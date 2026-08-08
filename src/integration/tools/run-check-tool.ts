@@ -24,6 +24,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
 import type { ToolContext, ToolDefinition, ToolResult } from './helpers.js';
 import {
   withReadOnlySession,
@@ -42,8 +43,6 @@ import {
 import type { SessionState } from '../../state/schema.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import { evaluate } from '../../machine/evaluate.js';
-import { isCommandAllowed, Command } from '../../machine/commands.js';
-import { evaluateValidationEvidence } from '../../machine/validation-evidence.js';
 import {
   type AssertionCapability,
   type FullCheckScopeAttestation,
@@ -90,6 +89,7 @@ import {
 } from '../../verification/execution-subject.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { hashText } from '../../shared/hashing.js';
+import { validateRunCheckRequest } from './run-check-request.js';
 const RUN_CHECK_RETRY_DELAYS_MS = [100, 200, 400] as const;
 const RUN_CHECK_RETRIES = RUN_CHECK_RETRY_DELAYS_MS.length;
 
@@ -108,10 +108,21 @@ export const run_check: ToolDefinition = {
     kind: VerificationCandidateKindSchema.describe(
       'Which verification kind to execute (e.g., "lint", "test", "typecheck", "build").',
     ),
+    candidateId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'Optional exact verification candidate identity. Must belong to the requested kind.',
+      ),
   },
   async execute(args, context) {
     try {
-      return await executeRunCheckPhased(args.kind as VerificationCandidateKind, context);
+      return await executeRunCheckPhased(
+        args.kind as VerificationCandidateKind,
+        args.candidateId as string | undefined,
+        context,
+      );
     } catch (err) {
       if (err instanceof PersistenceError && err.code === 'LOCK_TIMEOUT_EXHAUSTED') {
         getAdapterLogger().error('tool', 'lock_exhausted', {
@@ -152,6 +163,7 @@ type PhaseAResult =
 
 async function validateAndAttest(
   kind: VerificationCandidateKind,
+  candidateId: string | undefined,
   context: ToolContext,
 ): Promise<PhaseAResult> {
   const { sessDir, state } = await withReadOnlySession(context);
@@ -161,12 +173,12 @@ async function validateAndAttest(
     });
   }
 
-  const guard = validateRunCheckRequest(kind, state);
+  const guard = validateRunCheckRequest(kind, candidateId, state);
   if (typeof guard === 'string') return guard;
   const subject = freezeValidationSubject(state);
 
   const worktree = getWorktree(context);
-  const subjectInputs = state.executionSubjectInputsByKind?.[kind] ?? [];
+  const subjectInputs = executionSubjectInputs(state, guard.candidate);
 
   if (subjectInputs.length === 0) {
     return formatBlocked('VERIFICATION_SUBJECT_CHANGED', {
@@ -204,10 +216,11 @@ async function validateAndAttest(
 
 async function executeRunCheckPhased(
   kind: VerificationCandidateKind,
+  candidateId: string | undefined,
   context: ToolContext,
 ): Promise<ToolResult> {
   // ── Phase A: Validate + attest (read-only, no lock) ──
-  const phaseA = await validateAndAttest(kind, context);
+  const phaseA = await validateAndAttest(kind, candidateId, context);
   if (typeof phaseA === 'string') return phaseA;
 
   const {
@@ -247,6 +260,7 @@ async function executeRunCheckPhased(
   // ── Post-execution attestation + persist ──
   return persistAfterAttestation({
     kind,
+    candidateId: guard.candidate.candidateId,
     evidence,
     extraction,
     attemptId,
@@ -271,6 +285,7 @@ async function executeRunCheckPhased(
 
 async function persistAfterAttestation(params: {
   kind: VerificationCandidateKind;
+  candidateId?: string;
   evidence: Awaited<ReturnType<typeof executeCheck>>;
   extraction?: AssertionExtractionResult;
   attemptId: string;
@@ -296,6 +311,7 @@ async function persistAfterAttestation(params: {
   if (postAttestation.kind === 'subject_changed') {
     return persistCheckResultWithRetry({
       kind: params.kind,
+      candidateId: params.candidateId,
       evidence: params.evidence,
       derivedRepairGuidance: deriveRepairGuidance(params.evidence, 'blocked'),
       outcome: 'blocked',
@@ -313,6 +329,7 @@ async function persistAfterAttestation(params: {
   // ── Phase C: Persist with lock retry ──
   return persistCheckResultWithRetry({
     kind: params.kind,
+    candidateId: params.candidateId,
     evidence: params.evidence,
     derivedRepairGuidance: deriveRepairGuidance(params.evidence, params.outcome),
     outcome: params.outcome,
@@ -330,6 +347,7 @@ async function persistAfterAttestation(params: {
 
 interface PersistCheckInput {
   kind: VerificationCandidateKind;
+  candidateId?: string;
   evidence: Awaited<ReturnType<typeof executeCheck>>;
   derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance>;
   outcome: ValidationOutcome;
@@ -348,6 +366,7 @@ interface PersistCheckInput {
 async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<ToolResult> {
   const {
     kind,
+    candidateId,
     evidence,
     derivedRepairGuidance,
     outcome,
@@ -369,7 +388,7 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
       const freshPolicy = resolvePolicyFromState(freshState);
       const railCtx = createPolicyContext(freshPolicy);
 
-      const reGuard = validateRunCheckRequest(kind, freshState);
+      const reGuard = validateRunCheckRequest(kind, candidateId, freshState);
       if (typeof reGuard === 'string') {
         // State changed under us; do not persist stale result.
         return reGuard;
@@ -379,6 +398,7 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
 
       const validationResult = buildValidationResult({
         checkId: reGuard.checkId,
+        candidateId: reGuard.candidate.candidateId,
         evidence,
         outcome,
         derivedRepairGuidance,
@@ -422,6 +442,7 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
 
       return formatRunCheckResponse({
         kind,
+        candidateId: validationResult.candidateId,
         evidence,
         derivedRepairGuidance,
         originalState: freshState,
@@ -458,51 +479,14 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
   );
 }
 
-// ─── Request Validation ───────────────────────────────────────────────────────
-
-function validateRunCheckRequest(
-  kind: VerificationCandidateKind,
+function executionSubjectInputs(
   state: SessionState,
-):
-  | string
-  | {
-      checkId: string;
-      candidate: VerificationCandidate;
-    } {
-  if (!isCommandAllowed(state.phase, Command.VALIDATE)) {
-    return formatBlocked('COMMAND_NOT_ALLOWED', { command: '/run_check', phase: state.phase });
-  }
-  if (state.phase === 'VALIDATION' && !state.plan) {
-    return formatBlocked('PLAN_REQUIRED', { action: 'baseline validation' });
-  }
-  if (state.phase === 'IMPL_VALIDATION' && !state.implementation) {
-    return formatBlocked('IMPLEMENTATION_EVIDENCE_REQUIRED');
-  }
-  const activeChecksBlock = blockWhenNoActiveChecks(state);
-  if (activeChecksBlock) return activeChecksBlock;
-  const candidates = state.verificationCandidates ?? [];
-  const candidate = candidates.find((c) => c.kind === kind);
-  if (!candidate) {
-    return formatBlocked('CHECK_KIND_NOT_AVAILABLE', {
-      kind,
-      available: candidates.map((c) => c.kind).join(', ') || 'none',
-    });
-  }
-  if (!state.activeChecks.includes(kind)) {
-    return formatBlocked('CHECK_NOT_ACTIVE', {
-      checkId: kind,
-      activeChecks: state.activeChecks.join(', '),
-    });
-  }
-  return { checkId: kind, candidate };
-}
-
-function blockWhenNoActiveChecks(state: SessionState): string | null {
-  if (state.activeChecks.length > 0) return null;
-  const evidence = evaluateValidationEvidence(state);
-  return evidence.blocked && evidence.code !== null
-    ? formatBlocked(evidence.code)
-    : formatBlocked('NO_ACTIVE_CHECKS');
+  candidate: VerificationCandidate,
+): readonly ExecutionSubjectInput[] {
+  const byCandidate = candidate.candidateId
+    ? state.executionSubjectInputsByCandidateId?.[candidate.candidateId]
+    : undefined;
+  return byCandidate ?? state.executionSubjectInputsByKind?.[candidate.kind] ?? [];
 }
 
 // ─── Result Construction ──────────────────────────────────────────────────────
@@ -511,6 +495,7 @@ type CheckEvidence = Awaited<ReturnType<typeof executeCheck>>;
 
 function buildValidationResult(params: {
   checkId: string;
+  candidateId?: string;
   evidence: CheckEvidence;
   outcome: ValidationOutcome;
   derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance>;
@@ -520,6 +505,7 @@ function buildValidationResult(params: {
 }): ValidationResult {
   const {
     checkId,
+    candidateId,
     evidence,
     outcome,
     derivedRepairGuidance,
@@ -530,6 +516,7 @@ function buildValidationResult(params: {
   const passed = outcome === 'supported';
   return {
     checkId,
+    candidateId,
     passed,
     detail: formatValidationDetail(evidence),
     executedAt: evidence.startedAt,
@@ -669,6 +656,7 @@ function buildNextValidationState(
 
 function formatRunCheckResponse(input: {
   kind: string;
+  candidateId?: string;
   evidence: CheckEvidence;
   derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance> | undefined;
   originalState: SessionState;
@@ -718,6 +706,7 @@ function formatRunCheckResponse(input: {
       status: formatRunCheckStatus(kind, evidence),
       evidence: {
         kind: evidence.kind,
+        ...(input.candidateId ? { candidateId: input.candidateId } : {}),
         command: evidence.command,
         exitCode: evidence.exitCode,
         passed: evidence.passed,

@@ -244,6 +244,35 @@ describe('bindCounterexamples', () => {
     }
   });
 
+  it('rejects aggregate evidence from a different candidate of the same check kind', () => {
+    const binding = bindCounterexamples(
+      stateWith(
+        [
+          {
+            attemptId: ATT,
+            scope: 'implementation',
+            implementationDigest: IMPL_DIGEST,
+            result: {
+              ...aggregateValidationResult('full_check'),
+              candidateId: 'security-secondary',
+            },
+          },
+        ],
+        'IMPL_REVIEW',
+        {
+          counterexampleRequirement: {
+            ...AGGREGATE_COUNTEREXAMPLE_REQ,
+            candidateId: 'security-primary',
+          },
+        },
+      ),
+      NOW,
+    );
+
+    expect(binding.counterexamples[0]?.outcome).toBe('not_verified');
+    expect(binding.diagnostics.get(CLAIM)).toBe('aggregate_candidate_mismatch');
+  });
+
   it('returns not_verified when counterexampleRequirement is absent (defensive corruption handling)', () => {
     const state = stateWith(
       [

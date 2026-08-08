@@ -34,6 +34,8 @@ function classifyAggregateOutcome(
   const extraction = result.assertionExtraction;
   if (result.checkId !== requirement.checkId)
     return { outcome: 'not_verified', diagnosticCode: 'aggregate_check_mismatch' };
+  if (requirement.candidateId !== undefined && result.candidateId !== requirement.candidateId)
+    return { outcome: 'not_verified', diagnosticCode: 'aggregate_candidate_mismatch' };
   if (result.fullCheckScopeAttestation !== 'full_check')
     return { outcome: 'not_verified', diagnosticCode: 'aggregate_scope_unattested' };
   if (extraction?.status !== 'extracted')

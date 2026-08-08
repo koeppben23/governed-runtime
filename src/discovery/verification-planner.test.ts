@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import type { DetectedStack } from './types.js';
-import { planVerificationCandidates } from './verification-planner.js';
+import {
+  extractExecutionSubjectInputsByCandidateId,
+  planVerificationCandidates,
+} from './verification-planner.js';
 
 function makeDetectedStack(items: DetectedStack['items']): DetectedStack {
   return {
@@ -23,6 +26,29 @@ function makeReadFile(files: Record<string, string | undefined>) {
 
 describe('verification planner', () => {
   describe('HAPPY', () => {
+    it('assigns deterministic IDs and candidate-specific subject inputs', async () => {
+      const input = {
+        detectedStack: makeDetectedStack([
+          { kind: 'language' as const, id: 'typescript', evidence: 'tsconfig.json' },
+        ]),
+        allFiles: ['package.json'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({ scripts: { typecheck: 'tsc --noEmit' } }),
+        }),
+      };
+      const first = await planVerificationCandidates(input);
+      const second = await planVerificationCandidates(input);
+
+      expect(first.map((entry) => entry.candidate.candidateId)).toEqual(
+        second.map((entry) => entry.candidate.candidateId),
+      );
+      const candidate = first[0]!.candidate;
+      expect(candidate.candidateId).toMatch(/^vc_[a-f0-9]{64}$/);
+      expect(extractExecutionSubjectInputsByCandidateId(first)[candidate.candidateId!]).toEqual(
+        first[0]!.executionSubjectInputs,
+      );
+    });
+
     it('structured Maven wrapper candidate is produced alongside package script test', async () => {
       // Remove build script — wrapper fills the gap. Test script stays as repo-native.
       const candidates = await planVerificationCandidates({

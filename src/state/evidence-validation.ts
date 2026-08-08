@@ -242,6 +242,8 @@ export const ValidationResult = z
     executedAt: z.string().datetime(),
     /** The verification kind that was executed. */
     kind: VerificationCandidateKindSchema,
+    /** Exact verification candidate selected for this execution, when identified. */
+    candidateId: z.string().min(1).optional(),
     /** The exact command that was run. */
     command: z.string().min(1),
     /** Process exit code. */

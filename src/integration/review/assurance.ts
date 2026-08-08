@@ -84,6 +84,7 @@ export function createReviewObligation(input: {
    */
   claimedTaskClass?: TaskClass;
   metadata?: Record<string, unknown>;
+  fingerprintVersion?: 'v1' | 'v2';
 }): ReviewObligation {
   if (!input.subjectDigest || input.subjectDigest.length === 0) {
     throw new Error(
@@ -126,6 +127,7 @@ export function createReviewObligation(input: {
     ...requirements,
     subjectDigest: input.subjectDigest,
     metadata: input.metadata,
+    ...(input.fingerprintVersion ? { fingerprintVersion: input.fingerprintVersion } : {}),
   };
 }
 
@@ -218,6 +220,7 @@ export function findLatestPendingReviewObligation(
   assurance: ReviewAssuranceState | undefined,
   obligationType: ReviewObligationType,
   metadataFingerprint?: string,
+  fingerprintVersion?: 'v1' | 'v2',
 ): ReviewObligation | null {
   const base = ensureReviewAssurance(assurance);
   const candidates = base.obligations.filter(
@@ -231,7 +234,13 @@ export function findLatestPendingReviewObligation(
   if (metadataFingerprint) {
     return (
       candidates
-        .filter((o) => o.metadata && o.metadata.fingerprint === metadataFingerprint)
+        .filter(
+          (o) =>
+            o.metadata &&
+            o.metadata.fingerprint === metadataFingerprint &&
+            (fingerprintVersion === undefined ||
+              (o.fingerprintVersion ?? 'v1') === fingerprintVersion),
+        )
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
         .at(0) ?? null
     );

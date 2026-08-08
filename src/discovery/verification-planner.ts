@@ -26,6 +26,8 @@ import { buildScriptInvocation, type PackageManager } from './package-script-com
 import { analyzeVerificationScript } from './verification-script-analysis.js';
 import type { ProviderId } from '../state/assertion-identity.js';
 import type { PlannedVerificationCandidate } from './verification-candidate-planned.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { hashText } from '../shared/hashing.js';
 
 type ReadFileFn = (relativePath: string) => Promise<string | undefined>;
 
@@ -77,11 +79,18 @@ export async function planVerificationCandidates(
 
   addNonAssertionFallbacks(byKind, detectedStackIds, packageManager);
 
-  return [...byKind.values()].sort((a, b) => {
+  const ordered = [...byKind.values()].sort((a, b) => {
     const orderDiff = KIND_ORDER[a.candidate.kind] - KIND_ORDER[b.candidate.kind];
     if (orderDiff !== 0) return orderDiff;
     return a.candidate.command.localeCompare(b.candidate.command);
   });
+  return ordered.map((planned) => ({
+    ...planned,
+    candidate: {
+      ...planned.candidate,
+      candidateId: `vc_${hashText(canonicalJsonStringify(planned.candidate))}`,
+    },
+  }));
 }
 
 /**
@@ -105,6 +114,19 @@ export function extractExecutionSubjectInputs(
   for (const p of planned) {
     if (p.executionSubjectInputs.length > 0) {
       map[p.candidate.kind] = [...p.executionSubjectInputs];
+    }
+  }
+  return map;
+}
+
+/** Extract candidate-specific execution subject inputs for exact candidate execution. */
+export function extractExecutionSubjectInputsByCandidateId(
+  planned: readonly PlannedVerificationCandidate[],
+): Record<string, ExecutionSubjectInput[]> {
+  const map: Record<string, ExecutionSubjectInput[]> = {};
+  for (const p of planned) {
+    if (p.candidate.candidateId && p.executionSubjectInputs.length > 0) {
+      map[p.candidate.candidateId] = [...p.executionSubjectInputs];
     }
   }
   return map;

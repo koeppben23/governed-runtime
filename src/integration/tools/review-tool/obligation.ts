@@ -7,7 +7,9 @@
  * @version v1
  */
 
-import { hashText, hashTextShort } from '../../../shared/hashing.js';
+import { hashText } from '../../../shared/hashing.js';
+export { fingerprintReviewInput } from './fingerprint.js';
+import { fingerprintReviewInput } from './fingerprint.js';
 
 import type { SessionState } from '../../../state/schema.js';
 import type { ReviewFindings, ReviewObligation } from '../../../state/evidence.js';
@@ -273,27 +275,8 @@ export {
   type RequiredBranchReviewProvenance,
 } from '../../review/review-provenance.js';
 
-export function fingerprintReviewInput(args: {
-  prNumber?: number;
-  branch?: string;
-  url?: string;
-  text?: string;
-  inputOrigin?: string;
-  references?: unknown;
-  resolvedBranchSha?: string;
-  resolvedBaseSha?: string;
-}): string {
-  const payload = JSON.stringify({
-    prNumber: args.prNumber,
-    branch: args.branch,
-    url: args.url,
-    textHash: args.text ? hashTextShort(args.text, 16) : undefined,
-    inputOrigin: args.inputOrigin,
-    references: args.references ? hashTextShort(JSON.stringify(args.references), 16) : undefined,
-    resolvedBranchSha: args.resolvedBranchSha,
-    resolvedBaseSha: args.resolvedBaseSha,
-  });
-  return hashText(payload);
+function fingerprintVersionOf(obligation: ReviewObligation): 'v1' | 'v2' {
+  return obligation.fingerprintVersion ?? 'v1';
 }
 
 export function matchesReviewObligationInput(
@@ -301,7 +284,10 @@ export function matchesReviewObligationInput(
   args: ReviewToolArgs,
 ): boolean {
   const inputFingerprint = obligation.metadata?.inputFingerprint;
-  return typeof inputFingerprint === 'string' && inputFingerprint === fingerprintReviewInput(args);
+  return (
+    typeof inputFingerprint === 'string' &&
+    inputFingerprint === fingerprintReviewInput(args, fingerprintVersionOf(obligation))
+  );
 }
 
 /** Option A continuation: re-supply the immutable source alongside identity and verdict. */
@@ -360,6 +346,7 @@ interface NewReviewObligationInput {
   readonly resolvedSource: ResolvedBranchReviewSource | undefined;
   readonly fingerprint: string;
   readonly inputFingerprint: string;
+  readonly fingerprintVersion: 'v2';
 }
 
 async function createNewReviewObligation(
@@ -409,6 +396,7 @@ async function createNewReviewObligation(
       // not the session's own task-class claim. The C1 floor applies only to the
       // author's own change (plan/architecture/implement).
       metadata,
+      fingerprintVersion: input.fingerprintVersion,
     }),
   };
 }
@@ -434,13 +422,21 @@ export async function ensureMissingAnalysisObligation(
 
   if (!hasReviewContentInput(args)) return { message: null };
 
-  const fingerprint = fingerprintReviewInput({
-    ...args,
-    resolvedBranchSha: context.resolvedSource?.resolvedBranchSha,
-    resolvedBaseSha: context.resolvedSource?.resolvedBaseSha,
-  });
-  const inputFingerprint = fingerprintReviewInput(args);
-  const existing = findLatestPendingReviewObligation(state.reviewAssurance, 'review', fingerprint);
+  const fingerprint = fingerprintReviewInput(
+    {
+      ...args,
+      resolvedBranchSha: context.resolvedSource?.resolvedBranchSha,
+      resolvedBaseSha: context.resolvedSource?.resolvedBaseSha,
+    },
+    'v2',
+  );
+  const inputFingerprint = fingerprintReviewInput(args, 'v2');
+  const existing = findLatestPendingReviewObligation(
+    state.reviewAssurance,
+    'review',
+    fingerprint,
+    'v2',
+  );
   const verdictFirstCall = args.reviewVerdict !== undefined && existing === null;
   if (!verdictFirstCall && args.reviewFindings !== undefined) return { message: null };
   if (!existing) {
@@ -452,6 +448,7 @@ export async function ensureMissingAnalysisObligation(
       context,
       fingerprint,
       inputFingerprint,
+      fingerprintVersion: 'v2',
     });
   }
   return {
@@ -471,6 +468,7 @@ interface MissingAnalysisObligationInput {
   readonly now: string;
   readonly fingerprint: string;
   readonly inputFingerprint: string;
+  readonly fingerprintVersion: 'v2';
 }
 
 async function createAndPrepareMissingAnalysisObligation(
@@ -487,6 +485,7 @@ async function createAndPrepareMissingAnalysisObligation(
     now: input.now,
     fingerprint: input.fingerprint,
     inputFingerprint: input.inputFingerprint,
+    fingerprintVersion: input.fingerprintVersion,
     ...input.context,
   });
   if (created.blocked) return { message: created.blocked };
@@ -569,10 +568,10 @@ export async function resolveSubmittedReviewObligation(
       blocked: suppliedBlock,
     };
   }
-  const fingerprint = fingerprintReviewInput(args);
+  const fingerprint = fingerprintReviewInput(args, 'v2');
   let obligation =
     obligationById ??
-    findLatestPendingReviewObligation(state.reviewAssurance, 'review', fingerprint);
+    findLatestPendingReviewObligation(state.reviewAssurance, 'review', fingerprint, 'v2');
 
   if (!obligation) {
     const created = await createNewReviewObligation({
@@ -583,6 +582,7 @@ export async function resolveSubmittedReviewObligation(
       resolvedSource: undefined,
       fingerprint,
       inputFingerprint: fingerprint,
+      fingerprintVersion: 'v2',
     });
     if (created.blocked) return { obligation: null, blocked: created.blocked };
     obligation = created.obligation!;

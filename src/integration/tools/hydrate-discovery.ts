@@ -24,6 +24,7 @@ import {
   planVerificationCandidates,
   stripToCandidates,
   extractExecutionSubjectInputs,
+  extractExecutionSubjectInputsByCandidateId,
 } from '../../discovery/verification-planner.js';
 import {
   writeDiscovery,
@@ -300,12 +301,14 @@ export async function computeDiscoveryHydration(
   });
   const verificationCandidates = stripToCandidates(planned);
   const executionSubjectInputsByKind = extractExecutionSubjectInputs(planned);
+  const executionSubjectInputsByCandidateId = extractExecutionSubjectInputsByCandidateId(planned);
   return {
     discoveryDigest,
     discoverySummary,
     detectedStack,
     verificationCandidates,
     executionSubjectInputsByKind,
+    executionSubjectInputsByCandidateId,
   };
 }
 

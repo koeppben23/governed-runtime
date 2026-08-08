@@ -298,6 +298,34 @@ describe('HAPPY', () => {
       }),
     );
   });
+
+  it('selects and persists the exact candidate when candidateId is supplied', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+    const state = await readState(sd);
+    const primary = state!.verificationCandidates!.find(
+      (candidate) => candidate.kind === 'typecheck',
+    )!;
+    const candidateId = 'typecheck-alternate';
+    await writeState(sd, {
+      ...state!,
+      verificationCandidates: [
+        primary,
+        { ...primary, candidateId, command: 'npm run exact-typecheck' },
+      ],
+      executionSubjectInputsByCandidateId: {
+        ...(state!.executionSubjectInputsByCandidateId ?? {}),
+        [candidateId]: state!.executionSubjectInputsByKind!.typecheck ?? [],
+      },
+    });
+
+    await callOk(run_check, { kind: 'typecheck', candidateId });
+
+    expect(executeCheck).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'npm run exact-typecheck' }),
+    );
+    expect((await readState(sd))!.validation[0]!.candidateId).toBe(candidateId);
+  });
 });
 
 // ─── BAD ─────────────────────────────────────────────────────────────────────

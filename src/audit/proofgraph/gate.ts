@@ -47,6 +47,7 @@ function isValidBindingCode(value: string): value is AssertionBindingReasonCode 
     value === 'provider_mismatch' ||
     value === 'assertion_mismatch' ||
     value === 'aggregate_check_mismatch' ||
+    value === 'aggregate_candidate_mismatch' ||
     value === 'aggregate_scope_unattested' ||
     value === 'aggregate_extraction_missing' ||
     value === 'aggregate_capability_missing'

@@ -152,6 +152,45 @@ describe('validateProofClaimContract — critical contract', () => {
     expect(result).toEqual({ kind: 'ok' });
   });
 
+  it('requires the declared aggregate candidate ID to match the candidate kind', () => {
+    const result = validateProofClaimContract({
+      ...BASE,
+      source: 'plan',
+      verificationCandidates: [
+        BASE.verificationCandidates[0]!,
+        {
+          assertionCapability: 'structured' as const,
+          candidateId: 'security-primary',
+          kind: 'security' as const,
+          command: 'pytest --junitxml=reports.xml',
+          source: 'repo:pytest',
+          confidence: 'high' as const,
+          reason: 'complete pytest suite report',
+          assertionReport: {
+            collection: 'snapshot_diff' as const,
+            transport: 'file' as const,
+            providerId: 'pytest' as never,
+            format: 'junit_xml' as never,
+            standardPatterns: ['reports.xml'],
+          },
+          fullCheckScopeAttestation: 'full_check' as const,
+        },
+      ],
+      claims: [
+        planClaim({
+          claimScope: 'suite',
+          counterexampleRequirement: {
+            kind: 'aggregate_check',
+            checkId: 'security',
+            candidateId: 'security-other',
+          },
+        }),
+      ],
+    });
+
+    expect(result).toMatchObject({ kind: 'invalid', failureKind: 'unsatisfiable' });
+  });
+
   it('rejects aggregate coverage without an explicit full-check scope completeness attestation', () => {
     const result = validateProofClaimContract({
       ...BASE,

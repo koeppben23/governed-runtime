@@ -97,7 +97,12 @@ export const AssertionCounterexampleRequirement = z
   .strict()
   .readonly();
 export const AggregateCounterexampleRequirement = z
-  .object({ kind: z.literal('aggregate_check'), checkId: z.string().min(1) })
+  .object({
+    kind: z.literal('aggregate_check'),
+    checkId: z.string().min(1),
+    /** Exact candidate required for aggregate evidence when multiple candidates share a kind. */
+    candidateId: z.string().min(1).optional(),
+  })
   .strict()
   .readonly();
 export const V2CounterexampleRequirement = z.discriminatedUnion('kind', [
@@ -172,6 +177,7 @@ export const AssertionBindingReasonCodeSchema = z.enum([
   'provider_mismatch',
   'assertion_mismatch',
   'aggregate_check_mismatch',
+  'aggregate_candidate_mismatch',
   'aggregate_scope_unattested',
   'aggregate_extraction_missing',
   'aggregate_capability_missing',

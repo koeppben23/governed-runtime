@@ -379,6 +379,8 @@ export const ReviewProfileSource = z.enum([
   'inherited_plan_full',
 ]);
 export type ReviewProfileSource = z.infer<typeof ReviewProfileSource>;
+export const ReviewInputFingerprintVersion = z.enum(['v1', 'v2']);
+export type ReviewInputFingerprintVersion = z.infer<typeof ReviewInputFingerprintVersion>;
 
 /**
  * P35 strict obligation record.
@@ -426,6 +428,8 @@ export const ReviewObligation = z.object({
    * surfaces any site that forgets to freeze the subject.
    */
   subjectDigest: z.string().min(1),
+  /** Missing means the legacy v1 fingerprint algorithm. */
+  fingerprintVersion: ReviewInputFingerprintVersion.optional(),
   /**
    * Ordered attempt IDs associated with this obligation.
    * Each reviewer Task invocation creates a new attempt; the latest attempt at

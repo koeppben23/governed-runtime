@@ -300,6 +300,19 @@ function checkAggregateCounterexampleCapability(
   );
 }
 
+function resolveCounterexampleCandidate(
+  candidates: readonly VerificationCandidate[],
+  requirement: NonNullable<NormalizedClaimDeclaration['counterexampleRequirement']>,
+): VerificationCandidate | undefined {
+  const candidateId = 'candidateId' in requirement ? requirement.candidateId : undefined;
+  return candidateId
+    ? candidates.find(
+        (candidate) =>
+          candidate.candidateId === candidateId && candidate.kind === requirement.checkId,
+      )
+    : candidates.find((candidate) => candidate.kind === requirement.checkId);
+}
+
 /** Rule 8: counterexample check must provide the declared capability. */
 function checkCounterexampleSatisfiability(
   input: ClaimContractInput,
@@ -309,7 +322,7 @@ function checkCounterexampleSatisfiability(
   const req = claim.counterexampleRequirement;
   if (!req) return null;
 
-  const candidate = input.verificationCandidates.find((c) => c.kind === req.checkId);
+  const candidate = resolveCounterexampleCandidate(input.verificationCandidates, req);
   if (!candidate) {
     return invalid(
       input.source,

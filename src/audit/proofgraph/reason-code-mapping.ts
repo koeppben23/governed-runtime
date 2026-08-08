@@ -65,6 +65,8 @@ export function mapBindingReasonToRegistryCode(reasonCode: AssertionBindingReaso
       return 'PROOFGRAPH_ASSERTION_IDENTITY_MISMATCH';
     case 'aggregate_check_mismatch':
       return 'PROOFGRAPH_AGGREGATE_CHECK_MISMATCH';
+    case 'aggregate_candidate_mismatch':
+      return 'PROOFGRAPH_AGGREGATE_CHECK_MISMATCH';
     case 'aggregate_scope_unattested':
       return 'PROOFGRAPH_AGGREGATE_SCOPE_UNATTESTED';
     case 'aggregate_extraction_missing':

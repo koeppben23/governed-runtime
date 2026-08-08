@@ -15,6 +15,8 @@ import { describe, expect, it } from 'vitest';
 
 import type { PlanClaimDeclarations } from '../../state/proofgraph-approval.js';
 import { makeState, PLAN_RECORD } from '../../fixtures.js';
+import { canonicalJsonStringify } from '../../shared/canonical-json.js';
+import { hashText } from '../../shared/hashing.js';
 import {
   projectPlanProofObligations,
   projectArchitectureDecisionClaims,
@@ -57,7 +59,23 @@ function proofClaim(opts: {
 
 function makeEvalState(claims: ProofClaim[]): SessionState {
   const base = makeState('IMPLEMENTATION');
-  const authorizedIds = claims.filter((c) => c.critical).map((c) => c.claimId);
+  const claimDeclarations = {
+    flow: 'plan' as const,
+    version: 'v2' as const,
+    claims: claims.map((claim) => ({
+      claimId: claim.claimId,
+      statement: claim.statement,
+      critical: claim.critical,
+      claimScope: 'specific_behavior' as const,
+      expectedCheckId: 'check-1',
+      authoritySectionId: 'sec-1',
+      counterexampleRequirement: {
+        kind: 'assertion' as const,
+        checkId: 'check-2',
+        assertion: { providerId: 'junit' as const, localId: 'com.example.Test#counterexample' },
+      },
+    })),
+  };
   return {
     ...base,
     proofGraph: { version: 'proofgraph.v1' as const, claims, evaluatedAt: '2025-01-01T00:00:00Z' },
@@ -76,15 +94,19 @@ function makeEvalState(claims: ProofClaim[]): SessionState {
     },
     plan: {
       ...PLAN_RECORD,
-      claimDeclarations: {
+      claimDeclarations,
+      approvalCertificate: {
         flow: 'plan' as const,
-        claims: claims.map((c) => ({
-          claimId: c.claimId,
-          statement: c.statement,
-          critical: c.critical,
-          expectedCheckId: 'check-1',
-          authoritySectionId: 'sec-1',
-        })),
+        authorityDigest: PLAN_RECORD.current.digest,
+        claimDeclarationsDigest: hashText(canonicalJsonStringify(claimDeclarations)),
+        decisionAttestationDigest: 'd'.repeat(64),
+        approvedAt: '2025-01-01T00:00:00.000Z',
+        approvedBy: 'test-approver',
+        certificateId: '11111111-1111-4111-8111-111111111111',
+        planVersion: PLAN_RECORD.current.planVersion,
+        planRecordDigest: PLAN_RECORD.current.recordDigest,
+        reviewObligationId: null,
+        reviewEvidenceDigest: null,
       },
     },
     implementationRiskAssessment: undefined,

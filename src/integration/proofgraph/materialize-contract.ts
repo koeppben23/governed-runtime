@@ -80,9 +80,11 @@ function requiredEvidence(declaration: PlanClaimDeclaration) {
 function isAggregateCounterexampleAttempt(
   attempt: SessionState['validationAttempts'][number],
   requiredCheckId: string,
+  requiredCandidateId: string | undefined,
 ): boolean {
   return (
     attempt.result.checkId === requiredCheckId &&
+    (requiredCandidateId === undefined || attempt.result.candidateId === requiredCandidateId) &&
     attempt.result.fullCheckScopeAttestation === 'full_check' &&
     attempt.result.assertionExtraction?.status === 'extracted' &&
     attempt.result.assertionExtraction.bindingCapability === 'aggregate'
@@ -102,7 +104,7 @@ function resolveCounterexampleAttempts(
   if (!requiredCheckId) return { counterexampleAttempts: [] };
   if ('kind' in requirement && requirement.kind === 'aggregate_check') {
     const aggregateAttempts = attempts.filter((attempt) =>
-      isAggregateCounterexampleAttempt(attempt, requiredCheckId),
+      isAggregateCounterexampleAttempt(attempt, requiredCheckId, requirement.candidateId),
     );
     if (aggregateAttempts.length > 0) {
       return {

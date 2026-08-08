@@ -267,7 +267,13 @@ function attempt(
 function fullEvidence(): SessionState['validationAttempts'] {
   const cx = attempt(COUNTEREXAMPLE_ATTEMPT_ID, 'security', true, 'test');
   return [
-    attempt(ATTEMPT_ID, 'build', true),
+    {
+      ...attempt(ATTEMPT_ID, 'build', true),
+      result: {
+        ...attempt(ATTEMPT_ID, 'build', true).result,
+        fullCheckScopeAttestation: 'full_check',
+      },
+    },
     {
       ...cx,
       result: {
@@ -305,7 +311,14 @@ function fullEvidence(): SessionState['validationAttempts'] {
 function aggregateEvidence(): SessionState['validationAttempts'] {
   const cx = attempt(COUNTEREXAMPLE_ATTEMPT_ID, 'security', true, 'test');
   return [
-    attempt(ATTEMPT_ID, 'build', true),
+    {
+      ...attempt(ATTEMPT_ID, 'build', true),
+      // Suite claims require complete-suite positive evidence, not merely a passing check.
+      result: {
+        ...attempt(ATTEMPT_ID, 'build', true).result,
+        fullCheckScopeAttestation: 'full_check' as const,
+      },
+    },
     {
       ...cx,
       result: {

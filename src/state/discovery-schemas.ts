@@ -115,6 +115,8 @@ export type AssertionReportSpec = z.infer<typeof AssertionReportSpec>;
  */
 export const VerificationCandidateSchema = z.discriminatedUnion('assertionCapability', [
   z.object({
+    /** Stable planner identity for exact execution and evidence binding. */
+    candidateId: z.string().min(1).optional(),
     assertionCapability: z.literal('unsupported'),
     kind: VerificationCandidateKindSchema,
     command: z.string().min(1),
@@ -123,6 +125,8 @@ export const VerificationCandidateSchema = z.discriminatedUnion('assertionCapabi
     reason: z.string().min(1),
   }),
   z.object({
+    /** Stable planner identity for exact execution and evidence binding. */
+    candidateId: z.string().min(1).optional(),
     assertionCapability: z.literal('structured'),
     kind: VerificationCandidateKindSchema,
     command: z.string().min(1),
