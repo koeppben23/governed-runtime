@@ -206,6 +206,8 @@ real, registered reason.
 | `REVIEW_FINDINGS_REQUIRED`                  | Mode B verdict submitted without `reviewFindings`                             | Include the structured `reviewFindings` object                                                                       |
 | `REVIEW_FINDINGS_SESSION_MISMATCH`          | Findings came from a different session than the current FlowGuard session     | Use findings produced for the current session                                                                        |
 | `REVIEW_FINDINGS_HASH_MISMATCH`             | Findings hash does not match the review obligation                            | Re-run the review for the current obligation                                                                         |
+| `REVIEW_FINDING_OUT_OF_SCOPE`               | Reviewer findings reference paths outside the frozen reviewed file scope      | Re-run the review with the correct changed files scope                                                               |
+| `REVIEW_FINDING_SCOPE_UNVERIFIABLE`         | Legacy obligation has no frozen reviewed file scope                           | Re-run the review to create a new obligation with a frozen scope                                                     |
 | `REVIEW_OBLIGATION_NOT_FOUND`               | Review continuation ID is missing, consumed, blocked, or mismatched           | Use the ID from the original `CONTENT_ANALYSIS_REQUIRED` response; otherwise start a fresh `/review`                 |
 | `REVIEW_OBLIGATION_ID_REQUIRED`             | Host-task review verdict was submitted without its obligation ID              | Submit the original content, `reviewObligationId`, and the captured reviewer verdict together                        |
 | `REVIEW_OBLIGATION_AMBIGUOUS`               | More than one active review obligation could receive the submitted verdict    | Select the exact ID from the original `CONTENT_ANALYSIS_REQUIRED` response                                           |
@@ -417,6 +419,8 @@ REVIEW_ASSURANCE_UNAVAILABLE
 REVIEW_CARD_ARTIFACT_IMMUTABLE
 REVIEW_CARD_ARTIFACT_WRITE_FAILED
 REVIEW_CONTENT_SOURCE_INCOMPLETE
+REVIEW_FINDING_OUT_OF_SCOPE
+REVIEW_FINDING_SCOPE_UNVERIFIABLE
 REVIEW_FINDINGS_HASH_MISMATCH
 REVIEW_FINDINGS_REQUIRED
 REVIEW_FINDINGS_SESSION_MISMATCH
