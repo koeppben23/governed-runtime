@@ -264,7 +264,8 @@ function checkAggregateCounterexampleCapability(
   if (requirement.kind !== 'aggregate_check') return null;
   const report = candidate.assertionReport;
   const formats =
-    report && (input.aggregateFormatsByProvider ?? AGGREGATE_FORMATS_BY_PROVIDER).get(report.providerId);
+    report &&
+    (input.aggregateFormatsByProvider ?? AGGREGATE_FORMATS_BY_PROVIDER).get(report.providerId);
   if (report && formats?.has(report.format)) return null;
   return invalid(
     input.source,

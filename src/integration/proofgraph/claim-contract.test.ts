@@ -115,7 +115,8 @@ describe('validateProofClaimContract — critical contract', () => {
       ],
     });
     expect(result).toMatchObject({ kind: 'invalid', failureKind: 'unsatisfiable' });
-    if (result.kind === 'invalid') expect(result.detail).toContain('aggregate counterexample capability');
+    if (result.kind === 'invalid')
+      expect(result.detail).toContain('aggregate counterexample capability');
   });
 
   it('accepts aggregate coverage when the candidate report provider and format are registered', () => {

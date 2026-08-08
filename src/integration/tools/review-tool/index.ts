@@ -167,9 +167,7 @@ function resolveHostTaskContinuationAuthority(
   state: SessionState,
   exec: ReviewExecutionContext,
 ): HostTaskContinuationAuthority {
-  if (
-    exec.policy !== 'host_task_required' || exec.args.reviewVerdict === undefined
-  ) {
+  if (exec.policy !== 'host_task_required' || exec.args.reviewVerdict === undefined) {
     return { kind: 'not_applicable' };
   }
   if (exec.args.reviewObligationId !== undefined) {
@@ -197,7 +195,8 @@ function resolveHostTaskContinuationAuthority(
           invocation.hostVisible === true &&
           invocation.capturedRawFindings != null &&
           invocation.capturedVerdict === exec.args.reviewVerdict &&
-          (obligation.invocationId === invocation.invocationId || invocation.attemptId !== undefined),
+          (obligation.invocationId === invocation.invocationId ||
+            invocation.attemptId !== undefined),
       ),
     )
     .map((obligation) => obligation.obligationId);
@@ -206,7 +205,9 @@ function resolveHostTaskContinuationAuthority(
     : { kind: 'id_required', compatibleObligationIds };
 }
 
-function formatHostTaskContinuationAuthority(authority: HostTaskContinuationAuthority): string | null {
+function formatHostTaskContinuationAuthority(
+  authority: HostTaskContinuationAuthority,
+): string | null {
   if (authority.kind === 'not_applicable' || authority.kind === 'explicit') return null;
   if (authority.kind === 'ambiguous') {
     return formatBlocked('REVIEW_OBLIGATION_AMBIGUOUS', {
