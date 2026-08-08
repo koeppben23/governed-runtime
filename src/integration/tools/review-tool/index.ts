@@ -153,6 +153,20 @@ async function prepareReviewExecution(
   result: StartedReviewResult,
   exec: ReviewExecutionContext,
 ): Promise<ReviewPreparation | string> {
+  // A verdict has no standalone meaning without either the reviewed content or
+  // the obligation that binds it to captured host-task evidence. Do not let an
+  // omitted continuation ID silently start an unrelated content-free review.
+  if (
+    exec.policy === 'host_task_required' &&
+    exec.args.reviewVerdict !== undefined &&
+    exec.args.reviewObligationId === undefined &&
+    !hasReviewContentInput(exec.args)
+  ) {
+    return formatBlocked('REVIEW_OBLIGATION_ID_REQUIRED', {
+      reason:
+        'A host-task review verdict requires reviewObligationId unless this is the first content-aware review call.',
+    });
+  }
   const resolvedSource = resolveObligationBranchSource(exec);
 
   const hostTaskVerdict = await prepareHostTaskVerdictReview(sessDir, state, result, exec);

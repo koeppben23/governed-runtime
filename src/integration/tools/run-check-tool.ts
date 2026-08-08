@@ -100,6 +100,8 @@ import {
   type ExecutionSubjectInput,
   type ExecutionSubjectAttestation,
 } from '../../verification/execution-subject.js';
+import { canonicalJsonStringify } from '../../shared/canonical-json.js';
+import { hashText } from '../../shared/hashing.js';
 
 const RUN_CHECK_RETRY_DELAYS_MS = [100, 200, 400] as const;
 const RUN_CHECK_RETRIES = RUN_CHECK_RETRY_DELAYS_MS.length;
@@ -379,7 +381,6 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
         classificationReasonOverride,
       });
       const allResults = mergeValidationResult(freshState, validationResult);
-      const passedIds = new Set(allResults.filter((v) => v.passed).map((v) => v.checkId));
       const validationAttempt = buildValidationAttempt(subject, validationResult, attemptId);
       const nextState = buildNextValidationState(freshState, allResults, validationAttempt);
       const advanced = autoAdvance(nextState, (s) => evaluate(s, railCtx.policy), railCtx);
@@ -418,7 +419,6 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
         evidence,
         derivedRepairGuidance,
         originalState: freshState,
-        passedIds,
         advanced,
         finalState: persisted,
         nextObligation: activated.obligation,
@@ -662,14 +662,12 @@ function formatRunCheckResponse(input: {
   evidence: CheckEvidence;
   derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance> | undefined;
   originalState: SessionState;
-  passedIds: Set<string>;
   advanced: Exclude<ReturnType<typeof autoAdvance>, { kind: 'overflow' }>;
   finalState: SessionState;
   nextObligation: ReviewObligation | null;
   policy: FlowGuardPolicy;
 }): ToolResult {
-  const { kind, evidence, derivedRepairGuidance, originalState, passedIds, advanced, finalState } =
-    input;
+  const { kind, evidence, derivedRepairGuidance, originalState, advanced, finalState } = input;
   const { evalResult: ev, transitions } = advanced;
   const platform = resolveRuntimeReviewPlatform();
   const mode = resolveReviewOrchestrationMode({
@@ -703,8 +701,13 @@ function formatRunCheckResponse(input: {
         outputDigest: evidence.outputDigest,
         timedOut: evidence.timedOut,
       },
+      observedStateDigest: hashText(canonicalJsonStringify(originalState)),
+      committedStateDigest: hashText(canonicalJsonStringify(finalState)),
+      stateChangedDuringExecution:
+        hashText(canonicalJsonStringify(originalState)) !==
+        hashText(canonicalJsonStringify(finalState)),
       derivedRepairGuidance,
-      remainingChecks: originalState.activeChecks.filter((id) => !passedIds.has(id)),
+      remainingChecks: finalState.activeChecks,
       ...reviewObligationResponseFields(input.nextObligation),
       next: reviewInstruction?.next ?? formatEval(ev),
       ...(reviewInstruction ? { reviewInvocation: reviewInstruction.reviewInvocation } : {}),

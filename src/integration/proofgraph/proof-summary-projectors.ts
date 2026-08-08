@@ -455,6 +455,15 @@ export function projectImplementationProofStatus(
   state: SessionState,
   opts?: { gate?: ProofGraphGateDecision; decisionContext?: ProofDecisionContext },
 ): CompactProofPresentation {
+  // Approved declarations remain governance obligations until a materialized
+  // graph can evaluate them. An empty graph is not evidence that nothing was
+  // declared.
+  if (
+    (state.proofGraph?.claims.length ?? 0) === 0 &&
+    (state.plan?.claimDeclarations?.claims.length ?? 0) > 0
+  ) {
+    return projectPlanProofStatus(state);
+  }
   const gateResult = resolveGate(state, opts);
   const context =
     opts?.decisionContext ??

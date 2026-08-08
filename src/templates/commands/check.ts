@@ -17,9 +17,10 @@ Run automated verification checks for the current implementation.
 
 1. Call \`flowguard_status\` with NO focused flags (no whyBlocked/evidence/context/readiness) so the full projection is returned, then read \`activeChecks\` (equivalently \`remainingChecks\` in VALIDATION) and \`verificationCandidates\`.
 2. If \`activeChecks\` is empty AND \`verificationCandidates\` is empty, report that no verification checks are active (no discoverable commands).
-3. For each kind in \`activeChecks\` (or \`remainingChecks\`), call \`flowguard_run_check({ kind: "<kind>" })\`.
-   - FlowGuard executes the discovered command and returns execution evidence.
-   - You may also call \`flowguard_run_check({ kind: "<kind>" })\` directly for any kind in \`verificationCandidates\`; it validates the kind against canonical state, not against the status output.
+3. For each kind in \`activeChecks\` (or \`remainingChecks\`), call \`flowguard_run_check({ kind: "<kind>" })\` sequentially. Never run two state-mutating checks concurrently.
+    - FlowGuard executes the discovered command and returns execution evidence.
+    - You may also call \`flowguard_run_check({ kind: "<kind>" })\` directly for any kind in \`verificationCandidates\`; it validates the kind against canonical state, not against the status output.
+    - Inspect the response, then call \`flowguard_status\` again before selecting the next check. Treat the status projection, not an earlier check response, as authoritative after another mutation may have run.
 4. Inspect the final \`flowguard_run_check\` response before calling any other tool:
    - If its phase is \`IMPLEMENTATION\`: report the passed checks and the rendered next action, then STOP. Do not call \`read\`, \`glob\`, \`grep\`, \`bash\`, \`write\`, \`edit\`, \`flowguard_implement\`, or any implementation-review tool. Only a new, explicit user \`/implement\` command may start implementation.
    - If its phase is \`PLAN\` or \`IMPL_VALIDATION\`: report the check result and stop. Do not retry or advance without a new explicit user command.

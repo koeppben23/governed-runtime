@@ -122,7 +122,7 @@ describe('renderCompactProofSection', () => {
       const result = renderCompactProofSection(makeEvaluation('PROVEN', { provenCount: 5 }));
       expect(result).toContain('All critical claims PROVEN');
       expect(result).toContain('5 PROVEN');
-      expect(result).toContain('→ Full evidence lineage:');
+      expect(result).toContain('Evidence lineage:');
     });
 
     it('renders CONTRADICTED headline with reason, no scenario text', () => {
@@ -145,7 +145,7 @@ describe('renderCompactProofSection', () => {
       expect(result).toContain('falsified');
       expect(result).toContain('Fresh adversarial evidence falsified');
       expect(result).not.toContain('scenario');
-      expect(result).toContain('→ Inspect the blocking claim');
+      expect(result).toContain('Inspect the blocking claim');
       expect(result).toContain('1 CONTRADICTED');
     });
 

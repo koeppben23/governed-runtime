@@ -100,7 +100,17 @@ export function formatBlockedWithAttestation(
   });
 }
 
-export function formatMissingContentAnalysis(obligationId: string): string {
+export function formatMissingContentAnalysis(
+  obligationId: string,
+  hostTaskRequired = false,
+): string {
+  if (hostTaskRequired) {
+    return formatBlockedWithAttestation(
+      'CONTENT_ANALYSIS_REQUIRED',
+      `Content-aware /review requires subagent analysis. Call the ${REVIEWER_SUBAGENT_TYPE} subagent via Task tool, then re-run flowguard_review with the original content fields, reviewObligationId '${obligationId}', and reviewVerdict matching the captured reviewer verdict. Do not submit or copy reviewFindings in host-task mode.`,
+      obligationId,
+    );
+  }
   return formatBlockedWithAttestation(
     'CONTENT_ANALYSIS_REQUIRED',
     `Content-aware /review requires subagent analysis. Call the ${REVIEWER_SUBAGENT_TYPE} subagent via Task tool to analyze the provided content, then re-run flowguard_review with the complete ReviewFindings object. Manual JSON/attestation copy alone is not sufficient in strict mode; FlowGuard must persist matching ReviewInvocationEvidence.`,
@@ -426,13 +436,22 @@ export async function ensureMissingAnalysisObligation(
     obligation = created.obligation!;
     const persisted = await persistReviewObligation(sessDir, state, obligation);
     return {
-      message: formatMissingContentAnalysis(obligation.obligationId),
+      message: formatMissingContentAnalysis(
+        obligation.obligationId,
+        state.policySnapshot?.reviewInvocationPolicy === 'host_task_required',
+      ),
       obligation,
       attemptId: persisted.attemptId,
       assurance: persisted.assurance,
     };
   }
-  return { message: formatMissingContentAnalysis(obligation.obligationId), obligation };
+  return {
+    message: formatMissingContentAnalysis(
+      obligation.obligationId,
+      state.policySnapshot?.reviewInvocationPolicy === 'host_task_required',
+    ),
+    obligation,
+  };
 }
 
 function isActiveReviewObligation(

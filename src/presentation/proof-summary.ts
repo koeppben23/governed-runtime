@@ -77,7 +77,7 @@ function renderEvaluationSection(p: CompactProofPresentation & { kind: 'evaluati
     lines.push('Evidence freshness: Not verified');
     appendApproval(lines, p.approval);
     lines.push('');
-    lines.push('→ Full evidence lineage: `flowguard_status({ proofGraph: true })`');
+    lines.push('Evidence lineage: `flowguard_status({ proofGraph: true })`');
     return lines.join('\n');
   }
   const prefix =
@@ -142,8 +142,8 @@ function renderEvaluationSection(p: CompactProofPresentation & { kind: 'evaluati
   lines.push('');
   const detailLabel =
     p.headlineStatus !== 'PROVEN'
-      ? '→ Inspect the blocking claim and evidence lineage: `flowguard_status({ proofGraph: true })`'
-      : '→ Full evidence lineage: `flowguard_status({ proofGraph: true })`';
+      ? 'Inspect the blocking claim and evidence lineage: `flowguard_status({ proofGraph: true })`'
+      : 'Evidence lineage: `flowguard_status({ proofGraph: true })`';
   lines.push(detailLabel);
 
   return lines.join('\n');
