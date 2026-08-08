@@ -247,6 +247,31 @@ export function hasCurrentPlanApprovalCertificate(
   );
 }
 
+/** Minimal architecture authority shape needed to verify its approval certificate. */
+export interface ArchitectureClaimAuthority {
+  readonly digest: string;
+  readonly claimDeclarations?: ArchitectureClaimDeclarations;
+  readonly approvalCertificate?: ArchitectureApprovalCertificate;
+}
+
+/** Whether the certificate binds the current ADR and exact declaration set. */
+export function hasCurrentArchitectureApprovalCertificate(
+  architecture: ArchitectureClaimAuthority | null | undefined,
+): architecture is ArchitectureClaimAuthority & {
+  readonly approvalCertificate: ArchitectureApprovalCertificate;
+} {
+  if (!architecture?.approvalCertificate) return false;
+  if (architecture.approvalCertificate.authorityDigest !== architecture.digest) return false;
+  const declarations = architecture.claimDeclarations ?? {
+    flow: 'architecture' as const,
+    claims: [],
+  };
+  return (
+    architecture.approvalCertificate.claimDeclarationsDigest ===
+    hashText(canonicalJsonStringify(declarations))
+  );
+}
+
 /** Critical plan claims authorized by the certificate bound to the current plan. */
 export function authorizedCriticalPlanClaimIds(
   plan: PlanClaimAuthority | null | undefined,

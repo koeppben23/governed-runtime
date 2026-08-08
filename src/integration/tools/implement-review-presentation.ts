@@ -30,12 +30,9 @@ export function buildImplReviewBlockedMarkdown(
       buildProofGraphSection(proofSummary),
     ],
     conclusion: {
-      kind: 'next_action',
-      action: {
-        invocation: '/implement',
-        description: 'Restore independent review capability and retry the implementation review.',
-        visibility: 'recommended',
-      },
+      kind: 'recovery',
+      message: 'Independent review capability must be restored before this review can continue.',
+      steps: ['Restore the reviewer capability and retry the implementation review.'],
     },
   };
   return renderMarkdown(document);
@@ -44,6 +41,7 @@ export function buildImplReviewBlockedMarkdown(
 export function buildImplReviewChangesRequestedMarkdown(
   statusLine: string,
   proofSummary: CompactProofPresentation,
+  productNextAction: { readonly text: string; readonly commands: readonly string[] },
 ): string {
   const sections: PresentationSection[] = [
     { kind: 'text', content: normalizedMarkdown(statusLine) },
@@ -57,8 +55,8 @@ export function buildImplReviewChangesRequestedMarkdown(
     conclusion: {
       kind: 'next_action',
       action: {
-        invocation: '/implement',
-        description: 'Make the requested code changes, then call flowguard_implement to re-record.',
+        invocation: productNextAction.commands[0] ?? null,
+        description: productNextAction.text,
         visibility: 'recommended',
       },
     },

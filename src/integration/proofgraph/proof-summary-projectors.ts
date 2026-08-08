@@ -233,11 +233,19 @@ function selectUnmetCriticalClaims(
     }));
 }
 
-function approvalPresentation(state: SessionState): ProofApprovalPresentation {
+function approvalPresentation(
+  state: SessionState,
+  flow?: 'plan' | 'architecture',
+): ProofApprovalPresentation {
   const approval = buildProofApprovalProjection(state);
-  const certificate = approval.certificates[0];
+  const certificates = flow
+    ? approval.certificates.filter((certificate) => certificate.flow === flow)
+    : approval.certificates;
+  const certificate = certificates[0];
   if (!certificate) return { status: 'not_recorded' };
-  if (approval.coverageGaps.length > 0) return { status: 'stale_or_unbound' };
+  if (certificates.length !== 1 || certificate.binding !== 'current') {
+    return { status: 'stale_or_unbound' };
+  }
   return {
     status: 'current',
     flow: certificate.flow,
@@ -300,7 +308,7 @@ export function projectPlanProofStatus(state: SessionState): CompactProofPresent
       overallStatus: 'NOT_DECLARED',
       claimCount: 0,
       criticalCount: 0,
-      approval: approvalPresentation(state),
+      approval: approvalPresentation(state, 'plan'),
     };
   }
   const normalized = claims;
@@ -317,7 +325,7 @@ export function projectPlanProofStatus(state: SessionState): CompactProofPresent
     criticalCount,
     ...(falsificationReady > 0 ? { falsificationReadyCount: falsificationReady } : {}),
     ...(missingFalsification > 0 ? { missingFalsificationCount: missingFalsification } : {}),
-    approval: approvalPresentation(state),
+    approval: approvalPresentation(state, 'plan'),
   };
 }
 
@@ -330,7 +338,7 @@ export function projectArchitectureProofStatus(state: SessionState): CompactProo
       overallStatus: 'NOT_DECLARED',
       claimCount: 0,
       criticalCount: 0,
-      approval: approvalPresentation(state),
+      approval: approvalPresentation(state, 'architecture'),
     };
   }
   return {
@@ -339,7 +347,7 @@ export function projectArchitectureProofStatus(state: SessionState): CompactProo
     overallStatus: 'AWAITING_EVIDENCE',
     claimCount: claims.length,
     criticalCount: claims.filter((c) => c.critical).length,
-    approval: approvalPresentation(state),
+    approval: approvalPresentation(state, 'architecture'),
   };
 }
 

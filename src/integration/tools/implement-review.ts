@@ -474,6 +474,7 @@ async function handleChangesRequestedReview(input: {
     markdown: buildImplReviewChangesRequestedMarkdown(
       `Implementation review iteration ${input.iteration}/${input.runtime.maxImplReviewIterations}. Changes requested.`,
       input.proofSummary,
+      buildProductNextAction(resolveNextAction(finalState.phase, finalState), finalState.phase),
     ),
   };
   return appendNextAction(JSON.stringify(response), finalState);

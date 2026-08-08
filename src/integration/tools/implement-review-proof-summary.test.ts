@@ -165,11 +165,10 @@ describe('presentation.markdown rendering contract', () => {
     const markdown = buildImplReviewChangesRequestedMarkdown(
       'Implementation review iteration 1/3. Changes requested.',
       summary!,
+      { text: 'Re-record the revised implementation.', commands: ['/implement'] },
     );
     expect(markdown).toContain('## ProofGraph');
-    expect(markdown).toContain(
-      'Make the requested code changes, then call flowguard_implement to re-record.',
-    );
+    expect(markdown).toContain('Re-record the revised implementation.');
     expect(markdown).not.toContain('→ Continue to completion');
   });
 
@@ -178,13 +177,12 @@ describe('presentation.markdown rendering contract', () => {
     const markdown = buildImplReviewChangesRequestedMarkdown(
       'Implementation review iteration 1/3. Changes requested.',
       summary!,
+      { text: 'Re-record the revised implementation.', commands: ['/implement'] },
     );
     expect(markdown).toContain('## ProofGraph');
     expect(markdown).toContain('If submitted for approval now:');
     expect(markdown).toContain('CONTRADICTED');
-    expect(markdown).toContain(
-      'Make the requested code changes, then call flowguard_implement to re-record.',
-    );
+    expect(markdown).toContain('Re-record the revised implementation.');
   });
 
   it('accept card shows current_gate ProofGraph and decision gate', () => {
@@ -227,7 +225,7 @@ describe('presentation.markdown rendering contract', () => {
     expect(parsed.presentation.markdown).toContain('## Implementation review blocked');
     expect(parsed.presentation.markdown).toContain('## ProofGraph');
     expect(parsed.presentation.markdown).toContain(
-      'Restore independent review capability and retry the implementation review.',
+      'Restore the reviewer capability and retry the implementation review.',
     );
   });
 });
