@@ -29,6 +29,10 @@ import {
 } from '../../review/assurance.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import { validateChallengeConsistency } from '../../review/enforcement/challenge-consistency.js';
+import {
+  validateReviewFindingsScope,
+  type FindingWithLocation,
+} from '../../review/enforcement/findings-consistency.js';
 import { collectPreviouslyUsedChallengeIds } from '../../review/challenge-history.js';
 import { buildHostTaskChallengeContract } from '../../review/host-task-policy.js';
 import { formatBlocked, writeStateWithArtifacts } from '../helpers.js';
@@ -649,6 +653,24 @@ export function validateSubmittedReviewFindings(
   if (!challengeConsistency.ok) {
     return formatSubagentReviewNotInvoked(
       `${challengeConsistency.code}: ${JSON.stringify(challengeConsistency.details)}`,
+      obligation.obligationId,
+    );
+  }
+
+  const scopeLocations: FindingWithLocation[] = [];
+  [findings.blockingIssues, findings.majorRisks].forEach((arr) => {
+    if (Array.isArray(arr))
+      arr.forEach((item) => {
+        if (item && typeof item === 'object') scopeLocations.push(item as FindingWithLocation);
+      });
+  });
+  const scopeResult = validateReviewFindingsScope({
+    findings: scopeLocations,
+    reviewedFileScope: obligation.reviewedFileScope,
+  });
+  if (!scopeResult.ok && scopeResult.code === 'REVIEW_FINDING_OUT_OF_SCOPE') {
+    return formatSubagentReviewNotInvoked(
+      `Reviewer findings reference paths outside the reviewed file scope: ${scopeResult.details.outOfScopePaths.join(', ')}`,
       obligation.obligationId,
     );
   }

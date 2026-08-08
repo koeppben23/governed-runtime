@@ -108,6 +108,7 @@ function normalizeFilePath(raw: string): string {
 
 export interface FindingWithLocation {
   readonly location?: string;
+  readonly [key: string]: unknown;
 }
 
 /**
