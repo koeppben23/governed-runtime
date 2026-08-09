@@ -185,7 +185,9 @@ function appendAdvisoryFindingsSections(
       message: finding.message,
       ...(finding.location ? { location: finding.location } : {}),
     }));
-    const groups: FindingGroup[] = [{ severity: 'critical', label: 'Blocking Issues', items }];
+    // Blocking is the operative classification; the presentation severity
+    // reflects blocker status, not an invented canonical severity.
+    const groups: FindingGroup[] = [{ severity: 'major', label: 'Blocking Issues', items }];
     sections.push({ kind: 'findings', heading: 'Reviewer Findings', groups });
   }
   if (input.majorRisks && input.majorRisks.length > 0) {
