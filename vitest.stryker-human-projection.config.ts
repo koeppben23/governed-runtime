@@ -4,7 +4,11 @@ import { defineConfig } from 'vitest/config';
  * Stryker-specific vitest config for the targeted Human Projection mutation run.
  * Exercises the projection authority (reason-copy, reason-projection,
  * human-projection, markdown renderer) plus the surfaces that consume it.
- * TEMPORARY — used only for the PR #790 targeted mutation verification.
+ *
+ * This is a reusable targeted mutation profile: run it locally with
+ * `node scripts/stryker-patch.js && npx stryker run stryker.human-projection.conf.json`
+ * and it runs in CI as a PR check via
+ * `.github/workflows/mutation-human-projection.yml`.
  */
 export default defineConfig({
   test: {
