@@ -29,6 +29,7 @@
     "src/audit/proofgraph/assertion-evidence-binding.ts",
     "src/audit/proofgraph/enforcement-projection.ts",
     "src/verification/execution-subject.ts",
+    "src/discovery/verification-planner.ts",
 
     "src/config/policy.ts",
     "src/config/reasons.ts",
