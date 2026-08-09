@@ -43,6 +43,7 @@ import type { ToolDefinition, ToolResult } from './helpers.js';
 import { readConfig } from '../../adapters/persistence-config.js';
 import type { GlyphProfile } from '../../presentation/glyph-profile.js';
 import { emitTelemetryEvent } from '../../telemetry/human-projection/emitter.js';
+import type { ActionIntent } from '../../presentation/action-intent.js';
 import { renderMarkdown } from '../../presentation/markdown.js';
 import type { PresentationDocument } from '../../presentation/model.js';
 
@@ -153,7 +154,11 @@ export function attachGovernanceFooter(
   };
 }
 
-function withGovernanceFooter(toolDef: ToolDefinition): ToolDefinition {
+function withGovernanceFooter(
+  toolDef: ToolDefinition,
+  telemetry?: { intent?: ActionIntent },
+): ToolDefinition {
+  const intent = telemetry?.intent;
   return {
     ...toolDef,
     async execute(args, context) {
@@ -171,10 +176,10 @@ function withGovernanceFooter(toolDef: ToolDefinition): ToolDefinition {
           }
         }
         const finalResult = attachGovernanceFooter(result, glyphProfile);
-        emitActionInvoked(disposition, context);
+        emitActionInvoked(disposition, intent, context);
         return finalResult;
       } catch (err) {
-        emitActionInvoked('failed', context);
+        emitActionInvoked('failed', intent, context);
         throw err;
       }
     },
@@ -183,9 +188,14 @@ function withGovernanceFooter(toolDef: ToolDefinition): ToolDefinition {
 
 function emitActionInvoked(
   disposition: 'entered' | 'blocked' | 'failed',
+  intent: ActionIntent | undefined,
   context: { worktree?: string; sessionID?: string },
 ): void {
-  emitTelemetryEvent({ event: 'action_invoked', disposition }, context.sessionID, undefined);
+  emitTelemetryEvent(
+    { event: 'action_invoked', disposition, ...(intent ? { intent } : {}) },
+    context.sessionID,
+    undefined,
+  );
 }
 
 function resultDisposition(result: ToolResult): 'entered' | 'blocked' | 'failed' {
@@ -202,19 +212,19 @@ function resultDisposition(result: ToolResult): 'entered' | 'blocked' | 'failed'
 }
 
 // ── Focused tools ────────────────────────────────────────────────────────────
-export const status = withGovernanceFooter(rawStatus);
+export const status = withGovernanceFooter(rawStatus, { intent: 'inspect_status' });
 export const decision = withGovernanceFooter(rawDecision);
-export const run_check = withGovernanceFooter(rawRunCheck);
+export const run_check = withGovernanceFooter(rawRunCheck, { intent: 'run_validation' });
 
 // ── Simple tools ─────────────────────────────────────────────────────────────
 export const ticket = withGovernanceFooter(rawTicket);
-export const review = withGovernanceFooter(rawReview);
+export const review = withGovernanceFooter(rawReview, { intent: 'rerun_review' });
 export const abort_session = withGovernanceFooter(rawAbortSession);
-export const archive = withGovernanceFooter(rawArchive);
+export const archive = withGovernanceFooter(rawArchive, { intent: 'export_result' });
 export const help = withGovernanceFooter(rawHelp);
 
 // ── Complex tools ────────────────────────────────────────────────────────────
-export const hydrate = withGovernanceFooter(rawHydrate);
+export const hydrate = withGovernanceFooter(rawHydrate, { intent: 'refresh_repository' });
 export const plan = withGovernanceFooter(rawPlan);
 export const implement = withGovernanceFooter(rawImplement);
 export const review_implementation = withGovernanceFooter(rawReviewImplementation);

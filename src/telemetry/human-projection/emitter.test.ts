@@ -177,3 +177,31 @@ describe('emitTelemetryEvent', () => {
     expect(json).not.toContain('apiKey');
   });
 });
+
+it('action_invoked can carry intent', () => {
+  const recorded: unknown[] = [];
+  setHumanProjectionTelemetrySink({
+    record(event) {
+      recorded.push(event);
+    },
+  });
+  emitTelemetryEvent(
+    { event: 'action_invoked', disposition: 'entered', intent: 'run_validation' },
+    's1',
+    'READY',
+  );
+  const event = recorded[0] as Record<string, unknown>;
+  expect(event.intent).toBe('run_validation');
+});
+
+it('action_invoked without intent omits the field', () => {
+  const recorded: unknown[] = [];
+  setHumanProjectionTelemetrySink({
+    record(event) {
+      recorded.push(event);
+    },
+  });
+  emitTelemetryEvent({ event: 'action_invoked', disposition: 'entered' }, 's1', 'READY');
+  const event = recorded[0] as Record<string, unknown>;
+  expect(event.intent).toBeUndefined();
+});
