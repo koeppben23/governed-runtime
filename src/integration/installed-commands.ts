@@ -90,6 +90,8 @@ export interface InstalledCommandDefinition {
   readonly presentationGroup: PresentationGroup;
   /** Presentation copy for operational interfaces. */
   readonly description: string;
+  /** Host-neutral semantic action identity (PR 6). */
+  readonly intent?: import('../presentation/action-intent.js').ActionIntent;
 }
 
 function aliasKind(alias: keyof typeof COMMAND_ALIASES): InstalledCommandDefinition['kind'] {
@@ -107,6 +109,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     visibility: 'compatibility',
     presentationGroup: 'start',
     description: 'Prepare or restore a governed session.',
+    intent: 'refresh_repository',
   },
   {
     id: 'operational.status',
@@ -117,6 +120,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     visibility: 'primary',
     presentationGroup: 'information',
     description: 'Show the current phase and next action.',
+    intent: 'inspect_status',
   },
   {
     id: 'workflow.ticket',
@@ -180,6 +184,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     visibility: 'compatibility',
     presentationGroup: 'verify',
     description: 'Record required verification results.',
+    intent: 'run_validation',
   },
   {
     id: 'workflow.review-decision',
@@ -200,6 +205,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     visibility: 'primary',
     presentationGroup: 'review',
     description: 'Start a standalone compliance review.',
+    intent: 'rerun_review',
   },
   {
     id: 'workflow.architecture',
@@ -231,6 +237,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     presentationGroup: 'export',
     description:
       'Archive session as tar.gz (redactionMode: none|basic|pseudonymous, default basic; includeRaw: true|false, default false).',
+    intent: 'export_result',
   },
   {
     id: 'alias.start',
@@ -241,6 +248,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     visibility: 'primary',
     presentationGroup: 'start',
     description: 'Prepare or restore a governed session.',
+    intent: 'refresh_repository',
   },
   {
     id: 'alias.task',
@@ -265,6 +273,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     visibility: 'primary',
     presentationGroup: 'review',
     description: 'Accept the reviewed work and advance.',
+    intent: 'approve',
   },
   {
     id: 'variant.request-changes',
@@ -279,6 +288,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     visibility: 'primary',
     presentationGroup: 'review',
     description: 'Request revisions to the reviewed work.',
+    intent: 'request_changes',
   },
   {
     id: 'variant.reject',
@@ -293,6 +303,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     visibility: 'primary',
     presentationGroup: 'review',
     description: 'Reject the reviewed work.',
+    intent: 'reject',
   },
   {
     id: 'alias.check',
@@ -303,6 +314,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     visibility: 'primary',
     presentationGroup: 'verify',
     description: 'Run required verification checks.',
+    intent: 'run_validation',
   },
   {
     id: 'alias.export',
@@ -314,6 +326,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     presentationGroup: 'export',
     description:
       'Export audit package as tar.gz (redactionMode: none|basic|pseudonymous, default basic; includeRaw: true|false, default false).',
+    intent: 'export_result',
   },
   {
     id: 'alias.why',
@@ -324,6 +337,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     visibility: 'primary',
     presentationGroup: 'information',
     description: 'Explain the current runtime blocker.',
+    intent: 'inspect_blocker',
   },
   {
     id: 'operational.finish',

@@ -168,7 +168,7 @@ describe('presentation.markdown rendering contract', () => {
       { text: 'Re-record the revised implementation.', commands: ['/implement'] },
     );
     expect(markdown).toContain('## Verification');
-    expect(markdown).toContain('Re-record the revised implementation.');
+    expect(markdown).toContain('Record implementation evidence for the approved plan.');
     expect(markdown).not.toContain('→ Continue to completion');
   });
 
@@ -182,7 +182,7 @@ describe('presentation.markdown rendering contract', () => {
     expect(markdown).toContain('## Verification');
     expect(markdown).toContain('0 of 1 claims verified');
     expect(markdown).toContain('Failed');
-    expect(markdown).toContain('Re-record the revised implementation.');
+    expect(markdown).toContain('Record implementation evidence for the approved plan.');
   });
 
   it('accept card shows current_gate ProofGraph and decision gate', () => {

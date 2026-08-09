@@ -20,7 +20,8 @@ import { buildStatusDocument, buildNoSessionDocument } from './status-presentati
 import type { PresentationBuildOptions } from '../presentation/index.js';
 import type { FullStatusPresentationInput } from './status-presentation.js';
 import { buildStatusProjection } from './status.js';
-import type { StatusProjection, StatusActionProjection } from './status.js';
+import type { StatusProjection } from './status.js';
+import type { PresentationAction } from '../presentation/index.js';
 import type { DiscoveryHealthUnavailableProjection } from '../discovery/discovery-health.js';
 import type { DiscoveryDriftStatusProjection } from './discovery-drift-status.js';
 import { makeState } from '../fixtures.js';
@@ -416,7 +417,7 @@ describe('buildStatusDocument', () => {
   });
 
   it('maps decision_required conclusion correctly', () => {
-    const actions: StatusActionProjection[] = [
+    const actions: PresentationAction[] = [
       { invocation: '/approve', description: 'Approve', visibility: 'available' },
       { invocation: '/reject', description: 'Reject', visibility: 'available' },
     ];

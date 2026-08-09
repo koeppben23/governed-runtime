@@ -8,40 +8,28 @@
  * conclusion without inventing blocker semantics, recovery text, or
  * decision questions.
  *
- * Owns the StatusActionProjection and StatusConclusionProjection types
- * to avoid circular imports with status.ts.
+ * Uses the canonical PresentationAction as the single action representation
+ * (no parallel StatusActionProjection).
  *
- * @version v1
+ * @version v2
  */
 
 import { evaluate } from '../machine/evaluate.js';
 import { buildProductNextAction } from '../presentation/next-action-copy.js';
 import { getInstalledCommand } from './installed-commands.js';
-
-// ─── Action Projection ─────────────────────────────────────────────────────────
-
-/**
- * Single action within a status conclusion.
- * Populated from installed-command metadata (invocation + description) and
- * derived visibility from the evaluator result.
- */
-export interface StatusActionProjection {
-  readonly invocation: string | null;
-  readonly description: string;
-  readonly visibility: 'recommended' | 'available';
-}
+import type { PresentationAction } from '../presentation/index.js';
 
 // ─── Conclusion Projection ─────────────────────────────────────────────────────
 
 export type StatusConclusionProjection =
   | {
       readonly kind: 'next_action';
-      readonly action: StatusActionProjection;
+      readonly action: PresentationAction;
     }
   | {
       readonly kind: 'decision_required';
       readonly question: string;
-      readonly actions: readonly StatusActionProjection[];
+      readonly actions: readonly PresentationAction[];
     }
   | {
       readonly kind: 'terminal';
@@ -66,17 +54,11 @@ export function projectStatusConclusion(
   evalResult: ReturnType<typeof evaluate>,
   productNextAction: ReturnType<typeof buildProductNextAction>,
 ): StatusConclusionProjection {
-  // Blocked at a User Gate → decision_required
-  // question comes from evaluator reason; actions from product commands
   if (evalResult.kind === 'waiting') {
     const actions = productNextAction.commands.map((invocation) =>
       projectStatusActionFromCommand(invocation, 'available'),
     );
 
-    // A waiting gate with no resolvable commands is a data-integrity error.
-    // It must not be silently surfaced as a terminal conclusion — a waiting
-    // gate is not terminal, and the presentation layer must not invent
-    // fallback text to cover a contract deficiency.
     if (actions.length === 0) {
       throw Object.assign(
         new Error(
@@ -86,21 +68,13 @@ export function projectStatusConclusion(
       );
     }
 
-    return {
-      kind: 'decision_required',
-      question: evalResult.reason,
-      actions,
-    };
+    return { kind: 'decision_required', question: evalResult.reason, actions };
   }
 
   if (productNextAction.presentationForm === 'review_pending') {
-    return {
-      kind: 'review_pending',
-      message: productNextAction.text,
-    };
+    return { kind: 'review_pending', message: productNextAction.text };
   }
 
-  // There are still user actions available → next_action
   const command = productNextAction.commands[0];
   if (command) {
     return {
@@ -109,25 +83,20 @@ export function projectStatusConclusion(
     };
   }
 
-  // No further actions exist → terminal
-  return {
-    kind: 'terminal',
-    message: productNextAction.text,
-  };
+  return { kind: 'terminal', message: productNextAction.text };
 }
 
 /**
- * Project a StatusActionProjection from a command invocation string.
+ * Project a PresentationAction from a command invocation string.
  *
- * Uses getInstalledCommand() to obtain the canonical description — never
- * fabricates description text. Throws when metadata is missing for an
- * invocation that the runtime has selected (this is a data-integrity error,
- * not a recoverable presentation fallback).
+ * Uses getInstalledCommand() to obtain the canonical description and intent —
+ * never fabricates description text. Throws when metadata is missing for an
+ * invocation that the runtime has selected.
  */
 export function projectStatusActionFromCommand(
   invocation: string,
-  visibility: StatusActionProjection['visibility'],
-): StatusActionProjection {
+  visibility: PresentationAction['visibility'],
+): PresentationAction {
   const command = getInstalledCommand(invocation);
 
   if (!command) {
@@ -144,5 +113,6 @@ export function projectStatusActionFromCommand(
     invocation: command.invocation,
     description: command.description,
     visibility,
+    ...(command.intent ? { intent: command.intent } : {}),
   };
 }

@@ -11,6 +11,7 @@ import {
 } from '../../presentation/model.js';
 import { buildProofGraphSection } from '../../presentation/proof-summary.js';
 import type { CompactProofPresentation } from '../../presentation/proof-model.js';
+import { getInstalledCommand } from '../installed-commands.js';
 
 export function buildImplReviewBlockedMarkdown(
   message: string,
@@ -54,12 +55,39 @@ export function buildImplReviewChangesRequestedMarkdown(
     sections,
     conclusion: {
       kind: 'next_action',
-      action: {
-        invocation: productNextAction.commands[0] ?? null,
-        description: productNextAction.text,
-        visibility: 'recommended',
-      },
+      action: implReviewAction(productNextAction),
     },
   };
   return renderMarkdown(document);
+}
+
+function implReviewAction(productNextAction: {
+  readonly text: string;
+  readonly commands: readonly string[];
+}): {
+  invocation: string | null;
+  description: string;
+  visibility: 'recommended' | 'available';
+  intent?: import('../../presentation/action-intent.js').ActionIntent;
+} {
+  const invocation = productNextAction.commands[0] ?? null;
+  if (!invocation) {
+    return {
+      invocation: null,
+      description: productNextAction.text,
+      visibility: 'recommended',
+    };
+  }
+  const cmd = getInstalledCommand(invocation);
+  if (!cmd) {
+    throw new Error(
+      `implementation review action: no installed command metadata for "${invocation}".`,
+    );
+  }
+  return {
+    invocation: cmd.invocation,
+    description: cmd.description,
+    visibility: 'recommended',
+    ...(cmd.intent ? { intent: cmd.intent } : {}),
+  };
 }

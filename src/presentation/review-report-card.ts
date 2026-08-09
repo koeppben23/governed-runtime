@@ -73,6 +73,8 @@ export interface ReviewReportCardInput {
   proofSummary: CompactProofPresentation;
   /** Canonical next action resolved from the completed state. */
   productNextAction: { text: string; commands: readonly string[] };
+  /** Pre-computed canonical conclusion action (with intent from installed metadata). */
+  conclusionAction: import('./model.js').PresentationAction;
 }
 
 // ─── Severity / Category Projection ─────────────────────────────────────────────
@@ -157,7 +159,6 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
     reviewAssuranceLevel,
     extractionMethod,
     proofSummary,
-    productNextAction,
   } = input;
 
   const sections: PresentationSection[] = [];
@@ -305,11 +306,7 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
     sections,
     conclusion: {
       kind: 'next_action',
-      action: {
-        invocation: productNextAction.commands[0] ?? null,
-        description: productNextAction.text,
-        visibility: 'recommended',
-      },
+      action: input.conclusionAction,
     },
   };
 

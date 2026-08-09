@@ -12,7 +12,7 @@
  * @version v2
  */
 
-import type { StatusProjection, StatusActionProjection } from './status.js';
+import type { StatusProjection } from './status.js';
 import type { DiscoveryHealthProjection } from '../discovery/discovery-health.js';
 import type { DiscoveryDriftStatusProjection } from './discovery-drift-status.js';
 import { projectStatusActionFromCommand } from './status-conclusion.js';
@@ -36,6 +36,7 @@ import {
 } from '../presentation/index.js';
 import { buildProofGraphSection } from '../presentation/proof-summary.js';
 import type { ProofGraphRenderOptions } from '../presentation/proof-summary.js';
+import { getInstalledCommand } from './installed-commands.js';
 
 // ─── Presentation Input ────────────────────────────────────────────────────────
 
@@ -132,6 +133,10 @@ function proofGraphOpts(
  * Build a PresentationDocument for the no-session state.
  */
 export function buildNoSessionDocument(): PresentationDocument {
+  const startCmd = getInstalledCommand('/start');
+  if (!startCmd) {
+    throw new Error('buildNoSessionDocument: no installed command metadata for "/start".');
+  }
   return {
     kind: 'compact_card',
     density: 'compact',
@@ -145,9 +150,10 @@ export function buildNoSessionDocument(): PresentationDocument {
     conclusion: {
       kind: 'next_action',
       action: {
-        invocation: '/start',
-        description: 'Start or restore a governed session.',
+        invocation: startCmd.invocation,
+        description: startCmd.description,
         visibility: 'recommended',
+        ...(startCmd.intent ? { intent: startCmd.intent } : {}),
       },
     },
   };
@@ -341,35 +347,18 @@ function buildPresentationConclusion(
 ): PresentationConclusion {
   switch (conclusion.kind) {
     case 'next_action':
-      return {
-        kind: 'next_action',
-        action: toPresentationAction(conclusion.action),
-      };
+      return { kind: 'next_action', action: conclusion.action };
     case 'decision_required':
       return {
         kind: 'decision_required',
         question: conclusion.question,
-        actions: conclusion.actions.map(toPresentationAction),
+        actions: conclusion.actions,
       };
     case 'terminal':
-      return {
-        kind: 'terminal',
-        message: conclusion.message,
-      };
+      return { kind: 'terminal', message: conclusion.message };
     case 'review_pending':
-      return {
-        kind: 'review_pending',
-        message: conclusion.message,
-      };
+      return { kind: 'review_pending', message: conclusion.message };
   }
-}
-
-function toPresentationAction(action: StatusActionProjection): PresentationAction {
-  return {
-    invocation: action.invocation,
-    description: action.description,
-    visibility: action.visibility,
-  };
 }
 
 function presentationForm(blocked: boolean, conclusion: PresentationConclusion): PresentationForm {

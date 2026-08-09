@@ -16,10 +16,8 @@ import { resolveNextAction } from '../machine/next-action.js';
 import { PHASE_LABELS } from '../presentation/phase-labels.js';
 import { buildProductNextAction } from '../presentation/next-action-copy.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
-import {
-  projectStatusActionFromCommand,
-  type StatusActionProjection,
-} from './status-conclusion.js';
+import { projectStatusActionFromCommand } from './status-conclusion.js';
+import type { PresentationAction } from '../presentation/index.js';
 import type { BlockedProjection, FinishCard } from './status.js';
 import { projectProofStatusForState } from './proofgraph/proof-summary-projectors.js';
 
@@ -28,12 +26,12 @@ import { projectProofStatusForState } from './proofgraph/proof-summary-projector
 export type WhyConclusionProjection =
   | {
       readonly kind: 'next_action';
-      readonly action: StatusActionProjection;
+      readonly action: PresentationAction;
     }
   | {
       readonly kind: 'decision_required';
       readonly question: string;
-      readonly actions: readonly StatusActionProjection[];
+      readonly actions: readonly PresentationAction[];
     };
 
 export interface WhyPresentationProjection {
@@ -55,7 +53,7 @@ export interface WhyPresentationProjection {
 export type FinishConclusionProjection =
   | {
       readonly kind: 'next_action';
-      readonly action: StatusActionProjection;
+      readonly action: PresentationAction;
     }
   | {
       readonly kind: 'terminal';

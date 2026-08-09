@@ -482,3 +482,96 @@ function collectPresentationFiles(): { rel: string; content: string }[] {
   collectFiles(SRC_ROOT, files);
   return files;
 }
+
+// ─── ActionIntent SSOT ───────────────────────────────────────────────────────
+
+describe('ActionIntent SSOT', () => {
+  const files = collectPresentationFiles();
+
+  it('/continue must not be assigned an ActionIntent', () => {
+    for (const { rel, content } of files) {
+      if (!rel.includes('installed-commands.ts')) continue;
+      const continueBlock = content.match(/\/continue[\s\S]{0,400}?},{0,1}/);
+      if (continueBlock) {
+        expect(continueBlock[0]).not.toContain('intent:');
+      }
+    }
+  });
+
+  it('no invocation-based semantic branching in presentation modules', () => {
+    const violations: string[] = [];
+    for (const { rel, content } of files) {
+      if (!rel.startsWith('presentation/')) continue;
+      // Detect semantic interpretation of invocation strings
+      if (
+        /invocation\s*===?\s*['"]\/approve['"]/.test(content) ||
+        /invocation\s*===?\s*['"]\/reject['"]/.test(content) ||
+        /invocation\s*===?\s*['"]\/validate['"]/.test(content) ||
+        /invocation\s*\.startsWith\(/.test(content)
+      ) {
+        violations.push(`${rel}: derives semantics from invocation string (use intent instead)`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('no intent-to-command synthesis in presentation layer', () => {
+    const violations: string[] = [];
+    for (const { rel, content } of files) {
+      if (!rel.startsWith('presentation/')) continue;
+      // Detect intent used to synthesize commands
+      if (
+        /intent\s*===?\s*['"]approve['"]/.test(content) ||
+        /intent\s*===?\s*['"]reject['"]/.test(content)
+      ) {
+        violations.push(`${rel}: uses intent to synthesize commands (intent is metadata only)`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('no StatusActionProjection type remains', () => {
+    const violations: string[] = [];
+    for (const { rel, content } of files) {
+      if (rel.includes('.test.')) continue;
+      if (content.includes('interface StatusActionProjection')) {
+        violations.push(`${rel}: defines StatusActionProjection (use PresentationAction)`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  // ─── Positive Mapping Contract ──────────────────────────────────────────────
+
+  it('all expected commands carry the correct intents', () => {
+    const content = readFileSync(join(SRC_ROOT, 'integration/installed-commands.ts'), 'utf-8');
+
+    const hasIntent = (inv: string, intent: string): boolean => {
+      const idx = content.indexOf(`invocation: '${inv}'`);
+      if (idx === -1) return false;
+      const block = content.slice(idx, idx + 600);
+      return block.includes(`intent: '${intent}'`);
+    };
+
+    const noIntent = (inv: string): boolean => {
+      const idx = content.indexOf(`invocation: '${inv}'`);
+      if (idx === -1) return false;
+      const block = content.slice(idx, idx + 600);
+      return !block.includes('intent:');
+    };
+
+    expect(hasIntent('/hydrate', 'refresh_repository')).toBe(true);
+    expect(hasIntent('/start', 'refresh_repository')).toBe(true);
+    expect(hasIntent('/status', 'inspect_status')).toBe(true);
+    expect(hasIntent('/why', 'inspect_blocker')).toBe(true);
+    expect(hasIntent('/validate', 'run_validation')).toBe(true);
+    expect(hasIntent('/check', 'run_validation')).toBe(true);
+    expect(hasIntent('/review', 'rerun_review')).toBe(true);
+    expect(hasIntent('/approve', 'approve')).toBe(true);
+    expect(hasIntent('/request-changes', 'request_changes')).toBe(true);
+    expect(hasIntent('/reject', 'reject')).toBe(true);
+    expect(hasIntent('/export', 'export_result')).toBe(true);
+    expect(hasIntent('/archive', 'export_result')).toBe(true);
+    expect(noIntent('/continue')).toBe(true);
+  });
+});

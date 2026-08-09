@@ -26,6 +26,7 @@ import { writeReport, reportPath } from '../../../adapters/persistence.js';
 import { writeStateWithArtifacts, appendNextAction } from '../helpers.js';
 import { ensureReviewAssurance } from '../../review/assurance.js';
 import { resolveNextAction } from '../../../machine/next-action.js';
+import { projectStatusActionFromCommand } from '../../status-conclusion.js';
 import { projectCompletionProofStatus } from '../../proofgraph/proof-summary-projectors.js';
 import { NATIVE_ATTESTATION_REJECTION_FIELD } from '../../../shared/flowguard-identifiers.js';
 import type {
@@ -294,6 +295,14 @@ function buildStandaloneReviewCard(
   const { args, result, finalState, report, validatedReviewObligation } = input;
   const boundInvocation = findBoundReviewInvocation(result, validatedReviewObligation);
   const nextAction = resolveNextAction(finalState.phase, finalState);
+  const productNextAction = buildProductNextAction(nextAction, finalState.phase);
+  const primaryCommand = productNextAction.commands[0];
+  if (!primaryCommand) {
+    throw new Error(
+      'review completion: productNextAction has no commands; cannot build conclusion action.',
+    );
+  }
+  const conclusionAction = projectStatusActionFromCommand(primaryCommand, 'recommended');
   return buildReviewReportCard(
     {
       phase: finalState.phase,
@@ -305,7 +314,8 @@ function buildStandaloneReviewCard(
       references: args.references as Array<{ ref: string; type: string }> | undefined,
       obligationId: validatedReviewObligation?.obligationId,
       proofSummary: projectCompletionProofStatus(finalState),
-      productNextAction: buildProductNextAction(nextAction, finalState.phase),
+      productNextAction,
+      conclusionAction,
       ...reviewCardInvocationFields(boundInvocation, args),
     },
     options,
