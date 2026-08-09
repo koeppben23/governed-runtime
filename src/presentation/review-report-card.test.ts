@@ -51,10 +51,15 @@ const baseInput = {
     decisionContext: 'completion',
   } satisfies CompactProofPresentation,
   productNextAction: { text: 'Export the review evidence.', commands: ['/export'] },
+  conclusionAction: {
+    invocation: '/export',
+    description: 'Export the review evidence.',
+    visibility: 'recommended' as const,
+  },
 };
 function buildReviewReportCard(
-  input: Omit<ReviewReportCardInput, 'proofSummary' | 'productNextAction'> &
-    Partial<Pick<ReviewReportCardInput, 'proofSummary' | 'productNextAction'>>,
+  input: Omit<ReviewReportCardInput, 'proofSummary' | 'productNextAction' | 'conclusionAction'> &
+    Partial<Pick<ReviewReportCardInput, 'proofSummary' | 'productNextAction' | 'conclusionAction'>>,
   options?: Parameters<typeof buildCard>[1],
 ) {
   return buildCard({ ...baseInput, ...input }, options);

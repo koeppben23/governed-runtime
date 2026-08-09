@@ -398,7 +398,7 @@ function hydrateCommandAction(
 } {
   const cmd = getInstalledCommand(invocation);
   if (!cmd) {
-    return { invocation, description: invocation, visibility };
+    throw new Error(`hydrate presentation: no installed command metadata for "${invocation}".`);
   }
   return {
     invocation: cmd.invocation,

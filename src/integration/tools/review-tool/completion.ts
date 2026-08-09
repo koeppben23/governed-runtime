@@ -297,9 +297,12 @@ function buildStandaloneReviewCard(
   const nextAction = resolveNextAction(finalState.phase, finalState);
   const productNextAction = buildProductNextAction(nextAction, finalState.phase);
   const primaryCommand = productNextAction.commands[0];
-  const conclusionAction = primaryCommand
-    ? projectStatusActionFromCommand(primaryCommand, 'recommended')
-    : undefined;
+  if (!primaryCommand) {
+    throw new Error(
+      'review completion: productNextAction has no commands; cannot build conclusion action.',
+    );
+  }
+  const conclusionAction = projectStatusActionFromCommand(primaryCommand, 'recommended');
   return buildReviewReportCard(
     {
       phase: finalState.phase,
