@@ -23,6 +23,7 @@ import {
 } from './human-verification.js';
 import { BINDING_DIAGNOSTIC_COPY } from './claim-diagnostic-copy.js';
 import type { AssertionBindingReasonCode } from '../state/proofgraph.js';
+import type { ProofProviderKind, AdversarialEvidenceKind } from '../state/proofgraph-primitives.js';
 import {
   humanRequiredEvidenceText,
   humanCounterexampleRequirementText,
@@ -50,8 +51,8 @@ export interface ClaimDiagnosticProjection {
     readonly stale: boolean;
   };
   readonly requiredEvidence?: {
-    readonly positive: readonly string[];
-    readonly adversarial: readonly string[];
+    readonly positive: readonly ProofProviderKind[];
+    readonly adversarial: readonly AdversarialEvidenceKind[];
   };
   readonly counterexampleRequirement?: CounterexampleRequirementProjection;
 }

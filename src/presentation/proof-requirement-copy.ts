@@ -22,11 +22,9 @@ export function humanProviderKindLabel(kind: ProofProviderKind): string {
   return PROVIDER_KIND_LABELS[kind];
 }
 
-export function humanRequiredEvidenceText(positiveKinds: readonly string[]): string {
+export function humanRequiredEvidenceText(positiveKinds: readonly ProofProviderKind[]): string {
   if (positiveKinds.length === 0) return '';
-  const labels = positiveKinds
-    .map((k) => PROVIDER_KIND_LABELS[k as ProofProviderKind] ?? k)
-    .join(', ');
+  const labels = positiveKinds.map((k) => PROVIDER_KIND_LABELS[k]).join(', ');
   return labels;
 }
 

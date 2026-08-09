@@ -89,17 +89,22 @@ function isIntegrationPresentationRenderer(rel: string): boolean {
  * inside a presentation or integration renderer that is NOT the authority.
  */
 function hasLocalVocabularyMap(content: string): boolean {
-  // Literal state → label entries: { PROVEN: 'Verified' } or PROVEN: 'Verified'
+  // Literal state → label entries
   if (/PROVEN\s*:\s*['"]Verified['"]/g.test(content)) return true;
   if (/STALE\s*:\s*['"]Needs re-check['"]/g.test(content)) return true;
   if (/CONTRADICTED\s*:\s*['"]Failed['"]/g.test(content)) return true;
   if (/BLOCKED\s*:\s*['"]Blocked['"]/g.test(content)) return true;
+  if (/\bUNPROVEN\s*:\s*['"]Not verified['"]/g.test(content)) return true;
+  if (/\bNOT_VERIFIED\s*:\s*['"]Not verified['"]/g.test(content)) return true;
 
   // Switch case over state values returning labels
   if (
     /case\s+['"]PROVEN['"]\s*:.*return\s+['"]Verified['"]/g.test(content) ||
     /case\s+['"]STALE['"]\s*:.*return\s+['"]Needs/gs.test(content) ||
-    /case\s+['"]CONTRADICTED['"]\s*:.*return\s+['"]Failed['"]/gs.test(content)
+    /case\s+['"]CONTRADICTED['"]\s*:.*return\s+['"]Failed['"]/gs.test(content) ||
+    /case\s+['"]UNPROVEN['"]\s*:.*return\s+['"]Not verified['"]/gs.test(content) ||
+    /case\s+['"]NOT_VERIFIED['"]\s*:.*return\s+['"]Not verified['"]/gs.test(content) ||
+    /case\s+['"]BLOCKED['"]\s*:.*return\s+['"]Blocked['"]/gs.test(content)
   )
     return true;
 
@@ -134,9 +139,9 @@ const BINDING_CODE_LITERALS = [
  * inside a non-authority presentation/renderer module.
  */
 function hasLocalBindingDiagnosticMap(content: string): boolean {
-  // Object literal with binding code keys
+  // Object literal with binding code keys (both quoted and unquoted)
   const codeAliases = BINDING_CODE_LITERALS.join('|');
-  const objectPattern = new RegExp(`['"](${codeAliases})['"]\\s*:\\s*\\{`);
+  const objectPattern = new RegExp(`(?:['"])?(${codeAliases})(?:['"])?\\s*:\\s*\\{`);
   if (objectPattern.test(content)) return true;
 
   // Switch case returning prose for a new code
@@ -184,10 +189,13 @@ describe('Claim Resolution SSOT', () => {
     it('no presentation or integration renderer defines a local parallel state→label map', () => {
       const violations: string[] = [];
       // labels.ts is a generic status-label registry for non-ProofGraph domains
-      const EXCLUDED = new Set(['presentation/labels.ts']);
+      // Modules that import the vocabulary authority already use the SSOT
+      const EXCLUDED = new Set(['presentation/labels.ts', 'presentation/proof-summary.ts']);
       for (const f of files) {
         const rel = f.rel;
         if (rel === VOCABULARY_AUTHORITY || EXCLUDED.has(rel)) continue;
+        // If a module imports the authority, it uses SSOT — no parallel map check needed
+        if (PERMITTED_IMPORTERS.has(rel)) continue;
         if (!rel.startsWith('presentation/') && !isIntegrationPresentationRenderer(rel)) continue;
         if (hasLocalVocabularyMap(f.content)) {
           violations.push(
@@ -297,14 +305,40 @@ describe('Claim Resolution SSOT', () => {
       ).toBe(true);
     });
 
+    it('detects UNPROVEN → Not verified local mapping', () => {
+      expect(hasLocalVocabularyMap("UNPROVEN: 'Not verified'")).toBe(true);
+    });
+
+    it('detects NOT_VERIFIED → Not verified local mapping', () => {
+      expect(hasLocalVocabularyMap("const FALLBACK = { NOT_VERIFIED: 'Not verified' };")).toBe(
+        true,
+      );
+    });
+
     it('detects a switch-based vocabulary map outside the authority', () => {
       expect(hasLocalVocabularyMap("case 'CONTRADICTED': return 'Failed';")).toBe(true);
     });
 
-    it('detects a local per-code binding diagnostic map', () => {
+    it('detects a switch case for UNPROVEN → Not verified', () => {
+      expect(hasLocalVocabularyMap("case 'UNPROVEN': return 'Not verified';")).toBe(true);
+    });
+
+    it('detects a switch case for BLOCKED → Blocked', () => {
+      expect(hasLocalVocabularyMap("case 'BLOCKED': return 'Blocked';")).toBe(true);
+    });
+
+    it('detects a local per-code binding diagnostic map (quoted key)', () => {
       expect(
         hasLocalBindingDiagnosticMap(
           "'provider_mismatch': { headline: 'Wrong', explanation: 'Different provider' },",
+        ),
+      ).toBe(true);
+    });
+
+    it('detects a local per-code binding diagnostic map (unquoted key)', () => {
+      expect(
+        hasLocalBindingDiagnosticMap(
+          "evidence_missing: { headline: 'Missing', explanation: 'Evidence missing' },",
         ),
       ).toBe(true);
     });

@@ -19,7 +19,11 @@
 
 import type { ProofClaim } from '../state/proofgraph.js';
 import type { AssertionBindingReasonCode } from '../state/proofgraph.js';
-import type { ClaimVerificationState } from '../state/proofgraph-primitives.js';
+import type {
+  ClaimVerificationState,
+  ProofProviderKind,
+  AdversarialEvidenceKind,
+} from '../state/proofgraph-primitives.js';
 import type { SignalClass } from '../state/evidence-signal.js';
 import type { AssertionIdentity } from '../state/assertion-identity.js';
 
@@ -29,8 +33,8 @@ export interface AssertionIdentityProjection {
 }
 
 export interface RequiredEvidenceProjection {
-  readonly positive: readonly string[];
-  readonly adversarial: readonly string[];
+  readonly positive: readonly ProofProviderKind[];
+  readonly adversarial: readonly AdversarialEvidenceKind[];
 }
 
 export type CounterexampleRequirementProjection =
