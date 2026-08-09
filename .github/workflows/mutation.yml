@@ -2,17 +2,14 @@ name: Mutation Testing
 
 # Scope: scheduled (weekly) + release branches + manual dispatch — NOT a PR gate.
 #
-# The broad mutation health check surfaces score regressions on the nightly/
-# release cadence. It is intentionally NOT a required PR check (see
-# .github/BRANCH-PROTECTION.md). Compile errors, no-coverage artefacts, and
-# legacy rendering branches would produce a low global score that has little
-# signal for individual PR correctness.
-#
-# The narrow targeted Human Projection profile
-# (stryker.human-projection.conf.json) runs as a path-filtered advisory check
-# — see .github/workflows/mutation-human-projection.yml. It mutates only the
-# Claim/Human Projection authority modules, continues on error, and uploads
-# the JSON report as a CI artifact. It is NOT a required merge gate.
+# A per-PR mutation gate was evaluated and rejected: Stryker 9 has no git-since
+# mode, and restricting `--mutate` to changed files produces unreliable results
+# with this repo's `perTest` coverageAnalysis + vitest-runner patch (spurious
+# test-runner errors and artificially low scores). The supported `--incremental`
+# cache mode still pays a full cold run and needs cross-run cache plumbing. Until
+# that is solved, the full-suite mutation run stays on the nightly/release
+# cadence and is intentionally NOT a required PR check
+# (see .github/BRANCH-PROTECTION.md).
 
 on:
   schedule:
