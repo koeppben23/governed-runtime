@@ -81,6 +81,8 @@ export class PresentationContractError extends Error {
 
 /** Central action representation for commands and non-command actions. */
 export interface PresentationAction {
+  /** Host-neutral semantic identity of the action (added PR 6). */
+  readonly intent?: import('./action-intent.js').ActionIntent;
   /** Slash-command invocation (e.g. "/approve") or null for non-command actions. */
   readonly invocation: string | null;
   /** Human-readable description of what the action does. */

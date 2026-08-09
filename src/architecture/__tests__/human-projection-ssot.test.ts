@@ -482,3 +482,62 @@ function collectPresentationFiles(): { rel: string; content: string }[] {
   collectFiles(SRC_ROOT, files);
   return files;
 }
+
+// ─── ActionIntent SSOT ───────────────────────────────────────────────────────
+
+describe('ActionIntent SSOT', () => {
+  const files = collectPresentationFiles();
+
+  it('/continue must not be assigned an ActionIntent', () => {
+    for (const { rel, content } of files) {
+      if (!rel.includes('installed-commands.ts')) continue;
+      const continueBlock = content.match(/\/continue[\s\S]{0,400}?},{0,1}/);
+      if (continueBlock) {
+        expect(continueBlock[0]).not.toContain('intent:');
+      }
+    }
+  });
+
+  it('no invocation-based semantic branching in presentation modules', () => {
+    const violations: string[] = [];
+    for (const { rel, content } of files) {
+      if (!rel.startsWith('presentation/')) continue;
+      // Detect semantic interpretation of invocation strings
+      if (
+        /invocation\s*===?\s*['"]\/approve['"]/.test(content) ||
+        /invocation\s*===?\s*['"]\/reject['"]/.test(content) ||
+        /invocation\s*===?\s*['"]\/validate['"]/.test(content) ||
+        /invocation\s*\.startsWith\(/.test(content)
+      ) {
+        violations.push(`${rel}: derives semantics from invocation string (use intent instead)`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('no intent-to-command synthesis in presentation layer', () => {
+    const violations: string[] = [];
+    for (const { rel, content } of files) {
+      if (!rel.startsWith('presentation/')) continue;
+      // Detect intent used to synthesize commands
+      if (
+        /intent\s*===?\s*['"]approve['"]/.test(content) ||
+        /intent\s*===?\s*['"]reject['"]/.test(content)
+      ) {
+        violations.push(`${rel}: uses intent to synthesize commands (intent is metadata only)`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('no StatusActionProjection type remains', () => {
+    const violations: string[] = [];
+    for (const { rel, content } of files) {
+      if (rel.includes('.test.')) continue;
+      if (content.includes('interface StatusActionProjection')) {
+        violations.push(`${rel}: defines StatusActionProjection (use PresentationAction)`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+});

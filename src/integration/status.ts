@@ -40,11 +40,7 @@ const ALL_COMMANDS = Object.values(Command) as FlowGuardCommand[];
 import { evaluateCompleteness } from '../audit/completeness.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { getReviewLoopProgress, type ReviewLoopProgress } from './review/review-loop-progress.js';
-import {
-  projectStatusConclusion,
-  type StatusActionProjection,
-  type StatusConclusionProjection,
-} from './status-conclusion.js';
+import { projectStatusConclusion, type StatusConclusionProjection } from './status-conclusion.js';
 import type { KnownPresentationStatusInput } from '../presentation/labels.js';
 import {
   summarizePersistedProofGraph,
@@ -59,7 +55,7 @@ import { evaluateProofGraphGateFromState } from '../audit/proofgraph/gate.js';
 import { mapEnforcementReasonToRegistryCode } from '../audit/proofgraph/reason-code-mapping.js';
 
 // Re-export for consumers
-export type { StatusActionProjection, StatusConclusionProjection };
+export type { StatusConclusionProjection };
 // ─── Projection Types ─────────────────────────────────────────────────────────
 
 /**
