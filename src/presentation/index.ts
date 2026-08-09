@@ -21,6 +21,19 @@ export {
 export type { ReasonProjection } from './reason-projection.js';
 export { buildPlanReviewCard } from './plan-review-card.js';
 export {
+  buildReviewDecisionConclusion,
+  projectReviewDecision,
+  REVIEW_DECISION_COPY,
+} from './review-decision.js';
+export type {
+  ReviewDecisionReadiness,
+  ReviewDecisionProjection,
+  ReviewDecisionInput,
+  DecisionIssue,
+  DecisionIssueSource,
+  DecisionAdvisory,
+} from './review-decision.js';
+export {
   buildEvidenceReviewCard,
   buildEvidenceApprovalCompletionDocument,
 } from './evidence-review-card.js';

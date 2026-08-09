@@ -24,6 +24,8 @@ import type { PresentationRenderOptions } from './glyph-profile.js';
 import type { CompactProofPresentation } from './proof-model.js';
 import { buildProofGraphSection } from './proof-summary.js';
 import { buildReviewDecisionConclusion } from './review-decision.js';
+import { projectReviewDecision } from './review-decision.js';
+import type { ReviewDecisionInput } from './review-decision.js';
 
 // ─── Card Input ──────────────────────────────────────────────────────────────
 
@@ -41,10 +43,20 @@ export interface EvidenceReviewCardInput {
   statusLine: string;
   /** True when the review loop force-converged at the iteration limit. */
   forcedConvergence?: boolean;
+  /** Canonical blocking issues from the latest independent implementation review. */
+  blockingIssues?: Array<{
+    severity: string;
+    category: string;
+    message: string;
+    location?: string;
+    findingId?: string;
+  }>;
   /** Accepted advisory risks from the latest independent implementation review. */
   majorRisks?: Array<{ severity: string; category: string; message: string; location?: string }>;
   /** Verification gaps identified by the latest independent implementation review. */
   missingVerification?: string[];
+  /** Scope creep observations identified by the latest independent implementation review. */
+  scopeCreep?: string[];
   /** Unresolved questions identified by the latest independent implementation review. */
   unknowns?: string[];
 }
@@ -96,6 +108,9 @@ export function buildEvidenceReviewDocument(input: EvidenceReviewCardInput): Rev
     });
   }
 
+  // ── Decision posture (compressed review projection) ─────────────────
+  sections.push(buildDecisionSection(input));
+
   // ── ProofGraph summary (post-evaluation) ────────────────────────────
   sections.push(buildProofGraphSection(input.proofSummary));
 
@@ -116,6 +131,32 @@ export function buildEvidenceReviewDocument(input: EvidenceReviewCardInput): Rev
   };
 
   return document;
+}
+
+// ─── Decision Section Builder ────────────────────────────────────────────────
+
+function buildDecisionSection(input: EvidenceReviewCardInput): PresentationSection {
+  const reviewInput: ReviewDecisionInput = {
+    blockingIssues: input.blockingIssues,
+    majorRisks: input.majorRisks,
+    missingVerification: input.missingVerification,
+    scopeCreep: input.scopeCreep,
+    unknowns: input.unknowns,
+  };
+  const decision = projectReviewDecision(reviewInput);
+  const items: KeyValueItem[] = [
+    {
+      label: 'Readiness',
+      value: decision.readiness === 'ready' ? 'Ready for human decision' : 'Not ready for decision',
+    },
+  ];
+  if (decision.blockers.length > 0) {
+    items.push({ label: 'Blocking issues', value: String(decision.blockers.length) });
+  }
+  if (decision.risks.length > 0) {
+    items.push({ label: 'Risks', value: String(decision.risks.length) });
+  }
+  return { kind: 'keyValue', heading: 'Decision', items };
 }
 
 /** Build the completion presentation after an EVIDENCE_REVIEW approval. */
