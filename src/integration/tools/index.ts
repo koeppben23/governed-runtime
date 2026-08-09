@@ -42,6 +42,8 @@ import { record_mutation_evidence as rawRecordMutationEvidence } from './record-
 import type { ToolDefinition, ToolResult } from './helpers.js';
 import { readConfig } from '../../adapters/persistence-config.js';
 import type { GlyphProfile } from '../../presentation/glyph-profile.js';
+import { emitTelemetryEvent } from '../../telemetry/human-projection/emitter.js';
+import type { ActionIntent } from '../../presentation/action-intent.js';
 import { renderMarkdown } from '../../presentation/markdown.js';
 import type { PresentationDocument } from '../../presentation/model.js';
 
@@ -152,40 +154,77 @@ export function attachGovernanceFooter(
   };
 }
 
-function withGovernanceFooter(toolDef: ToolDefinition): ToolDefinition {
+function withGovernanceFooter(
+  toolDef: ToolDefinition,
+  telemetry?: { intent?: ActionIntent },
+): ToolDefinition {
+  const intent = telemetry?.intent;
   return {
     ...toolDef,
     async execute(args, context) {
-      const result = await toolDef.execute(args, context);
-      let glyphProfile: GlyphProfile | undefined;
-      if (needsPresentationProfile(result)) {
-        try {
-          glyphProfile = (await readConfig(context.worktree || context.directory)).presentation
-            .opencode.glyphProfile;
-        } catch {
-          // Presentation must not replace a tool's canonical result when config
-          // loading already failed or the tool has represented that failure.
+      let disposition: 'entered' | 'blocked' | 'failed' = 'entered';
+      try {
+        const result = await toolDef.execute(args, context);
+        disposition = resultDisposition(result);
+        let glyphProfile: GlyphProfile | undefined;
+        if (needsPresentationProfile(result)) {
+          try {
+            glyphProfile = (await readConfig(context.worktree || context.directory)).presentation
+              .opencode.glyphProfile;
+          } catch {
+            // Presentation must not replace canonical result when config loading fails.
+          }
         }
+        const finalResult = attachGovernanceFooter(result, glyphProfile);
+        emitActionInvoked(disposition, intent, context);
+        return finalResult;
+      } catch (err) {
+        emitActionInvoked('failed', intent, context);
+        throw err;
       }
-      return attachGovernanceFooter(result, glyphProfile);
     },
   };
 }
 
+function emitActionInvoked(
+  disposition: 'entered' | 'blocked' | 'failed',
+  intent: ActionIntent | undefined,
+  context: { worktree?: string; sessionID?: string },
+): void {
+  emitTelemetryEvent(
+    { event: 'action_invoked', disposition, ...(intent ? { intent } : {}) },
+    context.sessionID,
+    undefined,
+  );
+}
+
+function resultDisposition(result: ToolResult): 'entered' | 'blocked' | 'failed' {
+  const output = typeof result === 'string' ? result : result.output;
+  if (typeof output === 'string' && output.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(output);
+      if (parsed && parsed.error === true) return 'blocked';
+    } catch {
+      /* not valid JSON — treat as entered */
+    }
+  }
+  return 'entered';
+}
+
 // ── Focused tools ────────────────────────────────────────────────────────────
-export const status = withGovernanceFooter(rawStatus);
+export const status = withGovernanceFooter(rawStatus, { intent: 'inspect_status' });
 export const decision = withGovernanceFooter(rawDecision);
-export const run_check = withGovernanceFooter(rawRunCheck);
+export const run_check = withGovernanceFooter(rawRunCheck, { intent: 'run_validation' });
 
 // ── Simple tools ─────────────────────────────────────────────────────────────
 export const ticket = withGovernanceFooter(rawTicket);
-export const review = withGovernanceFooter(rawReview);
+export const review = withGovernanceFooter(rawReview, { intent: 'rerun_review' });
 export const abort_session = withGovernanceFooter(rawAbortSession);
-export const archive = withGovernanceFooter(rawArchive);
+export const archive = withGovernanceFooter(rawArchive, { intent: 'export_result' });
 export const help = withGovernanceFooter(rawHelp);
 
 // ── Complex tools ────────────────────────────────────────────────────────────
-export const hydrate = withGovernanceFooter(rawHydrate);
+export const hydrate = withGovernanceFooter(rawHydrate, { intent: 'refresh_repository' });
 export const plan = withGovernanceFooter(rawPlan);
 export const implement = withGovernanceFooter(rawImplement);
 export const review_implementation = withGovernanceFooter(rawReviewImplementation);

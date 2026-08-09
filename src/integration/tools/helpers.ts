@@ -60,7 +60,7 @@ import { projectStatusActionFromCommand } from '../status-conclusion.js';
 import { getReviewLoopProgress } from '../review/review-loop-progress.js';
 import { refreshProofGraph } from '../proofgraph/refresh.js';
 import { projectCompletionProofStatus } from '../proofgraph/proof-summary-projectors.js';
-
+import { emitPresentationTelemetry } from './presentation-telemetry.js';
 const lockedSessionDir = new AsyncLocalStorage<string>();
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
@@ -174,7 +174,9 @@ export function buildNextActionPresentation(
     sections: [],
     conclusion,
   };
-  return { markdown: renderMarkdown(document) };
+  const markdown = renderMarkdown(document);
+  emitPresentationTelemetry(document, state.phase, state.id);
+  return { markdown };
 }
 
 function presentationFormForConclusion(
@@ -269,14 +271,13 @@ export function formatRailResult(
 }
 
 function buildEvidenceApprovalCompletionPresentation(state: SessionState): { markdown: string } {
-  return {
-    markdown: renderMarkdown(
-      buildEvidenceApprovalCompletionDocument({
-        proofSummary: projectCompletionProofStatus(state),
-        exportAction: projectStatusActionFromCommand('/export', 'recommended'),
-      }),
-    ),
-  };
+  const document = buildEvidenceApprovalCompletionDocument({
+    proofSummary: projectCompletionProofStatus(state),
+    exportAction: projectStatusActionFromCommand('/export', 'recommended'),
+  });
+  const markdown = renderMarkdown(document);
+  emitPresentationTelemetry(document, state.phase, state.id);
+  return { markdown };
 }
 
 /**

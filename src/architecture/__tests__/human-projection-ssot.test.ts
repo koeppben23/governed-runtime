@@ -575,3 +575,38 @@ describe('ActionIntent SSOT', () => {
     expect(noIntent('/continue')).toBe(true);
   });
 });
+
+// ─── Human Projection Telemetry SSOT ─────────────────────────────────────────
+
+describe('Human Projection Telemetry SSOT', () => {
+  const files = collectPresentationFiles();
+
+  it('governance/audit modules must not import human-projection telemetry', () => {
+    const violations: string[] = [];
+    const FORBIDDEN_CONSUMERS = ['machine/', 'rails/', 'audit/', 'state/', 'config/'];
+    for (const { rel, content } of files) {
+      if (!FORBIDDEN_CONSUMERS.some((prefix) => rel.startsWith(prefix))) continue;
+      if (
+        content.includes("'../../telemetry/human-projection") ||
+        content.includes("'../telemetry/human-projection")
+      ) {
+        violations.push(`${rel}: governance/state module imports human-projection telemetry`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('telemetry event types must not expose free-form content fields', () => {
+    const eventsContent = readFileSync(
+      join(SRC_ROOT, 'telemetry/human-projection/events.ts'),
+      'utf-8',
+    );
+    // The event payload fields should be typed identifiers, not free-form prose storage
+    expect(eventsContent).not.toMatch(/Record<string,\s*unknown>/);
+  });
+
+  it('humanProjectionTelemetry disabled by default in config', () => {
+    const configContent = readFileSync(join(SRC_ROOT, 'config/flowguard-config.ts'), 'utf-8');
+    expect(configContent).toContain('enabled: false');
+  });
+});

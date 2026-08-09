@@ -98,7 +98,7 @@ import { buildStatusDocument, buildNoSessionDocument } from '../status-presentat
 import { buildWhyDocument } from '../why-presentation.js';
 import { buildFinishDocument } from '../finish-presentation.js';
 import { renderMarkdown } from '../../presentation/index.js';
-
+import { emitDetailRequested } from './presentation-telemetry.js';
 /**
  * Build identity for the governanceMandates block — surfaces the installed
  * plugin's version + git SHA at runtime so a stale installed dist (older than
@@ -245,6 +245,7 @@ async function resolveProjection(input: ResolveProjectionInput): Promise<string 
     const blocked = buildBlockedProjection(state, policy);
     const whyPres = buildWhyPresentationProjection(state, policy, blocked);
     const whyDoc = buildWhyDocument(whyPres);
+    emitDetailRequested(state);
     return appendNextAction(
       JSON.stringify({
         phase: state.phase,
