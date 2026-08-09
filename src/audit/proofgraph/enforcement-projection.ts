@@ -11,7 +11,7 @@
  *
  * Pure function: no side effects, no state access, deterministic.
  *
- * @version v1
+ * @version v2
  */
 
 import type { ProofGraphSummary } from './summary.js';
@@ -26,6 +26,19 @@ import type { EnforcementReasonCode } from './reason-code-mapping.js';
 
 // Re-export for consumers
 export type { EnforcementReasonCode };
+
+/**
+ * ProofGraph gate decision disposition, projected by computeProofGraphEnforcement.
+ * Owned here with the decision shape; registry codes are derived exclusively
+ * from `reasonCode` via mapEnforcementReasonToRegistryCode.
+ */
+export type EnforcementDecisionKind =
+  | 'clear'
+  | 'evaluation_unavailable'
+  | 'risk_assessment_stale'
+  | 'certificate_invalid'
+  | 'critical_fact_required'
+  | 'facts_unproven';
 
 /** Reason codes emitted by the enforcement projection. */
 
@@ -48,14 +61,6 @@ export interface BlockingClaim {
   /** Registry code derived from the binding diagnostic, or generic enforcement mapping. */
   readonly registryCode: string;
 }
-
-export type EnforcementDecisionKind =
-  | 'clear'
-  | 'evaluation_unavailable'
-  | 'risk_assessment_stale'
-  | 'certificate_invalid'
-  | 'critical_fact_required'
-  | 'facts_unproven';
 
 export interface ProofGraphEnforcement {
   readonly claims: readonly ClaimEnforcementState[];
@@ -159,7 +164,7 @@ function evaluatePreconditions(
       blockingClaims: [],
       satisfied: false,
       decisionKind: 'certificate_invalid',
-      reasonCode: 'evaluation_unavailable',
+      reasonCode: 'certificate_invalid',
       reason: 'The plan approval certificate is missing, stale, or does not bind the current plan.',
     };
   }

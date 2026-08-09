@@ -17,6 +17,8 @@ import type { Phase } from '../state/schema.js';
 import {
   lookupStatusLabel,
   parseArchiveLabel,
+  projectReasonFromRegistry,
+  projectDetailFields,
   PresentationContractError,
   type PresentationDocument,
   type PresentationSection,
@@ -70,12 +72,7 @@ export function buildFinishDocument(
 
   // 2. Blocked
   if (f.blocker.blocked && f.blocker.reasonText) {
-    sections.push({
-      kind: 'blocker',
-      heading: 'Blocked',
-      code: f.blocker.reasonCode,
-      text: f.blocker.reasonText,
-    });
+    sections.push(buildBlockerSection(f.blocker.reasonCode, f.blocker.reasonText));
   }
 
   // 3. Evidence
@@ -149,6 +146,17 @@ export function buildFinishDocument(
 }
 
 // ─── Internal Builders ─────────────────────────────────────────────────────────
+
+function buildBlockerSection(code: string | null, reasonText: string): PresentationSection {
+  const reasonProjection = code ? projectReasonFromRegistry(code) : null;
+  return {
+    kind: 'blocker',
+    heading: 'Blocked',
+    code,
+    text: reasonProjection?.headline ?? reasonText,
+    ...projectDetailFields(reasonProjection),
+  };
+}
 
 function buildEvidenceSection(finish: FinishCard): PresentationSection {
   const items: KeyValueItem[] = [

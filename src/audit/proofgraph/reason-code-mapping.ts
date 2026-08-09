@@ -5,7 +5,7 @@
  *
  * Both gate and status consume this mapping — no ad-hoc string projection.
  *
- * @version v1
+ * @version v3
  */
 
 /** Reason codes emitted by the enforcement projection. */
@@ -19,6 +19,7 @@ export type EnforcementReasonCode =
   | 'provenance_missing'
   | 'evaluation_unavailable'
   | 'risk_assessment_stale'
+  | 'certificate_invalid'
   | 'critical_fact_required'
   | 'aggregate_check_mismatch'
   | 'aggregate_candidate_mismatch'
@@ -45,6 +46,7 @@ const ENFORCEMENT_REGISTRY_MAP: Record<EnforcementReasonCode, string> = {
   provenance_missing: 'PROOFGRAPH_ASSERTION_EVIDENCE_MISSING',
   evaluation_unavailable: 'PROOFGRAPH_EVALUATION_UNAVAILABLE',
   risk_assessment_stale: 'PROOFGRAPH_RISK_ASSESSMENT_STALE',
+  certificate_invalid: 'PROOFGRAPH_CERTIFICATE_INVALID',
   critical_fact_required: 'PROOFGRAPH_CRITICAL_FACT_REQUIRED',
   aggregate_check_mismatch: 'PROOFGRAPH_AGGREGATE_CHECK_MISMATCH',
   aggregate_candidate_mismatch: 'PROOFGRAPH_AGGREGATE_CHECK_MISMATCH',
@@ -57,7 +59,7 @@ const ENFORCEMENT_REGISTRY_MAP: Record<EnforcementReasonCode, string> = {
   check_only_evidence: 'PROOFGRAPH_ASSERTION_BINDING_UNAVAILABLE',
 };
 
-/** Maps AssertionBindingReasonCode to registry BlockedReason codes. */
+/** Assertion binding reason codes emitted by the binding projection. */
 import type { AssertionBindingReasonCode } from '../../state/proofgraph.js';
 export type { AssertionBindingReasonCode };
 

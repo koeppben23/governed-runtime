@@ -501,6 +501,36 @@ WRITE_FAILED
 WRONG_PHASE
 ```
 
+## Migrated Reason Codes (Human Projection)
+
+The following reason codes are "migrated" onto the Human Projection. They are the
+single authority (`src/presentation/reason-copy.ts`) for human copy. On the
+rendered presentation surfaces (`/status`, `/why`, `/finish`) the context-free
+`headline` becomes the primary copy, the reason code moves into `**Details:**`,
+the registry-verbatim message is preserved there, and the human-authored
+`explanation` renders as `**Why:**`. Structured blocked tool results remain
+canonical and additive: `message` is the interpolated registry message and
+`headline` is carried as an additive field. Keep this table in sync with
+`REASON_COPY` — the drift test enforces it.
+
+| Code                                    | Headline                                                                        | Explanation                                                                                                                                                                                 |
+| --------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VALIDATION_EVIDENCE_REQUIRED`          | Validation evidence is required before VALIDATION can pass                      | Policy requires Discovery-derived verification commands to be active and executed. VALIDATION must not pass vacuously under this policy.                                                    |
+| `VALIDATION_EVIDENCE_UNVERIFIED`        | Validation evidence is unverified, so VALIDATION stays blocked                  | Discovery is not trustworthy enough to confirm whether verification commands exist. VALIDATION is blocked fail-closed instead of asserting false certainty.                                 |
+| `VALIDATION_EVIDENCE_STACK_NO_COMMANDS` | A detected stack produced no verification commands, so VALIDATION stays blocked | Discovery found a technology stack but derived no verification commands from it. A stack with zero active checks is treated as a mis-detection hazard, not a verified no-commands property. |
+| `PROOFGRAPH_CERTIFICATE_INVALID`        | Evidence approval is blocked by a missing or stale plan certificate             | The plan approval certificate is missing, stale, or does not bind the current plan version.                                                                                                 |
+| `PROOFGRAPH_EVALUATION_UNAVAILABLE`     | Evidence approval is blocked because critical claims have no proof evaluation   | Certificate-authorized critical plan claims have no persisted ProofGraph evaluation. Evidence approval cannot proceed on un-evaluated claims.                                               |
+| `PROOFGRAPH_RISK_ASSESSMENT_STALE`      | Evidence approval is blocked by a stale implementation risk assessment          | The implementation risk assessment is missing, stale, or predates trigger classification. Record a fresh assessment before approving.                                                       |
+| `PROOFGRAPH_CRITICAL_FACT_REQUIRED`     | Evidence approval requires a critical, certificate-authorized fact claim        | The declared risk triggers require at least one critical, certificate-authorized fact claim to be recorded and proven before approval.                                                      |
+| `PROOFGRAPH_CRITICAL_FACTS_UNPROVEN`    | Evidence approval is blocked because critical fact claims are not proven        | One or more critical, certificate-authorized fact claims are not yet PROVEN in the persisted ProofGraph.                                                                                    |
+| `VALIDATION_SUBJECT_CHANGED`            | The validation subject changed while checks were running                        | The plan or implementation under validation changed during the check run, so the results cannot be bound to a stable subject digest. Re-run the check against the current subject.          |
+| `VERIFICATION_SUBJECT_CHANGED`          | The execution subject changed during verification                               | The execution subject changed during the verification phase, so evidence cannot be bound to a stable subject. Re-capture discovery and re-execute verification.                             |
+| `FOUR_EYES_ACTOR_MATCH`                 | Four-eyes review required: a different reviewer must approve                    | The session initiator cannot approve their own work. A different person with reviewer permissions must provide the review decision.                                                         |
+| `REVIEW_FINDING_SCOPE_UNVERIFIABLE`     | The review scope is not verifiable for this obligation                          | The review obligation has no frozen reviewed-file scope, so scope verification is unavailable. Re-run the review to create an obligation with a verifiable frozen scope.                    |
+| `DISCOVERY_DRIFT_BLOCKED`               | Discovery drift blocks mutating tools                                           | The discovery surface drifted from the persisted binding and the onDrift policy blocks mutating tools. Reconcile drift before continuing.                                                   |
+| `DISCOVERY_HEALTH_UNAVAILABLE`          | Discovery evidence is unavailable; mutating tools are blocked                   | Policy requires healthy Discovery before mutating tools may run. Restore Discovery evidence and run hydration to re-establish health.                                                       |
+| `DISCOVERY_HEALTH_DEGRADED`             | Discovery is degraded; mutating tools are blocked                               | Discovery is available but degraded, and the onDegraded policy blocks mutating tools. Resolve the degraded collectors and re-run hydration.                                                 |
+
 ## Debug Mode
 
 Enable verbose logging via workspace config:

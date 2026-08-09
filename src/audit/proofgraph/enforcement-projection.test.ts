@@ -98,6 +98,18 @@ describe('computeProofGraphEnforcement', () => {
     expect(result.blockingClaims[0]!.reasonCode).toBe('evaluation_unavailable');
   });
 
+  it('certificate_invalid reason when the approval certificate is invalid', () => {
+    const result = computeProofGraphEnforcement({
+      projection: summary([provenClaim()]).projection,
+      authorizedCriticalClaimIds: ['c1'],
+      certificateValid: false,
+    });
+
+    expect(result.satisfied).toBe(false);
+    expect(result.decisionKind).toBe('certificate_invalid');
+    expect(result.reasonCode).toBe('certificate_invalid');
+  });
+
   it('critical_fact_required when risk triggers exist but no eligible claims', () => {
     const result = computeProofGraphEnforcement({
       projection: summary([]).projection,

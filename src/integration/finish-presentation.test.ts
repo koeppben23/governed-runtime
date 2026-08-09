@@ -13,6 +13,8 @@ import { buildFinishPresentationProjection } from './status-why-finish.js';
 import { makeState, makeProgressedState } from '../fixtures.js';
 import { getPolicyPreset } from '../config/policy.js';
 import { createPolicySnapshot } from '../config/policy-snapshot.js';
+import { hashText } from '../shared/hashing.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
 
 function sp(mode: 'solo' | 'team') {
   return createPolicySnapshot(getPolicyPreset(mode), '2026-01-01T00:00:00.000Z', () => 'd');
@@ -142,6 +144,81 @@ describe('buildFinishDocument', () => {
       buildFinishPresentationProjection(state, buildFinishCard(state, getPolicyPreset('team'))),
     );
     expect(renderMarkdown(doc)).toContain('## Blocked');
+  });
+
+  it('projects migrated headline, explanation, and canonical message on a gated finish', () => {
+    // EVIDENCE_REVIEW with an approved plan but no persisted proofGraph: the
+    // Evidence gate resolves to evaluation_unavailable (PROOFGRAPH_* migrated).
+    const claimId = '00000000-0000-4000-8000-000000000001';
+    const declarations = {
+      flow: 'plan' as const,
+      version: 'v2' as const,
+      claims: [
+        {
+          claimId,
+          statement: 'x',
+          critical: true,
+          authoritySectionId: 's1',
+          claimScope: 'specific_behavior' as const,
+          expectedCheckId: 'test',
+        },
+      ],
+    };
+    const certificate = {
+      flow: 'plan' as const,
+      authorityDigest: 'plan-digest',
+      claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
+      decisionAttestationDigest: 'd',
+      approvedAt: '2026-01-01T00:00:00.000Z',
+      approvedBy: 'reviewer',
+      certificateId: '00000000-0000-4000-8000-0000000000ce',
+      planVersion: 1,
+      planRecordDigest: 'record-digest',
+      reviewObligationId: null,
+      reviewEvidenceDigest: null,
+    };
+    const state: SessionState = {
+      ...makeProgressedState('EVIDENCE_REVIEW'),
+      policySnapshot: createPolicySnapshot(
+        getPolicyPreset('team'),
+        '2026-01-01T00:00:00.000Z',
+        () => 'd',
+      ),
+      plan: {
+        current: {
+          body: 'x',
+          digest: 'plan-digest',
+          sections: [],
+          createdAt: '2026-01-01T00:00:00.000Z',
+          recordDigest: 'record-digest',
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+          lineageStatus: 'unavailable',
+        },
+        history: [],
+        claimDeclarations: declarations,
+        approvalCertificate: certificate,
+      },
+      proofGraph: undefined,
+    };
+    const card = buildFinishCard(state, getPolicyPreset('team'));
+    const doc = buildFinishDocument(buildFinishPresentationProjection(state, card));
+    const output = renderMarkdown(doc);
+    expect(card.blocker.reasonCode).toBe('PROOFGRAPH_EVALUATION_UNAVAILABLE');
+    // Headline replaces the registry-verbatim message on the human surface.
+    expect(output).toContain(
+      'Evidence approval is blocked because critical claims have no proof evaluation',
+    );
+    // The human-authored explanation and the verbatim canonical message are preserved.
+    expect(output).toContain(
+      '**Why:** Certificate-authorized critical plan claims have no persisted ProofGraph evaluation',
+    );
+    expect(output).toContain('**Details:**');
+    expect(output).toContain(
+      'Evidence approval is blocked because certificate-authorized critical plan claim(s) have no persisted ProofGraph evaluation: {claimIds}.',
+    );
   });
 
   it('includes exit options section', () => {

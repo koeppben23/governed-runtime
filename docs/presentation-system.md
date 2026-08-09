@@ -184,6 +184,49 @@ interface PresentationAction {
 Reason codes (e.g. `PLAN_APPROVE_WITH_TEXT`, `MISSING_EVIDENCE`) are always
 rendered in backticks. Never use reason codes as plain inline text.
 
+### 11.1 Human Projection for Migrated Reason Codes
+
+"Migrated" reason codes carry human-authored copy in the canonical copy table
+(`src/presentation/reason-copy.ts`, the `REASON_COPY` authority). A code is
+migrated exactly when it has an entry in that table; the projection derives its
+`impact` classification and its human copy from it and never from the technical
+`BlockedCategory` taxonomy.
+
+Migrated reason codes render differently on the two default surfaces. The
+rendered presentation (`/status`, `/why`, `/finish`) makes the headline the
+primary human copy and keeps the reason code as diagnostic identity in Details:
+
+- **Headline becomes the primary human copy.** The context-free `headline` is
+  the `BlockerSection.text`, so `{placeholder}` interpolation context never
+  leaks onto the rendered surface.
+- **The reason code is diagnostic identity, not the headline.** It moves out of
+  the primary `Blocked:` line and into `**Details:**`.
+- **The registry-verbatim message is never lost.** It is carried as the
+  projection's `canonicalMessage` and rendered under `**Details:**`.
+- **The human-authored explanation renders as `**Why:**`** when present.
+
+```markdown
+⚠ **Blocked:** Discovery drift blocks mutating tools
+**Recovery:** Re-run discovery and flowguard_hydrate to reconcile drift against persisted evidence
+**Why:** The discovery surface drifted from the persisted binding and the onDrift policy blocks mutating tools. Reconcile drift before continuing.
+**Details:**
+`DISCOVERY_DRIFT_BLOCKED`
+Discovery drift verdict is drifted; policy onDrift=block stops mutating tools
+```
+
+The structured blocked tool result stays canonical and additive:
+
+```text
+message  = canonical registry message
+headline = humanized headline
+code     = canonical code
+recovery = canonical recovery
+```
+
+`message` remains the interpolated registry message; `headline` is carried as an
+additive field (migrated codes only) so plugin boundaries read the human copy
+without message parsing. Unmigrated blocked output is byte-identical.
+
 ## 12. Density
 
 `compact` is the default and currently only density. Future expansions (e.g.

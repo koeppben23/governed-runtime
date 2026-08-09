@@ -113,6 +113,7 @@ describe('presentation/index.ts barrel', () => {
     'PresentationContractError',
     'projectImpact',
     'projectReasonFromRegistry',
+    'projectDetailFields',
     'renderMarkdown',
     'STATUS_LABELS',
     'lookupStatusLabel',
@@ -120,6 +121,9 @@ describe('presentation/index.ts barrel', () => {
     'parseArchiveLabel',
     'toRecoveryProjection',
     'GUIDANCE_STATUS_LABELS',
+    'REASON_COPY',
+    'isMigratedReasonCode',
+    'lookupReasonCopy',
   ] as const;
 
   const INTERNAL_SYMBOLS = [

@@ -26,6 +26,24 @@ describe('mapEnforcementReasonToRegistryCode', () => {
     );
   });
 
+  it('risk_assessment_stale → PROOFGRAPH_RISK_ASSESSMENT_STALE', () => {
+    expect(mapEnforcementReasonToRegistryCode('risk_assessment_stale')).toBe(
+      'PROOFGRAPH_RISK_ASSESSMENT_STALE',
+    );
+  });
+
+  it('certificate_invalid → PROOFGRAPH_CERTIFICATE_INVALID', () => {
+    expect(mapEnforcementReasonToRegistryCode('certificate_invalid')).toBe(
+      'PROOFGRAPH_CERTIFICATE_INVALID',
+    );
+  });
+
+  it('critical_fact_required → PROOFGRAPH_CRITICAL_FACT_REQUIRED', () => {
+    expect(mapEnforcementReasonToRegistryCode('critical_fact_required')).toBe(
+      'PROOFGRAPH_CRITICAL_FACT_REQUIRED',
+    );
+  });
+
   it('every enforcement code maps to a defined value', () => {
     const codes: Parameters<typeof mapEnforcementReasonToRegistryCode>[0][] = [
       'proven',
@@ -37,6 +55,7 @@ describe('mapEnforcementReasonToRegistryCode', () => {
       'provenance_missing',
       'evaluation_unavailable',
       'risk_assessment_stale',
+      'certificate_invalid',
       'critical_fact_required',
     ];
     for (const code of codes) {

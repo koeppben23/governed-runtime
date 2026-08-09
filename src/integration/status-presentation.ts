@@ -22,6 +22,7 @@ import {
   normalizedMarkdown,
   lookupStatusLabel,
   projectReasonFromRegistry,
+  projectDetailFields,
   type PresentationDocument,
   type PresentationSection,
   type PresentationConclusion,
@@ -156,15 +157,20 @@ function buildBlockerSection(status: StatusProjection): BlockerSection {
   // Recovery guidance comes from the canonical reason registry via the Human
   // Projection — never from general next-action copy. When no canonical
   // reason code exists, recovery is intentionally omitted (no invented steps).
-  const recovery = blocker.reasonCode
-    ? projectReasonFromRegistry(blocker.reasonCode)?.recovery.primary
-    : undefined;
+  // For migrated codes the projection also supplies the context-free headline,
+  // the human-authored explanation, and the registry-verbatim canonicalMessage
+  // (never lost on the diagnostic surface).
+  const reasonProjection = blocker.reasonCode
+    ? projectReasonFromRegistry(blocker.reasonCode)
+    : null;
+  const recovery = reasonProjection?.recovery.primary;
   return {
     kind: 'blocker',
     heading: 'Blocked',
     code: blocker.reasonCode ?? null,
-    text: blocker.reasonText!,
+    text: reasonProjection?.headline ?? blocker.reasonText!,
     ...(recovery ? { recovery } : {}),
+    ...projectDetailFields(reasonProjection),
   };
 }
 

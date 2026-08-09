@@ -55,6 +55,8 @@ import {
   type ProofApprovalProjection,
 } from './proofgraph/approval-projection.js';
 import { projectProofStatusForState } from './proofgraph/proof-summary-projectors.js';
+import { evaluateProofGraphGateFromState } from '../audit/proofgraph/gate.js';
+import { mapEnforcementReasonToRegistryCode } from '../audit/proofgraph/reason-code-mapping.js';
 
 // Re-export for consumers
 export type { StatusActionProjection, StatusConclusionProjection };
@@ -331,7 +333,7 @@ export function buildStatusProjection(
   );
   const evalResult = evaluate(state, { requireHumanGates: policy.requireHumanGates });
 
-  const blocker = buildBlocker(evalResult);
+  const blocker = buildBlocker(evalResult, state);
   const policyMode = state.policySnapshot?.mode ?? 'unknown';
   const profileId = state.activeProfile?.id ?? 'none';
   const productNext = buildProductNextAction(
@@ -447,10 +449,13 @@ export function buildBlockedProjection(
     state.phase === 'VALIDATION' ? evaluateValidationEvidence(state) : null;
   const validationEvidenceBlocked =
     validationEvidence !== null && validationEvidence.blocked && validationEvidence.code !== null;
+  // #695: surface the enforced ProofGraph gate reason at EVIDENCE_REVIEW so the
+  // why-blocked surface projects the gate's migrated human copy.
+  const proofGraphGateCode = proofGraphGateRegistryCode(state);
 
   return {
     blocked,
-    reasonCode: validationEvidenceBlocked ? validationEvidence.code : null,
+    reasonCode: validationEvidenceBlocked ? validationEvidence.code : proofGraphGateCode,
     reasonText:
       evalResult.kind === 'waiting'
         ? evalResult.reason
@@ -553,12 +558,20 @@ function deriveReadinessField(
  * The blocker surface mirrors the EvalResult semantics used for
  * human-facing guidance. This is the same truth that feeds
  * formatEval() — no new blocker logic is invented here.
+ *
+ * At EVIDENCE_REVIEW the waiting blocker carries the registered reason code
+ * of the ProofGraph gate that the review-decision rail enforces (mirrors the
+ * rail inputs via evaluateProofGraphGateFromState), so the status surface can
+ * project the migrated human copy for the gate.
  */
-function buildBlocker(evalResult: ReturnType<typeof evaluate>): StatusProjection['blocker'] {
+function buildBlocker(
+  evalResult: ReturnType<typeof evaluate>,
+  state: SessionState,
+): StatusProjection['blocker'] {
   switch (evalResult.kind) {
     case 'waiting':
       return {
-        reasonCode: null,
+        reasonCode: proofGraphGateRegistryCode(state),
         reasonText: evalResult.reason,
       };
     case 'pending':
@@ -571,4 +584,16 @@ function buildBlocker(evalResult: ReturnType<typeof evaluate>): StatusProjection
     case 'transition':
       return null;
   }
+}
+
+/**
+ * Registry reason code for the enforced ProofGraph gate at EVIDENCE_REVIEW,
+ * or null when no gate is active. Projection of the rail's gate decision only
+ * — no independent gating authority.
+ */
+function proofGraphGateRegistryCode(state: SessionState): string | null {
+  if (state.phase !== 'EVIDENCE_REVIEW') return null;
+  const decision = evaluateProofGraphGateFromState(state);
+  if (!decision.gated) return null;
+  return mapEnforcementReasonToRegistryCode(decision.reasonCode);
 }

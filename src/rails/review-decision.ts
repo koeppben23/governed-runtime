@@ -50,6 +50,7 @@ import { blocked } from '../config/reasons.js';
 import { compareActorIdentity, isAssuranceAtLeast } from '../identity/actor-info.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { evaluateProofGraphGate } from '../audit/proofgraph/gate.js';
+import { mapEnforcementReasonToRegistryCode } from '../audit/proofgraph/reason-code-mapping.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -272,30 +273,26 @@ function enforceProofGraphEvidenceApproval(
     riskAssessment: state.implementationRiskAssessment,
   });
   if (!decision.gated) return null;
-  if (decision.kind === 'certificate_invalid') {
-    return blocked('PROOFGRAPH_CERTIFICATE_INVALID', {});
-  }
-  if (decision.kind === 'evaluation_unavailable') {
-    return blocked('PROOFGRAPH_EVALUATION_UNAVAILABLE', {
-      claimIds: decision.blockingClaimIds.join(', '),
-    });
-  }
-  if (decision.kind === 'risk_assessment_stale') {
-    return blocked('PROOFGRAPH_RISK_ASSESSMENT_STALE', {});
-  }
   if (decision.kind === 'critical_fact_required') {
     return blocked('PROOFGRAPH_CRITICAL_FACT_REQUIRED', {
       triggers: decision.relevantTriggers.join(', '),
     });
   }
-  // facts_unproven — use per-claim registry codes from blocking claims
-  const claimDetails = decision.blockingClaims
-    .map((bc) => `${bc.claimId} (${bc.registryCode})`)
-    .join(', ');
-  return blocked('PROOFGRAPH_CRITICAL_FACTS_UNPROVEN', {
-    claimDetails,
-    claimIds: decision.blockingClaimIds.join(', '),
-  });
+  if (decision.kind === 'facts_unproven') {
+    // facts_unproven — include per-claim registry details in the message
+    const claimDetails = decision.blockingClaims
+      .map((bc) => `${bc.claimId} (${bc.registryCode})`)
+      .join(', ');
+    return blocked('PROOFGRAPH_CRITICAL_FACTS_UNPROVEN', {
+      claimDetails,
+      claimIds: decision.blockingClaimIds.join(', '),
+    });
+  }
+  const registryCode = mapEnforcementReasonToRegistryCode(decision.reasonCode);
+  if (decision.kind === 'evaluation_unavailable') {
+    return blocked(registryCode, { claimIds: decision.blockingClaimIds.join(', ') });
+  }
+  return blocked(registryCode, undefined);
 }
 
 /**
