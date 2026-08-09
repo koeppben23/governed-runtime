@@ -60,7 +60,7 @@ import { projectStatusActionFromCommand } from '../status-conclusion.js';
 import { getReviewLoopProgress } from '../review/review-loop-progress.js';
 import { refreshProofGraph } from '../proofgraph/refresh.js';
 import { projectCompletionProofStatus } from '../proofgraph/proof-summary-projectors.js';
-
+import { emitPresentationTelemetry } from './presentation-telemetry.js';
 const lockedSessionDir = new AsyncLocalStorage<string>();
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
@@ -174,6 +174,7 @@ export function buildNextActionPresentation(
     sections: [],
     conclusion,
   };
+  emitPresentationTelemetry(document, state.phase, state.id);
   return { markdown: renderMarkdown(document) };
 }
 

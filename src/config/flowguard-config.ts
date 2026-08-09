@@ -126,6 +126,14 @@ export const FlowGuardConfigSchema = z.object({
       otlp: { enabled: false, allowInsecure: false },
     }),
 
+  /** Human Projection UX telemetry — optional, non-authoritative, disabled by default. */
+  humanProjectionTelemetry: z
+    .object({
+      /** Enable structured UX observation events. Default: false (opt-in). */
+      enabled: z.boolean().default(false),
+    })
+    .default({ enabled: false }),
+
   /** Policy override configuration. Merged field-wise with the resolved preset. */
   policy: z
     .object({

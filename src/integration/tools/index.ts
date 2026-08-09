@@ -42,6 +42,7 @@ import { record_mutation_evidence as rawRecordMutationEvidence } from './record-
 import type { ToolDefinition, ToolResult } from './helpers.js';
 import { readConfig } from '../../adapters/persistence-config.js';
 import type { GlyphProfile } from '../../presentation/glyph-profile.js';
+import { emitTelemetryEvent } from '../../telemetry/human-projection/emitter.js';
 import { renderMarkdown } from '../../presentation/markdown.js';
 import type { PresentationDocument } from '../../presentation/model.js';
 
@@ -156,20 +157,44 @@ function withGovernanceFooter(toolDef: ToolDefinition): ToolDefinition {
   return {
     ...toolDef,
     async execute(args, context) {
-      const result = await toolDef.execute(args, context);
-      let glyphProfile: GlyphProfile | undefined;
-      if (needsPresentationProfile(result)) {
-        try {
-          glyphProfile = (await readConfig(context.worktree || context.directory)).presentation
-            .opencode.glyphProfile;
-        } catch {
-          // Presentation must not replace a tool's canonical result when config
-          // loading already failed or the tool has represented that failure.
+      let disposition: 'entered' | 'blocked' | 'failed' = 'entered';
+      try {
+        const result = await toolDef.execute(args, context);
+        // Determine disposition from the tool result structure.
+        // Blocked tools return JSON-encoded { error: true, ... }.
+        if (typeof result === 'string' && result.startsWith('{')) {
+          try {
+            const parsed = JSON.parse(result);
+            if (parsed && parsed.error === true) disposition = 'blocked';
+          } catch {
+            /* not valid JSON — treat as entered */
+          }
         }
+        let glyphProfile: GlyphProfile | undefined;
+        if (needsPresentationProfile(result)) {
+          try {
+            glyphProfile = (await readConfig(context.worktree || context.directory)).presentation
+              .opencode.glyphProfile;
+          } catch {
+            // Presentation must not replace canonical result when config loading fails.
+          }
+        }
+        const finalResult = attachGovernanceFooter(result, glyphProfile);
+        emitActionInvoked(disposition, context);
+        return finalResult;
+      } catch (err) {
+        emitActionInvoked('failed', context);
+        throw err;
       }
-      return attachGovernanceFooter(result, glyphProfile);
     },
   };
+}
+
+function emitActionInvoked(
+  disposition: 'entered' | 'blocked' | 'failed',
+  context: { worktree?: string; sessionID?: string },
+): void {
+  emitTelemetryEvent({ event: 'action_invoked', disposition }, context.sessionID, undefined);
 }
 
 // ── Focused tools ────────────────────────────────────────────────────────────
