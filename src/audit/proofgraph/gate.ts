@@ -17,7 +17,8 @@
 
 import type { ProofGraphSummary } from './summary.js';
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
-import type { RiskTrigger } from '../../state/schema.js';
+import type { RiskTrigger, SessionState } from '../../state/schema.js';
+import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval.js';
 import type { AssertionBindingReasonCode } from './assertion-evidence-binding.js';
 import {
   computeProofGraphEnforcement,
@@ -127,4 +128,20 @@ export function evaluateProofGraphGate(input: {
     kind: enforcement.decisionKind,
     relevantTriggers: triggers,
   };
+}
+
+/**
+ * Evaluate the ProofGraph gate directly from persisted session state, mirroring
+ * the inputs the review-decision rail enforces. Read-only convenience for the
+ * status surface — never a second gating authority.
+ */
+export function evaluateProofGraphGateFromState(state: SessionState): ProofGraphGateDecision {
+  const authorization = authorizedCriticalPlanClaimIds(state.plan);
+  return evaluateProofGraphGate({
+    projection: state.proofGraph,
+    authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
+    certificateValid: authorization.kind === 'authorized',
+    implementationDigest: state.implementation?.digest,
+    riskAssessment: state.implementationRiskAssessment,
+  });
 }

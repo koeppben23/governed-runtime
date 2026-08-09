@@ -49,7 +49,7 @@ import { buildBlockedDiagnostics, formatDiagnosticCard } from '../../diagnostics
 import type { RuntimeDiagnostics } from '../../diagnostics/index.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
 import { PHASE_LABELS, buildProductNextAction } from '../../presentation/index.js';
-import { renderMarkdown } from '../../presentation/index.js';
+import { renderMarkdown, lookupReasonCopy } from '../../presentation/index.js';
 import {
   buildEvidenceApprovalCompletionDocument,
   type PresentationConclusion,
@@ -131,12 +131,13 @@ export function formatEval(ev: EvalResult): string {
   }
 }
 
-/**
- * Build the shared blocked-response fields for a reason code: the structured
- * diagnostics object (when a builder exists) and the presentation.markdown
- * rendered through the shared renderer. Single source of truth for both
- * blocked-response producers (formatRailResult, formatBlocked).
- */
+/** Migrated reason-copy headline field, present only for authored codes. */
+function headlineFields(code: string): { headline?: string } {
+  const copy = lookupReasonCopy(code);
+  return copy?.headline ? { headline: copy.headline } : {};
+}
+
+/** Blocked-response fields: structured diagnostics and rendered markdown. */
 function buildBlockedPresentation(
   code: string,
   message: string,
@@ -212,6 +213,7 @@ export function formatRailResult(
       message: result.reason,
       recovery: result.recovery,
       quickFix: result.quickFix,
+      ...headlineFields(result.code),
       ...blockedPresentation,
       // #428: surface structured overflow context so the plugin boundary can
       // detect and log the fail-closed overflow without parsing the message.
@@ -297,6 +299,7 @@ export function formatBlocked(
     message: info.reason,
     recovery: info.recovery,
     quickFix: info.quickFix,
+    ...headlineFields(info.code),
     ...blockedPresentation,
     ...(extra ?? {}),
   });

@@ -16,8 +16,9 @@ import type {
   PresentationDocument,
   PresentationSection,
   PresentationConclusion,
+  ReasonProjection,
 } from '../presentation/index.js';
-import { projectReasonFromRegistry } from '../presentation/index.js';
+import { projectReasonFromRegistry, projectDetailFields } from '../presentation/index.js';
 import type { WhyPresentationProjection, WhyConclusionProjection } from './status-why-finish.js';
 import { buildProofGraphSection } from '../presentation/proof-summary.js';
 
@@ -88,17 +89,29 @@ function buildBlockerSection(projection: WhyPresentationProjection): Presentatio
     projection.blocker.reasonCode !== null || projection.blocker.reasonText !== null;
   if (!hasBlockerDetail || !projection.blocker.reasonText) return null;
 
-  const registryRecovery = projection.blocker.reasonCode
-    ? projectReasonFromRegistry(projection.blocker.reasonCode)?.recovery.primary
-    : undefined;
-  const recovery = registryRecovery ?? projection.blocker.recoveryHint ?? undefined;
+  // Migrated codes project the context-free headline as the display text and
+  // carry the registry-verbatim message as canonicalMessage so the diagnostic
+  // why-surface never loses the canonical detail.
+  const reasonProjection = projection.blocker.reasonCode
+    ? projectReasonFromRegistry(projection.blocker.reasonCode)
+    : null;
+  const recovery = resolveRecovery(reasonProjection, projection.blocker.recoveryHint);
   return {
     kind: 'blocker',
     heading: projection.blocker.blocked ? 'Blocked' : 'Evidence required',
     code: projection.blocker.reasonCode,
-    text: projection.blocker.reasonText,
+    text: reasonProjection?.headline ?? projection.blocker.reasonText,
     ...(recovery ? { recovery } : {}),
+    ...projectDetailFields(reasonProjection),
   };
+}
+
+/** Canonical recovery with the caller-provided hint as a last-resort fallback. */
+function resolveRecovery(
+  projection: ReasonProjection | null,
+  hint: string | null,
+): string | undefined {
+  return projection?.recovery.primary ?? hint ?? undefined;
 }
 
 function toPresentationConclusion(c: WhyConclusionProjection): PresentationConclusion {

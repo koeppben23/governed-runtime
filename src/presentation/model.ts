@@ -162,10 +162,14 @@ export interface BlockerSection {
   readonly heading?: string;
   /** Reason code — rendered in backticks. Null/omitted when not available. */
   readonly code: string | null;
-  /** Human-readable reason text. */
+  /** Human-readable reason text. For migrated codes this is the copy headline. */
   readonly text: string;
   /** Recovery instruction, when available from the canonical source. */
   readonly recovery?: string;
+  /** Canonical registry-interpolated message for migrated codes. */
+  readonly canonicalMessage?: string;
+  /** Human-authored context for migrated codes, when available. */
+  readonly explanation?: string;
 }
 
 export interface ArtifactListSection {

@@ -39,10 +39,7 @@ describe('projectReasonFromRegistry', () => {
     expect(projectReasonFromRegistry('VALIDATION_EVIDENCE_REQUIRED')!.impact).toBe(
       'verification_incomplete',
     );
-    expect(projectReasonFromRegistry('PROOFGRAPH_ASSERTION_EVIDENCE_MISSING')!.impact).toBe(
-      'verification_incomplete',
-    );
-    expect(projectReasonFromRegistry('PROOFGRAPH_ASSERTION_PROVIDER_MISMATCH')!.impact).toBe(
+    expect(projectReasonFromRegistry('PROOFGRAPH_CERTIFICATE_INVALID')!.impact).toBe(
       'verification_incomplete',
     );
     expect(projectReasonFromRegistry('FOUR_EYES_ACTOR_MATCH')!.impact).toBe('review_required');
@@ -53,27 +50,46 @@ describe('projectReasonFromRegistry', () => {
     expect(projectReasonFromRegistry('READ_FAILED')!.impact).toBeUndefined();
     expect(projectReasonFromRegistry('CENTRAL_POLICY_UNREADABLE')!.impact).toBeUndefined();
     expect(projectReasonFromRegistry('ACTOR_CLAIM_INVALID')!.impact).toBeUndefined();
+    expect(
+      projectReasonFromRegistry('PROOFGRAPH_ASSERTION_EVIDENCE_MISSING')!.impact,
+    ).toBeUndefined();
+    expect(
+      projectReasonFromRegistry('PROOFGRAPH_AGGREGATE_SCOPE_UNATTESTED')!.impact,
+    ).toBeUndefined();
   });
 
-  it('interpolates vars through the canonical registry authority', () => {
+  it('replaces the headline with human copy and preserves the interpolated detail in canonicalMessage', () => {
     const projection = projectReasonFromRegistry('DISCOVERY_DRIFT_BLOCKED', {
       driftStatus: 'changed',
     })!;
-    expect(projection.headline).toContain('verdict is changed');
+    expect(projection.headline).toBe('Discovery drift blocks mutating tools');
+    expect(projection.headline).not.toContain('changed');
+    expect(projection.explanation).toBeDefined();
+    expect(projection.canonicalMessage).toContain('Discovery drift verdict is');
+    expect(projection.canonicalMessage).toContain('verdict is changed');
+  });
+
+  it('omits canonicalMessage and explanation for unmigrated codes', () => {
+    const projection = projectReasonFromRegistry('PLAN_REQUIRED')!;
+    expect('canonicalMessage' in projection).toBe(false);
+    expect('explanation' in projection).toBe(false);
   });
 });
 
 describe('projectImpact', () => {
   it('is an explicit per-code lookup, not a category heuristic', () => {
     expect(projectImpact('VALIDATION_EVIDENCE_REQUIRED')).toBe('verification_incomplete');
+    expect(projectImpact('PROOFGRAPH_CERTIFICATE_INVALID')).toBe('verification_incomplete');
     expect(projectImpact('FOUR_EYES_ACTOR_MATCH')).toBe('review_required');
-    expect(projectImpact('PROOFGRAPH_AGGREGATE_SCOPE_UNATTESTED')).toBe('verification_incomplete');
+    expect(projectImpact('DISCOVERY_DRIFT_BLOCKED')).toBe('workflow_blocked');
   });
 
   it('returns undefined for unmigrated codes of every category', () => {
     expect(projectImpact('READ_FAILED')).toBeUndefined();
     expect(projectImpact('ACTOR_CLAIM_INVALID')).toBeUndefined();
     expect(projectImpact('CENTRAL_POLICY_UNREADABLE')).toBeUndefined();
+    expect(projectImpact('PROOFGRAPH_AGGREGATE_SCOPE_UNATTESTED')).toBeUndefined();
+    expect(projectImpact('PROOFGRAPH_ASSERTION_PROVIDER_MISMATCH')).toBeUndefined();
   });
 });
 

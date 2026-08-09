@@ -37,11 +37,11 @@ export type UserImpact =
 /**
  * Human-readable explanation of a governance state.
  *
- * `headline` is the deterministic summary of the state. `explanation` is a
- * transitional field reserved for a canonical copy contract; it is absent
- * until such a source exists — the projection must fail incomplete rather
- * than invent prose. `impact` is present only for states with an explicit,
- * canonical impact mapping.
+ * `headline` is the deterministic summary of the state. For migrated reason
+ * codes the copy authority (`reason-copy.ts`) supplies `explanation` and
+ * `impact`; unmigrated states carry no explanation and the projection fails
+ * incomplete rather than invent prose. `impact` is present only for states
+ * with an explicit, canonical impact mapping.
  */
 export interface HumanExplanation {
   readonly headline: string;

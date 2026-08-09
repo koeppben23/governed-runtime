@@ -10,55 +10,46 @@
  * Guardrails:
  * - Only projects codes that exist in the canonical reason registry; unknown
  *   codes project to null (fail-closed, never invented recovery).
- * - `impact` is present ONLY for explicitly migrated reason codes via
- *   {@link REASON_IMPACT}. It is NEVER derived from the technical reason
- *   category: `BlockedCategory` answers "what technical class of error is
- *   this", while `impact` answers "what does this state mean for the user's
- *   workflow" — orthogonal dimensions. Unmigrated codes project no impact.
- * - `headline` and recovery come verbatim from the registry's interpolation
- *   authority (`defaultReasonRegistry.format`), never rephrased here.
+ * - `headline`, `explanation`, and `impact` come from the canonical copy
+ *   authority ({@link REASON_COPY}) for migrated codes. `impact` is NEVER
+ *   derived from the technical reason category: `BlockedCategory` answers
+ *   "what technical class of error is this", while `impact` answers "what
+ *   does this state mean for the user's workflow" — orthogonal dimensions.
+ * - For migrated codes, the registry-verbatim interpolated message is never
+ *   lost: it is preserved as `canonicalMessage` so diagnostic surfaces can
+ *   render the exact authoritative text.
+ * - For unmigrated codes, `headline` and recovery come verbatim from the
+ *   registry's interpolation authority (`defaultReasonRegistry.format`),
+ *   never rephrased here.
  * - The recovery contract guarantees at least one step; the projection
  *   enforces that invariant and never invents steps.
  *
- * @version v1
+ * @version v2
  */
 
 import { defaultReasonRegistry } from '../config/reasons.js';
 import type { BlockedCategory } from '../config/reasons-types.js';
 import { PresentationContractError } from './model.js';
 import type { HumanExplanation, RecoveryProjection, UserImpact } from './human-projection.js';
+import { isMigratedReasonCode, lookupReasonCopy } from './reason-copy.js';
 
 /** A reason code projected into human-facing shape. */
 export interface ReasonProjection extends HumanExplanation {
   readonly code: string;
   readonly category: BlockedCategory;
+  /** Registry-verbatim interpolated message for migrated codes. */
+  readonly canonicalMessage?: string;
   readonly recovery: RecoveryProjection;
 }
 
 /**
- * Explicit per-code impact classification. Only codes migrated onto the Human
- * Projection carry an impact. Migrating a code is an explicit, reviewed
- * decision — never a category heuristic. Coverage grows deliberately, code by
- * code.
- */
-const REASON_IMPACT: Readonly<Partial<Record<string, UserImpact>>> = {
-  VALIDATION_EVIDENCE_REQUIRED: 'verification_incomplete',
-  VALIDATION_EVIDENCE_UNVERIFIED: 'verification_incomplete',
-  VALIDATION_EVIDENCE_STACK_NO_COMMANDS: 'verification_incomplete',
-  PROOFGRAPH_ASSERTION_EVIDENCE_MISSING: 'verification_incomplete',
-  PROOFGRAPH_AGGREGATE_SCOPE_UNATTESTED: 'verification_incomplete',
-  PROOFGRAPH_ASSERTION_PROVIDER_MISMATCH: 'verification_incomplete',
-  FOUR_EYES_ACTOR_MATCH: 'review_required',
-  DISCOVERY_DRIFT_BLOCKED: 'workflow_blocked',
-};
-
-/**
  * Deterministic impact lookup for explicitly migrated reason codes.
+ * Derived from the canonical copy table — the single migrated-set authority.
  * Returns undefined (no impact) for unmigrated codes — the projection must
  * fail incomplete, not infer from an insufficient taxonomy.
  */
 export function projectImpact(code: string): UserImpact | undefined {
-  return REASON_IMPACT[code];
+  return lookupReasonCopy(code)?.impact;
 }
 
 /**
@@ -90,13 +81,37 @@ export function projectReasonFromRegistry(
 ): ReasonProjection | null {
   const reason = defaultReasonRegistry.get(code);
   if (!reason) return null;
-  const impact = REASON_IMPACT[code];
   const formatted = defaultReasonRegistry.format(code, vars);
+  const copy = lookupReasonCopy(code);
+  const headline = copy?.headline ?? formatted.reason;
+  const canonicalMessage = isMigratedReasonCode(code) ? formatted.reason : undefined;
   return {
     code,
     category: reason.category,
-    headline: formatted.reason,
-    ...(impact ? { impact } : {}),
+    headline,
+    ...(copy?.explanation ? { explanation: copy.explanation } : {}),
+    ...(canonicalMessage !== undefined ? { canonicalMessage } : {}),
+    ...(copy?.impact ? { impact: copy.impact } : {}),
     recovery: toRecoveryProjection(formatted.recovery),
+  };
+}
+
+/**
+ * Extract the optional canonical detail fields (canonicalMessage + explanation)
+ * of a reason projection for embedding in a `BlockerSection`.
+ *
+ * Consumers spread the result directly so migrated codes keep the
+ * registry-verbatim message and human-authored explanation on every diagnostic
+ * surface without duplicating the projection branch. Returns an empty object
+ * for null projections (fail-closed: never fabricates copy).
+ */
+export function projectDetailFields(projection: ReasonProjection | null): {
+  canonicalMessage?: string;
+  explanation?: string;
+} {
+  if (!projection) return {};
+  return {
+    ...(projection.canonicalMessage ? { canonicalMessage: projection.canonicalMessage } : {}),
+    ...(projection.explanation ? { explanation: projection.explanation } : {}),
   };
 }

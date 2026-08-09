@@ -22,10 +22,10 @@ import {
   mapBindingReasonToRegistryCode,
   mapEnforcementReasonToRegistryCode,
 } from './reason-code-mapping.js';
-import type { EnforcementReasonCode } from './reason-code-mapping.js';
+import type { EnforcementReasonCode, EnforcementDecisionKind } from './reason-code-mapping.js';
 
 // Re-export for consumers
-export type { EnforcementReasonCode };
+export type { EnforcementReasonCode, EnforcementDecisionKind };
 
 /** Reason codes emitted by the enforcement projection. */
 
@@ -48,14 +48,6 @@ export interface BlockingClaim {
   /** Registry code derived from the binding diagnostic, or generic enforcement mapping. */
   readonly registryCode: string;
 }
-
-export type EnforcementDecisionKind =
-  | 'clear'
-  | 'evaluation_unavailable'
-  | 'risk_assessment_stale'
-  | 'certificate_invalid'
-  | 'critical_fact_required'
-  | 'facts_unproven';
 
 export interface ProofGraphEnforcement {
   readonly claims: readonly ClaimEnforcementState[];

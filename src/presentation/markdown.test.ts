@@ -148,6 +148,71 @@ describe('renderMarkdown', () => {
     expect(result).toContain('→ `/check` — Run checks');
   });
 
+  it('renders a migrated blocker with explanation and canonical details', () => {
+    const doc: CompactCardDocument = {
+      kind: 'compact_card',
+      density: 'compact',
+      sections: [
+        {
+          kind: 'blocker',
+          code: 'DISCOVERY_DRIFT_BLOCKED',
+          text: 'Discovery drift blocks mutating tools',
+          recovery: 'Re-run discovery and flowguard_hydrate to reconcile drift',
+          canonicalMessage:
+            'Discovery drift verdict is changed; policy onDrift=block stops mutating tools',
+          explanation:
+            'The discovery surface drifted from the persisted binding and the onDrift policy blocks mutating tools.',
+        },
+      ],
+      conclusion: {
+        kind: 'next_action',
+        action: {
+          invocation: '/hydrate',
+          description: 'Re-run discovery',
+          visibility: 'recommended',
+        },
+      },
+    };
+    const result = renderMarkdown(doc);
+    assertRendererInvariants(result);
+    assertNoStructuralTripleNewline(result);
+    expect(result).toContain(
+      '⚠ **Blocked:** `DISCOVERY_DRIFT_BLOCKED` — Discovery drift blocks mutating tools',
+    );
+    expect(result).toContain(
+      '**Recovery:** Re-run discovery and flowguard_hydrate to reconcile drift',
+    );
+    expect(result).toContain('**Why:** The discovery surface drifted from the persisted binding');
+    expect(result).toContain(
+      '**Details:** Discovery drift verdict is changed; policy onDrift=block stops mutating tools',
+    );
+  });
+
+  it('omits the Details line when canonicalMessage equals the display text', () => {
+    const doc: CompactCardDocument = {
+      kind: 'compact_card',
+      density: 'compact',
+      sections: [
+        {
+          kind: 'blocker',
+          code: 'PLAN_REQUIRED',
+          text: 'An approved plan is required before proceeding',
+          canonicalMessage: 'An approved plan is required before proceeding',
+        },
+      ],
+      conclusion: {
+        kind: 'next_action',
+        action: { invocation: '/plan', description: 'Create a plan', visibility: 'recommended' },
+      },
+    };
+    const result = renderMarkdown(doc);
+    assertRendererInvariants(result);
+    expect(result).toContain(
+      '**Blocked:** `PLAN_REQUIRED` — An approved plan is required before proceeding',
+    );
+    expect(result).not.toContain('**Details:**');
+  });
+
   it('renders checklist', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',

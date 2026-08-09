@@ -34,7 +34,13 @@ import { describe, expect, it } from 'vitest';
  *      projection may later reference canonical command identity, but must
  *      not duplicate invocation metadata. This guard therefore rejects any
  *      slash-command string literal inside the Human Projection modules
- *      (`human-projection.ts`, `reason-projection.ts`).
+ *      (`human-projection.ts`, `reason-projection.ts`, `reason-copy.ts`).
+ *
+ *   C. Migrated reason-code copy (`headline`/`explanation`) and `impact`
+ *      classification have a single authority: `presentation/reason-copy.ts`
+ *      (the {@link REASON_COPY} table). `reason-projection.ts` MUST derive
+ *      them through `lookupReasonCopy`; no other presentation module or
+ *      integration renderer may define a parallel per-code impact map.
  *
  * Mechanism mirrors `mode-validation-ssot.test.ts`: a pure detector over
  * production source, plus inline negative fixtures proving the detector fires.
@@ -46,6 +52,9 @@ const SRC_ROOT = join(process.cwd(), 'src');
 /** The sole module permitted to consume the reason registry in the scanned scope. */
 const RECOVERY_AUTHORITY = 'presentation/reason-projection.ts';
 
+/** The single authority for migrated reason-code copy and impact. */
+const COPY_AUTHORITY = 'presentation/reason-copy.ts';
+
 /** Presentation renderers under `src/integration/` share the same invariant. */
 const INTEGRATION_DIR = 'integration/';
 
@@ -53,6 +62,7 @@ const INTEGRATION_DIR = 'integration/';
 const HUMAN_PROJECTION_MODULES = [
   'presentation/human-projection.ts',
   'presentation/reason-projection.ts',
+  'presentation/reason-copy.ts',
 ] as const;
 
 const PRESENTATION_DIR = 'presentation';
@@ -60,6 +70,8 @@ const PRESENTATION_DIR = 'presentation';
 const REGISTRY_IDIOM = /defaultReasonRegistry/;
 const REGISTRY_IMPORT_IDIOM = /from\s+['"][^'"]*config\/reasons\.js['"]/;
 const SLASH_COMMAND_IDIOM = /'\/[a-z][a-z0-9-]*'/;
+/** Literal per-code impact assignments — only the copy authority may hold them. */
+const IMPACT_MAP_IDIOM = /impact:\s*['"]/;
 
 interface SourceFile {
   readonly rel: string;
@@ -133,6 +145,48 @@ function findSlashCommandViolations(files: readonly SourceFile[]): Violation[] {
   return out;
 }
 
+function findImpactMapViolations(files: readonly SourceFile[]): Violation[] {
+  const out: Violation[] = [];
+  for (const f of files) {
+    if (f.rel === COPY_AUTHORITY) continue;
+    if (!isInScope(f.rel)) continue;
+    f.content.split('\n').forEach((text, i) => {
+      if (IMPACT_MAP_IDIOM.test(text)) {
+        out.push({
+          rel: f.rel,
+          line: i + 1,
+          snippet: text.trim(),
+          rule: 'parallel-impact-map',
+        });
+      }
+    });
+  }
+  return out;
+}
+
+function findCopyDerivationViolations(files: readonly SourceFile[]): Violation[] {
+  const out: Violation[] = [];
+  const projection = files.find((f) => f.rel === RECOVERY_AUTHORITY);
+  if (!projection) return out;
+  if (!projection.content.includes("from './reason-copy.js'")) {
+    out.push({
+      rel: RECOVERY_AUTHORITY,
+      line: 1,
+      snippet: 'missing reason-copy import',
+      rule: 'copy-authority-not-derived',
+    });
+  }
+  if (!projection.content.includes('lookupReasonCopy')) {
+    out.push({
+      rel: RECOVERY_AUTHORITY,
+      line: 1,
+      snippet: 'missing lookupReasonCopy usage',
+      rule: 'copy-authority-not-derived',
+    });
+  }
+  return out;
+}
+
 describe('human-projection SSOT (anti-drift)', () => {
   const files: SourceFile[] = [];
   collectFiles(SRC_ROOT, files);
@@ -149,6 +203,22 @@ describe('human-projection SSOT (anti-drift)', () => {
     const violations = findSlashCommandViolations(files);
     if (violations.length > 0) {
       console.error('Slash-command catalogue violations:', violations);
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('reason-projection derives migrated copy through the copy authority', () => {
+    const violations = findCopyDerivationViolations(files);
+    if (violations.length > 0) {
+      console.error('Copy-authority derivation violations:', violations);
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('no parallel per-code impact map exists outside the copy authority', () => {
+    const violations = findImpactMapViolations(files);
+    if (violations.length > 0) {
+      console.error('Parallel impact-map violations:', violations);
     }
     expect(violations).toEqual([]);
   });
@@ -237,6 +307,45 @@ describe('human-projection SSOT (anti-drift)', () => {
       ];
       expect(findRegistryViolations(fixture)).toEqual([]);
       expect(findSlashCommandViolations(fixture)).toEqual([]);
+    });
+
+    it('detects a parallel per-code impact map outside the copy authority', () => {
+      const fixture: SourceFile[] = [
+        {
+          rel: 'presentation/rogue-impact.ts',
+          content:
+            "export const MY_IMPACT = { VALIDATION_EVIDENCE_REQUIRED: impact: 'verification_incomplete' };",
+        },
+      ];
+      const violations = findImpactMapViolations(fixture);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]!.rule).toBe('parallel-impact-map');
+    });
+
+    it('detects an integration renderer inventing its own impact classification', () => {
+      const fixture: SourceFile[] = [
+        {
+          rel: 'integration/status-presentation.ts',
+          content:
+            "const impact = code === 'PLAN_REQUIRED' ? impact: 'workflow_blocked' : undefined;",
+        },
+      ];
+      const violations = findImpactMapViolations(fixture);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]!.rule).toBe('parallel-impact-map');
+    });
+
+    it('detects reason-projection not deriving copy from the copy authority', () => {
+      const fixture: SourceFile[] = [
+        {
+          rel: RECOVERY_AUTHORITY,
+          content:
+            "import { defaultReasonRegistry } from '../config/reasons.js';\nexport function projectReasonFromRegistry(code) { return null; }",
+        },
+      ];
+      const violations = findCopyDerivationViolations(fixture);
+      expect(violations).toHaveLength(2);
+      expect(violations.every((v) => v.rule === 'copy-authority-not-derived')).toBe(true);
     });
   });
 });

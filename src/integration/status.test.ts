@@ -36,6 +36,13 @@ import { makeState } from '../fixtures.js';
 import { isCommandAllowed, Command } from '../machine/commands.js';
 import { USER_GATES, TERMINAL } from '../machine/topology.js';
 import { computeRecordDigest } from '../state/evidence-plan.js';
+import type { PlanRecord } from '../state/evidence-plan.js';
+import type {
+  PlanApprovalCertificate,
+  PlanClaimDeclarations,
+} from '../state/proofgraph-approval.js';
+import { hashText } from '../shared/hashing.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
 
 // ─── Test Fixtures ────────────────────────────────────────────────────────────
 
@@ -317,6 +324,118 @@ describe('buildStatusProjection — CORNER', () => {
     expect(projection.allowedCommands).toContain('/ticket');
     expect(projection.allowedCommands).toContain('/architecture');
     expect(projection.allowedCommands).toContain('/review');
+  });
+});
+
+// ─── buildBlockedProjection — ProofGraph gate wiring (#695) ──────────────────
+
+describe('buildBlockedProjection — ProofGraph gate', () => {
+  const team = getPolicyPreset('team');
+  const CLAIM_ID = '00000000-0000-4000-8000-000000000001';
+  const CERT_ID = '00000000-0000-4000-8000-0000000000ce';
+
+  function declarations(): PlanClaimDeclarations {
+    return {
+      flow: 'plan',
+      version: 'v2',
+      claims: [
+        {
+          claimId: CLAIM_ID,
+          statement: 'x',
+          critical: true,
+          authoritySectionId: 's1',
+          claimScope: 'specific_behavior',
+          expectedCheckId: 'test',
+        },
+      ],
+    };
+  }
+
+  function certificate(): PlanApprovalCertificate {
+    const decls = declarations();
+    return {
+      flow: 'plan',
+      authorityDigest: 'plan-digest',
+      claimDeclarationsDigest: hashText(canonicalJsonStringify(decls)),
+      decisionAttestationDigest: 'd',
+      approvedAt: '2026-01-01T00:00:00.000Z',
+      approvedBy: 'reviewer',
+      certificateId: CERT_ID,
+      planVersion: 1,
+      planRecordDigest: 'record-digest',
+      reviewObligationId: null,
+      reviewEvidenceDigest: null,
+    };
+  }
+
+  function approvedPlan(): PlanRecord {
+    return {
+      current: {
+        body: 'x',
+        digest: 'plan-digest',
+        sections: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        recordDigest: 'record-digest',
+        planVersion: 1,
+        supersedesRecordDigest: null,
+        originatingReviewObligationId: null,
+        revisionReason: null,
+        lineageStatus: 'unavailable',
+      },
+      history: [],
+      claimDeclarations: declarations(),
+      approvalCertificate: certificate(),
+    };
+  }
+
+  it('carries the migrated gate code when the Evidence gate blocks a waiting session', () => {
+    const state: SessionState = {
+      ...makeMinimalState('EVIDENCE_REVIEW'),
+      policySnapshot: createPolicySnapshot(team, '2026-01-01T00:00:00.000Z', () => 'testdigest123'),
+      plan: approvedPlan(),
+    };
+    const blocker = buildBlockedProjection(state, team);
+    // Authorized critical claim is absent from the persisted proofGraph:
+    // the gate resolves to evaluation_unavailable, projecting the existing code.
+    expect(blocker.reasonCode).toBe('PROOFGRAPH_EVALUATION_UNAVAILABLE');
+  });
+
+  it('does not invent a gate code when the Evidence gate is satisfied', () => {
+    const state: SessionState = {
+      ...makeMinimalState('EVIDENCE_REVIEW'),
+      policySnapshot: createPolicySnapshot(team, '2026-01-01T00:00:00.000Z', () => 'testdigest123'),
+      plan: approvedPlan(),
+      proofGraph: {
+        version: 'proofgraph.v1',
+        evaluatedAt: '2026-01-01T00:00:00.000Z',
+        claims: [
+          {
+            claimId: CLAIM_ID,
+            statement: 'x',
+            signalClass: 'fact',
+            critical: true,
+            provenance: {
+              kind: 'canonical_authority',
+              authorityId: 'plan',
+              digest: 'd',
+              approval: {
+                certificateId: CERT_ID,
+                claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations())),
+                decisionAttestationDigest: 'd',
+                declarationId: CLAIM_ID,
+              },
+            },
+            evidenceRefs: [],
+            counterexampleRefs: [],
+            verificationState: 'PROVEN',
+          },
+        ],
+      },
+    };
+    const blocker = buildBlockedProjection(state, team);
+    // A satisfied gate projects no proofgraph reason code; the waiting blocker
+    // falls back to the generic waiting reason (reasonCode null at this phase).
+    expect(blocker.reasonCode).toBeNull();
   });
 });
 

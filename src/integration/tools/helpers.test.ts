@@ -69,6 +69,20 @@ describe('formatBlocked', () => {
     expect(presentation!.markdown.startsWith('\n')).toBe(false);
     expect(presentation!.markdown.endsWith('\n')).toBe(false);
   });
+
+  it('adds the migrated headline field only for migrated codes', () => {
+    const migrated = parseJSON(
+      formatBlocked('DISCOVERY_DRIFT_BLOCKED', { driftStatus: 'drifted' }),
+    );
+    expect(migrated.headline).toBe('Discovery drift blocks mutating tools');
+    // The registry-verbatim interpolated message is preserved in `message`,
+    // distinct from the context-free headline.
+    expect(migrated.message).toContain('Discovery drift verdict is drifted');
+    expect(migrated.message).not.toBe(migrated.headline);
+
+    const unmigrated = parseJSON(formatBlocked('COMMAND_NOT_ALLOWED'));
+    expect(unmigrated.headline).toBeUndefined();
+  });
 });
 
 describe('formatAutoAdvanceOverflow', () => {

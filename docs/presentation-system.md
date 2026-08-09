@@ -184,6 +184,39 @@ interface PresentationAction {
 Reason codes (e.g. `PLAN_APPROVE_WITH_TEXT`, `MISSING_EVIDENCE`) are always
 rendered in backticks. Never use reason codes as plain inline text.
 
+### 11.1 Human Projection for Migrated Reason Codes
+
+"Migrated" reason codes carry human-authored copy in the canonical copy table
+(`src/presentation/reason-copy.ts`, the `REASON_COPY` authority). A code is
+migrated exactly when it has an entry in that table; the projection derives its
+`impact` classification and its human copy from it and never from the technical
+`BlockedCategory` taxonomy.
+
+On the default human surface (`/status`, `/why`, `/finish`, and blocked tool
+results) a migrated code renders as:
+
+- **Headline replaces the interpolated registry message.** The context-free
+  `headline` is the `BlockerSection.text`, so `{placeholder}` interpolation
+  context never leaks onto the default surface.
+- **The registry-verbatim message is never lost.** It is carried as the
+  projection's `canonicalMessage` and rendered as `**Details:**` when it differs
+  from the headline text.
+- **The human-authored explanation renders as `**Why:**`** when present.
+- **Blocked tool-result JSON carries an additive `headline` field** (migrated
+  codes only), so plugin boundaries read the human copy without message parsing.
+  This is strictly additive — unmigrated blocked output is byte-identical.
+
+```markdown
+⚠ **Blocked:** `DISCOVERY_DRIFT_BLOCKED` — Discovery drift blocks mutating tools
+**Recovery:** Re-run discovery and flowguard_hydrate to reconcile drift against persisted evidence
+**Why:** The discovery surface drifted from the persisted binding and the onDrift policy blocks mutating tools. Reconcile drift before continuing.
+**Details:** Discovery drift verdict is drifted; policy onDrift=block stops mutating tools
+```
+
+The `**Details:**` line is omitted when `canonicalMessage` equals the display
+text, keeping migrated output concise while the diagnostic surface (diagnostics
+payload) still carries the verbatim message.
+
 ## 12. Density
 
 `compact` is the default and currently only density. Future expansions (e.g.

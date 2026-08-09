@@ -343,6 +343,37 @@ describe('buildStatusDocument', () => {
     expect(result).toContain('`MISSING`');
   });
 
+  it('uses the migrated headline, explanation, and canonical message for migrated blocker codes', () => {
+    const projection = makeBaseProjection({
+      blocker: {
+        reasonCode: 'DISCOVERY_DRIFT_BLOCKED',
+        reasonText: 'registry-verbatim interpolated message',
+      },
+      productNextAction: { primaryCommand: '/hydrate', summary: 'Reconcile drift.' },
+      conclusion: {
+        kind: 'next_action' as const,
+        action: {
+          invocation: '/hydrate',
+          description: 'Reconcile drift.',
+          visibility: 'recommended' as const,
+        },
+      },
+    });
+    const drift = makeDriftProjection();
+    const doc = buildCompactDoc({
+      status: projection,
+      discoveryHealth: null,
+      discoveryDrift: drift,
+    });
+    const result = renderMarkdown(doc);
+    // Headline replaces the registry-verbatim message on the human surface.
+    expect(result).toContain('— Discovery drift blocks mutating tools');
+    expect(result).not.toContain('registry-verbatim interpolated message');
+    // The human-authored explanation and the verbatim canonical message are preserved.
+    expect(result).toContain('**Why:** The discovery surface drifted from the persisted binding');
+    expect(result).toContain('**Details:**');
+  });
+
   it('omits blocker section when not blocked', () => {
     const projection = makeBaseProjection();
     const drift = makeDriftProjection();

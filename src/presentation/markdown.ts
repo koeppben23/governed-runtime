@@ -260,6 +260,12 @@ function renderBlocker(section: BlockerSection, warning: string): string {
   if (section.recovery) {
     lines.push(`**Recovery:** ${section.recovery}`);
   }
+  if (section.explanation) {
+    lines.push(`**Why:** ${section.explanation}`);
+  }
+  if (section.canonicalMessage && section.canonicalMessage !== section.text) {
+    lines.push(`**Details:** ${section.canonicalMessage}`);
+  }
   return lines.join('\n');
 }
 

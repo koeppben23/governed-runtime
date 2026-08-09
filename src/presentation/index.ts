@@ -9,10 +9,13 @@
 export { PHASE_LABELS } from './phase-labels.js';
 export { buildProductNextAction } from './next-action-copy.js';
 export type { UserImpact, HumanExplanation, RecoveryProjection } from './human-projection.js';
+export { REASON_COPY, isMigratedReasonCode, lookupReasonCopy } from './reason-copy.js';
+export type { MigratedReasonCopy } from './reason-copy.js';
 export {
   projectReasonFromRegistry,
   projectImpact,
   toRecoveryProjection,
+  projectDetailFields,
 } from './reason-projection.js';
 export type { ReasonProjection } from './reason-projection.js';
 export { buildPlanReviewCard } from './plan-review-card.js';

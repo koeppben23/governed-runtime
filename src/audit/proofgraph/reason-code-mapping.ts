@@ -5,7 +5,7 @@
  *
  * Both gate and status consume this mapping — no ad-hoc string projection.
  *
- * @version v1
+ * @version v2
  */
 
 /** Reason codes emitted by the enforcement projection. */
@@ -57,9 +57,39 @@ const ENFORCEMENT_REGISTRY_MAP: Record<EnforcementReasonCode, string> = {
   check_only_evidence: 'PROOFGRAPH_ASSERTION_BINDING_UNAVAILABLE',
 };
 
-/** Maps AssertionBindingReasonCode to registry BlockedReason codes. */
+/** Assertion binding reason codes emitted by the binding projection. */
 import type { AssertionBindingReasonCode } from '../../state/proofgraph.js';
 export type { AssertionBindingReasonCode };
+
+/**
+ * ProofGraph gate decision kinds, projected by computeProofGraphEnforcement.
+ * Owned here (with the gate→registry mapping authority) and re-exported by
+ * enforcement-projection.ts for consumers, mirroring `EnforcementReasonCode`.
+ */
+export type EnforcementDecisionKind =
+  | 'clear'
+  | 'evaluation_unavailable'
+  | 'risk_assessment_stale'
+  | 'certificate_invalid'
+  | 'critical_fact_required'
+  | 'facts_unproven';
+
+/**
+ * Maps a ProofGraph gate decision kind to its registered BlockedReason code.
+ * `clear` is not a gated outcome and maps to null (no registry code).
+ * Single authority shared by the review-decision rail and the status surface.
+ */
+export function mapGateKindToRegistryCode(kind: EnforcementDecisionKind): string | null {
+  return GATE_KIND_REGISTRY_MAP[kind] ?? null;
+}
+
+const GATE_KIND_REGISTRY_MAP: Partial<Record<EnforcementDecisionKind, string>> = {
+  evaluation_unavailable: 'PROOFGRAPH_EVALUATION_UNAVAILABLE',
+  risk_assessment_stale: 'PROOFGRAPH_RISK_ASSESSMENT_STALE',
+  certificate_invalid: 'PROOFGRAPH_CERTIFICATE_INVALID',
+  critical_fact_required: 'PROOFGRAPH_CRITICAL_FACT_REQUIRED',
+  facts_unproven: 'PROOFGRAPH_CRITICAL_FACTS_UNPROVEN',
+};
 
 export function mapBindingReasonToRegistryCode(reasonCode: AssertionBindingReasonCode): string {
   switch (reasonCode) {
