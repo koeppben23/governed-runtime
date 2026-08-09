@@ -160,16 +160,7 @@ function withGovernanceFooter(toolDef: ToolDefinition): ToolDefinition {
       let disposition: 'entered' | 'blocked' | 'failed' = 'entered';
       try {
         const result = await toolDef.execute(args, context);
-        // Determine disposition from the tool result structure.
-        // Blocked tools return JSON-encoded { error: true, ... }.
-        if (typeof result === 'string' && result.startsWith('{')) {
-          try {
-            const parsed = JSON.parse(result);
-            if (parsed && parsed.error === true) disposition = 'blocked';
-          } catch {
-            /* not valid JSON — treat as entered */
-          }
-        }
+        disposition = resultDisposition(result);
         let glyphProfile: GlyphProfile | undefined;
         if (needsPresentationProfile(result)) {
           try {
@@ -195,6 +186,19 @@ function emitActionInvoked(
   context: { worktree?: string; sessionID?: string },
 ): void {
   emitTelemetryEvent({ event: 'action_invoked', disposition }, context.sessionID, undefined);
+}
+
+function resultDisposition(result: ToolResult): 'entered' | 'blocked' | 'failed' {
+  const output = typeof result === 'string' ? result : result.output;
+  if (typeof output === 'string' && output.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(output);
+      if (parsed && parsed.error === true) return 'blocked';
+    } catch {
+      /* not valid JSON — treat as entered */
+    }
+  }
+  return 'entered';
 }
 
 // ── Focused tools ────────────────────────────────────────────────────────────

@@ -174,8 +174,9 @@ export function buildNextActionPresentation(
     sections: [],
     conclusion,
   };
+  const markdown = renderMarkdown(document);
   emitPresentationTelemetry(document, state.phase, state.id);
-  return { markdown: renderMarkdown(document) };
+  return { markdown };
 }
 
 function presentationFormForConclusion(
@@ -270,14 +271,13 @@ export function formatRailResult(
 }
 
 function buildEvidenceApprovalCompletionPresentation(state: SessionState): { markdown: string } {
-  return {
-    markdown: renderMarkdown(
-      buildEvidenceApprovalCompletionDocument({
-        proofSummary: projectCompletionProofStatus(state),
-        exportAction: projectStatusActionFromCommand('/export', 'recommended'),
-      }),
-    ),
-  };
+  const document = buildEvidenceApprovalCompletionDocument({
+    proofSummary: projectCompletionProofStatus(state),
+    exportAction: projectStatusActionFromCommand('/export', 'recommended'),
+  });
+  const markdown = renderMarkdown(document);
+  emitPresentationTelemetry(document, state.phase, state.id);
+  return { markdown };
 }
 
 /**

@@ -23,6 +23,8 @@ export {
   getHumanProjectionTelemetrySink,
   setHumanProjectionTelemetrySink,
   resetHumanProjectionTelemetrySink,
+  initHumanProjectionTelemetrySink,
 } from './sink.js';
 
 export { emitTelemetryEvent } from './emitter.js';
+export type { TelemetryEventBody } from './emitter.js';

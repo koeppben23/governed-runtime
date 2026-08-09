@@ -5,11 +5,14 @@
  * Observes PresentationDocument emission and conclusion actions
  * without affecting the canonical FlowGuard result.
  *
- * @version v1
+ * @version v2
  */
 
-import type { PresentationDocument } from '../../presentation/index.js';
-import { emitTelemetryEvent } from '../../telemetry/human-projection/emitter.js';
+import type { PresentationDocument, PresentationAction } from '../../presentation/index.js';
+import {
+  emitTelemetryEvent,
+  type TelemetryEventBody,
+} from '../../telemetry/human-projection/emitter.js';
 
 export function emitPresentationTelemetry(
   document: PresentationDocument,
@@ -21,15 +24,15 @@ export function emitPresentationTelemetry(
 }
 
 function emitRendered(document: PresentationDocument, sessionId: string, phase: string): void {
-  const payload: Record<string, unknown> = {
+  const body: TelemetryEventBody = {
     event: 'presentation_rendered',
-    documentKind: document.kind,
+    documentKind: document.kind as 'compact_card' | 'review_card' | 'diagnostic_card',
+    ...('form' in document && document.form ? { form: document.form } : {}),
+    ...('conclusion' in document && document.conclusion
+      ? { conclusionKind: document.conclusion.kind as string }
+      : {}),
   };
-  if ('form' in document && document.form) payload.form = document.form;
-  if ('conclusion' in document && document.conclusion) {
-    payload.conclusionKind = document.conclusion.kind;
-  }
-  emitTelemetryEvent(payload, sessionId, phase);
+  emitTelemetryEvent(body, sessionId, phase);
 }
 
 function emitConclusionActions(
@@ -40,28 +43,25 @@ function emitConclusionActions(
   if (!('conclusion' in document) || !document.conclusion) return;
   const c = document.conclusion;
   if (c.kind === 'next_action' && c.action) {
-    emitTelemetryEvent(
-      {
-        event: 'action_presented',
-        intent: (c.action as unknown as Record<string, unknown>).intent,
-        visibility: c.action.visibility,
-        conclusionKind: 'next_action',
-      },
-      sessionId,
-      phase,
-    );
+    emitActionPresented(c.action, 'next_action', sessionId, phase);
   } else if (c.kind === 'decision_required' && c.actions) {
     for (const action of c.actions) {
-      emitTelemetryEvent(
-        {
-          event: 'action_presented',
-          intent: (action as unknown as Record<string, unknown>).intent,
-          visibility: action.visibility,
-          conclusionKind: 'decision_required',
-        },
-        sessionId,
-        phase,
-      );
+      emitActionPresented(action, 'decision_required', sessionId, phase);
     }
   }
+}
+
+function emitActionPresented(
+  action: PresentationAction,
+  conclusionKind: 'next_action' | 'decision_required',
+  sessionId: string,
+  phase: string,
+): void {
+  const body: TelemetryEventBody = {
+    event: 'action_presented',
+    intent: action.intent,
+    visibility: action.visibility,
+    conclusionKind,
+  };
+  emitTelemetryEvent(body, sessionId, phase);
 }

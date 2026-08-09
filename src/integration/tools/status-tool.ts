@@ -98,6 +98,7 @@ import { buildStatusDocument, buildNoSessionDocument } from '../status-presentat
 import { buildWhyDocument } from '../why-presentation.js';
 import { buildFinishDocument } from '../finish-presentation.js';
 import { renderMarkdown } from '../../presentation/index.js';
+import { emitTelemetryEvent } from '../../telemetry/human-projection/emitter.js';
 
 /**
  * Build identity for the governanceMandates block — surfaces the installed
@@ -245,6 +246,11 @@ async function resolveProjection(input: ResolveProjectionInput): Promise<string 
     const blocked = buildBlockedProjection(state, policy);
     const whyPres = buildWhyPresentationProjection(state, policy, blocked);
     const whyDoc = buildWhyDocument(whyPres);
+    emitTelemetryEvent(
+      { event: 'detail_requested', from: 'summary', to: 'explanation', surface: 'why' },
+      state.id,
+      state.phase,
+    );
     return appendNextAction(
       JSON.stringify({
         phase: state.phase,

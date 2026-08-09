@@ -38,3 +38,24 @@ export function setHumanProjectionTelemetrySink(sink: HumanProjectionTelemetrySi
 export function resetHumanProjectionTelemetrySink(): void {
   currentSink = NOOP_SINK;
 }
+
+/**
+ * Initialise the telemetry sink based on config.
+ * When disabled, sets the no-op sink. When enabled, sets a diagnostic
+ * console sink (local persistence is deferred to a future PR).
+ */
+export function initHumanProjectionTelemetrySink(enabled: boolean): void {
+  currentSink = enabled ? CONSOLE_SINK : NOOP_SINK;
+}
+
+const CONSOLE_SINK: HumanProjectionTelemetrySink = {
+  record(event): void {
+    try {
+      const intent =
+        'intent' in event ? ((event as unknown as { intent?: string }).intent ?? '-') : '-';
+      console.error(`[fcg-telemetry] ${event.event} intent=${intent}`);
+    } catch {
+      /* sink failure is explicitly non-blocking */
+    }
+  },
+};
