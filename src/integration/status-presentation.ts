@@ -21,6 +21,7 @@ import { INSTALLED_COMMANDS } from './installed-commands.js';
 import {
   normalizedMarkdown,
   lookupStatusLabel,
+  projectReasonFromRegistry,
   type PresentationDocument,
   type PresentationSection,
   type PresentationConclusion,
@@ -152,13 +153,18 @@ function buildStatusSection(status: StatusProjection): PresentationSection {
 
 function buildBlockerSection(status: StatusProjection): BlockerSection {
   const blocker = status.blocker!;
+  // Recovery guidance comes from the canonical reason registry via the Human
+  // Projection — never from general next-action copy. When no canonical
+  // reason code exists, recovery is intentionally omitted (no invented steps).
+  const recovery = blocker.reasonCode
+    ? projectReasonFromRegistry(blocker.reasonCode)?.recovery.primary
+    : undefined;
   return {
     kind: 'blocker',
     heading: 'Blocked',
     code: blocker.reasonCode ?? null,
     text: blocker.reasonText!,
-    // recovery must come from the canonical projection, not from
-    // general next-action copy — omitted until the projection carries it
+    ...(recovery ? { recovery } : {}),
   };
 }
 

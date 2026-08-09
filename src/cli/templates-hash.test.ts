@@ -232,9 +232,13 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // replaced by assertion: { providerId, localId } in plan template examples.
     // Refreshed for same-check closure: replaced "MUST differ from expectedCheckId"
     // with bindability-oriented guidance and "structurally bindable counterexample check".
+    // Refreshed for English-only command copy: the /why and /finish verbatim-render
+    // steps were localized to English-only (no non-English phrasing) to match the
+    // single-language product surface. Changes both bodies and therefore the
+    // COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '9c4a8ee7925635f687081e389ec6ef64f99af6b55e706d77a7fba823e7f818d2',
+      '70ca82b99d3e93ae64c83fb9cfd6bb59ee6f6f8af0d98002ea6ea099f63ca72d',
     );
   });
 

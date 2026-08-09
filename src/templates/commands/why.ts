@@ -15,9 +15,9 @@ Show the user what is blocking progress and how to resolve it.
 
 1. Call \`flowguard_status({ whyBlocked: true })\`.
 2. Read the \`whyBlocked\` object (\`whyBlocked.reasonText\`, \`whyBlocked.reasonCode\`, \`whyBlocked.recoveryHint\`, \`whyBlocked.nextResolvableCommand\`).
-3. Wenn \`presentation.markdown\` im Response vorhanden ist, gib es wörtlich
-   aus — nicht umformulieren, nicht interpretieren.
-   Andernfalls gib die Projektion aus, ohne eigene Semantik zu erfinden.
+3. If \`presentation.markdown\` is present in the response, output it verbatim —
+   do not rephrase or interpret it.
+   Otherwise output the projection without inventing semantics.
 
 ## Rules
 
