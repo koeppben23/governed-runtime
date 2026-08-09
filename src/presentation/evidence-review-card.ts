@@ -159,6 +159,52 @@ function buildDecisionSection(input: EvidenceReviewCardInput): PresentationSecti
   return { kind: 'keyValue', heading: 'Decision', items };
 }
 
+/**
+ * Build FindingGroup objects grouped by the canonical Finding severity.
+ * Each group preserves the reviewer's actual severity — never invents one.
+ */
+function buildFindingGroups(
+  label: string,
+  findings: ReadonlyArray<{
+    severity: string;
+    category: string;
+    message: string;
+    location?: string;
+  }>,
+): FindingGroup[] {
+  const bySeverity = new Map<string, FindingItem[]>();
+  for (const f of findings) {
+    const items = bySeverity.get(f.severity) ?? [];
+    items.push({
+      category: f.category,
+      message: f.message,
+      ...(f.location ? { location: f.location } : {}),
+    });
+    bySeverity.set(f.severity, items);
+  }
+  const severityOrder = ['critical', 'major', 'minor'];
+  return severityOrder
+    .filter((s) => bySeverity.has(s))
+    .map((s) => ({
+      severity: severityToPresentation(s),
+      label: `${label} (${s})`,
+      items: bySeverity.get(s)!,
+    }));
+}
+
+function severityToPresentation(severity: string): FindingGroup['severity'] {
+  switch (severity) {
+    case 'critical':
+      return 'critical';
+    case 'major':
+      return 'major';
+    case 'minor':
+      return 'warning';
+    default:
+      return 'info';
+  }
+}
+
 /** Build the completion presentation after an EVIDENCE_REVIEW approval. */
 export function buildEvidenceApprovalCompletionDocument(input: {
   proofSummary: CompactProofPresentation;
@@ -180,14 +226,7 @@ function appendAdvisoryFindingsSections(
   >,
 ): void {
   if (input.blockingIssues && input.blockingIssues.length > 0) {
-    const items: FindingItem[] = input.blockingIssues.map((finding) => ({
-      category: finding.category,
-      message: finding.message,
-      ...(finding.location ? { location: finding.location } : {}),
-    }));
-    // Blocking is the operative classification; the presentation severity
-    // reflects blocker status, not an invented canonical severity.
-    const groups: FindingGroup[] = [{ severity: 'major', label: 'Blocking Issues', items }];
+    const groups = buildFindingGroups('Blocking Issues', input.blockingIssues);
     sections.push({ kind: 'findings', heading: 'Reviewer Findings', groups });
   }
   if (input.majorRisks && input.majorRisks.length > 0) {
