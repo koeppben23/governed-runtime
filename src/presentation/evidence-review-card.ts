@@ -174,8 +174,20 @@ export function buildEvidenceApprovalCompletionDocument(input: {
 
 function appendAdvisoryFindingsSections(
   sections: PresentationSection[],
-  input: Pick<EvidenceReviewCardInput, 'majorRisks' | 'missingVerification' | 'unknowns'>,
+  input: Pick<
+    EvidenceReviewCardInput,
+    'blockingIssues' | 'majorRisks' | 'missingVerification' | 'scopeCreep' | 'unknowns'
+  >,
 ): void {
+  if (input.blockingIssues && input.blockingIssues.length > 0) {
+    const items: FindingItem[] = input.blockingIssues.map((finding) => ({
+      category: finding.category,
+      message: finding.message,
+      ...(finding.location ? { location: finding.location } : {}),
+    }));
+    const groups: FindingGroup[] = [{ severity: 'critical', label: 'Blocking Issues', items }];
+    sections.push({ kind: 'findings', heading: 'Reviewer Findings', groups });
+  }
   if (input.majorRisks && input.majorRisks.length > 0) {
     const items: FindingItem[] = input.majorRisks.map((finding) => ({
       category: finding.category,
@@ -184,6 +196,13 @@ function appendAdvisoryFindingsSections(
     }));
     const groups: FindingGroup[] = [{ severity: 'major', label: 'Major Risks', items }];
     sections.push({ kind: 'findings', heading: 'Reviewer Findings', groups });
+  }
+  if (input.scopeCreep && input.scopeCreep.length > 0) {
+    sections.push({
+      kind: 'bulletList',
+      heading: `Scope Creep (${input.scopeCreep.length})`,
+      items: input.scopeCreep,
+    });
   }
   if (input.missingVerification && input.missingVerification.length > 0) {
     sections.push({

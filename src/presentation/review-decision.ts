@@ -56,8 +56,14 @@ export function buildReviewDecisionConclusion(
 /**
  * Compressed readiness posture of the current review state.
  *
- *   ready     — no canonical blockers prevent the human decision.
- *   not_ready — canonical blockers exist that prevent the decision.
+ *   ready     — no canonical review-finding blockers prevent the decision.
+ *   not_ready — canonical review-finding blockers exist.
+ *
+ * This reflects ReviewFindings.blockingIssues only. Canonical governance or
+ * verification blockers (ProofGraph gate, registry) are projected separately
+ * through the existing conclusion/blocker authorities. The review card's
+ * canonical conclusion remains the authority for whether the human decision
+ * is actually available.
  *
  * Presentation-only. Never authorizes approval. Risk visibility does not
  * change readiness; the human decides.
@@ -102,11 +108,11 @@ interface ReadinessCopy {
 export const REVIEW_DECISION_COPY: Readonly<Record<ReviewDecisionReadiness, ReadinessCopy>> = {
   ready: {
     headline: 'Ready for human decision.',
-    explanation: 'No blocking review issues remain.',
+    explanation: 'No blocking review findings remain.',
   },
   not_ready: {
     headline: 'Not ready for decision.',
-    explanation: 'Blocking review issues must be resolved before a decision can proceed.',
+    explanation: 'Blocking review findings must be resolved before a decision can proceed.',
   },
 };
 
@@ -141,13 +147,17 @@ function toDecisionIssues(
   }>,
 ): DecisionIssue[] {
   if (!findings || findings.length === 0) return [];
-  return findings.map((f) => ({
-    source,
-    title: f.message,
-    ...(f.severity ? { detail: `Severity: ${f.severity}` } : {}),
-    ...(f.location ? { detail: `${f.location}` } : {}),
-    ...(f.findingId ? { findingId: f.findingId } : {}),
-  }));
+  return findings.map((f) => {
+    const detail = [f.severity ? `Severity: ${f.severity}` : null, f.location ?? null]
+      .filter(Boolean)
+      .join(' · ');
+    return {
+      source,
+      title: f.message,
+      ...(detail ? { detail } : {}),
+      ...(f.findingId ? { findingId: f.findingId } : {}),
+    };
+  });
 }
 
 function toAdvisories(input: ReviewDecisionInput): DecisionAdvisory[] {

@@ -98,7 +98,7 @@ import { buildLatestImplementationReviewSummary } from './review-summary.js';
 import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
 import { buildHostTaskChallengeContract } from '../review/host-task-policy.js';
 import type { ImplementRuntime } from './implement-shared.js';
-import { nextImplementationReviewIteration } from './implement-shared.js';
+import { nextImplementationReviewIteration, normalizeHostFindings } from './implement-shared.js';
 import { projectImplementationProofStatus } from '../proofgraph/proof-summary-projectors.js';
 import type { CompactProofPresentation } from '../../presentation/proof-model.js';
 import {
@@ -391,7 +391,7 @@ function appendImplReviewState(input: {
   );
   const existingFindings = runtime.state.implReviewFindings ?? [];
   const newReviewFindings = effectiveFindings
-    ? [...existingFindings, effectiveFindings]
+    ? [...existingFindings, normalizeHostFindings(effectiveFindings)]
     : existingFindings;
   const reviewedState: SessionState = {
     ...runtime.state,

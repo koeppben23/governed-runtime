@@ -89,6 +89,7 @@ import {
 import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
 import { buildReviewerProofContext } from '../review/proof-context.js';
 import type { ImplementRuntime, ImplementationCeremony } from './implement-shared.js';
+import { normalizeHostFindings } from './implement-shared.js';
 import {
   activateImplementationReviewObligation,
   nextImplementationReviewIteration,
@@ -327,7 +328,7 @@ export async function handleImplRecord(
   const implEvidence = await buildImplEvidence(input, files, domainFiles);
   const existingFindings = input.state.implReviewFindings ?? [];
   const newReviewFindings = input.args.reviewFindings
-    ? [...existingFindings, input.args.reviewFindings]
+    ? [...existingFindings, normalizeHostFindings(input.args.reviewFindings)]
     : existingFindings;
   const reviewIteration = nextImplementationReviewIteration(input.state);
   const planVersion = (input.state.plan?.history.length ?? 0) + 1;

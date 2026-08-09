@@ -9,7 +9,7 @@ describe('projectReviewDecision', () => {
     expect(result.blockers).toEqual([]);
     expect(result.risks).toEqual([]);
     expect(result.advisories).toEqual([]);
-    expect(result.summary).toContain('No blocking review issues remain');
+    expect(result.summary).toContain('No blocking review findings remain');
   });
 
   it('blockingIssues produce not_ready readiness', () => {
