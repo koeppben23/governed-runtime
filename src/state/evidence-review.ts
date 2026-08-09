@@ -96,6 +96,7 @@ export const Finding = z
     category: z.enum(['completeness', 'correctness', 'feasibility', 'risk', 'quality']),
     message: z.string(),
     location: z.string().optional(),
+    findingId: z.string().uuid().optional(),
   })
   .readonly();
 export type Finding = z.infer<typeof Finding>;

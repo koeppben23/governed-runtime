@@ -11,10 +11,12 @@ import {
   nextImplementationReviewIteration,
   buildImplementRuntime,
   validateImplementSequence,
+  normalizeHostFindings,
   type ImplementArgs,
   type ImplementRuntime,
 } from './implement-shared.js';
 import type { SessionState, Phase } from '../../state/schema.js';
+import type { ReviewFindings } from '../../state/evidence.js';
 
 // ─── Minimal Fixtures ─────────────────────────────────────────────────────────
 
@@ -85,6 +87,27 @@ function flowGuardPolicy(overrides: Record<string, unknown> = {}) {
       ...((overrides.selfReview as Record<string, unknown>) ?? {}),
     },
   } as unknown as ImplementRuntime['policy'];
+}
+
+function makeReviewFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings {
+  return {
+    iteration: 1,
+    planVersion: 1,
+    reviewMode: 'subagent',
+    overallVerdict: 'changes_requested',
+    blockingIssues: [],
+    majorRisks: [],
+    missingVerification: [],
+    scopeCreep: [],
+    unknowns: [],
+    reviewedBy: {
+      actorId: 'reviewer',
+      reviewedAt: '2026-01-01T00:00:00.000Z',
+      reviewMode: 'subagent',
+    },
+    reviewedAt: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  } as any;
 }
 
 // ─── nextImplementationReviewIteration ────────────────────────────────────────
@@ -223,5 +246,79 @@ describe('validateImplementSequence', () => {
       implementation: {} as unknown as SessionState['implementation'],
     });
     expect(validateImplementSequence(implementArgs({ reviewVerdict: 'accept' }), s)).toBeNull();
+  });
+});
+
+// ─── Host Finding Identity Normalization ─────────────────────────────────────
+
+describe('normalizeHostFindings', () => {
+  it('mints host-assigned findingId on blockingIssues', () => {
+    const findings = makeReviewFindings({
+      blockingIssues: [
+        {
+          severity: 'critical' as const,
+          category: 'correctness' as const,
+          message: 'Missing null check',
+        },
+      ],
+    } as any);
+    const result = normalizeHostFindings(findings);
+    expect(result.blockingIssues[0]!.findingId).toBeTruthy();
+    expect(result.blockingIssues[0]!.findingId).toMatch(/^[a-f0-9-]{36}$/);
+  });
+
+  it('mints host-assigned findingId on majorRisks', () => {
+    const findings = makeReviewFindings({
+      majorRisks: [
+        { severity: 'major' as const, category: 'risk' as const, message: 'Retry untested' },
+      ],
+    } as any);
+    const result = normalizeHostFindings(findings);
+    expect(result.majorRisks[0]!.findingId).toBeTruthy();
+  });
+
+  it('overwrites reviewer-supplied findingId', () => {
+    const findings = makeReviewFindings({
+      blockingIssues: [
+        {
+          severity: 'critical' as const,
+          category: 'correctness' as const,
+          message: 'Issue',
+          findingId: 'reviewer-supplied-bad-uuid',
+        },
+      ],
+    } as any);
+    const result = normalizeHostFindings(findings);
+    expect(result.blockingIssues[0]!.findingId).not.toBe('reviewer-supplied-bad-uuid');
+    expect(result.blockingIssues[0]!.findingId).toMatch(/^[a-f0-9-]{36}$/);
+  });
+
+  it('assigns unique findingId per finding', () => {
+    const findings = makeReviewFindings({
+      blockingIssues: [
+        { severity: 'critical' as const, category: 'correctness' as const, message: 'Issue A' },
+        { severity: 'major' as const, category: 'completeness' as const, message: 'Issue B' },
+      ],
+    } as any);
+    const result = normalizeHostFindings(findings);
+    expect(result.blockingIssues[0]!.findingId).not.toBe(result.blockingIssues[1]!.findingId);
+  });
+
+  it('preserves all non-identity finding fields', () => {
+    const findings = makeReviewFindings({
+      blockingIssues: [
+        {
+          severity: 'critical' as const,
+          category: 'correctness' as const,
+          message: 'Issue',
+          location: 'src/foo.ts',
+        },
+      ],
+    } as any);
+    const result = normalizeHostFindings(findings);
+    expect(result.blockingIssues[0]!.severity).toBe('critical');
+    expect(result.blockingIssues[0]!.category).toBe('correctness');
+    expect(result.blockingIssues[0]!.message).toBe('Issue');
+    expect(result.blockingIssues[0]!.location).toBe('src/foo.ts');
   });
 });

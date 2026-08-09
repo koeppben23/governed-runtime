@@ -302,6 +302,28 @@ Default `/why` uses `detail: 'explanation'`:
 At `detail: 'diagnostic'`, canonical reason codes, registry messages, and
 full ProofGraph diagnostic claim detail are visible.
 
+### 12.3 Review Decision UX
+
+Review cards surface a compressed `ReviewDecisionProjection` before
+detailed findings. The projection derives readiness from canonical review
+state only — never from severity or prose matching.
+
+| Readiness   | Meaning                                                         |
+| ----------- | --------------------------------------------------------------- |
+| `ready`     | No canonical blocking review issues prevent the human decision. |
+| `not_ready` | Canonical blockers exist that prevent the decision.             |
+
+`majorRisks` do not affect readiness — they are visible as decision context
+but never create a synthetic acceptance gate. `missingVerification`,
+`scopeCreep`, and `unknowns` are projected as advisories (visible, non-blocking).
+
+Key invariant:
+
+> Review risks inform the human decision; they do not create decision
+> authority or decision prohibition.
+
+`ready ≠ approved`. The human always decides.
+
 ## 13. Density
 
 `compact` is the default and currently only density. Future expansions (e.g.

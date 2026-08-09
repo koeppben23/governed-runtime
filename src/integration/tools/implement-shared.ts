@@ -139,3 +139,27 @@ export function validateImplementSequence(args: ImplementArgs, state: SessionSta
   }
   return null;
 }
+
+// ─── Host Identity Normalization ──────────────────────────────────────────────
+
+/**
+ * Normalize reviewer-supplied findings into host-authoritative identity.
+ *
+ * Reviewer-supplied `findingId` values are not trusted — the host mints
+ * fresh UUIDs for every finding. Legacy findings without an ID remain
+ * readable without one. Never trusts, preserves, or forwards a reviewer-
+ * supplied UUID as finding identity.
+ */
+export function normalizeHostFindings(findings: ReviewFindings): ReviewFindings {
+  return {
+    ...findings,
+    blockingIssues: findings.blockingIssues.map((f) => ({
+      ...f,
+      findingId: crypto.randomUUID(),
+    })),
+    majorRisks: findings.majorRisks.map((f) => ({
+      ...f,
+      findingId: crypto.randomUUID(),
+    })),
+  };
+}

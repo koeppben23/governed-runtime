@@ -138,6 +138,9 @@ describe('presentation/index.ts barrel', () => {
     'buildProofGraphSection',
     'USER_IMPACT_COPY',
     'humanImpactText',
+    'projectReviewDecision',
+    'REVIEW_DECISION_COPY',
+    'buildReviewDecisionConclusion',
   ] as const;
 
   const INTERNAL_SYMBOLS = [

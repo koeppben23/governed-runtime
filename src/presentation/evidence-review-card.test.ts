@@ -178,6 +178,24 @@ describe('buildEvidenceReviewCard', () => {
     expect(card).toContain('Production contention is unknown.');
   });
 
+  it('renders blocking issues with canonical severity (never invents one)', () => {
+    const card = buildEvidenceReviewCard({
+      ...baseInput,
+      blockingIssues: [
+        {
+          severity: 'minor',
+          category: 'completeness',
+          message: 'Docstring missing.',
+        },
+      ],
+    });
+    expect(card).toContain('## Reviewer Findings');
+    expect(card).toContain('Blocking Issues (minor)');
+    expect(card).toContain('Docstring missing.');
+    // Must not claim critical severity for a minor finding
+    expect(card).not.toContain('Blocking Issues (critical)');
+  });
+
   it('ASCII glyph profile uses [WARN] prefix for force-convergence', () => {
     const card = buildEvidenceReviewCard(
       {

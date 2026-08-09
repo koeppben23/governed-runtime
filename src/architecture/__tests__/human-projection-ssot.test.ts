@@ -369,3 +369,116 @@ describe('human-projection SSOT (anti-drift)', () => {
     });
   });
 });
+
+// ─── Review Decision SSOT ─────────────────────────────────────────────────────
+
+const REVIEW_DECISION_AUTHORITY = 'presentation/review-decision.ts';
+
+/**
+ * Detect severity-based blocker classification in presentation/renderer modules.
+ * Patterns like: severity === 'critical' ? blocker : risk
+ * Merely referencing severity for display grouping is legitimate.
+ */
+function hasSeverityBlockerLogic(content: string): boolean {
+  // Ternary: severity === 'critical' ? blocker : risk
+  if (
+    /severity\s*===?\s*['"]critical['"]\s*\?/.test(content) ||
+    /severity\s*===?\s*['"]major['"]\s*\?/.test(content)
+  )
+    return true;
+  // if/else: if (severity === 'critical') return blocker; else return risk
+  if (
+    /if\s*\(.*severity\s*===?\s*['"]critical['"]\)/.test(content) ||
+    /if\s*\(.*severity\s*===?\s*['"]major['"]\)/.test(content)
+  )
+    return true;
+  return false;
+}
+
+/**
+ * Detect prose-based blocker/risk classification.
+ * Patterns like: message.includes('block'), .startsWith('risk'), regex on finding text.
+ */
+function hasProseBlockingLogic(content: string): boolean {
+  if (/\.message\s*\.\s*includes\(/.test(content)) return true;
+  if (/\.message\s*\.\s*startsWith\(/.test(content)) return true;
+  if (/\.message\s*\.\s*match\(/.test(content)) return true;
+  if (/\.message\s*\.\s*test\(/.test(content)) return true;
+  return false;
+}
+
+describe('review-decision SSOT', () => {
+  const files = collectPresentationFiles();
+
+  it('no module derives blocker/risk from severity outside review-decision authority', () => {
+    const violations: string[] = [];
+    for (const { rel, content } of files) {
+      if (rel === REVIEW_DECISION_AUTHORITY) continue;
+      if (!rel.startsWith('presentation/') && !rel.startsWith('integration/')) continue;
+      if (hasSeverityBlockerLogic(content)) {
+        violations.push(
+          `${rel}: derives blocker/risk from severity (severity ≠ blocking authority)`,
+        );
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('no module classifies findings by prose matching', () => {
+    const violations: string[] = [];
+    for (const { rel, content } of files) {
+      if (rel === REVIEW_DECISION_AUTHORITY) continue;
+      if (!rel.startsWith('presentation/') && !rel.startsWith('integration/')) continue;
+      if (hasProseBlockingLogic(content)) {
+        violations.push(`${rel}: classifies findings by prose matching (use structured fields)`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('REVIEW_DECISION_COPY authority is not duplicated', () => {
+    const violations: string[] = [];
+    const PERMITTED_CONSUMERS = new Set([
+      REVIEW_DECISION_AUTHORITY,
+      'presentation/review-decision.test.ts',
+      'presentation/evidence-review-card.ts',
+      'presentation/plan-review-card.ts',
+      'presentation/architecture-review-card.ts',
+    ]);
+    for (const { rel, content } of files) {
+      if (PERMITTED_CONSUMERS.has(rel)) continue;
+      if (!rel.startsWith('presentation/') && !rel.endsWith('-presentation.ts')) continue;
+      if (
+        content.includes("'Ready for human decision'") ||
+        content.includes("'Not ready for decision'")
+      ) {
+        violations.push(`${rel}: duplicates review decision copy outside authority`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  describe('negative fixtures — prove the detectors fire', () => {
+    it('detects severity-based blocker logic', () => {
+      expect(
+        hasSeverityBlockerLogic("if (finding.severity === 'critical') return 'blocker';"),
+      ).toBe(true);
+    });
+
+    it('detects prose-based finding classification', () => {
+      expect(hasProseBlockingLogic('if (finding.message.includes("block")) return true;')).toBe(
+        true,
+      );
+    });
+
+    it('does NOT flag legitimate structured-field access', () => {
+      expect(hasSeverityBlockerLogic('const severity = finding.severity;')).toBe(false);
+    });
+  });
+});
+
+function collectPresentationFiles(): { rel: string; content: string }[] {
+  const files: { rel: string; content: string }[] = [];
+  collectFiles(SRC_ROOT, files);
+  return files;
+}

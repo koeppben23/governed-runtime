@@ -50,3 +50,149 @@ export function buildReviewDecisionConclusion(
 
   return { kind: 'terminal', message: productNextAction.text };
 }
+
+// ─── Review Decision Projection ────────────────────────────────────────────────
+
+/**
+ * Compressed readiness posture of the current review state.
+ *
+ *   ready     — no canonical review-finding blockers prevent the decision.
+ *   not_ready — canonical review-finding blockers exist.
+ *
+ * This reflects ReviewFindings.blockingIssues only. Canonical governance or
+ * verification blockers (ProofGraph gate, registry) are projected separately
+ * through the existing conclusion/blocker authorities. The review card's
+ * canonical conclusion remains the authority for whether the human decision
+ * is actually available.
+ *
+ * Presentation-only. Never authorizes approval. Risk visibility does not
+ * change readiness; the human decides.
+ */
+export type ReviewDecisionReadiness = 'ready' | 'not_ready';
+
+/** Canonical source category of a decision-relevant issue. */
+export type DecisionIssueSource = 'review_finding' | 'verification' | 'governance' | 'policy';
+
+/** One decision-relevant issue, projected from canonical review/governance data. */
+export interface DecisionIssue {
+  readonly source: DecisionIssueSource;
+  readonly title: string;
+  readonly detail?: string;
+  readonly findingId?: string;
+  readonly claimId?: string;
+  readonly reasonCode?: string;
+}
+
+/** Review observations that do not affect readiness but remain visible. */
+export type DecisionAdvisory =
+  | { readonly kind: 'missing_verification'; readonly text: string }
+  | { readonly kind: 'scope_creep'; readonly text: string }
+  | { readonly kind: 'unknown'; readonly text: string };
+
+/** Canonical, read-only review decision projection. */
+export interface ReviewDecisionProjection {
+  readonly readiness: ReviewDecisionReadiness;
+  readonly blockers: readonly DecisionIssue[];
+  readonly risks: readonly DecisionIssue[];
+  readonly advisories: readonly DecisionAdvisory[];
+  readonly summary: string;
+}
+
+// ─── Readiness Copy ────────────────────────────────────────────────────────────
+
+interface ReadinessCopy {
+  readonly headline: string;
+  readonly explanation: string;
+}
+
+export const REVIEW_DECISION_COPY: Readonly<Record<ReviewDecisionReadiness, ReadinessCopy>> = {
+  ready: {
+    headline: 'Ready for human decision.',
+    explanation: 'No blocking review findings remain.',
+  },
+  not_ready: {
+    headline: 'Not ready for decision.',
+    explanation: 'Blocking review findings must be resolved before a decision can proceed.',
+  },
+};
+
+// ─── Projector ─────────────────────────────────────────────────────────────────
+
+export interface ReviewDecisionInput {
+  readonly blockingIssues?: ReadonlyArray<{
+    readonly message: string;
+    readonly severity?: string;
+    readonly category?: string;
+    readonly location?: string;
+    readonly findingId?: string;
+  }>;
+  readonly majorRisks?: ReadonlyArray<{
+    readonly message: string;
+    readonly severity?: string;
+    readonly category?: string;
+    readonly location?: string;
+  }>;
+  readonly missingVerification?: readonly string[];
+  readonly scopeCreep?: readonly string[];
+  readonly unknowns?: readonly string[];
+}
+
+function toDecisionIssues(
+  source: DecisionIssueSource,
+  findings?: ReadonlyArray<{
+    readonly message: string;
+    readonly severity?: string;
+    readonly location?: string;
+    readonly findingId?: string;
+  }>,
+): DecisionIssue[] {
+  if (!findings || findings.length === 0) return [];
+  return findings.map((f) => {
+    const detail = [f.severity ? `Severity: ${f.severity}` : null, f.location ?? null]
+      .filter(Boolean)
+      .join(' · ');
+    return {
+      source,
+      title: f.message,
+      ...(detail ? { detail } : {}),
+      ...(f.findingId ? { findingId: f.findingId } : {}),
+    };
+  });
+}
+
+function toAdvisories(input: ReviewDecisionInput): DecisionAdvisory[] {
+  const out: DecisionAdvisory[] = [];
+  for (const text of input.missingVerification ?? []) {
+    out.push({ kind: 'missing_verification', text });
+  }
+  for (const text of input.scopeCreep ?? []) {
+    out.push({ kind: 'scope_creep', text });
+  }
+  for (const text of input.unknowns ?? []) {
+    out.push({ kind: 'unknown', text });
+  }
+  return out;
+}
+
+function buildSummary(readiness: ReviewDecisionReadiness, blockers: number): string {
+  const copy = REVIEW_DECISION_COPY[readiness];
+  if (readiness === 'not_ready') {
+    return `${copy.explanation} (${blockers} blocking issue${blockers === 1 ? '' : 's'})`;
+  }
+  return copy.explanation;
+}
+
+export function projectReviewDecision(input: ReviewDecisionInput): ReviewDecisionProjection {
+  const blockers = toDecisionIssues('review_finding', input.blockingIssues);
+  const risks = toDecisionIssues('review_finding', input.majorRisks);
+  const advisories = toAdvisories(input);
+  const readiness: ReviewDecisionReadiness = blockers.length > 0 ? 'not_ready' : 'ready';
+
+  return {
+    readiness,
+    blockers,
+    risks,
+    advisories,
+    summary: buildSummary(readiness, blockers.length),
+  };
+}
