@@ -16,6 +16,26 @@ import type { ReportFormatId } from '../../state/assertion-identity.js';
 
 const JS_LOCAL_ID_RE = /^[^:]+(::[^:]+)+$/;
 
+const VITEST_CONFIG_FILES = [
+  'vitest.config.ts',
+  'vitest.config.js',
+  'vitest.config.mts',
+  'vitest.config.mjs',
+  'vitest.config.cts',
+  'vitest.config.cjs',
+  'vitest.workspace.ts',
+  'vitest.workspace.js',
+  'vitest.workspace.mts',
+  'vitest.workspace.mjs',
+];
+
+function resolveVitestConfigInputs(ctx: { readonly rootFiles: ReadonlySet<string> }) {
+  return VITEST_CONFIG_FILES.filter((f) => ctx.rootFiles.has(f)).map((f) => ({
+    kind: 'file' as const,
+    path: f,
+  }));
+}
+
 function fallbackCmd(pm: string, cmd: string): string {
   if (pm === 'pnpm') return `pnpm ${cmd}`;
   if (pm === 'yarn') return `yarn ${cmd}`;
@@ -88,6 +108,7 @@ export const vitestProvider: AssertionProviderExtension = {
             },
           };
         },
+        resolveExecutionSubjectInputs: resolveVitestConfigInputs,
       },
       {
         profileId: 'vitest-junit-aggregate',
@@ -128,6 +149,7 @@ export const vitestProvider: AssertionProviderExtension = {
             },
           };
         },
+        resolveExecutionSubjectInputs: resolveVitestConfigInputs,
       },
     ],
   },

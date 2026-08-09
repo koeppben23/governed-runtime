@@ -66,6 +66,25 @@ export const MUTATION_PROFILES: readonly MutationProfile[] = [
 export const MUTATION_PROFILE_IDS = MUTATION_PROFILES.map((p) => p.profileId);
 
 /**
+ * Registry-level capability check: does any registered mutation provider
+ * produce evidence that can satisfy a positive `fault_injection` proof
+ * requirement?
+ *
+ * Derived from the mutation binder's execution authority: returns `true`
+ * only when `bindMutationEvidence` produces evidence with attestation
+ * other than `external_self_reported`. Today all mutation evidence is
+ * externally self-reported → returns `false`.
+ *
+ * When a FlowGuard-executed mutation provider is built, the execution
+ * pipeline, binder attestation, and this check must change together.
+ * The binder's `Mutation Binder Authority Coupling Invariant` comment
+ * documents the required changes.
+ */
+export function hasProvingMutationProvider(): boolean {
+  return false;
+}
+
+/**
  * Load and parse a recorded mutation report.
  *
  * @param repoRoot   Repository root the report path is resolved against.

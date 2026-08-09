@@ -443,6 +443,93 @@ describe('verification planner', () => {
     });
   });
 
+  describe('provider → planner execution subject wiring', () => {
+    it('vitest script enrichment includes vitest config files', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: makeDetectedStack([
+          { kind: 'buildTool', id: 'pnpm', evidence: 'pnpm-lock.yaml' },
+          { kind: 'testFramework', id: 'vitest', evidence: 'vitest.config.ts' },
+        ]),
+        allFiles: ['package.json', 'pnpm-lock.yaml', 'vitest.config.ts'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({ scripts: { test: 'vitest run' } }),
+        }),
+      });
+
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
+      const inputs = testCandidate?.executionSubjectInputs ?? [];
+      expect(inputs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: 'implementation' }),
+          expect.objectContaining({ kind: 'file', path: 'package.json' }),
+          expect.objectContaining({ kind: 'file', path: 'vitest.config.ts' }),
+        ]),
+      );
+    });
+
+    it('vitest fallback includes vitest config files', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: makeDetectedStack([
+          { kind: 'testFramework', id: 'vitest', evidence: 'vitest.config.ts' },
+        ]),
+        allFiles: ['package.json', 'vitest.config.ts'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({ scripts: { build: 'true' } }),
+        }),
+      });
+
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
+      const inputs = testCandidate?.executionSubjectInputs ?? [];
+      expect(inputs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: 'implementation' }),
+          expect.objectContaining({ kind: 'file', path: 'vitest.config.ts' }),
+        ]),
+      );
+    });
+
+    it('pytest profile includes config files', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: makeDetectedStack([
+          { kind: 'testFramework', id: 'pytest', evidence: 'pyproject.toml' },
+        ]),
+        allFiles: ['package.json', 'pyproject.toml'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({ scripts: { build: 'true' } }),
+        }),
+      });
+
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
+      const inputs = testCandidate?.executionSubjectInputs ?? [];
+      expect(inputs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: 'implementation' }),
+          expect.objectContaining({ kind: 'file', path: 'pyproject.toml' }),
+        ]),
+      );
+    });
+
+    it('config files not in rootFiles are absent from subject inputs', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: makeDetectedStack([
+          { kind: 'testFramework', id: 'vitest', evidence: 'vitest.config.ts' },
+        ]),
+        allFiles: ['package.json'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({ scripts: { build: 'true' } }),
+        }),
+      });
+
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
+      const inputs = testCandidate?.executionSubjectInputs ?? [];
+      expect(inputs).toEqual(
+        expect.not.arrayContaining([
+          expect.objectContaining({ kind: 'file', path: 'vitest.config.ts' }),
+        ]),
+      );
+    });
+  });
+
   describe('EDGE', () => {
     it('ignores empty script values and continues with fallback', async () => {
       const detectedStack = makeDetectedStack([

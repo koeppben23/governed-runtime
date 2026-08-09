@@ -31,6 +31,7 @@ import {
   ASSERTION_CODEC_BY_PROVIDER,
   AGGREGATE_FORMATS_BY_PROVIDER,
 } from '../../providers/registry.js';
+import { hasProvingMutationProvider } from './mutation-provider.js';
 
 /** Write boundary a declaration arrived through; selects the public field names. */
 export type ClaimContractSource = 'plan' | 'declare_contract';
@@ -217,6 +218,27 @@ function checkRegistries(
     );
   }
   return null;
+}
+
+/** Rule 5b: a mutationProfile creates a fault_injection positive requirement.
+ *  When no FlowGuard-executed mutation provider exists, the claim can never be
+ *  PROVEN — external_self_reported evidence is filtered from positive proof.
+ *  The declaration must be rejected before it creates an unsatisfiable contract. */
+function checkMutationSatisfiability(
+  input: ClaimContractInput,
+  claim: NormalizedClaimDeclaration,
+): ClaimContractResult | null {
+  if (claim.mutationProfile === undefined) return null;
+  if (hasProvingMutationProvider()) return null;
+  return invalid(
+    input.source,
+    claim,
+    'mutationProfile',
+    `mutation profile '${claim.mutationProfile}' requires fault_injection evidence, ` +
+      'but no FlowGuard-executed mutation provider is registered; ' +
+      'externally self-reported mutation evidence cannot satisfy positive proof requirements',
+    'unsatisfiable',
+  );
 }
 
 /** Rule 6 (plan only): a claim without a governing section has no provenance. */
@@ -471,6 +493,7 @@ export function validateProofClaimContract(input: ClaimContractInput): ClaimCont
       checkCriticalContract(input, claim) ??
       checkCheckReferences(input, claim) ??
       checkRegistries(input, claim) ??
+      checkMutationSatisfiability(input, claim) ??
       checkAuthoritySection(input, claim) ??
       checkSuitePositiveSatisfiability(input, claim) ??
       checkCounterexampleScope(input, claim) ??

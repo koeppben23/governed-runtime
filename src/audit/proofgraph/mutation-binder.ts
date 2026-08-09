@@ -41,6 +41,31 @@ export const MUTATION_PROVIDER_ID = 'semantic-mutation';
 /** Provider version stamped on mutation results. */
 export const MUTATION_PROVIDER_VERSION = 'semantic-mutation.v1';
 
+/**
+ * Authority coupling invariant: mutation evidence attestation and declaration
+ * satisfiability must remain linked.
+ *
+ * Today all mutation evidence carries `external_self_reported` attestation,
+ * and `hasProvingMutationProvider()` in the provider registry returns `false`.
+ * The claim-contract boundary rejects `mutationProfile` declarations because
+ * no proving provider exists.
+ *
+ * When a FlowGuard-executed mutation provider is added, THREE things must
+ * change together — never independently:
+ *
+ * 1. The execution pipeline produces `flowguard_executed` evidence.
+ * 2. This binder derives `attestation` from the execution authority of the
+ *    actual attempt, not a hardcoded string.
+ * 3. `hasProvingMutationProvider()` reflects the new capability from the
+ *    same registry metadata.
+ *
+ * A future `trusted: true` profile flag that is not linked to the binder's
+ * attestation path would create a parallel authority: the declaration
+ * boundary would accept the claim, but the evaluator would still filter
+ * the evidence as `external_self_reported`, leaving the contract permanently
+ * unsatisfiable.
+ */
+
 function unavailable(claimId: string, evaluatedAt: string, reason: string): ProofProviderResult {
   return {
     claimId,

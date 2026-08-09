@@ -99,19 +99,36 @@ export interface PersistedProofGraphSummary {
 /**
  * Summarize the persisted projection without executing providers. An empty graph
  * is never reported as healthy: it means no structured claims were declared.
+ *
+ * Coverage reflects the declared contract exclusively — advisory review
+ * hypotheses are tallied separately and never affect the contract coverage
+ * status.
+ *
+ * Zero-claim declared contracts (`proofContract` exists but `claims.length === 0`)
+ * are treated as `NOT_VERIFIED`: the schema permits zero claims (no `min(1)`
+ * constraint), the `/plan` tool rejects zero claims at submission, but
+ * `/declare-contract` and direct state construction can produce empty
+ * contracts. Vacuous-truth `PROVEN` for zero claims is an explicit
+ * non-goal — a declared contract with no claims is an invalid declaration
+ * state, not a passing one.
  */
 export function summarizePersistedProofGraph(state: SessionState): PersistedProofGraphSummary {
   const claims = state.proofGraph?.claims ?? [];
   const provenCount = claims.filter((claim) => claim.verificationState === 'PROVEN').length;
   const unprovenCount = claims.length - provenCount;
+  const contractClaimIds = new Set((state.proofContract?.claims ?? []).map((c) => c.claimId));
+  const contractClaims = claims.filter((c) => contractClaimIds.has(c.claimId));
+  const contractProven = contractClaims.filter((c) => c.verificationState === 'PROVEN').length;
   const contractClaimCount = state.proofContract?.claims.length ?? 0;
   return {
     coverage:
       state.proofContract === undefined
         ? 'NOT_DECLARED'
-        : unprovenCount === 0 && claims.length > 0
-          ? 'PROVEN'
-          : 'NOT_VERIFIED',
+        : contractClaimCount === 0
+          ? 'NOT_VERIFIED'
+          : contractProven === contractClaims.length && contractClaims.length > 0
+            ? 'PROVEN'
+            : 'NOT_VERIFIED',
     claimCount: claims.length,
     provenCount,
     unprovenCount,

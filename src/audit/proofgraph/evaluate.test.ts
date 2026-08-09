@@ -827,4 +827,44 @@ describe('evaluateProofGraph', () => {
       expect(out.claims[0]!.verificationState).toBe('PROVEN');
     });
   });
+
+  describe('positive evidence retry policy: any historical same-subject failure blocks', () => {
+    const id = uuid(200);
+
+    it('same digest + attempt1 fail + attempt2 pass → claim stays UNPROVEN', () => {
+      const out = evaluate({
+        claims: [claim(id)],
+        providerResults: [result(id, 'fail', CURR), result(id, 'pass', CURR)],
+        counterexamples: [],
+      });
+      expect(out.claims[0]!.verificationState).toBe('UNPROVEN');
+    });
+
+    it('same digest + attempt1 error + attempt2 pass → claim stays BLOCKED', () => {
+      const out = evaluate({
+        claims: [claim(id)],
+        providerResults: [result(id, 'error', CURR), result(id, 'pass', CURR)],
+        counterexamples: [],
+      });
+      expect(out.claims[0]!.verificationState).toBe('BLOCKED');
+    });
+
+    it('same digest + attempt1 unavailable + attempt2 pass → claim stays NOT_VERIFIED', () => {
+      const out = evaluate({
+        claims: [claim(id)],
+        providerResults: [result(id, 'unavailable'), result(id, 'pass', CURR)],
+        counterexamples: [],
+      });
+      expect(out.claims[0]!.verificationState).toBe('NOT_VERIFIED');
+    });
+
+    it('single pass without prior failure → PROVEN', () => {
+      const out = evaluate({
+        claims: [claim(id)],
+        providerResults: [result(id, 'pass', CURR)],
+        counterexamples: [],
+      });
+      expect(out.claims[0]!.verificationState).toBe('PROVEN');
+    });
+  });
 });

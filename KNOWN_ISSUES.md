@@ -287,7 +287,8 @@ tracked separately. (Merged via #585.)
 | ID     | Severity | Title                                                              | Status     |
 | ------ | -------- | ------------------------------------------------------------------ | ---------- |
 | **T1** | **P1**   | **Mutation evidence is externally self-reported**                  | **Closed** |
-| **T2** | **P1**   | **Execution subject surface attestation incomplete**               | **Open**   |
+| **T2** | **P1**   | **Execution subject surface attestation incomplete**               | **Closed** |
+| **T3** | **P1**   | **mutationProfile creates structurally unsatisfiable contract**    | **Closed** |
 
 **T1 — Mutation evidence is externally self-reported (Closed).**
 `record_mutation_evidence` accepts caller-supplied `command`, `startedAt`,
@@ -300,16 +301,31 @@ FlowGuard-executed mutation provider is added. The evidence remains visible
 and auditable. See `src/state/proofgraph.ts` `EvidenceAttestation` and
 `src/audit/proofgraph/evaluate.ts` `deriveFromRequiredEvidence`.
 
-**T2 — Execution subject surface attestation incomplete (Open).**
-Execution Subject Attestation (`src/verification/execution-subject.ts`)
-currently attests only the implementation digest and `package.json` script
-sources. Other configuration surfaces that affect verification semantics
-(`vitest.config.*`, `jest.config.*`, `pytest.ini`, `pyproject.toml`, `pom.xml`,
-`build.gradle*`, `go.mod`, etc.) are not yet attested. An agent that modifies
-these files after `/implement` but before `flowguard_run_check` could alter
-verification behavior without detection. The implementation re-attestation
-prevents direct source/test file tampering, but config-driven tampering
-remains possible.
+**T2 — Execution subject surface attestation incomplete (Closed).**
+Execution Subject Attestation (`src/verification/execution-subject.ts`) now
+includes provider-declared verification-semantic surfaces via
+`ExecutionProfile.resolveExecutionSubjectInputs()`. Vitest and pytest
+providers declare their config files (`vitest.config.*`, `vitest.workspace.ts`,
+`pytest.ini`, `pyproject.toml`, `tox.ini`, `setup.cfg`). The planner merges
+these as `{ kind: 'file' }` inputs alongside the implementation surface.
+Pre/post attestation in `run-check-tool.ts` detects config surface tampering
+and emits `VERIFICATION_SUBJECT_CHANGED`.
+
+Scope: surfaces covered are those discoverable through the current
+`PlannerContext` (root-level basenames via `ctx.rootFiles`). Nested workspace
+and multi-module discovery are explicitly scoped separately. Provider-owned
+via `ExecutionProfile` — no provider-specific logic in ProofGraph core.
+
+**T3 — mutationProfile creates structurally unsatisfiable contract (Closed).**
+A `mutationProfile` declaration adds `fault_injection` to the positive proof
+requirements. All current mutation evidence carries
+`attestation: 'external_self_reported'`, which the evaluator filters from
+positive proof. The declaration boundary now checks
+`hasProvingMutationProvider()` (registry-level authority in
+`mutation-provider.ts`) and rejects claims with `mutationProfile` as
+`PROOFGRAPH_CLAIM_UNSATISFIABLE` until a FlowGuard-executed mutation provider
+is registered. Externally self-reported mutation evidence remains visible
+and auditable.
 
 ## Maintenance Rules
 

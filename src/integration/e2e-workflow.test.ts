@@ -1324,31 +1324,26 @@ describe('ProofGraph demo fixtures', () => {
     expect(after!.proofContract?.claims[1]?.provenance).not.toHaveProperty('approval');
   });
 
-  it('blocks final approval when a certificate-bound fact lacks required mutation evidence', async () => {
-    await driveToImplementationReview('proofgraph-evaluator', true);
-    const sessDir = await getSessDir();
-    const materialized = await readState(sessDir);
-    expect(materialized!.proofContractCoverage).toContainEqual({
-      claimId: PLAN_CLAIM.claimId,
-      cause: 'unverified_mutation_profile',
-    });
-    expect(materialized!.proofGraph?.claims[0]?.verificationState).not.toBe('PROVEN');
-
-    await callOk(review_implementation, { reviewVerdict: 'accept' });
-    expect(await getPhase()).toBe('EVIDENCE_REVIEW');
-
-    recordUserDecisionIntent({
-      sessionId: ctx.sessionID,
-      command: '/review-decision',
-      expectedVerdict: 'approve',
-    });
+  it('rejects a plan claim with mutationProfile when no proving mutation provider exists', async () => {
+    await fs.writeFile(`${ws.tmpDir}/mvnw`, '#!/bin/sh\necho "mvnw"', 'utf-8');
+    await fs.chmod(`${ws.tmpDir}/mvnw`, 0o755);
+    await fs.writeFile(
+      `${ws.tmpDir}/package.json`,
+      JSON.stringify({ scripts: { build: 'true', test: './mvnw test' } }),
+      'utf8',
+    );
+    await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
+    await callOk(ticket, { text: 'Demonstrate ProofGraph evidence.', source: 'user' });
     const blocked = parseToolResult(
-      await decision.execute(
-        { verdict: 'approve', rationale: 'Demonstrate final ProofGraph gate.' },
+      await plan.execute(
+        {
+          planText: PLAN_TEXT,
+          claims: [{ ...PLAN_CLAIM, critical: true, mutationProfile: 'proofgraph-evaluator' }],
+        },
         ctx,
       ),
     );
-    expect(blocked.code).toBe('PROOFGRAPH_CRITICAL_FACTS_UNPROVEN');
-    expect(await getPhase()).toBe('EVIDENCE_REVIEW');
+    expect(blocked.error).toBe(true);
+    expect(blocked.code).toBe('PROOFGRAPH_CLAIM_UNSATISFIABLE');
   });
 });
