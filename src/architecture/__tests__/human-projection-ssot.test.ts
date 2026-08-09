@@ -147,8 +147,11 @@ function findSlashCommandViolations(files: readonly SourceFile[]): Violation[] {
 
 function findImpactMapViolations(files: readonly SourceFile[]): Violation[] {
   const out: Violation[] = [];
+  // human-projection.ts is the impact copy authority; reason-copy.ts is the
+  // migrated-reason-code impact authority.
+  const IMPACT_AUTHORITIES = new Set([COPY_AUTHORITY, 'presentation/human-projection.ts']);
   for (const f of files) {
-    if (f.rel === COPY_AUTHORITY) continue;
+    if (IMPACT_AUTHORITIES.has(f.rel)) continue;
     if (!isInScope(f.rel)) continue;
     f.content.split('\n').forEach((text, i) => {
       if (IMPACT_MAP_IDIOM.test(text)) {
@@ -157,6 +160,23 @@ function findImpactMapViolations(files: readonly SourceFile[]): Violation[] {
           line: i + 1,
           snippet: text.trim(),
           rule: 'parallel-impact-map',
+        });
+      }
+      // Detect switch-on-UserImpact returning prose strings (parallel impact copy).
+      // Must check for return of a STRING literal, not an object (conclusion dispatch
+      // also uses 'case \'decision_required\'' but returns objects).
+      if (
+        /case\s+['"]workflow_blocked['"]\s*:.*return\s+['"]/.test(text) ||
+        /case\s+['"]verification_incomplete['"]\s*:.*return\s+['"]/.test(text) ||
+        /case\s+['"]review_required['"]\s*:.*return\s+['"]/.test(text) ||
+        /case\s+['"]decision_required['"]\s*:.*return\s+['"]/.test(text) ||
+        /case\s+['"]degraded_only['"]\s*:.*return\s+['"]/.test(text)
+      ) {
+        out.push({
+          rel: f.rel,
+          line: i + 1,
+          snippet: text.trim(),
+          rule: 'parallel-impact-switch',
         });
       }
     });

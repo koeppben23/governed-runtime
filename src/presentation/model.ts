@@ -170,7 +170,7 @@ export interface BlockerSection {
   readonly canonicalMessage?: string;
   /** Human-authored context for migrated codes, when available. */
   readonly explanation?: string;
-  /** Semantic impact on the developer's workflow, when canonically projected. */
+  /** Human-readable impact copy (from the central impact authority). */
   readonly impact?: string;
 }
 

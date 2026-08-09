@@ -9,6 +9,7 @@
 export { PHASE_LABELS } from './phase-labels.js';
 export { buildProductNextAction } from './next-action-copy.js';
 export type { UserImpact, HumanExplanation, RecoveryProjection } from './human-projection.js';
+export { USER_IMPACT_COPY, humanImpactText } from './human-projection.js';
 export { REASON_COPY, isMigratedReasonCode, lookupReasonCopy } from './reason-copy.js';
 export type { MigratedReasonCopy } from './reason-copy.js';
 export {

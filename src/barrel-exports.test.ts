@@ -136,6 +136,8 @@ describe('presentation/index.ts barrel', () => {
     'humanCounterexampleRequirementText',
     'humanRequiredEvidenceText',
     'buildProofGraphSection',
+    'USER_IMPACT_COPY',
+    'humanImpactText',
   ] as const;
 
   const INTERNAL_SYMBOLS = [

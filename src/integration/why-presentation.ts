@@ -20,7 +20,7 @@ import type {
   PresentationDetailLevel,
   ReasonProjection,
 } from '../presentation/index.js';
-import { projectReasonFromRegistry } from '../presentation/index.js';
+import { projectReasonFromRegistry, humanImpactText } from '../presentation/index.js';
 import type { WhyPresentationProjection, WhyConclusionProjection } from './status-why-finish.js';
 import type { CompactProofPresentation } from '../presentation/proof-model.js';
 import { buildProofGraphSection } from '../presentation/proof-summary.js';
@@ -147,7 +147,6 @@ function buildBlockerSection(
     ...blockerDetailFields(reasonProjection, detail),
   };
 }
-
 function blockerDetailFields(
   projection: ReasonProjection | null,
   detail: PresentationDetailLevel,
@@ -161,35 +160,17 @@ function blockerDetailFields(
     case 'explanation':
       return {
         ...(projection.explanation ? { explanation: projection.explanation } : {}),
-        ...(projection.impact ? { impact: impactLabel(projection.impact) } : {}),
+        ...(projection.impact ? { impact: humanImpactText(projection.impact) } : {}),
       };
 
     case 'diagnostic':
       return {
         ...(projection.explanation ? { explanation: projection.explanation } : {}),
         ...(projection.canonicalMessage ? { canonicalMessage: projection.canonicalMessage } : {}),
-        ...(projection.impact ? { impact: impactLabel(projection.impact) } : {}),
+        ...(projection.impact ? { impact: humanImpactText(projection.impact) } : {}),
       };
   }
 }
-
-function impactLabel(impact: string): string {
-  switch (impact) {
-    case 'workflow_blocked':
-      return 'Further progress is blocked until this condition is resolved.';
-    case 'verification_incomplete':
-      return 'Verification cannot complete without satisfying this requirement.';
-    case 'review_required':
-      return 'A human review decision is required before progress can continue.';
-    case 'decision_required':
-      return 'A human decision is required.';
-    case 'degraded_only':
-      return 'The workflow can continue, but some capabilities are degraded.';
-    default:
-      return impact;
-  }
-}
-
 /** Canonical recovery with the caller-provided hint as a last-resort fallback. */
 function resolveRecovery(
   projection: ReasonProjection | null,
