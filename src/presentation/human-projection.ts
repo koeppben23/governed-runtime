@@ -63,3 +63,29 @@ export interface RecoveryProjection {
   readonly secondary: readonly string[];
   readonly diagnosticNotes?: string;
 }
+
+// ─── Impact Copy ──────────────────────────────────────────────────────────────
+
+/**
+ * Single authority for UserImpact → human-readable product copy.
+ *
+ * No surface builder or renderer may define its own impact prose mapping.
+ * Consume this via {@link humanImpactText}.
+ */
+export const USER_IMPACT_COPY: Readonly<Record<UserImpact, string>> = {
+  workflow_blocked: 'Further progress is blocked until this condition is resolved.',
+  verification_incomplete: 'Verification cannot complete without satisfying this requirement.',
+  review_required: 'A human review decision is required before progress can continue.',
+  decision_required: 'A human decision is required.',
+  degraded_only: 'The workflow can continue, but some capabilities are degraded.',
+};
+
+/**
+ * Look up the canonical human-readable impact text for a UserImpact.
+ *
+ * Exhaustive: every UserImpact member has a defined prose mapping.
+ * No surface builder or renderer may define its own impact copy.
+ */
+export function humanImpactText(impact: UserImpact): string {
+  return USER_IMPACT_COPY[impact];
+}

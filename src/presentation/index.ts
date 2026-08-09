@@ -9,6 +9,7 @@
 export { PHASE_LABELS } from './phase-labels.js';
 export { buildProductNextAction } from './next-action-copy.js';
 export type { UserImpact, HumanExplanation, RecoveryProjection } from './human-projection.js';
+export { USER_IMPACT_COPY, humanImpactText } from './human-projection.js';
 export { REASON_COPY, isMigratedReasonCode, lookupReasonCopy } from './reason-copy.js';
 export type { MigratedReasonCopy } from './reason-copy.js';
 export {
@@ -62,6 +63,8 @@ export type {
   PlanDocument,
   HelpDocument,
   PresentationDocument,
+  PresentationDetailLevel,
+  PresentationBuildOptions,
 } from './model.js';
 export { renderMarkdown } from './markdown.js';
 export type {
@@ -103,6 +106,8 @@ export {
   humanCounterexampleRequirementText,
   humanRequiredEvidenceText,
 } from './proof-requirement-copy.js';
+export { buildProofGraphSection } from './proof-summary.js';
+export type { ProofGraphRenderOptions, ClaimVisibility } from './proof-summary.js';
 export {
   STATUS_LABELS,
   lookupStatusLabel,

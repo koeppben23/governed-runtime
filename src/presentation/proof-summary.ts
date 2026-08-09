@@ -9,7 +9,12 @@
  *   human     — summary line, per-claim human vocabulary, evidence requirements
  *   diagnostic — canonical state per claim (claimId, state, scope, binding code, freshness)
  *
- * @version v2
+ * Claim visibility is controlled separately from renderer detail:
+ *   none     — no per-claim list rendered (only summary counts)
+ *   selected — only claims whose ids are in selectedClaimIds are listed
+ *   all      — all claims in the humanSummary are rendered
+ *
+ * @version v3
  */
 
 import type { ProofGraphSection } from './model.js';
@@ -17,6 +22,15 @@ import type { CompactProofPresentation, ProofApprovalPresentation } from './proo
 import type { HumanProofSummary } from './claim-human-projection.js';
 import { humanVerificationLabel, projectHumanVerificationStatus } from './human-verification.js';
 import { UNICODE_GLYPHS } from './glyph-profile.js';
+
+export type ClaimVisibility = 'none' | 'selected' | 'all';
+
+export interface ProofGraphRenderOptions {
+  readonly detail?: 'human' | 'diagnostic';
+  readonly humanSummary?: HumanProofSummary;
+  readonly claimVisibility?: ClaimVisibility;
+  readonly selectedClaimIds?: readonly string[];
+}
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
@@ -30,7 +44,7 @@ export function renderCompactProofSection(presentation: CompactProofPresentation
 
 export function renderProofGraphMarkdown(
   presentation: CompactProofPresentation,
-  opts?: { detail?: 'human' | 'diagnostic'; humanSummary?: HumanProofSummary },
+  opts?: ProofGraphRenderOptions,
 ): string {
   const detail = opts?.detail ?? 'human';
   const heading = detail === 'diagnostic' ? '## Verification (diagnostic)' : '## Verification';
@@ -39,7 +53,7 @@ export function renderProofGraphMarkdown(
 
 function renderCompactProofSectionWithOpts(
   presentation: CompactProofPresentation,
-  opts?: { detail?: 'human' | 'diagnostic'; humanSummary?: HumanProofSummary },
+  opts?: ProofGraphRenderOptions,
 ): string {
   if (presentation.kind === 'declaration') {
     return renderDeclarationSection(presentation);
@@ -49,12 +63,12 @@ function renderCompactProofSectionWithOpts(
   if (detail === 'diagnostic') {
     return renderEvaluationDiagnostic(presentation, summary);
   }
-  return renderEvaluationHuman(presentation, summary);
+  return renderEvaluationHuman(presentation, summary, opts);
 }
 
 export function buildProofGraphSection(
   presentation: CompactProofPresentation,
-  opts?: { detail?: 'human' | 'diagnostic'; humanSummary?: HumanProofSummary },
+  opts?: ProofGraphRenderOptions,
 ): ProofGraphSection {
   return {
     kind: 'proofGraph',
@@ -103,14 +117,17 @@ function renderDeclarationSection(p: CompactProofPresentation & { kind: 'declara
 function renderEvaluationHuman(
   p: CompactProofPresentation & { kind: 'evaluation' },
   summary?: HumanProofSummary,
+  opts?: ProofGraphRenderOptions,
 ): string {
   if (p.overallStatus === 'NOT_DECLARED') {
     return renderNotDeclaredHuman(p);
   }
+  const visibility = opts?.claimVisibility ?? 'all';
   if (summary !== undefined && summary.claims.length > 0) {
-    return renderHumanSummary(p, summary);
+    return renderHumanSummary(p, summary, visibility, opts?.selectedClaimIds);
   }
-  return renderEvaluationFallback(p);
+  // Fallback: when no humanSummary is available, render summary counts only
+  return renderEvaluationFallback(p, visibility);
 }
 
 function renderNotDeclaredHuman(p: CompactProofPresentation & { kind: 'evaluation' }): string {
@@ -125,6 +142,8 @@ function renderNotDeclaredHuman(p: CompactProofPresentation & { kind: 'evaluatio
 function renderHumanSummary(
   p: CompactProofPresentation & { kind: 'evaluation' },
   summary: HumanProofSummary,
+  visibility: ClaimVisibility,
+  selectedClaimIds?: readonly string[],
 ): string {
   const lines: string[] = [];
   const glyphs = UNICODE_GLYPHS;
@@ -142,8 +161,9 @@ function renderHumanSummary(
     lines.push(primReason);
   }
 
-  // Per-claim human projection
-  for (const claim of summary.claims) {
+  // Per-claim human projection — filtered by visibility
+  const visibleClaims = filterClaims(summary.claims, visibility, selectedClaimIds);
+  for (const claim of visibleClaims) {
     lines.push('');
     const glyph = humanGlyph(claim.status, glyphs);
     lines.push(`${glyph} ${claim.statement}`);
@@ -167,7 +187,25 @@ function renderHumanSummary(
   return lines.join('\n');
 }
 
-function renderEvaluationFallback(p: CompactProofPresentation & { kind: 'evaluation' }): string {
+function filterClaims(
+  claims: readonly import('./claim-human-projection.js').ClaimHumanProjection[],
+  visibility: ClaimVisibility,
+  selectedIds?: readonly string[],
+): readonly import('./claim-human-projection.js').ClaimHumanProjection[] {
+  if (visibility === 'none') return [];
+  if (visibility === 'selected') {
+    if (!selectedIds || selectedIds.length === 0) return [];
+    const idSet = new Set(selectedIds);
+    return claims.filter((c) => idSet.has(c.claimId));
+  }
+  return claims;
+}
+// ─── Fallback evaluation rendering ──────────────────────────────────────────
+
+function renderEvaluationFallback(
+  p: CompactProofPresentation & { kind: 'evaluation' },
+  visibility: ClaimVisibility = 'all',
+): string {
   const lines: string[] = [];
   const glyphs = UNICODE_GLYPHS;
 
@@ -184,24 +222,26 @@ function renderEvaluationFallback(p: CompactProofPresentation & { kind: 'evaluat
     lines.push(primReason);
   }
 
-  const unmet = 'unmetCriticalClaims' in p ? p.unmetCriticalClaims : [];
-  for (const claim of unmet) {
-    const status = projectHumanVerificationStatus(claim.status);
-    const glyph = humanGlyph(status, glyphs);
-    lines.push('');
-    lines.push(`${glyph} ${claim.statement}`);
-    lines.push(`  ${humanVerificationLabel(claim.status)}`);
-    if (claim.reason) lines.push(`  ${claim.reason}`);
-  }
+  if (visibility !== 'none') {
+    const unmet = 'unmetCriticalClaims' in p ? p.unmetCriticalClaims : [];
+    for (const claim of unmet) {
+      const status = projectHumanVerificationStatus(claim.status);
+      const glyph = humanGlyph(status, glyphs);
+      lines.push('');
+      lines.push(`${glyph} ${claim.statement}`);
+      lines.push(`  ${humanVerificationLabel(claim.status)}`);
+      if (claim.reason) lines.push(`  ${claim.reason}`);
+    }
 
-  const other = 'otherHighlightedClaims' in p ? p.otherHighlightedClaims : [];
-  for (const claim of other) {
-    const status = projectHumanVerificationStatus(claim.status);
-    const glyph = humanGlyph(status, glyphs);
-    lines.push('');
-    lines.push(`${glyph} ${claim.statement}`);
-    lines.push(`  ${humanVerificationLabel(claim.status)}`);
-    if (claim.reason) lines.push(`  ${claim.reason}`);
+    const other = 'otherHighlightedClaims' in p ? p.otherHighlightedClaims : [];
+    for (const claim of other) {
+      const status = projectHumanVerificationStatus(claim.status);
+      const glyph = humanGlyph(status, glyphs);
+      lines.push('');
+      lines.push(`${glyph} ${claim.statement}`);
+      lines.push(`  ${humanVerificationLabel(claim.status)}`);
+      if (claim.reason) lines.push(`  ${claim.reason}`);
+    }
   }
 
   lines.push('');

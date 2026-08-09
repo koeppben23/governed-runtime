@@ -22,17 +22,20 @@ import {
   normalizedMarkdown,
   lookupStatusLabel,
   projectReasonFromRegistry,
-  projectDetailFields,
   type PresentationDocument,
   type PresentationSection,
   type PresentationConclusion,
   type PresentationAction,
   type PresentationForm,
+  type PresentationBuildOptions,
+  type PresentationDetailLevel,
   type KeyValueItem,
   type BlockerSection,
   type NoticeSection,
+  type ReasonProjection,
 } from '../presentation/index.js';
 import { buildProofGraphSection } from '../presentation/proof-summary.js';
+import type { ProofGraphRenderOptions } from '../presentation/proof-summary.js';
 
 // ─── Presentation Input ────────────────────────────────────────────────────────
 
@@ -48,59 +51,42 @@ export interface FullStatusPresentationInput {
 /**
  * Build a compact-card PresentationDocument from the Full-Status projection.
  *
- * Renders sections with `##` headings in UX-optimised order:
- *   1. ## Status (phase, readiness, policy)
- *   2. ## Blocked (only when blocked)
- *   3. ## Evidence summary
- *   4. ## Available actions
- *   5. ## Remaining checks (VALIDATION phase only)
- *   6. ## Notice (Discovery warnings / not-verified)
- *   7. Conclusion (no heading — inline at document end)
+ * `detail` controls information density:
+ *   summary     — compressed: immediate state, blocker headline, primary action
+ *   explanation — causal: state, blocker explanation, recovery, relevant claims
+ *   diagnostic  — full: canonical codes, raw states, structured detail
+ *
+ * Section order varies by detail level. Summary mode omits the full Evidence
+ * section (substituted by compact notice when evidence causes NOT_VERIFIED)
+ * and renders ProofGraph without a per-claim list.
  */
-export function buildStatusDocument(input: FullStatusPresentationInput): PresentationDocument {
+export function buildStatusDocument(
+  input: FullStatusPresentationInput,
+  options: PresentationBuildOptions = { detail: 'summary' },
+): PresentationDocument {
   const { status, discoveryHealth, discoveryDrift, remainingChecks } = input;
+  const detail = options.detail;
   const sections: PresentationSection[] = [];
 
-  // 1. Status
   sections.push(buildStatusSection(status));
 
-  // 2. Blocked
   if (status.blocker && status.blocker.reasonText) {
-    sections.push(buildBlockerSection(status));
+    sections.push(buildBlockerSection(status, detail));
   }
 
-  // 3. Evidence summary
-  sections.push(buildEvidenceSection(status));
+  buildEvidenceSection(status, detail, sections);
 
-  // 3b. ProofGraph is mandatory for every resolved governance status.
-  sections.push(buildProofGraphSection(status.proofSummary));
+  sections.push(buildProofGraphSection(status.proofSummary, proofGraphOpts(detail, status)));
 
-  // 4. Available actions
-  if (status.allowedCommands.length > 0) {
+  if (detail !== 'summary' && status.allowedCommands.length > 0) {
     sections.push(buildAvailableActionsSection(status));
   }
 
-  // 5. Remaining checks (VALIDATION phase)
   if (remainingChecks && remainingChecks.length > 0) {
     sections.push(buildRemainingChecksSection(remainingChecks));
   }
 
-  // 6. Discovery notices
-  const discoverySection = buildDiscoveryNoticeSection(discoveryHealth, discoveryDrift);
-  if (discoverySection) {
-    sections.push(discoverySection);
-  }
-
-  // 7. Finish-readiness hint (terminal phases only).
-  //    /finish is an operational, read-only status aggregator — it is NOT a
-  //    workflow command and therefore never appears in `allowedCommands` or as a
-  //    next-action. At the workflow end we surface it as a plain hint, clearly
-  //    separated from the canonical `→ /export` conclusion, without a heading so
-  //    it is not mistaken for next-action authority.
-  const finishHint = buildFinishHintSection(status);
-  if (finishHint) {
-    sections.push(finishHint);
-  }
+  appendDiscoveryAndFinish(sections, status, discoveryHealth, discoveryDrift);
 
   const conclusion = buildPresentationConclusion(status.conclusion);
 
@@ -114,6 +100,32 @@ export function buildStatusDocument(input: FullStatusPresentationInput): Present
     sections,
     conclusion,
   };
+}
+
+function appendDiscoveryAndFinish(
+  sections: PresentationSection[],
+  status: StatusProjection,
+  discoveryHealth: DiscoveryHealthProjection | null,
+  discoveryDrift: DiscoveryDriftStatusProjection,
+): void {
+  const discoverySection = buildDiscoveryNoticeSection(discoveryHealth, discoveryDrift);
+  if (discoverySection) {
+    sections.push(discoverySection);
+  }
+  const finishHint = buildFinishHintSection(status);
+  if (finishHint) {
+    sections.push(finishHint);
+  }
+}
+
+function proofGraphOpts(
+  detail: PresentationBuildOptions['detail'],
+  _status: StatusProjection,
+): ProofGraphRenderOptions {
+  if (detail === 'diagnostic') return { detail: 'diagnostic' };
+  if (detail === 'summary') return { claimVisibility: 'none' };
+  // explanation: show all human claims
+  return {};
 }
 
 /**
@@ -152,14 +164,11 @@ function buildStatusSection(status: StatusProjection): PresentationSection {
   return { kind: 'keyValue', heading: 'Status', items };
 }
 
-function buildBlockerSection(status: StatusProjection): BlockerSection {
+function buildBlockerSection(
+  status: StatusProjection,
+  detail: PresentationBuildOptions['detail'],
+): BlockerSection {
   const blocker = status.blocker!;
-  // Recovery guidance comes from the canonical reason registry via the Human
-  // Projection — never from general next-action copy. When no canonical
-  // reason code exists, recovery is intentionally omitted (no invented steps).
-  // For migrated codes the projection also supplies the context-free headline,
-  // the human-authored explanation, and the registry-verbatim canonicalMessage
-  // (never lost on the diagnostic surface).
   const reasonProjection = blocker.reasonCode
     ? projectReasonFromRegistry(blocker.reasonCode)
     : null;
@@ -167,27 +176,75 @@ function buildBlockerSection(status: StatusProjection): BlockerSection {
   return {
     kind: 'blocker',
     heading: 'Blocked',
-    code: blocker.reasonCode ?? null,
+    code: detail === 'diagnostic' ? (blocker.reasonCode ?? null) : null,
     text: reasonProjection?.headline ?? blocker.reasonText!,
     ...(recovery ? { recovery } : {}),
-    ...projectDetailFields(reasonProjection),
+    ...statusBlockerDetailFields(reasonProjection, detail),
   };
 }
 
-function buildEvidenceSection(status: StatusProjection): PresentationSection {
+function statusBlockerDetailFields(
+  projection: ReasonProjection | null,
+  detail: PresentationDetailLevel,
+): { explanation?: string; canonicalMessage?: string; impact?: string } {
+  if (!projection) return {};
+
+  switch (detail) {
+    case 'summary':
+      return {};
+
+    case 'explanation':
+      return {
+        ...(projection.explanation ? { explanation: projection.explanation } : {}),
+      };
+
+    case 'diagnostic':
+      return {
+        ...(projection.explanation ? { explanation: projection.explanation } : {}),
+        ...(projection.canonicalMessage ? { canonicalMessage: projection.canonicalMessage } : {}),
+      };
+  }
+}
+
+function buildEvidenceSection(
+  status: StatusProjection,
+  detail: PresentationBuildOptions['detail'],
+  sections: PresentationSection[],
+): void {
   const { evidenceSummary } = status;
-  return {
-    kind: 'keyValue',
-    heading: 'Evidence',
-    items: [
-      { label: 'Verified', value: String(evidenceSummary.present) },
-      { label: 'Missing', value: String(evidenceSummary.missing) },
-      { label: 'Not yet required', value: String(evidenceSummary.notYetRequired) },
-      ...(evidenceSummary.failed > 0
-        ? [{ label: 'Failed', value: String(evidenceSummary.failed) }]
-        : []),
-    ],
-  };
+
+  if (detail === 'diagnostic' || detail === 'explanation') {
+    sections.push({
+      kind: 'keyValue',
+      heading: 'Evidence',
+      items: [
+        { label: 'Verified', value: String(evidenceSummary.present) },
+        { label: 'Missing', value: String(evidenceSummary.missing) },
+        { label: 'Not yet required', value: String(evidenceSummary.notYetRequired) },
+        ...(evidenceSummary.failed > 0
+          ? [{ label: 'Failed', value: String(evidenceSummary.failed) }]
+          : []),
+      ],
+    });
+    return;
+  }
+
+  // Summary mode: compact notice only when evidence incompleteness is
+  // materially relevant (NOT_VERIFIED caused by missing/failed evidence)
+  if (
+    status.readiness === 'NOT_VERIFIED' &&
+    (evidenceSummary.missing > 0 || evidenceSummary.failed > 0)
+  ) {
+    const parts: string[] = [];
+    if (evidenceSummary.missing > 0) parts.push(`${evidenceSummary.missing} missing`);
+    if (evidenceSummary.failed > 0) parts.push(`${evidenceSummary.failed} failed`);
+    sections.push({
+      kind: 'notice',
+      level: 'not_verified',
+      message: `Evidence is incomplete: ${parts.join(', ')}.`,
+      details: [],
+    });
+  }
 }
 
 function buildAvailableActionsSection(status: StatusProjection): PresentationSection {

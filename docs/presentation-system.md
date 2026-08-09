@@ -259,13 +259,56 @@ evidence status is inferred. `candidateId`, provider identity, and claim
 scope are rendered only when canonically present. Binding diagnostic copy
 lives in a single exhaustive authority (`src/presentation/claim-diagnostic-copy.ts`).
 
-## 12. Density
+## 12. Progressive Disclosure
+
+Presentation surfaces select information density through
+`PresentationDetailLevel` — a composition-layer concept that is never domain
+state, never persisted, and never affects canonical workflow, verification,
+evidence, blocker, recovery, or approval semantics.
+
+| Level         | Default surface   | Content                                                               |
+| ------------- | ----------------- | --------------------------------------------------------------------- |
+| `summary`     | `/status`         | Immediate state, blocker headline, primary action, compressed context |
+| `explanation` | `/why`            | Cause, impact, recovery, relevant unresolved claim context            |
+| `diagnostic`  | internal / opt-in | Canonical codes, raw states, structured identifiers, full detail      |
+
+### 12.1 `/status` progressive disclosure
+
+Default `/status` uses `detail: 'summary'`:
+
+- One status section (phase, readiness, policy).
+- Blocker headline when blocked; reason code and canonical message hidden by
+  default.
+- Evidence section compressed to a compact notice only when evidence
+  incompleteness causes `NOT_VERIFIED`.
+- ProofGraph summary counts only; no per-claim list unless diagnostic mode.
+- Available actions hidden (use `/why` for explanation).
+- One primary next action in the conclusion.
+
+At `detail: 'explanation'` and higher, the full Evidence section and
+Available actions list return.
+
+At `detail: 'diagnostic'`, reason codes, canonical messages, and full
+ProofGraph diagnostic detail are visible.
+
+### 12.2 `/why` progressive disclosure
+
+Default `/why` uses `detail: 'explanation'`:
+
+- Blocker headline, explanation, recovery, and relevant missing evidence.
+- ProofGraph with relevant unresolved critical claims.
+- Reason code as secondary detail.
+
+At `detail: 'diagnostic'`, canonical reason codes, registry messages, and
+full ProofGraph diagnostic claim detail are visible.
+
+## 13. Density
 
 `compact` is the default and currently only density. Future expansions (e.g.
 `verbose` for diagnostics) will be represented as part of the document `kind`,
 not as a renderer parameter.
 
-## 13. Code Fences
+## 14. Code Fences
 
 - Code sections use fenced Markdown blocks.
 - Fence length is deterministically chosen to exceed the longest backtick run
@@ -273,7 +316,7 @@ not as a renderer parameter.
 - Language identifiers are validated against `[A-Za-z0-9_+.#-]+`. Invalid
   identifiers are rejected with an explicit error.
 
-## 14. Bullet List (`bulletList`)
+## 15. Bullet List (`bulletList`)
 
 Generic bulleted list for non-command items (exit options, enumerations).
 Renders as:
@@ -286,7 +329,7 @@ Renders as:
 - Empty items are rejected with a contract error.
 - Distinct from `commandList` — no invocation, no description, no visibility.
 
-## 15. Guidance (`guidance`)
+## 16. Guidance (`guidance`)
 
 Non-normative action recommendations for /finish.
 
@@ -300,7 +343,7 @@ Non-normative action recommendations for /finish.
 - Must NOT be confused with advisory notices (`notice`).
 - Every item must have non-empty `action` and `reason` fields.
 
-## 16. Notice Multi-Message
+## 17. Notice Multi-Message
 
 The `NoticeSection` now supports `additionalMessages?: readonly string[]`
 for rendering multiple messages under a single heading:
@@ -316,7 +359,7 @@ for rendering multiple messages under a single heading:
 - Empty messages in `additionalMessages` are rejected.
 - Backwards-compatible: existing single-message notices are unaffected.
 
-## 17. Tables And Long Content
+## 18. Tables And Long Content
 
 Compact FlowGuard state is rendered through typed key-value, checklist,
 artifact, and findings sections; the renderer does not generate Markdown tables.
@@ -325,7 +368,7 @@ structurally normalized but never truncated, summarized, or converted by the
 renderer. Canonical upstream projections may instead reference an artifact when
 they intentionally avoid returning its full content.
 
-## 18. Archive Labels
+## 19. Archive Labels
 
 Archive lifecycle states (`pending` | `created` | `verified` | `failed`)
 are normalised via `parseArchiveLabel()`. Unknown values throw a contract

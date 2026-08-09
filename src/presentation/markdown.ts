@@ -269,6 +269,9 @@ function renderBlocker(section: BlockerSection, warning: string): string {
     if (section.explanation) {
       lines.push(`**Why:** ${section.explanation}`);
     }
+    if (section.impact) {
+      lines.push(`**Impact:** ${section.impact}`);
+    }
     if (section.canonicalMessage || section.code) {
       lines.push('**Details:**');
       if (section.code) {
