@@ -65,3 +65,16 @@ function emitActionPresented(
   };
   emitTelemetryEvent(body, sessionId, phase);
 }
+
+export function emitDetailRequested(state: { phase: string; id: string }): void {
+  emitTelemetryEvent(
+    {
+      event: 'detail_requested',
+      from: 'summary',
+      to: 'explanation',
+      surface: 'why',
+    },
+    state.id,
+    state.phase,
+  );
+}
