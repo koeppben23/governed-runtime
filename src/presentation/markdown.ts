@@ -253,18 +253,34 @@ function renderCommandList(
 }
 
 function renderBlocker(section: BlockerSection, warning: string): string {
-  const lines: string[] = [];
   const symbol = warning;
+  // Migrated codes carry human projection detail fields (canonicalMessage /
+  // explanation); the reason code is diagnostic identity and moves out of the
+  // primary Blocked line into Details. Unmigrated sections keep the legacy
+  // layout byte-for-byte.
+  if (section.explanation || section.canonicalMessage) {
+    const lines: string[] = [`${symbol} **Blocked:** ${section.text}`];
+    if (section.recovery) {
+      lines.push(`**Recovery:** ${section.recovery}`);
+    }
+    if (section.explanation) {
+      lines.push(`**Why:** ${section.explanation}`);
+    }
+    if (section.canonicalMessage || section.code) {
+      lines.push('**Details:**');
+      if (section.code) {
+        lines.push(`\`${section.code}\``);
+      }
+      if (section.canonicalMessage) {
+        lines.push(section.canonicalMessage);
+      }
+    }
+    return lines.join('\n');
+  }
   const codeBlock = section.code ? ` \`${section.code}\`` : '';
-  lines.push(`${symbol} **Blocked:**${codeBlock} — ${section.text}`);
+  const lines: string[] = [`${symbol} **Blocked:**${codeBlock} — ${section.text}`];
   if (section.recovery) {
     lines.push(`**Recovery:** ${section.recovery}`);
-  }
-  if (section.explanation) {
-    lines.push(`**Why:** ${section.explanation}`);
-  }
-  if (section.canonicalMessage && section.canonicalMessage !== section.text) {
-    lines.push(`**Details:** ${section.canonicalMessage}`);
   }
   return lines.join('\n');
 }

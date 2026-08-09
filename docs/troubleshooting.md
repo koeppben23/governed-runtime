@@ -504,11 +504,13 @@ WRONG_PHASE
 ## Migrated Reason Codes (Human Projection)
 
 The following reason codes are "migrated" onto the Human Projection. They are the
-single authority (`src/presentation/reason-copy.ts`) for human copy: on the
-default human surface (`/status`, `/why`, `/finish`, and blocked tool results)
-the context-free `headline` replaces the interpolated registry message, the
-registry-verbatim message is preserved as the diagnostic detail, and the
-human-authored `explanation` renders as `**Why:**`. Keep this table in sync with
+single authority (`src/presentation/reason-copy.ts`) for human copy. On the
+rendered presentation surfaces (`/status`, `/why`, `/finish`) the context-free
+`headline` becomes the primary copy, the reason code moves into `**Details:**`,
+the registry-verbatim message is preserved there, and the human-authored
+`explanation` renders as `**Why:**`. Structured blocked tool results remain
+canonical and additive: `message` is the interpolated registry message and
+`headline` is carried as an additive field. Keep this table in sync with
 `REASON_COPY` — the drift test enforces it.
 
 | Code                                    | Headline                                                                        | Explanation                                                                                                                                                                                 |

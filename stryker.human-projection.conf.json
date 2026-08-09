@@ -1,0 +1,27 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "packageManager": "npm",
+  "testRunner": "vitest",
+  "reporters": ["clear-text", "json"],
+  "coverageAnalysis": "perTest",
+  "checkers": ["typescript"],
+  "tsconfigFile": "tsconfig.json",
+  "vitest": {
+    "configFile": "vitest.stryker-human-projection.config.ts"
+  },
+  "mutate": [
+    "src/presentation/reason-copy.ts",
+    "src/presentation/reason-projection.ts",
+    "src/presentation/human-projection.ts",
+    "src/presentation/markdown.ts:255-287"
+  ],
+  "mutator": {
+    "excludedMutations": ["StringLiteral", "ArrayDeclaration"]
+  },
+  "ignoreStatic": true,
+  "thresholds": {
+    "high": 85,
+    "low": 80,
+    "break": 80
+  }
+}

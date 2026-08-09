@@ -192,30 +192,40 @@ migrated exactly when it has an entry in that table; the projection derives its
 `impact` classification and its human copy from it and never from the technical
 `BlockedCategory` taxonomy.
 
-On the default human surface (`/status`, `/why`, `/finish`, and blocked tool
-results) a migrated code renders as:
+Migrated reason codes render differently on the two default surfaces. The
+rendered presentation (`/status`, `/why`, `/finish`) makes the headline the
+primary human copy and keeps the reason code as diagnostic identity in Details:
 
-- **Headline replaces the interpolated registry message.** The context-free
-  `headline` is the `BlockerSection.text`, so `{placeholder}` interpolation
-  context never leaks onto the default surface.
+- **Headline becomes the primary human copy.** The context-free `headline` is
+  the `BlockerSection.text`, so `{placeholder}` interpolation context never
+  leaks onto the rendered surface.
+- **The reason code is diagnostic identity, not the headline.** It moves out of
+  the primary `Blocked:` line and into `**Details:**`.
 - **The registry-verbatim message is never lost.** It is carried as the
-  projection's `canonicalMessage` and rendered as `**Details:**` when it differs
-  from the headline text.
+  projection's `canonicalMessage` and rendered under `**Details:**`.
 - **The human-authored explanation renders as `**Why:**`** when present.
-- **Blocked tool-result JSON carries an additive `headline` field** (migrated
-  codes only), so plugin boundaries read the human copy without message parsing.
-  This is strictly additive — unmigrated blocked output is byte-identical.
 
 ```markdown
-⚠ **Blocked:** `DISCOVERY_DRIFT_BLOCKED` — Discovery drift blocks mutating tools
+⚠ **Blocked:** Discovery drift blocks mutating tools
 **Recovery:** Re-run discovery and flowguard_hydrate to reconcile drift against persisted evidence
 **Why:** The discovery surface drifted from the persisted binding and the onDrift policy blocks mutating tools. Reconcile drift before continuing.
-**Details:** Discovery drift verdict is drifted; policy onDrift=block stops mutating tools
+**Details:**
+`DISCOVERY_DRIFT_BLOCKED`
+Discovery drift verdict is drifted; policy onDrift=block stops mutating tools
 ```
 
-The `**Details:**` line is omitted when `canonicalMessage` equals the display
-text, keeping migrated output concise while the diagnostic surface (diagnostics
-payload) still carries the verbatim message.
+The structured blocked tool result stays canonical and additive:
+
+```text
+message  = canonical registry message
+headline = humanized headline
+code     = canonical code
+recovery = canonical recovery
+```
+
+`message` remains the interpolated registry message; `headline` is carried as an
+additive field (migrated codes only) so plugin boundaries read the human copy
+without message parsing. Unmigrated blocked output is byte-identical.
 
 ## 12. Density
 

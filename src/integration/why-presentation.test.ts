@@ -179,6 +179,9 @@ describe('buildWhyDocument', () => {
     // The human-authored explanation and the verbatim canonical message are preserved.
     expect(output).toContain('**Why:** The declared risk triggers require at least one critical');
     expect(output).toContain('**Details:**');
+    expect(output).toContain(
+      'Evidence approval is blocked because {triggers} requires at least one critical, certificate-authorized fact claim.',
+    );
   });
 
   it('omits blocker section when not blocked', () => {

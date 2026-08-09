@@ -216,6 +216,9 @@ describe('buildFinishDocument', () => {
       '**Why:** Certificate-authorized critical plan claims have no persisted ProofGraph evaluation',
     );
     expect(output).toContain('**Details:**');
+    expect(output).toContain(
+      'Evidence approval is blocked because certificate-authorized critical plan claim(s) have no persisted ProofGraph evaluation: {claimIds}.',
+    );
   });
 
   it('includes exit options section', () => {

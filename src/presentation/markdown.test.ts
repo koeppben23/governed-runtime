@@ -148,7 +148,7 @@ describe('renderMarkdown', () => {
     expect(result).toContain('→ `/check` — Run checks');
   });
 
-  it('renders a migrated blocker with explanation and canonical details', () => {
+  it('renders a migrated blocker with headline first and code in Details', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
@@ -176,19 +176,21 @@ describe('renderMarkdown', () => {
     const result = renderMarkdown(doc);
     assertRendererInvariants(result);
     assertNoStructuralTripleNewline(result);
-    expect(result).toContain(
-      '⚠ **Blocked:** `DISCOVERY_DRIFT_BLOCKED` — Discovery drift blocks mutating tools',
-    );
+    // Headline is primary; the reason code is diagnostic identity, not the headline.
+    expect(result).toContain('⚠ **Blocked:** Discovery drift blocks mutating tools');
+    expect(result).not.toContain('**Blocked:** `DISCOVERY_DRIFT_BLOCKED`');
     expect(result).toContain(
       '**Recovery:** Re-run discovery and flowguard_hydrate to reconcile drift',
     );
     expect(result).toContain('**Why:** The discovery surface drifted from the persisted binding');
+    expect(result).toContain('**Details:**');
+    expect(result).toContain('`DISCOVERY_DRIFT_BLOCKED`');
     expect(result).toContain(
-      '**Details:** Discovery drift verdict is changed; policy onDrift=block stops mutating tools',
+      'Discovery drift verdict is changed; policy onDrift=block stops mutating tools',
     );
   });
 
-  it('omits the Details line when canonicalMessage equals the display text', () => {
+  it('keeps the legacy layout for unmigrated blockers with code in the primary line', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
@@ -197,7 +199,7 @@ describe('renderMarkdown', () => {
           kind: 'blocker',
           code: 'PLAN_REQUIRED',
           text: 'An approved plan is required before proceeding',
-          canonicalMessage: 'An approved plan is required before proceeding',
+          recovery: 'Create a plan with /plan',
         },
       ],
       conclusion: {
@@ -211,6 +213,99 @@ describe('renderMarkdown', () => {
       '**Blocked:** `PLAN_REQUIRED` — An approved plan is required before proceeding',
     );
     expect(result).not.toContain('**Details:**');
+  });
+
+  it('treats a section with only an explanation as migrated without a Details block', () => {
+    const doc: CompactCardDocument = {
+      kind: 'compact_card',
+      density: 'compact',
+      sections: [
+        {
+          kind: 'blocker',
+          code: null,
+          text: 'The review scope is not verifiable for this obligation',
+          explanation: 'The review obligation has no frozen reviewed-file scope.',
+        },
+      ],
+      conclusion: {
+        kind: 'next_action',
+        action: {
+          invocation: '/review',
+          description: 'Re-run the review',
+          visibility: 'recommended',
+        },
+      },
+    };
+    const result = renderMarkdown(doc);
+    assertRendererInvariants(result);
+    expect(result).toContain('**Blocked:** The review scope is not verifiable for this obligation');
+    expect(result).toContain('**Why:** The review obligation has no frozen reviewed-file scope.');
+    // No recovery, no canonical message, no code → no additional blocks.
+    expect(result).not.toContain('**Recovery:**');
+    expect(result).not.toContain('**Details:**');
+  });
+
+  it('treats a section with only a canonical message as migrated (no explanation)', () => {
+    const doc: CompactCardDocument = {
+      kind: 'compact_card',
+      density: 'compact',
+      sections: [
+        {
+          kind: 'blocker',
+          code: 'DISCOVERY_HEALTH_DEGRADED',
+          text: 'Discovery is degraded; mutating tools are blocked',
+          canonicalMessage: 'Discovery is degraded and the onDegraded policy blocks mutating tools',
+        },
+      ],
+      conclusion: {
+        kind: 'next_action',
+        action: {
+          invocation: '/hydrate',
+          description: 'Resolve degradation',
+          visibility: 'recommended',
+        },
+      },
+    };
+    const result = renderMarkdown(doc);
+    assertRendererInvariants(result);
+    expect(result).toContain('**Blocked:** Discovery is degraded; mutating tools are blocked');
+    expect(result).toContain('**Details:**');
+    expect(result).toContain('`DISCOVERY_HEALTH_DEGRADED`');
+    expect(result).toContain(
+      'Discovery is degraded and the onDegraded policy blocks mutating tools',
+    );
+    expect(result).not.toContain('**Why:**');
+    expect(result).not.toContain('**Blocked:** `DISCOVERY_HEALTH_DEGRADED`');
+  });
+
+  it('renders Details with the message only when a migrated section has no code', () => {
+    const doc: CompactCardDocument = {
+      kind: 'compact_card',
+      density: 'compact',
+      sections: [
+        {
+          kind: 'blocker',
+          code: null,
+          text: 'Discovery is degraded; mutating tools are blocked',
+          canonicalMessage: 'Discovery is degraded and the onDegraded policy blocks mutating tools',
+        },
+      ],
+      conclusion: {
+        kind: 'next_action',
+        action: {
+          invocation: '/hydrate',
+          description: 'Resolve degradation',
+          visibility: 'recommended',
+        },
+      },
+    };
+    const result = renderMarkdown(doc);
+    assertRendererInvariants(result);
+    expect(result).toContain('**Details:**');
+    expect(result).toContain(
+      'Discovery is degraded and the onDegraded policy blocks mutating tools',
+    );
+    expect(result).not.toContain('`null`');
   });
 
   it('renders checklist', () => {
