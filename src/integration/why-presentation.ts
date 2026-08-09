@@ -17,6 +17,7 @@ import type {
   PresentationSection,
   PresentationConclusion,
 } from '../presentation/index.js';
+import { projectReasonFromRegistry } from '../presentation/index.js';
 import type { WhyPresentationProjection, WhyConclusionProjection } from './status-why-finish.js';
 import { buildProofGraphSection } from '../presentation/proof-summary.js';
 
@@ -37,18 +38,8 @@ export function buildWhyDocument(projection: WhyPresentationProjection): Present
   });
 
   // Blocker / Evidence-required detail
-  const hasBlockerDetail =
-    projection.blocker.reasonCode !== null || projection.blocker.reasonText !== null;
-
-  if (hasBlockerDetail && projection.blocker.reasonText) {
-    sections.push({
-      kind: 'blocker',
-      heading: projection.blocker.blocked ? 'Blocked' : 'Evidence required',
-      code: projection.blocker.reasonCode,
-      text: projection.blocker.reasonText,
-      ...(projection.blocker.recoveryHint ? { recovery: projection.blocker.recoveryHint } : {}),
-    });
-  }
+  const blockerSection = buildBlockerSection(projection);
+  if (blockerSection) sections.push(blockerSection);
 
   // Missing evidence
   if (projection.evidenceSlots.length > 0) {
@@ -81,6 +72,32 @@ export function buildWhyDocument(projection: WhyPresentationProjection): Present
           : 'success',
     sections,
     conclusion,
+  };
+}
+
+/**
+ * Build the blocker / evidence-required section for /why.
+ *
+ * Recovery guidance: registry-backed recovery (canonical reason steps from
+ * the Human Projection) takes precedence over the phase-derived next-action
+ * hint, which remains the fallback for blockers without a canonical reason
+ * code. Returns null when there is no blocker detail to present.
+ */
+function buildBlockerSection(projection: WhyPresentationProjection): PresentationSection | null {
+  const hasBlockerDetail =
+    projection.blocker.reasonCode !== null || projection.blocker.reasonText !== null;
+  if (!hasBlockerDetail || !projection.blocker.reasonText) return null;
+
+  const registryRecovery = projection.blocker.reasonCode
+    ? projectReasonFromRegistry(projection.blocker.reasonCode)?.recovery.primary
+    : undefined;
+  const recovery = registryRecovery ?? projection.blocker.recoveryHint ?? undefined;
+  return {
+    kind: 'blocker',
+    heading: projection.blocker.blocked ? 'Blocked' : 'Evidence required',
+    code: projection.blocker.reasonCode,
+    text: projection.blocker.reasonText,
+    ...(recovery ? { recovery } : {}),
   };
 }
 

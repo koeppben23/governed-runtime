@@ -22,6 +22,15 @@ const CODE_LITERAL_PATTERN = /code:\s*['"]([A-Z][A-Z0-9_]+)['"]/g;
 // `code:` object properties, so the property pattern above misses them. Guard
 // them explicitly to prevent unregistered-code regressions on those paths.
 const BLOCK_HELPER_PATTERN = /(?:formatBlocked|strictBlockedOutput)\(\s*['"]([A-Z][A-Z0-9_]+)['"]/g;
+// ProofGraph enforcement mapping (audit/proofgraph/reason-code-mapping.ts)
+// emits registry codes as OBJECT-MAP VALUES and switch RETURNS — e.g.
+// `evidence_missing: 'PROOFGRAPH_ASSERTION_EVIDENCE_MISSING'` or
+// `return 'PROOFGRAPH_AGGREGATE_SCOPE_UNATTESTED'`. These are neither `code:`
+// properties nor formatBlocked('CODE') calls, so both patterns above miss
+// them. Scan mapping-value literals explicitly so the F1 guard also covers
+// ProofGraph enforcement outputs (gate and status consume this mapping).
+const MAPPING_CODE_PATTERN = /['"]([A-Z][A-Z0-9_]+)['"]/g;
+const PROOFGRAPH_MAPPING_FILE = 'reason-code-mapping.ts';
 
 // These codes are NOT registry codes — they are CRITICAL/error severities,
 // audit event codes, or external library codes. Excluded explicitly.
@@ -55,6 +64,11 @@ const EXCLUDED_CODES: ReadonlySet<string> = new Set([
   // Diagnostic-only host-capability log code (diagnosticLog.warn), not a
   // governance reason code — mirrors the CRITICAL/error-severity exclusions above.
   'HOST_CAPABILITY_MISMATCH',
+  // Pass-state registry code derived by reason-code-mapping.ts for PROVEN
+  // claims (ClaimEnforcementState.registryCode). Never a blocking reason:
+  // blockingStateFor('PROVEN') is null, so this code can never surface as a
+  // blocked recovery path. Excluded from the registration guard deliberately.
+  'PROOFGRAPH_EVIDENCE_PROVEN',
 ]);
 
 /**
@@ -98,6 +112,14 @@ function collectCodeLiterals(dir: string, acc: Set<string>): void {
         acc.add(code);
       }
     }
+    if (fullPath.endsWith(PROOFGRAPH_MAPPING_FILE)) {
+      while ((match = MAPPING_CODE_PATTERN.exec(content)) !== null) {
+        const code = match[1];
+        if (code !== undefined && !EXCLUDED_CODES.has(code)) {
+          acc.add(code);
+        }
+      }
+    }
   }
 }
 
@@ -139,9 +161,9 @@ describe('P10c — reason code split', () => {
       ...PROOFGRAPH_REASONS.map((r: { code: string }) => r.code),
     ];
 
-    expect(allSplitCodes).toHaveLength(223);
+    expect(allSplitCodes).toHaveLength(226);
     // No duplicates across the 4 arrays
-    expect(new Set(allSplitCodes).size).toBe(223);
+    expect(new Set(allSplitCodes).size).toBe(226);
     // All split codes are registered in the default registry
     for (const code of allSplitCodes) {
       expect(defaultReasonRegistry.get(code)).toBeDefined();

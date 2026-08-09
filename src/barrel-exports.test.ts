@@ -111,11 +111,14 @@ describe('presentation/index.ts barrel', () => {
     'normalizedMarkdown',
     'validateCodeLanguage',
     'PresentationContractError',
+    'projectImpact',
+    'projectReasonFromRegistry',
     'renderMarkdown',
     'STATUS_LABELS',
     'lookupStatusLabel',
     'parseStatusLabel',
     'parseArchiveLabel',
+    'toRecoveryProjection',
     'GUIDANCE_STATUS_LABELS',
   ] as const;
 

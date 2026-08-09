@@ -51,6 +51,17 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
     ],
   },
   {
+    code: 'PROOFGRAPH_COUNTEREXAMPLE_OBSERVED',
+    category: 'precondition',
+    messageTemplate:
+      "Claim '{claimId}' is contradicted by fresh adversarial evidence from its bound counterexample check.",
+    recoverySteps: [
+      'Inspect the failing assertion produced by the counterexample check',
+      'Correct the implementation or revise the approved claim, then re-run the required positive and adversarial evidence',
+    ],
+  },
+
+  {
     code: 'PROOFGRAPH_CRITICAL_FACTS_UNPROVEN',
     category: 'precondition',
     messageTemplate:
@@ -184,6 +195,18 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'PROOFGRAPH_ASSERTION_EVIDENCE_MISSING',
+    category: 'precondition',
+    messageTemplate:
+      "Claim '{claimId}' requires positive evidence, but no provider result is bound to the required check '{checkId}' (or the binding is not fresh).",
+    recoverySteps: [
+      'Run the required verification check for the claim and record its result',
+      'Verify the evidence binds the current implementation revision and the expected check identifier',
+      'Rerun the check so a fresh, matching report is recorded',
+    ],
+  },
+
+  {
     code: 'PROOFGRAPH_ASSERTION_PROVIDER_MISMATCH',
     category: 'precondition',
     messageTemplate:
@@ -191,6 +214,18 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
     recoverySteps: [
       'Ensure the verification check uses the correct test framework',
       'A JUnit assertion cannot be proven by Vitest output or vice versa',
+    ],
+  },
+
+  {
+    code: 'PROOFGRAPH_PROVIDER_EXECUTION_ERROR',
+    category: 'precondition',
+    messageTemplate:
+      "Verification check '{checkId}' for claim '{claimId}' could not execute, so its provider produced no result to bind as evidence.",
+    recoverySteps: [
+      'Run the check locally to inspect the provider execution error',
+      'Fix the check command or execution environment so the provider can run',
+      'Rerun the check and record a fresh, matching report',
     ],
   },
 

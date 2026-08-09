@@ -8,6 +8,13 @@
 
 export { PHASE_LABELS } from './phase-labels.js';
 export { buildProductNextAction } from './next-action-copy.js';
+export type { UserImpact, HumanExplanation, RecoveryProjection } from './human-projection.js';
+export {
+  projectReasonFromRegistry,
+  projectImpact,
+  toRecoveryProjection,
+} from './reason-projection.js';
+export type { ReasonProjection } from './reason-projection.js';
 export { buildPlanReviewCard } from './plan-review-card.js';
 export {
   buildEvidenceReviewCard,
