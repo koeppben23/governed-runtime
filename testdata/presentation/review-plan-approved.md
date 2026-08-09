@@ -5,12 +5,11 @@
 **Policy:** team
 **Task:** Add payment validation
 
-## ProofGraph
+## Verification
 
 Status: NOT_DECLARED
-No proof obligations declared.
+No verification obligations declared.
 Approval evidence: Not recorded
-Verification effect: None — approval is not verification
 
 ## Proposed Plan
 

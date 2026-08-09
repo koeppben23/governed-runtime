@@ -227,6 +227,38 @@ recovery = canonical recovery
 additive field (migrated codes only) so plugin boundaries read the human copy
 without message parsing. Unmigrated blocked output is byte-identical.
 
+### 11.2 ProofGraph Claim Human Projection
+
+Claim verification states are projected through a single vocabulary authority
+(`src/presentation/human-verification.ts`) that maps six canonical states to
+five human labels. Only `PROVEN` renders as `Verified`; `UNPROVEN` and
+`NOT_VERIFIED` both render as `Not verified` but remain diagnostically distinct.
+
+Default surface (human mode):
+
+- `PROVEN` → `✓ Verified`
+- `UNPROVEN` → `? Not verified`
+- `NOT_VERIFIED` → `? Not verified`
+- `CONTRADICTED` → `✗ Failed`
+- `STALE` → `⚠ Needs re-check`
+- `BLOCKED` → `⚠ Blocked`
+
+Diagnostic mode (`detail: 'diagnostic'`) renders the raw canonical state,
+claim id, claim scope, required evidence kinds, counterexample requirement,
+binding diagnostic code, freshness digest, and candidate id when present.
+
+Evidence requirements are projected from two distinct canonical sources
+that MUST NOT be collapsed:
+
+- `requiredEvidence` (provider kinds) → `RequiredEvidenceProjection`
+- `counterexampleRequirement` (assertion / aggregate_check binding) →
+  `CounterexampleRequirementProjection`
+
+Claim statements are rendered verbatim. No per-reference satisfied/missing
+evidence status is inferred. `candidateId`, provider identity, and claim
+scope are rendered only when canonically present. Binding diagnostic copy
+lives in a single exhaustive authority (`src/presentation/claim-diagnostic-copy.ts`).
+
 ## 12. Density
 
 `compact` is the default and currently only density. Future expansions (e.g.

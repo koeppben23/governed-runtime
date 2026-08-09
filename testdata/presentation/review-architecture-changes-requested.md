@@ -7,12 +7,11 @@
 ⚠ Reviewer did NOT approve this ADR.
 ⚠ The independent review reached its iteration limit without convergence (last verdict: changes_requested). Review the outstanding findings carefully before approving.
 
-## ProofGraph
+## Verification
 
 Status: NOT_DECLARED
-No proof obligations declared.
+No verification obligations declared.
 Approval evidence: Not recorded
-Verification effect: None — approval is not verification
 
 ## ADR Details
 

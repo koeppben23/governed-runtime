@@ -661,7 +661,7 @@ describe('plan review golden fixtures', () => {
         approval: { attestations: [] },
       },
     });
-    expect(card).toContain('## ProofGraph');
+    expect(card).toContain('## Verification');
     expect(card).toContain('2 plan claim(s) declared');
     expect(card).toContain('1 critical');
     expect(card).toContain('AWAITING_EVIDENCE');

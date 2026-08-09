@@ -10,12 +10,6 @@ name: Mutation Testing
 # that is solved, the full-suite mutation run stays on the nightly/release
 # cadence and is intentionally NOT a required PR check
 # (see .github/BRANCH-PROTECTION.md).
-#
-# The narrow targeted Human Projection profile
-# (stryker.human-projection.conf.json) is the exception: it avoids the
-# changed-files restriction problem by mutating a complete module against a
-# fixed test subset, so it DOES run as a PR check — see
-# .github/workflows/mutation-human-projection.yml.
 
 on:
   schedule:

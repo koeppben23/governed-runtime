@@ -4,6 +4,7 @@
  */
 
 import type { ClaimVerificationState as CanonicalClaimVerificationState } from '../state/proofgraph-primitives.js';
+import type { HumanProofSummary } from './claim-human-projection.js';
 
 export type ClaimVerificationState = CanonicalClaimVerificationState;
 
@@ -57,6 +58,7 @@ export type CompactProofPresentation =
       readonly otherHighlightedClaims: readonly [];
       readonly approval: ProofApprovalPresentation;
       readonly decisionContext: 'current_gate' | 'prospective_approval' | 'completion';
+      readonly humanSummary?: HumanProofSummary;
     }
   | {
       readonly kind: 'evaluation';
@@ -81,4 +83,5 @@ export type CompactProofPresentation =
       readonly revisionDigest?: string;
       readonly approval: ProofApprovalPresentation;
       readonly decisionContext: 'current_gate' | 'prospective_approval' | 'completion';
+      readonly humanSummary?: HumanProofSummary;
     };

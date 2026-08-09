@@ -375,8 +375,8 @@ describe('e2e-workflow', () => {
       expect(presentation?.markdown).toContain('/approve');
       expect(presentation?.markdown).toContain('/request-changes');
       expect(presentation?.markdown).toContain('/reject');
-      expect(presentation?.markdown).toContain('## ProofGraph');
-      expect(presentation?.markdown).toContain('Status: NOT_DECLARED');
+      expect(presentation?.markdown).toContain('## Verification');
+      expect(presentation?.markdown).toContain('No verification obligations declared');
 
       // 7. Decision: approve evidence
       await callOk(decision, { verdict: 'approve', rationale: 'Ship it' });

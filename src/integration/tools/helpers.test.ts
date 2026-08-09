@@ -180,7 +180,7 @@ describe('formatRailResult', () => {
     );
     const output = typeof result === 'string' ? result : result.output;
     const presentation = parseJSON(output).presentation as { markdown: string };
-    expect(presentation.markdown).toContain('## ProofGraph');
+    expect(presentation.markdown).toContain('## Verification');
     expect(presentation.markdown).toContain('/export');
     expect(presentation.markdown).not.toContain('/approve');
   });

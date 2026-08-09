@@ -224,3 +224,33 @@ surfaces explicitly, rather than merely implying:
   an unsourced assumption, a falsification, an errored provider, missing
   evidence, and superseded (stale) evidence;
 - the registration and config-default consistency reports and the gate decision.
+
+## Human claim vocabulary
+
+The default human surface maps canonical verification states to five
+human-readable labels through a single vocabulary authority. Only `PROVEN`
+renders as `Verified`; all other states are explicitly non-verified.
+
+| Canonical      | Human            | Glyph |
+| -------------- | ---------------- | ----- |
+| `PROVEN`       | `Verified`       | `✓`   |
+| `UNPROVEN`     | `Not verified`   | `?`   |
+| `NOT_VERIFIED` | `Not verified`   | `?`   |
+| `CONTRADICTED` | `Failed`         | `✗`   |
+| `STALE`        | `Needs re-check` | `⚠`   |
+| `BLOCKED`      | `Blocked`        | `⚠`   |
+
+`UNPROVEN` and `NOT_VERIFIED` are compressed to `Not verified` in the default
+surface but remain distinct in diagnostic mode — no domain merge.
+
+Evidence requirements are displayed directly from the canonical contract:
+
+- `requiredEvidence` exposes the positive provider kinds (e.g. `executed_test`,
+  `fault_injection`) and adversarial evidence categories the evaluator requires.
+- `counterexampleRequirement` exposes the assertion/aggregate_check binding
+  (`checkId`, `providerId`, `candidateId`) that governs counterexample
+  evidence matching.
+
+Claim Resolution displays the canonical evidence requirement contract and
+claim-level binding diagnostic. It does **not** reconstruct per-reference
+evidence satisfaction.

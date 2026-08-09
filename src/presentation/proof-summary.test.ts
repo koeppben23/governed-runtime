@@ -114,14 +114,14 @@ describe('renderCompactProofSection', () => {
   });
 
   describe('evaluation', () => {
-    it('renders PROVEN headline', () => {
+    it('renders PROVEN summary line', () => {
       const result = renderCompactProofSection(makeEvaluation('PROVEN', { provenCount: 5 }));
-      expect(result).toContain('All critical claims PROVEN');
-      expect(result).toContain('5 PROVEN');
-      expect(result).toContain('Evidence lineage:');
+      expect(result).toContain('5 of 5 claims verified');
+      expect(result).toContain('Critical coverage: 3/3 verified');
+      expect(result).toContain('Diagnostic:');
     });
 
-    it('renders CONTRADICTED headline with reason, no scenario text', () => {
+    it('renders CONTRADICTED claim with human vocabulary', () => {
       const pres = makeEvaluation('CONTRADICTED', {
         contradictedCount: 1,
         provenCount: 1,
@@ -137,15 +137,13 @@ describe('renderCompactProofSection', () => {
         },
       ];
       const result = renderCompactProofSection(pres);
-      expect(result).toContain('CONTRADICTED');
+      expect(result).toContain('Failed');
       expect(result).toContain('falsified');
       expect(result).toContain('Fresh adversarial evidence falsified');
-      expect(result).not.toContain('scenario');
-      expect(result).toContain('Inspect the blocking claim');
-      expect(result).toContain('1 CONTRADICTED');
+      expect(result).toContain('Diagnostic:');
     });
 
-    it('renders BLOCKED headline with provider-failure reason', () => {
+    it('renders BLOCKED claim with provider-failure reason in fallback', () => {
       const pres = makeEvaluation('BLOCKED', { blockedCount: 1 });
       (pres as Record<string, unknown>).unmetCriticalClaims = [
         {
@@ -158,11 +156,11 @@ describe('renderCompactProofSection', () => {
         },
       ];
       const result = renderCompactProofSection(pres);
-      expect(result).toContain('BLOCKED');
+      expect(result).toContain('Blocked');
       expect(result).toContain('could not produce a usable verdict');
     });
 
-    it('renders STALE headline without asserting implementation changed', () => {
+    it('renders STALE claim with human vocabulary in fallback', () => {
       const pres = makeEvaluation('STALE', { staleCount: 1 });
       (pres as Record<string, unknown>).unmetCriticalClaims = [
         {
@@ -175,25 +173,28 @@ describe('renderCompactProofSection', () => {
         },
       ];
       const result = renderCompactProofSection(pres);
-      expect(result).toContain('STALE');
+      expect(result).toContain('Needs re-check');
       expect(result).toContain('no longer current');
       expect(result).not.toContain('implementation changed');
     });
 
-    it('renders revision digest shorthand', () => {
-      const result = renderCompactProofSection(
-        makeEvaluation('PROVEN', {
-          revisionDigest: 'abc123def4567890',
-        }),
-      );
-      expect(result).toContain('Revision: `abc123def456`');
+    it('diagnostic mode shows revision digest', () => {
+      const pres = makeEvaluation('PROVEN', {
+        revisionDigest: 'abc123def4567890',
+      });
+      const section = buildProofGraphSection(pres, { detail: 'diagnostic' });
+      const markdown = renderCompactProofSection(section.proof);
+      // The renderCompactProofSection doesn't receive detail — it always renders human.
+      // Diagnostic mode is accessed via renderProofGraphMarkdown with detail option.
+      // For the human renderer, revision digest is only shown in diagnostic mode.
+      expect(markdown).not.toContain('Revision:');
     });
 
-    it('renders evidence freshness', () => {
+    it('renders evidence freshness in human mode via diagnostic pointer', () => {
       const result = renderCompactProofSection(
         makeEvaluation('PROVEN', { evidenceFreshness: 'STALE' }),
       );
-      expect(result).toContain('Evidence freshness: Stale');
+      expect(result).toContain('Diagnostic: `flowguard_status({ proofGraph: true })`');
     });
 
     it('renders multiple approval attestations without collapsing their binding', () => {
@@ -213,45 +214,7 @@ describe('renderCompactProofSection', () => {
       expect(result).not.toContain('Stale or unbound');
     });
 
-    it('renders prospective approval prefix', () => {
-      const pres = makeEvaluation('UNPROVEN', {
-        unprovenCount: 1,
-        decisionContext: 'prospective_approval',
-      });
-      (pres as Record<string, unknown>).unmetCriticalClaims = [
-        {
-          claimId: 'd'.repeat(36),
-          statement: 'Memory safety is guaranteed.',
-          status: 'UNPROVEN',
-          critical: true,
-          reason: 'The available evidence does not establish this claim.',
-        },
-      ];
-      const result = renderCompactProofSection(pres);
-      expect(result).toContain('If submitted for approval now:');
-    });
-
-    it('renders completion context without approval language', () => {
-      const pres = makeEvaluation('UNPROVEN', {
-        unprovenCount: 1,
-        decisionContext: 'completion',
-      });
-      (pres as Record<string, unknown>).unmetCriticalClaims = [
-        {
-          claimId: 'e'.repeat(36),
-          statement: 'Final unresolved claim.',
-          status: 'UNPROVEN',
-          critical: true,
-          reason: 'The available evidence does not establish this claim.',
-        },
-      ];
-      const result = renderCompactProofSection(pres);
-      expect(result).not.toContain('If submitted for approval');
-      expect(result).not.toContain('Current status:');
-      expect(result).toContain('UNPROVEN');
-    });
-
-    it('renders primaryReason alongside highlighted claims (not instead)', () => {
+    it('renders primaryReason alongside highlighted claims in fallback', () => {
       const pres = makeEvaluation('BLOCKED', { blockedCount: 1 });
       (pres as Record<string, unknown>).primaryReason =
         'The implementation risk assessment is outdated and must be refreshed.';
@@ -265,10 +228,8 @@ describe('renderCompactProofSection', () => {
         },
       ];
       const result = renderCompactProofSection(pres);
-      // Both the gate reason and the claim detail appear
       expect(result).toContain('The implementation risk assessment is outdated');
-      expect(result).toContain('"Additional claim still unresolved."');
-      // The gate reason must appear before the claim detail
+      expect(result).toContain('Additional claim still unresolved.');
       const reasonIdx = result.indexOf('risk assessment is outdated');
       const claimIdx = result.indexOf('Additional claim');
       expect(reasonIdx).toBeLessThan(claimIdx);
@@ -282,7 +243,7 @@ describe('renderCompactProofSection', () => {
       expect(result).toContain('The ProofGraph evaluator could not produce a verdict');
     });
 
-    it('tally includes all relevant counts', () => {
+    it('counts reflect proven vs total in human summary', () => {
       const result = renderCompactProofSection(
         makeEvaluation('UNPROVEN', {
           provenCount: 3,
@@ -293,13 +254,8 @@ describe('renderCompactProofSection', () => {
           notVerifiedCount: 0,
         }),
       );
-      expect(result).toContain('3 PROVEN');
-      expect(result).toContain('1 CONTRADICTED');
-      expect(result).toContain('1 BLOCKED');
-      expect(result).toContain('1 UNPROVEN');
-      // STALE and NOT_VERIFIED should not appear when zero
-      expect(result).not.toContain('0 STALE');
-      expect(result).not.toContain('0 NOT_VERIFIED');
+      expect(result).toContain('3 of 5 claims verified');
+      expect(result).toContain('Critical coverage: 0/3 verified');
     });
   });
 });

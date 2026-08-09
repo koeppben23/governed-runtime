@@ -210,7 +210,10 @@ function renderSection(section: PresentationSection, glyphs: PresentationGlyphs)
     case 'text':
       return sectionHeading(section) + renderText(section);
     case 'proofGraph':
-      return renderProofGraphMarkdown(section.proof);
+      return renderProofGraphMarkdown(section.proof, {
+        detail: section.detail,
+        humanSummary: section.humanSummary,
+      });
     case 'code':
       return sectionHeading(section) + renderCode(section);
     case 'notice':

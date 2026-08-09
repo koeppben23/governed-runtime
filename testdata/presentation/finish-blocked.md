@@ -14,16 +14,12 @@
 **Missing:** 0
 **Four eyes:** Satisfied
 
-## ProofGraph
+## Verification
 
-Status: NOT_DECLARED
-No proof obligations declared.
-Critical coverage: 0/0 proven
-Evidence freshness: Not verified
+No verification obligations declared.
 Approval evidence: Not recorded
-Verification effect: None — approval is not verification
 
-Evidence lineage: `flowguard_status({ proofGraph: true })`
+Diagnostic: `flowguard_status({ proofGraph: true })`
 
 ## Guidance
 

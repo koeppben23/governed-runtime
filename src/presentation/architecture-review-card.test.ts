@@ -231,7 +231,7 @@ describe('architecture review golden fixtures', () => {
         approval: { attestations: [] },
       },
     });
-    expect(card).toContain('## ProofGraph');
+    expect(card).toContain('## Verification');
     expect(card).toContain('1 architecture claim(s) declared');
     expect(card).toContain('AWAITING_EVIDENCE');
   });
