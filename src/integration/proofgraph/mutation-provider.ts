@@ -70,14 +70,18 @@ export const MUTATION_PROFILE_IDS = MUTATION_PROFILES.map((p) => p.profileId);
  * produce evidence that can satisfy a positive `fault_injection` proof
  * requirement?
  *
- * Derived from `MUTATION_PROFILES` metadata — returns `true` when at
- * least one registered profile has `trusted: true`. Currently `false`
- * because all profiles rely on externally self-reported reports. When a
- * FlowGuard-executed mutation provider is registered with `trusted: true`,
- * this function reflects it automatically.
+ * Derived from the mutation binder's execution authority: returns `true`
+ * only when `bindMutationEvidence` produces evidence with attestation
+ * other than `external_self_reported`. Today all mutation evidence is
+ * externally self-reported → returns `false`.
+ *
+ * When a FlowGuard-executed mutation provider is built, the execution
+ * pipeline, binder attestation, and this check must change together.
+ * The binder's `Mutation Binder Authority Coupling Invariant` comment
+ * documents the required changes.
  */
 export function hasProvingMutationProvider(): boolean {
-  return MUTATION_PROFILES.some((p) => p.trusted === true);
+  return false;
 }
 
 /**

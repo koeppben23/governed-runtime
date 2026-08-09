@@ -80,13 +80,6 @@ export interface MutationProfile {
   readonly locations: readonly string[];
   /** Command that produced the report (recorded for reproducibility). */
   readonly command: string;
-  /**
-   * Whether this profile is produced by a FlowGuard-executed provider.
-   * When `false` (the default), evidence from this profile carries
-   * `external_self_reported` attestation and cannot satisfy positive
-   * `fault_injection` proof requirements.
-   */
-  readonly trusted?: boolean;
 }
 
 /** A single surviving mutant, retained for reviewer-facing reporting. */

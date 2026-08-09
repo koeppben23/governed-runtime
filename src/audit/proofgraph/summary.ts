@@ -102,8 +102,15 @@ export interface PersistedProofGraphSummary {
  *
  * Coverage reflects the declared contract exclusively — advisory review
  * hypotheses are tallied separately and never affect the contract coverage
- * status. An empty declared contract (zero claims) is treated as NOT_VERIFIED,
- * not as vacuous-truth PROVEN.
+ * status.
+ *
+ * Zero-claim declared contracts (`proofContract` exists but `claims.length === 0`)
+ * are treated as `NOT_VERIFIED`: the schema permits zero claims (no `min(1)`
+ * constraint), the `/plan` tool rejects zero claims at submission, but
+ * `/declare-contract` and direct state construction can produce empty
+ * contracts. Vacuous-truth `PROVEN` for zero claims is an explicit
+ * non-goal — a declared contract with no claims is an invalid declaration
+ * state, not a passing one.
  */
 export function summarizePersistedProofGraph(state: SessionState): PersistedProofGraphSummary {
   const claims = state.proofGraph?.claims ?? [];
