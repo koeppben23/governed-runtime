@@ -73,6 +73,8 @@ export interface ReviewReportCardInput {
   proofSummary: CompactProofPresentation;
   /** Canonical next action resolved from the completed state. */
   productNextAction: { text: string; commands: readonly string[] };
+  /** Pre-computed canonical conclusion action (with intent from installed metadata). */
+  conclusionAction?: import('./model.js').PresentationAction;
 }
 
 // ─── Severity / Category Projection ─────────────────────────────────────────────
@@ -305,7 +307,7 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
     sections,
     conclusion: {
       kind: 'next_action',
-      action: {
+      action: input.conclusionAction ?? {
         invocation: productNextAction.commands[0] ?? null,
         description: productNextAction.text,
         visibility: 'recommended',

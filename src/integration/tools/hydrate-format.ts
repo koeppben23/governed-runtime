@@ -13,6 +13,7 @@ import { persistAndFormat, appendNextAction } from './helpers.js';
 import { LOCK_CONTENDED_OUTPUT_FIELD } from '../../shared/flowguard-identifiers.js';
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
 import { renderMarkdown } from '../../presentation/markdown.js';
+import { getInstalledCommand } from '../installed-commands.js';
 import type {
   CompactCardDocument,
   PresentationSection,
@@ -188,11 +189,7 @@ function buildHydratePresentationCard(params: HydrateCardParams): { markdown: st
 
   const conclusion: PresentationConclusion = {
     kind: 'next_action',
-    action: {
-      invocation: '/task',
-      description: 'Record the task that the workflow will govern.',
-      visibility: 'recommended',
-    },
+    action: hydrateCommandAction('/task', 'recommended'),
   };
 
   const document: CompactCardDocument = {
@@ -240,22 +237,9 @@ function buildHydrateWorkflowsSection(): CommandListSection {
     kind: 'commandList',
     heading: 'Workflows',
     items: [
-      {
-        invocation: '/task',
-        description:
-          'Record a ticket and run the full development lifecycle (ticket \u2192 plan \u2192 implement \u2192 review)',
-        visibility: 'available' as const,
-      },
-      {
-        invocation: '/architecture',
-        description: 'Create an Architecture Decision Record (ADR)',
-        visibility: 'available' as const,
-      },
-      {
-        invocation: '/review',
-        description: 'Generate a compliance review report',
-        visibility: 'available' as const,
-      },
+      hydrateCommandAction('/task', 'available'),
+      hydrateCommandAction('/architecture', 'available'),
+      hydrateCommandAction('/review', 'available'),
     ],
   };
 }
@@ -401,4 +385,25 @@ export function withGateNotice(result: ToolResult, notice: string | null): ToolR
   if (!notice) return result;
   if (typeof result === 'string') return injectGateNotice(result, notice);
   return { ...result, output: injectGateNotice(result.output, notice) };
+}
+
+function hydrateCommandAction(
+  invocation: string,
+  visibility: 'recommended' | 'available',
+): {
+  invocation: string | null;
+  description: string;
+  visibility: 'recommended' | 'available';
+  intent?: import('../../presentation/action-intent.js').ActionIntent;
+} {
+  const cmd = getInstalledCommand(invocation);
+  if (!cmd) {
+    return { invocation, description: invocation, visibility };
+  }
+  return {
+    invocation: cmd.invocation,
+    description: cmd.description,
+    visibility,
+    ...(cmd.intent ? { intent: cmd.intent } : {}),
+  };
 }
