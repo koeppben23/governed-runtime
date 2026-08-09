@@ -22,16 +22,17 @@ import {
   normalizedMarkdown,
   lookupStatusLabel,
   projectReasonFromRegistry,
-  projectDetailFields,
   type PresentationDocument,
   type PresentationSection,
   type PresentationConclusion,
   type PresentationAction,
   type PresentationForm,
   type PresentationBuildOptions,
+  type PresentationDetailLevel,
   type KeyValueItem,
   type BlockerSection,
   type NoticeSection,
+  type ReasonProjection,
 } from '../presentation/index.js';
 import { buildProofGraphSection } from '../presentation/proof-summary.js';
 import type { ProofGraphRenderOptions } from '../presentation/proof-summary.js';
@@ -178,8 +179,31 @@ function buildBlockerSection(
     code: detail === 'diagnostic' ? (blocker.reasonCode ?? null) : null,
     text: reasonProjection?.headline ?? blocker.reasonText!,
     ...(recovery ? { recovery } : {}),
-    ...(detail !== 'summary' ? projectDetailFields(reasonProjection) : {}),
+    ...statusBlockerDetailFields(reasonProjection, detail),
   };
+}
+
+function statusBlockerDetailFields(
+  projection: ReasonProjection | null,
+  detail: PresentationDetailLevel,
+): { explanation?: string; canonicalMessage?: string; impact?: string } {
+  if (!projection) return {};
+
+  switch (detail) {
+    case 'summary':
+      return {};
+
+    case 'explanation':
+      return {
+        ...(projection.explanation ? { explanation: projection.explanation } : {}),
+      };
+
+    case 'diagnostic':
+      return {
+        ...(projection.explanation ? { explanation: projection.explanation } : {}),
+        ...(projection.canonicalMessage ? { canonicalMessage: projection.canonicalMessage } : {}),
+      };
+  }
 }
 
 function buildEvidenceSection(

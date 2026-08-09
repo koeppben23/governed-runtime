@@ -193,7 +193,8 @@ function filterClaims(
   selectedIds?: readonly string[],
 ): readonly import('./claim-human-projection.js').ClaimHumanProjection[] {
   if (visibility === 'none') return [];
-  if (visibility === 'selected' && selectedIds) {
+  if (visibility === 'selected') {
+    if (!selectedIds || selectedIds.length === 0) return [];
     const idSet = new Set(selectedIds);
     return claims.filter((c) => idSet.has(c.claimId));
   }

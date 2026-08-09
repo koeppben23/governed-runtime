@@ -17,10 +17,12 @@ import type {
   PresentationSection,
   PresentationConclusion,
   PresentationBuildOptions,
+  PresentationDetailLevel,
   ReasonProjection,
 } from '../presentation/index.js';
-import { projectReasonFromRegistry, projectDetailFields } from '../presentation/index.js';
+import { projectReasonFromRegistry } from '../presentation/index.js';
 import type { WhyPresentationProjection, WhyConclusionProjection } from './status-why-finish.js';
+import type { CompactProofPresentation } from '../presentation/proof-model.js';
 import { buildProofGraphSection } from '../presentation/proof-summary.js';
 import type { ProofGraphRenderOptions } from '../presentation/proof-summary.js';
 
@@ -67,7 +69,12 @@ export function buildWhyDocument(
     });
   }
 
-  sections.push(buildProofGraphSection(projection.proofSummary, whyProofGraphOpts(detail)));
+  sections.push(
+    buildProofGraphSection(
+      projection.proofSummary,
+      whyProofGraphOpts(detail, projection.proofSummary),
+    ),
+  );
 
   // Conclusion — copied mechanically, not derived
   const conclusion = toPresentationConclusion(projection.conclusion);
@@ -86,10 +93,26 @@ export function buildWhyDocument(
   };
 }
 
-function whyProofGraphOpts(detail: PresentationBuildOptions['detail']): ProofGraphRenderOptions {
+function whyProofGraphOpts(
+  detail: PresentationBuildOptions['detail'],
+  proofSummary: CompactProofPresentation,
+): ProofGraphRenderOptions {
   if (detail === 'diagnostic') return { detail: 'diagnostic' };
-  // explanation: show all human claims
-  return {};
+
+  // explanation: show only unresolved critical claims (structured fallback)
+  const humanSummary = proofSummary.kind === 'evaluation' ? proofSummary.humanSummary : undefined;
+  if (!humanSummary) return { claimVisibility: 'none' };
+
+  const unresolvedCriticalIds = humanSummary.claims
+    .filter((c) => c.critical && c.status !== 'verified')
+    .map((c) => c.claimId);
+
+  if (unresolvedCriticalIds.length === 0) return { claimVisibility: 'none' };
+
+  return {
+    claimVisibility: 'selected',
+    selectedClaimIds: unresolvedCriticalIds,
+  };
 }
 
 /**
@@ -121,8 +144,50 @@ function buildBlockerSection(
     code: detail === 'diagnostic' ? projection.blocker.reasonCode : null,
     text: reasonProjection?.headline ?? projection.blocker.reasonText,
     ...(recovery ? { recovery } : {}),
-    ...projectDetailFields(reasonProjection),
+    ...blockerDetailFields(reasonProjection, detail),
   };
+}
+
+function blockerDetailFields(
+  projection: ReasonProjection | null,
+  detail: PresentationDetailLevel,
+): { explanation?: string; canonicalMessage?: string; impact?: string } {
+  if (!projection) return {};
+
+  switch (detail) {
+    case 'summary':
+      return {};
+
+    case 'explanation':
+      return {
+        ...(projection.explanation ? { explanation: projection.explanation } : {}),
+        ...(projection.impact ? { impact: impactLabel(projection.impact) } : {}),
+      };
+
+    case 'diagnostic':
+      return {
+        ...(projection.explanation ? { explanation: projection.explanation } : {}),
+        ...(projection.canonicalMessage ? { canonicalMessage: projection.canonicalMessage } : {}),
+        ...(projection.impact ? { impact: impactLabel(projection.impact) } : {}),
+      };
+  }
+}
+
+function impactLabel(impact: string): string {
+  switch (impact) {
+    case 'workflow_blocked':
+      return 'Further progress is blocked until this condition is resolved.';
+    case 'verification_incomplete':
+      return 'Verification cannot complete without satisfying this requirement.';
+    case 'review_required':
+      return 'A human review decision is required before progress can continue.';
+    case 'decision_required':
+      return 'A human decision is required.';
+    case 'degraded_only':
+      return 'The workflow can continue, but some capabilities are degraded.';
+    default:
+      return impact;
+  }
 }
 
 /** Canonical recovery with the caller-provided hint as a last-resort fallback. */
