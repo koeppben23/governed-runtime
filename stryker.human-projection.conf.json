@@ -18,8 +18,7 @@
     "src/presentation/human-verification.ts",
     "src/presentation/claim-human-projection.ts",
     "src/presentation/proof-requirement-copy.ts",
-    "src/presentation/markdown.ts:255-287",
-    "src/presentation/proof-summary.ts:32-290"
+    "src/presentation/markdown.ts:255-287"
   ],
   "mutator": {
     "excludedMutations": ["StringLiteral", "ArrayDeclaration"]
