@@ -62,6 +62,8 @@ export type {
   PlanDocument,
   HelpDocument,
   PresentationDocument,
+  PresentationDetailLevel,
+  PresentationBuildOptions,
 } from './model.js';
 export { renderMarkdown } from './markdown.js';
 export type {
@@ -103,6 +105,8 @@ export {
   humanCounterexampleRequirementText,
   humanRequiredEvidenceText,
 } from './proof-requirement-copy.js';
+export { buildProofGraphSection } from './proof-summary.js';
+export type { ProofGraphRenderOptions, ClaimVisibility } from './proof-summary.js';
 export {
   STATUS_LABELS,
   lookupStatusLabel,

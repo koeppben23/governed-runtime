@@ -406,7 +406,33 @@ export type PresentationConclusion =
 export type PresentationForm =
   'success' | 'blocked' | 'decision' | 'review_pending' | 'terminal' | 'diagnostic';
 
-// ─── Document Types ────────────────────────────────────────────────────────────
+// ─── Progressive Disclosure ────────────────────────────────────────────────────
+
+/**
+ * Controls the information density of a presentation surface.
+ *
+ * This is a presentation-composition concept — never domain state, never
+ * ProofGraph state, never persisted. It selects which canonical facts are
+ * visible at each output level.
+ *
+ *   summary     — immediate state + one primary action + compressed context
+ *   explanation — cause + impact + recovery + relevant unresolved claim context
+ *   diagnostic  — canonical codes, raw states, structured identifiers, full detail
+ */
+export type PresentationDetailLevel = 'summary' | 'explanation' | 'diagnostic';
+
+/**
+ * Presentation composition options passed to surface builders.
+ *
+ * `detail` controls surface-specific information density. It MUST NOT affect
+ * canonical workflow, verification, evidence, blocker, recovery, or approval
+ * semantics — it is a visibility/presentation-layer concern only.
+ */
+export interface PresentationBuildOptions {
+  readonly detail: PresentationDetailLevel;
+}
+
+// ─── Progressive Disclosure ────────────────────────────────────────────────────
 
 export interface CompactCardDocument {
   readonly kind: 'compact_card';

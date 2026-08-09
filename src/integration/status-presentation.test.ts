@@ -17,6 +17,7 @@ import { resolve } from 'node:path';
 import { renderMarkdown } from '../presentation/markdown.js';
 import type { PresentationDocument, CompactCardDocument } from '../presentation/model.js';
 import { buildStatusDocument, buildNoSessionDocument } from './status-presentation.js';
+import type { PresentationBuildOptions } from '../presentation/index.js';
 import type { FullStatusPresentationInput } from './status-presentation.js';
 import { buildStatusProjection } from './status.js';
 import type { StatusProjection, StatusActionProjection } from './status.js';
@@ -30,8 +31,11 @@ import type { FlowGuardPolicy } from '../config/policy.js';
 
 // ─── Test Helpers ──────────────────────────────────────────────────────────────
 
-function buildCompactDoc(input: FullStatusPresentationInput): CompactCardDocument {
-  const doc = buildStatusDocument(input);
+function buildCompactDoc(
+  input: FullStatusPresentationInput,
+  opts: PresentationBuildOptions = { detail: 'diagnostic' },
+): CompactCardDocument {
+  const doc = buildStatusDocument(input, opts);
   if (doc.kind !== 'compact_card') {
     throw new Error('buildStatusDocument must return a compact_card');
   }
@@ -234,11 +238,10 @@ describe('golden fixtures', () => {
     const policy = makeSoloPolicy();
     const projection = buildStatusProjection(state, policy);
     const drift = makeDriftProjection();
-    const doc = buildCompactDoc({
-      status: projection,
-      discoveryHealth: null,
-      discoveryDrift: drift,
-    });
+    const doc = buildCompactDoc(
+      { status: projection, discoveryHealth: null, discoveryDrift: drift },
+      { detail: 'summary' },
+    );
     const output = renderMarkdown(doc);
     const golden = await readGolden('status-ready.md');
     expect(output).toBe(golden.trimEnd());
@@ -249,11 +252,10 @@ describe('golden fixtures', () => {
     const policy = makeTeamPolicy();
     const projection = buildStatusProjection(state, policy);
     const drift = makeDriftProjection();
-    const doc = buildCompactDoc({
-      status: projection,
-      discoveryHealth: null,
-      discoveryDrift: drift,
-    });
+    const doc = buildCompactDoc(
+      { status: projection, discoveryHealth: null, discoveryDrift: drift },
+      { detail: 'summary' },
+    );
     const output = renderMarkdown(doc);
     const golden = await readGolden('status-blocked-plan-review.md');
     expect(output).toBe(golden.trimEnd());
@@ -269,11 +271,10 @@ describe('golden fixtures', () => {
       notVerified: ['Discovery drift', 'Code-surface completeness'],
     });
     const health = makeDegradedDiscoveryHealth();
-    const doc = buildCompactDoc({
-      status: projection,
-      discoveryHealth: health,
-      discoveryDrift: drift,
-    });
+    const doc = buildCompactDoc(
+      { status: projection, discoveryHealth: health, discoveryDrift: drift },
+      { detail: 'summary' },
+    );
     const output = renderMarkdown(doc);
     const golden = await readGolden('status-degraded-discovery.md');
     expect(output).toBe(golden.trimEnd());

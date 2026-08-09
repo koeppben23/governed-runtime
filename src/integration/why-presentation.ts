@@ -16,16 +16,26 @@ import type {
   PresentationDocument,
   PresentationSection,
   PresentationConclusion,
+  PresentationBuildOptions,
   ReasonProjection,
 } from '../presentation/index.js';
 import { projectReasonFromRegistry, projectDetailFields } from '../presentation/index.js';
 import type { WhyPresentationProjection, WhyConclusionProjection } from './status-why-finish.js';
 import { buildProofGraphSection } from '../presentation/proof-summary.js';
+import type { ProofGraphRenderOptions } from '../presentation/proof-summary.js';
 
 /**
  * Build a compact-card PresentationDocument for /why.
+ *
+ * `detail` controls information density:
+ *   explanation — default: cause, impact, recovery, relevant unresolved claims
+ *   diagnostic  — full canonical codes, raw states, structured detail
  */
-export function buildWhyDocument(projection: WhyPresentationProjection): PresentationDocument {
+export function buildWhyDocument(
+  projection: WhyPresentationProjection,
+  options: PresentationBuildOptions = { detail: 'explanation' },
+): PresentationDocument {
+  const detail = options.detail;
   const sections: PresentationSection[] = [];
 
   // Status
@@ -39,11 +49,11 @@ export function buildWhyDocument(projection: WhyPresentationProjection): Present
   });
 
   // Blocker / Evidence-required detail
-  const blockerSection = buildBlockerSection(projection);
+  const blockerSection = buildBlockerSection(projection, detail);
   if (blockerSection) sections.push(blockerSection);
 
-  // Missing evidence
-  if (projection.evidenceSlots.length > 0) {
+  // Missing evidence — show in explanation+ detail
+  if (detail !== 'summary' && projection.evidenceSlots.length > 0) {
     sections.push({
       kind: 'artifactList',
       heading: 'Missing evidence',
@@ -57,7 +67,7 @@ export function buildWhyDocument(projection: WhyPresentationProjection): Present
     });
   }
 
-  sections.push(buildProofGraphSection(projection.proofSummary));
+  sections.push(buildProofGraphSection(projection.proofSummary, whyProofGraphOpts(detail)));
 
   // Conclusion — copied mechanically, not derived
   const conclusion = toPresentationConclusion(projection.conclusion);
@@ -76,6 +86,12 @@ export function buildWhyDocument(projection: WhyPresentationProjection): Present
   };
 }
 
+function whyProofGraphOpts(detail: PresentationBuildOptions['detail']): ProofGraphRenderOptions {
+  if (detail === 'diagnostic') return { detail: 'diagnostic' };
+  // explanation: show all human claims
+  return {};
+}
+
 /**
  * Build the blocker / evidence-required section for /why.
  *
@@ -83,15 +99,18 @@ export function buildWhyDocument(projection: WhyPresentationProjection): Present
  * the Human Projection) takes precedence over the phase-derived next-action
  * hint, which remains the fallback for blockers without a canonical reason
  * code. Returns null when there is no blocker detail to present.
+ *
+ * In diagnostic mode the reason code is always visible; in explanation mode
+ * it is secondary (code field null, canonicalMessage rendered in Details).
  */
-function buildBlockerSection(projection: WhyPresentationProjection): PresentationSection | null {
+function buildBlockerSection(
+  projection: WhyPresentationProjection,
+  detail: PresentationBuildOptions['detail'],
+): PresentationSection | null {
   const hasBlockerDetail =
     projection.blocker.reasonCode !== null || projection.blocker.reasonText !== null;
   if (!hasBlockerDetail || !projection.blocker.reasonText) return null;
 
-  // Migrated codes project the context-free headline as the display text and
-  // carry the registry-verbatim message as canonicalMessage so the diagnostic
-  // why-surface never loses the canonical detail.
   const reasonProjection = projection.blocker.reasonCode
     ? projectReasonFromRegistry(projection.blocker.reasonCode)
     : null;
@@ -99,7 +118,7 @@ function buildBlockerSection(projection: WhyPresentationProjection): Presentatio
   return {
     kind: 'blocker',
     heading: projection.blocker.blocked ? 'Blocked' : 'Evidence required',
-    code: projection.blocker.reasonCode,
+    code: detail === 'diagnostic' ? projection.blocker.reasonCode : null,
     text: reasonProjection?.headline ?? projection.blocker.reasonText,
     ...(recovery ? { recovery } : {}),
     ...projectDetailFields(reasonProjection),

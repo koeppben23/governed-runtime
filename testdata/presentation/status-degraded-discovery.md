@@ -4,24 +4,13 @@
 **Readiness:** Not verified
 **Policy:** solo
 
-## Evidence
-
-**Verified:** 1
-**Missing:** 3
-**Not yet required:** 5
+? Evidence is incomplete: 3 missing.
 
 ## Verification
 
 Status: NOT_DECLARED
 No verification obligations declared.
 Approval evidence: Not recorded
-
-## Available actions
-
-- `/hydrate` — Prepare or restore a governed session.
-- `/continue` — Route to the next workflow step.
-- `/validate` — Record required verification results.
-- `/abort` — End the current workflow without presenting it as completed.
 
 ## Discovery
 
