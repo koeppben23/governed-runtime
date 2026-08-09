@@ -12,6 +12,7 @@
 import type { ProviderId, ReportFormatId } from '../state/assertion-identity.js';
 import type { VerificationCandidateKind, AssertionReportSpec } from '../state/discovery-schemas.js';
 import type { VerificationCandidate } from '../state/discovery-schemas.js';
+import type { ExecutionSubjectInput } from '../state/discovery-schemas.js';
 
 // ─── Planner Context ─────────────────────────────────────────────────────────
 
@@ -84,6 +85,17 @@ export interface ExecutionProfile {
 
   /** Explicitly attest only commands known to execute this profile's full check scope. */
   attestFullCheckScope?(command: string): boolean;
+
+  /**
+   * Provider-owned verification-semantic surfaces that become part of the
+   * execution subject. The planner includes these as `{ kind: 'file' }`
+   * inputs alongside the implementation surface. Only files discoverable
+   * through the current PlannerContext are included — the profile must filter
+   * against ctx.rootFiles where semantics depend on file existence.
+   *
+   * Absent → no additional subject inputs beyond implementation.
+   */
+  resolveExecutionSubjectInputs?(ctx: PlannerContext): readonly ExecutionSubjectInput[];
 
   /** Profile-specific runtime requirements override provider defaults. */
   readonly runtimeRequirements?: readonly RuntimeRequirement[];

@@ -66,6 +66,21 @@ export const MUTATION_PROFILES: readonly MutationProfile[] = [
 export const MUTATION_PROFILE_IDS = MUTATION_PROFILES.map((p) => p.profileId);
 
 /**
+ * Registry-level capability check: does any registered mutation provider
+ * produce `flowguard_executed` evidence that can satisfy a positive
+ * `fault_injection` proof requirement?
+ *
+ * Currently returns `false` — all registered profiles rely on externally
+ * self-reported reports. When a FlowGuard-executed mutation provider is added,
+ * this function becomes the single authority for declaration-satisfiability
+ * gating, preventing caller-level booleans from drifting out of sync with the
+ * provider registry.
+ */
+export function hasProvingMutationProvider(): boolean {
+  return false;
+}
+
+/**
  * Load and parse a recorded mutation report.
  *
  * @param repoRoot   Repository root the report path is resolved against.

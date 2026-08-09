@@ -23,6 +23,12 @@
     "src/audit/proofgraph/evaluate.ts",
     "src/audit/proofgraph/gate.ts",
     "src/integration/proofgraph/claim-contract.ts",
+    "src/integration/proofgraph/materialize-contract.ts",
+    "src/audit/proofgraph/executed-test-binder.ts",
+    "src/audit/proofgraph/counterexample-binder.ts",
+    "src/audit/proofgraph/assertion-evidence-binding.ts",
+    "src/audit/proofgraph/enforcement-projection.ts",
+    "src/verification/execution-subject.ts",
 
     "src/config/policy.ts",
     "src/config/reasons.ts",

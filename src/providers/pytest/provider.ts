@@ -98,6 +98,12 @@ export const pytestProvider: AssertionProviderExtension = {
             },
           };
         },
+        resolveExecutionSubjectInputs(ctx: { readonly rootFiles: ReadonlySet<string> }) {
+          const configs = ['pytest.ini', 'pyproject.toml', 'tox.ini', 'setup.cfg'];
+          return configs
+            .filter((f) => ctx.rootFiles.has(f))
+            .map((f) => ({ kind: 'file' as const, path: f }));
+        },
       },
       {
         profileId: 'pytest-junit-aggregate',
@@ -135,6 +141,12 @@ export const pytestProvider: AssertionProviderExtension = {
               resultPatternTemplate: '.flowguard/reports/{attemptId}/pytest.junit.xml',
             },
           };
+        },
+        resolveExecutionSubjectInputs(ctx: { readonly rootFiles: ReadonlySet<string> }) {
+          const configs = ['pytest.ini', 'pyproject.toml', 'tox.ini', 'setup.cfg'];
+          return configs
+            .filter((f) => ctx.rootFiles.has(f))
+            .map((f) => ({ kind: 'file' as const, path: f }));
         },
       },
     ],

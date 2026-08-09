@@ -219,6 +219,13 @@ function deriveVerificationState(
   // 2.5 A fresh blocked counterexample blocks the claim — evidence provider could not
   //      produce an answerative result (timeout, crash, empty output).
   if (cx.freshBlocked) return 'BLOCKED';
+  // ── Positive evidence retry policy ──────────────────────────────────────
+  // Any historical same-subject failure, error, or unavailable blocks the
+  // claim. No silent supersession: a transient failure on the current
+  // implementation digest persists as blocking evidence. To clear it, produce
+  // a new implementation digest via a new /implement record with actual
+  // source changes. Rerunning /run_check on the same subject without changes
+  // will not override the prior outcome.
   // 3./4. Distinguish an execution error (BLOCKED) from a missing provider (NOT_VERIFIED).
   if (results.some((r) => r.status === 'error')) return 'BLOCKED';
   if (results.some((r) => r.status === 'unavailable')) return 'NOT_VERIFIED';

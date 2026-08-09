@@ -141,6 +141,7 @@ function applyProfiles(
     readonly alternate?: boolean;
     createCandidate(ctx: PlannerContext): VerificationCandidate | null;
     attestFullCheckScope?(command: string): boolean;
+    resolveExecutionSubjectInputs?(ctx: PlannerContext): readonly ExecutionSubjectInput[];
   }>,
 ): void {
   for (const profile of profiles) {
@@ -160,11 +161,14 @@ function applyProfiles(
           ? defaultPlan.scopeSemanticCommand
           : raw.command;
       const candidate = attestFullCheckScope(profile, routed, scopeSemanticCommand);
+      const subjectInputs: ExecutionSubjectInput[] = [{ kind: 'implementation' as const }];
+      const profileFiles = profile.resolveExecutionSubjectInputs?.(ctx) ?? [];
+      for (const f of profileFiles) subjectInputs.push(f);
       byKind.set(profile.alternate ? profile.profileId! : raw.kind, {
         candidate,
         executionProfileId: profile.profileId,
         scopeSemanticCommand,
-        executionSubjectInputs: [{ kind: 'implementation' as const }],
+        executionSubjectInputs: subjectInputs,
       });
     }
   }
@@ -270,6 +274,7 @@ function addScriptCandidates(
           executionSubjectInputs: [
             { kind: 'implementation' as const },
             { kind: 'file' as const, path: 'package.json' },
+            ...(profile.resolveExecutionSubjectInputs?.(_ctx) ?? []),
           ],
         });
         continue;

@@ -501,6 +501,20 @@ describe('validateProofClaimContract — registries', () => {
       field: 'mutationProfile',
     });
   });
+
+  it('rejects a registered mutation profile when no proving mutation provider exists', () => {
+    const claim = planClaim({ critical: true, mutationProfile: 'proofgraph-evaluator' });
+    const result = validateProofClaimContract({
+      ...BASE,
+      source: 'plan',
+      claims: [claim],
+    });
+    expect(result).toMatchObject({
+      kind: 'invalid',
+      field: 'mutationProfile',
+      failureKind: 'unsatisfiable',
+    });
+  });
 });
 
 describe('validateProofClaimContract — identity and authority', () => {

@@ -88,6 +88,19 @@ export const vitestProvider: AssertionProviderExtension = {
             },
           };
         },
+        resolveExecutionSubjectInputs(ctx: { readonly rootFiles: ReadonlySet<string> }) {
+          const configs = [
+            'vitest.config.ts',
+            'vitest.config.js',
+            'vitest.config.mts',
+            'vitest.config.mjs',
+            'vitest.config.cts',
+            'vitest.workspace.ts',
+          ];
+          return configs
+            .filter((f) => ctx.rootFiles.has(f))
+            .map((f) => ({ kind: 'file' as const, path: f }));
+        },
       },
       {
         profileId: 'vitest-junit-aggregate',
@@ -127,6 +140,19 @@ export const vitestProvider: AssertionProviderExtension = {
               resultPatternTemplate: '.flowguard/reports/{attemptId}/vitest.junit.xml',
             },
           };
+        },
+        resolveExecutionSubjectInputs(ctx: { readonly rootFiles: ReadonlySet<string> }) {
+          const configs = [
+            'vitest.config.ts',
+            'vitest.config.js',
+            'vitest.config.mts',
+            'vitest.config.mjs',
+            'vitest.config.cts',
+            'vitest.workspace.ts',
+          ];
+          return configs
+            .filter((f) => ctx.rootFiles.has(f))
+            .map((f) => ({ kind: 'file' as const, path: f }));
         },
       },
     ],
