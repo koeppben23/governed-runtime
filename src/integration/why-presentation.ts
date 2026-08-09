@@ -123,8 +123,8 @@ function whyProofGraphOpts(
  * hint, which remains the fallback for blockers without a canonical reason
  * code. Returns null when there is no blocker detail to present.
  *
- * In diagnostic mode the reason code is always visible; in explanation mode
- * it is secondary (code field null, canonicalMessage rendered in Details).
+ * In diagnostic mode the reason code, canonical message, and full
+ * claim diagnostic detail are visible.
  */
 function buildBlockerSection(
   projection: WhyPresentationProjection,
