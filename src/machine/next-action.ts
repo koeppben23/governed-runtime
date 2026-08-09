@@ -258,7 +258,7 @@ export function resolveNextAction(phase: Phase, state: SessionState): NextAction
   const pendingStandaloneReview = state.reviewAssurance?.obligations.some(
     (obligation) => obligation.obligationType === 'review' && obligation.status === 'pending',
   );
-  if (phase === 'READY' && pendingStandaloneReview) {
+  if ((phase === 'READY' || phase === 'REVIEW') && pendingStandaloneReview) {
     return {
       code: ACTION_CODES.RUN_REVIEWER_TASK,
       text: 'Independent content review is pending. Invoke the flowguard-reviewer Task, then submit only its verdict with flowguard_review.',
