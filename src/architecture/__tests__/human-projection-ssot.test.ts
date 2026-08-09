@@ -16,12 +16,17 @@ import { describe, expect, it } from 'vitest';
  *   A. Reason-code recovery guidance MUST be derived by
  *      `projectReasonFromRegistry` (`presentation/reason-projection.ts`). The
  *      guard scans BOTH the presentation layer AND the real presentation
- *      renderers in `src/integration/` (`status-presentation.ts`,
+ *      renderers under `src/integration/` (any module matching
+ *      `integration/*-presentation.ts` — today `status-presentation.ts`,
  *      `why-presentation.ts`, `finish-presentation.ts`) for direct
  *      consumption of the canonical reason registry (`defaultReasonRegistry`
  *      / `config/reasons.js`). Only `reason-projection.ts` may consume it
  *      there — a renderer that imports the registry to format recovery steps
  *      directly is a duplicate-authority drift hazard.
+ *
+ *      The renderer scope is pattern-based (`integration/*-presentation.ts`)
+ *      rather than a hardcoded file list so that future presentation builders
+ *      are covered without editing this guard.
  *
  *   B. The Human Projection modules MUST NOT define an independent
  *      slash-command catalogue. Command/invocation metadata is canonical in
@@ -41,10 +46,8 @@ const SRC_ROOT = join(process.cwd(), 'src');
 /** The sole module permitted to consume the reason registry in the scanned scope. */
 const RECOVERY_AUTHORITY = 'presentation/reason-projection.ts';
 
-/** Scanned scope: presentation layer plus the integration presentation renderers. */
-const PRESENTATION_RENDERER = 'integration/status-presentation.ts';
-const PRESENTATION_RENDERER_WHY = 'integration/why-presentation.ts';
-const PRESENTATION_RENDERER_FINISH = 'integration/finish-presentation.ts';
+/** Presentation renderers under `src/integration/` share the same invariant. */
+const INTEGRATION_DIR = 'integration/';
 
 /** Human Projection modules that must not carry slash-command invocation metadata. */
 const HUMAN_PROJECTION_MODULES = [
@@ -84,13 +87,13 @@ function collectFiles(dir: string, acc: SourceFile[]): void {
   }
 }
 
+function isIntegrationPresentationRenderer(rel: string): boolean {
+  return rel.startsWith(INTEGRATION_DIR) && rel.endsWith('-presentation.ts');
+}
+
 function isInScope(rel: string): boolean {
   if (rel.startsWith(PRESENTATION_DIR)) return true;
-  return (
-    rel === PRESENTATION_RENDERER ||
-    rel === PRESENTATION_RENDERER_WHY ||
-    rel === PRESENTATION_RENDERER_FINISH
-  );
+  return isIntegrationPresentationRenderer(rel);
 }
 
 function findRegistryViolations(files: readonly SourceFile[]): Violation[] {
@@ -154,7 +157,7 @@ describe('human-projection SSOT (anti-drift)', () => {
     it('detects a registry consumer inside an integration renderer', () => {
       const fixture: SourceFile[] = [
         {
-          rel: PRESENTATION_RENDERER,
+          rel: 'integration/status-presentation.ts',
           content:
             "import { defaultReasonRegistry } from '../config/reasons.js';\n" +
             'const recovery = defaultReasonRegistry.get("PLAN_REQUIRED")?.recoverySteps;',
@@ -163,6 +166,30 @@ describe('human-projection SSOT (anti-drift)', () => {
       const violations = findRegistryViolations(fixture);
       expect(violations).toHaveLength(2);
       expect(violations.every((v) => v.rule === 'duplicate-recovery-authority')).toBe(true);
+    });
+
+    it('detects a registry consumer inside a FUTURE integration renderer (pattern-based scope)', () => {
+      const fixture: SourceFile[] = [
+        {
+          rel: 'integration/review-decision-presentation.ts',
+          content: "import { formatReason } from '../config/reasons.js';",
+        },
+      ];
+      const violations = findRegistryViolations(fixture);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]!.rule).toBe('duplicate-recovery-authority');
+    });
+
+    it('does NOT scan non-presenter integration modules (legitimate registry consumers)', () => {
+      const fixture: SourceFile[] = [
+        {
+          rel: 'integration/tools/helpers.ts',
+          content:
+            "import { defaultReasonRegistry } from '../../config/reasons.js';\n" +
+            'const r = defaultReasonRegistry.get("PLAN_REQUIRED");',
+        },
+      ];
+      expect(findRegistryViolations(fixture)).toEqual([]);
     });
 
     it('detects a registry consumer inside the presentation layer', () => {
@@ -200,7 +227,7 @@ describe('human-projection SSOT (anti-drift)', () => {
             'const reason = defaultReasonRegistry.get("PLAN_REQUIRED");',
         },
         {
-          rel: PRESENTATION_RENDERER_WHY,
+          rel: 'integration/why-presentation.ts',
           content: "import { projectReasonFromRegistry } from '../presentation/index.js';",
         },
         {
