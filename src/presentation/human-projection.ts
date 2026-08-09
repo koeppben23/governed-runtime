@@ -12,12 +12,19 @@
  * - A default (lossy) presentation must remain traceable to canonical
  *   semantics through the diagnostic surface.
  *
+ * Command/invocation metadata is NOT part of this layer. The canonical
+ * public-command catalogue is owned by the command layer
+ * (`integration/installed-commands.ts`). The Human Projection defines no
+ * slash-command table and duplicates no invocation metadata.
+ *
+ * Semantic action bindings (`impact`, future intent/action projections) are
+ * ONLY introduced where an explicit, canonical source carries them — never
+ * inferred from prose or from a coarse technical taxonomy.
+ *
  * Pure type + pure function layer. Imports only presentation-layer types.
  *
  * @version v1
  */
-
-import type { PresentationAction } from './model.js';
 
 /** Semantic impact a governance state has on the developer's workflow. */
 export type UserImpact =
@@ -30,12 +37,16 @@ export type UserImpact =
 /**
  * Human-readable explanation of a governance state.
  *
- * Presentation-only classification: `impact` and `summary` never alter
- * workflow, policy, evidence, or routing.
+ * `headline` is the deterministic summary of the state. `explanation` is a
+ * transitional field reserved for a canonical copy contract; it is absent
+ * until such a source exists — the projection must fail incomplete rather
+ * than invent prose. `impact` is present only for states with an explicit,
+ * canonical impact mapping.
  */
 export interface HumanExplanation {
-  readonly impact: UserImpact;
-  readonly summary: string;
+  readonly headline: string;
+  readonly explanation?: string;
+  readonly impact?: UserImpact;
 }
 
 /**
@@ -43,79 +54,12 @@ export interface HumanExplanation {
  *
  * `primary` is the first, most direct action; `secondary` holds the remaining
  * ordered steps. `diagnosticNotes` carry diagnostic-only detail that must not
- * be rendered in the default surface.
+ * be rendered in the default surface. `primary` is never an empty string —
+ * the recovery contract guarantees at least one step, and the projection
+ * enforces that invariant.
  */
 export interface RecoveryProjection {
   readonly primary: string;
   readonly secondary: readonly string[];
   readonly diagnosticNotes?: string;
-}
-
-/** Minimal set of deterministic next-action intents a human may take. */
-export type ActionIntent =
-  | 'refresh_repository'
-  | 'run_validation'
-  | 'rerun_review'
-  | 'inspect_status'
-  | 'inspect_blocker'
-  | 'approve'
-  | 'request_changes';
-
-/** A projected, canonical-command-backed action a developer can take. */
-export interface ProjectedAction {
-  readonly intent: ActionIntent;
-  /** Short present-tense title for the action. */
-  readonly title: string;
-  readonly description?: string;
-  /** Canonical command action when the intent maps to a slash command. */
-  readonly presentationAction?: PresentationAction;
-}
-
-/** Titles for each projected action intent. */
-const INTENT_TITLES: Record<ActionIntent, string> = {
-  refresh_repository: 'Refresh repository discovery and evidence',
-  run_validation: 'Run validation checks',
-  rerun_review: 'Re-run independent review',
-  inspect_status: 'Inspect session status',
-  inspect_blocker: 'Explain the blocker',
-  approve: 'Approve the current review decision',
-  request_changes: 'Request changes',
-};
-
-/** Canonical slash commands that back each intent. */
-const INTENT_COMMANDS: Record<ActionIntent, readonly string[]> = {
-  refresh_repository: ['/hydrate', '/start'],
-  run_validation: ['/check', '/validate'],
-  rerun_review: ['/review'],
-  inspect_status: ['/status'],
-  inspect_blocker: ['/why'],
-  approve: ['/approve'],
-  request_changes: ['/request-changes'],
-};
-
-const COMMAND_TO_INTENT = new Map<string, ActionIntent>(
-  Object.entries(INTENT_COMMANDS).flatMap(([intent, commands]) =>
-    commands.map((command) => [command, intent as ActionIntent]),
-  ),
-);
-
-/**
- * Project a canonical slash command into a {@link ProjectedAction}.
- *
- * Returns null for invocations that carry no projected intent. The resulting
- * `presentationAction` uses `available` visibility — a projected action is a
- * surface offering, never a recommendation (the conclusion owns that).
- */
-export function projectActionIntent(invocation: string): ProjectedAction | null {
-  const intent = COMMAND_TO_INTENT.get(invocation);
-  if (!intent) return null;
-  return {
-    intent,
-    title: INTENT_TITLES[intent],
-    presentationAction: {
-      invocation,
-      description: INTENT_TITLES[intent],
-      visibility: 'available',
-    },
-  };
 }

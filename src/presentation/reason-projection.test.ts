@@ -9,7 +9,6 @@ import {
   projectImpact,
   toRecoveryProjection,
 } from './reason-projection.js';
-import { projectActionIntent } from './human-projection.js';
 
 describe('projectReasonFromRegistry', () => {
   it('returns null for unregistered codes (fail-closed)', () => {
@@ -20,13 +19,12 @@ describe('projectReasonFromRegistry', () => {
     expect(projectReasonFromRegistry('whatever') ?? null).toBeNull();
   });
 
-  it('projects a precondition code with category-derived impact', () => {
+  it('projects a registered code with registry verbatim headline and split recovery', () => {
     const projection = projectReasonFromRegistry('PLAN_REQUIRED')!;
     expect(projection).not.toBeNull();
     expect(projection.code).toBe('PLAN_REQUIRED');
     expect(projection.category).toBe('precondition');
-    expect(projection.impact).toBe('workflow_blocked');
-    expect(projection.summary).toContain('An approved plan is required');
+    expect(projection.headline).toContain('An approved plan is required');
     expect(projection.recovery.primary).toBe('Run /plan to create a plan');
     expect(projection.recovery.secondary).toEqual(['Get the plan approved at PLAN_REVIEW']);
   });
@@ -37,7 +35,7 @@ describe('projectReasonFromRegistry', () => {
     expect(projection.recovery.secondary).toEqual([]);
   });
 
-  it('applies documented per-code impact overrides for evidence gaps', () => {
+  it('carries an impact only for explicitly migrated codes', () => {
     expect(projectReasonFromRegistry('VALIDATION_EVIDENCE_REQUIRED')!.impact).toBe(
       'verification_incomplete',
     );
@@ -47,61 +45,35 @@ describe('projectReasonFromRegistry', () => {
     expect(projectReasonFromRegistry('PROOFGRAPH_ASSERTION_PROVIDER_MISMATCH')!.impact).toBe(
       'verification_incomplete',
     );
+    expect(projectReasonFromRegistry('FOUR_EYES_ACTOR_MATCH')!.impact).toBe('review_required');
+    expect(projectReasonFromRegistry('DISCOVERY_DRIFT_BLOCKED')!.impact).toBe('workflow_blocked');
   });
 
-  it('falls back to category-derived impact when no override exists', () => {
-    expect(projectReasonFromRegistry('DISCOVERY_DRIFT_BLOCKED')!.impact).toBe('workflow_blocked');
+  it('projects NO impact for unmigrated codes (never inferred from category)', () => {
+    expect(projectReasonFromRegistry('READ_FAILED')!.impact).toBeUndefined();
+    expect(projectReasonFromRegistry('CENTRAL_POLICY_UNREADABLE')!.impact).toBeUndefined();
+    expect(projectReasonFromRegistry('ACTOR_CLAIM_INVALID')!.impact).toBeUndefined();
   });
 
   it('interpolates vars through the canonical registry authority', () => {
     const projection = projectReasonFromRegistry('DISCOVERY_DRIFT_BLOCKED', {
       driftStatus: 'changed',
     })!;
-    expect(projection.summary).toContain('verdict is changed');
-  });
-
-  it('projects quick-fix command tokens into deduplicated actions', () => {
-    const projection = projectReasonFromRegistry('VALIDATION_INCOMPLETE')!;
-    expect(projection.projectedActions).toHaveLength(1);
-    const action = projection.projectedActions[0]!;
-    expect(action.intent).toBe('run_validation');
-    expect(action.presentationAction?.invocation).toBe('/validate');
-    expect(action.presentationAction?.visibility).toBe('available');
-  });
-
-  it('omits actions for command tokens without a projected intent', () => {
-    const projection = projectReasonFromRegistry('PLAN_REQUIRED')!;
-    expect(projection.projectedActions).toEqual([]);
-  });
-});
-
-describe('projectActionIntent', () => {
-  it('maps a canonical command to an available presentation action', () => {
-    const action = projectActionIntent('/why')!;
-    expect(action.intent).toBe('inspect_blocker');
-    expect(action.title).toContain('blocker');
-    expect(action.presentationAction?.invocation).toBe('/why');
-  });
-
-  it('returns null for unknown commands', () => {
-    expect(projectActionIntent('/not-a-command')).toBeNull();
+    expect(projection.headline).toContain('verdict is changed');
   });
 });
 
 describe('projectImpact', () => {
-  it('classifies each category deterministically', () => {
-    const expectations: Readonly<Record<string, string>> = {
-      precondition: 'workflow_blocked',
-      admissibility: 'workflow_blocked',
-      input: 'workflow_blocked',
-      identity: 'review_required',
-      state: 'workflow_blocked',
-      config: 'workflow_blocked',
-      adapter: 'degraded_only',
-    };
-    for (const [category, expected] of Object.entries(expectations)) {
-      expect(projectImpact(category as never, 'ANY_CODE')).toBe(expected);
-    }
+  it('is an explicit per-code lookup, not a category heuristic', () => {
+    expect(projectImpact('VALIDATION_EVIDENCE_REQUIRED')).toBe('verification_incomplete');
+    expect(projectImpact('FOUR_EYES_ACTOR_MATCH')).toBe('review_required');
+    expect(projectImpact('PROOFGRAPH_AGGREGATE_SCOPE_UNATTESTED')).toBe('verification_incomplete');
+  });
+
+  it('returns undefined for unmigrated codes of every category', () => {
+    expect(projectImpact('READ_FAILED')).toBeUndefined();
+    expect(projectImpact('ACTOR_CLAIM_INVALID')).toBeUndefined();
+    expect(projectImpact('CENTRAL_POLICY_UNREADABLE')).toBeUndefined();
   });
 });
 
@@ -113,7 +85,7 @@ describe('toRecoveryProjection', () => {
     });
   });
 
-  it('handles empty input with an empty primary', () => {
-    expect(toRecoveryProjection([])).toEqual({ primary: '', secondary: [] });
+  it('enforces the non-empty recovery invariant instead of inventing an empty primary', () => {
+    expect(() => toRecoveryProjection([])).toThrow(/at least one recovery step/);
   });
 });

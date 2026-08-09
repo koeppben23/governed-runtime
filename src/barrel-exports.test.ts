@@ -111,7 +111,6 @@ describe('presentation/index.ts barrel', () => {
     'normalizedMarkdown',
     'validateCodeLanguage',
     'PresentationContractError',
-    'projectActionIntent',
     'projectImpact',
     'projectReasonFromRegistry',
     'renderMarkdown',

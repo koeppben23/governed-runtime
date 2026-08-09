@@ -8,14 +8,7 @@
 
 export { PHASE_LABELS } from './phase-labels.js';
 export { buildProductNextAction } from './next-action-copy.js';
-export { projectActionIntent } from './human-projection.js';
-export type {
-  UserImpact,
-  HumanExplanation,
-  RecoveryProjection,
-  ActionIntent,
-  ProjectedAction,
-} from './human-projection.js';
+export type { UserImpact, HumanExplanation, RecoveryProjection } from './human-projection.js';
 export {
   projectReasonFromRegistry,
   projectImpact,
