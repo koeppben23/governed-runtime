@@ -272,15 +272,21 @@ function renderEvaluationDiagnostic(
           lines.push(`  Adversarial required: ${adv.join(', ')}`);
         }
       }
-      if (claim.counterexampleRequirementLabel) {
-        lines.push(`  ${claim.counterexampleRequirementLabel}`);
+      if (claim.diagnostic.counterexampleRequirement) {
+        const cr = claim.diagnostic.counterexampleRequirement;
+        lines.push(`  Counterexample requirement: ${cr.kind}`);
+        lines.push(`  Check: ${cr.checkId}`);
+        if (cr.kind === 'assertion' || cr.kind === 'legacy_assertion') {
+          lines.push(`  Provider: ${cr.assertion.providerId}`);
+          lines.push(`  Assertion: ${cr.assertion.localId}`);
+        }
+        if (cr.kind === 'aggregate_check' && cr.candidateId) {
+          lines.push(`  Candidate: ${cr.candidateId}`);
+        }
       }
       if (claim.diagnostic.freshness) {
         const f = claim.diagnostic.freshness;
         lines.push(`  Freshness: ${f.boundDigest.slice(0, 12)} (stale: ${String(f.stale)})`);
-      }
-      if (claim.diagnostic.candidateId) {
-        lines.push(`  Candidate: ${claim.diagnostic.candidateId}`);
       }
       lines.push(`  Statement: ${claim.statement}`);
     }

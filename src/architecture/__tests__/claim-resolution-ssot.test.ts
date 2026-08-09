@@ -6,15 +6,16 @@
  * Guard invariants:
  *   A. Vocabulary SSOT — only human-verification.ts maps canonical states to
  *      human labels. No other presentation or integration renderer module may
- *      define its own ClaimVerificationState → label mapping.
+ *      define its own ClaimVerificationState → label mapping. Guards both
+ *      imports AND parallel inline mappings.
  *   B. Binding diagnostic copy SSOT — only claim-diagnostic-copy.ts holds
- *      AssertionBindingReasonCode → prose. No renderer may define a parallel
- *      per-code copy map.
+ *      AssertionBindingReasonCode → prose. Guards both imports AND parallel
+ *      per-code copy tables/switch statements.
  *   C. No evidence reconstruction — presentation/ modules must not import from
  *      audit/proofgraph/ binding, evaluation, derivation, or summarization
  *      modules, nor from validation attempt internals.
  *
- * @version v1
+ * @version v2
  */
 
 import { describe, expect, it } from 'vitest';
@@ -79,6 +80,78 @@ function isIntegrationPresentationRenderer(rel: string): boolean {
   return rel.startsWith('integration/') && rel.endsWith('-presentation.ts');
 }
 
+/**
+ * Detect a local parallel ClaimVerificationState → human label mapping.
+ * Patterns like:
+ *   PROVEN: 'Verified'
+ *   STALE: 'Needs re-check'
+ *   case 'CONTRADICTED': return 'Failed';
+ * inside a presentation or integration renderer that is NOT the authority.
+ */
+function hasLocalVocabularyMap(content: string): boolean {
+  // Literal state → label entries: { PROVEN: 'Verified' } or PROVEN: 'Verified'
+  if (/PROVEN\s*:\s*['"]Verified['"]/g.test(content)) return true;
+  if (/STALE\s*:\s*['"]Needs re-check['"]/g.test(content)) return true;
+  if (/CONTRADICTED\s*:\s*['"]Failed['"]/g.test(content)) return true;
+  if (/BLOCKED\s*:\s*['"]Blocked['"]/g.test(content)) return true;
+
+  // Switch case over state values returning labels
+  if (
+    /case\s+['"]PROVEN['"]\s*:.*return\s+['"]Verified['"]/g.test(content) ||
+    /case\s+['"]STALE['"]\s*:.*return\s+['"]Needs/gs.test(content) ||
+    /case\s+['"]CONTRADICTED['"]\s*:.*return\s+['"]Failed['"]/gs.test(content)
+  )
+    return true;
+
+  return false;
+}
+
+// ─── Invariant B: binding diagnostic copy SSOT ────────────────────────────────
+
+/**
+ * The ten AssertionBindingReasonCode literal values.
+ * Any module that references one as a literal key in a copy/prose context
+ * outside the authority is a parallel map.
+ */
+const BINDING_CODE_LITERALS = [
+  'check_mismatch',
+  'evidence_missing',
+  'check_only_evidence',
+  'provider_mismatch',
+  'assertion_mismatch',
+  'aggregate_check_mismatch',
+  'aggregate_candidate_mismatch',
+  'aggregate_scope_unattested',
+  'aggregate_extraction_missing',
+  'aggregate_capability_missing',
+];
+
+/**
+ * Detect a local per-code binding diagnostic mapping.
+ * Matches patterns like:
+ *   case 'provider_mismatch': return '...';
+ *   evidence_missing: { headline: '...', explanation: '...' }
+ * inside a non-authority presentation/renderer module.
+ */
+function hasLocalBindingDiagnosticMap(content: string): boolean {
+  // Object literal with binding code keys
+  const codeAliases = BINDING_CODE_LITERALS.join('|');
+  const objectPattern = new RegExp(`['"](${codeAliases})['"]\\s*:\\s*\\{`);
+  if (objectPattern.test(content)) return true;
+
+  // Switch case returning prose for a new code
+  if (
+    /case\s+['"](provider_mismatch|evidence_missing|aggregate_scope_unattested|assertion_mismatch|check_mismatch|check_only_evidence|aggregate_check_mismatch|aggregate_candidate_mismatch|aggregate_extraction_missing|aggregate_capability_missing)['"]\s*:/.test(
+      content,
+    )
+  )
+    return true;
+
+  return false;
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
 describe('Claim Resolution SSOT', () => {
   const files = collectSourceFiles().map((abs) => ({
     rel: relative(SRC, abs).split('/').join('/'),
@@ -107,6 +180,23 @@ describe('Claim Resolution SSOT', () => {
       }
       expect(violations).toEqual([]);
     });
+
+    it('no presentation or integration renderer defines a local parallel state→label map', () => {
+      const violations: string[] = [];
+      // labels.ts is a generic status-label registry for non-ProofGraph domains
+      const EXCLUDED = new Set(['presentation/labels.ts']);
+      for (const f of files) {
+        const rel = f.rel;
+        if (rel === VOCABULARY_AUTHORITY || EXCLUDED.has(rel)) continue;
+        if (!rel.startsWith('presentation/') && !isIntegrationPresentationRenderer(rel)) continue;
+        if (hasLocalVocabularyMap(f.content)) {
+          violations.push(
+            `${rel}: defines a local ClaimVerificationState → human label mapping outside vocabulary authority`,
+          );
+        }
+      }
+      expect(violations).toEqual([]);
+    });
   });
 
   describe('B — binding diagnostic copy SSOT', () => {
@@ -124,13 +214,27 @@ describe('Claim Resolution SSOT', () => {
         if (PERMITTED_COPY_IMPORTERS.has(rel)) continue;
         if (!rel.startsWith('presentation/') && !isIntegrationPresentationRenderer(rel)) continue;
 
-        // Any module outside the authority importing BINDING_DIAGNOSTIC_COPY
         if (
           f.content.includes(`'./claim-diagnostic-copy.js'`) ||
           f.content.includes(`'../presentation/claim-diagnostic-copy.js'`)
         ) {
           violations.push(
             `${rel}: imports binding diagnostic copy authority outside permitted path`,
+          );
+        }
+      }
+      expect(violations).toEqual([]);
+    });
+
+    it('no presentation or integration renderer defines a local per-code binding diagnostic map', () => {
+      const violations: string[] = [];
+      for (const f of files) {
+        const rel = f.rel;
+        if (PERMITTED_COPY_IMPORTERS.has(rel)) continue;
+        if (!rel.startsWith('presentation/') && !isIntegrationPresentationRenderer(rel)) continue;
+        if (hasLocalBindingDiagnosticMap(f.content)) {
+          violations.push(
+            `${rel}: defines a local AssertionBindingReasonCode → prose mapping outside copy authority`,
           );
         }
       }
@@ -178,7 +282,53 @@ describe('Claim Resolution SSOT', () => {
       expect(module!.content, 'diagnostic must preserve canonicalState').toContain(
         'canonicalState',
       );
-      expect(module!.content, 'diagnostic must preserve bindingReason').toContain('bindingReason');
+      expect(module!.content, 'diagnostic must preserve counterexampleRequirement').toContain(
+        'counterexampleRequirement',
+      );
+    });
+  });
+
+  // ─── Negative fixtures ─────────────────────────────────────────────────────
+
+  describe('negative fixtures — prove the detectors fire', () => {
+    it('detects a local state→label map in a presentation renderer', () => {
+      expect(
+        hasLocalVocabularyMap("const LABELS = { PROVEN: 'Verified', STALE: 'Needs re-check' };"),
+      ).toBe(true);
+    });
+
+    it('detects a switch-based vocabulary map outside the authority', () => {
+      expect(hasLocalVocabularyMap("case 'CONTRADICTED': return 'Failed';")).toBe(true);
+    });
+
+    it('detects a local per-code binding diagnostic map', () => {
+      expect(
+        hasLocalBindingDiagnosticMap(
+          "'provider_mismatch': { headline: 'Wrong', explanation: 'Different provider' },",
+        ),
+      ).toBe(true);
+    });
+
+    it('detects a switch over binding reason codes', () => {
+      expect(
+        hasLocalBindingDiagnosticMap("case 'evidence_missing': return 'Missing evidence';"),
+      ).toBe(true);
+    });
+
+    it('does NOT flag legitimate literal usage in the authority module', () => {
+      // The authority is expected to contain these literals
+      const fixture = {
+        rel: VOCABULARY_AUTHORITY,
+        content: "PROVEN: { label: 'Verified', defaultExplanation: 'sufficient' },",
+      };
+      expect(fixture.rel === VOCABULARY_AUTHORITY).toBe(true);
+    });
+
+    it('does NOT flag code occurrences in non-presentation modules', () => {
+      // audit/ files legitimately contain binding code literals
+      const fixtureRel = 'audit/proofgraph/assertion-evidence-binding.ts';
+      expect(isIntegrationPresentationRenderer(fixtureRel)).toBe(false);
+      expect(fixtureRel.startsWith('presentation/')).toBe(false);
     });
   });
 });

@@ -10,7 +10,11 @@
  * @version v1
  */
 
-import type { ClaimResolutionFacts, RequiredEvidenceProjection } from './claim-resolution.js';
+import type {
+  ClaimResolutionFacts,
+  RequiredEvidenceProjection,
+  CounterexampleRequirementProjection,
+} from './claim-resolution.js';
 import type { HumanVerificationStatus } from './human-verification.js';
 import {
   projectHumanVerificationStatus,
@@ -40,7 +44,6 @@ export interface ClaimDiagnosticProjection {
   readonly canonicalState: string;
   readonly bindingReason?: AssertionBindingReasonCode;
   readonly claimScope?: 'specific_behavior' | 'suite';
-  readonly candidateId?: string;
   readonly freshness?: {
     readonly boundDigest: string;
     readonly evaluatedAt: string;
@@ -50,6 +53,7 @@ export interface ClaimDiagnosticProjection {
     readonly positive: readonly string[];
     readonly adversarial: readonly string[];
   };
+  readonly counterexampleRequirement?: CounterexampleRequirementProjection;
 }
 
 export interface HumanProofSummary {
@@ -79,28 +83,21 @@ function extractRequiredEvidenceLabel(facts: ClaimResolutionFacts): string | und
   return humanRequiredEvidenceText(facts.requiredEvidence.positive);
 }
 
-function extractCandidateId(facts: ClaimResolutionFacts): string | undefined {
-  const cr = facts.counterexampleRequirement;
-  if (cr?.kind === 'aggregate_check' && cr.candidateId) {
-    return cr.candidateId;
-  }
-  return undefined;
-}
-
 function toDiagnosticProjection(facts: ClaimResolutionFacts): ClaimDiagnosticProjection {
   const re: RequiredEvidenceProjection | undefined = facts.requiredEvidence;
   return {
     canonicalState: facts.verificationState,
     ...(facts.bindingDiagnostic !== undefined ? { bindingReason: facts.bindingDiagnostic } : {}),
     ...(facts.claimScope !== undefined ? { claimScope: facts.claimScope } : {}),
-    ...(extractCandidateId(facts) !== undefined ? { candidateId: extractCandidateId(facts) } : {}),
     ...(facts.freshness !== undefined ? { freshness: facts.freshness } : {}),
     ...(re !== undefined
       ? { requiredEvidence: { positive: re.positive, adversarial: re.adversarial } }
       : {}),
+    ...(facts.counterexampleRequirement !== undefined
+      ? { counterexampleRequirement: facts.counterexampleRequirement }
+      : {}),
   };
 }
-
 export function projectClaimHumanProjection(facts: ClaimResolutionFacts): ClaimHumanProjection {
   return {
     claimId: facts.claimId,

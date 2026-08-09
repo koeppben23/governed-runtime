@@ -162,17 +162,65 @@ describe('projectClaimResolutionFacts', () => {
     expect(facts.signalClass).toBe('hypothesis');
   });
 
-  it('handles empty requiredEvidence arrays', () => {
+  it('preserves empty requiredEvidence arrays verbatim', () => {
     const c = claim({ requiredEvidence: { positive: [], adversarial: [] } });
     const facts = projectClaimResolutionFacts(c);
-    expect(facts.requiredEvidence).toBeUndefined();
+    expect(facts.requiredEvidence).toEqual({ positive: [], adversarial: [] });
   });
 
-  it('projects approved_ticket provenance', () => {
+  it('projects approved_ticket provenance with all canonical fields', () => {
     const c = claim({
       provenance: { kind: 'approved_ticket', ticketDigest: 'feedbeef' },
     } as any);
     const facts = projectClaimResolutionFacts(c);
-    expect(facts.provenance).toEqual({ kind: 'approved_ticket', digest: 'feedbeef' });
+    expect(facts.provenance).toEqual({ kind: 'approved_ticket', ticketDigest: 'feedbeef' });
+  });
+
+  it('projects plan_adr_section provenance losslessly', () => {
+    const c = claim({
+      provenance: {
+        kind: 'plan_adr_section',
+        artifactKind: 'plan',
+        artifactDigest: 'abc',
+        sectionPath: [{ headingDepth: 2, siblingIndex: 1, headingText: '## Scope' }],
+        excerptDigest: 'def',
+      },
+    } as any);
+    const facts = projectClaimResolutionFacts(c);
+    expect(facts.provenance).toEqual({
+      kind: 'plan_adr_section',
+      artifactKind: 'plan',
+      artifactDigest: 'abc',
+      sectionPath: [{ headingDepth: 2, siblingIndex: 1, headingText: '## Scope' }],
+      excerptDigest: 'def',
+    });
+  });
+
+  it('projects canonical_authority with approval binding', () => {
+    const c = claim({
+      provenance: {
+        kind: 'canonical_authority',
+        authorityId: 'plan',
+        digest: 'abc123',
+        approval: {
+          certificateId: 'aaa-bbb',
+          claimDeclarationsDigest: 'c'.repeat(64),
+          decisionAttestationDigest: 'd'.repeat(64),
+          declarationId: 'eee-fff',
+        },
+      },
+    } as any);
+    const facts = projectClaimResolutionFacts(c);
+    expect(facts.provenance).toEqual({
+      kind: 'canonical_authority',
+      authorityId: 'plan',
+      digest: 'abc123',
+      approval: {
+        certificateId: 'aaa-bbb',
+        claimDeclarationsDigest: 'c'.repeat(64),
+        decisionAttestationDigest: 'd'.repeat(64),
+        declarationId: 'eee-fff',
+      },
+    });
   });
 });

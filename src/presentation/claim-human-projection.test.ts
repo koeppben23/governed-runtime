@@ -179,10 +179,15 @@ describe('projectClaimHumanProjection', () => {
         },
       }),
     );
-    expect(p.diagnostic.candidateId).toBe('cand-7');
+    expect(p.diagnostic.counterexampleRequirement?.kind).toBe('aggregate_check');
+    expect(
+      p.diagnostic.counterexampleRequirement?.kind === 'aggregate_check'
+        ? p.diagnostic.counterexampleRequirement.candidateId
+        : undefined,
+    ).toBe('cand-7');
   });
 
-  it('diagnostic omits candidateId when absent', () => {
+  it('diagnostic preserves the full counterexampleRequirement contract', () => {
     const p = projectClaimHumanProjection(
       facts({
         verificationState: 'NOT_VERIFIED',
@@ -193,7 +198,32 @@ describe('projectClaimHumanProjection', () => {
         },
       }),
     );
-    expect(p.diagnostic.candidateId).toBeUndefined();
+    expect(p.diagnostic.counterexampleRequirement).toEqual({
+      kind: 'assertion',
+      checkId: 'test',
+      assertion: { providerId: 'v', localId: 't' },
+    });
+  });
+
+  it('diagnostic omits counterexampleRequirement when absent', () => {
+    const p = projectClaimHumanProjection(
+      facts({ verificationState: 'PROVEN', counterexampleRequirement: undefined }),
+    );
+    expect(p.diagnostic.counterexampleRequirement).toBeUndefined();
+  });
+
+  it('diagnostic preserves legacy_assertion kind', () => {
+    const p = projectClaimHumanProjection(
+      facts({
+        verificationState: 'NOT_VERIFIED',
+        counterexampleRequirement: {
+          kind: 'legacy_assertion',
+          checkId: 'old-test',
+          assertion: { providerId: 'junit', localId: 'test#thing' },
+        },
+      }),
+    );
+    expect(p.diagnostic.counterexampleRequirement?.kind).toBe('legacy_assertion');
   });
 
   it('preserves statement verbatim in human projection', () => {

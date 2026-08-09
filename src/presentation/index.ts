@@ -83,6 +83,9 @@ export type {
   AssertionIdentityProjection,
   FreshnessProjection,
   ClaimProvenanceProjection,
+  ApprovedTicketProjection,
+  PlanAdrSectionProjection,
+  CanonicalAuthorityProjection,
 } from './claim-resolution.js';
 export { projectClaimResolutionFacts } from './claim-resolution.js';
 export { projectClaimHumanProjection, projectHumanProofSummary } from './claim-human-projection.js';

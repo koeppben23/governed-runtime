@@ -56,11 +56,37 @@ export interface FreshnessProjection {
   readonly stale: boolean;
 }
 
-export interface ClaimProvenanceProjection {
-  readonly kind: string;
-  readonly authorityId?: string;
-  readonly digest?: string;
+export interface ApprovedTicketProjection {
+  readonly kind: 'approved_ticket';
+  readonly ticketDigest: string;
 }
+
+export interface PlanAdrSectionProjection {
+  readonly kind: 'plan_adr_section';
+  readonly artifactKind: 'plan' | 'adr';
+  readonly artifactDigest: string;
+  readonly sectionPath: readonly {
+    readonly headingDepth: number;
+    readonly siblingIndex: number;
+    readonly headingText: string;
+  }[];
+  readonly excerptDigest: string;
+}
+
+export interface CanonicalAuthorityProjection {
+  readonly kind: 'canonical_authority';
+  readonly authorityId: string;
+  readonly digest: string;
+  readonly approval?: {
+    readonly certificateId: string;
+    readonly claimDeclarationsDigest: string;
+    readonly decisionAttestationDigest: string;
+    readonly declarationId: string;
+  };
+}
+
+export type ClaimProvenanceProjection =
+  ApprovedTicketProjection | PlanAdrSectionProjection | CanonicalAuthorityProjection;
 
 export interface ClaimResolutionFacts {
   readonly claimId: string;
@@ -83,7 +109,6 @@ function projectAssertionIdentity(identity: AssertionIdentity): AssertionIdentit
 function projectRequiredEvidence(claim: ProofClaim): RequiredEvidenceProjection | undefined {
   const re = claim.requiredEvidence;
   if (!re) return undefined;
-  if (re.positive.length === 0 && re.adversarial.length === 0) return undefined;
   return { positive: re.positive, adversarial: re.adversarial };
 }
 
@@ -123,16 +148,54 @@ function projectFreshness(claim: ProofClaim): FreshnessProjection | undefined {
 function projectProvenance(claim: ProofClaim): ClaimProvenanceProjection | undefined {
   const p = claim.provenance;
   if (!p) return undefined;
-  const base: { kind: string } = { kind: p.kind };
-  if ('authorityId' in p) {
-    const auth = p as { kind: string; authorityId: string; digest: string };
-    return { ...base, authorityId: auth.authorityId, digest: auth.digest };
+
+  switch (p.kind) {
+    case 'approved_ticket': {
+      const ticket = p as { kind: 'approved_ticket'; ticketDigest: string };
+      return { kind: 'approved_ticket', ticketDigest: ticket.ticketDigest };
+    }
+    case 'plan_adr_section': {
+      const section = p as {
+        kind: 'plan_adr_section';
+        artifactKind: 'plan' | 'adr';
+        artifactDigest: string;
+        sectionPath: readonly {
+          headingDepth: number;
+          siblingIndex: number;
+          headingText: string;
+        }[];
+        excerptDigest: string;
+      };
+      return {
+        kind: 'plan_adr_section',
+        artifactKind: section.artifactKind,
+        artifactDigest: section.artifactDigest,
+        sectionPath: section.sectionPath,
+        excerptDigest: section.excerptDigest,
+      };
+    }
+    case 'canonical_authority': {
+      const auth = p as {
+        kind: 'canonical_authority';
+        authorityId: string;
+        digest: string;
+        approval?: {
+          certificateId: string;
+          claimDeclarationsDigest: string;
+          decisionAttestationDigest: string;
+          declarationId: string;
+        };
+      };
+      return {
+        kind: 'canonical_authority',
+        authorityId: auth.authorityId,
+        digest: auth.digest,
+        ...(auth.approval ? { approval: auth.approval } : {}),
+      };
+    }
+    default:
+      return undefined;
   }
-  if ('ticketDigest' in p) {
-    const ticket = p as { kind: string; ticketDigest: string };
-    return { ...base, digest: ticket.ticketDigest };
-  }
-  return base;
 }
 
 export function projectClaimResolutionFacts(
