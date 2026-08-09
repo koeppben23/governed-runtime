@@ -341,7 +341,7 @@ describe('buildFinishDocument', () => {
     const pres = buildFinishPresentationProjection(state, card);
     const doc = buildFinishDocument(pres);
     const markdown = renderMarkdown(doc);
-    expect(markdown).toContain('## ProofGraph');
-    expect(markdown).toContain('All critical claims PROVEN');
+    expect(markdown).toContain('## Verification');
+    expect(markdown).toContain('1 of 1 claims verified');
   });
 });

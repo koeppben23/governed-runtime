@@ -124,6 +124,17 @@ describe('presentation/index.ts barrel', () => {
     'REASON_COPY',
     'isMigratedReasonCode',
     'lookupReasonCopy',
+    'projectClaimResolutionFacts',
+    'projectClaimHumanProjection',
+    'projectHumanProofSummary',
+    'projectHumanVerificationStatus',
+    'humanVerificationLabel',
+    'humanVerificationExplanation',
+    'BINDING_DIAGNOSTIC_COPY',
+    'humanProviderKindLabel',
+    'humanCounterexampleKindLabel',
+    'humanCounterexampleRequirementText',
+    'humanRequiredEvidenceText',
   ] as const;
 
   const INTERNAL_SYMBOLS = [

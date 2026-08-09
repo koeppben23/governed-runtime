@@ -5,37 +5,73 @@
  * Presentation-only — no state dependency, no side effects, no audit/ imports.
  * Projectors that read SessionState live in integration/proofgraph/proof-summary-projectors.ts.
  *
- * @version v1
+ * Renders two modes:
+ *   human     — summary line, per-claim human vocabulary, evidence requirements
+ *   diagnostic — canonical state per claim (claimId, state, scope, binding code, freshness)
+ *
+ * @version v2
  */
 
 import type { ProofGraphSection } from './model.js';
-import type {
-  ClaimVerificationState,
-  CompactProofClaim,
-  CompactProofPresentation,
-  ProofApprovalPresentation,
-} from './proof-model.js';
+import type { CompactProofPresentation, ProofApprovalPresentation } from './proof-model.js';
+import type { HumanProofSummary } from './claim-human-projection.js';
+import { humanVerificationLabel, projectHumanVerificationStatus } from './human-verification.js';
+import { UNICODE_GLYPHS } from './glyph-profile.js';
 
-// ─── Renderer ───────────────────────────────────────────────────────────────
+// ─── Public API ──────────────────────────────────────────────────────────────
 
 export function renderCompactProofSection(presentation: CompactProofPresentation): string {
   if (presentation.kind === 'declaration') {
     return renderDeclarationSection(presentation);
   }
-  return renderEvaluationSection(presentation);
+  const humanSummary = 'humanSummary' in presentation ? presentation.humanSummary : undefined;
+  return renderCompactProofSectionWithOpts(presentation, { humanSummary });
 }
 
-/** Render the canonical ProofGraph heading and semantic content as Markdown. */
-export function renderProofGraphMarkdown(presentation: CompactProofPresentation): string {
-  return `## ProofGraph\n\n${renderCompactProofSection(presentation)}`;
+export function renderProofGraphMarkdown(
+  presentation: CompactProofPresentation,
+  opts?: { detail?: 'human' | 'diagnostic'; humanSummary?: HumanProofSummary },
+): string {
+  const detail = opts?.detail ?? 'human';
+  const heading = detail === 'diagnostic' ? '## Verification (diagnostic)' : '## Verification';
+  return `${heading}\n\n${renderCompactProofSectionWithOpts(presentation, opts)}`;
 }
+
+function renderCompactProofSectionWithOpts(
+  presentation: CompactProofPresentation,
+  opts?: { detail?: 'human' | 'diagnostic'; humanSummary?: HumanProofSummary },
+): string {
+  if (presentation.kind === 'declaration') {
+    return renderDeclarationSection(presentation);
+  }
+  const detail = opts?.detail ?? 'human';
+  const summary = opts?.humanSummary ?? presentation.humanSummary;
+  if (detail === 'diagnostic') {
+    return renderEvaluationDiagnostic(presentation, summary);
+  }
+  return renderEvaluationHuman(presentation, summary);
+}
+
+export function buildProofGraphSection(
+  presentation: CompactProofPresentation,
+  opts?: { detail?: 'human' | 'diagnostic'; humanSummary?: HumanProofSummary },
+): ProofGraphSection {
+  return {
+    kind: 'proofGraph',
+    proof: presentation,
+    ...(opts?.detail && opts.detail !== 'human' ? { detail: opts.detail } : {}),
+    ...(opts?.humanSummary !== undefined ? { humanSummary: opts.humanSummary } : {}),
+  };
+}
+
+// ─── Declaration rendering (unchanged structure) ──────────────────────────────
 
 function renderDeclarationSection(p: CompactProofPresentation & { kind: 'declaration' }): string {
   const lines: string[] = [];
   const flowLabel = p.flow === 'plan' ? 'Plan' : 'Architecture';
   if (p.overallStatus === 'NOT_DECLARED') {
     lines.push('Status: NOT_DECLARED');
-    lines.push('No proof obligations declared.');
+    lines.push('No verification obligations declared.');
     appendApproval(lines, p.approval);
     return lines.join('\n');
   }
@@ -46,11 +82,13 @@ function renderDeclarationSection(p: CompactProofPresentation & { kind: 'declara
     lines.push('');
     if (p.missingFalsificationCount !== undefined && p.missingFalsificationCount > 0) {
       lines.push(
-        `⚠ ${p.missingFalsificationCount} critical claim(s) lack a counterexample check — falsification evidence is required for proof.`,
+        `${UNICODE_GLYPHS.warning} ${p.missingFalsificationCount} critical claim(s) lack a counterexample check — falsification evidence is required for proof.`,
       );
     }
     if (p.falsificationReadyCount !== undefined && p.falsificationReadyCount > 0) {
-      lines.push(`✓ ${p.falsificationReadyCount} critical claim(s) with counterexample checks`);
+      lines.push(
+        `${UNICODE_GLYPHS.verified} ${p.falsificationReadyCount} critical claim(s) with counterexample checks`,
+      );
     }
   }
 
@@ -60,55 +98,137 @@ function renderDeclarationSection(p: CompactProofPresentation & { kind: 'declara
   return lines.join('\n');
 }
 
-function renderEvaluationSection(p: CompactProofPresentation & { kind: 'evaluation' }): string {
+// ─── Human evaluation rendering ──────────────────────────────────────────────
+
+function renderEvaluationHuman(
+  p: CompactProofPresentation & { kind: 'evaluation' },
+  summary?: HumanProofSummary,
+): string {
+  if (p.overallStatus === 'NOT_DECLARED') {
+    return renderNotDeclaredHuman(p);
+  }
+  if (summary !== undefined && summary.claims.length > 0) {
+    return renderHumanSummary(p, summary);
+  }
+  return renderEvaluationFallback(p);
+}
+
+function renderNotDeclaredHuman(p: CompactProofPresentation & { kind: 'evaluation' }): string {
+  const lines: string[] = [];
+  lines.push('No verification obligations declared.');
+  appendApproval(lines, p.approval);
+  lines.push('');
+  lines.push('Diagnostic: `flowguard_status({ proofGraph: true })`');
+  return lines.join('\n');
+}
+
+function renderHumanSummary(
+  p: CompactProofPresentation & { kind: 'evaluation' },
+  summary: HumanProofSummary,
+): string {
+  const lines: string[] = [];
+  const glyphs = UNICODE_GLYPHS;
+
+  // Summary line
+  lines.push(`${summary.verified} of ${summary.total} claims verified`);
+  if (summary.criticalTotal > 0) {
+    lines.push(`${summary.criticalVerified} of ${summary.criticalTotal} critical claims verified`);
+  }
+
+  // Gate primary reason
+  const primReason = 'primaryReason' in p ? p.primaryReason : undefined;
+  if (primReason) {
+    lines.push('');
+    lines.push(primReason);
+  }
+
+  // Per-claim human projection
+  for (const claim of summary.claims) {
+    lines.push('');
+    const glyph = humanGlyph(claim.status, glyphs);
+    lines.push(`${glyph} ${claim.statement}`);
+    lines.push(`  ${claim.statusLabel}`);
+    if (claim.requiredEvidenceLabel) {
+      lines.push(`  Required evidence: ${claim.requiredEvidenceLabel}`);
+    }
+    if (claim.counterexampleRequirementLabel) {
+      lines.push(`  ${claim.counterexampleRequirementLabel}`);
+    }
+    if (claim.status !== 'verified') {
+      lines.push(`  Issue: ${claim.explanation}`);
+    }
+  }
+
+  lines.push('');
+  appendApproval(lines, p.approval);
+  lines.push('');
+  lines.push('Diagnostic: `flowguard_status({ proofGraph: true })`');
+
+  return lines.join('\n');
+}
+
+function renderEvaluationFallback(p: CompactProofPresentation & { kind: 'evaluation' }): string {
+  const lines: string[] = [];
+  const glyphs = UNICODE_GLYPHS;
+
+  const primReason = 'primaryReason' in p ? p.primaryReason : undefined;
+  const provenCount = 'provenCount' in p ? p.provenCount : 0;
+  const claimCount = p.claimCount;
+  const criticalProven = 'criticalProvenCount' in p ? p.criticalProvenCount : 0;
+  const criticalCount = p.criticalCount;
+
+  lines.push(`${provenCount} of ${claimCount} claims verified`);
+
+  if (primReason) {
+    lines.push('');
+    lines.push(primReason);
+  }
+
+  const unmet = 'unmetCriticalClaims' in p ? p.unmetCriticalClaims : [];
+  for (const claim of unmet) {
+    const status = projectHumanVerificationStatus(claim.status);
+    const glyph = humanGlyph(status, glyphs);
+    lines.push('');
+    lines.push(`${glyph} ${claim.statement}`);
+    lines.push(`  ${humanVerificationLabel(claim.status)}`);
+    if (claim.reason) lines.push(`  ${claim.reason}`);
+  }
+
+  const other = 'otherHighlightedClaims' in p ? p.otherHighlightedClaims : [];
+  for (const claim of other) {
+    const status = projectHumanVerificationStatus(claim.status);
+    const glyph = humanGlyph(status, glyphs);
+    lines.push('');
+    lines.push(`${glyph} ${claim.statement}`);
+    lines.push(`  ${humanVerificationLabel(claim.status)}`);
+    if (claim.reason) lines.push(`  ${claim.reason}`);
+  }
+
+  lines.push('');
+  lines.push(`Critical coverage: ${criticalProven}/${criticalCount} verified`);
+  appendApproval(lines, p.approval);
+  lines.push('');
+  lines.push('Diagnostic: `flowguard_status({ proofGraph: true })`');
+
+  return lines.join('\n');
+}
+
+// ─── Diagnostic evaluation rendering ─────────────────────────────────────────
+
+function renderEvaluationDiagnostic(
+  p: CompactProofPresentation & { kind: 'evaluation' },
+  summary?: HumanProofSummary,
+): string {
   const lines: string[] = [];
 
   if (p.overallStatus === 'NOT_DECLARED') {
     lines.push('Status: NOT_DECLARED');
-    lines.push('No proof obligations declared.');
-    lines.push('Critical coverage: 0/0 proven');
-    lines.push('Evidence freshness: Not verified');
+    lines.push('No verification obligations declared.');
     appendApproval(lines, p.approval);
-    lines.push('');
-    lines.push('Evidence lineage: `flowguard_status({ proofGraph: true })`');
     return lines.join('\n');
   }
-  const prefix =
-    p.decisionContext === 'prospective_approval'
-      ? 'If submitted for approval now:'
-      : 'Current status:';
-  const headlineLabel = renderHeadlineLabel(p.headlineStatus);
 
-  if (p.headlineStatus !== 'PROVEN') {
-    lines.push('');
-    if (p.decisionContext === 'prospective_approval') {
-      lines.push(`${prefix} **${headlineLabel}**`);
-    } else {
-      lines.push(headlineLabel);
-    }
-
-    // Gate reason always appears directly after the headline when present,
-    // never hidden behind unrelated claim details.
-    if (p.primaryReason) {
-      lines.push('');
-      lines.push(p.primaryReason);
-    }
-
-    if (p.unmetCriticalClaims.length > 0) {
-      lines.push('');
-      lines.push('Unmet critical claims:');
-      appendClaims(lines, p.unmetCriticalClaims);
-    }
-    if (p.otherHighlightedClaims.length > 0) {
-      lines.push('');
-      lines.push('Other unresolved claims:');
-      appendClaims(lines, p.otherHighlightedClaims);
-    }
-  } else {
-    lines.push('All critical claims PROVEN.');
-  }
-
-  lines.push('');
+  // Raw counts
   const parts: string[] = [];
   parts.push(`${p.provenCount} PROVEN`);
   if (p.contradictedCount > 0) parts.push(`${p.contradictedCount} CONTRADICTED`);
@@ -120,8 +240,7 @@ function renderEvaluationSection(p: CompactProofPresentation & { kind: 'evaluati
   lines.push(`Critical coverage: ${p.criticalProvenCount}/${p.criticalCount} proven`);
 
   if (p.revisionDigest) {
-    const short = p.revisionDigest.slice(0, 12);
-    lines.push(`Revision: \`${short}\``);
+    lines.push(`Revision: \`${p.revisionDigest.slice(0, 12)}\``);
   }
 
   const freshnessLabel: Record<string, string> = {
@@ -130,23 +249,75 @@ function renderEvaluationSection(p: CompactProofPresentation & { kind: 'evaluati
     NOT_VERIFIED: 'Not verified',
   };
   lines.push(`Evidence freshness: ${freshnessLabel[p.evidenceFreshness]}`);
-  appendApproval(lines, p.approval);
 
+  // Per-claim diagnostic when humanSummary available
+  if (summary !== undefined) {
+    for (const claim of summary.claims) {
+      lines.push('');
+      lines.push(`Claim \`${claim.claimId}\``);
+      lines.push(`  Canonical state: ${claim.diagnostic.canonicalState}`);
+      if (claim.diagnostic.claimScope) {
+        lines.push(`  Scope: ${claim.diagnostic.claimScope}`);
+      }
+      if (claim.diagnostic.bindingReason) {
+        lines.push(`  Binding diagnostic: ${claim.diagnostic.bindingReason}`);
+      }
+      if (claim.diagnostic.requiredEvidence) {
+        const pos = claim.diagnostic.requiredEvidence.positive;
+        const adv = claim.diagnostic.requiredEvidence.adversarial;
+        if (pos.length > 0) {
+          lines.push(`  Required evidence: ${pos.join(', ')}`);
+        }
+        if (adv.length > 0) {
+          lines.push(`  Adversarial required: ${adv.join(', ')}`);
+        }
+      }
+      if (claim.counterexampleRequirementLabel) {
+        lines.push(`  ${claim.counterexampleRequirementLabel}`);
+      }
+      if (claim.diagnostic.freshness) {
+        const f = claim.diagnostic.freshness;
+        lines.push(`  Freshness: ${f.boundDigest.slice(0, 12)} (stale: ${String(f.stale)})`);
+      }
+      if (claim.diagnostic.candidateId) {
+        lines.push(`  Candidate: ${claim.diagnostic.candidateId}`);
+      }
+      lines.push(`  Statement: ${claim.statement}`);
+    }
+  } else {
+    // Fallback: show raw claims from CompactProofClaim
+    for (const claim of p.unmetCriticalClaims) {
+      lines.push('');
+      lines.push(`Claim \`${claim.claimId}\``);
+      lines.push(`  Canonical state: ${claim.status}`);
+      lines.push(`  Statement: ${claim.statement}`);
+      if (claim.reason) lines.push(`  Reason: ${claim.reason}`);
+    }
+  }
+
+  appendApproval(lines, p.approval);
   lines.push('');
-  const detailLabel =
-    p.headlineStatus !== 'PROVEN'
-      ? 'Inspect the blocking claim and evidence lineage: `flowguard_status({ proofGraph: true })`'
-      : 'Evidence lineage: `flowguard_status({ proofGraph: true })`';
-  lines.push(detailLabel);
+  lines.push('Diagnostic: `flowguard_status({ proofGraph: true })`');
 
   return lines.join('\n');
 }
 
-function appendClaims(lines: string[], claims: readonly CompactProofClaim[]): void {
-  for (const claim of claims) {
-    lines.push(`"${claim.statement}"`);
-    if (claim.reason) lines.push(claim.reason);
-    for (const step of claim.recovery ?? []) lines.push(step);
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function humanGlyph(
+  status: ReturnType<typeof projectHumanVerificationStatus>,
+  glyphs: typeof UNICODE_GLYPHS,
+): string {
+  switch (status) {
+    case 'verified':
+      return glyphs.verified;
+    case 'failed':
+      return glyphs.failed;
+    case 'needs_recheck':
+    case 'blocked':
+      return glyphs.warning;
+    case 'not_verified':
+      return glyphs.notVerified;
   }
 }
 
@@ -158,44 +329,8 @@ function appendApproval(lines: string[], approval: ProofApprovalPresentation): v
     for (const attestation of approval.attestations) {
       const binding = attestation.binding === 'current' ? 'Current' : 'Stale or unbound';
       lines.push(
-        `- ${attestation.flow}: ${binding} (certificate \`${attestation.certificateId}\`)`,
+        `  - ${attestation.flow}: ${binding} (certificate \`${attestation.certificateId}\`)`,
       );
     }
   }
-  lines.push('Verification effect: None — approval is not verification');
-}
-
-function renderHeadlineLabel(status: ClaimVerificationState): string {
-  switch (status) {
-    case 'CONTRADICTED':
-      return 'CONTRADICTED — fresh adversarial evidence falsified at least one critical claim';
-    case 'BLOCKED':
-      return 'BLOCKED — the evidence gate cannot clear';
-    case 'STALE':
-      return 'STALE — previously recorded evidence is no longer current';
-    case 'UNPROVEN':
-      return 'UNPROVEN — available evidence does not establish at least one critical claim';
-    case 'NOT_VERIFIED':
-      return 'NOT_VERIFIED — required evidence is missing or unavailable';
-    case 'PROVEN':
-      return 'All critical claims PROVEN';
-  }
-}
-
-// ─── Canonical ProofGraph Presentation Section ────────────────────────────────
-
-/**
- * Build the canonical proofGraph presentation section for review cards.
- *
- * Every card that displays ProofGraph data MUST use this function instead of
- * calling {@link renderCompactProofSection} + rolling its own text wrapping.
- * The heading semantics (## Proof obligations vs ## ProofGraph) are owned by
- * {@link renderCompactProofSection}; the structural section wrapping is owned
- * here.
- */
-export function buildProofGraphSection(presentation: CompactProofPresentation): ProofGraphSection {
-  return {
-    kind: 'proofGraph',
-    proof: presentation,
-  };
 }

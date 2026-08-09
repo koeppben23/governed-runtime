@@ -167,7 +167,7 @@ describe('presentation.markdown rendering contract', () => {
       summary!,
       { text: 'Re-record the revised implementation.', commands: ['/implement'] },
     );
-    expect(markdown).toContain('## ProofGraph');
+    expect(markdown).toContain('## Verification');
     expect(markdown).toContain('Re-record the revised implementation.');
     expect(markdown).not.toContain('→ Continue to completion');
   });
@@ -179,9 +179,9 @@ describe('presentation.markdown rendering contract', () => {
       summary!,
       { text: 'Re-record the revised implementation.', commands: ['/implement'] },
     );
-    expect(markdown).toContain('## ProofGraph');
-    expect(markdown).toContain('If submitted for approval now:');
-    expect(markdown).toContain('CONTRADICTED');
+    expect(markdown).toContain('## Verification');
+    expect(markdown).toContain('0 of 1 claims verified');
+    expect(markdown).toContain('Failed');
     expect(markdown).toContain('Re-record the revised implementation.');
   });
 
@@ -199,8 +199,8 @@ describe('presentation.markdown rendering contract', () => {
       statusLine: 'Implementation review converged at iteration 1. Reviewer accepted.',
     };
     const markdown = buildEvidenceReviewCard(cardInput);
-    expect(markdown).toContain('## ProofGraph');
-    expect(markdown).toContain('All critical claims PROVEN');
+    expect(markdown).toContain('## Verification');
+    expect(markdown).toContain('1 of 1 claims verified');
     expect(markdown).not.toContain('If submitted for approval now:');
     expect(markdown).toContain('## Decision required');
     expect(markdown).toContain('/approve');
@@ -223,7 +223,7 @@ describe('presentation.markdown rendering contract', () => {
     const parsed = JSON.parse(result.response);
     expect(parsed.presentation).toBeDefined();
     expect(parsed.presentation.markdown).toContain('## Implementation review blocked');
-    expect(parsed.presentation.markdown).toContain('## ProofGraph');
+    expect(parsed.presentation.markdown).toContain('## Verification');
     expect(parsed.presentation.markdown).toContain(
       'Restore the reviewer capability and retry the implementation review.',
     );

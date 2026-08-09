@@ -23,6 +23,8 @@ import type {
 } from '../../presentation/proof-model.js';
 import type { ProofApprovalPresentation } from '../../presentation/proof-model.js';
 import { buildProofApprovalProjection } from './approval-projection.js';
+import { projectClaimResolutionFactsFromState } from './claim-resolution-projector.js';
+import { projectHumanProofSummary } from '../../presentation/claim-human-projection.js';
 
 // ─── Decision context ───────────────────────────────────────────────────────
 
@@ -379,6 +381,8 @@ function buildEvaluationResult(
   }
   const tallies = tallyClaims(claims);
   const unmetCriticalClaims = selectUnmetCriticalClaims(claims, state.plan?.claimDeclarations);
+  const facts = projectClaimResolutionFactsFromState(state);
+  const humanSummary = facts.length > 0 ? projectHumanProofSummary(facts) : undefined;
   const result: CompactProofPresentation = {
     kind: 'evaluation',
     claimCount: summary.claimCount,
@@ -403,6 +407,7 @@ function buildEvaluationResult(
     unprovenCount: tallies.unprovenCount,
     notVerifiedCount: tallies.notVerifiedCount,
     approval: approvalPresentation(state),
+    ...(humanSummary !== undefined ? { humanSummary } : {}),
   };
   return result;
 }

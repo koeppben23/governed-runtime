@@ -207,6 +207,8 @@ export interface TextSection {
 export interface ProofGraphSection {
   readonly kind: 'proofGraph';
   readonly proof: import('./proof-model.js').CompactProofPresentation;
+  readonly detail?: 'human' | 'diagnostic';
+  readonly humanSummary?: import('./claim-human-projection.js').HumanProofSummary;
 }
 
 export interface CodeSection {

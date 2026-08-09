@@ -71,6 +71,35 @@ export type {
   ProofApprovalPresentation,
   ProofGraphPresentationStatus,
 } from './proof-model.js';
+export type {
+  HumanProofSummary,
+  ClaimHumanProjection,
+  ClaimDiagnosticProjection,
+} from './claim-human-projection.js';
+export type {
+  ClaimResolutionFacts,
+  CounterexampleRequirementProjection,
+  RequiredEvidenceProjection,
+  AssertionIdentityProjection,
+  FreshnessProjection,
+  ClaimProvenanceProjection,
+} from './claim-resolution.js';
+export { projectClaimResolutionFacts } from './claim-resolution.js';
+export { projectClaimHumanProjection, projectHumanProofSummary } from './claim-human-projection.js';
+export {
+  projectHumanVerificationStatus,
+  humanVerificationLabel,
+  humanVerificationExplanation,
+} from './human-verification.js';
+export type { HumanVerificationStatus } from './human-verification.js';
+export { BINDING_DIAGNOSTIC_COPY } from './claim-diagnostic-copy.js';
+export type { BindingDiagnosticCopy } from './claim-diagnostic-copy.js';
+export {
+  humanProviderKindLabel,
+  humanCounterexampleKindLabel,
+  humanCounterexampleRequirementText,
+  humanRequiredEvidenceText,
+} from './proof-requirement-copy.js';
 export {
   STATUS_LABELS,
   lookupStatusLabel,

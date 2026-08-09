@@ -15,7 +15,7 @@ export interface PresentationGlyphs {
   readonly availableAction: string;
 }
 
-const UNICODE_GLYPHS: PresentationGlyphs = {
+export const UNICODE_GLYPHS: PresentationGlyphs = {
   warning: '⚠',
   verified: '✓',
   failed: '✗',

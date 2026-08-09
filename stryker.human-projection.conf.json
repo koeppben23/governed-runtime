@@ -13,7 +13,13 @@
     "src/presentation/reason-copy.ts",
     "src/presentation/reason-projection.ts",
     "src/presentation/human-projection.ts",
-    "src/presentation/markdown.ts:255-287"
+    "src/presentation/claim-resolution.ts",
+    "src/presentation/claim-diagnostic-copy.ts",
+    "src/presentation/human-verification.ts",
+    "src/presentation/claim-human-projection.ts",
+    "src/presentation/proof-requirement-copy.ts",
+    "src/presentation/markdown.ts:255-287",
+    "src/presentation/proof-summary.ts:32-290"
   ],
   "mutator": {
     "excludedMutations": ["StringLiteral", "ArrayDeclaration"]

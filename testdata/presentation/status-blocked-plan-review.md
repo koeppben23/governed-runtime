@@ -14,12 +14,11 @@
 **Missing:** 3
 **Not yet required:** 6
 
-## ProofGraph
+## Verification
 
 Status: NOT_DECLARED
-No proof obligations declared.
+No verification obligations declared.
 Approval evidence: Not recorded
-Verification effect: None — approval is not verification
 
 ## Available actions
 

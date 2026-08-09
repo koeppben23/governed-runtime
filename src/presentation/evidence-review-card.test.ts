@@ -107,10 +107,11 @@ describe('buildEvidenceReviewCard', () => {
     expect(card).toContain(baseInput.phaseLabel);
   });
 
-  it('includes ## ProofGraph section via canonical buildProofGraphSection', () => {
+  it('includes ## Verification section via canonical buildProofGraphSection', () => {
     const card = buildEvidenceReviewCard(baseInput);
-    expect(card).toContain('## ProofGraph');
-    expect(card).toContain('All critical claims PROVEN');
+    expect(card).toContain('## Verification');
+    expect(card).toContain('2 of 2 claims verified');
+    expect(card).toContain('Critical coverage: 1/1 verified');
   });
 
   it('includes ## Decision required with gate commands when commands present', () => {
@@ -139,7 +140,7 @@ describe('buildEvidenceReviewCard', () => {
     });
     expect(card).toContain('# FlowGuard Implementation Review');
     expect(card).toContain(baseInput.statusLine);
-    expect(card).toContain('## ProofGraph');
+    expect(card).toContain('## Verification');
     expect(card).toContain('## Decision required');
     expect(card).toContain('/approve');
     expect(card).toContain('/request-changes');
@@ -196,7 +197,7 @@ describe('buildEvidenceReviewCard', () => {
 
   it('ProofGraph section appears before ## Decision required', () => {
     const card = buildEvidenceReviewCard(baseInput);
-    const proofGraphIdx = card.indexOf('## ProofGraph');
+    const proofGraphIdx = card.indexOf('## Verification');
     const decisionIdx = card.indexOf('## Decision required');
     expect(proofGraphIdx).toBeGreaterThan(-1);
     expect(decisionIdx).toBeGreaterThan(-1);
