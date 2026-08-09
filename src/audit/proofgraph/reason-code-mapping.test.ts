@@ -7,9 +7,7 @@ import { describe, expect, it } from 'vitest';
 import {
   mapEnforcementReasonToRegistryCode,
   mapBindingReasonToRegistryCode,
-  mapGateKindToRegistryCode,
 } from './reason-code-mapping.js';
-import type { EnforcementDecisionKind } from './enforcement-projection.js';
 
 describe('mapEnforcementReasonToRegistryCode', () => {
   it('counterexample_observed → PROOFGRAPH_COUNTEREXAMPLE_OBSERVED', () => {
@@ -28,6 +26,24 @@ describe('mapEnforcementReasonToRegistryCode', () => {
     );
   });
 
+  it('risk_assessment_stale → PROOFGRAPH_RISK_ASSESSMENT_STALE', () => {
+    expect(mapEnforcementReasonToRegistryCode('risk_assessment_stale')).toBe(
+      'PROOFGRAPH_RISK_ASSESSMENT_STALE',
+    );
+  });
+
+  it('certificate_invalid → PROOFGRAPH_CERTIFICATE_INVALID', () => {
+    expect(mapEnforcementReasonToRegistryCode('certificate_invalid')).toBe(
+      'PROOFGRAPH_CERTIFICATE_INVALID',
+    );
+  });
+
+  it('critical_fact_required → PROOFGRAPH_CRITICAL_FACT_REQUIRED', () => {
+    expect(mapEnforcementReasonToRegistryCode('critical_fact_required')).toBe(
+      'PROOFGRAPH_CRITICAL_FACT_REQUIRED',
+    );
+  });
+
   it('every enforcement code maps to a defined value', () => {
     const codes: Parameters<typeof mapEnforcementReasonToRegistryCode>[0][] = [
       'proven',
@@ -39,6 +55,7 @@ describe('mapEnforcementReasonToRegistryCode', () => {
       'provenance_missing',
       'evaluation_unavailable',
       'risk_assessment_stale',
+      'certificate_invalid',
       'critical_fact_required',
     ];
     for (const code of codes) {
@@ -70,37 +87,5 @@ describe('mapBindingReasonToRegistryCode', () => {
     expect(mapBindingReasonToRegistryCode('check_mismatch')).toBe(
       'PROOFGRAPH_ASSERTION_EVIDENCE_MISSING',
     );
-  });
-});
-
-describe('mapGateKindToRegistryCode', () => {
-  it('clear is not a gated outcome and maps to null', () => {
-    expect(mapGateKindToRegistryCode('clear')).toBeNull();
-  });
-
-  it('maps each blocking decision kind to its existing registered code', () => {
-    const expectations: Array<[EnforcementDecisionKind, string]> = [
-      ['evaluation_unavailable', 'PROOFGRAPH_EVALUATION_UNAVAILABLE'],
-      ['risk_assessment_stale', 'PROOFGRAPH_RISK_ASSESSMENT_STALE'],
-      ['certificate_invalid', 'PROOFGRAPH_CERTIFICATE_INVALID'],
-      ['critical_fact_required', 'PROOFGRAPH_CRITICAL_FACT_REQUIRED'],
-      ['facts_unproven', 'PROOFGRAPH_CRITICAL_FACTS_UNPROVEN'],
-    ];
-    for (const [kind, code] of expectations) {
-      expect(mapGateKindToRegistryCode(kind)).toBe(code);
-    }
-  });
-
-  it('every non-clear enforcement decision kind resolves to a defined code', () => {
-    const kinds: EnforcementDecisionKind[] = [
-      'evaluation_unavailable',
-      'risk_assessment_stale',
-      'certificate_invalid',
-      'critical_fact_required',
-      'facts_unproven',
-    ];
-    for (const kind of kinds) {
-      expect(mapGateKindToRegistryCode(kind)).toBeTruthy();
-    }
   });
 });

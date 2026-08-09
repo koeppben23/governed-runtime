@@ -56,7 +56,7 @@ import {
 } from './proofgraph/approval-projection.js';
 import { projectProofStatusForState } from './proofgraph/proof-summary-projectors.js';
 import { evaluateProofGraphGateFromState } from '../audit/proofgraph/gate.js';
-import { mapGateKindToRegistryCode } from '../audit/proofgraph/reason-code-mapping.js';
+import { mapEnforcementReasonToRegistryCode } from '../audit/proofgraph/reason-code-mapping.js';
 
 // Re-export for consumers
 export type { StatusActionProjection, StatusConclusionProjection };
@@ -594,6 +594,6 @@ function buildBlocker(
 function proofGraphGateRegistryCode(state: SessionState): string | null {
   if (state.phase !== 'EVIDENCE_REVIEW') return null;
   const decision = evaluateProofGraphGateFromState(state);
-  if (!decision.gated || decision.kind === 'clear') return null;
-  return mapGateKindToRegistryCode(decision.kind);
+  if (!decision.gated) return null;
+  return mapEnforcementReasonToRegistryCode(decision.reasonCode);
 }

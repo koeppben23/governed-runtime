@@ -50,7 +50,7 @@ import { blocked } from '../config/reasons.js';
 import { compareActorIdentity, isAssuranceAtLeast } from '../identity/actor-info.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { evaluateProofGraphGate } from '../audit/proofgraph/gate.js';
-import { mapGateKindToRegistryCode } from '../audit/proofgraph/reason-code-mapping.js';
+import { mapEnforcementReasonToRegistryCode } from '../audit/proofgraph/reason-code-mapping.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -288,8 +288,7 @@ function enforceProofGraphEvidenceApproval(
       claimIds: decision.blockingClaimIds.join(', '),
     });
   }
-  const registryCode = mapGateKindToRegistryCode(decision.kind);
-  if (!registryCode) return null;
+  const registryCode = mapEnforcementReasonToRegistryCode(decision.reasonCode);
   if (decision.kind === 'evaluation_unavailable') {
     return blocked(registryCode, { claimIds: decision.blockingClaimIds.join(', ') });
   }
