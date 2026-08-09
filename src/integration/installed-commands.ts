@@ -237,6 +237,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     presentationGroup: 'export',
     description:
       'Archive session as tar.gz (redactionMode: none|basic|pseudonymous, default basic; includeRaw: true|false, default false).',
+    intent: 'export_result',
   },
   {
     id: 'alias.start',
@@ -247,7 +248,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     visibility: 'primary',
     presentationGroup: 'start',
     description: 'Prepare or restore a governed session.',
-    intent: 'export_result',
+    intent: 'refresh_repository',
   },
   {
     id: 'alias.task',
@@ -325,6 +326,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     presentationGroup: 'export',
     description:
       'Export audit package as tar.gz (redactionMode: none|basic|pseudonymous, default basic; includeRaw: true|false, default false).',
+    intent: 'export_result',
   },
   {
     id: 'alias.why',

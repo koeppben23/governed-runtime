@@ -71,11 +71,23 @@ function implReviewAction(productNextAction: {
   intent?: import('../../presentation/action-intent.js').ActionIntent;
 } {
   const invocation = productNextAction.commands[0] ?? null;
-  const cmd = invocation ? getInstalledCommand(invocation) : null;
+  if (!invocation) {
+    return {
+      invocation: null,
+      description: productNextAction.text,
+      visibility: 'recommended',
+    };
+  }
+  const cmd = getInstalledCommand(invocation);
+  if (!cmd) {
+    throw new Error(
+      `implementation review action: no installed command metadata for "${invocation}".`,
+    );
+  }
   return {
-    invocation,
-    description: cmd?.description ?? productNextAction.text,
+    invocation: cmd.invocation,
+    description: cmd.description,
     visibility: 'recommended',
-    ...(cmd?.intent ? { intent: cmd.intent } : {}),
+    ...(cmd.intent ? { intent: cmd.intent } : {}),
   };
 }

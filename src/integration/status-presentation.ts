@@ -134,6 +134,9 @@ function proofGraphOpts(
  */
 export function buildNoSessionDocument(): PresentationDocument {
   const startCmd = getInstalledCommand('/start');
+  if (!startCmd) {
+    throw new Error('buildNoSessionDocument: no installed command metadata for "/start".');
+  }
   return {
     kind: 'compact_card',
     density: 'compact',
@@ -147,10 +150,10 @@ export function buildNoSessionDocument(): PresentationDocument {
     conclusion: {
       kind: 'next_action',
       action: {
-        invocation: startCmd?.invocation ?? '/start',
-        description: startCmd?.description ?? 'Prepare or restore a governed session.',
+        invocation: startCmd.invocation,
+        description: startCmd.description,
         visibility: 'recommended',
-        ...(startCmd?.intent ? { intent: startCmd.intent } : {}),
+        ...(startCmd.intent ? { intent: startCmd.intent } : {}),
       },
     },
   };

@@ -540,4 +540,38 @@ describe('ActionIntent SSOT', () => {
     }
     expect(violations).toEqual([]);
   });
+
+  // ─── Positive Mapping Contract ──────────────────────────────────────────────
+
+  it('all expected commands carry the correct intents', () => {
+    const content = readFileSync(join(SRC_ROOT, 'integration/installed-commands.ts'), 'utf-8');
+
+    const hasIntent = (inv: string, intent: string): boolean => {
+      const idx = content.indexOf(`invocation: '${inv}'`);
+      if (idx === -1) return false;
+      const block = content.slice(idx, idx + 600);
+      return block.includes(`intent: '${intent}'`);
+    };
+
+    const noIntent = (inv: string): boolean => {
+      const idx = content.indexOf(`invocation: '${inv}'`);
+      if (idx === -1) return false;
+      const block = content.slice(idx, idx + 600);
+      return !block.includes('intent:');
+    };
+
+    expect(hasIntent('/hydrate', 'refresh_repository')).toBe(true);
+    expect(hasIntent('/start', 'refresh_repository')).toBe(true);
+    expect(hasIntent('/status', 'inspect_status')).toBe(true);
+    expect(hasIntent('/why', 'inspect_blocker')).toBe(true);
+    expect(hasIntent('/validate', 'run_validation')).toBe(true);
+    expect(hasIntent('/check', 'run_validation')).toBe(true);
+    expect(hasIntent('/review', 'rerun_review')).toBe(true);
+    expect(hasIntent('/approve', 'approve')).toBe(true);
+    expect(hasIntent('/request-changes', 'request_changes')).toBe(true);
+    expect(hasIntent('/reject', 'reject')).toBe(true);
+    expect(hasIntent('/export', 'export_result')).toBe(true);
+    expect(hasIntent('/archive', 'export_result')).toBe(true);
+    expect(noIntent('/continue')).toBe(true);
+  });
 });
