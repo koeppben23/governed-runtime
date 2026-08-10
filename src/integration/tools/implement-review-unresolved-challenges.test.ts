@@ -27,6 +27,7 @@ type Findings = {
 
 function stateWith(input: {
   digest?: string;
+  contentDigest?: string;
   challenges?: Ch[];
   findingsList?: Findings[];
   resolutions?: { challengeId: string; implementationDigest: string }[];
@@ -34,7 +35,15 @@ function stateWith(input: {
   const implReviewFindings =
     input.findingsList ?? (input.challenges ? [{ challenges: input.challenges }] : undefined);
   return {
-    implementation: input.digest ? { digest: input.digest } : null,
+    implementation: input.digest
+      ? {
+          digest: input.digest,
+          candidate: {
+            candidateDigest: input.digest,
+            contentDigest: input.contentDigest ?? `${input.digest}-content`,
+          },
+        }
+      : null,
     implReviewFindings,
     challengeResolutions: input.resolutions ?? [],
   } as unknown as SessionState;
@@ -63,6 +72,18 @@ describe('implement re-review challenge lifecycle (#747)', () => {
         resolutions: [{ challengeId: A, implementationDigest: 'impl-1' }], // stale digest
       });
       expect(computeTargetedResolutionChallengeIds(state)).toEqual([]);
+    });
+
+    it('does NOT target a resolution from another candidate with identical content', () => {
+      const state = stateWith({
+        digest: 'candidate-b',
+        contentDigest: 'shared-content',
+        challenges: [{ challengeId: A, kind: 'implementation_challenge', outcome: 'fail' }],
+        resolutions: [{ challengeId: A, implementationDigest: 'candidate-a' }],
+      });
+
+      expect(computeTargetedResolutionChallengeIds(state)).toEqual([]);
+      expect(computeUnaddressedPriorFailIds(state)).toEqual([A]);
     });
 
     it('ignores non-implementation and passing challenges', () => {

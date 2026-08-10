@@ -1,111 +1,123 @@
 /**
  * @module integration/implementation-candidate
- * @description Candidate resolution — derives ImplementationCandidate from the worktree.
+ * @description Single resolver for an immutable worktree candidate.
  *
- * Shared authority for both /implement (record) and /review-decision (approval
- * re-observation). Uses the same baseline-scoping authority, git hashing, and
- * digest computation as the implement-record pipeline.
+ *              Resolves task-owned changed paths (after baseline attribution),
+ *              final contents, and a complete diff from one worktree moment.
+ *              Callers downstream never independently recompute candidate identity.
  *
- * @version v1
+ * @version v2
  */
 
 import {
-  type ImplementationCandidate,
-  computeCandidateDigest,
-  computeContentDigest,
-} from '../state/evidence-candidate.js';
-import { hashWorktreeFiles, worktreeDiff, headCommitFull } from '../adapters/git.js';
+  changedFiles,
+  captureCandidateDiff,
+  hashWorktreeFiles,
+  headCommitFull,
+  trackedPaths,
+} from '../adapters/git.js';
+import type { ImplementationCandidate } from '../state/evidence-candidate.js';
+import { ImplementationCandidate as ImplementationCandidateSchema } from '../state/evidence-candidate.js';
+import type { RepositoryPath } from '../state/evidence-review.js';
+import { computeCandidateDigest, computeContentDigest } from '../state/evidence-candidate.js';
+import { hashBuffer } from '../shared/hashing.js';
 import type { SessionState } from '../state/schema.js';
 import type { ImplementationApprovalObservation } from '../state/implementation-approval-binding.js';
 
-// ─── Candidate Identity ────────────────────────────────────────────────────────
-
-export interface CandidateIdentity {
-  readonly candidateDigest: string;
-  readonly contentDigest: string;
+/** The resolved candidate alongside the exact diff bytes used for diffDigest. */
+export interface CapturedImplementationCandidate {
+  identity: ImplementationCandidate;
+  candidateDiffBytes: Buffer;
 }
 
-// ─── Full Candidate Resolution ─────────────────────────────────────────────────
+/** Candidate resolution with lightweight identity-only output for re-verification. */
+export interface CandidateIdentity {
+  candidateDigest: string;
+}
 
-export interface ResolvedImplementationCandidate {
-  readonly identity: ImplementationCandidate;
+/** Input for candidate resolution allowing task-owned path scoping. */
+export interface ResolveCandidateInput {
+  worktree: string;
+  /** Optional set of task-owned paths. When provided, only these paths
+   *  participate in the candidate; all other worktree changes are excluded. */
+  taskOwnedPaths?: readonly string[];
 }
 
 /**
- * Resolve a full ImplementationCandidate from the worktree using the same
- * task-owned scoping authority as /implement.
+ * Resolve a full implementation candidate from the current worktree.
  *
- * Steps:
- * 1. Get current changed files from git
- * 2. Apply baseline attribution (same logic as scopeImplementationFiles)
- * 3. Hash current file content
- * 4. Compute contentDigest
- * 5. Compute diffDigest
- * 6. Get baseHeadSha
- * 7. Compute candidateDigest
+ * When `taskOwnedPaths` is provided, the candidate represents exactly those
+ * paths — baseline attribution happens BEFORE candidate identity is computed.
+ *
+ * Captures the complete candidate state (base HEAD, changed paths, file
+ * hashes, complete binary-capable diff) and returns the identity together
+ * with the exact diff bytes.
  */
 export async function resolveImplementationCandidate(
   worktree: string,
-  taskOwnedPaths: readonly string[],
-): Promise<ResolvedImplementationCandidate | null> {
-  const sortedPaths = [...taskOwnedPaths].sort();
+  taskOwnedPaths?: readonly string[],
+): Promise<CapturedImplementationCandidate | null> {
+  const candidatePaths =
+    taskOwnedPaths !== undefined ? [...taskOwnedPaths] : await changedFiles(worktree);
 
-  if (sortedPaths.length === 0) return null;
-
-  const contentHashes = await hashWorktreeFiles(worktree, sortedPaths);
-  const contentDigest = computeContentDigest(
-    sortedPaths.map((p) => ({
-      path: p,
-      blobDigest: contentHashes[p] ?? 'deleted',
-    })),
-  );
-
-  let diffDigest: string | null = null;
-  const diffText = await worktreeDiff(worktree, sortedPaths);
-  if (diffText.trim().length > 0) {
-    const { hashText } = await import('../shared/hashing.js');
-    diffDigest = hashText(diffText);
-  }
+  if (candidatePaths.length === 0) return null;
 
   const baseHeadSha = await headCommitFull(worktree);
+
+  const changedPaths: RepositoryPath[] = [...candidatePaths].sort();
+
+  const contentHashes = await hashWorktreeFiles(worktree, changedPaths);
+  const contentEntries = changedPaths.map((path) => {
+    const blobDigest = contentHashes[path] ?? null;
+    return {
+      path,
+      state: blobDigest === null ? ('deleted' as const) : ('present' as const),
+      blobDigest,
+    };
+  });
+  const contentDigest = computeContentDigest(contentEntries);
+
+  const { trackedPaths: tracked, untrackedPaths: untracked } = await trackedPaths(
+    worktree,
+    changedPaths,
+  );
+
+  const candidateDiffBytes = await captureCandidateDiff(worktree, tracked, untracked);
+  const diffDigest = hashBuffer(candidateDiffBytes);
+
   const candidateDigest = computeCandidateDigest({
     baseHeadSha,
-    changedPaths: sortedPaths,
+    changedPaths,
     contentDigest,
     diffDigest,
   });
 
-  return {
-    identity: {
-      baseHeadSha,
-      changedPaths: sortedPaths,
-      contentDigest,
-      diffDigest,
-      candidateDigest,
-    },
-  };
+  const identity = ImplementationCandidateSchema.parse({
+    version: 1,
+    baseHeadSha,
+    changedPaths,
+    contentDigest,
+    diffDigest,
+    candidateDigest,
+  });
+
+  return { identity, candidateDiffBytes };
 }
 
-// ─── Lightweight Identity for TOCTOU Re-observation ────────────────────────────
-
 /**
- * Resolve a lightweight candidate identity for TOCTOU re-verification at
- * approval time. Must be cheaper than full content materialization or guaranteed
- * to detect every candidate-relevant change.
+ * Resolve a lightweight candidate identity for TOCTOU re-verification.
+ *
+ * Uses the full resolver for correctness. Must be cheaper than full content
+ * materialization or guaranteed to detect every candidate-relevant change.
  */
 export async function resolveImplementationCandidateIdentity(
   worktree: string,
-  taskOwnedPaths: readonly string[],
+  taskOwnedPaths?: readonly string[],
 ): Promise<CandidateIdentity | null> {
   const captured = await resolveImplementationCandidate(worktree, taskOwnedPaths);
   if (!captured) return null;
-  return {
-    candidateDigest: captured.identity.candidateDigest,
-    contentDigest: captured.identity.contentDigest,
-  };
+  return { candidateDigest: captured.identity.candidateDigest };
 }
-
-// ─── Approval Observation ──────────────────────────────────────────────────────
 
 /**
  * Resolve the host-authoritative implementation-approval observation for the
@@ -121,7 +133,12 @@ export async function resolveImplementationApprovalObservation(
   const candidate = state.implementationCandidate;
   if (!candidate) return null;
 
-  const identity = await resolveImplementationCandidateIdentity(worktree, candidate.changedPaths);
+  const captured = await resolveImplementationCandidate(worktree, candidate.changedPaths);
 
-  return identity ?? null;
+  if (!captured) return null;
+
+  return {
+    candidateDigest: captured.identity.candidateDigest,
+    contentDigest: captured.identity.contentDigest,
+  };
 }

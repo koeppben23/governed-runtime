@@ -114,7 +114,7 @@ export function buildProofApprovalProjection(state: SessionState): ProofApproval
 
   return {
     certificates: certificateProjection(state),
-    implementationDigest: state.implementation?.digest ?? null,
+    implementationDigest: state.implementation?.candidate.candidateDigest ?? null,
     claims,
     coverageGaps: state.proofContractCoverage ?? [],
   };

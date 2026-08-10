@@ -10,7 +10,8 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { makeState, PLAN_RECORD } from '../../fixtures.js';
+import { IMPL_EVIDENCE, makeState, PLAN_RECORD } from '../../fixtures.js';
+import { evaluateProofGraphGateFromState } from '../../audit/proofgraph/gate.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { hashText } from '../../shared/hashing.js';
 import {
@@ -73,19 +74,7 @@ function makeEvalState(claims: ProofClaim[]): SessionState {
   return {
     ...base,
     proofGraph: { version: 'proofgraph.v1' as const, claims, evaluatedAt: '2025-01-01T00:00:00Z' },
-    implementation: {
-      digest: 'abc123',
-      files: [{ path: 'src/foo.ts', status: 'modified' as const, contentHash: 'abc' }],
-      history: [
-        {
-          kind: 'impl_record' as const,
-          id: 'evt-1',
-          ts: '2025-01-01T00:00:00Z',
-          phase: 'IMPLEMENTATION',
-          digest: 'abc123',
-        },
-      ],
-    },
+    implementation: IMPL_EVIDENCE,
     plan: {
       ...PLAN_RECORD,
       claimDeclarations,
@@ -161,6 +150,33 @@ describe('projectImplementationProofStatus', () => {
     expect(result!.kind).toBe('evaluation');
     expect((result as Record<string, unknown>).headlineStatus).toBe('PROVEN');
     expect((result as Record<string, unknown>).provenCount).toBe(1);
+  });
+
+  it('keeps the presentation gate current when content and candidate digests differ', () => {
+    const state = {
+      ...makeEvalState([
+        proofClaim({
+          claimId: '11111111-1111-1111-1111-111111111112',
+          statement: 'Current lifecycle-bound risk assessment.',
+          critical: true,
+          verificationState: 'PROVEN',
+        }),
+      ]),
+      implementationRiskAssessment: {
+        implementationDigest: IMPL_EVIDENCE.candidate.candidateDigest,
+        riskTriggers: [],
+        computedMinimumTaskClass: 'STANDARD' as const,
+        touchedSurfaces: [],
+        assessedFrom: 'implementation_changed_files' as const,
+        assessedFileCount: 0,
+      },
+    } as SessionState;
+
+    expect(IMPL_EVIDENCE.candidate.contentDigest).not.toBe(IMPL_EVIDENCE.candidate.candidateDigest);
+    expect(evaluateProofGraphGateFromState(state).gated).toBe(false);
+    expect(
+      (projectImplementationProofStatus(state) as Record<string, unknown>).headlineStatus,
+    ).toBe('PROVEN');
   });
 
   it('returns CONTRADICTED headline when a claim is contradicted', () => {

@@ -468,7 +468,7 @@ function implementationFileItems(
   state: SessionState,
   taskTerms: readonly string[],
 ): ImplementationGuidanceItem[] {
-  return (state.implementation?.changedFiles ?? []).map((file) => ({
+  return (state.implementation?.candidate.changedPaths ?? []).map((file) => ({
     ...makeItem(file, file, [file], taskTerms, 'session_implementation_evidence'),
     source: 'session_implementation_evidence',
   }));

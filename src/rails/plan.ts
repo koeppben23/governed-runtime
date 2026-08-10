@@ -157,17 +157,22 @@ export async function executePlan(
   // maxIterations from policy (SOLO=1, TEAM/REGULATED=3)
   const maxIterations = ctx.policy?.maxSelfReviewIterations ?? DEFAULT_MAX_REVIEW_ITERATIONS;
 
-  const loop = await runConvergenceLoop(currentPlan, maxIterations, async (plan, iter) => {
-    const review = await executors.selfReview(plan, iter);
-    if (review.verdict === 'changes_requested' && review.revisedBody?.trim()) {
-      history.unshift(plan);
-      return {
-        verdict: review.verdict,
-        updated: revisedPlanEvidence(plan, review.revisedBody, ctx),
-      };
-    }
-    return { verdict: review.verdict };
-  });
+  const loop = await runConvergenceLoop(
+    currentPlan,
+    maxIterations,
+    async (plan, iter) => {
+      const review = await executors.selfReview(plan, iter);
+      if (review.verdict === 'changes_requested' && review.revisedBody?.trim()) {
+        history.unshift(plan);
+        return {
+          verdict: review.verdict,
+          updated: revisedPlanEvidence(plan, review.revisedBody, ctx),
+        };
+      }
+      return { verdict: review.verdict };
+    },
+    (p) => p.digest,
+  );
 
   // P1.3 slice 4b: route reviewer tool-failure to BLOCKED.
   // The convergence loop returns kind='blocked' when the reviewer subagent

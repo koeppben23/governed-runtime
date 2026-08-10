@@ -11,7 +11,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { makeState, POLICY_SNAPSHOT, TICKET } from '../../fixtures.js';
+import { makeState, POLICY_SNAPSHOT, TICKET, makeImplEvidence } from '../../fixtures.js';
 import { TEAM_POLICY } from '../../config/policy-presets.js';
 import type { SessionState } from '../../state/schema.js';
 import {
@@ -295,12 +295,11 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
         history: [],
         reviewFindings: [],
       },
-      implementation: {
-        changedFiles: ['src/foo.ts'],
+      implementation: makeImplEvidence({
+        candidate: { candidateDigest: 'digest-impl', changedPaths: ['src/foo.ts'] },
         domainFiles: ['src/foo.ts'],
-        digest: 'digest-impl',
         executedAt: now,
-      },
+      }),
       selfReview: {
         iteration: 0,
         maxIterations: 3,

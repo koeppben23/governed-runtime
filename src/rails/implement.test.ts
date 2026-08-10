@@ -10,10 +10,17 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { executeImplement, type ImplExecutors } from './implement.js';
-import { makeState, FIXED_TIME, TICKET, PLAN_RECORD, IMPL_EVIDENCE } from '../fixtures.js';
+import {
+  makeState,
+  FIXED_TIME,
+  TICKET,
+  PLAN_RECORD,
+  IMPL_EVIDENCE,
+  CANDIDATE,
+} from '../fixtures.js';
 import type { RailContext } from './types.js';
 import { TEAM_POLICY } from '../config/policy.js';
-import type { ValidationResult } from '../state/evidence.js';
+import type { ValidationResult, ImplementationCandidate } from '../state/evidence.js';
 
 const ctx: RailContext = {
   now: () => FIXED_TIME,
@@ -24,7 +31,7 @@ const ctx: RailContext = {
 function makeExecutors(overrides?: Partial<ImplExecutors>): ImplExecutors {
   return {
     execute: vi.fn().mockResolvedValue({
-      changedFiles: ['src/foo.ts', 'src/foo.test.ts'],
+      candidate: CANDIDATE,
       domainFiles: ['src/foo.ts'],
     }),
     reviewAndRevise: vi.fn().mockResolvedValue({ verdict: 'approve' as const }),
@@ -69,7 +76,7 @@ describe('implement rail', () => {
         // Mode A → IMPL_REVIEW → if review converges → EVIDENCE_REVIEW
         expect(result.state.phase).toMatch(/^(IMPL_REVIEW|EVIDENCE_REVIEW)$/);
         expect(result.state.implementation).not.toBeNull();
-        expect(result.state.implementation!.changedFiles).toContain('src/foo.ts');
+        expect(result.state.implementation!.candidate.changedPaths).toContain('src/auth.ts');
       }
     });
 
@@ -80,9 +87,10 @@ describe('implement rail', () => {
           iteration: 0,
           maxIterations: 3,
           prevDigest: null,
-          currDigest: 'dx',
+          currDigest: CANDIDATE.candidateDigest,
           revisionDelta: 'minor' as const,
           verdict: 'changes_requested' as const,
+          executedAt: FIXED_TIME,
         },
       });
       const executors = makeExecutors({
@@ -127,9 +135,10 @@ describe('implement rail', () => {
           iteration: 3,
           maxIterations: 3,
           prevDigest: null,
-          currDigest: 'dx',
+          currDigest: CANDIDATE.candidateDigest,
           revisionDelta: 'major' as const,
           verdict: 'changes_requested' as const,
+          executedAt: FIXED_TIME,
         },
       });
       const executors = makeExecutors({

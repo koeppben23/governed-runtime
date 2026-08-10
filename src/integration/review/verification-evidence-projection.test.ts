@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { IMPL_EVIDENCE, VALIDATION_PASSED, makeState } from '../../fixtures.js';
+import { IMPL_EVIDENCE, VALIDATION_PASSED, makeState, makeImplEvidence } from '../../fixtures.js';
 import { stateVerificationEvidence } from './shared-helpers.js';
 
 // Slice 1 fail-closed digest binding: only implementation-scope validation
@@ -8,7 +8,7 @@ import { stateVerificationEvidence } from './shared-helpers.js';
 // reviewer prompt. Stale, baseline, or foreign-digest attempts must be excluded
 // so the reviewer never verifies claims against outdated ground truth.
 
-const CURRENT_DIGEST = IMPL_EVIDENCE.digest;
+const CURRENT_DIGEST = IMPL_EVIDENCE.candidate.contentDigest;
 
 function implAttempt(overrides: Record<string, unknown> = {}) {
   return {
@@ -54,7 +54,7 @@ describe('stateVerificationEvidence', () => {
 
   it('excludes stale attempts after the implementation digest changes', () => {
     const state = makeState('IMPL_REVIEW', {
-      implementation: { ...IMPL_EVIDENCE, digest: 'replacement-digest' },
+      implementation: makeImplEvidence({ candidate: { contentDigest: 'replacement-content' } }),
       validationAttempts: [implAttempt()] as never,
     });
     expect(stateVerificationEvidence(state)).toEqual([]);

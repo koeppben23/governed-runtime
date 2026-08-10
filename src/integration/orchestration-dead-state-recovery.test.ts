@@ -32,6 +32,7 @@ import { plan, implement, architecture } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import type { SessionState } from '../state/schema.js';
 import type { ReviewObligation } from '../state/evidence.js';
+import { makeImplEvidence } from '../fixtures.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -214,12 +215,11 @@ async function setupImplementDeadState(blockedCount = 1): Promise<void> {
       revisionDelta: 'none',
       verdict: 'accept',
     },
-    implementation: {
-      changedFiles: ['src/test.ts'],
+    implementation: makeImplEvidence({
+      candidate: { candidateDigest: 'impl-digest', changedPaths: ['src/test.ts'] },
       domainFiles: ['src/test.ts'],
-      digest: 'impl-digest',
       executedAt: new Date().toISOString(),
-    },
+    }),
     reviewAssurance: {
       obligations: blockedObligations,
       invocations: [],

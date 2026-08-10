@@ -143,7 +143,7 @@ export function bindCounterexamples(
   evaluatedAt: string,
 ): CounterexampleBindingResult {
   const claims = state.proofContract?.claims ?? [];
-  const currentDigest = state.implementation?.digest;
+  const currentDigest = state.implementation?.candidate.contentDigest;
   if (currentDigest === undefined) return { counterexamples: [], diagnostics: new Map() };
 
   const diagnostics = new Map<string, AssertionBindingReasonCode>();

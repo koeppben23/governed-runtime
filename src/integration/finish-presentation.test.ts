@@ -10,7 +10,7 @@ import { renderMarkdown } from '../presentation/markdown.js';
 import { buildFinishDocument } from './finish-presentation.js';
 import { buildFinishCard } from './status-finish.js';
 import { buildFinishPresentationProjection } from './status-why-finish.js';
-import { makeState, makeProgressedState } from '../fixtures.js';
+import { makeImplEvidence, makeState, makeProgressedState } from '../fixtures.js';
 import { getPolicyPreset } from '../config/policy.js';
 import { createPolicySnapshot } from '../config/policy-snapshot.js';
 import { hashText } from '../shared/hashing.js';
@@ -287,12 +287,11 @@ describe('buildFinishDocument', () => {
         ],
         evaluatedAt: '2025-01-01T00:00:00Z',
       },
-      implementation: {
-        changedFiles: ['src/foo.ts'],
+      implementation: makeImplEvidence({
+        candidate: { changedPaths: ['src/foo.ts'] },
         domainFiles: ['src/foo.ts'],
-        digest: 'impl-digest',
         executedAt: '2025-01-01T00:00:00Z',
-      },
+      }),
     });
     const card = buildFinishCard(state, getPolicyPreset('solo'));
     expect(card.proofSummary).toBeDefined();
@@ -330,12 +329,11 @@ describe('buildFinishDocument', () => {
         ],
         evaluatedAt: '2025-01-01T00:00:00Z',
       },
-      implementation: {
-        changedFiles: ['src/foo.ts'],
+      implementation: makeImplEvidence({
+        candidate: { changedPaths: ['src/foo.ts'] },
         domainFiles: ['src/foo.ts'],
-        digest: 'impl-digest',
         executedAt: '2025-01-01T00:00:00Z',
-      },
+      }),
     });
     const card = buildFinishCard(state, getPolicyPreset('solo'));
     const pres = buildFinishPresentationProjection(state, card);

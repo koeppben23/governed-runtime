@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { makeState } from '../../fixtures.js';
+import { CANDIDATE, makeState, makeImplEvidence } from '../../fixtures.js';
 import {
   computeArtifactDigest,
   computeProjectionDigest,
@@ -135,17 +135,16 @@ function stateWithClaims() {
       decidedAt: NOW,
       decidedBy: 'user',
     },
-    implementation: {
-      changedFiles: ['src/example.ts'],
+    implementation: makeImplEvidence({
+      candidate: { candidateDigest: IMPL_DIGEST, changedPaths: ['src/example.ts'] },
       domainFiles: ['src/example.ts'],
-      digest: IMPL_DIGEST,
       executedAt: NOW,
-    },
+    }),
     validationAttempts: [
       {
         attemptId: ATTEMPT_ID,
         scope: 'implementation',
-        implementationDigest: IMPL_DIGEST,
+        implementationDigest: CANDIDATE.contentDigest,
         result: {
           checkId: 'test',
           passed: true,
@@ -317,7 +316,7 @@ describe('materializeApprovedPlanContract', () => {
           mutationAttempts: [
             {
               attemptId: '33333333-3333-4333-8333-333333333333',
-              implementationDigest: IMPL_DIGEST,
+              implementationDigest: state.implementation!.candidate.candidateDigest,
               command: 'npm run mutation',
               startedAt: NOW,
               completedAt: '2026-01-01T00:01:00.000Z',
@@ -420,7 +419,7 @@ describe('materializeApprovedPlanContract', () => {
           {
             attemptId: '11111111-1111-4111-8111-111111111111',
             scope: 'implementation' as const,
-            implementationDigest: IMPL_DIGEST,
+            implementationDigest: CANDIDATE.contentDigest,
             result: {
               checkId: 'test',
               passed: true,
@@ -438,7 +437,7 @@ describe('materializeApprovedPlanContract', () => {
           {
             attemptId: '22222222-2222-4222-8222-222222222222',
             scope: 'implementation' as const,
-            implementationDigest: IMPL_DIGEST,
+            implementationDigest: CANDIDATE.contentDigest,
             result: {
               checkId: 'security',
               passed: true,

@@ -11,7 +11,7 @@ import type { ValidationAttempt } from '../../state/evidence-validation.js';
 // gate binds to state.validationAttempts by implementationDigest, so stale-digest
 // evidence can never satisfy acceptance.
 
-const CURRENT_DIGEST = IMPL_EVIDENCE.digest;
+const CURRENT_DIGEST = IMPL_EVIDENCE.candidate.contentDigest;
 
 function attempt(checkId: string, passed: boolean, digest = CURRENT_DIGEST): ValidationAttempt {
   return {

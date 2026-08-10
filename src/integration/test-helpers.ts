@@ -381,7 +381,8 @@ export async function fulfillStrictReviewObligation(
         evidenceRefs: [
           {
             kind: 'implementation' as const,
-            implementationDigest: state.implementation?.digest ?? 'missing-implementation-digest',
+            implementationDigest:
+              state.implementation?.candidate.candidateDigest ?? 'missing-implementation-digest',
           },
           {
             kind: 'validation_attempt' as const,

@@ -345,7 +345,7 @@ function resolveGate(state: SessionState, opts?: { gate?: ProofGraphGateDecision
         authorizedCriticalClaimIds:
           authorization.kind === 'authorized' ? authorization.claimIds : [],
         certificateValid: authorization.kind === 'authorized',
-        implementationDigest: state.implementation?.digest,
+        implementationDigest: state.implementation?.candidate.candidateDigest,
         riskAssessment: state.implementationRiskAssessment,
       });
     })()
@@ -393,7 +393,7 @@ function buildEvaluationResult(
     unmetCriticalClaims,
     otherHighlightedClaims: selectHighlightedClaims(claims, state.plan?.claimDeclarations),
     evidenceFreshness: deriveEvidenceFreshness(claims),
-    revisionDigest: state.implementation?.digest,
+    revisionDigest: state.implementation?.candidate.candidateDigest,
     decisionContext: decisionContext,
     ...tallies,
     criticalCount: tallies.criticalCount,

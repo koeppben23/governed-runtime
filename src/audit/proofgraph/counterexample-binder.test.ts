@@ -8,21 +8,20 @@
  */
 import { describe, it, expect } from 'vitest';
 import { bindCounterexamples } from './counterexample-binder.js';
-import { makeState } from '../../fixtures.js';
+import { makeState, IMPL_EVIDENCE } from '../../fixtures.js';
 import { ProofCounterexample, type CounterexampleRequirement } from '../../state/proofgraph.js';
 import type { SessionState } from '../../state/schema.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
 const CLAIM = '00000000-0000-4000-8000-000000000001';
 const ATT = '00000000-0000-4000-8000-0000000000cc';
-const IMPL_DIGEST = 'impl-current';
+const IMPL_DIGEST = IMPL_EVIDENCE.candidate.candidateDigest;
 const SHA = 'a'.repeat(64);
 const AUTHORITY_REF = {
   kind: 'canonical_authority' as const,
   authorityId: 'ticket',
   digest: 'authority',
 };
-const IMPL = { changedFiles: ['a.ts'], domainFiles: [], digest: IMPL_DIGEST, executedAt: NOW };
 
 const COUNTEREXAMPLE_REQ: CounterexampleRequirement = {
   checkId: 'security',
@@ -92,7 +91,7 @@ function stateWith(
   overrides: Partial<ReturnType<typeof claim>> = {},
 ): SessionState {
   return makeState(phase, {
-    implementation: IMPL,
+    implementation: IMPL_EVIDENCE,
     proofContract: {
       version: 'contract.v1',
       claims: [{ ...claim(), ...overrides }],
@@ -292,7 +291,7 @@ describe('bindCounterexamples', () => {
   it('marks a missing counterexample attempt as not_verified', () => {
     const cx = bindCounterexamples(stateWith([]), NOW).counterexamples[0]!;
     expect(cx.outcome).toBe('not_verified');
-    expect(cx.boundDigest).toBe(IMPL_DIGEST);
+    expect(cx.boundDigest).toBe(IMPL_EVIDENCE.candidate.contentDigest);
   });
 
   it('returns nothing when there is no implementation', () => {
@@ -304,7 +303,7 @@ describe('bindCounterexamples', () => {
 
   it('ignores non-validation_attempt counterexample references', () => {
     const state = makeState('IMPL_REVIEW', {
-      implementation: IMPL,
+      implementation: IMPL_EVIDENCE,
       proofContract: {
         version: 'contract.v1',
         claims: [{ ...claim(), counterexampleRefs: [{ kind: 'content', digest: 'x' }] }],

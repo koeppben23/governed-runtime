@@ -296,12 +296,12 @@ function enforceProofGraphEvidenceApproval(
     return null;
   }
   const authorization = authorizedCriticalPlanClaimIds(state.plan);
-  const implementationDigest = candidateDigestOverride ?? state.implementation?.digest;
   const decision = evaluateProofGraphGate({
     projection: state.proofGraph,
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
     certificateValid: authorization.kind === 'authorized',
-    implementationDigest,
+    implementationDigest:
+      candidateDigestOverride ?? state.implementation?.candidate.candidateDigest,
     riskAssessment: state.implementationRiskAssessment,
   });
   if (!decision.gated) return null;

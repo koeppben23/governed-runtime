@@ -93,7 +93,7 @@ describe('buildProofApprovalProjection', () => {
   it('binds the materialized claim to its certificate, revision, and evidence', () => {
     const projection = buildProofApprovalProjection(contractState());
 
-    expect(projection.implementationDigest).toBe(IMPL_EVIDENCE.digest);
+    expect(projection.implementationDigest).toBe(IMPL_EVIDENCE.candidate.candidateDigest);
     expect(projection.claims[0]).toMatchObject({
       claimId: CLAIM_ID,
       signalClass: 'fact',

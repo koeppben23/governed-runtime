@@ -55,6 +55,8 @@ export interface ProofGraphEvaluationInput {
    * digest is stale.
    */
   readonly currentImplementationDigest: string | null;
+  /** Current content digest for evidence produced by executed validation checks. */
+  readonly currentContentDigest?: string | null;
   /** The current plan digest, or `null`/absent. Plan-bound evidence uses this. */
   readonly currentPlanDigest?: string | null;
   /**
@@ -79,6 +81,10 @@ function isFresh(
         input.currentImplementationDigest !== null &&
         binding.digest === input.currentImplementationDigest
       );
+    case 'content': {
+      const currentContentDigest = input.currentContentDigest ?? input.currentImplementationDigest;
+      return currentContentDigest !== null && binding.digest === currentContentDigest;
+    }
     case 'plan': {
       const currentPlanDigest = input.currentPlanDigest ?? null;
       return currentPlanDigest !== null && binding.digest === currentPlanDigest;
@@ -95,17 +101,14 @@ function bindingOf(result: ProofProviderResult): ProofProviderBinding | undefine
 
 /**
  * Whether a counterexample is fresh: bound to the current implementation
- * revision. A stale counterexample can neither contradict the current revision
+ * content. A stale counterexample can neither contradict the current revision
  * nor satisfy an adversarial requirement for it.
  */
 export function isFreshCounterexample(
   counterexample: ProofCounterexample,
-  currentImplementationDigest: string | null,
+  currentContentDigest: string | null,
 ): boolean {
-  return (
-    currentImplementationDigest !== null &&
-    counterexample.boundDigest === currentImplementationDigest
-  );
+  return currentContentDigest !== null && counterexample.boundDigest === currentContentDigest;
 }
 
 function computeFreshness(
@@ -131,7 +134,7 @@ interface AdversarialAnalysis {
 
 function analyzeCounterexamples(
   counterexamples: readonly ProofCounterexample[],
-  currentImplementationDigest: string | null,
+  currentContentDigest: string | null,
 ): AdversarialAnalysis {
   let freshContradicted = false;
   let freshSupported = false;
@@ -141,7 +144,7 @@ function analyzeCounterexamples(
   for (const c of counterexamples) {
     if (c.outcome === 'not_verified') continue;
     if (c.outcome === 'blocked') {
-      if (isFreshCounterexample(c, currentImplementationDigest)) {
+      if (isFreshCounterexample(c, currentContentDigest)) {
         freshBlocked = true;
         hasFreshAdversarial = true;
       } else {
@@ -149,7 +152,7 @@ function analyzeCounterexamples(
       }
       continue;
     }
-    if (isFreshCounterexample(c, currentImplementationDigest)) {
+    if (isFreshCounterexample(c, currentContentDigest)) {
       hasFreshAdversarial = true;
       if (c.outcome === 'contradicted') freshContradicted = true;
       else freshSupported = true;
@@ -213,7 +216,10 @@ function deriveVerificationState(
   // Legacy declarations retain their certificate digest for audit, but predate
   // the v2 scope contract and therefore cannot establish proof.
   if (claim.proofEligibility === 'legacy_declaration_v1') return 'NOT_VERIFIED';
-  const cx = analyzeCounterexamples(counterexamples, input.currentImplementationDigest);
+  const cx = analyzeCounterexamples(
+    counterexamples,
+    input.currentContentDigest ?? input.currentImplementationDigest,
+  );
   // 2. Only a FRESH executed counterexample that falsified the claim contradicts it.
   if (cx.freshContradicted) return 'CONTRADICTED';
   // 2.5 A fresh blocked counterexample blocks the claim — evidence provider could not

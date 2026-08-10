@@ -47,9 +47,15 @@
     }
   ],
   "implementation": {
-    "changedFiles": ["src/a.ts"],
+    "candidate": {
+      "version": 1,
+      "baseHeadSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "changedPaths": ["src/auth.ts", "src/auth.test.ts"],
+      "contentDigest": "content-digest-of-impl",
+      "diffDigest": "diff-digest-of-impl",
+      "candidateDigest": "ebe8e8311459704d79079bcedc5fefe83f48917044d48d01ce80a45f6cb73560"
+    },
     "domainFiles": ["src/a.ts"],
-    "digest": "impl-digest-legacy-complete",
     "executedAt": "2026-01-01T00:00:00.000Z"
   },
   "implReview": {

@@ -47,7 +47,15 @@ export async function activateImplementationReviewObligation(
     worktree: string;
   },
 ): Promise<{ state: SessionState; obligation: ReviewObligation | null; attemptId: string | null }> {
+  // The obligation is only created when the machine has actually crossed into
+  // IMPL_REVIEW — proven by the autoAdvance transition, not inferred from
+  // partial validation state. A still-IMPL_VALIDATION session with one of N
+  // checks passed must not yet permit independent implementation review.
   if (state.phase !== 'IMPL_REVIEW' || state.reducedCeremony !== null || !input.subagentEnabled) {
+    return { state, obligation: null, attemptId: null };
+  }
+
+  if (state.implementation === null) {
     return { state, obligation: null, attemptId: null };
   }
 
@@ -57,11 +65,11 @@ export async function activateImplementationReviewObligation(
     iteration: input.iteration,
     planVersion: input.planVersion,
     now: input.now,
-    subjectDigest: state.implementation?.digest ?? `impl-${input.now}`,
+    subjectDigest: state.implementation?.candidate.candidateDigest ?? `impl-${input.now}`,
     reviewProfile: resolveFrozenReviewProfile(state.policySnapshot),
     profileSource: 'policy_default',
     policySnapshot: state.policySnapshot,
-    changedFiles: state.implementation?.changedFiles ?? [],
+    changedFiles: state.implementation?.candidate.changedPaths ?? [],
     claimedTaskClass: state.claimedTaskClass,
     repositoryRevisionProvenance: headSha
       ? { kind: 'available', headSha }

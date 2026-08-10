@@ -190,7 +190,7 @@ export function renderCriticalClaimRequirement(state: SessionState): string[] {
     projection: state.proofGraph,
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
     certificateValid: authorization.kind === 'authorized',
-    implementationDigest: state.implementation.digest,
+    implementationDigest: state.implementation.candidate.candidateDigest,
     riskAssessment: state.implementationRiskAssessment,
   });
   if (decision.kind === 'risk_assessment_stale') {

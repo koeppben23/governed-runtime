@@ -133,9 +133,20 @@ export class GitError extends Error {
  * @param args - Git subcommand and arguments (e.g., ["status", "--porcelain"]).
  * @param timeoutMs - Optional timeout override.
  */
-async function gitRaw(
+/**
+ * Execute a git command, returning raw stdout or throwing GitError.
+ *
+ * When `acceptableExitCodes` is provided, the given exit codes are treated as
+ * success and their stdout is returned. This is essential for commands like
+ * `git diff --no-index` which exit `1` when files differ — a normal, desired
+ * outcome with meaningful output.
+ *
+ * Default: only exit 0 is acceptable (same behaviour as classic `gitRaw`).
+ */
+async function execGitRaw(
   cwd: string,
   args: string[],
+  acceptableExitCodes: ReadonlySet<number> = new Set([0]),
   timeoutMs: number = GIT_TIMEOUT_MS,
 ): Promise<string> {
   try {
@@ -143,17 +154,19 @@ async function gitRaw(
       cwd,
       timeout: timeoutMs,
       windowsHide: true,
-      // maxBuffer: 10MB -- sufficient for large repos with many files
       maxBuffer: 10 * 1024 * 1024,
     });
-    // NOTE: raw stdout, NOT trimmed. Callers that parse fixed-width or
-    // NUL-delimited output (e.g. `--porcelain -z`) MUST NOT receive a
-    // whole-blob-trimmed string: trimming strips the leading status column of
-    // the first porcelain line (e.g. " M src/...") which then shifts every
-    // fixed-offset slice and corrupts the first path (src -> rc). See
-    // parsePorcelainZ. Use `git()` (trimmed) only for single-value commands.
     return stdout;
   } catch (err: unknown) {
+    // Check for acceptable non-zero exit BEFORE type-checking GitError subtypes.
+    // The native ExecException carries the numeric `code` and captured `stdout`;
+    // we must inspect these before converting to a GitError, which discards both.
+    if (typeof err === 'object' && err !== null && 'code' in err && 'stdout' in err) {
+      const execErr = err as { code: unknown; stdout: unknown };
+      if (typeof execErr.code === 'number' && acceptableExitCodes.has(execErr.code)) {
+        return typeof execErr.stdout === 'string' ? execErr.stdout : String(execErr.stdout ?? '');
+      }
+    }
     if (isEnoent(err)) {
       getAdapterLogger().error('git', 'git executable not found in PATH');
       throw new GitError(
@@ -181,14 +194,14 @@ async function gitRaw(
 /**
  * Trimmed git invocation -- for single-value commands (rev-parse, symbolic-ref,
  * config) where surrounding whitespace is noise. NEVER use for parsing
- * multi-record porcelain/diff output; use {@link gitRaw} + a dedicated parser.
+ * multi-record porcelain/diff output.
  */
 async function git(
   cwd: string,
   args: string[],
   timeoutMs: number = GIT_TIMEOUT_MS,
 ): Promise<string> {
-  return (await gitRaw(cwd, args, timeoutMs)).trim();
+  return (await execGitRaw(cwd, args, new Set([0]), timeoutMs)).trim();
 }
 
 /**
@@ -313,7 +326,7 @@ export async function isClean(worktree: string): Promise<boolean> {
  * changes (e.g. " M src/..." -> "rc/...").
  */
 export async function changedFiles(worktree: string): Promise<string[]> {
-  const status = await gitRaw(worktree, ['status', '--porcelain=v1', '-z']);
+  const status = await execGitRaw(worktree, ['status', '--porcelain=v1', '-z']);
   if (!status) return [];
 
   const files = new Set<string>(parsePorcelainZ(status));
@@ -339,11 +352,11 @@ export async function changedFiles(worktree: string): Promise<string[]> {
 export async function worktreeDiff(worktree: string, paths: readonly string[]): Promise<string> {
   if (paths.length === 0) return '';
   try {
-    return await gitRaw(worktree, ['diff', '--no-color', 'HEAD', '--', ...paths]);
+    return await execGitRaw(worktree, ['diff', '--no-color', 'HEAD', '--', ...paths]);
   } catch {
     // No HEAD yet (initial repo) or path error — fall back to a plain worktree diff.
     try {
-      return await gitRaw(worktree, ['diff', '--no-color', '--', ...paths]);
+      return await execGitRaw(worktree, ['diff', '--no-color', '--', ...paths]);
     } catch {
       return '';
     }
@@ -373,7 +386,7 @@ export async function hashWorktreeFiles(
   if (paths.length === 0) return {};
   // Fast path: one subprocess for all paths.
   try {
-    const raw = await gitRaw(worktree, ['hash-object', '--', ...paths]);
+    const raw = await execGitRaw(worktree, ['hash-object', '--', ...paths]);
     const lines = raw.split('\n').filter((l) => l.length > 0);
     if (lines.length === paths.length) {
       const out: Record<string, string | null> = {};
@@ -397,6 +410,116 @@ export async function hashWorktreeFiles(
     }
   }
   return out;
+}
+
+/**
+ * Classify paths as tracked or untracked.
+ *
+ * Uses a single `git ls-files -- <paths>` call to determine which paths
+ * exist in the index/HEAD. Paths present in the output are tracked (modified,
+ * deleted, staged, renamed); paths absent are untracked. If ls-files fails
+ * entirely (e.g. no git repo), all paths are treated as untracked.
+ */
+export async function trackedPaths(
+  worktree: string,
+  paths: readonly string[],
+): Promise<{ trackedPaths: string[]; untrackedPaths: string[] }> {
+  const trackedPaths: string[] = [];
+  const untrackedPaths: string[] = [];
+
+  try {
+    const raw = await execGitRaw(worktree, ['ls-files', '--', ...paths]);
+    const tracked = new Set(raw.split('\n').filter(Boolean));
+    for (const p of paths) {
+      if (tracked.has(p)) {
+        trackedPaths.push(p);
+      } else {
+        untrackedPaths.push(p);
+      }
+    }
+  } catch {
+    for (const p of paths) {
+      untrackedPaths.push(p);
+    }
+  }
+
+  return { trackedPaths, untrackedPaths };
+}
+
+/**
+ * Capture a complete, binary-capable candidate diff covering every changed path.
+ *
+ * Unlike {@link worktreeDiff} (which deliberately omits untracked file content),
+ * this function produces a deterministic byte-stream that includes:
+ * - staged + unstaged tracked changes (vs HEAD);
+ * - deleted tracked files;
+ * - renames (git rename detection);
+ * - untracked non-ignored files as full /dev/null additions;
+ * - binary changes (--binary flag);
+ * - initial repositories without HEAD (all files treated as untracked).
+ *
+ * The caller receives a deterministic Buffer that can be hashed for diffDigest
+ * and persisted verbatim as the diff artifact. No second call to git diff is
+ * needed downstream.
+ *
+ * Ordering: tracked changes first (HEAD diff), then untracked files sorted
+ * lexicographically by path.
+ */
+export async function captureCandidateDiff(
+  worktree: string,
+  trackedPaths: readonly string[],
+  untrackedPaths: readonly string[],
+): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+
+  if (trackedPaths.length > 0) {
+    try {
+      const tracked = await execGitRaw(worktree, [
+        'diff',
+        '--binary',
+        '--no-color',
+        'HEAD',
+        '--',
+        ...trackedPaths,
+      ]);
+      if (tracked.trim()) {
+        chunks.push(Buffer.from(tracked, 'utf-8'));
+      }
+    } catch {
+      try {
+        const tracked = await execGitRaw(worktree, [
+          'diff',
+          '--binary',
+          '--no-color',
+          '--',
+          ...trackedPaths,
+        ]);
+        if (tracked.trim()) {
+          chunks.push(Buffer.from(tracked, 'utf-8'));
+        }
+      } catch {
+        // No HEAD and no index diff available — treat as untracked
+      }
+    }
+  }
+
+  const sortedUntracked = [...untrackedPaths].sort();
+  for (const p of sortedUntracked) {
+    try {
+      const diff = await execGitRaw(
+        worktree,
+        ['diff', '--binary', '--no-color', '--no-index', '/dev/null', p],
+        new Set([0, 1]),
+      );
+      if (diff.trim()) {
+        chunks.push(Buffer.from(diff, 'utf-8'));
+      }
+    } catch {
+      // Unreadable or missing — skip
+    }
+  }
+
+  return Buffer.concat(chunks);
 }
 
 /**
@@ -497,7 +620,7 @@ export async function listRepoSignals(worktree: string): Promise<{
   } catch {
     // No commits yet or not a git repo — try status-based fallback
     try {
-      const status = await gitRaw(worktree, ['status', '--porcelain=v1', '-z']);
+      const status = await execGitRaw(worktree, ['status', '--porcelain=v1', '-z']);
       if (status) {
         allFiles = parsePorcelainZ(status);
       }
