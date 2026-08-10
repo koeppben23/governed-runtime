@@ -15,14 +15,15 @@
  */
 
 import type { Phase } from '../state/schema.js';
-import { formatFindingRelation } from './model.js';
 import type {
   ReviewCardDocument,
   PresentationSection,
   KeyValueItem,
   FindingGroup,
   FindingItem,
+  FindingRelationPresentation,
 } from './model.js';
+import { projectFindingRelation } from './finding-relation.js';
 import { renderMarkdown } from './markdown.js';
 import type { PresentationRenderOptions } from './glyph-profile.js';
 import type { CompactProofPresentation } from './proof-model.js';
@@ -42,7 +43,7 @@ export interface ReviewReportCardInput {
     severity: string;
     category: string;
     message: string;
-    relation?: unknown;
+    relation?: FindingRelationPresentation;
   }>;
   /** Completeness summary. */
   completeness: {
@@ -208,7 +209,7 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
       bucket.items.push({
         category: categoryLabel(f.category),
         message: f.message,
-        ...(f.relation === undefined ? {} : { relation: formatFindingRelation(f.relation) }),
+        ...projectFindingRelation(f.relation),
       });
     }
     const groups: FindingGroup[] = [...grouped.entries()]

@@ -11,7 +11,6 @@
  * @version v1
  */
 
-import { formatFindingRelation } from './model.js';
 import type {
   ReviewCardDocument,
   PresentationSection,
@@ -19,7 +18,9 @@ import type {
   FindingGroup,
   FindingItem,
   PresentationAction,
+  FindingRelationPresentation,
 } from './model.js';
+import { projectFindingRelation } from './finding-relation.js';
 import { renderMarkdown } from './markdown.js';
 import type { PresentationRenderOptions } from './glyph-profile.js';
 import type { CompactProofPresentation } from './proof-model.js';
@@ -49,11 +50,16 @@ export interface EvidenceReviewCardInput {
     severity: string;
     category: string;
     message: string;
-    relation: unknown;
+    relation?: FindingRelationPresentation;
     findingId?: string;
   }>;
   /** Accepted advisory risks from the latest independent implementation review. */
-  majorRisks?: Array<{ severity: string; category: string; message: string; relation: unknown }>;
+  majorRisks?: Array<{
+    severity: string;
+    category: string;
+    message: string;
+    relation?: FindingRelationPresentation;
+  }>;
   /** Verification gaps identified by the latest independent implementation review. */
   missingVerification?: string[];
   /** Scope creep observations identified by the latest independent implementation review. */
@@ -170,7 +176,7 @@ function buildFindingGroups(
     severity: string;
     category: string;
     message: string;
-    relation: unknown;
+    relation?: FindingRelationPresentation;
   }>,
 ): FindingGroup[] {
   const bySeverity = new Map<string, FindingItem[]>();
@@ -179,7 +185,7 @@ function buildFindingGroups(
     items.push({
       category: f.category,
       message: f.message,
-      relation: formatFindingRelation(f.relation),
+      ...projectFindingRelation(f.relation),
     });
     bySeverity.set(f.severity, items);
   }
@@ -234,7 +240,7 @@ function appendAdvisoryFindingsSections(
     const items: FindingItem[] = input.majorRisks.map((finding) => ({
       category: finding.category,
       message: finding.message,
-      relation: formatFindingRelation(finding.relation),
+      ...projectFindingRelation(finding.relation),
     }));
     const groups: FindingGroup[] = [{ severity: 'major', label: 'Major Risks', items }];
     sections.push({ kind: 'findings', heading: 'Reviewer Findings', groups });

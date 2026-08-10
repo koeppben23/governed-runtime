@@ -12,8 +12,6 @@
  * @version v1
  */
 
-import { canonicalJsonStringify } from '../shared/canonical-json.js';
-
 // ─── Branded Normalized Markdown ───────────────────────────────────────────────
 
 declare const normalizedMarkdownBrand: unique symbol;
@@ -113,15 +111,36 @@ export interface ArtifactItem {
 
 // ─── Finding Groups ────────────────────────────────────────────────────────────
 
+/** A repository location already validated by the review boundary. */
+export interface FindingRepositoryLocation {
+  readonly path: string;
+  readonly revision: 'base' | 'head';
+  readonly line?: number;
+  readonly endLine?: number;
+}
+
+/** A reviewed subject, represented without state-layer validation types. */
+export type FindingSubject =
+  | { readonly kind: 'repository_location'; readonly location: FindingRepositoryLocation }
+  | {
+      readonly kind: 'artifact_section';
+      readonly artifactKind: 'plan' | 'adr';
+      readonly sectionPath: readonly { readonly headingText: string }[];
+    };
+
+/** Structured relation accepted at the presentation boundary after validation upstream. */
+export interface FindingRelationPresentation {
+  readonly subjectAnchors: readonly FindingSubject[];
+  readonly evidenceLocations: readonly FindingRepositoryLocation[];
+}
+
 export interface FindingItem {
   readonly category: string;
   readonly message: string;
-  readonly relation?: string;
-}
-
-/** Render an already-validated finding relation without interpreting its anchors. */
-export function formatFindingRelation(relation: unknown): string {
-  return canonicalJsonStringify(relation);
+  /** Reviewed locations or artifact sections. Absent for legacy findings. */
+  readonly subjects?: readonly FindingSubject[];
+  /** Repository evidence locations. Absent for legacy findings. */
+  readonly evidence?: readonly FindingRepositoryLocation[];
 }
 
 export interface FindingGroup {

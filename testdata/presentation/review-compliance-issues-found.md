@@ -14,13 +14,19 @@ Diagnostic: `flowguard_status({ proofGraph: true })`
 ## Findings
 
 ### Critical (1)
-- **Completeness:** Missing evidence `{"evidenceLocations":["evidence"],"subjectAnchors":["subject"]}`
+- **Completeness:** Missing evidence
+  Affected: BASE · src/subject.ts:8 · Evidence: 1 cited
+  - HEAD · test/evidence.test.ts:4
 
 ### Major (1)
-- **Risk:** Untracked dependency `{"evidenceLocations":["package"],"subjectAnchors":["dependency"]}`
+- **Risk:** Untracked dependency
+  Affected: BASE · src/subject.ts:8 · Evidence: 1 cited
+  - HEAD · test/evidence.test.ts:4
 
 ### Warnings (1)
-- **Quality:** Missing changelog entry `{"evidenceLocations":["evidence"],"subjectAnchors":["subject"]}`
+- **Quality:** Missing changelog entry
+  Affected: BASE · src/subject.ts:8 · Evidence: 1 cited
+  - HEAD · test/evidence.test.ts:4
 
 ## Completeness
 

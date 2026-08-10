@@ -47,6 +47,12 @@ import type {
   HelpArtifactSection,
   EmbeddedMarkdownSection,
 } from './model.js';
+import {
+  formatFindingAffected,
+  formatFindingEvidence,
+  formatFindingLocation,
+  formatFindingSubject,
+} from './finding-relation.js';
 import { validateCodeLanguage, normalizedMarkdown, PresentationContractError } from './model.js';
 import { GUIDANCE_STATUS_LABELS } from './labels.js';
 import { renderProofGraphMarkdown } from './proof-summary.js';
@@ -331,8 +337,17 @@ function renderFindings(groups: readonly FindingGroup[]): string {
 }
 
 function renderFindingItem(item: FindingItem): string {
-  const loc = item.relation ? ` \`${item.relation}\`` : '';
-  return `- **${item.category}:** ${item.message}${loc}`;
+  const subjects = item.subjects ?? [];
+  const evidence = item.evidence ?? [];
+  const lines = [
+    `- **${item.category}:** ${item.message}`,
+    `  ${formatFindingAffected(subjects)} · ${formatFindingEvidence(evidence)}`,
+  ];
+  if (subjects.length > 1) {
+    lines.push(...subjects.map((subject) => `  - ${formatFindingSubject(subject)}`));
+  }
+  lines.push(...evidence.map((location) => `  - ${formatFindingLocation(location)}`));
+  return lines.join('\n');
 }
 
 function renderChecklist(section: ChecklistSection): string {

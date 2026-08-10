@@ -24,7 +24,7 @@ const baseInput = {
     severity: string;
     category: string;
     message: string;
-    relation: unknown;
+    relation?: import('./model.js').FindingRelationPresentation;
   }>,
   completeness: {
     overallComplete: true,
@@ -57,7 +57,15 @@ const baseInput = {
     visibility: 'recommended' as const,
   },
 };
-const relation = { evidenceLocations: ['evidence'], subjectAnchors: ['subject'] };
+const relation = {
+  evidenceLocations: [{ path: 'test/evidence.test.ts', revision: 'head' as const, line: 4 }],
+  subjectAnchors: [
+    {
+      kind: 'repository_location' as const,
+      location: { path: 'src/subject.ts', revision: 'base' as const, line: 8 },
+    },
+  ],
+} satisfies import('./model.js').FindingRelationPresentation;
 function buildReviewReportCard(
   input: Omit<ReviewReportCardInput, 'proofSummary' | 'productNextAction' | 'conclusionAction'> &
     Partial<Pick<ReviewReportCardInput, 'proofSummary' | 'productNextAction' | 'conclusionAction'>>,
@@ -215,13 +223,13 @@ describe('implementation review golden fixtures', () => {
           severity: 'critical',
           category: 'correctness',
           message: 'Missing null check',
-          relation: { evidenceLocations: ['validate'], subjectAnchors: ['payments'] },
+          relation,
         },
         {
           severity: 'major',
           category: 'quality',
           message: 'Missing test coverage',
-          relation: { evidenceLocations: ['routes'], subjectAnchors: ['payments'] },
+          relation,
         },
       ],
       completeness: {
@@ -272,7 +280,7 @@ describe('compliance review golden fixtures', () => {
           severity: 'major',
           category: 'risk',
           message: 'Untracked dependency',
-          relation: { evidenceLocations: ['package'], subjectAnchors: ['dependency'] },
+          relation,
         },
         {
           severity: 'warning',

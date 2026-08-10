@@ -8,10 +8,10 @@
  * @version v1
  */
 
-import {
-  formatFindingRelation,
-  type PresentationAction,
-  type PresentationConclusion,
+import type {
+  FindingRelationPresentation,
+  PresentationAction,
+  PresentationConclusion,
 } from './model.js';
 
 const GATE_COMMANDS = ['/approve', '/request-changes', '/reject'] as const;
@@ -127,14 +127,14 @@ export interface ReviewDecisionInput {
     readonly message: string;
     readonly severity?: string;
     readonly category?: string;
-    readonly relation?: unknown;
+    readonly relation?: FindingRelationPresentation;
     readonly findingId?: string;
   }>;
   readonly majorRisks?: ReadonlyArray<{
     readonly message: string;
     readonly severity?: string;
     readonly category?: string;
-    readonly relation?: unknown;
+    readonly relation?: FindingRelationPresentation;
   }>;
   readonly missingVerification?: readonly string[];
   readonly scopeCreep?: readonly string[];
@@ -146,18 +146,13 @@ function toDecisionIssues(
   findings?: ReadonlyArray<{
     readonly message: string;
     readonly severity?: string;
-    readonly relation?: unknown;
+    readonly relation?: FindingRelationPresentation;
     readonly findingId?: string;
   }>,
 ): DecisionIssue[] {
   if (!findings || findings.length === 0) return [];
   return findings.map((f) => {
-    const detail = [
-      f.severity ? `Severity: ${f.severity}` : null,
-      f.relation === undefined ? null : `Relation: ${formatFindingRelation(f.relation)}`,
-    ]
-      .filter(Boolean)
-      .join(' · ');
+    const detail = f.severity ? `Severity: ${f.severity}` : undefined;
     return {
       source,
       title: f.message,
