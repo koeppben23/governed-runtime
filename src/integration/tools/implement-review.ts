@@ -330,6 +330,7 @@ function bindAgentReviewAssurance(
   assurance: ReturnType<typeof ensureReviewAssurance>,
   sessionId: string,
   now: string,
+  findings: unknown,
 ): ReturnType<typeof ensureReviewAssurance> {
   const ob = [...assurance.obligations].reverse().find((o) => o.obligationType === 'implement');
   if (!ob) return assurance;
@@ -337,6 +338,7 @@ function bindAgentReviewAssurance(
   const at = [...r.attempts]
     .filter((a) => a.obligationId === ob.obligationId)
     .sort((a, b) => b.ordinal - a.ordinal)[0];
+  // Bind the attempt: the review was accepted by the system.
   if (at && at.status !== 'bound' && at.status !== 'rejected') {
     r = {
       ...r,
@@ -350,7 +352,10 @@ function bindAgentReviewAssurance(
       ),
     };
   }
+  // Record invocation evidence from the actual submitted findings.
+  // Agent-submitted reviews are self-report — provenance fields reflect this.
   if (!r.invocations.some((i) => i.obligationId === ob.obligationId)) {
+    const fh = hashFindings((findings as Record<string, unknown>) ?? {});
     r = {
       ...r,
       invocations: [
@@ -360,21 +365,21 @@ function bindAgentReviewAssurance(
           obligationId: ob.obligationId,
           obligationType: ob.obligationType,
           parentSessionId: sessionId,
-          childSessionId: sessionId,
+          childSessionId: '',
           agentType: 'flowguard-reviewer' as const,
           attemptId: at?.attemptId,
           invocationMode: 'manual_attested' as const,
-          hostVisible: false,
-          promptHash: hashFindings({}),
+          hostVisible: true,
+          promptHash: fh,
           mandateDigest: ob.mandateDigest,
           criteriaVersion: ob.criteriaVersion,
-          findingsHash: hashFindings({}),
+          findingsHash: fh,
           invokedAt: now,
           fulfilledAt: now,
           consumedByObligationId: null,
-          reviewOutputMode: 'structured_output' as const,
-          structuredOutputUsed: true,
-          reviewAssuranceLevel: 'structured_high' as const,
+          reviewOutputMode: 'text_compat' as const,
+          structuredOutputUsed: false,
+          reviewAssuranceLevel: 'text_compat_lower' as const,
         },
       ],
     };
@@ -422,11 +427,15 @@ function appendImplReviewState(input: {
       executedAt: runtime.ctx.now(),
     },
     implReviewFindings: newReviewFindings.length > 0 ? newReviewFindings : undefined,
-    reviewAssurance: bindAgentReviewAssurance(
-      consumedAssurance,
-      runtime.context.sessionID,
-      runtime.ctx.now(),
-    ),
+    reviewAssurance:
+      runtime.args.reviewVerdict === 'accept'
+        ? bindAgentReviewAssurance(
+            consumedAssurance,
+            runtime.context.sessionID,
+            runtime.ctx.now(),
+            effectiveFindings ?? runtime.args.reviewFindings,
+          )
+        : consumedAssurance,
     error: null,
   };
   return { reviewedState, newReviewFindings };
