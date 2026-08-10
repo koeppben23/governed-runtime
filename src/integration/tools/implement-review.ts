@@ -260,7 +260,7 @@ function resolvedForCurrentDigestIds(state: SessionState): ReadonlySet<string> {
     state.challengeResolutions
       .filter(
         (resolution) =>
-          resolution.implementationDigest === state.implementation?.candidate.candidateDigest,
+          resolution.implementationDigest === state.implementation?.candidate.contentDigest,
       )
       .map((resolution) => resolution.challengeId),
   );

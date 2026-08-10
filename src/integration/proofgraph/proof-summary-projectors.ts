@@ -345,7 +345,7 @@ function resolveGate(state: SessionState, opts?: { gate?: ProofGraphGateDecision
         authorizedCriticalClaimIds:
           authorization.kind === 'authorized' ? authorization.claimIds : [],
         certificateValid: authorization.kind === 'authorized',
-        implementationDigest: state.implementation?.candidate.candidateDigest,
+        implementationDigest: state.implementation?.candidate.contentDigest,
         riskAssessment: state.implementationRiskAssessment,
       });
     })()

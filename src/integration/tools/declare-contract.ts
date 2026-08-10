@@ -407,7 +407,7 @@ export const declare_contract: ToolDefinition = {
         const built = buildDeclaredClaims(
           state,
           args.claims as readonly RawClaim[],
-          implementation.candidate.candidateDigest,
+          implementation.candidate.contentDigest,
           verdicts,
         );
         if ('unresolvedCheckId' in built) {

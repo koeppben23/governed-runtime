@@ -446,7 +446,7 @@ function stateChallengeResolutions(state: SessionState) {
   return state.challengeResolutions
     .filter(
       (resolution) =>
-        resolution.implementationDigest === state.implementation?.candidate.candidateDigest,
+        resolution.implementationDigest === state.implementation?.candidate.contentDigest,
     )
     .map(({ challengeId, implementationDigest, validationAttemptIds, resolvedAt }) => ({
       challengeId,

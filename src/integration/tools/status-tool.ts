@@ -559,7 +559,7 @@ function buildImplementationStatus(state: SessionState): Record<string, unknown>
     challengeResolutions: state.challengeResolutions
       .filter(
         (resolution) =>
-          resolution.implementationDigest === state.implementation?.candidate.candidateDigest,
+          resolution.implementationDigest === state.implementation?.candidate.contentDigest,
       )
       .map((resolution) => ({
         ...resolution,
