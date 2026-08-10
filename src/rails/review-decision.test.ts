@@ -1,23 +1,96 @@
 import { describe, expect, it } from 'vitest';
 import { executeReviewDecision } from './review-decision.js';
+import type { ReviewDecisionRuntimeEvidence } from './review-decision.js';
 import {
   makeState,
   ARCHITECTURE_DECISION,
   IMPL_EVIDENCE,
+  CANDIDATE_DIGEST,
+  CANDIDATE_CONTENT_DIGEST,
   PLAN_RECORD,
   FIXED_TIME,
 } from '../fixtures.js';
 import { TEAM_POLICY } from '../config/policy.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
+import type { ReviewAssuranceState } from '../state/evidence.js';
 
-/** Minimal ImplementationCandidate for tests that approve at EVIDENCE_REVIEW. */
-const IMPL_CANDIDATE = {
-  baseHeadSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as string | null,
-  changedPaths: ['src/auth.ts', 'src/auth.test.ts'],
-  contentDigest: 'digest-of-impl',
-  diffDigest: null as string | null,
-  candidateDigest: 'test-candidate-digest',
-};
+const FIXED_ATTEMPT_ID = '11111111-1111-4111-8111-111111111111';
+const FIXED_OBLIGATION_ID = '22222222-2222-4222-8222-222222222222';
+const FIXED_INVOCATION_ID = '33333333-3333-4333-8333-333333333333';
+
+function makeImplApprovalObservation(): ReviewDecisionRuntimeEvidence {
+  return {
+    implementationApprovalObservation: {
+      candidateDigest: CANDIDATE_DIGEST,
+      contentDigest: CANDIDATE_CONTENT_DIGEST,
+    },
+  };
+}
+
+function makeImplReviewAssurance(): ReviewAssuranceState {
+  return {
+    obligations: [
+      {
+        obligationId: FIXED_OBLIGATION_ID,
+        obligationType: 'implement',
+        iteration: 0,
+        planVersion: 1,
+        criteriaVersion: 'v1',
+        mandateDigest: 'mandate-digest',
+        createdAt: FIXED_TIME,
+        pluginHandshakeAt: null,
+        status: 'fulfilled',
+        invocationId: FIXED_INVOCATION_ID,
+        blockedCode: null,
+        fulfilledAt: FIXED_TIME,
+        consumedAt: null,
+        subjectDigest: CANDIDATE_DIGEST,
+        reviewSubjectScope: {
+          kind: 'repository_change' as const,
+          paths: [],
+          revisions: ['head' as const],
+        },
+        attemptIds: [FIXED_ATTEMPT_ID],
+      },
+    ],
+    invocations: [
+      {
+        invocationId: FIXED_INVOCATION_ID,
+        obligationId: FIXED_OBLIGATION_ID,
+        obligationType: 'implement',
+        parentSessionId: 'parent-session',
+        childSessionId: 'child-session',
+        agentType: 'flowguard-reviewer' as const,
+        attemptId: FIXED_ATTEMPT_ID,
+        invocationMode: 'host_subagent_task' as const,
+        hostVisible: true,
+        promptHash: 'prompt-hash',
+        mandateDigest: 'mandate-digest',
+        criteriaVersion: 'v1',
+        findingsHash: 'findings-hash',
+        invokedAt: FIXED_TIME,
+        fulfilledAt: FIXED_TIME,
+        consumedByObligationId: null,
+        reviewOutputMode: 'structured_output' as const,
+        structuredOutputUsed: true,
+        reviewAssuranceLevel: 'structured_high' as const,
+      },
+    ],
+    attempts: [
+      {
+        attemptId: FIXED_ATTEMPT_ID,
+        obligationId: FIXED_OBLIGATION_ID,
+        obligationType: 'implement',
+        subjectDigest: CANDIDATE_DIGEST,
+        ordinal: 0,
+        childSessionId: 'child-session',
+        status: 'bound',
+        createdAt: FIXED_TIME,
+        completedAt: FIXED_TIME,
+      },
+    ],
+  };
+}
 
 const baseCtx = {
   now: () => FIXED_TIME,
@@ -629,6 +702,8 @@ describe('review-decision rail', () => {
       plan: PLAN_RECORD,
       implementation: IMPL_EVIDENCE,
       reducedCeremony: reducedCeremonyDecision,
+      reviewAssurance: makeImplReviewAssurance(),
+      activeChecks: [],
       implReview: {
         iteration: 1,
         maxIterations: 3,
@@ -644,6 +719,7 @@ describe('review-decision rail', () => {
       state,
       { verdict: 'approve', rationale: 'looks good', decidedBy: 'reviewer-1' },
       baseCtx,
+      makeImplApprovalObservation(),
     );
 
     expect(result.kind).toBe('ok');
@@ -909,6 +985,8 @@ describe('review-decision rail', () => {
         plan: PLAN_RECORD,
         initiatedBy: 'initiator',
         initiatedByIdentity: initiatorIdentity,
+        reviewAssurance: makeImplReviewAssurance(),
+        activeChecks: [],
       });
       const result = executeReviewDecision(
         state,
@@ -924,6 +1002,7 @@ describe('review-decision rail', () => {
             minimumActorAssuranceForApproval: 'claim_validated',
           }),
         },
+        makeImplApprovalObservation(),
       );
       expect(result.kind).toBe('ok');
     });
@@ -934,6 +1013,8 @@ describe('review-decision rail', () => {
         plan: PLAN_RECORD,
         initiatedBy: 'initiator',
         initiatedByIdentity: initiatorIdentity,
+        reviewAssurance: makeImplReviewAssurance(),
+        activeChecks: [],
       });
       const result = executeReviewDecision(
         state,
@@ -949,6 +1030,7 @@ describe('review-decision rail', () => {
             minimumActorAssuranceForApproval: 'idp_verified',
           }),
         },
+        makeImplApprovalObservation(),
       );
       expect(result.kind).toBe('ok');
     });
@@ -959,6 +1041,8 @@ describe('review-decision rail', () => {
         plan: PLAN_RECORD,
         initiatedBy: 'initiator',
         initiatedByIdentity: initiatorIdentity,
+        reviewAssurance: makeImplReviewAssurance(),
+        activeChecks: [],
       });
       const result = executeReviewDecision(
         state,
@@ -974,6 +1058,7 @@ describe('review-decision rail', () => {
             // Neither requireVerifiedActorsForApproval nor minimumActorAssuranceForApproval set
           }),
         },
+        makeImplApprovalObservation(),
       );
       expect(result.kind).toBe('ok');
     });

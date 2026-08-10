@@ -113,7 +113,6 @@ const REJECT_CLEAR = {
   implementation: null,
   implReview: null,
   reviewDecision: null,
-  implementationCandidate: undefined,
   implementationApproval: undefined,
 };
 
@@ -187,7 +186,6 @@ function applyStateClearingPattern(state: SessionState, verdict: ReviewVerdict):
       implReview: null,
       reducedCeremony: null,
       reviewDecision: null,
-      implementationCandidate: undefined,
       implementationApproval: undefined,
     };
   }
@@ -347,8 +345,8 @@ function enforceArchitectureReviewCompletion(
  * the live observed candidate matches the persisted candidate and that all
  * required evidence (validation, review) binds that exact candidate identity.
  *
- * When no ImplementationCandidate is present in state (legacy sessions), the
- * binding check is skipped and legacy ProofGraph enforcement applies alone.
+ * Fail-closed: a missing candidate, missing observation, or stale evidence
+ * blocks final approval. There is no legacy bypass.
  *
  * On success, returns the validated binding for downstream certificate construction.
  * On failure, returns a blocked result — no partial COMPLETE, no orphan certificate.
@@ -361,13 +359,6 @@ function enforceImplementationApprovalBinding(
   | { readonly kind: 'ok'; readonly binding: ValidImplementationApprovalBinding | undefined }
   | { readonly kind: 'blocked'; readonly block: RailBlocked } {
   if (state.phase !== 'EVIDENCE_REVIEW' || input.verdict !== 'approve') {
-    return { kind: 'ok', binding: undefined };
-  }
-
-  // Legacy sessions without a recorded ImplementationCandidate skip the binding
-  // check. Only sessions where /implement captured the candidate are subject to
-  // candidate-bound approval enforcement.
-  if (!state.implementationCandidate) {
     return { kind: 'ok', binding: undefined };
   }
 

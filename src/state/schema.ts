@@ -23,7 +23,6 @@ import {
   DecisionIdentitySchema,
   ErrorInfo,
   ImplementationApprovalCertificate,
-  ImplementationCandidate,
   ImplEvidence,
   ImplReviewResult,
   MutationAttempt,
@@ -367,18 +366,6 @@ export const SessionState = z.object({
 
   /** Implementation evidence from /implement. */
   implementation: ImplEvidence.nullable(),
-
-  /**
-   * Canonical implementation candidate identity for the current change set.
-   *
-   * candidateDigest = lifecycle identity (binds Risk, Review, Approval)
-   * contentDigest  = file-content identity (binds Validation)
-   *
-   * Set when /implement records evidence. Must be re-resolved when the
-   * repository changes. Absence means no candidate authority exists —
-   * neither implementation review nor final approval can proceed.
-   */
-  implementationCandidate: ImplementationCandidate.optional(),
 
   /**
    * Candidate-bound implementation final approval certificate.

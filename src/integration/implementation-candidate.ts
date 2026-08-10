@@ -21,8 +21,6 @@ import { ImplementationCandidate as ImplementationCandidateSchema } from '../sta
 import type { RepositoryPath } from '../state/evidence-review.js';
 import { computeCandidateDigest, computeContentDigest } from '../state/evidence-candidate.js';
 import { hashBuffer } from '../shared/hashing.js';
-import type { SessionState } from '../state/schema.js';
-import type { ImplementationApprovalObservation } from '../state/implementation-approval-binding.js';
 
 /** The resolved candidate alongside the exact diff bytes used for diffDigest. */
 export interface CapturedImplementationCandidate {
@@ -117,28 +115,4 @@ export async function resolveImplementationCandidateIdentity(
   const captured = await resolveImplementationCandidate(worktree, taskOwnedPaths);
   if (!captured) return null;
   return { candidateDigest: captured.identity.candidateDigest };
-}
-
-/**
- * Resolve the host-authoritative implementation-approval observation for the
- * current worktree, using the same task-owned scoping authority as /implement.
- *
- * The observation captures what the repository currently resolves to; it is
- * compared against the persisted candidate inside the rail to detect drift.
- */
-export async function resolveImplementationApprovalObservation(
-  state: SessionState,
-  worktree: string,
-): Promise<ImplementationApprovalObservation | null> {
-  const candidate = state.implementationCandidate;
-  if (!candidate) return null;
-
-  const captured = await resolveImplementationCandidate(worktree, candidate.changedPaths);
-
-  if (!captured) return null;
-
-  return {
-    candidateDigest: captured.identity.candidateDigest,
-    contentDigest: captured.identity.contentDigest,
-  };
 }

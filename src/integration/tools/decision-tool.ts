@@ -34,7 +34,7 @@ import { resolveActorForPolicy } from '../../adapters/actor-context.js';
 import { ActorIdentityError } from '../../adapters/actor.js';
 
 // Candidate observation
-import { resolveImplementationApprovalObservation } from '../implementation-candidate.js';
+import { resolveImplementationApprovalObservation } from '../implementation-approval-observation.js';
 
 // Finalization service
 import { finalizeDecision } from '../services/decision-finalization.js';

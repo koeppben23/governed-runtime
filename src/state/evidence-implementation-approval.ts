@@ -10,6 +10,8 @@
  */
 
 import { z } from 'zod';
+import { hashText } from '../shared/hashing.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
 
 /**
  * Immutable certificate that proves a human decision approved a specific
@@ -18,8 +20,9 @@ import { z } from 'zod';
  * The `candidateDigest` is the lifecycle identity; `contentDigest` is the
  * file-content identity for cross-referencing validation evidence.
  *
- * None of these digests are user-supplied. The rail constructs the
- * certificate from host-authoritative state and observation.
+ * Self-consistency: the certificateId field MUST equal the result of
+ * recomputing the canonical certificate payload digest. This is enforced
+ * at the Zod schema boundary so a tampered certificateId is rejected.
  */
 export const ImplementationApprovalCertificate = z
   .object({
@@ -43,8 +46,8 @@ export const ImplementationApprovalCertificate = z
     /** Digest of the review invocation evidence bound to the accepted obligation+attempt. */
     reviewEvidenceDigest: z.string().min(1),
 
-    /** Immutable validation-attempt IDs whose passing result supported this candidate. */
-    validationAttemptIds: z.array(z.string().uuid()).min(1),
+    /** Immutable validation-attempt IDs whose passing result supported this candidate. May be empty when no active checks were required. */
+    validationAttemptIds: z.array(z.string().uuid()),
 
     /** ISO-8601 timestamp when the human decision was recorded. */
     approvedAt: z.string().datetime(),
@@ -55,6 +58,30 @@ export const ImplementationApprovalCertificate = z
     certificateId: z.string().min(1),
   })
   .strict()
-  .readonly();
+  .readonly()
+  .superRefine((cert, ctx) => {
+    const sortedIds = [...cert.validationAttemptIds].sort();
+    const expectedId = hashText(
+      canonicalJsonStringify({
+        flow: 'implementation',
+        candidateDigest: cert.candidateDigest,
+        contentDigest: cert.contentDigest,
+        decisionAttestationDigest: cert.decisionAttestationDigest,
+        reviewObligationId: cert.reviewObligationId,
+        reviewAttemptId: cert.reviewAttemptId,
+        reviewEvidenceDigest: cert.reviewEvidenceDigest,
+        validationAttemptIds: sortedIds,
+        approvedAt: cert.approvedAt,
+        approvedBy: cert.approvedBy,
+      }),
+    );
+    if (cert.certificateId !== expectedId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `certificateId does not match recomputed identity`,
+        path: ['certificateId'],
+      });
+    }
+  });
 
 export type ImplementationApprovalCertificate = z.infer<typeof ImplementationApprovalCertificate>;
