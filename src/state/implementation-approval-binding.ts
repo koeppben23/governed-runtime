@@ -340,16 +340,11 @@ export function createImplementationApprovalCertificate(params: {
 
 /**
  * Validate that an ImplementationApprovalCertificate is internally consistent
- * and binds the current implementation candidate.
+ * and that every piece of evidence it claims (review obligation, review attempt,
+ * review invocation, validation attempts) still exists and binds the current
+ * implementation candidate.
  *
- * Verifies:
- *  - certificateId is self-consistent (enforced by schema superRefine)
- *  - candidateDigest and contentDigest match the current candidate
- *
- * The decisionAttestationDigest is a frozen snapshot of the human decision
- * at approval time and cannot be independently validated without access to
- * the original ReviewDecision. The schema-level certificateId superRefine
- * already guarantees the certificate's internal integrity.
+ * This is a full state-lineage check, not merely a candidate-digest comparison.
  */
 export function validateCurrentImplementationApprovalCertificate(
   state: SessionState,
@@ -364,12 +359,84 @@ export function validateCurrentImplementationApprovalCertificate(
     return { ok: false, reason: 'No implementation candidate exists.' };
   }
 
+  // Candidate binding.
   if (cert.candidateDigest !== candidate.candidateDigest) {
     return { ok: false, reason: 'Certificate candidateDigest does not match current candidate.' };
   }
-
   if (cert.contentDigest !== candidate.contentDigest) {
     return { ok: false, reason: 'Certificate contentDigest does not match current candidate.' };
+  }
+
+  // Validation attempt lineage.
+  for (const id of cert.validationAttemptIds) {
+    const attempt = state.validationAttempts.find((a) => a.attemptId === id);
+    if (!attempt) {
+      return {
+        ok: false,
+        reason: `Validation attempt ${id} referenced by certificate does not exist.`,
+      };
+    }
+    if (
+      attempt.scope !== 'implementation' ||
+      attempt.implementationDigest !== candidate.contentDigest
+    ) {
+      return { ok: false, reason: `Validation attempt ${id} does not bind current contentDigest.` };
+    }
+  }
+
+  // Review obligation lineage.
+  const assurance = state.reviewAssurance;
+  if (!assurance) {
+    return {
+      ok: false,
+      reason: 'No review assurance exists — certificate review lineage cannot be verified.',
+    };
+  }
+
+  const obligation = assurance.obligations.find((o) => o.obligationId === cert.reviewObligationId);
+  if (!obligation) {
+    return {
+      ok: false,
+      reason: `Review obligation ${cert.reviewObligationId} referenced by certificate does not exist.`,
+    };
+  }
+  if (obligation.subjectDigest !== candidate.candidateDigest) {
+    return {
+      ok: false,
+      reason: 'Review obligation subjectDigest does not match current candidate.',
+    };
+  }
+
+  // Review attempt lineage.
+  const attempt = assurance.attempts.find((a) => a.attemptId === cert.reviewAttemptId);
+  if (!attempt) {
+    return {
+      ok: false,
+      reason: `Review attempt ${cert.reviewAttemptId} referenced by certificate does not exist.`,
+    };
+  }
+  if (attempt.obligationId !== obligation.obligationId) {
+    return { ok: false, reason: 'Review attempt does not belong to the referenced obligation.' };
+  }
+  if (attempt.subjectDigest !== candidate.candidateDigest) {
+    return { ok: false, reason: 'Review attempt subjectDigest does not match current candidate.' };
+  }
+
+  // Review invocation evidence digest.
+  const invocation = assurance.invocations.find(
+    (i) => i.obligationId === obligation.obligationId && i.attemptId === attempt.attemptId,
+  );
+  if (!invocation) {
+    return {
+      ok: false,
+      reason: 'No review invocation evidence binds the referenced obligation and attempt.',
+    };
+  }
+  if (invocation.findingsHash !== cert.reviewEvidenceDigest) {
+    return {
+      ok: false,
+      reason: 'Certificate reviewEvidenceDigest does not match current invocation evidence.',
+    };
   }
 
   return { ok: true };
