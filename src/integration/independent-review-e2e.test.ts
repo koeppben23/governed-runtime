@@ -41,6 +41,7 @@ vi.mock('../adapters/gh-cli', () => ({
   loadResolvedBranchDiff: vi
     .fn()
     .mockReturnValue('diff --git a/src/x.java b/src/x.java\n+resolved line'),
+  loadBranchChangedFiles: vi.fn().mockReturnValue(['docs/test.md']),
 }));
 import { FlowGuardAuditPlugin } from './plugin.js';
 import { review } from './tools/index.js';
@@ -54,6 +55,7 @@ import {
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import type { SessionState } from '../state/schema.js';
 import { computeRecordDigest } from '../state/evidence-plan.js';
+import { CHALLENGE_POLICY_V1 } from '../config/policy-types.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -421,6 +423,7 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
       makeState('READY', {
         policySnapshot: {
           ...base.policySnapshot,
+          challengePolicy: CHALLENGE_POLICY_V1,
           reviewInvocationPolicy: 'host_task_required',
         },
       }),

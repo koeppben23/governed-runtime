@@ -281,11 +281,14 @@ function checkReviewFindingsScope(
   findings: ReviewFindings,
   obligation: ReviewObligation | null,
 ): string | null {
-  if (!obligation) return null;
   const scopeRelations: FindingWithRelation[] = [];
   [...(findings.blockingIssues ?? []), ...(findings.majorRisks ?? [])].forEach((item) => {
     if (item && typeof item === 'object') scopeRelations.push(item);
   });
+  if (scopeRelations.length === 0) return null;
+  if (!obligation) {
+    return formatBlocked('REVIEW_SUBJECT_SCOPE_UNAVAILABLE', { obligationId: 'unresolved' });
+  }
   const scopeResult = validateReviewFindingsScope({
     findings: scopeRelations,
     reviewSubjectScope: obligation.reviewSubjectScope,

@@ -214,7 +214,7 @@ describe('validateReviewFindings', () => {
     it('allows changes_requested with blocking issues', () => {
       const result = validateReviewFindings(
         makeFindings({ overallVerdict: 'changes_requested', blockingIssues: [criticalIssue] }),
-        makeCtx(),
+        makeCtx({ assurance: strictAssuranceFixture(), obligationType: 'plan' }),
       );
       expect(result).toBeNull();
     });
@@ -235,9 +235,17 @@ describe('validateReviewFindings', () => {
           majorRisks: [majorIssue],
           missingVerification: ['no integration test for the new path'],
         }),
-        makeCtx(),
+        makeCtx({ assurance: strictAssuranceFixture(), obligationType: 'plan' }),
       );
       expect(result).toBeNull();
+    });
+
+    it('blocks material findings without a resolved review obligation scope', () => {
+      const result = validateReviewFindings(
+        makeFindings({ overallVerdict: 'changes_requested', blockingIssues: [majorIssue] }),
+        makeCtx(),
+      );
+      expect(parseBlocked(result!).code).toBe('REVIEW_SUBJECT_SCOPE_UNAVAILABLE');
     });
 
     it('reports unable_to_review via its own SSOT path, not the coherence rule', () => {

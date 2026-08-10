@@ -79,8 +79,8 @@ compliance-report flow (READY only). Use `/status` or `/why` instead.
 **Important invariant:** Native Claude/Codex reviewer agents are transport/isolation artifacts only. Review completion still requires validated, obligation-bound `ReviewFindings`.
 
 Each submitted finding must include its required structured `relation` with
-non-empty `subjectAnchors` and `evidenceLocations`; legacy `location` text is
-not accepted.
+non-empty `subjectAnchors`; `evidenceLocations` is required but may be empty.
+Legacy `location` text is not accepted.
 
 **Common causes:**
 

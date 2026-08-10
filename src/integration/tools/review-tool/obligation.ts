@@ -12,7 +12,7 @@ import { fingerprintReviewInput } from './fingerprint.js';
 
 import type { SessionState } from '../../../state/schema.js';
 import type { ReviewFindings, ReviewObligation } from '../../../state/evidence.js';
-import type { ReviewAssuranceState } from '../../../state/evidence-review.js';
+import type { ReviewAssuranceState, ReviewSubjectScope } from '../../../state/evidence-review.js';
 import type { ReviewReferenceInput } from '../../../rails/review.js';
 import {
   REVIEW_MANDATE_DIGEST,
@@ -385,6 +385,15 @@ async function createNewReviewObligation(
     metadata.resolvedBranchSha = input.resolvedSource.resolvedBranchSha;
     metadata.resolvedBaseSha = input.resolvedSource.resolvedBaseSha;
   }
+  const reviewSubjectScope: ReviewSubjectScope | undefined = input.resolvedSource
+    ? {
+        kind: 'repository_change',
+        paths: [...resolvedTargetPaths],
+        // The frozen source includes both SHAs, so findings may cite either side
+        // of the reviewed diff without introducing free-form revision authority.
+        revisions: ['base', 'head'],
+      }
+    : undefined;
   return {
     obligation: createReviewObligation({
       obligationType: 'review',
@@ -396,6 +405,7 @@ async function createNewReviewObligation(
       profileSource: 'policy_default',
       policySnapshot: input.state.policySnapshot,
       changedFiles: resolvedTargetPaths,
+      reviewSubjectScope,
       // No claimedTaskClass floor here: a standalone /review assesses an EXTERNAL
       // PR/branch/content whose risk is the reviewed diff itself (changedFiles),
       // not the session's own task-class claim. The C1 floor applies only to the
