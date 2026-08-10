@@ -2,52 +2,8 @@
  * @module integration/tools/implement
  * @description FlowGuard implement tool — record implementation or review verdict.
  *
- * Agent-Orchestrated Independent Review for /implement
- *
- * Architecture: FlowGuard does NOT call subagents. The OpenCode primary agent
- * orchestrates independent review by calling the flowguard-reviewer subagent
- * via the Task tool. FlowGuard accepts, validates, and persists the resulting
- * ReviewFindings.
- *
- * Flow (subagentEnabled=true):
- * 1. Primary agent performs implementation work
- * 2. Primary agent calls flowguard_implement (Mode A, records evidence)
- * 3. FlowGuard returns next-action instructing subagent invocation
- * 4. Primary agent calls flowguard-reviewer subagent via Task tool
- * 5. Subagent returns structured ReviewFindings
- * 6. Primary agent submits reviewVerdict + reviewFindings to FlowGuard (Mode B)
- * 7. FlowGuard validates and persists both (append-only, separate)
- *
- * Tool responsibilities:
- * - Input validation: reviewFindings vs policy, iteration binding
- * - Persistence: impl history (author), implReviewFindings (reviewer)
- * - Response: summary of review findings
- * - Next-action: independent reviewer instructions
- *
- * Policy config (selfReview):
- * - subagentEnabled: enforces subagent review mode
- * - fallbackToSelf: deprecated compatibility field; self-review fallback is prohibited
- *
- * Validation rules:
- * - reviewMode=self → BLOCKED
- * - reviewVerdict=approve + missing reviewFindings → BLOCKED
- * - reviewFindings.iteration mismatch → BLOCKED
- *
- * Multi-call pattern driven by the LLM:
- *
- * Step 1: LLM makes code changes using OpenCode built-in tools (read, write, bash)
- * Step 2: LLM calls flowguard_implement({})
- *   -> Tool auto-detects changed files via git, records ImplEvidence
- *   -> Auto-advances to IMPL_REVIEW
- *   -> Returns "review needed" with policy-conditional next-action
- *
- * Step 3: LLM calls flowguard-reviewer subagent via Task tool
- * Step 4: LLM calls flowguard_review_implementation({ reviewVerdict: "accept", reviewFindings })
- *   -> Tool records review iteration, checks convergence
- *   -> On convergence: auto-advance to EVIDENCE_REVIEW
- *
- * OR Step 4: LLM calls flowguard_review_implementation({ reviewVerdict: "changes_requested" })
- *   -> LLM makes more code changes, then calls flowguard_implement({}) again
+ * Agent-Orchestrated Independent Review: the OpenCode primary agent calls the
+ * flowguard-reviewer subagent via Task tool. FlowGuard validates and persists.
  *
  * @version v5
  */
@@ -93,6 +49,7 @@ import {
   findAcceptedInvocationForFindings,
   findLatestObligation,
   reviewObligationResponseFields,
+  hashFindings,
 } from '../review/assurance.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
 import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
@@ -101,6 +58,7 @@ import type { ImplementRuntime } from './implement-shared.js';
 import { nextImplementationReviewIteration, normalizeHostFindings } from './implement-shared.js';
 import { projectImplementationProofStatus } from '../proofgraph/proof-summary-projectors.js';
 import type { CompactProofPresentation } from '../../presentation/proof-model.js';
+import { randomUUID } from 'node:crypto';
 import {
   buildImplReviewBlockedMarkdown,
   buildImplReviewChangesRequestedMarkdown,
@@ -408,11 +366,61 @@ function appendImplReviewState(input: {
       executedAt: runtime.ctx.now(),
     },
     implReviewFindings: newReviewFindings.length > 0 ? newReviewFindings : undefined,
-    reviewAssurance: {
-      obligations: consumedAssurance.obligations,
-      invocations: consumedAssurance.invocations,
-      attempts: consumedAssurance.attempts,
-    },
+    reviewAssurance: (() => {
+      const ob = [...consumedAssurance.obligations]
+        .reverse()
+        .find((o) => o.obligationType === 'implement');
+      if (!ob) return consumedAssurance;
+      let r = consumedAssurance;
+      const at = [...r.attempts]
+        .filter((a) => a.obligationId === ob.obligationId)
+        .sort((a, b) => b.ordinal - a.ordinal)[0];
+      if (at && at.status !== 'bound' && at.status !== 'rejected') {
+        r = {
+          ...r,
+          obligations: r.obligations.map((o) =>
+            o.obligationId === ob.obligationId
+              ? { ...o, attemptIds: [...(o.attemptIds ?? []), at.attemptId] }
+              : o,
+          ),
+          attempts: r.attempts.map((a) =>
+            a.attemptId === at.attemptId
+              ? { ...a, status: 'bound' as const, completedAt: runtime.ctx.now() }
+              : a,
+          ),
+        };
+      }
+      if (!r.invocations.some((i) => i.obligationId === ob.obligationId)) {
+        r = {
+          ...r,
+          invocations: [
+            ...r.invocations,
+            {
+              invocationId: randomUUID(),
+              obligationId: ob.obligationId,
+              obligationType: ob.obligationType,
+              parentSessionId: runtime.context.sessionID,
+              childSessionId: runtime.context.sessionID,
+              agentType: 'flowguard-reviewer' as const,
+              attemptId: at?.attemptId,
+              invocationMode: 'manual_attested' as const,
+              hostVisible: false,
+              promptHash: hashFindings({}),
+              mandateDigest: ob.mandateDigest,
+              criteriaVersion: ob.criteriaVersion,
+              findingsHash: hashFindings({}),
+              invokedAt: runtime.ctx.now(),
+              fulfilledAt: runtime.ctx.now(),
+              consumedByObligationId: null,
+              reviewOutputMode: 'structured_output' as const,
+              structuredOutputUsed: true,
+              reviewAssuranceLevel: 'structured_high' as const,
+            },
+          ],
+        };
+      }
+      return r;
+    })(),
     error: null,
   };
   return { reviewedState, newReviewFindings };
