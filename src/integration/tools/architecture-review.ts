@@ -19,7 +19,12 @@ import { evaluate } from '../../machine/evaluate.js';
 import { autoAdvance } from '../../rails/types.js';
 import type { AutoAdvanceResult } from '../../rails/types.js';
 
-import type { LoopVerdict, RevisionDelta, ReviewFindings } from '../../state/evidence.js';
+import type {
+  ArchitectureReviewCompletion,
+  LoopVerdict,
+  RevisionDelta,
+  ReviewFindings,
+} from '../../state/evidence.js';
 import { validateAdrSections } from '../../state/evidence.js';
 
 import {
@@ -93,12 +98,6 @@ type ReviewResultContext = {
   revision: AdrRevision;
   advanced: AdvancedArchitectureState;
   iteration: number;
-  /**
-   * True when convergence was forced by reaching the iteration limit without
-   * an approving verdict (last verdict was changes_requested). Drives honest,
-   * non-"approved" messaging and the review-card warning banner.
-   */
-  forcedConvergence?: boolean;
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -291,8 +290,25 @@ function buildReviewedState(
   return {
     ...state,
     architecture: newReviewFindings
-      ? { ...revision.currentAdr, reviewFindings: newReviewFindings }
-      : revision.currentAdr,
+      ? {
+          ...revision.currentAdr,
+          reviewCompletion: resolveArchitectureReviewCompletion(
+            iteration,
+            policy.maxSelfReviewIterations,
+            revision.revisionDelta,
+            args.reviewVerdict as LoopVerdict,
+          ),
+          reviewFindings: newReviewFindings,
+        }
+      : {
+          ...revision.currentAdr,
+          reviewCompletion: resolveArchitectureReviewCompletion(
+            iteration,
+            policy.maxSelfReviewIterations,
+            revision.revisionDelta,
+            args.reviewVerdict as LoopVerdict,
+          ),
+        },
     selfReview: {
       iteration,
       maxIterations: policy.maxSelfReviewIterations,
@@ -310,23 +326,24 @@ function buildReviewedState(
   };
 }
 
+function resolveArchitectureReviewCompletion(
+  iteration: number,
+  maxIterations: number,
+  revisionDelta: RevisionDelta,
+  verdict: LoopVerdict,
+): ArchitectureReviewCompletion {
+  const reviewerAccepted = revisionDelta === 'none' && verdict === 'accept';
+  if (reviewerAccepted) return 'reviewer_accepted';
+  if (iteration >= maxIterations) return 'review_exhausted';
+  return 'pending';
+}
+
 function autoAdvanceArchitectureState(
   nextState: SessionState,
   session: ArchitectureSession,
 ): AutoAdvanceResult {
   const { policy, ctx } = session;
-  const advanced = autoAdvance(nextState, (s: SessionState) => evaluate(s, policy), ctx);
-  if (advanced.kind === 'overflow') {
-    return advanced;
-  }
-  const finalState =
-    advanced.state.phase === 'ARCH_COMPLETE' && advanced.state.architecture
-      ? {
-          ...advanced.state,
-          architecture: { ...advanced.state.architecture, status: 'accepted' as const },
-        }
-      : advanced.state;
-  return { ...advanced, state: finalState };
+  return autoAdvance(nextState, (s: SessionState) => evaluate(s, policy), ctx);
 }
 
 export async function handleAdrReview(
@@ -352,24 +369,14 @@ export async function handleAdrReview(
 
 async function persistAndFormatReviewResult(input: ReviewResultContext): Promise<string> {
   const iteration = input.session.state.selfReview!.iteration + 1;
+  const completion = input.advanced.state.architecture?.reviewCompletion;
   const verdict = input.args.reviewVerdict as LoopVerdict;
-  const approvedConverged = input.revision.revisionDelta === 'none' && verdict === 'accept';
-  const maxReached = iteration >= input.session.policy.maxSelfReviewIterations;
+  const context = { ...input, iteration };
 
-  // Force-convergence: the review loop exhausted its iteration budget without
-  // an approving verdict. Parity with the plan and implementation review flows:
-  // NEVER block here. Route through the converged path so human-gated modes
-  // stop at ARCH_REVIEW for the human to decide, and auto-approve modes finalize
-  // with an honest, audit-visible status. The previous hard block stranded the
-  // session at ARCH_REVIEW while its recovery told the user to run a command
-  // inadmissible at that phase.
-  const forcedConvergence = maxReached && !approvedConverged;
-  const context = { ...input, iteration, forcedConvergence };
-
-  if (forcedConvergence) {
+  if (completion === 'review_exhausted') {
     getAdapterLogger().warn(
       'flowguard_architecture',
-      'ADR review force-converged at iteration limit without reviewer approval',
+      'ADR review exhausted at iteration limit without reviewer approval',
       {
         sessDir: input.session.sessDir,
         iteration,
@@ -381,22 +388,22 @@ async function persistAndFormatReviewResult(input: ReviewResultContext): Promise
     );
   }
 
-  if (approvedConverged || forcedConvergence) {
+  if (completion === 'reviewer_accepted' || completion === 'review_exhausted') {
     return persistAndFormatConvergedReview(context);
   }
   return persistAndFormatNonConvergedReview(context, verdict);
 }
 
 async function persistAndFormatConvergedReview(input: ReviewResultContext): Promise<string> {
-  const { args, session, review, revision, advanced, iteration, forcedConvergence } = input;
+  const { session, review, revision, advanced, iteration } = input;
   await writeStateWithArtifacts(session.sessDir, advanced.state);
-  const isComplete = advanced.state.phase === 'ARCH_COMPLETE';
   const reviewLabel = review.subagentEnabled ? 'Independent review' : 'ADR self-review';
-  const status = forcedConvergence
-    ? `${reviewLabel} reached the iteration limit (${iteration}/${session.policy.maxSelfReviewIterations}) ` +
-      `without reviewer approval (last verdict: ${args.reviewVerdict}). ` +
-      `${isComplete ? 'ADR auto-finalized.' : 'Your decision is required.'}`
-    : `${reviewLabel} converged at iteration ${iteration}. ADR ${isComplete ? 'approved' : 'ready for approval'}.`;
+  const completion = advanced.state.architecture?.reviewCompletion;
+  const status =
+    completion === 'review_exhausted'
+      ? `${reviewLabel} reached the iteration limit (${iteration}/${session.policy.maxSelfReviewIterations}) ` +
+        'without reviewer approval. Human approval is required.'
+      : `${reviewLabel} accepted the ADR at iteration ${iteration}. Human approval is required.`;
   const resp: Record<string, unknown> = {
     phase: advanced.state.phase,
     status,
@@ -414,8 +421,7 @@ async function persistAndFormatConvergedReview(input: ReviewResultContext): Prom
     revision,
     finalState: advanced.state,
     iteration,
-    isComplete,
-    forcedConvergence: forcedConvergence ?? false,
+    reviewCompletion: completion,
   });
   return appendNextAction(JSON.stringify(resp), advanced.state);
 }
@@ -446,10 +452,9 @@ async function attachReviewCard(input: {
   revision: AdrRevision;
   finalState: SessionState;
   iteration: number;
-  isComplete: boolean;
-  forcedConvergence: boolean;
+  reviewCompletion: ArchitectureReviewCompletion | undefined;
 }): Promise<void> {
-  const { resp, reviewFindings, session, revision, finalState, iteration, isComplete } = input;
+  const { resp, reviewFindings, session, revision, finalState, iteration } = input;
   const nextAction = resolveNextAction(finalState.phase, finalState);
   const productNext = buildProductNextAction(nextAction, finalState.phase);
   const latestReview = resp.latestReview as Record<string, unknown> | undefined;
@@ -468,8 +473,8 @@ async function attachReviewCard(input: {
     scopeCreep: reviewFindings?.scopeCreep,
     unknowns: reviewFindings?.unknowns,
     productNextAction: productNext,
-    isApproved: isComplete,
-    forcedConvergence: input.forcedConvergence,
+    isApproved: finalState.architecture?.status === 'accepted',
+    reviewCompletion: input.reviewCompletion,
     proofSummary: projectArchitectureProofStatus(finalState),
   };
   // Cards and artifacts are canonical Unicode; only host-visible Markdown uses preferences.

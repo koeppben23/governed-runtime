@@ -14,6 +14,7 @@
  */
 
 import type { Phase } from '../state/schema.js';
+import type { ArchitectureReviewCompletion } from '../state/evidence.js';
 import type {
   ReviewCardDocument,
   PresentationSection,
@@ -75,12 +76,8 @@ export interface ArchitectureReviewCardInput {
   };
   /** True when the ADR has been approved (ARCH_COMPLETE). */
   isApproved: boolean;
-  /**
-   * True when the independent review loop force-converged at the iteration
-   * limit WITHOUT an approving verdict. Renders a prominent warning so the
-   * human reviewer does not mistake the gate for a reviewer-approved ADR.
-   */
-  forcedConvergence?: boolean;
+  /** Typed reviewer-cycle evidence, separate from human approval. */
+  reviewCompletion?: ArchitectureReviewCompletion;
   /** Compact ProofGraph summary for the review card (decision claims). */
   proofSummary: CompactProofPresentation;
 }
@@ -152,15 +149,15 @@ export function buildArchitectureReviewDocument(
   metadata.push({ label: 'Verdict', value: verdict });
   sections.push({ kind: 'keyValue', items: metadata });
 
-  // ── Force-convergence warning ──────────────────────────────────────
-  if (input.forcedConvergence && !isApproved) {
+  // ── Review exhaustion warning ──────────────────────────────────────
+  if (input.reviewCompletion === 'review_exhausted' && !isApproved) {
     sections.push({
       kind: 'notice',
       level: 'warning',
       message: 'Reviewer did NOT approve this ADR.',
       additionalMessages: [
-        'The independent review reached its iteration limit without convergence ' +
-          '(last verdict: changes_requested). Review the outstanding findings carefully before approving.',
+        'The independent review reached its iteration limit without reviewer acceptance. ' +
+          'Review the outstanding findings carefully before making the required human decision.',
       ],
       details: [],
     });

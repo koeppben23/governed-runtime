@@ -157,6 +157,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
           digest: 'digest-adr',
           status: 'proposed',
+          reviewCompletion: 'pending',
           createdAt: '2026-01-01T00:00:00.000Z',
         },
       }),
@@ -171,6 +172,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
           digest: 'digest-adr',
           status: 'proposed',
+          reviewCompletion: 'pending',
           createdAt: '2026-01-01T00:00:00.000Z',
         },
       }),
@@ -215,6 +217,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
           digest: 'digest-adr',
           status: 'proposed',
+          reviewCompletion: 'pending',
           createdAt: now,
         },
         selfReview: {
@@ -302,6 +305,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
           digest: 'digest-adr',
           status: 'proposed',
+          reviewCompletion: 'pending',
           createdAt: now,
         },
         selfReview: {
@@ -419,6 +423,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           adrText: '## Context\nctx\n\n## Decision\ndec\n\n## Consequences\ncons\n',
           digest: 'digest-adr',
           status: 'proposed',
+          reviewCompletion: 'pending',
           createdAt: now,
         },
         selfReview: {
@@ -488,14 +493,13 @@ describe('architecture — BUG-15 evidence-resolve', () => {
         reviewInvocationPolicy: 'host_task_required',
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
       });
-      // autoAdvance retains ARCHITECTURE — converged path is triggered by
-      // approvedConverged (revisionDelta=none + verdict=accept), not by phase.
-      mocks.autoAdvance.mockReturnValue({
+      // Preserve the reviewed candidate and stop at the mandatory human gate.
+      mocks.autoAdvance.mockImplementation((state: SessionState) => ({
         kind: 'advanced',
-        state: mocks.state,
-        evalResult: { kind: 'pending' },
+        state: { ...state, phase: 'ARCH_REVIEW' },
+        evalResult: { kind: 'waiting', phase: 'ARCH_REVIEW', reason: 'human decision required' },
         transitions: [],
-      });
+      }));
 
       const { architecture } = await import('./architecture.js');
       // Agent submits ONLY the verdict — no reviewFindings (host_task_required contract)
@@ -552,6 +556,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
           digest: 'digest-adr',
           status: 'proposed',
+          reviewCompletion: 'pending',
           createdAt: now,
         },
         selfReview: {

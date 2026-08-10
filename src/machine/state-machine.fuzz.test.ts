@@ -168,19 +168,30 @@ describe('state machine fuzz', () => {
     );
   });
 
-  it('user gates auto-approve when requireHumanGates is false', () => {
+  it('solo mode auto-approves only plan and evidence gates', () => {
     fc.assert(
-      fc.property(
-        fc.constantFrom('PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW' as Phase),
-        (phase) => {
-          const state = makeState(phase) as SessionState;
-          const result = evaluate(state, { requireHumanGates: false });
-          expect(result.kind).toBe('transition');
-          if (result.kind === 'transition') {
-            expect(result.event).toBe('APPROVE');
-          }
-        },
-      ),
+      fc.property(fc.constantFrom('PLAN_REVIEW', 'EVIDENCE_REVIEW' as Phase), (phase) => {
+        const state = makeState(phase) as SessionState;
+        const result = evaluate(state, { requireHumanGates: false });
+        expect(result.kind).toBe('transition');
+        if (result.kind === 'transition') {
+          expect(result.event).toBe('APPROVE');
+        }
+      }),
+      {
+        numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,
+        seed: Number(process.env.FAST_CHECK_SEED ?? '12345'),
+        endOnFailure: true,
+      },
+    );
+  });
+
+  it('architecture review always waits for an explicit human decision', () => {
+    fc.assert(
+      fc.property(fc.boolean(), (requireHumanGates) => {
+        const result = evaluate(makeState('ARCH_REVIEW'), { requireHumanGates });
+        expect(result.kind).toBe('waiting');
+      }),
       {
         numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,
         seed: Number(process.env.FAST_CHECK_SEED ?? '12345'),

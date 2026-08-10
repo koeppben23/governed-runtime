@@ -127,6 +127,7 @@ export const ARCHITECTURE_DECISION: ArchitectureDecision = {
   adrText:
     '## Context\nWe need a database.\n\n## Decision\nUse PostgreSQL.\n\n## Consequences\nMust maintain DB infra.',
   status: 'proposed',
+  reviewCompletion: 'pending',
   createdAt: FIXED_TIME,
   digest: 'digest-of-adr',
 };
@@ -396,12 +397,16 @@ export function makeProgressedState(phase: Phase): SessionState {
       });
     case 'ARCH_REVIEW':
       return makeState('ARCH_REVIEW', {
-        architecture: ARCHITECTURE_DECISION,
+        architecture: { ...ARCHITECTURE_DECISION, reviewCompletion: 'reviewer_accepted' },
         selfReview: SELF_REVIEW_CONVERGED,
       });
     case 'ARCH_COMPLETE':
       return makeState('ARCH_COMPLETE', {
-        architecture: { ...ARCHITECTURE_DECISION, status: 'accepted' },
+        architecture: {
+          ...ARCHITECTURE_DECISION,
+          status: 'accepted',
+          reviewCompletion: 'reviewer_accepted',
+        },
         selfReview: SELF_REVIEW_CONVERGED,
         reviewDecision: REVIEW_APPROVE,
       });

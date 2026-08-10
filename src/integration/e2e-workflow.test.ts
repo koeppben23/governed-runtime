@@ -853,8 +853,8 @@ describe('e2e-workflow', () => {
       expect(completeness.slots).toBeDefined();
     });
 
-    it('architecture solo flow: hydrate → architecture → ARCH_COMPLETE', async () => {
-      // 1. Hydrate (solo — auto-approves at gates)
+    it('architecture solo flow: hydrate → architecture → human approval → ARCH_COMPLETE', async () => {
+      // 1. Hydrate (solo auto-approves non-architecture gates)
       await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
       expect(await getPhase()).toBe('READY');
 
@@ -868,12 +868,15 @@ describe('e2e-workflow', () => {
       });
       expect(await getPhase()).toBe('ARCHITECTURE');
 
-      // 3. Self-review: approve (solo: maxSelfReviewIterations=1, so converges immediately)
+      // 3. Reviewer acceptance opens ARCH_REVIEW even in solo mode.
       await callOk(architecture, { reviewVerdict: 'accept' });
-      // Solo auto-approves ARCH_REVIEW → ARCH_COMPLETE
+      expect(await getPhase()).toBe('ARCH_REVIEW');
+
+      // 4. A human decision is the sole path to ADR acceptance.
+      await callOk(decision, { verdict: 'approve', rationale: 'Approved ADR' });
       expect(await getPhase()).toBe('ARCH_COMPLETE');
 
-      // 4. Verify architecture evidence
+      // 5. Verify architecture evidence
       const sessDir = await getSessDir();
       const state = await readState(sessDir);
       expect(state!.architecture).not.toBeNull();

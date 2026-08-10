@@ -274,7 +274,7 @@ describe('evaluate', () => {
 
   // ─── CORNER ────────────────────────────────────────────────
   describe('CORNER', () => {
-    it('solo mode: user gates auto-approve via APPROVE event', () => {
+    it('solo mode auto-approves plan and evidence gates but never architecture approval', () => {
       const soloPolicy = { requireHumanGates: false };
 
       const planReview = evaluate(makeProgressedState('PLAN_REVIEW'), soloPolicy);
@@ -292,10 +292,9 @@ describe('evaluate', () => {
       }
 
       const archReview = evaluate(makeProgressedState('ARCH_REVIEW'), soloPolicy);
-      expect(archReview.kind).toBe('transition');
-      if (archReview.kind === 'transition') {
-        expect(archReview.event).toBe('APPROVE');
-        expect(archReview.target).toBe('ARCH_COMPLETE');
+      expect(archReview.kind).toBe('waiting');
+      if (archReview.kind === 'waiting') {
+        expect(archReview.phase).toBe('ARCH_REVIEW');
       }
     });
 

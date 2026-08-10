@@ -169,7 +169,11 @@ function applyStateClearingPattern(state: SessionState, verdict: ReviewVerdict):
     return {
       ...state,
       architecture: state.architecture
-        ? { ...state.architecture, approvalCertificate: undefined }
+        ? {
+            ...state.architecture,
+            reviewCompletion: 'pending',
+            approvalCertificate: undefined,
+          }
         : null,
       selfReview: null,
     };
@@ -293,6 +297,19 @@ function enforceProofGraphEvidenceApproval(
     return blocked(registryCode, { claimIds: decision.blockingClaimIds.join(', ') });
   }
   return blocked(registryCode, undefined);
+}
+
+/** Architecture approval requires a completed reviewer cycle, never a pending loop. */
+function enforceArchitectureReviewCompletion(
+  state: SessionState,
+  input: ReviewDecisionInput,
+): RailBlocked | null {
+  if (state.phase !== 'ARCH_REVIEW' || input.verdict !== 'approve') return null;
+  const completion = state.architecture?.reviewCompletion;
+  if (completion === 'reviewer_accepted' || completion === 'review_exhausted') return null;
+  return blocked('ARCHITECTURE_REVIEW_COMPLETION_REQUIRED', {
+    reviewCompletion: completion ?? 'missing',
+  });
 }
 
 /**
@@ -479,6 +496,8 @@ export function executeReviewDecision(
   if (input.verdict === 'approve') {
     const identityBlock = enforceApprovalIdentity(state, input, ctx);
     if (identityBlock) return identityBlock;
+    const architectureReviewBlock = enforceArchitectureReviewCompletion(state, input);
+    if (architectureReviewBlock) return architectureReviewBlock;
     const proofGraphBlock = enforceProofGraphEvidenceApproval(state, input);
     if (proofGraphBlock) return proofGraphBlock;
   }

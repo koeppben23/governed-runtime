@@ -386,6 +386,18 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'ARCHITECTURE_REVIEW_COMPLETION_REQUIRED',
+    category: 'precondition',
+    messageTemplate:
+      'Architecture approval requires completed independent review evidence. Current review completion: {reviewCompletion}.',
+    recoverySteps: [
+      'Request changes to reopen the architecture review cycle',
+      'Complete the independent ADR review cycle until it is reviewer_accepted or review_exhausted',
+    ],
+    quickFixCommand: '/review-decision changes_requested',
+  },
+
+  {
     code: 'NO_IMPLEMENTATION',
     category: 'precondition',
     messageTemplate: 'No implementation evidence to review.',

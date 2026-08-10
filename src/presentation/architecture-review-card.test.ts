@@ -44,7 +44,7 @@ function buildArchitectureReviewCard(
 
 describe('buildArchitectureReviewCard', () => {
   it('keeps Unicode canonical by default and supports an ASCII transient rendering', () => {
-    const input = { ...baseInput, forcedConvergence: true };
+    const input = { ...baseInput, reviewCompletion: 'review_exhausted' as const };
     const canonical = buildArchitectureReviewCard(input);
 
     expect(buildArchitectureReviewCard(input)).toBe(canonical);
@@ -176,22 +176,22 @@ describe('buildArchitectureReviewCard', () => {
     expect(card).not.toContain('## Reviewer Findings');
   });
 
-  it('renders a "reviewer did NOT approve" warning when forceConverged at the gate', () => {
+  it('renders a "reviewer did NOT approve" warning when review is exhausted at the gate', () => {
     const card = buildArchitectureReviewCard({
       ...baseInput,
-      forcedConvergence: true,
+      reviewCompletion: 'review_exhausted',
     });
     expect(card).toContain('Reviewer did NOT approve this ADR.');
     expect(card).toContain('iteration limit');
   });
 
-  it('suppresses the forced-convergence warning once the ADR is approved', () => {
+  it('suppresses the review exhaustion warning once the ADR is approved', () => {
     const card = buildArchitectureReviewCard({
       ...baseInput,
       phase: 'ARCH_COMPLETE',
       phaseLabel: 'Architecture complete',
       isApproved: true,
-      forcedConvergence: true,
+      reviewCompletion: 'review_exhausted',
     });
     expect(card).not.toContain('Reviewer did NOT approve');
   });
@@ -225,7 +225,7 @@ describe('architecture review golden fixtures', () => {
       iteration: 3,
       overallVerdict: 'changes_requested',
       isApproved: false,
-      forcedConvergence: true,
+      reviewCompletion: 'review_exhausted',
       productNextAction: {
         text: 'Review the ADR and decide.',
         commands: ['/approve', '/request-changes', '/reject'],
