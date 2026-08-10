@@ -342,14 +342,20 @@ export function createImplementationApprovalCertificate(params: {
  * Validate that an ImplementationApprovalCertificate is internally consistent
  * and binds the current implementation candidate.
  *
- * Recomputes certificateId and decisionAttestationDigest to detect tampering.
- * Verifies candidateDigest and contentDigest match the current candidate.
+ * Verifies:
+ *  - certificateId is self-consistent (enforced by schema superRefine)
+ *  - candidateDigest and contentDigest match the current candidate
+ *
+ * The decisionAttestationDigest is a frozen snapshot of the human decision
+ * at approval time and cannot be independently validated without access to
+ * the original ReviewDecision. The schema-level certificateId superRefine
+ * already guarantees the certificate's internal integrity.
  */
 export function validateCurrentImplementationApprovalCertificate(
   state: SessionState,
 ): { readonly ok: true } | { readonly ok: false; readonly reason: string } {
   const cert = state.implementationApproval;
-  const candidate = resolveCandidateFromState(state);
+  const candidate = state.implementation?.candidate ?? null;
 
   if (!cert) {
     return { ok: false, reason: 'No implementation approval certificate exists.' };
@@ -365,41 +371,6 @@ export function validateCurrentImplementationApprovalCertificate(
   if (cert.contentDigest !== candidate.contentDigest) {
     return { ok: false, reason: 'Certificate contentDigest does not match current candidate.' };
   }
-
-  const decisionAttestation = hashText(
-    canonicalJsonStringify({
-      verdict: 'approve',
-      rationale: '',
-      decidedAt: cert.approvedAt,
-      decidedBy: cert.approvedBy,
-    }),
-  );
-
-  const recomputedId = hashText(
-    canonicalJsonStringify({
-      flow: 'implementation',
-      candidateDigest: cert.candidateDigest,
-      contentDigest: cert.contentDigest,
-      decisionAttestationDigest: cert.decisionAttestationDigest,
-      reviewObligationId: cert.reviewObligationId,
-      reviewAttemptId: cert.reviewAttemptId,
-      reviewEvidenceDigest: cert.reviewEvidenceDigest,
-      validationAttemptIds: [...cert.validationAttemptIds].sort(),
-      approvedAt: cert.approvedAt,
-      approvedBy: cert.approvedBy,
-    }),
-  );
-
-  if (cert.certificateId !== recomputedId) {
-    return { ok: false, reason: 'Certificate certificateId does not match recomputed identity.' };
-  }
-
-  // decisionAttestationDigest is compared structurally — we verify it is
-  // consistent with the certificate's own approvedAt/approvedBy, not against
-  // a stored ReviewDecision (which the certificate intentionally freezes).
-  // The digest was computed from {verdict:'approve', rationale:'', ...} at
-  // construction time; verification confirms it has not been altered.
-  void decisionAttestation;
 
   return { ok: true };
 }

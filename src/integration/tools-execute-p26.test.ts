@@ -74,6 +74,28 @@ vi.mock('../adapters/git', async (importOriginal) => {
   };
 });
 
+// ─── Approval Observation Mock ───────────────────────────────────────────────
+// Fixture-based tests write state directly and the worktree does not match the
+// persisted candidate. Mock the observation to return the expected identity
+// so the candidate-bound approval check passes in these tests.
+// Each test can override via vi.mocked(...).mockResolvedValue(...).
+
+vi.mock('./implementation-approval-observation.js', () => ({
+  resolveImplementationApprovalObservation: vi.fn().mockResolvedValue(null),
+}));
+
+import { resolveImplementationApprovalObservation } from './implementation-approval-observation.js';
+import { CANDIDATE_DIGEST, CANDIDATE_CONTENT_DIGEST } from '../fixtures.js';
+
+const OBSERVATION = {
+  candidateDigest: CANDIDATE_DIGEST,
+  contentDigest: CANDIDATE_CONTENT_DIGEST,
+};
+
+function allowImplApproval(): void {
+  vi.mocked(resolveImplementationApprovalObservation).mockResolvedValue(OBSERVATION);
+}
+
 // ─── Workspace Mock (P26) ────────────────────────────────────────────────────
 // Partial mock: archiveSession and verifyArchive are vi.fn() wrappers that
 // default to the real implementations. P26 tests override them per-test.
@@ -350,6 +372,9 @@ describe('P26: regulated archive completion', () => {
       error: null,
     };
     await writeStateWithArtifacts(sessDir, regulatedState);
+    // Fixture-based state doesn't match the real worktree. Allow the
+    // candidate-bound approval observation to return the expected identity.
+    allowImplApproval();
     return sessDir;
   }
 
