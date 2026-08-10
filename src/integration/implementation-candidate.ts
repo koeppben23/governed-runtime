@@ -55,11 +55,8 @@ export async function resolveImplementationCandidate(
   worktree: string,
   taskOwnedPaths?: readonly string[],
 ): Promise<CapturedImplementationCandidate | null> {
-  const rawFiles = await changedFiles(worktree);
-  if (rawFiles.length === 0) return null;
-
   const candidatePaths =
-    taskOwnedPaths !== undefined ? rawFiles.filter((f) => taskOwnedPaths.includes(f)) : rawFiles;
+    taskOwnedPaths !== undefined ? [...taskOwnedPaths] : await changedFiles(worktree);
 
   if (candidatePaths.length === 0) return null;
 
