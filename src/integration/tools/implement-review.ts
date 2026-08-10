@@ -326,6 +326,62 @@ function validateEffectiveFindings(
   return null;
 }
 
+function bindAgentReviewAssurance(
+  assurance: ReturnType<typeof ensureReviewAssurance>,
+  sessionId: string,
+  now: string,
+): ReturnType<typeof ensureReviewAssurance> {
+  const ob = [...assurance.obligations].reverse().find((o) => o.obligationType === 'implement');
+  if (!ob) return assurance;
+  let r = assurance;
+  const at = [...r.attempts]
+    .filter((a) => a.obligationId === ob.obligationId)
+    .sort((a, b) => b.ordinal - a.ordinal)[0];
+  if (at && at.status !== 'bound' && at.status !== 'rejected') {
+    r = {
+      ...r,
+      obligations: r.obligations.map((o) =>
+        o.obligationId === ob.obligationId
+          ? { ...o, attemptIds: [...(o.attemptIds ?? []), at.attemptId] }
+          : o,
+      ),
+      attempts: r.attempts.map((a) =>
+        a.attemptId === at.attemptId ? { ...a, status: 'bound' as const, completedAt: now } : a,
+      ),
+    };
+  }
+  if (!r.invocations.some((i) => i.obligationId === ob.obligationId)) {
+    r = {
+      ...r,
+      invocations: [
+        ...r.invocations,
+        {
+          invocationId: randomUUID(),
+          obligationId: ob.obligationId,
+          obligationType: ob.obligationType,
+          parentSessionId: sessionId,
+          childSessionId: sessionId,
+          agentType: 'flowguard-reviewer' as const,
+          attemptId: at?.attemptId,
+          invocationMode: 'manual_attested' as const,
+          hostVisible: false,
+          promptHash: hashFindings({}),
+          mandateDigest: ob.mandateDigest,
+          criteriaVersion: ob.criteriaVersion,
+          findingsHash: hashFindings({}),
+          invokedAt: now,
+          fulfilledAt: now,
+          consumedByObligationId: null,
+          reviewOutputMode: 'structured_output' as const,
+          structuredOutputUsed: true,
+          reviewAssuranceLevel: 'structured_high' as const,
+        },
+      ],
+    };
+  }
+  return r;
+}
+
 function appendImplReviewState(input: {
   runtime: ImplementRuntime;
   iteration: number;
@@ -366,61 +422,11 @@ function appendImplReviewState(input: {
       executedAt: runtime.ctx.now(),
     },
     implReviewFindings: newReviewFindings.length > 0 ? newReviewFindings : undefined,
-    reviewAssurance: (() => {
-      const ob = [...consumedAssurance.obligations]
-        .reverse()
-        .find((o) => o.obligationType === 'implement');
-      if (!ob) return consumedAssurance;
-      let r = consumedAssurance;
-      const at = [...r.attempts]
-        .filter((a) => a.obligationId === ob.obligationId)
-        .sort((a, b) => b.ordinal - a.ordinal)[0];
-      if (at && at.status !== 'bound' && at.status !== 'rejected') {
-        r = {
-          ...r,
-          obligations: r.obligations.map((o) =>
-            o.obligationId === ob.obligationId
-              ? { ...o, attemptIds: [...(o.attemptIds ?? []), at.attemptId] }
-              : o,
-          ),
-          attempts: r.attempts.map((a) =>
-            a.attemptId === at.attemptId
-              ? { ...a, status: 'bound' as const, completedAt: runtime.ctx.now() }
-              : a,
-          ),
-        };
-      }
-      if (!r.invocations.some((i) => i.obligationId === ob.obligationId)) {
-        r = {
-          ...r,
-          invocations: [
-            ...r.invocations,
-            {
-              invocationId: randomUUID(),
-              obligationId: ob.obligationId,
-              obligationType: ob.obligationType,
-              parentSessionId: runtime.context.sessionID,
-              childSessionId: runtime.context.sessionID,
-              agentType: 'flowguard-reviewer' as const,
-              attemptId: at?.attemptId,
-              invocationMode: 'manual_attested' as const,
-              hostVisible: false,
-              promptHash: hashFindings({}),
-              mandateDigest: ob.mandateDigest,
-              criteriaVersion: ob.criteriaVersion,
-              findingsHash: hashFindings({}),
-              invokedAt: runtime.ctx.now(),
-              fulfilledAt: runtime.ctx.now(),
-              consumedByObligationId: null,
-              reviewOutputMode: 'structured_output' as const,
-              structuredOutputUsed: true,
-              reviewAssuranceLevel: 'structured_high' as const,
-            },
-          ],
-        };
-      }
-      return r;
-    })(),
+    reviewAssurance: bindAgentReviewAssurance(
+      consumedAssurance,
+      runtime.context.sessionID,
+      runtime.ctx.now(),
+    ),
     error: null,
   };
   return { reviewedState, newReviewFindings };
