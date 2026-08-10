@@ -265,16 +265,31 @@ export const IMPL_EVIDENCE: ImplEvidence = {
 
 /**
  * Create an ImplEvidence fixture with optional overrides for tests.
- * Uses the shared CANDIDATE fixture by default; pass a partial candidate
- * object to override specific candidate fields.
+ * Uses the shared CANDIDATE fixture by default; candidateDigest is always
+ * recomputed when any candidate field is overridden so the candidate remains
+ * self-consistent (candidateDigest === computeCandidateDigest(...)).
  */
 export function makeImplEvidence(overrides?: {
   candidate?: Partial<ImplementationCandidate>;
   domainFiles?: string[];
   executedAt?: string;
 }): ImplEvidence {
+  const merged = overrides?.candidate
+    ? ({ ...CANDIDATE, ...overrides.candidate } as ImplementationCandidate)
+    : CANDIDATE;
+  const candidate: ImplementationCandidate = overrides?.candidate
+    ? {
+        ...merged,
+        candidateDigest: computeCandidateDigest({
+          baseHeadSha: merged.baseHeadSha,
+          changedPaths: merged.changedPaths,
+          contentDigest: merged.contentDigest,
+          diffDigest: merged.diffDigest,
+        }),
+      }
+    : CANDIDATE;
   return {
-    candidate: overrides?.candidate ? { ...CANDIDATE, ...overrides.candidate } : CANDIDATE,
+    candidate,
     domainFiles: overrides?.domainFiles ?? ['src/auth.ts'],
     executedAt: overrides?.executedAt ?? FIXED_TIME,
   };
