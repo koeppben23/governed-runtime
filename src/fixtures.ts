@@ -328,7 +328,7 @@ export const IMPL_REVIEW_ASSURANCE = {
       subjectDigest: CANDIDATE_DIGEST,
       reviewSubjectScope: {
         kind: 'repository_change' as const,
-        paths: [],
+        paths: ['src/auth.ts'],
         revisions: ['head' as const],
       },
       attemptIds: [FIXED_ATTEMPT_ID],
