@@ -243,9 +243,10 @@ describe('architecture — BUG-15 evidence-resolve', () => {
               blockedCode: null,
               fulfilledAt: now,
               consumedAt: null,
-              reviewedFileScope: {
-                kind: 'not_applicable' as const,
-                reason: 'architecture_obligation',
+              reviewSubjectScope: {
+                kind: 'repository_change',
+                paths: ['src/architecture.ts'],
+                revisions: ['base', 'head'],
               },
             },
           ],
@@ -329,9 +330,10 @@ describe('architecture — BUG-15 evidence-resolve', () => {
               blockedCode: null,
               fulfilledAt: now,
               consumedAt: null,
-              reviewedFileScope: {
-                kind: 'not_applicable' as const,
-                reason: 'architecture_obligation',
+              reviewSubjectScope: {
+                kind: 'repository_change',
+                paths: ['src/architecture.ts'],
+                revisions: ['base', 'head'],
               },
             },
           ],
@@ -378,11 +380,29 @@ describe('architecture — BUG-15 evidence-resolve', () => {
             category: 'risk',
             message: 'Race condition in in-memory storage',
             location: 'TaskRepository',
+            relation: {
+              subjectAnchors: [
+                {
+                  kind: 'repository_location',
+                  location: { path: 'src/architecture.ts', revision: 'head' },
+                },
+              ],
+              evidenceLocations: [],
+            },
           },
           {
             severity: 'minor',
             category: 'quality',
             message: 'Lack of architectural coupling guard',
+            relation: {
+              subjectAnchors: [
+                {
+                  kind: 'repository_location',
+                  location: { path: 'src/architecture.ts', revision: 'head' },
+                },
+              ],
+              evidenceLocations: [],
+            },
           },
         ],
         missingVerification: ['No negative-path integration test'],
@@ -427,9 +447,10 @@ describe('architecture — BUG-15 evidence-resolve', () => {
               blockedCode: null,
               fulfilledAt: now,
               consumedAt: null,
-              reviewedFileScope: {
-                kind: 'not_applicable' as const,
-                reason: 'architecture_obligation',
+              reviewSubjectScope: {
+                kind: 'repository_change',
+                paths: ['src/architecture.ts'],
+                revisions: ['base', 'head'],
               },
             },
           ],

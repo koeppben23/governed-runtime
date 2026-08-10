@@ -370,7 +370,7 @@ Independent subagent review is the default FlowGuard policy configuration:
   reviewMode:           'subagent'
   overallVerdict:       'accept' | 'changes_requested' | 'unable_to_review'
   blockingIssues:       Finding[] // severity: critical|major|minor
-  majorRisks:           Finding[] // category: completeness|correctness|feasibility|risk|quality
+   majorRisks:           Finding[] // category: completeness|correctness|feasibility|risk|quality
   missingVerification:  string[]
   scopeCreep:           string[]
   unknowns:             string[]
@@ -386,6 +386,11 @@ Independent subagent review is the default FlowGuard policy configuration:
   }
 }
 ```
+
+Each `Finding` requires `severity`, `category`, `message`, and `relation`.
+`relation.subjectAnchors` and `relation.evidenceLocations` are non-empty arrays
+of structured repository or artifact anchors. The legacy free-text `location`
+field is not accepted.
 
 > **Attestation in subagent mode:** the `attestation` field is declared
 > optional in the Zod `ReviewFindings` schema (so self-review and legacy

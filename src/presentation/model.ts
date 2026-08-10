@@ -12,6 +12,8 @@
  * @version v1
  */
 
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
+
 // ─── Branded Normalized Markdown ───────────────────────────────────────────────
 
 declare const normalizedMarkdownBrand: unique symbol;
@@ -114,7 +116,12 @@ export interface ArtifactItem {
 export interface FindingItem {
   readonly category: string;
   readonly message: string;
-  readonly location?: string;
+  readonly relation?: string;
+}
+
+/** Render an already-validated finding relation without interpreting its anchors. */
+export function formatFindingRelation(relation: unknown): string {
+  return canonicalJsonStringify(relation);
 }
 
 export interface FindingGroup {

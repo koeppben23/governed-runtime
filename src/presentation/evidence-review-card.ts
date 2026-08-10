@@ -11,6 +11,7 @@
  * @version v1
  */
 
+import { formatFindingRelation } from './model.js';
 import type {
   ReviewCardDocument,
   PresentationSection,
@@ -48,11 +49,11 @@ export interface EvidenceReviewCardInput {
     severity: string;
     category: string;
     message: string;
-    location?: string;
+    relation: unknown;
     findingId?: string;
   }>;
   /** Accepted advisory risks from the latest independent implementation review. */
-  majorRisks?: Array<{ severity: string; category: string; message: string; location?: string }>;
+  majorRisks?: Array<{ severity: string; category: string; message: string; relation: unknown }>;
   /** Verification gaps identified by the latest independent implementation review. */
   missingVerification?: string[];
   /** Scope creep observations identified by the latest independent implementation review. */
@@ -169,7 +170,7 @@ function buildFindingGroups(
     severity: string;
     category: string;
     message: string;
-    location?: string;
+    relation: unknown;
   }>,
 ): FindingGroup[] {
   const bySeverity = new Map<string, FindingItem[]>();
@@ -178,7 +179,7 @@ function buildFindingGroups(
     items.push({
       category: f.category,
       message: f.message,
-      ...(f.location ? { location: f.location } : {}),
+      relation: formatFindingRelation(f.relation),
     });
     bySeverity.set(f.severity, items);
   }
@@ -233,7 +234,7 @@ function appendAdvisoryFindingsSections(
     const items: FindingItem[] = input.majorRisks.map((finding) => ({
       category: finding.category,
       message: finding.message,
-      ...(finding.location ? { location: finding.location } : {}),
+      relation: formatFindingRelation(finding.relation),
     }));
     const groups: FindingGroup[] = [{ severity: 'major', label: 'Major Risks', items }];
     sections.push({ kind: 'findings', heading: 'Reviewer Findings', groups });

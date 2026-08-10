@@ -210,7 +210,11 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
             blockedCode: null,
             fulfilledAt: null,
             consumedAt: null,
-            reviewedFileScope: { kind: 'files' as const, paths: ['docs/test.md'] },
+            reviewSubjectScope: {
+              kind: 'repository_change',
+              paths: ['docs/test.md'],
+              revisions: ['base', 'head'],
+            },
           },
         ],
         invocations: [],
@@ -435,7 +439,11 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
     // Call 1: content-aware /review with a BRANCH reference (the reported failing
     // invocation was `/review branch=feature/add-due-date`) -> CONTENT_ANALYSIS_REQUIRED.
     const call1Raw = await review.execute(
-      { branch: 'feature-add-due-date', inputOrigin: 'branch' },
+      {
+        branch: 'feature-add-due-date',
+        inputOrigin: 'branch',
+        targetPaths: ['docs/test.md'],
+      },
       ctx,
     );
     const call1 = JSON.parse(String(call1Raw)) as Record<string, unknown>;
@@ -458,6 +466,24 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
       (o) => o.obligationType === 'review' && o.status === 'pending',
     );
     expect(pendingAfterCall1.length, 'pending review obligation after Call 1').toBe(1);
+    await writeState(sessDir, {
+      ...afterCall1!,
+      reviewAssurance: {
+        ...afterCall1!.reviewAssurance!,
+        obligations: afterCall1!.reviewAssurance!.obligations.map((obligation) =>
+          obligation.obligationId === obligationId
+            ? {
+                ...obligation,
+                reviewSubjectScope: {
+                  kind: 'repository_change' as const,
+                  paths: ['docs/test.md'],
+                  revisions: ['base', 'head'],
+                },
+              }
+            : obligation,
+        ),
+      },
+    });
 
     const hooks = await FlowGuardAuditPlugin({
       project: {} as unknown,
@@ -528,6 +554,15 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
               category: 'correctness',
               message: 'The changed request is not propagated to its service.',
               location: 'src/outside-diff.ts',
+              relation: {
+                subjectAnchors: [
+                  {
+                    kind: 'repository_location',
+                    location: { path: 'src/outside-diff.ts', revision: 'head' },
+                  },
+                ],
+                evidenceLocations: [],
+              },
             },
           ],
           majorRisks: [],
@@ -589,6 +624,7 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
         args: {
           branch: 'feature-add-due-date',
           inputOrigin: 'branch',
+          targetPaths: ['docs/test.md'],
           reviewObligationId: obligationId,
           reviewVerdict: 'changes_requested',
         },
@@ -678,7 +714,11 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
             status: 'pending',
             fulfilledAt: null,
             consumedAt: null,
-            reviewedFileScope: { kind: 'files' as const, paths: ['docs/test.md'] },
+            reviewSubjectScope: {
+              kind: 'repository_change',
+              paths: ['docs/test.md'],
+              revisions: ['base', 'head'],
+            },
           },
         ],
       },
@@ -697,6 +737,7 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
           {
             branch: 'feature-add-due-date',
             inputOrigin: 'branch',
+            targetPaths: ['docs/test.md'],
             reviewObligationId: obligationId,
             reviewVerdict: 'changes_requested',
           },

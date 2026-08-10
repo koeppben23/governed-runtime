@@ -628,7 +628,17 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
       overallVerdict: 'accept',
       blockingIssues: [],
       majorRisks: [
-        { severity: 'minor', category: 'quality', message: 'Consider adding more tests' },
+        {
+          severity: 'minor',
+          category: 'quality',
+          message: 'Consider adding more tests',
+          relation: {
+            subjectAnchors: [
+              { kind: 'repository_location', location: { path: 'src/foo.ts', revision: 'head' } },
+            ],
+            evidenceLocations: [],
+          },
+        },
       ],
       missingVerification: ['Integration test coverage'],
       scopeCreep: [],

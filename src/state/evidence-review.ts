@@ -7,6 +7,7 @@
  */
 
 import { z } from 'zod';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { REVIEWER_SUBAGENT_TYPE, REVIEW_REPORT_SCHEMA_ID } from './evidence-identifiers.js';
 import { assuranceSchema } from './evidence-assurance-internal.js';
 import {
@@ -88,18 +89,56 @@ export const CompletenessReportSchema = z.object({
 // ─── Independent Review Findings ───────────────────────────────────────────────
 
 /**
- * Single finding from an independent review.
+ * Normalize a repository-relative POSIX path without allowing ambiguous or
+ * escaping path forms. The schema below is the runtime gate for untrusted data.
  */
-export const Finding = z
+export function normalizeRepositoryPath(value: string): string | undefined {
+  const path = value.trim();
+  if (
+    path.length === 0 ||
+    path.startsWith('/') ||
+    /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(path) ||
+    path.includes('\\') ||
+    path.includes('\0')
+  ) {
+    return undefined;
+  }
+  const resolved: string[] = [];
+  for (const segment of path.split('/')) {
+    if (segment.length === 0 || segment === '.') continue;
+    if (segment === '..') {
+      if (resolved.length === 0) return undefined;
+      resolved.pop();
+      continue;
+    }
+    resolved.push(segment);
+  }
+  return resolved.length > 0 ? resolved.join('/') : undefined;
+}
+
+/** Strict, normalized repository-relative path used by review anchors and scopes. */
+export const RepositoryPathSchema = z.string().transform((value, context) => {
+  const normalized = normalizeRepositoryPath(value);
+  if (normalized !== undefined) return normalized;
+  context.addIssue({ code: 'custom', message: 'Expected a repository-relative POSIX path' });
+  return z.NEVER;
+});
+export type RepositoryPath = z.infer<typeof RepositoryPathSchema>;
+
+/** A repository location at the frozen review base or head. */
+export const RepositoryLocation = z
   .object({
-    severity: z.enum(['critical', 'major', 'minor']),
-    category: z.enum(['completeness', 'correctness', 'feasibility', 'risk', 'quality']),
-    message: z.string(),
-    location: z.string().optional(),
-    findingId: z.string().uuid().optional(),
+    path: RepositoryPathSchema,
+    revision: z.enum(['base', 'head']),
+    line: z.number().int().positive().optional(),
+    endLine: z.number().int().positive().optional(),
+  })
+  .refine(({ line, endLine }) => endLine === undefined || (line !== undefined && endLine >= line), {
+    message: 'endLine must not precede line',
+    path: ['endLine'],
   })
   .readonly();
-export type Finding = z.infer<typeof Finding>;
+export type RepositoryLocation = z.infer<typeof RepositoryLocation>;
 
 /** A deterministic Markdown heading path, including presentation-only text. */
 export const MarkdownSectionPath = z
@@ -113,6 +152,81 @@ export const MarkdownSectionPath = z
   .min(1)
   .readonly();
 export type MarkdownSectionPath = z.infer<typeof MarkdownSectionPath>;
+
+/** A digest-bound anchor within a structured artifact section. */
+export const ArtifactSectionAnchor = z
+  .object({
+    kind: z.literal('artifact_section'),
+    artifactKind: z.enum(['plan', 'adr']),
+    artifactDigest: z.string().min(1),
+    sectionPath: MarkdownSectionPath,
+  })
+  .readonly();
+export type ArtifactSectionAnchor = z.infer<typeof ArtifactSectionAnchor>;
+
+export const RepositoryLocationAnchor = z
+  .object({
+    kind: z.literal('repository_location'),
+    location: RepositoryLocation,
+  })
+  .readonly();
+export type RepositoryLocationAnchor = z.infer<typeof RepositoryLocationAnchor>;
+
+/** A structured target or evidence anchor for a review finding. */
+export const ReviewSubjectAnchor = z.discriminatedUnion('kind', [
+  RepositoryLocationAnchor,
+  ArtifactSectionAnchor,
+]);
+export type ReviewSubjectAnchor = z.infer<typeof ReviewSubjectAnchor>;
+
+/** Required relation between the reviewed subject and the evidence for a finding. */
+export const FindingRelation = z
+  .object({
+    subjectAnchors: z.array(ReviewSubjectAnchor).min(1).readonly(),
+    evidenceLocations: z.array(RepositoryLocation).readonly(),
+  })
+  .superRefine((relation, context) => {
+    const duplicate = (items: readonly unknown[]) => {
+      const seen = new Set<string>();
+      return items.some((item) => {
+        const key = canonicalJsonStringify(item);
+        if (seen.has(key)) return true;
+        seen.add(key);
+        return false;
+      });
+    };
+    if (duplicate(relation.subjectAnchors)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['subjectAnchors'],
+        message: 'Duplicate subject anchor',
+      });
+    }
+    if (duplicate(relation.evidenceLocations)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['evidenceLocations'],
+        message: 'Duplicate evidence location',
+      });
+    }
+  })
+  .readonly();
+export type FindingRelation = z.infer<typeof FindingRelation>;
+
+/**
+ * Single finding from an independent review. Both the affected subject and its
+ * supporting evidence are structured, rather than inferred from free text.
+ */
+export const Finding = z
+  .object({
+    severity: z.enum(['critical', 'major', 'minor']),
+    category: z.enum(['completeness', 'correctness', 'feasibility', 'risk', 'quality']),
+    message: z.string(),
+    relation: FindingRelation,
+    findingId: z.string().uuid().optional(),
+  })
+  .readonly();
+export type Finding = z.infer<typeof Finding>;
 
 /** Digest-bound reference to a Plan or ADR section excerpt. */
 export const PlanAdrSectionRef = z
@@ -383,6 +497,39 @@ export type ReviewProfileSource = z.infer<typeof ReviewProfileSource>;
 export const ReviewInputFingerprintVersion = z.enum(['v1', 'v2']);
 export type ReviewInputFingerprintVersion = z.infer<typeof ReviewInputFingerprintVersion>;
 
+/** Frozen, structured subject coverage for a review obligation. */
+export const ReviewSubjectScope = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('repository_change'),
+      paths: z.array(RepositoryPathSchema).min(1).readonly(),
+      revisions: z
+        .array(z.enum(['base', 'head']))
+        .min(1)
+        .readonly(),
+    })
+    .readonly(),
+  z
+    .object({
+      kind: z.literal('artifact'),
+      artifact: z
+        .object({
+          kind: z.enum(['plan', 'adr']),
+          digest: z.string().min(1),
+          sectionPaths: z.array(MarkdownSectionPath).min(1).readonly(),
+        })
+        .readonly(),
+    })
+    .readonly(),
+  z
+    .object({
+      kind: z.literal('unavailable'),
+      reason: z.string().min(1),
+    })
+    .readonly(),
+]);
+export type ReviewSubjectScope = z.infer<typeof ReviewSubjectScope>;
+
 /**
  * P35 strict obligation record.
  * Exactly one independent review invocation must fulfill each obligation.
@@ -439,39 +586,8 @@ export const ReviewObligation = z.object({
   attemptIds: z.array(z.string().uuid()).optional(),
   /** Optional metadata, e.g. input fingerprint for standalone /review obligations. */
   metadata: z.record(z.string(), z.unknown()).optional(),
-  /**
-   * Frozen file scope for this obligation.
-   *
-   * `kind: 'files'`     — concrete set of file paths the reviewer was issued.
-   * `kind: 'not_applicable'` — review context has no file scope (ADR, plan text,
-   *    architecture section).
-   * `kind: 'unavailable'` — scope could not be resolved for a file-backed review.
-   *
-   * Absence of the field (legacy obligations persisted before this type) is
-   * treated as `unavailable`; consumers fail closed.
-   */
-  reviewedFileScope: z
-    .discriminatedUnion('kind', [
-      z
-        .object({
-          kind: z.literal('files'),
-          paths: z.array(z.string().min(1)).readonly(),
-        })
-        .readonly(),
-      z
-        .object({
-          kind: z.literal('not_applicable'),
-          reason: z.string().min(1),
-        })
-        .readonly(),
-      z
-        .object({
-          kind: z.literal('unavailable'),
-          reason: z.string().min(1),
-        })
-        .readonly(),
-    ])
-    .optional(),
+  /** Frozen subject coverage. A review without a subject is not bindable. */
+  reviewSubjectScope: ReviewSubjectScope,
 });
 export type ReviewObligation = z.infer<typeof ReviewObligation>;
 
@@ -597,16 +713,6 @@ export const ReviewDecision = z
   .readonly();
 export type ReviewDecision = z.infer<typeof ReviewDecision>;
 
-// ─── Review Report (Standalone Compliance Artifact) ────────────────────────────
-
-/**
- * Standalone review report — written as a separate file, NOT embedded in state.
- * Own schema version for independent evolution.
- * Generated by /review (read-only, always available).
- *
- * Includes the evidence completeness matrix as a canonical field.
- * The ExtendedReviewReport interface is removed in PR-C; completeness lives in the base schema.
- */
 export const ReviewReport = z.object({
   kind: z.never().optional(),
   schemaVersion: z.literal(REVIEW_REPORT_SCHEMA_ID),

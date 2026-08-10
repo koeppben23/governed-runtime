@@ -291,6 +291,16 @@ describe('review (standalone flow)', () => {
   // toolObligationId is required (schema demands it after P2 obligation binding);
   // callers that need the real obligation UUID should create an obligation first
   // and pass the returned UUID to this helper.
+  const REVIEW_RELATION = {
+    subjectAnchors: [
+      {
+        kind: 'repository_location' as const,
+        location: { path: 'docs/test.md', revision: 'head' },
+      },
+    ],
+    evidenceLocations: [],
+  };
+
   function buildAnalysisFindings(
     overallVerdict: 'accept' | 'changes_requested',
     toolObligationId?: string,
@@ -302,6 +312,7 @@ describe('review (standalone flow)', () => {
               severity: 'major' as const,
               category: 'risk' as const,
               message: 'Critical security flaw in authentication flow',
+              relation: REVIEW_RELATION,
             },
           ]
         : [];
@@ -655,6 +666,7 @@ describe('review (standalone flow)', () => {
             category: 'quality' as const,
             message: 'stale comment in test',
             location: 'src/test/TaskControllerTest.java:108',
+            relation: REVIEW_RELATION,
           },
         ],
         majorRisks: [],
@@ -1149,6 +1161,7 @@ describe('review (standalone flow)', () => {
               severity: 'critical' as const,
               category: 'correctness' as const,
               message: 'Logic error in token refresh',
+              relation: REVIEW_RELATION,
             },
           ],
           majorRisks: [
@@ -1156,6 +1169,7 @@ describe('review (standalone flow)', () => {
               severity: 'major' as const,
               category: 'risk' as const,
               message: 'Race condition in cache invalidation',
+              relation: REVIEW_RELATION,
             },
           ],
           missingVerification: ['no integration test for the new error path'],
@@ -1479,6 +1493,11 @@ describe('review (standalone flow)', () => {
           blockedCode: null,
           fulfilledAt: new Date().toISOString(),
           consumedAt: null,
+          reviewSubjectScope: {
+            kind: 'repository_change' as const,
+            paths: ['src/foo.ts'],
+            revisions: ['base', 'head'] as const,
+          },
         };
         const withObligation = {
           ...assurance,

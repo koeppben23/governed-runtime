@@ -297,6 +297,15 @@ describe('review', () => {
             severity: 'major' as const,
             category: 'correctness',
             message: 'The supplied diff needs follow-up review evidence.',
+            relation: {
+              subjectAnchors: [
+                {
+                  kind: 'repository_location' as const,
+                  location: { path: 'docs/test.md', revision: 'head' },
+                },
+              ],
+              evidenceLocations: [],
+            },
           },
         ],
         missingVerification: [],

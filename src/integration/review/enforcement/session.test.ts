@@ -695,6 +695,11 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
             blockedCode: null,
             fulfilledAt: null,
             consumedAt: null,
+            reviewSubjectScope: {
+              kind: 'repository_change' as const,
+              paths: ['src/foo.ts'],
+              revisions: ['base', 'head'] as const,
+            },
           },
         ],
         invocations: [],
@@ -735,6 +740,11 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
             blockedCode: null,
             fulfilledAt: null,
             consumedAt: null,
+            reviewSubjectScope: {
+              kind: 'repository_change' as const,
+              paths: ['src/foo.ts'],
+              revisions: ['base', 'head'] as const,
+            },
           },
         ],
         invocations: [],

@@ -314,7 +314,11 @@ function planStateWithEvidence(
           blockedCode: null,
           fulfilledAt: now,
           consumedAt: null,
-          reviewedFileScope: { kind: 'files' as const, paths: [] as readonly string[] },
+          reviewSubjectScope: {
+            kind: 'repository_change',
+            paths: ['src/foo.ts'],
+            revisions: ['base', 'head'],
+          },
         },
       ],
       invocations: [
@@ -393,7 +397,17 @@ describe('BUG-17: plan evidence-first resolution', () => {
     // closed at evidence resolution and MUST NOT advance to PLAN_REVIEW or
     // persist any converged state.
     mocks.state = planStateWithEvidence('accept', [
-      { severity: 'minor', category: 'quality', message: 'stale comment' },
+      {
+        severity: 'minor',
+        category: 'quality',
+        message: 'stale comment',
+        relation: {
+          subjectAnchors: [
+            { kind: 'repository_location', location: { path: 'src/foo.ts', revision: 'head' } },
+          ],
+          evidenceLocations: [],
+        },
+      },
     ]);
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     mocks.resolvePolicyFromState.mockReturnValue({
@@ -717,7 +731,11 @@ describe('BUG-17: plan evidence-first resolution', () => {
             blockedCode: null,
             fulfilledAt: now,
             consumedAt: null,
-            reviewedFileScope: { kind: 'files' as const, paths: [] as readonly string[] },
+            reviewSubjectScope: {
+              kind: 'repository_change',
+              paths: ['src/foo.ts'],
+              revisions: ['base', 'head'],
+            },
           },
         ],
         invocations: [manualAttestedInvocation({ obligationType: 'plan', findings })],

@@ -587,7 +587,17 @@ describe('BUG-20: attestation-free fallback binding', () => {
       overallVerdict: 'accept',
       blockingIssues: [],
       majorRisks: [
-        { severity: 'major', category: 'risk', message: 'No error handling for network failures' },
+        {
+          severity: 'major',
+          category: 'risk',
+          message: 'No error handling for network failures',
+          relation: {
+            subjectAnchors: [
+              { kind: 'repository_location', location: { path: 'src/foo.ts', revision: 'head' } },
+            ],
+            evidenceLocations: [],
+          },
+        },
       ],
       missingVerification: ['Unit tests for auth flow'],
       scopeCreep: [],

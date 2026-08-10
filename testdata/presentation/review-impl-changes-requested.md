@@ -14,10 +14,10 @@ Diagnostic: `flowguard_status({ proofGraph: true })`
 ## Findings
 
 ### Critical (1)
-- **Correctness:** Missing null check `src/payments/validate.ts`
+- **Correctness:** Missing null check `{"evidenceLocations":["validate"],"subjectAnchors":["payments"]}`
 
 ### Major (1)
-- **Quality:** Missing test coverage `src/payments/routes.ts`
+- **Quality:** Missing test coverage `{"evidenceLocations":["routes"],"subjectAnchors":["payments"]}`
 
 ## Completeness
 

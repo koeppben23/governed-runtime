@@ -329,7 +329,11 @@ function implStateWithEvidence(
           blockedCode: null,
           fulfilledAt: now,
           consumedAt: null,
-          reviewedFileScope: { kind: 'files' as const, paths: [] as readonly string[] },
+          reviewSubjectScope: {
+            kind: 'repository_change',
+            paths: ['src/foo.ts'],
+            revisions: ['base', 'head'],
+          },
         },
       ],
       invocations: [
@@ -408,7 +412,17 @@ describe('BUG-17: implement evidence-first resolution', () => {
     // closed at the host-task resolution boundary and MUST NOT advance the
     // phase or persist any converged state.
     mocks.state = implStateWithEvidence('accept', [
-      { severity: 'minor', category: 'quality', message: 'stale comment' },
+      {
+        severity: 'minor',
+        category: 'quality',
+        message: 'stale comment',
+        relation: {
+          subjectAnchors: [
+            { kind: 'repository_location', location: { path: 'src/foo.ts', revision: 'head' } },
+          ],
+          evidenceLocations: [],
+        },
+      },
     ]);
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     mocks.resolvePolicyFromState.mockReturnValue({
@@ -635,7 +649,11 @@ describe('BUG-17: implement evidence-first resolution', () => {
             blockedCode: null,
             fulfilledAt: now,
             consumedAt: null,
-            reviewedFileScope: { kind: 'files' as const, paths: [] as readonly string[] },
+            reviewSubjectScope: {
+              kind: 'repository_change',
+              paths: ['src/foo.ts'],
+              revisions: ['base', 'head'],
+            },
           },
         ],
         invocations: [manualAttestedInvocation({ obligationType: 'implement', findings })],

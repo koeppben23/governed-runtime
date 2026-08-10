@@ -24,7 +24,7 @@ const baseInput = {
     severity: string;
     category: string;
     message: string;
-    location?: string;
+    relation: unknown;
   }>,
   completeness: {
     overallComplete: true,
@@ -57,6 +57,7 @@ const baseInput = {
     visibility: 'recommended' as const,
   },
 };
+const relation = { evidenceLocations: ['evidence'], subjectAnchors: ['subject'] };
 function buildReviewReportCard(
   input: Omit<ReviewReportCardInput, 'proofSummary' | 'productNextAction' | 'conclusionAction'> &
     Partial<Pick<ReviewReportCardInput, 'proofSummary' | 'productNextAction' | 'conclusionAction'>>,
@@ -101,10 +102,25 @@ describe('buildReviewReportCard', () => {
       ...baseInput,
       overallStatus: 'issues',
       findings: [
-        { severity: 'critical', category: 'risk', message: 'SQL injection vulnerability' },
-        { severity: 'major', category: 'correctness', message: 'Logic error in token refresh' },
-        { severity: 'warning', category: 'quality', message: 'Unused import' },
-        { severity: 'info', category: 'unknown', message: 'Load test results unavailable' },
+        {
+          severity: 'critical',
+          category: 'risk',
+          message: 'SQL injection vulnerability',
+          relation,
+        },
+        {
+          severity: 'major',
+          category: 'correctness',
+          message: 'Logic error in token refresh',
+          relation,
+        },
+        { severity: 'warning', category: 'quality', message: 'Unused import', relation },
+        {
+          severity: 'info',
+          category: 'unknown',
+          message: 'Load test results unavailable',
+          relation,
+        },
       ],
     });
     expect(card).toContain('### Critical (1)');
@@ -162,7 +178,7 @@ describe('buildReviewReportCard', () => {
   it('shows action follow-up when critical/major findings present', () => {
     const card = buildReviewReportCard({
       ...baseInput,
-      findings: [{ severity: 'critical', category: 'risk', message: 'SQL injection' }],
+      findings: [{ severity: 'critical', category: 'risk', message: 'SQL injection', relation }],
     });
     expect(card).toContain('Address critical and major findings');
     expect(card).not.toContain('No follow-up required');
@@ -199,13 +215,13 @@ describe('implementation review golden fixtures', () => {
           severity: 'critical',
           category: 'correctness',
           message: 'Missing null check',
-          location: 'src/payments/validate.ts',
+          relation: { evidenceLocations: ['validate'], subjectAnchors: ['payments'] },
         },
         {
           severity: 'major',
           category: 'quality',
           message: 'Missing test coverage',
-          location: 'src/payments/routes.ts',
+          relation: { evidenceLocations: ['routes'], subjectAnchors: ['payments'] },
         },
       ],
       completeness: {
@@ -250,17 +266,19 @@ describe('compliance review golden fixtures', () => {
           severity: 'critical',
           category: 'completeness',
           message: 'Missing evidence',
+          relation,
         },
         {
           severity: 'major',
           category: 'risk',
           message: 'Untracked dependency',
-          location: 'package.json',
+          relation: { evidenceLocations: ['package'], subjectAnchors: ['dependency'] },
         },
         {
           severity: 'warning',
           category: 'quality',
           message: 'Missing changelog entry',
+          relation,
         },
       ],
       completeness: {

@@ -34,7 +34,7 @@ export const REVIEWER_CRITERIA: Record<Exclude<ReviewerPromptType, 'all'>, strin
 - Use categories: "completeness" | "correctness" | "feasibility" | "risk" | "quality".
 - Compliance -> correctness; missing validation -> completeness.
 - Security (as risk): trace user input to sensitive sinks and flag concretely exploitable injection (SQL/command/path/template), authn/authz bypass or privilege escalation, hardcoded secrets or weak crypto, unsafe deserialization/RCE, XSS, and sensitive-data/PII exposure; require a clear attack path and skip theoretical hardening.
-- Scope: review only changed code (flag newly changed files over ~1000 lines); report high-conviction findings with an exact location and concrete remedy, not style preferences.
+- Scope: review only changed code (flag newly changed files over ~1000 lines); report high-conviction findings with structured subject and evidence anchors plus a concrete remedy, not style preferences.
 - Return complete ReviewFindings; do not drop reviewMode, reviewedBy, reviewedAt, attestation, overallVerdict, missingVerification, scopeCreep, or unknowns.
 - Include attestation.toolObligationId exactly as FlowGuard provides it.`,
 };
@@ -70,13 +70,13 @@ You are an independent FlowGuard reviewer. Review falsification-first and return
 
 ## Your Role
 
-Find concrete defects the author missed. Do not rubber-stamp. Every finding needs evidence and a location.
+Find concrete defects the author missed. Do not rubber-stamp. Every finding needs evidence and a structured relation.
 
 ## Review Approach
 
 1. Read the provided material and referenced files.
 2. Ask what would make each claim wrong.
-3. Cite exact files, sections, or lines.
+3. Record exact files, sections, or lines in the finding relation.
 4. Approve only after genuine falsification.
 
 ## Review Criteria
@@ -96,8 +96,8 @@ Your response must conform to this JSON schema. When structured output is active
   "planVersion": <number>,
   "reviewMode": "subagent",
   "overallVerdict": "accept" | "changes_requested" | "unable_to_review",
-  "blockingIssues": [{ "severity": "critical" | "major" | "minor", "category": "completeness" | "correctness" | "feasibility" | "risk" | "quality", "message": "<specific problem>", "location": "<file path, section, or line>" }],
-  "majorRisks": [{ "severity": "critical" | "major" | "minor", "category": "completeness" | "correctness" | "feasibility" | "risk" | "quality", "message": "<specific risk>", "location": "<where it manifests>" }],
+  "blockingIssues": [{ "severity": "critical" | "major" | "minor", "category": "completeness" | "correctness" | "feasibility" | "risk" | "quality", "message": "<specific problem>", "relation": { "subjectAnchors": [<RepositoryLocation | ArtifactAnchor>], "evidenceLocations": [<RepositoryLocation | ArtifactAnchor>] } }],
+  "majorRisks": [{ "severity": "critical" | "major" | "minor", "category": "completeness" | "correctness" | "feasibility" | "risk" | "quality", "message": "<specific risk>", "relation": { "subjectAnchors": [<RepositoryLocation | ArtifactAnchor>], "evidenceLocations": [<RepositoryLocation | ArtifactAnchor>] } }],
   "missingVerification": ["<specific check not run or not provable>"],
   "scopeCreep": ["<specific out-of-scope item>"],
   "unknowns": ["<specific unresolved question>"],
@@ -111,7 +111,7 @@ Your response must conform to this JSON schema. When structured output is active
 - overallVerdict MUST be "changes_requested" whenever blockingIssues is non-empty.
 - overallVerdict MAY be "accept" only if blockingIssues is empty.
 - overallVerdict MAY be "unable_to_review" only under the validity conditions above.
-- Do NOT use "unable_to_review" to avoid producing substantive findings; every finding needs evidence.
+- Do NOT use "unable_to_review" to avoid producing substantive findings; every finding needs evidence and a relation with non-empty subjectAnchors and evidenceLocations.
 - Do NOT accept without reading the artifact; "accept" is a reviewer verdict, not user approval; reviewMode is "subagent".
   - iteration and planVersion are provided in your task prompt. Use exactly those values.
   - Honor the obligation's frozen \`requiredChallengeCount\` and \`requiredChallengeKind\`. Required challenges need matching digest-bound evidence. Implementation challenges with \`fail\` or \`not_verified\` cannot support acceptance. For prior author resolutions, return \`challengeResolutionVerdicts\` with your independent \`resolved\`, \`still_failing\`, or \`not_verified\` verdict; author claims have no acceptance authority.
@@ -127,7 +127,7 @@ Review completion still requires validated, obligation-bound ReviewFindings thro
 
 ## Your Role
 
-Find concrete defects the author missed. Do not rubber-stamp. Every finding needs evidence and a location.
+Find concrete defects the author missed. Do not rubber-stamp. Every finding needs evidence and a structured relation.
 
 ## Review Criteria
 
@@ -148,8 +148,8 @@ flowguard_decision is not independent review evidence. A review-evidence file is
   "planVersion": <number>,
   "reviewMode": "subagent",
   "overallVerdict": "accept" | "changes_requested" | "unable_to_review",
-  "blockingIssues": [{ "severity": "critical" | "major" | "minor", "category": "completeness" | "correctness" | "feasibility" | "risk" | "quality", "message": "<specific problem>", "location": "<file path, section, or line>" }],
-  "majorRisks": [{ "severity": "critical" | "major" | "minor", "category": "completeness" | "correctness" | "feasibility" | "risk" | "quality", "message": "<specific risk>", "location": "<where it manifests>" }],
+  "blockingIssues": [{ "severity": "critical" | "major" | "minor", "category": "completeness" | "correctness" | "feasibility" | "risk" | "quality", "message": "<specific problem>", "relation": { "subjectAnchors": [<RepositoryLocation | ArtifactAnchor>], "evidenceLocations": [<RepositoryLocation | ArtifactAnchor>] } }],
+  "majorRisks": [{ "severity": "critical" | "major" | "minor", "category": "completeness" | "correctness" | "feasibility" | "risk" | "quality", "message": "<specific risk>", "relation": { "subjectAnchors": [<RepositoryLocation | ArtifactAnchor>], "evidenceLocations": [<RepositoryLocation | ArtifactAnchor>] } }],
   "missingVerification": ["<specific check not run or not provable>"],
   "scopeCreep": ["<specific out-of-scope item>"],
   "unknowns": ["<specific unresolved question>"],

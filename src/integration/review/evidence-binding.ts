@@ -28,7 +28,7 @@ import {
 import {
   validateReviewFindingsConsistency,
   validateReviewFindingsScope,
-  type FindingWithLocation,
+  type FindingWithRelation,
 } from './enforcement/findings-consistency.js';
 import {
   ReviewActorInfo,
@@ -664,34 +664,44 @@ function prepareBindableFindings(input: {
   }
   const contractCheck = checkChallengeContract(findings, obligation, childSessionId);
   if (contractCheck) return contractCheck;
-  const locationFindings: FindingWithLocation[] = [];
+  const scopeResult = validateReviewFindingsScope({
+    findings: relationFindings(findings),
+    reviewSubjectScope: obligation.reviewSubjectScope,
+  });
+  if (!scopeResult.ok) return scopeFailure(scopeResult, childSessionId, obligation.obligationId);
+  return { findings };
+}
+
+function relationFindings(findings: Record<string, unknown>): FindingWithRelation[] {
+  const relationFindings: FindingWithRelation[] = [];
   [findings.blockingIssues, findings.majorRisks].forEach((arr) => {
     if (Array.isArray(arr))
       arr.forEach((item) => {
-        if (item && typeof item === 'object') locationFindings.push(item as FindingWithLocation);
+        if (item && typeof item === 'object') relationFindings.push(item as FindingWithRelation);
       });
   });
-  const scopeResult = validateReviewFindingsScope({
-    findings: locationFindings,
-    reviewedFileScope: obligation.reviewedFileScope,
-  });
-  if (!scopeResult.ok) {
-    const outOfScope = scopeResult.code === 'REVIEW_FINDING_OUT_OF_SCOPE';
-    return {
-      evidence: null,
-      bindOutcome: outOfScope ? 'review_finding_out_of_scope' : 'review_finding_scope_unverifiable',
-      diagnostic: {
-        childSessionId,
-        obligationId: obligation.obligationId,
-        code: scopeResult.code,
-        ...scopeResult.details,
-        message: outOfScope
-          ? 'Reviewer findings reference paths outside the reviewed file scope.'
-          : 'Review file scope could not be verified for this obligation.',
-      },
-    };
-  }
-  return { findings };
+  return relationFindings;
+}
+
+function scopeFailure(
+  scopeResult: Exclude<ReturnType<typeof validateReviewFindingsScope>, { readonly ok: true }>,
+  childSessionId: string,
+  obligationId: string,
+): HostTaskBindResult {
+  const outOfScope = scopeResult.code === 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE';
+  return {
+    evidence: null,
+    bindOutcome: outOfScope ? 'review_finding_out_of_scope' : 'review_finding_scope_unverifiable',
+    diagnostic: {
+      childSessionId,
+      obligationId,
+      code: scopeResult.code,
+      ...scopeResult.details,
+      message: outOfScope
+        ? 'Reviewer findings do not relate to the reviewed subject scope.'
+        : 'Review finding relation could not be verified for this obligation.',
+    },
+  };
 }
 
 function validateNormalizedFindings(
@@ -717,7 +727,6 @@ function validateNormalizedFindings(
   }
   return null;
 }
-
 function checkDuplicateHostTaskEvidence(
   invocations: ReviewInvocationEvidence[],
   obligation: ReviewObligation,

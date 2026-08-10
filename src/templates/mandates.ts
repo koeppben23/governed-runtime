@@ -179,7 +179,7 @@ Use one output contract, scaled by task class:
 For review tasks (any class), include:
 
 - Verdict: \`accept\` or \`changes_requested\`.
-- Findings with: severity, type, location, evidence, impact, and smallest fix.
+- Findings with: severity, type, structured relation, evidence, impact, and smallest fix.
 
 ## 9. Implementation Checklist
 

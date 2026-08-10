@@ -60,6 +60,19 @@ function parseDiagnosticCode(result: string): string | undefined {
   return parsed.diagnostics?.diagnosticCode;
 }
 
+function finding(message: string) {
+  const location = { path: 'src/foo.ts', revision: 'head' as const, line: 1 };
+  return {
+    severity: 'major' as const,
+    category: 'risk' as const,
+    message,
+    relation: {
+      subjectAnchors: [{ kind: 'repository_location' as const, location }],
+      evidenceLocations: [location],
+    },
+  };
+}
+
 /** Subject digest shared by the plan obligation and its reviewer attempt. */
 const ANTI_FORGERY_SUBJECT_DIGEST = 'anti-forgery-plan-subject-digest';
 
@@ -105,7 +118,11 @@ function strictAssuranceFixture(
         blockedCode: null,
         fulfilledAt: new Date().toISOString(),
         consumedAt: null,
-        reviewedFileScope: { kind: 'files' as const, paths: ['src/foo.ts'] },
+        reviewSubjectScope: {
+          kind: 'repository_change',
+          paths: ['src/foo.ts'],
+          revisions: ['base', 'head'],
+        },
       },
     ],
     invocations: [
@@ -748,7 +765,7 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const submittedFindings = strictFindings({
       overallVerdict: 'accept',
       // Different majorRisks array → different hash, same verdict
-      majorRisks: [{ severity: 'major', category: 'risk', message: 'agent-reconstructed' }],
+      majorRisks: [finding('agent-reconstructed')],
     });
     const assurance = strictAssuranceFixture(storedFindings);
     assurance.obligations[0] = {
@@ -859,7 +876,7 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     // Legacy invocation evidence without capturedVerdict → falls back to hash comparison
     const storedFindings = strictFindings();
     const submittedFindings = strictFindings({
-      majorRisks: [{ severity: 'major', category: 'risk', message: 'extra' }],
+      majorRisks: [finding('extra')],
     });
     const assurance = strictAssuranceFixture(storedFindings);
     assurance.obligations[0] = {
@@ -897,7 +914,7 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     // SDK path MUST NOT use verdict-based validation — hash comparison stays
     const storedFindings = strictFindings();
     const submittedFindings = strictFindings({
-      majorRisks: [{ severity: 'major', category: 'risk', message: 'sdk tampered' }],
+      majorRisks: [finding('sdk tampered')],
     });
     const assurance = strictAssuranceFixture(storedFindings);
 

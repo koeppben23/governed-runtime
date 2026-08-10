@@ -331,7 +331,7 @@ function renderFindings(groups: readonly FindingGroup[]): string {
 }
 
 function renderFindingItem(item: FindingItem): string {
-  const loc = item.location ? ` \`${item.location}\`` : '';
+  const loc = item.relation ? ` \`${item.relation}\`` : '';
   return `- **${item.category}:** ${item.message}${loc}`;
 }
 

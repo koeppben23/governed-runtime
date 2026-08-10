@@ -99,6 +99,11 @@ function obligation(
     blockedCode: null,
     fulfilledAt: null,
     consumedAt: null,
+    reviewSubjectScope: {
+      kind: 'repository_change',
+      paths: ['src/foo.ts'],
+      revisions: ['base', 'head'],
+    },
     ...(metadata ? { metadata } : {}),
   };
 }

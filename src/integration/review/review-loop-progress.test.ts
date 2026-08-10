@@ -24,6 +24,19 @@ function makeReview(overrides: Record<string, unknown> = {}): Record<string, unk
   };
 }
 
+function finding(message: string) {
+  const location = { path: 'src/foo.ts', revision: 'head' as const, line: 1 };
+  return {
+    severity: 'major' as const,
+    category: 'risk' as const,
+    message,
+    relation: {
+      subjectAnchors: [{ kind: 'repository_location' as const, location }],
+      evidenceLocations: [location],
+    },
+  };
+}
+
 describe('getReviewLoopProgress', () => {
   describe('HAPPY', () => {
     it('returns progress for PLAN_REVIEW with selfReview', () => {
@@ -119,9 +132,7 @@ describe('getReviewLoopProgress', () => {
             planVersion: 1,
             reviewMode: 'subagent',
             overallVerdict: 'changes_requested',
-            blockingIssues: [
-              { severity: 'major', category: 'risk', message: 'Use prepared statements' },
-            ],
+            blockingIssues: [finding('Use prepared statements')],
             majorRisks: [],
             missingVerification: [],
             scopeCreep: [],
@@ -140,12 +151,7 @@ describe('getReviewLoopProgress', () => {
     });
 
     it('outstandingIssues capped at 3 entries', () => {
-      const issues = [
-        { severity: 'major' as const, category: 'risk' as const, message: 'A' },
-        { severity: 'major' as const, category: 'risk' as const, message: 'B' },
-        { severity: 'major' as const, category: 'risk' as const, message: 'C' },
-        { severity: 'major' as const, category: 'risk' as const, message: 'D' },
-      ];
+      const issues = [finding('A'), finding('B'), finding('C'), finding('D')];
       const state = reviewState('IMPL_REVIEW', {
         implReview: {
           iteration: 1,

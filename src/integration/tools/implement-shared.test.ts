@@ -100,14 +100,26 @@ function makeReviewFindings(overrides: Partial<ReviewFindings> = {}): ReviewFind
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
-    reviewedBy: {
-      actorId: 'reviewer',
-      reviewedAt: '2026-01-01T00:00:00.000Z',
-      reviewMode: 'subagent',
-    },
+    reviewedBy: { sessionId: 'reviewer' },
     reviewedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
-  } as any;
+  };
+}
+
+function finding(
+  overrides: Partial<ReviewFindings['blockingIssues'][number]> = {},
+): ReviewFindings['blockingIssues'][number] {
+  const location = { path: 'src/foo.ts', revision: 'head' as const, line: 1 };
+  return {
+    severity: 'critical',
+    category: 'correctness',
+    message: 'Issue',
+    relation: {
+      subjectAnchors: [{ kind: 'repository_location', location }],
+      evidenceLocations: [location],
+    },
+    ...overrides,
+  };
 }
 
 // ─── nextImplementationReviewIteration ────────────────────────────────────────
@@ -254,14 +266,8 @@ describe('validateImplementSequence', () => {
 describe('normalizeHostFindings', () => {
   it('mints host-assigned findingId on blockingIssues', () => {
     const findings = makeReviewFindings({
-      blockingIssues: [
-        {
-          severity: 'critical' as const,
-          category: 'correctness' as const,
-          message: 'Missing null check',
-        },
-      ],
-    } as any);
+      blockingIssues: [finding({ message: 'Missing null check' })],
+    });
     const result = normalizeHostFindings(findings);
     expect(result.blockingIssues[0]!.findingId).toBeTruthy();
     expect(result.blockingIssues[0]!.findingId).toMatch(/^[a-f0-9-]{36}$/);
@@ -269,25 +275,16 @@ describe('normalizeHostFindings', () => {
 
   it('mints host-assigned findingId on majorRisks', () => {
     const findings = makeReviewFindings({
-      majorRisks: [
-        { severity: 'major' as const, category: 'risk' as const, message: 'Retry untested' },
-      ],
-    } as any);
+      majorRisks: [finding({ severity: 'major', category: 'risk', message: 'Retry untested' })],
+    });
     const result = normalizeHostFindings(findings);
     expect(result.majorRisks[0]!.findingId).toBeTruthy();
   });
 
   it('overwrites reviewer-supplied findingId', () => {
     const findings = makeReviewFindings({
-      blockingIssues: [
-        {
-          severity: 'critical' as const,
-          category: 'correctness' as const,
-          message: 'Issue',
-          findingId: 'reviewer-supplied-bad-uuid',
-        },
-      ],
-    } as any);
+      blockingIssues: [finding({ findingId: 'reviewer-supplied-bad-uuid' })],
+    });
     const result = normalizeHostFindings(findings);
     expect(result.blockingIssues[0]!.findingId).not.toBe('reviewer-supplied-bad-uuid');
     expect(result.blockingIssues[0]!.findingId).toMatch(/^[a-f0-9-]{36}$/);
@@ -296,29 +293,25 @@ describe('normalizeHostFindings', () => {
   it('assigns unique findingId per finding', () => {
     const findings = makeReviewFindings({
       blockingIssues: [
-        { severity: 'critical' as const, category: 'correctness' as const, message: 'Issue A' },
-        { severity: 'major' as const, category: 'completeness' as const, message: 'Issue B' },
+        finding({ message: 'Issue A' }),
+        finding({ severity: 'major', category: 'completeness', message: 'Issue B' }),
       ],
-    } as any);
+    });
     const result = normalizeHostFindings(findings);
     expect(result.blockingIssues[0]!.findingId).not.toBe(result.blockingIssues[1]!.findingId);
   });
 
   it('preserves all non-identity finding fields', () => {
     const findings = makeReviewFindings({
-      blockingIssues: [
-        {
-          severity: 'critical' as const,
-          category: 'correctness' as const,
-          message: 'Issue',
-          location: 'src/foo.ts',
-        },
-      ],
-    } as any);
+      blockingIssues: [finding()],
+    });
     const result = normalizeHostFindings(findings);
     expect(result.blockingIssues[0]!.severity).toBe('critical');
     expect(result.blockingIssues[0]!.category).toBe('correctness');
     expect(result.blockingIssues[0]!.message).toBe('Issue');
-    expect(result.blockingIssues[0]!.location).toBe('src/foo.ts');
+    expect(result.blockingIssues[0]!.relation.subjectAnchors[0]).toMatchObject({
+      kind: 'repository_location',
+      location: { path: 'src/foo.ts' },
+    });
   });
 });

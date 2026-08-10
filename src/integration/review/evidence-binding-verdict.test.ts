@@ -352,7 +352,22 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
       reviewMode: 'subagent' as const,
       overallVerdict: 'accept' as const,
       blockingIssues: [],
-      majorRisks: [{ severity: 'major' as const, category: 'risk', message: 'agent added this' }],
+      majorRisks: [
+        {
+          severity: 'major' as const,
+          category: 'risk',
+          message: 'agent added this',
+          relation: {
+            subjectAnchors: [
+              {
+                kind: 'repository_location',
+                location: { path: 'src/foo.ts', revision: 'head', line: 1 },
+              },
+            ],
+            evidenceLocations: [{ path: 'src/foo.ts', revision: 'head', line: 1 }],
+          },
+        },
+      ],
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],

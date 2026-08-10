@@ -38,6 +38,13 @@ describe('REVIEWER_AGENT template: schema integrity (B1)', () => {
     expect(REVIEWER_AGENT).toMatch(/"reviewedBy":\s*"flowguard-reviewer"/);
   });
 
+  it('requires structured finding relations and omits legacy locations', () => {
+    expect(REVIEWER_AGENT).toContain('"relation"');
+    expect(REVIEWER_AGENT).toContain('"subjectAnchors"');
+    expect(REVIEWER_AGENT).toContain('"evidenceLocations"');
+    expect(REVIEWER_AGENT).not.toContain('"location"');
+  });
+
   it('does not instruct the subagent to use the literal "subagent" as sessionId (B3)', () => {
     expect(REVIEWER_AGENT).not.toMatch(/otherwise\s+'subagent'/);
   });

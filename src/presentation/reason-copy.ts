@@ -122,7 +122,7 @@ export const REASON_COPY: readonly MigratedReasonCopy[] = [
       'The session initiator cannot approve their own work. A different person with reviewer permissions must provide the review decision.',
   },
   {
-    code: 'REVIEW_FINDING_SCOPE_UNVERIFIABLE',
+    code: 'REVIEW_SUBJECT_SCOPE_UNAVAILABLE',
     impact: 'review_required',
     headline: 'The review scope is not verifiable for this obligation',
     explanation:

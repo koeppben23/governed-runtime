@@ -78,6 +78,10 @@ compliance-report flow (READY only). Use `/status` or `/why` instead.
 
 **Important invariant:** Native Claude/Codex reviewer agents are transport/isolation artifacts only. Review completion still requires validated, obligation-bound `ReviewFindings`.
 
+Each submitted finding must include its required structured `relation` with
+non-empty `subjectAnchors` and `evidenceLocations`; legacy `location` text is
+not accepted.
+
 **Common causes:**
 
 1. The reviewer output is not a complete `ReviewFindings` object.
@@ -186,40 +190,42 @@ real, registered reason.
 
 ### Independent Review (subagent)
 
-| Code                                        | Description                                                                   | Solution                                                                                                             |
-| ------------------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `SUBAGENT_REVIEW_NOT_INVOKED`               | L1 — primary agent submitted a verdict without invoking the reviewer subagent | Read the previous tool response and follow the `next` action                                                         |
-| `SUBAGENT_REVIEW_REQUIRED`                  | Content-aware review requires reviewFindings from flowguard-reviewer subagent | Call Task tool with subagent_type: "flowguard-reviewer" and pass output as reviewFindings                            |
-| `SUBAGENT_SESSION_MISMATCH`                 | L2 — `reviewedBy.sessionId` does not match actual subagent session            | Do not edit `reviewedBy.sessionId`; the runtime authoritatively sets it                                              |
-| `SUBAGENT_PROMPT_EMPTY`                     | L3 — subagent prompt < 200 chars                                              | Use the runtime-built review prompt (do not hand-craft)                                                              |
-| `SUBAGENT_PROMPT_MISSING_CONTEXT`           | L3 — prompt missing iteration or planVersion context                          | Use the runtime-built prompt                                                                                         |
-| `SUBAGENT_PROMPT_ARTIFACT_MISSING`          | L3 - prompt ends at the canonical instruction block with nothing appended     | Append the content to review below the final line of `reviewerTaskPrompt`                                            |
-| `SUBAGENT_FINDINGS_VERDICT_MISMATCH`        | L4 — submitted overallVerdict differs from actual subagent verdict            | Submit the findings exactly as returned by the orchestrator                                                          |
-| `SUBAGENT_FINDINGS_ISSUES_MISMATCH`         | L4 — submitted blockingIssues count differs from actual count                 | Submit the findings exactly as returned                                                                              |
-| `SUBAGENT_VERDICT_FINDINGS_INCOHERENT`      | Captured review is self-contradictory: `accept` verdict with blocking issues  | Return a non-accept verdict, or reclassify/resolve the blocking issues, then re-review                               |
-| `SUBAGENT_EVIDENCE_REUSED`                  | One-shot review evidence reused for a second obligation                       | Submit a substantively-new artifact for a fresh review obligation                                                    |
-| `MAX_REVIEW_ITERATIONS_REACHED`             | Retained; no longer emitted — loop force-converges to the review gate         | Use `/review-decision` (approve / request-changes / reject) at the gate                                              |
-| `SUBAGENT_UNABLE_TO_REVIEW`                 | Reviewer declared the artifact unreviewable; obligation consumed              | Address the reviewer's reason or substantially revise; do not retry the same artifact                                |
-| `SUBAGENT_TYPE_UNAUTHORIZED`                | Non-reviewer subagent type blocked by FlowGuard governance (defense-in-depth) | Only `flowguard-reviewer` subagent type is authorized; do not spawn other subagents                                  |
-| `REVIEWER_TASK_REQUIRES_PENDING_OBLIGATION` | Reviewer Task started before pending review obligation (pre-execution block)  | Run `flowguard_plan` or `flowguard_review` first to create a pending review obligation, then start the reviewer Task |
-| `SUBAGENT_CONTEXT_UNVERIFIABLE`             | Strict enforcement cannot validate obligation context from tool output        | Re-run the tool that produced the review obligation                                                                  |
-| `REVIEW_FINDINGS_REQUIRED`                  | Mode B verdict submitted without `reviewFindings`                             | Include the structured `reviewFindings` object                                                                       |
-| `REVIEW_FINDINGS_SESSION_MISMATCH`          | Findings came from a different session than the current FlowGuard session     | Use findings produced for the current session                                                                        |
-| `REVIEW_FINDINGS_HASH_MISMATCH`             | Findings hash does not match the review obligation                            | Re-run the review for the current obligation                                                                         |
-| `REVIEW_FINDING_OUT_OF_SCOPE`               | Reviewer findings reference paths outside the frozen reviewed file scope      | Re-run the review with the correct changed files scope                                                               |
-| `REVIEW_FINDING_SCOPE_UNVERIFIABLE`         | Legacy obligation has no frozen reviewed file scope                           | Re-run the review to create a new obligation with a frozen scope                                                     |
-| `REVIEW_OBLIGATION_NOT_FOUND`               | Review continuation ID is missing, consumed, blocked, or mismatched           | Use the ID from the original `CONTENT_ANALYSIS_REQUIRED` response; otherwise start a fresh `/review`                 |
-| `REVIEW_OBLIGATION_ID_REQUIRED`             | Host-task review verdict was submitted without its obligation ID              | Submit the original content, `reviewObligationId`, and the captured reviewer verdict together                        |
-| `REVIEW_OBLIGATION_AMBIGUOUS`               | More than one active review obligation could receive the submitted verdict    | Select the exact ID from the original `CONTENT_ANALYSIS_REQUIRED` response                                           |
-| `REVIEW_OBLIGATION_INPUT_MISMATCH`          | Review continuation ID does not match the supplied immutable review input     | Reuse the exact branch, PR, URL, text, input origin, and references from the original review                         |
-| `REVIEW_CONTENT_SOURCE_INCOMPLETE`          | `inputOrigin` or `references` declared but no concrete content field provided | Provide `branch=<ref>`, `prNumber=<n>`, `url=<url>`, or non-empty `text`                                             |
-| `REVIEW_SELF_APPROVAL_DENIED`               | Manual-attested findings came from the governed parent session                | Invoke `flowguard-reviewer` in a distinct session                                                                    |
-| `REVIEW_TRANSPORT_EVIDENCE_INVALID`         | External review-evidence transport JSON is malformed or unbindable            | Regenerate evidence with valid obligation-bound `ReviewFindings`                                                     |
-| `REVIEW_ASSURANCE_STATE_UNAVAILABLE`        | Strict review assurance state cannot be read                                  | Re-hydrate; if persistent, restore from archive                                                                      |
-| `REVIEW_ATTEMPT_ID_MISSING`                 | Invocation lacks a persisted attemptId (legacy data)                          | Re-invoke the reviewer subagent for a fresh attempt                                                                  |
-| `REVIEW_ATTEMPT_LINEAGE_UNAVAILABLE`        | Invocation has no attempt lineage; cannot determine which attempt to reject   | Re-invoke the reviewer; the stale invocation is retained for audit                                                   |
-| `REVIEW_ATTEMPT_NOT_FOUND`                  | Attempt referenced by invocation was not found in assurance state             | Verify the attempt exists with flowguard_status; re-invoke reviewer if corrupt                                       |
-| `REVIEW_ASSURANCE_UNAVAILABLE`              | Review assurance state missing; cannot reject an incoherent attempt           | Ensure the session has an active review obligation with an attempt                                                   |
+| Code                                         | Description                                                                   | Solution                                                                                                             |
+| -------------------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `SUBAGENT_REVIEW_NOT_INVOKED`                | L1 — primary agent submitted a verdict without invoking the reviewer subagent | Read the previous tool response and follow the `next` action                                                         |
+| `SUBAGENT_REVIEW_REQUIRED`                   | Content-aware review requires reviewFindings from flowguard-reviewer subagent | Call Task tool with subagent_type: "flowguard-reviewer" and pass output as reviewFindings                            |
+| `SUBAGENT_SESSION_MISMATCH`                  | L2 — `reviewedBy.sessionId` does not match actual subagent session            | Do not edit `reviewedBy.sessionId`; the runtime authoritatively sets it                                              |
+| `SUBAGENT_PROMPT_EMPTY`                      | L3 — subagent prompt < 200 chars                                              | Use the runtime-built review prompt (do not hand-craft)                                                              |
+| `SUBAGENT_PROMPT_MISSING_CONTEXT`            | L3 — prompt missing iteration or planVersion context                          | Use the runtime-built prompt                                                                                         |
+| `SUBAGENT_PROMPT_ARTIFACT_MISSING`           | L3 - prompt ends at the canonical instruction block with nothing appended     | Append the content to review below the final line of `reviewerTaskPrompt`                                            |
+| `SUBAGENT_FINDINGS_VERDICT_MISMATCH`         | L4 — submitted overallVerdict differs from actual subagent verdict            | Submit the findings exactly as returned by the orchestrator                                                          |
+| `SUBAGENT_FINDINGS_ISSUES_MISMATCH`          | L4 — submitted blockingIssues count differs from actual count                 | Submit the findings exactly as returned                                                                              |
+| `SUBAGENT_VERDICT_FINDINGS_INCOHERENT`       | Captured review is self-contradictory: `accept` verdict with blocking issues  | Return a non-accept verdict, or reclassify/resolve the blocking issues, then re-review                               |
+| `SUBAGENT_EVIDENCE_REUSED`                   | One-shot review evidence reused for a second obligation                       | Submit a substantively-new artifact for a fresh review obligation                                                    |
+| `MAX_REVIEW_ITERATIONS_REACHED`              | Retained; no longer emitted — loop force-converges to the review gate         | Use `/review-decision` (approve / request-changes / reject) at the gate                                              |
+| `SUBAGENT_UNABLE_TO_REVIEW`                  | Reviewer declared the artifact unreviewable; obligation consumed              | Address the reviewer's reason or substantially revise; do not retry the same artifact                                |
+| `SUBAGENT_TYPE_UNAUTHORIZED`                 | Non-reviewer subagent type blocked by FlowGuard governance (defense-in-depth) | Only `flowguard-reviewer` subagent type is authorized; do not spawn other subagents                                  |
+| `REVIEWER_TASK_REQUIRES_PENDING_OBLIGATION`  | Reviewer Task started before pending review obligation (pre-execution block)  | Run `flowguard_plan` or `flowguard_review` first to create a pending review obligation, then start the reviewer Task |
+| `SUBAGENT_CONTEXT_UNVERIFIABLE`              | Strict enforcement cannot validate obligation context from tool output        | Re-run the tool that produced the review obligation                                                                  |
+| `REVIEW_FINDINGS_REQUIRED`                   | Mode B verdict submitted without `reviewFindings`                             | Include the structured `reviewFindings` object                                                                       |
+| `REVIEW_FINDINGS_SESSION_MISMATCH`           | Findings came from a different session than the current FlowGuard session     | Use findings produced for the current session                                                                        |
+| `REVIEW_FINDINGS_HASH_MISMATCH`              | Findings hash does not match the review obligation                            | Re-run the review for the current obligation                                                                         |
+| `REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED`     | Reviewer finding has no valid structured subject anchor                       | Anchor the finding to the reviewed change or artifact section                                                        |
+| `REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE` | Reviewer finding does not intersect the frozen reviewed subject               | Anchor the finding to the reviewed change or artifact section                                                        |
+| `REVIEW_REPOSITORY_REVISION_UNAVAILABLE`     | Finding cites a repository revision unavailable to the reviewed subject       | Use only the frozen base or head revision                                                                            |
+| `REVIEW_SUBJECT_SCOPE_UNAVAILABLE`           | Review obligation has no verifiable frozen subject scope                      | Re-run the review after subject scope resolution succeeds                                                            |
+| `REVIEW_OBLIGATION_NOT_FOUND`                | Review continuation ID is missing, consumed, blocked, or mismatched           | Use the ID from the original `CONTENT_ANALYSIS_REQUIRED` response; otherwise start a fresh `/review`                 |
+| `REVIEW_OBLIGATION_ID_REQUIRED`              | Host-task review verdict was submitted without its obligation ID              | Submit the original content, `reviewObligationId`, and the captured reviewer verdict together                        |
+| `REVIEW_OBLIGATION_AMBIGUOUS`                | More than one active review obligation could receive the submitted verdict    | Select the exact ID from the original `CONTENT_ANALYSIS_REQUIRED` response                                           |
+| `REVIEW_OBLIGATION_INPUT_MISMATCH`           | Review continuation ID does not match the supplied immutable review input     | Reuse the exact branch, PR, URL, text, input origin, and references from the original review                         |
+| `REVIEW_CONTENT_SOURCE_INCOMPLETE`           | `inputOrigin` or `references` declared but no concrete content field provided | Provide `branch=<ref>`, `prNumber=<n>`, `url=<url>`, or non-empty `text`                                             |
+| `REVIEW_SELF_APPROVAL_DENIED`                | Manual-attested findings came from the governed parent session                | Invoke `flowguard-reviewer` in a distinct session                                                                    |
+| `REVIEW_TRANSPORT_EVIDENCE_INVALID`          | External review-evidence transport JSON is malformed or unbindable            | Regenerate evidence with valid obligation-bound `ReviewFindings`                                                     |
+| `REVIEW_ASSURANCE_STATE_UNAVAILABLE`         | Strict review assurance state cannot be read                                  | Re-hydrate; if persistent, restore from archive                                                                      |
+| `REVIEW_ATTEMPT_ID_MISSING`                  | Invocation lacks a persisted attemptId (legacy data)                          | Re-invoke the reviewer subagent for a fresh attempt                                                                  |
+| `REVIEW_ATTEMPT_LINEAGE_UNAVAILABLE`         | Invocation has no attempt lineage; cannot determine which attempt to reject   | Re-invoke the reviewer; the stale invocation is retained for audit                                                   |
+| `REVIEW_ATTEMPT_NOT_FOUND`                   | Attempt referenced by invocation was not found in assurance state             | Verify the attempt exists with flowguard_status; re-invoke reviewer if corrupt                                       |
+| `REVIEW_ASSURANCE_UNAVAILABLE`               | Review assurance state missing; cannot reject an incoherent attempt           | Ensure the session has an active review obligation with an attempt                                                   |
 
 ### Review Envelope Validation
 
@@ -422,8 +428,8 @@ REVIEW_ASSURANCE_UNAVAILABLE
 REVIEW_CARD_ARTIFACT_IMMUTABLE
 REVIEW_CARD_ARTIFACT_WRITE_FAILED
 REVIEW_CONTENT_SOURCE_INCOMPLETE
-REVIEW_FINDING_OUT_OF_SCOPE
-REVIEW_FINDING_SCOPE_UNVERIFIABLE
+REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE
+REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED
 REVIEW_FINDINGS_HASH_MISMATCH
 REVIEW_FINDINGS_REQUIRED
 REVIEW_FINDINGS_SESSION_MISMATCH
@@ -435,7 +441,9 @@ REVIEW_OBLIGATION_INPUT_MISMATCH
 REVIEW_OBLIGATION_NOT_FOUND
 REVIEW_OBLIGATION_UNRESOLVED
 REVIEW_PLAN_VERSION_MISMATCH
+REVIEW_REPOSITORY_REVISION_UNAVAILABLE
 REVIEW_SELF_APPROVAL_DENIED
+REVIEW_SUBJECT_SCOPE_UNAVAILABLE
 REVIEW_TRANSPORT_EVIDENCE_INVALID
 REVIEWER_INVOCATION_EXHAUSTED
 REVIEWER_TASK_REQUIRES_PENDING_OBLIGATION
@@ -526,7 +534,7 @@ canonical and additive: `message` is the interpolated registry message and
 | `VALIDATION_SUBJECT_CHANGED`            | The validation subject changed while checks were running                        | The plan or implementation under validation changed during the check run, so the results cannot be bound to a stable subject digest. Re-run the check against the current subject.          |
 | `VERIFICATION_SUBJECT_CHANGED`          | The execution subject changed during verification                               | The execution subject changed during the verification phase, so evidence cannot be bound to a stable subject. Re-capture discovery and re-execute verification.                             |
 | `FOUR_EYES_ACTOR_MATCH`                 | Four-eyes review required: a different reviewer must approve                    | The session initiator cannot approve their own work. A different person with reviewer permissions must provide the review decision.                                                         |
-| `REVIEW_FINDING_SCOPE_UNVERIFIABLE`     | The review scope is not verifiable for this obligation                          | The review obligation has no frozen reviewed-file scope, so scope verification is unavailable. Re-run the review to create an obligation with a verifiable frozen scope.                    |
+| `REVIEW_SUBJECT_SCOPE_UNAVAILABLE`      | The review subject scope is not verifiable for this obligation                  | The review obligation has no frozen repository or artifact subject scope. Re-run the review after subject scope resolution succeeds.                                                        |
 | `DISCOVERY_DRIFT_BLOCKED`               | Discovery drift blocks mutating tools                                           | The discovery surface drifted from the persisted binding and the onDrift policy blocks mutating tools. Reconcile drift before continuing.                                                   |
 | `DISCOVERY_HEALTH_UNAVAILABLE`          | Discovery evidence is unavailable; mutating tools are blocked                   | Policy requires healthy Discovery before mutating tools may run. Restore Discovery evidence and run hydration to re-establish health.                                                       |
 | `DISCOVERY_HEALTH_DEGRADED`             | Discovery is degraded; mutating tools are blocked                               | Discovery is available but degraded, and the onDegraded policy blocks mutating tools. Resolve the degraded collectors and re-run hydration.                                                 |

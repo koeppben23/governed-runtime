@@ -31,7 +31,7 @@ import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js
 import { validateChallengeConsistency } from '../../review/enforcement/challenge-consistency.js';
 import {
   validateReviewFindingsScope,
-  type FindingWithLocation,
+  type FindingWithRelation,
 } from '../../review/enforcement/findings-consistency.js';
 import { collectPreviouslyUsedChallengeIds } from '../../review/challenge-history.js';
 import { buildHostTaskChallengeContract } from '../../review/host-task-policy.js';
@@ -659,22 +659,22 @@ export function validateSubmittedReviewFindings(
     );
   }
 
-  const scopeLocations: FindingWithLocation[] = [];
+  const scopeRelations: FindingWithRelation[] = [];
   [findings.blockingIssues, findings.majorRisks].forEach((arr) => {
     if (Array.isArray(arr))
       arr.forEach((item) => {
-        if (item && typeof item === 'object') scopeLocations.push(item as FindingWithLocation);
+        if (item && typeof item === 'object') scopeRelations.push(item as FindingWithRelation);
       });
   });
   const scopeResult = validateReviewFindingsScope({
-    findings: scopeLocations,
-    reviewedFileScope: obligation.reviewedFileScope,
+    findings: scopeRelations,
+    reviewSubjectScope: obligation.reviewSubjectScope,
   });
   if (!scopeResult.ok) {
     return formatSubagentReviewNotInvoked(
-      scopeResult.code === 'REVIEW_FINDING_OUT_OF_SCOPE'
-        ? `Reviewer findings reference paths outside the reviewed file scope: ${scopeResult.details.outOfScopePaths.join(', ')}`
-        : `Review file scope could not be verified for obligation ${obligation.obligationId}`,
+      scopeResult.code === 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE'
+        ? `Reviewer findings do not relate to the reviewed subject scope at indexes: ${scopeResult.details.outOfScopeFindingIndexes.join(', ')}`
+        : `Review subject scope could not be verified for obligation ${obligation.obligationId}`,
       obligation.obligationId,
     );
   }
