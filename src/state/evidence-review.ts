@@ -17,6 +17,7 @@ import {
   LoopVerdict,
   ReviewObligationType,
   ReviewObligationStatus,
+  ReviewRepositoryRevisionProvenance as ReviewRepositoryRevisionProvenanceSchema,
   ReviewVerdict,
 } from './evidence-primitives.js';
 import { ActorInfoSchema, DecisionIdentity } from './evidence-identity.js';
@@ -530,6 +531,8 @@ export const ReviewSubjectScope = z.discriminatedUnion('kind', [
 ]);
 export type ReviewSubjectScope = z.infer<typeof ReviewSubjectScope>;
 
+export { ReviewRepositoryRevisionProvenance } from './evidence-primitives.js';
+
 /**
  * P35 strict obligation record.
  * Exactly one independent review invocation must fulfill each obligation.
@@ -588,6 +591,7 @@ export const ReviewObligation = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
   /** Frozen subject coverage. A review without a subject is not bindable. */
   reviewSubjectScope: ReviewSubjectScope,
+  repositoryRevisionProvenance: ReviewRepositoryRevisionProvenanceSchema.optional(),
 });
 export type ReviewObligation = z.infer<typeof ReviewObligation>;
 

@@ -24,7 +24,10 @@ import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { assessMinimumTaskClass, maxTaskClass } from '../phase-tool-gate.js';
 import { challengeKindForObligation } from '../../config/policy-types.js';
 import type { TaskClass } from '../../state/schema.js';
-import type { ReviewSubjectScope } from '../../state/evidence-review.js';
+import type {
+  ReviewRepositoryRevisionProvenance,
+  ReviewSubjectScope,
+} from '../../state/evidence-review.js';
 
 // Static import - mandate content is a constant in ESM
 import { REVIEWER_AGENT } from '../../templates/mandates.js';
@@ -88,6 +91,7 @@ export function createReviewObligation(input: {
   changedFiles?: readonly string[];
   /** Explicit structured subject scope. Absent → derived from changedFiles only. */
   reviewSubjectScope?: ReviewSubjectScope;
+  repositoryRevisionProvenance?: ReviewRepositoryRevisionProvenance;
   /**
    * The author's declared task class. Used as a fail-closed FLOOR on the
    * challenge count so a high-risk change cannot collapse the requirement to 0
@@ -148,6 +152,10 @@ export function createReviewObligation(input: {
     metadata: input.metadata,
     ...(input.fingerprintVersion ? { fingerprintVersion: input.fingerprintVersion } : {}),
     reviewSubjectScope,
+    repositoryRevisionProvenance: input.repositoryRevisionProvenance ?? {
+      kind: 'unavailable',
+      reason: 'repository_revision_not_resolved',
+    },
   };
 }
 
@@ -397,8 +405,7 @@ export function createReviewAttempt(input: {
   };
 }
 
-/**
- * Create an obligation and its initial attempt atomically.
+/** Create an obligation and its initial attempt atomically.
  *
  * The attempt is persisted alongside the obligation at creation time,
  * BEFORE the reviewer subagent is invoked. This satisfies the core

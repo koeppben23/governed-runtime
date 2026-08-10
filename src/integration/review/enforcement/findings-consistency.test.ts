@@ -9,6 +9,9 @@ const REPOSITORY_SCOPE = {
   paths: ['src/foo.ts'],
   revisions: ['base', 'head'] as const,
 };
+const HEAD_SHA = 'a'.repeat(40);
+const BASE_SHA = 'b'.repeat(40);
+const REPOSITORY_PROVENANCE = { kind: 'available' as const, headSha: HEAD_SHA, baseSha: BASE_SHA };
 const repositoryRelation = {
   subjectAnchors: [
     {
@@ -40,8 +43,16 @@ describe('review/enforcement/findings-consistency', () => {
     it('accepts a subject anchor in the repository-change paths and external evidence', () => {
       expect(
         validateReviewFindingsScope({
-          findings: [{ relation: repositoryRelation }],
+          findings: [
+            {
+              relation: {
+                ...repositoryRelation,
+                evidenceLocations: [{ path: 'docs/evidence.md', revision: 'head', line: 2 }],
+              },
+            },
+          ],
           reviewSubjectScope: REPOSITORY_SCOPE,
+          repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
         }),
       ).toEqual({ ok: true });
     });
@@ -62,6 +73,7 @@ describe('review/enforcement/findings-consistency', () => {
           },
         ],
         reviewSubjectScope: REPOSITORY_SCOPE,
+        repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
       });
       expect(result).toMatchObject({
         ok: false,
@@ -102,6 +114,7 @@ describe('review/enforcement/findings-consistency', () => {
               sectionPaths: [validationPath],
             },
           },
+          repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
         }),
       ).toEqual({ ok: true });
     });
@@ -123,7 +136,11 @@ describe('review/enforcement/findings-consistency', () => {
         artifact: { kind: 'plan' as const, digest: 'plan-digest', sectionPaths: [validationPath] },
       };
       expect(
-        validateReviewFindingsScope({ findings: [{ relation }], reviewSubjectScope: scope }),
+        validateReviewFindingsScope({
+          findings: [{ relation }],
+          reviewSubjectScope: scope,
+          repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
+        }),
       ).toMatchObject({
         code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
       });
@@ -134,6 +151,7 @@ describe('review/enforcement/findings-consistency', () => {
             ...scope,
             artifact: { ...scope.artifact, sectionPaths: [validationPath, unitTestsPath] },
           },
+          repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
         }),
       ).toEqual({ ok: true });
     });
@@ -141,8 +159,16 @@ describe('review/enforcement/findings-consistency', () => {
     it('fails closed for unavailable scope', () => {
       expect(
         validateReviewFindingsScope({
-          findings: [{ relation: repositoryRelation }],
+          findings: [
+            {
+              relation: {
+                ...repositoryRelation,
+                evidenceLocations: [{ path: 'docs/evidence.md', revision: 'head', line: 2 }],
+              },
+            },
+          ],
           reviewSubjectScope: { kind: 'unavailable', reason: 'scope lookup failed' },
+          repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
         }),
       ).toMatchObject({ code: 'REVIEW_SUBJECT_SCOPE_UNAVAILABLE' });
     });
@@ -159,6 +185,7 @@ describe('review/enforcement/findings-consistency', () => {
             },
           ],
           reviewSubjectScope: REPOSITORY_SCOPE,
+          repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
         }),
       ).toMatchObject({ code: 'REVIEW_EVIDENCE_LOCATION_INVALID' });
     });
@@ -168,6 +195,7 @@ describe('review/enforcement/findings-consistency', () => {
         validateReviewFindingsScope({
           findings: [{ relation: { ...repositoryRelation, subjectAnchors: [] } }],
           reviewSubjectScope: REPOSITORY_SCOPE,
+          repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
         }),
       ).toMatchObject({ code: 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED' });
       expect(
@@ -183,6 +211,7 @@ describe('review/enforcement/findings-consistency', () => {
             },
           ],
           reviewSubjectScope: REPOSITORY_SCOPE,
+          repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
         }),
       ).toMatchObject({ code: 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED' });
     });
@@ -199,6 +228,43 @@ describe('review/enforcement/findings-consistency', () => {
             },
           ],
           reviewSubjectScope: { ...REPOSITORY_SCOPE, revisions: ['base'] },
+          repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
+        }),
+      ).toMatchObject({ code: 'REVIEW_REPOSITORY_REVISION_UNAVAILABLE' });
+    });
+
+    it('accepts a head location with a frozen head revision', () => {
+      expect(
+        validateReviewFindingsScope({
+          findings: [
+            {
+              relation: {
+                ...repositoryRelation,
+                evidenceLocations: [{ path: 'docs/evidence.md', revision: 'head', line: 2 }],
+              },
+            },
+          ],
+          reviewSubjectScope: REPOSITORY_SCOPE,
+          repositoryRevisionProvenance: { kind: 'available', headSha: HEAD_SHA },
+        }),
+      ).toEqual({ ok: true });
+    });
+
+    it('rejects a base location without a frozen base revision', () => {
+      expect(
+        validateReviewFindingsScope({
+          findings: [{ relation: repositoryRelation }],
+          reviewSubjectScope: REPOSITORY_SCOPE,
+          repositoryRevisionProvenance: { kind: 'available', headSha: HEAD_SHA },
+        }),
+      ).toMatchObject({ code: 'REVIEW_REPOSITORY_REVISION_UNAVAILABLE' });
+    });
+
+    it('rejects repository locations when legacy provenance is absent', () => {
+      expect(
+        validateReviewFindingsScope({
+          findings: [{ relation: repositoryRelation }],
+          reviewSubjectScope: REPOSITORY_SCOPE,
         }),
       ).toMatchObject({ code: 'REVIEW_REPOSITORY_REVISION_UNAVAILABLE' });
     });

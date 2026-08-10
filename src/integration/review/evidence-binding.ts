@@ -664,6 +664,7 @@ function prepareBindableFindings(input: {
   const scopeResult = validateReviewFindingsScope({
     findings: relationFindings(findings),
     reviewSubjectScope: obligation.reviewSubjectScope,
+    repositoryRevisionProvenance: obligation.repositoryRevisionProvenance,
   });
   if (!scopeResult.ok) return scopeFailure(scopeResult, childSessionId, obligation.obligationId);
   return { findings };

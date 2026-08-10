@@ -37,6 +37,7 @@
  */
 
 import { z } from 'zod';
+import { headCommitFull } from '../../adapters/git.js';
 
 import type { ToolDefinition } from './helpers.js';
 import {
@@ -289,17 +290,18 @@ function buildPlanEvidence(
 }
 
 /** Register the plan review obligation and its first attempt, when review applies. */
-function createPlanReviewAttempt(
+async function createPlanReviewAttempt(
   scope: PlanExecutionScope,
   planEvidence: PlanEvidence,
   planVersion: number,
   classificationFiles?: readonly string[],
-): ReturnType<typeof createObligationAndAttempt> | null {
+): Promise<ReturnType<typeof createObligationAndAttempt> | null> {
   if (!scope.reviewPolicy.subagentEnabled) return null;
   const metadata: Record<string, unknown> = {};
   if (classificationFiles && classificationFiles.length > 0) {
     metadata.targetPaths = [...classificationFiles];
   }
+  const headSha = await headCommitFull(scope.wsDir);
   return createObligationAndAttempt(
     scope.state.reviewAssurance,
     {
@@ -314,20 +316,23 @@ function createPlanReviewAttempt(
       changedFiles: classificationFiles,
       claimedTaskClass: scope.state.claimedTaskClass,
       metadata,
+      repositoryRevisionProvenance: headSha
+        ? { kind: 'available', headSha }
+        : { kind: 'unavailable', reason: 'head_revision_not_resolved' },
     },
     scope.ctx.now(),
   );
 }
 
-function buildPlanSubmissionState(
+async function buildPlanSubmissionState(
   scope: PlanExecutionScope,
   planEvidence: PlanEvidence,
   planVersion: number,
   reviewFindings: ReviewFindings | null,
   classificationFiles?: readonly string[],
-): SessionState {
+): Promise<SessionState> {
   const history = scope.state.plan ? [scope.state.plan.current, ...scope.state.plan.history] : [];
-  const attemptResult = createPlanReviewAttempt(
+  const attemptResult = await createPlanReviewAttempt(
     scope,
     planEvidence,
     planVersion,
@@ -559,7 +564,7 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
     scope.reviewPolicy.subagentEnabled,
     scope.args.targetPaths,
   );
-  const nextState = buildPlanSubmissionState(
+  const nextState = await buildPlanSubmissionState(
     scope,
     planEvidence,
     planVersion,

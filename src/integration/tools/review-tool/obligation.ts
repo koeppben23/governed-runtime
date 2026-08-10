@@ -2,8 +2,6 @@
  * @module integration/tools/review-tool/obligation
  * @description Review obligation lifecycle — create, resolve, validate, consume.
  *
- * Extracted from simple-tools.ts for single-responsibility compliance.
- *
  * @version v1
  */
 
@@ -406,6 +404,13 @@ async function createNewReviewObligation(
       policySnapshot: input.state.policySnapshot,
       changedFiles: resolvedTargetPaths,
       reviewSubjectScope,
+      repositoryRevisionProvenance: input.resolvedSource
+        ? {
+            kind: 'available',
+            headSha: input.resolvedSource.resolvedBranchSha,
+            baseSha: input.resolvedSource.resolvedBaseSha,
+          }
+        : { kind: 'unavailable', reason: 'repository_revision_not_resolved' },
       // No claimedTaskClass floor here: a standalone /review assesses an EXTERNAL
       // PR/branch/content whose risk is the reviewed diff itself (changedFiles),
       // not the session's own task-class claim. The C1 floor applies only to the
@@ -679,6 +684,7 @@ export function validateSubmittedReviewFindings(
   const scopeResult = validateReviewFindingsScope({
     findings: scopeRelations,
     reviewSubjectScope: obligation.reviewSubjectScope,
+    repositoryRevisionProvenance: obligation.repositoryRevisionProvenance,
   });
   if (!scopeResult.ok) {
     return formatSubagentReviewNotInvoked(

@@ -423,12 +423,16 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
             proofContractCoverage: [...materialized.coverage],
           }
         : advanced.state;
-      const activated = activateImplementationReviewObligation(stateWithMaterializedContract, {
-        subagentEnabled: freshPolicy.selfReview?.subagentEnabled ?? false,
-        iteration: nextImplementationReviewIteration(advanced.state),
-        planVersion: (advanced.state.plan?.history.length ?? 0) + 1,
-        now: railCtx.now(),
-      });
+      const activated = await activateImplementationReviewObligation(
+        stateWithMaterializedContract,
+        {
+          subagentEnabled: freshPolicy.selfReview?.subagentEnabled ?? false,
+          iteration: nextImplementationReviewIteration(advanced.state),
+          planVersion: (advanced.state.plan?.history.length ?? 0) + 1,
+          now: railCtx.now(),
+          worktree: freshState.binding.worktree,
+        },
+      );
       // The persisted state carries the REFRESHED ProofGraph derived from the
       // freshly materialized contract (#762).
       const persisted = await writeStateWithArtifactsAlreadyLocked(sessDir, activated.state);

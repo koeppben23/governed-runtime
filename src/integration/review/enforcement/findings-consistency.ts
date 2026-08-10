@@ -11,6 +11,7 @@ import {
   type ArtifactSectionAnchor,
   type FindingRelation as FindingRelationValue,
   type MarkdownSectionPath,
+  type ReviewRepositoryRevisionProvenance,
   type ReviewSubjectScope as ReviewSubjectScopeValue,
 } from '../../../state/evidence-review.js';
 
@@ -114,7 +115,7 @@ function relationIntersectsScope(
   return false;
 }
 
-function hasUnavailableRepositoryRevision(
+function hasUnavailableScopedRepositoryRevision(
   relation: FindingRelationValue,
   scope: Extract<ReviewSubjectScopeValue, { readonly kind: 'repository_change' }>,
 ): boolean {
@@ -124,6 +125,23 @@ function hasUnavailableRepositoryRevision(
         anchor.kind === 'repository_location' &&
         !scope.revisions.includes(anchor.location.revision),
     ) || relation.evidenceLocations.some((location) => !scope.revisions.includes(location.revision))
+  );
+}
+
+function hasUnavailableFrozenRepositoryRevision(
+  relation: FindingRelationValue,
+  provenance: ReviewRepositoryRevisionProvenance | undefined,
+): boolean {
+  const locations = [
+    ...relation.subjectAnchors.flatMap((anchor) =>
+      anchor.kind === 'repository_location' ? [anchor.location] : [],
+    ),
+    ...relation.evidenceLocations,
+  ];
+  return locations.some(
+    (location) =>
+      provenance?.kind !== 'available' ||
+      (location.revision === 'head' ? !provenance.headSha : !provenance.baseSha),
   );
 }
 
@@ -151,22 +169,18 @@ function relationFailureCode(
  * scope-matched: evidence may be external, but must be a structured valid
  * repository or artifact anchor.
  */
+// eslint-disable-next-line complexity -- independent schema, provenance, and subject-scope checks fail closed.
 export function validateReviewFindingsScope(input: {
   readonly findings: readonly FindingWithRelation[];
   readonly reviewSubjectScope?: ReviewSubjectScopeValue;
+  readonly repositoryRevisionProvenance?: ReviewRepositoryRevisionProvenance;
 }): ReviewFindingsScopeResult {
   const parsedScope =
     input.reviewSubjectScope && ReviewSubjectScope.safeParse(input.reviewSubjectScope);
-  if (!parsedScope || !parsedScope.success || parsedScope.data.kind === 'unavailable') {
-    return {
-      ok: false,
-      code: 'REVIEW_SUBJECT_SCOPE_UNAVAILABLE',
-      details: { outOfScopeFindingIndexes: [], reviewSubjectScope: undefined },
-    };
-  }
-
   const repositoryScope =
-    parsedScope.data.kind === 'repository_change' ? parsedScope.data : undefined;
+    parsedScope?.success && parsedScope.data.kind === 'repository_change'
+      ? parsedScope.data
+      : undefined;
   const outOfScopeFindingIndexes: number[] = [];
   for (const [index, finding] of input.findings.entries()) {
     const relation = FindingRelation.safeParse(finding.relation);
@@ -174,10 +188,24 @@ export function validateReviewFindingsScope(input: {
       return {
         ok: false,
         code: relationFailureCode(finding.relation),
-        details: { outOfScopeFindingIndexes: [], reviewSubjectScope: parsedScope.data },
+        details: { outOfScopeFindingIndexes: [], reviewSubjectScope: parsedScope?.data },
       };
     }
-    if (repositoryScope && hasUnavailableRepositoryRevision(relation.data, repositoryScope)) {
+    if (hasUnavailableFrozenRepositoryRevision(relation.data, input.repositoryRevisionProvenance)) {
+      return {
+        ok: false,
+        code: 'REVIEW_REPOSITORY_REVISION_UNAVAILABLE',
+        details: { outOfScopeFindingIndexes: [index], reviewSubjectScope: parsedScope?.data },
+      };
+    }
+    if (!parsedScope || !parsedScope.success || parsedScope.data.kind === 'unavailable') {
+      return {
+        ok: false,
+        code: 'REVIEW_SUBJECT_SCOPE_UNAVAILABLE',
+        details: { outOfScopeFindingIndexes: [], reviewSubjectScope: undefined },
+      };
+    }
+    if (repositoryScope && hasUnavailableScopedRepositoryRevision(relation.data, repositoryScope)) {
       return {
         ok: false,
         code: 'REVIEW_REPOSITORY_REVISION_UNAVAILABLE',
@@ -192,7 +220,7 @@ export function validateReviewFindingsScope(input: {
     return {
       ok: false,
       code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
-      details: { outOfScopeFindingIndexes, reviewSubjectScope: parsedScope.data },
+      details: { outOfScopeFindingIndexes, reviewSubjectScope: parsedScope?.data },
     };
   }
   return { ok: true };

@@ -123,6 +123,11 @@ function strictAssuranceFixture(
           paths: ['src/foo.ts'],
           revisions: ['base', 'head'],
         },
+        repositoryRevisionProvenance: {
+          kind: 'available',
+          headSha: 'a'.repeat(40),
+          baseSha: 'b'.repeat(40),
+        },
       },
     ],
     invocations: [

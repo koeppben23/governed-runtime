@@ -107,6 +107,7 @@ export function pendingObligation(overrides: Partial<ReviewObligation> = {}): Re
     now: NOW,
     subjectDigest: 'diagnostics-test-subject',
     changedFiles: ['src/foo.ts'],
+    repositoryRevisionProvenance: { kind: 'available', headSha: 'a'.repeat(40) },
   });
   return { ...base, ...overrides };
 }

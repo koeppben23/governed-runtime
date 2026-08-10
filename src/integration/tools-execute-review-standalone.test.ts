@@ -9,6 +9,7 @@ import {
   parseToolResult,
   isBlockedResult,
   fulfillStrictReviewObligation,
+  freezeRepositoryReviewObligation,
   GIT_MOCK_DEFAULTS,
   type TestToolContext,
   type TestWorkspace,
@@ -203,7 +204,6 @@ function requiredRecord(value: unknown, label: string): Record<string, unknown> 
   }
   return value as Record<string, unknown>;
 }
-
 function requiredString(value: unknown, key: string): string {
   const record = requiredRecord(value, key);
   const field = record[key];
@@ -330,9 +330,10 @@ describe('review (standalone flow)', () => {
     if (blocked.code !== 'CONTENT_ANALYSIS_REQUIRED') {
       throw new Error(`Expected CONTENT_ANALYSIS_REQUIRED, got ${blocked.code}`);
     }
-    return requiredString(blocked.requiredReviewAttestation, 'toolObligationId');
+    const obligationId = requiredString(blocked.requiredReviewAttestation, 'toolObligationId');
+    await freezeRepositoryReviewObligation(await currentSessionDir(), obligationId);
+    return obligationId;
   }
-
   // Helper: Full two-step flow — creates obligation, then submits valid findings.
   // Returns the parseToolResult from the second (successful) /review call.
   async function submitContentReview(

@@ -292,6 +292,7 @@ function checkReviewFindingsScope(
   const scopeResult = validateReviewFindingsScope({
     findings: scopeRelations,
     reviewSubjectScope: obligation.reviewSubjectScope,
+    repositoryRevisionProvenance: obligation.repositoryRevisionProvenance,
   });
   if (!scopeResult.ok)
     return formatBlocked(scopeResult.code, {
