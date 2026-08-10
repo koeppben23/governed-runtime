@@ -111,20 +111,20 @@ function resolveAuthority(
 }
 
 /**
- * The latest implementation-scoped validation attempt for `checkId` at `digest`,
+ * The latest implementation-scoped validation attempt for `checkId` at `contentDigest`,
  * or undefined when the check has no attempt at the current revision.
  */
 function resolveImplAttempt(
   attempts: SessionState['validationAttempts'],
   checkId: string,
-  digest: string,
+  contentDigest: string,
 ): SessionState['validationAttempts'][number] | undefined {
   return [...attempts]
     .reverse()
     .find(
       (a) =>
         a.scope === 'implementation' &&
-        a.implementationDigest === digest &&
+        a.implementationDigest === contentDigest &&
         a.result.checkId === checkId,
     );
 }
@@ -152,7 +152,7 @@ type RawClaim = {
 function buildOptionalEvidence(
   state: SessionState,
   rc: RawClaim,
-  digest: string,
+  candidateDigest: string,
   verdicts: VerifiedMutationVerdicts,
 ):
   | {
@@ -176,7 +176,7 @@ function buildOptionalEvidence(
     const attempt = resolveVerifiedMutationAttempt(
       state.mutationAttempts,
       rc.mutationProfile,
-      digest,
+      candidateDigest,
       verdicts,
     );
     if (attempt === null) return { unresolvedProfileId: rc.mutationProfile };
@@ -202,13 +202,13 @@ function buildOptionalEvidence(
 function resolveCounterexampleRef(
   state: SessionState,
   rc: RawClaim,
-  digest: string,
+  contentDigest: string,
 ):
   | { readonly refs: ValidationAttemptRef[] }
   | { readonly error: { readonly unresolvedCheckId: string } } {
   const checkId = rc.counterexampleRequirement?.checkId;
   if (checkId === undefined) return { refs: [] };
-  const attempt = resolveImplAttempt(state.validationAttempts, checkId, digest);
+  const attempt = resolveImplAttempt(state.validationAttempts, checkId, contentDigest);
   if (attempt === undefined) return { error: { unresolvedCheckId: checkId } };
   return { refs: [{ kind: 'validation_attempt', attemptId: attempt.attemptId }] };
 }
@@ -216,7 +216,8 @@ function resolveCounterexampleRef(
 function buildDeclaredClaims(
   state: SessionState,
   rawClaims: readonly RawClaim[],
-  digest: string,
+  contentDigest: string,
+  candidateDigest: string,
   verdicts: VerifiedMutationVerdicts,
 ):
   | { readonly claims: DeclaredClaim[] }
@@ -224,19 +225,19 @@ function buildDeclaredClaims(
   | { readonly unresolvedProfileId: string } {
   const claims: DeclaredClaim[] = [];
   for (const rc of rawClaims) {
-    const evidence = resolveImplAttempt(state.validationAttempts, rc.checkId, digest);
+    const evidence = resolveImplAttempt(state.validationAttempts, rc.checkId, contentDigest);
     if (evidence === undefined) return { unresolvedCheckId: rc.checkId };
     const evidenceRef: ValidationAttemptRef = {
       kind: 'validation_attempt',
       attemptId: evidence.attemptId,
     };
-    const counterexampleResolution = resolveCounterexampleRef(state, rc, digest);
+    const counterexampleResolution = resolveCounterexampleRef(state, rc, contentDigest);
     if ('error' in counterexampleResolution) return counterexampleResolution.error;
     const counterexampleRefs = counterexampleResolution.refs;
     const provenance = resolveAuthority(state, rc.authority);
     const isFact = provenance !== null;
     const critical = rc.critical;
-    const optional = buildOptionalEvidence(state, rc, digest, verdicts);
+    const optional = buildOptionalEvidence(state, rc, candidateDigest, verdicts);
     if ('unresolvedProfileId' in optional) return optional;
     const evidenceRefs: DeclaredClaim['evidenceRefs'][number][] = [evidenceRef, ...optional.refs];
     const positive: ProofProviderKind[] = ['executed_test', ...optional.positive];
@@ -408,6 +409,7 @@ export const declare_contract: ToolDefinition = {
           state,
           args.claims as readonly RawClaim[],
           implementation.candidate.contentDigest,
+          implementation.candidate.candidateDigest,
           verdicts,
         );
         if ('unresolvedCheckId' in built) {

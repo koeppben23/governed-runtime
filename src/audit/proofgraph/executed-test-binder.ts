@@ -103,7 +103,7 @@ export function bindExecutedTestEvidence(
           stableId: r.checkId,
         },
         executionRecordId: attempt.attemptId,
-        binding: { kind: 'implementation' as const, digest: attempt.implementationDigest },
+        binding: { kind: 'content' as const, digest: attempt.implementationDigest },
         resultDigest: r.outputDigest,
         executedAt: r.executedAt,
         detail: r.command,

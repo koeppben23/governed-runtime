@@ -1125,7 +1125,7 @@ describe('declare_contract', () => {
         {
           attemptId: crypto.randomUUID(),
           scope: 'implementation',
-          implementationDigest: digest,
+          implementationDigest: CANDIDATE.contentDigest,
           result: {
             checkId,
             passed: overrides.passed ?? true,
@@ -1143,7 +1143,7 @@ describe('declare_contract', () => {
         {
           attemptId: crypto.randomUUID(),
           scope: 'implementation',
-          implementationDigest: digest,
+          implementationDigest: CANDIDATE.contentDigest,
           result: {
             checkId: 'security',
             passed: true,
@@ -1314,7 +1314,7 @@ describe('declare_contract', () => {
       contractClaimCount: 2,
     });
     expect(statusResult.proofApprovals).toMatchObject({
-      implementationDigest: 'impl-digest-1',
+      implementationDigest: persisted!.implementation!.candidate.candidateDigest,
       coverageGaps: coverage,
     });
     expect((statusResult.proofApprovals as { claims: unknown[] }).claims).toHaveLength(2);
@@ -1455,7 +1455,7 @@ describe('declare_contract', () => {
       const attempt = (checkId: string, passed: boolean) => ({
         attemptId: crypto.randomUUID(),
         scope: 'implementation' as const,
-        implementationDigest: digest,
+        implementationDigest: CANDIDATE.contentDigest,
         result: {
           checkId,
           passed,
@@ -1719,7 +1719,7 @@ describe('declare_contract', () => {
       return {
         attemptId: crypto.randomUUID(),
         scope: 'implementation' as const,
-        implementationDigest: digest,
+        implementationDigest: CANDIDATE.contentDigest,
         result: {
           checkId,
           passed,

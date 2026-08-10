@@ -75,7 +75,7 @@ describe('bindExecutedTestEvidence', () => {
     expect(r).toMatchObject({
       claimId: CLAIM,
       status: 'pass',
-      binding: { kind: 'implementation', digest: IMPL_DIGEST },
+      binding: { kind: 'content', digest: IMPL_DIGEST },
       resultDigest: SHA,
       providerId: EXECUTED_TEST_PROVIDER_ID,
       providerVersion: EXECUTED_TEST_PROVIDER_VERSION,

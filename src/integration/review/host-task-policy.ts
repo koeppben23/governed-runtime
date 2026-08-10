@@ -321,11 +321,12 @@ function implementationChallengeEvidence(
   state: SessionState,
 ): Record<string, unknown>[] | undefined {
   const implementationDigest = state.implementation?.candidate.candidateDigest;
-  if (!implementationDigest) return undefined;
+  const contentDigest = state.implementation?.candidate.contentDigest;
+  if (!implementationDigest || !contentDigest) return undefined;
   const successfulAttempts = state.validationAttempts.filter(
     (attempt) =>
       attempt.scope === 'implementation' &&
-      attempt.implementationDigest === implementationDigest &&
+      attempt.implementationDigest === contentDigest &&
       attempt.result.passed,
   );
   if (successfulAttempts.length === 0) return undefined;

@@ -10,7 +10,7 @@ import type { SessionState } from '../../state/schema.js';
 const NOW = '2026-01-01T00:00:00.000Z';
 const CLAIM = '00000000-0000-4000-8000-000000000001';
 const ATT = '00000000-0000-4000-8000-0000000000aa';
-const IMPL_DIGEST = IMPL_EVIDENCE.candidate.candidateDigest;
+const IMPL_DIGEST = IMPL_EVIDENCE.candidate.contentDigest;
 const SHA = 'a'.repeat(64);
 const AUTHORITY_REF = {
   kind: 'canonical_authority' as const,

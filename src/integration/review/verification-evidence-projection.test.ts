@@ -8,7 +8,7 @@ import { stateVerificationEvidence } from './shared-helpers.js';
 // reviewer prompt. Stale, baseline, or foreign-digest attempts must be excluded
 // so the reviewer never verifies claims against outdated ground truth.
 
-const CURRENT_DIGEST = IMPL_EVIDENCE.candidate.candidateDigest;
+const CURRENT_DIGEST = IMPL_EVIDENCE.candidate.contentDigest;
 
 function implAttempt(overrides: Record<string, unknown> = {}) {
   return {
@@ -54,7 +54,7 @@ describe('stateVerificationEvidence', () => {
 
   it('excludes stale attempts after the implementation digest changes', () => {
     const state = makeState('IMPL_REVIEW', {
-      implementation: makeImplEvidence({ candidate: { candidateDigest: 'replacement-digest' } }),
+      implementation: makeImplEvidence({ candidate: { contentDigest: 'replacement-content' } }),
       validationAttempts: [implAttempt()] as never,
     });
     expect(stateVerificationEvidence(state)).toEqual([]);

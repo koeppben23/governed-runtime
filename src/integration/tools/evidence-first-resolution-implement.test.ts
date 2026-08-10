@@ -11,7 +11,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { makeState, TICKET, VALIDATION_PASSED, makeImplEvidence } from '../../fixtures.js';
+import {
+  CANDIDATE,
+  makeState,
+  TICKET,
+  VALIDATION_PASSED,
+  makeImplEvidence,
+} from '../../fixtures.js';
 import { TEAM_POLICY } from '../../config/policy-presets.js';
 import type { SessionState } from '../../state/schema.js';
 import {
@@ -281,13 +287,13 @@ function implStateWithEvidence(
       {
         attemptId: '00000000-0000-4000-8000-00000000dd01',
         scope: 'implementation' as const,
-        implementationDigest: 'digest-impl',
+        implementationDigest: CANDIDATE.contentDigest,
         result: { ...VALIDATION_PASSED[0]!, checkId: 'test', passed: true },
       },
       {
         attemptId: '00000000-0000-4000-8000-00000000dd02',
         scope: 'implementation' as const,
-        implementationDigest: 'digest-impl',
+        implementationDigest: CANDIDATE.contentDigest,
         result: { ...VALIDATION_PASSED[1]!, checkId: 'lint', passed: true },
       },
     ],
@@ -611,13 +617,13 @@ describe('BUG-17: implement evidence-first resolution', () => {
         {
           attemptId: '00000000-0000-4000-8000-00000000ee01',
           scope: 'implementation' as const,
-          implementationDigest: 'digest-impl',
+          implementationDigest: CANDIDATE.contentDigest,
           result: { ...VALIDATION_PASSED[0]!, checkId: 'test', passed: true },
         },
         {
           attemptId: '00000000-0000-4000-8000-00000000ee02',
           scope: 'implementation' as const,
-          implementationDigest: 'digest-impl',
+          implementationDigest: CANDIDATE.contentDigest,
           result: { ...VALIDATION_PASSED[1]!, checkId: 'lint', passed: true },
         },
       ],

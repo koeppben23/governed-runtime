@@ -52,6 +52,7 @@ export function deriveProofGraph(
       providerResults,
       counterexamples,
       currentImplementationDigest: state.implementation?.candidate.candidateDigest ?? null,
+      currentContentDigest: state.implementation?.candidate.contentDigest ?? null,
       currentPlanDigest: state.plan?.current.digest ?? null,
       currentSurfaceDigests: opts?.currentSurfaceDigests ?? {},
     },

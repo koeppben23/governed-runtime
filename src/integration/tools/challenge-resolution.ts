@@ -89,7 +89,7 @@ export const resolve_implementation_challenge: ToolDefinition = {
         const challengeBlock = checkResolvableChallenge(
           state,
           challengeId,
-          implementation.candidate.contentDigest,
+          implementation.candidate.candidateDigest,
         );
         if (challengeBlock) return challengeBlock;
         if (new Set(attemptIds).size !== attemptIds.length) {
@@ -122,7 +122,7 @@ export const resolve_implementation_challenge: ToolDefinition = {
         }
         const resolution: ChallengeResolution = {
           challengeId,
-          implementationDigest: implementation.candidate.contentDigest,
+          implementationDigest: implementation.candidate.candidateDigest,
           validationAttemptIds: attemptIds,
           resolvedAt: ctx.now(),
           ...(author ? { author } : {}),

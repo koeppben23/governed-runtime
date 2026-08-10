@@ -242,7 +242,7 @@ export function summarizeProofGraph(
     }
   }
 
-  const currentDigest = state.implementation?.candidate.candidateDigest ?? null;
+  const currentDigest = state.implementation?.candidate.contentDigest ?? null;
   const counterexamples: CounterexampleStatus[] = executedCounterexamples.map((c) => ({
     claimId: c.claimId,
     scenario: c.scenario,

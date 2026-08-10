@@ -246,7 +246,7 @@ function attempt(
   return {
     attemptId,
     scope: 'implementation',
-    implementationDigest: IMPL_EVIDENCE.candidate.candidateDigest,
+    implementationDigest: IMPL_EVIDENCE.candidate.contentDigest,
     result: {
       checkId,
       passed,
@@ -712,7 +712,7 @@ describe('implementation risk assessment (runtime)', () => {
 
   it('treats an assessment from a superseded revision as not current', async () => {
     const state = makeState('IMPLEMENTATION', {
-      implementation: makeImplEvidence({ candidate: { candidateDigest: 'new-revision-digest' } }),
+      implementation: makeImplEvidence({ candidate: { contentDigest: 'new-revision-content' } }),
       implementationRiskAssessment: {
         computedMinimumTaskClass: 'HIGH-RISK',
         touchedSurfaces: ['src/state/schema.ts'],

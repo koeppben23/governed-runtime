@@ -291,7 +291,7 @@ describe('bindCounterexamples', () => {
   it('marks a missing counterexample attempt as not_verified', () => {
     const cx = bindCounterexamples(stateWith([]), NOW).counterexamples[0]!;
     expect(cx.outcome).toBe('not_verified');
-    expect(cx.boundDigest).toBe(IMPL_DIGEST);
+    expect(cx.boundDigest).toBe(IMPL_EVIDENCE.candidate.contentDigest);
   });
 
   it('returns nothing when there is no implementation', () => {

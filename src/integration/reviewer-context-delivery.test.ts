@@ -209,7 +209,7 @@ describe('reviewer artifact context reaches the delivered prompt', () => {
         {
           attemptId: '22222222-2222-4222-8222-222222222222',
           scope: 'implementation' as const,
-          implementationDigest: IMPL_EVIDENCE.candidate.candidateDigest,
+          implementationDigest: IMPL_EVIDENCE.candidate.contentDigest,
           result: VALIDATION_PASSED[0]!,
         },
       ],

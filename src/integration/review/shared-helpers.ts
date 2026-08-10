@@ -446,7 +446,7 @@ function stateChallengeResolutions(state: SessionState) {
   return state.challengeResolutions
     .filter(
       (resolution) =>
-        resolution.implementationDigest === state.implementation?.candidate.contentDigest,
+        resolution.implementationDigest === state.implementation?.candidate.candidateDigest,
     )
     .map(({ challengeId, implementationDigest, validationAttemptIds, resolvedAt }) => ({
       challengeId,
@@ -458,10 +458,10 @@ function stateChallengeResolutions(state: SessionState) {
 
 /**
  * Project runtime-executed verification evidence bound to the CURRENT
- * implementation digest for injection into the implementation review prompt.
+ * content digest for injection into the implementation review prompt.
  *
  * Fail-closed digest binding: only `implementation`-scope attempts whose
- * `implementationDigest` equals the current `implementation.digest` are
+ * `implementationDigest` equals the current implementation content digest are
  * projected. Stale attempts (from a prior implementation revision) are excluded
  * — showing them would let the reviewer verify claims against outdated ground
  * truth. When there is no current implementation digest, nothing is projected
@@ -470,7 +470,7 @@ function stateChallengeResolutions(state: SessionState) {
 export function stateVerificationEvidence(
   state: SessionState,
 ): readonly ReviewVerificationEvidenceItem[] {
-  const currentDigest = state.implementation?.candidate.candidateDigest;
+  const currentDigest = state.implementation?.candidate.contentDigest;
   if (!currentDigest) return [];
   return state.validationAttempts
     .filter(
