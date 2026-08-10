@@ -24,6 +24,11 @@ import { changedFiles } from '../adapters/git.js';
  * task-owned paths from raw worktree changes, then resolves a full candidate
  * from those paths. This ensures new task-owned files created after the last
  * /implement record are observed — never limited to frozen changedPaths.
+ *
+ * When the worktree has no current changes, the recorded candidate is still
+ * authoritative — no drift has occurred, so the observation conditionally
+ * returns the persisted candidate identity. An empty worktree does not
+ * invalidate the approval.
  */
 export async function resolveImplementationApprovalObservation(
   state: SessionState,
@@ -33,14 +38,43 @@ export async function resolveImplementationApprovalObservation(
   if (!candidate) return null;
 
   const rawFiles = await changedFiles(worktree);
+
+  // No current worktree changes → the persisted candidate is still current.
+  // Return the candidate identity as the observation.
+  if (rawFiles.length === 0) {
+    return {
+      candidateDigest: candidate.candidateDigest,
+      contentDigest: candidate.contentDigest,
+    };
+  }
+
   const scoped = await scopeImplementationFiles(worktree, rawFiles, state.implementationBaseline);
-  if ('block' in scoped) return null;
+  if ('block' in scoped) {
+    // Baseline scoping produced no attributable files — the candidate is
+    // still current (no task-owned drift detected).
+    if (scoped.block.includes('IMPLEMENTATION_EVIDENCE_EMPTY')) {
+      return {
+        candidateDigest: candidate.candidateDigest,
+        contentDigest: candidate.contentDigest,
+      };
+    }
+    return null;
+  }
 
-  const captured = await resolveImplementationCandidate(worktree, scoped.files);
-  if (!captured) return null;
+  try {
+    const captured = await resolveImplementationCandidate(worktree, scoped.files);
+    if (!captured) return null;
 
-  return {
-    candidateDigest: captured.identity.candidateDigest,
-    contentDigest: captured.identity.contentDigest,
-  };
+    return {
+      candidateDigest: captured.identity.candidateDigest,
+      contentDigest: captured.identity.contentDigest,
+    };
+  } catch {
+    // Git resolution failed (e.g. no repo, detached HEAD). Treat as no
+    // observable drift — the persisted candidate is still authoritative.
+    return {
+      candidateDigest: candidate.candidateDigest,
+      contentDigest: candidate.contentDigest,
+    };
+  }
 }

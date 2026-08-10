@@ -55,6 +55,7 @@ import {
   VALIDATION_PASSED,
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
+  IMPL_REVIEW_ASSURANCE,
 } from '../fixtures.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import type { ToolDefinition, ToolResult } from './tools/helpers.js';
@@ -326,6 +327,8 @@ describe('P26: regulated archive completion', () => {
       validation: VALIDATION_PASSED,
       implementation: IMPL_EVIDENCE,
       implReview: IMPL_REVIEW_CONVERGED,
+      activeChecks: [],
+      reviewAssurance: IMPL_REVIEW_ASSURANCE,
       initiatedBy: 'initiator',
       initiatedByIdentity: {
         actorId: 'initiator',
