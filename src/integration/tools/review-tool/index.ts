@@ -7,22 +7,18 @@
  *
  * @version v1
  */
-
 import { z } from 'zod';
-
 import type { ToolDefinition } from '../helpers.js';
 import {
   withMutableSessionTransaction,
-  formatRailResult,
   formatError,
   formatAutoAdvanceOverflow,
   formatBlocked,
 } from '../helpers.js';
 import {
-  startReviewFlow,
   executeReview,
-  type ReviewReferenceInput,
   type PreparedReviewContent,
+  type ReviewReferenceInput,
 } from '../../../rails/review.js';
 import {
   InputOriginSchema,
@@ -31,12 +27,12 @@ import {
   type ReviewObligation,
 } from '../../../state/evidence.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
+import { formatReviewRequiredSignal } from '../../review/enforcement/types.js';
 import type { ReviewExecutionContext, ReviewPreparation } from './types.js';
 import type { StartedReviewResult } from './types.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { ReviewToolArgs } from './types.js';
 import {
-  buildReviewReferenceInput,
   ensureMissingAnalysisObligation,
   hasReviewContentInput,
   hasImplicitContentSignal,
@@ -62,6 +58,12 @@ import {
   appendPreparedReviewEvidence,
   prepareStandaloneReviewEvidence,
 } from './preparation.js';
+import {
+  ensureStartedReviewState,
+  reissueReviewAttempt,
+  populateRefInput,
+  buildHostTaskAttestation,
+} from './continuation.js';
 
 async function bindReviewContentDigest(
   context: Parameters<ToolDefinition['execute']>[1],
@@ -101,23 +103,7 @@ async function bindReviewContentDigest(
 
 // ─── Review preparation orchestrator ─────────────────────────────────────────
 
-function populateBranchRefInput(
-  refInput: ReviewReferenceInput | undefined,
-  source: {
-    branch: string;
-    baseBranch: string;
-    resolvedBranchSha: string;
-    resolvedBaseSha: string;
-  },
-): ReviewReferenceInput {
-  return {
-    ...refInput,
-    branch: source.branch,
-    baseBranch: source.baseBranch,
-    resolvedBranchSha: source.resolvedBranchSha,
-    resolvedBaseSha: source.resolvedBaseSha,
-  };
-}
+// ─── Ref input resolution ────────────────────────────────────────────────────
 
 function withCwd(
   refInput: ReviewReferenceInput | undefined,
@@ -241,19 +227,15 @@ async function prepareReviewExecution(
   const missingVerdictBlock = missingHostTaskVerdictBlock(state, exec);
   if (missingVerdictBlock) return missingVerdictBlock;
   const resolvedSource = resolveObligationBranchSource(exec);
-
-  const hostTaskVerdict = await prepareHostTaskVerdictReview(sessDir, state, result, exec);
-  if (hostTaskVerdict) return hostTaskVerdict;
+  const hostVerdict = await prepareHostTaskVerdictReview(sessDir, state, result, exec);
+  if (hostVerdict) return hostVerdict;
 
   const missingResult = await ensureMissingAnalysisObligation(sessDir, state, exec.args, exec.now, {
     worktree: exec.context.worktree,
     resolvedSource,
   });
 
-  let refInput = buildReviewReferenceInput(exec.args);
-  if (resolvedSource) {
-    refInput = populateBranchRefInput(refInput, resolvedSource);
-  }
+  let refInput = populateRefInput(exec.args, state, resolvedSource);
   if (resolvedSource && missingResult.obligation) {
     refInput = {
       ...refInput,
@@ -380,7 +362,7 @@ async function rejectIncoherentAttempt(
   return { ok: true };
 }
 
-// eslint-disable-next-line complexity -- explicit fail-closed host-task verdict resolution
+// eslint-disable-next-line complexity, max-lines-per-function -- explicit fail-closed host-task verdict resolution
 async function prepareHostTaskVerdictReview(
   sessDir: string,
   state: SessionState,
@@ -426,6 +408,18 @@ async function prepareHostTaskVerdictReview(
   }
 
   if (resolved.kind !== 'resolved') {
+    // Reissue an attempt so the next reviewer Task has a registered attempt
+    // identity before the host issues retry guidance.
+    const reissue = await reissueReviewAttempt(
+      sessDir,
+      state,
+      {
+        obligationId: obligation.obligationId,
+        subjectDigest: obligation.subjectDigest,
+        obligationType: obligation.obligationType,
+      },
+      exec.now,
+    );
     return formatBlocked(
       'HOST_SUBAGENT_TASK_REQUIRED',
       { reviewerSubagentType: REVIEWER_SUBAGENT_TYPE },
@@ -438,6 +432,10 @@ async function prepareHostTaskVerdictReview(
         policyMode: exec.policy,
         bindOutcome: resolved.kind,
         reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
+        reviewObligationId: obligation.obligationId,
+        reviewAttemptId: reissue.attemptId,
+        next: formatReviewRequiredSignal(obligation.iteration, obligation.planVersion),
+        requiredReviewAttestation: buildHostTaskAttestation(obligation),
       },
     );
   }
@@ -455,7 +453,7 @@ async function prepareHostTaskVerdictReview(
     });
   }
 
-  const refInput = buildReviewReferenceInput(exec.args);
+  const refInput = populateRefInput(exec.args, state, undefined);
   return {
     result,
     refInput: refInput
@@ -484,9 +482,9 @@ async function prepareReviewWithoutExternalCalls(
 ): Promise<PreparedReviewExecution | string> {
   return withMutableSessionTransaction(context, async ({ sessDir, state, ctx }) => {
     const now = new Date().toISOString();
-    const result = startReviewFlow(state, ctx);
-
-    if (result.kind === 'blocked') return String(formatRailResult(result));
+    const ensured = ensureStartedReviewState(state, ctx);
+    if (typeof ensured === 'string') return ensured;
+    const result = ensured;
 
     const prepared = await prepareReviewExecution(sessDir, state, result, {
       args,
@@ -497,9 +495,11 @@ async function prepareReviewWithoutExternalCalls(
     if (typeof prepared === 'string') return prepared;
     const taskEvidence = prepareStandaloneReviewEvidence(args, now, prepared.refInput);
     const stateWithTaskEvidence: SessionState = {
-      // Preparation records intent before reviewer work, but does not materialize
-      // the REVIEW transition. The existing completion rail remains authoritative.
-      ...state,
+      // Persist the REVIEW transition materialized by startReviewFlow so the
+      // canonical session state reflects the active review obligation. The
+      // completion path continues an existing REVIEW rather than re-starting
+      // the user-level /review command (which would require READY).
+      ...result.state,
       // Obligation preparation already persisted the obligation AND its attempt.
       // Re-deriving from `state` (read before that write) dropped the attempt, so
       // the host could never bind reviewer evidence for a standalone /review.
@@ -522,10 +522,11 @@ async function persistCompletedReview(
   now: string,
 ): Promise<string> {
   return withMutableSessionTransaction(context, async ({ sessDir, state, ctx }) => {
-    let result = startReviewFlow(state, ctx);
-    if (result.kind === 'blocked') return String(formatRailResult(result));
+    const ensured = ensureStartedReviewState(state, ctx);
+    if (typeof ensured === 'string') return ensured;
+    const startedResult = ensured;
 
-    const prepared = await prepareReviewExecution(sessDir, state, result, {
+    const prepared = await prepareReviewExecution(sessDir, state, startedResult, {
       args,
       context,
       now,
@@ -537,7 +538,7 @@ async function persistCompletedReview(
       return formatBlockedReviewReport(reviewResult);
     }
 
-    result = consumeValidatedReviewObligation(
+    let result = consumeValidatedReviewObligation(
       prepared.result,
       prepared.validatedReviewObligation,
       args,

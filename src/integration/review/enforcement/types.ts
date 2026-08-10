@@ -129,6 +129,15 @@ export type EnforcementResult =
 export const REVIEW_REQUIRED_PREFIX = 'INDEPENDENT_REVIEW_REQUIRED';
 
 /**
+ * Canonical host signal for a reviewer Task requirement. Emitters attach the
+ * obligation and attempt IDs alongside this signal; enforcement owns tracking
+ * those IDs as the Task-binding authority.
+ */
+export function formatReviewRequiredSignal(iteration: number, planVersion: number): string {
+  return `${REVIEW_REQUIRED_PREFIX}: iteration=${iteration}, planVersion=${planVersion}`;
+}
+
+/**
  * Opening of the trailing line of the canonical reviewer prompt, which tells the
  * agent to append the artifact below it.
  *
