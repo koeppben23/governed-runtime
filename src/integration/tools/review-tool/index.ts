@@ -29,12 +29,12 @@ import {
   type ReviewObligation,
 } from '../../../state/evidence.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
+import { formatReviewRequiredSignal } from '../../review/enforcement/types.js';
 import type { ReviewExecutionContext, ReviewPreparation } from './types.js';
 import type { StartedReviewResult } from './types.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { ReviewToolArgs } from './types.js';
 import {
-  buildReviewReferenceInput,
   ensureMissingAnalysisObligation,
   hasReviewContentInput,
   hasImplicitContentSignal,
@@ -228,9 +228,8 @@ async function prepareReviewExecution(
   const missingVerdictBlock = missingHostTaskVerdictBlock(state, exec);
   if (missingVerdictBlock) return missingVerdictBlock;
   const resolvedSource = resolveObligationBranchSource(exec);
-
-  const hostTaskVerdict = await prepareHostTaskVerdictReview(sessDir, state, result, exec);
-  if (hostTaskVerdict) return hostTaskVerdict;
+  const hostVerdict = await prepareHostTaskVerdictReview(sessDir, state, result, exec);
+  if (hostVerdict) return hostVerdict;
 
   const missingResult = await ensureMissingAnalysisObligation(sessDir, state, exec.args, exec.now, {
     worktree: exec.context.worktree,
@@ -436,6 +435,7 @@ async function prepareHostTaskVerdictReview(
         reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
         reviewObligationId: obligation.obligationId,
         reviewAttemptId: reissue.attemptId,
+        next: formatReviewRequiredSignal(obligation.iteration, obligation.planVersion),
       },
     );
   }
@@ -453,7 +453,7 @@ async function prepareHostTaskVerdictReview(
     });
   }
 
-  const refInput = buildReviewReferenceInput(exec.args);
+  const refInput = populateRefInput(exec.args, state, undefined);
   return {
     result,
     refInput: refInput

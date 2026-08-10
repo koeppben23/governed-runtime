@@ -14,6 +14,9 @@ import { describe, it, expect } from 'vitest';
 import { appendPreparedReviewEvidence, prepareStandaloneReviewEvidence } from './preparation.js';
 import type { StandaloneReviewPreparedEvidence } from '../../../state/standalone-review.js';
 import type { ReviewReferenceInput } from '../../../rails/review.js';
+import { populateRefInput } from './continuation.js';
+import { makeState } from '../../../fixtures.js';
+import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from '../../review/assurance.js';
 
 function evidence(args: {
   readonly branch?: string;
@@ -89,6 +92,42 @@ describe('subject digest stability', () => {
     });
 
     expect(a.requestedDigests.taskDigest).not.toBe(b.requestedDigests.taskDigest);
+  });
+
+  it('rehydrates resolved SHAs from the verdict obligation when no source is available', () => {
+    const obligationId = '33333333-1111-4111-8111-111111111111';
+    const state = makeState('REVIEW', {
+      reviewAssurance: {
+        obligations: [
+          {
+            obligationId,
+            obligationType: 'review',
+            iteration: 0,
+            planVersion: 1,
+            criteriaVersion: REVIEW_CRITERIA_VERSION,
+            mandateDigest: REVIEW_MANDATE_DIGEST,
+            createdAt: '2026-08-09T00:00:00.000Z',
+            pluginHandshakeAt: null,
+            status: 'pending',
+            invocationId: null,
+            blockedCode: null,
+            fulfilledAt: null,
+            consumedAt: null,
+            subjectDigest: 'review-subject',
+            metadata: { resolvedBranchSha: revSha, resolvedBaseSha: baseSha },
+          },
+        ],
+        invocations: [],
+        attempts: [],
+      },
+    });
+
+    expect(
+      populateRefInput({ branch, base, reviewObligationId: obligationId }, state, undefined),
+    ).toMatchObject({
+      resolvedBranchSha: revSha,
+      resolvedBaseSha: baseSha,
+    });
   });
 });
 

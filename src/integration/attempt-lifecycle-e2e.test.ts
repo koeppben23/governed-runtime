@@ -344,6 +344,47 @@ describe('reviewer attempt lifecycle through the real hooks', () => {
     expect(retry?.childSessionId).toBe(CHILD_RETRY);
   });
 
+  it('keeps one active attempt after ten unusable reviewer retries and binds the next valid attempt', async () => {
+    const ws = await createTestWorkspace();
+    cleanupWs = ws.cleanup;
+    await execFileAsync('git', ['init'], { cwd: ws.tmpDir });
+    const sessionID = crypto.randomUUID();
+    const sessDir = await seedSession(ws.tmpDir, sessionID);
+    const hooks = await FlowGuardAuditPlugin(
+      createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+    );
+    const afterHook = hooks['tool.execute.after']!;
+
+    await afterHook(
+      { tool: 'flowguard_plan', sessionID, callID: 'call-plan', args: {} },
+      { title: 'flowguard_plan', output: planReviewRequiredOutput(), metadata: {} },
+    );
+    for (let retry = 0; retry < 10; retry += 1) {
+      await afterHook(
+        { tool: 'task', sessionID, callID: `call-rejected-${retry}`, args: reviewerArgs },
+        {
+          title: 'task',
+          output: unusableReviewerOutput(`ses_child_lifecycle_rejected_${retry}`),
+          metadata: {},
+        },
+      );
+    }
+    await afterHook(
+      { tool: 'task', sessionID, callID: 'call-valid-after-retries', args: reviewerArgs },
+      { title: 'task', output: reviewerOutput(CHILD_RETRY), metadata: {} },
+    );
+
+    const state = await readState(sessDir);
+    const attempts = state?.reviewAssurance?.attempts ?? [];
+    expect(attempts).toHaveLength(11);
+    expect(attempts.filter((attempt) => attempt.status === 'stale')).toHaveLength(10);
+    expect(
+      attempts.filter((attempt) => attempt.status === 'bound' || attempt.status === 'captured'),
+    ).toHaveLength(1);
+    expect(state?.reviewAssurance?.invocations ?? []).toHaveLength(1);
+    expect((state?.reviewAssurance?.invocations ?? [])[0]?.childSessionId).toBe(CHILD_RETRY);
+  });
+
   // ─── The open slot is still taken normally ──────────────────────────────────
 
   it('binds an unbound created attempt to the reviewer session', async () => {
