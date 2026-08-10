@@ -7,6 +7,7 @@
 import type { BlockedReason } from './reasons-types.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { ENVELOPE_PRECONDITION_REASONS } from './reasons-envelope.js';
+import { IMPLEMENTATION_APPROVAL_REASONS } from './reasons-precondition-approval.js';
 
 export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   {
@@ -140,7 +141,6 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
 
   // ─── Review Envelope Validation — re-exported from reasons-envelope.ts ──────
   ...ENVELOPE_PRECONDITION_REASONS,
-
   {
     code: 'REVIEW_OBLIGATION_UNRESOLVED',
     category: 'precondition',
@@ -544,8 +544,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     category: 'precondition',
     messageTemplate: 'Implementation challenge {challengeId} remains unresolved.',
     recoverySteps: [
-      'Record advisory resolution evidence using a passing post-implementation validation attempt.',
-      'Obtain a subsequent independent reviewer verdict of resolved.',
+      'Record advisory resolution evidence with a passing post-implementation validation attempt and obtain a subsequent independent reviewer verdict of resolved.',
     ],
   },
 
@@ -746,4 +745,5 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Do not start reviewer Tasks speculatively before a review obligation has been created',
     ],
   },
+  ...IMPLEMENTATION_APPROVAL_REASONS,
 ];

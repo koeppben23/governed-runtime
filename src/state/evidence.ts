@@ -36,10 +36,20 @@ export type * from './evidence-binding.js';
 export * from './evidence-validation.js';
 export type * from './evidence-validation.js';
 
+// ─── Candidate Identity ───────────────────────────────────────────────────────
+
+export * from './evidence-candidate.js';
+export type * from './evidence-candidate.js';
+
 // ─── Implementation ────────────────────────────────────────────────────────────
 
 export * from './evidence-impl.js';
 export type * from './evidence-impl.js';
+
+// ─── Implementation Approval ───────────────────────────────────────────────────
+
+export * from './evidence-implementation-approval.js';
+export type * from './evidence-implementation-approval.js';
 
 // ─── Plan ──────────────────────────────────────────────────────────────────────
 

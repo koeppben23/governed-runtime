@@ -38,6 +38,14 @@ import type {
   DecisionIdentity,
 } from '../state/evidence.js';
 import type {
+  ImplementationApprovalObservation,
+  ValidImplementationApprovalBinding,
+} from '../state/implementation-approval-binding.js';
+import {
+  createImplementationApprovalCertificate,
+  validateImplementationApprovalBinding,
+} from '../state/implementation-approval-binding.js';
+import type {
   ArchitectureApprovalCertificate,
   PlanApprovalCertificate,
 } from '../state/proofgraph-approval.js';
@@ -68,6 +76,20 @@ export interface ReviewDecisionInput {
   readonly decisionIdentity?: DecisionIdentity;
 }
 
+/**
+ * Host-authoritative runtime evidence supplied by the integration layer.
+ *
+ * The user/agent MUST NOT supply these values. Only the integration layer,
+ * which has access to the worktree, resolves and passes them. The rail
+ * treats this input as host-authoritative observation.
+ *
+ * implementationApprovalObservation is required for EVIDENCE_REVIEW + approve;
+ * it may be absent for all other gate/verdict combinations.
+ */
+export interface ReviewDecisionRuntimeEvidence {
+  readonly implementationApprovalObservation?: ImplementationApprovalObservation;
+}
+
 // ─── Verdict → Event mapping ──────────────────────────────────────────────────
 
 const VERDICT_TO_EVENT: Record<ReviewVerdict, Event> = {
@@ -91,6 +113,8 @@ const REJECT_CLEAR = {
   implementation: null,
   implReview: null,
   reviewDecision: null,
+  implementationCandidate: undefined,
+  implementationApproval: undefined,
 };
 
 /**
@@ -163,6 +187,8 @@ function applyStateClearingPattern(state: SessionState, verdict: ReviewVerdict):
       implReview: null,
       reducedCeremony: null,
       reviewDecision: null,
+      implementationCandidate: undefined,
+      implementationApproval: undefined,
     };
   }
   if (state.phase === 'ARCH_REVIEW') {
@@ -264,16 +290,18 @@ function enforceApprovalIdentity(
 function enforceProofGraphEvidenceApproval(
   state: SessionState,
   input: ReviewDecisionInput,
+  candidateDigestOverride?: string,
 ): RailBlocked | null {
   if (state.phase !== 'EVIDENCE_REVIEW' || input.verdict !== 'approve') {
     return null;
   }
   const authorization = authorizedCriticalPlanClaimIds(state.plan);
+  const implementationDigest = candidateDigestOverride ?? state.implementation?.digest;
   const decision = evaluateProofGraphGate({
     projection: state.proofGraph,
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
     certificateValid: authorization.kind === 'authorized',
-    implementationDigest: state.implementation?.digest,
+    implementationDigest,
     riskAssessment: state.implementationRiskAssessment,
   });
   if (!decision.gated) return null;
@@ -310,6 +338,52 @@ function enforceArchitectureReviewCompletion(
   return blocked('ARCHITECTURE_REVIEW_COMPLETION_REQUIRED', {
     reviewCompletion: completion ?? 'missing',
   });
+}
+
+/**
+ * Enforce candidate-bound implementation approval binding at EVIDENCE_REVIEW + approve.
+ *
+ * This is the central authority check: before COMPLETE, the rail validates that
+ * the live observed candidate matches the persisted candidate and that all
+ * required evidence (validation, review) binds that exact candidate identity.
+ *
+ * When no ImplementationCandidate is present in state (legacy sessions), the
+ * binding check is skipped and legacy ProofGraph enforcement applies alone.
+ *
+ * On success, returns the validated binding for downstream certificate construction.
+ * On failure, returns a blocked result — no partial COMPLETE, no orphan certificate.
+ */
+function enforceImplementationApprovalBinding(
+  state: SessionState,
+  input: ReviewDecisionInput,
+  runtimeEvidence?: ReviewDecisionRuntimeEvidence,
+):
+  | { readonly kind: 'ok'; readonly binding: ValidImplementationApprovalBinding | undefined }
+  | { readonly kind: 'blocked'; readonly block: RailBlocked } {
+  if (state.phase !== 'EVIDENCE_REVIEW' || input.verdict !== 'approve') {
+    return { kind: 'ok', binding: undefined };
+  }
+
+  // Legacy sessions without a recorded ImplementationCandidate skip the binding
+  // check. Only sessions where /implement captured the candidate are subject to
+  // candidate-bound approval enforcement.
+  if (!state.implementationCandidate) {
+    return { kind: 'ok', binding: undefined };
+  }
+
+  const result = validateImplementationApprovalBinding({
+    state,
+    observedCandidate: runtimeEvidence?.implementationApprovalObservation,
+  });
+
+  if (!result.ok) {
+    return {
+      kind: 'blocked',
+      block: blocked(result.code, result.details as Record<string, string> | undefined),
+    };
+  }
+
+  return { kind: 'ok', binding: result.binding };
 }
 
 /**
@@ -427,12 +501,39 @@ function resolveAcceptedPlanReviewEvidence(
   return [acceptedObligation?.obligationId ?? null, acceptedEvidence?.findingsHash ?? null];
 }
 
+function createImplementationApprovalPatch(
+  state: SessionState,
+  input: ReviewDecisionInput,
+  decision: ReviewDecision,
+  implementationBinding: ValidImplementationApprovalBinding,
+): Pick<SessionState, 'implementationApproval'> | null {
+  if (
+    state.phase === 'EVIDENCE_REVIEW' &&
+    input.verdict === 'approve' &&
+    !state.implementationApproval
+  ) {
+    return {
+      implementationApproval: createImplementationApprovalCertificate({
+        binding: implementationBinding,
+        decision: {
+          verdict: decision.verdict,
+          rationale: decision.rationale,
+          decidedAt: decision.decidedAt,
+          decidedBy: decision.decidedBy,
+        },
+      }),
+    };
+  }
+  return null;
+}
+
 function approvalCertificatePatch(
   state: SessionState,
   input: ReviewDecisionInput,
   decision: ReviewDecision,
   ctx: RailContext,
-): Partial<Pick<SessionState, 'plan' | 'architecture'>> {
+  implementationBinding?: ValidImplementationApprovalBinding,
+): Partial<Pick<SessionState, 'plan' | 'architecture' | 'implementationApproval'>> {
   if (
     state.phase === 'PLAN_REVIEW' &&
     input.verdict === 'approve' &&
@@ -468,6 +569,10 @@ function approvalCertificatePatch(
       },
     };
   }
+  if (implementationBinding) {
+    const patch = createImplementationApprovalPatch(state, input, decision, implementationBinding);
+    if (patch) return patch;
+  }
   return {};
 }
 
@@ -477,6 +582,7 @@ export function executeReviewDecision(
   state: SessionState,
   input: ReviewDecisionInput,
   ctx: RailContext,
+  runtimeEvidence?: ReviewDecisionRuntimeEvidence,
 ): RailResult {
   // 1. Admissibility
   if (!isCommandAllowed(state.phase, Command.REVIEW_DECISION)) {
@@ -493,12 +599,28 @@ export function executeReviewDecision(
   }
 
   // 3. Four-eyes and decision identity enforcement (approval only).
+  let implementationBinding: ValidImplementationApprovalBinding | undefined;
   if (input.verdict === 'approve') {
     const identityBlock = enforceApprovalIdentity(state, input, ctx);
     if (identityBlock) return identityBlock;
     const architectureReviewBlock = enforceArchitectureReviewCompletion(state, input);
     if (architectureReviewBlock) return architectureReviewBlock;
-    const proofGraphBlock = enforceProofGraphEvidenceApproval(state, input);
+
+    // Implementation approval binding — must be validated before ProofGraph gate
+    // so the pre-validated candidateDigest can be fed to the gate.
+    if (state.phase === 'EVIDENCE_REVIEW') {
+      const implResult = enforceImplementationApprovalBinding(state, input, runtimeEvidence);
+      if (implResult.kind === 'blocked') return implResult.block;
+      implementationBinding = implResult.binding;
+    }
+
+    // ProofGraph gate — fed the already-validated candidate digest from the
+    // implementation approval binding rather than independently re-reading state.
+    const proofGraphBlock = enforceProofGraphEvidenceApproval(
+      state,
+      input,
+      implementationBinding?.candidateDigest,
+    );
     if (proofGraphBlock) return proofGraphBlock;
   }
 
@@ -523,7 +645,13 @@ export function executeReviewDecision(
 
   // A certificate is created only for the first human approval at its flow's gate;
   // an existing immutable certificate is never rewritten.
-  const certificatePatch = approvalCertificatePatch(state, input, decision, ctx);
+  const certificatePatch = approvalCertificatePatch(
+    state,
+    input,
+    decision,
+    ctx,
+    implementationBinding,
+  );
 
   // 6. Apply state clearing pattern based on gate + verdict
   const clearedState = applyStateClearingPattern(

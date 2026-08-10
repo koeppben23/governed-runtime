@@ -271,8 +271,15 @@ export type ValidationResult = z.infer<typeof ValidationResult>;
 /**
  * Immutable record of one runtime-executed validation attempt.
  *
- * The scope binds baseline validation to the approved plan and post-implementation
- * validation to the implementation evidence that was under test.
+ * Baseline scope binds the attempt to the approved plan digest.
+ *
+ * Implementation scope binds the attempt to the exact resulting file
+ * content that was under test. The `implementationDigest` field MUST
+ * equal `ImplementationCandidate.contentDigest` — it is a content-bound
+ * digest over sorted {path, blobDigest} entries, NOT the lifecycle
+ * `candidateDigest`. Validation evidence may remain content-compatible
+ * for a new candidate with identical file content, but review and
+ * approval authority are never portable.
  */
 export const ValidationAttempt = z.discriminatedUnion('scope', [
   z
@@ -288,6 +295,7 @@ export const ValidationAttempt = z.discriminatedUnion('scope', [
     .object({
       attemptId: z.string().uuid(),
       scope: z.literal('implementation'),
+      /** ImplementationCandidate.contentDigest — the content identity, not the lifecycle identity. */
       implementationDigest: z.string().min(1),
       result: ValidationResult,
     })

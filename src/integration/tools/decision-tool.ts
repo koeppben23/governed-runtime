@@ -33,6 +33,9 @@ import { executeReviewDecision } from '../../rails/review-decision.js';
 import { resolveActorForPolicy } from '../../adapters/actor-context.js';
 import { ActorIdentityError } from '../../adapters/actor.js';
 
+// Candidate observation
+import { resolveImplementationApprovalObservation } from '../implementation-candidate.js';
+
 // Finalization service
 import { finalizeDecision } from '../services/decision-finalization.js';
 import { consumeUserDecisionIntent, peekUserDecisionIntent } from '../user-decision-intent.js';
@@ -60,6 +63,16 @@ function requireHumanDecisionIntent(input: {
   return formatBlocked('HUMAN_DECISION_REQUIRED', {
     reason: gate.reason,
   });
+}
+
+async function resolveApprovalObservation(
+  verdict: ReviewVerdict,
+  state: import('../../state/schema.js').SessionState,
+  worktree: string,
+): Promise<import('../../rails/review-decision.js').ReviewDecisionRuntimeEvidence> {
+  if (state.phase !== 'EVIDENCE_REVIEW' || verdict !== 'approve') return {};
+  const observation = await resolveImplementationApprovalObservation(state, worktree);
+  return observation ? { implementationApprovalObservation: observation } : {};
 }
 
 export const decision: ToolDefinition = {
@@ -104,31 +117,27 @@ export const decision: ToolDefinition = {
       return await withMutableSessionTransaction(
         context,
         async ({ fingerprint, sessDir, state, ctx }) => {
-          // P30/P34: Build structured decision identity directly from resolved actor info
-          // actorAssurance comes from the canonical ActorInfo — not re-derived from source
-          const decisionIdentity = {
-            actorId: actorInfo.id,
-            actorEmail: actorInfo.email,
-            actorDisplayName: actorInfo.displayName,
-            actorSource: actorInfo.source,
-            actorAssurance: actorInfo.assurance,
-          };
-
+          // P30/P34: Structured decision identity from resolved actor info
           const result = executeReviewDecision(
             state,
             {
               verdict: args.verdict,
-              // Fall back to an empty string here rather than relying on the Zod
-              // `.default('')`: the MCP boundary strips null-valued args (some
-              // models inject `rationale: null`), which removes the key entirely
-              // and leaves the value undefined by the time it reaches state
-              // serialization. Without this guard SessionState.safeParse rejects
-              // the decision with SCHEMA_VALIDATION_FAILED.
               rationale: args.rationale ?? '',
               decidedBy: actorInfo.id,
-              decisionIdentity,
+              decisionIdentity: {
+                actorId: actorInfo.id,
+                actorEmail: actorInfo.email,
+                actorDisplayName: actorInfo.displayName,
+                actorSource: actorInfo.source,
+                actorAssurance: actorInfo.assurance,
+              },
             },
             ctx,
+            await resolveApprovalObservation(
+              args.verdict,
+              state,
+              context.worktree || context.directory,
+            ),
           );
 
           // Delegate post-rail finalization (MADR + P26 regulated completion)
@@ -146,13 +155,7 @@ export const decision: ToolDefinition = {
               state.phase === 'EVIDENCE_REVIEW' && args.verdict === 'approve',
           });
 
-          // Consume the user-decision intent ONLY on a fully successful decision,
-          // and only in human-gated mode. Placing this after finalizeDecision (and
-          // after persistAndFormat) guarantees that any failure which produces a
-          // non-ok result or throws before this point — schema validation, actor
-          // assurance, missing evidence artifacts — leaves the intent intact for
-          // retry. A successful decision still burns it exactly once, preserving
-          // anti-replay. The consume is in-memory and cannot fail.
+          // Consume user-decision intent on success only — failures leave intent for retry
           if (requireHumanGates && finalResult.kind === 'ok') {
             consumeUserDecisionIntent({
               sessionId: context.sessionID,

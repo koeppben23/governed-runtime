@@ -10,6 +10,15 @@ import {
 import { TEAM_POLICY } from '../config/policy.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 
+/** Minimal ImplementationCandidate for tests that approve at EVIDENCE_REVIEW. */
+const IMPL_CANDIDATE = {
+  baseHeadSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as string | null,
+  changedPaths: ['src/auth.ts', 'src/auth.test.ts'],
+  contentDigest: 'digest-of-impl',
+  diffDigest: null as string | null,
+  candidateDigest: 'test-candidate-digest',
+};
+
 const baseCtx = {
   now: () => FIXED_TIME,
   digest: (text: string) => `sha256:${text.length}`,

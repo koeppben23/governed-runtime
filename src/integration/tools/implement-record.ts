@@ -63,7 +63,12 @@ import {
 import { evaluate } from '../../machine/evaluate.js';
 import { resolveNextAction } from '../../machine/next-action.js';
 import { autoAdvance } from '../../rails/types.js';
-import type { ReviewFindings, ImplEvidence, ReviewObligation } from '../../state/evidence.js';
+import type {
+  ReviewFindings,
+  ImplEvidence,
+  ReviewObligation,
+  ImplementationCandidate,
+} from '../../state/evidence.js';
 import type { SessionState } from '../../state/schema.js';
 import { isCommandAllowed, Command } from '../../machine/commands.js';
 
@@ -264,6 +269,36 @@ async function scopeImplementationFiles(
 }
 
 /**
+ * Build an ImplementationCandidate from the scoped implementation files
+ * and the already-computed ImplEvidence.
+ *
+ * candidateDigest = lifecycle identity (binds Risk, Review, Approval)
+ * contentDigest  = implEvidence.digest (content identity for Validation)
+ */
+async function buildImplementationCandidate(
+  input: ImplementRuntime,
+  files: string[],
+  implEvidence: ImplEvidence,
+): Promise<ImplementationCandidate> {
+  const { computeCandidateDigest } = await import('../../state/evidence-candidate.js');
+  const { headCommitFull } = await import('../../adapters/git.js');
+  const baseHeadSha = await headCommitFull(input.worktree);
+  const candidateDigest = computeCandidateDigest({
+    baseHeadSha,
+    changedPaths: files,
+    contentDigest: implEvidence.digest,
+    diffDigest: implEvidence.diffDigest ?? null,
+  });
+  return {
+    baseHeadSha,
+    changedPaths: files,
+    contentDigest: implEvidence.digest,
+    diffDigest: implEvidence.diffDigest ?? null,
+    candidateDigest,
+  };
+}
+
+/**
  * Build ImplEvidence with a CONTENT-bound digest and capture the change as a diff
  * artifact.
  *
@@ -326,6 +361,9 @@ export async function handleImplRecord(
     (f) => !f.startsWith('.opencode/') && !f.includes('node_modules/') && !isNonDomainConfigPath(f),
   );
   const implEvidence = await buildImplEvidence(input, files, domainFiles);
+
+  const implementationCandidate = await buildImplementationCandidate(input, files, implEvidence);
+
   const existingFindings = input.state.implReviewFindings ?? [];
   const newReviewFindings = input.args.reviewFindings
     ? [...existingFindings, normalizeHostFindings(input.args.reviewFindings)]
@@ -337,6 +375,7 @@ export async function handleImplRecord(
   const nextState: SessionState = {
     ...input.state,
     implementation: implEvidence,
+    implementationCandidate,
     // #762: bind the risk classification to the exact revision it describes, so a
     // gate rail can consult it without re-deriving it from a later file set.
     implementationRiskAssessment: {
@@ -345,7 +384,7 @@ export async function handleImplRecord(
       riskTriggers: [...ceremony.riskTriggers],
       assessedFrom: 'implementation_changed_files',
       assessedFileCount: files.length,
-      implementationDigest: implEvidence.digest,
+      implementationDigest: implementationCandidate.candidateDigest,
     },
     // Fresh implementation invalidates any prior post-implementation checks; the
     // machine advances to IMPL_VALIDATION where the checks are re-run against the
