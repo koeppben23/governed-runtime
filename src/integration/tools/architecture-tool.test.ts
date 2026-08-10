@@ -812,7 +812,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(writtenState.architecture?.approvalCertificate).toBeUndefined();
   });
 
-  it('returns converged status and finalizes accepted architecture', async () => {
+  it('routes reviewer acceptance to the human architecture gate', async () => {
     mocks.state = makeState('ARCHITECTURE', {
       architecture: {
         id: 'ADR-001',
@@ -832,21 +832,12 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
     });
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
-    mocks.autoAdvance.mockReturnValue({
+    mocks.autoAdvance.mockImplementation((state: SessionState) => ({
       kind: 'advanced',
-      state: makeState('ARCH_COMPLETE', {
-        architecture: {
-          id: 'ADR-001',
-          title: 'ADR',
-          adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
-          digest: 'digest-adr',
-          status: 'proposed',
-          createdAt: '2026-01-01T00:00:00.000Z',
-        },
-      }),
-      evalResult: { kind: 'ready' },
+      state: { ...state, phase: 'ARCH_REVIEW' },
+      evalResult: { kind: 'waiting', phase: 'ARCH_REVIEW', reason: 'human decision required' },
       transitions: [],
-    });
+    }));
     const { architecture } = await import('./architecture.js');
     const res = await architecture.execute(
       {
@@ -855,7 +846,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
       {} as never,
     );
-    expect(JSON.parse(String(res)).status).toContain('converged');
+    expect(JSON.parse(String(res)).status).toContain('Human approval is required');
     const parsed = JSON.parse(String(res));
     expect(parsed.reviewCard).toBeDefined();
     expect(typeof parsed.reviewCard).toBe('string');
@@ -864,7 +855,11 @@ describe('integration/tools/architecture (wrapper)', () => {
     const writtenState = mocks.writeStateWithArtifacts.mock.calls[0]?.[1] as {
       architecture?: { status?: string };
     };
-    expect(writtenState.architecture?.status).toBe('accepted');
+    expect(parsed.phase).toBe('ARCH_REVIEW');
+    expect(writtenState.architecture?.status).toBe('proposed');
+    expect((writtenState.architecture as { reviewCompletion?: string }).reviewCompletion).toBe(
+      'reviewer_accepted',
+    );
   });
 
   it('force-converges to the human gate (ARCH_REVIEW) instead of blocking at the iteration limit', async () => {
@@ -888,21 +883,12 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
     });
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
-    mocks.autoAdvance.mockReturnValue({
+    mocks.autoAdvance.mockImplementation((state: SessionState) => ({
       kind: 'advanced',
-      state: makeState('ARCH_REVIEW', {
-        architecture: {
-          id: 'ADR-001',
-          title: 'ADR',
-          adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
-          digest: 'digest-adr',
-          status: 'proposed',
-          createdAt: '2026-01-01T00:00:00.000Z',
-        },
-      }),
-      evalResult: { kind: 'waiting' },
+      state: { ...state, phase: 'ARCH_REVIEW' },
+      evalResult: { kind: 'waiting', phase: 'ARCH_REVIEW', reason: 'human decision required' },
       transitions: [],
-    });
+    }));
     const { architecture } = await import('./architecture.js');
     const parsed = JSON.parse(
       String(
@@ -922,11 +908,11 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(parsed.phase).toBe('ARCH_REVIEW');
     expect(parsed.status).toContain('iteration limit');
     expect(parsed.status).toContain('without reviewer approval');
-    expect(parsed.status).toContain('Your decision is required');
+    expect(parsed.status).toContain('Human approval is required');
     expect(parsed.reviewCard).toContain('Reviewer did NOT approve');
   });
 
-  it('force-convergence auto-finalizes the ADR in auto-approve modes (ARCH_COMPLETE)', async () => {
+  it('never auto-finalizes an exhausted ADR in auto-approve modes', async () => {
     mocks.state = makeState('ARCHITECTURE', {
       architecture: {
         id: 'ADR-001',
@@ -946,21 +932,12 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
     });
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
-    mocks.autoAdvance.mockReturnValue({
+    mocks.autoAdvance.mockImplementation((state: SessionState) => ({
       kind: 'advanced',
-      state: makeState('ARCH_COMPLETE', {
-        architecture: {
-          id: 'ADR-001',
-          title: 'ADR',
-          adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
-          digest: 'digest-adr',
-          status: 'proposed',
-          createdAt: '2026-01-01T00:00:00.000Z',
-        },
-      }),
-      evalResult: { kind: 'terminal' },
+      state: { ...state, phase: 'ARCH_REVIEW' },
+      evalResult: { kind: 'waiting', phase: 'ARCH_REVIEW', reason: 'human decision required' },
       transitions: [],
-    });
+    }));
     const { architecture } = await import('./architecture.js');
     const parsed = JSON.parse(
       String(
@@ -977,9 +954,12 @@ describe('integration/tools/architecture (wrapper)', () => {
 
     expect(parsed.error).not.toBe(true);
     expect(parsed.code).toBeUndefined();
-    expect(parsed.phase).toBe('ARCH_COMPLETE');
+    expect(parsed.phase).toBe('ARCH_REVIEW');
     expect(parsed.status).toContain('without reviewer approval');
-    expect(parsed.status).toContain('ADR auto-finalized');
+    expect(parsed.status).toContain('Human approval is required');
+    const writtenState = mocks.writeStateWithArtifacts.mock.calls[0]?.[1] as SessionState;
+    expect(writtenState.architecture?.status).toBe('proposed');
+    expect(writtenState.architecture?.reviewCompletion).toBe('review_exhausted');
   });
 
   it('rejects reviewFindings without a verdict in a submission (#499: no silent discard)', async () => {

@@ -22,6 +22,7 @@ describe('evidence-architecture', () => {
         status: 'proposed' as const,
         createdAt: FIXED_TIME,
         digest: 'sha256-adr',
+        reviewCompletion: 'pending' as const,
       };
       expect(ArchitectureDecision.parse(adr)).toEqual(adr);
     });
@@ -34,6 +35,7 @@ describe('evidence-architecture', () => {
         status: 'accepted' as const,
         createdAt: FIXED_TIME,
         digest: 'sha256-deadbeef',
+        reviewCompletion: 'reviewer_accepted' as const,
         reviewFindings: [],
       };
       expect(ArchitectureDecision.parse(adr)).toEqual(adr);
@@ -98,9 +100,36 @@ describe('evidence-architecture', () => {
       };
       expect(ArchitectureDecision.parse(adr)).toEqual(adr);
     });
+
+    it('accepts review exhaustion as lifecycle evidence without changing ADR content', () => {
+      const adr = {
+        id: 'ADR-1',
+        title: 'Exhausted ADR',
+        adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+        status: 'proposed' as const,
+        reviewCompletion: 'review_exhausted' as const,
+        createdAt: FIXED_TIME,
+        digest: 'content-digest',
+      };
+      expect(ArchitectureDecision.parse(adr)).toEqual(adr);
+    });
   });
 
   describe('EDGE', () => {
+    it('rejects an unknown review completion state', () => {
+      expect(() =>
+        ArchitectureDecision.parse({
+          id: 'ADR-1',
+          title: 'Test',
+          adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+          status: 'proposed',
+          reviewCompletion: 'accepted',
+          createdAt: FIXED_TIME,
+          digest: 'abc',
+        }),
+      ).toThrow();
+    });
+
     it('ArchitectureDecision rejects empty title', () => {
       expect(() =>
         ArchitectureDecision.parse({

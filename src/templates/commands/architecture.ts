@@ -111,7 +111,7 @@ ${GOVERNANCE_RULES}
 ## Done-when
 
 - ADR is created or revised with Context, Decision, and Consequences sections.
-- Independent review loop has converged (approved or max iterations reached).
+- Independent review loop has reviewer evidence (reviewer accepted or iteration limit reached). Both outcomes require an explicit human decision at ARCH_REVIEW; auto-approval policies never accept an ADR.
 ${DISCOVERY_REVIEW_DONE_WHEN}
 - If \`presentation.markdown\` is present, it is displayed verbatim; otherwise the legacy \`reviewCard\` is displayed verbatim.
 - Phase has reached ARCH_REVIEW (ready for human review).

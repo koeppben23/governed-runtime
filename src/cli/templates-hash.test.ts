@@ -237,9 +237,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // steps were localized to English-only (no non-English phrasing) to match the
     // single-language product surface. Changes both bodies and therefore the
     // COMMANDS hash.
+    // Refreshed for architecture acceptance integrity: every completed ADR
+    // reviewer cycle now stops at ARCH_REVIEW and requires a human decision.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '70ca82b99d3e93ae64c83fb9cfd6bb59ee6f6f8af0d98002ea6ea099f63ca72d',
+      '6b5ae8cf917f7bafcc50462ad85e6860b19ff6622f0dc5ffbd0b89aede4e1ce1',
     );
   });
 

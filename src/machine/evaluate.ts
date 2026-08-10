@@ -88,8 +88,9 @@ const GATE_REASONS = {
  * 1. If phase is terminal → return terminal.
  * 2. If phase is READY → return pending (command-driven, no auto-advance).
  * 3. If phase is a User Gate:
- *    a. If policy.requireHumanGates === false → auto-approve (solo mode)
- *    b. Otherwise → return waiting (human must decide)
+ *    a. ARCH_REVIEW always waits for an explicit human decision.
+ *    b. Other gates auto-approve only if policy.requireHumanGates === false.
+ *    c. Otherwise → return waiting (human must decide)
  * 4. Otherwise, iterate guards for the current phase (first match wins).
  * 5. If a guard matches, resolve the transition via topology.
  * 6. If no guard matches → return pending (phase needs work/evidence).
@@ -120,8 +121,9 @@ export function evaluate(
   // 3. User Gate — policy-dependent
   if (USER_GATES.has(phase)) {
     const gatePhase = phase as UserGatePhase;
-    // Solo mode: auto-approve at user gates.
-    if (policy?.requireHumanGates === false) {
+    // Architecture acceptance is always a human decision. Other gates retain
+    // their policy-controlled solo-mode auto-approval behavior.
+    if (gatePhase !== 'ARCH_REVIEW' && policy?.requireHumanGates === false) {
       const target = resolveTransition(gatePhase, 'APPROVE');
       if (target) {
         return { kind: 'transition', event: 'APPROVE', target };

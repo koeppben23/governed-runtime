@@ -109,6 +109,7 @@ describe('review-decision rail', () => {
   it('creates an immutable certificate for approved architecture claims', () => {
     const architecture = {
       ...ARCHITECTURE_DECISION,
+      reviewCompletion: 'reviewer_accepted' as const,
       claimDeclarations: { flow: 'architecture' as const, claims: [ARCHITECTURE_CLAIM] },
     };
     const result = executeReviewDecision(
@@ -137,7 +138,7 @@ describe('review-decision rail', () => {
 
   it('reject at ARCH_REVIEW clears architecture and selfReview', () => {
     const state = makeState('ARCH_REVIEW', {
-      architecture: ARCHITECTURE_DECISION,
+      architecture: { ...ARCHITECTURE_DECISION, reviewCompletion: 'reviewer_accepted' },
       selfReview: {
         iteration: 1,
         maxIterations: 3,
@@ -201,7 +202,7 @@ describe('review-decision rail', () => {
 
   it('approve at ARCH_REVIEW marks architecture as accepted', () => {
     const state = makeState('ARCH_REVIEW', {
-      architecture: ARCHITECTURE_DECISION,
+      architecture: { ...ARCHITECTURE_DECISION, reviewCompletion: 'reviewer_accepted' },
       selfReview: {
         iteration: 1,
         maxIterations: 3,
@@ -712,7 +713,7 @@ describe('review-decision rail', () => {
   describe('MUTATION_KILL', () => {
     it('approve at ARCH_REVIEW sets architecture.status to "accepted"', () => {
       const state = makeState('ARCH_REVIEW', {
-        architecture: ARCHITECTURE_DECISION,
+        architecture: { ...ARCHITECTURE_DECISION, reviewCompletion: 'reviewer_accepted' },
         selfReview: CONVERGED_SELF_REVIEW,
       });
       const result = executeReviewDecision(
@@ -726,7 +727,7 @@ describe('review-decision rail', () => {
       }
     });
 
-    it('approve at ARCH_REVIEW without architecture leaves state unchanged (arch guard)', () => {
+    it('blocks approval at ARCH_REVIEW without completed architecture review evidence', () => {
       const state = makeState('ARCH_REVIEW', {
         architecture: null,
         selfReview: CONVERGED_SELF_REVIEW,
@@ -736,11 +737,50 @@ describe('review-decision rail', () => {
         { verdict: 'approve', rationale: 'LGTM', decidedBy: 'reviewer' },
         baseCtx,
       );
-      expect(result.kind).toBe('ok');
-      if (result.kind === 'ok') {
-        expect(result.state.architecture).toBeNull();
-      }
+      expect(result).toMatchObject({
+        kind: 'blocked',
+        code: 'ARCHITECTURE_REVIEW_COMPLETION_REQUIRED',
+      });
     });
+
+    it('blocks approval at ARCH_REVIEW while review completion is pending', () => {
+      const state = makeState('ARCH_REVIEW', {
+        architecture: ARCHITECTURE_DECISION,
+        selfReview: CONVERGED_SELF_REVIEW,
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'LGTM', decidedBy: 'reviewer' },
+        baseCtx,
+      );
+      expect(result).toMatchObject({
+        kind: 'blocked',
+        code: 'ARCHITECTURE_REVIEW_COMPLETION_REQUIRED',
+      });
+      expect(state.architecture?.status).toBe('proposed');
+      expect(state.architecture?.approvalCertificate).toBeUndefined();
+    });
+
+    it.each(['reviewer_accepted', 'review_exhausted'] as const)(
+      'allows approval with %s architecture review completion',
+      (reviewCompletion) => {
+        const state = makeState('ARCH_REVIEW', {
+          architecture: { ...ARCHITECTURE_DECISION, reviewCompletion },
+          selfReview: CONVERGED_SELF_REVIEW,
+        });
+        const result = executeReviewDecision(
+          state,
+          { verdict: 'approve', rationale: 'LGTM', decidedBy: 'reviewer' },
+          baseCtx,
+        );
+        expect(result.kind).toBe('ok');
+        if (result.kind === 'ok') {
+          expect(result.state.phase).toBe('ARCH_COMPLETE');
+          expect(result.state.architecture?.status).toBe('accepted');
+          expect(result.state.architecture?.approvalCertificate).toBeDefined();
+        }
+      },
+    );
 
     it('changes_requested at ARCH_REVIEW clears selfReview', () => {
       const approvedArchitecture = {
@@ -770,6 +810,7 @@ describe('review-decision rail', () => {
         // architecture should still be present
         expect(result.state.architecture).not.toBeNull();
         expect(result.state.architecture?.approvalCertificate).toBeUndefined();
+        expect(result.state.architecture?.reviewCompletion).toBe('pending');
       }
     });
 
@@ -992,7 +1033,7 @@ describe('review-decision rail', () => {
 
     it('changes_requested at ARCH_REVIEW clears selfReview (survivor kill)', () => {
       const state = makeState('ARCH_REVIEW', {
-        architecture: ARCHITECTURE_DECISION,
+        architecture: { ...ARCHITECTURE_DECISION, reviewCompletion: 'review_exhausted' },
         selfReview: CONVERGED_SELF_REVIEW,
       });
       const result = executeReviewDecision(
@@ -1003,6 +1044,7 @@ describe('review-decision rail', () => {
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
         expect(result.state.selfReview).toBeNull();
+        expect(result.state.architecture?.reviewCompletion).toBe('pending');
       }
     });
 

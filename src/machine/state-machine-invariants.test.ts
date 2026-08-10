@@ -133,10 +133,17 @@ describe('state machine invariants', () => {
           const teamCi = results.find((r) => r.mode === 'team-ci')!.evalResult;
           const regulated = results.find((r) => r.mode === 'regulated')!.evalResult;
 
-          expect(solo.kind).toBe('transition');
-          expect(team.kind).toBe('waiting');
-          expect(teamCi.kind).toBe('transition');
-          expect(regulated.kind).toBe('waiting');
+          if (phase === 'ARCH_REVIEW') {
+            expect(solo.kind).toBe('waiting');
+            expect(team.kind).toBe('waiting');
+            expect(teamCi.kind).toBe('waiting');
+            expect(regulated.kind).toBe('waiting');
+          } else {
+            expect(solo.kind).toBe('transition');
+            expect(team.kind).toBe('waiting');
+            expect(teamCi.kind).toBe('transition');
+            expect(regulated.kind).toBe('waiting');
+          }
         } else {
           const [first, ...rest] = results;
           expect(first).toBeDefined();

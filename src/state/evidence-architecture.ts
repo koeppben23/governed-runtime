@@ -6,7 +6,7 @@
  */
 
 import { z } from 'zod';
-import { AdrStatus } from './evidence-primitives.js';
+import { AdrStatus, ArchitectureReviewCompletion } from './evidence-primitives.js';
 import { ReviewFindings } from './evidence-review.js';
 import {
   ArchitectureApprovalCertificate,
@@ -46,6 +46,11 @@ export const ArchitectureDecision = z
     adrText: z.string().min(1),
     /** Lifecycle status of the ADR. */
     status: AdrStatus,
+    /**
+     * Independent-review completion for this ADR text. This is separate from
+     * `digest`, which identifies only `adrText`, and from human approval.
+     */
+    reviewCompletion: ArchitectureReviewCompletion.optional(),
     /** When the ADR was created. */
     createdAt: z.string().datetime(),
     /** SHA-256 digest of the adrText for integrity verification. */
@@ -66,4 +71,8 @@ export const ArchitectureDecision = z
     approvalCertificate: ArchitectureApprovalCertificate.optional(),
   })
   .readonly();
+/**
+ * Persisted legacy sessions may not yet have review-completion evidence. Runtime
+ * approval treats an absent value as pending and therefore blocks fail-closed.
+ */
 export type ArchitectureDecision = z.infer<typeof ArchitectureDecision>;

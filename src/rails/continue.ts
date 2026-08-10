@@ -143,17 +143,9 @@ export async function executeContinue(
   const advanced = autoAdvance(workState, evalFn, ctx);
   if (advanced.kind === 'overflow') return blockedFromOverflow(advanced);
 
-  const finalState =
-    advanced.state.phase === 'ARCH_COMPLETE' && advanced.state.architecture
-      ? {
-          ...advanced.state,
-          architecture: { ...advanced.state.architecture, status: 'accepted' as const },
-        }
-      : advanced.state;
-
   return {
     kind: 'ok',
-    state: finalState,
+    state: advanced.state,
     evalResult: advanced.evalResult,
     transitions: advanced.transitions,
   };

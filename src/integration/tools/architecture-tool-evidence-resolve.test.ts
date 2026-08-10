@@ -488,14 +488,13 @@ describe('architecture — BUG-15 evidence-resolve', () => {
         reviewInvocationPolicy: 'host_task_required',
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
       });
-      // autoAdvance retains ARCHITECTURE — converged path is triggered by
-      // approvedConverged (revisionDelta=none + verdict=accept), not by phase.
-      mocks.autoAdvance.mockReturnValue({
+      // Preserve the reviewed candidate and stop at the mandatory human gate.
+      mocks.autoAdvance.mockImplementation((state: SessionState) => ({
         kind: 'advanced',
-        state: mocks.state,
-        evalResult: { kind: 'pending' },
+        state: { ...state, phase: 'ARCH_REVIEW' },
+        evalResult: { kind: 'waiting', phase: 'ARCH_REVIEW', reason: 'human decision required' },
         transitions: [],
-      });
+      }));
 
       const { architecture } = await import('./architecture.js');
       // Agent submits ONLY the verdict — no reviewFindings (host_task_required contract)
