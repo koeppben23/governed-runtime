@@ -110,6 +110,7 @@ vi.mock('../../rails/types.js', () => ({
 
 vi.mock('../../adapters/git.js', () => ({
   changedFiles: mocks.changedFiles,
+  headCommitFull: vi.fn().mockResolvedValue('a'.repeat(40)),
 }));
 
 vi.mock('../../adapters/persistence-discovery.js', async (importOriginal) => {

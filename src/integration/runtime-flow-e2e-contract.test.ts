@@ -161,6 +161,11 @@ async function inject(
     status: 'fulfilled' as const,
     fulfilledAt: FIXED_TIME,
     pluginHandshakeAt: isOpen(host) ? FIXED_TIME : null,
+    reviewSubjectScope: {
+      kind: 'repository_change' as const,
+      paths: ['README.md'],
+      revisions: ['base', 'head'] as const,
+    },
   };
   const inv = {
     invocationId: randomUUID(),
@@ -494,7 +499,7 @@ describe('FlowGuard tool-level E2E', () => {
 
         // Step 1: content-aware call creates review obligation
         const r1 = await review.execute(
-          { inputOrigin: 'manual_text', text: 'E2E review content' },
+          { inputOrigin: 'manual_text', text: 'E2E review content', targetPaths: ['README.md'] },
           s.tc,
         );
         expect(typeof r1).toBe('string');
@@ -508,10 +513,29 @@ describe('FlowGuard tool-level E2E', () => {
         // Step 2: complete with findings — review tool records its own evidence
         let st = await readState(s.sDir);
         const obl = st!.reviewAssurance!.obligations.find((o) => o.obligationId === oblId)!;
+        await writeStateWithArtifacts(s.sDir, {
+          ...st!,
+          reviewAssurance: {
+            ...st!.reviewAssurance!,
+            obligations: st!.reviewAssurance!.obligations.map((item) =>
+              item.obligationId === oblId
+                ? {
+                    ...item,
+                    reviewSubjectScope: {
+                      kind: 'repository_change',
+                      paths: ['README.md'],
+                      revisions: ['base', 'head'],
+                    },
+                  }
+                : item,
+            ),
+          },
+        });
         const r2 = await review.execute(
           {
             inputOrigin: 'manual_text',
             text: 'E2E review content',
+            targetPaths: ['README.md'],
             reviewFindings: f(oblId, obl.iteration, obl.planVersion),
           },
           s.tc,

@@ -18,6 +18,7 @@ import {
   resolveFrozenReviewProfile,
 } from '../review/assurance.js';
 import { classifyToolCallMode } from './review-validation-mode.js';
+import { headCommitFull } from '../../adapters/git.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Shared Types / Helpers
@@ -36,19 +37,21 @@ export function nextImplementationReviewIteration(state: SessionState): number {
  * validation has reached IMPL_REVIEW. Both /implement (vacuous checks) and
  * /check (executed checks) use this boundary.
  */
-export function activateImplementationReviewObligation(
+export async function activateImplementationReviewObligation(
   state: SessionState,
   input: {
     subagentEnabled: boolean;
     iteration: number;
     planVersion: number;
     now: string;
+    worktree: string;
   },
-): { state: SessionState; obligation: ReviewObligation | null; attemptId: string | null } {
+): Promise<{ state: SessionState; obligation: ReviewObligation | null; attemptId: string | null }> {
   if (state.phase !== 'IMPL_REVIEW' || state.reducedCeremony !== null || !input.subagentEnabled) {
     return { state, obligation: null, attemptId: null };
   }
 
+  const headSha = await headCommitFull(input.worktree);
   const obligation = createReviewObligation({
     obligationType: 'implement',
     iteration: input.iteration,
@@ -60,6 +63,9 @@ export function activateImplementationReviewObligation(
     policySnapshot: state.policySnapshot,
     changedFiles: state.implementation?.changedFiles ?? [],
     claimedTaskClass: state.claimedTaskClass,
+    repositoryRevisionProvenance: headSha
+      ? { kind: 'available', headSha }
+      : { kind: 'unavailable', reason: 'head_revision_not_resolved' },
   });
   const withAttempt = appendObligationWithAttempt(state.reviewAssurance, obligation, input.now);
   return {

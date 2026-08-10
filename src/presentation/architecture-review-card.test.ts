@@ -104,9 +104,21 @@ describe('buildArchitectureReviewCard', () => {
       ...baseInput,
       overallVerdict: 'changes_requested',
       blockingIssues: [
-        { severity: 'critical', category: 'completeness', message: 'Missing alternatives' },
+        {
+          severity: 'critical',
+          category: 'completeness',
+          message: 'Missing alternatives',
+          relation: { evidenceLocations: ['decision'], subjectAnchors: ['alternatives'] },
+        },
       ],
-      majorRisks: [{ severity: 'major', category: 'risk', message: 'Race condition' }],
+      majorRisks: [
+        {
+          severity: 'major',
+          category: 'risk',
+          message: 'Race condition',
+          relation: { evidenceLocations: ['design'], subjectAnchors: ['concurrency'] },
+        },
+      ],
       missingVerification: ['No integration test for the new error path'],
       scopeCreep: ['Unrelated dependency upgrade'],
       unknowns: ['Behaviour under sustained load'],

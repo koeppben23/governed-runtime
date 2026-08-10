@@ -479,7 +479,11 @@ describe('renderMarkdown', () => {
               severity: 'critical',
               label: 'Critical',
               items: [
-                { category: 'correctness', message: 'Missing validation', location: 'src/foo.ts' },
+                {
+                  category: 'correctness',
+                  message: 'Missing validation',
+                  relation: '{"subjectAnchors":["src/foo.ts"]}',
+                },
               ],
             },
             {
@@ -495,13 +499,15 @@ describe('renderMarkdown', () => {
     const result = renderMarkdown(doc);
     assertRendererInvariants(result);
     expect(result).toContain('### Critical (1)');
-    expect(result).toContain('- **correctness:** Missing validation `src/foo.ts`');
+    expect(result).toContain(
+      '- **correctness:** Missing validation `{"subjectAnchors":["src/foo.ts"]}`',
+    );
     expect(result).toContain('### Warnings (1)');
     expect(result).toContain('- **quality:** Missing tests');
     // Consecutive severity groups are separated by a blank line so each `###`
     // group heading is a cleanly delimited block.
     expect(result).toContain(
-      '- **correctness:** Missing validation `src/foo.ts`\n\n### Warnings (1)',
+      '- **correctness:** Missing validation `{"subjectAnchors":["src/foo.ts"]}`\n\n### Warnings (1)',
     );
   });
 

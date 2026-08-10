@@ -14,6 +14,7 @@
  */
 
 import type { Phase } from '../state/schema.js';
+import { formatFindingRelation } from './model.js';
 import type {
   ReviewCardDocument,
   PresentationSection,
@@ -51,14 +52,14 @@ export interface ArchitectureReviewCardInput {
     severity: string;
     category: string;
     message: string;
-    location?: string;
+    relation: unknown;
   }>;
   /** Major risks from review findings. */
   majorRisks?: Array<{
     severity: string;
     category: string;
     message: string;
-    location?: string;
+    relation: unknown;
   }>;
   /** Missing verifications. */
   missingVerification?: string[];
@@ -220,21 +221,21 @@ interface FindingInputs {
     severity: string;
     category: string;
     message: string;
-    location?: string;
+    relation: unknown;
   }>;
-  majorRisks?: Array<{ severity: string; category: string; message: string; location?: string }>;
+  majorRisks?: Array<{ severity: string; category: string; message: string; relation: unknown }>;
   missingVerification?: string[];
   scopeCreep?: string[];
   unknowns?: string[];
 }
 
 function toFindingItems(
-  raw: Array<{ category: string; message: string; location?: string }>,
+  raw: Array<{ category: string; message: string; relation: unknown }>,
 ): FindingItem[] {
   return raw.map((f) => ({
     category: f.category,
     message: f.message,
-    ...(f.location ? { location: f.location } : {}),
+    relation: formatFindingRelation(f.relation),
   }));
 }
 

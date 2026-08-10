@@ -26,6 +26,9 @@ import {
   FourEyesStatusSchema,
   CompletenessSummarySchema,
   CompletenessReportSchema,
+  classifyRepositoryPath,
+  RepositoryLocation,
+  ReviewSubjectScope,
 } from './evidence-review.js';
 import { FIXED_TIME, FIXED_UUID } from './evidence-test-constants.js';
 
@@ -87,9 +90,122 @@ describe('evidence-review', () => {
         severity: 'major' as const,
         category: 'correctness' as const,
         message: 'Missing edge case handling',
-        location: 'src/auth.ts:42',
+        relation: {
+          subjectAnchors: [
+            {
+              kind: 'repository_location' as const,
+              location: { path: 'src/auth.ts', revision: 'head' as const, line: 42 },
+            },
+          ],
+          evidenceLocations: [{ path: 'src/auth.ts', revision: 'head' as const, line: 42 }],
+        },
       };
       expect(Finding.parse(finding)).toEqual(finding);
+    });
+
+    it('normalizes repository paths and rejects ambiguous path forms', () => {
+      expect(
+        RepositoryLocation.parse({ path: './src/auth.ts', revision: 'base', line: 1, endLine: 2 }),
+      ).toEqual({ path: 'src/auth.ts', revision: 'base', line: 1, endLine: 2 });
+      expect(RepositoryLocation.parse({ path: 'src/a/../b.ts', revision: 'head' })).toEqual({
+        path: 'src/b.ts',
+        revision: 'head',
+      });
+      for (const path of [
+        '../secret.ts',
+        '/etc/passwd',
+        'file:///tmp/x',
+        'C:\\repo\\x.ts',
+        'src/\0x.ts',
+      ]) {
+        expect(RepositoryLocation.safeParse({ path, revision: 'head' }).success).toBe(false);
+      }
+    });
+
+    it('classifies repository-root escapes separately from generic invalid paths', () => {
+      expect(classifyRepositoryPath('../outside.ts')).toEqual({ kind: 'escapes_repository' });
+      expect(classifyRepositoryPath('/etc/passwd')).toEqual({ kind: 'invalid' });
+      expect(classifyRepositoryPath('file:///tmp/evidence.ts')).toEqual({ kind: 'invalid' });
+      expect(classifyRepositoryPath('src/a/../b.ts')).toEqual({
+        kind: 'valid',
+        normalizedPath: 'src/b.ts',
+      });
+    });
+
+    it('allows empty evidence and preserves relation order while rejecting duplicate locations', () => {
+      const subjectAnchors = [
+        {
+          kind: 'repository_location' as const,
+          location: { path: 'src/b.ts', revision: 'head' as const },
+        },
+        {
+          kind: 'repository_location' as const,
+          location: { path: 'src/a.ts', revision: 'base' as const },
+        },
+      ];
+      const evidenceLocations = [
+        { path: 'docs/b.md', revision: 'head' as const },
+        { path: 'docs/a.md', revision: 'base' as const },
+      ];
+      expect(
+        Finding.parse({
+          severity: 'minor',
+          category: 'quality',
+          message: 'test',
+          relation: { subjectAnchors, evidenceLocations },
+        }).relation,
+      ).toEqual({ subjectAnchors, evidenceLocations });
+      expect(
+        Finding.safeParse({
+          severity: 'minor',
+          category: 'quality',
+          message: 'test',
+          relation: { subjectAnchors, evidenceLocations: [] },
+        }).success,
+      ).toBe(true);
+      expect(
+        Finding.safeParse({
+          severity: 'minor',
+          category: 'quality',
+          message: 'test',
+          relation: { subjectAnchors: [subjectAnchors[0], subjectAnchors[0]], evidenceLocations },
+        }).success,
+      ).toBe(false);
+      expect(
+        Finding.safeParse({
+          severity: 'minor',
+          category: 'quality',
+          message: 'test',
+          relation: {
+            subjectAnchors,
+            evidenceLocations: [evidenceLocations[0], evidenceLocations[0]],
+          },
+        }).success,
+      ).toBe(false);
+    });
+
+    it('parses repository-change and artifact review subject scopes', () => {
+      expect(
+        ReviewSubjectScope.parse({
+          kind: 'repository_change',
+          paths: ['./src/auth.ts'],
+          revisions: ['base', 'head'],
+        }),
+      ).toEqual({
+        kind: 'repository_change',
+        paths: ['src/auth.ts'],
+        revisions: ['base', 'head'],
+      });
+      expect(
+        ReviewSubjectScope.parse({
+          kind: 'artifact',
+          artifact: {
+            kind: 'plan',
+            digest: 'plan-digest',
+            sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Validation' }]],
+          },
+        }),
+      ).toBeDefined();
     });
 
     it('ReviewActorInfo parses minimal actor info', () => {
@@ -222,6 +338,11 @@ describe('evidence-review', () => {
         blockedCode: null,
         fulfilledAt: null,
         consumedAt: null,
+        reviewSubjectScope: {
+          kind: 'repository_change' as const,
+          paths: ['src/auth.ts'],
+          revisions: ['base', 'head'],
+        },
       };
       expect(ReviewObligation.parse(obligation)).toEqual(obligation);
     });
@@ -454,6 +575,11 @@ describe('evidence-review', () => {
         blockedCode: null,
         fulfilledAt: null,
         consumedAt: null,
+        reviewSubjectScope: {
+          kind: 'repository_change' as const,
+          paths: ['src/auth.ts'],
+          revisions: ['base', 'head'],
+        },
         metadata: { inputFingerprint: 'abc', customField: 42 },
       };
       expect(ReviewObligation.parse(obligation)).toEqual(obligation);
@@ -525,13 +651,18 @@ describe('evidence-review', () => {
         blockedCode: null,
         fulfilledAt: null,
         consumedAt: null,
+        reviewSubjectScope: {
+          kind: 'repository_change' as const,
+          paths: ['src/auth.ts'],
+          revisions: ['base', 'head'],
+        },
         reviewProfile: 'core' as const,
         profileSource: 'policy_default' as const,
       };
       expect(ReviewObligation.parse(obligation)).toEqual(obligation);
     });
 
-    it('ReviewObligation remains backward compatible without profile fields', () => {
+    it('ReviewObligation accepts no optional profile fields', () => {
       const legacy = {
         obligationId: FIXED_UUID,
         obligationType: 'plan' as const,
@@ -547,6 +678,11 @@ describe('evidence-review', () => {
         blockedCode: null,
         fulfilledAt: null,
         consumedAt: null,
+        reviewSubjectScope: {
+          kind: 'repository_change' as const,
+          paths: ['src/auth.ts'],
+          revisions: ['base', 'head'],
+        },
       };
       const parsed = ReviewObligation.parse(legacy);
       expect(parsed.reviewProfile).toBeUndefined();

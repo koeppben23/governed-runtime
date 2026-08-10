@@ -178,6 +178,16 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ Zod ReviewFindings drift guard', () =>
     ]);
   });
 
+  it('CONTRACT: findings require structured relations and reject legacy locations', () => {
+    const props = jsonSchemaProperties();
+    for (const key of ['blockingIssues', 'majorRisks'] as const) {
+      const finding = props[key]!.items!;
+      expect(finding.properties?.relation).toBeDefined();
+      expect(finding.required).toContain('relation');
+      expect(finding.properties?.location).toBeUndefined();
+    }
+  });
+
   it('GOOD: attestation.toolObligationId enforces UUID pattern (matches z.string().uuid())', () => {
     // Drift guard: Zod ReviewAttestation.toolObligationId is z.string().uuid().
     // Pre-fix the JSON-Schema only required `type: string`, so the SDK could

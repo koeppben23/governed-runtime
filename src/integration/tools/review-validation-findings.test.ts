@@ -47,6 +47,14 @@ function parseBlocked(result: string): { code: string; error: boolean } {
   return JSON.parse(result) as { code: string; error: boolean };
 }
 
+function findingRelation() {
+  const location = { path: 'src/foo.ts', revision: 'head' as const, line: 1 };
+  return {
+    subjectAnchors: [{ kind: 'repository_location' as const, location }],
+    evidenceLocations: [location],
+  };
+}
+
 function strictFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings {
   return makeFindings({
     reviewedBy: { sessionId: 'ses_child' },
@@ -83,7 +91,16 @@ function strictAssuranceFixture(
         blockedCode: null,
         fulfilledAt: new Date().toISOString(),
         consumedAt: null,
-        reviewedFileScope: { kind: 'files' as const, paths: ['src/foo.ts'] },
+        reviewSubjectScope: {
+          kind: 'repository_change' as const,
+          paths: ['src/foo.ts'],
+          revisions: ['base', 'head'] as const,
+        },
+        repositoryRevisionProvenance: {
+          kind: 'available' as const,
+          headSha: 'a'.repeat(40),
+          baseSha: 'b'.repeat(40),
+        },
       },
     ],
     invocations: [
@@ -151,16 +168,19 @@ describe('validateReviewFindings', () => {
       severity: 'critical' as const,
       category: 'correctness' as const,
       message: 'contract drift',
+      relation: findingRelation(),
     };
     const majorIssue = {
       severity: 'major' as const,
       category: 'risk' as const,
       message: 'silent data loss',
+      relation: findingRelation(),
     };
     const minorIssue = {
       severity: 'minor' as const,
       category: 'quality' as const,
       message: 'stale comment',
+      relation: findingRelation(),
     };
 
     it('blocks accept with a critical blocking issue', () => {
@@ -199,7 +219,7 @@ describe('validateReviewFindings', () => {
     it('allows changes_requested with blocking issues', () => {
       const result = validateReviewFindings(
         makeFindings({ overallVerdict: 'changes_requested', blockingIssues: [criticalIssue] }),
-        makeCtx(),
+        makeCtx({ assurance: strictAssuranceFixture(), obligationType: 'plan' }),
       );
       expect(result).toBeNull();
     });
@@ -220,9 +240,17 @@ describe('validateReviewFindings', () => {
           majorRisks: [majorIssue],
           missingVerification: ['no integration test for the new path'],
         }),
-        makeCtx(),
+        makeCtx({ assurance: strictAssuranceFixture(), obligationType: 'plan' }),
       );
       expect(result).toBeNull();
+    });
+
+    it('blocks material findings without a resolved review obligation scope', () => {
+      const result = validateReviewFindings(
+        makeFindings({ overallVerdict: 'changes_requested', blockingIssues: [majorIssue] }),
+        makeCtx(),
+      );
+      expect(parseBlocked(result!).code).toBe('REVIEW_SUBJECT_SCOPE_UNAVAILABLE');
     });
 
     it('reports unable_to_review via its own SSOT path, not the coherence rule', () => {
@@ -622,7 +650,11 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
       consumedAt: null,
       requiredChallengeCount: 1,
       requiredChallengeKind: 'implementation_challenge' as const,
-      reviewedFileScope: { kind: 'files' as const, paths: ['src/foo.ts'] },
+      reviewSubjectScope: {
+        kind: 'repository_change' as const,
+        paths: ['src/foo.ts'],
+        revisions: ['base', 'head'] as const,
+      },
     };
   }
 

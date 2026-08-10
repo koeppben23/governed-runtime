@@ -1,314 +1,292 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   validateReviewFindingsConsistency,
   validateReviewFindingsScope,
 } from './findings-consistency.js';
 
-// F12: canonical verdict/blocking-issues coherence invariant (strict emptiness).
-// This is the single source of truth for the rule; both ingestion boundaries
-// delegate here. The matrix below fully pins the rule so a refactor cannot
-// silently narrow or widen it. Challenge/resolution consistency lives in the
-// separate challenge-consistency authority (#747) and is tested there.
+const REPOSITORY_SCOPE = {
+  kind: 'repository_change' as const,
+  paths: ['src/foo.ts'],
+  revisions: ['base', 'head'] as const,
+};
+const HEAD_SHA = 'a'.repeat(40);
+const BASE_SHA = 'b'.repeat(40);
+const REPOSITORY_PROVENANCE = { kind: 'available' as const, headSha: HEAD_SHA, baseSha: BASE_SHA };
+const repositoryRelation = {
+  subjectAnchors: [
+    {
+      kind: 'repository_location' as const,
+      location: { path: 'src/foo.ts', revision: 'head' as const, line: 10 },
+    },
+  ],
+  evidenceLocations: [{ path: 'docs/evidence.md', revision: 'base' as const, line: 2 }],
+};
+
 describe('review/enforcement/findings-consistency', () => {
-  describe('BAD — accept with any blocking issue is incoherent (strict emptiness)', () => {
-    it('accept + 1 blocking issue → incoherent', () => {
-      const result = validateReviewFindingsConsistency({
-        overallVerdict: 'accept',
-        blockingIssueCount: 1,
-      });
-      expect(result.ok).toBe(false);
-      if (result.ok) throw new Error('expected incoherent');
-      expect(result.code).toBe('SUBAGENT_VERDICT_FINDINGS_INCOHERENT');
-      expect(result.details).toEqual({ overallVerdict: 'accept', blockingIssueCount: 1 });
-    });
-
-    it('accept + many blocking issues → incoherent, count preserved', () => {
-      const result = validateReviewFindingsConsistency({
-        overallVerdict: 'accept',
-        blockingIssueCount: 4,
-      });
-      expect(result.ok).toBe(false);
-      if (result.ok) throw new Error('expected incoherent');
-      expect(result.details.blockingIssueCount).toBe(4);
+  it('rejects accept with blocking findings', () => {
+    expect(
+      validateReviewFindingsConsistency({ overallVerdict: 'accept', blockingIssueCount: 1 }),
+    ).toEqual({
+      ok: false,
+      code: 'SUBAGENT_VERDICT_FINDINGS_INCOHERENT',
+      details: { overallVerdict: 'accept', blockingIssueCount: 1 },
     });
   });
 
-  describe('HAPPY — coherent combinations pass', () => {
-    it('P3: accept + zero blocking issues is the only accepted zero-claim case', () => {
-      expect(
-        validateReviewFindingsConsistency({ overallVerdict: 'accept', blockingIssueCount: 0 }),
-      ).toEqual({ ok: true });
-    });
+  it('accepts a coherent verdict', () => {
+    expect(
+      validateReviewFindingsConsistency({ overallVerdict: 'accept', blockingIssueCount: 0 }),
+    ).toEqual({ ok: true });
+  });
 
-    it('changes_requested + blocking issues → ok (non-accept verdicts are unconstrained)', () => {
+  describe('structured subject scope', () => {
+    it('accepts a subject anchor in the repository-change paths and external evidence', () => {
       expect(
-        validateReviewFindingsConsistency({
-          overallVerdict: 'changes_requested',
-          blockingIssueCount: 3,
+        validateReviewFindingsScope({
+          findings: [
+            {
+              relation: {
+                ...repositoryRelation,
+                evidenceLocations: [{ path: 'docs/evidence.md', revision: 'head', line: 2 }],
+              },
+            },
+          ],
+          reviewSubjectScope: REPOSITORY_SCOPE,
+          repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
         }),
       ).toEqual({ ok: true });
     });
 
-    it('changes_requested + 0 blocking issues → ok', () => {
+    it('rejects a finding without a subject anchor in the repository-change paths', () => {
+      const result = validateReviewFindingsScope({
+        findings: [
+          {
+            relation: {
+              ...repositoryRelation,
+              subjectAnchors: [
+                {
+                  kind: 'repository_location' as const,
+                  location: { path: 'src/other.ts', revision: 'head' as const, line: 10 },
+                },
+              ],
+            },
+          },
+        ],
+        reviewSubjectScope: REPOSITORY_SCOPE,
+        repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
+        details: { outOfScopeFindingIndexes: [0] },
+      });
+    });
+
+    const validationPath = [{ headingDepth: 1, siblingIndex: 1, headingText: 'Validation' }];
+    const unitTestsPath = [
+      ...validationPath,
+      { headingDepth: 2, siblingIndex: 1, headingText: 'Unit tests' },
+    ];
+
+    it('matches an artifact section only when its path is explicitly scoped', () => {
       expect(
-        validateReviewFindingsConsistency({
-          overallVerdict: 'changes_requested',
-          blockingIssueCount: 0,
+        validateReviewFindingsScope({
+          findings: [
+            {
+              relation: {
+                subjectAnchors: [
+                  {
+                    kind: 'artifact_section',
+                    artifactKind: 'plan',
+                    artifactDigest: 'plan-digest',
+                    sectionPath: validationPath,
+                  },
+                ],
+                evidenceLocations: [{ path: 'docs/plan.md', revision: 'head', line: 8 }],
+              },
+            },
+          ],
+          reviewSubjectScope: {
+            kind: 'artifact',
+            artifact: {
+              kind: 'plan',
+              digest: 'plan-digest',
+              sectionPaths: [validationPath],
+            },
+          },
+          repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
         }),
       ).toEqual({ ok: true });
     });
 
-    it('unable_to_review + 0 blocking issues → ok (own SSOT path, not this rule)', () => {
+    it('rejects an artifact descendant unless that path is explicitly scoped', () => {
+      const relation = {
+        subjectAnchors: [
+          {
+            kind: 'artifact_section' as const,
+            artifactKind: 'plan' as const,
+            artifactDigest: 'plan-digest',
+            sectionPath: unitTestsPath,
+          },
+        ],
+        evidenceLocations: [],
+      };
+      const scope = {
+        kind: 'artifact' as const,
+        artifact: { kind: 'plan' as const, digest: 'plan-digest', sectionPaths: [validationPath] },
+      };
       expect(
-        validateReviewFindingsConsistency({
-          overallVerdict: 'unable_to_review',
-          blockingIssueCount: 0,
+        validateReviewFindingsScope({
+          findings: [{ relation }],
+          reviewSubjectScope: scope,
+          repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
+        }),
+      ).toMatchObject({
+        code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
+      });
+      expect(
+        validateReviewFindingsScope({
+          findings: [{ relation }],
+          reviewSubjectScope: {
+            ...scope,
+            artifact: { ...scope.artifact, sectionPaths: [validationPath, unitTestsPath] },
+          },
+          repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
         }),
       ).toEqual({ ok: true });
     });
-  });
 
-  describe('GUARD — rule keys ONLY on blocking issues, not on other findings', () => {
-    it('the check receives only verdict + blocking count; advisory data elsewhere cannot trip it', () => {
-      // The input contract deliberately excludes majorRisks/missingVerification/etc.
-      // so "accept must be findings-free" can never be implemented by accident.
+    it('fails closed for unavailable scope', () => {
       expect(
-        validateReviewFindingsConsistency({ overallVerdict: 'accept', blockingIssueCount: 0 }),
+        validateReviewFindingsScope({
+          findings: [
+            {
+              relation: {
+                ...repositoryRelation,
+                evidenceLocations: [{ path: 'docs/evidence.md', revision: 'head', line: 2 }],
+              },
+            },
+          ],
+          reviewSubjectScope: { kind: 'unavailable', reason: 'scope lookup failed' },
+          repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
+        }),
+      ).toMatchObject({ code: 'REVIEW_SUBJECT_SCOPE_UNAVAILABLE' });
+    });
+
+    it('identifies evidence locations that escape the repository when the subject anchor is valid', () => {
+      expect(
+        validateReviewFindingsScope({
+          findings: [
+            {
+              relation: {
+                ...repositoryRelation,
+                evidenceLocations: [{ path: '../outside.ts', revision: 'head', line: 1 }],
+              },
+            },
+          ],
+          reviewSubjectScope: REPOSITORY_SCOPE,
+          repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
+        }),
+      ).toMatchObject({ code: 'REVIEW_EVIDENCE_LOCATION_ESCAPES_REPOSITORY' });
+    });
+
+    it.each(['/etc/passwd', 'file:///tmp/evidence.ts'])(
+      'identifies generic invalid evidence location %s when the subject anchor is valid',
+      (path) => {
+        expect(
+          validateReviewFindingsScope({
+            findings: [
+              {
+                relation: {
+                  ...repositoryRelation,
+                  evidenceLocations: [{ path, revision: 'head', line: 1 }],
+                },
+              },
+            ],
+            reviewSubjectScope: REPOSITORY_SCOPE,
+            repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
+          }),
+        ).toMatchObject({ code: 'REVIEW_EVIDENCE_LOCATION_INVALID' });
+      },
+    );
+
+    it('keeps missing or malformed subject anchors anchor-required', () => {
+      expect(
+        validateReviewFindingsScope({
+          findings: [{ relation: { ...repositoryRelation, subjectAnchors: [] } }],
+          reviewSubjectScope: REPOSITORY_SCOPE,
+          repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
+        }),
+      ).toMatchObject({ code: 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED' });
+      expect(
+        validateReviewFindingsScope({
+          findings: [
+            {
+              relation: {
+                ...repositoryRelation,
+                subjectAnchors: [
+                  { kind: 'not_an_anchor' },
+                ] as unknown as typeof repositoryRelation.subjectAnchors,
+              },
+            },
+          ],
+          reviewSubjectScope: REPOSITORY_SCOPE,
+          repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
+        }),
+      ).toMatchObject({ code: 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED' });
+    });
+
+    it('rejects repository locations at revisions unavailable to the scope', () => {
+      expect(
+        validateReviewFindingsScope({
+          findings: [
+            {
+              relation: {
+                ...repositoryRelation,
+                evidenceLocations: [{ path: 'docs/evidence.md', revision: 'head', line: 2 }],
+              },
+            },
+          ],
+          reviewSubjectScope: { ...REPOSITORY_SCOPE, revisions: ['base'] },
+          repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
+        }),
+      ).toMatchObject({ code: 'REVIEW_REPOSITORY_REVISION_UNAVAILABLE' });
+    });
+
+    it('accepts a head location with a frozen head revision', () => {
+      expect(
+        validateReviewFindingsScope({
+          findings: [
+            {
+              relation: {
+                ...repositoryRelation,
+                evidenceLocations: [{ path: 'docs/evidence.md', revision: 'head', line: 2 }],
+              },
+            },
+          ],
+          reviewSubjectScope: REPOSITORY_SCOPE,
+          repositoryRevisionProvenance: { kind: 'available', headSha: HEAD_SHA },
+        }),
       ).toEqual({ ok: true });
     });
-  });
 
-  describe('validateReviewFindingsScope', () => {
-    it('path matching a scope entry is valid', () => {
-      const result = validateReviewFindingsScope({
-        findings: [{ location: 'src/foo.ts' }],
-        reviewedFileScope: ['src/foo.ts', 'src/bar.ts'],
-      });
-      expect(result.ok).toBe(true);
-    });
-
-    it('path outside scope is rejected', () => {
-      const result = validateReviewFindingsScope({
-        findings: [{ location: 'src/baz.ts' }],
-        reviewedFileScope: ['src/foo.ts'],
-      });
-      expect(result.ok).toBe(false);
-      if (result.ok) throw new Error('expected rejection');
-      expect(result.code).toBe('REVIEW_FINDING_OUT_OF_SCOPE');
-      expect(result.details.outOfScopePaths).toContain('src/baz.ts');
-    });
-
-    it('./ prefix is normalized before comparison', () => {
-      const result = validateReviewFindingsScope({
-        findings: [{ location: './src/foo.ts' }],
-        reviewedFileScope: ['src/foo.ts'],
-      });
-      expect(result.ok).toBe(true);
-    });
-
-    it('path traversal via ../ is caught and normalized', () => {
-      const result = validateReviewFindingsScope({
-        findings: [{ location: 'src/../etc/passwd' }],
-        reviewedFileScope: ['src/foo.ts'],
-      });
-      expect(result.ok).toBe(false);
-      if (result.ok) throw new Error('expected rejection');
-      expect(result.details.outOfScopePaths).toContain('src/../etc/passwd');
-    });
-
-    it('legacy obligation without reviewedFileScope → scope_unverifiable', () => {
-      const result = validateReviewFindingsScope({
-        findings: [{ location: 'src/foo.ts' }],
-      });
-      expect(result.ok).toBe(false);
-      if (result.ok) throw new Error('expected rejection');
-      expect(result.code).toBe('REVIEW_FINDING_SCOPE_UNVERIFIABLE');
-    });
-
-    it('findings without locations pass scope check', () => {
-      const result = validateReviewFindingsScope({
-        findings: [{ message: 'no location' }],
-        reviewedFileScope: ['src/foo.ts'],
-      });
-      expect(result.ok).toBe(true);
-    });
-
-    it('same out-of-scope finding rejected regardless of finding source (symmetry)', () => {
-      const outOfScope = { location: 'src/secret.ts', severity: 'critical' };
-      const scope = ['src/foo.ts'];
+    it('rejects a base location without a frozen base revision', () => {
       expect(
-        validateReviewFindingsScope({ findings: [outOfScope], reviewedFileScope: scope }).ok,
-      ).toBe(false);
-      const combined = [{ location: 'src/foo.ts' }, outOfScope, { location: 'src/bar.ts' }];
-      const result = validateReviewFindingsScope({
-        findings: combined,
-        reviewedFileScope: ['src/foo.ts', 'src/bar.ts'],
-      });
-      expect(result.ok).toBe(false);
-      if (result.ok) throw new Error('expected rejection');
-      expect(result.details.outOfScopePaths).toEqual(['src/secret.ts']);
-    });
-  });
-
-  describe('validateReviewFindingsScope — path candidate extraction', () => {
-    const SCOPE = ['src/foo/TaskService.java', 'src/foo/CreateTaskRequest.java'];
-
-    it('extracts path with line range and method decoration', () => {
-      const result = validateReviewFindingsScope({
-        findings: [{ location: 'src/foo/TaskService.java:34-43 (createTask method)' }],
-        reviewedFileScope: SCOPE,
-      });
-      expect(result.ok).toBe(true);
+        validateReviewFindingsScope({
+          findings: [{ relation: repositoryRelation }],
+          reviewSubjectScope: REPOSITORY_SCOPE,
+          repositoryRevisionProvenance: { kind: 'available', headSha: HEAD_SHA },
+        }),
+      ).toMatchObject({ code: 'REVIEW_REPOSITORY_REVISION_UNAVAILABLE' });
     });
 
-    it('extracts path with line annotation and field decoration', () => {
-      const result = validateReviewFindingsScope({
-        findings: [{ location: 'src/foo/CreateTaskRequest.java (dueDate field)' }],
-        reviewedFileScope: SCOPE,
-      });
-      expect(result.ok).toBe(true);
-    });
-
-    it('extracts path from mixed prose/path location separated by semicolon', () => {
-      const result = validateReviewFindingsScope({
-        findings: [{ location: 'ADR Decision section; src/foo/TaskService.java:26-32 (getTask)' }],
-        reviewedFileScope: SCOPE,
-      });
-      expect(result.ok).toBe(true);
-    });
-
-    it('rejects path in mixed prose when path is out of scope', () => {
-      const result = validateReviewFindingsScope({
-        findings: [{ location: 'ADR Decision section; src/other/Secret.java:10-20 (leak)' }],
-        reviewedFileScope: SCOPE,
-      });
-      expect(result.ok).toBe(false);
-      if (result.ok) throw new Error('expected rejection');
-      expect(result.code).toBe('REVIEW_FINDING_OUT_OF_SCOPE');
-    });
-
-    it('extracts multiple paths from a single location string', () => {
-      const result = validateReviewFindingsScope({
-        findings: [
-          {
-            location:
-              'See src/foo/TaskService.java and src/foo/CreateTaskRequest.java for the mismatch',
-          },
-        ],
-        reviewedFileScope: SCOPE,
-      });
-      expect(result.ok).toBe(true);
-    });
-
-    it('blocks when one of multiple extracted paths is out of scope', () => {
-      const result = validateReviewFindingsScope({
-        findings: [
-          {
-            location: 'src/foo/TaskService.java + src/other/OutOfScope.java mismatch',
-          },
-        ],
-        reviewedFileScope: SCOPE,
-      });
-      expect(result.ok).toBe(false);
-      if (result.ok) throw new Error('expected rejection');
-      expect(result.code).toBe('REVIEW_FINDING_OUT_OF_SCOPE');
-    });
-
-    it('blocks when 2 in-scope + 2 out-of-scope paths in same location', () => {
-      const result = validateReviewFindingsScope({
-        findings: [
-          {
-            location:
-              'src/foo/TaskService.java, src/foo/CreateTaskRequest.java, src/other/A.java, src/other/B.java',
-          },
-        ],
-        reviewedFileScope: SCOPE,
-      });
-      expect(result.ok).toBe(false);
-      if (result.ok) throw new Error('expected rejection');
-      expect(result.code).toBe('REVIEW_FINDING_OUT_OF_SCOPE');
-    });
-
-    it('pure prose location with zero paths passes scope check', () => {
-      const result = validateReviewFindingsScope({
-        findings: [{ location: 'ADR Decision section, lines 45-53 (updateTask)' }],
-        reviewedFileScope: SCOPE,
-      });
-      expect(result.ok).toBe(true);
-    });
-
-    it('non-path prose tokens do not cause false positives', () => {
-      const result = validateReviewFindingsScope({
-        findings: [
-          {
-            location:
-              'ADR Decision section; src/foo/TaskService.java:26-32 (getTask), lines 45-53 (updateTask)',
-          },
-        ],
-        reviewedFileScope: SCOPE,
-      });
-      expect(result.ok).toBe(true);
-    });
-  });
-
-  describe('validateReviewFindingsScope — discriminated union ReviewedScope', () => {
-    const SCOPE_FILES = {
-      kind: 'files' as const,
-      paths: ['src/foo.ts'],
-    };
-
-    it('kind=files with matching path passes', () => {
-      const result = validateReviewFindingsScope({
-        findings: [{ location: 'src/foo.ts' }],
-        reviewedFileScope: SCOPE_FILES,
-      });
-      expect(result.ok).toBe(true);
-    });
-
-    it('kind=files with out-of-scope path is rejected', () => {
-      const result = validateReviewFindingsScope({
-        findings: [{ location: 'src/bar.ts' }],
-        reviewedFileScope: SCOPE_FILES,
-      });
-      expect(result.ok).toBe(false);
-      if (result.ok) throw new Error('expected rejection');
-      expect(result.code).toBe('REVIEW_FINDING_OUT_OF_SCOPE');
-    });
-
-    it('kind=not_applicable always passes regardless of findings', () => {
-      const result = validateReviewFindingsScope({
-        findings: [{ location: 'src/anywhere/Secret.ts' }],
-        reviewedFileScope: { kind: 'not_applicable', reason: 'architecture_obligation' },
-      });
-      expect(result.ok).toBe(true);
-    });
-
-    it('kind=unavailable yields scope_unverifiable', () => {
-      const result = validateReviewFindingsScope({
-        findings: [{ location: 'src/foo.ts' }],
-        reviewedFileScope: { kind: 'unavailable', reason: 'diff_resolution_failed' },
-      });
-      expect(result.ok).toBe(false);
-      if (result.ok) throw new Error('expected rejection');
-      expect(result.code).toBe('REVIEW_FINDING_SCOPE_UNVERIFIABLE');
-    });
-
-    it('empty files array rejects any finding with a path', () => {
-      const result = validateReviewFindingsScope({
-        findings: [{ location: 'src/foo.ts' }],
-        reviewedFileScope: { kind: 'files', paths: [] },
-      });
-      expect(result.ok).toBe(false);
-      if (result.ok) throw new Error('expected rejection');
-      expect(result.code).toBe('REVIEW_FINDING_OUT_OF_SCOPE');
-    });
-
-    it('empty files array passes findings without locations', () => {
-      const result = validateReviewFindingsScope({
-        findings: [{ message: 'no location' }],
-        reviewedFileScope: { kind: 'files', paths: [] },
-      });
-      expect(result.ok).toBe(true);
+    it('rejects repository locations when legacy provenance is absent', () => {
+      expect(
+        validateReviewFindingsScope({
+          findings: [{ relation: repositoryRelation }],
+          reviewSubjectScope: REPOSITORY_SCOPE,
+        }),
+      ).toMatchObject({ code: 'REVIEW_REPOSITORY_REVISION_UNAVAILABLE' });
     });
   });
 });

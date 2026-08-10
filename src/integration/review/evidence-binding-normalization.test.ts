@@ -27,6 +27,7 @@ import {
   ensureReviewAssurance,
 } from './assurance.js';
 import type { ReviewObligation } from '../../state/evidence.js';
+import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence-review.js';
 import { resolveHostTaskFindings } from '../tools/review-validation.js';
 
 import {
@@ -531,6 +532,66 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
     expect(rehash).toBe(result.evidence!.findingsHash);
   });
 
+  it('REGRESSION: host-task evidence strips legacy finding locations before hashing and storage', () => {
+    const state = createSessionState();
+    onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(), NOW);
+    const obligation = pendingObligation();
+    const reviewerOutput = JSON.stringify({
+      iteration: 0,
+      planVersion: 1,
+      reviewMode: 'subagent',
+      overallVerdict: 'changes_requested',
+      blockingIssues: [
+        {
+          severity: 'major',
+          category: 'correctness',
+          message: 'The plan does not handle failed OAuth callbacks.',
+          relation: {
+            subjectAnchors: [
+              { kind: 'repository_location', location: { path: 'src/foo.ts', revision: 'head' } },
+            ],
+            evidenceLocations: [],
+          },
+          location: 'legacy/path.ts:12',
+        },
+      ],
+      majorRisks: [],
+      missingVerification: [],
+      scopeCreep: [],
+      unknowns: [],
+      reviewedBy: { sessionId: CHILD_SESSION_ID },
+      reviewedAt: NOW,
+      attestation: {
+        toolObligationId: obligation.obligationId,
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+        criteriaVersion: REVIEW_CRITERIA_VERSION,
+        iteration: 0,
+        planVersion: 1,
+        reviewedBy: REVIEWER_SUBAGENT_TYPE,
+      },
+    });
+    onTaskToolAfter(
+      state,
+      { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
+      reviewerOutput,
+      LATER,
+    );
+
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: [attemptFor(obligation)],
+    });
+
+    expect(result.bindOutcome).toBe('bound');
+    const evidence = result.evidence!;
+    const capturedRawFindings = evidence.capturedRawFindings!;
+    const blockingFinding = (capturedRawFindings.blockingIssues as Record<string, unknown>[])[0]!;
+    expect(blockingFinding).not.toHaveProperty('location');
+    expect(hashFindings(capturedRawFindings)).toBe(evidence.findingsHash);
+    expect(ReviewFindingsSchema.safeParse(capturedRawFindings).success).toBe(true);
+  });
+
   // ─── SMOKE ─────────────────────────────────────────────────────────────────
 
   it('SMOKE: normalization is deterministic — same result on repeated builds', () => {
@@ -628,7 +689,17 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
       overallVerdict: 'accept',
       blockingIssues: [],
       majorRisks: [
-        { severity: 'minor', category: 'quality', message: 'Consider adding more tests' },
+        {
+          severity: 'minor',
+          category: 'quality',
+          message: 'Consider adding more tests',
+          relation: {
+            subjectAnchors: [
+              { kind: 'repository_location', location: { path: 'src/foo.ts', revision: 'head' } },
+            ],
+            evidenceLocations: [],
+          },
+        },
       ],
       missingVerification: ['Integration test coverage'],
       scopeCreep: [],

@@ -612,7 +612,7 @@ describe('standalone review hypotheses (runtime)', () => {
     await writeStateWithArtifacts(env.sDir, makeState('READY'));
 
     const first = await review.execute(
-      { inputOrigin: 'manual_text', text: 'PR under review' },
+      { inputOrigin: 'manual_text', text: 'PR under review', targetPaths: ['README.md'] },
       env.tc,
     );
     const obligationId = JSON.parse(String(first)).requiredReviewAttestation
@@ -623,11 +623,30 @@ describe('standalone review hypotheses (runtime)', () => {
     const obligation = prepared!.reviewAssurance!.obligations.find(
       (o) => o.obligationId === obligationId,
     )!;
+    await writeStateWithArtifacts(env.sDir, {
+      ...prepared!,
+      reviewAssurance: {
+        ...prepared!.reviewAssurance!,
+        obligations: prepared!.reviewAssurance!.obligations.map((item) =>
+          item.obligationId === obligationId
+            ? {
+                ...item,
+                reviewSubjectScope: {
+                  kind: 'repository_change',
+                  paths: ['README.md'],
+                  revisions: ['base', 'head'],
+                },
+              }
+            : item,
+        ),
+      },
+    });
 
     await review.execute(
       {
         inputOrigin: 'manual_text',
         text: 'PR under review',
+        targetPaths: ['README.md'],
         reviewFindings: findings(obligationId, obligation.iteration, obligation.planVersion),
       },
       env.tc,
@@ -944,7 +963,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             fulfilledAt: FIXED_TIME,
             consumedAt: null,
             requiredChallengeCount: undefined,
-            reviewedFileScope: { kind: 'files' as const, paths: [] as readonly string[] },
+            reviewSubjectScope: { kind: 'unavailable', reason: 'no changed files available' },
           },
         ],
         invocations: [

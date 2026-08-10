@@ -26,6 +26,11 @@ function makeObligation(overrides: Partial<ReviewObligation> = {}): ReviewObliga
     blockedCode: null,
     fulfilledAt: null,
     consumedAt: null,
+    reviewSubjectScope: {
+      kind: 'repository_change',
+      paths: ['src/foo.ts'],
+      revisions: ['base', 'head'],
+    },
     ...overrides,
   };
 }

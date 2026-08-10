@@ -284,7 +284,7 @@ describe('integration/review-assurance', () => {
     });
   });
 
-  describe('createReviewObligation — reviewedFileScope construction', () => {
+  describe('createReviewObligation — reviewSubjectScope construction', () => {
     it('plan + undefined changedFiles → unavailable', () => {
       const result = createReviewObligation({
         obligationType: 'plan',
@@ -293,7 +293,7 @@ describe('integration/review-assurance', () => {
         now: NOW,
         subjectDigest: 'test',
       });
-      expect(result.reviewedFileScope).toEqual({
+      expect(result.reviewSubjectScope).toEqual({
         kind: 'unavailable',
         reason: 'scope_not_resolved',
       });
@@ -307,7 +307,7 @@ describe('integration/review-assurance', () => {
         now: NOW,
         subjectDigest: 'test',
       });
-      expect(result.reviewedFileScope).toEqual({
+      expect(result.reviewSubjectScope).toEqual({
         kind: 'unavailable',
         reason: 'scope_not_resolved',
       });
@@ -321,13 +321,13 @@ describe('integration/review-assurance', () => {
         now: NOW,
         subjectDigest: 'test',
       });
-      expect(result.reviewedFileScope).toEqual({
+      expect(result.reviewSubjectScope).toEqual({
         kind: 'unavailable',
         reason: 'scope_not_resolved',
       });
     });
 
-    it('architecture + undefined changedFiles → not_applicable', () => {
+    it('architecture + undefined changedFiles → unavailable', () => {
       const result = createReviewObligation({
         obligationType: 'architecture',
         iteration: 0,
@@ -335,13 +335,13 @@ describe('integration/review-assurance', () => {
         now: NOW,
         subjectDigest: 'test',
       });
-      expect(result.reviewedFileScope).toEqual({
-        kind: 'not_applicable',
-        reason: 'architecture_obligation',
+      expect(result.reviewSubjectScope).toEqual({
+        kind: 'unavailable',
+        reason: 'scope_not_resolved',
       });
     });
 
-    it('any type + empty changedFiles → files:[]', () => {
+    it('any type + empty changedFiles → unavailable', () => {
       const result = createReviewObligation({
         obligationType: 'plan',
         iteration: 0,
@@ -350,13 +350,13 @@ describe('integration/review-assurance', () => {
         subjectDigest: 'test',
         changedFiles: [],
       });
-      expect(result.reviewedFileScope).toEqual({
-        kind: 'files',
-        paths: [],
+      expect(result.reviewSubjectScope).toEqual({
+        kind: 'unavailable',
+        reason: 'scope_not_resolved',
       });
     });
 
-    it('any type + concrete changedFiles → files with paths', () => {
+    it('any type + concrete changedFiles → repository_change with paths', () => {
       const result = createReviewObligation({
         obligationType: 'plan',
         iteration: 0,
@@ -365,13 +365,14 @@ describe('integration/review-assurance', () => {
         subjectDigest: 'test',
         changedFiles: ['src/foo.ts'],
       });
-      expect(result.reviewedFileScope).toEqual({
-        kind: 'files',
+      expect(result.reviewSubjectScope).toEqual({
+        kind: 'repository_change',
         paths: ['src/foo.ts'],
+        revisions: ['head'],
       });
     });
 
-    it('explicit reviewedScope overrides derivation', () => {
+    it('explicit reviewSubjectScope overrides derivation', () => {
       const result = createReviewObligation({
         obligationType: 'plan',
         iteration: 0,
@@ -379,11 +380,37 @@ describe('integration/review-assurance', () => {
         now: NOW,
         subjectDigest: 'test',
         changedFiles: ['src/foo.ts'],
-        reviewedScope: { kind: 'unavailable', reason: 'diff_resolution_failed' },
+        reviewSubjectScope: { kind: 'unavailable', reason: 'diff_resolution_failed' },
       });
-      expect(result.reviewedFileScope).toEqual({
+      expect(result.reviewSubjectScope).toEqual({
         kind: 'unavailable',
         reason: 'diff_resolution_failed',
+      });
+    });
+
+    it('binds an explicit artifact scope to the authoritative subject digest', () => {
+      const result = createReviewObligation({
+        obligationType: 'plan',
+        iteration: 0,
+        planVersion: 1,
+        now: NOW,
+        subjectDigest: 'plan-digest',
+        reviewSubjectScope: {
+          kind: 'artifact',
+          artifact: {
+            kind: 'plan',
+            digest: 'untrusted-digest',
+            sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Overview' }]],
+          },
+        },
+      });
+      expect(result.reviewSubjectScope).toEqual({
+        kind: 'artifact',
+        artifact: {
+          kind: 'plan',
+          digest: 'plan-digest',
+          sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Overview' }]],
+        },
       });
     });
   });

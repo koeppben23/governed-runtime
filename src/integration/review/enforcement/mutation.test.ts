@@ -524,6 +524,11 @@ describe('review-enforcement mutation kills', () => {
               blockedCode: null,
               fulfilledAt: null,
               consumedAt: null,
+              reviewSubjectScope: {
+                kind: 'repository_change' as const,
+                paths: ['src/foo.ts'],
+                revisions: ['base', 'head'] as const,
+              },
             },
           ],
           invocations: [],
@@ -564,6 +569,11 @@ describe('review-enforcement mutation kills', () => {
               blockedCode: null,
               fulfilledAt: NOW,
               consumedAt: null,
+              reviewSubjectScope: {
+                kind: 'repository_change' as const,
+                paths: ['src/foo.ts'],
+                revisions: ['base', 'head'] as const,
+              },
             },
           ],
           invocations: [],

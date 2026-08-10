@@ -15,6 +15,65 @@
 
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
+const REPOSITORY_LOCATION_JSON_SCHEMA = {
+  oneOf: [
+    {
+      type: 'object',
+      properties: {
+        path: { type: 'string', minLength: 1 },
+        revision: { type: 'string', enum: ['base', 'head'] },
+        line: { type: 'integer', minimum: 1 },
+        endLine: { type: 'integer', minimum: 1 },
+      },
+      required: ['path', 'revision'],
+    },
+  ],
+} as const;
+
+const REVIEW_SUBJECT_ANCHOR_JSON_SCHEMA = {
+  oneOf: [
+    {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', const: 'repository_location' },
+        location: REPOSITORY_LOCATION_JSON_SCHEMA,
+      },
+      required: ['kind', 'location'],
+    },
+    {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', const: 'artifact_section' },
+        artifactKind: { type: 'string', enum: ['plan', 'adr'] },
+        artifactDigest: { type: 'string', minLength: 1 },
+        sectionPath: {
+          type: 'array',
+          minItems: 1,
+          items: {
+            type: 'object',
+            properties: {
+              headingDepth: { type: 'integer', minimum: 1, maximum: 6 },
+              siblingIndex: { type: 'integer', minimum: 1 },
+              headingText: { type: 'string' },
+            },
+            required: ['headingDepth', 'siblingIndex', 'headingText'],
+          },
+        },
+      },
+      required: ['kind', 'artifactKind', 'artifactDigest', 'sectionPath'],
+    },
+  ],
+} as const;
+
+const FINDING_RELATION_JSON_SCHEMA = {
+  type: 'object',
+  properties: {
+    subjectAnchors: { type: 'array', minItems: 1, items: REVIEW_SUBJECT_ANCHOR_JSON_SCHEMA },
+    evidenceLocations: { type: 'array', items: REPOSITORY_LOCATION_JSON_SCHEMA },
+  },
+  required: ['subjectAnchors', 'evidenceLocations'],
+} as const;
+
 export const REVIEW_FINDINGS_JSON_SCHEMA = {
   type: 'object',
   properties: {
@@ -33,9 +92,9 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
             enum: ['completeness', 'correctness', 'feasibility', 'risk', 'quality'],
           },
           message: { type: 'string' },
-          location: { type: 'string' },
+          relation: FINDING_RELATION_JSON_SCHEMA,
         },
-        required: ['severity', 'category', 'message'],
+        required: ['severity', 'category', 'message', 'relation'],
       },
     },
     majorRisks: {
@@ -49,9 +108,9 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
             enum: ['completeness', 'correctness', 'feasibility', 'risk', 'quality'],
           },
           message: { type: 'string' },
-          location: { type: 'string' },
+          relation: FINDING_RELATION_JSON_SCHEMA,
         },
-        required: ['severity', 'category', 'message'],
+        required: ['severity', 'category', 'message', 'relation'],
       },
     },
     missingVerification: { type: 'array', items: { type: 'string' } },

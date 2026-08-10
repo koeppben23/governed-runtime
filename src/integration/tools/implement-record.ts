@@ -410,11 +410,12 @@ export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): 
         proofContractCoverage: [...materialized.coverage],
       }
     : finalState;
-  const activated = activateImplementationReviewObligation(stateWithMaterializedContract, {
+  const activated = await activateImplementationReviewObligation(stateWithMaterializedContract, {
     subagentEnabled: input.subagentEnabled,
     iteration: reviewIteration,
     planVersion,
     now: input.ctx.now(),
+    worktree: input.worktree,
   });
   // The persisted state carries the REFRESHED ProofGraph derived from the freshly
   // materialized contract; rendering `activated.state` would emit the pre-write

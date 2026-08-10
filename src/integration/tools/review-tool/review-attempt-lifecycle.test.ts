@@ -114,6 +114,11 @@ describe('subject digest stability', () => {
             fulfilledAt: null,
             consumedAt: null,
             subjectDigest: 'review-subject',
+            reviewSubjectScope: {
+              kind: 'repository_change',
+              paths: ['src/foo.ts'],
+              revisions: ['base', 'head'],
+            },
             metadata: { resolvedBranchSha: revSha, resolvedBaseSha: baseSha },
           },
         ],

@@ -35,6 +35,22 @@ describe('resolveHostTaskFindings', () => {
     reviewedBy: { sessionId: 'ses_child' },
     reviewedAt: now,
   };
+  const validRelation = {
+    subjectAnchors: [
+      {
+        kind: 'repository_location',
+        location: { path: 'src/foo.ts', revision: 'head', line: 10 },
+      },
+    ],
+    evidenceLocations: [{ path: 'src/foo.ts', revision: 'head', line: 10 }],
+  };
+  const finding = (overrides: Record<string, unknown> = {}) => ({
+    severity: 'minor',
+    category: 'quality',
+    message: 'stale comment',
+    relation: validRelation,
+    ...overrides,
+  });
 
   function makeObligation(overrides: Partial<ReviewObligation> = {}): ReviewObligation {
     return {
@@ -52,7 +68,11 @@ describe('resolveHostTaskFindings', () => {
       blockedCode: null,
       fulfilledAt: now,
       consumedAt: null,
-      reviewedFileScope: { kind: 'files' as const, paths: ['src/foo.ts'] },
+      reviewSubjectScope: {
+        kind: 'repository_change',
+        paths: ['src/foo.ts'],
+        revisions: ['base', 'head'],
+      },
       ...overrides,
     };
   }
@@ -177,7 +197,7 @@ describe('resolveHostTaskFindings', () => {
     const rawFindings = {
       ...validRawFindings,
       overallVerdict: 'accept',
-      blockingIssues: [{ severity: 'minor', category: 'quality', message: 'stale comment' }],
+      blockingIssues: [finding()],
     };
     const assurance = {
       attempts: [],
@@ -202,8 +222,8 @@ describe('resolveHostTaskFindings', () => {
       ...validRawFindings,
       overallVerdict: 'accept',
       blockingIssues: [
-        { severity: 'critical', category: 'correctness', message: 'contract drift' },
-        { severity: 'major', category: 'risk', message: 'silent data loss' },
+        finding({ severity: 'critical', category: 'correctness', message: 'contract drift' }),
+        finding({ severity: 'major', category: 'risk', message: 'silent data loss' }),
       ],
     };
     const assurance = {
@@ -227,7 +247,7 @@ describe('resolveHostTaskFindings', () => {
     const rawFindings = {
       ...validRawFindings,
       overallVerdict: 'changes_requested',
-      blockingIssues: [{ severity: 'critical', category: 'correctness', message: 'bug' }],
+      blockingIssues: [finding({ severity: 'critical', category: 'correctness', message: 'bug' })],
     };
     const assurance = {
       attempts: [],
@@ -248,12 +268,12 @@ describe('resolveHostTaskFindings', () => {
     const incoherentRawFindings = {
       ...validRawFindings,
       overallVerdict: 'accept',
-      blockingIssues: [{ severity: 'minor', category: 'quality', message: 'stale comment' }],
+      blockingIssues: [finding()],
     };
     const coherentRawFindings = {
       ...validRawFindings,
       overallVerdict: 'changes_requested',
-      blockingIssues: [{ severity: 'minor', category: 'quality', message: 'stale comment' }],
+      blockingIssues: [finding()],
     };
     const laterInvocationId = '33333333-3333-4333-8333-333333333333';
     const assurance = {
@@ -612,7 +632,7 @@ describe('resolveHostTaskFindings', () => {
     const offensiveRawFindings = {
       ...validRawFindings,
       overallVerdict: 'accept',
-      blockingIssues: [{ severity: 'minor', category: 'quality', message: 'stale' }],
+      blockingIssues: [finding({ message: 'stale' })],
     };
     const assurance = {
       obligations: [makeObligation()],
@@ -711,12 +731,12 @@ describe('resolveHostTaskFindings', () => {
       capturedRawFindings: {
         ...validRawFindings,
         overallVerdict: 'accept',
-        blockingIssues: [{ severity: 'minor', category: 'quality', message: 'stale' }],
+        blockingIssues: [finding({ message: 'stale' })],
       },
       findingsHash: hashFindings({
         ...validRawFindings,
         overallVerdict: 'accept',
-        blockingIssues: [{ severity: 'minor', category: 'quality', message: 'stale' }],
+        blockingIssues: [finding({ message: 'stale' })],
       }),
     });
     const result = resolveHostTaskFindings(
@@ -763,12 +783,12 @@ describe('resolveHostTaskFindings', () => {
       capturedRawFindings: {
         ...validRawFindings,
         overallVerdict: 'accept',
-        blockingIssues: [{ severity: 'minor', category: 'quality', message: 'stale' }],
+        blockingIssues: [finding({ message: 'stale' })],
       },
       findingsHash: hashFindings({
         ...validRawFindings,
         overallVerdict: 'accept',
-        blockingIssues: [{ severity: 'minor', category: 'quality', message: 'stale' }],
+        blockingIssues: [finding({ message: 'stale' })],
       }),
     });
     const result = resolveHostTaskFindings(
@@ -812,12 +832,12 @@ describe('resolveHostTaskFindings', () => {
       capturedRawFindings: {
         ...validRawFindings,
         overallVerdict: 'accept',
-        blockingIssues: [{ severity: 'minor', category: 'quality', message: 'stale' }],
+        blockingIssues: [finding({ message: 'stale' })],
       },
       findingsHash: hashFindings({
         ...validRawFindings,
         overallVerdict: 'accept',
-        blockingIssues: [{ severity: 'minor', category: 'quality', message: 'stale' }],
+        blockingIssues: [finding({ message: 'stale' })],
       }),
     });
     const result = resolveHostTaskFindings(
@@ -839,7 +859,7 @@ describe('resolveHostTaskFindings', () => {
       ...validRawFindings,
       overallVerdict: 'accept',
       blockingIssues: [
-        { severity: 'major', category: 'correctness', message: 'legacy contradiction' },
+        finding({ severity: 'major', category: 'correctness', message: 'legacy contradiction' }),
       ],
     };
 
@@ -847,7 +867,7 @@ describe('resolveHostTaskFindings', () => {
       ...validRawFindings,
       overallVerdict: 'changes_requested',
       blockingIssues: [
-        { severity: 'major', category: 'correctness', message: 'valid retry finding' },
+        finding({ severity: 'major', category: 'correctness', message: 'valid retry finding' }),
       ],
     };
 
@@ -915,7 +935,11 @@ describe('resolveHostTaskEffectiveFindings — directly-submitted challenge fres
       consumedAt: null,
       requiredChallengeCount: 1,
       requiredChallengeKind: 'implementation_challenge' as const,
-      reviewedFileScope: { kind: 'files' as const, paths: ['src/foo.ts'] },
+      reviewSubjectScope: {
+        kind: 'repository_change',
+        paths: ['src/foo.ts'],
+        revisions: ['base', 'head'],
+      },
     };
   }
 

@@ -14,13 +14,13 @@ Diagnostic: `flowguard_status({ proofGraph: true })`
 ## Findings
 
 ### Critical (1)
-- **Completeness:** Missing evidence
+- **Completeness:** Missing evidence `{"evidenceLocations":["evidence"],"subjectAnchors":["subject"]}`
 
 ### Major (1)
-- **Risk:** Untracked dependency `package.json`
+- **Risk:** Untracked dependency `{"evidenceLocations":["package"],"subjectAnchors":["dependency"]}`
 
 ### Warnings (1)
-- **Quality:** Missing changelog entry
+- **Quality:** Missing changelog entry `{"evidenceLocations":["evidence"],"subjectAnchors":["subject"]}`
 
 ## Completeness
 

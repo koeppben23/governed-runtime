@@ -57,6 +57,7 @@ import {
   buildArchitectureReviewInstruction,
 } from './architecture-shared.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
+import { headCommitFull } from '../../adapters/git.js';
 
 // ─── Mode-B Internal Types ────────────────────────────────────────────────
 
@@ -525,6 +526,7 @@ async function persistAndFormatNonConvergedReview(
   );
   const resolvedTargetPaths =
     classification.kind === 'available' ? [...classification.changedFiles] : undefined;
+  const headSha = await headCommitFull(session.wsDir);
   const nextObligation = review.subagentEnabled
     ? createReviewObligation({
         obligationType: 'architecture',
@@ -538,6 +540,9 @@ async function persistAndFormatNonConvergedReview(
         changedFiles: resolvedTargetPaths,
         claimedTaskClass: advanced.state.claimedTaskClass,
         metadata: targetPathsMetadata(resolvedTargetPaths),
+        repositoryRevisionProvenance: headSha
+          ? { kind: 'available', headSha }
+          : { kind: 'unavailable', reason: 'head_revision_not_resolved' },
       })
     : null;
   let archAttemptId: string | null = null;

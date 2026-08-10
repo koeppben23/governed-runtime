@@ -2,8 +2,6 @@
  * @module integration/tools/review-tool/obligation
  * @description Review obligation lifecycle — create, resolve, validate, consume.
  *
- * Extracted from simple-tools.ts for single-responsibility compliance.
- *
  * @version v1
  */
 
@@ -12,7 +10,7 @@ import { fingerprintReviewInput } from './fingerprint.js';
 
 import type { SessionState } from '../../../state/schema.js';
 import type { ReviewFindings, ReviewObligation } from '../../../state/evidence.js';
-import type { ReviewAssuranceState } from '../../../state/evidence-review.js';
+import type { ReviewAssuranceState, ReviewSubjectScope } from '../../../state/evidence-review.js';
 import type { ReviewReferenceInput } from '../../../rails/review.js';
 import {
   REVIEW_MANDATE_DIGEST,
@@ -31,7 +29,7 @@ import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js
 import { validateChallengeConsistency } from '../../review/enforcement/challenge-consistency.js';
 import {
   validateReviewFindingsScope,
-  type FindingWithLocation,
+  type FindingWithRelation,
 } from '../../review/enforcement/findings-consistency.js';
 import { collectPreviouslyUsedChallengeIds } from '../../review/challenge-history.js';
 import { buildHostTaskChallengeContract } from '../../review/host-task-policy.js';
@@ -385,6 +383,15 @@ async function createNewReviewObligation(
     metadata.resolvedBranchSha = input.resolvedSource.resolvedBranchSha;
     metadata.resolvedBaseSha = input.resolvedSource.resolvedBaseSha;
   }
+  const reviewSubjectScope: ReviewSubjectScope | undefined = input.resolvedSource
+    ? {
+        kind: 'repository_change',
+        paths: [...resolvedTargetPaths],
+        // The frozen source includes both SHAs, so findings may cite either side
+        // of the reviewed diff without introducing free-form revision authority.
+        revisions: ['base', 'head'],
+      }
+    : undefined;
   return {
     obligation: createReviewObligation({
       obligationType: 'review',
@@ -396,6 +403,14 @@ async function createNewReviewObligation(
       profileSource: 'policy_default',
       policySnapshot: input.state.policySnapshot,
       changedFiles: resolvedTargetPaths,
+      reviewSubjectScope,
+      repositoryRevisionProvenance: input.resolvedSource
+        ? {
+            kind: 'available',
+            headSha: input.resolvedSource.resolvedBranchSha,
+            baseSha: input.resolvedSource.resolvedBaseSha,
+          }
+        : { kind: 'unavailable', reason: 'repository_revision_not_resolved' },
       // No claimedTaskClass floor here: a standalone /review assesses an EXTERNAL
       // PR/branch/content whose risk is the reviewed diff itself (changedFiles),
       // not the session's own task-class claim. The C1 floor applies only to the
@@ -659,22 +674,23 @@ export function validateSubmittedReviewFindings(
     );
   }
 
-  const scopeLocations: FindingWithLocation[] = [];
+  const scopeRelations: FindingWithRelation[] = [];
   [findings.blockingIssues, findings.majorRisks].forEach((arr) => {
     if (Array.isArray(arr))
       arr.forEach((item) => {
-        if (item && typeof item === 'object') scopeLocations.push(item as FindingWithLocation);
+        if (item && typeof item === 'object') scopeRelations.push(item as FindingWithRelation);
       });
   });
   const scopeResult = validateReviewFindingsScope({
-    findings: scopeLocations,
-    reviewedFileScope: obligation.reviewedFileScope,
+    findings: scopeRelations,
+    reviewSubjectScope: obligation.reviewSubjectScope,
+    repositoryRevisionProvenance: obligation.repositoryRevisionProvenance,
   });
   if (!scopeResult.ok) {
     return formatSubagentReviewNotInvoked(
-      scopeResult.code === 'REVIEW_FINDING_OUT_OF_SCOPE'
-        ? `Reviewer findings reference paths outside the reviewed file scope: ${scopeResult.details.outOfScopePaths.join(', ')}`
-        : `Review file scope could not be verified for obligation ${obligation.obligationId}`,
+      scopeResult.code === 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE'
+        ? `Reviewer findings do not relate to the reviewed subject scope at indexes: ${scopeResult.details.outOfScopeFindingIndexes.join(', ')}`
+        : `Review subject scope could not be verified for obligation ${obligation.obligationId}`,
       obligation.obligationId,
     );
   }

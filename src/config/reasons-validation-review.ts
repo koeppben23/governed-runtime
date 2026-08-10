@@ -462,29 +462,66 @@ export const REVIEW_VALIDATION_REASONS = [
       'Do not retry the command until the misconfigured transition path is fixed',
     ],
   },
-  // ─── Review Findings Scope Enforcement ───────────────────────────────────
+  // ─── Review Finding Subject-Scope Enforcement ───────────────────────────
 
   {
-    code: 'REVIEW_FINDING_OUT_OF_SCOPE',
+    code: 'REVIEW_SUBJECT_SCOPE_UNAVAILABLE',
     category: 'state',
-    messageTemplate:
-      'Reviewer findings reference paths outside the frozen reviewed file scope: {outOfScopePaths}. Obligation {obligationId}.',
+    messageTemplate: 'Review obligation {obligationId} has no verifiable frozen subject scope.',
     recoverySteps: [
-      'Check that the reviewer was given the correct set of changed files',
-      'Re-run the review with a reviewer prompt that includes the correct file scope',
-      'If the findings are legitimate, add the missing paths to the review scope and re-run',
+      'Re-run the review after subject scope resolution succeeds',
+      'Do not bind findings until the reviewed revision or artifact subject is frozen',
     ],
   },
 
   {
-    code: 'REVIEW_FINDING_SCOPE_UNVERIFIABLE',
+    code: 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED',
     category: 'state',
     messageTemplate:
-      'Review obligation {obligationId} has no frozen reviewedFileScope; scope verification is unavailable.',
+      'Reviewer finding {findingIndex} lacks a valid structured subject anchor for obligation {obligationId}.',
     recoverySteps: [
-      'File scope must be resolved at obligation creation time for file-backed reviews',
-      'Re-run the review to create a new obligation with a verifiable frozen scope',
-      'If the review context is deliberately non-file-backed, set the scope to not_applicable',
+      'Provide at least one structured subject anchor tied to the reviewed subject',
+      'Keep supporting repository evidence in evidenceLocations',
+    ],
+  },
+  {
+    code: 'REVIEW_EVIDENCE_LOCATION_ESCAPES_REPOSITORY',
+    category: 'state',
+    messageTemplate:
+      'Reviewer finding {findingIndex} has an evidence location that escapes the repository for obligation {obligationId}.',
+    recoverySteps: [
+      'Use evidenceLocations paths that remain below the repository root at the frozen base or head revision',
+      'Remove leading or resolving parent-directory segments that escape the repository',
+    ],
+  },
+  {
+    code: 'REVIEW_EVIDENCE_LOCATION_INVALID',
+    category: 'state',
+    messageTemplate:
+      'Reviewer finding {findingIndex} has an invalid repository evidence location for obligation {obligationId}.',
+    recoverySteps: [
+      'Provide evidenceLocations as repository-relative paths at the frozen base or head revision',
+      'Keep the valid subject anchor tied to the reviewed subject',
+    ],
+  },
+  {
+    code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
+    category: 'state',
+    messageTemplate:
+      'Reviewer finding {findingIndex} has no subject anchor in the frozen reviewed subject for obligation {obligationId}.',
+    recoverySteps: [
+      'Anchor the finding to the reviewed change or artifact section',
+      'Put unrelated observations in scopeCreep instead of blockingIssues or majorRisks',
+    ],
+  },
+  {
+    code: 'REVIEW_REPOSITORY_REVISION_UNAVAILABLE',
+    category: 'state',
+    messageTemplate:
+      'Reviewer finding {findingIndex} cites a repository revision unavailable for obligation {obligationId}.',
+    recoverySteps: [
+      'Use only the frozen base or head revision available to the reviewed subject',
+      'Re-run the review if the required revision provenance could not be resolved',
     ],
   },
 ] as const satisfies readonly BlockedReason[];

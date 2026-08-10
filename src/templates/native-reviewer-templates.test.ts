@@ -37,6 +37,8 @@ describe('reviewer prompt JSON schema integrity', () => {
     expect(openBraces).toBe(closeBraces);
     expect(schemaBlock).toContain('"overallVerdict"');
     expect(schemaBlock).toContain('"blockingIssues"');
+    expect(schemaBlock).toContain('"relation"');
+    expect(schemaBlock).not.toContain('"location"');
     expect(schemaBlock).toContain('"attestation"');
     expect(schemaBlock).not.toContain('"evidenceRefs"');
     expect(prompt).toContain(

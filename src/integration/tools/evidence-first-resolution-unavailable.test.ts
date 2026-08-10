@@ -263,6 +263,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
             blockedCode: null,
             fulfilledAt: null,
             consumedAt: null,
+            reviewSubjectScope: { kind: 'unavailable', reason: 'scope resolution unavailable' },
           },
         ],
         invocations: [], // NO evidence — reviewer failed to be invoked
@@ -331,6 +332,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
             blockedCode: null,
             fulfilledAt: null,
             consumedAt: null,
+            reviewSubjectScope: { kind: 'unavailable', reason: 'scope resolution unavailable' },
           },
         ],
         invocations: [],

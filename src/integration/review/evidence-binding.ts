@@ -2,13 +2,7 @@
  * @module integration/review-evidence-binding
  * @description Host-task evidence binding for review enforcement.
  *
- * Extracted from review-enforcement.ts (FG-REL-038) for single-responsibility.
- * Builds persistent ReviewInvocationEvidence from enforcement state and
- * persisted obligations after a Task tool call to flowguard-reviewer.
- *
  * Pure function — reads enforcement state but does not mutate it.
- *
- * @version v1
  */
 
 import type {
@@ -28,7 +22,7 @@ import {
 import {
   validateReviewFindingsConsistency,
   validateReviewFindingsScope,
-  type FindingWithLocation,
+  type FindingWithRelation,
 } from './enforcement/findings-consistency.js';
 import {
   ReviewActorInfo,
@@ -636,10 +630,13 @@ function prepareBindableFindings(input: {
     allowedEvidenceRefs,
   );
   if ('bindOutcome' in normalization) return normalization;
-  const findings = normalization.findings;
-
-  const schemaCheck = validateNormalizedFindings(findings, obligation.obligationId, childSessionId);
-  if (schemaCheck) return schemaCheck;
+  const schemaCheck = validateNormalizedFindings(
+    normalization.findings,
+    obligation.obligationId,
+    childSessionId,
+  );
+  if ('bindOutcome' in schemaCheck) return schemaCheck;
+  const findings = schemaCheck.findings;
 
   const overallVerdict = findings.overallVerdict;
   const blockingIssues = findings.blockingIssues;
@@ -664,41 +661,52 @@ function prepareBindableFindings(input: {
   }
   const contractCheck = checkChallengeContract(findings, obligation, childSessionId);
   if (contractCheck) return contractCheck;
-  const locationFindings: FindingWithLocation[] = [];
+  const scopeResult = validateReviewFindingsScope({
+    findings: relationFindings(findings),
+    reviewSubjectScope: obligation.reviewSubjectScope,
+    repositoryRevisionProvenance: obligation.repositoryRevisionProvenance,
+  });
+  if (!scopeResult.ok) return scopeFailure(scopeResult, childSessionId, obligation.obligationId);
+  return { findings };
+}
+
+function relationFindings(findings: Record<string, unknown>): FindingWithRelation[] {
+  const relationFindings: FindingWithRelation[] = [];
   [findings.blockingIssues, findings.majorRisks].forEach((arr) => {
     if (Array.isArray(arr))
       arr.forEach((item) => {
-        if (item && typeof item === 'object') locationFindings.push(item as FindingWithLocation);
+        if (item && typeof item === 'object') relationFindings.push(item as FindingWithRelation);
       });
   });
-  const scopeResult = validateReviewFindingsScope({
-    findings: locationFindings,
-    reviewedFileScope: obligation.reviewedFileScope,
-  });
-  if (!scopeResult.ok) {
-    const outOfScope = scopeResult.code === 'REVIEW_FINDING_OUT_OF_SCOPE';
-    return {
-      evidence: null,
-      bindOutcome: outOfScope ? 'review_finding_out_of_scope' : 'review_finding_scope_unverifiable',
-      diagnostic: {
-        childSessionId,
-        obligationId: obligation.obligationId,
-        code: scopeResult.code,
-        ...scopeResult.details,
-        message: outOfScope
-          ? 'Reviewer findings reference paths outside the reviewed file scope.'
-          : 'Review file scope could not be verified for this obligation.',
-      },
-    };
-  }
-  return { findings };
+  return relationFindings;
+}
+
+function scopeFailure(
+  scopeResult: Exclude<ReturnType<typeof validateReviewFindingsScope>, { readonly ok: true }>,
+  childSessionId: string,
+  obligationId: string,
+): HostTaskBindResult {
+  const outOfScope = scopeResult.code === 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE';
+  return {
+    evidence: null,
+    bindOutcome: outOfScope ? 'review_finding_out_of_scope' : 'review_finding_scope_unverifiable',
+    diagnostic: {
+      childSessionId,
+      obligationId,
+      code: scopeResult.code,
+      ...scopeResult.details,
+      message: outOfScope
+        ? 'Reviewer findings do not relate to the reviewed subject scope.'
+        : 'Review finding relation could not be verified for this obligation.',
+    },
+  };
 }
 
 function validateNormalizedFindings(
   normalizedFindings: Record<string, unknown>,
   obligationId: string,
   childSessionId: string,
-): HostTaskBindResult | null {
+): HostTaskBindResult | { findings: Record<string, unknown> } {
   const schemaResult = ReviewFindingsSchema.safeParse(normalizedFindings);
   if (!schemaResult.success) {
     const issues = schemaResult.error.issues.map(
@@ -715,9 +723,8 @@ function validateNormalizedFindings(
       },
     };
   }
-  return null;
+  return { findings: schemaResult.data };
 }
-
 function checkDuplicateHostTaskEvidence(
   invocations: ReviewInvocationEvidence[],
   obligation: ReviewObligation,

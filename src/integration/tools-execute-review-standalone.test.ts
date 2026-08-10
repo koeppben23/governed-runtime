@@ -1,19 +1,4 @@
 import * as path from 'node:path';
-/**
- * @module integration/tools-execute.test
- * @description Execution tests for FlowGuard tool execute() functions.
- *
- * Tests each tool's execute() against real filesystem persistence with
- * OPENCODE_CONFIG_DIR redirected to a temp directory. Git adapter functions
- * (remoteOriginUrl, changedFiles, listRepoSignals) are selectively mocked;
- * all other I/O (workspace init, state read/write, config) runs for real.
- *
- * Scope: Tool behavior, tool-to-state, tool-to-persistence, tool-specific edge cases.
- * NOT in scope: Full multi-step workflows (see e2e-workflow.test.ts).
- *
- * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories present.
- */
-
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
@@ -24,6 +9,7 @@ import {
   parseToolResult,
   isBlockedResult,
   fulfillStrictReviewObligation,
+  freezeRepositoryReviewObligation,
   GIT_MOCK_DEFAULTS,
   type TestToolContext,
   type TestWorkspace,
@@ -75,8 +61,6 @@ import {
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import { TEAM_POLICY } from '../config/policy.js';
 
-// ─── Git Mock ────────────────────────────────────────────────────────────────
-
 vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
   return {
@@ -86,16 +70,6 @@ vi.mock('../adapters/git', async (importOriginal) => {
     listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
   };
 });
-
-// ─── Workspace Mock (P26) ────────────────────────────────────────────────────
-// Partial mock: archiveSession and verifyArchive are vi.fn() wrappers that
-// default to the real implementations. P26 tests override them per-test.
-// All other workspace exports (computeFingerprint, initWorkspace, etc.)
-// remain real for full integration fidelity.
-//
-// Originals are stored via vi.hoisted (survives vi.mock hoisting) so afterEach
-// can fully reset the once-queues (vi.clearAllMocks does NOT clear
-// mockResolvedValueOnce queues — unconsumed values leak across tests).
 
 const wsOriginals = vi.hoisted(() => ({
   archiveSession:
@@ -115,10 +89,6 @@ vi.mock('../adapters/workspace', async (importOriginal) => {
   };
 });
 
-// ─── Actor Mock (P27) ────────────────────────────────────────────────────────
-// Mock resolveActor to return a deterministic actor for integration tests.
-// Prevents dependency on real env vars or git config.
-
 const actorOriginal = vi.hoisted(() => ({
   resolveActor: null as unknown as (typeof import('../adapters/actor.js'))['resolveActor'],
 }));
@@ -136,16 +106,10 @@ vi.mock('../adapters/actor', async (importOriginal) => {
   };
 });
 
-// Lazy import for per-test overrides
 const gitMock = await import('../adapters/git.js');
 const ghMock = await import('../adapters/gh-cli.js');
 const wsMock = await import('../adapters/workspace/index.js');
 const actorMock = await import('../adapters/actor.js');
-
-// ─── GH-CLI Mock ────────────────────────────────────────────────────────────
-// Mock gh-cli adapter to avoid dependency on real `gh` CLI in tests.
-// Using vi.mock() which is hoisted, so this affects all tests.
-// The P34a test doesn't use gh-cli, so this is safe.
 
 vi.mock('../adapters/gh-cli', () => ({
   hasGhCli: vi.fn().mockReturnValue(true),
@@ -164,11 +128,7 @@ vi.mock('../adapters/gh-cli', () => ({
   loadPrChangedFiles: vi.fn().mockReturnValue(['src/auth/login.ts', 'src/auth/types.ts']),
 }));
 
-// ─── Capability Gates ────────────────────────────────────────────────────────
-
 const tarOk = await isTarAvailable();
-
-// ─── Test Setup ──────────────────────────────────────────────────────────────
 
 let ws: TestWorkspace;
 let ctx: TestToolContext;
@@ -185,13 +145,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  // Reset workspace mock once-queues to prevent cross-test leaks.
-  // vi.clearAllMocks() only clears calls/results, NOT mockResolvedValueOnce
-  // queues. If a P26 test fails before consuming its once-mocks, the stale
-  // values leak into subsequent tests (e.g. archive manifest test).
   vi.mocked(wsMock.archiveSession).mockReset().mockImplementation(wsOriginals.archiveSession);
   vi.mocked(wsMock.verifyArchive).mockReset().mockImplementation(wsOriginals.verifyArchive);
-  // Reset actor mock to default deterministic value (P27/P34)
   vi.mocked(actorMock.resolveActor)
     .mockReset()
     .mockResolvedValue({
@@ -206,9 +161,6 @@ afterEach(async () => {
   await ws.cleanup();
 });
 
-// ─── Helper ──────────────────────────────────────────────────────────────────
-
-/** Hydrate a session and return parsed result. Convenience for setup. */
 async function hydrateSession(
   overrides: { policyMode?: string; profileId?: string } = {},
 ): Promise<Record<string, unknown>> {
@@ -222,7 +174,6 @@ async function hydrateSession(
   return parseToolResult(raw);
 }
 
-/** Hydrate + ticket. Convenience for tests that need to start from PLAN phase. */
 async function hydrateAndTicket(ticketText = 'Fix the auth bug'): Promise<void> {
   await hydrateSession();
   await ticket.execute({ text: ticketText, source: 'user' }, ctx);
@@ -253,7 +204,6 @@ function requiredRecord(value: unknown, label: string): Record<string, unknown> 
   }
   return value as Record<string, unknown>;
 }
-
 function requiredString(value: unknown, key: string): string {
   const record = requiredRecord(value, key);
   const field = record[key];
@@ -262,7 +212,6 @@ function requiredString(value: unknown, key: string): string {
 }
 
 describe('review (standalone flow)', () => {
-  // Mock fetch for URL tests
   beforeEach(() => {
     vi.stubGlobal(
       'fetch',
@@ -275,7 +224,6 @@ describe('review (standalone flow)', () => {
     );
   });
 
-  // Helper: Create a fresh session in READY phase
   async function hydrateAndGetReady(): Promise<void> {
     const raw = await hydrate.execute({ policyMode: 'solo' }, ctx);
     const result = parseToolResult(raw);
@@ -284,13 +232,16 @@ describe('review (standalone flow)', () => {
     }
   }
 
-  // Helper: Build a complete subagent-attested ReviewFindings object as the
-  // primary agent would receive it from the flowguard-reviewer subagent.
-  // Categories are restricted to the schema-allowed enum
-  // ("completeness" | "correctness" | "feasibility" | "risk" | "quality").
-  // toolObligationId is required (schema demands it after P2 obligation binding);
-  // callers that need the real obligation UUID should create an obligation first
-  // and pass the returned UUID to this helper.
+  const REVIEW_RELATION = {
+    subjectAnchors: [
+      {
+        kind: 'repository_location' as const,
+        location: { path: 'docs/test.md', revision: 'head' },
+      },
+    ],
+    evidenceLocations: [],
+  };
+
   function buildAnalysisFindings(
     overallVerdict: 'accept' | 'changes_requested',
     toolObligationId?: string,
@@ -302,6 +253,7 @@ describe('review (standalone flow)', () => {
               severity: 'major' as const,
               category: 'risk' as const,
               message: 'Critical security flaw in authentication flow',
+              relation: REVIEW_RELATION,
             },
           ]
         : [];
@@ -378,9 +330,10 @@ describe('review (standalone flow)', () => {
     if (blocked.code !== 'CONTENT_ANALYSIS_REQUIRED') {
       throw new Error(`Expected CONTENT_ANALYSIS_REQUIRED, got ${blocked.code}`);
     }
-    return requiredString(blocked.requiredReviewAttestation, 'toolObligationId');
+    const obligationId = requiredString(blocked.requiredReviewAttestation, 'toolObligationId');
+    await freezeRepositoryReviewObligation(await currentSessionDir(), obligationId);
+    return obligationId;
   }
-
   // Helper: Full two-step flow — creates obligation, then submits valid findings.
   // Returns the parseToolResult from the second (successful) /review call.
   async function submitContentReview(
@@ -412,6 +365,73 @@ describe('review (standalone flow)', () => {
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('REVIEW_COMPLETE');
       expect(result.inputOrigin).toBe('branch');
+    });
+
+    it('binds branch material findings to the resolved base/head source scope', async () => {
+      await hydrateAndGetReady();
+      const first = parseToolResult(
+        await review.execute(
+          { branch: 'feature-auth', inputOrigin: 'branch', targetPaths: ['src/auth/login.ts'] },
+          ctx,
+        ),
+      );
+      const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
+      const state = (await readState(await currentSessionDir()))!;
+      const obligation = state.reviewAssurance!.obligations.find(
+        (item) => item.obligationId === obligationId,
+      )!;
+      expect(obligation.reviewSubjectScope).toEqual({
+        kind: 'repository_change',
+        paths: ['src/auth/login.ts'],
+        revisions: ['base', 'head'],
+      });
+      expect(obligation.metadata).toMatchObject({
+        resolvedBranchSha: 'a'.repeat(40),
+        resolvedBaseSha: 'b'.repeat(40),
+      });
+      const findings = {
+        ...buildAnalysisFindings('accept', obligationId),
+        challenges: [
+          {
+            challengeId: '22222222-2222-4222-8222-222222222222',
+            obligationId,
+            scenario: 'The authorization check is absent on the reviewed branch.',
+            claim: 'The change preserves authorization.',
+            locations: ['src/auth/login.ts'],
+            kind: 'content_challenge' as const,
+            evidenceRefs: [{ kind: 'content' as const, digest: obligation.metadata!.fingerprint }],
+            outcome: 'supported' as const,
+          },
+        ],
+        majorRisks: [
+          {
+            severity: 'major' as const,
+            category: 'risk' as const,
+            message: 'The branch removes the authorization check.',
+            relation: {
+              subjectAnchors: [
+                {
+                  kind: 'repository_location' as const,
+                  location: { path: 'src/auth/login.ts', revision: 'head' as const },
+                },
+              ],
+              evidenceLocations: [{ path: 'src/auth/login.ts', revision: 'base' as const }],
+            },
+          },
+        ],
+      };
+      const result = parseToolResult(
+        await review.execute(
+          {
+            branch: 'feature-auth',
+            inputOrigin: 'branch',
+            targetPaths: ['src/auth/login.ts'],
+            reviewFindings: findings,
+          },
+          ctx,
+        ),
+      );
+      expect(result).toMatchObject({ phase: 'REVIEW_COMPLETE' });
     });
 
     it('standalone /review Call 1 persists a PENDING review obligation for host-task binding', async () => {
@@ -654,7 +674,7 @@ describe('review (standalone flow)', () => {
             severity: 'minor' as const,
             category: 'quality' as const,
             message: 'stale comment in test',
-            location: 'src/test/TaskControllerTest.java:108',
+            relation: REVIEW_RELATION,
           },
         ],
         majorRisks: [],
@@ -1149,6 +1169,7 @@ describe('review (standalone flow)', () => {
               severity: 'critical' as const,
               category: 'correctness' as const,
               message: 'Logic error in token refresh',
+              relation: REVIEW_RELATION,
             },
           ],
           majorRisks: [
@@ -1156,6 +1177,7 @@ describe('review (standalone flow)', () => {
               severity: 'major' as const,
               category: 'risk' as const,
               message: 'Race condition in cache invalidation',
+              relation: REVIEW_RELATION,
             },
           ],
           missingVerification: ['no integration test for the new error path'],
@@ -1479,6 +1501,11 @@ describe('review (standalone flow)', () => {
           blockedCode: null,
           fulfilledAt: new Date().toISOString(),
           consumedAt: null,
+          reviewSubjectScope: {
+            kind: 'repository_change' as const,
+            paths: ['src/foo.ts'],
+            revisions: ['base', 'head'] as const,
+          },
         };
         const withObligation = {
           ...assurance,

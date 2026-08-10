@@ -307,6 +307,37 @@ export function isBlockedResult(result: Record<string, unknown>): boolean {
   return result.error === true && typeof result.code === 'string';
 }
 
+export async function freezeRepositoryReviewObligation(
+  sessDir: string,
+  obligationId: string,
+): Promise<void> {
+  const state = await readState(sessDir);
+  if (!state) throw new Error('No test session state found');
+  await writeState(sessDir, {
+    ...state,
+    reviewAssurance: {
+      ...state.reviewAssurance!,
+      obligations: state.reviewAssurance!.obligations.map((obligation) =>
+        obligation.obligationId === obligationId
+          ? {
+              ...obligation,
+              reviewSubjectScope: {
+                kind: 'repository_change',
+                paths: ['docs/test.md'],
+                revisions: ['base', 'head'],
+              },
+              repositoryRevisionProvenance: {
+                kind: 'available',
+                headSha: 'a'.repeat(40),
+                baseSha: 'b'.repeat(40),
+              },
+            }
+          : obligation,
+      ),
+    },
+  });
+}
+
 /**
  * Fulfill a strict independent-review obligation in tool execution tests.
  *

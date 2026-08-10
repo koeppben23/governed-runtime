@@ -69,7 +69,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // role/identity sentence and enriched ## 12. Extended Guidance to name the
     // owning authorities (commands/profiles/reviewer) without duplicating them.
     expect(sha256(FLOWGUARD_MANDATES_BODY)).toBe(
-      '7c548c88db81c74930cd2c4cf86f3892ba3b8b34d3fa314cb0be6a9b6f15ab85',
+      'a51c4d18d7ec1f924cd33237b7a98fe5685c6baa25fecd61d321bb542315d68b',
     );
   });
 
@@ -92,8 +92,9 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // p37 -> p38: strict blockingIssues/verdict coherence. p38 -> p39: OpenCode
     // reviewer capability isolation denies direct and MCP-prefixed FlowGuard tools.
     // p39 -> p40: reviewer task delegation is denied as part of that boundary.
+    // p40 -> p41: material findings require structured subject and evidence relations.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      'e78b6bab98fcf033874fcc07e17d87aaff73fca47b1a28209e5dd4a1a28eedb7',
+      'eaba0884d2ab1653e77f58b1d33eb9fa678ebb38ef555c2ebcfbcef747dcd558',
     );
   });
 

@@ -91,6 +91,11 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
           blockedCode: null,
           fulfilledAt: null,
           consumedAt: null,
+          reviewSubjectScope: {
+            kind: 'repository_change',
+            paths: ['src/foo.ts'],
+            revisions: ['base', 'head'],
+          },
         },
       ],
       // NO invocations → no host evidence → buildHostTaskPolicyOutput(null) path

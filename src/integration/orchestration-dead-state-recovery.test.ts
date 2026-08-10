@@ -108,6 +108,7 @@ function makeBlockedObligation(
     invocationId: null,
     fulfilledAt: null,
     consumedAt: null,
+    reviewSubjectScope: { kind: 'unavailable', reason: 'blocked obligation fixture' },
   };
 }
 
@@ -132,6 +133,11 @@ function makePendingObligation(
     invocationId: null,
     fulfilledAt: null,
     consumedAt: null,
+    reviewSubjectScope: {
+      kind: 'repository_change',
+      paths: ['src/foo.ts'],
+      revisions: ['base', 'head'],
+    },
   };
 }
 

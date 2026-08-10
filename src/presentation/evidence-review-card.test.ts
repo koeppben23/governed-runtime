@@ -164,7 +164,7 @@ describe('buildEvidenceReviewCard', () => {
           severity: 'major',
           category: 'correctness',
           message: 'Concurrent updates may race.',
-          location: 'src/updates.ts',
+          relation: { evidenceLocations: ['updates'], subjectAnchors: ['concurrency'] },
         },
       ],
       missingVerification: ['No integration test covers concurrent updates.'],
@@ -186,6 +186,7 @@ describe('buildEvidenceReviewCard', () => {
           severity: 'minor',
           category: 'completeness',
           message: 'Docstring missing.',
+          relation: { evidenceLocations: ['docstring'], subjectAnchors: ['implementation'] },
         },
       ],
     });

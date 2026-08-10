@@ -5,6 +5,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { hashText } from '../../shared/hashing.js';
+import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 export { hashText };
 
 import type {
@@ -23,19 +24,32 @@ import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { assessMinimumTaskClass, maxTaskClass } from '../phase-tool-gate.js';
 import { challengeKindForObligation } from '../../config/policy-types.js';
 import type { TaskClass } from '../../state/schema.js';
-import type { ReviewedScope } from './enforcement/findings-consistency.js';
+import type {
+  ReviewRepositoryRevisionProvenance,
+  ReviewSubjectScope,
+} from '../../state/evidence-review.js';
 
 // Static import - mandate content is a constant in ESM
 import { REVIEWER_AGENT } from '../../templates/mandates.js';
 export const REVIEW_CRITERIA_VERSION = 'p40-v1';
 // Mandate digest - computed from actual REVIEWER_AGENT template at module load
 export const REVIEW_MANDATE_DIGEST = hashText(REVIEWER_AGENT);
-const defaultScope = (t: ReviewObligationType, f: readonly string[] | undefined) =>
-  f !== undefined
-    ? { kind: 'files' as const, paths: [...f] }
-    : t === 'architecture'
-      ? { kind: 'not_applicable' as const, reason: 'architecture_obligation' }
-      : { kind: 'unavailable' as const, reason: 'scope_not_resolved' };
+const defaultScope = (changedFiles: readonly string[] | undefined): ReviewSubjectScope =>
+  changedFiles && changedFiles.length > 0
+    ? { kind: 'repository_change', paths: [...changedFiles], revisions: ['head'] }
+    : { kind: 'unavailable', reason: 'scope_not_resolved' };
+
+function resolveSubjectScope(
+  subjectDigest: string,
+  explicitScope: ReviewSubjectScope | undefined,
+  changedFiles: readonly string[] | undefined,
+): ReviewSubjectScope {
+  if (explicitScope?.kind !== 'artifact') return explicitScope ?? defaultScope(changedFiles);
+  return {
+    ...explicitScope,
+    artifact: { ...explicitScope.artifact, digest: subjectDigest },
+  };
+}
 export function getReviewMandateDigest(): string {
   return REVIEW_MANDATE_DIGEST;
 }
@@ -75,8 +89,9 @@ export function createReviewObligation(input: {
   policySnapshot?: Pick<PolicySnapshot, 'challengePolicy'> | null;
   /** Runtime paths classified by the canonical phase-tool gate. */
   changedFiles?: readonly string[];
-  /** Explicit file-scope state. Absent → derived from changedFiles + obligationType. */
-  reviewedScope?: ReviewedScope;
+  /** Explicit structured subject scope. Absent → derived from changedFiles only. */
+  reviewSubjectScope?: ReviewSubjectScope;
+  repositoryRevisionProvenance?: ReviewRepositoryRevisionProvenance;
   /**
    * The author's declared task class. Used as a fail-closed FLOOR on the
    * challenge count so a high-risk change cannot collapse the requirement to 0
@@ -96,6 +111,11 @@ export function createReviewObligation(input: {
     );
   }
   const challengePolicy = input.policySnapshot?.challengePolicy;
+  const reviewSubjectScope = resolveSubjectScope(
+    input.subjectDigest,
+    input.reviewSubjectScope,
+    input.changedFiles,
+  );
   const requirements = challengePolicy
     ? {
         requiredChallengeCount:
@@ -131,19 +151,14 @@ export function createReviewObligation(input: {
     subjectDigest: input.subjectDigest,
     metadata: input.metadata,
     ...(input.fingerprintVersion ? { fingerprintVersion: input.fingerprintVersion } : {}),
-    reviewedFileScope:
-      input.reviewedScope ?? defaultScope(input.obligationType, input.changedFiles),
+    reviewSubjectScope,
+    repositoryRevisionProvenance: input.repositoryRevisionProvenance ?? {
+      kind: 'unavailable',
+      reason: 'repository_revision_not_resolved',
+    },
   };
 }
 
-/**
- * Resolve the frozen mandatory review profile from a policy snapshot shape.
- *
- * Fail-closed: any missing or invalid value resolves to the mandatory 'core'
- * baseline. 'core' is never operator-optional and has no 'off' mode. This is
- * the single resolver used by obligation-creation call sites so the frozen
- * profile is consistent across every review flow.
- */
 export function resolveFrozenReviewProfile(
   policySnapshot: { reviewProfile?: string } | null | undefined,
 ): ReviewProfile {
@@ -211,16 +226,6 @@ export function findLatestObligation(
   return null;
 }
 
-/**
- * Find the latest pending obligation of a given type.
- *
- * When a `metadataFingerprint` is supplied, only obligations whose
- * `metadata.fingerprint` matches are returned. This prevents a /review
- * call for prNumber=42 from reusing an obligation created for prNumber=99.
- *
- * Used by standalone /review to reuse an existing pending obligation (retry-safe)
- * rather than creating a fresh one on every call.
- */
 export function findLatestPendingReviewObligation(
   assurance: ReviewAssuranceState | undefined,
   obligationType: ReviewObligationType,
@@ -256,14 +261,6 @@ export function findLatestPendingReviewObligation(
   return broad.at(0) ?? null;
 }
 
-/**
- * Find a review obligation by its exact UUID.
- *
- * Used when reviewFindings carry attestation.toolObligationId — the
- * obligation was either created by the blocked response (pending) or already
- * fulfilled by the plugin-orchestrator. Both states are valid for the final
- * submit; only 'consumed' obligations are rejected (single-use enforcement).
- */
 export function findReviewObligationById(
   assurance: ReviewAssuranceState | undefined,
   obligationId: string,
@@ -272,15 +269,6 @@ export function findReviewObligationById(
   return base.obligations.find((o) => o.obligationId === obligationId) ?? null;
 }
 
-/**
- * Find the latest unconsumed obligation of a given type.
- * Matches both 'pending' and 'fulfilled' statuses — plugin-orchestrated
- * obligations are set to 'fulfilled' before the agent's Mode B submission.
- * Excludes 'consumed' obligations (single-use enforcement).
- *
- * Used by /architecture Mode B for consistency with the manual search that
- * previously matched status !== 'consumed' && consumedAt == null.
- */
 export function findLatestUnconsumedObligation(
   assurance: ReviewAssuranceState | undefined,
   obligationType: ReviewObligationType,
@@ -363,19 +351,40 @@ export function findAcceptedInvocationForFindings(
 }
 
 export function hashFindings(findings: Record<string, unknown>): string {
-  return hashText(JSON.stringify(findings));
+  const normalizeFinding = (value: unknown): unknown => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+    const finding = value as Record<string, unknown>;
+    const { findingId: _findingId, relation, ...rest } = finding;
+    if (!relation || typeof relation !== 'object' || Array.isArray(relation)) return rest;
+    const typedRelation = relation as Record<string, unknown>;
+    const sorted = (items: unknown) =>
+      Array.isArray(items)
+        ? [...items].sort((left, right) =>
+            canonicalJsonStringify(left).localeCompare(canonicalJsonStringify(right)),
+          )
+        : items;
+    return {
+      ...rest,
+      relation: {
+        ...typedRelation,
+        subjectAnchors: sorted(typedRelation.subjectAnchors),
+        evidenceLocations: sorted(typedRelation.evidenceLocations),
+      },
+    };
+  };
+  return hashText(
+    canonicalJsonStringify({
+      ...findings,
+      blockingIssues: Array.isArray(findings.blockingIssues)
+        ? findings.blockingIssues.map(normalizeFinding)
+        : findings.blockingIssues,
+      majorRisks: Array.isArray(findings.majorRisks)
+        ? findings.majorRisks.map(normalizeFinding)
+        : findings.majorRisks,
+    }),
+  );
 }
 
-// ─── Review Attempt Lifecycle ──────────────────────────────────────────────────
-
-/**
- * Create a ReviewAttempt record BEFORE the reviewer subagent is invoked.
- *
- * This is the central security invariant: the attempt MUST exist in the
- * assurance state before any callback can arrive. When a newer attempt is
- * created for the same obligation, older non-bound attempts become stale.
- * Late callbacks for stale attempts are rejected at binding time.
- */
 export function createReviewAttempt(input: {
   obligationId: string;
   obligationType: ReviewObligationType;
@@ -396,8 +405,7 @@ export function createReviewAttempt(input: {
   };
 }
 
-/**
- * Create an obligation and its initial attempt atomically.
+/** Create an obligation and its initial attempt atomically.
  *
  * The attempt is persisted alongside the obligation at creation time,
  * BEFORE the reviewer subagent is invoked. This satisfies the core
@@ -684,10 +692,6 @@ export function hasEvidenceReuse(
   );
 }
 
-/**
- * Append a ReviewInvocationEvidence record to the assurance state.
- * Uses spread to preserve any future fields added to ReviewAssuranceState.
- */
 export function appendInvocationEvidence(
   assurance: ReviewAssuranceState,
   invocation: ReviewInvocationEvidence,
@@ -696,10 +700,6 @@ export function appendInvocationEvidence(
   return { ...base, invocations: [...base.invocations, invocation] };
 }
 
-/**
- * Mark an obligation as fulfilled and bind it to an invocation.
- * Uses spread to preserve any future fields added to ReviewObligation.
- */
 export function fulfillObligation(
   assurance: ReviewAssuranceState,
   obligationId: string,

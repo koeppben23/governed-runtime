@@ -21,6 +21,11 @@ function obligation(): ReviewObligation {
     blockedCode: null,
     fulfilledAt: null,
     consumedAt: null,
+    reviewSubjectScope: {
+      kind: 'repository_change',
+      paths: ['src/foo.ts'],
+      revisions: ['base', 'head'],
+    },
     requiredChallengeCount: 1,
     requiredChallengeKind: 'implementation_challenge',
   };
