@@ -858,17 +858,19 @@ describe('audit completeness', () => {
 
     it('getSlotDetail implementation: digest.slice(0, 12) truncates', () => {
       const longDigest = 'fedcba9876543210fedcba9876543210fedcba98';
+      const ev = makeImplEvidence({
+        candidate: { candidateDigest: longDigest },
+        domainFiles: ['a.ts', 'b.ts'],
+        executedAt: FIXED_TIME,
+      });
+      const actualDigest = ev.candidate.candidateDigest;
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
-        implementation: makeImplEvidence({
-          candidate: { candidateDigest: longDigest },
-          domainFiles: ['a.ts', 'b.ts'],
-          executedAt: FIXED_TIME,
-        }),
+        implementation: ev,
       });
       const report = evaluateCompleteness(state);
       const slot = report.slots.find((s) => s.slot === 'implementation');
-      expect(slot?.detail).toContain('fedcba987654...');
+      expect(slot?.detail).toContain(actualDigest.slice(0, 12));
       expect(slot?.detail).not.toContain(longDigest);
     });
 

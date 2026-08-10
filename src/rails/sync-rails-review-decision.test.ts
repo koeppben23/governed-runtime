@@ -182,24 +182,26 @@ describe('review-decision rail', () => {
 
     it('blocks a specific implementation trigger without a critical fact claim', () => {
       const state = makeProgressedState('EVIDENCE_REVIEW');
+      const ev = makeImplEvidence({
+        candidate: {
+          candidateDigest: 'implementation-digest',
+          changedPaths: ['src/state/schema.ts'],
+        },
+        domainFiles: ['src/state/schema.ts'],
+        executedAt: '2026-01-01T00:00:00.000Z',
+      });
+      const digest = ev.candidate.candidateDigest;
       const result = executeReviewDecision(
         {
           ...state,
-          implementation: makeImplEvidence({
-            candidate: {
-              candidateDigest: 'implementation-digest',
-              changedPaths: ['src/state/schema.ts'],
-            },
-            domainFiles: ['src/state/schema.ts'],
-            executedAt: '2026-01-01T00:00:00.000Z',
-          }),
+          implementation: ev,
           implementationRiskAssessment: {
             computedMinimumTaskClass: 'HIGH-RISK',
             touchedSurfaces: ['src/state/schema.ts'],
             riskTriggers: ['state_integrity'],
             assessedFrom: 'implementation_changed_files',
             assessedFileCount: 1,
-            implementationDigest: 'implementation-digest',
+            implementationDigest: digest,
           },
         },
         { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
@@ -210,24 +212,26 @@ describe('review-decision rail', () => {
 
     it('does not impose a critical fact requirement for ceremony_only', () => {
       const state = makeProgressedState('EVIDENCE_REVIEW');
+      const ev = makeImplEvidence({
+        candidate: {
+          candidateDigest: 'implementation-digest',
+          changedPaths: ['src/archive/verify.ts'],
+        },
+        domainFiles: ['src/archive/verify.ts'],
+        executedAt: '2026-01-01T00:00:00.000Z',
+      });
+      const digest = ev.candidate.candidateDigest;
       const result = executeReviewDecision(
         {
           ...state,
-          implementation: makeImplEvidence({
-            candidate: {
-              candidateDigest: 'implementation-digest',
-              changedPaths: ['src/archive/verify.ts'],
-            },
-            domainFiles: ['src/archive/verify.ts'],
-            executedAt: '2026-01-01T00:00:00.000Z',
-          }),
+          implementation: ev,
           implementationRiskAssessment: {
             computedMinimumTaskClass: 'HIGH-RISK',
             touchedSurfaces: ['src/archive/verify.ts'],
             riskTriggers: ['ceremony_only'],
             assessedFrom: 'implementation_changed_files',
             assessedFileCount: 1,
-            implementationDigest: 'implementation-digest',
+            implementationDigest: digest,
           },
         },
         { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
@@ -238,23 +242,25 @@ describe('review-decision rail', () => {
 
     it('blocks an assessment that predates trigger classification', () => {
       const state = makeProgressedState('EVIDENCE_REVIEW');
+      const ev = makeImplEvidence({
+        candidate: {
+          candidateDigest: 'implementation-digest',
+          changedPaths: ['src/state/schema.ts'],
+        },
+        domainFiles: ['src/state/schema.ts'],
+        executedAt: '2026-01-01T00:00:00.000Z',
+      });
+      const digest = ev.candidate.candidateDigest;
       const result = executeReviewDecision(
         {
           ...state,
-          implementation: makeImplEvidence({
-            candidate: {
-              candidateDigest: 'implementation-digest',
-              changedPaths: ['src/state/schema.ts'],
-            },
-            domainFiles: ['src/state/schema.ts'],
-            executedAt: '2026-01-01T00:00:00.000Z',
-          }),
+          implementation: ev,
           implementationRiskAssessment: {
             computedMinimumTaskClass: 'HIGH-RISK',
             touchedSurfaces: ['src/state/schema.ts'],
             assessedFrom: 'implementation_changed_files',
             assessedFileCount: 1,
-            implementationDigest: 'implementation-digest',
+            implementationDigest: digest,
           },
         },
         { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
