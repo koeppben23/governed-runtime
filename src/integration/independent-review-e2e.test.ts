@@ -59,6 +59,7 @@ const execFileAsync = promisify(execFile);
 
 const PARENT_SESSION = 'ses_parent_e2e';
 const CHILD_SESSION = 'ses_child_real_e2e';
+const RETRY_CHILD_SESSION = 'ses_child_retry_e2e';
 const OBLIGATION_ID = '2a8f1c40-1111-4aaa-8bbb-cccccccccccc';
 const ATTEMPT_ID = '3b9f1c40-2222-4aaa-8bbb-cccccccccccc';
 const SUBJECT_DIGEST = 'e2e-plan-subject-digest';
@@ -496,12 +497,19 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
       'pending review obligation after flowguard_review after-hook (handshake)',
     ).toBe(1);
 
-    // task after-hook: reviewer returns findings carrying the real obligationId.
+    const attemptA = (afterHandshake?.reviewAssurance?.attempts ?? []).find(
+      (attempt) => attempt.obligationId === obligationId,
+    );
+    const initialHypothesisCount = afterHandshake?.proofGraph?.claims.length ?? 0;
+    expect(initialHypothesisCount).toBeGreaterThan(0);
+
+    // Attempt A returns an out-of-scope finding. Binding rejects the capture,
+    // leaving the obligation pending but spending only this attempt.
     await afterHook(
       {
         tool: 'task',
         sessionID: PARENT_SESSION,
-        callID: 'c-task',
+        callID: 'c-task-a',
         args: {
           subagent_type: 'flowguard-reviewer',
           prompt: `Review this content. iteration=1, planVersion=1. toolObligationId=${obligationId}. Return ReviewFindings JSON.`,
@@ -514,7 +522,14 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
           planVersion: 1,
           reviewMode: 'subagent',
           overallVerdict: 'changes_requested',
-          blockingIssues: [],
+          blockingIssues: [
+            {
+              severity: 'major',
+              category: 'correctness',
+              message: 'The changed request is not propagated to its service.',
+              location: 'src/outside-diff.ts',
+            },
+          ],
           majorRisks: [],
           missingVerification: [],
           scopeCreep: [],
@@ -534,6 +549,98 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
       },
     );
 
+    const afterRejectedA = await readState(sessDir);
+    expect(afterRejectedA?.reviewAssurance?.invocations ?? []).toHaveLength(0);
+    expect(
+      afterRejectedA?.reviewAssurance?.attempts.find(
+        (attempt) => attempt.attemptId === attemptA?.attemptId,
+      )?.status,
+    ).toBe('rejected');
+
+    // The actual standalone continuation creates attempt B, emits the canonical
+    // retry signal, and the review after-hook registers B for Task binding.
+    const retryRaw = await review.execute(
+      {
+        branch: 'feature-add-due-date',
+        inputOrigin: 'branch',
+        reviewObligationId: obligationId,
+        reviewVerdict: 'changes_requested',
+      },
+      ctx,
+    );
+    const retry = JSON.parse(String(retryRaw)) as Record<string, unknown>;
+    expect(retry.code).toBe('HOST_SUBAGENT_TASK_REQUIRED');
+    const afterReissue = await readState(sessDir);
+    const attemptB = (afterReissue?.reviewAssurance?.attempts ?? []).find(
+      (attempt) => attempt.attemptId === retry.reviewAttemptId,
+    );
+    expect(attemptB).toMatchObject({ obligationId, status: 'created' });
+    expect(afterReissue?.proofGraph?.claims).toHaveLength(initialHypothesisCount);
+    expect(
+      (afterReissue?.standaloneReviewEvidence ?? []).filter((entry) => entry.kind === 'prepared'),
+    ).toHaveLength(1);
+
+    const retryOut = { title: 'Review retry', output: String(retryRaw), metadata: {} };
+    await afterHook(
+      {
+        tool: 'flowguard_review',
+        sessionID: PARENT_SESSION,
+        callID: 'c-review-retry',
+        args: {
+          branch: 'feature-add-due-date',
+          inputOrigin: 'branch',
+          reviewObligationId: obligationId,
+          reviewVerdict: 'changes_requested',
+        },
+      },
+      retryOut,
+    );
+    const trackedRetry = JSON.parse(retryOut.output) as Record<string, unknown>;
+    expect(trackedRetry.reviewAttemptId).toBe(attemptB?.attemptId);
+    expect(typeof trackedRetry.reviewerTaskPrompt).toBe('string');
+    const retryPrompt = trackedRetry.reviewerTaskPrompt as string;
+
+    // Attempt B binds through the real Task after-hook and supplies the evidence
+    // consumed by the matching standalone review verdict.
+    const taskBOut = {
+      title: 'Reviewer task',
+      output: JSON.stringify({
+        iteration: 1,
+        planVersion: 1,
+        reviewMode: 'subagent',
+        overallVerdict: 'changes_requested',
+        blockingIssues: [],
+        majorRisks: [],
+        missingVerification: [],
+        scopeCreep: [],
+        unknowns: [],
+        reviewedBy: { sessionId: 'ses_reviewer_selfreported' },
+        reviewedAt: '2026-06-22T00:00:00.000Z',
+        attestation: {
+          toolObligationId: obligationId,
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
+          iteration: 1,
+          planVersion: 1,
+          reviewedBy: 'flowguard-reviewer',
+        },
+      }),
+      metadata: { sessionID: RETRY_CHILD_SESSION },
+    };
+    await afterHook(
+      {
+        tool: 'task',
+        sessionID: PARENT_SESSION,
+        callID: 'c-task-b',
+        args: {
+          subagent_type: 'flowguard-reviewer',
+          prompt: `${retryPrompt}\n\n## Reviewed content\nbranch feature-add-due-date`,
+        },
+      },
+      taskBOut,
+    );
+    expect(taskBOut.output).not.toContain('HOST_SUBAGENT_TASK_REQUIRED');
+
     // The host-task evidence must be bound to the review obligation.
     const finalState = await readState(sessDir);
     const bound = (finalState?.reviewAssurance?.invocations ?? []).find(
@@ -545,6 +652,12 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
     ).toBeDefined();
     expect(bound?.invocationMode).toBe('host_subagent_task');
     expect(bound?.hostVisible).toBe(true);
+    expect(bound?.attemptId).toBe(attemptB?.attemptId);
+    expect(
+      (finalState?.reviewAssurance?.obligations ?? []).filter(
+        (item) => item.obligationType === 'review',
+      ),
+    ).toHaveLength(1);
 
     // An unrelated active review without captured lineage must not make this
     // continuation ambiguous. A no-ID verdict still never mutates state.
@@ -593,7 +706,7 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
     ) as Record<string, unknown>;
     expect(completion.phase).toBe('REVIEW_COMPLETE');
     expect(completion.reviewCard).toContain('host_subagent_task');
-    expect(completion.reviewCard).toContain(CHILD_SESSION);
+    expect(completion.reviewCard).toContain(RETRY_CHILD_SESSION);
     const consumed = await readState(sessDir);
     const consumedInvocation = consumed?.reviewAssurance?.invocations.find(
       (item) => item.invocationId === bound?.invocationId,
@@ -602,6 +715,14 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
       (item) => item.obligationId === obligationId,
     );
     expect(obligation?.status).toBe('consumed');
+    expect(obligation?.metadata).toMatchObject({
+      resolvedBranchSha: 'a'.repeat(40),
+      resolvedBaseSha: 'b'.repeat(40),
+    });
+    expect(consumed?.proofGraph?.claims).toHaveLength(initialHypothesisCount);
+    expect(
+      (consumed?.standaloneReviewEvidence ?? []).filter((entry) => entry.kind === 'prepared'),
+    ).toHaveLength(1);
     expect(consumedInvocation?.consumedByObligationId).toBe(obligationId);
     expect(consumed?.standaloneReviewEvidence.at(-1)).toMatchObject({
       kind: 'completed',

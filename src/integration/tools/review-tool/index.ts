@@ -7,9 +7,7 @@
  *
  * @version v1
  */
-
 import { z } from 'zod';
-
 import type { ToolDefinition } from '../helpers.js';
 import {
   withMutableSessionTransaction,
@@ -64,6 +62,7 @@ import {
   ensureStartedReviewState,
   reissueReviewAttempt,
   populateRefInput,
+  buildHostTaskAttestation,
 } from './continuation.js';
 
 async function bindReviewContentDigest(
@@ -436,6 +435,7 @@ async function prepareHostTaskVerdictReview(
         reviewObligationId: obligation.obligationId,
         reviewAttemptId: reissue.attemptId,
         next: formatReviewRequiredSignal(obligation.iteration, obligation.planVersion),
+        requiredReviewAttestation: buildHostTaskAttestation(obligation),
       },
     );
   }

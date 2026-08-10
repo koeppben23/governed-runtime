@@ -19,7 +19,7 @@ import {
 import { writeStateWithArtifacts } from '../helpers.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { StartedReviewResult } from './types.js';
-import type { ReviewAttempt } from '../../../state/evidence-review.js';
+import type { ReviewAttempt, ReviewObligation } from '../../../state/evidence-review.js';
 
 export function ensureStartedReviewState(
   state: SessionState,
@@ -49,6 +49,17 @@ export function resolveObligationResolvedRefs(
   const baseSha = typeof meta.resolvedBaseSha === 'string' ? meta.resolvedBaseSha : undefined;
   if (!branchSha || !baseSha) return undefined;
   return { resolvedBranchSha: branchSha, resolvedBaseSha: baseSha };
+}
+
+/** Host-authored attestation fields required to regenerate a reviewer Task prompt. */
+export function buildHostTaskAttestation(obligation: ReviewObligation): Record<string, unknown> {
+  return {
+    toolObligationId: obligation.obligationId,
+    mandateDigest: obligation.mandateDigest,
+    criteriaVersion: obligation.criteriaVersion,
+    iteration: obligation.iteration,
+    planVersion: obligation.planVersion,
+  };
 }
 
 /**
