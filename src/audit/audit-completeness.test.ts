@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { evaluateCompleteness } from './completeness.js';
-import { makeState, makeProgressedState, FIXED_TIME, FIXED_SESSION_UUID } from '../fixtures.js';
+import {
+  makeState,
+  makeProgressedState,
+  FIXED_TIME,
+  FIXED_SESSION_UUID,
+  makeImplEvidence,
+} from '../fixtures.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import type { ValidationResult } from '../state/evidence.js';
 import type { SessionState } from '../state/schema.js';
@@ -487,7 +493,7 @@ describe('audit completeness', () => {
       const report = evaluateCompleteness(state);
       const implSlot = report.slots.find((s) => s.slot === 'implementation');
       expect(implSlot?.detail).toContain('files changed');
-      expect(implSlot?.detail).toContain('digest:');
+      expect(implSlot?.detail).toContain('candidate:');
     });
 
     it('slot detail shows failed check ids in validation', () => {
@@ -852,18 +858,19 @@ describe('audit completeness', () => {
 
     it('getSlotDetail implementation: digest.slice(0, 12) truncates', () => {
       const longDigest = 'fedcba9876543210fedcba9876543210fedcba98';
+      const ev = makeImplEvidence({
+        candidate: { candidateDigest: longDigest },
+        domainFiles: ['a.ts', 'b.ts'],
+        executedAt: FIXED_TIME,
+      });
+      const actualDigest = ev.candidate.candidateDigest;
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
-        implementation: {
-          changedFiles: ['a.ts', 'b.ts'],
-          domainFiles: ['a.ts', 'b.ts'],
-          digest: longDigest,
-          executedAt: FIXED_TIME,
-        },
+        implementation: ev,
       });
       const report = evaluateCompleteness(state);
       const slot = report.slots.find((s) => s.slot === 'implementation');
-      expect(slot?.detail).toContain('fedcba987654...');
+      expect(slot?.detail).toContain(actualDigest.slice(0, 12));
       expect(slot?.detail).not.toContain(longDigest);
     });
 

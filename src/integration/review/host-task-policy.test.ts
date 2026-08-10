@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { FIXED_TIME, IMPL_EVIDENCE, VALIDATION_PASSED, makeState } from '../../fixtures.js';
+import {
+  FIXED_TIME,
+  IMPL_EVIDENCE,
+  VALIDATION_PASSED,
+  makeState,
+  makeImplEvidence,
+} from '../../fixtures.js';
 import type { ReviewObligation } from '../../state/evidence.js';
 import { buildHostTaskChallengeContract } from './host-task-policy.js';
 
-const IMPLEMENTATION_DIGEST = IMPL_EVIDENCE.digest;
+const CANDIDATE_DIGEST = IMPL_EVIDENCE.candidate.candidateDigest;
+const CONTENT_DIGEST = IMPL_EVIDENCE.candidate.contentDigest;
 
 function obligation(): ReviewObligation {
   return {
@@ -35,7 +42,7 @@ function implementationAttempt(overrides: Record<string, unknown> = {}) {
   return {
     attemptId: '22222222-2222-4222-8222-222222222222',
     scope: 'implementation' as const,
-    implementationDigest: IMPLEMENTATION_DIGEST,
+    implementationDigest: CONTENT_DIGEST,
     result: VALIDATION_PASSED[0]!,
     ...overrides,
   };
@@ -55,7 +62,7 @@ describe('implementation host-task challenge evidence', () => {
     );
 
     expect(instructions).toEqual([
-      { kind: 'implementation', implementationDigest: IMPLEMENTATION_DIGEST },
+      { kind: 'implementation', implementationDigest: CANDIDATE_DIGEST },
       {
         kind: 'validation_attempt',
         attemptId: '22222222-2222-4222-8222-222222222222',
@@ -96,7 +103,9 @@ describe('implementation host-task challenge evidence', () => {
     expect(
       evidence(
         makeState('IMPL_REVIEW', {
-          implementation: { ...IMPL_EVIDENCE, digest: 'replacement-digest' },
+          implementation: makeImplEvidence({
+            candidate: { contentDigest: 'replacement-content' },
+          }),
           validationAttempts: [implementationAttempt()] as never,
         }),
       ),

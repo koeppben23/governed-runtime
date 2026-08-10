@@ -1,7 +1,16 @@
 import { z } from 'zod';
 import type { ToolDefinition, ToolContext } from './helpers.js';
-import { formatError, withMutableSession, withMutableSessionTransaction } from './helpers.js';
+import {
+  formatError,
+  withMutableSession,
+  withMutableSessionTransaction,
+  formatBlocked,
+} from './helpers.js';
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
+import {
+  resolveImplementationCandidate,
+  resolveImplementationCandidateIdentity,
+} from '../implementation-candidate.js';
 import { changedFiles } from '../../adapters/git.js';
 import {
   type ImplementArgs,
@@ -12,6 +21,7 @@ import {
   handleImplRecord,
   validateImplRecordPrerequisites,
   validateInitialReviewFindings,
+  scopeImplementationFiles,
 } from './implement-record.js';
 import { handleImplReview } from './implement-review.js';
 
@@ -30,8 +40,25 @@ async function executeImplementRecord(context: ToolContext): Promise<string> {
   const findingsBlocked = validateInitialReviewFindings(probeRuntime);
   if (findingsBlocked) return findingsBlocked;
 
-  // Git/worktree inspection can be slow and must not hold the session write lock.
-  const files = await changedFiles(probe.worktree);
+  // Resolve the candidate outside the session write lock. Baseline attribution
+  // uses the probe's state snapshot; the worktree is not expected to change
+  // between probe and transaction entry (TOCTOU is rechecked inside the lock).
+  const rawFiles = await changedFiles(probe.worktree);
+  const scoped = await scopeImplementationFiles(
+    probe.worktree,
+    rawFiles,
+    probe.state.implementationBaseline,
+  );
+  if ('block' in scoped) return scoped.block;
+  const { files: scopedPaths, baselineScoping } = scoped;
+
+  const captured = await resolveImplementationCandidate(probe.worktree, scopedPaths);
+  if (!captured) {
+    return formatBlocked('IMPLEMENTATION_EVIDENCE_EMPTY', {
+      reason: 'no changed files detected in worktree after baseline scoping',
+    });
+  }
+
   return withMutableSessionTransaction(
     context,
     async ({ worktree, sessDir, state, policy, ctx }) => {
@@ -50,7 +77,18 @@ async function executeImplementRecord(context: ToolContext): Promise<string> {
       if (freshPrereqBlocked) return freshPrereqBlocked;
       const freshFindingsBlocked = validateInitialReviewFindings(runtime);
       if (freshFindingsBlocked) return freshFindingsBlocked;
-      return handleImplRecord(runtime, files);
+
+      // TOCTOU re-verification: the worktree must not have changed between
+      // candidate capture and transaction acquisition.
+      const currentIdentity = await resolveImplementationCandidateIdentity(worktree, scopedPaths);
+      if (
+        !currentIdentity ||
+        captured.identity.candidateDigest !== currentIdentity.candidateDigest
+      ) {
+        return formatBlocked('IMPLEMENTATION_CANDIDATE_CHANGED_DURING_CAPTURE');
+      }
+
+      return handleImplRecord(runtime, captured, baselineScoping);
     },
   );
 }

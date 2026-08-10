@@ -38,6 +38,7 @@ import { writeStateWithArtifacts } from './tools/helpers.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
 import { REVIEW_REPORT_SCHEMA_ID } from '../shared/flowguard-identifiers.js';
 import { computeRecordDigest } from '../state/evidence-plan.js';
+import { makeImplEvidence, CANDIDATE } from '../fixtures.js';
 // ─── Zod v4 Metadata Regression (P1 review gate) ──────────────────────────────
 describe('tool-schemas-zod-v4', () => {
   const allTools = {
@@ -1115,12 +1116,16 @@ describe('declare_contract', () => {
       phase: 'IMPL_VALIDATION',
       activeChecks: [checkId, 'security', ...(overrides.unattemptedChecks ?? [])],
       ticket: { text: 'approved ticket', digest: 'ticket-digest', source: 'user', createdAt: NOW },
-      implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
+      implementation: makeImplEvidence({
+        candidate: { candidateDigest: digest, changedPaths: ['a.ts'] },
+        domainFiles: [],
+        executedAt: NOW,
+      }),
       validationAttempts: [
         {
           attemptId: crypto.randomUUID(),
           scope: 'implementation',
-          implementationDigest: digest,
+          implementationDigest: CANDIDATE.contentDigest,
           result: {
             checkId,
             passed: overrides.passed ?? true,
@@ -1138,7 +1143,7 @@ describe('declare_contract', () => {
         {
           attemptId: crypto.randomUUID(),
           scope: 'implementation',
-          implementationDigest: digest,
+          implementationDigest: CANDIDATE.contentDigest,
           result: {
             checkId: 'security',
             passed: true,
@@ -1309,7 +1314,7 @@ describe('declare_contract', () => {
       contractClaimCount: 2,
     });
     expect(statusResult.proofApprovals).toMatchObject({
-      implementationDigest: 'impl-digest-1',
+      implementationDigest: persisted!.implementation!.candidate.candidateDigest,
       coverageGaps: coverage,
     });
     expect((statusResult.proofApprovals as { claims: unknown[] }).claims).toHaveLength(2);
@@ -1450,7 +1455,7 @@ describe('declare_contract', () => {
       const attempt = (checkId: string, passed: boolean) => ({
         attemptId: crypto.randomUUID(),
         scope: 'implementation' as const,
-        implementationDigest: digest,
+        implementationDigest: CANDIDATE.contentDigest,
         result: {
           checkId,
           passed,
@@ -1500,7 +1505,11 @@ describe('declare_contract', () => {
           source: 'user',
           createdAt: NOW,
         },
-        implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
+        implementation: makeImplEvidence({
+          candidate: { candidateDigest: digest, changedPaths: ['a.ts'] },
+          domainFiles: [],
+          executedAt: NOW,
+        }),
         validationAttempts: [
           attempt('test', true),
           {
@@ -1710,7 +1719,7 @@ describe('declare_contract', () => {
       return {
         attemptId: crypto.randomUUID(),
         scope: 'implementation' as const,
-        implementationDigest: digest,
+        implementationDigest: CANDIDATE.contentDigest,
         result: {
           checkId,
           passed,
@@ -1742,7 +1751,11 @@ describe('declare_contract', () => {
         makeStructuredSecurityCandidate(),
       ],
       ticket: { text: 'approved ticket', digest: 'ticket-digest', source: 'user', createdAt: NOW },
-      implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
+      implementation: makeImplEvidence({
+        candidate: { candidateDigest: digest, changedPaths: ['a.ts'] },
+        domainFiles: [],
+        executedAt: NOW,
+      }),
       validationAttempts: [
         attempt('test', true),
         {

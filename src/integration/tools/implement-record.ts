@@ -1,6 +1,7 @@
 /**
- * @module integration/tools/implement
- * @description FlowGuard implement tool — record implementation or review verdict.
+ * @module integration/tools/implement-record
+ * @description FlowGuard implement tool — record implementation evidence bound to an
+ *              immutable ImplementationCandidate.
  *
  * Agent-Orchestrated Independent Review for /implement
  *
@@ -24,32 +25,7 @@
  * - Response: summary of review findings
  * - Next-action: independent reviewer instructions
  *
- * Policy config (selfReview):
- * - subagentEnabled: enforces subagent review mode
- * - fallbackToSelf: deprecated compatibility field; self-review fallback is prohibited
- *
- * Validation rules:
- * - reviewMode=self → BLOCKED
- * - reviewVerdict=approve + missing reviewFindings → BLOCKED
- * - reviewFindings.iteration mismatch → BLOCKED
- *
- * Multi-call pattern driven by the LLM:
- *
- * Step 1: LLM makes code changes using OpenCode built-in tools (read, write, bash)
- * Step 2: LLM calls flowguard_implement({})
- *   -> Tool auto-detects changed files via git, records ImplEvidence
- *   -> Auto-advances to IMPL_REVIEW
- *   -> Returns "review needed" with policy-conditional next-action
- *
- * Step 3: LLM calls flowguard-reviewer subagent via Task tool
- * Step 4: LLM calls flowguard_review_implementation({ reviewVerdict: "accept", reviewFindings })
- *   -> Tool records review iteration, checks convergence
- *   -> On convergence: auto-advance to EVIDENCE_REVIEW
- *
- * OR Step 4: LLM calls flowguard_review_implementation({ reviewVerdict: "changes_requested" })
- *   -> LLM makes more code changes, then calls flowguard_implement({}) again
- *
- * @version v5
+ * @version v6
  */
 
 import {
@@ -67,14 +43,11 @@ import type { ReviewFindings, ImplEvidence, ReviewObligation } from '../../state
 import type { SessionState } from '../../state/schema.js';
 import { isCommandAllowed, Command } from '../../machine/commands.js';
 
-// Rail helpers
-
 // Adapters
-import { changedFiles, hashWorktreeFiles, worktreeDiff } from '../../adapters/git.js';
+import { hashWorktreeFiles } from '../../adapters/git.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import { writeImplementationDiffArtifact } from './implement-diff-artifact.js';
-
-// Evidence types
+import type { CapturedImplementationCandidate } from '../implementation-candidate.js';
 
 // Review findings validation (shared with plan.ts)
 import { validateReviewFindings } from './review-validation.js';
@@ -95,6 +68,7 @@ import {
   nextImplementationReviewIteration,
 } from './implement-shared.js';
 import { materializeApprovedPlanContractResult } from '../proofgraph/materialize-contract.js';
+
 // Mode A
 export function validateInitialReviewFindings(input: ImplementRuntime): string | null {
   if (!input.args.reviewFindings) return null;
@@ -208,16 +182,11 @@ function buildImplRecordedResponse(input: {
 /**
  * Apply pre-implementation baseline scoping (#baseline): subtract files that
  * were already dirty at session start AND are still unchanged (same content
- * hash), so pre-existing worktree changes (e.g. a stale opencode.json) are not
- * attributed to this implementation — while a pre-dirty file the task actually
- * modified (hash changed) is KEPT, never hidden. When no baseline was captured
- * (legacy session / git unreadable at hydrate), do NOT subtract: record the
- * full worktree exactly as before and mark scoping unavailable.
- *
- * Returns the scoped file list plus the scoping status, or an
- * IMPLEMENTATION_EVIDENCE_EMPTY block when nothing remains.
+ * hash), so pre-existing worktree changes are not attributed to this
+ * implementation. When no baseline was captured, the full worktree is recorded
+ * and scoping is marked unavailable.
  */
-async function scopeImplementationFiles(
+export async function scopeImplementationFiles(
   worktree: string,
   rawFiles: string[],
   baseline: SessionState['implementationBaseline'],
@@ -233,21 +202,16 @@ async function scopeImplementationFiles(
     return { files: rawFiles, baselineScoping: 'unavailable' };
   }
 
-  // Re-hash the still-present baseline paths; a path is scoped out only if it
-  // was pre-dirty and its content hash is unchanged since session start.
   const baselineByPath = new Map(baseline.dirtyFiles.map((d) => [d.path, d.hash]));
   const candidatesToRehash = rawFiles.filter((f) => baselineByPath.has(f));
   const currentHashes =
     candidatesToRehash.length > 0 ? await hashWorktreeFiles(worktree, candidatesToRehash) : {};
   const files = rawFiles.filter((f) => {
-    if (!baselineByPath.has(f)) return true; // not pre-dirty → task change
+    if (!baselineByPath.has(f)) return true;
     const before = baselineByPath.get(f) ?? null;
     const now = currentHashes[f] ?? null;
-    // Scope out ONLY when both hashes are present and equal (provably unchanged
-    // since session start). If either hash is missing, we cannot prove the file
-    // is untouched, so we conservatively KEEP it — never hide a change.
     if (before === null || now === null) return true;
-    return before !== now; // changed since baseline → keep; unchanged → drop
+    return before !== now;
   });
 
   if (files.length === 0) {
@@ -263,69 +227,33 @@ async function scopeImplementationFiles(
   return { files, baselineScoping: 'applied' };
 }
 
-/**
- * Build ImplEvidence with a CONTENT-bound digest and capture the change as a diff
- * artifact.
- *
- * The digest hashes each changed file's CURRENT content (path + git blob hash) so
- * distinct edits to the same file set yield distinct digests — closing the prior
- * gap where the digest was computed over file NAMES only. The unified diff is written
- * to `<sessDir>/implementation-diff.<diffDigest>.patch` (content-addressed, so
- * identical content is idempotent) and covered by the archive manifest checksums;
- * its digest is bound into the evidence. Diff capture is best-effort: an empty
- * diff or a write failure omits `diffDigest` and never blocks recording; the digest
- * is only set when the artifact was successfully written to disk.
- */
-async function buildImplEvidence(
-  input: ImplementRuntime,
-  files: string[],
-  domainFiles: string[],
-): Promise<ImplEvidence> {
-  const sortedFiles = [...files].sort();
-  const contentHashes = await hashWorktreeFiles(input.worktree, sortedFiles);
-  const digest = input.ctx.digest(
-    sortedFiles.map((f) => `${f}:${contentHashes[f] ?? 'deleted'}`).join('\n'),
-  );
-
-  let diffDigest: string | undefined;
-  const diffText = await worktreeDiff(input.worktree, sortedFiles);
-  if (diffText.trim().length > 0) {
-    const candidateDigest = input.ctx.digest(diffText);
-    const written = await writeImplementationDiffArtifact(input.sessDir, candidateDigest, diffText);
-    if (written) {
-      diffDigest = candidateDigest;
-    }
-  }
-
-  return {
-    changedFiles: files,
-    domainFiles,
-    digest,
-    ...(diffDigest ? { diffDigest } : {}),
-    executedAt: input.ctx.now(),
-  };
-}
-
 export async function handleImplRecord(
   input: ImplementRuntime,
-  changedFilesOverride?: string[],
+  capturedCandidate: CapturedImplementationCandidate,
+  scoping: 'applied' | 'unavailable' = 'unavailable',
 ): Promise<string> {
   const blocked = validateImplRecordPrerequisites(input);
   if (blocked) return blocked;
 
-  const rawFiles = changedFilesOverride ?? (await changedFiles(input.worktree));
-  const scoped = await scopeImplementationFiles(
-    input.worktree,
-    rawFiles,
-    input.state.implementationBaseline,
-  );
-  if ('block' in scoped) return scoped.block;
-  const { files, baselineScoping } = scoped;
+  const files = [...capturedCandidate.identity.changedPaths] as string[];
 
   const domainFiles = files.filter(
     (f) => !f.startsWith('.opencode/') && !f.includes('node_modules/') && !isNonDomainConfigPath(f),
   );
-  const implEvidence = await buildImplEvidence(input, files, domainFiles);
+
+  // Persist the exact diff bytes from the captured candidate. No second git diff.
+  const diffDigest = capturedCandidate.identity.diffDigest;
+  const diffText = capturedCandidate.candidateDiffBytes.toString('utf-8');
+  if (diffText.trim().length > 0) {
+    await writeImplementationDiffArtifact(input.sessDir, diffDigest, diffText);
+  }
+
+  const implEvidence: ImplEvidence = {
+    candidate: capturedCandidate.identity,
+    domainFiles,
+    executedAt: input.ctx.now(),
+  };
+
   const existingFindings = input.state.implReviewFindings ?? [];
   const newReviewFindings = input.args.reviewFindings
     ? [...existingFindings, normalizeHostFindings(input.args.reviewFindings)]
@@ -337,19 +265,14 @@ export async function handleImplRecord(
   const nextState: SessionState = {
     ...input.state,
     implementation: implEvidence,
-    // #762: bind the risk classification to the exact revision it describes, so a
-    // gate rail can consult it without re-deriving it from a later file set.
     implementationRiskAssessment: {
       computedMinimumTaskClass: ceremony.computedMinimumTaskClass,
       touchedSurfaces: [...ceremony.touchedSurfaces],
       riskTriggers: [...ceremony.riskTriggers],
       assessedFrom: 'implementation_changed_files',
       assessedFileCount: files.length,
-      implementationDigest: implEvidence.digest,
+      implementationDigest: capturedCandidate.identity.candidateDigest,
     },
-    // Fresh implementation invalidates any prior post-implementation checks; the
-    // machine advances to IMPL_VALIDATION where the checks are re-run against the
-    // new code (prevents a stale IMPL_VALIDATION failure from looping).
     implValidation: [],
     reducedCeremony: reducedCeremony
       ? {
@@ -375,7 +298,7 @@ export async function handleImplRecord(
     planVersion,
     reviewFindings: newReviewFindings,
     ceremony,
-    baselineScoping,
+    baselineScoping: scoping,
   });
 }
 
@@ -394,7 +317,6 @@ interface PersistImplRecordArgs {
 export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): Promise<string> {
   const { input, nextState, files, domainFiles, reviewIteration, planVersion } = args;
   const advanced = autoAdvance(nextState, (s) => evaluate(s, input.policy), input.ctx);
-  // #428: fail closed on overflow BEFORE persisting — no partially-advanced write.
   if (advanced.kind === 'overflow') {
     return formatAutoAdvanceOverflow(advanced);
   }
@@ -417,9 +339,6 @@ export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): 
     now: input.ctx.now(),
     worktree: input.worktree,
   });
-  // The persisted state carries the REFRESHED ProofGraph derived from the freshly
-  // materialized contract; rendering `activated.state` would emit the pre-write
-  // projection and understate claim coverage in the reviewer prompt (#762).
   const persisted = await writeStateWithArtifacts(input.sessDir, activated.state);
 
   return appendNextAction(

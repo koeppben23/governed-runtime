@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { makeState, PLAN_RECORD, ARCHITECTURE_DECISION } from '../../fixtures.js';
+import { ARCHITECTURE_DECISION, IMPL_EVIDENCE, makeState, PLAN_RECORD } from '../../fixtures.js';
 import type { SessionState } from '../../state/schema.js';
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
 import { renderReviewerTaskPrompt } from './prompt-builders.js';
@@ -269,19 +269,14 @@ describe('host-task reviewer prompt carries ProofGraph context', () => {
 
   it('renders the persisted critical fact requirement for a specific trigger', () => {
     const state = makeState('IMPL_REVIEW', {
-      implementation: {
-        changedFiles: ['src/state/schema.ts'],
-        domainFiles: ['src/state/schema.ts'],
-        digest: 'implementation-digest',
-        executedAt: '2026-01-01T00:00:00.000Z',
-      },
+      implementation: IMPL_EVIDENCE,
       implementationRiskAssessment: {
         computedMinimumTaskClass: 'HIGH-RISK',
-        touchedSurfaces: ['src/state/schema.ts'],
+        touchedSurfaces: [...IMPL_EVIDENCE.candidate.changedPaths],
         riskTriggers: ['state_integrity'],
         assessedFrom: 'implementation_changed_files',
-        assessedFileCount: 1,
-        implementationDigest: 'implementation-digest',
+        assessedFileCount: IMPL_EVIDENCE.candidate.changedPaths.length,
+        implementationDigest: IMPL_EVIDENCE.candidate.candidateDigest,
       },
     });
     expect(buildReviewerProofContext(state).join('\n')).toContain(

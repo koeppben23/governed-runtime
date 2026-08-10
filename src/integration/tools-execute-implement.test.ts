@@ -81,6 +81,15 @@ vi.mock('../adapters/git', async (importOriginal) => {
     // Defaults to the real helper (which returns '' on the non-repo temp worktree);
     // F3 tests override it per-call to exercise diff-artifact capture.
     worktreeDiff: vi.fn(original.worktreeDiff),
+    headCommitFull: vi.fn().mockResolvedValue('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'),
+    captureCandidateDiff: vi.fn(
+      async (_worktree: string, _tracked: readonly string[], _untracked: readonly string[]) =>
+        Buffer.from(''),
+    ),
+    trackedPaths: vi.fn(async (_worktree: string, paths: readonly string[]) => {
+      // Default: all paths are tracked
+      return { trackedPaths: [...paths], untrackedPaths: [] };
+    }),
   };
 });
 
@@ -389,8 +398,11 @@ describe('implement', () => {
       const diff =
         'diff --git a/src/auth.ts b/src/auth.ts\n' +
         '--- a/src/auth.ts\n+++ b/src/auth.ts\n@@ -1 +1 @@\n-old\n+new\n';
+      const diffBuf = Buffer.from(diff, 'utf-8');
       vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['src/auth.ts']);
-      vi.mocked(gitMock.worktreeDiff).mockResolvedValueOnce(diff);
+      // Two calls: initial capture + TOCTOU recheck
+      vi.mocked(gitMock.captureCandidateDiff).mockResolvedValueOnce(diffBuf);
+      vi.mocked(gitMock.captureCandidateDiff).mockResolvedValueOnce(diffBuf);
 
       const raw = await implement.execute({}, ctx);
       await passImplValidation();
@@ -398,15 +410,11 @@ describe('implement', () => {
 
       const state = await readState(sessDir);
       const impl = state!.implementation!;
-      // Digest is derived from per-path CONTENT hashes (see hashWorktreeFiles mock),
-      // not a hash of the file-name list — distinct content yields a distinct digest.
-      expect(impl.digest).toBeTruthy();
-      expect(impl.diffDigest).toBeTruthy();
+      expect(impl.candidate.candidateDigest).toBeTruthy();
+      expect(impl.candidate.diffDigest).toBeTruthy();
 
-      // The diff artifact is written, content-addressed by diffDigest, and is picked
-      // up by the archive manifest (it lives under the session directory).
       const patch = await fs.readFile(
-        `${sessDir}/implementation-diff.${impl.diffDigest}.patch`,
+        `${sessDir}/implementation-diff.${impl.candidate.diffDigest}.patch`,
         'utf8',
       );
       expect(patch).toBe(diff);
@@ -416,23 +424,31 @@ describe('implement', () => {
       await reachImplementation();
       const sessDir = await currentSessionDir();
       vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['src/auth.ts']);
-      vi.mocked(gitMock.worktreeDiff).mockResolvedValueOnce('   \n');
+      vi.mocked(gitMock.captureCandidateDiff).mockResolvedValueOnce(Buffer.from(''));
+      vi.mocked(gitMock.captureCandidateDiff).mockResolvedValueOnce(Buffer.from(''));
 
       const raw = await implement.execute({}, ctx);
       await passImplValidation();
       expect(parseToolResult(raw).error).toBeUndefined();
 
       const impl = (await readState(sessDir))!.implementation!;
-      expect(impl.diffDigest).toBeUndefined();
+      // diffDigest is always part of the candidate identity; empty diff produces
+      // a deterministic empty-buffer hash. The artifact file is NOT written.
+      expect(impl.candidate.diffDigest).toBeTruthy();
+      const files = await fs.readdir(sessDir);
+      const patches = files.filter((f) => f.startsWith('implementation-diff.'));
+      expect(patches).toHaveLength(0);
     });
 
     it('F3: omits diffDigest and never persists a claimed artifact when write fails', async () => {
       await reachImplementation();
       const sessDir = await currentSessionDir();
       vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['src/auth.ts']);
-      vi.mocked(gitMock.worktreeDiff).mockResolvedValueOnce(
+      const diffBuf = Buffer.from(
         'diff --git a/src/auth.ts b/src/auth.ts\n--- a/src/auth.ts\n+++ b/src/auth.ts',
       );
+      vi.mocked(gitMock.captureCandidateDiff).mockResolvedValueOnce(diffBuf);
+      vi.mocked(gitMock.captureCandidateDiff).mockResolvedValueOnce(diffBuf);
       // Simulate writeImplementationDiffArtifact failing (ENOSPC).
       vi.mocked(diffArtifactMock.writeImplementationDiffArtifact).mockResolvedValueOnce(false);
 
@@ -441,9 +457,12 @@ describe('implement', () => {
 
       const impl = (await readState(sessDir))!.implementation!;
       // Implementation recording itself must still succeed (best-effort diff).
-      expect(impl.digest).toBeTruthy();
-      // diffDigest must NOT be set — no artifact was written.
-      expect(impl.diffDigest).toBeUndefined();
+      expect(impl.candidate.candidateDigest).toBeTruthy();
+      // diffDigest is always present (part of candidate identity); artifact not on disk.
+      expect(impl.candidate.diffDigest).toBeTruthy();
+      const files = await fs.readdir(sessDir);
+      const patches = files.filter((f) => f.startsWith('implementation-diff.'));
+      expect(patches).toHaveLength(0);
     });
 
     it('Mode B: approve review converges in solo', async () => {

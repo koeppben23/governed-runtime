@@ -156,7 +156,8 @@ export async function materializeApprovedPlanContractResult(
   worktree: string,
 ): Promise<MaterializedPlanContract> {
   const certificate = validateApprovedPlanCertificate(state);
-  const implementationDigest = state.implementation?.digest;
+  const contentDigest = state.implementation?.candidate.contentDigest;
+  const candidateDigest = state.implementation?.candidate.candidateDigest;
   const declarations = state.plan?.claimDeclarations;
   if (!declarations || declarations.claims.length === 0) {
     return { contract: EMPTY_CONTRACT, coverage: [{ cause: 'missing_declarations' }] };
@@ -164,14 +165,14 @@ export async function materializeApprovedPlanContractResult(
   if (certificate.kind !== 'valid') {
     return { contract: EMPTY_CONTRACT, coverage: [{ cause: certificate.cause }] };
   }
-  if (!implementationDigest) {
+  if (!contentDigest || !candidateDigest) {
     return { contract: EMPTY_CONTRACT, coverage: [{ cause: 'missing_implementation' }] };
   }
   const mutationVerdicts = await resolveVerifiedMutationVerdicts(worktree, state.mutationAttempts);
 
   const attempts = state.validationAttempts.filter(
     (attempt) =>
-      attempt.scope === 'implementation' && attempt.implementationDigest === implementationDigest,
+      attempt.scope === 'implementation' && attempt.implementationDigest === contentDigest,
   );
   const coverage: ProofContractCoverage[] = [];
   const legacyDeclarations = !('version' in declarations);
@@ -188,7 +189,7 @@ export async function materializeApprovedPlanContractResult(
     const mutationAttempt = resolveMutationAttempt(
       state,
       declaration,
-      implementationDigest,
+      candidateDigest,
       mutationVerdicts,
     );
     if (declaration.mutationProfile && mutationAttempt === null) {

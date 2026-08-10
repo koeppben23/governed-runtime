@@ -258,7 +258,10 @@ function projectFindingsChallengeLifecycle(
 function resolvedForCurrentDigestIds(state: SessionState): ReadonlySet<string> {
   return new Set(
     state.challengeResolutions
-      .filter((resolution) => resolution.implementationDigest === state.implementation?.digest)
+      .filter(
+        (resolution) =>
+          resolution.implementationDigest === state.implementation?.candidate.candidateDigest,
+      )
       .map((resolution) => resolution.challengeId),
   );
 }
@@ -398,8 +401,8 @@ function appendImplReviewState(input: {
     implReview: {
       iteration,
       maxIterations: runtime.maxImplReviewIterations,
-      prevDigest: implementation.digest,
-      currDigest: implementation.digest,
+      prevDigest: implementation.candidate.candidateDigest,
+      currDigest: implementation.candidate.candidateDigest,
       revisionDelta: 'none',
       verdict: runtime.args.reviewVerdict as LoopVerdict,
       executedAt: runtime.ctx.now(),
@@ -691,7 +694,7 @@ export function implValidationEvidenceGate(state: SessionState): string | null {
   // Active checks present: require a PASSING validation attempt bound to the
   // current implementation digest for EVERY active check. A missing current
   // implementation digest cannot satisfy any check.
-  const currentDigest = state.implementation?.digest;
+  const currentDigest = state.implementation?.candidate.contentDigest;
   const passedForCurrentDigest = new Set<string>();
   if (currentDigest) {
     for (const attempt of state.validationAttempts) {

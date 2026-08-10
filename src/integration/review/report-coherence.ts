@@ -40,7 +40,7 @@ export function resolveCurrentReviewReport(
   if (report.planDigest !== (state.plan?.current.digest ?? null)) {
     return { status: 'stale', reasonCode: 'stale_plan_digest' };
   }
-  if (report.implDigest !== (state.implementation?.digest ?? null)) {
+  if (report.implDigest !== (state.implementation?.candidate.candidateDigest ?? null)) {
     return { status: 'stale', reasonCode: 'stale_impl_digest' };
   }
   return { status: 'current', report };

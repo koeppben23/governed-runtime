@@ -4,7 +4,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { deriveProofGraph } from './derive.js';
-import { makeState } from '../../fixtures.js';
+import { makeState, IMPL_EVIDENCE } from '../../fixtures.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
 const UUID = '00000000-0000-4000-8000-000000000001';
@@ -13,8 +13,7 @@ const AUTHORITY_REF = {
   authorityId: 'ticket',
   digest: 'authority',
 };
-const IMPL_DIGEST = 'impl-current';
-const IMPL = { changedFiles: ['a.ts'], domainFiles: [], digest: IMPL_DIGEST, executedAt: NOW };
+const IMPL_DIGEST = IMPL_EVIDENCE.candidate.candidateDigest;
 const SHA = 'a'.repeat(64);
 
 function claim() {
@@ -31,7 +30,7 @@ function claim() {
 
 function stateWithContract() {
   return makeState('IMPLEMENTATION', {
-    implementation: IMPL,
+    implementation: IMPL_EVIDENCE,
     proofContract: { version: 'contract.v1' as const, claims: [claim()] },
   });
 }

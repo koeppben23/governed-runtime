@@ -338,12 +338,13 @@ export type ConvergenceResult<T> = ConvergedResult<T> | BlockedResult;
  * Process one iteration result: compute revision delta and resolve artifact.
  * Shared primitive for both full loops and single-step continues.
  */
-function processIteration<T extends { readonly digest: string }>(
+function processIteration<T>(
   current: T,
   result: IterationResult<T>,
+  digestOf: (artifact: T) => string,
 ): { readonly artifact: T; readonly revisionDelta: RevisionDelta } {
   if (result.verdict === 'changes_requested' && result.updated) {
-    const delta: RevisionDelta = result.updated.digest === current.digest ? 'none' : 'minor';
+    const delta: RevisionDelta = digestOf(result.updated) === digestOf(current) ? 'none' : 'minor';
     return { artifact: result.updated, revisionDelta: delta };
   }
   return { artifact: current, revisionDelta: 'none' };
@@ -365,10 +366,11 @@ function processIteration<T extends { readonly digest: string }>(
  *
  * Used by /plan (self-review loop) and /implement (impl review loop).
  */
-export async function runConvergenceLoop<T extends { readonly digest: string }>(
+export async function runConvergenceLoop<T>(
   initial: T,
   maxIterations: number,
   iterate: (current: T, iteration: number) => Promise<IterationResult<T>>,
+  digestOf: (artifact: T) => string,
 ): Promise<ConvergenceResult<T>> {
   let current = initial;
   let prevDigest: string | null = null;
@@ -380,7 +382,7 @@ export async function runConvergenceLoop<T extends { readonly digest: string }>(
     iteration++;
     const result = await iterate(current, iteration);
     verdict = result.verdict;
-    prevDigest = current.digest;
+    prevDigest = digestOf(current);
 
     // P1.3 slice 4b: tool-failure verdict short-circuits the loop and
     // returns a BlockedResult. No artifact resolution, no digest update.
@@ -394,7 +396,7 @@ export async function runConvergenceLoop<T extends { readonly digest: string }>(
       };
     }
 
-    const processed = processIteration(current, result);
+    const processed = processIteration(current, result, digestOf);
     revisionDelta = processed.revisionDelta;
     current = processed.artifact;
 
@@ -407,7 +409,7 @@ export async function runConvergenceLoop<T extends { readonly digest: string }>(
     iteration,
     maxIterations,
     prevDigest,
-    currDigest: current.digest,
+    currDigest: digestOf(current),
     revisionDelta,
     verdict,
   };
@@ -419,11 +421,13 @@ export async function runConvergenceLoop<T extends { readonly digest: string }>(
  * Used by /continue for incremental self-review and impl-review.
  * If startIteration >= maxIterations, returns immediately (no iteration runs).
  */
-export async function runSingleIteration<T extends { readonly digest: string }>(
+// eslint-disable-next-line max-params
+export async function runSingleIteration<T>(
   current: T,
   startIteration: number,
   maxIterations: number,
   iterate: (artifact: T, iteration: number) => Promise<IterationResult<T>>,
+  digestOf: (artifact: T) => string,
   lastVerdict?: LoopVerdict,
 ): Promise<ConvergenceResult<T>> {
   // Already at max — force-converge with the last real verdict.
@@ -437,7 +441,7 @@ export async function runSingleIteration<T extends { readonly digest: string }>(
       iteration: startIteration,
       maxIterations,
       prevDigest: null,
-      currDigest: current.digest,
+      currDigest: digestOf(current),
       revisionDelta: 'none',
       verdict: lastVerdict ?? 'changes_requested',
     };
@@ -445,7 +449,7 @@ export async function runSingleIteration<T extends { readonly digest: string }>(
 
   const nextIteration = startIteration + 1;
   const result = await iterate(current, nextIteration);
-  const prevDigest = current.digest;
+  const prevDigest = digestOf(current);
 
   // P1.3 slice 4b: tool-failure verdict short-circuits the iteration
   // and returns a BlockedResult. No artifact resolution.
@@ -459,7 +463,7 @@ export async function runSingleIteration<T extends { readonly digest: string }>(
     };
   }
 
-  const processed = processIteration(current, result);
+  const processed = processIteration(current, result, digestOf);
 
   return {
     kind: 'converged',
@@ -467,7 +471,7 @@ export async function runSingleIteration<T extends { readonly digest: string }>(
     iteration: nextIteration,
     maxIterations,
     prevDigest,
-    currDigest: processed.artifact.digest,
+    currDigest: digestOf(processed.artifact),
     revisionDelta: processed.revisionDelta,
     verdict: result.verdict,
   };

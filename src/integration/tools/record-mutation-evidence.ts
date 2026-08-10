@@ -88,7 +88,7 @@ function validatePreconditions(state: SessionState):
       recovery: 'call /implement first',
     };
   }
-  return { kind: 'ok', implementationDigest: implementation.digest };
+  return { kind: 'ok', implementationDigest: implementation.candidate.candidateDigest };
 }
 
 export const record_mutation_evidence: ToolDefinition = {

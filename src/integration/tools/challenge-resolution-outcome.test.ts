@@ -1,7 +1,12 @@
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import { afterEach, describe, expect, it } from 'vitest';
-import { makeState } from '../../fixtures.js';
+import {
+  CANDIDATE_CONTENT_DIGEST,
+  CANDIDATE_DIGEST,
+  makeState,
+  makeImplEvidence,
+} from '../../fixtures.js';
 import { readState, writeState } from '../../adapters/persistence.js';
 import { computeFingerprint, sessionDir } from '../../adapters/workspace/index.js';
 import { createTestWorkspace, createToolContext, parseToolResult } from '../test-helpers.js';
@@ -17,8 +22,9 @@ afterEach(async () => {
   cleanup = undefined;
 });
 
-const DIGEST = 'impl-digest';
-const DIGEST_2 = 'impl-digest-2';
+const DIGEST = CANDIDATE_DIGEST;
+const CONTENT_DIGEST = CANDIDATE_CONTENT_DIGEST;
+const CONTENT_DIGEST_2 = 'content-digest-2';
 const ATTEMPT_ID = '33333333-3333-4333-8333-333333333333';
 const ATTEMPT_ID_2 = '55555555-5555-4555-8555-555555555555';
 const FAIL_CHALLENGE = '11111111-1111-4111-8111-111111111111';
@@ -79,7 +85,7 @@ function reviewFindings(overrides: Record<string, unknown>) {
 }
 
 interface SeedOptions {
-  digest?: string;
+  contentDigest?: string;
   findingsList?: Record<string, unknown>[];
   resolutions?: {
     challengeId: string;
@@ -98,15 +104,13 @@ async function seedState(options: SeedOptions = {}) {
   const fingerprint = await computeFingerprint(ws.tmpDir);
   const sessDir = sessionDir(fingerprint.fingerprint, sessionID);
   await fs.mkdir(sessDir, { recursive: true });
+  const implementation = options.contentDigest
+    ? makeImplEvidence({ candidate: { contentDigest: options.contentDigest } })
+    : makeImplEvidence();
   await writeState(
     sessDir,
     makeState('IMPL_REVIEW', {
-      implementation: {
-        changedFiles: ['src/example.ts'],
-        domainFiles: ['src/example.ts'],
-        digest: options.digest ?? DIGEST,
-        executedAt: '2026-07-26T00:00:00.000Z',
-      },
+      implementation,
       implReviewFindings: (options.findingsList ?? [
         reviewFindings({
           challenges: [challenge(FAIL_CHALLENGE, 'fail'), challenge(PASS_CHALLENGE, 'pass')],
@@ -116,7 +120,9 @@ async function seedState(options: SeedOptions = {}) {
         resolvedAt: '2026-07-26T00:00:00.000Z',
         ...resolution,
       })),
-      validationAttempts: options.attempts ?? [attempt(ATTEMPT_ID, DIGEST)],
+      validationAttempts: options.attempts ?? [
+        attempt(ATTEMPT_ID, implementation.candidate.contentDigest),
+      ],
     }),
   );
   return { context, sessDir };
@@ -176,7 +182,7 @@ describe('resolve_implementation_challenge — outcome precondition (#747)', () 
       // verdict). New implementation digest 2 + fresh passing attempt: a second
       // append-only resolution must be allowed.
       const { context, sessDir } = await seedState({
-        digest: DIGEST_2,
+        contentDigest: CONTENT_DIGEST_2,
         findingsList: [
           reviewFindings({ challenges: [challenge(FAIL_CHALLENGE, 'fail')] }),
           reviewFindings({
@@ -193,7 +199,7 @@ describe('resolve_implementation_challenge — outcome precondition (#747)', () 
             validationAttemptIds: [ATTEMPT_ID],
           },
         ],
-        attempts: [attempt(ATTEMPT_ID, DIGEST), attempt(ATTEMPT_ID_2, DIGEST_2)],
+        attempts: [attempt(ATTEMPT_ID, CONTENT_DIGEST), attempt(ATTEMPT_ID_2, CONTENT_DIGEST_2)],
       });
       const result = parseToolResult(
         await resolve_implementation_challenge.execute(
@@ -204,7 +210,9 @@ describe('resolve_implementation_challenge — outcome precondition (#747)', () 
       expect(result.error).toBeUndefined();
       const state = await readState(sessDir);
       expect(state?.challengeResolutions).toHaveLength(2);
-      expect(state?.challengeResolutions[1]?.implementationDigest).toBe(DIGEST_2);
+      expect(state?.challengeResolutions[1]?.implementationDigest).toBe(
+        state?.implementation?.candidate.candidateDigest,
+      );
     });
 
     it('resolves a challenge that is absent from the latest challenges[] but still_failing per the latest verdict', async () => {
@@ -212,7 +220,7 @@ describe('resolve_implementation_challenge — outcome precondition (#747)', () 
       // findings[1] carries A forward solely as a still_failing verdict. The
       // resolver must still treat A as resolvable via the lifecycle projection.
       const { context } = await seedState({
-        digest: DIGEST_2,
+        contentDigest: CONTENT_DIGEST_2,
         findingsList: [
           reviewFindings({ challenges: [challenge(FAIL_CHALLENGE, 'fail')] }),
           reviewFindings({
@@ -222,7 +230,7 @@ describe('resolve_implementation_challenge — outcome precondition (#747)', () 
             ],
           }),
         ],
-        attempts: [attempt(ATTEMPT_ID_2, DIGEST_2)],
+        attempts: [attempt(ATTEMPT_ID_2, CONTENT_DIGEST_2)],
       });
       const result = parseToolResult(
         await resolve_implementation_challenge.execute(
@@ -235,7 +243,7 @@ describe('resolve_implementation_challenge — outcome precondition (#747)', () 
 
     it('blocks resolving a challenge whose latest independent verdict is resolved', async () => {
       const { context } = await seedState({
-        digest: DIGEST_2,
+        contentDigest: CONTENT_DIGEST_2,
         findingsList: [
           reviewFindings({ challenges: [challenge(FAIL_CHALLENGE, 'fail')] }),
           reviewFindings({
@@ -243,7 +251,7 @@ describe('resolve_implementation_challenge — outcome precondition (#747)', () 
             challengeResolutionVerdicts: [{ challengeId: FAIL_CHALLENGE, verdict: 'resolved' }],
           }),
         ],
-        attempts: [attempt(ATTEMPT_ID_2, DIGEST_2)],
+        attempts: [attempt(ATTEMPT_ID_2, CONTENT_DIGEST_2)],
       });
       const result = parseToolResult(
         await resolve_implementation_challenge.execute(

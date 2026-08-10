@@ -216,6 +216,7 @@ async function runOneSelfReviewIteration(
       }
       return { verdict: review.verdict };
     },
+    (p) => p.digest,
     state.selfReview?.verdict,
   );
 
@@ -267,6 +268,7 @@ async function runOneImplReviewIteration(
       const review = await executors.implReview(impl, plan, iter);
       return { verdict: review.verdict, updated: review.updatedImpl };
     },
+    (e) => e.candidate.candidateDigest,
     state.implReview?.verdict,
   );
 
@@ -329,6 +331,7 @@ async function runOneArchitectureReviewIteration(
       }
       return { verdict: review.verdict };
     },
+    (a) => a.digest,
     state.selfReview?.verdict,
   );
 

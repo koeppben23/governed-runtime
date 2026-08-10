@@ -4,20 +4,19 @@
  */
 import { describe, it, expect } from 'vitest';
 import { summarizeProofGraph } from './summary.js';
-import { makeState } from '../../fixtures.js';
+import { makeState, IMPL_EVIDENCE } from '../../fixtures.js';
 import type { SessionState } from '../../state/schema.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
 const CLAIM = '00000000-0000-4000-8000-000000000001';
 const ATT = '00000000-0000-4000-8000-0000000000aa';
-const IMPL_DIGEST = 'impl-current';
+const IMPL_DIGEST = IMPL_EVIDENCE.candidate.contentDigest;
 const SHA = 'a'.repeat(64);
 const AUTHORITY_REF = {
   kind: 'canonical_authority' as const,
   authorityId: 'ticket',
   digest: 'authority',
 };
-const IMPL = { changedFiles: ['a.ts'], domainFiles: [], digest: IMPL_DIGEST, executedAt: NOW };
 
 function attemptResult(passed: boolean) {
   return {
@@ -49,7 +48,7 @@ function claim() {
 
 function stateWith(attempts: SessionState['validationAttempts']): SessionState {
   return makeState('IMPL_VALIDATION', {
-    implementation: IMPL,
+    implementation: IMPL_EVIDENCE,
     proofContract: { version: 'contract.v1', claims: [claim()] },
     validationAttempts: attempts,
   });
@@ -119,7 +118,7 @@ describe('summarizeProofGraph reviewer projection', () => {
 
   function stateWithCounterexample(cxDigest: string): SessionState {
     return makeState('IMPL_VALIDATION', {
-      implementation: IMPL,
+      implementation: IMPL_EVIDENCE,
       proofContract: {
         version: 'contract.v1',
         claims: [
@@ -191,7 +190,7 @@ describe('summarizeProofGraph reviewer projection', () => {
 
   it('lists an unsourced claim as an unresolved assumption with a reason', () => {
     const state = makeState('IMPL_VALIDATION', {
-      implementation: IMPL,
+      implementation: IMPL_EVIDENCE,
       proofContract: {
         version: 'contract.v1',
         claims: [{ ...claim(), provenance: null, evidenceRefs: [] }],

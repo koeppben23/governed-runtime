@@ -6,9 +6,9 @@
  * 1. Validate admissibility (allowed in IMPLEMENTATION)
  * 2. Verify preconditions: ticket, plan, validation passed
  * 3. Execute implementation via LLM executor
- * 4. Record ImplEvidence
+ * 4. Record ImplEvidence (bound to an immutable ImplementationCandidate)
  * 5. Auto-advance to IMPL_REVIEW
- * 6. Run impl review loop (up to maxIterations from policy, digest-stop)
+ * 6. Run impl review loop (up to maxIterations from policy, digest-stop on candidateDigest)
  * 7. Auto-advance to EVIDENCE_REVIEW if review converges
  *
  * maxIterations is resolved from policy:
@@ -18,11 +18,17 @@
  * The auto-advance through IMPL_REVIEW eliminates /continue in the happy path.
  * If the review loop doesn't converge, stops at IMPL_REVIEW.
  *
- * @version v1
+ * @version v2
  */
 
 import type { SessionState } from '../state/schema.js';
-import type { ImplEvidence, PlanRecord, TicketEvidence, LoopVerdict } from '../state/evidence.js';
+import type {
+  ImplEvidence,
+  PlanRecord,
+  TicketEvidence,
+  LoopVerdict,
+  ImplementationCandidate,
+} from '../state/evidence.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import type { RailResult, RailContext, TransitionRecord } from './types.js';
 import {
@@ -39,13 +45,20 @@ import { blockedFromOverflow } from './auto-advance-overflow.js';
 
 export interface ImplExecutors {
   /**
-   * Execute the implementation. Returns changed file lists.
-   * The executor does the actual LLM coding work.
+   * Execute the implementation. Returns a resolved implementation candidate
+   * and domain files. The executor does the actual LLM coding work and
+   * resolves the candidate via the Candidate Resolver.
+   *
+   * The rail never computes candidate identity — it consumes the pre-resolved
+   * candidate from the executor.
    */
   execute: (
     ticket: TicketEvidence,
     plan: PlanRecord,
-  ) => Promise<{ changedFiles: string[]; domainFiles: string[] }>;
+  ) => Promise<{
+    candidate: ImplementationCandidate;
+    domainFiles: readonly string[];
+  }>;
 
   /**
    * Review the implementation against the plan.
@@ -72,11 +85,10 @@ async function collectAndAdvance(
   nextState: SessionState;
   transitions: TransitionRecord[];
 }> {
-  const { changedFiles, domainFiles } = await executors.execute(work.ticket, work.plan);
+  const { candidate, domainFiles } = await executors.execute(work.ticket, work.plan);
   const currentImpl: ImplEvidence = {
-    changedFiles,
+    candidate,
     domainFiles,
-    digest: ctx.digest(changedFiles.sort().join('\n')),
     executedAt: ctx.now(),
   };
   const nextState: SessionState = {
@@ -137,10 +149,15 @@ export async function executeImplement(
   }
 
   const plan = state.plan;
-  const loop = await runConvergenceLoop(currentImpl, maxIterations, async (impl, iter) => {
-    const review = await executors.reviewAndRevise(impl, plan, iter);
-    return { verdict: review.verdict, updated: review.updatedImpl };
-  });
+  const loop = await runConvergenceLoop(
+    currentImpl,
+    maxIterations,
+    async (impl, iter) => {
+      const review = await executors.reviewAndRevise(impl, plan, iter);
+      return { verdict: review.verdict, updated: review.updatedImpl };
+    },
+    (e) => e.candidate.candidateDigest,
+  );
 
   if (loop.kind === 'blocked') {
     return blocked('SUBAGENT_UNABLE_TO_REVIEW', {

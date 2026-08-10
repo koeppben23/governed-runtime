@@ -21,8 +21,10 @@ import type {
   ErrorInfo,
   BindingInfo,
   PolicySnapshot,
+  ImplementationCandidate,
 } from './state/evidence.js';
 import { computeRecordDigest } from './state/evidence-plan.js';
+import { computeCandidateDigest } from './state/evidence-candidate.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -232,18 +234,72 @@ export const VALIDATION_FAILED: ValidationResult[] = [
   },
 ];
 
+export const CANDIDATE_BASE_HEAD_SHA = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+export const CANDIDATE_CONTENT_DIGEST = 'content-digest-of-impl';
+export const CANDIDATE_DIFF_DIGEST = 'diff-digest-of-impl';
+export const CANDIDATE_CHANGED_PATHS = ['src/auth.ts', 'src/auth.test.ts'] as const;
+export const CANDIDATE_DIGEST = (() => {
+  const digest = computeCandidateDigest({
+    baseHeadSha: CANDIDATE_BASE_HEAD_SHA,
+    changedPaths: CANDIDATE_CHANGED_PATHS as unknown as readonly string[],
+    contentDigest: CANDIDATE_CONTENT_DIGEST,
+    diffDigest: CANDIDATE_DIFF_DIGEST,
+  });
+  return digest;
+})();
+
+export const CANDIDATE: ImplementationCandidate = {
+  version: 1,
+  baseHeadSha: CANDIDATE_BASE_HEAD_SHA,
+  changedPaths: [...CANDIDATE_CHANGED_PATHS],
+  contentDigest: CANDIDATE_CONTENT_DIGEST,
+  diffDigest: CANDIDATE_DIFF_DIGEST,
+  candidateDigest: CANDIDATE_DIGEST,
+};
+
 export const IMPL_EVIDENCE: ImplEvidence = {
-  changedFiles: ['src/auth.ts', 'src/auth.test.ts'],
+  candidate: CANDIDATE,
   domainFiles: ['src/auth.ts'],
-  digest: 'digest-of-impl',
   executedAt: FIXED_TIME,
 };
+
+/**
+ * Create an ImplEvidence fixture with optional overrides for tests.
+ * Uses the shared CANDIDATE fixture by default; candidateDigest is always
+ * recomputed when any candidate field is overridden so the candidate remains
+ * self-consistent (candidateDigest === computeCandidateDigest(...)).
+ */
+export function makeImplEvidence(overrides?: {
+  candidate?: Partial<ImplementationCandidate>;
+  domainFiles?: string[];
+  executedAt?: string;
+}): ImplEvidence {
+  const merged = overrides?.candidate
+    ? ({ ...CANDIDATE, ...overrides.candidate } as ImplementationCandidate)
+    : CANDIDATE;
+  const candidate: ImplementationCandidate = overrides?.candidate
+    ? {
+        ...merged,
+        candidateDigest: computeCandidateDigest({
+          baseHeadSha: merged.baseHeadSha,
+          changedPaths: merged.changedPaths,
+          contentDigest: merged.contentDigest,
+          diffDigest: merged.diffDigest,
+        }),
+      }
+    : CANDIDATE;
+  return {
+    candidate,
+    domainFiles: overrides?.domainFiles ?? ['src/auth.ts'],
+    executedAt: overrides?.executedAt ?? FIXED_TIME,
+  };
+}
 
 export const IMPL_REVIEW_CONVERGED: ImplReviewResult = {
   iteration: 1,
   maxIterations: 3,
   prevDigest: null,
-  currDigest: 'digest-of-impl',
+  currDigest: CANDIDATE_DIGEST,
   revisionDelta: 'none',
   verdict: 'accept',
   executedAt: FIXED_TIME,
@@ -253,7 +309,7 @@ export const IMPL_REVIEW_PENDING_RESULT: ImplReviewResult = {
   iteration: 1,
   maxIterations: 3,
   prevDigest: null,
-  currDigest: 'digest-of-impl',
+  currDigest: CANDIDATE_DIGEST,
   revisionDelta: 'minor',
   verdict: 'changes_requested',
   executedAt: FIXED_TIME,

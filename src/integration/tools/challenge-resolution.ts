@@ -86,7 +86,11 @@ export const resolve_implementation_challenge: ToolDefinition = {
         }
         const implementation = state.implementation;
         if (!implementation) return formatBlocked('IMPLEMENTATION_EVIDENCE_REQUIRED');
-        const challengeBlock = checkResolvableChallenge(state, challengeId, implementation.digest);
+        const challengeBlock = checkResolvableChallenge(
+          state,
+          challengeId,
+          implementation.candidate.candidateDigest,
+        );
         if (challengeBlock) return challengeBlock;
         if (new Set(attemptIds).size !== attemptIds.length) {
           return formatBlocked('IMPLEMENTATION_VALIDATION_ATTEMPT_DUPLICATE', {
@@ -100,7 +104,7 @@ export const resolve_implementation_challenge: ToolDefinition = {
           if (attempt.scope !== 'implementation') {
             return formatBlocked('IMPLEMENTATION_VALIDATION_ATTEMPT_WRONG_SCOPE', { attemptId });
           }
-          if (attempt.implementationDigest !== implementation.digest) {
+          if (attempt.implementationDigest !== implementation.candidate.contentDigest) {
             return formatBlocked('IMPLEMENTATION_VALIDATION_ATTEMPT_DIGEST_MISMATCH', {
               attemptId,
             });
@@ -118,7 +122,7 @@ export const resolve_implementation_challenge: ToolDefinition = {
         }
         const resolution: ChallengeResolution = {
           challengeId,
-          implementationDigest: implementation.digest,
+          implementationDigest: implementation.candidate.candidateDigest,
           validationAttemptIds: attemptIds,
           resolvedAt: ctx.now(),
           ...(author ? { author } : {}),

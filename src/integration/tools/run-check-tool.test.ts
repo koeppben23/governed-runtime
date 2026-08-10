@@ -33,8 +33,10 @@ import {
 } from '../../adapters/workspace/index.js';
 import { executeCheck } from '../../verification/executor.js';
 import { PersistenceError } from '../../adapters/persistence.js';
+import { makeImplEvidence } from '../../fixtures.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { hashText } from '../../shared/hashing.js';
+import { computeContentDigest } from '../../state/evidence-candidate.js';
 import { hashWorktreeFiles, listRepoSignals } from '../../adapters/git.js';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -579,16 +581,27 @@ describe('CORNER', () => {
     await driveToValidation();
     const sessDir = await getSessDir();
     const state = await readState(sessDir);
-    const implDigest = await writeImplFileAndDigest(ws.tmpDir, 'src/example.ts', 'test');
+    // Write files on disk and compute a contentDigest matching the actual worktree
+    const fullPath = join(ws.tmpDir, 'src/example.ts');
+    mkdirSync(dirname(fullPath), { recursive: true });
+    writeFileSync(fullPath, 'test', 'utf-8');
+    const contentHashes = await hashWorktreeFiles(ws.tmpDir, ['src/example.ts']);
+    const contentDigest = computeContentDigest([
+      {
+        path: 'src/example.ts' as unknown as import('../../state/evidence-review.js').RepositoryPath,
+        state: 'present' as const,
+        blobDigest: contentHashes['src/example.ts'] ?? null,
+      },
+    ]);
+    const ev = makeImplEvidence({
+      candidate: { changedPaths: ['src/example.ts'], contentDigest },
+      domainFiles: ['src/example.ts'],
+      executedAt: '2026-01-01T00:00:00.000Z',
+    });
     await writeState(sessDir, {
       ...state!,
       phase: 'IMPL_VALIDATION',
-      implementation: {
-        changedFiles: ['src/example.ts'],
-        domainFiles: ['src/example.ts'],
-        digest: implDigest,
-        executedAt: '2026-01-01T00:00:00.000Z',
-      },
+      implementation: ev,
     });
 
     await callOk(run_check, { kind: 'typecheck' });
@@ -597,7 +610,7 @@ describe('CORNER', () => {
     expect(finalState!.validationAttempts).toHaveLength(1);
     expect(finalState!.validationAttempts[0]).toMatchObject({
       scope: 'implementation',
-      implementationDigest: implDigest,
+      implementationDigest: contentDigest,
     });
   });
 
@@ -606,16 +619,26 @@ describe('CORNER', () => {
     const sessDir = await getSessDir();
     const state = await readState(sessDir);
     const claimId = '11111111-1111-4111-8111-111111111111';
-    const implDigest = await writeImplFileAndDigest(ws.tmpDir, 'src/example.ts', 'test');
+    const fullPath = join(ws.tmpDir, 'src/example.ts');
+    mkdirSync(dirname(fullPath), { recursive: true });
+    writeFileSync(fullPath, 'test', 'utf-8');
+    const contentHashes = await hashWorktreeFiles(ws.tmpDir, ['src/example.ts']);
+    const contentDigest = computeContentDigest([
+      {
+        path: 'src/example.ts' as unknown as import('../../state/evidence-review.js').RepositoryPath,
+        state: 'present' as const,
+        blobDigest: contentHashes['src/example.ts'] ?? null,
+      },
+    ]);
+    const ev = makeImplEvidence({
+      candidate: { changedPaths: ['src/example.ts'], contentDigest },
+      domainFiles: ['src/example.ts'],
+      executedAt: '2026-01-01T00:00:00.000Z',
+    });
     await writeState(sessDir, {
       ...state!,
       phase: 'IMPL_VALIDATION',
-      implementation: {
-        changedFiles: ['src/example.ts'],
-        domainFiles: ['src/example.ts'],
-        digest: implDigest,
-        executedAt: '2026-01-01T00:00:00.000Z',
-      },
+      implementation: ev,
       plan: {
         ...state!.plan!,
         claimDeclarations: {

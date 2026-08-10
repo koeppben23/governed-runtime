@@ -200,8 +200,10 @@ export type ProofGraphProjection = z.infer<typeof ProofGraphProjection>;
  * Digest binding of a provider result to the concrete surface it was computed
  * over. Freshness is evaluated against this binding, never omitted:
  *
- * - `implementation` / `plan`: bound to a revision digest; a result is fresh
- *   only while that digest is the current implementation/plan revision.
+ * - `implementation` / `plan`: bound to a lifecycle revision digest; a result is
+ *   fresh only while that digest is the current implementation/plan revision.
+ * - `content`: bound to executed file content; a result is fresh only while its
+ *   digest matches the current implementation content.
  * - `surface_set`: bound to a canonical digest over an explicit input surface
  *   (e.g. a set of registry/config source locations); fresh only while that
  *   surface's current digest still matches. Structural and schema assertions
@@ -209,6 +211,7 @@ export type ProofGraphProjection = z.infer<typeof ProofGraphProjection>;
  */
 export const ProofProviderBinding = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('implementation'), digest: z.string().min(1) }).readonly(),
+  z.object({ kind: z.literal('content'), digest: z.string().min(1) }).readonly(),
   z.object({ kind: z.literal('plan'), digest: z.string().min(1) }).readonly(),
   z
     .object({

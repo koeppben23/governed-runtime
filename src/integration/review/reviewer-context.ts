@@ -183,7 +183,7 @@ export function buildReviewerArtifactContext(
         ...renderTicketContext(state),
         ...renderApprovedPlanContext(state),
         ...renderChangedFiles(
-          state.implementation?.changedFiles ?? [],
+          state.implementation?.candidate.changedPaths ?? [],
           'Changed Files',
           'no implementation file set is recorded; do not assume the diff is complete.',
         ),
