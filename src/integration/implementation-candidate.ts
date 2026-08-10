@@ -2,11 +2,11 @@
  * @module integration/implementation-candidate
  * @description Single resolver for an immutable worktree candidate.
  *
- *              Resolves changed paths, final contents, and a complete diff from
- *              one worktree moment. Callers downstream never independently
- *              recompute candidate identity.
+ *              Resolves task-owned changed paths (after baseline attribution),
+ *              final contents, and a complete diff from one worktree moment.
+ *              Callers downstream never independently recompute candidate identity.
  *
- * @version v1
+ * @version v2
  */
 
 import {
@@ -14,8 +14,10 @@ import {
   captureCandidateDiff,
   hashWorktreeFiles,
   headCommitFull,
+  trackedPaths,
 } from '../adapters/git.js';
 import type { ImplementationCandidate } from '../state/evidence-candidate.js';
+import { ImplementationCandidate as ImplementationCandidateSchema } from '../state/evidence-candidate.js';
 import type { RepositoryPath } from '../state/evidence-review.js';
 import { computeCandidateDigest, computeContentDigest } from '../state/evidence-candidate.js';
 import { hashBuffer } from '../shared/hashing.js';
@@ -31,51 +33,19 @@ export interface CandidateIdentity {
   candidateDigest: string;
 }
 
-/**
- * Classify a list of candidate paths into tracked and untracked.
- *
- * Uses a single `git ls-files -- <paths>` call (not one per path) to
- * determine which paths exist in the index/HEAD. Paths not in the output
- * are untracked; paths present are tracted (modified, deleted, staged).
- */
-async function classifyCandidatePaths(
-  worktree: string,
-  paths: readonly string[],
-): Promise<{ trackedPaths: string[]; untrackedPaths: string[] }> {
-  const trackedPaths: string[] = [];
-  const untrackedPaths: string[] = [];
-
-  const { execFile } = await import('node:child_process');
-  const { promisify } = await import('node:util');
-  const execFileAsync = promisify(execFile);
-
-  try {
-    const { stdout } = await execFileAsync('git', ['ls-files', '--', ...paths], {
-      cwd: worktree,
-      timeout: 5_000,
-      windowsHide: true,
-      maxBuffer: 10 * 1024 * 1024,
-    });
-    const tracked = new Set(stdout.split('\n').filter(Boolean));
-    for (const p of paths) {
-      if (tracked.has(p)) {
-        trackedPaths.push(p);
-      } else {
-        untrackedPaths.push(p);
-      }
-    }
-  } catch {
-    // If ls-files fails entirely (e.g. no git repo), treat all as untracked
-    for (const p of paths) {
-      untrackedPaths.push(p);
-    }
-  }
-
-  return { trackedPaths, untrackedPaths };
+/** Input for candidate resolution allowing task-owned path scoping. */
+export interface ResolveCandidateInput {
+  worktree: string;
+  /** Optional set of task-owned paths. When provided, only these paths
+   *  participate in the candidate; all other worktree changes are excluded. */
+  taskOwnedPaths?: readonly string[];
 }
 
 /**
  * Resolve a full implementation candidate from the current worktree.
+ *
+ * When `taskOwnedPaths` is provided, the candidate represents exactly those
+ * paths — baseline attribution happens BEFORE candidate identity is computed.
  *
  * Captures the complete candidate state (base HEAD, changed paths, file
  * hashes, complete binary-capable diff) and returns the identity together
@@ -83,13 +53,19 @@ async function classifyCandidatePaths(
  */
 export async function resolveImplementationCandidate(
   worktree: string,
+  taskOwnedPaths?: readonly string[],
 ): Promise<CapturedImplementationCandidate | null> {
-  const files = await changedFiles(worktree);
-  if (files.length === 0) return null;
+  const rawFiles = await changedFiles(worktree);
+  if (rawFiles.length === 0) return null;
+
+  const candidatePaths =
+    taskOwnedPaths !== undefined ? rawFiles.filter((f) => taskOwnedPaths.includes(f)) : rawFiles;
+
+  if (candidatePaths.length === 0) return null;
 
   const baseHeadSha = await headCommitFull(worktree);
 
-  const changedPaths: RepositoryPath[] = [...files].sort();
+  const changedPaths: RepositoryPath[] = [...candidatePaths].sort();
 
   const contentHashes = await hashWorktreeFiles(worktree, changedPaths);
   const contentEntries = changedPaths.map((path) => {
@@ -102,9 +78,12 @@ export async function resolveImplementationCandidate(
   });
   const contentDigest = computeContentDigest(contentEntries);
 
-  const { trackedPaths, untrackedPaths } = await classifyCandidatePaths(worktree, changedPaths);
+  const { trackedPaths: tracked, untrackedPaths: untracked } = await trackedPaths(
+    worktree,
+    changedPaths,
+  );
 
-  const candidateDiffBytes = await captureCandidateDiff(worktree, trackedPaths, untrackedPaths);
+  const candidateDiffBytes = await captureCandidateDiff(worktree, tracked, untracked);
   const diffDigest = hashBuffer(candidateDiffBytes);
 
   const candidateDigest = computeCandidateDigest({
@@ -114,14 +93,14 @@ export async function resolveImplementationCandidate(
     diffDigest,
   });
 
-  const identity: ImplementationCandidate = {
+  const identity = ImplementationCandidateSchema.parse({
     version: 1,
     baseHeadSha,
     changedPaths,
     contentDigest,
     diffDigest,
     candidateDigest,
-  };
+  });
 
   return { identity, candidateDiffBytes };
 }
@@ -134,8 +113,9 @@ export async function resolveImplementationCandidate(
  */
 export async function resolveImplementationCandidateIdentity(
   worktree: string,
+  taskOwnedPaths?: readonly string[],
 ): Promise<CandidateIdentity | null> {
-  const captured = await resolveImplementationCandidate(worktree);
+  const captured = await resolveImplementationCandidate(worktree, taskOwnedPaths);
   if (!captured) return null;
   return { candidateDigest: captured.identity.candidateDigest };
 }

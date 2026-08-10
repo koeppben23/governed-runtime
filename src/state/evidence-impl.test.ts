@@ -6,16 +6,39 @@
 import { describe, it, expect } from 'vitest';
 import { ImplEvidence, ImplReviewResult } from './evidence-impl.js';
 import { FIXED_TIME } from './evidence-test-constants.js';
-import { ImplementationCandidate } from './evidence-candidate.js';
+import { ImplementationCandidate, computeCandidateDigest } from './evidence-candidate.js';
+import type { RepositoryPath } from './evidence-review.js';
 
-const CANDIDATE: ImplementationCandidate = {
-  version: 1,
-  baseHeadSha: 'a1b2c3d4e5f6789012345678abcdef0123456789',
-  changedPaths: ['src/auth.ts', 'src/auth.test.ts'],
-  contentDigest: 'content-sha256',
-  diffDigest: 'diff-sha256',
-  candidateDigest: 'candidate-sha256',
-};
+function makeTestCandidate(overrides?: {
+  baseHeadSha?: string | null;
+  changedPaths?: readonly string[];
+  contentDigest?: string;
+  diffDigest?: string;
+}): ImplementationCandidate {
+  const baseHeadSha = overrides?.baseHeadSha ?? 'a1b2c3d4e5f6789012345678abcdef0123456789';
+  const changedPaths = (overrides?.changedPaths ?? [
+    'src/auth.ts',
+    'src/auth.test.ts',
+  ]) as unknown as RepositoryPath[];
+  const contentDigest = overrides?.contentDigest ?? 'content-sha256';
+  const diffDigest = overrides?.diffDigest ?? 'diff-sha256';
+  const candidateDigest = computeCandidateDigest({
+    baseHeadSha,
+    changedPaths,
+    contentDigest,
+    diffDigest,
+  });
+  return {
+    version: 1,
+    baseHeadSha,
+    changedPaths,
+    contentDigest,
+    diffDigest,
+    candidateDigest,
+  };
+}
+
+const CANDIDATE = makeTestCandidate();
 
 describe('evidence-impl', () => {
   describe('HAPPY', () => {
@@ -25,7 +48,10 @@ describe('evidence-impl', () => {
         domainFiles: ['src/auth.ts'],
         executedAt: FIXED_TIME,
       };
-      expect(ImplEvidence.parse(impl)).toEqual(impl);
+      const parsed = ImplEvidence.parse(impl);
+      expect(parsed.candidate.candidateDigest).toBe(CANDIDATE.candidateDigest);
+      expect(parsed.domainFiles).toEqual(['src/auth.ts']);
+      expect(parsed.executedAt).toBe(FIXED_TIME);
     });
 
     it('ImplReviewResult parses converged review', () => {
@@ -112,7 +138,9 @@ describe('evidence-impl', () => {
         domainFiles: [],
         executedAt: FIXED_TIME,
       };
-      expect(ImplEvidence.parse(impl)).toEqual(impl);
+      const parsed = ImplEvidence.parse(impl);
+      expect(parsed.domainFiles).toEqual([]);
+      expect(parsed.candidate.candidateDigest).toBe(CANDIDATE.candidateDigest);
     });
   });
 

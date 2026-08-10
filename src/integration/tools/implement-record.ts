@@ -186,7 +186,7 @@ function buildImplRecordedResponse(input: {
  * implementation. When no baseline was captured, the full worktree is recorded
  * and scoping is marked unavailable.
  */
-async function scopeImplementationFiles(
+export async function scopeImplementationFiles(
   worktree: string,
   rawFiles: string[],
   baseline: SessionState['implementationBaseline'],
@@ -230,18 +230,12 @@ async function scopeImplementationFiles(
 export async function handleImplRecord(
   input: ImplementRuntime,
   capturedCandidate: CapturedImplementationCandidate,
+  scoping: 'applied' | 'unavailable' = 'unavailable',
 ): Promise<string> {
   const blocked = validateImplRecordPrerequisites(input);
   if (blocked) return blocked;
 
-  const rawFiles = [...capturedCandidate.identity.changedPaths] as string[];
-  const scoped = await scopeImplementationFiles(
-    input.worktree,
-    rawFiles,
-    input.state.implementationBaseline,
-  );
-  if ('block' in scoped) return scoped.block;
-  const { files, baselineScoping } = scoped;
+  const files = [...capturedCandidate.identity.changedPaths] as string[];
 
   const domainFiles = files.filter(
     (f) => !f.startsWith('.opencode/') && !f.includes('node_modules/') && !isNonDomainConfigPath(f),
@@ -304,7 +298,7 @@ export async function handleImplRecord(
     planVersion,
     reviewFindings: newReviewFindings,
     ceremony,
-    baselineScoping,
+    baselineScoping: scoping,
   });
 }
 

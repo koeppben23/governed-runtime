@@ -192,6 +192,55 @@ async function git(
 }
 
 /**
+ * Execute a git diff command that may exit with code 1 (differences found).
+ *
+ * Standard `git diff --no-index` exits 0 when files match and 1 when they
+ * differ. Both are successful from the caller's perspective — the command
+ * completed and produced meaningful output. Only genuine failures (exit >= 2,
+ * signal, timeout, git not found) throw.
+ *
+ * Design: a constrained primitive, NOT a breakout of general exit-code
+ * tolerance. Every caller that accepts non-zero exit must explicitly name
+ * which codes are permissible so readers can audit the semantics.
+ */
+async function gitDiffRaw(
+  cwd: string,
+  args: string[],
+  acceptableExitCodes: ReadonlySet<number>,
+  timeoutMs: number = GIT_TIMEOUT_MS,
+): Promise<string> {
+  try {
+    return await gitRaw(cwd, args, timeoutMs);
+  } catch (err: unknown) {
+    if (typeof err === 'object' && err !== null && 'code' in err && 'stdout' in err) {
+      const hasCode = err as { code: unknown; stdout: unknown };
+      if (typeof hasCode.code === 'number' && acceptableExitCodes.has(hasCode.code)) {
+        return typeof hasCode.stdout === 'string' ? hasCode.stdout : String(hasCode.stdout ?? '');
+      }
+    }
+    // Re-throw — the exit code is not in the acceptable set.
+    // Check for typed errors (EACCES, timeout, not-found) first.
+    if (isEnoent(err)) {
+      getAdapterLogger().error('git', 'git executable not found in PATH');
+      throw new GitError(
+        'GIT_NOT_FOUND',
+        'git executable not found in PATH. Ensure git is installed.',
+      );
+    }
+    if (isTimedOut(err)) {
+      getAdapterLogger().error('git', `git ${args[0]} timed out`, { args, timeoutMs, cwd });
+      throw new GitError('GIT_TIMEOUT', `git ${args[0]} timed out after ${timeoutMs}ms`);
+    }
+    const stderr =
+      typeof err === 'object' && err !== null && 'stderr' in err
+        ? String((err as { stderr: unknown }).stderr).trim()
+        : '';
+    const msg = stderr || (err instanceof Error ? err.message : String(err));
+    throw new GitError('GIT_COMMAND_FAILED', `git ${args.join(' ')} failed: ${msg}`);
+  }
+}
+
+/**
  * Parse `git status --porcelain=v1 -z` output into a list of changed paths.
  *
  * Why `-z`: the default (newline) porcelain format C-quotes paths containing
@@ -400,6 +449,40 @@ export async function hashWorktreeFiles(
 }
 
 /**
+ * Classify paths as tracked or untracked.
+ *
+ * Uses a single `git ls-files -- <paths>` call to determine which paths
+ * exist in the index/HEAD. Paths present in the output are tracked (modified,
+ * deleted, staged, renamed); paths absent are untracked. If ls-files fails
+ * entirely (e.g. no git repo), all paths are treated as untracked.
+ */
+export async function trackedPaths(
+  worktree: string,
+  paths: readonly string[],
+): Promise<{ trackedPaths: string[]; untrackedPaths: string[] }> {
+  const trackedPaths: string[] = [];
+  const untrackedPaths: string[] = [];
+
+  try {
+    const raw = await gitRaw(worktree, ['ls-files', '--', ...paths]);
+    const tracked = new Set(raw.split('\n').filter(Boolean));
+    for (const p of paths) {
+      if (tracked.has(p)) {
+        trackedPaths.push(p);
+      } else {
+        untrackedPaths.push(p);
+      }
+    }
+  } catch {
+    for (const p of paths) {
+      untrackedPaths.push(p);
+    }
+  }
+
+  return { trackedPaths, untrackedPaths };
+}
+
+/**
  * Capture a complete, binary-capable candidate diff covering every changed path.
  *
  * Unlike {@link worktreeDiff} (which deliberately omits untracked file content),
@@ -459,14 +542,11 @@ export async function captureCandidateDiff(
   const sortedUntracked = [...untrackedPaths].sort();
   for (const p of sortedUntracked) {
     try {
-      const diff = await gitRaw(worktree, [
-        'diff',
-        '--binary',
-        '--no-color',
-        '--no-index',
-        '/dev/null',
-        p,
-      ]);
+      const diff = await gitDiffRaw(
+        worktree,
+        ['diff', '--binary', '--no-color', '--no-index', '/dev/null', p],
+        new Set([0, 1]),
+      );
       if (diff.trim()) {
         chunks.push(Buffer.from(diff, 'utf-8'));
       }

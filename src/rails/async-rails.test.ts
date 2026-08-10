@@ -273,7 +273,7 @@ describe('implement rail', () => {
   const CANDIDATE_FIXTURE = {
     version: 1 as const,
     baseHeadSha: null as string | null,
-    changedPaths: ['src/auth.ts'] as readonly string[],
+    changedPaths: ['src/auth.ts'],
     contentDigest: 'content-d',
     diffDigest: 'diff-d',
     candidateDigest: 'cand-d',

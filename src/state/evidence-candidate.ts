@@ -27,6 +27,11 @@ import { hashText } from '../shared/hashing.js';
  *   binary-capable diff).
  * - `candidateDigest`: canonical lifecycle identity — structural binding of snapshot,
  *   inventory, content identity and diff identity.
+ *
+ * Self-consistency: the candidateDigest field MUST equal the result of
+ * `computeCandidateDigest()` over the candidate's own fields. This is enforced
+ * at the Zod schema boundary so no caller can submit a pre-computed digest
+ * that is inconsistent with its structural identity.
  */
 export const ImplementationCandidate = z
   .object({
@@ -35,13 +40,28 @@ export const ImplementationCandidate = z
       .string()
       .regex(/^[0-9a-f]{40}$/i)
       .nullable(),
-    changedPaths: z.array(RepositoryPathSchema).readonly(),
+    changedPaths: z.array(RepositoryPathSchema).transform((paths) => [...new Set(paths)].sort()),
     contentDigest: z.string().min(1),
     diffDigest: z.string().min(1),
     candidateDigest: z.string().min(1),
   })
   .strict()
-  .readonly();
+  .readonly()
+  .superRefine((candidate, ctx) => {
+    const expected = computeCandidateDigest({
+      baseHeadSha: candidate.baseHeadSha,
+      changedPaths: candidate.changedPaths,
+      contentDigest: candidate.contentDigest,
+      diffDigest: candidate.diffDigest,
+    });
+    if (candidate.candidateDigest !== expected) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `candidateDigest does not match computed identity. Expected ${expected}, got ${candidate.candidateDigest}`,
+        path: ['candidateDigest'],
+      });
+    }
+  });
 export type ImplementationCandidate = z.infer<typeof ImplementationCandidate>;
 
 /**
@@ -57,7 +77,7 @@ export function computeCandidateDigest(input: {
   contentDigest: string;
   diffDigest: string;
 }): string {
-  const sortedPaths = [...input.changedPaths].sort();
+  const sortedPaths = [...new Set(input.changedPaths)].sort();
   return hashText(
     canonicalJsonStringify({
       version: 1,

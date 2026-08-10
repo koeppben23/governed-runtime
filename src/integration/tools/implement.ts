@@ -11,6 +11,7 @@ import {
   resolveImplementationCandidate,
   resolveImplementationCandidateIdentity,
 } from '../implementation-candidate.js';
+import { changedFiles } from '../../adapters/git.js';
 import {
   type ImplementArgs,
   buildImplementRuntime,
@@ -20,6 +21,7 @@ import {
   handleImplRecord,
   validateImplRecordPrerequisites,
   validateInitialReviewFindings,
+  scopeImplementationFiles,
 } from './implement-record.js';
 import { handleImplReview } from './implement-review.js';
 
@@ -37,14 +39,6 @@ async function executeImplementRecord(context: ToolContext): Promise<string> {
   if (prereqBlocked) return prereqBlocked;
   const findingsBlocked = validateInitialReviewFindings(probeRuntime);
   if (findingsBlocked) return findingsBlocked;
-
-  // Resolve the full candidate outside the session write lock.
-  const captured = await resolveImplementationCandidate(probe.worktree);
-  if (!captured) {
-    return formatBlocked('IMPLEMENTATION_EVIDENCE_EMPTY', {
-      reason: 'no changed files detected in worktree',
-    });
-  }
 
   return withMutableSessionTransaction(
     context,
@@ -65,9 +59,28 @@ async function executeImplementRecord(context: ToolContext): Promise<string> {
       const freshFindingsBlocked = validateInitialReviewFindings(runtime);
       if (freshFindingsBlocked) return freshFindingsBlocked;
 
-      // TOCTOU re-verification: the worktree must not have changed between
-      // candidate capture and transaction acquisition.
-      const currentIdentity = await resolveImplementationCandidateIdentity(worktree);
+      // Scope task-owned paths via baseline attribution, then resolve the
+      // candidate over exactly those paths. The candidate identity must only
+      // cover paths attributable to this implementation.
+      const rawFiles = await changedFiles(worktree);
+      const scoped = await scopeImplementationFiles(
+        worktree,
+        rawFiles,
+        state.implementationBaseline,
+      );
+      if ('block' in scoped) return scoped.block;
+      const { files: scopedPaths, baselineScoping } = scoped;
+
+      const captured = await resolveImplementationCandidate(worktree, scopedPaths);
+      if (!captured) {
+        return formatBlocked('IMPLEMENTATION_EVIDENCE_EMPTY', {
+          reason: 'no changed files detected in worktree after baseline scoping',
+        });
+      }
+
+      // TOCTOU re-verification: the worktree must not have changed during
+      // candidate capture. Re-check with the same scoped paths.
+      const currentIdentity = await resolveImplementationCandidateIdentity(worktree, scopedPaths);
       if (
         !currentIdentity ||
         captured.identity.candidateDigest !== currentIdentity.candidateDigest
@@ -75,7 +88,7 @@ async function executeImplementRecord(context: ToolContext): Promise<string> {
         return formatBlocked('IMPLEMENTATION_CANDIDATE_CHANGED_DURING_CAPTURE');
       }
 
-      return handleImplRecord(runtime, captured);
+      return handleImplRecord(runtime, captured, baselineScoping);
     },
   );
 }

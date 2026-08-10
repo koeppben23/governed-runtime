@@ -24,6 +24,7 @@ import type {
   ImplementationCandidate,
 } from './state/evidence.js';
 import { computeRecordDigest } from './state/evidence-plan.js';
+import { computeCandidateDigest } from './state/evidence-candidate.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -233,15 +234,24 @@ export const VALIDATION_FAILED: ValidationResult[] = [
   },
 ];
 
-export const CANDIDATE_DIGEST = 'candidate-digest-of-impl';
+export const CANDIDATE_BASE_HEAD_SHA = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 export const CANDIDATE_CONTENT_DIGEST = 'content-digest-of-impl';
 export const CANDIDATE_DIFF_DIGEST = 'diff-digest-of-impl';
-export const CANDIDATE_BASE_HEAD_SHA = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+export const CANDIDATE_CHANGED_PATHS = ['src/auth.ts', 'src/auth.test.ts'] as const;
+export const CANDIDATE_DIGEST = (() => {
+  const digest = computeCandidateDigest({
+    baseHeadSha: CANDIDATE_BASE_HEAD_SHA,
+    changedPaths: CANDIDATE_CHANGED_PATHS as unknown as readonly string[],
+    contentDigest: CANDIDATE_CONTENT_DIGEST,
+    diffDigest: CANDIDATE_DIFF_DIGEST,
+  });
+  return digest;
+})();
 
 export const CANDIDATE: ImplementationCandidate = {
   version: 1,
   baseHeadSha: CANDIDATE_BASE_HEAD_SHA,
-  changedPaths: ['src/auth.ts', 'src/auth.test.ts'],
+  changedPaths: [...CANDIDATE_CHANGED_PATHS],
   contentDigest: CANDIDATE_CONTENT_DIGEST,
   diffDigest: CANDIDATE_DIFF_DIGEST,
   candidateDigest: CANDIDATE_DIGEST,

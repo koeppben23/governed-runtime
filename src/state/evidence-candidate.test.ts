@@ -12,43 +12,68 @@ import {
 } from './evidence-candidate.js';
 import type { RepositoryPath } from './evidence-review.js';
 
+function makeCandidateDigest(overrides: {
+  baseHeadSha?: string | null;
+  changedPaths?: readonly string[];
+  contentDigest?: string;
+  diffDigest?: string;
+}): string {
+  return computeCandidateDigest({
+    baseHeadSha: overrides.baseHeadSha ?? 'a1b2c3d4e5f6789012345678abcdef0123456789',
+    changedPaths: overrides.changedPaths ?? (['src/auth.ts'] as unknown as RepositoryPath[]),
+    contentDigest: overrides.contentDigest ?? 'content-sha256',
+    diffDigest: overrides.diffDigest ?? 'diff-sha256',
+  });
+}
+
+const DEF_CANDIDATE_DIGEST = makeCandidateDigest({});
+
 describe('evidence-candidate', () => {
   describe('HAPPY', () => {
     it('parses valid candidate', () => {
       const candidate = {
         version: 1 as const,
         baseHeadSha: 'a1b2c3d4e5f6789012345678abcdef0123456789',
-        changedPaths: ['src/auth.ts', 'src/auth.test.ts'],
+        changedPaths: ['src/auth.ts'],
         contentDigest: 'content-sha256',
         diffDigest: 'diff-sha256',
-        candidateDigest: 'candidate-sha256',
+        candidateDigest: DEF_CANDIDATE_DIGEST,
       };
       expect(ImplementationCandidate.parse(candidate)).toEqual(candidate);
     });
 
     it('parses candidate with null baseHeadSha (no HEAD)', () => {
+      const digest = computeCandidateDigest({
+        baseHeadSha: null,
+        changedPaths: ['src/new.ts'] as unknown as RepositoryPath[],
+        contentDigest: 'content-sha256',
+        diffDigest: 'diff-sha256',
+      });
       const candidate = {
         version: 1 as const,
         baseHeadSha: null,
-        changedPaths: ['src/new.ts'],
+        changedPaths: ['src/new.ts'] as unknown as RepositoryPath[],
         contentDigest: 'content-sha256',
         diffDigest: 'diff-sha256',
-        candidateDigest: 'candidate-sha256',
+        candidateDigest: digest,
       };
-      expect(ImplementationCandidate.parse(candidate)).toEqual(candidate);
+      expect(() => ImplementationCandidate.parse(candidate)).not.toThrow();
     });
 
-    it('canonical changedPaths are normalized', () => {
+    it('canonical changedPaths are deduplicated and sorted', () => {
+      const digest = makeCandidateDigest({
+        changedPaths: ['src/b.ts', 'src/a.ts'],
+      });
       const candidate = {
         version: 1 as const,
         baseHeadSha: 'a1b2c3d4e5f6789012345678abcdef0123456789',
-        changedPaths: ['src/b.ts', 'src/a.ts'],
-        contentDigest: 'x',
-        diffDigest: 'y',
-        candidateDigest: 'z',
+        changedPaths: ['src/b.ts', 'src/a.ts', 'src/a.ts'],
+        contentDigest: 'content-sha256',
+        diffDigest: 'diff-sha256',
+        candidateDigest: digest,
       };
       const parsed = ImplementationCandidate.parse(candidate);
-      expect(parsed.changedPaths).toEqual(['src/b.ts', 'src/a.ts']);
+      expect(parsed.changedPaths).toEqual(['src/a.ts', 'src/b.ts']);
     });
 
     it('computeCandidateDigest is deterministic', () => {
@@ -127,7 +152,11 @@ describe('evidence-candidate', () => {
 
     it('computeContentDigest handles deleted state', () => {
       const entries = [
-        { path: 'src/removed.ts' as RepositoryPath, state: 'deleted' as const, blobDigest: null },
+        {
+          path: 'src/removed.ts' as RepositoryPath,
+          state: 'deleted' as const,
+          blobDigest: null,
+        },
         {
           path: 'src/modified.ts' as RepositoryPath,
           state: 'present' as const,
@@ -140,33 +169,36 @@ describe('evidence-candidate', () => {
     });
 
     it('sameImplementationCandidate returns true for equal candidates', () => {
+      const digest = makeCandidateDigest({});
       const candidate = {
         version: 1 as const,
         baseHeadSha: 'a1b2c3d4e5f6789012345678abcdef0123456789',
-        changedPaths: ['src/a.ts'] as readonly RepositoryPath[],
-        contentDigest: 'content',
-        diffDigest: 'diff',
-        candidateDigest: 'same-digest',
+        changedPaths: ['src/auth.ts'] as unknown as RepositoryPath[],
+        contentDigest: 'content-sha256',
+        diffDigest: 'diff-sha256',
+        candidateDigest: digest,
       };
       expect(sameImplementationCandidate(candidate, candidate)).toBe(true);
     });
 
     it('sameImplementationCandidate returns false for different candidates', () => {
+      const digestA = makeCandidateDigest({ contentDigest: 'a' });
+      const digestB = makeCandidateDigest({ contentDigest: 'b' });
       const a = {
         version: 1 as const,
         baseHeadSha: 'a1b2c3d4e5f6789012345678abcdef0123456789',
-        changedPaths: ['src/a.ts'] as readonly RepositoryPath[],
-        contentDigest: 'content',
-        diffDigest: 'diff',
-        candidateDigest: 'digest-a',
+        changedPaths: ['src/auth.ts'] as unknown as RepositoryPath[],
+        contentDigest: 'a',
+        diffDigest: 'diff-sha256',
+        candidateDigest: digestA,
       };
       const b = {
         version: 1 as const,
         baseHeadSha: 'a1b2c3d4e5f6789012345678abcdef0123456789',
-        changedPaths: ['src/a.ts'] as readonly RepositoryPath[],
-        contentDigest: 'content',
-        diffDigest: 'diff',
-        candidateDigest: 'digest-b',
+        changedPaths: ['src/auth.ts'] as unknown as RepositoryPath[],
+        contentDigest: 'b',
+        diffDigest: 'diff-sha256',
+        candidateDigest: digestB,
       };
       expect(sameImplementationCandidate(a, b)).toBe(false);
     });
@@ -195,7 +227,7 @@ describe('evidence-candidate', () => {
       ).toThrow();
     });
 
-    it('rejects missing snapshot', () => {
+    it('rejects missing baseHeadSha field', () => {
       expect(() =>
         ImplementationCandidate.parse({
           version: 1,
@@ -245,17 +277,31 @@ describe('evidence-candidate', () => {
         }),
       ).toThrow();
     });
+
+    it('rejects inconsistent candidateDigest', () => {
+      expect(() =>
+        ImplementationCandidate.parse({
+          version: 1,
+          baseHeadSha: 'a1b2c3d4e5f6789012345678abcdef0123456789',
+          changedPaths: ['src/a.ts'],
+          contentDigest: 'content',
+          diffDigest: 'diff',
+          candidateDigest: 'forged-digest',
+        }),
+      ).toThrow();
+    });
   });
 
   describe('CORNER', () => {
     it('empty changedPaths is valid', () => {
+      const digest = makeCandidateDigest({ changedPaths: [] });
       const candidate = {
         version: 1 as const,
         baseHeadSha: 'a1b2c3d4e5f6789012345678abcdef0123456789',
-        changedPaths: [] as readonly RepositoryPath[],
-        contentDigest: 'empty',
-        diffDigest: 'empty',
-        candidateDigest: 'empty-digest',
+        changedPaths: [] as unknown as RepositoryPath[],
+        contentDigest: 'content-sha256',
+        diffDigest: 'diff-sha256',
+        candidateDigest: digest,
       };
       expect(ImplementationCandidate.parse(candidate)).toEqual(candidate);
     });
