@@ -483,6 +483,18 @@ describe('P26: regulated archive completion', () => {
         if (s.phase === 'EVIDENCE_REVIEW') break;
         await executeWithStrictReview(review_implementation, { reviewVerdict: 'accept' });
       }
+      // Read the actual candidate identity from state so the observation mock
+      // returns matching digests for the candidate-bound approval check.
+      {
+        const sessDir = await currentSessDir();
+        const st = await readState(sessDir);
+        if (st?.implementation?.candidate) {
+          vi.mocked(resolveImplementationApprovalObservation).mockResolvedValue({
+            candidateDigest: st.implementation.candidate.candidateDigest,
+            contentDigest: st.implementation.candidate.contentDigest,
+          });
+        }
+      }
       const raw = await executeDecision({ verdict: 'approve', rationale: 'Ship it' });
       const result = parseToolResult(raw);
       expect(result.phase).toBe('COMPLETE');
