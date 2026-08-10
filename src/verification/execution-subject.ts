@@ -21,6 +21,8 @@ import { join } from 'node:path';
 import { hashText } from '../shared/hashing.js';
 import { hashWorktreeFiles } from '../adapters/git.js';
 import type { ExecutionSubjectInput as InputFromSchema } from '../state/discovery-schemas.js';
+import { computeContentDigest } from '../state/evidence-candidate.js';
+import type { RepositoryPath } from '../state/evidence-review.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -64,7 +66,12 @@ export async function attestExecutionSubject(
       if (changedFiles.length === 0) continue;
       const sortedFiles = [...changedFiles].sort();
       const hashes = await hashWorktreeFiles(worktree, sortedFiles);
-      const digest = hashText(sortedFiles.map((f) => `${f}:${hashes[f] ?? 'deleted'}`).join('\n'));
+      const entries = sortedFiles.map((f) => ({
+        path: f as RepositoryPath,
+        state: (hashes[f] !== null ? 'present' : 'deleted') as 'present' | 'deleted',
+        blobDigest: hashes[f] ?? null,
+      }));
+      const digest = computeContentDigest(entries);
       if (digest !== implementationDigest) {
         return {
           kind: 'subject_changed',
@@ -114,7 +121,12 @@ export async function reattestExecutionSubject(
       if (changedFiles.length === 0) continue;
       const sortedFiles = [...changedFiles].sort();
       const hashes = await hashWorktreeFiles(worktree, sortedFiles);
-      const digest = hashText(sortedFiles.map((f) => `${f}:${hashes[f] ?? 'deleted'}`).join('\n'));
+      const entries = sortedFiles.map((f) => ({
+        path: f as RepositoryPath,
+        state: (hashes[f] !== null ? 'present' : 'deleted') as 'present' | 'deleted',
+        blobDigest: hashes[f] ?? null,
+      }));
+      const digest = computeContentDigest(entries);
       const expected = preAttestation.surfaceDigests.get('implementation');
       if (expected !== undefined && digest !== expected) {
         return {

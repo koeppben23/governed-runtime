@@ -694,7 +694,7 @@ export function implValidationEvidenceGate(state: SessionState): string | null {
   // Active checks present: require a PASSING validation attempt bound to the
   // current implementation digest for EVERY active check. A missing current
   // implementation digest cannot satisfy any check.
-  const currentDigest = state.implementation?.candidate.candidateDigest;
+  const currentDigest = state.implementation?.candidate.contentDigest;
   const passedForCurrentDigest = new Set<string>();
   if (currentDigest) {
     for (const attempt of state.validationAttempts) {

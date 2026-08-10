@@ -597,7 +597,7 @@ function freezeValidationSubject(state: SessionState): ValidationSubject {
   }
   return {
     scope: 'implementation',
-    implementationDigest: state.implementation!.candidate.candidateDigest,
+    implementationDigest: state.implementation!.candidate.contentDigest,
   };
 }
 
@@ -605,7 +605,7 @@ function validationSubjectMatches(state: SessionState, subject: ValidationSubjec
   return subject.scope === 'baseline'
     ? state.phase === 'VALIDATION' && state.plan?.current.digest === subject.planDigest
     : state.phase === 'IMPL_VALIDATION' &&
-        state.implementation?.candidate.candidateDigest === subject.implementationDigest;
+        state.implementation?.candidate.contentDigest === subject.implementationDigest;
 }
 
 function validationSubjectBlock(state: SessionState, subject: ValidationSubject): string | null {
