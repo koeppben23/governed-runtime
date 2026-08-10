@@ -152,10 +152,6 @@ export function resolveImplementationReviewBinding(
 
   const obligation = relevantObligations[relevantObligations.length - 1]!;
 
-  // Resolve the highest ordinal attempt that matches this obligation and
-  // candidate. Prefer a bound or captured attempt; fall back to any admissible
-  // attempt. A fulfilled/consumed obligation authoritatively proves the review
-  // completed — the attempt is supporting evidence, not the authority itself.
   const attemptsForObligation = (obligation.attemptIds ?? [])
     .map((id) => assurance.attempts.find((a) => a.attemptId === id))
     .filter((a): a is NonNullable<typeof a> => a !== undefined)
@@ -163,30 +159,26 @@ export function resolveImplementationReviewBinding(
       (a) => a.subjectDigest === candidateDigest && a.obligationId === obligation.obligationId,
     );
 
-  let authoritativeAttempt = null;
-  if (attemptsForObligation.length > 0) {
-    const sorted = [...attemptsForObligation].sort((a, b) => b.ordinal - a.ordinal);
-    authoritativeAttempt =
-      sorted.find((a) => a.status === 'bound') ??
-      sorted.find((a) => a.status === 'captured') ??
-      sorted[0];
-  }
+  if (attemptsForObligation.length === 0) return null;
 
-  const invocation = authoritativeAttempt
-    ? assurance.invocations.find(
-        (i) =>
-          i.obligationId === obligation.obligationId &&
-          i.attemptId === authoritativeAttempt.attemptId,
-      )
-    : assurance.invocations.find((i) => i.obligationId === obligation.obligationId);
+  // Highest ordinal is the authoritative attempt (#797).
+  const authoritativeAttempt = [...attemptsForObligation].sort((a, b) => b.ordinal - a.ordinal)[0]!;
 
-  const attemptId = authoritativeAttempt?.attemptId ?? '00000000-0000-4000-8000-000000000000';
-  const evidenceDigest = invocation?.findingsHash ?? 'no-invocation-evidence';
+  // Final approval authority requires a bound attempt. No other status
+  // (created, captured, rejected, stale, expired) is admissible.
+  if (authoritativeAttempt.status !== 'bound') return null;
+
+  const invocation = assurance.invocations.find(
+    (i) =>
+      i.obligationId === obligation.obligationId && i.attemptId === authoritativeAttempt.attemptId,
+  );
+
+  if (!invocation) return null;
 
   return {
     obligationId: obligation.obligationId,
-    attemptId,
-    evidenceDigest,
+    attemptId: authoritativeAttempt.attemptId,
+    evidenceDigest: invocation.findingsHash,
   };
 }
 

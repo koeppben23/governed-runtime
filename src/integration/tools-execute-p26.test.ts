@@ -86,6 +86,7 @@ vi.mock('./implementation-approval-observation.js', () => ({
 
 import { resolveImplementationApprovalObservation } from './implementation-approval-observation.js';
 import { CANDIDATE_DIGEST, CANDIDATE_CONTENT_DIGEST } from '../fixtures.js';
+import './test-review-binding-mock.js';
 
 const OBSERVATION = {
   candidateDigest: CANDIDATE_DIGEST,
