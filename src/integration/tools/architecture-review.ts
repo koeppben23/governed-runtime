@@ -369,7 +369,7 @@ export async function handleAdrReview(
 
 async function persistAndFormatReviewResult(input: ReviewResultContext): Promise<string> {
   const iteration = input.session.state.selfReview!.iteration + 1;
-  const completion = input.advanced.state.architecture?.reviewCompletion ?? 'pending';
+  const completion = input.advanced.state.architecture?.reviewCompletion;
   const verdict = input.args.reviewVerdict as LoopVerdict;
   const context = { ...input, iteration };
 

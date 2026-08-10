@@ -180,6 +180,7 @@ describe('integration/tools/architecture (wrapper)', () => {
           adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
           digest: 'digest-adr',
           status: 'proposed',
+          reviewCompletion: 'pending',
           createdAt: '2026-01-01T00:00:00.000Z',
         },
       }),
@@ -194,6 +195,7 @@ describe('integration/tools/architecture (wrapper)', () => {
           adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
           digest: 'digest-adr',
           status: 'proposed',
+          reviewCompletion: 'pending',
           createdAt: '2026-01-01T00:00:00.000Z',
           claimDeclarations: {
             flow: 'architecture',
@@ -278,6 +280,7 @@ describe('integration/tools/architecture (wrapper)', () => {
           adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
           digest: 'digest-adr',
           status: 'proposed',
+          reviewCompletion: 'pending',
           createdAt: '2026-01-01T00:00:00.000Z',
         },
       }),
@@ -356,6 +359,7 @@ describe('integration/tools/architecture (wrapper)', () => {
           adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
           digest: 'digest-adr',
           status: 'proposed',
+          reviewCompletion: 'pending',
           createdAt: '2026-01-01T00:00:00.000Z',
         },
       }),
@@ -431,6 +435,7 @@ describe('integration/tools/architecture (wrapper)', () => {
           adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
           digest: 'digest-adr',
           status: 'proposed',
+          reviewCompletion: 'pending',
           createdAt: '2026-01-01T00:00:00.000Z',
         },
       }),
@@ -478,6 +483,7 @@ describe('integration/tools/architecture (wrapper)', () => {
           adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
           digest: 'digest-adr',
           status: 'proposed',
+          reviewCompletion: 'pending',
           createdAt: '2026-01-01T00:00:00.000Z',
         },
       }),
@@ -520,6 +526,7 @@ describe('integration/tools/architecture (wrapper)', () => {
           adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
           digest: 'digest-adr',
           status: 'proposed',
+          reviewCompletion: 'pending',
           createdAt: '2026-01-01T00:00:00.000Z',
         },
       }),
@@ -602,6 +609,7 @@ describe('integration/tools/architecture (wrapper)', () => {
         adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
         digest: 'digest-adr',
         status: 'proposed',
+        reviewCompletion: 'pending',
         createdAt: '2026-01-01T00:00:00.000Z',
       },
       selfReview: {
@@ -639,6 +647,7 @@ describe('integration/tools/architecture (wrapper)', () => {
         adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
         digest: 'digest-adr',
         status: 'proposed',
+        reviewCompletion: 'pending',
         createdAt: '2026-01-01T00:00:00.000Z',
       },
       selfReview: null,
@@ -674,6 +683,7 @@ describe('integration/tools/architecture (wrapper)', () => {
         adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
         digest: 'digest-adr',
         status: 'proposed',
+        reviewCompletion: 'pending',
         createdAt: '2026-01-01T00:00:00.000Z',
       },
       selfReview: {
@@ -706,6 +716,7 @@ describe('integration/tools/architecture (wrapper)', () => {
         adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
         digest: 'digest-adr',
         status: 'proposed',
+        reviewCompletion: 'pending',
         createdAt: '2026-01-01T00:00:00.000Z',
       },
       selfReview: {
@@ -738,6 +749,7 @@ describe('integration/tools/architecture (wrapper)', () => {
         adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
         digest: 'digest-adr',
         status: 'proposed',
+        reviewCompletion: 'pending',
         createdAt: '2026-01-01T00:00:00.000Z',
       },
       selfReview: {
@@ -770,6 +782,7 @@ describe('integration/tools/architecture (wrapper)', () => {
         adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
         digest: 'digest-adr',
         status: 'proposed',
+        reviewCompletion: 'pending',
         createdAt: '2026-01-01T00:00:00.000Z',
         approvalCertificate: {
           flow: 'architecture',
@@ -820,6 +833,7 @@ describe('integration/tools/architecture (wrapper)', () => {
         adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
         digest: 'digest-adr',
         status: 'proposed',
+        reviewCompletion: 'pending',
         createdAt: '2026-01-01T00:00:00.000Z',
       },
       selfReview: {
@@ -870,6 +884,7 @@ describe('integration/tools/architecture (wrapper)', () => {
         adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
         digest: 'digest-adr',
         status: 'proposed',
+        reviewCompletion: 'pending',
         createdAt: '2026-01-01T00:00:00.000Z',
       },
       // iteration 2 + this review → 3 == maxSelfReviewIterations: force-convergence.
@@ -920,6 +935,7 @@ describe('integration/tools/architecture (wrapper)', () => {
         adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
         digest: 'digest-adr',
         status: 'proposed',
+        reviewCompletion: 'pending',
         createdAt: '2026-01-01T00:00:00.000Z',
       },
       selfReview: {
@@ -1087,6 +1103,7 @@ describe('integration/tools/architecture (wrapper)', () => {
         adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
         digest: 'digest-adr',
         status: 'proposed',
+        reviewCompletion: 'pending',
         createdAt: '2026-01-01T00:00:00.000Z',
       },
       selfReview: {
@@ -1128,6 +1145,7 @@ describe('integration/tools/architecture (wrapper)', () => {
         adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
         digest: 'digest-adr',
         status: 'proposed',
+        reviewCompletion: 'pending',
         createdAt: '2026-01-01T00:00:00.000Z',
         reviewFindings: [existingFinding],
       },
@@ -1178,6 +1196,7 @@ describe('integration/tools/architecture (wrapper)', () => {
         adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
         digest: 'digest-adr',
         status: 'proposed',
+        reviewCompletion: 'pending',
         createdAt: '2026-01-01T00:00:00.000Z',
       },
       selfReview: {
@@ -1219,6 +1238,7 @@ describe('integration/tools/architecture (wrapper)', () => {
         adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
         digest: 'digest-adr',
         status: 'proposed',
+        reviewCompletion: 'pending',
         createdAt: '2026-01-01T00:00:00.000Z',
       },
       selfReview: {
@@ -1257,6 +1277,7 @@ describe('integration/tools/architecture (wrapper)', () => {
         adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
         digest: 'digest-adr',
         status: 'proposed',
+        reviewCompletion: 'pending',
         createdAt: '2026-01-01T00:00:00.000Z',
       },
       selfReview: {

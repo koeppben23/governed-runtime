@@ -391,10 +391,10 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'Architecture approval requires completed independent review evidence. Current review completion: {reviewCompletion}.',
     recoverySteps: [
+      'Request changes to reopen the architecture review cycle',
       'Complete the independent ADR review cycle until it is reviewer_accepted or review_exhausted',
-      'Do not approve a pending or incomplete ADR review',
     ],
-    quickFixCommand: '/architecture',
+    quickFixCommand: '/review-decision changes_requested',
   },
 
   {

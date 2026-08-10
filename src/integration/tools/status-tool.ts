@@ -553,9 +553,7 @@ function buildImplementationStatus(state: SessionState): Record<string, unknown>
       includePlanVersion: true,
       hostIteration: state.selfReview?.iteration,
     }),
-    architectureReviewCompletion: state.architecture
-      ? (state.architecture.reviewCompletion ?? 'pending')
-      : null,
+    architectureReviewCompletion: state.architecture?.reviewCompletion ?? null,
     hasReviewDecision: state.reviewDecision !== null,
     reviewVerdict: state.reviewDecision?.verdict ?? null,
     challengeResolutions: state.challengeResolutions

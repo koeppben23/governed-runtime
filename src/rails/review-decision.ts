@@ -305,10 +305,10 @@ function enforceArchitectureReviewCompletion(
   input: ReviewDecisionInput,
 ): RailBlocked | null {
   if (state.phase !== 'ARCH_REVIEW' || input.verdict !== 'approve') return null;
-  const completion = state.architecture?.reviewCompletion ?? 'pending';
+  const completion = state.architecture?.reviewCompletion;
   if (completion === 'reviewer_accepted' || completion === 'review_exhausted') return null;
   return blocked('ARCHITECTURE_REVIEW_COMPLETION_REQUIRED', {
-    reviewCompletion: completion,
+    reviewCompletion: completion ?? 'missing',
   });
 }
 

@@ -131,6 +131,7 @@ function buildState(
             title: 'Use strict review orchestration',
             adrText: '## Context\nNeed proof.\n## Decision\nAdd orchestration regression tests.',
             status: 'proposed',
+            reviewCompletion: 'pending',
             createdAt: NOW,
             digest: 'digest-of-adr',
           }

@@ -454,6 +454,7 @@ describe('archive', () => {
           title: 'Test ADR',
           adrText: '## Context\nTest\n## Decision\nTest\n## Consequences\nTest',
           status: 'accepted',
+          reviewCompletion: 'reviewer_accepted',
           createdAt: new Date().toISOString(),
           digest: 'abc123',
         },

@@ -157,6 +157,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
           digest: 'digest-adr',
           status: 'proposed',
+          reviewCompletion: 'pending',
           createdAt: '2026-01-01T00:00:00.000Z',
         },
       }),
@@ -171,6 +172,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
           digest: 'digest-adr',
           status: 'proposed',
+          reviewCompletion: 'pending',
           createdAt: '2026-01-01T00:00:00.000Z',
         },
       }),
@@ -215,6 +217,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
           digest: 'digest-adr',
           status: 'proposed',
+          reviewCompletion: 'pending',
           createdAt: now,
         },
         selfReview: {
@@ -302,6 +305,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
           digest: 'digest-adr',
           status: 'proposed',
+          reviewCompletion: 'pending',
           createdAt: now,
         },
         selfReview: {
@@ -419,6 +423,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           adrText: '## Context\nctx\n\n## Decision\ndec\n\n## Consequences\ncons\n',
           digest: 'digest-adr',
           status: 'proposed',
+          reviewCompletion: 'pending',
           createdAt: now,
         },
         selfReview: {
@@ -551,6 +556,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
           digest: 'digest-adr',
           status: 'proposed',
+          reviewCompletion: 'pending',
           createdAt: now,
         },
         selfReview: {

@@ -89,7 +89,7 @@ describe('evidence-architecture', () => {
       expect(validateAdrSections('')).toEqual(['## Context', '## Decision', '## Consequences']);
     });
 
-    it('ArchitectureDecision with absent reviewFindings is valid (legacy compat)', () => {
+    it('ArchitectureDecision requires review completion evidence', () => {
       const adr = {
         id: 'ADR-1',
         title: 'Legacy ADR',
@@ -98,7 +98,7 @@ describe('evidence-architecture', () => {
         createdAt: FIXED_TIME,
         digest: 'abc',
       };
-      expect(ArchitectureDecision.parse(adr)).toEqual(adr);
+      expect(() => ArchitectureDecision.parse(adr)).toThrow();
     });
 
     it('accepts review exhaustion as lifecycle evidence without changing ADR content', () => {
