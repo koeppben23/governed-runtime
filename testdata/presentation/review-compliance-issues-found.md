@@ -16,16 +16,19 @@ Diagnostic: `flowguard_status({ proofGraph: true })`
 ### Critical (1)
 - **Completeness:** Missing evidence
   Affected: BASE · src/subject.ts:8 · Evidence: 1 cited
+  - BASE · src/subject.ts:8
   - HEAD · test/evidence.test.ts:4
 
 ### Major (1)
 - **Risk:** Untracked dependency
   Affected: BASE · src/subject.ts:8 · Evidence: 1 cited
+  - BASE · src/subject.ts:8
   - HEAD · test/evidence.test.ts:4
 
 ### Warnings (1)
 - **Quality:** Missing changelog entry
   Affected: BASE · src/subject.ts:8 · Evidence: 1 cited
+  - BASE · src/subject.ts:8
   - HEAD · test/evidence.test.ts:4
 
 ## Completeness

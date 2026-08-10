@@ -9,13 +9,33 @@ import type {
   FindingSubject,
 } from './model.js';
 
-export function projectFindingRelation(relation: FindingRelationPresentation | undefined): {
-  readonly subjects: readonly FindingSubject[];
-  readonly evidence: readonly FindingRepositoryLocation[];
-} {
+export function projectFindingRelation(relation: FindingRelationPresentation | undefined):
+  | {
+      readonly subjects: readonly FindingSubject[];
+      readonly evidence: readonly FindingRepositoryLocation[];
+    }
+  | Record<never, never> {
+  if (relation === undefined) return {};
   return {
-    subjects: relation?.subjectAnchors ?? [],
-    evidence: relation?.evidenceLocations ?? [],
+    subjects: relation.subjectAnchors.map((subject) =>
+      subject.kind === 'repository_location'
+        ? { kind: 'repository_location', location: projectLocation(subject.location) }
+        : {
+            kind: 'artifact_section',
+            artifactKind: subject.artifactKind,
+            sectionPath: subject.sectionPath.map(({ headingText }) => ({ headingText })),
+          },
+    ),
+    evidence: relation.evidenceLocations.map(projectLocation),
+  };
+}
+
+function projectLocation(location: FindingRepositoryLocation): FindingRepositoryLocation {
+  return {
+    path: location.path,
+    revision: location.revision,
+    ...(location.line === undefined ? {} : { line: location.line }),
+    ...(location.endLine === undefined ? {} : { endLine: location.endLine }),
   };
 }
 

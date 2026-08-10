@@ -234,7 +234,7 @@ function appendAdvisoryFindingsSections(
 ): void {
   if (input.blockingIssues && input.blockingIssues.length > 0) {
     const groups = buildFindingGroups('Blocking Issues', input.blockingIssues);
-    sections.push({ kind: 'findings', heading: 'Reviewer Findings', groups });
+    sections.push({ kind: 'findings', heading: 'Reviewer Findings', detail: 'compact', groups });
   }
   if (input.majorRisks && input.majorRisks.length > 0) {
     const items: FindingItem[] = input.majorRisks.map((finding) => ({
@@ -243,7 +243,7 @@ function appendAdvisoryFindingsSections(
       ...projectFindingRelation(finding.relation),
     }));
     const groups: FindingGroup[] = [{ severity: 'major', label: 'Major Risks', items }];
-    sections.push({ kind: 'findings', heading: 'Reviewer Findings', groups });
+    sections.push({ kind: 'findings', heading: 'Reviewer Findings', detail: 'compact', groups });
   }
   if (input.scopeCreep && input.scopeCreep.length > 0) {
     sections.push({

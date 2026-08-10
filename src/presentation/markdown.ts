@@ -210,7 +210,7 @@ function renderSection(section: PresentationSection, glyphs: PresentationGlyphs)
     case 'artifactList':
       return sectionHeading(section) + renderArtifactList(section.items, glyphs);
     case 'findings':
-      return sectionHeading(section) + renderFindings(section.groups);
+      return sectionHeading(section) + renderFindings(section.groups, section.detail ?? 'compact');
     case 'checklist':
       return sectionHeading(section) + renderChecklist(section);
     case 'text':
@@ -321,13 +321,13 @@ function artifactStatusSymbol(status: ArtifactItem['status'], glyphs: Presentati
   }
 }
 
-function renderFindings(groups: readonly FindingGroup[]): string {
+function renderFindings(groups: readonly FindingGroup[], detail: 'compact' | 'expanded'): string {
   const blocks: string[] = [];
   for (const group of groups) {
     if (group.items.length === 0) continue;
     const lines: string[] = [`### ${group.label} (${group.items.length})`];
     for (const item of group.items) {
-      lines.push(renderFindingItem(item));
+      lines.push(renderFindingItem(item, detail));
     }
     blocks.push(lines.join('\n'));
   }
@@ -336,17 +336,17 @@ function renderFindings(groups: readonly FindingGroup[]): string {
   return blocks.join('\n\n');
 }
 
-function renderFindingItem(item: FindingItem): string {
+function renderFindingItem(item: FindingItem, detail: 'compact' | 'expanded'): string {
+  const lines = [`- **${item.category}:** ${item.message}`];
+  if (item.subjects === undefined && item.evidence === undefined) return lines[0]!;
+
   const subjects = item.subjects ?? [];
   const evidence = item.evidence ?? [];
-  const lines = [
-    `- **${item.category}:** ${item.message}`,
-    `  ${formatFindingAffected(subjects)} · ${formatFindingEvidence(evidence)}`,
-  ];
-  if (subjects.length > 1) {
+  lines.push(`  ${formatFindingAffected(subjects)} · ${formatFindingEvidence(evidence)}`);
+  if (detail === 'expanded') {
     lines.push(...subjects.map((subject) => `  - ${formatFindingSubject(subject)}`));
+    lines.push(...evidence.map((location) => `  - ${formatFindingLocation(location)}`));
   }
-  lines.push(...evidence.map((location) => `  - ${formatFindingLocation(location)}`));
   return lines.join('\n');
 }
 

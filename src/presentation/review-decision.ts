@@ -13,6 +13,7 @@ import type {
   PresentationAction,
   PresentationConclusion,
 } from './model.js';
+import { formatFindingAffected, projectFindingRelation } from './finding-relation.js';
 
 const GATE_COMMANDS = ['/approve', '/request-changes', '/reject'] as const;
 
@@ -152,11 +153,17 @@ function toDecisionIssues(
 ): DecisionIssue[] {
   if (!findings || findings.length === 0) return [];
   return findings.map((f) => {
-    const detail = f.severity ? `Severity: ${f.severity}` : undefined;
+    const relation = projectFindingRelation(f.relation);
+    const detail = [
+      f.severity ? `Severity: ${f.severity}` : undefined,
+      'subjects' in relation ? formatFindingAffected(relation.subjects) : undefined,
+    ]
+      .filter((part): part is string => part !== undefined)
+      .join(' · ');
     return {
       source,
       title: f.message,
-      ...(detail ? { detail } : {}),
+      ...(detail.length > 0 ? { detail } : {}),
       ...(f.findingId ? { findingId: f.findingId } : {}),
     };
   });

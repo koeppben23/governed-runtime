@@ -9,4 +9,3 @@
   - HEAD · src/range.ts:10
   - HEAD · test/range.test.ts
 - **quality:** Legacy finding
-  Affected: not cited · Evidence: none cited

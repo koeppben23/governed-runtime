@@ -16,11 +16,13 @@ Diagnostic: `flowguard_status({ proofGraph: true })`
 ### Critical (1)
 - **Correctness:** Missing null check
   Affected: BASE · src/subject.ts:8 · Evidence: 1 cited
+  - BASE · src/subject.ts:8
   - HEAD · test/evidence.test.ts:4
 
 ### Major (1)
 - **Quality:** Missing test coverage
   Affected: BASE · src/subject.ts:8 · Evidence: 1 cited
+  - BASE · src/subject.ts:8
   - HEAD · test/evidence.test.ts:4
 
 ## Completeness

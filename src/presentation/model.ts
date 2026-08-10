@@ -213,6 +213,8 @@ export interface FindingsSection {
   readonly kind: 'findings';
   /** Rendered as `## heading` when present. */
   readonly heading?: string;
+  /** Compact cards summarize relations; reports expand every anchor and evidence location. */
+  readonly detail?: 'compact' | 'expanded';
   readonly groups: readonly FindingGroup[];
 }
 

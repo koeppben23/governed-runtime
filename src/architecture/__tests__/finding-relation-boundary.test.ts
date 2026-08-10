@@ -4,7 +4,7 @@
  *              evidence, Git, and ProofGraph authorities must not cross this boundary.
  */
 
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -20,12 +20,31 @@ const PRESENTATION_FORBIDDEN_IMPORTS = [
   'state/proofgraph.js',
 ] as const;
 
-const CANONICAL_AUTHORITIES = [
-  'state/evidence-review.ts',
-  'integration/review/enforcement/findings-consistency.ts',
+const CANONICAL_AUTHORITY_ROOTS = [
+  'state',
+  'integration/review/enforcement',
   'integration/review/evidence-binding.ts',
   'integration/tools/review-validation.ts',
+  'integration/tools/review-tool',
 ] as const;
+
+// completion.ts is the intentional presentation adapter that materializes the
+// review report. It is not an authority module and is covered by card tests.
+const PRESENTATION_ADAPTERS = new Set(['integration/tools/review-tool/completion.ts']);
+
+function authorityFiles(root: string): string[] {
+  const absolute = join(SRC_ROOT, root);
+  if (statSync(absolute).isFile()) return [root];
+  return readdirSync(absolute, { withFileTypes: true }).flatMap((entry) => {
+    const relative = `${root}/${entry.name}`;
+    if (entry.isDirectory()) return authorityFiles(relative);
+    return entry.name.endsWith('.ts') &&
+      !entry.name.endsWith('.test.ts') &&
+      !PRESENTATION_ADAPTERS.has(relative)
+      ? [relative]
+      : [];
+  });
+}
 
 function importSpecifiers(content: string): string[] {
   const specifiers: string[] = [];
@@ -56,7 +75,7 @@ describe('finding-relation presentation boundary', () => {
   });
 
   it('keeps canonical review authorities independent of presentation', () => {
-    const violations = CANONICAL_AUTHORITIES.flatMap((authority) => {
+    const violations = CANONICAL_AUTHORITY_ROOTS.flatMap(authorityFiles).flatMap((authority) => {
       const content = readFileSync(join(SRC_ROOT, authority), 'utf8');
       return presentationImports(content).map((specifier) => `${authority}: imports ${specifier}`);
     });

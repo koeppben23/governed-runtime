@@ -274,7 +274,7 @@ function appendFindingsSections(sections: PresentationSection[], inputs: Finding
     });
   }
   if (groups.length > 0) {
-    sections.push({ kind: 'findings', heading: 'Reviewer Findings', groups });
+    sections.push({ kind: 'findings', heading: 'Reviewer Findings', detail: 'compact', groups });
   }
 
   // Non-severity categories that do not fit the FindingGroup.severity union

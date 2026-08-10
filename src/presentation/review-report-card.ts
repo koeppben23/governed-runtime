@@ -219,7 +219,7 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
         label: bucket.label,
         items: bucket.items,
       }));
-    sections.push({ kind: 'findings', heading: 'Findings', groups });
+    sections.push({ kind: 'findings', heading: 'Findings', detail: 'expanded', groups });
   } else {
     sections.push({
       kind: 'bulletList',
