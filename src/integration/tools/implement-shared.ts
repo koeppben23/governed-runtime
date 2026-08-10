@@ -47,7 +47,11 @@ export async function activateImplementationReviewObligation(
     worktree: string;
   },
 ): Promise<{ state: SessionState; obligation: ReviewObligation | null; attemptId: string | null }> {
-  if (state.phase !== 'IMPL_REVIEW' || state.reducedCeremony !== null || !input.subagentEnabled) {
+  if (state.reducedCeremony !== null || !input.subagentEnabled) {
+    return { state, obligation: null, attemptId: null };
+  }
+
+  if (state.implementation === null) {
     return { state, obligation: null, attemptId: null };
   }
 
