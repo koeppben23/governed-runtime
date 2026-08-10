@@ -4,6 +4,7 @@
  */
 
 import {
+  classifyRepositoryPath,
   FindingRelation,
   RepositoryLocation,
   ReviewSubjectAnchor,
@@ -32,6 +33,7 @@ export type ReviewFindingsScopeResult =
       readonly code:
         | 'REVIEW_SUBJECT_SCOPE_UNAVAILABLE'
         | 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED'
+        | 'REVIEW_EVIDENCE_LOCATION_ESCAPES_REPOSITORY'
         | 'REVIEW_EVIDENCE_LOCATION_INVALID'
         | 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE'
         | 'REVIEW_REPOSITORY_REVISION_UNAVAILABLE';
@@ -154,11 +156,27 @@ function hasValidSubjectAnchorsAndInvalidEvidenceLocations(relation: unknown): b
   );
 }
 
+function hasEscapingEvidenceLocation(relation: unknown): boolean {
+  if (!relation || typeof relation !== 'object' || Array.isArray(relation)) return false;
+  const { evidenceLocations } = relation as Record<string, unknown>;
+  if (!Array.isArray(evidenceLocations)) return false;
+  return evidenceLocations.some((location) => {
+    if (!location || typeof location !== 'object' || Array.isArray(location)) return false;
+    const { path } = location as Record<string, unknown>;
+    return typeof path === 'string' && classifyRepositoryPath(path).kind === 'escapes_repository';
+  });
+}
+
 function relationFailureCode(
   relation: unknown,
-): 'REVIEW_EVIDENCE_LOCATION_INVALID' | 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED' {
+):
+  | 'REVIEW_EVIDENCE_LOCATION_ESCAPES_REPOSITORY'
+  | 'REVIEW_EVIDENCE_LOCATION_INVALID'
+  | 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED' {
   if (hasValidSubjectAnchorsAndInvalidEvidenceLocations(relation)) {
-    return 'REVIEW_EVIDENCE_LOCATION_INVALID';
+    return hasEscapingEvidenceLocation(relation)
+      ? 'REVIEW_EVIDENCE_LOCATION_ESCAPES_REPOSITORY'
+      : 'REVIEW_EVIDENCE_LOCATION_INVALID';
   }
   return 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED';
 }

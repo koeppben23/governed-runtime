@@ -21,6 +21,13 @@ import {
   ReviewVerdict,
 } from './evidence-primitives.js';
 import { ActorInfoSchema, DecisionIdentity } from './evidence-identity.js';
+import { normalizeRepositoryPath } from './repository-path.js';
+
+export {
+  classifyRepositoryPath,
+  normalizeRepositoryPath,
+  type RepositoryPathClassification,
+} from './repository-path.js';
 
 // ─── Review Attempt (Invocation Envelope) ─────────────────────────────────────
 
@@ -88,34 +95,6 @@ export const CompletenessReportSchema = z.object({
 });
 
 // ─── Independent Review Findings ───────────────────────────────────────────────
-
-/**
- * Normalize a repository-relative POSIX path without allowing ambiguous or
- * escaping path forms. The schema below is the runtime gate for untrusted data.
- */
-export function normalizeRepositoryPath(value: string): string | undefined {
-  const path = value.trim();
-  if (
-    path.length === 0 ||
-    path.startsWith('/') ||
-    /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(path) ||
-    path.includes('\\') ||
-    path.includes('\0')
-  ) {
-    return undefined;
-  }
-  const resolved: string[] = [];
-  for (const segment of path.split('/')) {
-    if (segment.length === 0 || segment === '.') continue;
-    if (segment === '..') {
-      if (resolved.length === 0) return undefined;
-      resolved.pop();
-      continue;
-    }
-    resolved.push(segment);
-  }
-  return resolved.length > 0 ? resolved.join('/') : undefined;
-}
 
 /** Strict, normalized repository-relative path used by review anchors and scopes. */
 export const RepositoryPathSchema = z.string().transform((value, context) => {

@@ -26,6 +26,7 @@ import {
   FourEyesStatusSchema,
   CompletenessSummarySchema,
   CompletenessReportSchema,
+  classifyRepositoryPath,
   RepositoryLocation,
   ReviewSubjectScope,
 } from './evidence-review.js';
@@ -119,6 +120,16 @@ describe('evidence-review', () => {
       ]) {
         expect(RepositoryLocation.safeParse({ path, revision: 'head' }).success).toBe(false);
       }
+    });
+
+    it('classifies repository-root escapes separately from generic invalid paths', () => {
+      expect(classifyRepositoryPath('../outside.ts')).toEqual({ kind: 'escapes_repository' });
+      expect(classifyRepositoryPath('/etc/passwd')).toEqual({ kind: 'invalid' });
+      expect(classifyRepositoryPath('file:///tmp/evidence.ts')).toEqual({ kind: 'invalid' });
+      expect(classifyRepositoryPath('src/a/../b.ts')).toEqual({
+        kind: 'valid',
+        normalizedPath: 'src/b.ts',
+      });
     });
 
     it('allows empty evidence and preserves relation order while rejecting duplicate locations', () => {

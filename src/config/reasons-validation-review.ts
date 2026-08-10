@@ -485,6 +485,16 @@ export const REVIEW_VALIDATION_REASONS = [
     ],
   },
   {
+    code: 'REVIEW_EVIDENCE_LOCATION_ESCAPES_REPOSITORY',
+    category: 'state',
+    messageTemplate:
+      'Reviewer finding {findingIndex} has an evidence location that escapes the repository for obligation {obligationId}.',
+    recoverySteps: [
+      'Use evidenceLocations paths that remain below the repository root at the frozen base or head revision',
+      'Remove leading or resolving parent-directory segments that escape the repository',
+    ],
+  },
+  {
     code: 'REVIEW_EVIDENCE_LOCATION_INVALID',
     category: 'state',
     messageTemplate:

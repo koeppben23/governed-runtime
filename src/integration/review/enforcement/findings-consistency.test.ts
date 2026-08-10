@@ -173,7 +173,7 @@ describe('review/enforcement/findings-consistency', () => {
       ).toMatchObject({ code: 'REVIEW_SUBJECT_SCOPE_UNAVAILABLE' });
     });
 
-    it('identifies invalid evidence locations when the subject anchor is valid', () => {
+    it('identifies evidence locations that escape the repository when the subject anchor is valid', () => {
       expect(
         validateReviewFindingsScope({
           findings: [
@@ -187,8 +187,28 @@ describe('review/enforcement/findings-consistency', () => {
           reviewSubjectScope: REPOSITORY_SCOPE,
           repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
         }),
-      ).toMatchObject({ code: 'REVIEW_EVIDENCE_LOCATION_INVALID' });
+      ).toMatchObject({ code: 'REVIEW_EVIDENCE_LOCATION_ESCAPES_REPOSITORY' });
     });
+
+    it.each(['/etc/passwd', 'file:///tmp/evidence.ts'])(
+      'identifies generic invalid evidence location %s when the subject anchor is valid',
+      (path) => {
+        expect(
+          validateReviewFindingsScope({
+            findings: [
+              {
+                relation: {
+                  ...repositoryRelation,
+                  evidenceLocations: [{ path, revision: 'head', line: 1 }],
+                },
+              },
+            ],
+            reviewSubjectScope: REPOSITORY_SCOPE,
+            repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
+          }),
+        ).toMatchObject({ code: 'REVIEW_EVIDENCE_LOCATION_INVALID' });
+      },
+    );
 
     it('keeps missing or malformed subject anchors anchor-required', () => {
       expect(
