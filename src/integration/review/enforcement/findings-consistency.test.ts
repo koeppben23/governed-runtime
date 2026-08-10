@@ -70,7 +70,13 @@ describe('review/enforcement/findings-consistency', () => {
       });
     });
 
-    it('matches an artifact section and its descendant sections', () => {
+    const validationPath = [{ headingDepth: 1, siblingIndex: 1, headingText: 'Validation' }];
+    const unitTestsPath = [
+      ...validationPath,
+      { headingDepth: 2, siblingIndex: 1, headingText: 'Unit tests' },
+    ];
+
+    it('matches an artifact section only when its path is explicitly scoped', () => {
       expect(
         validateReviewFindingsScope({
           findings: [
@@ -81,10 +87,7 @@ describe('review/enforcement/findings-consistency', () => {
                     kind: 'artifact_section',
                     artifactKind: 'plan',
                     artifactDigest: 'plan-digest',
-                    sectionPath: [
-                      { headingDepth: 1, siblingIndex: 1, headingText: 'Validation' },
-                      { headingDepth: 2, siblingIndex: 1, headingText: 'Unit tests' },
-                    ],
+                    sectionPath: validationPath,
                   },
                 ],
                 evidenceLocations: [{ path: 'docs/plan.md', revision: 'head', line: 8 }],
@@ -96,20 +99,55 @@ describe('review/enforcement/findings-consistency', () => {
             artifact: {
               kind: 'plan',
               digest: 'plan-digest',
-              sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Validation' }]],
+              sectionPaths: [validationPath],
             },
           },
         }),
       ).toEqual({ ok: true });
     });
 
-    it('fails closed for unavailable scope or malformed external evidence', () => {
+    it('rejects an artifact descendant unless that path is explicitly scoped', () => {
+      const relation = {
+        subjectAnchors: [
+          {
+            kind: 'artifact_section' as const,
+            artifactKind: 'plan' as const,
+            artifactDigest: 'plan-digest',
+            sectionPath: unitTestsPath,
+          },
+        ],
+        evidenceLocations: [],
+      };
+      const scope = {
+        kind: 'artifact' as const,
+        artifact: { kind: 'plan' as const, digest: 'plan-digest', sectionPaths: [validationPath] },
+      };
+      expect(
+        validateReviewFindingsScope({ findings: [{ relation }], reviewSubjectScope: scope }),
+      ).toMatchObject({
+        code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
+      });
+      expect(
+        validateReviewFindingsScope({
+          findings: [{ relation }],
+          reviewSubjectScope: {
+            ...scope,
+            artifact: { ...scope.artifact, sectionPaths: [validationPath, unitTestsPath] },
+          },
+        }),
+      ).toEqual({ ok: true });
+    });
+
+    it('fails closed for unavailable scope', () => {
       expect(
         validateReviewFindingsScope({
           findings: [{ relation: repositoryRelation }],
           reviewSubjectScope: { kind: 'unavailable', reason: 'scope lookup failed' },
         }),
       ).toMatchObject({ code: 'REVIEW_SUBJECT_SCOPE_UNAVAILABLE' });
+    });
+
+    it('identifies invalid evidence locations when the subject anchor is valid', () => {
       expect(
         validateReviewFindingsScope({
           findings: [
@@ -117,6 +155,30 @@ describe('review/enforcement/findings-consistency', () => {
               relation: {
                 ...repositoryRelation,
                 evidenceLocations: [{ path: '../outside.ts', revision: 'head', line: 1 }],
+              },
+            },
+          ],
+          reviewSubjectScope: REPOSITORY_SCOPE,
+        }),
+      ).toMatchObject({ code: 'REVIEW_EVIDENCE_LOCATION_INVALID' });
+    });
+
+    it('keeps missing or malformed subject anchors anchor-required', () => {
+      expect(
+        validateReviewFindingsScope({
+          findings: [{ relation: { ...repositoryRelation, subjectAnchors: [] } }],
+          reviewSubjectScope: REPOSITORY_SCOPE,
+        }),
+      ).toMatchObject({ code: 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED' });
+      expect(
+        validateReviewFindingsScope({
+          findings: [
+            {
+              relation: {
+                ...repositoryRelation,
+                subjectAnchors: [
+                  { kind: 'not_an_anchor' },
+                ] as unknown as typeof repositoryRelation.subjectAnchors,
               },
             },
           ],

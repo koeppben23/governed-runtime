@@ -5,6 +5,8 @@
 
 import {
   FindingRelation,
+  RepositoryLocation,
+  ReviewSubjectAnchor,
   ReviewSubjectScope,
   type ArtifactSectionAnchor,
   type FindingRelation as FindingRelationValue,
@@ -29,6 +31,7 @@ export type ReviewFindingsScopeResult =
       readonly code:
         | 'REVIEW_SUBJECT_SCOPE_UNAVAILABLE'
         | 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED'
+        | 'REVIEW_EVIDENCE_LOCATION_INVALID'
         | 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE'
         | 'REVIEW_REPOSITORY_REVISION_UNAVAILABLE';
       readonly details: {
@@ -63,9 +66,9 @@ export function validateReviewFindingsConsistency(
   return { ok: true };
 }
 
-function sectionPathContains(scope: MarkdownSectionPath, anchor: MarkdownSectionPath): boolean {
+function sectionPathsEqual(scope: MarkdownSectionPath, anchor: MarkdownSectionPath): boolean {
   return (
-    scope.length <= anchor.length &&
+    scope.length === anchor.length &&
     scope.every((part, index) => {
       const candidate = anchor[index];
       return (
@@ -85,7 +88,7 @@ function artifactAnchorIntersectsScope(
     anchor.artifactKind === scope.artifact.kind &&
     anchor.artifactDigest === scope.artifact.digest &&
     scope.artifact.sectionPaths.some((sectionPath) =>
-      sectionPathContains(sectionPath, anchor.sectionPath),
+      sectionPathsEqual(sectionPath, anchor.sectionPath),
     )
   );
 }
@@ -124,6 +127,24 @@ function hasUnavailableRepositoryRevision(
   );
 }
 
+function hasValidSubjectAnchorsAndInvalidEvidenceLocations(relation: unknown): boolean {
+  if (!relation || typeof relation !== 'object' || Array.isArray(relation)) return false;
+  const { subjectAnchors, evidenceLocations } = relation as Record<string, unknown>;
+  return (
+    ReviewSubjectAnchor.array().min(1).safeParse(subjectAnchors).success &&
+    !RepositoryLocation.array().safeParse(evidenceLocations).success
+  );
+}
+
+function relationFailureCode(
+  relation: unknown,
+): 'REVIEW_EVIDENCE_LOCATION_INVALID' | 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED' {
+  if (hasValidSubjectAnchorsAndInvalidEvidenceLocations(relation)) {
+    return 'REVIEW_EVIDENCE_LOCATION_INVALID';
+  }
+  return 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED';
+}
+
 /**
  * Validate that every finding has a schema-valid relation and at least one
  * subject anchor in the frozen scope. Evidence locations are intentionally not
@@ -152,7 +173,7 @@ export function validateReviewFindingsScope(input: {
     if (!relation.success) {
       return {
         ok: false,
-        code: 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED',
+        code: relationFailureCode(finding.relation),
         details: { outOfScopeFindingIndexes: [], reviewSubjectScope: parsedScope.data },
       };
     }

@@ -485,6 +485,16 @@ export const REVIEW_VALIDATION_REASONS = [
     ],
   },
   {
+    code: 'REVIEW_EVIDENCE_LOCATION_INVALID',
+    category: 'state',
+    messageTemplate:
+      'Reviewer finding {findingIndex} has an invalid repository evidence location for obligation {obligationId}.',
+    recoverySteps: [
+      'Provide evidenceLocations as repository-relative paths at the frozen base or head revision',
+      'Keep the valid subject anchor tied to the reviewed subject',
+    ],
+  },
+  {
     code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
     category: 'state',
     messageTemplate:

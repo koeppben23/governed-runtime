@@ -211,6 +211,7 @@ real, registered reason.
 | `REVIEW_FINDINGS_SESSION_MISMATCH`           | Findings came from a different session than the current FlowGuard session     | Use findings produced for the current session                                                                        |
 | `REVIEW_FINDINGS_HASH_MISMATCH`              | Findings hash does not match the review obligation                            | Re-run the review for the current obligation                                                                         |
 | `REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED`     | Reviewer finding has no valid structured subject anchor                       | Anchor the finding to the reviewed change or artifact section                                                        |
+| `REVIEW_EVIDENCE_LOCATION_INVALID`           | Finding evidence location is not a valid repository location                  | Use repository-relative evidence paths at the frozen base or head revision                                           |
 | `REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE` | Reviewer finding does not intersect the frozen reviewed subject               | Anchor the finding to the reviewed change or artifact section                                                        |
 | `REVIEW_REPOSITORY_REVISION_UNAVAILABLE`     | Finding cites a repository revision unavailable to the reviewed subject       | Use only the frozen base or head revision                                                                            |
 | `REVIEW_SUBJECT_SCOPE_UNAVAILABLE`           | Review obligation has no verifiable frozen subject scope                      | Re-run the review after subject scope resolution succeeds                                                            |
@@ -428,6 +429,7 @@ REVIEW_ASSURANCE_UNAVAILABLE
 REVIEW_CARD_ARTIFACT_IMMUTABLE
 REVIEW_CARD_ARTIFACT_WRITE_FAILED
 REVIEW_CONTENT_SOURCE_INCOMPLETE
+REVIEW_EVIDENCE_LOCATION_INVALID
 REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE
 REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED
 REVIEW_FINDINGS_HASH_MISMATCH
