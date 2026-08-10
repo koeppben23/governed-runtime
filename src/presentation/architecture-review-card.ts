@@ -15,14 +15,15 @@
 
 import type { Phase } from '../state/schema.js';
 import type { ArchitectureReviewCompletion } from '../state/evidence.js';
-import { formatFindingRelation } from './model.js';
 import type {
   ReviewCardDocument,
   PresentationSection,
   KeyValueItem,
   FindingGroup,
   FindingItem,
+  FindingRelationPresentation,
 } from './model.js';
+import { projectFindingRelation } from './finding-relation.js';
 import { renderMarkdown } from './markdown.js';
 import type { PresentationRenderOptions } from './glyph-profile.js';
 import type { CompactProofPresentation } from './proof-model.js';
@@ -53,14 +54,14 @@ export interface ArchitectureReviewCardInput {
     severity: string;
     category: string;
     message: string;
-    relation: unknown;
+    relation?: FindingRelationPresentation;
   }>;
   /** Major risks from review findings. */
   majorRisks?: Array<{
     severity: string;
     category: string;
     message: string;
-    relation: unknown;
+    relation?: FindingRelationPresentation;
   }>;
   /** Missing verifications. */
   missingVerification?: string[];
@@ -218,21 +219,26 @@ interface FindingInputs {
     severity: string;
     category: string;
     message: string;
-    relation: unknown;
+    relation?: FindingRelationPresentation;
   }>;
-  majorRisks?: Array<{ severity: string; category: string; message: string; relation: unknown }>;
+  majorRisks?: Array<{
+    severity: string;
+    category: string;
+    message: string;
+    relation?: FindingRelationPresentation;
+  }>;
   missingVerification?: string[];
   scopeCreep?: string[];
   unknowns?: string[];
 }
 
 function toFindingItems(
-  raw: Array<{ category: string; message: string; relation: unknown }>,
+  raw: Array<{ category: string; message: string; relation?: FindingRelationPresentation }>,
 ): FindingItem[] {
   return raw.map((f) => ({
     category: f.category,
     message: f.message,
-    relation: formatFindingRelation(f.relation),
+    ...projectFindingRelation(f.relation),
   }));
 }
 
@@ -265,7 +271,7 @@ function appendFindingsSections(sections: PresentationSection[], inputs: Finding
     });
   }
   if (groups.length > 0) {
-    sections.push({ kind: 'findings', heading: 'Reviewer Findings', groups });
+    sections.push({ kind: 'findings', heading: 'Reviewer Findings', detail: 'compact', groups });
   }
 
   // Non-severity categories that do not fit the FindingGroup.severity union

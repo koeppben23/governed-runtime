@@ -108,7 +108,15 @@ describe('buildArchitectureReviewCard', () => {
           severity: 'critical',
           category: 'completeness',
           message: 'Missing alternatives',
-          relation: { evidenceLocations: ['decision'], subjectAnchors: ['alternatives'] },
+          relation: {
+            evidenceLocations: [],
+            subjectAnchors: [
+              {
+                kind: 'repository_location',
+                location: { path: 'docs/adr.md', revision: 'head' },
+              },
+            ],
+          },
         },
       ],
       majorRisks: [
@@ -116,7 +124,15 @@ describe('buildArchitectureReviewCard', () => {
           severity: 'major',
           category: 'risk',
           message: 'Race condition',
-          relation: { evidenceLocations: ['design'], subjectAnchors: ['concurrency'] },
+          relation: {
+            evidenceLocations: [],
+            subjectAnchors: [
+              {
+                kind: 'repository_location',
+                location: { path: 'src/design.ts', revision: 'base' },
+              },
+            ],
+          },
         },
       ],
       missingVerification: ['No integration test for the new error path'],

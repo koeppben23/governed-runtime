@@ -41,12 +41,22 @@ export {
 export { buildArchitectureReviewCard } from './architecture-review-card.js';
 export { buildReviewReportCard } from './review-report-card.js';
 export { normalizedMarkdown, validateCodeLanguage, PresentationContractError } from './model.js';
+export {
+  projectFindingRelation,
+  formatFindingLocation,
+  formatFindingSubject,
+  formatFindingAffected,
+  formatFindingEvidence,
+} from './finding-relation.js';
 export type {
   NormalizedMarkdown,
   PresentationAction,
   KeyValueItem,
   ArtifactItem,
   FindingItem,
+  FindingRepositoryLocation,
+  FindingSubject,
+  FindingRelationPresentation,
   FindingGroup,
   ChecklistItem,
   KeyValueSection,

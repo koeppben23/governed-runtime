@@ -3,6 +3,31 @@ import { projectReviewDecision, REVIEW_DECISION_COPY } from './review-decision.j
 import type { ReviewDecisionInput } from './review-decision.js';
 
 describe('projectReviewDecision', () => {
+  it('includes a compact affected-subject summary without changing readiness', () => {
+    const result = projectReviewDecision({
+      blockingIssues: [
+        {
+          message: 'Callback validation is incomplete',
+          severity: 'major',
+          relation: {
+            subjectAnchors: [
+              {
+                kind: 'repository_location',
+                location: { revision: 'head', path: 'src/auth/callback.ts', line: 44, endLine: 61 },
+              },
+            ],
+            evidenceLocations: [],
+          },
+        },
+      ],
+    });
+
+    expect(result.readiness).toBe('not_ready');
+    expect(result.blockers[0]?.detail).toBe(
+      'Severity: major · Affected: HEAD · src/auth/callback.ts:44–61',
+    );
+  });
+
   it('empty input produces ready readiness', () => {
     const result = projectReviewDecision({});
     expect(result.readiness).toBe('ready');
