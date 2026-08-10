@@ -2,13 +2,7 @@
  * @module integration/review-evidence-binding
  * @description Host-task evidence binding for review enforcement.
  *
- * Extracted from review-enforcement.ts (FG-REL-038) for single-responsibility.
- * Builds persistent ReviewInvocationEvidence from enforcement state and
- * persisted obligations after a Task tool call to flowguard-reviewer.
- *
  * Pure function — reads enforcement state but does not mutate it.
- *
- * @version v1
  */
 
 import type {
@@ -636,10 +630,13 @@ function prepareBindableFindings(input: {
     allowedEvidenceRefs,
   );
   if ('bindOutcome' in normalization) return normalization;
-  const findings = normalization.findings;
-
-  const schemaCheck = validateNormalizedFindings(findings, obligation.obligationId, childSessionId);
-  if (schemaCheck) return schemaCheck;
+  const schemaCheck = validateNormalizedFindings(
+    normalization.findings,
+    obligation.obligationId,
+    childSessionId,
+  );
+  if ('bindOutcome' in schemaCheck) return schemaCheck;
+  const findings = schemaCheck.findings;
 
   const overallVerdict = findings.overallVerdict;
   const blockingIssues = findings.blockingIssues;
@@ -708,7 +705,7 @@ function validateNormalizedFindings(
   normalizedFindings: Record<string, unknown>,
   obligationId: string,
   childSessionId: string,
-): HostTaskBindResult | null {
+): HostTaskBindResult | { findings: Record<string, unknown> } {
   const schemaResult = ReviewFindingsSchema.safeParse(normalizedFindings);
   if (!schemaResult.success) {
     const issues = schemaResult.error.issues.map(
@@ -725,7 +722,7 @@ function validateNormalizedFindings(
       },
     };
   }
-  return null;
+  return { findings: schemaResult.data };
 }
 function checkDuplicateHostTaskEvidence(
   invocations: ReviewInvocationEvidence[],

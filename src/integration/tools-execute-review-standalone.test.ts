@@ -673,7 +673,6 @@ describe('review (standalone flow)', () => {
             severity: 'minor' as const,
             category: 'quality' as const,
             message: 'stale comment in test',
-            location: 'src/test/TaskControllerTest.java:108',
             relation: REVIEW_RELATION,
           },
         ],
