@@ -156,7 +156,7 @@ export async function materializeApprovedPlanContractResult(
   worktree: string,
 ): Promise<MaterializedPlanContract> {
   const certificate = validateApprovedPlanCertificate(state);
-  const implementationDigest = state.implementation?.candidate.candidateDigest;
+  const implementationDigest = state.implementation?.candidate.contentDigest;
   const declarations = state.plan?.claimDeclarations;
   if (!declarations || declarations.claims.length === 0) {
     return { contract: EMPTY_CONTRACT, coverage: [{ cause: 'missing_declarations' }] };
