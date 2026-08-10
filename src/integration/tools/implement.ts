@@ -40,6 +40,25 @@ async function executeImplementRecord(context: ToolContext): Promise<string> {
   const findingsBlocked = validateInitialReviewFindings(probeRuntime);
   if (findingsBlocked) return findingsBlocked;
 
+  // Resolve the candidate outside the session write lock. Baseline attribution
+  // uses the probe's state snapshot; the worktree is not expected to change
+  // between probe and transaction entry (TOCTOU is rechecked inside the lock).
+  const rawFiles = await changedFiles(probe.worktree);
+  const scoped = await scopeImplementationFiles(
+    probe.worktree,
+    rawFiles,
+    probe.state.implementationBaseline,
+  );
+  if ('block' in scoped) return scoped.block;
+  const { files: scopedPaths, baselineScoping } = scoped;
+
+  const captured = await resolveImplementationCandidate(probe.worktree, scopedPaths);
+  if (!captured) {
+    return formatBlocked('IMPLEMENTATION_EVIDENCE_EMPTY', {
+      reason: 'no changed files detected in worktree after baseline scoping',
+    });
+  }
+
   return withMutableSessionTransaction(
     context,
     async ({ worktree, sessDir, state, policy, ctx }) => {
@@ -59,27 +78,8 @@ async function executeImplementRecord(context: ToolContext): Promise<string> {
       const freshFindingsBlocked = validateInitialReviewFindings(runtime);
       if (freshFindingsBlocked) return freshFindingsBlocked;
 
-      // Scope task-owned paths via baseline attribution, then resolve the
-      // candidate over exactly those paths. The candidate identity must only
-      // cover paths attributable to this implementation.
-      const rawFiles = await changedFiles(worktree);
-      const scoped = await scopeImplementationFiles(
-        worktree,
-        rawFiles,
-        state.implementationBaseline,
-      );
-      if ('block' in scoped) return scoped.block;
-      const { files: scopedPaths, baselineScoping } = scoped;
-
-      const captured = await resolveImplementationCandidate(worktree, scopedPaths);
-      if (!captured) {
-        return formatBlocked('IMPLEMENTATION_EVIDENCE_EMPTY', {
-          reason: 'no changed files detected in worktree after baseline scoping',
-        });
-      }
-
-      // TOCTOU re-verification: the worktree must not have changed during
-      // candidate capture. Re-check with the same scoped paths.
+      // TOCTOU re-verification: the worktree must not have changed between
+      // candidate capture and transaction acquisition.
       const currentIdentity = await resolveImplementationCandidateIdentity(worktree, scopedPaths);
       if (
         !currentIdentity ||
