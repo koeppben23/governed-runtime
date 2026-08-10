@@ -47,7 +47,11 @@ export async function activateImplementationReviewObligation(
     worktree: string;
   },
 ): Promise<{ state: SessionState; obligation: ReviewObligation | null; attemptId: string | null }> {
-  if (state.reducedCeremony !== null || !input.subagentEnabled) {
+  // The obligation is only created when the machine has actually crossed into
+  // IMPL_REVIEW — proven by the autoAdvance transition, not inferred from
+  // partial validation state. A still-IMPL_VALIDATION session with one of N
+  // checks passed must not yet permit independent implementation review.
+  if (state.phase !== 'IMPL_REVIEW' || state.reducedCeremony !== null || !input.subagentEnabled) {
     return { state, obligation: null, attemptId: null };
   }
 
