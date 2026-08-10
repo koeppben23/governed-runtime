@@ -192,7 +192,7 @@ async function validateAndAttest(
     subjectInputs,
     worktree,
     subject.scope === 'implementation' ? subject.implementationDigest : subject.planDigest,
-    subject.scope === 'implementation' ? (state.implementation?.changedFiles ?? []) : [],
+    subject.scope === 'implementation' ? (state.implementation?.candidate.changedPaths ?? []) : [],
   );
   if (result.kind === 'subject_changed') {
     return formatBlocked('VERIFICATION_SUBJECT_CHANGED', {
@@ -271,7 +271,9 @@ async function executeRunCheckPhased(
     implementationDigest:
       subject.scope === 'implementation' ? subject.implementationDigest : subject.planDigest,
     changedFiles:
-      subject.scope === 'implementation' ? (state.implementation?.changedFiles ?? []) : [],
+      subject.scope === 'implementation'
+        ? (state.implementation?.candidate.changedPaths ?? [])
+        : [],
     outcome,
     fullCheckScopeAttestation:
       guard.candidate.assertionCapability === 'structured'
@@ -595,7 +597,7 @@ function freezeValidationSubject(state: SessionState): ValidationSubject {
   }
   return {
     scope: 'implementation',
-    implementationDigest: state.implementation!.digest,
+    implementationDigest: state.implementation!.candidate.candidateDigest,
   };
 }
 
@@ -603,7 +605,7 @@ function validationSubjectMatches(state: SessionState, subject: ValidationSubjec
   return subject.scope === 'baseline'
     ? state.phase === 'VALIDATION' && state.plan?.current.digest === subject.planDigest
     : state.phase === 'IMPL_VALIDATION' &&
-        state.implementation?.digest === subject.implementationDigest;
+        state.implementation?.candidate.candidateDigest === subject.implementationDigest;
 }
 
 function validationSubjectBlock(state: SessionState, subject: ValidationSubject): string | null {

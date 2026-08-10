@@ -8,7 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import { bindMutationEvidence, MUTATION_PROVIDER_VERSION } from './mutation-binder.js';
 import type { VerifiedProfileVerdict } from './mutation-binder.js';
-import { makeState } from '../../fixtures.js';
+import { makeState, makeImplEvidence } from '../../fixtures.js';
 import { ProofProviderResult } from '../../state/proofgraph.js';
 import type { SessionState } from '../../state/schema.js';
 
@@ -30,12 +30,11 @@ function stateWithAttemptRef(
   implDigest = 'impl-current',
 ): SessionState {
   return makeState('IMPL_VALIDATION', {
-    implementation: {
-      changedFiles: ['a.ts'],
+    implementation: makeImplEvidence({
+      candidate: { candidateDigest: implDigest },
       domainFiles: [],
-      digest: implDigest,
       executedAt: NOW,
-    },
+    }),
     proofContract: {
       version: 'contract.v1',
       claims: [
@@ -202,12 +201,11 @@ describe('bindMutationEvidence', () => {
   describe('exit code semantics', () => {
     function stateWithExitCode(exitCode: number): SessionState {
       return makeState('IMPL_VALIDATION', {
-        implementation: {
-          changedFiles: ['a.ts'],
+        implementation: makeImplEvidence({
+          candidate: { candidateDigest: 'impl-current' },
           domainFiles: [],
-          digest: 'impl-current',
           executedAt: NOW,
-        },
+        }),
         proofContract: {
           version: 'contract.v1',
           claims: [

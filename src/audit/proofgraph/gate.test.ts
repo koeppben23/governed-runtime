@@ -22,7 +22,7 @@ import type {
   PlanClaimDeclarations,
 } from '../../state/proofgraph-approval.js';
 import type { PlanRecord } from '../../state/evidence-plan.js';
-import { makeState } from '../../fixtures.js';
+import { makeState, makeImplEvidence } from '../../fixtures.js';
 import { hashText } from '../../shared/hashing.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 
@@ -386,7 +386,7 @@ describe('evaluateProofGraphGateFromState', () => {
       stateWith({
         plan: planRecord(decls, certificate(decls)),
         proofGraph: projection([claim(UUID(1), { state: 'PROVEN' })]),
-        implementation: { digest: 'impl-digest' } as SessionState['implementation'],
+        implementation: makeImplEvidence({ candidate: { candidateDigest: 'impl-digest' } }),
         implementationRiskAssessment: {
           computedMinimumTaskClass: 'STANDARD',
           touchedSurfaces: ['src/'],

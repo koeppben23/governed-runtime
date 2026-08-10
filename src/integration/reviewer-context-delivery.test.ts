@@ -32,6 +32,7 @@ import {
   TICKET,
   IMPL_EVIDENCE,
   VALIDATION_PASSED,
+  makeImplEvidence,
 } from '../fixtures.js';
 import { runReviewOrchestration } from './plugin-orchestrator.js';
 import type { OrchestratorDeps, ToolCallEvent } from './plugin-orchestrator.js';
@@ -208,7 +209,7 @@ describe('reviewer artifact context reaches the delivered prompt', () => {
         {
           attemptId: '22222222-2222-4222-8222-222222222222',
           scope: 'implementation' as const,
-          implementationDigest: IMPL_EVIDENCE.digest,
+          implementationDigest: IMPL_EVIDENCE.candidate.candidateDigest,
           result: VALIDATION_PASSED[0]!,
         },
       ],
@@ -221,7 +222,7 @@ describe('reviewer artifact context reaches the delivered prompt', () => {
     expect(prompt).toContain(PLAN_RECORD.current.digest);
     // What actually changed.
     expect(prompt).toContain('## Changed Files');
-    for (const file of IMPL_EVIDENCE.changedFiles) {
+    for (const file of IMPL_EVIDENCE.candidate.changedPaths) {
       expect(prompt).toContain(file);
     }
     // Which checks ran, host-executed.
@@ -272,7 +273,10 @@ describe('reviewer artifact context reaches the delivered prompt', () => {
   it('bounds the changed-file list instead of flooding the prompt', async () => {
     const many = Array.from({ length: 120 }, (_, i) => `src/generated/file-${i}.ts`);
     const state = buildState('implement', {
-      implementation: { ...IMPL_EVIDENCE, changedFiles: many, domainFiles: many.slice(0, 1) },
+      implementation: makeImplEvidence({
+        candidate: { changedPaths: many },
+        domainFiles: many.slice(0, 1),
+      }),
       validationAttempts: [],
     });
 

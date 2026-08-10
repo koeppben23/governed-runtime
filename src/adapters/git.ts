@@ -400,6 +400,85 @@ export async function hashWorktreeFiles(
 }
 
 /**
+ * Capture a complete, binary-capable candidate diff covering every changed path.
+ *
+ * Unlike {@link worktreeDiff} (which deliberately omits untracked file content),
+ * this function produces a deterministic byte-stream that includes:
+ * - staged + unstaged tracked changes (vs HEAD);
+ * - deleted tracked files;
+ * - renames (git rename detection);
+ * - untracked non-ignored files as full /dev/null additions;
+ * - binary changes (--binary flag);
+ * - initial repositories without HEAD (all files treated as untracked).
+ *
+ * The caller receives a deterministic Buffer that can be hashed for diffDigest
+ * and persisted verbatim as the diff artifact. No second call to git diff is
+ * needed downstream.
+ *
+ * Ordering: tracked changes first (HEAD diff), then untracked files sorted
+ * lexicographically by path.
+ */
+export async function captureCandidateDiff(
+  worktree: string,
+  trackedPaths: readonly string[],
+  untrackedPaths: readonly string[],
+): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+
+  if (trackedPaths.length > 0) {
+    try {
+      const tracked = await gitRaw(worktree, [
+        'diff',
+        '--binary',
+        '--no-color',
+        'HEAD',
+        '--',
+        ...trackedPaths,
+      ]);
+      if (tracked.trim()) {
+        chunks.push(Buffer.from(tracked, 'utf-8'));
+      }
+    } catch {
+      try {
+        const tracked = await gitRaw(worktree, [
+          'diff',
+          '--binary',
+          '--no-color',
+          '--',
+          ...trackedPaths,
+        ]);
+        if (tracked.trim()) {
+          chunks.push(Buffer.from(tracked, 'utf-8'));
+        }
+      } catch {
+        // No HEAD and no index diff available — treat as untracked
+      }
+    }
+  }
+
+  const sortedUntracked = [...untrackedPaths].sort();
+  for (const p of sortedUntracked) {
+    try {
+      const diff = await gitRaw(worktree, [
+        'diff',
+        '--binary',
+        '--no-color',
+        '--no-index',
+        '/dev/null',
+        p,
+      ]);
+      if (diff.trim()) {
+        chunks.push(Buffer.from(diff, 'utf-8'));
+      }
+    } catch {
+      // Unreadable or missing — skip
+    }
+  }
+
+  return Buffer.concat(chunks);
+}
+
+/**
  * Get the current HEAD commit hash (short form).
  * Returns null if no commits exist.
  */

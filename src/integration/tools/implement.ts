@@ -1,8 +1,16 @@
 import { z } from 'zod';
 import type { ToolDefinition, ToolContext } from './helpers.js';
-import { formatError, withMutableSession, withMutableSessionTransaction } from './helpers.js';
+import {
+  formatError,
+  withMutableSession,
+  withMutableSessionTransaction,
+  formatBlocked,
+} from './helpers.js';
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
-import { changedFiles } from '../../adapters/git.js';
+import {
+  resolveImplementationCandidate,
+  resolveImplementationCandidateIdentity,
+} from '../implementation-candidate.js';
 import {
   type ImplementArgs,
   buildImplementRuntime,
@@ -30,8 +38,14 @@ async function executeImplementRecord(context: ToolContext): Promise<string> {
   const findingsBlocked = validateInitialReviewFindings(probeRuntime);
   if (findingsBlocked) return findingsBlocked;
 
-  // Git/worktree inspection can be slow and must not hold the session write lock.
-  const files = await changedFiles(probe.worktree);
+  // Resolve the full candidate outside the session write lock.
+  const captured = await resolveImplementationCandidate(probe.worktree);
+  if (!captured) {
+    return formatBlocked('IMPLEMENTATION_EVIDENCE_EMPTY', {
+      reason: 'no changed files detected in worktree',
+    });
+  }
+
   return withMutableSessionTransaction(
     context,
     async ({ worktree, sessDir, state, policy, ctx }) => {
@@ -50,7 +64,18 @@ async function executeImplementRecord(context: ToolContext): Promise<string> {
       if (freshPrereqBlocked) return freshPrereqBlocked;
       const freshFindingsBlocked = validateInitialReviewFindings(runtime);
       if (freshFindingsBlocked) return freshFindingsBlocked;
-      return handleImplRecord(runtime, files);
+
+      // TOCTOU re-verification: the worktree must not have changed between
+      // candidate capture and transaction acquisition.
+      const currentIdentity = await resolveImplementationCandidateIdentity(worktree);
+      if (
+        !currentIdentity ||
+        captured.identity.candidateDigest !== currentIdentity.candidateDigest
+      ) {
+        return formatBlocked('IMPLEMENTATION_CANDIDATE_CHANGED_DURING_CAPTURE');
+      }
+
+      return handleImplRecord(runtime, captured);
     },
   );
 }

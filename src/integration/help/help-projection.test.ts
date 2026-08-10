@@ -35,7 +35,7 @@ function makeReviewReport(
     generatedAt: '2026-01-01T00:00:00.000Z',
     phase: state.phase,
     planDigest: state.plan?.current.digest ?? null,
-    implDigest: state.implementation?.digest ?? null,
+    implDigest: state.implementation?.candidate.candidateDigest ?? null,
     validationSummary: [],
     findings: [],
     overallStatus,

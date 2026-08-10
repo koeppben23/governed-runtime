@@ -471,7 +471,7 @@ export function buildReviewReport(opts: BuildReportOptions): ReviewReport {
     generatedAt: now,
     phase: state.phase,
     planDigest: state.plan?.current.digest ?? null,
-    implDigest: state.implementation?.digest ?? null,
+    implDigest: state.implementation?.candidate.candidateDigest ?? null,
     validationSummary,
     findings,
     overallStatus,

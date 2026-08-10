@@ -10,7 +10,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { executeValidate, type ValidateExecutors } from './validate.js';
-import { makeState, FIXED_TIME, TICKET } from '../fixtures.js';
+import { makeState, makeImplEvidence, FIXED_TIME, TICKET } from '../fixtures.js';
 import type { RailContext } from './types.js';
 import type { PlanRecord, ValidationResult } from '../state/evidence.js';
 import { TEAM_POLICY } from '../config/policy.js';
@@ -227,12 +227,11 @@ describe('validate rail', () => {
           revisionDelta: 'none' as const,
           verdict: 'accept' as const,
         },
-        implementation: {
-          changedFiles: ['src/auth.ts'],
+        implementation: makeImplEvidence({
+          candidate: { changedPaths: ['src/auth.ts'] },
           domainFiles: ['src/auth.ts'],
-          digest: 'impl-d',
           executedAt: FIXED_TIME,
-        },
+        }),
         ...overrides,
       });
     }

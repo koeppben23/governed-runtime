@@ -444,6 +444,18 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'IMPLEMENTATION_CANDIDATE_CHANGED_DURING_CAPTURE',
+    category: 'precondition',
+    messageTemplate:
+      'The implementation candidate changed while it was being captured. Repository contents were modified between candidate resolution and evidence persistence.',
+    recoverySteps: [
+      'Run /implement again to capture the current candidate',
+      'Avoid modifying files in the worktree while /implement is recording evidence',
+    ],
+    quickFixCommand: '/implement',
+  },
+
+  {
     code: 'IMPLEMENT_REVIEW_LOOP_REQUIRED',
     category: 'precondition',
     messageTemplate:

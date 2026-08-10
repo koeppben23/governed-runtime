@@ -1,7 +1,7 @@
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import { afterEach, describe, expect, it } from 'vitest';
-import { makeState } from '../../fixtures.js';
+import { makeState, makeImplEvidence } from '../../fixtures.js';
 import { readState, writeState } from '../../adapters/persistence.js';
 import { computeFingerprint, sessionDir } from '../../adapters/workspace/index.js';
 import { createTestWorkspace, createToolContext, parseToolResult } from '../test-helpers.js';
@@ -101,12 +101,11 @@ async function seedState(options: SeedOptions = {}) {
   await writeState(
     sessDir,
     makeState('IMPL_REVIEW', {
-      implementation: {
-        changedFiles: ['src/example.ts'],
+      implementation: makeImplEvidence({
+        candidate: { candidateDigest: options.digest ?? DIGEST, changedPaths: ['src/example.ts'] },
         domainFiles: ['src/example.ts'],
-        digest: options.digest ?? DIGEST,
         executedAt: '2026-07-26T00:00:00.000Z',
-      },
+      }),
       implReviewFindings: (options.findingsList ?? [
         reviewFindings({
           challenges: [challenge(FAIL_CHALLENGE, 'fail'), challenge(PASS_CHALLENGE, 'pass')],

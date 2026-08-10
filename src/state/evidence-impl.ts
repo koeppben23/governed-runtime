@@ -2,38 +2,31 @@
  * @module evidence-impl
  * @description Implementation evidence schemas — /implement output and implementation review.
  *
- * @version v1
+ * @version v2
  */
 
 import { z } from 'zod';
 import { LoopVerdict, RevisionDelta } from './evidence-primitives.js';
+import { ImplementationCandidate } from './evidence-candidate.js';
 
-/** Evidence produced by /implement — what files were changed. */
+/** Evidence produced by /implement — bound to exactly one immutable candidate. */
 export const ImplEvidence = z
   .object({
-    changedFiles: z.array(z.string()),
-    domainFiles: z.array(z.string()),
-    /**
-     * Content-bound digest of the change: hashes the CURRENT content of each changed
-     * file (path + git blob hash), so two different edits to the same file set produce
-     * different digests. (Legacy sessions hashed only the sorted file-name list.)
-     */
-    digest: z.string().min(1),
-    /**
-     * Optional content digest of the captured unified diff (`implementation-diff.*.patch`).
-     * Binds the human-readable change artifact into the evidence. Optional for
-     * backward compatibility: sessions recorded before this field, or where no diff
-     * could be captured, omit it.
-     */
-    diffDigest: z.string().min(1).optional(),
+    /** The immutable repository candidate from which all implementation identity is derived. */
+    candidate: ImplementationCandidate,
+    /** Task-owned domain files (governance classification, not a git fact). */
+    domainFiles: z.array(z.string()).readonly(),
     executedAt: z.string().datetime(),
   })
+  .strict()
   .readonly();
 export type ImplEvidence = z.infer<typeof ImplEvidence>;
 
 /**
  * Result of an implementation review iteration (IMPL_REVIEW phase).
  * Same convergence logic as SelfReviewLoop: digest-stop.
+ *
+ * `prevDigest` and `currDigest` are ImplementationCandidate.candidateDigest values.
  */
 export const ImplReviewResult = z
   .object({

@@ -400,13 +400,13 @@ describe('implement', () => {
       const impl = state!.implementation!;
       // Digest is derived from per-path CONTENT hashes (see hashWorktreeFiles mock),
       // not a hash of the file-name list — distinct content yields a distinct digest.
-      expect(impl.digest).toBeTruthy();
-      expect(impl.diffDigest).toBeTruthy();
+      expect(impl.candidate.candidateDigest).toBeTruthy();
+      expect(impl.candidate.diffDigest).toBeTruthy();
 
       // The diff artifact is written, content-addressed by diffDigest, and is picked
       // up by the archive manifest (it lives under the session directory).
       const patch = await fs.readFile(
-        `${sessDir}/implementation-diff.${impl.diffDigest}.patch`,
+        `${sessDir}/implementation-diff.${impl.candidate.diffDigest}.patch`,
         'utf8',
       );
       expect(patch).toBe(diff);
@@ -423,7 +423,7 @@ describe('implement', () => {
       expect(parseToolResult(raw).error).toBeUndefined();
 
       const impl = (await readState(sessDir))!.implementation!;
-      expect(impl.diffDigest).toBeUndefined();
+      expect(impl.candidate.diffDigest).toBeUndefined();
     });
 
     it('F3: omits diffDigest and never persists a claimed artifact when write fails', async () => {
@@ -441,9 +441,9 @@ describe('implement', () => {
 
       const impl = (await readState(sessDir))!.implementation!;
       // Implementation recording itself must still succeed (best-effort diff).
-      expect(impl.digest).toBeTruthy();
+      expect(impl.candidate.candidateDigest).toBeTruthy();
       // diffDigest must NOT be set — no artifact was written.
-      expect(impl.diffDigest).toBeUndefined();
+      expect(impl.candidate.diffDigest).toBeUndefined();
     });
 
     it('Mode B: approve review converges in solo', async () => {

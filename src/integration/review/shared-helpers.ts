@@ -408,7 +408,7 @@ export function buildToolPrompt(params: BuildToolPromptParams): string | null {
     return buildImplReviewPrompt({
       changedFiles: Array.isArray(parsedOutput.changedFiles)
         ? (parsedOutput.changedFiles as string[])
-        : (sessionState.implementation?.changedFiles ?? []),
+        : [...(sessionState.implementation?.candidate.changedPaths ?? [])],
       planText,
       ticketText,
       iteration: reviewCtx.iteration,
@@ -444,7 +444,10 @@ export function buildToolPrompt(params: BuildToolPromptParams): string | null {
 
 function stateChallengeResolutions(state: SessionState) {
   return state.challengeResolutions
-    .filter((resolution) => resolution.implementationDigest === state.implementation?.digest)
+    .filter(
+      (resolution) =>
+        resolution.implementationDigest === state.implementation?.candidate.candidateDigest,
+    )
     .map(({ challengeId, implementationDigest, validationAttemptIds, resolvedAt }) => ({
       challengeId,
       implementationDigest,
@@ -467,7 +470,7 @@ function stateChallengeResolutions(state: SessionState) {
 export function stateVerificationEvidence(
   state: SessionState,
 ): readonly ReviewVerificationEvidenceItem[] {
-  const currentDigest = state.implementation?.digest;
+  const currentDigest = state.implementation?.candidate.candidateDigest;
   if (!currentDigest) return [];
   return state.validationAttempts
     .filter(

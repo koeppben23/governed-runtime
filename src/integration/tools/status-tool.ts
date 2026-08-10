@@ -186,7 +186,7 @@ async function buildProofGraphProjectionResponse(
     projection: proofGraph.projection,
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
     certificateValid: authorization.kind === 'authorized',
-    implementationDigest: state.implementation?.digest,
+    implementationDigest: state.implementation?.candidate.candidateDigest,
     riskAssessment: state.implementationRiskAssessment,
     claimDiagnostics: proofGraph.claimDiagnostics,
   });
@@ -557,7 +557,10 @@ function buildImplementationStatus(state: SessionState): Record<string, unknown>
     hasReviewDecision: state.reviewDecision !== null,
     reviewVerdict: state.reviewDecision?.verdict ?? null,
     challengeResolutions: state.challengeResolutions
-      .filter((resolution) => resolution.implementationDigest === state.implementation?.digest)
+      .filter(
+        (resolution) =>
+          resolution.implementationDigest === state.implementation?.candidate.candidateDigest,
+      )
       .map((resolution) => ({
         ...resolution,
         advisory:

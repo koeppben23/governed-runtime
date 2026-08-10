@@ -335,7 +335,7 @@ const SLOT_DETAIL_FNS: Record<
   },
   implementation: (s) =>
     s.implementation
-      ? `${s.implementation.changedFiles.length} files changed, digest: ${s.implementation.digest.slice(0, 12)}...`
+      ? `${s.implementation.candidate.changedPaths.length} files changed, candidate: ${s.implementation.candidate.candidateDigest.slice(0, 12)}...`
       : undefined,
   implReview: (s) =>
     s.implReview

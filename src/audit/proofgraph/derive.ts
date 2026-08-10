@@ -51,7 +51,7 @@ export function deriveProofGraph(
       claims: [...contractClaims, ...standaloneClaims.values()],
       providerResults,
       counterexamples,
-      currentImplementationDigest: state.implementation?.digest ?? null,
+      currentImplementationDigest: state.implementation?.candidate.candidateDigest ?? null,
       currentPlanDigest: state.plan?.current.digest ?? null,
       currentSurfaceDigests: opts?.currentSurfaceDigests ?? {},
     },

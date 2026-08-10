@@ -43,7 +43,7 @@ import { evaluateProofGraphGate } from '../audit/proofgraph/gate.js';
 import { buildProofApprovalProjection } from './proofgraph/approval-projection.js';
 import { buildReviewerProofContext } from './review/proof-context.js';
 import { isRiskAssessmentCurrent } from '../audit/proofgraph/gate.js';
-import { makeState, TICKET, IMPL_EVIDENCE, FIXED_TIME } from '../fixtures.js';
+import { makeState, TICKET, IMPL_EVIDENCE, FIXED_TIME, makeImplEvidence } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 import type {
   PlanClaimDeclaration,
@@ -246,7 +246,7 @@ function attempt(
   return {
     attemptId,
     scope: 'implementation',
-    implementationDigest: IMPL_EVIDENCE.digest,
+    implementationDigest: IMPL_EVIDENCE.candidate.candidateDigest,
     result: {
       checkId,
       passed,
@@ -697,32 +697,38 @@ describe('implementation risk assessment (runtime)', () => {
         touchedSurfaces: ['src/state/schema.ts'],
         assessedFrom: 'implementation_changed_files',
         assessedFileCount: 1,
-        implementationDigest: IMPL_EVIDENCE.digest,
+        implementationDigest: IMPL_EVIDENCE.candidate.candidateDigest,
         riskTriggers: ['state_integrity'],
       },
     });
 
     expect(
-      isRiskAssessmentCurrent(state.implementationRiskAssessment, state.implementation?.digest),
+      isRiskAssessmentCurrent(
+        state.implementationRiskAssessment,
+        state.implementation?.candidate.candidateDigest,
+      ),
     ).toBe(true);
   });
 
   it('treats an assessment from a superseded revision as not current', async () => {
     const state = makeState('IMPLEMENTATION', {
-      implementation: { ...IMPL_EVIDENCE, digest: 'new-revision-digest' },
+      implementation: makeImplEvidence({ candidate: { candidateDigest: 'new-revision-digest' } }),
       implementationRiskAssessment: {
         computedMinimumTaskClass: 'HIGH-RISK',
         touchedSurfaces: ['src/state/schema.ts'],
         assessedFrom: 'implementation_changed_files',
         assessedFileCount: 1,
-        implementationDigest: IMPL_EVIDENCE.digest,
+        implementationDigest: IMPL_EVIDENCE.candidate.candidateDigest,
         riskTriggers: ['state_integrity'],
       },
     });
 
     // A stale classification must never justify a gate decision on new code.
     expect(
-      isRiskAssessmentCurrent(state.implementationRiskAssessment, state.implementation?.digest),
+      isRiskAssessmentCurrent(
+        state.implementationRiskAssessment,
+        state.implementation?.candidate.candidateDigest,
+      ),
     ).toBe(false);
   });
 });
@@ -904,7 +910,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
     });
 
     expect(projection.certificates[0]?.declaredClaimCount).toBe(1);
-    expect(projection.implementationDigest).toBe(IMPL_EVIDENCE.digest);
+    expect(projection.implementationDigest).toBe(IMPL_EVIDENCE.candidate.candidateDigest);
     expect(projection.claims[0]).toMatchObject({
       claimId: CRITICAL_CLAIM_ID,
       verificationState: 'PROVEN',

@@ -78,7 +78,7 @@ describe('review rail', () => {
       expect(report.generatedAt).toBe(NOW);
       expect(report.phase).toBe('COMPLETE');
       expect(report.planDigest).toBe(state.plan!.current.digest);
-      expect(report.implDigest).toBe(state.implementation!.digest);
+      expect(report.implDigest).toBe(state.implementation!.candidate.candidateDigest);
       expect(report.overallStatus).toBe('clean');
       expect(report.findings.filter((f) => f.severity === 'error')).toHaveLength(0);
     });

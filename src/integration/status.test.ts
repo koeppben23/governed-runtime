@@ -32,7 +32,7 @@ import {
 } from './status.js';
 import { getPolicyPreset } from '../config/policy.js';
 import { createPolicySnapshot } from '../config/policy-snapshot.js';
-import { makeState } from '../fixtures.js';
+import { makeState, makeImplEvidence } from '../fixtures.js';
 import { isCommandAllowed, Command } from '../machine/commands.js';
 import { USER_GATES, TERMINAL } from '../machine/topology.js';
 import { computeRecordDigest } from '../state/evidence-plan.js';
@@ -696,12 +696,11 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
           outcome: 'supported' as const,
         },
       ],
-      implementation: {
-        changedFiles: ['a.ts'],
+      implementation: makeImplEvidence({
+        candidate: { candidateDigest: 'impl_digest', changedPaths: ['a.ts'] },
         domainFiles: ['a.ts'],
-        digest: 'impl_digest',
         executedAt: new Date().toISOString(),
-      },
+      }),
       implReview: {
         iteration: 1,
         maxIterations: 2,

@@ -57,11 +57,11 @@ export async function activateImplementationReviewObligation(
     iteration: input.iteration,
     planVersion: input.planVersion,
     now: input.now,
-    subjectDigest: state.implementation?.digest ?? `impl-${input.now}`,
+    subjectDigest: state.implementation?.candidate.candidateDigest ?? `impl-${input.now}`,
     reviewProfile: resolveFrozenReviewProfile(state.policySnapshot),
     profileSource: 'policy_default',
     policySnapshot: state.policySnapshot,
-    changedFiles: state.implementation?.changedFiles ?? [],
+    changedFiles: state.implementation?.candidate.changedPaths ?? [],
     claimedTaskClass: state.claimedTaskClass,
     repositoryRevisionProvenance: headSha
       ? { kind: 'available', headSha }

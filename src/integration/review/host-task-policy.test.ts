@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { FIXED_TIME, IMPL_EVIDENCE, VALIDATION_PASSED, makeState } from '../../fixtures.js';
+import {
+  FIXED_TIME,
+  IMPL_EVIDENCE,
+  VALIDATION_PASSED,
+  makeState,
+  makeImplEvidence,
+} from '../../fixtures.js';
 import type { ReviewObligation } from '../../state/evidence.js';
 import { buildHostTaskChallengeContract } from './host-task-policy.js';
 
-const IMPLEMENTATION_DIGEST = IMPL_EVIDENCE.digest;
+const IMPLEMENTATION_DIGEST = IMPL_EVIDENCE.candidate.candidateDigest;
 
 function obligation(): ReviewObligation {
   return {
@@ -96,7 +102,9 @@ describe('implementation host-task challenge evidence', () => {
     expect(
       evidence(
         makeState('IMPL_REVIEW', {
-          implementation: { ...IMPL_EVIDENCE, digest: 'replacement-digest' },
+          implementation: makeImplEvidence({
+            candidate: { candidateDigest: 'replacement-digest' },
+          }),
           validationAttempts: [implementationAttempt()] as never,
         }),
       ),

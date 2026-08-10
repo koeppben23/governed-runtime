@@ -7,6 +7,7 @@ import {
   REGULATED_POLICY_SNAPSHOT,
   DECISION_IDENTITY_REVIEWER,
   DECISION_IDENTITY_VERIFIED_REVIEWER,
+  makeImplEvidence,
 } from '../fixtures.js';
 import { REGULATED_POLICY, TEAM_POLICY } from '../config/policy.js';
 import type { ProofGraphProjection } from '../state/proofgraph.js';
@@ -184,12 +185,14 @@ describe('review-decision rail', () => {
       const result = executeReviewDecision(
         {
           ...state,
-          implementation: {
-            changedFiles: ['src/state/schema.ts'],
+          implementation: makeImplEvidence({
+            candidate: {
+              candidateDigest: 'implementation-digest',
+              changedPaths: ['src/state/schema.ts'],
+            },
             domainFiles: ['src/state/schema.ts'],
-            digest: 'implementation-digest',
             executedAt: '2026-01-01T00:00:00.000Z',
-          },
+          }),
           implementationRiskAssessment: {
             computedMinimumTaskClass: 'HIGH-RISK',
             touchedSurfaces: ['src/state/schema.ts'],
@@ -210,12 +213,14 @@ describe('review-decision rail', () => {
       const result = executeReviewDecision(
         {
           ...state,
-          implementation: {
-            changedFiles: ['src/archive/verify.ts'],
+          implementation: makeImplEvidence({
+            candidate: {
+              candidateDigest: 'implementation-digest',
+              changedPaths: ['src/archive/verify.ts'],
+            },
             domainFiles: ['src/archive/verify.ts'],
-            digest: 'implementation-digest',
             executedAt: '2026-01-01T00:00:00.000Z',
-          },
+          }),
           implementationRiskAssessment: {
             computedMinimumTaskClass: 'HIGH-RISK',
             touchedSurfaces: ['src/archive/verify.ts'],
@@ -236,12 +241,14 @@ describe('review-decision rail', () => {
       const result = executeReviewDecision(
         {
           ...state,
-          implementation: {
-            changedFiles: ['src/state/schema.ts'],
+          implementation: makeImplEvidence({
+            candidate: {
+              candidateDigest: 'implementation-digest',
+              changedPaths: ['src/state/schema.ts'],
+            },
             domainFiles: ['src/state/schema.ts'],
-            digest: 'implementation-digest',
             executedAt: '2026-01-01T00:00:00.000Z',
-          },
+          }),
           implementationRiskAssessment: {
             computedMinimumTaskClass: 'HIGH-RISK',
             touchedSurfaces: ['src/state/schema.ts'],

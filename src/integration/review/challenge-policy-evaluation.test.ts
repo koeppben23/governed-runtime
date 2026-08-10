@@ -8,7 +8,7 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import { afterEach, describe, expect, it } from 'vitest';
 import { CHALLENGE_POLICY_V1 } from '../../config/policy-types.js';
-import { makeState } from '../../fixtures.js';
+import { makeState, makeImplEvidence } from '../../fixtures.js';
 import type { ReviewFindings } from '../../state/evidence.js';
 import { readState, writeState } from '../../adapters/persistence.js';
 import { computeFingerprint, sessionDir } from '../../adapters/workspace/index.js';
@@ -235,12 +235,11 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
   await writeState(
     sessDir,
     makeState('IMPL_REVIEW', {
-      implementation: {
-        changedFiles: ['src/example.ts'],
+      implementation: makeImplEvidence({
+        candidate: { candidateDigest: 'impl-digest', changedPaths: ['src/example.ts'] },
         domainFiles: ['src/example.ts'],
-        digest: 'impl-digest',
         executedAt: '2026-07-26T00:00:00.000Z',
-      },
+      }),
       implReviewFindings: [firstFindings],
       reviewAssurance: {
         obligations: [firstObligation],

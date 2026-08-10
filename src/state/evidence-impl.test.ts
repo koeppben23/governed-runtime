@@ -1,19 +1,28 @@
 /**
  * @module evidence-impl.test
- * @description Tests for evidence-impl module.
+ * @description Tests for evidence-impl module (v2 — candidate-bound evidence).
  * Extracted from evidence-split.test.ts.
  */
 import { describe, it, expect } from 'vitest';
 import { ImplEvidence, ImplReviewResult } from './evidence-impl.js';
 import { FIXED_TIME } from './evidence-test-constants.js';
+import { ImplementationCandidate } from './evidence-candidate.js';
+
+const CANDIDATE: ImplementationCandidate = {
+  version: 1,
+  baseHeadSha: 'a1b2c3d4e5f6789012345678abcdef0123456789',
+  changedPaths: ['src/auth.ts', 'src/auth.test.ts'],
+  contentDigest: 'content-sha256',
+  diffDigest: 'diff-sha256',
+  candidateDigest: 'candidate-sha256',
+};
 
 describe('evidence-impl', () => {
   describe('HAPPY', () => {
-    it('ImplEvidence parses valid implementation', () => {
+    it('ImplEvidence parses valid implementation with candidate', () => {
       const impl = {
-        changedFiles: ['src/auth.ts', 'src/auth.test.ts'],
+        candidate: CANDIDATE,
         domainFiles: ['src/auth.ts'],
-        digest: 'sha256-abc',
         executedAt: FIXED_TIME,
       };
       expect(ImplEvidence.parse(impl)).toEqual(impl);
@@ -24,7 +33,7 @@ describe('evidence-impl', () => {
         iteration: 1,
         maxIterations: 3,
         prevDigest: null,
-        currDigest: 'sha256-abc',
+        currDigest: 'candidate-sha256',
         revisionDelta: 'none' as const,
         verdict: 'accept' as const,
         executedAt: FIXED_TIME,
@@ -36,8 +45,8 @@ describe('evidence-impl', () => {
       const result = {
         iteration: 2,
         maxIterations: 5,
-        prevDigest: 'sha256-old',
-        currDigest: 'sha256-new',
+        prevDigest: 'candidate-old',
+        currDigest: 'candidate-new',
         revisionDelta: 'major' as const,
         verdict: 'changes_requested' as const,
         executedAt: FIXED_TIME,
@@ -47,23 +56,22 @@ describe('evidence-impl', () => {
   });
 
   describe('BAD', () => {
-    it('ImplEvidence rejects empty changedFiles', () => {
+    it('ImplEvidence rejects missing candidate', () => {
       expect(() =>
         ImplEvidence.parse({
-          changedFiles: [],
-          domainFiles: [],
-          digest: 'abc',
-          executedAt: FIXED_TIME,
-        }),
-      ).not.toThrow(); // empty array is valid
-    });
-
-    it('ImplEvidence rejects missing digest', () => {
-      expect(() =>
-        ImplEvidence.parse({
-          changedFiles: ['file.ts'],
           domainFiles: ['file.ts'],
           executedAt: FIXED_TIME,
+        }),
+      ).toThrow();
+    });
+
+    it('ImplEvidence rejects extra field', () => {
+      expect(() =>
+        ImplEvidence.parse({
+          candidate: CANDIDATE,
+          domainFiles: ['file.ts'],
+          executedAt: FIXED_TIME,
+          changedFiles: ['file.ts'],
         }),
       ).toThrow();
     });
@@ -98,11 +106,10 @@ describe('evidence-impl', () => {
   });
 
   describe('CORNER', () => {
-    it('ImplEvidence empty arrays are valid (no changes)', () => {
+    it('ImplEvidence empty domainFiles is valid', () => {
       const impl = {
-        changedFiles: [],
+        candidate: CANDIDATE,
         domainFiles: [],
-        digest: 'empty-digest',
         executedAt: FIXED_TIME,
       };
       expect(ImplEvidence.parse(impl)).toEqual(impl);

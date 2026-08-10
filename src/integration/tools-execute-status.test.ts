@@ -38,6 +38,7 @@ import { writeStateWithArtifacts } from './tools/helpers.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
 import { REVIEW_REPORT_SCHEMA_ID } from '../shared/flowguard-identifiers.js';
 import { computeRecordDigest } from '../state/evidence-plan.js';
+import { makeImplEvidence, CANDIDATE } from '../fixtures.js';
 // ─── Zod v4 Metadata Regression (P1 review gate) ──────────────────────────────
 describe('tool-schemas-zod-v4', () => {
   const allTools = {
@@ -1115,7 +1116,11 @@ describe('declare_contract', () => {
       phase: 'IMPL_VALIDATION',
       activeChecks: [checkId, 'security', ...(overrides.unattemptedChecks ?? [])],
       ticket: { text: 'approved ticket', digest: 'ticket-digest', source: 'user', createdAt: NOW },
-      implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
+      implementation: makeImplEvidence({
+        candidate: { candidateDigest: digest, changedPaths: ['a.ts'] },
+        domainFiles: [],
+        executedAt: NOW,
+      }),
       validationAttempts: [
         {
           attemptId: crypto.randomUUID(),
@@ -1500,7 +1505,11 @@ describe('declare_contract', () => {
           source: 'user',
           createdAt: NOW,
         },
-        implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
+        implementation: makeImplEvidence({
+          candidate: { candidateDigest: digest, changedPaths: ['a.ts'] },
+          domainFiles: [],
+          executedAt: NOW,
+        }),
         validationAttempts: [
           attempt('test', true),
           {
@@ -1742,7 +1751,11 @@ describe('declare_contract', () => {
         makeStructuredSecurityCandidate(),
       ],
       ticket: { text: 'approved ticket', digest: 'ticket-digest', source: 'user', createdAt: NOW },
-      implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
+      implementation: makeImplEvidence({
+        candidate: { candidateDigest: digest, changedPaths: ['a.ts'] },
+        domainFiles: [],
+        executedAt: NOW,
+      }),
       validationAttempts: [
         attempt('test', true),
         {

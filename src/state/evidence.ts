@@ -81,6 +81,11 @@ export type * from './evidence-audit.js';
 export * from './evidence-mutation.js';
 export type * from './evidence-mutation.js';
 
+// ─── Implementation Candidate ──────────────────────────────────────────────────
+
+export * from './evidence-candidate.js';
+export type * from './evidence-candidate.js';
+
 // ─── Timestamp ─────────────────────────────────────────────────────────────────
 
 export * from './evidence-timestamp.js';

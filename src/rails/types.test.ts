@@ -34,6 +34,10 @@ import { TEAM_POLICY } from '../config/policy.js';
 
 const ctx = createTestContext();
 
+type MockArtifact = { digest: string; value?: string };
+
+const mockDigestOf = (a: MockArtifact): string => a.digest;
+
 function advanced(result: ReturnType<typeof autoAdvance>): AutoAdvanceAdvanced {
   if (result.kind !== 'advanced') throw new Error('expected advanced result');
   return result;
@@ -198,11 +202,14 @@ describe('rails/types', () => {
     });
 
     it('runConvergenceLoop converges on first iteration when approved+none', async () => {
-      const initial = { digest: 'd1', value: 'original' };
+      const initial: MockArtifact = { digest: 'd1', value: 'original' };
       const result = converged(
-        await runConvergenceLoop(initial, 3, async () => {
-          return { verdict: 'accept' as const };
-        }),
+        await runConvergenceLoop(
+          initial,
+          3,
+          async () => ({ verdict: 'accept' as const }),
+          mockDigestOf,
+        ),
       );
       expect(result.iteration).toBe(1);
       expect(result.revisionDelta).toBe('none');
@@ -212,15 +219,20 @@ describe('rails/types', () => {
 
     it('runConvergenceLoop stops at maxIterations', async () => {
       let count = 0;
-      const initial = { digest: 'd1' };
+      const initial: MockArtifact = { digest: 'd1' };
       const result = converged(
-        await runConvergenceLoop(initial, 2, async (_current, _iter) => {
-          count++;
-          return {
-            verdict: 'changes_requested' as const,
-            updated: { digest: `d${count + 1}` },
-          };
-        }),
+        await runConvergenceLoop(
+          initial,
+          2,
+          async (_current, _iter) => {
+            count++;
+            return {
+              verdict: 'changes_requested' as const,
+              updated: { digest: `d${count + 1}` },
+            };
+          },
+          mockDigestOf,
+        ),
       );
       expect(result.iteration).toBe(2);
       expect(count).toBe(2);
@@ -230,11 +242,17 @@ describe('rails/types', () => {
   // ─── EDGE ──────────────────────────────────────────────────
   describe('EDGE', () => {
     it('runSingleIteration at maxIterations returns immediately', async () => {
-      const current = { digest: 'd1' };
+      const current: MockArtifact = { digest: 'd1' };
       const result = converged(
-        await runSingleIteration(current, 3, 3, async () => {
-          throw new Error('should not be called');
-        }),
+        await runSingleIteration(
+          current,
+          3,
+          3,
+          async () => {
+            throw new Error('should not be called');
+          },
+          mockDigestOf,
+        ),
       );
       expect(result.iteration).toBe(3);
       expect(result.verdict).toBe('changes_requested');
@@ -243,27 +261,38 @@ describe('rails/types', () => {
 
     it('runSingleIteration runs exactly one iteration', async () => {
       let called = 0;
-      const current = { digest: 'd1' };
-      const result = await runSingleIteration(current, 0, 3, async () => {
-        called++;
-        return { verdict: 'accept' as const };
-      });
+      const current: MockArtifact = { digest: 'd1' };
+      const result = await runSingleIteration(
+        current,
+        0,
+        3,
+        async () => {
+          called++;
+          return { verdict: 'accept' as const };
+        },
+        mockDigestOf,
+      );
       expect(called).toBe(1);
       expect(result.iteration).toBe(1);
     });
 
     it('runConvergenceLoop tracks prevDigest correctly', async () => {
-      const initial = { digest: 'd0' };
+      const initial: MockArtifact = { digest: 'd0' };
       const result = converged(
-        await runConvergenceLoop(initial, 3, async (current, iter) => {
-          if (iter < 3) {
-            return {
-              verdict: 'changes_requested' as const,
-              updated: { digest: `d${iter}` },
-            };
-          }
-          return { verdict: 'accept' as const };
-        }),
+        await runConvergenceLoop(
+          initial,
+          3,
+          async (current, iter) => {
+            if (iter < 3) {
+              return {
+                verdict: 'changes_requested' as const,
+                updated: { digest: `d${iter}` },
+              };
+            }
+            return { verdict: 'accept' as const };
+          },
+          mockDigestOf,
+        ),
       );
       // Last iteration should have prevDigest from previous iteration
       expect(result.prevDigest).toBeDefined();
@@ -273,10 +302,13 @@ describe('rails/types', () => {
   // ─── P1.3 slice 4b: BLOCKED routing on unable_to_review ──────────────
   describe('P1.3 slice 4b — unable_to_review routes to BlockedResult', () => {
     it('runConvergenceLoop returns kind=blocked when iterate emits unable_to_review (HAPPY: first iteration)', async () => {
-      const initial = { digest: 'd0' };
-      const result = await runConvergenceLoop(initial, 3, async () => {
-        return { verdict: 'unable_to_review' as const };
-      });
+      const initial: MockArtifact = { digest: 'd0' };
+      const result = await runConvergenceLoop(
+        initial,
+        3,
+        async () => ({ verdict: 'unable_to_review' as const }),
+        mockDigestOf,
+      );
       expect(result.kind).toBe('blocked');
       // narrow for further assertions
       if (result.kind !== 'blocked') throw new Error('expected blocked');
@@ -293,16 +325,21 @@ describe('rails/types', () => {
       // iteration 3 of 3. Pre-slice-4a, isConverged would have returned
       // true on the maxIterations disjunct; pre-slice-4b, the loop would
       // have returned a ConvergedResult. Now it must return BlockedResult.
-      const initial = { digest: 'd0' };
-      const result = await runConvergenceLoop(initial, 3, async (_current, iter) => {
-        if (iter < 3) {
-          return {
-            verdict: 'changes_requested' as const,
-            updated: { digest: `d${iter}` },
-          };
-        }
-        return { verdict: 'unable_to_review' as const };
-      });
+      const initial: MockArtifact = { digest: 'd0' };
+      const result = await runConvergenceLoop(
+        initial,
+        3,
+        async (_current, iter) => {
+          if (iter < 3) {
+            return {
+              verdict: 'changes_requested' as const,
+              updated: { digest: `d${iter}` },
+            };
+          }
+          return { verdict: 'unable_to_review' as const };
+        },
+        mockDigestOf,
+      );
       expect(result.kind).toBe('blocked');
       if (result.kind !== 'blocked') throw new Error('expected blocked');
       expect(result.iteration).toBe(3);
@@ -314,20 +351,29 @@ describe('rails/types', () => {
       // iterate calls. This pins the short-circuit so that future refactors
       // cannot accidentally drop the early-return inside the while loop.
       let calls = 0;
-      const initial = { digest: 'd0' };
-      const result = await runConvergenceLoop(initial, 5, async () => {
-        calls++;
-        return { verdict: 'unable_to_review' as const };
-      });
+      const initial: MockArtifact = { digest: 'd0' };
+      const result = await runConvergenceLoop(
+        initial,
+        5,
+        async () => {
+          calls++;
+          return { verdict: 'unable_to_review' as const };
+        },
+        mockDigestOf,
+      );
       expect(calls).toBe(1);
       expect(result.kind).toBe('blocked');
     });
 
     it('runSingleIteration returns kind=blocked when iterate emits unable_to_review', async () => {
-      const current = { digest: 'd0' };
-      const result = await runSingleIteration(current, 0, 3, async () => {
-        return { verdict: 'unable_to_review' as const };
-      });
+      const current: MockArtifact = { digest: 'd0' };
+      const result = await runSingleIteration(
+        current,
+        0,
+        3,
+        async () => ({ verdict: 'unable_to_review' as const }),
+        mockDigestOf,
+      );
       expect(result.kind).toBe('blocked');
       if (result.kind !== 'blocked') throw new Error('expected blocked');
       expect(result.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
@@ -343,10 +389,16 @@ describe('rails/types', () => {
       // reaches that point; the result is converged with verdict=changes_requested.
       // This pins the precedence order so a future refactor cannot
       // accidentally swap it.
-      const current = { digest: 'd0' };
-      const result = await runSingleIteration(current, 3, 3, async () => {
-        throw new Error('iterate must not be called');
-      });
+      const current: MockArtifact = { digest: 'd0' };
+      const result = await runSingleIteration(
+        current,
+        3,
+        3,
+        async () => {
+          throw new Error('iterate must not be called');
+        },
+        mockDigestOf,
+      );
       expect(result.kind).toBe('converged');
       if (result.kind !== 'converged') throw new Error('expected converged');
       expect(result.verdict).toBe('changes_requested');
@@ -356,10 +408,13 @@ describe('rails/types', () => {
     it('runConvergenceLoop returns kind=converged on normal approve+none (HAPPY: existing path unchanged)', async () => {
       // Regression guard: the new BLOCKED path must NOT fire on normal
       // convergence. Approve+none must still produce ConvergedResult.
-      const initial = { digest: 'd0' };
-      const result = await runConvergenceLoop(initial, 3, async () => {
-        return { verdict: 'accept' as const };
-      });
+      const initial: MockArtifact = { digest: 'd0' };
+      const result = await runConvergenceLoop(
+        initial,
+        3,
+        async () => ({ verdict: 'accept' as const }),
+        mockDigestOf,
+      );
       expect(result.kind).toBe('converged');
       if (result.kind !== 'converged') throw new Error('expected converged');
       expect(result.artifact).toBe(initial);

@@ -270,9 +270,18 @@ describe('validate rail', () => {
 });
 
 describe('implement rail', () => {
+  const CANDIDATE_FIXTURE = {
+    version: 1 as const,
+    baseHeadSha: null as string | null,
+    changedPaths: ['src/auth.ts'] as readonly string[],
+    contentDigest: 'content-d',
+    diffDigest: 'diff-d',
+    candidateDigest: 'cand-d',
+  };
+
   const implExecutors = {
     execute: async () => ({
-      changedFiles: ['src/auth.ts'],
+      candidate: CANDIDATE_FIXTURE,
       domainFiles: ['src/auth.ts'],
     }),
     reviewAndRevise: async () => ({ verdict: 'accept' as const }),
@@ -326,7 +335,7 @@ describe('implement rail', () => {
     it('impl review loop respects maxIterations from policy', async () => {
       let count = 0;
       const neverApprove = {
-        execute: async () => ({ changedFiles: ['a.ts'], domainFiles: [] }),
+        execute: async () => ({ candidate: CANDIDATE_FIXTURE, domainFiles: [] }),
         reviewAndRevise: async () => {
           count++;
           return { verdict: 'changes_requested' as const };
@@ -629,14 +638,16 @@ describe('continue rail', () => {
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
         expect(result.state.implReview!.iteration).toBe(3);
-        expect(result.state.implementation!.digest).toBe(IMPL_EVIDENCE.digest);
+        expect(result.state.implementation!.candidate.candidateDigest).toBe(
+          IMPL_EVIDENCE.candidate.candidateDigest,
+        );
       }
     });
 
     it('at IMPL_REVIEW applies updated implementation evidence', async () => {
       const updatedImpl = {
         ...IMPL_EVIDENCE,
-        digest: 'digest-of-impl-v2',
+        candidate: { ...IMPL_EVIDENCE.candidate, candidateDigest: 'digest-of-impl-v2' },
       };
       const updateExecutors = {
         ...continueExecutors,
@@ -653,7 +664,7 @@ describe('continue rail', () => {
       const result = await executeContinue(state, ctx, updateExecutors);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        expect(result.state.implementation!.digest).toBe('digest-of-impl-v2');
+        expect(result.state.implementation!.candidate.candidateDigest).toBe('digest-of-impl-v2');
         expect(result.state.implReview!.executedAt).toBeDefined();
       }
     });

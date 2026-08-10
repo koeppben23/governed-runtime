@@ -33,6 +33,7 @@ import {
 } from '../../adapters/workspace/index.js';
 import { executeCheck } from '../../verification/executor.js';
 import { PersistenceError } from '../../adapters/persistence.js';
+import { makeImplEvidence } from '../../fixtures.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { hashText } from '../../shared/hashing.js';
 import { hashWorktreeFiles, listRepoSignals } from '../../adapters/git.js';
@@ -583,12 +584,11 @@ describe('CORNER', () => {
     await writeState(sessDir, {
       ...state!,
       phase: 'IMPL_VALIDATION',
-      implementation: {
-        changedFiles: ['src/example.ts'],
+      implementation: makeImplEvidence({
+        candidate: { candidateDigest: implDigest, changedPaths: ['src/example.ts'] },
         domainFiles: ['src/example.ts'],
-        digest: implDigest,
         executedAt: '2026-01-01T00:00:00.000Z',
-      },
+      }),
     });
 
     await callOk(run_check, { kind: 'typecheck' });
@@ -610,12 +610,11 @@ describe('CORNER', () => {
     await writeState(sessDir, {
       ...state!,
       phase: 'IMPL_VALIDATION',
-      implementation: {
-        changedFiles: ['src/example.ts'],
+      implementation: makeImplEvidence({
+        candidate: { candidateDigest: implDigest, changedPaths: ['src/example.ts'] },
         domainFiles: ['src/example.ts'],
-        digest: implDigest,
         executedAt: '2026-01-01T00:00:00.000Z',
-      },
+      }),
       plan: {
         ...state!.plan!,
         claimDeclarations: {

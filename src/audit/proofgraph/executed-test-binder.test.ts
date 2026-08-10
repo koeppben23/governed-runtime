@@ -8,21 +8,20 @@ import {
   EXECUTED_TEST_PROVIDER_ID,
   EXECUTED_TEST_PROVIDER_VERSION,
 } from './executed-test-binder.js';
-import { makeState } from '../../fixtures.js';
+import { makeState, IMPL_EVIDENCE } from '../../fixtures.js';
 import { ProofProviderResult } from '../../state/proofgraph.js';
 import type { SessionState } from '../../state/schema.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
 const CLAIM = '00000000-0000-4000-8000-000000000001';
 const ATT = '00000000-0000-4000-8000-0000000000aa';
-const IMPL_DIGEST = 'impl-current';
+const IMPL_DIGEST = IMPL_EVIDENCE.candidate.candidateDigest;
 const SHA = 'a'.repeat(64);
 const AUTHORITY_REF = {
   kind: 'canonical_authority' as const,
   authorityId: 'ticket',
   digest: 'authority',
 };
-const IMPL = { changedFiles: ['a.ts'], domainFiles: [], digest: IMPL_DIGEST, executedAt: NOW };
 
 function validationResult(passed: boolean, over: Record<string, unknown> = {}) {
   return {
@@ -56,7 +55,7 @@ function claimRefingAttempt(attemptId = ATT, claimScope?: 'specific_behavior' | 
 
 function stateWith(attempts: SessionState['validationAttempts']): SessionState {
   return makeState('IMPL_VALIDATION', {
-    implementation: IMPL,
+    implementation: IMPL_EVIDENCE,
     proofContract: { version: 'contract.v1', claims: [claimRefingAttempt()] },
     validationAttempts: attempts,
   });
@@ -130,7 +129,7 @@ describe('bindExecutedTestEvidence', () => {
 
   it('requires attempt-bound full-check attestation for suite positive evidence', () => {
     const state = makeState('IMPL_VALIDATION', {
-      implementation: IMPL,
+      implementation: IMPL_EVIDENCE,
       proofContract: {
         version: 'contract.v1',
         claims: [claimRefingAttempt(ATT, 'suite')],
@@ -149,7 +148,7 @@ describe('bindExecutedTestEvidence', () => {
 
   it('binds suite positive evidence only when its executed attempt is full-check attested', () => {
     const state = makeState('IMPL_VALIDATION', {
-      implementation: IMPL,
+      implementation: IMPL_EVIDENCE,
       proofContract: {
         version: 'contract.v1',
         claims: [claimRefingAttempt(ATT, 'suite')],

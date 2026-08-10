@@ -273,7 +273,7 @@ function enforceProofGraphEvidenceApproval(
     projection: state.proofGraph,
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
     certificateValid: authorization.kind === 'authorized',
-    implementationDigest: state.implementation?.digest,
+    implementationDigest: state.implementation?.candidate.candidateDigest,
     riskAssessment: state.implementationRiskAssessment,
   });
   if (!decision.gated) return null;

@@ -320,7 +320,7 @@ function architectureChallengeEvidence(state: SessionState): Record<string, unkn
 function implementationChallengeEvidence(
   state: SessionState,
 ): Record<string, unknown>[] | undefined {
-  const implementationDigest = state.implementation?.digest;
+  const implementationDigest = state.implementation?.candidate.candidateDigest;
   if (!implementationDigest) return undefined;
   const successfulAttempts = state.validationAttempts.filter(
     (attempt) =>

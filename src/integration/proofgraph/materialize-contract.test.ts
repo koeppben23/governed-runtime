@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { makeState } from '../../fixtures.js';
+import { makeState, makeImplEvidence } from '../../fixtures.js';
 import {
   computeArtifactDigest,
   computeProjectionDigest,
@@ -135,12 +135,11 @@ function stateWithClaims() {
       decidedAt: NOW,
       decidedBy: 'user',
     },
-    implementation: {
-      changedFiles: ['src/example.ts'],
+    implementation: makeImplEvidence({
+      candidate: { candidateDigest: IMPL_DIGEST, changedPaths: ['src/example.ts'] },
       domainFiles: ['src/example.ts'],
-      digest: IMPL_DIGEST,
       executedAt: NOW,
-    },
+    }),
     validationAttempts: [
       {
         attemptId: ATTEMPT_ID,

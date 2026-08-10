@@ -11,7 +11,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { makeState, TICKET, VALIDATION_PASSED } from '../../fixtures.js';
+import { makeState, TICKET, VALIDATION_PASSED, makeImplEvidence } from '../../fixtures.js';
 import { TEAM_POLICY } from '../../config/policy-presets.js';
 import type { SessionState } from '../../state/schema.js';
 import {
@@ -268,12 +268,11 @@ function implStateWithEvidence(
       history: [],
       reviewFindings: [],
     },
-    implementation: {
-      changedFiles: ['src/foo.ts'],
-      digest: 'digest-impl',
+    implementation: makeImplEvidence({
+      candidate: { candidateDigest: 'digest-impl', changedPaths: ['src/foo.ts'] },
       domainFiles: ['src/foo.ts'],
       executedAt: now,
-    },
+    }),
     // Realistic IMPL_REVIEW state: the phase is only reachable once the active
     // checks passed in IMPL_VALIDATION, so carry that passing evidence bound to
     // the current implementation digest.
@@ -469,12 +468,11 @@ describe('BUG-17: implement evidence-first resolution', () => {
         history: [],
         reviewFindings: [],
       },
-      implementation: {
-        changedFiles: ['src/foo.ts'],
-        digest: 'digest-impl',
+      implementation: makeImplEvidence({
+        candidate: { changedPaths: ['src/foo.ts'] },
         domainFiles: ['src/foo.ts'],
         executedAt: now,
-      },
+      }),
       selfReview: {
         iteration: 0,
         maxIterations: 3,
@@ -602,12 +600,11 @@ describe('BUG-17: implement evidence-first resolution', () => {
         history: [],
         reviewFindings: [],
       },
-      implementation: {
-        changedFiles: ['src/foo.ts'],
+      implementation: makeImplEvidence({
+        candidate: { changedPaths: ['src/foo.ts'] },
         domainFiles: ['src/foo.ts'],
-        digest: 'digest-impl',
         executedAt: now,
-      },
+      }),
       // Realistic IMPL_REVIEW state: active checks passed in IMPL_VALIDATION.
       implValidation: VALIDATION_PASSED,
       validationAttempts: [
