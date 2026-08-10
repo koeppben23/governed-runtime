@@ -482,7 +482,13 @@ describe('renderMarkdown', () => {
                 {
                   category: 'correctness',
                   message: 'Missing validation',
-                  relation: '{"subjectAnchors":["src/foo.ts"]}',
+                  subjects: [
+                    {
+                      kind: 'repository_location',
+                      location: { path: 'src/foo.ts', revision: 'head' },
+                    },
+                  ],
+                  evidence: [],
                 },
               ],
             },
@@ -500,14 +506,14 @@ describe('renderMarkdown', () => {
     assertRendererInvariants(result);
     expect(result).toContain('### Critical (1)');
     expect(result).toContain(
-      '- **correctness:** Missing validation `{"subjectAnchors":["src/foo.ts"]}`',
+      '- **correctness:** Missing validation\n  Affected: HEAD · src/foo.ts · Evidence: none cited',
     );
     expect(result).toContain('### Warnings (1)');
     expect(result).toContain('- **quality:** Missing tests');
     // Consecutive severity groups are separated by a blank line so each `###`
     // group heading is a cleanly delimited block.
     expect(result).toContain(
-      '- **correctness:** Missing validation `{"subjectAnchors":["src/foo.ts"]}`\n\n### Warnings (1)',
+      'Affected: HEAD · src/foo.ts · Evidence: none cited\n\n### Warnings (1)',
     );
   });
 

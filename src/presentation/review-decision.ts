@@ -8,11 +8,12 @@
  * @version v1
  */
 
-import {
-  formatFindingRelation,
-  type PresentationAction,
-  type PresentationConclusion,
+import type {
+  FindingRelationPresentation,
+  PresentationAction,
+  PresentationConclusion,
 } from './model.js';
+import { formatFindingAffected, projectFindingRelation } from './finding-relation.js';
 
 const GATE_COMMANDS = ['/approve', '/request-changes', '/reject'] as const;
 
@@ -127,14 +128,14 @@ export interface ReviewDecisionInput {
     readonly message: string;
     readonly severity?: string;
     readonly category?: string;
-    readonly relation?: unknown;
+    readonly relation?: FindingRelationPresentation;
     readonly findingId?: string;
   }>;
   readonly majorRisks?: ReadonlyArray<{
     readonly message: string;
     readonly severity?: string;
     readonly category?: string;
-    readonly relation?: unknown;
+    readonly relation?: FindingRelationPresentation;
   }>;
   readonly missingVerification?: readonly string[];
   readonly scopeCreep?: readonly string[];
@@ -146,22 +147,23 @@ function toDecisionIssues(
   findings?: ReadonlyArray<{
     readonly message: string;
     readonly severity?: string;
-    readonly relation?: unknown;
+    readonly relation?: FindingRelationPresentation;
     readonly findingId?: string;
   }>,
 ): DecisionIssue[] {
   if (!findings || findings.length === 0) return [];
   return findings.map((f) => {
+    const relation = projectFindingRelation(f.relation);
     const detail = [
-      f.severity ? `Severity: ${f.severity}` : null,
-      f.relation === undefined ? null : `Relation: ${formatFindingRelation(f.relation)}`,
+      f.severity ? `Severity: ${f.severity}` : undefined,
+      'subjects' in relation ? formatFindingAffected(relation.subjects) : undefined,
     ]
-      .filter(Boolean)
+      .filter((part): part is string => part !== undefined)
       .join(' · ');
     return {
       source,
       title: f.message,
-      ...(detail ? { detail } : {}),
+      ...(detail.length > 0 ? { detail } : {}),
       ...(f.findingId ? { findingId: f.findingId } : {}),
     };
   });
