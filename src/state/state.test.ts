@@ -476,6 +476,7 @@ describe('state schemas', () => {
         title: 'Test',
         adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
         status: 'proposed' as const,
+        reviewCompletion: 'pending' as const,
         createdAt: '2026-01-01T00:00:00.000Z',
         digest: 'sha256-deadbeef',
       };
