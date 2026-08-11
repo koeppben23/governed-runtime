@@ -18,6 +18,7 @@ import {
   staleObligationAttempts,
   updateAttemptStatus,
 } from './review/assurance.js';
+import { bindHostReviewInvocation } from './review/host-review-assurance-binding.js';
 import { appendReviewAuditEvent } from './review/audit-events.js';
 import { strictBlockedOutput } from './plugin-helpers.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
@@ -206,10 +207,7 @@ async function persistHostTaskEvidence(
       return { ...s, reviewAssurance: fulfilled };
     }
 
-    // The evidence timestamps are the authoritative completion time; `now` is
-    // the injected host clock, used only when the evidence carries neither.
-    // Update the existing attempt record in-place — never append a duplicate.
-    const marked = updateAttemptStatus(fulfilled, bindResult.attempt.attemptId, 'bound', at);
+    const marked = bindCapturedHostInvocation(fulfilled, evidence, at);
     // Stale any OTHER non-bound attempts for the same obligation.
     const deduped = staleObligationAttempts(
       marked,
@@ -234,6 +232,14 @@ async function persistHostTaskEvidence(
       bindOutcome: bindResult.bindOutcome,
     },
   );
+}
+
+function bindCapturedHostInvocation(
+  assurance: ReturnType<typeof ensureReviewAssurance>,
+  evidence: Parameters<typeof appendInvocationEvidence>[1],
+  now: string,
+) {
+  return bindHostReviewInvocation(assurance, evidence.obligationId, evidence.invocationId, now);
 }
 
 async function persistAttemptStatus(

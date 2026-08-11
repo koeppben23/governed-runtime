@@ -49,7 +49,6 @@ import {
   findAcceptedInvocationForFindings,
   findLatestObligation,
   reviewObligationResponseFields,
-  hashFindings,
 } from '../review/assurance.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
 import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
@@ -58,7 +57,6 @@ import type { ImplementRuntime } from './implement-shared.js';
 import { nextImplementationReviewIteration, normalizeHostFindings } from './implement-shared.js';
 import { projectImplementationProofStatus } from '../proofgraph/proof-summary-projectors.js';
 import type { CompactProofPresentation } from '../../presentation/proof-model.js';
-import { randomUUID } from 'node:crypto';
 import {
   buildImplReviewBlockedMarkdown,
   buildImplReviewChangesRequestedMarkdown,
@@ -326,67 +324,6 @@ function validateEffectiveFindings(
   return null;
 }
 
-function bindAgentReviewAssurance(
-  assurance: ReturnType<typeof ensureReviewAssurance>,
-  sessionId: string,
-  now: string,
-  findings: unknown,
-): ReturnType<typeof ensureReviewAssurance> {
-  const ob = [...assurance.obligations].reverse().find((o) => o.obligationType === 'implement');
-  if (!ob) return assurance;
-  let r = assurance;
-  const at = [...r.attempts]
-    .filter((a) => a.obligationId === ob.obligationId)
-    .sort((a, b) => b.ordinal - a.ordinal)[0];
-  // Bind the attempt: the review was accepted by the system.
-  if (at && at.status !== 'bound' && at.status !== 'rejected') {
-    r = {
-      ...r,
-      obligations: r.obligations.map((o) =>
-        o.obligationId === ob.obligationId
-          ? { ...o, attemptIds: [...(o.attemptIds ?? []), at.attemptId] }
-          : o,
-      ),
-      attempts: r.attempts.map((a) =>
-        a.attemptId === at.attemptId ? { ...a, status: 'bound' as const, completedAt: now } : a,
-      ),
-    };
-  }
-  // Record invocation evidence from the actual submitted findings.
-  // Agent-submitted reviews are self-report — provenance fields reflect this.
-  if (!r.invocations.some((i) => i.obligationId === ob.obligationId)) {
-    const fh = hashFindings((findings as Record<string, unknown>) ?? {});
-    r = {
-      ...r,
-      invocations: [
-        ...r.invocations,
-        {
-          invocationId: randomUUID(),
-          obligationId: ob.obligationId,
-          obligationType: ob.obligationType,
-          parentSessionId: sessionId,
-          childSessionId: '',
-          agentType: 'flowguard-reviewer' as const,
-          attemptId: at?.attemptId,
-          invocationMode: 'manual_attested' as const,
-          hostVisible: true,
-          promptHash: fh,
-          mandateDigest: ob.mandateDigest,
-          criteriaVersion: ob.criteriaVersion,
-          findingsHash: fh,
-          invokedAt: now,
-          fulfilledAt: now,
-          consumedByObligationId: null,
-          reviewOutputMode: 'text_compat' as const,
-          structuredOutputUsed: false,
-          reviewAssuranceLevel: 'text_compat_lower' as const,
-        },
-      ],
-    };
-  }
-  return r;
-}
-
 function appendImplReviewState(input: {
   runtime: ImplementRuntime;
   iteration: number;
@@ -427,15 +364,9 @@ function appendImplReviewState(input: {
       executedAt: runtime.ctx.now(),
     },
     implReviewFindings: newReviewFindings.length > 0 ? newReviewFindings : undefined,
-    reviewAssurance:
-      runtime.args.reviewVerdict === 'accept'
-        ? bindAgentReviewAssurance(
-            consumedAssurance,
-            runtime.context.sessionID,
-            runtime.ctx.now(),
-            effectiveFindings ?? runtime.args.reviewFindings,
-          )
-        : consumedAssurance,
+    // Submitted findings are retained as review content only. Host-captured
+    // review evidence is the sole authority that can bind an attempt.
+    reviewAssurance: consumedAssurance,
     error: null,
   };
   return { reviewedState, newReviewFindings };

@@ -13,6 +13,7 @@
  *              4. Rails never import the candidate resolver.
  *              5. No duplicate validate/hasCurrent implementation exists outside the authority file.
  *              6. The implementation-approval-binding module is the single validation authority.
+ *              7. Implementation review tools cannot synthesize review provenance.
  */
 
 import { readFileSync, readdirSync } from 'node:fs';
@@ -109,5 +110,21 @@ describe('implementation-final-approval authority', () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it('implementation review never creates or binds review provenance from submitted findings', () => {
+    const content = readFileSync(join(SRC_ROOT, 'integration/tools/implement-review.ts'), 'utf-8');
+    expect(content).not.toContain("status: 'bound'");
+    expect(content).not.toContain('buildInvocationEvidence(');
+    expect(content).not.toContain('ReviewInvocationEvidence');
+  });
+
+  it('only the canonical assurance binder can bind host review evidence', () => {
+    const assurance = readFileSync(
+      join(SRC_ROOT, 'integration/review/host-review-assurance-binding.ts'),
+      'utf-8',
+    );
+    expect(assurance).toContain('export function bindHostReviewInvocation');
+    expect(assurance).toContain("invocation.invocationMode === 'host_subagent_task'");
   });
 });

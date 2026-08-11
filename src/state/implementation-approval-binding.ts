@@ -170,7 +170,11 @@ export function resolveImplementationReviewBinding(
 
   const invocation = assurance.invocations.find(
     (i) =>
-      i.obligationId === obligation.obligationId && i.attemptId === authoritativeAttempt.attemptId,
+      i.obligationId === obligation.obligationId &&
+      i.attemptId === authoritativeAttempt.attemptId &&
+      i.invocationMode === 'host_subagent_task' &&
+      i.hostVisible === true &&
+      i.childSessionId === authoritativeAttempt.childSessionId,
   );
 
   if (!invocation) return null;
@@ -367,75 +371,35 @@ export function validateCurrentImplementationApprovalCertificate(
     return { ok: false, reason: 'Certificate contentDigest does not match current candidate.' };
   }
 
-  // Validation attempt lineage.
-  for (const id of cert.validationAttemptIds) {
-    const attempt = state.validationAttempts.find((a) => a.attemptId === id);
-    if (!attempt) {
-      return {
-        ok: false,
-        reason: `Validation attempt ${id} referenced by certificate does not exist.`,
-      };
-    }
-    if (
-      attempt.scope !== 'implementation' ||
-      attempt.implementationDigest !== candidate.contentDigest
-    ) {
-      return { ok: false, reason: `Validation attempt ${id} does not bind current contentDigest.` };
-    }
-  }
-
-  // Review obligation lineage.
-  const assurance = state.reviewAssurance;
-  if (!assurance) {
+  const validationBinding = resolveImplementationValidationBinding(state, candidate.contentDigest);
+  if ('missingCheckIds' in validationBinding) {
     return {
       ok: false,
-      reason: 'No review assurance exists — certificate review lineage cannot be verified.',
+      reason: 'Required validation evidence is no longer passing for current content.',
+    };
+  }
+  if (
+    [...cert.validationAttemptIds].sort().join(',') !==
+    [...validationBinding.attemptIds].sort().join(',')
+  ) {
+    return {
+      ok: false,
+      reason: 'Certificate validation attempts do not match current passing evidence.',
     };
   }
 
-  const obligation = assurance.obligations.find((o) => o.obligationId === cert.reviewObligationId);
-  if (!obligation) {
+  const reviewBinding = resolveImplementationReviewBinding(state, candidate.candidateDigest);
+  if (!reviewBinding) {
+    return { ok: false, reason: 'Certificate review lineage is no longer authoritative.' };
+  }
+  if (
+    reviewBinding.obligationId !== cert.reviewObligationId ||
+    reviewBinding.attemptId !== cert.reviewAttemptId ||
+    reviewBinding.evidenceDigest !== cert.reviewEvidenceDigest
+  ) {
     return {
       ok: false,
-      reason: `Review obligation ${cert.reviewObligationId} referenced by certificate does not exist.`,
-    };
-  }
-  if (obligation.subjectDigest !== candidate.candidateDigest) {
-    return {
-      ok: false,
-      reason: 'Review obligation subjectDigest does not match current candidate.',
-    };
-  }
-
-  // Review attempt lineage.
-  const attempt = assurance.attempts.find((a) => a.attemptId === cert.reviewAttemptId);
-  if (!attempt) {
-    return {
-      ok: false,
-      reason: `Review attempt ${cert.reviewAttemptId} referenced by certificate does not exist.`,
-    };
-  }
-  if (attempt.obligationId !== obligation.obligationId) {
-    return { ok: false, reason: 'Review attempt does not belong to the referenced obligation.' };
-  }
-  if (attempt.subjectDigest !== candidate.candidateDigest) {
-    return { ok: false, reason: 'Review attempt subjectDigest does not match current candidate.' };
-  }
-
-  // Review invocation evidence digest.
-  const invocation = assurance.invocations.find(
-    (i) => i.obligationId === obligation.obligationId && i.attemptId === attempt.attemptId,
-  );
-  if (!invocation) {
-    return {
-      ok: false,
-      reason: 'No review invocation evidence binds the referenced obligation and attempt.',
-    };
-  }
-  if (invocation.findingsHash !== cert.reviewEvidenceDigest) {
-    return {
-      ok: false,
-      reason: 'Certificate reviewEvidenceDigest does not match current invocation evidence.',
+      reason: 'Certificate review lineage does not match the authoritative review binding.',
     };
   }
 
