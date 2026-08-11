@@ -299,14 +299,7 @@ export function createImplementationApprovalCertificate(params: {
     readonly decidedBy: string;
   };
 }): ImplementationApprovalCertificate {
-  const decisionAttestationDigest = hashText(
-    canonicalJsonStringify({
-      verdict: params.decision.verdict,
-      rationale: params.decision.rationale,
-      decidedAt: params.decision.decidedAt,
-      decidedBy: params.decision.decidedBy,
-    }),
-  );
+  const decisionAttestationDigest = hashDecisionAttestation(params.decision);
 
   const sortedAttemptIds = [...params.binding.validationAttemptIds].sort();
 
@@ -371,21 +364,42 @@ export function validateCurrentImplementationApprovalCertificate(
     return { ok: false, reason: 'Certificate contentDigest does not match current candidate.' };
   }
 
-  const validationBinding = resolveImplementationValidationBinding(state, candidate.contentDigest);
-  if ('missingCheckIds' in validationBinding) {
+  const decision = state.reviewDecision;
+  if (!decision || decision.verdict !== 'approve') {
     return {
       ok: false,
-      reason: 'Required validation evidence is no longer passing for current content.',
+      reason: 'No approving human review decision exists for the certificate.',
     };
   }
   if (
-    [...cert.validationAttemptIds].sort().join(',') !==
-    [...validationBinding.attemptIds].sort().join(',')
+    cert.approvedAt !== decision.decidedAt ||
+    cert.approvedBy !== decision.decidedBy ||
+    cert.decisionAttestationDigest !== hashDecisionAttestation(decision)
   ) {
     return {
       ok: false,
-      reason: 'Certificate validation attempts do not match current passing evidence.',
+      reason: 'Certificate human decision attestation does not match the persisted approval.',
     };
+  }
+
+  const certifiedAttempts = cert.validationAttemptIds.map((id) =>
+    state.validationAttempts.find((attempt) => attempt.attemptId === id),
+  );
+  if (
+    certifiedAttempts.some(
+      (attempt) =>
+        !attempt ||
+        attempt.scope !== 'implementation' ||
+        attempt.implementationDigest !== cert.contentDigest ||
+        !attempt.result.passed,
+    )
+  ) {
+    return { ok: false, reason: 'Certificate validation evidence is no longer valid.' };
+  }
+  const certifiedCheckIds = new Set(certifiedAttempts.map((attempt) => attempt!.result.checkId));
+  const missingCheckIds = state.activeChecks.filter((checkId) => !certifiedCheckIds.has(checkId));
+  if (missingCheckIds.length > 0) {
+    return { ok: false, reason: 'Certificate validation evidence does not cover required checks.' };
   }
 
   const reviewBinding = resolveImplementationReviewBinding(state, candidate.candidateDigest);
@@ -404,6 +418,22 @@ export function validateCurrentImplementationApprovalCertificate(
   }
 
   return { ok: true };
+}
+
+function hashDecisionAttestation(decision: {
+  readonly verdict: string;
+  readonly rationale: string;
+  readonly decidedAt: string;
+  readonly decidedBy: string;
+}): string {
+  return hashText(
+    canonicalJsonStringify({
+      verdict: decision.verdict,
+      rationale: decision.rationale,
+      decidedAt: decision.decidedAt,
+      decidedBy: decision.decidedBy,
+    }),
+  );
 }
 
 /**
