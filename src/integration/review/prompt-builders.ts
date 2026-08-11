@@ -72,6 +72,19 @@ export function renderReviewContext(input: {
   return parts.join(', ');
 }
 
+/** Serialize the integrity-verified review subject identically for every transport. */
+export function renderFrozenReviewSubjectEnvelope(context: FrozenReviewerContext): string[] {
+  return [
+    '## Frozen Review Subject',
+    JSON.stringify(context.reviewSubject),
+    '## Review Subject Scope (frozen obligation scope)',
+    JSON.stringify(context.reviewSubjectScope),
+    context.anchorContract,
+    `${CANONICAL_PROMPT_APPEND_MARKER} persisted review material below this line:`,
+    context.reviewMaterial.content,
+  ];
+}
+
 /** Inputs for the canonical, copy-ready reviewer Task prompt (F10). */
 export interface ReviewerTaskPromptInput {
   readonly iteration: number;
@@ -225,15 +238,7 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
       : []),
     ...(input.proofContext && input.proofContext.length > 0 ? [...input.proofContext] : []),
     ...(input.frozenReviewerContext
-      ? [
-          '## Frozen Review Subject',
-          JSON.stringify(input.frozenReviewerContext.reviewSubject),
-          '## Review Subject Scope (frozen obligation scope)',
-          JSON.stringify(input.frozenReviewerContext.reviewSubjectScope),
-          input.frozenReviewerContext.anchorContract,
-          `${CANONICAL_PROMPT_APPEND_MARKER} persisted review material below this line:`,
-          input.frozenReviewerContext.reviewMaterial.content,
-        ]
+      ? renderFrozenReviewSubjectEnvelope(input.frozenReviewerContext)
       : [
           `${CANONICAL_PROMPT_APPEND_MARKER} ${input.subjectLabel} content to review below this line:`,
         ]),
@@ -651,21 +656,12 @@ export function buildReviewContentPrompt(opts: {
     lines.push(discoverySection, '');
   }
   lines.push(...renderPersistedProofGraphContext(opts.proofGraph));
+  if (opts.frozenReviewerContext) {
+    lines.push(...renderFrozenReviewSubjectEnvelope(opts.frozenReviewerContext));
+  } else {
+    lines.push('CONTENT TO REVIEW:', '```', opts.content, '```');
+  }
   lines.push(
-    ...(opts.frozenReviewerContext
-      ? [
-          '## Frozen Review Subject',
-          JSON.stringify(opts.frozenReviewerContext.reviewSubject),
-          '## Review Subject Scope (frozen obligation scope)',
-          JSON.stringify(opts.frozenReviewerContext.reviewSubjectScope),
-          opts.frozenReviewerContext.anchorContract,
-          `${CANONICAL_PROMPT_APPEND_MARKER} persisted review material below this line:`,
-        ]
-      : []),
-    'CONTENT TO REVIEW:',
-    '```',
-    opts.frozenReviewerContext?.reviewMaterial.content ?? opts.content,
-    '```',
     '',
     'Return a complete ReviewFindings JSON object (no markdown fences, no extra text).',
     'Fields: reviewMode: "subagent", iteration, planVersion, overallVerdict,',

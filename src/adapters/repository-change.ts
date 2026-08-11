@@ -1,15 +1,32 @@
 /** Canonical parsing and projection of repository changes represented as a Git patch. */
 
-export type RepositoryChangeKind =
-  'add' | 'modify' | 'delete' | 'rename' | 'copy' | 'mode' | 'binary';
+export type RepositoryChangeKind = 'add' | 'modify' | 'delete' | 'rename' | 'copy';
+export type RepositoryChangeRepresentation = 'text' | 'binary';
+
+export interface RepositoryModeChange {
+  readonly oldMode: string;
+  readonly newMode: string;
+}
 
 export type CanonicalRepositoryChange =
-  | { readonly kind: 'add'; readonly newPath: string; readonly reviewerMaterial: string }
-  | { readonly kind: 'delete'; readonly oldPath: string; readonly reviewerMaterial: string }
   | {
-      readonly kind: 'modify' | 'rename' | 'copy' | 'mode' | 'binary';
+      readonly kind: 'add';
+      readonly newPath: string;
+      readonly representation: RepositoryChangeRepresentation;
+      readonly reviewerMaterial: string;
+    }
+  | {
+      readonly kind: 'delete';
+      readonly oldPath: string;
+      readonly representation: RepositoryChangeRepresentation;
+      readonly reviewerMaterial: string;
+    }
+  | {
+      readonly kind: 'modify' | 'rename' | 'copy';
       readonly oldPath: string;
       readonly newPath: string;
+      readonly representation: RepositoryChangeRepresentation;
+      readonly modeChange?: RepositoryModeChange;
       readonly reviewerMaterial: string;
     };
 
@@ -141,10 +158,11 @@ function parseChange(
       .split('\n')
       .some((line) => line === `Binary files a/${oldPath} and b/${newPath} differ`);
 
-  // Extended headers are authoritative only before the patch body. Conflicting
-  // forms and header/marker disagreement are ambiguous repository scope.
+  // Lifecycle headers are mutually exclusive. Binary representation and mode
+  // metadata are orthogonal attributes of an otherwise valid lifecycle.
   if (
-    [isAdd, isDelete, isRename, isCopy, isMode, isBinary].filter(Boolean).length > 1 ||
+    [isAdd, isDelete, isRename, isCopy].filter(Boolean).length > 1 ||
+    ((isAdd || isDelete) && isMode) ||
     (isAdd && newFileModes.length !== 1) ||
     (isDelete && deletedFileModes.length !== 1) ||
     (isRename &&
@@ -162,13 +180,15 @@ function parseChange(
     return null;
   }
   const reviewerMaterial = section;
-  if (isAdd) return { kind: 'add', newPath, reviewerMaterial };
-  if (isDelete) return { kind: 'delete', oldPath, reviewerMaterial };
-  if (isRename) return { kind: 'rename', oldPath, newPath, reviewerMaterial };
-  if (isCopy) return { kind: 'copy', oldPath, newPath, reviewerMaterial };
-  if (isMode) return { kind: 'mode', oldPath, newPath, reviewerMaterial };
-  if (isBinary) return { kind: 'binary', oldPath, newPath, reviewerMaterial };
-  return { kind: 'modify', oldPath, newPath, reviewerMaterial };
+  const representation: RepositoryChangeRepresentation = isBinary ? 'binary' : 'text';
+  if (isAdd) return { kind: 'add', newPath, representation, reviewerMaterial };
+  if (isDelete) return { kind: 'delete', oldPath, representation, reviewerMaterial };
+  const modeChange = isMode ? { oldMode: oldModes[0]!, newMode: newModes[0]! } : undefined;
+  if (isRename)
+    return { kind: 'rename', oldPath, newPath, representation, modeChange, reviewerMaterial };
+  if (isCopy)
+    return { kind: 'copy', oldPath, newPath, representation, modeChange, reviewerMaterial };
+  return { kind: 'modify', oldPath, newPath, representation, modeChange, reviewerMaterial };
 }
 
 function firstPatchBodyLine(section: string): number {

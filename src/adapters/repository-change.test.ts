@@ -8,7 +8,7 @@ import {
 } from './repository-change.js';
 
 describe('canonical repository changes', () => {
-  it('preserves explicit add, modify, delete, rename, copy, mode, and binary path semantics', () => {
+  it('preserves lifecycle, representation, and mode-change semantics', () => {
     const changes = parseCanonicalRepositoryChanges(`diff --git a/add.ts b/add.ts
 new file mode 100644
 diff --git a/modify.ts b/modify.ts
@@ -33,13 +33,19 @@ Binary files a/image.png and b/image.png differ
 `);
 
     expect(changes?.changes).toMatchObject([
-      { kind: 'add', newPath: 'add.ts' },
-      { kind: 'modify', oldPath: 'modify.ts', newPath: 'modify.ts' },
-      { kind: 'delete', oldPath: 'delete.ts' },
-      { kind: 'rename', oldPath: 'old.ts', newPath: 'new.ts' },
-      { kind: 'copy', oldPath: 'source.ts', newPath: 'copy.ts' },
-      { kind: 'mode', oldPath: 'script.sh', newPath: 'script.sh' },
-      { kind: 'binary', oldPath: 'image.png', newPath: 'image.png' },
+      { kind: 'add', newPath: 'add.ts', representation: 'text' },
+      { kind: 'modify', oldPath: 'modify.ts', newPath: 'modify.ts', representation: 'text' },
+      { kind: 'delete', oldPath: 'delete.ts', representation: 'text' },
+      { kind: 'rename', oldPath: 'old.ts', newPath: 'new.ts', representation: 'text' },
+      { kind: 'copy', oldPath: 'source.ts', newPath: 'copy.ts', representation: 'text' },
+      {
+        kind: 'modify',
+        oldPath: 'script.sh',
+        newPath: 'script.sh',
+        representation: 'text',
+        modeChange: { oldMode: '100644', newMode: '100755' },
+      },
+      { kind: 'modify', oldPath: 'image.png', newPath: 'image.png', representation: 'binary' },
     ]);
     expect(changes && repositoryChangePaths(changes)).toEqual([
       'add.ts',
@@ -84,10 +90,11 @@ rename to injected.ts
 `,
     ],
     [
-      'ambiguous change kinds',
+      'conflicting lifecycle headers',
       `diff --git a/file.ts b/file.ts
 new file mode 100644
-Binary files a/file.ts and b/file.ts differ
+rename from file.ts
+rename to other.ts
 `,
     ],
     [
@@ -113,5 +120,27 @@ new file mode 100755
     ],
   ])('fails closed for %s', (_case, diff) => {
     expect(parseCanonicalRepositoryChanges(diff)).toBeNull();
+  });
+
+  it('represents binary and mode details alongside a valid lifecycle', () => {
+    const changes = parseCanonicalRepositoryChanges(`diff --git a/new.png b/new.png
+new file mode 100644
+Binary files a/new.png and b/new.png differ
+diff --git a/image.png b/image.png
+old mode 100644
+new mode 100755
+Binary files a/image.png and b/image.png differ
+`);
+
+    expect(changes?.changes).toMatchObject([
+      { kind: 'add', newPath: 'new.png', representation: 'binary' },
+      {
+        kind: 'modify',
+        oldPath: 'image.png',
+        newPath: 'image.png',
+        representation: 'binary',
+        modeChange: { oldMode: '100644', newMode: '100755' },
+      },
+    ]);
   });
 });
