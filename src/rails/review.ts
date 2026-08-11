@@ -17,7 +17,13 @@
  */
 
 import type { SessionState } from '../state/schema.js';
-import { ReviewReport, type ExternalReference, type InputOrigin } from '../state/evidence.js';
+import {
+  ReviewReport,
+  type ExternalReference,
+  type FrozenReviewSubject,
+  type InputOrigin,
+  type ReviewReportFinding,
+} from '../state/evidence.js';
 import { REVIEW_REPORT_SCHEMA_ID } from '../shared/flowguard-identifiers.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
@@ -25,7 +31,11 @@ import type { RailResult, RailContext, TransitionRecord, RailBlocked } from './t
 import { autoAdvance, applyTransition, createPolicyEvalFn } from './types.js';
 import { blocked } from '../config/reasons.js';
 import { blockedFromOverflow } from './auto-advance-overflow.js';
-import { hasGhCli, loadPrDiff, loadResolvedBranchDiff } from '../adapters/gh-cli.js';
+import {
+  loadResolvedBranchDiff,
+  loadResolvedPullRequestDiff,
+  resolvePullRequestReviewSource,
+} from '../adapters/gh-cli.js';
 import {
   parseIPv4,
   isPrivateIPv4,
@@ -34,7 +44,13 @@ import {
   isIPv6Address,
 } from '../adapters/ip-validation.js';
 import { lookupReviewHostname, type ReviewDnsLookup } from '../adapters/dns-resolution.js';
-import { hashText } from '../shared/hashing.js';
+import { prepareResolvedRepositoryContent } from './repository-review-subject.js';
+import {
+  hashCanonicalContentSubject,
+  hashCanonicalReviewContent,
+  normalizeReviewContent,
+  reviewContentLineCount,
+} from '../shared/review-subject.js';
 export { parseIPv4 };
 
 // ─── Content Preparation Types ───────────────────────────────────────────────
@@ -42,6 +58,7 @@ export { parseIPv4 };
 export interface PreparedReviewContent {
   readonly content: string;
   readonly reviewedContentDigest: string;
+  readonly reviewSubject: FrozenReviewSubject;
 }
 
 export type PrepareReviewResult = PreparedReviewContent | RailBlocked | null;
@@ -223,7 +240,37 @@ async function fetchUrlContent(
       reason: `Failed to fetch ${url}: HTTP ${resp.status} ${resp.statusText}`,
     });
   }
-  return { content: await resp.text() };
+  const contentType = resp.headers.get('content-type');
+  if (!isUtf8ContentType(contentType)) {
+    return blocked('REVIEW_URL_CONTENT_ENCODING_INVALID', {
+      reason: `declared charset is not strict UTF-8 (${contentType ?? 'no charset declared'})`,
+    });
+  }
+  try {
+    return { content: new TextDecoder('utf-8', { fatal: true }).decode(await resp.arrayBuffer()) };
+  } catch {
+    return blocked('REVIEW_URL_CONTENT_ENCODING_INVALID', {
+      reason: 'response bytes are not valid UTF-8',
+    });
+  }
+}
+
+/** A declared charset is accepted only when it is unambiguously UTF-8. */
+function isUtf8ContentType(contentType: string | null): boolean {
+  if (contentType === null) return true;
+  const charsetParameters = contentType
+    .split(';')
+    .slice(1)
+    .map((parameter) => parameter.trim())
+    .filter((parameter) => /^charset\s*=/i.test(parameter));
+  return (
+    charsetParameters.length <= 1 &&
+    charsetParameters.every((parameter) => {
+      const match = parameter.match(/^charset\s*=\s*(?:"([^"]*)"|([^\s;]+))$/i);
+      const charset = match?.[1] ?? match?.[2];
+      return charset?.toLowerCase() === 'utf-8';
+    })
+  );
 }
 
 // ─── Executor Interface ───────────────────────────────────────────────
@@ -239,12 +286,7 @@ export interface ReviewExecutors {
    * @param state - Current session state
    * @param content - Optional external content (text blob, PR diff, branch diff, URL content)
    */
-  analyze?: (
-    state: SessionState,
-    content?: string,
-  ) => Promise<
-    Array<{ severity: 'info' | 'warning' | 'error'; category: string; message: string }>
-  >;
+  analyze?: (state: SessionState, content?: string) => Promise<ReviewReportFinding[]>;
 }
 
 // ─── Review Reference Input ───────────────────────────────────────────
@@ -272,40 +314,37 @@ export interface ReviewReferenceInput {
   readonly resolvedBaseSha?: string;
   /** Worktree directory for git operations (branch reviews only). */
   readonly cwd?: string;
+  /** Repository identity resolved with the immutable branch source. */
+  readonly repository?: { readonly host: string; readonly owner: string; readonly name: string };
+  /** Repository paths requested for a scoped branch or pull-request review. */
+  readonly targetPaths?: readonly string[];
 }
 
 // ─── Mechanical Findings ──────────────────────────────────────
+
+type MechanicalFinding = Extract<ReviewReportFinding, { readonly source: 'mechanical' }>;
 
 function buildMechanicalFindings(
   state: SessionState,
   completeness: ReturnType<typeof evaluateCompleteness>,
   refInput?: ReviewReferenceInput,
-): Array<{ severity: 'info' | 'warning' | 'error'; category: string; message: string }> {
-  const findings: Array<{
-    severity: 'info' | 'warning' | 'error';
-    category: string;
-    message: string;
-  }> = [];
-
-  // F11: the "No ticket evidence" / "No plan evidence" warnings describe the
-  // session LIFECYCLE and are meaningless for a standalone content review of an
-  // external diff/PR/branch/text (refInput is defined only for content reviews;
-  // see buildReviewReferenceInput). Emitting them there contradicted the report's
-  // own completeness projection (0/0 complete, Overall: Complete) and inflated the
-  // finding/warning count. They are lifecycle findings, not completeness evidence
-  // for the reviewed content, so they are suppressed in content-review mode.
+): MechanicalFinding[] {
+  const findings: MechanicalFinding[] = [];
+  // Lifecycle gaps do not describe standalone external content reviews.
   const isContentReview = refInput !== undefined;
   if (!isContentReview) {
     if (!state.ticket) {
       findings.push({
-        severity: 'warning',
+        source: 'mechanical',
+        reportSeverity: 'warning',
         category: 'completeness',
         message: 'No ticket evidence',
       });
     }
     if (!state.plan) {
       findings.push({
-        severity: 'warning',
+        source: 'mechanical',
+        reportSeverity: 'warning',
         category: 'completeness',
         message: 'No plan evidence',
       });
@@ -313,7 +352,8 @@ function buildMechanicalFindings(
   }
   if (state.error) {
     findings.push({
-      severity: 'error',
+      source: 'mechanical',
+      reportSeverity: 'error',
       category: 'error',
       message: `Error: ${state.error.code} — ${state.error.message}`,
     });
@@ -321,38 +361,41 @@ function buildMechanicalFindings(
   if (state.validation.some((v) => !v.passed)) {
     const failed = state.validation.filter((v) => !v.passed).map((v) => v.checkId);
     findings.push({
-      severity: 'error',
+      source: 'mechanical',
+      reportSeverity: 'error',
       category: 'validation',
       message: `Failed checks: ${failed.join(', ')}`,
     });
   }
-
   if (completeness.fourEyes.required && !completeness.fourEyes.satisfied) {
     if (completeness.fourEyes.decidedBy === null) {
       findings.push({
-        severity: 'warning',
+        source: 'mechanical',
+        reportSeverity: 'warning',
         category: 'four-eyes',
         message: 'Four-eyes principle required but no review decision recorded yet',
       });
     } else {
       findings.push({
-        severity: 'error',
+        source: 'mechanical',
+        reportSeverity: 'error',
         category: 'four-eyes',
         message: `Four-eyes principle VIOLATED: initiator (${completeness.fourEyes.initiatedBy}) and reviewer (${completeness.fourEyes.decidedBy}) are the same person`,
       });
     }
   }
-
   for (const slot of completeness.slots) {
     if (slot.status === 'missing') {
       findings.push({
-        severity: 'warning',
+        source: 'mechanical',
+        reportSeverity: 'warning',
         category: 'completeness',
         message: `${slot.label} is missing (required at phase ${state.phase})`,
       });
     } else if (slot.status === 'failed') {
       findings.push({
-        severity: 'error',
+        source: 'mechanical',
+        reportSeverity: 'error',
         category: 'completeness',
         message: `${slot.label} has failed`,
       });
@@ -368,10 +411,20 @@ export async function loadExternalContent(
   refInput: ReviewReferenceInput,
   dnsLookup?: ReviewDnsLookup,
 ): Promise<PrepareReviewResult> {
+  const sources = [refInput.prNumber, refInput.branch, refInput.url, refInput.text].filter(
+    (value) =>
+      (typeof value === 'number' && value > 0) ||
+      (typeof value === 'string' && value.trim().length > 0),
+  );
+  if (sources.length > 1) {
+    return blocked('COMMAND_BLOCKED', {
+      command: '/review',
+      reason:
+        'Review content sources are mutually exclusive; provide exactly one of prNumber, branch, url, or text.',
+    });
+  }
   if (typeof refInput.prNumber === 'number' && refInput.prNumber > 0) {
-    const result = loadPrContent(refInput.prNumber);
-    if ('kind' in result) return result;
-    return { content: result.content, reviewedContentDigest: hashText(result.content) };
+    return loadPullRequestContent(refInput.prNumber, refInput.targetPaths);
   }
   if (typeof refInput.branch === 'string' && refInput.branch.trim().length > 0) {
     return loadBranchContent(refInput);
@@ -379,40 +432,40 @@ export async function loadExternalContent(
   if (typeof refInput.url === 'string' && refInput.url.trim().length > 0) {
     const result = await loadUrlContent(refInput, dnsLookup);
     if ('kind' in result) return result;
-    return { content: result.content, reviewedContentDigest: hashText(result.content) };
+    return preparedContent(result.content, refInput);
   }
   if (refInput.text !== undefined) {
-    return { content: refInput.text, reviewedContentDigest: hashText(refInput.text) };
+    return preparedContent(refInput.text, refInput);
   }
   return null;
 }
-
-function loadContentViaGh(
-  fetcher: () => string,
-  failureReasonPrefix: string,
-): { content: string } | RailBlocked {
-  if (!hasGhCli()) {
-    return blocked('COMMAND_BLOCKED', {
-      command: '/review',
-      reason: 'GitHub CLI (gh) is required. Install: https://cli.github.com/',
-    });
-  }
+function loadPullRequestContent(
+  prNumber: number,
+  targetPaths?: readonly string[],
+): PrepareReviewResult {
   try {
-    return { content: fetcher() };
+    const source = resolvePullRequestReviewSource(prNumber);
+    const diff = loadResolvedPullRequestDiff(source);
+    return prepareResolvedRepositoryContent(
+      diff,
+      {
+        source: { kind: 'pull_request', pullRequestNumber: source.pullRequestNumber },
+        baseRepository: source.baseRepository,
+        headRepository: source.headRepository,
+        baseSha: source.baseSha,
+        headSha: source.headSha,
+      },
+      targetPaths,
+    );
   } catch (err) {
     return blocked('COMMAND_BLOCKED', {
       command: '/review',
-      reason: `${failureReasonPrefix}: ${err instanceof Error ? err.message : String(err)}`,
+      reason: `Failed to load pull-request diff at resolved commits: ${err instanceof Error ? err.message : String(err)}`,
     });
   }
 }
-
-function loadPrContent(prNumber: number): { content: string } | RailBlocked {
-  return loadContentViaGh(() => loadPrDiff(prNumber), `Failed to load PR #${prNumber}`);
-}
-
 function loadBranchContent(refInput: ReviewReferenceInput): PrepareReviewResult {
-  if (!refInput.reviewObligationId || !refInput.resolvedBranchSha || !refInput.resolvedBaseSha) {
+  if (!refInput.resolvedBranchSha || !refInput.resolvedBaseSha || !refInput.repository) {
     return blocked('REVIEW_BRANCH_PROVENANCE_MISSING', {
       command: '/review',
       reason: 'Branch review requires resolved head and base commit provenance.',
@@ -424,7 +477,21 @@ function loadBranchContent(refInput: ReviewReferenceInput): PrepareReviewResult 
       refInput.resolvedBaseSha,
       refInput.cwd,
     );
-    return { content: diff, reviewedContentDigest: hashText(diff) };
+    return prepareResolvedRepositoryContent(
+      diff,
+      {
+        source: {
+          kind: 'branch',
+          branch: refInput.branch!,
+          ...(refInput.baseBranch ? { requestedBase: refInput.baseBranch } : {}),
+        },
+        baseRepository: refInput.repository,
+        headRepository: refInput.repository,
+        baseSha: refInput.resolvedBaseSha,
+        headSha: refInput.resolvedBranchSha,
+      },
+      refInput.targetPaths,
+    );
   } catch (err) {
     return blocked('COMMAND_BLOCKED', {
       command: '/review',
@@ -432,7 +499,40 @@ function loadBranchContent(refInput: ReviewReferenceInput): PrepareReviewResult 
     });
   }
 }
-
+function preparedContent(content: string, refInput: ReviewReferenceInput): PreparedReviewContent {
+  const normalizedContent = normalizeReviewContent(content);
+  const reviewedContentDigest = hashCanonicalReviewContent(normalizedContent);
+  const lineCount = reviewContentLineCount(normalizedContent);
+  const source =
+    typeof refInput.url === 'string'
+      ? {
+          kind: 'url' as const,
+          url: safeUrlMetadata(refInput.url),
+        }
+      : {
+          kind: 'inline' as const,
+          mediaType: refInput.branch ? ('diff' as const) : ('text' as const),
+        };
+  return {
+    content: normalizedContent,
+    reviewedContentDigest,
+    reviewSubject: {
+      kind: 'content',
+      source,
+      materialDigest: reviewedContentDigest,
+      subjectDigest: hashCanonicalContentSubject(reviewedContentDigest),
+      lineCount,
+    },
+  };
+}
+function safeUrlMetadata(url: string): {
+  requested: { origin: string; pathname: string };
+  resolved: { origin: string; pathname: string };
+} {
+  const parsed = new URL(url);
+  const location = { origin: parsed.origin, pathname: parsed.pathname || '/' };
+  return { requested: location, resolved: location };
+}
 async function loadUrlContent(
   refInput: ReviewReferenceInput,
   dnsLookup?: ReviewDnsLookup,
@@ -449,20 +549,18 @@ async function loadUrlContent(
   if ('kind' in fetchResult) return fetchResult;
   return { content: fetchResult.content };
 }
-
 // ─── Build Report ──────────────────────────────────────────
-
 interface BuildReportOptions {
   state: SessionState;
   now: string;
   validationSummary: Array<{ checkId: string; passed: boolean; detail: string }>;
-  findings: Array<{ severity: 'info' | 'warning' | 'error'; category: string; message: string }>;
+  findings: ReviewReportFinding[];
   completeness: ReturnType<typeof evaluateCompleteness>;
   refInput?: ReviewReferenceInput;
+  reviewSubject?: FrozenReviewSubject;
 }
-
 export function buildReviewReport(opts: BuildReportOptions): ReviewReport {
-  const { state, now, validationSummary, findings, completeness, refInput } = opts;
+  const { state, now, validationSummary, findings, completeness, refInput, reviewSubject } = opts;
   const overallStatus = computeOverallStatus(findings);
   const refs = computeRefs(refInput);
   return ReviewReport.parse({
@@ -476,16 +574,16 @@ export function buildReviewReport(opts: BuildReportOptions): ReviewReport {
     findings,
     overallStatus,
     completeness,
+    reviewKind: reviewSubject ? 'content_review' : 'lifecycle_review',
+    ...(reviewSubject && { reviewSubject }),
     ...(refInput?.inputOrigin !== undefined && { inputOrigin: refInput.inputOrigin }),
     ...(refs !== undefined && { references: refs }),
   });
 }
 
-function computeOverallStatus(
-  findings: Array<{ severity: 'info' | 'warning' | 'error'; category: string; message: string }>,
-): 'issues' | 'clean' | 'warnings' {
-  const hasErrors = findings.some((f) => f.severity === 'error');
-  const hasWarnings = findings.some((f) => f.severity === 'warning');
+function computeOverallStatus(findings: ReviewReportFinding[]): 'issues' | 'clean' | 'warnings' {
+  const hasErrors = findings.some((f) => f.reportSeverity === 'error');
+  const hasWarnings = findings.some((f) => f.reportSeverity === 'warning');
   return hasErrors ? 'issues' : hasWarnings ? 'warnings' : 'clean';
 }
 
@@ -518,7 +616,7 @@ export async function executeReview(
   now: string,
   executors?: ReviewExecutors,
   refInput?: ReviewReferenceInput,
-  preloadedContent?: string,
+  preloadedContent?: PreparedReviewContent | string,
 ): Promise<ReviewReport | RailBlocked> {
   const validationSummary = state.validation.map((v) => ({
     checkId: v.checkId,
@@ -527,24 +625,13 @@ export async function executeReview(
   }));
 
   const completeness = evaluateCompleteness(state);
-  const findings = buildMechanicalFindings(state, completeness, refInput);
+  const content = await resolveReviewContent(preloadedContent, refInput, executors?.dnsLookup);
+  if ('kind' in content) return content;
 
-  let externalContent: string | undefined;
-  if (preloadedContent !== undefined) {
-    externalContent = preloadedContent || undefined;
-  } else if (refInput && !refInput.skipExternalContentLoad) {
-    const result = await loadExternalContent(refInput, executors?.dnsLookup);
-    if (result === null) {
-      // No external content to load
-    } else if ('kind' in result) {
-      return result; // RailBlocked
-    } else {
-      externalContent = result.content || undefined;
-    }
-  }
+  const findings: ReviewReportFinding[] = buildMechanicalFindings(state, completeness, refInput);
 
   if (executors?.analyze) {
-    const llmFindings = await executors.analyze(state, externalContent);
+    const llmFindings = await executors.analyze(state, content.externalContent);
     findings.push(...llmFindings);
   }
 
@@ -555,7 +642,39 @@ export async function executeReview(
     findings,
     completeness,
     refInput,
+    reviewSubject: content.reviewSubject,
   });
+}
+
+async function resolveReviewContent(
+  preloadedContent: PreparedReviewContent | string | undefined,
+  refInput: ReviewReferenceInput | undefined,
+  dnsLookup: ReviewDnsLookup | undefined,
+): Promise<
+  | { externalContent: string | undefined; reviewSubject: FrozenReviewSubject | undefined }
+  | RailBlocked
+> {
+  if (preloadedContent !== undefined) {
+    if (typeof preloadedContent === 'string') {
+      return {
+        externalContent: preloadedContent || undefined,
+        reviewSubject: refInput
+          ? preparedContent(preloadedContent, refInput).reviewSubject
+          : undefined,
+      };
+    }
+    return {
+      externalContent: preloadedContent.content || undefined,
+      reviewSubject: preloadedContent.reviewSubject,
+    };
+  }
+  if (!refInput || refInput.skipExternalContentLoad) {
+    return { externalContent: undefined, reviewSubject: undefined };
+  }
+  const result = await loadExternalContent(refInput, dnsLookup);
+  if (result === null) return { externalContent: undefined, reviewSubject: undefined };
+  if ('kind' in result) return result;
+  return { externalContent: result.content || undefined, reviewSubject: result.reviewSubject };
 }
 
 // ─── Review Flow Rail ─────────────────────────────────────────────────

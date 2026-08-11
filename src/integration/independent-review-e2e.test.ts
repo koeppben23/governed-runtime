@@ -28,19 +28,28 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 vi.mock('../adapters/gh-cli', () => ({
-  loadPrDiff: vi.fn().mockReturnValue('diff --git a/src/x.java b/src/x.java\n+pr line'),
-  loadBranchDiff: vi
+  loadPrDiff: vi.fn().mockReturnValue('diff --git a/docs/test.md b/docs/test.md\n+pr line'),
+  resolvePullRequestReviewSource: vi.fn().mockImplementation((pullRequestNumber: number) => ({
+    pullRequestNumber,
+    baseRepository: { host: 'github.com', owner: 'flowguard', name: 'governed-runtime' },
+    headRepository: { host: 'github.com', owner: 'flowguard', name: 'governed-runtime' },
+    baseSha: 'b'.repeat(40),
+    headSha: 'a'.repeat(40),
+  })),
+  loadResolvedPullRequestDiff: vi
     .fn()
-    .mockReturnValue('diff --git a/src/x.java b/src/x.java\n+branch line for review'),
+    .mockReturnValue('diff --git a/docs/test.md b/docs/test.md\n+pr line'),
+  loadBranchDiff: vi.fn().mockReturnValue('diff --git a/docs/test.md b/docs/test.md\n+branch line'),
   resolveBranchReviewSource: vi.fn().mockImplementation((branch: string) => ({
     branch,
     baseBranch: 'main',
     resolvedBranchSha: 'a'.repeat(40),
     resolvedBaseSha: 'b'.repeat(40),
+    repository: { host: 'github.com', owner: 'flowguard', name: 'governed-runtime' },
   })),
   loadResolvedBranchDiff: vi
     .fn()
-    .mockReturnValue('diff --git a/src/x.java b/src/x.java\n+resolved line'),
+    .mockReturnValue('diff --git a/docs/test.md b/docs/test.md\n+resolved line'),
   loadBranchChangedFiles: vi.fn().mockReturnValue(['docs/test.md']),
 }));
 import { FlowGuardAuditPlugin } from './plugin.js';
@@ -465,10 +474,26 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
       ),
       'bindable attempt persisted by Call 1',
     ).toHaveLength(1);
+    const initialAttempt = (afterCall1?.reviewAssurance?.attempts ?? [])[0];
+    expect(initialAttempt?.reviewMaterial).toEqual({
+      content: expect.any(String),
+      materialDigest: expect.any(String),
+    });
     const pendingAfterCall1 = (afterCall1?.reviewAssurance?.obligations ?? []).filter(
       (o) => o.obligationType === 'review' && o.status === 'pending',
     );
     expect(pendingAfterCall1.length, 'pending review obligation after Call 1').toBe(1);
+    const pendingObligation = pendingAfterCall1[0];
+    const reviewSubject = pendingObligation?.reviewSubject;
+    expect(pendingObligation?.subjectDigest).toBe(reviewSubject?.subjectDigest);
+    expect(reviewSubject?.kind).toBe('repository_change');
+    if (reviewSubject?.kind === 'repository_change') {
+      expect(pendingObligation?.reviewSubjectScope).toMatchObject({
+        kind: 'repository_change',
+        paths: reviewSubject.changedPaths,
+      });
+    }
+    expect(initialAttempt?.reviewMaterial?.materialDigest).toBe(reviewSubject?.materialDigest);
     await writeState(sessDir, {
       ...afterCall1!,
       reviewAssurance: {
@@ -759,14 +784,22 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
       (item) => item.obligationId === obligationId,
     );
     expect(obligation?.status).toBe('consumed');
-    expect(obligation?.metadata).toMatchObject({
-      resolvedBranchSha: 'a'.repeat(40),
-      resolvedBaseSha: 'b'.repeat(40),
+    expect(obligation?.reviewSubject).toMatchObject({
+      kind: 'repository_change',
+      baseRepository: { host: 'github.com', owner: 'flowguard', name: 'governed-runtime' },
+      headRepository: { host: 'github.com', owner: 'flowguard', name: 'governed-runtime' },
+      baseSha: 'b'.repeat(40),
+      headSha: 'a'.repeat(40),
     });
-    expect(consumed?.proofGraph?.claims).toHaveLength(initialHypothesisCount);
+    expect(obligation?.subjectDigest).toBe(obligation?.reviewSubject?.subjectDigest);
+    // The completed immutable subject contributes one material-bound claim for
+    // each path in the resolved diff; retries themselves must not duplicate them.
+    expect(consumed?.proofGraph?.claims).toHaveLength(initialHypothesisCount + 3);
+    // The rejected reviewer attempt and its retry each retain their prepared
+    // immutable material for auditability.
     expect(
       (consumed?.standaloneReviewEvidence ?? []).filter((entry) => entry.kind === 'prepared'),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
     expect(consumedInvocation?.consumedByObligationId).toBe(obligationId);
     expect(consumed?.standaloneReviewEvidence.at(-1)).toMatchObject({
       kind: 'completed',

@@ -29,6 +29,7 @@ import {
   classifyRepositoryPath,
   RepositoryLocation,
   ReviewSubjectScope,
+  FrozenReviewSubject,
 } from './evidence-review.js';
 import { FIXED_TIME, FIXED_UUID } from './evidence-test-constants.js';
 
@@ -208,6 +209,41 @@ describe('evidence-review', () => {
       ).toBeDefined();
     });
 
+    it('parses strict frozen repository and content subjects', () => {
+      const repository = {
+        kind: 'repository_change' as const,
+        source: { kind: 'branch' as const, branch: 'main' },
+        baseRepository: { host: 'github.com', owner: 'flowguard', name: 'core' },
+        baseSha: 'a'.repeat(40),
+        headSha: 'b'.repeat(40),
+        changedPaths: ['src/auth.ts'],
+        materialDigest: 'a'.repeat(64),
+        subjectDigest: 'b'.repeat(64),
+      };
+      const parsedRepository = FrozenReviewSubject.parse(repository);
+      expect(parsedRepository.kind).toBe('repository_change');
+      if (parsedRepository.kind === 'repository_change') {
+        expect(parsedRepository.changedPaths).toEqual(['src/auth.ts']);
+      }
+      const content = {
+        kind: 'content' as const,
+        source: { kind: 'inline' as const, mediaType: 'text' as const },
+        materialDigest: 'd'.repeat(64),
+        subjectDigest: 'c'.repeat(64),
+        lineCount: 4,
+      };
+      expect(FrozenReviewSubject.parse(content)).toEqual(content);
+      expect(
+        ReviewSubjectScope.parse({ kind: 'content', subjectDigest: 'c'.repeat(64), lineCount: 4 }),
+      ).toEqual({ kind: 'content', subjectDigest: 'c'.repeat(64), lineCount: 4 });
+      expect(
+        FrozenReviewSubject.safeParse({
+          ...content,
+          source: { kind: 'inline', mediaType: 'invalid' },
+        }).success,
+      ).toBe(false);
+    });
+
     it('ReviewActorInfo parses minimal actor info', () => {
       const actor = { sessionId: 'ses_test' };
       expect(ReviewActorInfo.parse(actor)).toEqual(actor);
@@ -326,7 +362,7 @@ describe('evidence-review', () => {
       const obligation = {
         obligationId: FIXED_UUID,
         obligationType: 'plan' as const,
-        subjectDigest: 'sha256-subject',
+        subjectDigest: 'a'.repeat(64),
         iteration: 0,
         planVersion: 1,
         criteriaVersion: 'v1',
@@ -414,6 +450,7 @@ describe('evidence-review', () => {
   describe('Review report (HAPPY)', () => {
     it('ReviewReport parses clean report', () => {
       const report = {
+        reviewKind: 'lifecycle_review' as const,
         schemaVersion: 'flowguard-review-report.v1' as const,
         sessionId: FIXED_UUID,
         generatedAt: FIXED_TIME,
@@ -440,6 +477,45 @@ describe('evidence-review', () => {
         },
       };
       expect(ReviewReport.parse(report)).toEqual(report);
+    });
+
+    it('ReviewReport parses a strict content review report', () => {
+      const report = {
+        reviewKind: 'content_review' as const,
+        schemaVersion: 'flowguard-review-report.v1' as const,
+        sessionId: FIXED_UUID,
+        generatedAt: FIXED_TIME,
+        phase: 'REVIEW_COMPLETE',
+        planDigest: null,
+        implDigest: null,
+        validationSummary: [],
+        findings: [],
+        overallStatus: 'clean' as const,
+        completeness: {
+          sessionId: FIXED_UUID,
+          phase: 'REVIEW_COMPLETE',
+          policyMode: 'team',
+          overallComplete: true,
+          slots: [],
+          fourEyes: {
+            required: false,
+            satisfied: true,
+            initiatedBy: 'test',
+            decidedBy: null,
+            detail: 'N/A',
+          },
+          summary: { total: 0, complete: 0, missing: 0, notYetRequired: 0, failed: 0 },
+        },
+        reviewSubject: {
+          kind: 'content' as const,
+          source: { kind: 'inline' as const, mediaType: 'text' as const },
+          materialDigest: 'b'.repeat(64),
+          subjectDigest: 'a'.repeat(64),
+          lineCount: 1,
+        },
+      };
+      expect(ReviewReport.parse(report)).toEqual(report);
+      expect(ReviewReport.safeParse({ ...report, unexpected: true }).success).toBe(false);
     });
   });
 
@@ -472,6 +548,7 @@ describe('evidence-review', () => {
     it('ReviewReport rejects invalid overallStatus', () => {
       expect(() =>
         ReviewReport.parse({
+          reviewKind: 'lifecycle_review',
           schemaVersion: 'flowguard-review-report.v1',
           sessionId: FIXED_UUID,
           generatedAt: FIXED_TIME,
@@ -563,7 +640,7 @@ describe('evidence-review', () => {
       const obligation = {
         obligationId: FIXED_UUID,
         obligationType: 'review' as const,
-        subjectDigest: 'sha256-subject',
+        subjectDigest: 'a'.repeat(64),
         iteration: 0,
         planVersion: 1,
         criteriaVersion: 'v1',
@@ -576,9 +653,16 @@ describe('evidence-review', () => {
         fulfilledAt: null,
         consumedAt: null,
         reviewSubjectScope: {
-          kind: 'repository_change' as const,
-          paths: ['src/auth.ts'],
-          revisions: ['base', 'head'],
+          kind: 'content' as const,
+          subjectDigest: 'a'.repeat(64),
+          lineCount: 1,
+        },
+        reviewSubject: {
+          kind: 'content' as const,
+          source: { kind: 'inline' as const, mediaType: 'text' as const },
+          materialDigest: 'a'.repeat(64),
+          subjectDigest: 'a'.repeat(64),
+          lineCount: 1,
         },
         metadata: { inputFingerprint: 'abc', customField: 42 },
       };
@@ -608,6 +692,43 @@ describe('evidence-review', () => {
       const result = ReviewObligation.safeParse(withoutSubject);
       expect(result.success).toBe(false);
       expect(result.error?.issues.map((issue) => issue.path.join('.'))).toContain('subjectDigest');
+    });
+
+    it('requires a frozen subject and matching subjectDigest for standalone reviews', () => {
+      const base = {
+        obligationId: FIXED_UUID,
+        obligationType: 'review' as const,
+        subjectDigest: 'a'.repeat(64),
+        iteration: 0,
+        planVersion: 1,
+        criteriaVersion: 'v1',
+        mandateDigest: 'sha256-mandate',
+        createdAt: FIXED_TIME,
+        pluginHandshakeAt: null,
+        status: 'pending' as const,
+        invocationId: null,
+        blockedCode: null,
+        fulfilledAt: null,
+        consumedAt: null,
+        reviewSubjectScope: {
+          kind: 'content' as const,
+          subjectDigest: 'a'.repeat(64),
+          lineCount: 1,
+        },
+      };
+      expect(ReviewObligation.safeParse(base).success).toBe(false);
+      expect(
+        ReviewObligation.safeParse({
+          ...base,
+          reviewSubject: {
+            kind: 'content' as const,
+            source: { kind: 'inline' as const, mediaType: 'text' as const },
+            materialDigest: 'b'.repeat(64),
+            subjectDigest: 'c'.repeat(64),
+            lineCount: 1,
+          },
+        }).success,
+      ).toBe(false);
     });
   });
 

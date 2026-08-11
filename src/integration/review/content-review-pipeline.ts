@@ -2,7 +2,7 @@
  * @module integration/review/content-review-pipeline
  * @description Content review pipeline for flowguard_review tool invocations.
  *
- * Loads external content, builds a review prompt, invokes the reviewer
+ * Resolves persisted review material, builds a review prompt, invokes the reviewer
  * subagent, validates findings, and enforces strict gates.
  */
 
@@ -10,13 +10,14 @@ import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js'
 import { buildReviewContentPrompt, selectReviewerProfileRules } from './prompt-builders.js';
 import { buildReviewContentMutatedOutput, type ReviewerSuccessResult } from './orchestrator.js';
 import { strictBlockedOutput } from '../plugin-helpers.js';
-import { loadExternalContent } from '../../rails/review.js';
 import { TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
 import { REASON_HOST_SUBAGENT_TASK_REQUIRED } from '../../shared/flowguard-identifiers.js';
 import {
   hashText,
   hashFindings,
   ensureReviewAssurance,
+  findReviewObligationById,
+  findBindableAttempt,
   hasEvidenceReuse,
   buildInvocationEvidence,
   appendInvocationEvidence,
@@ -33,6 +34,10 @@ import {
   buildAttemptSucceededLogger,
   buildReviewDiscoveryContextForPipeline,
 } from './shared-helpers.js';
+import {
+  verifyFrozenReviewerContext,
+  type FrozenReviewerContext,
+} from './frozen-reviewer-context.js';
 
 // ─── Review Content Pipeline ─────────────────────────────────────────────────
 
@@ -40,28 +45,32 @@ function countFindings(findings: unknown): number {
   return Array.isArray(findings) ? findings.length : Object.keys(findings ?? {}).length;
 }
 
-async function loadContentForReview(
+async function loadPersistedContentForReview(
   ctx: PipelineContext,
-  input: unknown,
-  strictEnforcement: boolean,
-): Promise<string | null> {
+): Promise<{ content: string; frozenReviewerContext: FrozenReviewerContext } | null> {
   const { deps, reviewCtx } = ctx;
-  const refInput = extractContentRefInput(input);
-  const contentResult = await loadExternalContent(refInput);
-  const hasContent =
-    contentResult !== null &&
-    !('kind' in contentResult) &&
-    typeof contentResult.content === 'string';
-  if (!hasContent) {
-    if (strictEnforcement) {
-      await blockReviewOutcomeHelper(deps, ctx, 'STRICT_REVIEW_ORCHESTRATION_FAILED', {
-        obligationId: reviewCtx.obligationId,
-        reason: 'external review content could not be loaded',
-      });
-    }
+  const obligation = findReviewObligationById(
+    ensureReviewAssurance(ctx.sessionState.reviewAssurance),
+    reviewCtx.obligationId,
+  );
+  const attempt = findBindableAttempt(ctx.sessionState.reviewAssurance, reviewCtx.obligationId);
+  const material = attempt?.reviewMaterial;
+  if (!attempt || !material || attempt.subjectDigest !== obligation?.subjectDigest) {
+    await blockReviewOutcomeHelper(deps, ctx, 'REVIEW_MATERIAL_INTEGRITY_FAILED', {
+      obligationId: reviewCtx.obligationId,
+      reason: 'bindable attempt is missing or does not match the frozen obligation subject',
+    });
     return null;
   }
-  return contentResult.content;
+  const verification = verifyFrozenReviewerContext(obligation, material);
+  if (verification.kind === 'blocked') {
+    await blockReviewOutcomeHelper(deps, ctx, verification.code, {
+      obligationId: reviewCtx.obligationId,
+      reason: verification.reason,
+    });
+    return null;
+  }
+  return { content: material.content, frozenReviewerContext: verification.context };
 }
 
 async function validateContentFindings(
@@ -106,16 +115,13 @@ async function validateContentFindings(
   return true;
 }
 
-export async function runReviewContentPipeline(
-  ctx: PipelineContext,
-  input: unknown,
-): Promise<void> {
+export async function runReviewContentPipeline(ctx: PipelineContext): Promise<void> {
   const { deps, sessionState, reviewCtx, output, sessionId } = ctx;
   deps.log.info('review', 'content_review_started', { sessionId });
   const strictEnforcement = isStrictEnforcementEnabled(sessionState);
 
-  const content = await loadContentForReview(ctx, input, strictEnforcement);
-  if (!content) return;
+  const persistedContent = await loadPersistedContentForReview(ctx);
+  if (!persistedContent) return;
 
   const { profileName, profileRules } = selectReviewerProfileRules(
     sessionState.activeProfile,
@@ -124,7 +130,7 @@ export async function runReviewContentPipeline(
   const ticketText = sessionState.ticket?.text ?? '';
   const discoveryContext = await buildReviewDiscoveryContextForPipeline(ctx);
   const prompt = buildReviewContentPrompt({
-    content,
+    content: persistedContent.content,
     ticketText,
     obligationId: reviewCtx.obligationId,
     mandateDigest: reviewCtx.mandateDigest,
@@ -135,6 +141,7 @@ export async function runReviewContentPipeline(
     profileRules,
     discoveryContext,
     proofGraph: sessionState.proofGraph,
+    frozenReviewerContext: persistedContent.frozenReviewerContext,
   });
 
   const policies = getReviewerPolicies(sessionState);
@@ -173,25 +180,6 @@ export async function runReviewContentPipeline(
     sessionId,
     findingCount: countFindings(reviewerResult.findings),
   });
-}
-
-function extractContentRefInput(input: unknown): {
-  text?: string;
-  prNumber?: number;
-  branch?: string;
-  url?: string;
-} {
-  const wrappedArgs = (input as { args?: unknown })?.args;
-  const rawInput =
-    wrappedArgs && typeof wrappedArgs === 'object' && !Array.isArray(wrappedArgs)
-      ? (wrappedArgs as Record<string, unknown>)
-      : (input as Record<string, unknown>);
-  return {
-    text: typeof rawInput.text === 'string' ? rawInput.text : undefined,
-    prNumber: typeof rawInput.prNumber === 'number' ? rawInput.prNumber : undefined,
-    branch: typeof rawInput.branch === 'string' ? rawInput.branch : undefined,
-    url: typeof rawInput.url === 'string' ? rawInput.url : undefined,
-  };
 }
 
 async function enforceContentStrictGate(

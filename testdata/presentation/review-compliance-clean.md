@@ -2,7 +2,6 @@
 
 **Status:** Review complete
 **Overall:** clean
-**Input:** manual_text
 
 ## Verification
 

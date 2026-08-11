@@ -6,8 +6,9 @@
  */
 
 import type { startReviewFlow, executeReview } from '../../../rails/review.js';
+import type { RailBlocked } from '../../../rails/types.js';
 import type { ReviewReferenceInput } from '../../../rails/review.js';
-import type { ReviewObligation } from '../../../state/evidence.js';
+import type { FrozenReviewSubject, ReviewObligation } from '../../../state/evidence.js';
 import type { ReviewFindings } from '../../../state/evidence.js';
 import type { ReviewAssuranceState } from '../../../state/evidence-review.js';
 import type { ToolContext } from '../helpers.js';
@@ -50,12 +51,11 @@ export type ReviewPreparation = {
   effectiveReviewFindings?: ReviewFindings;
   evidenceInvocationId?: string;
   nativeAttestationRejection?: NativeAttestationRejection;
+  materializedContent?: import('../../../rails/review.js').PreparedReviewContent | null;
+  reviewSubject?: FrozenReviewSubject;
 };
 
-export type ReviewReportResult = Exclude<
-  Awaited<ReturnType<typeof executeReview>>,
-  { kind: 'blocked' }
->;
+export type ReviewReportResult = Exclude<Awaited<ReturnType<typeof executeReview>>, RailBlocked>;
 
 export type ReviewToolArgs = {
   inputOrigin?: ReviewReferenceInput['inputOrigin'];

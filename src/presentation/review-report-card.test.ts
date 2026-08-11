@@ -8,6 +8,7 @@ import {
   type ReviewReportCardInput,
 } from './review-report-card.js';
 import type { CompactProofPresentation } from './proof-model.js';
+import type { ReviewReportFinding } from '../state/evidence.js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
@@ -20,12 +21,7 @@ const baseInput = {
   phase: 'REVIEW_COMPLETE' as const,
   phaseLabel: 'Review complete',
   overallStatus: 'clean' as const,
-  findings: [] as Array<{
-    severity: string;
-    category: string;
-    message: string;
-    relation?: import('./model.js').FindingRelationPresentation;
-  }>,
+  findings: [] as ReviewReportFinding[],
   completeness: {
     overallComplete: true,
     fourEyes: false,
@@ -66,6 +62,19 @@ const relation = {
     },
   ],
 } satisfies import('./model.js').FindingRelationPresentation;
+
+function materialFinding(
+  reportSeverity: 'info' | 'warning' | 'error',
+  severity: 'critical' | 'major' | 'minor',
+  category: 'completeness' | 'correctness' | 'feasibility' | 'risk' | 'quality',
+  message: string,
+): ReviewReportFinding {
+  return {
+    source: 'material_finding',
+    reportSeverity,
+    finding: { severity, category, message, relation },
+  };
+}
 function buildReviewReportCard(
   input: Omit<ReviewReportCardInput, 'proofSummary' | 'productNextAction' | 'conclusionAction'> &
     Partial<Pick<ReviewReportCardInput, 'proofSummary' | 'productNextAction' | 'conclusionAction'>>,
@@ -82,27 +91,64 @@ describe('buildReviewReportCard', () => {
     expect(buildReviewReportCard(baseInput, { glyphProfile: 'ascii' })).toContain('[NEXT]');
   });
 
-  it('renders header with status and input origin', () => {
+  it('renders header with status and the frozen reviewed subject', () => {
     const card = buildReviewReportCard({
       ...baseInput,
-      inputOrigin: 'pr',
+      reviewSubject: {
+        kind: 'repository_change',
+        source: { kind: 'pull_request', pullRequestNumber: 42 },
+        baseRepository: { host: 'github.com', owner: 'owner', name: 'repo' },
+        headRepository: { host: 'github.com', owner: 'owner', name: 'repo' },
+        baseSha: 'a'.repeat(40),
+        headSha: 'b'.repeat(40),
+        changedPaths: ['src/review.ts'],
+        materialDigest: 'c'.repeat(64),
+        subjectDigest: 'd'.repeat(64),
+      },
     });
     expect(card).toContain('# FlowGuard Review Report');
     expect(card).toContain('**Status:** Review complete');
-    expect(card).toContain('**Input:** pr');
+    expect(card).toContain('**Reviewed subject:** Pull request #42 (1 changed paths)');
   });
 
-  it('renders references with fallback formatting', () => {
+  it('renders content subject sources without exposing raw reference input', () => {
     const card = buildReviewReportCard({
       ...baseInput,
-      references: [
-        { ref: 'https://github.com/owner/repo/pull/42', type: 'pr' },
-        { ref: '' } as never,
-        { title: 'JIRA-456' } as never,
-      ],
+      reviewSubject: {
+        kind: 'content',
+        source: {
+          kind: 'url',
+          url: {
+            requested: { origin: 'https://input.example', pathname: '/raw' },
+            resolved: { origin: 'https://review.example', pathname: '/safe_path' },
+          },
+        },
+        materialDigest: 'a'.repeat(64),
+        subjectDigest: 'b'.repeat(64),
+        lineCount: 12,
+      },
     });
-    expect(card).toContain('pr: https://github.com/owner/repo/pull/42');
-    expect(card).toContain('JIRA-456');
+    expect(card).toContain(
+      '**Reviewed subject:** URL https://review\\.example/safe\\_path (12 lines)',
+    );
+    expect(card).not.toContain('input.example');
+  });
+
+  it('escapes branch source text before rendering it in Markdown', () => {
+    const card = buildReviewReportCard({
+      ...baseInput,
+      reviewSubject: {
+        kind: 'repository_change',
+        source: { kind: 'branch', branch: 'feature/[unsafe](branch)' },
+        baseRepository: { host: 'github.com', owner: 'owner', name: 'repo' },
+        baseSha: 'a'.repeat(40),
+        headSha: 'b'.repeat(40),
+        changedPaths: ['src/review.ts'],
+        materialDigest: 'c'.repeat(64),
+        subjectDigest: 'd'.repeat(64),
+      },
+    });
+    expect(card).toContain('Branch feature/\\[unsafe\\]\\(branch\\)');
   });
 
   it('renders all finding groups sorted by severity', () => {
@@ -110,30 +156,19 @@ describe('buildReviewReportCard', () => {
       ...baseInput,
       overallStatus: 'issues',
       findings: [
+        materialFinding('error', 'critical', 'risk', 'SQL injection vulnerability'),
+        materialFinding('error', 'major', 'correctness', 'Logic error in token refresh'),
+        materialFinding('warning', 'minor', 'quality', 'Unused import'),
         {
-          severity: 'critical',
-          category: 'risk',
-          message: 'SQL injection vulnerability',
-          relation,
-        },
-        {
-          severity: 'major',
-          category: 'correctness',
-          message: 'Logic error in token refresh',
-          relation,
-        },
-        { severity: 'warning', category: 'quality', message: 'Unused import', relation },
-        {
-          severity: 'info',
+          source: 'unknown',
+          reportSeverity: 'info',
           category: 'unknown',
           message: 'Load test results unavailable',
-          relation,
         },
       ],
     });
-    expect(card).toContain('### Critical (1)');
+    expect(card).toContain('### Issues (2)');
     expect(card).toContain('SQL injection vulnerability');
-    expect(card).toContain('### Major (1)');
     expect(card).toContain('Logic error in token refresh');
     expect(card).toContain('### Warnings (1)');
     expect(card).toContain('### Notes (1)');
@@ -186,7 +221,7 @@ describe('buildReviewReportCard', () => {
   it('shows action follow-up when critical/major findings present', () => {
     const card = buildReviewReportCard({
       ...baseInput,
-      findings: [{ severity: 'critical', category: 'risk', message: 'SQL injection', relation }],
+      findings: [materialFinding('error', 'critical', 'risk', 'SQL injection')],
     });
     expect(card).toContain('Address critical and major findings');
     expect(card).not.toContain('No follow-up required');
@@ -208,7 +243,6 @@ describe('implementation review golden fixtures', () => {
         total: 6,
         summary: '6/6 complete, 0 missing',
       },
-      inputOrigin: 'pr',
     });
     expect(card).toBe(await readGolden('review-impl-accepted.md'));
   });
@@ -219,18 +253,8 @@ describe('implementation review golden fixtures', () => {
       phaseLabel: 'Implementation review in progress',
       overallStatus: 'issues',
       findings: [
-        {
-          severity: 'critical',
-          category: 'correctness',
-          message: 'Missing null check',
-          relation,
-        },
-        {
-          severity: 'major',
-          category: 'quality',
-          message: 'Missing test coverage',
-          relation,
-        },
+        materialFinding('error', 'critical', 'correctness', 'Missing null check'),
+        materialFinding('error', 'major', 'quality', 'Missing test coverage'),
       ],
       completeness: {
         overallComplete: false,
@@ -238,7 +262,6 @@ describe('implementation review golden fixtures', () => {
         total: 6,
         summary: '4/6 complete, 2 missing',
       },
-      inputOrigin: 'pr',
     });
     expect(card).toBe(await readGolden('review-impl-changes-requested.md'));
   });
@@ -257,7 +280,6 @@ describe('compliance review golden fixtures', () => {
         total: 3,
         summary: '3/3 complete, 0 missing',
       },
-      inputOrigin: 'manual_text',
       obligationId: 'oblig-001',
       invocationSource: 'host-orchestrated',
     });
@@ -270,24 +292,9 @@ describe('compliance review golden fixtures', () => {
       phaseLabel: 'Review complete',
       overallStatus: 'issues',
       findings: [
-        {
-          severity: 'critical',
-          category: 'completeness',
-          message: 'Missing evidence',
-          relation,
-        },
-        {
-          severity: 'major',
-          category: 'risk',
-          message: 'Untracked dependency',
-          relation,
-        },
-        {
-          severity: 'warning',
-          category: 'quality',
-          message: 'Missing changelog entry',
-          relation,
-        },
+        materialFinding('error', 'critical', 'completeness', 'Missing evidence'),
+        materialFinding('error', 'major', 'risk', 'Untracked dependency'),
+        materialFinding('warning', 'minor', 'quality', 'Missing changelog entry'),
       ],
       completeness: {
         overallComplete: false,
@@ -295,7 +302,6 @@ describe('compliance review golden fixtures', () => {
         total: 3,
         summary: '1/3 complete, 2 missing',
       },
-      inputOrigin: 'branch',
       invocationSource: 'agent-submitted-attested',
       obligationId: 'oblig-002',
     });

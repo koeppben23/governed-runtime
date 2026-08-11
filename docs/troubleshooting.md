@@ -215,6 +215,7 @@ real, registered reason.
 | `REVIEW_EVIDENCE_LOCATION_INVALID`            | Finding evidence location is not a valid repository location                  | Use repository-relative evidence paths at the frozen base or head revision                                           |
 | `REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE`  | Reviewer finding does not intersect the frozen reviewed subject               | Anchor the finding to the reviewed change or artifact section                                                        |
 | `REVIEW_REPOSITORY_REVISION_UNAVAILABLE`      | Finding cites a repository revision unavailable to the reviewed subject       | Use only the frozen base or head revision                                                                            |
+| `REVIEW_SUBJECT_NOT_MATERIALIZED`             | Standalone review source could not be frozen into immutable material          | Resolve exactly one review source before creating or continuing the obligation                                       |
 | `REVIEW_SUBJECT_SCOPE_UNAVAILABLE`            | Review obligation has no verifiable frozen subject scope                      | Re-run the review after subject scope resolution succeeds                                                            |
 | `REVIEW_OBLIGATION_NOT_FOUND`                 | Review continuation ID is missing, consumed, blocked, or mismatched           | Use the ID from the original `CONTENT_ANALYSIS_REQUIRED` response; otherwise start a fresh `/review`                 |
 | `REVIEW_OBLIGATION_ID_REQUIRED`               | Host-task review verdict was submitted without its obligation ID              | Submit the original content, `reviewObligationId`, and the captured reviewer verdict together                        |
@@ -223,6 +224,7 @@ real, registered reason.
 | `REVIEW_CONTENT_SOURCE_INCOMPLETE`            | `inputOrigin` or `references` declared but no concrete content field provided | Provide `branch=<ref>`, `prNumber=<n>`, `url=<url>`, or non-empty `text`                                             |
 | `REVIEW_SELF_APPROVAL_DENIED`                 | Manual-attested findings came from the governed parent session                | Invoke `flowguard-reviewer` in a distinct session                                                                    |
 | `REVIEW_TRANSPORT_EVIDENCE_INVALID`           | External review-evidence transport JSON is malformed or unbindable            | Regenerate evidence with valid obligation-bound `ReviewFindings`                                                     |
+| `REVIEW_URL_CONTENT_ENCODING_INVALID`         | URL review content is malformed or not strict UTF-8                           | Serve valid UTF-8 content or provide the review content directly                                                     |
 | `REVIEW_ASSURANCE_STATE_UNAVAILABLE`          | Strict review assurance state cannot be read                                  | Re-hydrate; if persistent, restore from archive                                                                      |
 | `REVIEW_ATTEMPT_ID_MISSING`                   | Invocation lacks a persisted attemptId (legacy data)                          | Re-invoke the reviewer subagent for a fresh attempt                                                                  |
 | `REVIEW_ATTEMPT_LINEAGE_UNAVAILABLE`          | Invocation has no attempt lineage; cannot determine which attempt to reject   | Re-invoke the reviewer; the stale invocation is retained for audit                                                   |
@@ -439,6 +441,7 @@ REVIEW_FINDINGS_HASH_MISMATCH
 REVIEW_FINDINGS_REQUIRED
 REVIEW_FINDINGS_SESSION_MISMATCH
 REVIEW_ITERATION_MISMATCH
+REVIEW_MATERIAL_INTEGRITY_FAILED
 REVIEW_MODE_SELF_NOT_ALLOWED
 REVIEW_OBLIGATION_AMBIGUOUS
 REVIEW_OBLIGATION_ID_REQUIRED
@@ -448,8 +451,10 @@ REVIEW_OBLIGATION_UNRESOLVED
 REVIEW_PLAN_VERSION_MISMATCH
 REVIEW_REPOSITORY_REVISION_UNAVAILABLE
 REVIEW_SELF_APPROVAL_DENIED
+REVIEW_SUBJECT_NOT_MATERIALIZED
 REVIEW_SUBJECT_SCOPE_UNAVAILABLE
 REVIEW_TRANSPORT_EVIDENCE_INVALID
+REVIEW_URL_CONTENT_ENCODING_INVALID
 REVIEWER_INVOCATION_EXHAUSTED
 REVIEWER_TASK_REQUIRES_PENDING_OBLIGATION
 REVIEWER_UNAVAILABLE_STRICT

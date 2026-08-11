@@ -10,8 +10,13 @@
 import { hashTextShort } from '../../../shared/hashing.js';
 
 import type { SessionState } from '../../../state/schema.js';
-import type { ReviewObligation } from '../../../state/evidence.js';
+import type {
+  ReviewFindings,
+  ReviewObligation,
+  ReviewReportFinding,
+} from '../../../state/evidence.js';
 import type { ReviewExecutors } from '../../../rails/review.js';
+import { ReviewReport } from '../../../state/evidence.js';
 import { autoAdvance, createPolicyEvalFn } from '../../../rails/types.js';
 import type { AutoAdvanceOverflow } from '../../../rails/types.js';
 import {
@@ -76,15 +81,15 @@ const CHALLENGE_OUTCOME_SEVERITY: Record<string, 'info' | 'warning' | 'error'> =
  * author never saw them.
  */
 function challengeFindings(
-  reviewFindings: Record<string, unknown>,
-): Array<Record<string, unknown>> {
+  reviewFindings: Pick<ReviewFindings, 'challenges'>,
+): ReviewReportFinding[] {
   const challenges = reviewFindings.challenges;
   if (!Array.isArray(challenges)) return [];
   return challenges.flatMap((entry) => challengeFinding(entry));
 }
 
 /** Project one challenge, or nothing when it lacks the fields a reader needs. */
-function challengeFinding(entry: unknown): Array<Record<string, unknown>> {
+function challengeFinding(entry: unknown): ReviewReportFinding[] {
   if (typeof entry !== 'object' || entry === null) return [];
   const challenge = entry as Record<string, unknown>;
   const outcome = stringField(challenge.outcome);
@@ -94,7 +99,8 @@ function challengeFinding(entry: unknown): Array<Record<string, unknown>> {
   const location = challengeLocation(challenge.locations);
   return [
     {
-      severity: CHALLENGE_OUTCOME_SEVERITY[outcome] ?? 'warning',
+      source: 'challenge',
+      reportSeverity: CHALLENGE_OUTCOME_SEVERITY[outcome] ?? 'warning',
       category: stringField(challenge.kind) || 'challenge',
       message: `[${outcome}] ${scenario}${claim ? ` - claim under test: ${claim}` : ''}`,
       ...(location ? { location } : {}),
@@ -113,46 +119,41 @@ function challengeLocation(value: unknown): string {
 
 // ─── Report building ─────────────────────────────────────────────────────────
 
-export function mapReviewFindingsToReport(reviewFindings: Record<string, unknown>): Array<{
-  severity: 'info' | 'warning' | 'error';
-  category: string;
-  message: string;
-  location?: string;
-}> {
-  const allFindings: Array<Record<string, unknown>> = [
-    ...((reviewFindings.blockingIssues as Array<Record<string, unknown>>) ?? []),
-    ...((reviewFindings.majorRisks as Array<Record<string, unknown>>) ?? []),
-    ...((reviewFindings.missingVerification as string[]) ?? []).map((message) => ({
-      severity: 'warning' as const,
+export function mapReviewFindingsToReport(reviewFindings: ReviewFindings): ReviewReportFinding[] {
+  const materialFindings = [...reviewFindings.blockingIssues, ...reviewFindings.majorRisks].map(
+    (finding) => ({
+      source: 'material_finding' as const,
+      reportSeverity: reviewSeverityMap[finding.severity] ?? 'warning',
+      finding,
+    }),
+  );
+  return [
+    ...materialFindings,
+    ...reviewFindings.missingVerification.map((message) => ({
+      source: 'missing_verification' as const,
+      reportSeverity: 'warning' as const,
       category: 'missing-verification',
       message,
     })),
-    ...((reviewFindings.scopeCreep as string[]) ?? []).map((message) => ({
-      severity: 'warning' as const,
+    ...reviewFindings.scopeCreep.map((message) => ({
+      source: 'scope_creep' as const,
+      reportSeverity: 'warning' as const,
       category: 'scope-creep',
       message,
     })),
-    ...((reviewFindings.unknowns as string[]) ?? []).map((message) => ({
-      severity: 'info' as const,
+    ...reviewFindings.unknowns.map((message) => ({
+      source: 'unknown' as const,
+      reportSeverity: 'info' as const,
       category: 'unknown',
       message,
     })),
     ...challengeFindings(reviewFindings),
   ];
-
-  return allFindings
-    .filter((f) => f.severity && f.category && f.message)
-    .map((f) => ({
-      severity: reviewSeverityMap[f.severity as string] ?? 'warning',
-      category: f.category as string,
-      message: f.message as string,
-      ...(f.location ? { location: f.location as string } : {}),
-    }));
 }
 
 export function buildReviewExecutors(
   args: ReviewToolArgs,
-  effectiveReviewFindings?: Record<string, unknown>,
+  effectiveReviewFindings?: ReviewFindings,
 ): ReviewExecutors {
   return {
     analyze: async () => {
@@ -193,6 +194,7 @@ export async function persistReviewCompletion(
   | {
       kind: 'ok';
       finalState: SessionState;
+      report: ReviewReportResult;
       allTransitions: StartedReviewResult['transitions'];
     }
 > {
@@ -204,16 +206,17 @@ export async function persistReviewCompletion(
     return { kind: 'overflow', overflow: advanced };
   }
   const { state: finalState, transitions: advanceTransitions } = advanced;
-  const finalReport = {
+  const finalReport = ReviewReport.parse({
     ...report,
     phase: finalState.phase,
     completeness: { ...report.completeness, phase: finalState.phase },
-  };
+  });
   await writeReport(sessDir, finalReport);
   await writeStateWithArtifacts(sessDir, finalState);
   return {
     kind: 'ok',
     finalState,
+    report: finalReport,
     allTransitions: [...result.transitions, ...advanceTransitions],
   };
 }
@@ -310,8 +313,7 @@ function buildStandaloneReviewCard(
       overallStatus: report.overallStatus,
       findings: report.findings ?? [],
       completeness: reviewCardCompleteness(report),
-      inputOrigin: args.inputOrigin,
-      references: args.references as Array<{ ref: string; type: string }> | undefined,
+      reviewSubject: report.reviewKind === 'content_review' ? report.reviewSubject : undefined,
       obligationId: validatedReviewObligation?.obligationId,
       proofSummary: projectCompletionProofStatus(finalState),
       productNextAction,
@@ -388,8 +390,7 @@ function formatReviewCompletionResponse(input: {
       findingsCount: report.findings.length,
       findings: report.findings,
       validationSummary: report.validationSummary,
-      references: report.references,
-      inputOrigin: report.inputOrigin,
+      ...(report.reviewKind === 'content_review' && { reviewSubject: report.reviewSubject }),
       _audit: { transitions: allTransitions },
     }),
     finalState,

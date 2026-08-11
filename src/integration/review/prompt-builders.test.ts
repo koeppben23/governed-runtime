@@ -5,9 +5,12 @@ import {
   buildImplReviewPrompt,
   buildPlanReviewPrompt,
   buildReviewContentPrompt,
+  renderFrozenReviewSubjectEnvelope,
   renderReviewerTaskPrompt,
 } from './prompt-builders.js';
 import { renderPersistedProofGraphContext } from './proof-context.js';
+import { FROZEN_REVIEW_ANCHOR_CONTRACT } from './frozen-reviewer-context.js';
+import type { FrozenReviewerContext } from './frozen-reviewer-context.js';
 
 const BASE_INPUT = {
   iteration: 0,
@@ -70,6 +73,46 @@ describe('renderReviewerTaskPrompt challenge contract', () => {
         locations: ['ADR: Decision'],
       }).success,
     ).toBe(true);
+  });
+});
+
+describe('frozen review subject envelope', () => {
+  const frozenReviewerContext: FrozenReviewerContext = {
+    reviewMaterial: { content: 'exact persisted material', materialDigest: 'a'.repeat(64) },
+    reviewSubject: {
+      kind: 'content' as const,
+      source: { kind: 'inline' as const, mediaType: 'text' as const },
+      materialDigest: 'a'.repeat(64),
+      subjectDigest: 'b'.repeat(64),
+      lineCount: 1,
+    },
+    reviewSubjectScope: { kind: 'content' as const, subjectDigest: 'b'.repeat(64), lineCount: 1 },
+    anchorContract: FROZEN_REVIEW_ANCHOR_CONTRACT,
+  };
+
+  it('keeps exact persisted material immediately after the anchor in both transports', () => {
+    const hostPrompt = renderReviewerTaskPrompt({ ...BASE_INPUT, frozenReviewerContext });
+    const sdkPrompt = buildReviewContentPrompt({
+      content: 'untrusted content',
+      ticketText: '',
+      obligationId: BASE_INPUT.obligationId,
+      mandateDigest: BASE_INPUT.mandateDigest,
+      criteriaVersion: BASE_INPUT.criteriaVersion,
+      iteration: BASE_INPUT.iteration,
+      planVersion: BASE_INPUT.planVersion,
+      discoveryContext: {},
+      frozenReviewerContext,
+    });
+    const envelope = renderFrozenReviewSubjectEnvelope(frozenReviewerContext).join('\n');
+    const anchorAndMaterial =
+      'Append the persisted review material below this line:\nexact persisted material';
+
+    expect(hostPrompt).toContain(envelope);
+    expect(sdkPrompt).toContain(envelope);
+    expect(hostPrompt).toContain(anchorAndMaterial);
+    expect(sdkPrompt).toContain(anchorAndMaterial);
+    expect(sdkPrompt).not.toContain('CONTENT TO REVIEW:');
+    expect(sdkPrompt).not.toContain('untrusted content');
   });
 });
 

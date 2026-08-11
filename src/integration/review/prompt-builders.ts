@@ -14,12 +14,14 @@
 
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
+import type { FrozenReviewSubject, ReviewSubjectScope } from '../../state/evidence.js';
 import { renderPersistedProofGraphContext } from './proof-context.js';
 import { CANONICAL_PROMPT_APPEND_MARKER } from './enforcement/types.js';
 import {
   buildDiscoveryContextSection,
   type DiscoveryReviewContext,
 } from './discovery-context-prompt.js';
+import type { FrozenReviewerContext } from './frozen-reviewer-context.js';
 
 /**
  * Mandatory-baseline marker appended as the final line of every reviewer prompt.
@@ -70,6 +72,19 @@ export function renderReviewContext(input: {
   return parts.join(', ');
 }
 
+/** Serialize the integrity-verified review subject identically for every transport. */
+export function renderFrozenReviewSubjectEnvelope(context: FrozenReviewerContext): string[] {
+  return [
+    '## Frozen Review Subject',
+    JSON.stringify(context.reviewSubject),
+    '## Review Subject Scope (frozen obligation scope)',
+    JSON.stringify(context.reviewSubjectScope),
+    context.anchorContract,
+    `${CANONICAL_PROMPT_APPEND_MARKER} persisted review material below this line:`,
+    context.reviewMaterial.content,
+  ];
+}
+
 /** Inputs for the canonical, copy-ready reviewer Task prompt (F10). */
 export interface ReviewerTaskPromptInput {
   readonly iteration: number;
@@ -101,6 +116,14 @@ export interface ReviewerTaskPromptInput {
    * promised, what changed, or which checks were executed.
    */
   readonly artifactContext?: readonly string[];
+  /** Integrity-verified standalone-review material, subject, scope, and anchor contract. */
+  readonly frozenReviewerContext?: FrozenReviewerContext;
+}
+
+export function deriveReviewSubjectScope(subject: FrozenReviewSubject): ReviewSubjectScope {
+  return subject.kind === 'repository_change'
+    ? { kind: 'repository_change', paths: [...subject.changedPaths], revisions: ['base', 'head'] }
+    : { kind: 'content', subjectDigest: subject.subjectDigest, lineCount: subject.lineCount };
 }
 
 export interface ReviewerChallengePromptContract {
@@ -171,8 +194,8 @@ function renderChallengeContract(
  * FlowGuard now hands the agent a ready-to-paste prompt whose review context is
  * produced by the SAME renderReviewContext serializer the enforcement matcher
  * validates against — making the emitter/validator agreement structural rather
- * than dependent on the agent echoing the values. The agent only appends the
- * subject content (diff/plan/ADR) to this block.
+ * than dependent on the agent echoing the values. For standalone content
+ * reviews, persisted material follows the anchor; callers must not append it.
  *
  * The prompt intentionally does NOT include any verdict or findings text
  * (anti-fabrication) and stays above MIN_SUBAGENT_PROMPT_LENGTH so it clears the
@@ -214,7 +237,11 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
       ? [...input.artifactContext]
       : []),
     ...(input.proofContext && input.proofContext.length > 0 ? [...input.proofContext] : []),
-    `${CANONICAL_PROMPT_APPEND_MARKER} ${input.subjectLabel} content to review below this line:`,
+    ...(input.frozenReviewerContext
+      ? renderFrozenReviewSubjectEnvelope(input.frozenReviewerContext)
+      : [
+          `${CANONICAL_PROMPT_APPEND_MARKER} ${input.subjectLabel} content to review below this line:`,
+        ]),
   ].join('\n');
 }
 
@@ -601,6 +628,8 @@ export function buildReviewContentPrompt(opts: {
   discoveryContext: DiscoveryReviewContext;
   /** Persisted advisory projection only; prompt construction never evaluates providers. */
   proofGraph?: ProofGraphProjection;
+  /** The same integrity-verified context delivered by the host-task path. */
+  frozenReviewerContext?: FrozenReviewerContext;
 }): string {
   const stackSection = buildStackProfileSection(opts.profileName, opts.profileRules);
   const discoverySection = buildDiscoveryContextSection(opts.discoveryContext);
@@ -627,11 +656,12 @@ export function buildReviewContentPrompt(opts: {
     lines.push(discoverySection, '');
   }
   lines.push(...renderPersistedProofGraphContext(opts.proofGraph));
+  if (opts.frozenReviewerContext) {
+    lines.push(...renderFrozenReviewSubjectEnvelope(opts.frozenReviewerContext));
+  } else {
+    lines.push('CONTENT TO REVIEW:', '```', opts.content, '```');
+  }
   lines.push(
-    'CONTENT TO REVIEW:',
-    '```',
-    opts.content,
-    '```',
     '',
     'Return a complete ReviewFindings JSON object (no markdown fences, no extra text).',
     'Fields: reviewMode: "subagent", iteration, planVersion, overallVerdict,',

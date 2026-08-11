@@ -4,17 +4,17 @@
  *
  * @version v1
  */
-
 export { fingerprintReviewInput } from './fingerprint.js';
 import { fingerprintReviewInput } from './fingerprint.js';
-
 import type { SessionState } from '../../../state/schema.js';
 import type { ReviewFindings, ReviewObligation } from '../../../state/evidence.js';
-import type { ReviewAssuranceState, ReviewSubjectScope } from '../../../state/evidence-review.js';
-import type { ReviewReferenceInput } from '../../../rails/review.js';
+import type {
+  ReviewAssuranceState,
+  ReviewMaterial,
+  ReviewSubjectScope,
+} from '../../../state/evidence-review.js';
+import type { PreparedReviewContent, ReviewReferenceInput } from '../../../rails/review.js';
 import {
-  REVIEW_MANDATE_DIGEST,
-  REVIEW_CRITERIA_VERSION,
   createReviewObligation,
   appendObligationWithAttempt,
   resolveFrozenReviewProfile,
@@ -26,6 +26,16 @@ import {
   findAcceptedInvocationForFindings,
 } from '../../review/assurance.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
+import {
+  formatMissingContentAnalysis,
+  formatSubagentReviewNotInvoked,
+} from './obligation-format.js';
+export {
+  buildRequiredReviewAttestationPayload,
+  formatBlockedWithAttestation,
+  formatMissingContentAnalysis,
+  formatSubagentReviewNotInvoked,
+} from './obligation-format.js';
 import { validateChallengeConsistency } from '../../review/enforcement/challenge-consistency.js';
 import {
   validateReviewFindingsScope,
@@ -38,99 +48,7 @@ import { resolveChallengeClassificationEvidence } from '../review-obligation-cla
 import { type ResolvedBranchReviewSource } from '../../../adapters/gh-cli.js';
 import type { ReviewToolArgs, StartedReviewResult } from './types.js';
 
-// ─── Formatting helpers ──────────────────────────────────────────────────────
-
-export function buildRequiredReviewAttestationPayload(obligationId: string): {
-  requiredReviewAttestation: {
-    reviewedBy: string;
-    mandateDigest: string;
-    criteriaVersion: string;
-    toolObligationId: string;
-  };
-  reviewerSubagentType: string;
-  recovery: string[];
-} {
-  return {
-    requiredReviewAttestation: {
-      reviewedBy: REVIEWER_SUBAGENT_TYPE,
-      mandateDigest: REVIEW_MANDATE_DIGEST,
-      criteriaVersion: REVIEW_CRITERIA_VERSION,
-      toolObligationId: obligationId,
-    },
-    reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
-    recovery: [
-      'Load the referenced content (PR diff via gh CLI, URL via webfetch, or use manual text).',
-      `Call Task tool with subagent_type: "${REVIEWER_SUBAGENT_TYPE}" and provide the content in the prompt.`,
-      'Pass the requiredReviewAttestation values to the subagent so it populates attestation.reviewedBy, attestation.mandateDigest, attestation.criteriaVersion, and attestation.toolObligationId exactly as provided.',
-      'Instruct the subagent to return a complete ReviewFindings object (reviewMode, reviewedBy, reviewedAt, attestation, blockingIssues, majorRisks, missingVerification, scopeCreep, unknowns).',
-      'Parse the subagent response as a ReviewFindings object - do NOT convert it to an array and do NOT drop attestation fields.',
-      'Re-run flowguard_review with reviewFindings set to the complete ReviewFindings object. In strict mode, copied attestation fields alone are diagnostic context only; FlowGuard must persist matching ReviewInvocationEvidence before the findings satisfy governance.',
-    ],
-  };
-}
-
-export function formatBlockedWithAttestation(
-  code: string,
-  message: string,
-  obligationId: string,
-): string {
-  if (code === 'HOST_SUBAGENT_TASK_REQUIRED') {
-    return JSON.stringify({
-      error: true,
-      code,
-      message,
-      reviewObligationId: obligationId,
-      requiredReviewAttestation: {
-        reviewedBy: REVIEWER_SUBAGENT_TYPE,
-        mandateDigest: REVIEW_MANDATE_DIGEST,
-        criteriaVersion: REVIEW_CRITERIA_VERSION,
-        toolObligationId: obligationId,
-      },
-      reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
-      recovery: [
-        `Call Task tool with subagent_type: "${REVIEWER_SUBAGENT_TYPE}" and provide the content plus requiredReviewAttestation.`,
-        'After FlowGuard captures the Task evidence, re-run flowguard_review with reviewObligationId set to requiredReviewAttestation.toolObligationId and reviewVerdict matching the reviewer overallVerdict.',
-        'Do not submit, copy, or alter reviewFindings in host-task mode.',
-      ],
-    });
-  }
-  return JSON.stringify({
-    error: true,
-    code,
-    message,
-    reviewObligationId: obligationId,
-    ...buildRequiredReviewAttestationPayload(obligationId),
-  });
-}
-
-export function formatMissingContentAnalysis(
-  obligationId: string,
-  hostTaskRequired = false,
-): string {
-  if (hostTaskRequired) {
-    return formatBlockedWithAttestation(
-      'CONTENT_ANALYSIS_REQUIRED',
-      `Content-aware /review requires subagent analysis. Call the ${REVIEWER_SUBAGENT_TYPE} subagent via Task tool, then re-run flowguard_review with the original content fields, reviewObligationId '${obligationId}', and reviewVerdict matching the captured reviewer verdict. Do not submit or copy reviewFindings in host-task mode.`,
-      obligationId,
-    );
-  }
-  return formatBlockedWithAttestation(
-    'CONTENT_ANALYSIS_REQUIRED',
-    `Content-aware /review requires subagent analysis. Call the ${REVIEWER_SUBAGENT_TYPE} subagent via Task tool to analyze the provided content, then re-run flowguard_review with the complete ReviewFindings object. Manual JSON/attestation copy alone is not sufficient in strict mode; FlowGuard must persist matching ReviewInvocationEvidence.`,
-    obligationId,
-  );
-}
-
-export function formatSubagentReviewNotInvoked(detail: string, obligationId: string): string {
-  return formatBlockedWithAttestation(
-    'SUBAGENT_REVIEW_NOT_INVOKED',
-    `Supplied reviewFindings did not pass subagent attestation: ${detail}. Re-run the ${REVIEWER_SUBAGENT_TYPE} subagent with the requiredReviewAttestation values and submit the complete ReviewFindings object. Copied attestation fields are diagnostic context only until FlowGuard persists matching ReviewInvocationEvidence.`,
-    obligationId,
-  );
-}
-
 // ─── Input helpers ───────────────────────────────────────────────────────────
-
 export function buildReviewReferenceInput(args: {
   inputOrigin?: ReviewReferenceInput['inputOrigin'];
   references?: ReviewReferenceInput['references'];
@@ -138,6 +56,7 @@ export function buildReviewReferenceInput(args: {
   prNumber?: number;
   branch?: string;
   url?: string;
+  targetPaths?: readonly string[];
 }): ReviewReferenceInput | undefined {
   const hasContent =
     args.inputOrigin || args.references || args.text || args.prNumber || args.branch || args.url;
@@ -149,6 +68,7 @@ export function buildReviewReferenceInput(args: {
     prNumber: args.prNumber,
     branch: args.branch,
     url: args.url,
+    targetPaths: args.targetPaths,
   };
 }
 
@@ -265,7 +185,6 @@ export function hasImplicitContentSignal(args: {
 }
 
 // ─── Branch Review Provenance ────────────────────────────────────────────────
-
 export {
   BranchReviewSourceSchema,
   BranchReviewProvenanceSchema,
@@ -326,11 +245,13 @@ export async function persistReviewObligation(
   sessDir: string,
   state: SessionState,
   obligation: ReviewObligation,
+  reviewMaterial?: ReviewMaterial,
 ): Promise<{ attemptId: string; assurance: ReviewAssuranceState }> {
   const result = appendObligationWithAttempt(
     state.reviewAssurance,
     obligation,
     obligation.createdAt,
+    reviewMaterial,
   );
   await writeStateWithArtifacts(sessDir, {
     ...state,
@@ -345,6 +266,7 @@ interface NewReviewObligationInput {
   readonly now: string;
   readonly worktree: string | undefined;
   readonly resolvedSource: ResolvedBranchReviewSource | undefined;
+  readonly preparedContent: PreparedReviewContent | undefined;
   readonly fingerprint: string;
   readonly inputFingerprint: string;
   readonly fingerprintVersion: 'v2';
@@ -353,6 +275,14 @@ interface NewReviewObligationInput {
 async function createNewReviewObligation(
   input: NewReviewObligationInput,
 ): Promise<{ obligation?: ReviewObligation; blocked?: string }> {
+  const reviewSubject = input.preparedContent?.reviewSubject;
+  if (!reviewSubject) {
+    return {
+      blocked: formatBlocked('REVIEW_SUBJECT_NOT_MATERIALIZED', {
+        reason: 'Standalone review requires a frozen subject before creating an obligation.',
+      }),
+    };
+  }
   const classification = await resolveChallengeClassificationEvidence(input.state, input.worktree, {
     targetPaths: input.args.targetPaths,
     branch: input.args.branch,
@@ -377,28 +307,30 @@ async function createNewReviewObligation(
   if (resolvedTargetPaths) {
     metadata.targetPaths = resolvedTargetPaths;
   }
-  if (input.args.branch && input.resolvedSource) {
-    metadata.branch = input.args.branch;
-    metadata.baseBranch = input.resolvedSource.baseBranch;
-    metadata.resolvedBranchSha = input.resolvedSource.resolvedBranchSha;
-    metadata.resolvedBaseSha = input.resolvedSource.resolvedBaseSha;
-  }
-  const reviewSubjectScope: ReviewSubjectScope | undefined = input.resolvedSource
-    ? {
-        kind: 'repository_change',
-        paths: [...resolvedTargetPaths],
-        // The frozen source includes both SHAs, so findings may cite either side
-        // of the reviewed diff without introducing free-form revision authority.
-        revisions: ['base', 'head'],
-      }
-    : undefined;
+  const reviewSubjectScope: ReviewSubjectScope =
+    reviewSubject.kind === 'repository_change'
+      ? {
+          kind: 'repository_change',
+          paths: [...reviewSubject.changedPaths],
+          // The frozen source includes both SHAs, so findings may cite either side
+          // of the reviewed diff without introducing free-form revision authority.
+          revisions: ['base', 'head'],
+        }
+      : reviewSubject.kind === 'content'
+        ? {
+            kind: 'content',
+            subjectDigest: reviewSubject.subjectDigest,
+            lineCount: reviewSubject.lineCount,
+          }
+        : { kind: 'unavailable', reason: 'review_content_not_materialized' };
   return {
     obligation: createReviewObligation({
       obligationType: 'review',
       iteration: 1,
       planVersion: 1,
       now: input.now,
-      subjectDigest: input.fingerprint,
+      subjectDigest: reviewSubject.subjectDigest,
+      reviewSubject,
       reviewProfile: resolveFrozenReviewProfile(input.state.policySnapshot),
       profileSource: 'policy_default',
       policySnapshot: input.state.policySnapshot,
@@ -426,7 +358,7 @@ export async function ensureMissingAnalysisObligation(
   state: SessionState,
   args: ReviewToolArgs,
   now: string,
-  context: Pick<NewReviewObligationInput, 'worktree' | 'resolvedSource'>,
+  context: Pick<NewReviewObligationInput, 'worktree' | 'resolvedSource' | 'preparedContent'>,
 ): Promise<{
   message: string | null;
   obligation?: ReviewObligation;
@@ -482,7 +414,10 @@ export async function ensureMissingAnalysisObligation(
 
 interface MissingAnalysisObligationInput {
   readonly sessDir: string;
-  readonly context: Pick<NewReviewObligationInput, 'worktree' | 'resolvedSource'>;
+  readonly context: Pick<
+    NewReviewObligationInput,
+    'worktree' | 'resolvedSource' | 'preparedContent'
+  >;
   readonly state: SessionState;
   readonly args: ReviewToolArgs;
   readonly now: string;
@@ -510,7 +445,18 @@ async function createAndPrepareMissingAnalysisObligation(
   });
   if (created.blocked) return { message: created.blocked };
   const obligation = created.obligation!;
-  const persisted = await persistReviewObligation(input.sessDir, input.state, obligation);
+  const preparedContent = input.context.preparedContent;
+  const persisted = await persistReviewObligation(
+    input.sessDir,
+    input.state,
+    obligation,
+    preparedContent
+      ? {
+          content: preparedContent.content,
+          materialDigest: preparedContent.reviewSubject.materialDigest,
+        }
+      : undefined,
+  );
   return {
     message: formatMissingContentAnalysis(
       obligation.obligationId,
@@ -600,6 +546,7 @@ export async function resolveSubmittedReviewObligation(
       now,
       worktree,
       resolvedSource: undefined,
+      preparedContent: undefined,
       fingerprint,
       inputFingerprint: fingerprint,
       fingerprintVersion: 'v2',
@@ -710,7 +657,6 @@ export function validateSubmittedReviewFindings(
       )
     : null;
 }
-
 export function consumeValidatedReviewObligation(
   result: StartedReviewResult,
   obligation: ReviewObligation | null,

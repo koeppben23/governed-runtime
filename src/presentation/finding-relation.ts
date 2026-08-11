@@ -20,11 +20,17 @@ export function projectFindingRelation(relation: FindingRelationPresentation | u
     subjects: relation.subjectAnchors.map((subject) =>
       subject.kind === 'repository_location'
         ? { kind: 'repository_location', location: projectLocation(subject.location) }
-        : {
-            kind: 'artifact_section',
-            artifactKind: subject.artifactKind,
-            sectionPath: subject.sectionPath.map(({ headingText }) => ({ headingText })),
-          },
+        : subject.kind === 'artifact_section'
+          ? {
+              kind: 'artifact_section',
+              artifactKind: subject.artifactKind,
+              sectionPath: subject.sectionPath.map(({ headingText }) => ({ headingText })),
+            }
+          : {
+              kind: 'content',
+              subjectDigest: subject.subjectDigest,
+              ...(subject.range === undefined ? {} : { range: subject.range }),
+            },
     ),
     evidence: relation.evidenceLocations.map(projectLocation),
   };
@@ -49,6 +55,13 @@ export function formatFindingLocation(location: FindingRepositoryLocation): stri
 
 export function formatFindingSubject(subject: FindingSubject): string {
   if (subject.kind === 'repository_location') return formatFindingLocation(subject.location);
+  if (subject.kind === 'content') {
+    const range = subject.range;
+    const lines = range
+      ? `:${range.startLine}${range.endLine === undefined ? '' : `-${range.endLine}`}`
+      : '';
+    return `Content ${subject.subjectDigest.slice(0, 12)}${lines}`;
+  }
   const artifact = subject.artifactKind === 'plan' ? 'Plan' : 'ADR';
   return `${artifact} · ${subject.sectionPath.map((section) => section.headingText).join(' › ')}`;
 }

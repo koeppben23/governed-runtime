@@ -629,6 +629,7 @@ describe('state schemas', () => {
     it('ReviewReport validates overall status enum', () => {
       expect(() =>
         ReviewReport.parse({
+          reviewKind: 'lifecycle_review',
           schemaVersion: 'flowguard-review-report.v1',
           sessionId: FIXED_UUID,
           generatedAt: FIXED_TIME,

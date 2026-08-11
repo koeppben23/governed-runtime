@@ -10,6 +10,25 @@ import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
 export const REVIEW_VALIDATION_REASONS = [
   {
+    code: 'REVIEW_URL_CONTENT_ENCODING_INVALID',
+    category: 'input',
+    messageTemplate: 'URL review content could not be materialized as strict UTF-8: {reason}.',
+    recoverySteps: [
+      'Serve the reviewed URL as valid UTF-8, with charset=utf-8 when a charset is declared',
+      'Provide the content directly as review text if the source uses another encoding',
+    ],
+  },
+  {
+    code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
+    category: 'state',
+    messageTemplate:
+      'Frozen review material integrity verification failed: {reason}. The reviewer was not invoked.',
+    recoverySteps: [
+      'Restore the persisted review obligation and material from a trusted source',
+      'Create a new standalone review obligation for the intended content',
+    ],
+  },
+  {
     code: 'IMPL_VALIDATION_EVIDENCE_REQUIRED',
     category: 'state',
     messageTemplate:
@@ -463,6 +482,17 @@ export const REVIEW_VALIDATION_REASONS = [
     ],
   },
   // ─── Review Finding Subject-Scope Enforcement ───────────────────────────
+
+  {
+    code: 'REVIEW_SUBJECT_NOT_MATERIALIZED',
+    category: 'state',
+    messageTemplate:
+      'Standalone review cannot create obligation {obligationId} because the reviewed subject was not materialized and frozen.',
+    recoverySteps: [
+      'Provide exactly one supported review source and resolve it successfully',
+      'Do not create or continue a review obligation until immutable subject material is available',
+    ],
+  },
 
   {
     code: 'REVIEW_SUBJECT_SCOPE_UNAVAILABLE',

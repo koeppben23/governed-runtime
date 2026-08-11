@@ -12,6 +12,14 @@
 
 import { describe, it, expect } from 'vitest';
 import { mapReviewFindingsToReport } from './completion.js';
+import type { ReviewFindings, ReviewReportFinding } from '../../../state/evidence.js';
+
+function challengeFinding(findings: ReviewReportFinding[]) {
+  const finding = findings[0];
+  if (!finding || finding.source !== 'challenge')
+    throw new Error('Expected challenge report finding');
+  return finding;
+}
 
 function challenge(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -27,16 +35,34 @@ function challenge(overrides: Record<string, unknown> = {}): Record<string, unkn
   };
 }
 
+function reviewFindings(overrides: Record<string, unknown>): ReviewFindings {
+  return {
+    iteration: 0,
+    planVersion: 1,
+    reviewMode: 'subagent',
+    overallVerdict: 'accept',
+    blockingIssues: [],
+    majorRisks: [],
+    missingVerification: [],
+    scopeCreep: [],
+    unknowns: [],
+    reviewedBy: { sessionId: 'reviewer' },
+    reviewedAt: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  } as ReviewFindings;
+}
+
 describe('mapReviewFindingsToReport: challenges reach the author', () => {
   it('projects a falsified challenge as an error with its location', () => {
-    const findings = mapReviewFindingsToReport({ challenges: [challenge()] });
+    const findings = mapReviewFindingsToReport(reviewFindings({ challenges: [challenge()] }));
 
     expect(findings).toHaveLength(1);
-    expect(findings[0]!.severity).toBe('error');
-    expect(findings[0]!.category).toBe('implementation_challenge');
-    expect(findings[0]!.message).toContain('Submit a task with a due date in the past');
-    expect(findings[0]!.message).toContain('Due dates are validated before persistence');
-    expect(findings[0]!.location).toBe('src/main/java/com/example/TaskService.java:42');
+    const finding = challengeFinding(findings);
+    expect(finding.reportSeverity).toBe('error');
+    expect(finding.category).toBe('implementation_challenge');
+    expect(finding.message).toContain('Submit a task with a due date in the past');
+    expect(finding.message).toContain('Due dates are validated before persistence');
+    expect(finding.location).toBe('src/main/java/com/example/TaskService.java:42');
   });
 
   it.each([
@@ -46,31 +72,50 @@ describe('mapReviewFindingsToReport: challenges reach the author', () => {
     ['supported', 'info'],
     ['pass', 'info'],
   ])('maps outcome %s to severity %s', (outcome, severity) => {
-    const findings = mapReviewFindingsToReport({ challenges: [challenge({ outcome })] });
+    const findings = mapReviewFindingsToReport(
+      reviewFindings({ challenges: [challenge({ outcome })] }),
+    );
 
-    expect(findings[0]!.severity).toBe(severity);
+    expect(challengeFinding(findings).reportSeverity).toBe(severity);
   });
 
   it('joins multiple locations so every cited site is visible', () => {
-    const findings = mapReviewFindingsToReport({
-      challenges: [challenge({ locations: ['a/File.java:1', 'b/Other.java:9'] })],
-    });
+    const findings = mapReviewFindingsToReport(
+      reviewFindings({
+        challenges: [challenge({ locations: ['a/File.java:1', 'b/Other.java:9'] })],
+      }),
+    );
 
-    expect(findings[0]!.location).toBe('a/File.java:1, b/Other.java:9');
+    expect(challengeFinding(findings).location).toBe('a/File.java:1, b/Other.java:9');
   });
 
   it('keeps the existing finding categories alongside challenges', () => {
-    const findings = mapReviewFindingsToReport({
-      blockingIssues: [{ severity: 'critical', category: 'correctness', message: 'Null deref' }],
-      unknowns: ['Unclear rollback path'],
-      challenges: [challenge()],
-    });
+    const findings = mapReviewFindingsToReport(
+      reviewFindings({
+        blockingIssues: [
+          {
+            severity: 'critical',
+            category: 'correctness',
+            message: 'Null deref',
+            relation: {
+              subjectAnchors: [
+                {
+                  kind: 'repository_location',
+                  location: { path: 'src/task.ts', revision: 'head', line: 1 },
+                },
+              ],
+              evidenceLocations: [],
+            },
+          },
+        ],
+        unknowns: ['Unclear rollback path'],
+        challenges: [challenge()],
+      }),
+    );
 
-    expect(findings.map((f) => f.category)).toEqual([
-      'correctness',
-      'unknown',
-      'implementation_challenge',
-    ]);
+    expect(
+      findings.map((f) => (f.source === 'material_finding' ? f.finding.category : f.category)),
+    ).toEqual(['correctness', 'unknown', 'implementation_challenge']);
   });
 
   it.each([
@@ -80,15 +125,17 @@ describe('mapReviewFindingsToReport: challenges reach the author', () => {
     ['an entry without an outcome', { challenges: [challenge({ outcome: undefined })] }],
     ['an entry without a scenario', { challenges: [challenge({ scenario: undefined })] }],
   ])('ignores %s rather than emitting a hollow finding', (_label, input) => {
-    expect(mapReviewFindingsToReport(input as Record<string, unknown>)).toEqual([]);
+    expect(mapReviewFindingsToReport(reviewFindings(input as Record<string, unknown>))).toEqual([]);
   });
 
   it('still emits a challenge that carries no usable location', () => {
     // The schema requires locations, but the report must not silently drop a
     // finding just because a reviewer returned a malformed list.
-    const findings = mapReviewFindingsToReport({ challenges: [challenge({ locations: [] })] });
+    const findings = mapReviewFindingsToReport(
+      reviewFindings({ challenges: [challenge({ locations: [] })] }),
+    );
 
     expect(findings).toHaveLength(1);
-    expect(findings[0]!.location).toBeUndefined();
+    expect(challengeFinding(findings).location).toBeUndefined();
   });
 });

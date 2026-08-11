@@ -5,8 +5,9 @@
 
 import { randomUUID } from 'node:crypto';
 import { hashText } from '../../shared/hashing.js';
-import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 export { hashText };
+export { hashFindings } from './findings-hash.js';
+import { hashFindings } from './findings-hash.js';
 
 import type {
   ReviewAssuranceState,
@@ -19,6 +20,8 @@ import type {
   ReviewProfileSource,
   PolicySnapshot,
   ReviewAttempt,
+  ReviewMaterial,
+  FrozenReviewSubject,
 } from '../../state/evidence.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { assessMinimumTaskClass, maxTaskClass } from '../phase-tool-gate.js';
@@ -50,6 +53,14 @@ function resolveSubjectScope(
     artifact: { ...explicitScope.artifact, digest: subjectDigest },
   };
 }
+
+function resolveSubjectDigest(input: {
+  subjectDigest: string;
+  reviewSubject?: FrozenReviewSubject;
+}): string {
+  return input.reviewSubject?.subjectDigest ?? input.subjectDigest;
+}
+
 export function getReviewMandateDigest(): string {
   return REVIEW_MANDATE_DIGEST;
 }
@@ -78,6 +89,8 @@ export function createReviewObligation(input: {
    * rejected; no binding is possible without a proven subject identity.
    */
   subjectDigest: string;
+  /** Frozen standalone content/repository subject, when this is a standalone review. */
+  reviewSubject?: FrozenReviewSubject;
   /**
    * Mandatory review coverage profile frozen into the obligation at creation,
    * before any reviewer invocation. Defaults to the fail-closed 'core' baseline.
@@ -111,8 +124,9 @@ export function createReviewObligation(input: {
     );
   }
   const challengePolicy = input.policySnapshot?.challengePolicy;
+  const subjectDigest = resolveSubjectDigest(input);
   const reviewSubjectScope = resolveSubjectScope(
-    input.subjectDigest,
+    subjectDigest,
     input.reviewSubjectScope,
     input.changedFiles,
   );
@@ -148,7 +162,8 @@ export function createReviewObligation(input: {
     reviewProfile: input.reviewProfile ?? 'core',
     profileSource: input.profileSource ?? 'policy_default',
     ...requirements,
-    subjectDigest: input.subjectDigest,
+    subjectDigest,
+    reviewSubject: input.reviewSubject,
     metadata: input.metadata,
     ...(input.fingerprintVersion ? { fingerprintVersion: input.fingerprintVersion } : {}),
     reviewSubjectScope,
@@ -350,45 +365,11 @@ export function findAcceptedInvocationForFindings(
   );
 }
 
-export function hashFindings(findings: Record<string, unknown>): string {
-  const normalizeFinding = (value: unknown): unknown => {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
-    const finding = value as Record<string, unknown>;
-    const { findingId: _findingId, relation, ...rest } = finding;
-    if (!relation || typeof relation !== 'object' || Array.isArray(relation)) return rest;
-    const typedRelation = relation as Record<string, unknown>;
-    const sorted = (items: unknown) =>
-      Array.isArray(items)
-        ? [...items].sort((left, right) =>
-            canonicalJsonStringify(left).localeCompare(canonicalJsonStringify(right)),
-          )
-        : items;
-    return {
-      ...rest,
-      relation: {
-        ...typedRelation,
-        subjectAnchors: sorted(typedRelation.subjectAnchors),
-        evidenceLocations: sorted(typedRelation.evidenceLocations),
-      },
-    };
-  };
-  return hashText(
-    canonicalJsonStringify({
-      ...findings,
-      blockingIssues: Array.isArray(findings.blockingIssues)
-        ? findings.blockingIssues.map(normalizeFinding)
-        : findings.blockingIssues,
-      majorRisks: Array.isArray(findings.majorRisks)
-        ? findings.majorRisks.map(normalizeFinding)
-        : findings.majorRisks,
-    }),
-  );
-}
-
 export function createReviewAttempt(input: {
   obligationId: string;
   obligationType: ReviewObligationType;
   subjectDigest: string;
+  reviewMaterial?: ReviewMaterial;
   ordinal: number;
   childSessionId?: string;
   now: string;
@@ -398,6 +379,7 @@ export function createReviewAttempt(input: {
     obligationId: input.obligationId,
     obligationType: input.obligationType,
     subjectDigest: input.subjectDigest,
+    ...(input.reviewMaterial === undefined ? {} : { reviewMaterial: input.reviewMaterial }),
     ordinal: input.ordinal,
     childSessionId: input.childSessionId,
     status: 'created',
@@ -455,6 +437,7 @@ export function appendObligationWithAttempt(
   assurance: ReviewAssuranceState | undefined,
   obligation: ReviewObligation,
   now: string,
+  reviewMaterial?: ReviewMaterial,
 ): { assurance: ReviewAssuranceState; attemptId: string } {
   const base = ensureReviewAssurance(assurance);
   const ordinal =
@@ -463,6 +446,7 @@ export function appendObligationWithAttempt(
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
     subjectDigest: obligation.subjectDigest,
+    reviewMaterial,
     ordinal,
     now,
   });
@@ -502,12 +486,26 @@ export function createAttemptForExistingObligation(
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
     subjectDigest: obligation.subjectDigest,
+    reviewMaterial: latestReviewMaterial(base, obligation.obligationId),
     ordinal,
     childSessionId,
     now,
   });
   const withAttempt = appendReviewAttempt(base, attempt);
   return staleObligationAttempts(withAttempt, obligation.obligationId, attempt.attemptId, now);
+}
+
+function latestReviewMaterial(
+  assurance: ReviewAssuranceState,
+  obligationId: string,
+): ReviewMaterial | undefined {
+  for (let index = assurance.attempts.length - 1; index >= 0; index--) {
+    const attempt = assurance.attempts[index];
+    if (attempt?.obligationId === obligationId && attempt.reviewMaterial) {
+      return attempt.reviewMaterial;
+    }
+  }
+  return undefined;
 }
 
 export function appendReviewAttempt(

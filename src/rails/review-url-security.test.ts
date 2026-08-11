@@ -174,6 +174,39 @@ describe('BUG-13: validateReviewUrl — SSRF mitigation', () => {
 });
 
 describe('Issue #310: resolved URL targets are validated before fetch', () => {
+  it.each([
+    ['malformed UTF-8 bytes', new Uint8Array([0xc3, 0x28]), 'text/plain; charset=utf-8'],
+    [
+      'unsupported charset',
+      new TextEncoder().encode('review material'),
+      'text/plain; charset=iso-8859-1',
+    ],
+    [
+      'malformed charset declaration',
+      new TextEncoder().encode('review material'),
+      'text/plain; charset=',
+    ],
+  ])('blocks URL materialization with %s', async (_case, body, contentType) => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(body, { headers: { 'content-type': contentType } }));
+    try {
+      const result = await executeReview(
+        makeProgressedState('COMPLETE'),
+        NOW,
+        { dnsLookup: async () => [{ address: '93.184.216.34', family: 4 }] },
+        { inputOrigin: 'external_reference', url: 'https://example.com/spec.md' },
+      );
+
+      expect(result).toMatchObject({
+        kind: 'blocked',
+        code: 'REVIEW_URL_CONTENT_ENCODING_INVALID',
+      });
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
   it('accepts hostname DNS results when every resolved address is public', async () => {
     const result = await validateResolvedReviewUrlTarget(
       'https://example.com/spec.md',
