@@ -12,6 +12,7 @@ vi.mock('../adapters/gh-cli.js', () => ({
 }));
 
 import { loadExternalContent } from './review.js';
+import { hashText } from '../shared/hashing.js';
 
 describe('immutable pull-request review materialization', () => {
   beforeEach(() => {
@@ -62,5 +63,38 @@ describe('immutable pull-request review materialization', () => {
 
     expect(result).toMatchObject({ kind: 'blocked', code: 'COMMAND_BLOCKED' });
     expect(mocks.loadResolvedPullRequestDiff).not.toHaveBeenCalled();
+  });
+
+  it('scopes reviewer material, subject paths, and digests to validated target paths', async () => {
+    const resolved = {
+      pullRequestNumber: 42,
+      baseRepository: { host: 'github.com', owner: 'upstream', name: 'project' },
+      headRepository: { host: 'github.com', owner: 'contributor', name: 'project-fork' },
+      baseSha: 'a'.repeat(40),
+      headSha: 'b'.repeat(40),
+    };
+    mocks.resolvePullRequestReviewSource.mockReturnValue(resolved);
+    mocks.loadResolvedPullRequestDiff.mockReturnValue(`diff --git a/old.ts b/new.ts
+similarity index 100%
+rename from old.ts
+rename to new.ts
+diff --git a/other.ts b/other.ts
+@@ -1 +1 @@
+-old
++new
+`);
+
+    const scoped = await loadExternalContent({ prNumber: 42, targetPaths: ['old.ts'] });
+    expect(scoped).toMatchObject({
+      content: expect.stringContaining('rename to new.ts'),
+      reviewSubject: { changedPaths: ['new.ts', 'old.ts'] },
+    });
+    if (!scoped || !('content' in scoped)) return;
+    expect(scoped.content).not.toContain('other.ts');
+    expect(hashText(scoped.content)).toBe(scoped.reviewSubject.materialDigest);
+    expect(await loadExternalContent({ prNumber: 42, targetPaths: ['missing.ts'] })).toMatchObject({
+      kind: 'blocked',
+      code: 'COMMAND_BLOCKED',
+    });
   });
 });

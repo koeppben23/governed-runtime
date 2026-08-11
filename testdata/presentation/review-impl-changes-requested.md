@@ -2,7 +2,6 @@
 
 **Status:** Implementation review in progress
 **Overall:** issues
-**Input:** pr
 
 ## Verification
 

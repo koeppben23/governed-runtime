@@ -44,10 +44,10 @@ import {
   isIPv6Address,
 } from '../adapters/ip-validation.js';
 import { lookupReviewHostname, type ReviewDnsLookup } from '../adapters/dns-resolution.js';
+import { prepareResolvedRepositoryContent } from './repository-review-subject.js';
 import { hashText } from '../shared/hashing.js';
 import {
   hashCanonicalContentSubject,
-  hashCanonicalRepositorySubject,
   normalizeReviewContent,
   reviewContentLineCount,
 } from '../shared/review-subject.js';
@@ -286,6 +286,8 @@ export interface ReviewReferenceInput {
   readonly cwd?: string;
   /** Repository identity resolved with the immutable branch source. */
   readonly repository?: { readonly host: string; readonly owner: string; readonly name: string };
+  /** Repository paths requested for a scoped branch or pull-request review. */
+  readonly targetPaths?: readonly string[];
 }
 
 // ─── Mechanical Findings ──────────────────────────────────────
@@ -392,7 +394,7 @@ export async function loadExternalContent(
     });
   }
   if (typeof refInput.prNumber === 'number' && refInput.prNumber > 0) {
-    return loadPullRequestContent(refInput.prNumber);
+    return loadPullRequestContent(refInput.prNumber, refInput.targetPaths);
   }
   if (typeof refInput.branch === 'string' && refInput.branch.trim().length > 0) {
     return loadBranchContent(refInput);
@@ -407,17 +409,24 @@ export async function loadExternalContent(
   }
   return null;
 }
-function loadPullRequestContent(prNumber: number): PrepareReviewResult {
+function loadPullRequestContent(
+  prNumber: number,
+  targetPaths?: readonly string[],
+): PrepareReviewResult {
   try {
     const source = resolvePullRequestReviewSource(prNumber);
     const diff = loadResolvedPullRequestDiff(source);
-    return preparedResolvedRepositoryContent(diff, {
-      source: { kind: 'pull_request', pullRequestNumber: source.pullRequestNumber },
-      baseRepository: source.baseRepository,
-      headRepository: source.headRepository,
-      baseSha: source.baseSha,
-      headSha: source.headSha,
-    });
+    return prepareResolvedRepositoryContent(
+      diff,
+      {
+        source: { kind: 'pull_request', pullRequestNumber: source.pullRequestNumber },
+        baseRepository: source.baseRepository,
+        headRepository: source.headRepository,
+        baseSha: source.baseSha,
+        headSha: source.headSha,
+      },
+      targetPaths,
+    );
   } catch (err) {
     return blocked('COMMAND_BLOCKED', {
       command: '/review',
@@ -438,76 +447,27 @@ function loadBranchContent(refInput: ReviewReferenceInput): PrepareReviewResult 
       refInput.resolvedBaseSha,
       refInput.cwd,
     );
-    return preparedResolvedRepositoryContent(diff, {
-      source: {
-        kind: 'branch',
-        branch: refInput.branch!,
-        ...(refInput.baseBranch ? { requestedBase: refInput.baseBranch } : {}),
+    return prepareResolvedRepositoryContent(
+      diff,
+      {
+        source: {
+          kind: 'branch',
+          branch: refInput.branch!,
+          ...(refInput.baseBranch ? { requestedBase: refInput.baseBranch } : {}),
+        },
+        baseRepository: refInput.repository,
+        headRepository: refInput.repository,
+        baseSha: refInput.resolvedBaseSha,
+        headSha: refInput.resolvedBranchSha,
       },
-      baseRepository: refInput.repository,
-      headRepository: refInput.repository,
-      baseSha: refInput.resolvedBaseSha,
-      headSha: refInput.resolvedBranchSha,
-    });
+      refInput.targetPaths,
+    );
   } catch (err) {
     return blocked('COMMAND_BLOCKED', {
       command: '/review',
       reason: `Failed to load branch diff at resolved commits: ${err instanceof Error ? err.message : String(err)}`,
     });
   }
-}
-interface ResolvedRepositorySubjectInput {
-  readonly source:
-    | { readonly kind: 'pull_request'; readonly pullRequestNumber: number }
-    | { readonly kind: 'branch'; readonly branch: string; readonly requestedBase?: string };
-  readonly baseRepository: { readonly host: string; readonly owner: string; readonly name: string };
-  readonly headRepository: { readonly host: string; readonly owner: string; readonly name: string };
-  readonly baseSha: string;
-  readonly headSha: string;
-}
-function preparedResolvedRepositoryContent(
-  content: string,
-  source: ResolvedRepositorySubjectInput,
-): PrepareReviewResult {
-  const normalizedContent = normalizeReviewContent(content);
-  const materialDigest = hashText(normalizedContent);
-  const changedPaths = extractChangedPaths(normalizedContent);
-  if (changedPaths.length === 0) {
-    return blocked('COMMAND_BLOCKED', {
-      command: '/review',
-      reason: 'Resolved repository diff contains no repository paths.',
-    });
-  }
-  return {
-    content: normalizedContent,
-    reviewedContentDigest: materialDigest,
-    reviewSubject: {
-      kind: 'repository_change',
-      source: source.source,
-      baseRepository: source.baseRepository,
-      headRepository: source.headRepository,
-      baseSha: source.baseSha,
-      headSha: source.headSha,
-      changedPaths,
-      materialDigest,
-      subjectDigest: hashCanonicalRepositorySubject({
-        baseRepository: source.baseRepository,
-        headRepository: source.headRepository,
-        baseSha: source.baseSha,
-        headSha: source.headSha,
-        changedPaths,
-        materialDigest,
-      }),
-    },
-  };
-}
-function extractChangedPaths(diff: string): string[] {
-  const paths = new Set<string>();
-  for (const line of diff.split('\n')) {
-    const match = /^diff --git a\/(.+) b\/(.+)$/.exec(line);
-    if (match?.[2]) paths.add(match[2]);
-  }
-  return [...paths].sort();
 }
 function preparedContent(content: string, refInput: ReviewReferenceInput): PreparedReviewContent {
   const normalizedContent = normalizeReviewContent(content);

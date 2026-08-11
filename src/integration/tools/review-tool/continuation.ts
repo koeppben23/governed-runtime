@@ -91,6 +91,7 @@ export async function reissueReviewAttempt(
     obligationId: opts.obligationId,
     obligationType: opts.obligationType as ReviewAttempt['obligationType'],
     subjectDigest: opts.subjectDigest,
+    reviewMaterial: latestReviewMaterial(base, opts.obligationId),
     ordinal,
     now,
   });
@@ -98,6 +99,19 @@ export async function reissueReviewAttempt(
   const reissue = staleObligationAttempts(withAttempt, opts.obligationId, attempt.attemptId, now);
   await writeStateWithArtifacts(sessDir, { ...state, reviewAssurance: reissue });
   return attempt;
+}
+
+function latestReviewMaterial(
+  assurance: ReturnType<typeof ensureReviewAssurance>,
+  obligationId: string,
+): ReviewAttempt['reviewMaterial'] {
+  for (let index = assurance.attempts.length - 1; index >= 0; index--) {
+    const attempt = assurance.attempts[index];
+    if (attempt?.obligationId === obligationId && attempt.reviewMaterial) {
+      return attempt.reviewMaterial;
+    }
+  }
+  return undefined;
 }
 
 import { buildReviewReferenceInput } from './obligation.js';

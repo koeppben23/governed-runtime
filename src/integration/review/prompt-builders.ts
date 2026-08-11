@@ -16,6 +16,11 @@ import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
 import { renderPersistedProofGraphContext } from './proof-context.js';
 import { CANONICAL_PROMPT_APPEND_MARKER } from './enforcement/types.js';
+import type {
+  FrozenReviewSubject,
+  ReviewMaterial,
+  ReviewSubjectScope,
+} from '../../state/evidence.js';
 import {
   buildDiscoveryContextSection,
   type DiscoveryReviewContext,
@@ -101,6 +106,17 @@ export interface ReviewerTaskPromptInput {
    * promised, what changed, or which checks were executed.
    */
   readonly artifactContext?: readonly string[];
+  /** Immutable standalone-review bytes and their frozen subject identity. */
+  readonly reviewMaterial?: ReviewMaterial;
+  readonly reviewSubject?: FrozenReviewSubject;
+  /** Derived from reviewSubject; rendered so the reviewer knows its exact scope. */
+  readonly reviewSubjectScope?: ReviewSubjectScope;
+}
+
+export function deriveReviewSubjectScope(subject: FrozenReviewSubject): ReviewSubjectScope {
+  return subject.kind === 'repository_change'
+    ? { kind: 'repository_change', paths: [...subject.changedPaths], revisions: ['base', 'head'] }
+    : { kind: 'content', subjectDigest: subject.subjectDigest, lineCount: subject.lineCount };
 }
 
 export interface ReviewerChallengePromptContract {
@@ -171,8 +187,8 @@ function renderChallengeContract(
  * FlowGuard now hands the agent a ready-to-paste prompt whose review context is
  * produced by the SAME renderReviewContext serializer the enforcement matcher
  * validates against — making the emitter/validator agreement structural rather
- * than dependent on the agent echoing the values. The agent only appends the
- * subject content (diff/plan/ADR) to this block.
+ * than dependent on the agent echoing the values. For standalone content
+ * reviews, persisted material follows the anchor; callers must not append it.
  *
  * The prompt intentionally does NOT include any verdict or findings text
  * (anti-fabrication) and stays above MIN_SUBAGENT_PROMPT_LENGTH so it clears the
@@ -214,7 +230,19 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
       ? [...input.artifactContext]
       : []),
     ...(input.proofContext && input.proofContext.length > 0 ? [...input.proofContext] : []),
-    `${CANONICAL_PROMPT_APPEND_MARKER} ${input.subjectLabel} content to review below this line:`,
+    ...(input.reviewMaterial && input.reviewSubject && input.reviewSubjectScope
+      ? [
+          '## Frozen Review Subject',
+          JSON.stringify(input.reviewSubject),
+          '## Review Subject Scope (derived)',
+          JSON.stringify(input.reviewSubjectScope),
+          'Content anchor contract: the exact persisted review material begins immediately after the canonical anchor. Do not append, replace, or supplement it.',
+          `${CANONICAL_PROMPT_APPEND_MARKER} persisted review material below this line:`,
+          input.reviewMaterial.content,
+        ]
+      : [
+          `${CANONICAL_PROMPT_APPEND_MARKER} ${input.subjectLabel} content to review below this line:`,
+        ]),
   ].join('\n');
 }
 

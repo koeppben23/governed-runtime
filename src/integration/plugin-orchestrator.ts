@@ -151,7 +151,7 @@ export async function runReviewOrchestration(
     };
 
     if (toolName === TOOL_FLOWGUARD_REVIEW) {
-      await runReviewContentPipeline(ctx, input);
+      await runReviewContentPipeline(ctx);
     } else {
       await runStandardReviewPipeline(ctx, toolName, input);
     }

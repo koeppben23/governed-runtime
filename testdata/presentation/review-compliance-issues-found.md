@@ -2,7 +2,6 @@
 
 **Status:** Review complete
 **Overall:** issues
-**Input:** branch
 
 ## Verification
 

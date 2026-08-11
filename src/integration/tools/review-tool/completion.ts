@@ -16,6 +16,7 @@ import type {
   ReviewReportFinding,
 } from '../../../state/evidence.js';
 import type { ReviewExecutors } from '../../../rails/review.js';
+import { ReviewReport } from '../../../state/evidence.js';
 import { autoAdvance, createPolicyEvalFn } from '../../../rails/types.js';
 import type { AutoAdvanceOverflow } from '../../../rails/types.js';
 import {
@@ -193,6 +194,7 @@ export async function persistReviewCompletion(
   | {
       kind: 'ok';
       finalState: SessionState;
+      report: ReviewReportResult;
       allTransitions: StartedReviewResult['transitions'];
     }
 > {
@@ -204,16 +206,17 @@ export async function persistReviewCompletion(
     return { kind: 'overflow', overflow: advanced };
   }
   const { state: finalState, transitions: advanceTransitions } = advanced;
-  const finalReport = {
+  const finalReport = ReviewReport.parse({
     ...report,
     phase: finalState.phase,
     completeness: { ...report.completeness, phase: finalState.phase },
-  };
+  });
   await writeReport(sessDir, finalReport);
   await writeStateWithArtifacts(sessDir, finalState);
   return {
     kind: 'ok',
     finalState,
+    report: finalReport,
     allTransitions: [...result.transitions, ...advanceTransitions],
   };
 }
@@ -310,8 +313,7 @@ function buildStandaloneReviewCard(
       overallStatus: report.overallStatus,
       findings: report.findings ?? [],
       completeness: reviewCardCompleteness(report),
-      inputOrigin: args.inputOrigin,
-      references: args.references as Array<{ ref: string; type: string }> | undefined,
+      reviewSubject: report.reviewKind === 'content_review' ? report.reviewSubject : undefined,
       obligationId: validatedReviewObligation?.obligationId,
       proofSummary: projectCompletionProofStatus(finalState),
       productNextAction,
@@ -388,8 +390,7 @@ function formatReviewCompletionResponse(input: {
       findingsCount: report.findings.length,
       findings: report.findings,
       validationSummary: report.validationSummary,
-      references: report.references,
-      inputOrigin: report.inputOrigin,
+      ...(report.reviewKind === 'content_review' && { reviewSubject: report.reviewSubject }),
       _audit: { transitions: allTransitions },
     }),
     finalState,

@@ -215,6 +215,7 @@ real, registered reason.
 | `REVIEW_EVIDENCE_LOCATION_INVALID`            | Finding evidence location is not a valid repository location                  | Use repository-relative evidence paths at the frozen base or head revision                                           |
 | `REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE`  | Reviewer finding does not intersect the frozen reviewed subject               | Anchor the finding to the reviewed change or artifact section                                                        |
 | `REVIEW_REPOSITORY_REVISION_UNAVAILABLE`      | Finding cites a repository revision unavailable to the reviewed subject       | Use only the frozen base or head revision                                                                            |
+| `REVIEW_SUBJECT_NOT_MATERIALIZED`             | Standalone review source could not be frozen into immutable material          | Resolve exactly one review source before creating or continuing the obligation                                       |
 | `REVIEW_SUBJECT_SCOPE_UNAVAILABLE`            | Review obligation has no verifiable frozen subject scope                      | Re-run the review after subject scope resolution succeeds                                                            |
 | `REVIEW_OBLIGATION_NOT_FOUND`                 | Review continuation ID is missing, consumed, blocked, or mismatched           | Use the ID from the original `CONTENT_ANALYSIS_REQUIRED` response; otherwise start a fresh `/review`                 |
 | `REVIEW_OBLIGATION_ID_REQUIRED`               | Host-task review verdict was submitted without its obligation ID              | Submit the original content, `reviewObligationId`, and the captured reviewer verdict together                        |
@@ -448,6 +449,7 @@ REVIEW_OBLIGATION_UNRESOLVED
 REVIEW_PLAN_VERSION_MISMATCH
 REVIEW_REPOSITORY_REVISION_UNAVAILABLE
 REVIEW_SELF_APPROVAL_DENIED
+REVIEW_SUBJECT_NOT_MATERIALIZED
 REVIEW_SUBJECT_SCOPE_UNAVAILABLE
 REVIEW_TRANSPORT_EVIDENCE_INVALID
 REVIEWER_INVOCATION_EXHAUSTED

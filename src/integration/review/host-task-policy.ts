@@ -9,7 +9,11 @@
 import { parseToolResult, getToolOutput } from '../plugin-helpers.js';
 import { extractContentMeta } from './enforcement/extraction.js';
 import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
-import { renderReviewContext, renderReviewerTaskPrompt } from './prompt-builders.js';
+import {
+  deriveReviewSubjectScope,
+  renderReviewContext,
+  renderReviewerTaskPrompt,
+} from './prompt-builders.js';
 import { buildReviewerProofContext } from './proof-context.js';
 import { buildReviewerArtifactContext } from './reviewer-context.js';
 import { REVIEW_COMPLETED_PREFIX, extractReviewContext } from './orchestrator.js';
@@ -65,6 +69,8 @@ interface HostTaskOutputInput {
    * obligation. Empty when no obligation could be resolved.
    */
   readonly artifactContext: readonly string[];
+  readonly reviewMaterial: Parameters<typeof renderReviewerTaskPrompt>[0]['reviewMaterial'];
+  readonly reviewSubject: Parameters<typeof renderReviewerTaskPrompt>[0]['reviewSubject'];
 }
 
 function buildHostTaskPolicyOutput(input: HostTaskOutputInput): string | null {
@@ -124,6 +130,7 @@ function buildReviewerTaskPromptOrNull(
   ctx: { iteration: number; planVersion: number | null } | null,
   challengeContract: Parameters<typeof renderReviewerTaskPrompt>[0]['challengeContract'],
   context: { readonly proof: readonly string[]; readonly artifact: readonly string[] },
+  reviewContent: Pick<HostTaskOutputInput, 'reviewMaterial' | 'reviewSubject'>,
 ): string | null {
   if (!attestationMeta || ctx?.iteration == null) return null;
   return renderReviewerTaskPrompt({
@@ -136,6 +143,11 @@ function buildReviewerTaskPromptOrNull(
     challengeContract,
     proofContext: context.proof,
     artifactContext: context.artifact,
+    reviewMaterial: reviewContent.reviewMaterial,
+    reviewSubject: reviewContent.reviewSubject,
+    reviewSubjectScope: reviewContent.reviewSubject
+      ? deriveReviewSubjectScope(reviewContent.reviewSubject)
+      : undefined,
   });
 }
 
@@ -174,10 +186,11 @@ function buildHostTaskBlockedOutput(
       proof: proofContext,
       artifact: input.artifactContext,
     },
+    { reviewMaterial: input.reviewMaterial, reviewSubject: input.reviewSubject },
   );
   const copyPromptStr = reviewerTaskPrompt
     ? ` A ready-to-use reviewer prompt is provided in the reviewerTaskPrompt field — pass it ` +
-      `VERBATIM as the Task tool "prompt" argument (append the artifact content to review), ` +
+      `VERBATIM as the Task tool "prompt" argument without appending content, ` +
       `so the required review context is present on the first attempt.`
     : '';
 
@@ -373,6 +386,91 @@ export function buildHostTaskChallengeContract(
   return evidenceRefs ? { ...base, evidenceRefs } : base;
 }
 
+function resolveHostTaskInterception(
+  sessionState: SessionState,
+  obligationId: string,
+  output: ToolCallEvent['output'],
+): {
+  policy: Extract<ReviewInvocationPolicy, 'host_task_required' | 'host_task_preferred'>;
+  obligation: ReviewObligation | null;
+  childSessionId: string | null;
+} | null {
+  const invocationPolicy = sessionState.policySnapshot?.reviewInvocationPolicy;
+  const obligation = findReviewObligationById(
+    ensureReviewAssurance(sessionState.reviewAssurance),
+    obligationId,
+  );
+  const hostEvidence = sessionState.reviewAssurance?.invocations.find(
+    (invocation) =>
+      invocation.obligationId === obligationId &&
+      invocation.invocationMode === 'host_subagent_task' &&
+      invocation.hostVisible === true,
+  );
+  if (
+    resolveHostTaskAction(
+      invocationPolicy,
+      hasReportedTaskTransportFailure(output),
+      hostEvidence,
+    ) === 'fall_through'
+  ) {
+    return null;
+  }
+  return {
+    policy: invocationPolicy as Extract<
+      ReviewInvocationPolicy,
+      'host_task_required' | 'host_task_preferred'
+    >,
+    obligation,
+    childSessionId: hostEvidence?.childSessionId ?? null,
+  };
+}
+
+function buildHostTaskOutputInput(
+  sessionState: SessionState,
+  originalOutput: string,
+  obligationId: string,
+  interception: NonNullable<ReturnType<typeof resolveHostTaskInterception>>,
+): HostTaskOutputInput {
+  const { obligation } = interception;
+  const bindableAttempt = findBindableAttempt(sessionState.reviewAssurance, obligationId);
+  const reviewMaterial = resolveHostTaskReviewMaterial(obligation, bindableAttempt);
+  return {
+    originalOutput,
+    policy: interception.policy,
+    childSessionId: interception.childSessionId,
+    attestationMeta: buildHostTaskAttestationMeta(obligation),
+    attemptId: bindableAttempt?.attemptId ?? null,
+    challengeContract: buildHostTaskChallengeContract(sessionState, obligation),
+    proofContext: buildReviewerProofContext(sessionState),
+    artifactContext: obligation ? buildReviewerArtifactContext(sessionState, obligation) : [],
+    reviewMaterial,
+    reviewSubject: reviewMaterial ? obligation?.reviewSubject : undefined,
+  };
+}
+
+function resolveHostTaskReviewMaterial(
+  obligation: ReviewObligation | null,
+  attempt: ReturnType<typeof findBindableAttempt>,
+): HostTaskOutputInput['reviewMaterial'] {
+  if (!obligation?.reviewSubject) return undefined;
+  return attempt?.reviewMaterial?.materialDigest === obligation.reviewSubject.materialDigest
+    ? attempt.reviewMaterial
+    : undefined;
+}
+
+function buildHostTaskAttestationMeta(
+  obligation: ReviewObligation | null,
+): HostTaskAttestationMeta | null {
+  if (!obligation) return null;
+  return {
+    toolObligationId: obligation.obligationId,
+    iteration: obligation.iteration,
+    planVersion: obligation.planVersion,
+    mandateDigest: obligation.mandateDigest,
+    criteriaVersion: obligation.criteriaVersion,
+  };
+}
+
 export async function handleHostTaskPolicy(
   deps: OrchestratorDeps,
   sessionState: SessionState,
@@ -380,27 +478,9 @@ export async function handleHostTaskPolicy(
   reviewCtx: NonNullable<ReturnType<typeof extractReviewContext>>,
   output: ToolCallEvent['output'],
 ): Promise<boolean> {
-  const invocationPolicy = sessionState.policySnapshot?.reviewInvocationPolicy;
-
   const obligationId = reviewCtx.obligationId;
-  const preUpdateObligation = findReviewObligationById(
-    ensureReviewAssurance(sessionState.reviewAssurance),
-    obligationId,
-  );
-  const invocations = sessionState.reviewAssurance?.invocations ?? [];
-  const hostEvidence = invocations.find(
-    (inv) =>
-      inv.obligationId === obligationId &&
-      inv.invocationMode === 'host_subagent_task' &&
-      inv.hostVisible === true,
-  );
-
-  const action = resolveHostTaskAction(
-    invocationPolicy,
-    hasReportedTaskTransportFailure(output),
-    hostEvidence,
-  );
-  if (action === 'fall_through') return false;
+  const interception = resolveHostTaskInterception(sessionState, obligationId, output);
+  if (!interception) return false;
 
   await deps.updateReviewAssurance(sessDir, (s, now2) =>
     updateObligation(s, obligationId, (item) => ({
@@ -410,48 +490,9 @@ export async function handleHostTaskPolicy(
   );
 
   const rawOutput = getToolOutput(output);
-  const typedPolicy = invocationPolicy as Extract<
-    ReviewInvocationPolicy,
-    'host_task_required' | 'host_task_preferred'
-  >;
-  const childSessionId = hostEvidence
-    ? (hostEvidence as { childSessionId: string }).childSessionId
-    : null;
-  // Host-authoritative attestation/cycle-binding context the agent must forward
-  // to the reviewer subagent. Sourced from the obligation (not agent-chosen) so
-  // the reviewer echoes a concrete toolObligationId (UUID) and the captured
-  // evidence binds. The standalone /review obligation always exists here.
-  const attestationMeta: HostTaskAttestationMeta | null = preUpdateObligation
-    ? {
-        toolObligationId: preUpdateObligation.obligationId,
-        iteration: preUpdateObligation.iteration,
-        planVersion: preUpdateObligation.planVersion,
-        mandateDigest: preUpdateObligation.mandateDigest,
-        criteriaVersion: preUpdateObligation.criteriaVersion,
-      }
-    : null;
-  const challengeContract = buildHostTaskChallengeContract(sessionState, preUpdateObligation);
-  // #762: the host-task prompt is the prompt the reviewer actually receives under
-  // host_task_* policy. It MUST carry the same persisted ProofGraph context as the
-  // SDK path, otherwise the claim context is silently dropped for every flow.
-  const proofContext = buildReviewerProofContext(sessionState);
-  // #762 follow-up: the host-task prompt is the prompt the reviewer actually
-  // receives under every shipped preset. It must carry the artifact context that
-  // was previously rendered only by the unreachable SDK prompt builders.
-  const artifactContext = preUpdateObligation
-    ? buildReviewerArtifactContext(sessionState, preUpdateObligation)
-    : [];
-  const bindableAttempt = findBindableAttempt(sessionState.reviewAssurance, obligationId);
-  const mutated = buildHostTaskPolicyOutput({
-    originalOutput: rawOutput,
-    policy: typedPolicy,
-    childSessionId,
-    attestationMeta,
-    attemptId: bindableAttempt?.attemptId ?? null,
-    challengeContract,
-    proofContext,
-    artifactContext,
-  });
+  const mutated = buildHostTaskPolicyOutput(
+    buildHostTaskOutputInput(sessionState, rawOutput, obligationId, interception),
+  );
   if (mutated) output.output = mutated;
   return true;
 }

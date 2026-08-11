@@ -16,6 +16,7 @@
 
 import type { Phase } from '../state/schema.js';
 import type { ReviewReportFinding } from '../state/evidence.js';
+import type { FrozenReviewSubject } from '../state/evidence.js';
 import type {
   ReviewCardDocument,
   PresentationSection,
@@ -48,10 +49,8 @@ export interface ReviewReportCardInput {
     /** Total slots evaluated. 0 means completeness was not assessed for any slots. */
     total: number;
   };
-  /** Where the review input originated (pr, branch, url, manual_text). */
-  inputOrigin?: string;
-  /** External references provided with the review. */
-  references?: Array<{ ref: string; type: string }>;
+  /** Host-validated immutable identity of the reviewed content. */
+  reviewSubject?: FrozenReviewSubject;
   /** Obligation UUID — present when content-aware review was performed. */
   obligationId?: string;
   /** Evidence source: host-orchestrated or agent-submitted-attested. */
@@ -121,7 +120,7 @@ function categoryLabel(category: string): string {
  *
  * Sections (all typed, spacing enforced by renderMarkdown):
  * 1. Title (H1)
- * 2. Metadata (status, overall, input, references)
+ * 2. Metadata (status, overall, reviewed subject)
  * 3. Findings grouped by severity (critical > major > issues > warnings > notes)
  * 4. Completeness (4-eyes status + summary)
  * 5. Evidence (obligationId, invocation source, reviewer — when present)
@@ -144,8 +143,7 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
     overallStatus,
     findings,
     completeness,
-    inputOrigin,
-    references,
+    reviewSubject,
     obligationId,
     invocationSource,
     invocationMode,
@@ -168,22 +166,8 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
     { label: 'Status', value: phaseLabel },
     { label: 'Overall', value: overallStatus },
   ];
-  if (inputOrigin) {
-    metadata.push({ label: 'Input', value: inputOrigin });
-  }
-  if (references && references.length > 0) {
-    const refList = references
-      .map((r) => {
-        const value =
-          (r as Record<string, unknown>).ref ??
-          (r as Record<string, unknown>).source ??
-          (r as Record<string, unknown>).title ??
-          JSON.stringify(r);
-        const type = (r as Record<string, unknown>).type;
-        return type ? `${type}: ${value}` : String(value);
-      })
-      .join(', ');
-    metadata.push({ label: 'References', value: refList });
+  if (reviewSubject) {
+    metadata.push({ label: 'Reviewed subject', value: presentReviewSubject(reviewSubject) });
   }
   sections.push({ kind: 'keyValue', items: metadata });
   sections.push(buildProofGraphSection(proofSummary));
@@ -312,6 +296,25 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
   };
 
   return document;
+}
+
+/** Project only the frozen, host-validated subject metadata into Markdown-safe text. */
+function presentReviewSubject(subject: FrozenReviewSubject): string {
+  if (subject.kind === 'repository_change') {
+    if (subject.source.kind === 'pull_request') {
+      return `Pull request #${subject.source.pullRequestNumber} (${subject.changedPaths.length} changed paths)`;
+    }
+    return `Branch ${safeMarkdownText(subject.source.branch)} (${subject.changedPaths.length} changed paths)`;
+  }
+  if (subject.source.kind === 'inline') {
+    return `Inline ${subject.source.mediaType} (${subject.lineCount} lines)`;
+  }
+  const location = subject.source.url.resolved ?? subject.source.url.requested;
+  return `URL ${safeMarkdownText(`${location.origin}${location.pathname}`)} (${subject.lineCount} lines)`;
+}
+
+function safeMarkdownText(value: string): string {
+  return value.replace(/[\\`*_{}\x5b\x5d<>()#+.!|\x2d\n\r]/g, '\\$&');
 }
 
 function projectReviewReportFinding(entry: ReviewReportFinding): {

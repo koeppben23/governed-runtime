@@ -117,6 +117,7 @@ describe('FG-REL-013: type-safe discriminated union + schema validation', () => 
         validationSummary: [],
         findings: [],
         overallStatus: 'clean',
+        reviewKind: 'lifecycle_review',
         completeness: {
           sessionId: base.id,
           phase: 'COMPLETE',
@@ -241,6 +242,7 @@ describe('FG-REL-013: type-safe discriminated union + schema validation', () => 
         validationSummary: [],
         findings: [],
         overallStatus: 'clean',
+        reviewKind: 'lifecycle_review',
         completeness: {
           sessionId: base.id,
           phase: 'COMPLETE',

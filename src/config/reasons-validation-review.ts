@@ -465,6 +465,17 @@ export const REVIEW_VALIDATION_REASONS = [
   // ─── Review Finding Subject-Scope Enforcement ───────────────────────────
 
   {
+    code: 'REVIEW_SUBJECT_NOT_MATERIALIZED',
+    category: 'state',
+    messageTemplate:
+      'Standalone review cannot create obligation {obligationId} because the reviewed subject was not materialized and frozen.',
+    recoverySteps: [
+      'Provide exactly one supported review source and resolve it successfully',
+      'Do not create or continue a review obligation until immutable subject material is available',
+    ],
+  },
+
+  {
     code: 'REVIEW_SUBJECT_SCOPE_UNAVAILABLE',
     category: 'state',
     messageTemplate: 'Review obligation {obligationId} has no verifiable frozen subject scope.',

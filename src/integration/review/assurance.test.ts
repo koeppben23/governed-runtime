@@ -27,6 +27,8 @@ import {
   validateStrictAttestation,
   findBindableAttempt,
   createReviewAttempt,
+  appendObligationWithAttempt,
+  createAttemptForExistingObligation,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './assurance.js';
@@ -104,6 +106,46 @@ describe('integration/review-assurance', () => {
       const result = emptyReviewAssurance();
       expect(result.obligations).toEqual([]);
       expect(result.invocations).toEqual([]);
+    });
+  });
+
+  describe('standalone review material', () => {
+    it('copies persisted normalized material to a reissued attempt', () => {
+      const material = {
+        content: 'line one\nline two\n',
+        materialDigest: hashText('line one\nline two\n'),
+      };
+      const subjectDigest = hashText(`content:${material.materialDigest}`);
+      const obligation = createReviewObligation({
+        obligationType: 'review',
+        iteration: 1,
+        planVersion: 1,
+        now: NOW,
+        subjectDigest,
+        reviewSubject: {
+          kind: 'content',
+          source: { kind: 'inline', mediaType: 'text' },
+          materialDigest: material.materialDigest,
+          subjectDigest,
+          lineCount: 2,
+        },
+        reviewSubjectScope: { kind: 'content', subjectDigest, lineCount: 2 },
+      });
+      const initial = appendObligationWithAttempt(
+        emptyReviewAssurance(),
+        obligation,
+        NOW,
+        material,
+      );
+      const retried = createAttemptForExistingObligation(
+        initial.assurance,
+        obligation,
+        'child-session-2',
+        NOW,
+      );
+
+      expect(retried.attempts.at(-1)?.reviewMaterial).toEqual(material);
+      expect(retried.attempts.at(-1)?.subjectDigest).toBe(subjectDigest);
     });
   });
 

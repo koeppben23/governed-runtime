@@ -2,7 +2,7 @@
  * @module integration/review/content-review-pipeline
  * @description Content review pipeline for flowguard_review tool invocations.
  *
- * Loads external content, builds a review prompt, invokes the reviewer
+ * Resolves persisted review material, builds a review prompt, invokes the reviewer
  * subagent, validates findings, and enforces strict gates.
  */
 
@@ -10,13 +10,14 @@ import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js'
 import { buildReviewContentPrompt, selectReviewerProfileRules } from './prompt-builders.js';
 import { buildReviewContentMutatedOutput, type ReviewerSuccessResult } from './orchestrator.js';
 import { strictBlockedOutput } from '../plugin-helpers.js';
-import { loadExternalContent } from '../../rails/review.js';
 import { TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
 import { REASON_HOST_SUBAGENT_TASK_REQUIRED } from '../../shared/flowguard-identifiers.js';
 import {
   hashText,
   hashFindings,
   ensureReviewAssurance,
+  findReviewObligationById,
+  findBindableAttempt,
   hasEvidenceReuse,
   buildInvocationEvidence,
   appendInvocationEvidence,
@@ -40,28 +41,31 @@ function countFindings(findings: unknown): number {
   return Array.isArray(findings) ? findings.length : Object.keys(findings ?? {}).length;
 }
 
-async function loadContentForReview(
+async function loadPersistedContentForReview(
   ctx: PipelineContext,
-  input: unknown,
-  strictEnforcement: boolean,
-): Promise<string | null> {
+): Promise<{ content: string } | null> {
   const { deps, reviewCtx } = ctx;
-  const refInput = extractContentRefInput(input);
-  const contentResult = await loadExternalContent(refInput);
-  const hasContent =
-    contentResult !== null &&
-    !('kind' in contentResult) &&
-    typeof contentResult.content === 'string';
-  if (!hasContent) {
-    if (strictEnforcement) {
-      await blockReviewOutcomeHelper(deps, ctx, 'STRICT_REVIEW_ORCHESTRATION_FAILED', {
-        obligationId: reviewCtx.obligationId,
-        reason: 'external review content could not be loaded',
-      });
-    }
+  const obligation = findReviewObligationById(
+    ensureReviewAssurance(ctx.sessionState.reviewAssurance),
+    reviewCtx.obligationId,
+  );
+  const attempt = findBindableAttempt(ctx.sessionState.reviewAssurance, reviewCtx.obligationId);
+  const material = attempt?.reviewMaterial;
+  if (
+    !obligation?.reviewSubject ||
+    !attempt ||
+    !material ||
+    attempt.subjectDigest !== obligation.subjectDigest ||
+    material.materialDigest !== obligation.reviewSubject.materialDigest
+  ) {
+    await blockReviewOutcomeHelper(deps, ctx, 'STRICT_REVIEW_ORCHESTRATION_FAILED', {
+      obligationId: reviewCtx.obligationId,
+      reason:
+        'persisted review obligation, bindable attempt, or material binding is missing or mismatched',
+    });
     return null;
   }
-  return contentResult.content;
+  return { content: material.content };
 }
 
 async function validateContentFindings(
@@ -106,16 +110,13 @@ async function validateContentFindings(
   return true;
 }
 
-export async function runReviewContentPipeline(
-  ctx: PipelineContext,
-  input: unknown,
-): Promise<void> {
+export async function runReviewContentPipeline(ctx: PipelineContext): Promise<void> {
   const { deps, sessionState, reviewCtx, output, sessionId } = ctx;
   deps.log.info('review', 'content_review_started', { sessionId });
   const strictEnforcement = isStrictEnforcementEnabled(sessionState);
 
-  const content = await loadContentForReview(ctx, input, strictEnforcement);
-  if (!content) return;
+  const persistedContent = await loadPersistedContentForReview(ctx);
+  if (!persistedContent) return;
 
   const { profileName, profileRules } = selectReviewerProfileRules(
     sessionState.activeProfile,
@@ -124,7 +125,7 @@ export async function runReviewContentPipeline(
   const ticketText = sessionState.ticket?.text ?? '';
   const discoveryContext = await buildReviewDiscoveryContextForPipeline(ctx);
   const prompt = buildReviewContentPrompt({
-    content,
+    content: persistedContent.content,
     ticketText,
     obligationId: reviewCtx.obligationId,
     mandateDigest: reviewCtx.mandateDigest,
@@ -173,25 +174,6 @@ export async function runReviewContentPipeline(
     sessionId,
     findingCount: countFindings(reviewerResult.findings),
   });
-}
-
-function extractContentRefInput(input: unknown): {
-  text?: string;
-  prNumber?: number;
-  branch?: string;
-  url?: string;
-} {
-  const wrappedArgs = (input as { args?: unknown })?.args;
-  const rawInput =
-    wrappedArgs && typeof wrappedArgs === 'object' && !Array.isArray(wrappedArgs)
-      ? (wrappedArgs as Record<string, unknown>)
-      : (input as Record<string, unknown>);
-  return {
-    text: typeof rawInput.text === 'string' ? rawInput.text : undefined,
-    prNumber: typeof rawInput.prNumber === 'number' ? rawInput.prNumber : undefined,
-    branch: typeof rawInput.branch === 'string' ? rawInput.branch : undefined,
-    url: typeof rawInput.url === 'string' ? rawInput.url : undefined,
-  };
 }
 
 async function enforceContentStrictGate(

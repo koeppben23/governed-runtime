@@ -57,11 +57,23 @@ export const ReviewAttemptStatusValues = [
 export const ReviewAttemptStatus = z.enum(ReviewAttemptStatusValues);
 export type ReviewAttemptStatus = z.infer<typeof ReviewAttemptStatus>;
 
+/** Immutable normalized bytes delivered to a standalone review attempt. */
+export const ReviewMaterial = z
+  .object({
+    content: z.string(),
+    materialDigest: z.string().min(1),
+  })
+  .strict()
+  .readonly();
+export type ReviewMaterial = z.infer<typeof ReviewMaterial>;
+
 export const ReviewAttempt = z.object({
   attemptId: z.string().uuid(),
   obligationId: z.string().uuid(),
   obligationType: ReviewObligationType,
   subjectDigest: z.string().min(1),
+  /** Immutable material supplied to the reviewer for standalone content reviews. */
+  reviewMaterial: ReviewMaterial.optional(),
   ordinal: z.number().int().nonnegative(),
   childSessionId: z.string().optional(),
   status: ReviewAttemptStatus,
@@ -425,6 +437,8 @@ export const ReviewObligation = z.object({
    * surfaces any site that forgets to freeze the subject.
    */
   subjectDigest: z.string().min(1),
+  /** Present for standalone content reviews and authoritative for their attempts. */
+  reviewSubject: FrozenReviewSubject.optional(),
   /** Missing means the legacy v1 fingerprint algorithm. */
   fingerprintVersion: ReviewInputFingerprintVersion.optional(),
   /**

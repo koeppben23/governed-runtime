@@ -65,6 +65,7 @@ import {
   populateRefInput,
   buildHostTaskAttestation,
 } from './continuation.js';
+import { repositoryFromBranchSubject } from './obligation-format.js';
 
 // ─── Review preparation orchestrator ─────────────────────────────────────────
 
@@ -103,15 +104,17 @@ function getPersistedObligationBranchSource(
     exec.args.reviewFindings as { attestation?: { toolObligationId?: string } }
   )?.attestation?.toolObligationId;
   const obligationId = exec.args.reviewObligationId ?? findingsObligationId;
-  const provenance = obligationId
-    ? findReviewObligationById(state.reviewAssurance, obligationId)?.repositoryRevisionProvenance
+  const obligation = obligationId
+    ? findReviewObligationById(state.reviewAssurance, obligationId)
     : undefined;
+  const provenance = obligation?.repositoryRevisionProvenance;
   if (provenance?.kind !== 'available' || !provenance.baseSha) return undefined;
   return {
     branch: exec.args.branch,
     baseBranch: exec.args.base ?? provenance.baseSha,
     resolvedBranchSha: provenance.headSha,
     resolvedBaseSha: provenance.baseSha,
+    repository: repositoryFromBranchSubject(obligation?.reviewSubject),
   };
 }
 
@@ -210,6 +213,7 @@ function missingHostTaskVerdictBlock(
   return formatHostTaskContinuationAuthority(resolveHostTaskContinuationAuthority(state, exec));
 }
 
+// eslint-disable-next-line complexity -- branch provenance and host continuation fail closed independently
 async function prepareReviewExecution(
   sessDir: string,
   state: SessionState,
@@ -220,6 +224,10 @@ async function prepareReviewExecution(
   if (missingVerdictBlock) return missingVerdictBlock;
   const resolvedSource = resolveObligationBranchSource(state, exec);
   let refInput = withCwd(populateRefInput(exec.args, state, resolvedSource), exec.context.worktree);
+  if (exec.args.branch && !resolvedSource) {
+    const hostVerdict = await prepareHostTaskVerdictReview(sessDir, state, result, exec);
+    if (hostVerdict) return withMaterializedHostVerdict(hostVerdict, null);
+  }
   const materializedContent = await prepareReviewContent(refInput, undefined);
   if (materializedContent && 'kind' in materializedContent) {
     return formatBlockedReviewReport(materializedContent);
@@ -230,7 +238,7 @@ async function prepareReviewExecution(
   const missingResult = await ensureMissingAnalysisObligation(sessDir, state, exec.args, exec.now, {
     worktree: exec.context.worktree,
     resolvedSource,
-    reviewSubject: materializedContent?.reviewSubject,
+    preparedContent: materializedContent ?? undefined,
   });
 
   if (resolvedSource && missingResult.obligation) {
@@ -582,7 +590,7 @@ async function persistCompletedReview(
       sessDir,
       args,
       result,
-      report: reviewResult,
+      report: completion.report,
       validatedReviewObligation: prepared.validatedReviewObligation,
       nativeAttestationRejection: prepared.nativeAttestationRejection,
       finalState: completion.finalState,

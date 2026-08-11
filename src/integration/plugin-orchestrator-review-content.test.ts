@@ -41,6 +41,8 @@ const CHILD_SESSION_ID = 'child-session-review-1';
 const OBLIGATION_ID = '11111111-1111-4111-8111-111111111111';
 const SESS_DIR = '/tmp/fg-review-content-sess-dir';
 const NOW = '2026-05-06T12:00:00.000Z';
+const MATERIAL_DIGEST = 'a'.repeat(64);
+const ATTEMPT_ID = '22222222-2222-4222-8222-222222222222';
 
 function contentAnalysisRequiredOutput(): string {
   return JSON.stringify({
@@ -147,7 +149,7 @@ function buildSessionState(
         {
           obligationId: OBLIGATION_ID,
           obligationType: 'review',
-          subjectDigest: 'test-subject-digest',
+          subjectDigest: MATERIAL_DIGEST,
           iteration: 1,
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
@@ -160,14 +162,32 @@ function buildSessionState(
           fulfilledAt: null,
           consumedAt: null,
           reviewSubjectScope: {
-            kind: 'repository_change',
-            paths: ['src/foo.ts'],
-            revisions: ['base', 'head'],
+            kind: 'content',
+            subjectDigest: MATERIAL_DIGEST,
+            lineCount: 1,
+          },
+          reviewSubject: {
+            kind: 'content',
+            source: { kind: 'inline', mediaType: 'diff' },
+            materialDigest: MATERIAL_DIGEST,
+            subjectDigest: MATERIAL_DIGEST,
+            lineCount: 1,
           },
         },
       ],
       invocations: seedInvocations,
-      attempts: [],
+      attempts: [
+        {
+          attemptId: ATTEMPT_ID,
+          obligationId: OBLIGATION_ID,
+          obligationType: 'review',
+          subjectDigest: MATERIAL_DIGEST,
+          reviewMaterial: { content: 'persisted diff content', materialDigest: MATERIAL_DIGEST },
+          ordinal: 1,
+          status: 'created',
+          createdAt: NOW,
+        },
+      ],
     },
   });
 }
@@ -326,6 +346,15 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     expect(next).toContain('planVersion=1');
     expect(next).toContain(`toolObligationId=${OBLIGATION_ID}`);
     expect(next).not.toContain('toolObligationId=NOT_VERIFIED');
+    const reviewerTaskPrompt = String(parsed.reviewerTaskPrompt);
+    expect(reviewerTaskPrompt).toContain('persisted diff content');
+    expect(reviewerTaskPrompt).toContain('## Frozen Review Subject');
+    expect(reviewerTaskPrompt).toContain('## Review Subject Scope (derived)');
+    expect(reviewerTaskPrompt).toContain(
+      JSON.stringify({ kind: 'content', subjectDigest: MATERIAL_DIGEST, lineCount: 1 }),
+    );
+    expect(reviewerTaskPrompt).toContain('Content anchor contract:');
+    expect(reviewerTaskPrompt).not.toContain('content to review below this line:');
   });
 
   it('blocks with SUBAGENT_MANDATE_MISMATCH when strict /review attestation obligation mismatches', async () => {
@@ -507,24 +536,94 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     });
   });
 
-  it('supports direct /review input shape while injecting valid strict findings', async () => {
-    const { output, blockReviewOutcome } = await runReviewContent(buildFindings(), {
+  it('uses persisted material rather than direct /review input while injecting valid strict findings', async () => {
+    const { output, blockReviewOutcome, client } = await runReviewContent(buildFindings(), {
       text: 'diff content',
       inputOrigin: 'manual_text',
     });
 
     expect(blockReviewOutcome).not.toHaveBeenCalled();
-    expect(loadExternalContent).toHaveBeenCalledWith({
-      text: 'diff content',
-      prNumber: undefined,
-      branch: undefined,
-      url: undefined,
-    });
+    expect(loadExternalContent).not.toHaveBeenCalled();
+    expect(client.session.prompt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          parts: [
+            expect.objectContaining({ text: expect.stringContaining('persisted diff content') }),
+          ],
+        }),
+      }),
+    );
     const parsed = JSON.parse(output.output) as Record<string, unknown>;
     expect(String(parsed.next)).toContain('PLUGIN_REVIEW_COMPLETED');
     expect(parsed.pluginReviewFindings).toMatchObject({
       attestation: { toolObligationId: OBLIGATION_ID },
     });
+  });
+
+  it('fails closed without a bindable persisted attempt', async () => {
+    const client = buildClient(buildFindings());
+    const stateRef = { current: buildSessionState() };
+    stateRef.current = {
+      ...stateRef.current,
+      reviewAssurance: { ...stateRef.current.reviewAssurance!, attempts: [] },
+    };
+    vi.mocked(readState).mockResolvedValue(stateRef.current);
+    const { deps, blockReviewOutcome } = buildDeps(client, stateRef);
+    const output = { output: contentAnalysisRequiredOutput() };
+
+    await runReviewOrchestration(deps, {
+      toolName: TOOL_FLOWGUARD_REVIEW,
+      input: { args: { text: 'untrusted replacement' } },
+      output,
+      sessionId: PARENT_SESSION_ID,
+      now: NOW,
+    });
+
+    expect(client.session.create).not.toHaveBeenCalled();
+    expect(blockReviewOutcome).toHaveBeenCalledWith(
+      expect.anything(),
+      OBLIGATION_ID,
+      'STRICT_REVIEW_ORCHESTRATION_FAILED',
+      expect.objectContaining({ reason: expect.stringContaining('bindable attempt') }),
+      output,
+    );
+  });
+
+  it('fails closed when persisted material does not match the frozen subject', async () => {
+    const client = buildClient(buildFindings());
+    const stateRef = { current: buildSessionState() };
+    stateRef.current = {
+      ...stateRef.current,
+      reviewAssurance: {
+        ...stateRef.current.reviewAssurance!,
+        attempts: [
+          {
+            ...stateRef.current.reviewAssurance!.attempts[0]!,
+            reviewMaterial: { content: 'wrong material', materialDigest: 'b'.repeat(64) },
+          },
+        ],
+      },
+    };
+    vi.mocked(readState).mockResolvedValue(stateRef.current);
+    const { deps, blockReviewOutcome } = buildDeps(client, stateRef);
+    const output = { output: contentAnalysisRequiredOutput() };
+
+    await runReviewOrchestration(deps, {
+      toolName: TOOL_FLOWGUARD_REVIEW,
+      input: { args: { text: 'untrusted replacement' } },
+      output,
+      sessionId: PARENT_SESSION_ID,
+      now: NOW,
+    });
+
+    expect(client.session.create).not.toHaveBeenCalled();
+    expect(blockReviewOutcome).toHaveBeenCalledWith(
+      expect.anything(),
+      OBLIGATION_ID,
+      'STRICT_REVIEW_ORCHESTRATION_FAILED',
+      expect.objectContaining({ reason: expect.stringContaining('mismatched') }),
+      output,
+    );
   });
 
   it('preserves non-strict /review fallback by injecting findings without blocking mismatch', async () => {
