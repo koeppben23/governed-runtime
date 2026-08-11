@@ -60,6 +60,7 @@ import {
 } from '../fixtures.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import { TEAM_POLICY } from '../config/policy.js';
+import { hasMaterialFinding } from './review/report-test-helpers.js';
 
 vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
@@ -1017,16 +1018,13 @@ describe('review (standalone flow)', () => {
 
         expect(result.error).toBeUndefined();
         expect(result.phase).toBe('REVIEW_COMPLETE');
-        // Mapped finding (severity 'major' -> 'error', category 'risk' preserved) is in the report.
         const mapped = result.findings as Array<Record<string, unknown>>;
         expect(
-          mapped.some(
-            (f) =>
-              f.source === 'material_finding' &&
-              (f.finding as Record<string, unknown>).category === 'risk' &&
-              (f.finding as Record<string, unknown>).message ===
-                'Critical security flaw in authentication flow' &&
-              f.reportSeverity === 'error',
+          hasMaterialFinding(
+            mapped,
+            'Critical security flaw in authentication flow',
+            'risk',
+            'error',
           ),
         ).toBe(true);
         // Provenance preserved: inputOrigin and references survive the report.
@@ -1195,21 +1193,8 @@ describe('review (standalone flow)', () => {
         expect(result.error).toBeUndefined();
 
         const mapped = result.findings as Array<Record<string, unknown>>;
-        expect(
-          mapped.some(
-            (f) =>
-              f.source === 'material_finding' &&
-              (f.finding as Record<string, unknown>).message === 'Logic error in token refresh',
-          ),
-        ).toBe(true);
-        expect(
-          mapped.some(
-            (f) =>
-              f.source === 'material_finding' &&
-              (f.finding as Record<string, unknown>).message ===
-                'Race condition in cache invalidation',
-          ),
-        ).toBe(true);
+        expect(hasMaterialFinding(mapped, 'Logic error in token refresh')).toBe(true);
+        expect(hasMaterialFinding(mapped, 'Race condition in cache invalidation')).toBe(true);
         expect(
           mapped.some(
             (f) =>
