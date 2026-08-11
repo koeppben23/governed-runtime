@@ -368,9 +368,13 @@ describe('review', () => {
       expect(result.findings).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            severity: 'error', // 'major' maps to 'error'
-            category: 'correctness',
-            message: 'The supplied diff needs follow-up review evidence.',
+            source: 'material_finding',
+            reportSeverity: 'error', // 'major' maps to report severity 'error'
+            finding: expect.objectContaining({
+              severity: 'major',
+              category: 'correctness',
+              message: 'The supplied diff needs follow-up review evidence.',
+            }),
           }),
         ]),
       );

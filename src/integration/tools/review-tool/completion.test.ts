@@ -12,6 +12,14 @@
 
 import { describe, it, expect } from 'vitest';
 import { mapReviewFindingsToReport } from './completion.js';
+import type { ReviewReportFinding } from '../../../state/evidence.js';
+
+function challengeFinding(findings: ReviewReportFinding[]) {
+  const finding = findings[0];
+  if (!finding || finding.source !== 'challenge')
+    throw new Error('Expected challenge report finding');
+  return finding;
+}
 
 function challenge(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -32,11 +40,12 @@ describe('mapReviewFindingsToReport: challenges reach the author', () => {
     const findings = mapReviewFindingsToReport({ challenges: [challenge()] });
 
     expect(findings).toHaveLength(1);
-    expect(findings[0]!.severity).toBe('error');
-    expect(findings[0]!.category).toBe('implementation_challenge');
-    expect(findings[0]!.message).toContain('Submit a task with a due date in the past');
-    expect(findings[0]!.message).toContain('Due dates are validated before persistence');
-    expect(findings[0]!.location).toBe('src/main/java/com/example/TaskService.java:42');
+    const finding = challengeFinding(findings);
+    expect(finding.reportSeverity).toBe('error');
+    expect(finding.category).toBe('implementation_challenge');
+    expect(finding.message).toContain('Submit a task with a due date in the past');
+    expect(finding.message).toContain('Due dates are validated before persistence');
+    expect(finding.location).toBe('src/main/java/com/example/TaskService.java:42');
   });
 
   it.each([
@@ -48,7 +57,7 @@ describe('mapReviewFindingsToReport: challenges reach the author', () => {
   ])('maps outcome %s to severity %s', (outcome, severity) => {
     const findings = mapReviewFindingsToReport({ challenges: [challenge({ outcome })] });
 
-    expect(findings[0]!.severity).toBe(severity);
+    expect(challengeFinding(findings).reportSeverity).toBe(severity);
   });
 
   it('joins multiple locations so every cited site is visible', () => {
@@ -56,21 +65,34 @@ describe('mapReviewFindingsToReport: challenges reach the author', () => {
       challenges: [challenge({ locations: ['a/File.java:1', 'b/Other.java:9'] })],
     });
 
-    expect(findings[0]!.location).toBe('a/File.java:1, b/Other.java:9');
+    expect(challengeFinding(findings).location).toBe('a/File.java:1, b/Other.java:9');
   });
 
   it('keeps the existing finding categories alongside challenges', () => {
     const findings = mapReviewFindingsToReport({
-      blockingIssues: [{ severity: 'critical', category: 'correctness', message: 'Null deref' }],
+      blockingIssues: [
+        {
+          severity: 'critical',
+          category: 'correctness',
+          message: 'Null deref',
+          relation: {
+            subjectAnchors: [
+              {
+                kind: 'repository_location',
+                location: { path: 'src/task.ts', revision: 'head', line: 1 },
+              },
+            ],
+            evidenceLocations: [],
+          },
+        },
+      ],
       unknowns: ['Unclear rollback path'],
       challenges: [challenge()],
     });
 
-    expect(findings.map((f) => f.category)).toEqual([
-      'correctness',
-      'unknown',
-      'implementation_challenge',
-    ]);
+    expect(
+      findings.map((f) => (f.source === 'material_finding' ? f.finding.category : f.category)),
+    ).toEqual(['correctness', 'unknown', 'implementation_challenge']);
   });
 
   it.each([
@@ -89,6 +111,6 @@ describe('mapReviewFindingsToReport: challenges reach the author', () => {
     const findings = mapReviewFindingsToReport({ challenges: [challenge({ locations: [] })] });
 
     expect(findings).toHaveLength(1);
-    expect(findings[0]!.location).toBeUndefined();
+    expect(challengeFinding(findings).location).toBeUndefined();
   });
 });

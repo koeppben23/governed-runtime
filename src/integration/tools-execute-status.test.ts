@@ -657,7 +657,14 @@ describe('status', () => {
         planDigest: null,
         implDigest: null,
         validationSummary: [],
-        findings: [{ severity: 'error', category: 'correctness', message: 'Changes required' }],
+        findings: [
+          {
+            source: 'mechanical',
+            reportSeverity: 'error',
+            category: 'correctness',
+            message: 'Changes required',
+          },
+        ],
         overallStatus: 'issues',
         completeness: evaluateCompleteness(reviewState),
       });

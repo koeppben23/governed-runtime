@@ -8,7 +8,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { executeReview, buildReviewReport } from './review.js';
-import { ReviewReport } from '../state/evidence.js';
+import { ReviewReport, ReviewReportFinding } from '../state/evidence.js';
 import { makeState } from '../fixtures.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
@@ -56,6 +56,52 @@ describe('FG-REL-013: type-safe discriminated union + schema validation', () => 
         },
       });
       expect(result.success).toBe(false);
+    });
+
+    it('rejects untagged and undeclared report finding fields', () => {
+      expect(
+        ReviewReportFinding.safeParse({
+          reportSeverity: 'warning',
+          category: 'quality',
+          message: 'No source discriminator',
+        }).success,
+      ).toBe(false);
+      expect(
+        ReviewReportFinding.safeParse({
+          source: 'mechanical',
+          reportSeverity: 'warning',
+          category: 'quality',
+          message: 'Unexpected authority copy',
+          relation: { subjectAnchors: [], evidenceLocations: [] },
+        }).success,
+      ).toBe(false);
+    });
+
+    it('preserves a complete canonical material finding relation', () => {
+      const finding = {
+        source: 'material_finding' as const,
+        reportSeverity: 'error' as const,
+        finding: {
+          severity: 'major' as const,
+          category: 'correctness' as const,
+          message: 'Incorrect revision comparison',
+          relation: {
+            subjectAnchors: [
+              {
+                kind: 'repository_location' as const,
+                location: { path: 'src/compare.ts', revision: 'head' as const, line: 12 },
+              },
+            ],
+            evidenceLocations: [
+              { path: 'src/compare.test.ts', revision: 'base' as const, line: 24 },
+            ],
+          },
+        },
+      };
+      const result = ReviewReportFinding.parse(finding);
+      expect(result).toEqual(finding);
+      if (result.source !== 'material_finding') throw new Error('Expected material finding');
+      expect(result.finding.relation.evidenceLocations[0]!.revision).toBe('base');
     });
 
     it('safeParse rejects blocked discriminant on ReviewReport', () => {

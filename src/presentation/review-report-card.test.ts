@@ -8,6 +8,7 @@ import {
   type ReviewReportCardInput,
 } from './review-report-card.js';
 import type { CompactProofPresentation } from './proof-model.js';
+import type { ReviewReportFinding } from '../state/evidence.js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
@@ -20,12 +21,7 @@ const baseInput = {
   phase: 'REVIEW_COMPLETE' as const,
   phaseLabel: 'Review complete',
   overallStatus: 'clean' as const,
-  findings: [] as Array<{
-    severity: string;
-    category: string;
-    message: string;
-    relation?: import('./model.js').FindingRelationPresentation;
-  }>,
+  findings: [] as ReviewReportFinding[],
   completeness: {
     overallComplete: true,
     fourEyes: false,
@@ -66,6 +62,19 @@ const relation = {
     },
   ],
 } satisfies import('./model.js').FindingRelationPresentation;
+
+function materialFinding(
+  reportSeverity: 'info' | 'warning' | 'error',
+  severity: 'critical' | 'major' | 'minor',
+  category: 'completeness' | 'correctness' | 'feasibility' | 'risk' | 'quality',
+  message: string,
+): ReviewReportFinding {
+  return {
+    source: 'material_finding',
+    reportSeverity,
+    finding: { severity, category, message, relation },
+  };
+}
 function buildReviewReportCard(
   input: Omit<ReviewReportCardInput, 'proofSummary' | 'productNextAction' | 'conclusionAction'> &
     Partial<Pick<ReviewReportCardInput, 'proofSummary' | 'productNextAction' | 'conclusionAction'>>,
@@ -110,24 +119,14 @@ describe('buildReviewReportCard', () => {
       ...baseInput,
       overallStatus: 'issues',
       findings: [
+        materialFinding('error', 'critical', 'risk', 'SQL injection vulnerability'),
+        materialFinding('error', 'major', 'correctness', 'Logic error in token refresh'),
+        materialFinding('warning', 'minor', 'quality', 'Unused import'),
         {
-          severity: 'critical',
-          category: 'risk',
-          message: 'SQL injection vulnerability',
-          relation,
-        },
-        {
-          severity: 'major',
-          category: 'correctness',
-          message: 'Logic error in token refresh',
-          relation,
-        },
-        { severity: 'warning', category: 'quality', message: 'Unused import', relation },
-        {
-          severity: 'info',
+          source: 'unknown',
+          reportSeverity: 'info',
           category: 'unknown',
           message: 'Load test results unavailable',
-          relation,
         },
       ],
     });
@@ -186,7 +185,7 @@ describe('buildReviewReportCard', () => {
   it('shows action follow-up when critical/major findings present', () => {
     const card = buildReviewReportCard({
       ...baseInput,
-      findings: [{ severity: 'critical', category: 'risk', message: 'SQL injection', relation }],
+      findings: [materialFinding('error', 'critical', 'risk', 'SQL injection')],
     });
     expect(card).toContain('Address critical and major findings');
     expect(card).not.toContain('No follow-up required');
@@ -219,18 +218,8 @@ describe('implementation review golden fixtures', () => {
       phaseLabel: 'Implementation review in progress',
       overallStatus: 'issues',
       findings: [
-        {
-          severity: 'critical',
-          category: 'correctness',
-          message: 'Missing null check',
-          relation,
-        },
-        {
-          severity: 'major',
-          category: 'quality',
-          message: 'Missing test coverage',
-          relation,
-        },
+        materialFinding('error', 'critical', 'correctness', 'Missing null check'),
+        materialFinding('error', 'major', 'quality', 'Missing test coverage'),
       ],
       completeness: {
         overallComplete: false,
@@ -270,24 +259,9 @@ describe('compliance review golden fixtures', () => {
       phaseLabel: 'Review complete',
       overallStatus: 'issues',
       findings: [
-        {
-          severity: 'critical',
-          category: 'completeness',
-          message: 'Missing evidence',
-          relation,
-        },
-        {
-          severity: 'major',
-          category: 'risk',
-          message: 'Untracked dependency',
-          relation,
-        },
-        {
-          severity: 'warning',
-          category: 'quality',
-          message: 'Missing changelog entry',
-          relation,
-        },
+        materialFinding('error', 'critical', 'completeness', 'Missing evidence'),
+        materialFinding('error', 'major', 'risk', 'Untracked dependency'),
+        materialFinding('warning', 'minor', 'quality', 'Missing changelog entry'),
       ],
       completeness: {
         overallComplete: false,

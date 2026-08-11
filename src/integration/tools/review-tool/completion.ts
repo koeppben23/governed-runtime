@@ -10,7 +10,11 @@
 import { hashTextShort } from '../../../shared/hashing.js';
 
 import type { SessionState } from '../../../state/schema.js';
-import type { ReviewObligation } from '../../../state/evidence.js';
+import {
+  Finding,
+  type ReviewObligation,
+  type ReviewReportFinding,
+} from '../../../state/evidence.js';
 import type { ReviewExecutors } from '../../../rails/review.js';
 import { autoAdvance, createPolicyEvalFn } from '../../../rails/types.js';
 import type { AutoAdvanceOverflow } from '../../../rails/types.js';
@@ -75,16 +79,14 @@ const CHALLENGE_OUTCOME_SEVERITY: Record<string, 'info' | 'warning' | 'error'> =
  * they are always located). They were dropped entirely from the report, so the
  * author never saw them.
  */
-function challengeFindings(
-  reviewFindings: Record<string, unknown>,
-): Array<Record<string, unknown>> {
+function challengeFindings(reviewFindings: Record<string, unknown>): ReviewReportFinding[] {
   const challenges = reviewFindings.challenges;
   if (!Array.isArray(challenges)) return [];
   return challenges.flatMap((entry) => challengeFinding(entry));
 }
 
 /** Project one challenge, or nothing when it lacks the fields a reader needs. */
-function challengeFinding(entry: unknown): Array<Record<string, unknown>> {
+function challengeFinding(entry: unknown): ReviewReportFinding[] {
   if (typeof entry !== 'object' || entry === null) return [];
   const challenge = entry as Record<string, unknown>;
   const outcome = stringField(challenge.outcome);
@@ -94,7 +96,8 @@ function challengeFinding(entry: unknown): Array<Record<string, unknown>> {
   const location = challengeLocation(challenge.locations);
   return [
     {
-      severity: CHALLENGE_OUTCOME_SEVERITY[outcome] ?? 'warning',
+      source: 'challenge',
+      reportSeverity: CHALLENGE_OUTCOME_SEVERITY[outcome] ?? 'warning',
       category: stringField(challenge.kind) || 'challenge',
       message: `[${outcome}] ${scenario}${claim ? ` - claim under test: ${claim}` : ''}`,
       ...(location ? { location } : {}),
@@ -113,41 +116,45 @@ function challengeLocation(value: unknown): string {
 
 // ─── Report building ─────────────────────────────────────────────────────────
 
-export function mapReviewFindingsToReport(reviewFindings: Record<string, unknown>): Array<{
-  severity: 'info' | 'warning' | 'error';
-  category: string;
-  message: string;
-  location?: string;
-}> {
-  const allFindings: Array<Record<string, unknown>> = [
-    ...((reviewFindings.blockingIssues as Array<Record<string, unknown>>) ?? []),
-    ...((reviewFindings.majorRisks as Array<Record<string, unknown>>) ?? []),
+export function mapReviewFindingsToReport(
+  reviewFindings: Record<string, unknown>,
+): ReviewReportFinding[] {
+  const materialFindings = [
+    ...((reviewFindings.blockingIssues as unknown[]) ?? []),
+    ...((reviewFindings.majorRisks as unknown[]) ?? []),
+  ].flatMap((finding) => {
+    const parsed = Finding.safeParse(finding);
+    if (!parsed.success) return [];
+    return [
+      {
+        source: 'material_finding' as const,
+        reportSeverity: reviewSeverityMap[parsed.data.severity] ?? 'warning',
+        finding: parsed.data,
+      },
+    ];
+  });
+  return [
+    ...materialFindings,
     ...((reviewFindings.missingVerification as string[]) ?? []).map((message) => ({
-      severity: 'warning' as const,
+      source: 'missing_verification' as const,
+      reportSeverity: 'warning' as const,
       category: 'missing-verification',
       message,
     })),
     ...((reviewFindings.scopeCreep as string[]) ?? []).map((message) => ({
-      severity: 'warning' as const,
+      source: 'scope_creep' as const,
+      reportSeverity: 'warning' as const,
       category: 'scope-creep',
       message,
     })),
     ...((reviewFindings.unknowns as string[]) ?? []).map((message) => ({
-      severity: 'info' as const,
+      source: 'unknown' as const,
+      reportSeverity: 'info' as const,
       category: 'unknown',
       message,
     })),
     ...challengeFindings(reviewFindings),
   ];
-
-  return allFindings
-    .filter((f) => f.severity && f.category && f.message)
-    .map((f) => ({
-      severity: reviewSeverityMap[f.severity as string] ?? 'warning',
-      category: f.category as string,
-      message: f.message as string,
-      ...(f.location ? { location: f.location as string } : {}),
-    }));
 }
 
 export function buildReviewExecutors(
