@@ -305,6 +305,73 @@ export const IMPL_REVIEW_CONVERGED: ImplReviewResult = {
   executedAt: FIXED_TIME,
 };
 
+const FIXED_ATTEMPT_ID = '11111111-1111-4111-8111-111111111111';
+const FIXED_OBLIGATION_ID = '22222222-2222-4222-8222-222222222222';
+const FIXED_INVOCATION_ID = '33333333-3333-4333-8333-333333333333';
+
+export const IMPL_REVIEW_ASSURANCE = {
+  obligations: [
+    {
+      obligationId: FIXED_OBLIGATION_ID,
+      obligationType: 'implement' as const,
+      iteration: 0,
+      planVersion: 1,
+      criteriaVersion: 'v1',
+      mandateDigest: 'mandate-digest',
+      createdAt: FIXED_TIME,
+      pluginHandshakeAt: null,
+      status: 'fulfilled' as const,
+      invocationId: FIXED_INVOCATION_ID,
+      blockedCode: null,
+      fulfilledAt: FIXED_TIME,
+      consumedAt: null,
+      subjectDigest: CANDIDATE_DIGEST,
+      reviewSubjectScope: {
+        kind: 'repository_change' as const,
+        paths: ['src/auth.ts'],
+        revisions: ['head' as const],
+      },
+      attemptIds: [FIXED_ATTEMPT_ID],
+    },
+  ],
+  invocations: [
+    {
+      invocationId: FIXED_INVOCATION_ID,
+      obligationId: FIXED_OBLIGATION_ID,
+      obligationType: 'implement' as const,
+      parentSessionId: 'parent-session',
+      childSessionId: 'child-session',
+      agentType: 'flowguard-reviewer' as const,
+      attemptId: FIXED_ATTEMPT_ID,
+      invocationMode: 'host_subagent_task' as const,
+      hostVisible: true,
+      promptHash: 'prompt-hash',
+      mandateDigest: 'mandate-digest',
+      criteriaVersion: 'v1',
+      findingsHash: 'findings-hash',
+      invokedAt: FIXED_TIME,
+      fulfilledAt: FIXED_TIME,
+      consumedByObligationId: null,
+      reviewOutputMode: 'structured_output' as const,
+      structuredOutputUsed: true,
+      reviewAssuranceLevel: 'structured_high' as const,
+    },
+  ],
+  attempts: [
+    {
+      attemptId: FIXED_ATTEMPT_ID,
+      obligationId: FIXED_OBLIGATION_ID,
+      obligationType: 'implement' as const,
+      subjectDigest: CANDIDATE_DIGEST,
+      ordinal: 0,
+      childSessionId: 'child-session',
+      status: 'bound' as const,
+      createdAt: FIXED_TIME,
+      completedAt: FIXED_TIME,
+    },
+  ],
+};
+
 export const IMPL_REVIEW_PENDING_RESULT: ImplReviewResult = {
   iteration: 1,
   maxIterations: 3,
@@ -435,6 +502,8 @@ export function makeProgressedState(phase: Phase): SessionState {
         implementation: IMPL_EVIDENCE,
         implValidation: VALIDATION_PASSED,
         implReview: IMPL_REVIEW_CONVERGED,
+        activeChecks: [],
+        reviewAssurance: IMPL_REVIEW_ASSURANCE,
       });
     case 'COMPLETE':
       return makeState('COMPLETE', {

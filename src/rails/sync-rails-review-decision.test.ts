@@ -8,11 +8,21 @@ import {
   DECISION_IDENTITY_REVIEWER,
   DECISION_IDENTITY_VERIFIED_REVIEWER,
   makeImplEvidence,
+  CANDIDATE_DIGEST,
+  CANDIDATE_CONTENT_DIGEST,
 } from '../fixtures.js';
 import { REGULATED_POLICY, TEAM_POLICY } from '../config/policy.js';
 import type { ProofGraphProjection } from '../state/proofgraph.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { hashText } from '../shared/hashing.js';
+import type { ReviewDecisionRuntimeEvidence } from '../rails/review-decision.js';
+
+const RUNTIME_EVIDENCE_APPROVED: ReviewDecisionRuntimeEvidence = {
+  implementationApprovalObservation: {
+    candidateDigest: CANDIDATE_DIGEST,
+    contentDigest: CANDIDATE_CONTENT_DIGEST,
+  },
+};
 
 const ctx = createTestContext();
 
@@ -123,6 +133,7 @@ describe('review-decision rail', () => {
           decidedBy: 'reviewer-1',
         },
         ctx,
+        RUNTIME_EVIDENCE_APPROVED,
       );
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
@@ -136,6 +147,7 @@ describe('review-decision rail', () => {
         { ...state, proofGraph: undefined },
         { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
         ctx,
+        RUNTIME_EVIDENCE_APPROVED,
       );
       expect(result).toMatchObject({
         kind: 'blocked',
@@ -151,6 +163,7 @@ describe('review-decision rail', () => {
         { ...certified, plan: { ...certified.plan!, approvalCertificate: undefined } },
         { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
         ctx,
+        RUNTIME_EVIDENCE_APPROVED,
       );
       expect(result).toMatchObject({ kind: 'blocked', code: 'PROOFGRAPH_CERTIFICATE_INVALID' });
     });
@@ -161,6 +174,7 @@ describe('review-decision rail', () => {
         { ...state, proofGraph: undefined },
         { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
         ctx,
+        RUNTIME_EVIDENCE_APPROVED,
       );
       expect(result).toMatchObject({ kind: 'ok' });
     });
@@ -172,6 +186,7 @@ describe('review-decision rail', () => {
         { ...state, proofGraph: proofGraph() },
         { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
         ctx,
+        RUNTIME_EVIDENCE_APPROVED,
       );
       expect(result.kind).toBe('blocked');
       if (result.kind === 'blocked') {
@@ -191,10 +206,30 @@ describe('review-decision rail', () => {
         executedAt: '2026-01-01T00:00:00.000Z',
       });
       const digest = ev.candidate.candidateDigest;
+      const obs = {
+        implementationApprovalObservation: {
+          candidateDigest: ev.candidate.candidateDigest,
+          contentDigest: ev.candidate.contentDigest,
+        },
+      };
+      const customAssurance = {
+        obligations:
+          state.reviewAssurance?.obligations.map((o) => ({
+            ...o,
+            subjectDigest: ev.candidate.candidateDigest,
+          })) ?? [],
+        invocations: state.reviewAssurance?.invocations ?? [],
+        attempts:
+          state.reviewAssurance?.attempts.map((a) => ({
+            ...a,
+            subjectDigest: ev.candidate.candidateDigest,
+          })) ?? [],
+      };
       const result = executeReviewDecision(
         {
           ...state,
           implementation: ev,
+          reviewAssurance: customAssurance,
           implementationRiskAssessment: {
             computedMinimumTaskClass: 'HIGH-RISK',
             touchedSurfaces: ['src/state/schema.ts'],
@@ -206,6 +241,12 @@ describe('review-decision rail', () => {
         },
         { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
         ctx,
+        {
+          implementationApprovalObservation: {
+            candidateDigest: ev.candidate.candidateDigest,
+            contentDigest: ev.candidate.contentDigest,
+          },
+        },
       );
       expect(result).toMatchObject({ kind: 'blocked', code: 'PROOFGRAPH_CRITICAL_FACT_REQUIRED' });
     });
@@ -221,10 +262,22 @@ describe('review-decision rail', () => {
         executedAt: '2026-01-01T00:00:00.000Z',
       });
       const digest = ev.candidate.candidateDigest;
+      const customAssurance = {
+        obligations: state.reviewAssurance!.obligations.map((o) => ({
+          ...o,
+          subjectDigest: ev.candidate.candidateDigest,
+        })),
+        invocations: state.reviewAssurance!.invocations,
+        attempts: state.reviewAssurance!.attempts.map((a) => ({
+          ...a,
+          subjectDigest: ev.candidate.candidateDigest,
+        })),
+      };
       const result = executeReviewDecision(
         {
           ...state,
           implementation: ev,
+          reviewAssurance: customAssurance,
           implementationRiskAssessment: {
             computedMinimumTaskClass: 'HIGH-RISK',
             touchedSurfaces: ['src/archive/verify.ts'],
@@ -236,6 +289,12 @@ describe('review-decision rail', () => {
         },
         { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
         ctx,
+        {
+          implementationApprovalObservation: {
+            candidateDigest: ev.candidate.candidateDigest,
+            contentDigest: ev.candidate.contentDigest,
+          },
+        },
       );
       expect(result).toMatchObject({ kind: 'ok' });
     });
@@ -251,10 +310,22 @@ describe('review-decision rail', () => {
         executedAt: '2026-01-01T00:00:00.000Z',
       });
       const digest = ev.candidate.candidateDigest;
+      const customAssurance = {
+        obligations: state.reviewAssurance!.obligations.map((o) => ({
+          ...o,
+          subjectDigest: ev.candidate.candidateDigest,
+        })),
+        invocations: state.reviewAssurance!.invocations,
+        attempts: state.reviewAssurance!.attempts.map((a) => ({
+          ...a,
+          subjectDigest: ev.candidate.candidateDigest,
+        })),
+      };
       const result = executeReviewDecision(
         {
           ...state,
           implementation: ev,
+          reviewAssurance: customAssurance,
           implementationRiskAssessment: {
             computedMinimumTaskClass: 'HIGH-RISK',
             touchedSurfaces: ['src/state/schema.ts'],
@@ -265,6 +336,12 @@ describe('review-decision rail', () => {
         },
         { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
         ctx,
+        {
+          implementationApprovalObservation: {
+            candidateDigest: ev.candidate.candidateDigest,
+            contentDigest: ev.candidate.contentDigest,
+          },
+        },
       );
       expect(result).toMatchObject({ kind: 'blocked', code: 'PROOFGRAPH_RISK_ASSESSMENT_STALE' });
     });
@@ -275,6 +352,7 @@ describe('review-decision rail', () => {
         { ...state, proofGraph: proofGraph('hypothesis') },
         { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
         ctx,
+        RUNTIME_EVIDENCE_APPROVED,
       );
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') expect(result.state.phase).toBe('COMPLETE');

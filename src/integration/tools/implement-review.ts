@@ -2,52 +2,8 @@
  * @module integration/tools/implement
  * @description FlowGuard implement tool — record implementation or review verdict.
  *
- * Agent-Orchestrated Independent Review for /implement
- *
- * Architecture: FlowGuard does NOT call subagents. The OpenCode primary agent
- * orchestrates independent review by calling the flowguard-reviewer subagent
- * via the Task tool. FlowGuard accepts, validates, and persists the resulting
- * ReviewFindings.
- *
- * Flow (subagentEnabled=true):
- * 1. Primary agent performs implementation work
- * 2. Primary agent calls flowguard_implement (Mode A, records evidence)
- * 3. FlowGuard returns next-action instructing subagent invocation
- * 4. Primary agent calls flowguard-reviewer subagent via Task tool
- * 5. Subagent returns structured ReviewFindings
- * 6. Primary agent submits reviewVerdict + reviewFindings to FlowGuard (Mode B)
- * 7. FlowGuard validates and persists both (append-only, separate)
- *
- * Tool responsibilities:
- * - Input validation: reviewFindings vs policy, iteration binding
- * - Persistence: impl history (author), implReviewFindings (reviewer)
- * - Response: summary of review findings
- * - Next-action: independent reviewer instructions
- *
- * Policy config (selfReview):
- * - subagentEnabled: enforces subagent review mode
- * - fallbackToSelf: deprecated compatibility field; self-review fallback is prohibited
- *
- * Validation rules:
- * - reviewMode=self → BLOCKED
- * - reviewVerdict=approve + missing reviewFindings → BLOCKED
- * - reviewFindings.iteration mismatch → BLOCKED
- *
- * Multi-call pattern driven by the LLM:
- *
- * Step 1: LLM makes code changes using OpenCode built-in tools (read, write, bash)
- * Step 2: LLM calls flowguard_implement({})
- *   -> Tool auto-detects changed files via git, records ImplEvidence
- *   -> Auto-advances to IMPL_REVIEW
- *   -> Returns "review needed" with policy-conditional next-action
- *
- * Step 3: LLM calls flowguard-reviewer subagent via Task tool
- * Step 4: LLM calls flowguard_review_implementation({ reviewVerdict: "accept", reviewFindings })
- *   -> Tool records review iteration, checks convergence
- *   -> On convergence: auto-advance to EVIDENCE_REVIEW
- *
- * OR Step 4: LLM calls flowguard_review_implementation({ reviewVerdict: "changes_requested" })
- *   -> LLM makes more code changes, then calls flowguard_implement({}) again
+ * Agent-Orchestrated Independent Review: the OpenCode primary agent calls the
+ * flowguard-reviewer subagent via Task tool. FlowGuard validates and persists.
  *
  * @version v5
  */
@@ -408,11 +364,9 @@ function appendImplReviewState(input: {
       executedAt: runtime.ctx.now(),
     },
     implReviewFindings: newReviewFindings.length > 0 ? newReviewFindings : undefined,
-    reviewAssurance: {
-      obligations: consumedAssurance.obligations,
-      invocations: consumedAssurance.invocations,
-      attempts: consumedAssurance.attempts,
-    },
+    // Submitted findings are retained as review content only. Host-captured
+    // review evidence is the sole authority that can bind an attempt.
+    reviewAssurance: consumedAssurance,
     error: null,
   };
   return { reviewedState, newReviewFindings };

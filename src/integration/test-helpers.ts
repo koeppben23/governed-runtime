@@ -32,11 +32,14 @@ import type { ReviewFindings, ReviewObligationType } from '../state/evidence.js'
 import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
+  appendInvocationEvidence,
   buildInvocationEvidence,
+  fulfillObligation,
   findLatestObligation,
   hashFindings,
   hashText,
 } from './review/assurance.js';
+import { bindHostReviewInvocation } from './review/host-review-assurance-binding.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
 // ─── Safety Guards ───────────────────────────────────────────────────────────
@@ -439,7 +442,12 @@ export async function fulfillStrictReviewObligation(
     ...(challenges.length > 0 ? { challenges } : {}),
   };
 
-  const isHostTask = state.policySnapshot?.reviewInvocationPolicy === 'host_task_required';
+  // Implementation final approval accepts only host-observed reviewer evidence.
+  // Direct tool tests therefore simulate the same persisted host capture as the
+  // production Task after-hook, rather than treating submitted findings as proof.
+  const isHostTask =
+    input.obligationType === 'implement' ||
+    state.policySnapshot?.reviewInvocationPolicy === 'host_task_required';
   const invocation = buildInvocationEvidence({
     obligationId: obligation.obligationId,
     obligationType: input.obligationType,
@@ -463,28 +471,46 @@ export async function fulfillStrictReviewObligation(
         }
       : {}),
   });
-  const obligationAcceptedByReviewer = !isHostTask;
+  const fulfilledAssurance = fulfillObligation(
+    {
+      obligations: assurance.obligations,
+      invocations: assurance.invocations,
+      attempts: assurance.attempts,
+    },
+    obligation.obligationId,
+    invocation.invocationId,
+    new Date().toISOString(),
+  );
+  const withInvocation = appendInvocationEvidence(fulfilledAssurance, invocation);
+  const reviewAssurance = isHostTask
+    ? bindHostReviewInvocation(
+        withInvocation,
+        obligation.obligationId,
+        invocation.invocationId,
+        new Date().toISOString(),
+      )
+    : withInvocation;
+  if (
+    isHostTask &&
+    reviewAssurance.attempts.find((attempt) => attempt.attemptId === invocation.attemptId)
+      ?.status !== 'bound'
+  ) {
+    throw new Error('Host review fixture could not bind the persisted review attempt');
+  }
 
   await writeState(sessDir, {
     ...state,
     reviewAssurance: {
-      obligations: assurance.obligations.map((item) =>
+      obligations: reviewAssurance.obligations.map((item) =>
         item.obligationId === obligation.obligationId
           ? {
               ...item,
               pluginHandshakeAt: new Date().toISOString(),
-              status: obligationAcceptedByReviewer ? ('fulfilled' as const) : item.status,
-              invocationId: obligationAcceptedByReviewer
-                ? invocation.invocationId
-                : item.invocationId,
-              fulfilledAt: obligationAcceptedByReviewer
-                ? new Date().toISOString()
-                : item.fulfilledAt,
             }
           : item,
       ),
-      invocations: [...assurance.invocations, invocation],
-      attempts: assurance.attempts,
+      invocations: reviewAssurance.invocations,
+      attempts: reviewAssurance.attempts,
     },
   });
 

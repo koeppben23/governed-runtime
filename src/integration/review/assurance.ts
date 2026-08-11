@@ -406,7 +406,6 @@ export function createReviewAttempt(input: {
 }
 
 /** Create an obligation and its initial attempt atomically.
- *
  * The attempt is persisted alongside the obligation at creation time,
  * BEFORE the reviewer subagent is invoked. This satisfies the core
  * security invariant that attempts are invocation envelopes, not
@@ -442,9 +441,7 @@ export function createObligationAndAttempt(
   return { assurance: deduped, obligation, attempt };
 }
 
-/**
- * Append an obligation AND its initial attempt to the assurance state atomically.
- *
+/** Append an obligation AND its initial attempt to the assurance state atomically.
  * This is the simplest integration point for call sites that currently call
  * `appendReviewObligation`. The attempt is created BEFORE any reviewer subagent
  * is invoked, satisfying the core security invariant.
@@ -479,9 +476,7 @@ export function appendObligationWithAttempt(
   };
 }
 
-/**
- * Create a new attempt for an EXISTING obligation (retry / re-invocation).
- *
+/** Create a new attempt for an EXISTING obligation (retry / re-invocation).
  * Unlike createObligationAndAttempt (which creates a new obligation), this
  * attaches a new attempt to an already-persisted obligation. Previous
  * non-bound attempts for this obligation are staled — so a late callback

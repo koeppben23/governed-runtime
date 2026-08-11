@@ -43,7 +43,16 @@ import { evaluateProofGraphGate } from '../audit/proofgraph/gate.js';
 import { buildProofApprovalProjection } from './proofgraph/approval-projection.js';
 import { buildReviewerProofContext } from './review/proof-context.js';
 import { isRiskAssessmentCurrent } from '../audit/proofgraph/gate.js';
-import { makeState, TICKET, IMPL_EVIDENCE, FIXED_TIME, makeImplEvidence } from '../fixtures.js';
+import {
+  makeState,
+  TICKET,
+  IMPL_EVIDENCE,
+  FIXED_TIME,
+  makeImplEvidence,
+  CANDIDATE_DIGEST,
+  CANDIDATE_CONTENT_DIGEST,
+  IMPL_REVIEW_ASSURANCE,
+} from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 import type {
   PlanClaimDeclaration,
@@ -887,10 +896,18 @@ describe('ProofGraph materialization and gate (runtime)', () => {
         phase: 'EVIDENCE_REVIEW',
         proofContract: contract,
         proofGraph: summary.projection,
+        activeChecks: [],
+        reviewAssurance: IMPL_REVIEW_ASSURANCE,
       },
       { verdict: 'approve', rationale: 'ship it', decidedBy: 'approver' },
       // No policy configuration at all: enforcement is unconditional (#762).
       realDigestContext(),
+      {
+        implementationApprovalObservation: {
+          candidateDigest: CANDIDATE_DIGEST,
+          contentDigest: CANDIDATE_CONTENT_DIGEST,
+        },
+      },
     );
 
     expect(blocked.kind).toBe('blocked');

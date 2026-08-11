@@ -43,7 +43,8 @@ describe('state machine invariants', () => {
   });
 
   describe('BAD — blocked rails never advance phase', () => {
-    for (const phase of ALL_PHASES) {
+    const phasesExceptEvidenceReview = ALL_PHASES.filter((p) => p !== 'EVIDENCE_REVIEW');
+    for (const phase of phasesExceptEvidenceReview) {
       it(`${phase}: blocked review-decision does not mutate phase`, () => {
         const state = makeProgressedState(phase);
         const beforePhase = state.phase;

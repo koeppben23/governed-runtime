@@ -1,14 +1,96 @@
 import { describe, expect, it } from 'vitest';
 import { executeReviewDecision } from './review-decision.js';
+import type { ReviewDecisionRuntimeEvidence } from './review-decision.js';
 import {
   makeState,
   ARCHITECTURE_DECISION,
   IMPL_EVIDENCE,
+  CANDIDATE_DIGEST,
+  CANDIDATE_CONTENT_DIGEST,
   PLAN_RECORD,
   FIXED_TIME,
 } from '../fixtures.js';
 import { TEAM_POLICY } from '../config/policy.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
+import type { ReviewAssuranceState } from '../state/evidence.js';
+
+const FIXED_ATTEMPT_ID = '11111111-1111-4111-8111-111111111111';
+const FIXED_OBLIGATION_ID = '22222222-2222-4222-8222-222222222222';
+const FIXED_INVOCATION_ID = '33333333-3333-4333-8333-333333333333';
+
+function makeImplApprovalObservation(): ReviewDecisionRuntimeEvidence {
+  return {
+    implementationApprovalObservation: {
+      candidateDigest: CANDIDATE_DIGEST,
+      contentDigest: CANDIDATE_CONTENT_DIGEST,
+    },
+  };
+}
+
+function makeImplReviewAssurance(): ReviewAssuranceState {
+  return {
+    obligations: [
+      {
+        obligationId: FIXED_OBLIGATION_ID,
+        obligationType: 'implement',
+        iteration: 0,
+        planVersion: 1,
+        criteriaVersion: 'v1',
+        mandateDigest: 'mandate-digest',
+        createdAt: FIXED_TIME,
+        pluginHandshakeAt: null,
+        status: 'fulfilled',
+        invocationId: FIXED_INVOCATION_ID,
+        blockedCode: null,
+        fulfilledAt: FIXED_TIME,
+        consumedAt: null,
+        subjectDigest: CANDIDATE_DIGEST,
+        reviewSubjectScope: {
+          kind: 'repository_change' as const,
+          paths: [],
+          revisions: ['head' as const],
+        },
+        attemptIds: [FIXED_ATTEMPT_ID],
+      },
+    ],
+    invocations: [
+      {
+        invocationId: FIXED_INVOCATION_ID,
+        obligationId: FIXED_OBLIGATION_ID,
+        obligationType: 'implement',
+        parentSessionId: 'parent-session',
+        childSessionId: 'child-session',
+        agentType: 'flowguard-reviewer' as const,
+        attemptId: FIXED_ATTEMPT_ID,
+        invocationMode: 'host_subagent_task' as const,
+        hostVisible: true,
+        promptHash: 'prompt-hash',
+        mandateDigest: 'mandate-digest',
+        criteriaVersion: 'v1',
+        findingsHash: 'findings-hash',
+        invokedAt: FIXED_TIME,
+        fulfilledAt: FIXED_TIME,
+        consumedByObligationId: null,
+        reviewOutputMode: 'structured_output' as const,
+        structuredOutputUsed: true,
+        reviewAssuranceLevel: 'structured_high' as const,
+      },
+    ],
+    attempts: [
+      {
+        attemptId: FIXED_ATTEMPT_ID,
+        obligationId: FIXED_OBLIGATION_ID,
+        obligationType: 'implement',
+        subjectDigest: CANDIDATE_DIGEST,
+        ordinal: 0,
+        childSessionId: 'child-session',
+        status: 'bound',
+        createdAt: FIXED_TIME,
+        completedAt: FIXED_TIME,
+      },
+    ],
+  };
+}
 
 const baseCtx = {
   now: () => FIXED_TIME,
@@ -620,6 +702,8 @@ describe('review-decision rail', () => {
       plan: PLAN_RECORD,
       implementation: IMPL_EVIDENCE,
       reducedCeremony: reducedCeremonyDecision,
+      reviewAssurance: makeImplReviewAssurance(),
+      activeChecks: [],
       implReview: {
         iteration: 1,
         maxIterations: 3,
@@ -635,6 +719,7 @@ describe('review-decision rail', () => {
       state,
       { verdict: 'approve', rationale: 'looks good', decidedBy: 'reviewer-1' },
       baseCtx,
+      makeImplApprovalObservation(),
     );
 
     expect(result.kind).toBe('ok');
@@ -900,6 +985,8 @@ describe('review-decision rail', () => {
         plan: PLAN_RECORD,
         initiatedBy: 'initiator',
         initiatedByIdentity: initiatorIdentity,
+        reviewAssurance: makeImplReviewAssurance(),
+        activeChecks: [],
       });
       const result = executeReviewDecision(
         state,
@@ -915,6 +1002,7 @@ describe('review-decision rail', () => {
             minimumActorAssuranceForApproval: 'claim_validated',
           }),
         },
+        makeImplApprovalObservation(),
       );
       expect(result.kind).toBe('ok');
     });
@@ -925,6 +1013,8 @@ describe('review-decision rail', () => {
         plan: PLAN_RECORD,
         initiatedBy: 'initiator',
         initiatedByIdentity: initiatorIdentity,
+        reviewAssurance: makeImplReviewAssurance(),
+        activeChecks: [],
       });
       const result = executeReviewDecision(
         state,
@@ -940,6 +1030,7 @@ describe('review-decision rail', () => {
             minimumActorAssuranceForApproval: 'idp_verified',
           }),
         },
+        makeImplApprovalObservation(),
       );
       expect(result.kind).toBe('ok');
     });
@@ -950,6 +1041,8 @@ describe('review-decision rail', () => {
         plan: PLAN_RECORD,
         initiatedBy: 'initiator',
         initiatedByIdentity: initiatorIdentity,
+        reviewAssurance: makeImplReviewAssurance(),
+        activeChecks: [],
       });
       const result = executeReviewDecision(
         state,
@@ -965,6 +1058,7 @@ describe('review-decision rail', () => {
             // Neither requireVerifiedActorsForApproval nor minimumActorAssuranceForApproval set
           }),
         },
+        makeImplApprovalObservation(),
       );
       expect(result.kind).toBe('ok');
     });
@@ -1163,6 +1257,143 @@ describe('review-decision rail', () => {
         // (which would happen only at ARCH_REVIEW).
         expect(result.state.architecture).toBe(state.architecture);
         expect(result.state.architecture?.status).toBe(ARCHITECTURE_DECISION.status);
+      }
+    });
+  });
+
+  describe('candidate-drift E2E', () => {
+    it('exact candidate unchanged → approval succeeds', () => {
+      const state = makeState('EVIDENCE_REVIEW', {
+        implementation: IMPL_EVIDENCE,
+        plan: PLAN_RECORD,
+        reviewAssurance: makeImplReviewAssurance(),
+        activeChecks: [],
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'ship it', decidedBy: 'reviewer-1' },
+        baseCtx,
+        makeImplApprovalObservation(),
+      );
+      expect(result.kind).toBe('ok');
+    });
+
+    it('candidateDigest mismatch → blocked with IMPLEMENTATION_CANDIDATE_STALE', () => {
+      const state = makeState('EVIDENCE_REVIEW', {
+        implementation: IMPL_EVIDENCE,
+        plan: PLAN_RECORD,
+        reviewAssurance: makeImplReviewAssurance(),
+        activeChecks: [],
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'ship it', decidedBy: 'reviewer-1' },
+        baseCtx,
+        {
+          implementationApprovalObservation: {
+            candidateDigest: 'different-candidate-digest',
+            contentDigest: CANDIDATE_CONTENT_DIGEST,
+          },
+        },
+      );
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.code).toBe('IMPLEMENTATION_CANDIDATE_STALE');
+      }
+    });
+
+    it('same contentDigest, different candidateDigest → review does not authorize new candidate', () => {
+      const state = makeState('EVIDENCE_REVIEW', {
+        implementation: IMPL_EVIDENCE,
+        plan: PLAN_RECORD,
+        reviewAssurance: makeImplReviewAssurance(),
+        activeChecks: [],
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'ship it', decidedBy: 'reviewer-1' },
+        baseCtx,
+        {
+          implementationApprovalObservation: {
+            candidateDigest: 'different-candidate-same-content',
+            contentDigest: CANDIDATE_CONTENT_DIGEST,
+          },
+        },
+      );
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.code).toBe('IMPLEMENTATION_CANDIDATE_STALE');
+      }
+    });
+
+    it('no observation → blocked with IMPLEMENTATION_CANDIDATE_STALE', () => {
+      const state = makeState('EVIDENCE_REVIEW', {
+        implementation: IMPL_EVIDENCE,
+        plan: PLAN_RECORD,
+        reviewAssurance: makeImplReviewAssurance(),
+        activeChecks: [],
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'ship it', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.code).toBe('IMPLEMENTATION_CANDIDATE_STALE');
+      }
+    });
+
+    it('validation evidence stale → IMPLEMENTATION_VALIDATION_BINDING_INVALID', () => {
+      const state = makeState('EVIDENCE_REVIEW', {
+        implementation: IMPL_EVIDENCE,
+        plan: PLAN_RECORD,
+        reviewAssurance: makeImplReviewAssurance(),
+        activeChecks: ['test'],
+        validationAttempts: [],
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'ship it', decidedBy: 'reviewer-1' },
+        baseCtx,
+        makeImplApprovalObservation(),
+      );
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.code).toBe('IMPLEMENTATION_VALIDATION_BINDING_INVALID');
+      }
+    });
+
+    it('review obligation binds different candidate → IMPLEMENTATION_REVIEW_BINDING_INVALID', () => {
+      const state = makeState('EVIDENCE_REVIEW', {
+        implementation: IMPL_EVIDENCE,
+        plan: PLAN_RECORD,
+        reviewAssurance: makeImplReviewAssurance(),
+        activeChecks: [],
+      });
+      const misboundState = {
+        ...state,
+        reviewAssurance: {
+          ...state.reviewAssurance!,
+          obligations: state.reviewAssurance!.obligations.map((o) => ({
+            ...o,
+            subjectDigest: 'wrong-candidate-digest',
+          })),
+          attempts: state.reviewAssurance!.attempts.map((a) => ({
+            ...a,
+            subjectDigest: 'wrong-candidate-digest',
+          })),
+        },
+      };
+      const result = executeReviewDecision(
+        misboundState,
+        { verdict: 'approve', rationale: 'ship it', decidedBy: 'reviewer-1' },
+        baseCtx,
+        makeImplApprovalObservation(),
+      );
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.code).toBe('IMPLEMENTATION_REVIEW_BINDING_INVALID');
       }
     });
   });
