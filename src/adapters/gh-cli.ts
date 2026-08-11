@@ -314,11 +314,13 @@ export function resolveBranchReviewSource(
     baseBranch: base.label,
     resolvedBranchSha: headSha,
     resolvedBaseSha: baseSha,
-    repository: resolveRepositoryIdentity(cwd),
+    repository: resolveRepositoryIdentity(baseSha, headSha, cwd),
   };
 }
 
 function resolveRepositoryIdentity(
+  baseSha: string,
+  headSha: string,
   cwd?: string,
 ):
   | { readonly host: string; readonly owner: string; readonly name: string }
@@ -331,21 +333,25 @@ function resolveRepositoryIdentity(
       cwd,
     }).trim();
     const match = /^(?:https?:\/\/|git@)([^/:]+)[:/]([^/]+)\/([^/]+?)(?:\.git)?$/.exec(remote);
-    if (!match) return localRepositoryIdentity(cwd);
+    if (!match) return localRepositoryIdentity(baseSha, headSha, cwd);
     const [, host, owner, name] = match;
-    if (!host || !owner || !name) return localRepositoryIdentity(cwd);
+    if (!host || !owner || !name) return localRepositoryIdentity(baseSha, headSha, cwd);
     return { host, owner, name };
   } catch {
-    return localRepositoryIdentity(cwd);
+    return localRepositoryIdentity(baseSha, headSha, cwd);
   }
 }
 
-function localRepositoryIdentity(cwd?: string): {
+function localRepositoryIdentity(
+  baseSha: string,
+  headSha: string,
+  cwd?: string,
+): {
   readonly kind: 'local';
   readonly rootCommitDigest: string;
 } {
   try {
-    const roots = execFileSync('git', ['rev-list', '--max-parents=0', '--all'], {
+    const roots = execFileSync('git', ['rev-list', '--max-parents=0', baseSha, headSha], {
       encoding: 'utf-8',
       stdio: 'pipe',
       timeout: 3000,
