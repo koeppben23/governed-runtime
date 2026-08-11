@@ -239,14 +239,7 @@ describe('review (standalone flow)', () => {
   beforeEach(() => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        headers: { get: () => 'text/plain; charset=utf-8' },
-        arrayBuffer: () =>
-          Promise.resolve(new TextEncoder().encode('Mock URL content for review').buffer),
-      } as Response),
+      vi.fn(() => new Response('Mock URL content for review')),
     );
   });
 
