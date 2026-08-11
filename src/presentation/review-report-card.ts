@@ -15,13 +15,13 @@
  */
 
 import type { Phase } from '../state/schema.js';
+import type { ReviewReportFinding } from '../state/evidence.js';
 import type {
   ReviewCardDocument,
   PresentationSection,
   KeyValueItem,
   FindingGroup,
   FindingItem,
-  FindingRelationPresentation,
 } from './model.js';
 import { projectFindingRelation } from './finding-relation.js';
 import { renderMarkdown } from './markdown.js';
@@ -39,12 +39,7 @@ export interface ReviewReportCardInput {
   /** Derived from report.completeness.overallComplete. */
   overallStatus: 'clean' | 'warnings' | 'issues';
   /** Review findings from the report. */
-  findings: Array<{
-    severity: string;
-    category: string;
-    message: string;
-    relation?: FindingRelationPresentation;
-  }>;
+  findings: ReviewReportFinding[];
   /** Completeness summary. */
   completeness: {
     overallComplete: boolean;
@@ -199,7 +194,8 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
       number,
       { label: string; severity: FindingGroup['severity']; items: FindingItem[] }
     >();
-    for (const f of findings) {
+    for (const reportFinding of findings) {
+      const f = projectReviewReportFinding(reportFinding);
       const g = severityGroup(f.severity);
       let bucket = grouped.get(g.order);
       if (!bucket) {
@@ -287,7 +283,10 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
   // ── Recommended follow-up ──────────────────────────────────────────
   const followUp: string[] = [];
   const hasCriticalOrMajor = findings.some(
-    (f) => f.severity === 'critical' || f.severity === 'major' || f.severity === 'error',
+    (finding) =>
+      finding.reportSeverity === 'error' ||
+      (finding.source === 'material_finding' &&
+        (finding.finding.severity === 'critical' || finding.finding.severity === 'major')),
   );
   if (findings.length === 0) {
     followUp.push(
@@ -313,4 +312,31 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
   };
 
   return document;
+}
+
+function projectReviewReportFinding(entry: ReviewReportFinding): {
+  readonly severity: string;
+  readonly category: string;
+  readonly message: string;
+  readonly relation?: import('./model.js').FindingRelationPresentation;
+} {
+  switch (entry.source) {
+    case 'material_finding':
+      return {
+        severity: entry.finding.severity,
+        category: entry.finding.category,
+        message: entry.finding.message,
+        relation: entry.finding.relation,
+      };
+    case 'mechanical':
+    case 'missing_verification':
+    case 'scope_creep':
+    case 'unknown':
+    case 'challenge':
+      return {
+        severity: entry.reportSeverity,
+        category: entry.category,
+        message: entry.message,
+      };
+  }
 }

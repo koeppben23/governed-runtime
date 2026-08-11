@@ -17,7 +17,12 @@
  */
 
 import type { SessionState } from '../state/schema.js';
-import { ReviewReport, type ExternalReference, type InputOrigin } from '../state/evidence.js';
+import {
+  ReviewReport,
+  type ExternalReference,
+  type InputOrigin,
+  type ReviewReportFinding,
+} from '../state/evidence.js';
 import { REVIEW_REPORT_SCHEMA_ID } from '../shared/flowguard-identifiers.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
@@ -239,12 +244,7 @@ export interface ReviewExecutors {
    * @param state - Current session state
    * @param content - Optional external content (text blob, PR diff, branch diff, URL content)
    */
-  analyze?: (
-    state: SessionState,
-    content?: string,
-  ) => Promise<
-    Array<{ severity: 'info' | 'warning' | 'error'; category: string; message: string }>
-  >;
+  analyze?: (state: SessionState, content?: string) => Promise<ReviewReportFinding[]>;
 }
 
 // ─── Review Reference Input ───────────────────────────────────────────
@@ -276,36 +276,29 @@ export interface ReviewReferenceInput {
 
 // ─── Mechanical Findings ──────────────────────────────────────
 
+type MechanicalFinding = Extract<ReviewReportFinding, { readonly source: 'mechanical' }>;
+
 function buildMechanicalFindings(
   state: SessionState,
   completeness: ReturnType<typeof evaluateCompleteness>,
   refInput?: ReviewReferenceInput,
-): Array<{ severity: 'info' | 'warning' | 'error'; category: string; message: string }> {
-  const findings: Array<{
-    severity: 'info' | 'warning' | 'error';
-    category: string;
-    message: string;
-  }> = [];
-
-  // F11: the "No ticket evidence" / "No plan evidence" warnings describe the
-  // session LIFECYCLE and are meaningless for a standalone content review of an
-  // external diff/PR/branch/text (refInput is defined only for content reviews;
-  // see buildReviewReferenceInput). Emitting them there contradicted the report's
-  // own completeness projection (0/0 complete, Overall: Complete) and inflated the
-  // finding/warning count. They are lifecycle findings, not completeness evidence
-  // for the reviewed content, so they are suppressed in content-review mode.
+): MechanicalFinding[] {
+  const findings: MechanicalFinding[] = [];
+  // Lifecycle gaps do not describe standalone external content reviews.
   const isContentReview = refInput !== undefined;
   if (!isContentReview) {
     if (!state.ticket) {
       findings.push({
-        severity: 'warning',
+        source: 'mechanical',
+        reportSeverity: 'warning',
         category: 'completeness',
         message: 'No ticket evidence',
       });
     }
     if (!state.plan) {
       findings.push({
-        severity: 'warning',
+        source: 'mechanical',
+        reportSeverity: 'warning',
         category: 'completeness',
         message: 'No plan evidence',
       });
@@ -313,7 +306,8 @@ function buildMechanicalFindings(
   }
   if (state.error) {
     findings.push({
-      severity: 'error',
+      source: 'mechanical',
+      reportSeverity: 'error',
       category: 'error',
       message: `Error: ${state.error.code} — ${state.error.message}`,
     });
@@ -321,38 +315,41 @@ function buildMechanicalFindings(
   if (state.validation.some((v) => !v.passed)) {
     const failed = state.validation.filter((v) => !v.passed).map((v) => v.checkId);
     findings.push({
-      severity: 'error',
+      source: 'mechanical',
+      reportSeverity: 'error',
       category: 'validation',
       message: `Failed checks: ${failed.join(', ')}`,
     });
   }
-
   if (completeness.fourEyes.required && !completeness.fourEyes.satisfied) {
     if (completeness.fourEyes.decidedBy === null) {
       findings.push({
-        severity: 'warning',
+        source: 'mechanical',
+        reportSeverity: 'warning',
         category: 'four-eyes',
         message: 'Four-eyes principle required but no review decision recorded yet',
       });
     } else {
       findings.push({
-        severity: 'error',
+        source: 'mechanical',
+        reportSeverity: 'error',
         category: 'four-eyes',
         message: `Four-eyes principle VIOLATED: initiator (${completeness.fourEyes.initiatedBy}) and reviewer (${completeness.fourEyes.decidedBy}) are the same person`,
       });
     }
   }
-
   for (const slot of completeness.slots) {
     if (slot.status === 'missing') {
       findings.push({
-        severity: 'warning',
+        source: 'mechanical',
+        reportSeverity: 'warning',
         category: 'completeness',
         message: `${slot.label} is missing (required at phase ${state.phase})`,
       });
     } else if (slot.status === 'failed') {
       findings.push({
-        severity: 'error',
+        source: 'mechanical',
+        reportSeverity: 'error',
         category: 'completeness',
         message: `${slot.label} has failed`,
       });
@@ -456,7 +453,7 @@ interface BuildReportOptions {
   state: SessionState;
   now: string;
   validationSummary: Array<{ checkId: string; passed: boolean; detail: string }>;
-  findings: Array<{ severity: 'info' | 'warning' | 'error'; category: string; message: string }>;
+  findings: ReviewReportFinding[];
   completeness: ReturnType<typeof evaluateCompleteness>;
   refInput?: ReviewReferenceInput;
 }
@@ -481,11 +478,9 @@ export function buildReviewReport(opts: BuildReportOptions): ReviewReport {
   });
 }
 
-function computeOverallStatus(
-  findings: Array<{ severity: 'info' | 'warning' | 'error'; category: string; message: string }>,
-): 'issues' | 'clean' | 'warnings' {
-  const hasErrors = findings.some((f) => f.severity === 'error');
-  const hasWarnings = findings.some((f) => f.severity === 'warning');
+function computeOverallStatus(findings: ReviewReportFinding[]): 'issues' | 'clean' | 'warnings' {
+  const hasErrors = findings.some((f) => f.reportSeverity === 'error');
+  const hasWarnings = findings.some((f) => f.reportSeverity === 'warning');
   return hasErrors ? 'issues' : hasWarnings ? 'warnings' : 'clean';
 }
 
@@ -527,7 +522,7 @@ export async function executeReview(
   }));
 
   const completeness = evaluateCompleteness(state);
-  const findings = buildMechanicalFindings(state, completeness, refInput);
+  const findings: ReviewReportFinding[] = buildMechanicalFindings(state, completeness, refInput);
 
   let externalContent: string | undefined;
   if (preloadedContent !== undefined) {

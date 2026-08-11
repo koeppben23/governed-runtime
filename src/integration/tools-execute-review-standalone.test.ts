@@ -1022,9 +1022,11 @@ describe('review (standalone flow)', () => {
         expect(
           mapped.some(
             (f) =>
-              f.category === 'risk' &&
-              f.message === 'Critical security flaw in authentication flow' &&
-              f.severity === 'error',
+              f.source === 'material_finding' &&
+              (f.finding as Record<string, unknown>).category === 'risk' &&
+              (f.finding as Record<string, unknown>).message ===
+                'Critical security flaw in authentication flow' &&
+              f.reportSeverity === 'error',
           ),
         ).toBe(true);
         // Provenance preserved: inputOrigin and references survive the report.
@@ -1193,8 +1195,21 @@ describe('review (standalone flow)', () => {
         expect(result.error).toBeUndefined();
 
         const mapped = result.findings as Array<Record<string, unknown>>;
-        expect(mapped.some((f) => f.message === 'Logic error in token refresh')).toBe(true);
-        expect(mapped.some((f) => f.message === 'Race condition in cache invalidation')).toBe(true);
+        expect(
+          mapped.some(
+            (f) =>
+              f.source === 'material_finding' &&
+              (f.finding as Record<string, unknown>).message === 'Logic error in token refresh',
+          ),
+        ).toBe(true);
+        expect(
+          mapped.some(
+            (f) =>
+              f.source === 'material_finding' &&
+              (f.finding as Record<string, unknown>).message ===
+                'Race condition in cache invalidation',
+          ),
+        ).toBe(true);
         expect(
           mapped.some(
             (f) =>
