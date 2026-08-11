@@ -13,13 +13,11 @@ Diagnostic: `flowguard_status({ proofGraph: true })`
 
 ## Findings
 
-### Critical (1)
+### Issues (2)
 - **Completeness:** Missing evidence
   Affected: BASE · src/subject.ts:8 · Evidence: 1 cited
   - BASE · src/subject.ts:8
   - HEAD · test/evidence.test.ts:4
-
-### Major (1)
 - **Risk:** Untracked dependency
   Affected: BASE · src/subject.ts:8 · Evidence: 1 cited
   - BASE · src/subject.ts:8

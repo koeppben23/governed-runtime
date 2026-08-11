@@ -323,7 +323,7 @@ function projectReviewReportFinding(entry: ReviewReportFinding): {
   switch (entry.source) {
     case 'material_finding':
       return {
-        severity: entry.finding.severity,
+        severity: entry.reportSeverity,
         category: entry.finding.category,
         message: entry.finding.message,
         relation: entry.finding.relation,

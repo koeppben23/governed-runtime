@@ -130,9 +130,8 @@ describe('buildReviewReportCard', () => {
         },
       ],
     });
-    expect(card).toContain('### Critical (1)');
+    expect(card).toContain('### Issues (2)');
     expect(card).toContain('SQL injection vulnerability');
-    expect(card).toContain('### Major (1)');
     expect(card).toContain('Logic error in token refresh');
     expect(card).toContain('### Warnings (1)');
     expect(card).toContain('### Notes (1)');

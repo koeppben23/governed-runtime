@@ -10,10 +10,10 @@
 import { hashTextShort } from '../../../shared/hashing.js';
 
 import type { SessionState } from '../../../state/schema.js';
-import {
-  Finding,
-  type ReviewObligation,
-  type ReviewReportFinding,
+import type {
+  ReviewFindings,
+  ReviewObligation,
+  ReviewReportFinding,
 } from '../../../state/evidence.js';
 import type { ReviewExecutors } from '../../../rails/review.js';
 import { autoAdvance, createPolicyEvalFn } from '../../../rails/types.js';
@@ -79,7 +79,9 @@ const CHALLENGE_OUTCOME_SEVERITY: Record<string, 'info' | 'warning' | 'error'> =
  * they are always located). They were dropped entirely from the report, so the
  * author never saw them.
  */
-function challengeFindings(reviewFindings: Record<string, unknown>): ReviewReportFinding[] {
+function challengeFindings(
+  reviewFindings: Pick<ReviewFindings, 'challenges'>,
+): ReviewReportFinding[] {
   const challenges = reviewFindings.challenges;
   if (!Array.isArray(challenges)) return [];
   return challenges.flatMap((entry) => challengeFinding(entry));
@@ -116,38 +118,29 @@ function challengeLocation(value: unknown): string {
 
 // ─── Report building ─────────────────────────────────────────────────────────
 
-export function mapReviewFindingsToReport(
-  reviewFindings: Record<string, unknown>,
-): ReviewReportFinding[] {
-  const materialFindings = [
-    ...((reviewFindings.blockingIssues as unknown[]) ?? []),
-    ...((reviewFindings.majorRisks as unknown[]) ?? []),
-  ].flatMap((finding) => {
-    const parsed = Finding.safeParse(finding);
-    if (!parsed.success) return [];
-    return [
-      {
-        source: 'material_finding' as const,
-        reportSeverity: reviewSeverityMap[parsed.data.severity] ?? 'warning',
-        finding: parsed.data,
-      },
-    ];
-  });
+export function mapReviewFindingsToReport(reviewFindings: ReviewFindings): ReviewReportFinding[] {
+  const materialFindings = [...reviewFindings.blockingIssues, ...reviewFindings.majorRisks].map(
+    (finding) => ({
+      source: 'material_finding' as const,
+      reportSeverity: reviewSeverityMap[finding.severity] ?? 'warning',
+      finding,
+    }),
+  );
   return [
     ...materialFindings,
-    ...((reviewFindings.missingVerification as string[]) ?? []).map((message) => ({
+    ...reviewFindings.missingVerification.map((message) => ({
       source: 'missing_verification' as const,
       reportSeverity: 'warning' as const,
       category: 'missing-verification',
       message,
     })),
-    ...((reviewFindings.scopeCreep as string[]) ?? []).map((message) => ({
+    ...reviewFindings.scopeCreep.map((message) => ({
       source: 'scope_creep' as const,
       reportSeverity: 'warning' as const,
       category: 'scope-creep',
       message,
     })),
-    ...((reviewFindings.unknowns as string[]) ?? []).map((message) => ({
+    ...reviewFindings.unknowns.map((message) => ({
       source: 'unknown' as const,
       reportSeverity: 'info' as const,
       category: 'unknown',
@@ -159,7 +152,7 @@ export function mapReviewFindingsToReport(
 
 export function buildReviewExecutors(
   args: ReviewToolArgs,
-  effectiveReviewFindings?: Record<string, unknown>,
+  effectiveReviewFindings?: ReviewFindings,
 ): ReviewExecutors {
   return {
     analyze: async () => {

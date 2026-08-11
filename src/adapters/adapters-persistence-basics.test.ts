@@ -61,6 +61,8 @@ import {
 import { appendAuditEvent, readAuditTrail } from './persistence-audit.js';
 import type { SessionState } from '../state/schema.js';
 import type { AuditEvent, ReviewReport } from '../state/evidence.js';
+import { buildReviewReportCard } from '../presentation/review-report-card.js';
+import type { CompactProofPresentation } from '../presentation/proof-model.js';
 import { withTestEnv } from '../integration/test-helpers.js';
 import {
   makeState,
@@ -205,6 +207,73 @@ describe('persistence', () => {
       expect(loaded).not.toBeNull();
       expect(loaded!.schemaVersion).toBe('flowguard-review-report.v1');
       expect(loaded!.overallStatus).toBe('clean');
+    });
+
+    it('preserves canonical material relations across report persistence and card projection', async () => {
+      const finding = {
+        severity: 'major' as const,
+        category: 'correctness' as const,
+        message: 'The implementation omits the approved rollback step.',
+        relation: {
+          subjectAnchors: [
+            {
+              kind: 'artifact_section' as const,
+              artifactKind: 'plan' as const,
+              artifactDigest: 'a'.repeat(64),
+              sectionPath: [
+                { headingDepth: 1, siblingIndex: 1, headingText: 'Rollback procedure' },
+              ],
+            },
+          ],
+          evidenceLocations: [{ path: 'src/rollback.ts', revision: 'head' as const, line: 42 }],
+        },
+      };
+      await writeReport(tmpDir, {
+        ...makeValidReport(),
+        overallStatus: 'issues',
+        findings: [{ source: 'material_finding', reportSeverity: 'error', finding }],
+      });
+      const loaded = await readReport(tmpDir);
+      expect(loaded?.findings).toEqual([
+        { source: 'material_finding', reportSeverity: 'error', finding },
+      ]);
+      if (!loaded || loaded.findings[0]?.source !== 'material_finding') {
+        throw new Error('Expected persisted material finding');
+      }
+      const proofSummary = {
+        kind: 'evaluation',
+        overallStatus: 'NOT_DECLARED',
+        claimCount: 0,
+        criticalCount: 0,
+        criticalProvenCount: 0,
+        provenCount: 0,
+        contradictedCount: 0,
+        blockedCount: 0,
+        staleCount: 0,
+        unprovenCount: 0,
+        notVerifiedCount: 0,
+        coverage: 'NOT_DECLARED',
+        unmetCriticalClaims: [],
+        otherHighlightedClaims: [],
+        approval: { attestations: [] },
+        decisionContext: 'completion',
+      } satisfies CompactProofPresentation;
+      const card = buildReviewReportCard({
+        phase: 'COMPLETE',
+        phaseLabel: 'Complete',
+        overallStatus: 'issues',
+        findings: loaded.findings,
+        completeness: { overallComplete: true, fourEyes: false, total: 0, summary: '0/0 complete' },
+        proofSummary,
+        productNextAction: { text: 'Export.', commands: ['/export'] },
+        conclusionAction: {
+          invocation: '/export',
+          description: 'Export.',
+          visibility: 'recommended',
+        },
+      });
+      expect(card).toContain('Plan · Rollback procedure');
+      expect(card).not.toContain(finding.relation.subjectAnchors[0]!.artifactDigest);
     });
 
     it('appendAuditEvent + readAuditTrail round-trip', async () => {
