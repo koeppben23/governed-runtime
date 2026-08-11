@@ -9,9 +9,9 @@ import {
   projectRepositoryReviewerMaterial,
   repositoryChangePaths,
 } from '../adapters/repository-change.js';
-import { hashText } from '../shared/hashing.js';
 import {
   hashCanonicalRepositorySubject,
+  hashCanonicalReviewContent,
   normalizeReviewContent,
 } from '../shared/review-subject.js';
 
@@ -52,7 +52,7 @@ export function prepareResolvedRepositoryContent(
     });
   }
   const reviewerMaterial = projectRepositoryReviewerMaterial(filteredChanges);
-  const materialDigest = hashText(reviewerMaterial);
+  const materialDigest = hashCanonicalReviewContent(reviewerMaterial);
   const changedPaths = repositoryChangePaths(filteredChanges);
   if (changedPaths.length === 0) {
     return blocked('COMMAND_BLOCKED', {

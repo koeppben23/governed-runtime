@@ -395,64 +395,84 @@ export { ReviewRepositoryRevisionProvenance } from './evidence-primitives.js';
  * P35 strict obligation record.
  * Exactly one independent review invocation must fulfill each obligation.
  */
-export const ReviewObligation = z.object({
-  obligationId: z.string().uuid(),
-  obligationType: ReviewObligationType,
-  iteration: z.number().int().nonnegative(),
-  planVersion: z.number().int().positive(),
-  criteriaVersion: z.string().min(1),
-  mandateDigest: z.string().min(1),
-  createdAt: z.string().datetime(),
-  pluginHandshakeAt: z.string().datetime().nullable(),
-  status: ReviewObligationStatus,
-  invocationId: z.string().uuid().nullable(),
-  blockedCode: z.string().nullable(),
-  fulfilledAt: z.string().datetime().nullable(),
-  consumedAt: z.string().datetime().nullable(),
-  /**
-   * Mandatory review coverage profile frozen at obligation creation, before any
-   * reviewer invocation. Optional for backward compatibility with obligations
-   * persisted before this field existed; consumers treat a missing value as the
-   * fail-closed 'core' baseline.
-   */
-  reviewProfile: ReviewProfile.optional(),
-  /** Provenance of the frozen review profile (see ReviewProfileSource). */
-  profileSource: ReviewProfileSource.optional(),
-  /** Challenge coverage frozen from the runtime-computed minimum task class. */
-  requiredChallengeCount: z.number().int().min(0).max(2).optional(),
-  /** The sole challenge evidence kind required for this obligation. */
-  requiredChallengeKind: z
-    .enum(['design_challenge', 'implementation_challenge', 'content_challenge'])
-    .optional(),
-  challengePolicyVersion: z.literal('challenge-policy.v1').optional(),
-  /**
-   * Digest of the subject artifact (plan, implementation, or reviewed content)
-   * frozen at obligation creation. This is the host-authoritative identity of
-   * what must be reviewed — never supplied by or echoed from the reviewer.
-   * Used at binding time to prevent cross-artifact evidence attachment.
-   *
-   * NOTE: `ReviewAttempt.subjectDigest` is REQUIRED and binding compares the two
-   * for equality, so an obligation without a subject digest can never bind.
-   * Required here as well, so the compiler — not a runtime bind failure —
-   * surfaces any site that forgets to freeze the subject.
-   */
-  subjectDigest: z.string().min(1),
-  /** Present for standalone content reviews and authoritative for their attempts. */
-  reviewSubject: FrozenReviewSubject.optional(),
-  /** Missing means the legacy v1 fingerprint algorithm. */
-  fingerprintVersion: ReviewInputFingerprintVersion.optional(),
-  /**
-   * Ordered attempt IDs associated with this obligation.
-   * Each reviewer Task invocation creates a new attempt; the latest attempt at
-   * the highest ordinal is the authoritative one for binding.
-   */
-  attemptIds: z.array(z.string().uuid()).optional(),
-  /** Optional metadata, e.g. input fingerprint for standalone /review obligations. */
-  metadata: z.record(z.string(), z.unknown()).optional(),
-  /** Frozen subject coverage. A review without a subject is not bindable. */
-  reviewSubjectScope: ReviewSubjectScope,
-  repositoryRevisionProvenance: ReviewRepositoryRevisionProvenanceSchema.optional(),
-});
+export const ReviewObligation = z
+  .object({
+    obligationId: z.string().uuid(),
+    obligationType: ReviewObligationType,
+    iteration: z.number().int().nonnegative(),
+    planVersion: z.number().int().positive(),
+    criteriaVersion: z.string().min(1),
+    mandateDigest: z.string().min(1),
+    createdAt: z.string().datetime(),
+    pluginHandshakeAt: z.string().datetime().nullable(),
+    status: ReviewObligationStatus,
+    invocationId: z.string().uuid().nullable(),
+    blockedCode: z.string().nullable(),
+    fulfilledAt: z.string().datetime().nullable(),
+    consumedAt: z.string().datetime().nullable(),
+    /**
+     * Mandatory review coverage profile frozen at obligation creation, before any
+     * reviewer invocation. Optional for backward compatibility with obligations
+     * persisted before this field existed; consumers treat a missing value as the
+     * fail-closed 'core' baseline.
+     */
+    reviewProfile: ReviewProfile.optional(),
+    /** Provenance of the frozen review profile (see ReviewProfileSource). */
+    profileSource: ReviewProfileSource.optional(),
+    /** Challenge coverage frozen from the runtime-computed minimum task class. */
+    requiredChallengeCount: z.number().int().min(0).max(2).optional(),
+    /** The sole challenge evidence kind required for this obligation. */
+    requiredChallengeKind: z
+      .enum(['design_challenge', 'implementation_challenge', 'content_challenge'])
+      .optional(),
+    challengePolicyVersion: z.literal('challenge-policy.v1').optional(),
+    /**
+     * Digest of the subject artifact (plan, implementation, or reviewed content)
+     * frozen at obligation creation. This is the host-authoritative identity of
+     * what must be reviewed — never supplied by or echoed from the reviewer.
+     * Used at binding time to prevent cross-artifact evidence attachment.
+     *
+     * NOTE: `ReviewAttempt.subjectDigest` is REQUIRED and binding compares the two
+     * for equality, so an obligation without a subject digest can never bind.
+     * Required here as well, so the compiler — not a runtime bind failure —
+     * surfaces any site that forgets to freeze the subject.
+     */
+    subjectDigest: z.string().min(1),
+    /** Present for standalone content reviews and authoritative for their attempts. */
+    reviewSubject: FrozenReviewSubject.optional(),
+    /** Missing means the legacy v1 fingerprint algorithm. */
+    fingerprintVersion: ReviewInputFingerprintVersion.optional(),
+    /**
+     * Ordered attempt IDs associated with this obligation.
+     * Each reviewer Task invocation creates a new attempt; the latest attempt at
+     * the highest ordinal is the authoritative one for binding.
+     */
+    attemptIds: z.array(z.string().uuid()).optional(),
+    /** Optional metadata, e.g. input fingerprint for standalone /review obligations. */
+    metadata: z.record(z.string(), z.unknown()).optional(),
+    /** Frozen subject coverage. A review without a subject is not bindable. */
+    reviewSubjectScope: ReviewSubjectScope,
+    repositoryRevisionProvenance: ReviewRepositoryRevisionProvenanceSchema.optional(),
+  })
+  .superRefine((obligation, context) => {
+    if (obligation.obligationType !== 'review') return;
+    if (!obligation.reviewSubject) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['reviewSubject'],
+        message: 'Standalone review obligations require a frozen reviewSubject.',
+      });
+      return;
+    }
+    if (obligation.subjectDigest !== obligation.reviewSubject.subjectDigest) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['subjectDigest'],
+        message:
+          'Standalone review obligation subjectDigest must match reviewSubject.subjectDigest.',
+      });
+    }
+  });
 export type ReviewObligation = z.infer<typeof ReviewObligation>;
 
 /** P35 strict invocation evidence record. */

@@ -7,6 +7,11 @@ export function normalizeReviewContent(content: string): string {
   return content.replace(/\r\n?/g, '\n');
 }
 
+/** Digest the normalized bytes that are persisted as standalone review material. */
+export function hashCanonicalReviewContent(content: string): string {
+  return hashText(normalizeReviewContent(content));
+}
+
 export function reviewContentLineCount(content: string): number {
   if (content === '') return 0;
   return content.endsWith('\n')

@@ -45,9 +45,9 @@ import {
 } from '../adapters/ip-validation.js';
 import { lookupReviewHostname, type ReviewDnsLookup } from '../adapters/dns-resolution.js';
 import { prepareResolvedRepositoryContent } from './repository-review-subject.js';
-import { hashText } from '../shared/hashing.js';
 import {
   hashCanonicalContentSubject,
+  hashCanonicalReviewContent,
   normalizeReviewContent,
   reviewContentLineCount,
 } from '../shared/review-subject.js';
@@ -240,7 +240,37 @@ async function fetchUrlContent(
       reason: `Failed to fetch ${url}: HTTP ${resp.status} ${resp.statusText}`,
     });
   }
-  return { content: await resp.text() };
+  const contentType = resp.headers.get('content-type');
+  if (!isUtf8ContentType(contentType)) {
+    return blocked('REVIEW_URL_CONTENT_ENCODING_INVALID', {
+      reason: `declared charset is not strict UTF-8 (${contentType ?? 'no charset declared'})`,
+    });
+  }
+  try {
+    return { content: new TextDecoder('utf-8', { fatal: true }).decode(await resp.arrayBuffer()) };
+  } catch {
+    return blocked('REVIEW_URL_CONTENT_ENCODING_INVALID', {
+      reason: 'response bytes are not valid UTF-8',
+    });
+  }
+}
+
+/** A declared charset is accepted only when it is unambiguously UTF-8. */
+function isUtf8ContentType(contentType: string | null): boolean {
+  if (contentType === null) return true;
+  const charsetParameters = contentType
+    .split(';')
+    .slice(1)
+    .map((parameter) => parameter.trim())
+    .filter((parameter) => /^charset\s*=/i.test(parameter));
+  return (
+    charsetParameters.length <= 1 &&
+    charsetParameters.every((parameter) => {
+      const match = parameter.match(/^charset\s*=\s*(?:"([^"]*)"|([^\s;]+))$/i);
+      const charset = match?.[1] ?? match?.[2];
+      return charset?.toLowerCase() === 'utf-8';
+    })
+  );
 }
 
 // ─── Executor Interface ───────────────────────────────────────────────
@@ -471,7 +501,7 @@ function loadBranchContent(refInput: ReviewReferenceInput): PrepareReviewResult 
 }
 function preparedContent(content: string, refInput: ReviewReferenceInput): PreparedReviewContent {
   const normalizedContent = normalizeReviewContent(content);
-  const reviewedContentDigest = hashText(normalizedContent);
+  const reviewedContentDigest = hashCanonicalReviewContent(normalizedContent);
   const lineCount = reviewContentLineCount(normalizedContent);
   const source =
     typeof refInput.url === 'string'

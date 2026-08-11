@@ -3,13 +3,15 @@
 export type RepositoryChangeKind =
   'add' | 'modify' | 'delete' | 'rename' | 'copy' | 'mode' | 'binary';
 
-export interface CanonicalRepositoryChange {
-  readonly kind: RepositoryChangeKind;
-  readonly oldPath?: string;
-  readonly newPath?: string;
-  /** Exact normalized patch section supplied to the reviewer. */
-  readonly reviewerMaterial: string;
-}
+export type CanonicalRepositoryChange =
+  | { readonly kind: 'add'; readonly newPath: string; readonly reviewerMaterial: string }
+  | { readonly kind: 'delete'; readonly oldPath: string; readonly reviewerMaterial: string }
+  | {
+      readonly kind: 'modify' | 'rename' | 'copy' | 'mode' | 'binary';
+      readonly oldPath: string;
+      readonly newPath: string;
+      readonly reviewerMaterial: string;
+    };
 
 export interface CanonicalRepositoryChanges {
   readonly changes: readonly CanonicalRepositoryChange[];
@@ -33,17 +35,9 @@ export function parseCanonicalRepositoryChanges(diff: string): CanonicalReposito
     const paths = parseDiffHeader(header);
     if (!paths) return null;
 
-    const oldPath =
-      markerPath(section, 'rename from ') ?? markerPath(section, 'copy from ') ?? paths.oldPath;
-    const newPath =
-      markerPath(section, 'rename to ') ?? markerPath(section, 'copy to ') ?? paths.newPath;
-    const kind = changeKind(section);
-    changes.push({
-      kind,
-      ...(kind === 'add' ? {} : { oldPath }),
-      ...(kind === 'delete' ? {} : { newPath }),
-      reviewerMaterial: section,
-    });
+    const change = parseChange(section, paths.oldPath, paths.newPath);
+    if (!change) return null;
+    changes.push(change);
   }
   return { changes };
 }
@@ -51,8 +45,8 @@ export function parseCanonicalRepositoryChanges(diff: string): CanonicalReposito
 export function repositoryChangePaths(changes: CanonicalRepositoryChanges): string[] {
   const paths = new Set<string>();
   for (const change of changes.changes) {
-    if (change.oldPath) paths.add(change.oldPath);
-    if (change.newPath) paths.add(change.newPath);
+    if ('oldPath' in change) paths.add(change.oldPath);
+    if ('newPath' in change) paths.add(change.newPath);
   }
   return [...paths].sort();
 }
@@ -73,8 +67,8 @@ export function filterRepositoryChanges(
   return {
     changes: changes.changes.filter(
       (change) =>
-        (change.oldPath !== undefined && requested.has(change.oldPath)) ||
-        (change.newPath !== undefined && requested.has(change.newPath)),
+        ('oldPath' in change && requested.has(change.oldPath)) ||
+        ('newPath' in change && requested.has(change.newPath)),
     ),
   };
 }
@@ -119,20 +113,82 @@ function readGitPath(input: string, start: number): { path: string; next: number
   };
 }
 
-function markerPath(section: string, marker: string): string | undefined {
-  const line = section.split('\n').find((candidate) => candidate.startsWith(marker));
-  if (!line) return undefined;
-  const value = line.slice(marker.length);
-  return value.length > 0 ? value : undefined;
+function parseChange(
+  section: string,
+  oldPath: string,
+  newPath: string,
+): CanonicalRepositoryChange | null {
+  if (!isRepositoryPath(oldPath) || !isRepositoryPath(newPath)) return null;
+  const preamble = section.split('\n').slice(1, firstPatchBodyLine(section));
+  const values = (marker: string): string[] =>
+    preamble.filter((line) => line.startsWith(marker)).map((line) => line.slice(marker.length));
+  const renameFrom = values('rename from ');
+  const renameTo = values('rename to ');
+  const copyFrom = values('copy from ');
+  const copyTo = values('copy to ');
+  const newFileModes = values('new file mode ');
+  const deletedFileModes = values('deleted file mode ');
+  const oldModes = values('old mode ');
+  const newModes = values('new mode ');
+  const isAdd = newFileModes.length > 0;
+  const isDelete = deletedFileModes.length > 0;
+  const isMode = oldModes.length > 0 || newModes.length > 0;
+  const isRename = renameFrom.length > 0 || renameTo.length > 0;
+  const isCopy = copyFrom.length > 0 || copyTo.length > 0;
+  const isBinary =
+    section.split('\n').some((line) => line === 'GIT binary patch') ||
+    section
+      .split('\n')
+      .some((line) => line === `Binary files a/${oldPath} and b/${newPath} differ`);
+
+  // Extended headers are authoritative only before the patch body. Conflicting
+  // forms and header/marker disagreement are ambiguous repository scope.
+  if (
+    [isAdd, isDelete, isRename, isCopy, isMode, isBinary].filter(Boolean).length > 1 ||
+    (isAdd && newFileModes.length !== 1) ||
+    (isDelete && deletedFileModes.length !== 1) ||
+    (isRename &&
+      (renameFrom.length !== 1 ||
+        renameTo.length !== 1 ||
+        renameFrom[0] !== oldPath ||
+        renameTo[0] !== newPath)) ||
+    (isCopy &&
+      (copyFrom.length !== 1 ||
+        copyTo.length !== 1 ||
+        copyFrom[0] !== oldPath ||
+        copyTo[0] !== newPath)) ||
+    (isMode && (oldModes.length !== 1 || newModes.length !== 1))
+  ) {
+    return null;
+  }
+  const reviewerMaterial = section;
+  if (isAdd) return { kind: 'add', newPath, reviewerMaterial };
+  if (isDelete) return { kind: 'delete', oldPath, reviewerMaterial };
+  if (isRename) return { kind: 'rename', oldPath, newPath, reviewerMaterial };
+  if (isCopy) return { kind: 'copy', oldPath, newPath, reviewerMaterial };
+  if (isMode) return { kind: 'mode', oldPath, newPath, reviewerMaterial };
+  if (isBinary) return { kind: 'binary', oldPath, newPath, reviewerMaterial };
+  return { kind: 'modify', oldPath, newPath, reviewerMaterial };
 }
 
-function changeKind(section: string): RepositoryChangeKind {
-  if (section.includes('\nnew file mode ')) return 'add';
-  if (section.includes('\ndeleted file mode ')) return 'delete';
-  if (section.includes('\nrename from ')) return 'rename';
-  if (section.includes('\ncopy from ')) return 'copy';
-  if (section.includes('\nold mode ') || section.includes('\nnew mode ')) return 'mode';
-  if (section.includes('\nBinary files ') || section.includes('\nGIT binary patch'))
-    return 'binary';
-  return 'modify';
+function firstPatchBodyLine(section: string): number {
+  const lines = section.split('\n');
+  const body = lines.findIndex(
+    (line, index) =>
+      index > 0 &&
+      (line.startsWith('@@ ') ||
+        line.startsWith('--- ') ||
+        line === 'GIT binary patch' ||
+        line.startsWith('Binary files ')),
+  );
+  return body === -1 ? lines.length : body;
+}
+
+function isRepositoryPath(path: string): boolean {
+  return (
+    path.length > 0 &&
+    !path.startsWith('/') &&
+    !path.includes('\0') &&
+    path.split('/').every((segment) => segment.length > 0 && segment !== '.' && segment !== '..')
+  );
 }

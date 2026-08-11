@@ -40,11 +40,18 @@ import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import type { SessionState } from '../state/schema.js';
 import type { ReviewObligation, ReviewObligationType } from '../state/evidence.js';
+import {
+  hashCanonicalContentSubject,
+  hashCanonicalReviewContent,
+} from '../shared/review-subject.js';
 
 const PARENT_SESSION_ID = 'parent-session-ctx-1';
 const OBLIGATION_ID = '11111111-1111-4111-8111-111111111111';
 const SESS_DIR = '/tmp/fg-reviewer-context-test';
 const NOW = '2026-05-10T13:00:00.000Z';
+const REVIEW_MATERIAL = 'persisted review material';
+const REVIEW_MATERIAL_DIGEST = hashCanonicalReviewContent(REVIEW_MATERIAL);
+const REVIEW_SUBJECT_DIGEST = hashCanonicalContentSubject(REVIEW_MATERIAL_DIGEST);
 
 function reviewRequiredOutput(): string {
   return JSON.stringify({
@@ -87,7 +94,7 @@ function obligation(
   return {
     obligationId: OBLIGATION_ID,
     obligationType,
-    subjectDigest: 'test-subject-digest',
+    subjectDigest: obligationType === 'review' ? REVIEW_SUBJECT_DIGEST : 'test-subject-digest',
     iteration: 1,
     planVersion: 1,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
@@ -99,11 +106,21 @@ function obligation(
     blockedCode: null,
     fulfilledAt: null,
     consumedAt: null,
-    reviewSubjectScope: {
-      kind: 'repository_change',
-      paths: ['src/foo.ts'],
-      revisions: ['base', 'head'],
-    },
+    reviewSubjectScope:
+      obligationType === 'review'
+        ? { kind: 'content', subjectDigest: REVIEW_SUBJECT_DIGEST, lineCount: 1 }
+        : { kind: 'repository_change', paths: ['src/foo.ts'], revisions: ['base', 'head'] },
+    ...(obligationType === 'review'
+      ? {
+          reviewSubject: {
+            kind: 'content' as const,
+            source: { kind: 'inline' as const, mediaType: 'text' as const },
+            materialDigest: REVIEW_MATERIAL_DIGEST,
+            subjectDigest: REVIEW_SUBJECT_DIGEST,
+            lineCount: 1,
+          },
+        }
+      : {}),
     ...(metadata ? { metadata } : {}),
   };
 }
@@ -125,7 +142,24 @@ function buildState(
     reviewAssurance: {
       obligations: [obligation(obligationType, metadata)],
       invocations: [],
-      attempts: [],
+      attempts:
+        obligationType === 'review'
+          ? [
+              {
+                attemptId: '22222222-2222-4222-8222-222222222222',
+                obligationId: OBLIGATION_ID,
+                obligationType: 'review' as const,
+                subjectDigest: REVIEW_SUBJECT_DIGEST,
+                reviewMaterial: {
+                  content: REVIEW_MATERIAL,
+                  materialDigest: REVIEW_MATERIAL_DIGEST,
+                },
+                ordinal: 1,
+                status: 'created' as const,
+                createdAt: NOW,
+              },
+            ]
+          : [],
     },
     ...overrides,
   });

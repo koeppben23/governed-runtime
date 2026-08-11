@@ -34,6 +34,10 @@ import {
   buildAttemptSucceededLogger,
   buildReviewDiscoveryContextForPipeline,
 } from './shared-helpers.js';
+import {
+  verifyFrozenReviewerContext,
+  type FrozenReviewerContext,
+} from './frozen-reviewer-context.js';
 
 // ─── Review Content Pipeline ─────────────────────────────────────────────────
 
@@ -43,7 +47,7 @@ function countFindings(findings: unknown): number {
 
 async function loadPersistedContentForReview(
   ctx: PipelineContext,
-): Promise<{ content: string } | null> {
+): Promise<{ content: string; frozenReviewerContext: FrozenReviewerContext } | null> {
   const { deps, reviewCtx } = ctx;
   const obligation = findReviewObligationById(
     ensureReviewAssurance(ctx.sessionState.reviewAssurance),
@@ -51,21 +55,22 @@ async function loadPersistedContentForReview(
   );
   const attempt = findBindableAttempt(ctx.sessionState.reviewAssurance, reviewCtx.obligationId);
   const material = attempt?.reviewMaterial;
-  if (
-    !obligation?.reviewSubject ||
-    !attempt ||
-    !material ||
-    attempt.subjectDigest !== obligation.subjectDigest ||
-    material.materialDigest !== obligation.reviewSubject.materialDigest
-  ) {
-    await blockReviewOutcomeHelper(deps, ctx, 'STRICT_REVIEW_ORCHESTRATION_FAILED', {
+  if (!attempt || !material || attempt.subjectDigest !== obligation?.subjectDigest) {
+    await blockReviewOutcomeHelper(deps, ctx, 'REVIEW_MATERIAL_INTEGRITY_FAILED', {
       obligationId: reviewCtx.obligationId,
-      reason:
-        'persisted review obligation, bindable attempt, or material binding is missing or mismatched',
+      reason: 'bindable attempt is missing or does not match the frozen obligation subject',
     });
     return null;
   }
-  return { content: material.content };
+  const verification = verifyFrozenReviewerContext(obligation, material);
+  if (verification.kind === 'blocked') {
+    await blockReviewOutcomeHelper(deps, ctx, verification.code, {
+      obligationId: reviewCtx.obligationId,
+      reason: verification.reason,
+    });
+    return null;
+  }
+  return { content: material.content, frozenReviewerContext: verification.context };
 }
 
 async function validateContentFindings(
@@ -136,6 +141,7 @@ export async function runReviewContentPipeline(ctx: PipelineContext): Promise<vo
     profileRules,
     discoveryContext,
     proofGraph: sessionState.proofGraph,
+    frozenReviewerContext: persistedContent.frozenReviewerContext,
   });
 
   const policies = getReviewerPolicies(sessionState);

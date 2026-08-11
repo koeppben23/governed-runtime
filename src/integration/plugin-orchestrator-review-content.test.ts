@@ -35,13 +35,19 @@ import { TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import type { SessionState } from '../state/schema.js';
 import type { OrchestratorClient } from './review/types.js';
+import {
+  hashCanonicalContentSubject,
+  hashCanonicalReviewContent,
+} from '../shared/review-subject.js';
 
 const PARENT_SESSION_ID = 'parent-session-review-1';
 const CHILD_SESSION_ID = 'child-session-review-1';
 const OBLIGATION_ID = '11111111-1111-4111-8111-111111111111';
 const SESS_DIR = '/tmp/fg-review-content-sess-dir';
 const NOW = '2026-05-06T12:00:00.000Z';
-const MATERIAL_DIGEST = 'a'.repeat(64);
+const PERSISTED_CONTENT = 'persisted diff content';
+const MATERIAL_DIGEST = hashCanonicalReviewContent(PERSISTED_CONTENT);
+const SUBJECT_DIGEST = hashCanonicalContentSubject(MATERIAL_DIGEST);
 const ATTEMPT_ID = '22222222-2222-4222-8222-222222222222';
 
 function contentAnalysisRequiredOutput(): string {
@@ -149,7 +155,7 @@ function buildSessionState(
         {
           obligationId: OBLIGATION_ID,
           obligationType: 'review',
-          subjectDigest: MATERIAL_DIGEST,
+          subjectDigest: SUBJECT_DIGEST,
           iteration: 1,
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
@@ -163,14 +169,14 @@ function buildSessionState(
           consumedAt: null,
           reviewSubjectScope: {
             kind: 'content',
-            subjectDigest: MATERIAL_DIGEST,
+            subjectDigest: SUBJECT_DIGEST,
             lineCount: 1,
           },
           reviewSubject: {
             kind: 'content',
             source: { kind: 'inline', mediaType: 'diff' },
             materialDigest: MATERIAL_DIGEST,
-            subjectDigest: MATERIAL_DIGEST,
+            subjectDigest: SUBJECT_DIGEST,
             lineCount: 1,
           },
         },
@@ -181,8 +187,8 @@ function buildSessionState(
           attemptId: ATTEMPT_ID,
           obligationId: OBLIGATION_ID,
           obligationType: 'review',
-          subjectDigest: MATERIAL_DIGEST,
-          reviewMaterial: { content: 'persisted diff content', materialDigest: MATERIAL_DIGEST },
+          subjectDigest: SUBJECT_DIGEST,
+          reviewMaterial: { content: PERSISTED_CONTENT, materialDigest: MATERIAL_DIGEST },
           ordinal: 1,
           status: 'created',
           createdAt: NOW,
@@ -349,9 +355,9 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     const reviewerTaskPrompt = String(parsed.reviewerTaskPrompt);
     expect(reviewerTaskPrompt).toContain('persisted diff content');
     expect(reviewerTaskPrompt).toContain('## Frozen Review Subject');
-    expect(reviewerTaskPrompt).toContain('## Review Subject Scope (derived)');
+    expect(reviewerTaskPrompt).toContain('## Review Subject Scope (frozen obligation scope)');
     expect(reviewerTaskPrompt).toContain(
-      JSON.stringify({ kind: 'content', subjectDigest: MATERIAL_DIGEST, lineCount: 1 }),
+      JSON.stringify({ kind: 'content', subjectDigest: SUBJECT_DIGEST, lineCount: 1 }),
     );
     expect(reviewerTaskPrompt).toContain('Content anchor contract:');
     expect(reviewerTaskPrompt).not.toContain('content to review below this line:');
@@ -583,7 +589,7 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     expect(blockReviewOutcome).toHaveBeenCalledWith(
       expect.anything(),
       OBLIGATION_ID,
-      'STRICT_REVIEW_ORCHESTRATION_FAILED',
+      'REVIEW_MATERIAL_INTEGRITY_FAILED',
       expect.objectContaining({ reason: expect.stringContaining('bindable attempt') }),
       output,
     );
@@ -620,8 +626,8 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     expect(blockReviewOutcome).toHaveBeenCalledWith(
       expect.anything(),
       OBLIGATION_ID,
-      'STRICT_REVIEW_ORCHESTRATION_FAILED',
-      expect.objectContaining({ reason: expect.stringContaining('mismatched') }),
+      'REVIEW_MATERIAL_INTEGRITY_FAILED',
+      expect.objectContaining({ reason: expect.stringContaining('digest does not match') }),
       output,
     );
   });

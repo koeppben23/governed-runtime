@@ -243,7 +243,8 @@ describe('review (standalone flow)', () => {
         ok: true,
         status: 200,
         statusText: 'OK',
-        text: () => Promise.resolve('Mock URL content for review'),
+        headers: { get: () => 'text/plain; charset=utf-8' },
+        arrayBuffer: () => Promise.resolve(new TextEncoder().encode('Mock URL content for review').buffer),
       } as Response),
     );
   });

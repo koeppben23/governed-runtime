@@ -9,11 +9,11 @@
 import { parseToolResult, getToolOutput } from '../plugin-helpers.js';
 import { extractContentMeta } from './enforcement/extraction.js';
 import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
+import { renderReviewContext, renderReviewerTaskPrompt } from './prompt-builders.js';
 import {
-  deriveReviewSubjectScope,
-  renderReviewContext,
-  renderReviewerTaskPrompt,
-} from './prompt-builders.js';
+  verifyFrozenReviewerContext,
+  type FrozenReviewerContext,
+} from './frozen-reviewer-context.js';
 import { buildReviewerProofContext } from './proof-context.js';
 import { buildReviewerArtifactContext } from './reviewer-context.js';
 import { REVIEW_COMPLETED_PREFIX, extractReviewContext } from './orchestrator.js';
@@ -69,14 +69,23 @@ interface HostTaskOutputInput {
    * obligation. Empty when no obligation could be resolved.
    */
   readonly artifactContext: readonly string[];
-  readonly reviewMaterial: Parameters<typeof renderReviewerTaskPrompt>[0]['reviewMaterial'];
-  readonly reviewSubject: Parameters<typeof renderReviewerTaskPrompt>[0]['reviewSubject'];
+  readonly frozenReviewerContext: FrozenReviewerContext | null;
+  readonly materialIntegrityFailure: string | null;
 }
 
 function buildHostTaskPolicyOutput(input: HostTaskOutputInput): string | null {
   const { originalOutput, policy, childSessionId } = input;
   const result = parseToolResult(originalOutput);
   if (!result || Array.isArray(result)) return null;
+  if (input.materialIntegrityFailure) {
+    result.code = 'REVIEW_MATERIAL_INTEGRITY_FAILED';
+    result.message = `Frozen review material integrity verification failed: ${input.materialIntegrityFailure}`;
+    result.recovery = [
+      'Restore the persisted review obligation and material from a trusted source',
+      'Create a new standalone review obligation for the intended content',
+    ];
+    return JSON.stringify(result);
+  }
   if (childSessionId) {
     result.next =
       `${REVIEW_COMPLETED_PREFIX}: Host evidence verified via Task tool subagent call ` +
@@ -130,7 +139,7 @@ function buildReviewerTaskPromptOrNull(
   ctx: { iteration: number; planVersion: number | null } | null,
   challengeContract: Parameters<typeof renderReviewerTaskPrompt>[0]['challengeContract'],
   context: { readonly proof: readonly string[]; readonly artifact: readonly string[] },
-  reviewContent: Pick<HostTaskOutputInput, 'reviewMaterial' | 'reviewSubject'>,
+  frozenReviewerContext: FrozenReviewerContext | null,
 ): string | null {
   if (!attestationMeta || ctx?.iteration == null) return null;
   return renderReviewerTaskPrompt({
@@ -143,11 +152,7 @@ function buildReviewerTaskPromptOrNull(
     challengeContract,
     proofContext: context.proof,
     artifactContext: context.artifact,
-    reviewMaterial: reviewContent.reviewMaterial,
-    reviewSubject: reviewContent.reviewSubject,
-    reviewSubjectScope: reviewContent.reviewSubject
-      ? deriveReviewSubjectScope(reviewContent.reviewSubject)
-      : undefined,
+    frozenReviewerContext: frozenReviewerContext ?? undefined,
   });
 }
 
@@ -186,7 +191,7 @@ function buildHostTaskBlockedOutput(
       proof: proofContext,
       artifact: input.artifactContext,
     },
-    { reviewMaterial: input.reviewMaterial, reviewSubject: input.reviewSubject },
+    input.frozenReviewerContext,
   );
   const copyPromptStr = reviewerTaskPrompt
     ? ` A ready-to-use reviewer prompt is provided in the reviewerTaskPrompt field — pass it ` +
@@ -433,7 +438,7 @@ function buildHostTaskOutputInput(
 ): HostTaskOutputInput {
   const { obligation } = interception;
   const bindableAttempt = findBindableAttempt(sessionState.reviewAssurance, obligationId);
-  const reviewMaterial = resolveHostTaskReviewMaterial(obligation, bindableAttempt);
+  const frozenReviewerContext = resolveFrozenReviewerContext(obligation, bindableAttempt);
   return {
     originalOutput,
     policy: interception.policy,
@@ -443,19 +448,20 @@ function buildHostTaskOutputInput(
     challengeContract: buildHostTaskChallengeContract(sessionState, obligation),
     proofContext: buildReviewerProofContext(sessionState),
     artifactContext: obligation ? buildReviewerArtifactContext(sessionState, obligation) : [],
-    reviewMaterial,
-    reviewSubject: reviewMaterial ? obligation?.reviewSubject : undefined,
+    frozenReviewerContext,
+    materialIntegrityFailure:
+      obligation?.obligationType === 'review' && !frozenReviewerContext
+        ? 'persisted material or its frozen digest binding is missing or invalid'
+        : null,
   };
 }
 
-function resolveHostTaskReviewMaterial(
+function resolveFrozenReviewerContext(
   obligation: ReviewObligation | null,
   attempt: ReturnType<typeof findBindableAttempt>,
-): HostTaskOutputInput['reviewMaterial'] {
-  if (!obligation?.reviewSubject) return undefined;
-  return attempt?.reviewMaterial?.materialDigest === obligation.reviewSubject.materialDigest
-    ? attempt.reviewMaterial
-    : undefined;
+): FrozenReviewerContext | null {
+  const verified = verifyFrozenReviewerContext(obligation, attempt?.reviewMaterial);
+  return verified.kind === 'ok' ? verified.context : null;
 }
 
 function buildHostTaskAttestationMeta(

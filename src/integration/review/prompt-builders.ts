@@ -14,17 +14,14 @@
 
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
+import type { FrozenReviewSubject, ReviewSubjectScope } from '../../state/evidence.js';
 import { renderPersistedProofGraphContext } from './proof-context.js';
 import { CANONICAL_PROMPT_APPEND_MARKER } from './enforcement/types.js';
-import type {
-  FrozenReviewSubject,
-  ReviewMaterial,
-  ReviewSubjectScope,
-} from '../../state/evidence.js';
 import {
   buildDiscoveryContextSection,
   type DiscoveryReviewContext,
 } from './discovery-context-prompt.js';
+import type { FrozenReviewerContext } from './frozen-reviewer-context.js';
 
 /**
  * Mandatory-baseline marker appended as the final line of every reviewer prompt.
@@ -106,11 +103,8 @@ export interface ReviewerTaskPromptInput {
    * promised, what changed, or which checks were executed.
    */
   readonly artifactContext?: readonly string[];
-  /** Immutable standalone-review bytes and their frozen subject identity. */
-  readonly reviewMaterial?: ReviewMaterial;
-  readonly reviewSubject?: FrozenReviewSubject;
-  /** Derived from reviewSubject; rendered so the reviewer knows its exact scope. */
-  readonly reviewSubjectScope?: ReviewSubjectScope;
+  /** Integrity-verified standalone-review material, subject, scope, and anchor contract. */
+  readonly frozenReviewerContext?: FrozenReviewerContext;
 }
 
 export function deriveReviewSubjectScope(subject: FrozenReviewSubject): ReviewSubjectScope {
@@ -230,15 +224,15 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
       ? [...input.artifactContext]
       : []),
     ...(input.proofContext && input.proofContext.length > 0 ? [...input.proofContext] : []),
-    ...(input.reviewMaterial && input.reviewSubject && input.reviewSubjectScope
+    ...(input.frozenReviewerContext
       ? [
           '## Frozen Review Subject',
-          JSON.stringify(input.reviewSubject),
-          '## Review Subject Scope (derived)',
-          JSON.stringify(input.reviewSubjectScope),
-          'Content anchor contract: the exact persisted review material begins immediately after the canonical anchor. Do not append, replace, or supplement it.',
+          JSON.stringify(input.frozenReviewerContext.reviewSubject),
+          '## Review Subject Scope (frozen obligation scope)',
+          JSON.stringify(input.frozenReviewerContext.reviewSubjectScope),
+          input.frozenReviewerContext.anchorContract,
           `${CANONICAL_PROMPT_APPEND_MARKER} persisted review material below this line:`,
-          input.reviewMaterial.content,
+          input.frozenReviewerContext.reviewMaterial.content,
         ]
       : [
           `${CANONICAL_PROMPT_APPEND_MARKER} ${input.subjectLabel} content to review below this line:`,
@@ -629,6 +623,8 @@ export function buildReviewContentPrompt(opts: {
   discoveryContext: DiscoveryReviewContext;
   /** Persisted advisory projection only; prompt construction never evaluates providers. */
   proofGraph?: ProofGraphProjection;
+  /** The same integrity-verified context delivered by the host-task path. */
+  frozenReviewerContext?: FrozenReviewerContext;
 }): string {
   const stackSection = buildStackProfileSection(opts.profileName, opts.profileRules);
   const discoverySection = buildDiscoveryContextSection(opts.discoveryContext);
@@ -656,9 +652,19 @@ export function buildReviewContentPrompt(opts: {
   }
   lines.push(...renderPersistedProofGraphContext(opts.proofGraph));
   lines.push(
+    ...(opts.frozenReviewerContext
+      ? [
+          '## Frozen Review Subject',
+          JSON.stringify(opts.frozenReviewerContext.reviewSubject),
+          '## Review Subject Scope (frozen obligation scope)',
+          JSON.stringify(opts.frozenReviewerContext.reviewSubjectScope),
+          opts.frozenReviewerContext.anchorContract,
+          `${CANONICAL_PROMPT_APPEND_MARKER} persisted review material below this line:`,
+        ]
+      : []),
     'CONTENT TO REVIEW:',
     '```',
-    opts.content,
+    opts.frozenReviewerContext?.reviewMaterial.content ?? opts.content,
     '```',
     '',
     'Return a complete ReviewFindings JSON object (no markdown fences, no extra text).',

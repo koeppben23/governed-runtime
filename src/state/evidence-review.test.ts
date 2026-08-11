@@ -362,7 +362,7 @@ describe('evidence-review', () => {
       const obligation = {
         obligationId: FIXED_UUID,
         obligationType: 'plan' as const,
-        subjectDigest: 'sha256-subject',
+        subjectDigest: 'a'.repeat(64),
         iteration: 0,
         planVersion: 1,
         criteriaVersion: 'v1',
@@ -508,9 +508,10 @@ describe('evidence-review', () => {
         },
         reviewSubject: {
           kind: 'content' as const,
-          subject: { kind: 'content' as const, subjectDigest: 'a'.repeat(64) },
+          source: { kind: 'inline' as const, mediaType: 'text' as const },
           materialDigest: 'b'.repeat(64),
           subjectDigest: 'a'.repeat(64),
+          lineCount: 1,
         },
       };
       expect(ReviewReport.parse(report)).toEqual(report);
@@ -639,7 +640,7 @@ describe('evidence-review', () => {
       const obligation = {
         obligationId: FIXED_UUID,
         obligationType: 'review' as const,
-        subjectDigest: 'sha256-subject',
+        subjectDigest: 'a'.repeat(64),
         iteration: 0,
         planVersion: 1,
         criteriaVersion: 'v1',
@@ -652,9 +653,16 @@ describe('evidence-review', () => {
         fulfilledAt: null,
         consumedAt: null,
         reviewSubjectScope: {
-          kind: 'repository_change' as const,
-          paths: ['src/auth.ts'],
-          revisions: ['base', 'head'],
+          kind: 'content' as const,
+          subjectDigest: 'a'.repeat(64),
+          lineCount: 1,
+        },
+        reviewSubject: {
+          kind: 'content' as const,
+          source: { kind: 'inline' as const, mediaType: 'text' as const },
+          materialDigest: 'a'.repeat(64),
+          subjectDigest: 'a'.repeat(64),
+          lineCount: 1,
         },
         metadata: { inputFingerprint: 'abc', customField: 42 },
       };
@@ -684,6 +692,43 @@ describe('evidence-review', () => {
       const result = ReviewObligation.safeParse(withoutSubject);
       expect(result.success).toBe(false);
       expect(result.error?.issues.map((issue) => issue.path.join('.'))).toContain('subjectDigest');
+    });
+
+    it('requires a frozen subject and matching subjectDigest for standalone reviews', () => {
+      const base = {
+        obligationId: FIXED_UUID,
+        obligationType: 'review' as const,
+        subjectDigest: 'a'.repeat(64),
+        iteration: 0,
+        planVersion: 1,
+        criteriaVersion: 'v1',
+        mandateDigest: 'sha256-mandate',
+        createdAt: FIXED_TIME,
+        pluginHandshakeAt: null,
+        status: 'pending' as const,
+        invocationId: null,
+        blockedCode: null,
+        fulfilledAt: null,
+        consumedAt: null,
+        reviewSubjectScope: {
+          kind: 'content' as const,
+          subjectDigest: 'a'.repeat(64),
+          lineCount: 1,
+        },
+      };
+      expect(ReviewObligation.safeParse(base).success).toBe(false);
+      expect(
+        ReviewObligation.safeParse({
+          ...base,
+          reviewSubject: {
+            kind: 'content' as const,
+            source: { kind: 'inline' as const, mediaType: 'text' as const },
+            materialDigest: 'b'.repeat(64),
+            subjectDigest: 'c'.repeat(64),
+            lineCount: 1,
+          },
+        }).success,
+      ).toBe(false);
     });
   });
 
