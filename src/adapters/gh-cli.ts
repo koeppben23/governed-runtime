@@ -50,6 +50,155 @@ export function loadPrDiff(prNumber: number): string {
   return out;
 }
 
+// ─── Immutable Pull-Request Review Source ────────────────────────────────────
+
+export interface ResolvedPullRequestReviewSource {
+  readonly pullRequestNumber: number;
+  readonly baseRepository: { readonly host: string; readonly owner: string; readonly name: string };
+  readonly headRepository: { readonly host: string; readonly owner: string; readonly name: string };
+  readonly baseSha: string;
+  readonly headSha: string;
+}
+
+/**
+ * Resolve a pull request's immutable commit and repository identities.
+ *
+ * This deliberately reads the PR metadata once and returns only immutable
+ * identifiers. Callers must use the returned SHAs for later materialization.
+ */
+export function resolvePullRequestReviewSource(prNumber: number): ResolvedPullRequestReviewSource {
+  if (!Number.isSafeInteger(prNumber) || prNumber <= 0) {
+    throw new GitError(
+      'GIT_NOT_FOUND',
+      `Pull request number must be a positive integer: ${prNumber}`,
+    );
+  }
+
+  let output: string;
+  try {
+    output = execFileSync(
+      'gh',
+      [
+        'pr',
+        'view',
+        String(prNumber),
+        '--json',
+        'baseRefOid,headRefOid,baseRepository,headRepository',
+      ],
+      { encoding: 'utf-8', stdio: 'pipe', timeout: 15000 },
+    );
+  } catch (err) {
+    throw new GitError(
+      'GIT_NOT_FOUND',
+      `Could not resolve immutable source for PR #${prNumber}: ${String(err)}`,
+    );
+  }
+
+  let metadata: unknown;
+  try {
+    metadata = JSON.parse(output);
+  } catch (err) {
+    throw new GitError(
+      'GIT_COMMAND_FAILED',
+      `GitHub returned invalid PR metadata for #${prNumber}: ${String(err)}`,
+    );
+  }
+  if (!isPullRequestMetadata(metadata)) {
+    throw new GitError(
+      'GIT_COMMAND_FAILED',
+      `GitHub returned incomplete immutable metadata for PR #${prNumber}`,
+    );
+  }
+
+  const baseRepository = repositoryIdentity(metadata.baseRepository);
+  const headRepository = repositoryIdentity(metadata.headRepository);
+  if (
+    !baseRepository ||
+    !headRepository ||
+    !isGitSha(metadata.baseRefOid) ||
+    !isGitSha(metadata.headRefOid)
+  ) {
+    throw new GitError(
+      'GIT_COMMAND_FAILED',
+      `GitHub returned incomplete immutable metadata for PR #${prNumber}`,
+    );
+  }
+  return {
+    pullRequestNumber: prNumber,
+    baseRepository,
+    headRepository,
+    baseSha: metadata.baseRefOid,
+    headSha: metadata.headRefOid,
+  };
+}
+
+/** Load a PR diff by the previously resolved immutable commit SHAs. */
+export function loadResolvedPullRequestDiff(source: ResolvedPullRequestReviewSource): string {
+  try {
+    const out = execFileSync(
+      'gh',
+      [
+        'api',
+        '--method',
+        'GET',
+        '--header',
+        'Accept: application/vnd.github.v3.diff',
+        `repos/${source.baseRepository.owner}/${source.baseRepository.name}/compare/${source.baseSha}...${source.headSha}`,
+      ],
+      { encoding: 'utf-8', stdio: 'pipe', timeout: 15000 },
+    );
+    if (!out || out.trim() === '') {
+      throw new GitError('GIT_COMMAND_FAILED', 'Empty diff between resolved pull-request commits');
+    }
+    return out;
+  } catch (err) {
+    if (err instanceof GitError) throw err;
+    throw new GitError(
+      'GIT_COMMAND_FAILED',
+      `Could not load diff between resolved pull-request commits: ${String(err)}`,
+    );
+  }
+}
+
+function isPullRequestMetadata(value: unknown): value is {
+  readonly baseRefOid: unknown;
+  readonly headRefOid: unknown;
+  readonly baseRepository: unknown;
+  readonly headRepository: unknown;
+} {
+  return typeof value === 'object' && value !== null;
+}
+
+function repositoryIdentity(
+  value: unknown,
+): { readonly host: string; readonly owner: string; readonly name: string } | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const repository = value as {
+    readonly name?: unknown;
+    readonly owner?: { readonly login?: unknown };
+    readonly url?: unknown;
+  };
+  if (
+    typeof repository.name !== 'string' ||
+    repository.name.length === 0 ||
+    typeof repository.owner?.login !== 'string' ||
+    repository.owner.login.length === 0 ||
+    typeof repository.url !== 'string'
+  ) {
+    return undefined;
+  }
+  try {
+    const host = new URL(repository.url).hostname;
+    return host ? { host, owner: repository.owner.login, name: repository.name } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isGitSha(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-f0-9]{40,64}$/i.test(value);
+}
+
 /**
  * Load branch diff via `gh` CLI (compares branch against base branch).
  * Requires `gh` CLI installed and authenticated.
@@ -80,6 +229,7 @@ export interface ResolvedBranchReviewSource {
   readonly baseBranch: string;
   readonly resolvedBranchSha: string;
   readonly resolvedBaseSha: string;
+  readonly repository?: { readonly host: string; readonly owner: string; readonly name: string };
 }
 
 /**
@@ -156,7 +306,33 @@ export function resolveBranchReviewSource(
         'nothing to review. Provide an explicit base with base=<ref> or push the branch to a remote.',
     );
   }
-  return { branch, baseBranch: base.label, resolvedBranchSha: headSha, resolvedBaseSha: baseSha };
+  return {
+    branch,
+    baseBranch: base.label,
+    resolvedBranchSha: headSha,
+    resolvedBaseSha: baseSha,
+    repository: resolveRepositoryIdentity(cwd),
+  };
+}
+
+function resolveRepositoryIdentity(
+  cwd?: string,
+): { readonly host: string; readonly owner: string; readonly name: string } | undefined {
+  try {
+    const remote = execFileSync('git', ['remote', 'get-url', 'origin'], {
+      encoding: 'utf-8',
+      stdio: 'pipe',
+      timeout: 3000,
+      cwd,
+    }).trim();
+    const match = /^(?:https?:\/\/|git@)([^/:]+)[:/]([^/]+)\/([^/]+?)(?:\.git)?$/.exec(remote);
+    if (!match) return undefined;
+    const [, host, owner, name] = match;
+    if (!host || !owner || !name) return undefined;
+    return { host, owner, name };
+  } catch {
+    return undefined;
+  }
 }
 
 /**

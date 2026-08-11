@@ -31,6 +31,7 @@ import { formatReviewRequiredSignal } from '../../review/enforcement/types.js';
 import type { ReviewExecutionContext, ReviewPreparation } from './types.js';
 import type { StartedReviewResult } from './types.js';
 import type { SessionState } from '../../../state/schema.js';
+import type { RailBlocked } from '../../../rails/types.js';
 import type { ReviewToolArgs } from './types.js';
 import {
   ensureMissingAnalysisObligation,
@@ -65,42 +66,6 @@ import {
   buildHostTaskAttestation,
 } from './continuation.js';
 
-async function bindReviewContentDigest(
-  context: Parameters<ToolDefinition['execute']>[1],
-  obligationId: string,
-  reviewedContentDigest: string,
-): Promise<SessionState> {
-  return withMutableSessionTransaction(context, async ({ sessDir, state }) => {
-    const assurance = state.reviewAssurance;
-    if (!assurance) throw new Error('No review assurance state for content digest binding');
-
-    const obligation = findReviewObligationById(assurance, obligationId);
-    if (!obligation) throw new Error('Obligation not found for content digest binding');
-
-    const existingMeta = obligation.metadata;
-    const updatedMetadata: Record<string, unknown> = {
-      ...(typeof existingMeta === 'object' && existingMeta !== null ? existingMeta : {}),
-      reviewedContentDigest,
-    };
-
-    const updatedObligation = { ...obligation, metadata: updatedMetadata };
-    const updatedObligations = assurance.obligations.map((o) =>
-      o.obligationId === obligationId ? updatedObligation : o,
-    );
-
-    const updatedState: SessionState = {
-      ...state,
-      reviewAssurance: {
-        ...assurance,
-        obligations: updatedObligations,
-      },
-    };
-
-    await writeStateWithArtifacts(sessDir, updatedState);
-    return updatedState;
-  });
-}
-
 // ─── Review preparation orchestrator ─────────────────────────────────────────
 
 // ─── Ref input resolution ────────────────────────────────────────────────────
@@ -119,16 +84,43 @@ function withCwd(
  * obligation and must not re-resolve refs.
  */
 function resolveObligationBranchSource(
+  state: SessionState,
   exec: ReviewExecutionContext,
 ): ReturnType<typeof resolveBranchReviewSource> | undefined {
   if (!exec.args.branch) return undefined;
-  if (exec.args.reviewFindings !== undefined) return undefined;
-  const isHostTaskVerdictContinuation =
+  const persistedSource = getPersistedObligationBranchSource(state, exec);
+  if (persistedSource) return persistedSource;
+  if (isHostTaskVerdictContinuation(exec)) return undefined;
+  return resolveBranchReviewSource(exec.args.branch, exec.args.base, exec.context.worktree);
+}
+
+function getPersistedObligationBranchSource(
+  state: SessionState,
+  exec: ReviewExecutionContext,
+): ReturnType<typeof resolveBranchReviewSource> | undefined {
+  if (!exec.args.branch) return undefined;
+  const findingsObligationId = (
+    exec.args.reviewFindings as { attestation?: { toolObligationId?: string } }
+  )?.attestation?.toolObligationId;
+  const obligationId = exec.args.reviewObligationId ?? findingsObligationId;
+  const provenance = obligationId
+    ? findReviewObligationById(state.reviewAssurance, obligationId)?.repositoryRevisionProvenance
+    : undefined;
+  if (provenance?.kind !== 'available' || !provenance.baseSha) return undefined;
+  return {
+    branch: exec.args.branch,
+    baseBranch: exec.args.base ?? provenance.baseSha,
+    resolvedBranchSha: provenance.headSha,
+    resolvedBaseSha: provenance.baseSha,
+  };
+}
+
+function isHostTaskVerdictContinuation(exec: ReviewExecutionContext): boolean {
+  return (
     exec.policy === 'host_task_required' &&
     exec.args.reviewVerdict !== undefined &&
-    exec.args.reviewObligationId !== undefined;
-  if (isHostTaskVerdictContinuation) return undefined;
-  return resolveBranchReviewSource(exec.args.branch, exec.args.base, exec.context.worktree);
+    exec.args.reviewObligationId !== undefined
+  );
 }
 
 type HostTaskContinuationAuthority =
@@ -226,16 +218,21 @@ async function prepareReviewExecution(
 ): Promise<ReviewPreparation | string> {
   const missingVerdictBlock = missingHostTaskVerdictBlock(state, exec);
   if (missingVerdictBlock) return missingVerdictBlock;
-  const resolvedSource = resolveObligationBranchSource(exec);
+  const resolvedSource = resolveObligationBranchSource(state, exec);
+  let refInput = withCwd(populateRefInput(exec.args, state, resolvedSource), exec.context.worktree);
+  const materializedContent = await prepareReviewContent(refInput, undefined);
+  if (materializedContent && 'kind' in materializedContent) {
+    return formatBlockedReviewReport(materializedContent);
+  }
   const hostVerdict = await prepareHostTaskVerdictReview(sessDir, state, result, exec);
-  if (hostVerdict) return hostVerdict;
+  if (hostVerdict) return withMaterializedHostVerdict(hostVerdict, materializedContent);
 
   const missingResult = await ensureMissingAnalysisObligation(sessDir, state, exec.args, exec.now, {
     worktree: exec.context.worktree,
     resolvedSource,
+    reviewSubject: materializedContent?.reviewSubject,
   });
 
-  let refInput = populateRefInput(exec.args, state, resolvedSource);
   if (resolvedSource && missingResult.obligation) {
     refInput = {
       ...refInput,
@@ -243,23 +240,36 @@ async function prepareReviewExecution(
       ...(missingResult.attemptId && { reviewAttemptId: missingResult.attemptId }),
     };
   }
-  if (exec.args.reviewFindings === undefined) {
-    return {
-      result,
-      refInput: withCwd(refInput, exec.context.worktree),
-      validatedReviewObligation: null,
-      pendingObligation: missingResult.obligation,
-      persistedAssurance: missingResult.assurance,
-      blockMessage: missingResult.message ?? undefined,
-    };
-  }
-  return finishFindingsSubmission(
-    sessDir,
-    state,
+  if (exec.args.reviewFindings === undefined)
+    return prepareMissingFindingsSubmission(result, refInput, missingResult, materializedContent);
+  return finishFindingsSubmission(sessDir, state, result, exec, { refInput, materializedContent });
+}
+
+function withMaterializedHostVerdict(
+  hostVerdict: ReviewPreparation | string,
+  materializedContent: PreparedReviewContent | null,
+): ReviewPreparation | string {
+  return typeof hostVerdict === 'string'
+    ? hostVerdict
+    : { ...hostVerdict, materializedContent, reviewSubject: materializedContent?.reviewSubject };
+}
+
+function prepareMissingFindingsSubmission(
+  result: StartedReviewResult,
+  refInput: ReviewReferenceInput | undefined,
+  missingResult: Awaited<ReturnType<typeof ensureMissingAnalysisObligation>>,
+  materializedContent: PreparedReviewContent | null,
+): ReviewPreparation {
+  return {
     result,
-    exec,
-    withCwd(refInput, exec.context.worktree),
-  );
+    refInput,
+    validatedReviewObligation: null,
+    pendingObligation: missingResult.obligation,
+    persistedAssurance: missingResult.assurance,
+    blockMessage: missingResult.message ?? undefined,
+    materializedContent,
+    reviewSubject: materializedContent?.reviewSubject,
+  };
 }
 
 async function finishFindingsSubmission(
@@ -267,7 +277,10 @@ async function finishFindingsSubmission(
   state: SessionState,
   result: StartedReviewResult,
   exec: ReviewExecutionContext,
-  refInput: ReviewReferenceInput | undefined,
+  content: {
+    refInput: ReviewReferenceInput | undefined;
+    materializedContent: PreparedReviewContent | null;
+  },
 ): Promise<ReviewPreparation | string> {
   const resolved = await resolveSubmittedReviewObligation(
     sessDir,
@@ -288,21 +301,15 @@ async function finishFindingsSubmission(
     sessDir,
   );
   if (recorded.blocked) return recorded.blocked;
-  if (refInput) refInput = { ...refInput, skipExternalContentLoad: true };
-  // Carry obligation provenance into refInput for the findings-submission path
-  const meta = resolved.obligation.metadata;
-  if (typeof meta?.resolvedBranchSha === 'string' && typeof meta?.resolvedBaseSha === 'string') {
-    refInput = {
-      ...refInput,
-      reviewObligationId: resolved.obligation.obligationId,
-      resolvedBranchSha: meta.resolvedBranchSha,
-      resolvedBaseSha: meta.resolvedBaseSha,
-    };
-  }
+  const refInput = content.refInput
+    ? { ...content.refInput, skipExternalContentLoad: true }
+    : undefined;
   return {
     result: recorded.result,
     refInput,
     validatedReviewObligation: resolved.obligation,
+    materializedContent: content.materializedContent,
+    reviewSubject: content.materializedContent?.reviewSubject,
     ...(recorded.nativeAttestationRejection
       ? { nativeAttestationRejection: recorded.nativeAttestationRejection }
       : {}),
@@ -476,6 +483,12 @@ type PreparedReviewExecution = ReviewPreparation & {
   now: string;
 };
 
+function isBlockedReviewResult(
+  result: Awaited<ReturnType<typeof executeReview>>,
+): result is RailBlocked {
+  return 'kind' in result && result.kind === 'blocked';
+}
+
 async function prepareReviewWithoutExternalCalls(
   args: ReviewToolArgs,
   context: Parameters<ToolDefinition['execute']>[1],
@@ -534,7 +547,7 @@ async function persistCompletedReview(
     });
     if (typeof prepared === 'string') return prepared;
 
-    if (reviewResult.kind === 'blocked') {
+    if (isBlockedReviewResult(reviewResult)) {
       return formatBlockedReviewReport(reviewResult);
     }
 
@@ -597,20 +610,9 @@ interface LoadedReviewContent {
 async function loadAndBindReviewContent(
   prepared: PreparedReviewExecution,
   args: ReviewToolArgs,
-  context: Parameters<ToolDefinition['execute']>[1],
 ): Promise<LoadedReviewContent> {
-  const result = await prepareReviewContent(prepared.refInput, undefined);
-  if (result && 'kind' in result) {
-    return {
-      reviewState: prepared.result.state,
-      loadedContent: undefined,
-      blockMessage: formatBlockedReviewReport(result),
-    };
-  }
-
-  const loadedContent: PreparedReviewContent | null = result;
-  const bindTarget = prepared.pendingObligation ?? prepared.validatedReviewObligation;
-  const reviewState = await bindDigestIfAvailable(context, bindTarget, loadedContent, prepared);
+  const loadedContent: PreparedReviewContent | null = prepared.materializedContent ?? null;
+  const reviewState = prepared.result.state;
 
   if (prepared.blockMessage) {
     return {
@@ -620,7 +622,7 @@ async function loadAndBindReviewContent(
     };
   }
 
-  if (hasImplicitContentSignal(args) && !bindTarget && !loadedContent) {
+  if (hasImplicitContentSignal(args) && !loadedContent) {
     return {
       reviewState,
       loadedContent: undefined,
@@ -635,18 +637,6 @@ async function loadAndBindReviewContent(
     loadedContent: loadedContent?.content,
     blockMessage: undefined,
   };
-}
-
-async function bindDigestIfAvailable(
-  context: Parameters<ToolDefinition['execute']>[1],
-  bindTarget: ReviewObligation | null | undefined,
-  content: PreparedReviewContent | null,
-  prepared: PreparedReviewExecution,
-): Promise<SessionState> {
-  if (!content?.reviewedContentDigest || !bindTarget?.obligationId) {
-    return prepared.result.state;
-  }
-  return bindReviewContentDigest(context, bindTarget.obligationId, content.reviewedContentDigest);
 }
 
 export const review: ToolDefinition = {
@@ -731,7 +721,7 @@ export const review: ToolDefinition = {
       const prepared = await prepareReviewWithoutExternalCalls(args, context);
       if (typeof prepared === 'string') return prepared;
 
-      const content = await loadAndBindReviewContent(prepared, args, context);
+      const content = await loadAndBindReviewContent(prepared, args);
       if (content.blockMessage) return content.blockMessage;
 
       const reviewResult = await executeReview(
@@ -739,7 +729,9 @@ export const review: ToolDefinition = {
         prepared.now,
         buildReviewExecutors(args, prepared.effectiveReviewFindings),
         prepared.refInput,
-        content.loadedContent,
+        content.loadedContent === undefined
+          ? undefined
+          : (prepared.materializedContent ?? content.loadedContent),
       );
       return await persistCompletedReview(args, context, reviewResult, prepared.now);
     } catch (err) {

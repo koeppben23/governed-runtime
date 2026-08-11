@@ -62,7 +62,9 @@ async function executeReviewReport(
   ...args: Parameters<typeof executeReviewUnsafe>
 ): Promise<RenderedReviewReport> {
   const result = await executeReviewUnsafe(...args);
-  if ('kind' in result && result!.kind === 'blocked') throw new Error(result.reason);
+  if (!result || !('reviewKind' in result)) {
+    throw new Error(result?.reason ?? 'Review did not produce a report');
+  }
   return renderReviewReport(result);
 }
 

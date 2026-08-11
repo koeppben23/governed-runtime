@@ -114,6 +114,16 @@ function relationIntersectsScope(
         anchor.kind === 'artifact_section' && artifactAnchorIntersectsScope(anchor, scope),
     );
   }
+  if (scope.kind === 'content') {
+    return relation.subjectAnchors.some(
+      (anchor) =>
+        anchor.kind === 'content' &&
+        anchor.subjectDigest === scope.subjectDigest &&
+        (anchor.range === undefined ||
+          (anchor.range.startLine <= scope.lineCount &&
+            (anchor.range.endLine === undefined || anchor.range.endLine <= scope.lineCount))),
+    );
+  }
   return false;
 }
 

@@ -256,6 +256,13 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     vi.mocked(loadExternalContent).mockResolvedValue({
       content: 'diff content',
       reviewedContentDigest: 'sha256:mock',
+      reviewSubject: {
+        kind: 'content',
+        source: { kind: 'inline', mediaType: 'diff' },
+        materialDigest: 'a'.repeat(64),
+        subjectDigest: 'a'.repeat(64),
+        lineCount: 1,
+      },
     });
   });
 

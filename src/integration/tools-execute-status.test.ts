@@ -650,6 +650,7 @@ describe('status', () => {
       };
       await writeState(sessDir, reviewState);
       await writeReport(sessDir, {
+        reviewKind: 'lifecycle_review',
         schemaVersion: REVIEW_REPORT_SCHEMA_ID,
         sessionId: reviewState.id,
         generatedAt: '2026-01-01T00:00:00.000Z',

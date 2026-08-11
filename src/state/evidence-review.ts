@@ -20,9 +20,11 @@ import {
   ReviewVerdict,
 } from './evidence-primitives.js';
 import { ActorInfoSchema, DecisionIdentity } from './evidence-identity.js';
-import { Finding, MarkdownSectionPath, RepositoryPathSchema } from './evidence-findings.js';
+import { Finding, MarkdownSectionPath } from './evidence-findings.js';
+import { FrozenReviewSubject, ReviewSubjectScope } from './evidence-review-subject.js';
 export {
   ArtifactSectionAnchor,
+  ContentSubjectAnchor,
   Finding,
   FindingRelation,
   MarkdownSectionPath,
@@ -30,8 +32,14 @@ export {
   RepositoryLocationAnchor,
   RepositoryPathSchema,
   ReviewSubjectAnchor,
+  SafeReviewUrlMetadata,
 } from './evidence-findings.js';
 export type { RepositoryPath } from './evidence-findings.js';
+export {
+  FrozenReviewSubject,
+  RepositoryIdentity,
+  ReviewSubjectScope,
+} from './evidence-review-subject.js';
 
 export { classifyRepositoryPath, type RepositoryPathClassification } from './repository-path.js';
 
@@ -369,39 +377,6 @@ export type ReviewProfileSource = z.infer<typeof ReviewProfileSource>;
 export const ReviewInputFingerprintVersion = z.enum(['v1', 'v2']);
 export type ReviewInputFingerprintVersion = z.infer<typeof ReviewInputFingerprintVersion>;
 
-/** Frozen, structured subject coverage for a review obligation. */
-export const ReviewSubjectScope = z.discriminatedUnion('kind', [
-  z
-    .object({
-      kind: z.literal('repository_change'),
-      paths: z.array(RepositoryPathSchema).min(1).readonly(),
-      revisions: z
-        .array(z.enum(['base', 'head']))
-        .min(1)
-        .readonly(),
-    })
-    .readonly(),
-  z
-    .object({
-      kind: z.literal('artifact'),
-      artifact: z
-        .object({
-          kind: z.enum(['plan', 'adr']),
-          digest: z.string().min(1),
-          sectionPaths: z.array(MarkdownSectionPath).min(1).readonly(),
-        })
-        .readonly(),
-    })
-    .readonly(),
-  z
-    .object({
-      kind: z.literal('unavailable'),
-      reason: z.string().min(1),
-    })
-    .readonly(),
-]);
-export type ReviewSubjectScope = z.infer<typeof ReviewSubjectScope>;
-
 export { ReviewRepositoryRevisionProvenance } from './evidence-primitives.js';
 
 /**
@@ -651,7 +626,6 @@ const ChallengeReviewReportFinding = z
   .strict()
   .readonly();
 
-/** Every standalone report entry is explicitly classified; no legacy fallback exists. */
 export const ReviewReportFinding = z
   .discriminatedUnion('source', [
     MaterialReviewReportFinding,
@@ -664,8 +638,17 @@ export const ReviewReportFinding = z
   .readonly();
 export type ReviewReportFinding = z.infer<typeof ReviewReportFinding>;
 
-export const ReviewReport = z.object({
-  kind: z.never().optional(),
+const LifecycleReviewReportFinding = z
+  .discriminatedUnion('source', [
+    MechanicalReviewReportFinding,
+    MissingVerificationReviewReportFinding,
+    ScopeCreepReviewReportFinding,
+    UnknownReviewReportFinding,
+    ChallengeReviewReportFinding,
+  ])
+  .readonly();
+
+const ReviewReportBase = {
   schemaVersion: z.literal(REVIEW_REPORT_SCHEMA_ID),
   sessionId: z.string().uuid(),
   generatedAt: z.string().datetime(),
@@ -679,10 +662,32 @@ export const ReviewReport = z.object({
       detail: z.string(),
     }),
   ),
-  findings: z.array(ReviewReportFinding),
   overallStatus: z.enum(['clean', 'warnings', 'issues']),
   completeness: CompletenessReportSchema,
   inputOrigin: InputOriginSchema.optional(),
   references: z.array(ExternalReferenceSchema).optional(),
-});
+};
+
+const LifecycleReviewReport = z
+  .object({
+    ...ReviewReportBase,
+    reviewKind: z.literal('lifecycle_review'),
+    findings: z.array(LifecycleReviewReportFinding),
+  })
+  .strict()
+  .readonly();
+
+const ContentReviewReport = z
+  .object({
+    ...ReviewReportBase,
+    reviewKind: z.literal('content_review'),
+    reviewSubject: FrozenReviewSubject,
+    findings: z.array(ReviewReportFinding),
+  })
+  .strict()
+  .readonly();
+
+export const ReviewReport = z
+  .discriminatedUnion('reviewKind', [ContentReviewReport, LifecycleReviewReport])
+  .readonly();
 export type ReviewReport = z.infer<typeof ReviewReport>;

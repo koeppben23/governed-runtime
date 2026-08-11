@@ -27,9 +27,10 @@ import { DEFAULT_CONFIG } from '../../config/flowguard-config.js';
 function makeReviewReport(
   state: ReturnType<typeof makeProgressedState>,
   overallStatus: ReviewReport['overallStatus'],
-  overrides?: Partial<ReviewReport>,
+  overrides?: Partial<Extract<ReviewReport, { readonly reviewKind: 'lifecycle_review' }>>,
 ): ReviewReport {
   return {
+    reviewKind: 'lifecycle_review',
     schemaVersion: 'flowguard-review-report.v1',
     sessionId: state.id,
     generatedAt: '2026-01-01T00:00:00.000Z',

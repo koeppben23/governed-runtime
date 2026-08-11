@@ -20,6 +20,7 @@ import type { SessionState } from '../state/schema.js';
 import {
   ReviewReport,
   type ExternalReference,
+  type FrozenReviewSubject,
   type InputOrigin,
   type ReviewReportFinding,
 } from '../state/evidence.js';
@@ -30,7 +31,11 @@ import type { RailResult, RailContext, TransitionRecord, RailBlocked } from './t
 import { autoAdvance, applyTransition, createPolicyEvalFn } from './types.js';
 import { blocked } from '../config/reasons.js';
 import { blockedFromOverflow } from './auto-advance-overflow.js';
-import { hasGhCli, loadPrDiff, loadResolvedBranchDiff } from '../adapters/gh-cli.js';
+import {
+  loadResolvedBranchDiff,
+  loadResolvedPullRequestDiff,
+  resolvePullRequestReviewSource,
+} from '../adapters/gh-cli.js';
 import {
   parseIPv4,
   isPrivateIPv4,
@@ -40,6 +45,12 @@ import {
 } from '../adapters/ip-validation.js';
 import { lookupReviewHostname, type ReviewDnsLookup } from '../adapters/dns-resolution.js';
 import { hashText } from '../shared/hashing.js';
+import {
+  hashCanonicalContentSubject,
+  hashCanonicalRepositorySubject,
+  normalizeReviewContent,
+  reviewContentLineCount,
+} from '../shared/review-subject.js';
 export { parseIPv4 };
 
 // ─── Content Preparation Types ───────────────────────────────────────────────
@@ -47,6 +58,7 @@ export { parseIPv4 };
 export interface PreparedReviewContent {
   readonly content: string;
   readonly reviewedContentDigest: string;
+  readonly reviewSubject: FrozenReviewSubject;
 }
 
 export type PrepareReviewResult = PreparedReviewContent | RailBlocked | null;
@@ -272,6 +284,8 @@ export interface ReviewReferenceInput {
   readonly resolvedBaseSha?: string;
   /** Worktree directory for git operations (branch reviews only). */
   readonly cwd?: string;
+  /** Repository identity resolved with the immutable branch source. */
+  readonly repository?: { readonly host: string; readonly owner: string; readonly name: string };
 }
 
 // ─── Mechanical Findings ──────────────────────────────────────
@@ -365,10 +379,20 @@ export async function loadExternalContent(
   refInput: ReviewReferenceInput,
   dnsLookup?: ReviewDnsLookup,
 ): Promise<PrepareReviewResult> {
+  const sources = [refInput.prNumber, refInput.branch, refInput.url, refInput.text].filter(
+    (value) =>
+      (typeof value === 'number' && value > 0) ||
+      (typeof value === 'string' && value.trim().length > 0),
+  );
+  if (sources.length > 1) {
+    return blocked('COMMAND_BLOCKED', {
+      command: '/review',
+      reason:
+        'Review content sources are mutually exclusive; provide exactly one of prNumber, branch, url, or text.',
+    });
+  }
   if (typeof refInput.prNumber === 'number' && refInput.prNumber > 0) {
-    const result = loadPrContent(refInput.prNumber);
-    if ('kind' in result) return result;
-    return { content: result.content, reviewedContentDigest: hashText(result.content) };
+    return loadPullRequestContent(refInput.prNumber);
   }
   if (typeof refInput.branch === 'string' && refInput.branch.trim().length > 0) {
     return loadBranchContent(refInput);
@@ -376,40 +400,33 @@ export async function loadExternalContent(
   if (typeof refInput.url === 'string' && refInput.url.trim().length > 0) {
     const result = await loadUrlContent(refInput, dnsLookup);
     if ('kind' in result) return result;
-    return { content: result.content, reviewedContentDigest: hashText(result.content) };
+    return preparedContent(result.content, refInput);
   }
   if (refInput.text !== undefined) {
-    return { content: refInput.text, reviewedContentDigest: hashText(refInput.text) };
+    return preparedContent(refInput.text, refInput);
   }
   return null;
 }
-
-function loadContentViaGh(
-  fetcher: () => string,
-  failureReasonPrefix: string,
-): { content: string } | RailBlocked {
-  if (!hasGhCli()) {
-    return blocked('COMMAND_BLOCKED', {
-      command: '/review',
-      reason: 'GitHub CLI (gh) is required. Install: https://cli.github.com/',
-    });
-  }
+function loadPullRequestContent(prNumber: number): PrepareReviewResult {
   try {
-    return { content: fetcher() };
+    const source = resolvePullRequestReviewSource(prNumber);
+    const diff = loadResolvedPullRequestDiff(source);
+    return preparedResolvedRepositoryContent(diff, {
+      source: { kind: 'pull_request', pullRequestNumber: source.pullRequestNumber },
+      baseRepository: source.baseRepository,
+      headRepository: source.headRepository,
+      baseSha: source.baseSha,
+      headSha: source.headSha,
+    });
   } catch (err) {
     return blocked('COMMAND_BLOCKED', {
       command: '/review',
-      reason: `${failureReasonPrefix}: ${err instanceof Error ? err.message : String(err)}`,
+      reason: `Failed to load pull-request diff at resolved commits: ${err instanceof Error ? err.message : String(err)}`,
     });
   }
 }
-
-function loadPrContent(prNumber: number): { content: string } | RailBlocked {
-  return loadContentViaGh(() => loadPrDiff(prNumber), `Failed to load PR #${prNumber}`);
-}
-
 function loadBranchContent(refInput: ReviewReferenceInput): PrepareReviewResult {
-  if (!refInput.reviewObligationId || !refInput.resolvedBranchSha || !refInput.resolvedBaseSha) {
+  if (!refInput.resolvedBranchSha || !refInput.resolvedBaseSha || !refInput.repository) {
     return blocked('REVIEW_BRANCH_PROVENANCE_MISSING', {
       command: '/review',
       reason: 'Branch review requires resolved head and base commit provenance.',
@@ -421,7 +438,17 @@ function loadBranchContent(refInput: ReviewReferenceInput): PrepareReviewResult 
       refInput.resolvedBaseSha,
       refInput.cwd,
     );
-    return { content: diff, reviewedContentDigest: hashText(diff) };
+    return preparedResolvedRepositoryContent(diff, {
+      source: {
+        kind: 'branch',
+        branch: refInput.branch!,
+        ...(refInput.baseBranch ? { requestedBase: refInput.baseBranch } : {}),
+      },
+      baseRepository: refInput.repository,
+      headRepository: refInput.repository,
+      baseSha: refInput.resolvedBaseSha,
+      headSha: refInput.resolvedBranchSha,
+    });
   } catch (err) {
     return blocked('COMMAND_BLOCKED', {
       command: '/review',
@@ -429,7 +456,93 @@ function loadBranchContent(refInput: ReviewReferenceInput): PrepareReviewResult 
     });
   }
 }
-
+interface ResolvedRepositorySubjectInput {
+  readonly source:
+    | { readonly kind: 'pull_request'; readonly pullRequestNumber: number }
+    | { readonly kind: 'branch'; readonly branch: string; readonly requestedBase?: string };
+  readonly baseRepository: { readonly host: string; readonly owner: string; readonly name: string };
+  readonly headRepository: { readonly host: string; readonly owner: string; readonly name: string };
+  readonly baseSha: string;
+  readonly headSha: string;
+}
+function preparedResolvedRepositoryContent(
+  content: string,
+  source: ResolvedRepositorySubjectInput,
+): PrepareReviewResult {
+  const normalizedContent = normalizeReviewContent(content);
+  const materialDigest = hashText(normalizedContent);
+  const changedPaths = extractChangedPaths(normalizedContent);
+  if (changedPaths.length === 0) {
+    return blocked('COMMAND_BLOCKED', {
+      command: '/review',
+      reason: 'Resolved repository diff contains no repository paths.',
+    });
+  }
+  return {
+    content: normalizedContent,
+    reviewedContentDigest: materialDigest,
+    reviewSubject: {
+      kind: 'repository_change',
+      source: source.source,
+      baseRepository: source.baseRepository,
+      headRepository: source.headRepository,
+      baseSha: source.baseSha,
+      headSha: source.headSha,
+      changedPaths,
+      materialDigest,
+      subjectDigest: hashCanonicalRepositorySubject({
+        baseRepository: source.baseRepository,
+        headRepository: source.headRepository,
+        baseSha: source.baseSha,
+        headSha: source.headSha,
+        changedPaths,
+        materialDigest,
+      }),
+    },
+  };
+}
+function extractChangedPaths(diff: string): string[] {
+  const paths = new Set<string>();
+  for (const line of diff.split('\n')) {
+    const match = /^diff --git a\/(.+) b\/(.+)$/.exec(line);
+    if (match?.[2]) paths.add(match[2]);
+  }
+  return [...paths].sort();
+}
+function preparedContent(content: string, refInput: ReviewReferenceInput): PreparedReviewContent {
+  const normalizedContent = normalizeReviewContent(content);
+  const reviewedContentDigest = hashText(normalizedContent);
+  const lineCount = reviewContentLineCount(normalizedContent);
+  const source =
+    typeof refInput.url === 'string'
+      ? {
+          kind: 'url' as const,
+          url: safeUrlMetadata(refInput.url),
+        }
+      : {
+          kind: 'inline' as const,
+          mediaType: refInput.branch ? ('diff' as const) : ('text' as const),
+        };
+  return {
+    content: normalizedContent,
+    reviewedContentDigest,
+    reviewSubject: {
+      kind: 'content',
+      source,
+      materialDigest: reviewedContentDigest,
+      subjectDigest: hashCanonicalContentSubject(reviewedContentDigest),
+      lineCount,
+    },
+  };
+}
+function safeUrlMetadata(url: string): {
+  requested: { origin: string; pathname: string };
+  resolved: { origin: string; pathname: string };
+} {
+  const parsed = new URL(url);
+  const location = { origin: parsed.origin, pathname: parsed.pathname || '/' };
+  return { requested: location, resolved: location };
+}
 async function loadUrlContent(
   refInput: ReviewReferenceInput,
   dnsLookup?: ReviewDnsLookup,
@@ -446,9 +559,7 @@ async function loadUrlContent(
   if ('kind' in fetchResult) return fetchResult;
   return { content: fetchResult.content };
 }
-
 // ─── Build Report ──────────────────────────────────────────
-
 interface BuildReportOptions {
   state: SessionState;
   now: string;
@@ -456,10 +567,10 @@ interface BuildReportOptions {
   findings: ReviewReportFinding[];
   completeness: ReturnType<typeof evaluateCompleteness>;
   refInput?: ReviewReferenceInput;
+  reviewSubject?: FrozenReviewSubject;
 }
-
 export function buildReviewReport(opts: BuildReportOptions): ReviewReport {
-  const { state, now, validationSummary, findings, completeness, refInput } = opts;
+  const { state, now, validationSummary, findings, completeness, refInput, reviewSubject } = opts;
   const overallStatus = computeOverallStatus(findings);
   const refs = computeRefs(refInput);
   return ReviewReport.parse({
@@ -473,6 +584,8 @@ export function buildReviewReport(opts: BuildReportOptions): ReviewReport {
     findings,
     overallStatus,
     completeness,
+    reviewKind: reviewSubject ? 'content_review' : 'lifecycle_review',
+    ...(reviewSubject && { reviewSubject }),
     ...(refInput?.inputOrigin !== undefined && { inputOrigin: refInput.inputOrigin }),
     ...(refs !== undefined && { references: refs }),
   });
@@ -513,7 +626,7 @@ export async function executeReview(
   now: string,
   executors?: ReviewExecutors,
   refInput?: ReviewReferenceInput,
-  preloadedContent?: string,
+  preloadedContent?: PreparedReviewContent | string,
 ): Promise<ReviewReport | RailBlocked> {
   const validationSummary = state.validation.map((v) => ({
     checkId: v.checkId,
@@ -522,24 +635,13 @@ export async function executeReview(
   }));
 
   const completeness = evaluateCompleteness(state);
+  const content = await resolveReviewContent(preloadedContent, refInput, executors?.dnsLookup);
+  if ('kind' in content) return content;
+
   const findings: ReviewReportFinding[] = buildMechanicalFindings(state, completeness, refInput);
 
-  let externalContent: string | undefined;
-  if (preloadedContent !== undefined) {
-    externalContent = preloadedContent || undefined;
-  } else if (refInput && !refInput.skipExternalContentLoad) {
-    const result = await loadExternalContent(refInput, executors?.dnsLookup);
-    if (result === null) {
-      // No external content to load
-    } else if ('kind' in result) {
-      return result; // RailBlocked
-    } else {
-      externalContent = result.content || undefined;
-    }
-  }
-
   if (executors?.analyze) {
-    const llmFindings = await executors.analyze(state, externalContent);
+    const llmFindings = await executors.analyze(state, content.externalContent);
     findings.push(...llmFindings);
   }
 
@@ -550,7 +652,39 @@ export async function executeReview(
     findings,
     completeness,
     refInput,
+    reviewSubject: content.reviewSubject,
   });
+}
+
+async function resolveReviewContent(
+  preloadedContent: PreparedReviewContent | string | undefined,
+  refInput: ReviewReferenceInput | undefined,
+  dnsLookup: ReviewDnsLookup | undefined,
+): Promise<
+  | { externalContent: string | undefined; reviewSubject: FrozenReviewSubject | undefined }
+  | RailBlocked
+> {
+  if (preloadedContent !== undefined) {
+    if (typeof preloadedContent === 'string') {
+      return {
+        externalContent: preloadedContent || undefined,
+        reviewSubject: refInput
+          ? preparedContent(preloadedContent, refInput).reviewSubject
+          : undefined,
+      };
+    }
+    return {
+      externalContent: preloadedContent.content || undefined,
+      reviewSubject: preloadedContent.reviewSubject,
+    };
+  }
+  if (!refInput || refInput.skipExternalContentLoad) {
+    return { externalContent: undefined, reviewSubject: undefined };
+  }
+  const result = await loadExternalContent(refInput, dnsLookup);
+  if (result === null) return { externalContent: undefined, reviewSubject: undefined };
+  if ('kind' in result) return result;
+  return { externalContent: result.content || undefined, reviewSubject: result.reviewSubject };
 }
 
 // ─── Review Flow Rail ─────────────────────────────────────────────────

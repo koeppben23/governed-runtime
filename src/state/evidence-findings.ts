@@ -63,10 +63,77 @@ export const RepositoryLocationAnchor = z
   .readonly();
 export type RepositoryLocationAnchor = z.infer<typeof RepositoryLocationAnchor>;
 
+const SafeUrlComponent = z
+  .string()
+  .min(1)
+  .refine(
+    (value) => {
+      try {
+        const parsed = new URL(value);
+        return (
+          parsed.origin === value &&
+          parsed.protocol === 'https:' &&
+          parsed.username === '' &&
+          parsed.password === ''
+        );
+      } catch {
+        return false;
+      }
+    },
+    { message: 'Expected an HTTPS origin without credentials, query, or fragment' },
+  );
+
+const SafeUrlPathname = z
+  .string()
+  .startsWith('/')
+  .refine((value) => !value.includes('?') && !value.includes('#'), {
+    message: 'Expected a pathname without query or fragment',
+  });
+
+/** Safe, display-only URL components for externally supplied reviewed content. */
+export const SafeReviewUrlMetadata = z
+  .object({
+    requested: z
+      .object({ origin: SafeUrlComponent, pathname: SafeUrlPathname })
+      .strict()
+      .readonly(),
+    resolved: z
+      .object({ origin: SafeUrlComponent, pathname: SafeUrlPathname })
+      .strict()
+      .readonly()
+      .optional(),
+  })
+  .strict()
+  .readonly();
+export type SafeReviewUrlMetadata = z.infer<typeof SafeReviewUrlMetadata>;
+
+/** A digest-bound anchor for content reviewed outside the repository. */
+export const ContentSubjectAnchor = z
+  .object({
+    kind: z.literal('content'),
+    subjectDigest: z.string().min(1),
+    range: z
+      .object({
+        startLine: z.number().int().positive(),
+        endLine: z.number().int().positive().optional(),
+      })
+      .strict()
+      .refine(({ startLine, endLine }) => endLine === undefined || endLine >= startLine, {
+        message: 'endLine must not precede startLine',
+        path: ['endLine'],
+      })
+      .readonly()
+      .optional(),
+  })
+  .strict()
+  .readonly();
+export type ContentSubjectAnchor = z.infer<typeof ContentSubjectAnchor>;
+
 /** A structured target or evidence anchor for a review finding. */
 export const ReviewSubjectAnchor = z.discriminatedUnion('kind', [
   RepositoryLocationAnchor,
   ArtifactSectionAnchor,
+  ContentSubjectAnchor,
 ]);
 export type ReviewSubjectAnchor = z.infer<typeof ReviewSubjectAnchor>;
 

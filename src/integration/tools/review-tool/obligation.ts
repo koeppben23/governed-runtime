@@ -4,12 +4,14 @@
  *
  * @version v1
  */
-
 export { fingerprintReviewInput } from './fingerprint.js';
 import { fingerprintReviewInput } from './fingerprint.js';
-
 import type { SessionState } from '../../../state/schema.js';
-import type { ReviewFindings, ReviewObligation } from '../../../state/evidence.js';
+import type {
+  FrozenReviewSubject,
+  ReviewFindings,
+  ReviewObligation,
+} from '../../../state/evidence.js';
 import type { ReviewAssuranceState, ReviewSubjectScope } from '../../../state/evidence-review.js';
 import type { ReviewReferenceInput } from '../../../rails/review.js';
 import {
@@ -130,7 +132,6 @@ export function formatSubagentReviewNotInvoked(detail: string, obligationId: str
 }
 
 // ─── Input helpers ───────────────────────────────────────────────────────────
-
 export function buildReviewReferenceInput(args: {
   inputOrigin?: ReviewReferenceInput['inputOrigin'];
   references?: ReviewReferenceInput['references'];
@@ -265,7 +266,6 @@ export function hasImplicitContentSignal(args: {
 }
 
 // ─── Branch Review Provenance ────────────────────────────────────────────────
-
 export {
   BranchReviewSourceSchema,
   BranchReviewProvenanceSchema,
@@ -345,6 +345,7 @@ interface NewReviewObligationInput {
   readonly now: string;
   readonly worktree: string | undefined;
   readonly resolvedSource: ResolvedBranchReviewSource | undefined;
+  readonly reviewSubject: FrozenReviewSubject | undefined;
   readonly fingerprint: string;
   readonly inputFingerprint: string;
   readonly fingerprintVersion: 'v2';
@@ -377,13 +378,7 @@ async function createNewReviewObligation(
   if (resolvedTargetPaths) {
     metadata.targetPaths = resolvedTargetPaths;
   }
-  if (input.args.branch && input.resolvedSource) {
-    metadata.branch = input.args.branch;
-    metadata.baseBranch = input.resolvedSource.baseBranch;
-    metadata.resolvedBranchSha = input.resolvedSource.resolvedBranchSha;
-    metadata.resolvedBaseSha = input.resolvedSource.resolvedBaseSha;
-  }
-  const reviewSubjectScope: ReviewSubjectScope | undefined = input.resolvedSource
+  const reviewSubjectScope: ReviewSubjectScope = input.resolvedSource
     ? {
         kind: 'repository_change',
         paths: [...resolvedTargetPaths],
@@ -391,7 +386,13 @@ async function createNewReviewObligation(
         // of the reviewed diff without introducing free-form revision authority.
         revisions: ['base', 'head'],
       }
-    : undefined;
+    : input.reviewSubject?.kind === 'content'
+      ? {
+          kind: 'content',
+          subjectDigest: input.reviewSubject.subjectDigest,
+          lineCount: input.reviewSubject.lineCount,
+        }
+      : { kind: 'unavailable', reason: 'review_content_not_materialized' };
   return {
     obligation: createReviewObligation({
       obligationType: 'review',
@@ -426,7 +427,7 @@ export async function ensureMissingAnalysisObligation(
   state: SessionState,
   args: ReviewToolArgs,
   now: string,
-  context: Pick<NewReviewObligationInput, 'worktree' | 'resolvedSource'>,
+  context: Pick<NewReviewObligationInput, 'worktree' | 'resolvedSource' | 'reviewSubject'>,
 ): Promise<{
   message: string | null;
   obligation?: ReviewObligation;
@@ -482,7 +483,7 @@ export async function ensureMissingAnalysisObligation(
 
 interface MissingAnalysisObligationInput {
   readonly sessDir: string;
-  readonly context: Pick<NewReviewObligationInput, 'worktree' | 'resolvedSource'>;
+  readonly context: Pick<NewReviewObligationInput, 'worktree' | 'resolvedSource' | 'reviewSubject'>;
   readonly state: SessionState;
   readonly args: ReviewToolArgs;
   readonly now: string;
@@ -600,6 +601,7 @@ export async function resolveSubmittedReviewObligation(
       now,
       worktree,
       resolvedSource: undefined,
+      reviewSubject: undefined,
       fingerprint,
       inputFingerprint: fingerprint,
       fingerprintVersion: 'v2',
@@ -710,7 +712,6 @@ export function validateSubmittedReviewFindings(
       )
     : null;
 }
-
 export function consumeValidatedReviewObligation(
   result: StartedReviewResult,
   obligation: ReviewObligation | null,

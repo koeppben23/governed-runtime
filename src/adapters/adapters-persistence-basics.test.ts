@@ -113,6 +113,7 @@ function makeValidAuditEvent(overrides: Partial<AuditEvent> = {}): AuditEvent {
 /** Create a minimal valid ReviewReport for persistence tests. */
 function makeValidReport(): ReviewReport {
   return {
+    reviewKind: 'lifecycle_review',
     schemaVersion: 'flowguard-review-report.v1',
     sessionId: FIXED_SESSION_UUID,
     generatedAt: FIXED_TIME,
@@ -230,6 +231,14 @@ describe('persistence', () => {
       };
       await writeReport(tmpDir, {
         ...makeValidReport(),
+        reviewKind: 'content_review',
+        reviewSubject: {
+          kind: 'content',
+          source: { kind: 'inline', mediaType: 'text' },
+          materialDigest: 'b'.repeat(64),
+          subjectDigest: 'a'.repeat(64),
+          lineCount: 1,
+        },
         overallStatus: 'issues',
         findings: [{ source: 'material_finding', reportSeverity: 'error', finding }],
       });
