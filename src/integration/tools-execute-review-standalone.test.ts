@@ -244,7 +244,8 @@ describe('review (standalone flow)', () => {
         status: 200,
         statusText: 'OK',
         headers: { get: () => 'text/plain; charset=utf-8' },
-        arrayBuffer: () => Promise.resolve(new TextEncoder().encode('Mock URL content for review').buffer),
+        arrayBuffer: () =>
+          Promise.resolve(new TextEncoder().encode('Mock URL content for review').buffer),
       } as Response),
     );
   });
