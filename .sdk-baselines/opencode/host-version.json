@@ -1,8 +1,8 @@
 {
   "platform": "opencode",
   "package": "opencode-ai",
-  "updated": "2026-08-03T10:48:13.699Z",
-  "version": "1.18.11",
+  "updated": "2026-08-10T08:42:49.626Z",
+  "version": "1.18.16",
   "evidence": "OpenCode Desktop/host compatibility is verified via the opencode-ai package with autoupdate disabled during CI.",
   "docs": [
     "https://opencode.ai/docs/cli/#upgrade",
