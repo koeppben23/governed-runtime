@@ -24,7 +24,21 @@ export function bindHostReviewInvocation(
     firstAttempt,
   );
   if (attempt.attemptId !== invocation.attemptId) return base;
-  return updateAttemptStatus(base, attempt.attemptId, 'bound', now);
+  const withAttemptReference = {
+    ...base,
+    obligations: base.obligations.map((obligation) =>
+      obligation.obligationId !== obligationId || obligation.attemptIds?.includes(attempt.attemptId)
+        ? obligation
+        : { ...obligation, attemptIds: [...(obligation.attemptIds ?? []), attempt.attemptId] },
+    ),
+  };
+  return updateAttemptStatus(
+    withAttemptReference,
+    attempt.attemptId,
+    'bound',
+    now,
+    invocation.childSessionId,
+  );
 }
 
 function isHostInvocationForObligation(
