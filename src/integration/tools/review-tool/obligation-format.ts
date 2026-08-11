@@ -5,14 +5,13 @@ import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from '../../review/ass
 export function repositoryFromBranchSubject(
   subject: FrozenReviewSubject | undefined,
 ): { readonly host: string; readonly owner: string; readonly name: string } | undefined {
-  if (
-    subject?.kind !== 'repository_change' ||
-    !subject.headRepository ||
-    JSON.stringify(subject.baseRepository) !== JSON.stringify(subject.headRepository)
-  ) {
+  if (subject?.kind !== 'repository_change' || !subject.headRepository) {
     return undefined;
   }
-  return subject.baseRepository;
+  const base = subject.baseRepository;
+  if (!('host' in base) || JSON.stringify(base) !== JSON.stringify(subject.headRepository))
+    return undefined;
+  return base;
 }
 
 export function buildRequiredReviewAttestationPayload(obligationId: string): {

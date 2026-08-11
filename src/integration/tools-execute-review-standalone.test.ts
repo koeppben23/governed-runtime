@@ -489,6 +489,7 @@ describe('review (standalone flow)', () => {
         baseBranch: 'main',
         resolvedBranchSha: 'a'.repeat(40),
         resolvedBaseSha: 'b'.repeat(40),
+        repository: { kind: 'local', rootCommitDigest: 'c'.repeat(64) },
       });
 
       const first = parseToolResult(
@@ -505,7 +506,9 @@ describe('review (standalone flow)', () => {
         headSha: 'a'.repeat(40),
         changedPaths: ['docs/test.md', 'src/auth/login.ts', 'src/auth/types.ts'],
       });
-      expect(obligation?.reviewSubject).not.toHaveProperty('baseRepository');
+      expect(obligation?.reviewSubject).toMatchObject({
+        baseRepository: { kind: 'local', rootCommitDigest: 'c'.repeat(64) },
+      });
       expect(obligation?.metadata?.targetPaths).toEqual([
         'docs/test.md',
         'src/auth/login.ts',
@@ -1619,7 +1622,6 @@ describe('review (standalone flow)', () => {
         expect(card).toContain('Review complete');
         expect(result.presentation).toEqual({ markdown: card });
 
-        // Verify the card was persisted as an artifact.
         const { computeFingerprint, sessionDir: resolveSessionDir } =
           await import('../adapters/workspace/index.js');
         const fp = await computeFingerprint(ws.tmpDir);
@@ -1710,7 +1712,6 @@ describe('review (standalone flow)', () => {
       const result = await review.execute({}, ctx);
       expect(typeof result).toBe('string');
       const parsed = parseToolResult(result);
-      // A content-free review completes mechanically — no error, no block.
       expect(parsed.error).toBeUndefined();
       expect(parsed.phase).toBe('REVIEW_COMPLETE');
     });
@@ -1789,7 +1790,6 @@ describe('review (standalone flow)', () => {
 
       const snapshot = (await readState(await currentSessionDir()))!.policySnapshot!;
 
-      // First call: create the review obligation (no findings yet).
       const first = parseToolResult(
         await review.execute(
           { prNumber: 77, inputOrigin: 'pr', targetPaths: ['docs/test.md'] },

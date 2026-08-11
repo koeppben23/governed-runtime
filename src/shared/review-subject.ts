@@ -24,16 +24,12 @@ export function hashCanonicalContentSubject(materialDigest: string): string {
 }
 
 export function hashCanonicalRepositorySubject(input: {
-  readonly baseRepository?: {
-    readonly host: string;
-    readonly owner: string;
-    readonly name: string;
-  };
-  readonly headRepository?: {
-    readonly host: string;
-    readonly owner: string;
-    readonly name: string;
-  };
+  readonly baseRepository:
+    | { readonly host: string; readonly owner: string; readonly name: string }
+    | { readonly kind: 'local'; readonly rootCommitDigest: string };
+  readonly headRepository?:
+    | { readonly host: string; readonly owner: string; readonly name: string }
+    | { readonly kind: 'local'; readonly rootCommitDigest: string };
   readonly baseSha: string;
   readonly headSha: string;
   readonly changedPaths: readonly string[];

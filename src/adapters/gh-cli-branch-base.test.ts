@@ -179,6 +179,10 @@ describe('resolveBranchReviewSource — real-git base detection', () => {
     expect(src.resolvedBaseSha).toBe(baseSha);
     expect(src.resolvedBranchSha).toBe(headSha);
     expect(src.resolvedBaseSha).not.toBe(src.resolvedBranchSha);
+    expect(src.repository).toMatchObject({ kind: 'local' });
+    if (src.repository && 'rootCommitDigest' in src.repository) {
+      expect(src.repository.rootCommitDigest).toMatch(/^[a-f0-9]{64}$/);
+    }
   });
 
   it('fails closed with recovery guidance when the branch has no commits ahead of base', async () => {

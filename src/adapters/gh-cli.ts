@@ -8,6 +8,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
+import { hashText } from '../shared/hashing.js';
 import { GitError } from './git.js';
 
 /**
@@ -229,7 +230,9 @@ export interface ResolvedBranchReviewSource {
   readonly baseBranch: string;
   readonly resolvedBranchSha: string;
   readonly resolvedBaseSha: string;
-  readonly repository?: { readonly host: string; readonly owner: string; readonly name: string };
+  readonly repository?:
+    | { readonly host: string; readonly owner: string; readonly name: string }
+    | { readonly kind: 'local'; readonly rootCommitDigest: string };
 }
 
 /**
@@ -317,7 +320,9 @@ export function resolveBranchReviewSource(
 
 function resolveRepositoryIdentity(
   cwd?: string,
-): { readonly host: string; readonly owner: string; readonly name: string } | undefined {
+):
+  | { readonly host: string; readonly owner: string; readonly name: string }
+  | { readonly kind: 'local'; readonly rootCommitDigest: string } {
   try {
     const remote = execFileSync('git', ['remote', 'get-url', 'origin'], {
       encoding: 'utf-8',
@@ -326,13 +331,35 @@ function resolveRepositoryIdentity(
       cwd,
     }).trim();
     const match = /^(?:https?:\/\/|git@)([^/:]+)[:/]([^/]+)\/([^/]+?)(?:\.git)?$/.exec(remote);
-    if (!match) return undefined;
+    if (!match) return localRepositoryIdentity(cwd);
     const [, host, owner, name] = match;
-    if (!host || !owner || !name) return undefined;
+    if (!host || !owner || !name) return localRepositoryIdentity(cwd);
     return { host, owner, name };
   } catch {
-    return undefined;
+    return localRepositoryIdentity(cwd);
   }
+}
+
+function localRepositoryIdentity(cwd?: string): {
+  readonly kind: 'local';
+  readonly rootCommitDigest: string;
+} {
+  try {
+    const roots = execFileSync('git', ['rev-list', '--max-parents=0', '--all'], {
+      encoding: 'utf-8',
+      stdio: 'pipe',
+      timeout: 3000,
+      cwd,
+    })
+      .split('\n')
+      .map((root) => root.trim())
+      .filter(Boolean)
+      .sort();
+    if (roots.length > 0) return { kind: 'local', rootCommitDigest: hashText(roots.join('\n')) };
+  } catch {
+    // Branch/base SHA resolution already established a usable Git repository.
+  }
+  throw new GitError('GIT_COMMAND_FAILED', 'Could not derive immutable local repository identity');
 }
 
 /**

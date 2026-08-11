@@ -225,8 +225,10 @@ describe('evidence-review', () => {
       if (parsedRepository.kind === 'repository_change') {
         expect(parsedRepository.changedPaths).toEqual(['src/auth.ts']);
       }
-      const localRepository = { ...repository };
-      delete (localRepository as { baseRepository?: unknown }).baseRepository;
+      const localRepository = {
+        ...repository,
+        baseRepository: { kind: 'local' as const, rootCommitDigest: 'c'.repeat(64) },
+      };
       expect(FrozenReviewSubject.parse(localRepository)).toMatchObject({
         kind: 'repository_change',
         baseSha: 'a'.repeat(40),
