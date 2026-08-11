@@ -60,7 +60,9 @@ export const FrozenReviewSubject = z
       .object({
         kind: z.literal('repository_change'),
         source: RepositorySubjectSource,
-        baseRepository: RepositoryIdentity,
+        // Local repositories have no stable remote identity. Their frozen
+        // commit pair, paths, and content digest remain the provenance.
+        baseRepository: RepositoryIdentity.optional(),
         headRepository: RepositoryIdentity.optional(),
         baseSha: GitSha,
         headSha: GitSha,

@@ -283,12 +283,18 @@ async function createNewReviewObligation(
       }),
     };
   }
-  const classification = await resolveChallengeClassificationEvidence(input.state, input.worktree, {
-    targetPaths: input.args.targetPaths,
-    branch: input.args.branch,
-    base: input.args.base,
-    prNumber: input.args.prNumber,
-  });
+  // Repository subjects have already been materialized from immutable base/head
+  // SHAs. Re-resolving a mutable branch or PR here could scope risk to different
+  // paths than the subject the reviewer receives.
+  const classification =
+    reviewSubject.kind === 'repository_change'
+      ? { kind: 'available' as const, changedFiles: reviewSubject.changedPaths }
+      : await resolveChallengeClassificationEvidence(input.state, input.worktree, {
+          targetPaths: input.args.targetPaths,
+          branch: input.args.branch,
+          base: input.args.base,
+          prNumber: input.args.prNumber,
+        });
   if (classification.kind === 'unavailable') {
     return {
       blocked: formatBlocked('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE', {

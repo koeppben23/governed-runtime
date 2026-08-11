@@ -118,9 +118,10 @@ describe('documentation/review-capabilities-doc-drift', () => {
       expect(cmds).not.toContain('branch name — loads diff via `gh` CLI');
     });
 
-    it('commands.md branch references git diff', () => {
+    it('commands.md assigns branch materialization to FlowGuard', () => {
       const cmds = readDoc('docs/commands.md');
-      expect(cmds).toMatch(/branch.*git diff/i);
+      expect(cmds).toMatch(/branch.*FlowGuard resolves and freezes/i);
+      expect(cmds).toContain('No remote is required when both refs exist locally.');
     });
 
     it('CHANGELOG PR-E entry does not claim branch review requires gh CLI', () => {

@@ -50,6 +50,7 @@ export const ACTION_CODES = {
   RUN_IMPLEMENT: 'RUN_IMPLEMENT',
   RUN_ARCHITECTURE: 'RUN_ARCHITECTURE',
   RUN_REVIEWER_TASK: 'RUN_REVIEWER_TASK',
+  REVIEW_STATE_INCOMPLETE: 'REVIEW_STATE_INCOMPLETE',
   SESSION_COMPLETE: 'SESSION_COMPLETE',
 } as const;
 
@@ -229,9 +230,9 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
 
   // ── Review Flow ───────────────────────────────────────────
   REVIEW: () => ({
-    code: ACTION_CODES.RUN_CONTINUE,
-    text: 'Review report generated. Run /continue to complete',
-    commands: ['/continue'],
+    code: ACTION_CODES.REVIEW_STATE_INCOMPLETE,
+    text: 'Review is incomplete: no pending reviewer obligation or persisted report is available. Inspect status or abort this session; /continue cannot complete it.',
+    commands: [],
   }),
 
   REVIEW_COMPLETE: () => ({

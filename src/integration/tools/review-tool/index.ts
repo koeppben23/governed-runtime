@@ -484,8 +484,6 @@ async function prepareHostTaskVerdictReview(
   };
 }
 
-// ─── Tool definition ─────────────────────────────────────────────────────────
-
 type PreparedReviewExecution = ReviewPreparation & {
   sessDir: string;
   now: string;
@@ -514,6 +512,8 @@ async function prepareReviewWithoutExternalCalls(
       policy: state.policySnapshot?.reviewInvocationPolicy ?? 'host_task_required',
     });
     if (typeof prepared === 'string') return prepared;
+    // Only a durable obligation may materialize the REVIEW intermediate state.
+    if (prepared.blockMessage && !prepared.persistedAssurance) return prepared.blockMessage;
     const taskEvidence = prepareStandaloneReviewEvidence(args, now, prepared.refInput);
     const stateWithTaskEvidence: SessionState = {
       // Persist the REVIEW transition materialized by startReviewFlow so the

@@ -29,6 +29,10 @@ export type WhyConclusionProjection =
       readonly action: PresentationAction;
     }
   | {
+      readonly kind: 'terminal';
+      readonly message: string;
+    }
+  | {
       readonly kind: 'decision_required';
       readonly question: string;
       readonly actions: readonly PresentationAction[];
@@ -126,10 +130,7 @@ function buildWhyConclusion(
     case 'pending':
     case 'transition': {
       if (!command) {
-        throw Object.assign(
-          new Error(`WhyProjection: ${evalResult.kind} without product command`),
-          { code: 'WHY_ACTION_PROJECTION_EMPTY' },
-        );
+        return { kind: 'terminal', message: productNext.text };
       }
       return {
         kind: 'next_action',

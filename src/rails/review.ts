@@ -465,7 +465,7 @@ function loadPullRequestContent(
   }
 }
 function loadBranchContent(refInput: ReviewReferenceInput): PrepareReviewResult {
-  if (!refInput.resolvedBranchSha || !refInput.resolvedBaseSha || !refInput.repository) {
+  if (!refInput.resolvedBranchSha || !refInput.resolvedBaseSha) {
     return blocked('REVIEW_BRANCH_PROVENANCE_MISSING', {
       command: '/review',
       reason: 'Branch review requires resolved head and base commit provenance.',
@@ -485,8 +485,10 @@ function loadBranchContent(refInput: ReviewReferenceInput): PrepareReviewResult 
           branch: refInput.branch!,
           ...(refInput.baseBranch ? { requestedBase: refInput.baseBranch } : {}),
         },
-        baseRepository: refInput.repository,
-        headRepository: refInput.repository,
+        ...(refInput.repository && {
+          baseRepository: refInput.repository,
+          headRepository: refInput.repository,
+        }),
         baseSha: refInput.resolvedBaseSha,
         headSha: refInput.resolvedBranchSha,
       },

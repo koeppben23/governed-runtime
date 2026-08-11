@@ -25,9 +25,9 @@ describe('templates/commands/review (#401 Discovery context)', () => {
       expect(REVIEW_COMMAND).toContain('repo-dependent quality claim');
     });
 
-    it('passes Discovery context to the manually-spawned reviewer subagent', () => {
+    it('passes Discovery context only to a free-composed reviewer prompt', () => {
       expect(REVIEW_COMMAND).toContain(REVIEWER_SUBAGENT_TYPE);
-      expect(REVIEW_COMMAND).toMatch(/Pass the compact Discovery context/);
+      expect(REVIEW_COMMAND).toMatch(/Only when composing a prompt[\s\S]*Discovery context/);
     });
   });
 
@@ -85,9 +85,15 @@ describe('templates/commands/review (#401 Discovery context)', () => {
       expect(REVIEW_COMMAND).toMatch(/not\s+a terminal failure/);
     });
 
-    it('documents local branch diff fallback when no remote PR is available', () => {
-      expect(REVIEW_COMMAND).toContain('git diff <base>...<branch>');
-      expect(REVIEW_COMMAND).toContain('when no remote/PR is available');
+    it('keeps branch materialization inside FlowGuard', () => {
+      expect(REVIEW_COMMAND).toContain('never run `git diff`');
+      expect(REVIEW_COMMAND).not.toContain('git diff <base>...<branch>');
+    });
+
+    it('uses a supplied reviewer task prompt without appending material', () => {
+      expect(REVIEW_COMMAND).toContain(
+        'without appending content, Discovery context, or instructions',
+      );
     });
   });
 });

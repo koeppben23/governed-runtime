@@ -225,6 +225,16 @@ describe('evidence-review', () => {
       if (parsedRepository.kind === 'repository_change') {
         expect(parsedRepository.changedPaths).toEqual(['src/auth.ts']);
       }
+      const localRepository = { ...repository };
+      delete (localRepository as { baseRepository?: unknown }).baseRepository;
+      expect(FrozenReviewSubject.parse(localRepository)).toMatchObject({
+        kind: 'repository_change',
+        baseSha: 'a'.repeat(40),
+        headSha: 'b'.repeat(40),
+      });
+      expect(
+        FrozenReviewSubject.safeParse({ ...localRepository, baseSha: undefined }).success,
+      ).toBe(false);
       const content = {
         kind: 'content' as const,
         source: { kind: 'inline' as const, mediaType: 'text' as const },

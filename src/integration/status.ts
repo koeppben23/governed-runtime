@@ -26,7 +26,7 @@
 import type { SessionState } from '../state/schema.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 import { evaluate } from '../machine/evaluate.js';
-import { resolveNextAction } from '../machine/next-action.js';
+import { resolveNextAction, type NextAction } from '../machine/next-action.js';
 import { evaluateValidationEvidence } from '../machine/validation-evidence.js';
 import {
   isCommandAllowed,
@@ -421,6 +421,30 @@ export function buildEvidenceDetailProjection(state: SessionState): EvidenceDeta
   };
 }
 
+function resolveBlockerReason(input: {
+  readonly validationEvidenceBlocked: boolean;
+  readonly validationEvidenceCode: string | null;
+  readonly proofGraphGateCode: string | null;
+  readonly incompleteReview: boolean;
+  readonly next: NextAction;
+}): { reasonCode: string | null; reasonText: string | null } {
+  if (input.validationEvidenceBlocked) {
+    return { reasonCode: input.validationEvidenceCode, reasonText: input.next.text };
+  }
+  if (input.proofGraphGateCode) return { reasonCode: input.proofGraphGateCode, reasonText: null };
+  return input.incompleteReview
+    ? { reasonCode: 'REVIEW_STATE_INCOMPLETE', reasonText: input.next.text }
+    : { reasonCode: null, reasonText: null };
+}
+
+function resolveHumanActionRequired(
+  evalResult: ReturnType<typeof evaluate>,
+  incompleteReview: boolean,
+): boolean | null {
+  if (evalResult.kind === 'waiting' || incompleteReview) return true;
+  return evalResult.kind === 'pending' ? null : false;
+}
+
 /** Build blocked detail projection for /status --why-blocked. */
 export function buildBlockedProjection(
   state: SessionState,
@@ -430,7 +454,8 @@ export function buildBlockedProjection(
   const next = resolveNextAction(state.phase, state);
   const completeness = evaluateCompleteness(state);
 
-  const blocked = evalResult.kind === 'waiting';
+  const incompleteReview = next.code === 'REVIEW_STATE_INCOMPLETE';
+  const blocked = evalResult.kind === 'waiting' || incompleteReview;
   const missingEvidence = completeness.slots
     .filter((slot) => slot.required && (slot.status === 'missing' || slot.status === 'failed'))
     .map((slot) => ({
@@ -448,21 +473,22 @@ export function buildBlockedProjection(
   // #695: surface the enforced ProofGraph gate reason at EVIDENCE_REVIEW so the
   // why-blocked surface projects the gate's migrated human copy.
   const proofGraphGateCode = proofGraphGateRegistryCode(state);
+  const reason = resolveBlockerReason({
+    validationEvidenceBlocked,
+    validationEvidenceCode: validationEvidence?.code ?? null,
+    proofGraphGateCode,
+    incompleteReview,
+    next,
+  });
 
   return {
     blocked,
-    reasonCode: validationEvidenceBlocked ? validationEvidence.code : proofGraphGateCode,
-    reasonText:
-      evalResult.kind === 'waiting'
-        ? evalResult.reason
-        : validationEvidenceBlocked
-          ? next.text
-          : null,
+    reasonCode: reason.reasonCode,
+    reasonText: evalResult.kind === 'waiting' ? evalResult.reason : reason.reasonText,
     recoveryHint: next.text,
     missingEvidence,
     nextResolvableCommand: next.commands[0] ?? null,
-    humanActionRequired:
-      evalResult.kind === 'waiting' ? true : evalResult.kind === 'pending' ? null : false,
+    humanActionRequired: resolveHumanActionRequired(evalResult, incompleteReview),
   };
 }
 

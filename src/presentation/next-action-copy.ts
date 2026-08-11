@@ -86,6 +86,10 @@ const PRODUCT_GUIDANCE = {
     commands: [],
     presentationForm: 'review_pending',
   },
+  REVIEW_STATE_INCOMPLETE: {
+    text: 'Review state is incomplete: no pending reviewer obligation or persisted report is available. Inspect the session with /status or abort it; /continue cannot complete this state.',
+    commands: [],
+  },
 } satisfies Partial<Record<ActionCode, ProductNextAction>>;
 
 /**
