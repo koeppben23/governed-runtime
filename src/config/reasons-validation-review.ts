@@ -10,6 +10,25 @@ import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
 export const REVIEW_VALIDATION_REASONS = [
   {
+    code: 'REVIEW_STATE_INCOMPLETE',
+    category: 'state',
+    messageTemplate:
+      'Review state has neither a pending reviewer obligation nor a persisted report and cannot be completed.',
+    recoverySteps: [
+      'Inspect the session state and audit trail before further workflow actions',
+      'Abort the session if the missing review state cannot be recovered from trusted evidence',
+    ],
+  },
+  {
+    code: 'REVIEW_BRANCH_PROVENANCE_MISSING',
+    category: 'input',
+    messageTemplate: 'Branch review requires resolved immutable base and head commit provenance.',
+    recoverySteps: [
+      'Provide a branch and base that both resolve to commits in the current worktree',
+      'For local repositories, ensure the branch and base refs exist; no remote is required',
+    ],
+  },
+  {
     code: 'REVIEW_URL_CONTENT_ENCODING_INVALID',
     category: 'input',
     messageTemplate: 'URL review content could not be materialized as strict UTF-8: {reason}.',

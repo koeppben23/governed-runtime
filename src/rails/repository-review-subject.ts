@@ -19,8 +19,12 @@ export interface ResolvedRepositorySubjectInput {
   readonly source:
     | { readonly kind: 'pull_request'; readonly pullRequestNumber: number }
     | { readonly kind: 'branch'; readonly branch: string; readonly requestedBase?: string };
-  readonly baseRepository: { readonly host: string; readonly owner: string; readonly name: string };
-  readonly headRepository: { readonly host: string; readonly owner: string; readonly name: string };
+  readonly baseRepository:
+    | { readonly host: string; readonly owner: string; readonly name: string }
+    | { readonly kind: 'local'; readonly rootCommitDigest: string };
+  readonly headRepository?:
+    | { readonly host: string; readonly owner: string; readonly name: string }
+    | { readonly kind: 'local'; readonly rootCommitDigest: string };
   readonly baseSha: string;
   readonly headSha: string;
 }
@@ -64,7 +68,7 @@ export function prepareResolvedRepositoryContent(
     kind: 'repository_change',
     source: source.source,
     baseRepository: source.baseRepository,
-    headRepository: source.headRepository,
+    ...(source.headRepository && { headRepository: source.headRepository }),
     baseSha: source.baseSha,
     headSha: source.headSha,
     changedPaths,

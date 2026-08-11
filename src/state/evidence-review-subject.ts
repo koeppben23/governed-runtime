@@ -23,6 +23,15 @@ export const RepositoryIdentity = z
   .readonly();
 export type RepositoryIdentity = z.infer<typeof RepositoryIdentity>;
 
+export const LocalRepositoryIdentity = z
+  .object({ kind: z.literal('local'), rootCommitDigest: Sha256Digest })
+  .strict()
+  .readonly();
+export type LocalRepositoryIdentity = z.infer<typeof LocalRepositoryIdentity>;
+
+export const ReviewRepositoryIdentity = z.union([RepositoryIdentity, LocalRepositoryIdentity]);
+export type ReviewRepositoryIdentity = z.infer<typeof ReviewRepositoryIdentity>;
+
 const PullRequestSource = z
   .object({
     kind: z.literal('pull_request'),
@@ -60,8 +69,8 @@ export const FrozenReviewSubject = z
       .object({
         kind: z.literal('repository_change'),
         source: RepositorySubjectSource,
-        baseRepository: RepositoryIdentity,
-        headRepository: RepositoryIdentity.optional(),
+        baseRepository: ReviewRepositoryIdentity,
+        headRepository: ReviewRepositoryIdentity.optional(),
         baseSha: GitSha,
         headSha: GitSha,
         changedPaths: z.array(RepositoryPathSchema).min(1).readonly(),

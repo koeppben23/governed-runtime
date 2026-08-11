@@ -315,7 +315,9 @@ export interface ReviewReferenceInput {
   /** Worktree directory for git operations (branch reviews only). */
   readonly cwd?: string;
   /** Repository identity resolved with the immutable branch source. */
-  readonly repository?: { readonly host: string; readonly owner: string; readonly name: string };
+  readonly repository?:
+    | { readonly host: string; readonly owner: string; readonly name: string }
+    | { readonly kind: 'local'; readonly rootCommitDigest: string };
   /** Repository paths requested for a scoped branch or pull-request review. */
   readonly targetPaths?: readonly string[];
 }
@@ -465,7 +467,7 @@ function loadPullRequestContent(
   }
 }
 function loadBranchContent(refInput: ReviewReferenceInput): PrepareReviewResult {
-  if (!refInput.resolvedBranchSha || !refInput.resolvedBaseSha || !refInput.repository) {
+  if (!refInput.resolvedBranchSha || !refInput.resolvedBaseSha) {
     return blocked('REVIEW_BRANCH_PROVENANCE_MISSING', {
       command: '/review',
       reason: 'Branch review requires resolved head and base commit provenance.',
@@ -485,7 +487,7 @@ function loadBranchContent(refInput: ReviewReferenceInput): PrepareReviewResult 
           branch: refInput.branch!,
           ...(refInput.baseBranch ? { requestedBase: refInput.baseBranch } : {}),
         },
-        baseRepository: refInput.repository,
+        baseRepository: refInput.repository!,
         headRepository: refInput.repository,
         baseSha: refInput.resolvedBaseSha,
         headSha: refInput.resolvedBranchSha,

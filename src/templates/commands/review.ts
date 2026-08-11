@@ -32,14 +32,14 @@ Start the compliance review flow for the current FlowGuard session.
 
 2. **External Reference Resolution** (PR URLs, branches, commits, URLs, manual text):
     If the user provides a reference:
-    - **PR number**: Load PR diff via \`webfetch\` or \`gh pr view <number> --json diff\`. Add ExternalReference with type \`"pr"\`, set \`inputOrigin: "pr"\`.
-    - **Branch name**: Prefer local branch diff via \`git diff <base>...<branch>\` when no remote/PR is available; otherwise PR/branch diff via \`gh\` is acceptable. Add ExternalReference with type \`"branch"\`, source \`"local"\`, set \`inputOrigin: "branch"\`. The base is auto-detected (origin/HEAD → main → master → merge-base with HEAD); if auto-detection fails or is wrong, pass an explicit \`base\` argument (e.g. \`flowguard_review({ branch: "feature/x", base: "main" })\`).
-    - **URL**: Fetch content via \`webfetch\`. Set \`inputOrigin: "external_reference"\`.
+    - **PR number**: Pass \`prNumber\` to \`flowguard_review\`. FlowGuard resolves the exact commits and materializes the canonical diff. Add ExternalReference with type \`"pr"\`, set \`inputOrigin: "pr"\`.
+    - **Branch name**: Pass \`branch\` (and \`base\` when needed) to \`flowguard_review\`. FlowGuard resolves and freezes the local or remote branch at exact commits; never run \`git diff\` or convert a branch failure into a \`text\` review. Add ExternalReference with type \`"branch"\`, source \`"local"\` when applicable, set \`inputOrigin: "branch"\`.
+    - **URL**: Pass \`url\` to \`flowguard_review\`; FlowGuard fetches and freezes the review content. Set \`inputOrigin: "external_reference"\`.
     - **Manual text**: Use the supplied text directly. Set \`inputOrigin: "manual_text"\`.
     - **Commit SHA**: Add ExternalReference with type \`"commit"\`, source \`"local"\`, set \`inputOrigin: "external_reference"\`.
     - **Both text AND reference**: Set \`inputOrigin: "mixed"\`.
     - **No reference**: Proceed without \`references\` or \`inputOrigin\`.
-    Always preserve the original URL/reference.
+    Always preserve the original URL/reference. If FlowGuard blocks source resolution, report its recovery and stop; do not pre-load or reinterpret the source.
 
 3. **Create the review obligation** (content-aware only):
     If content was provided, the FIRST \`flowguard_review\` call MUST carry ONLY the matching
@@ -59,14 +59,14 @@ Start the compliance review flow for the current FlowGuard session.
     via Task tool:
     - Use \`subagent_type: "${REVIEWER_SUBAGENT_TYPE}"\`
     - If the response includes a \`reviewerTaskPrompt\` field, pass it VERBATIM as the Task
-      tool "prompt" argument, then append the loaded content and the Discovery context below
-      it. This canonical prompt already carries the required review context (iteration/planVersion)
+      tool "prompt" argument without appending content, Discovery context, or instructions.
+      This canonical prompt already carries the frozen material and required review context (iteration/planVersion)
       and attestation, so the FIRST Task attempt is not blocked with
       \`SUBAGENT_PROMPT_MISSING_CONTEXT\`. Only free-compose a prompt if no \`reviewerTaskPrompt\`
       is provided, in which case you MUST include the \`requiredReviewAttestation\` values AND the
       literal \`iteration=<n>, planVersion=<n>\` context in the prompt.
-    - Pass the loaded content and \`requiredReviewAttestation\` values in the prompt
-    - Pass the compact Discovery context captured in step 1 (health, drift,
+    - Only when composing a prompt because no \`reviewerTaskPrompt\` was provided: pass the
+      loaded content, \`requiredReviewAttestation\` values, and compact Discovery context (health, drift,
       detectedStack, verificationCandidates, risk surfaces). This is REQUIRED so the
       external diff is reviewed against repo-native stack/verification/health/drift.
     - Instruct the subagent to: check Discovery health and drift BEFORE making any

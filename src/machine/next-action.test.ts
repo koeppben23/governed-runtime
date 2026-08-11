@@ -218,10 +218,11 @@ describe('resolveNextAction', () => {
     });
 
     // ── Review Flow ────────────────────────────────────────
-    it('REVIEW → RUN_CONTINUE', () => {
+    it('REVIEW without a report or pending obligation → REVIEW_STATE_INCOMPLETE', () => {
       const state = makeState('REVIEW');
       const action = resolveNextAction('REVIEW', state);
-      expectAction(action, ACTION_CODES.RUN_CONTINUE, ['/continue']);
+      expectAction(action, ACTION_CODES.REVIEW_STATE_INCOMPLETE, []);
+      expect(action.text).toContain('/continue cannot complete it');
     });
 
     it('REVIEW_COMPLETE → SESSION_COMPLETE (empty commands)', () => {
@@ -246,6 +247,21 @@ describe('resolveNextAction', () => {
       const action = resolveNextAction('READY', state);
       expectAction(action, ACTION_CODES.RUN_REVIEWER_TASK, []);
       expect(action.text).toContain('flowguard-reviewer Task');
+    });
+
+    it('REVIEW with a pending standalone review obligation → RUN_REVIEWER_TASK', () => {
+      const obligation = createReviewObligation({
+        obligationType: 'review',
+        iteration: 1,
+        planVersion: 1,
+        now: '2026-01-01T00:00:00.000Z',
+        subjectDigest: 'test',
+      });
+      const state = makeState('REVIEW', {
+        reviewAssurance: { obligations: [obligation], invocations: [], attempts: [] },
+      });
+      const action = resolveNextAction('REVIEW', state);
+      expectAction(action, ACTION_CODES.RUN_REVIEWER_TASK, []);
     });
   });
 

@@ -179,6 +179,40 @@ describe('resolveBranchReviewSource — real-git base detection', () => {
     expect(src.resolvedBaseSha).toBe(baseSha);
     expect(src.resolvedBranchSha).toBe(headSha);
     expect(src.resolvedBaseSha).not.toBe(src.resolvedBranchSha);
+    expect(src.repository).toMatchObject({ kind: 'local' });
+    if (src.repository && 'rootCommitDigest' in src.repository) {
+      expect(src.repository.rootCommitDigest).toMatch(/^[a-f0-9]{64}$/);
+    }
+  });
+
+  it('keeps local identity stable when unrelated refs change', async () => {
+    const { dir } = await repoWithBranch({});
+    process.chdir(dir);
+
+    const before = resolveBranchReviewSource('feature/add-due-date');
+    const emptyTree = git(dir, ['mktree']);
+    const orphan = git(dir, ['commit-tree', emptyTree, '-m', 'unrelated orphan']);
+    git(dir, ['update-ref', 'refs/heads/unrelated-orphan', orphan]);
+    git(dir, ['tag', 'unrelated-tag', orphan]);
+
+    const withUnrelatedRefs = resolveBranchReviewSource('feature/add-due-date');
+    const movedOrphan = git(dir, [
+      'commit-tree',
+      emptyTree,
+      '-p',
+      orphan,
+      '-m',
+      'unrelated tag target',
+    ]);
+    git(dir, ['tag', '-f', 'unrelated-tag', movedOrphan]);
+    const withMovedTag = resolveBranchReviewSource('feature/add-due-date');
+    git(dir, ['update-ref', '-d', 'refs/heads/unrelated-orphan']);
+    git(dir, ['tag', '-d', 'unrelated-tag']);
+    const after = resolveBranchReviewSource('feature/add-due-date');
+
+    expect(withUnrelatedRefs.repository).toEqual(before.repository);
+    expect(withMovedTag.repository).toEqual(before.repository);
+    expect(after.repository).toEqual(before.repository);
   });
 
   it('fails closed with recovery guidance when the branch has no commits ahead of base', async () => {

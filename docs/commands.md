@@ -293,7 +293,7 @@ Start the standalone review flow. Supports content-aware review (PR, branch, URL
 
 - `text` (optional): Direct text blob to review.
 - `prNumber` (optional): GitHub PR number — loads PR diff via `gh` CLI.
-- `branch` (optional): Git branch name — loads diff against detected base branch via `git diff`.
+- `branch` (optional): Git branch name. FlowGuard resolves and freezes the local or remote branch at exact base/head commits, then loads the canonical diff. No remote is required when both refs exist locally.
 - `url` (optional): URL content to review.
 - `inputOrigin` (optional): Where the content originated — `pr`, `branch`, `external_reference`, `mixed`, `manual_text`, etc.
 - `references` (optional): Array of external references with audit provenance. Same structure as `/ticket` references with types like `pr`, `branch`, `commit`, etc.
