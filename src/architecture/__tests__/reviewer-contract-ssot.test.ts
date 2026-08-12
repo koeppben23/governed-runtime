@@ -140,6 +140,8 @@ describe('reviewer contract SSOT guard', () => {
     expect(content).toContain('CATEGORY_VALUES');
     expect(content).toContain('REVISION_VALUES');
     expect(content).toContain('OVERALL_VERDICT_VALUES');
+    expect(content).toContain('ANCHOR_KINDS');
+    expect(content).toContain('CHALLENGE_KINDS');
   });
 
   it('finding-relation-grammar.ts imports all canonical values from reviewer-contract.ts', () => {

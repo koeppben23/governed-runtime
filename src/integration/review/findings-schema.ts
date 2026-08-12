@@ -18,6 +18,8 @@ import {
   CATEGORY_VALUES,
   REVISION_VALUES,
   OVERALL_VERDICT_VALUES,
+  ANCHOR_KINDS,
+  CHALLENGE_KINDS,
 } from './reviewer-contract.js';
 
 const REPOSITORY_LOCATION_JSON_SCHEMA = {
@@ -35,20 +37,22 @@ const REPOSITORY_LOCATION_JSON_SCHEMA = {
   ],
 } as const;
 
-const REVIEW_SUBJECT_ANCHOR_JSON_SCHEMA = {
-  oneOf: [
-    {
+function buildAnchorVariant(kind: (typeof ANCHOR_KINDS)[number]): Record<string, unknown> {
+  if (kind === 'repository_location') {
+    return {
       type: 'object',
       properties: {
-        kind: { type: 'string', const: 'repository_location' },
+        kind: { type: 'string', const: kind },
         location: REPOSITORY_LOCATION_JSON_SCHEMA,
       },
       required: ['kind', 'location'],
-    },
-    {
+    };
+  }
+  if (kind === 'artifact_section') {
+    return {
       type: 'object',
       properties: {
-        kind: { type: 'string', const: 'artifact_section' },
+        kind: { type: 'string', const: kind },
         artifactKind: { type: 'string', enum: ['plan', 'adr'] },
         artifactDigest: { type: 'string', minLength: 1 },
         sectionPath: {
@@ -66,11 +70,13 @@ const REVIEW_SUBJECT_ANCHOR_JSON_SCHEMA = {
         },
       },
       required: ['kind', 'artifactKind', 'artifactDigest', 'sectionPath'],
-    },
-    {
+    };
+  }
+  if (kind === 'content') {
+    return {
       type: 'object',
       properties: {
-        kind: { type: 'string', const: 'content' },
+        kind: { type: 'string', const: kind },
         subjectDigest: { type: 'string', minLength: 1 },
         range: {
           type: 'object',
@@ -82,8 +88,150 @@ const REVIEW_SUBJECT_ANCHOR_JSON_SCHEMA = {
         },
       },
       required: ['kind', 'subjectDigest'],
+    };
+  }
+  throw new Error(`Unknown anchor kind: ${kind} — update findings-schema.ts`);
+}
+
+function buildChallengeVariant(kind: (typeof CHALLENGE_KINDS)[number]): Record<string, unknown> {
+  const base = challengeBase(kind);
+  if (kind === 'design_challenge') return buildDesignChallenge(base);
+  if (kind === 'implementation_challenge') return buildImplementationChallenge(base);
+  if (kind === 'content_challenge') return buildContentChallenge(base);
+  throw new Error(`Unknown challenge kind: ${kind} — update findings-schema.ts`);
+}
+
+function challengeBase(kind: string) {
+  return {
+    challengeId: {
+      type: 'string',
+      pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
     },
-  ],
+    obligationId: {
+      type: 'string',
+      pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+    },
+    scenario: { type: 'string', minLength: 1 },
+    claim: { type: 'string', minLength: 1 },
+    locations: { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1 },
+    kind: { type: 'string', const: kind },
+  } as const;
+}
+
+const CHALLENGE_REQUIRED = [
+  'challengeId',
+  'obligationId',
+  'scenario',
+  'claim',
+  'locations',
+  'kind',
+  'evidenceRefs',
+  'outcome',
+];
+
+function buildDesignChallenge(base: Record<string, unknown>) {
+  return {
+    type: 'object',
+    properties: {
+      ...base,
+      evidenceRefs: {
+        type: 'array',
+        minItems: 1,
+        items: {
+          type: 'object',
+          properties: {
+            kind: { type: 'string', const: 'plan_adr_section' },
+            artifactKind: { type: 'string', enum: ['plan', 'adr'] },
+            artifactDigest: { type: 'string', minLength: 1 },
+            sectionPath: {
+              type: 'array',
+              minItems: 1,
+              items: {
+                type: 'object',
+                properties: {
+                  headingDepth: { type: 'integer', minimum: 1, maximum: 6 },
+                  siblingIndex: { type: 'integer', minimum: 1 },
+                  headingText: { type: 'string' },
+                },
+                required: ['headingDepth', 'siblingIndex', 'headingText'],
+              },
+            },
+            excerptDigest: { type: 'string', minLength: 1 },
+          },
+          required: ['kind', 'artifactKind', 'artifactDigest', 'sectionPath', 'excerptDigest'],
+        },
+      },
+      outcome: { type: 'string', enum: ['supported', 'contradicted', 'not_verified'] },
+    },
+    required: CHALLENGE_REQUIRED,
+  };
+}
+
+function buildImplementationChallenge(base: Record<string, unknown>) {
+  return {
+    type: 'object',
+    properties: {
+      ...base,
+      evidenceRefs: {
+        type: 'array',
+        minItems: 1,
+        items: {
+          oneOf: [
+            {
+              type: 'object',
+              properties: {
+                kind: { type: 'string', const: 'implementation' },
+                implementationDigest: { type: 'string', minLength: 1 },
+                diffDigest: { type: 'string', minLength: 1 },
+              },
+              required: ['kind', 'implementationDigest'],
+            },
+            {
+              type: 'object',
+              properties: {
+                kind: { type: 'string', const: 'validation_attempt' },
+                attemptId: {
+                  type: 'string',
+                  pattern:
+                    '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+                },
+              },
+              required: ['kind', 'attemptId'],
+            },
+          ],
+        },
+      },
+      outcome: { type: 'string', enum: ['pass', 'fail', 'not_verified'] },
+    },
+    required: CHALLENGE_REQUIRED,
+  };
+}
+
+function buildContentChallenge(base: Record<string, unknown>) {
+  return {
+    type: 'object',
+    properties: {
+      ...base,
+      evidenceRefs: {
+        type: 'array',
+        minItems: 1,
+        items: {
+          type: 'object',
+          properties: {
+            kind: { type: 'string', const: 'content' },
+            digest: { type: 'string', minLength: 1 },
+          },
+          required: ['kind', 'digest'],
+        },
+      },
+      outcome: { type: 'string', enum: ['supported', 'contradicted', 'not_verified'] },
+    },
+    required: CHALLENGE_REQUIRED,
+  };
+}
+
+const REVIEW_SUBJECT_ANCHOR_JSON_SCHEMA = {
+  oneOf: ANCHOR_KINDS.map(buildAnchorVariant),
 } as const;
 
 const FINDING_RELATION_JSON_SCHEMA = {
@@ -140,172 +288,7 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
     challenges: {
       type: 'array',
       items: {
-        oneOf: [
-          {
-            type: 'object',
-            properties: {
-              challengeId: {
-                type: 'string',
-                pattern:
-                  '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
-              },
-              obligationId: {
-                type: 'string',
-                pattern:
-                  '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
-              },
-              scenario: { type: 'string', minLength: 1 },
-              claim: { type: 'string', minLength: 1 },
-              locations: { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1 },
-              kind: { type: 'string', const: 'design_challenge' },
-              evidenceRefs: {
-                type: 'array',
-                minItems: 1,
-                items: {
-                  type: 'object',
-                  properties: {
-                    kind: { type: 'string', const: 'plan_adr_section' },
-                    artifactKind: { type: 'string', enum: ['plan', 'adr'] },
-                    artifactDigest: { type: 'string', minLength: 1 },
-                    sectionPath: {
-                      type: 'array',
-                      minItems: 1,
-                      items: {
-                        type: 'object',
-                        properties: {
-                          headingDepth: { type: 'integer', minimum: 1, maximum: 6 },
-                          siblingIndex: { type: 'integer', minimum: 1 },
-                          headingText: { type: 'string' },
-                        },
-                        required: ['headingDepth', 'siblingIndex', 'headingText'],
-                      },
-                    },
-                    excerptDigest: { type: 'string', minLength: 1 },
-                  },
-                  required: [
-                    'kind',
-                    'artifactKind',
-                    'artifactDigest',
-                    'sectionPath',
-                    'excerptDigest',
-                  ],
-                },
-              },
-              outcome: { type: 'string', enum: ['supported', 'contradicted', 'not_verified'] },
-            },
-            required: [
-              'challengeId',
-              'obligationId',
-              'scenario',
-              'claim',
-              'locations',
-              'kind',
-              'evidenceRefs',
-              'outcome',
-            ],
-          },
-          {
-            type: 'object',
-            properties: {
-              challengeId: {
-                type: 'string',
-                pattern:
-                  '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
-              },
-              obligationId: {
-                type: 'string',
-                pattern:
-                  '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
-              },
-              scenario: { type: 'string', minLength: 1 },
-              claim: { type: 'string', minLength: 1 },
-              locations: { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1 },
-              kind: { type: 'string', const: 'implementation_challenge' },
-              evidenceRefs: {
-                type: 'array',
-                minItems: 1,
-                items: {
-                  oneOf: [
-                    {
-                      type: 'object',
-                      properties: {
-                        kind: { type: 'string', const: 'implementation' },
-                        implementationDigest: { type: 'string', minLength: 1 },
-                        diffDigest: { type: 'string', minLength: 1 },
-                      },
-                      required: ['kind', 'implementationDigest'],
-                    },
-                    {
-                      type: 'object',
-                      properties: {
-                        kind: { type: 'string', const: 'validation_attempt' },
-                        attemptId: {
-                          type: 'string',
-                          pattern:
-                            '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
-                        },
-                      },
-                      required: ['kind', 'attemptId'],
-                    },
-                  ],
-                },
-              },
-              outcome: { type: 'string', enum: ['pass', 'fail', 'not_verified'] },
-            },
-            required: [
-              'challengeId',
-              'obligationId',
-              'scenario',
-              'claim',
-              'locations',
-              'kind',
-              'evidenceRefs',
-              'outcome',
-            ],
-          },
-          {
-            type: 'object',
-            properties: {
-              challengeId: {
-                type: 'string',
-                pattern:
-                  '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
-              },
-              obligationId: {
-                type: 'string',
-                pattern:
-                  '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
-              },
-              scenario: { type: 'string', minLength: 1 },
-              claim: { type: 'string', minLength: 1 },
-              locations: { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1 },
-              kind: { type: 'string', const: 'content_challenge' },
-              evidenceRefs: {
-                type: 'array',
-                minItems: 1,
-                items: {
-                  type: 'object',
-                  properties: {
-                    kind: { type: 'string', const: 'content' },
-                    digest: { type: 'string', minLength: 1 },
-                  },
-                  required: ['kind', 'digest'],
-                },
-              },
-              outcome: { type: 'string', enum: ['supported', 'contradicted', 'not_verified'] },
-            },
-            required: [
-              'challengeId',
-              'obligationId',
-              'scenario',
-              'claim',
-              'locations',
-              'kind',
-              'evidenceRefs',
-              'outcome',
-            ],
-          },
-        ],
+        oneOf: CHALLENGE_KINDS.map(buildChallengeVariant),
       },
     },
     challengeResolutionVerdicts: {
