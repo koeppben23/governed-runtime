@@ -170,20 +170,52 @@ function renderInvestigationScope(files: readonly string[]): string[] {
  * necessarily the reviewed revision. Stating the resolved shas makes that
  * discrepancy visible instead of silently inviting false falsification.
  */
-function renderReviewSubjectProvenance(obligation: ReviewObligation): string[] {
+// eslint-disable-next-line complexity
+function resolvedBranchFields(obligation: ReviewObligation): {
+  branch: string | null;
+  baseBranch: string;
+  branchSha: string;
+  baseSha: string;
+} {
   const metadata = obligation.metadata ?? {};
-  const branch = typeof metadata.branch === 'string' ? metadata.branch : null;
-  if (!branch) return [];
-  const baseBranch = typeof metadata.baseBranch === 'string' ? metadata.baseBranch : 'unknown';
-  const branchSha =
-    typeof metadata.resolvedBranchSha === 'string' ? metadata.resolvedBranchSha : 'unknown';
-  const baseSha =
-    typeof metadata.resolvedBaseSha === 'string' ? metadata.resolvedBaseSha : 'unknown';
+  const frozenSource =
+    obligation.reviewSubject?.kind === 'repository_change'
+      ? obligation.reviewSubject.source
+      : undefined;
+  const branch =
+    typeof metadata.branch === 'string'
+      ? metadata.branch
+      : frozenSource?.kind === 'branch'
+        ? frozenSource.branch
+        : null;
+  const resolvedBranchSha =
+    typeof metadata.resolvedBranchSha === 'string'
+      ? metadata.resolvedBranchSha
+      : obligation.reviewSubject?.kind === 'repository_change'
+        ? obligation.reviewSubject.headSha
+        : 'unknown';
+  const resolvedBaseSha =
+    typeof metadata.resolvedBaseSha === 'string'
+      ? metadata.resolvedBaseSha
+      : obligation.reviewSubject?.kind === 'repository_change'
+        ? obligation.reviewSubject.baseSha
+        : 'unknown';
+  return {
+    branch,
+    baseBranch: typeof metadata.baseBranch === 'string' ? metadata.baseBranch : 'unknown',
+    branchSha: resolvedBranchSha,
+    baseSha: resolvedBaseSha,
+  };
+}
+
+function renderReviewSubjectProvenance(obligation: ReviewObligation): string[] {
+  const fields = resolvedBranchFields(obligation);
+  if (!fields.branch) return [];
   return [
     '## Reviewed Revision (external)',
     '',
-    `- Branch: ${branch} @ ${branchSha}`,
-    `- Base: ${baseBranch} @ ${baseSha}`,
+    `- Branch: ${fields.branch} @ ${fields.branchSha}`,
+    `- Base: ${fields.baseBranch} @ ${fields.baseSha}`,
     '',
     'Your read/glob/grep tools see the CURRENTLY CHECKED-OUT worktree, which may differ from the',
     '  revision above. Base every claim on the supplied diff; mark repository-dependent claims',
@@ -193,8 +225,8 @@ function renderReviewSubjectProvenance(obligation: ReviewObligation): string[] {
     '',
     'To read a file at the exact frozen revision for evidence verification:',
     '',
-    `  git show ${branchSha}:<path>`,
-    `  git show ${baseSha}:<path>`,
+    `  git show ${fields.branchSha}:<path>`,
+    `  git show ${fields.baseSha}:<path>`,
     '',
     'Use these commands when you need to verify that bytes at revision "head" or "base"',
     'match the frozen SHA. If you cannot run git show, mark any revision-dependent',

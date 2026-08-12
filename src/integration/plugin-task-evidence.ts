@@ -296,5 +296,10 @@ function blockRequiredHostTaskEvidence(
     bindOutcome: bindResult.bindOutcome,
     ...(detail ? { detail } : {}),
     reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
+    // Include schema errors so the agent can fix specific issues on retry.
+    // Pass the same prompt again — the reviewer needs to know what failed.
+    ...(bindResult.bindOutcome === 'schema_invalid' && bindResult.diagnostic?.schemaErrors
+      ? { schemaErrors: (bindResult.diagnostic.schemaErrors as string[]).join('; ') }
+      : {}),
   });
 }

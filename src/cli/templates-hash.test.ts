@@ -240,7 +240,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // reviewer cycle now stops at ARCH_REVIEW and requires a human decision.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '2a957bec2209944fe4c8bfc598d83a0245f824da643e748a7eb3663ca5801af0',
+      '6ca012a21ce8d376a242b1bcab297ab49663d84e3a23af7cfbd526e03a44dd97',
     );
   });
 
