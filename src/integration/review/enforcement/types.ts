@@ -105,6 +105,15 @@ export interface PendingReview {
    * so the reviewer can fix specific errors instead of guessing.
    */
   lastSchemaErrors: readonly string[] | null;
+  /**
+   * Whether a fresh canonical repair prompt (from flowguard_review) is
+   * required before the next reviewer Task invocation. Set to true when
+   * the reviewer produces schema-invalid output. Enforced by
+   * enforceBeforeSubagentCall which blocks direct task retries until a
+   * new reviewerTaskPrompt (containing the retry error section) is issued
+   * by handleHostTaskPolicy.
+   */
+  repairPromptRequired: boolean;
 }
 
 /** Session-level enforcement state. */

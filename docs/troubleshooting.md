@@ -228,6 +228,7 @@ real, registered reason.
 | `REVIEW_VERDICT_EVIDENCE_MISSING`             | reviewVerdict submitted without matching bound ReviewInvocationEvidence        | Run flowguard-reviewer subagent before submitting verdict                                                            |
 | `REVIEW_VERDICT_MISMATCH`                     | Submitted verdict does not match captured reviewer overallVerdict              | Use verdict exactly matching reviewer output; do not override                                                        |
 | `REVIEWER_OUTPUT_RETRY_EXHAUSTED`             | Reviewer failed schema validation after canonical retry                        | Operator intervention required; do not rewrite prompt or fabricate findings                                          |
+| `REPAIR_PROMPT_REQUIRED`                      | Fresh canonical repair prompt required before re-running reviewer Task         | Call flowguard_review to obtain a new reviewerTaskPrompt with validation errors; never reuse stale prompt            |
 | `REVIEWER_OUTPUT_SCHEMA_INVALID`              | Reviewer output failed to validate against the canonical ReviewFindings schema | Re-invoke with exact same frozen subject; ensure output matches grammar in prompt                                    |
 | `INVALID_REVIEW_TOOL_SEQUENCE`                | Review tool call sequence is invalid (e.g. reviewerUnavailable after spawn)    | Follow invocation sequence; do not submit reviewerUnavailable when reviewer spawned                                  |
 | `REVIEW_ASSURANCE_STATE_UNAVAILABLE`          | Strict review assurance state cannot be read                                   | Re-hydrate; if persistent, restore from archive                                                                      |
@@ -465,6 +466,7 @@ REVIEW_URL_CONTENT_ENCODING_INVALID
 REVIEW_VERDICT_EVIDENCE_MISSING
 REVIEW_VERDICT_MISMATCH
 REVIEWER_OUTPUT_RETRY_EXHAUSTED
+REPAIR_PROMPT_REQUIRED
 REVIEWER_OUTPUT_SCHEMA_INVALID
 INVALID_REVIEW_TOOL_SEQUENCE
 REVIEWER_INVOCATION_EXHAUSTED

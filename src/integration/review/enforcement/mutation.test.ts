@@ -276,6 +276,7 @@ describe('review-enforcement mutation kills', () => {
           capturedFindings: null,
           retryCount: 0,
           lastSchemaErrors: null,
+          repairPromptRequired: false,
         });
 
         const shortPrompt = 'Short';
@@ -301,6 +302,7 @@ describe('review-enforcement mutation kills', () => {
           capturedFindings: null,
           retryCount: 0,
           lastSchemaErrors: null,
+          repairPromptRequired: false,
         });
 
         const result = enforceBeforeSubagentCall(
@@ -329,6 +331,7 @@ describe('review-enforcement mutation kills', () => {
           capturedFindings: null,
           retryCount: 0,
           lastSchemaErrors: null,
+          repairPromptRequired: false,
         });
 
         const result = enforceBeforeSubagentCall(state, {
@@ -352,6 +355,7 @@ describe('review-enforcement mutation kills', () => {
           capturedFindings: null,
           retryCount: 0,
           lastSchemaErrors: null,
+          repairPromptRequired: false,
         });
 
         const prompt = 'A'.repeat(100) + ' version=1 ' + 'B'.repeat(150);
@@ -377,6 +381,7 @@ describe('review-enforcement mutation kills', () => {
           capturedFindings: null,
           retryCount: 0,
           lastSchemaErrors: null,
+          repairPromptRequired: false,
         });
 
         const prompt = 'A'.repeat(100) + ' iteration=0 ' + 'B'.repeat(150);
@@ -402,6 +407,7 @@ describe('review-enforcement mutation kills', () => {
           capturedFindings: null,
           retryCount: 0,
           lastSchemaErrors: null,
+          repairPromptRequired: false,
         });
 
         const prompt = 'A'.repeat(50) + ' iteration=1 ' + ' planVersion=2 ' + 'B'.repeat(200);
@@ -437,6 +443,7 @@ describe('review-enforcement mutation kills', () => {
           capturedFindings: null,
           retryCount: 0,
           lastSchemaErrors: null,
+          repairPromptRequired: false,
         });
 
         // Mode B: submit verdict with success
@@ -464,6 +471,7 @@ describe('review-enforcement mutation kills', () => {
           capturedFindings: null,
           retryCount: 0,
           lastSchemaErrors: null,
+          repairPromptRequired: false,
         });
 
         // Mode B: submit verdict with error

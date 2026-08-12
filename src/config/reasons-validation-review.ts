@@ -602,6 +602,17 @@ export const REVIEW_VALIDATION_REASONS = [
     ],
   },
   {
+    code: 'REPAIR_PROMPT_REQUIRED',
+    category: 'state',
+    messageTemplate:
+      'The reviewer produced schema-invalid output. A fresh canonical repair prompt (from flowguard_review) must be obtained before re-running the reviewer Task. Do NOT re-run the Task with the same stale prompt.',
+    recoverySteps: [
+      'Call flowguard_review with the original content fields and reviewObligationId to obtain a new reviewerTaskPrompt with the validation errors',
+      'Pass the NEW reviewerTaskPrompt to the Task tool — never reuse the old one',
+      'Do NOT fabricate findings, guess a verdict, or call any other authority path',
+    ],
+  },
+  {
     code: 'REVIEW_VERDICT_EVIDENCE_MISSING',
     category: 'state',
     messageTemplate:

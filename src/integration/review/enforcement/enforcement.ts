@@ -104,6 +104,7 @@ function trackReviewRequired(
     capturedFindings: null,
     retryCount: 0,
     lastSchemaErrors: null,
+    repairPromptRequired: false,
   });
 }
 
@@ -120,6 +121,7 @@ function trackContentAnalysis(state: SessionEnforcementState, now: string): void
     capturedFindings: null,
     retryCount: 0,
     lastSchemaErrors: null,
+    repairPromptRequired: false,
   });
 }
 
@@ -285,6 +287,10 @@ export function onTaskToolAfter(
     matched.subagentRecord = record;
     matched.capturedFindings = capturedFindings;
     matched.lastSchemaErrors = extractSchemaErrors(capturedFindings);
+    // Enforce repair-prompt requirement: after schema-invalid output, a
+    // fresh canonical repair prompt (from flowguard_review, not a stale
+    // task re-run) must be issued before the next reviewer invocation.
+    matched.repairPromptRequired = matched.lastSchemaErrors !== null;
   }
 }
 

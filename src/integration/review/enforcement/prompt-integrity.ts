@@ -77,6 +77,7 @@ function checkReviewContext(
   return { hasMatch: false, missingFields };
 }
 
+// eslint-disable-next-line complexity
 export function enforceBeforeSubagentCall(
   state: SessionEnforcementState,
   taskArgs: Record<string, unknown>,
@@ -110,6 +111,29 @@ export function enforceBeforeSubagentCall(
         `output and the retry budget (1 retry) is exhausted. The review cannot ` +
         `proceed — report this to the operator.`,
     };
+  }
+
+  // Check repair-prompt requirement: after schema-invalid output, a
+  // fresh canonical repair prompt (from flowguard_review) must be issued
+  // before the next reviewer Task invocation. Direct re-runs of the task
+  // with a stale prompt are blocked here.
+  const needsRepair = unfilledPendingReviews.filter((p) => p.repairPromptRequired);
+  if (needsRepair.length > 0) {
+    const hasRetrySection = prompt.includes('## Prior Output Rejected');
+    if (!hasRetrySection) {
+      return {
+        allowed: false,
+        code: 'REPAIR_PROMPT_REQUIRED',
+        reason:
+          `FlowGuard enforcement: the reviewer produced schema-invalid output. ` +
+          `A fresh canonical repair prompt must be obtained from flowguard_review ` +
+          `before re-running the reviewer Task. Do NOT re-run the Task with the ` +
+          `same stale prompt — call flowguard_review first to get a new ` +
+          `reviewerTaskPrompt with the validation errors.`,
+      };
+    }
+    // Repair prompt received — clear the requirement for this attempt
+    for (const p of needsRepair) p.repairPromptRequired = false;
   }
 
   if (prompt.length < MIN_SUBAGENT_PROMPT_LENGTH) {
