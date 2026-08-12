@@ -103,6 +103,7 @@ function trackReviewRequired(
     canonicalPromptAnchor: binding.canonicalPromptAnchor ?? null,
     capturedFindings: null,
     retryCount: 0,
+    lastSchemaErrors: null,
   });
 }
 
@@ -118,6 +119,7 @@ function trackContentAnalysis(state: SessionEnforcementState, now: string): void
     canonicalPromptAnchor: null,
     capturedFindings: null,
     retryCount: 0,
+    lastSchemaErrors: null,
   });
 }
 
@@ -282,7 +284,15 @@ export function onTaskToolAfter(
     matched.subagentCalled = true;
     matched.subagentRecord = record;
     matched.capturedFindings = capturedFindings;
+    matched.lastSchemaErrors = extractSchemaErrors(capturedFindings);
   }
+}
+
+function extractSchemaErrors(captured: CapturedFindings | null): readonly string[] | null {
+  if (!captured?.rawFindings) return null;
+  const parseResult = ReviewFindings.safeParse(captured.rawFindings);
+  if (parseResult.success) return null;
+  return parseResult.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`);
 }
 
 /**

@@ -133,7 +133,7 @@ export async function runReviewOrchestration(
     const { sessionState, sessDir, reviewCtx, parsedOutput } = v;
     const rawOutput = getToolOutput(output);
 
-    if (await handleHostTaskPolicy(deps, sessionState, sessDir, reviewCtx, output)) {
+    if (await handleHostTaskPolicy(deps, sessionState, sessDir, reviewCtx, output, sessionId)) {
       return;
     }
 

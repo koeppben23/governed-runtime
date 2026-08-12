@@ -125,6 +125,12 @@ export interface ReviewerTaskPromptInput {
    * Host Task paths so no transport has more semantic information than the other.
    */
   readonly discoveryContext?: DiscoveryReviewContext;
+  /**
+   * Schema validation errors from a prior failed reviewer output for the
+   * same obligation. When present, the prompt includes these errors so the
+   * reviewer can fix specific issues rather than guessing.
+   */
+  readonly retrySchemaErrors?: readonly string[];
 }
 
 export function deriveReviewSubjectScope(subject: FrozenReviewSubject): ReviewSubjectScope {
@@ -231,6 +237,20 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
     `  iteration: ${input.iteration}`,
     ...(input.planVersion != null ? [`  planVersion: ${input.planVersion}`] : []),
     '',
+    ...(input.retrySchemaErrors && input.retrySchemaErrors.length > 0
+      ? [
+          '## Prior Output Rejected — Schema Validation Errors',
+          '',
+          'Your previous output for this obligation was rejected. Correct these',
+          'specific errors in your new output:',
+          '',
+          ...input.retrySchemaErrors.map((e) => `- ${e}`),
+          '',
+          'Return a fresh complete ReviewFindings object using the exact output',
+          'contract below. The frozen review subject and material remain unchanged.',
+          '',
+        ]
+      : []),
     'Rules:',
     `- You MUST NOT call any FlowGuard tools (flowguard_plan, flowguard_implement, ` +
       `flowguard_review_implementation, flowguard_architecture, flowguard_review) in your session.`,
