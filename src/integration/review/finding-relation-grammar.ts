@@ -1,9 +1,10 @@
 /**
  * @module integration/review/finding-relation-grammar
  * @description Deterministic, machine-consistent FindingRelation grammar for
- * reviewer prompts. Derived from the same canonical Zod schemas that validate
- * findings at binding time. Every reviewer transport MUST receive this grammar
- * so no path can guess the schema that the other path enforces.
+ * reviewer prompts. Values are sourced from reviewer-contract.ts (the canonical SSOT),
+ * which is verified against the Zod schemas by reviewer-contract.test.ts.
+ * Every reviewer transport MUST receive this grammar so no path can guess the
+ * schema that the other path enforces.
  */
 export function renderFindingRelationGrammar(): string {
   return [

@@ -129,4 +129,20 @@ describe('reviewer contract SSOT guard', () => {
     const content = readFileSync(join(SRC_ROOT, 'integration/review/prompt-builders.ts'), 'utf8');
     expect(content).toContain("from './finding-relation-grammar.js'");
   });
+
+  it('findings-schema.ts imports enum values from reviewer-contract.ts', () => {
+    const content = readFileSync(join(SRC_ROOT, 'integration/review/findings-schema.ts'), 'utf8');
+    expect(content).toContain("from './reviewer-contract.js'");
+    expect(content).toContain('SEVERITY_VALUES');
+    expect(content).toContain('CATEGORY_VALUES');
+  });
+
+  it('finding-relation-grammar.ts documents reviewer-contract.ts as authority', () => {
+    const content = readFileSync(
+      join(SRC_ROOT, 'integration/review/finding-relation-grammar.ts'),
+      'utf8',
+    );
+    expect(content).toContain('reviewer-contract.ts');
+    expect(content).toContain('canonical');
+  });
 });

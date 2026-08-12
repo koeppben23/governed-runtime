@@ -17,6 +17,19 @@ import {
 } from './types.js';
 import { promptContainsValue } from './extraction.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../tool-names.js';
+import { ReviewFindings } from '../../../state/evidence-review.js';
+import { validateReviewFindingsConsistency } from './findings-consistency.js';
+
+/** Inlined from enforcement.ts to avoid circular import. */
+function hasUsableCapture(pending: PendingReview): boolean {
+  if (pending.subagentRecord?.terminationReason === 'step_exhausted') return false;
+  const parsed = ReviewFindings.safeParse(pending.capturedFindings?.rawFindings);
+  if (!parsed.success) return false;
+  return validateReviewFindingsConsistency({
+    overallVerdict: parsed.data.overallVerdict,
+    blockingIssueCount: parsed.data.blockingIssues.length,
+  }).ok;
+}
 /**
  * Enforce prompt integrity before allowing a subagent call (Level 3).
  * Called in tool.execute.before for task calls with subagent_type=flowguard-reviewer.
@@ -73,8 +86,31 @@ export function enforceBeforeSubagentCall(
   if (subagentType !== REVIEWER_SUBAGENT_TYPE) return { allowed: true };
 
   const prompt = typeof taskArgs.prompt === 'string' ? taskArgs.prompt : '';
-  const pendingReviews = [...state.pendingReviews.values()].filter((p) => !p.subagentCalled);
-  if (pendingReviews.length === 0) return { allowed: true };
+  // Include pending reviews awaiting capture: never called, or called but
+  // capture is unusable (schema-invalid) and a retry is still allowed.
+  const unfilledPendingReviews = [...state.pendingReviews.values()].filter(
+    (p) => !p.subagentCalled || !hasUsableCapture(p),
+  );
+  if (unfilledPendingReviews.length === 0) return { allowed: true };
+
+  // Check retry exhaustion: a review that was already called and has
+  // exhausted its retry budget (>= 1 retry) cannot be re-invoked.
+  const retryExhausted = unfilledPendingReviews.filter(
+    (p) => p.subagentCalled && (p.retryCount ?? 0) >= 1,
+  );
+  if (
+    retryExhausted.length > 0 &&
+    unfilledPendingReviews.every((p) => retryExhausted.includes(p))
+  ) {
+    return {
+      allowed: false,
+      code: 'REVIEWER_OUTPUT_RETRY_EXHAUSTED',
+      reason:
+        `FlowGuard enforcement: the reviewer has already produced schema-invalid ` +
+        `output and the retry budget (1 retry) is exhausted. The review cannot ` +
+        `proceed — report this to the operator.`,
+    };
+  }
 
   if (prompt.length < MIN_SUBAGENT_PROMPT_LENGTH) {
     return {
@@ -84,7 +120,7 @@ export function enforceBeforeSubagentCall(
     };
   }
 
-  const ctx = checkReviewContext(pendingReviews, prompt, strictEnforcement);
+  const ctx = checkReviewContext(unfilledPendingReviews, prompt, strictEnforcement);
   if (ctx.blockReason) return ctx.blockReason;
   if (!ctx.hasMatch) {
     return {
@@ -93,7 +129,7 @@ export function enforceBeforeSubagentCall(
       reason: `FlowGuard enforcement: the prompt for ${REVIEWER_SUBAGENT_TYPE} does not contain the expected review context. Missing: ${[...new Set(ctx.missingFields)].join(', ')}. Include the iteration and planVersion values from the FlowGuard tool response.`,
     };
   }
-  return checkArtifactAppended(pendingReviews, prompt);
+  return checkArtifactAppended(unfilledPendingReviews, prompt);
 }
 
 /**

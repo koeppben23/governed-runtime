@@ -229,8 +229,7 @@ function buildDeps(
       updateReviewAssurance,
       blockReviewOutcome,
       getEnforcementState: vi.fn().mockReturnValue({
-        sessionId: PARENT_SESSION_ID,
-        pluginReviews: new Map(),
+        pendingReviews: new Map(),
       }),
       log: { info: vi.fn(), warn: vi.fn() },
       client,

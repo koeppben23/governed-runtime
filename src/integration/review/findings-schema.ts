@@ -5,14 +5,15 @@
  * This schema is passed to the OpenCode SDK `session.prompt()` format field
  * to enforce structured JSON output from the reviewer subagent.
  *
- * Enum values and discriminator variants are defined here. Drift from the
- * canonical Zod types is detected by findings-schema-drift.test.ts which
- * validates against ReviewFindings.safeParse at build time.
+ * Enum values and discriminator variants are sourced from reviewer-contract.ts,
+ * the canonical SSOT. Drift from canonical Zod types is detected by both
+ * reviewer-contract.test.ts and findings-schema-drift.test.ts.
  *
- * @version v2 — content anchor added, severity category invariants verified
+ * @version v3 — canonical SSOT via reviewer-contract
  */
 
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
+import { SEVERITY_VALUES, CATEGORY_VALUES } from './reviewer-contract.js';
 
 const REPOSITORY_LOCATION_JSON_SCHEMA = {
   oneOf: [
@@ -101,10 +102,10 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          severity: { type: 'string', enum: ['critical', 'major', 'minor'] },
+          severity: { type: 'string', enum: [...SEVERITY_VALUES] },
           category: {
             type: 'string',
-            enum: ['completeness', 'correctness', 'feasibility', 'risk', 'quality'],
+            enum: [...CATEGORY_VALUES],
           },
           message: { type: 'string' },
           relation: FINDING_RELATION_JSON_SCHEMA,
@@ -117,10 +118,10 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          severity: { type: 'string', enum: ['critical', 'major', 'minor'] },
+          severity: { type: 'string', enum: [...SEVERITY_VALUES] },
           category: {
             type: 'string',
-            enum: ['completeness', 'correctness', 'feasibility', 'risk', 'quality'],
+            enum: [...CATEGORY_VALUES],
           },
           message: { type: 'string' },
           relation: FINDING_RELATION_JSON_SCHEMA,
