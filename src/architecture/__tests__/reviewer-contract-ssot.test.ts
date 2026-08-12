@@ -106,12 +106,15 @@ describe('reviewer contract SSOT guard', () => {
     }
   });
 
-  it('finding-relation-grammar.ts documents both canonical revision aliases', () => {
+  it('finding-relation-grammar.ts renders revision aliases from reviewer-contract', () => {
     const content = readFileSync(
       join(SRC_ROOT, 'integration/review/finding-relation-grammar.ts'),
       'utf8',
     );
-    expect(content).toContain('"base" | "head"');
+    // Grammar imports REVISION_VALUES and renders them dynamically
+    expect(content).toContain('REVISION_VALUES');
+    expect(content).toContain("from './reviewer-contract.js'");
+    // The revision rules section still documents the invariant
     expect(content).toContain('revision is a frozen alias');
     expect(content).toContain('never a SHA');
   });

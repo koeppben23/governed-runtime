@@ -1,20 +1,26 @@
 /**
  * @module integration/review/finding-relation-grammar
  * @description Deterministic, machine-consistent FindingRelation grammar for
- * reviewer prompts. Values are sourced from reviewer-contract.ts (the canonical SSOT),
+ * reviewer prompts. Rendered from reviewer-contract.ts (the canonical SSOT),
  * which is verified against the Zod schemas by reviewer-contract.test.ts.
  * Every reviewer transport MUST receive this grammar so no path can guess the
  * schema that the other path enforces.
  */
+import { SEVERITY_VALUES, CATEGORY_VALUES, REVISION_VALUES } from './reviewer-contract.js';
+
 export function renderFindingRelationGrammar(): string {
+  const severities = SEVERITY_VALUES.map((s) => `"${s}"`).join(' | ');
+  const categories = CATEGORY_VALUES.map((c) => `"${c}"`).join(' | ');
+  const revisions = REVISION_VALUES.map((r) => `"${r}"`).join(' | ');
+
   return [
     '## Finding Output Contract',
     '',
     'Every material finding MUST include a structured relation:',
     '',
     '{',
-    '  "severity": "critical" | "major" | "minor",',
-    '  "category": "completeness" | "correctness" | "feasibility" | "risk" | "quality",',
+    `  "severity": ${severities},`,
+    `  "category": ${categories},`,
     '  "message": "<specific defect description>",',
     '  "relation": {',
     '    "subjectAnchors": [ ... ],   // min 1, identifies what is criticized',
@@ -31,7 +37,7 @@ export function renderFindingRelationGrammar(): string {
     '  "kind": "repository_location",',
     '  "location": {',
     '    "path": "<string>",',
-    '    "revision": "base" | "head",',
+    `    "revision": ${revisions},`,
     '    "line": <integer optional>,',
     '    "endLine": <integer optional>',
     '  }',
@@ -61,6 +67,6 @@ export function renderFindingRelationGrammar(): string {
     '### Revision Rules',
     '',
     'revision is a frozen alias, never a SHA.',
-    'Only "base" or "head" are valid.',
+    `Only ${revisions} are valid.`,
   ].join('\n');
 }
