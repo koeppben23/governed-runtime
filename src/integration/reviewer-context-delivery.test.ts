@@ -99,6 +99,7 @@ function obligation(
     planVersion: 1,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
     mandateDigest: REVIEW_MANDATE_DIGEST,
+    maxReviewerOutputRepairAttempts: 1,
     createdAt: NOW,
     pluginHandshakeAt: null,
     status: 'pending',
@@ -140,6 +141,7 @@ function buildState(
       reviewOutputPolicy: 'structured_required',
     },
     reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v2' as const,
       obligations: [obligation(obligationType, metadata)],
       invocations: [],
       attempts:
@@ -156,6 +158,7 @@ function buildState(
                 },
                 ordinal: 1,
                 status: 'created' as const,
+                origin: { kind: 'initial' } as const,
                 createdAt: NOW,
               },
             ]

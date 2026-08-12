@@ -1500,6 +1500,7 @@ describe('review (standalone flow)', () => {
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
+          maxReviewerOutputRepairAttempts: 1,
           createdAt: new Date().toISOString(),
           pluginHandshakeAt: null,
           status: 'fulfilled' as const,

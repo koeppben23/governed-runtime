@@ -406,9 +406,7 @@ function appendImplReviewState(input: {
     },
     implReviewFindings: newReviewFindings.length > 0 ? newReviewFindings : undefined,
     reviewAssurance: {
-      obligations: consumedAssurance.obligations,
-      invocations: consumedAssurance.invocations,
-      attempts: consumedAssurance.attempts,
+      ...consumedAssurance,
     },
     error: null,
   };

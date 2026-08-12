@@ -25,7 +25,10 @@ import type {
 } from '../../state/evidence.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { assessMinimumTaskClass, maxTaskClass } from '../phase-tool-gate.js';
-import { challengeKindForObligation } from '../../config/policy-types.js';
+import {
+  challengeKindForObligation,
+  DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS,
+} from '../../config/policy-types.js';
 import type { TaskClass } from '../../state/schema.js';
 import type {
   ReviewRepositoryRevisionProvenance,
@@ -108,8 +111,15 @@ export function createReviewObligation(input: {
   reviewProfile?: ReviewProfile;
   /** Provenance of the frozen profile. Defaults to 'policy_default'. */
   profileSource?: ReviewProfileSource;
-  /** Frozen session policy; without its challenge policy, enforcement is disabled. */
-  policySnapshot?: Pick<PolicySnapshot, 'challengePolicy'> | null;
+  /**
+   * Frozen session policy; without its challenge policy, enforcement is
+   * disabled. The output-repair budget is frozen onto the obligation from the
+   * snapshot at creation — the reissue gate never re-reads live config.
+   */
+  policySnapshot?: Pick<
+    PolicySnapshot,
+    'challengePolicy' | 'maxReviewerOutputRepairAttempts'
+  > | null;
   /** Runtime paths classified by the canonical phase-tool gate. */
   changedFiles?: readonly string[];
   /** Explicit structured subject scope. Absent → derived from changedFiles only. */
@@ -181,6 +191,11 @@ export function createReviewObligation(input: {
       kind: 'unavailable',
       reason: 'repository_revision_not_resolved',
     },
+    // Frozen output-repair budget. The canonical policy default applies at
+    // creation time only; the reissue gate reads this frozen value, never the
+    // live config, so a later policy change cannot re-open a settled
+    // obligation's repair window.
+    maxReviewerOutputRepairAttempts: resolveFrozenOutputRepairBudget(input.policySnapshot),
   };
 }
 
@@ -191,6 +206,20 @@ export function resolveFrozenReviewProfile(
   return raw === 'core' || raw === 'full' ? raw : 'core';
 }
 
+/**
+ * Frozen output-repair budget for an obligation. The canonical policy default
+ * applies at creation time only; the reissue gate reads the frozen obligation
+ * value, never the live config.
+ */
+function resolveFrozenOutputRepairBudget(
+  policySnapshot:
+    Pick<PolicySnapshot, 'challengePolicy' | 'maxReviewerOutputRepairAttempts'> | null | undefined,
+): number {
+  return (
+    policySnapshot?.maxReviewerOutputRepairAttempts ?? DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS
+  );
+}
+
 export function appendReviewObligation(
   assurance: ReviewAssuranceState | undefined,
   obligation: ReviewObligation | null,
@@ -198,9 +227,8 @@ export function appendReviewObligation(
   const base = ensureReviewAssurance(assurance);
   if (!obligation) return base;
   return {
+    ...base,
     obligations: [...base.obligations, obligation],
-    invocations: base.invocations,
-    attempts: base.attempts,
   };
 }
 
@@ -319,6 +347,7 @@ export function consumeReviewObligation(
   if (!obligation) return assurance;
   const invocationId = acceptedInvocationId ?? obligation.invocationId;
   return {
+    ...assurance,
     obligations: assurance.obligations.map((item) => {
       if (item.obligationId !== obligation.obligationId) return item;
       return {
@@ -336,7 +365,6 @@ export function consumeReviewObligation(
         consumedByObligationId: obligation.obligationId,
       };
     }),
-    attempts: assurance.attempts,
   };
 }
 
@@ -399,6 +427,7 @@ export function createObligationAndAttempt(
     obligationType: obligation.obligationType,
     subjectDigest: obligationInput.subjectDigest,
     ordinal,
+    origin: { kind: 'initial' },
     now,
   });
   const withObligation = appendReviewObligation(assurance, obligation);
@@ -436,6 +465,7 @@ export function appendObligationWithAttempt(
     subjectDigest: obligation.subjectDigest,
     reviewMaterial,
     ordinal,
+    origin: { kind: 'initial' },
     now,
   });
   const withObligation = { ...base, obligations: [...base.obligations, obligation] };

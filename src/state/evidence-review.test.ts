@@ -391,6 +391,7 @@ describe('evidence-review', () => {
           paths: ['src/auth.ts'],
           revisions: ['base', 'head'],
         },
+        maxReviewerOutputRepairAttempts: 1,
       };
       expect(ReviewObligation.parse(obligation)).toEqual(obligation);
     });
@@ -420,7 +421,12 @@ describe('evidence-review', () => {
     });
 
     it('ReviewAssuranceState parses valid assurance state', () => {
-      const state = { obligations: [], invocations: [], attempts: [] };
+      const state = {
+        assuranceSchemaVersion: 'review-assurance.v2' as const,
+        obligations: [],
+        invocations: [],
+        attempts: [],
+      };
       expect(ReviewAssuranceState.parse(state)).toEqual(state);
     });
 
@@ -677,6 +683,7 @@ describe('evidence-review', () => {
           lineCount: 1,
         },
         metadata: { inputFingerprint: 'abc', customField: 42 },
+        maxReviewerOutputRepairAttempts: 1,
       };
       expect(ReviewObligation.parse(obligation)).toEqual(obligation);
     });
@@ -791,6 +798,7 @@ describe('evidence-review', () => {
         },
         reviewProfile: 'core' as const,
         profileSource: 'policy_default' as const,
+        maxReviewerOutputRepairAttempts: 1,
       };
       expect(ReviewObligation.parse(obligation)).toEqual(obligation);
     });
@@ -816,6 +824,7 @@ describe('evidence-review', () => {
           paths: ['src/auth.ts'],
           revisions: ['base', 'head'],
         },
+        maxReviewerOutputRepairAttempts: 1,
       };
       const parsed = ReviewObligation.parse(legacy);
       expect(parsed.reviewProfile).toBeUndefined();

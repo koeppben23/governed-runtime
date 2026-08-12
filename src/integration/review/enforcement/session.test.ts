@@ -576,7 +576,12 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       'flowguard_plan',
       { reviewVerdict: 'accept' },
       {
-        reviewAssurance: { obligations: [], invocations: [], attempts: [] },
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v2' as const,
+          obligations: [],
+          invocations: [],
+          attempts: [],
+        },
       },
     );
     expect(result.allowed).toBe(true);
@@ -592,7 +597,12 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       'flowguard_plan',
       { reviewVerdict: 'accept' },
       {
-        reviewAssurance: { obligations: [], invocations: [], attempts: [] },
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v2' as const,
+          obligations: [],
+          invocations: [],
+          attempts: [],
+        },
       },
     );
     expect(result.allowed).toBe(false);
@@ -631,7 +641,14 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       state,
       'flowguard_plan',
       { reviewVerdict: 'accept' },
-      { reviewAssurance: { obligations: [], invocations: [], attempts: [] } },
+      {
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v2' as const,
+          obligations: [],
+          invocations: [],
+          attempts: [],
+        },
+      },
       true,
     );
     expect(result.allowed).toBe(true);
@@ -679,6 +696,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
     const state = createSessionState();
     const sessionState = {
       reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v2' as const,
         obligations: [
           {
             obligationId: '00000000-0000-4000-8000-bug21pending01',
@@ -688,6 +706,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
             planVersion: 1,
             criteriaVersion: 'v1',
             mandateDigest: 'digest',
+            maxReviewerOutputRepairAttempts: 1,
             createdAt: NOW,
             pluginHandshakeAt: null,
             status: 'pending' as const,
@@ -724,6 +743,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
     const state = createSessionState();
     const sessionState = {
       reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v2' as const,
         obligations: [
           {
             obligationId: '00000000-0000-4000-8000-bug21impl0001',
@@ -733,6 +753,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
             planVersion: 1,
             criteriaVersion: 'v1',
             mandateDigest: 'digest',
+            maxReviewerOutputRepairAttempts: 1,
             createdAt: NOW,
             pluginHandshakeAt: null,
             status: 'pending' as const,
@@ -818,7 +839,14 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       state,
       'flowguard_plan',
       { planText: '## Revised Plan', reviewVerdict: 'accept' },
-      { reviewAssurance: { obligations: [], invocations: [], attempts: [] } },
+      {
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v2' as const,
+          obligations: [],
+          invocations: [],
+          attempts: [],
+        },
+      },
       true,
     );
     expect(result.allowed).toBe(true);
@@ -830,7 +858,14 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       state,
       'flowguard_plan',
       { planText: '## Revised Plan', reviewFindings: {} },
-      { reviewAssurance: { obligations: [], invocations: [], attempts: [] } },
+      {
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v2' as const,
+          obligations: [],
+          invocations: [],
+          attempts: [],
+        },
+      },
       true,
     );
     expect(result.allowed).toBe(true);
@@ -842,7 +877,14 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       state,
       'flowguard_plan',
       { planText: '## Revised Plan', reviewerUnavailable: true },
-      { reviewAssurance: { obligations: [], invocations: [], attempts: [] } },
+      {
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v2' as const,
+          obligations: [],
+          invocations: [],
+          attempts: [],
+        },
+      },
       true,
     );
     expect(result.allowed).toBe(true);
@@ -865,7 +907,14 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       state,
       'flowguard_plan',
       { reviewVerdict: 'accept', reviewFindings: null },
-      { reviewAssurance: { obligations: [], invocations: [], attempts: [] } },
+      {
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v2' as const,
+          obligations: [],
+          invocations: [],
+          attempts: [],
+        },
+      },
     );
     expect(result.allowed).toBe(true);
   });

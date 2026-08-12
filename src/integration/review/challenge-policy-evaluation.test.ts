@@ -147,7 +147,9 @@ async function resolveCapturedFixture(
     now: '2026-07-26T00:00:00.000Z',
     subjectDigest: 'test',
     changedFiles: ['src/example.ts'],
-    policySnapshot: frozen ? { challengePolicy: CHALLENGE_POLICY_V1 } : {},
+    policySnapshot: frozen
+      ? { challengePolicy: CHALLENGE_POLICY_V1, maxReviewerOutputRepairAttempts: 1 }
+      : { maxReviewerOutputRepairAttempts: 1 },
   });
   const reviewerStartedAt = performance.now();
   const findings = await fixtureReviewer({
@@ -169,7 +171,12 @@ async function resolveCapturedFixture(
     capturedRawFindings: findings,
   });
   const result = resolveHostTaskFindings(
-    { obligations: [obligation], invocations: [invocation], attempts: [] },
+    {
+      assuranceSchemaVersion: 'review-assurance.v2' as const,
+      obligations: [obligation],
+      invocations: [invocation],
+      attempts: [],
+    },
     obligation,
   );
   return { blocked: result.kind !== 'resolved', reviewerLatencyMs };
@@ -191,7 +198,9 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
     now: '2026-07-26T00:00:00.000Z',
     subjectDigest: 'test',
     changedFiles: ['src/example.ts'],
-    policySnapshot: frozen ? { challengePolicy: CHALLENGE_POLICY_V1 } : {},
+    policySnapshot: frozen
+      ? { challengePolicy: CHALLENGE_POLICY_V1, maxReviewerOutputRepairAttempts: 1 }
+      : { maxReviewerOutputRepairAttempts: 1 },
   });
   const challengeId = '22222222-2222-4222-8222-222222222222';
   const firstFindings = capturedFindings(firstObligation.obligationId, 0, 'structurally_valid', {
@@ -227,7 +236,12 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
   });
   expect(
     resolveHostTaskFindings(
-      { obligations: [firstObligation], invocations: [firstInvocation], attempts: [] },
+      {
+        assuranceSchemaVersion: 'review-assurance.v2' as const,
+        obligations: [firstObligation],
+        invocations: [firstInvocation],
+        attempts: [],
+      },
       firstObligation,
     ).kind,
   ).toBe('resolved');
@@ -243,6 +257,7 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
       },
       implReviewFindings: [firstFindings],
       reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v2' as const,
         obligations: [firstObligation],
         invocations: [firstInvocation],
         attempts: [],
@@ -287,7 +302,9 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
     now: '2026-07-26T00:01:00.000Z',
     subjectDigest: 'test',
     changedFiles: ['src/example.ts'],
-    policySnapshot: frozen ? { challengePolicy: CHALLENGE_POLICY_V1 } : {},
+    policySnapshot: frozen
+      ? { challengePolicy: CHALLENGE_POLICY_V1, maxReviewerOutputRepairAttempts: 1 }
+      : { maxReviewerOutputRepairAttempts: 1 },
   });
   const secondFindings = capturedFindings(secondObligation.obligationId, 1, 'structurally_valid', {
     reviewedBy: { sessionId: 'captured-reviewer-second' },
@@ -306,7 +323,12 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
     capturedRawFindings: secondFindings,
   });
   const reReview = resolveHostTaskFindings(
-    { obligations: [secondObligation], invocations: [secondInvocation], attempts: [] },
+    {
+      assuranceSchemaVersion: 'review-assurance.v2' as const,
+      obligations: [secondObligation],
+      invocations: [secondInvocation],
+      attempts: [],
+    },
     secondObligation,
     state ? computeTargetedResolutionChallengeIds(state) : undefined,
     undefined,

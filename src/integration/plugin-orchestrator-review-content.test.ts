@@ -151,6 +151,7 @@ function buildSessionState(
       ...(reviewInvocationPolicy ? { reviewInvocationPolicy } : {}),
     },
     reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v2' as const,
       obligations: [
         {
           obligationId: OBLIGATION_ID,
@@ -160,6 +161,7 @@ function buildSessionState(
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
+          maxReviewerOutputRepairAttempts: 1,
           createdAt: NOW,
           pluginHandshakeAt: null,
           status: 'pending',
@@ -191,6 +193,7 @@ function buildSessionState(
           reviewMaterial: { content: PERSISTED_CONTENT, materialDigest: MATERIAL_DIGEST },
           ordinal: 1,
           status: 'created',
+          origin: { kind: 'initial' } as const,
           createdAt: NOW,
         },
       ],

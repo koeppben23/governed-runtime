@@ -261,9 +261,14 @@ async function rejectIncoherentAttempt(
   if (!attempt) {
     return { ok: false, code: 'REVIEW_ATTEMPT_NOT_FOUND', details: { attemptId } };
   }
+  // Verdict-time incoherence (SUBAGENT_VERDICT_FINDINGS_INCOHERENT and all
+  // SUBAGENT_CHALLENGE_* codes) is a semantic consistency failure — persisted
+  // as `consistency_invalid`, which never authorizes an output repair.
   const rejectedState: SessionState = {
     ...state,
-    reviewAssurance: updateAttemptStatus(assurance, attempt.attemptId, 'rejected', now),
+    reviewAssurance: updateAttemptStatus(assurance, attempt.attemptId, 'rejected', now, {
+      rejectionReason: 'consistency_invalid',
+    }),
   };
   await writeStateWithArtifacts(sessDir, rejectedState);
   return { ok: true };
@@ -316,8 +321,23 @@ async function prepareHostTaskVerdictReview(
 
   if (resolved.kind !== 'resolved') {
     // Reissue an attempt so the next reviewer Task has a registered attempt
-    // identity before the host issues retry guidance.
+    // identity before the host issues retry guidance. Reissue is authorized
+    // by the output-repair gate; a denied gate blocks the obligation.
     const reissue = await reissueReviewAttempt(sessDir, state, obligation, exec.now);
+    if (reissue.kind === 'blocked') {
+      return formatBlocked(
+        reissue.authorization.code,
+        {
+          obligationId: obligation.obligationId,
+          reason: reissue.authorization.reason,
+        },
+        {
+          policy: exec.policy,
+          policyMode: exec.policy,
+          bindOutcome: resolved.kind,
+        },
+      );
+    }
     return formatBlocked(
       'HOST_SUBAGENT_TASK_REQUIRED',
       { reviewerSubagentType: REVIEWER_SUBAGENT_TYPE },
@@ -331,7 +351,7 @@ async function prepareHostTaskVerdictReview(
         bindOutcome: resolved.kind,
         reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
         reviewObligationId: obligation.obligationId,
-        reviewAttemptId: reissue.attemptId,
+        reviewAttemptId: reissue.attempt.attemptId,
         next: formatReviewRequiredSignal(obligation.iteration, obligation.planVersion),
         requiredReviewAttestation: buildHostTaskAttestation(obligation),
       },

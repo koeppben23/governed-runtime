@@ -51,6 +51,7 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
   maxIncoherentReviewerCaptureRetries: 1,
+  maxReviewerOutputRepairAttempts: 1,
   allowSelfApproval: true,
   minimumActorAssuranceForApproval: 'best_effort',
   requireVerifiedActorsForApproval: false,

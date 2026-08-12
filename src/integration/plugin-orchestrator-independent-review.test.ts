@@ -146,6 +146,7 @@ function buildState(
       reviewOutputPolicy,
     },
     reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v2' as const,
       obligations: [
         {
           obligationId: OBLIGATION_ID,
@@ -155,6 +156,7 @@ function buildState(
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
+          maxReviewerOutputRepairAttempts: 1,
           createdAt: NOW,
           pluginHandshakeAt: null,
           status: 'pending',

@@ -13,6 +13,11 @@ import {
   findReviewObligationById,
   createAttemptForExistingObligation,
 } from '../../review/assurance.js';
+import {
+  authorizeOutputRepairReissue,
+  type OutputRepairAuthorization,
+} from '../../review/reissue-authority.js';
+import { blockObligation } from '../../review/obligation-state.js';
 import { writeStateWithArtifacts } from '../helpers.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { StartedReviewResult } from './types.js';
@@ -62,34 +67,74 @@ export function buildHostTaskAttestation(obligation: ReviewObligation): Record<s
 /**
  * Reissue a bindable review attempt for an existing obligation.
  *
- * Used when the prior attempt was rejected (invalid reviewer output, out-of-scope
- * findings, etc.) and the host must re-issue reviewer-task guidance. The new
- * attempt is created without a child session — the after-hook binds the child
- * session when the reviewer Task completes.
+ * Used when the prior attempt was rejected and the host must re-issue
+ * reviewer-task guidance. The new attempt is created without a child session —
+ * the after-hook binds the child session when the reviewer Task completes.
+ *
+ * Authorization is delegated to `authorizeOutputRepairReissue` (pending
+ * obligation, no bindable attempt, latest attempt rejected with an explicit
+ * canonically repairable reason, remaining frozen output-repair budget). On
+ * denial the obligation is deterministically blocked with the denial code and
+ * the caller receives the blocked message instead of an attempt identity.
  *
  * Attempt construction is delegated to the canonical
  * `createAttemptForExistingObligation` authority so ordinal assignment, material
  * carry-forward, and staling of superseded attempts cannot drift between the
- * verdict-continuation path and the pre-Task repair path.
+ * verdict-continuation path and the pre-Task repair path. The origin is always
+ * `output_repair` with the rejected predecessor and its trigger reason.
  *
  * Persists the updated assurance state and returns the new `ReviewAttempt` with
  * its `attemptId` for inclusion in the blocked response so enforcement tracking
  * can register it before the next Task invocation.
  */
+export type ReissueReviewAttemptResult =
+  | { readonly kind: 'ok'; readonly attempt: ReviewAttempt }
+  | {
+      readonly kind: 'blocked';
+      readonly authorization: Extract<OutputRepairAuthorization, { readonly kind: 'blocked' }>;
+    };
+
 export async function reissueReviewAttempt(
   sessDir: string,
   state: SessionState,
   obligation: ReviewObligation,
   now: string,
-): Promise<ReviewAttempt> {
+): Promise<ReissueReviewAttemptResult> {
+  const authorization = authorizeOutputRepairReissue(state.reviewAssurance, obligation);
+  if (authorization.kind === 'blocked') {
+    const blockedState = blockObligation(state, obligation.obligationId, authorization.code);
+    await writeStateWithArtifacts(sessDir, blockedState);
+    return { kind: 'blocked', authorization };
+  }
+  if (authorization.kind === 'bindable_exists') {
+    const existing = state.reviewAssurance?.attempts.find(
+      (a) => a.attemptId === authorization.attemptId,
+    );
+    if (!existing) {
+      return {
+        kind: 'blocked',
+        authorization: {
+          kind: 'blocked',
+          code: 'REVIEW_REPAIR_UNAVAILABLE',
+          reason: 'bindable attempt referenced by authorization is missing from state',
+        },
+      };
+    }
+    return { kind: 'ok', attempt: existing };
+  }
   const reissue = createAttemptForExistingObligation(
     state.reviewAssurance,
     obligation,
     undefined,
     now,
+    {
+      kind: 'output_repair',
+      predecessorAttemptId: authorization.predecessorAttemptId,
+      triggerReason: authorization.triggerReason,
+    },
   );
   await writeStateWithArtifacts(sessDir, { ...state, reviewAssurance: reissue.assurance });
-  return reissue.attempt;
+  return { kind: 'ok', attempt: reissue.attempt };
 }
 
 import { buildReviewReferenceInput } from './obligation.js';

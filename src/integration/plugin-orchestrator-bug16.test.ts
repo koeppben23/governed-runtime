@@ -75,6 +75,7 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
       reviewOutputPolicy: 'structured_required',
     },
     reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v2' as const,
       obligations: [
         {
           obligationId: OBLIGATION_ID,
@@ -84,6 +85,7 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
           planVersion: 3,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
+          maxReviewerOutputRepairAttempts: 1,
           createdAt: NOW,
           pluginHandshakeAt: null,
           status: 'pending',

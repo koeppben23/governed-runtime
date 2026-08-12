@@ -74,6 +74,7 @@ function strictAssuranceFixture(
   findings: ReviewFindings = strictFindings(),
 ): NonNullable<ReviewFindingsValidationContext['assurance']> {
   return {
+    assuranceSchemaVersion: 'review-assurance.v2' as const,
     attempts: [],
     obligations: [
       {
@@ -84,6 +85,7 @@ function strictAssuranceFixture(
         planVersion: 1,
         criteriaVersion: REVIEW_CRITERIA_VERSION,
         mandateDigest: REVIEW_MANDATE_DIGEST,
+        maxReviewerOutputRepairAttempts: 1,
         createdAt: new Date().toISOString(),
         pluginHandshakeAt: new Date().toISOString(),
         status: 'fulfilled' as const,
@@ -641,6 +643,7 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
       planVersion: 1,
       criteriaVersion: REVIEW_CRITERIA_VERSION,
       mandateDigest: REVIEW_MANDATE_DIGEST,
+      maxReviewerOutputRepairAttempts: 1,
       createdAt: new Date().toISOString(),
       pluginHandshakeAt: null,
       status: 'pending' as const,
@@ -676,7 +679,12 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
   ): ReviewFindingsValidationContext {
     return makeCtx({
       obligationType: 'implement',
-      assurance: { obligations: [implObligation()], invocations: [], attempts: [] },
+      assurance: {
+        assuranceSchemaVersion: 'review-assurance.v2' as const,
+        obligations: [implObligation()],
+        invocations: [],
+        attempts: [],
+      },
       allowedEvidenceRefs: [IMPL_REF, FRESH_ATTEMPT_REF],
       expectedObligationId: OBLIGATION_ID,
       ...overrides,

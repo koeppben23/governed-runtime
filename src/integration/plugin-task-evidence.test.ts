@@ -65,6 +65,7 @@ function makeStateInfo(policyMode: string = 'host_task_required'): SessionState 
         policyMode as SessionState['policySnapshot']['reviewInvocationPolicy'],
     },
     reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v2' as const,
       obligations: [],
       invocations: [],
       attempts: [],

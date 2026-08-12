@@ -15,13 +15,20 @@ import { randomUUID } from 'node:crypto';
 import type {
   ReviewAssuranceState,
   ReviewAttempt,
+  ReviewAttemptOrigin,
+  ReviewAttemptRejectionReason,
   ReviewMaterial,
   ReviewObligation,
   ReviewObligationType,
 } from '../../state/evidence.js';
 
 export function emptyReviewAssurance(): ReviewAssuranceState {
-  return { obligations: [], invocations: [], attempts: [] };
+  return {
+    assuranceSchemaVersion: 'review-assurance.v2',
+    obligations: [],
+    invocations: [],
+    attempts: [],
+  };
 }
 
 export function ensureReviewAssurance(
@@ -37,6 +44,13 @@ export function createReviewAttempt(input: {
   reviewMaterial?: ReviewMaterial;
   ordinal: number;
   childSessionId?: string;
+  /**
+   * Authority-bearing origin. Every attempt must name how it came into
+   * existence: `initial` at obligation creation, `output_repair` after an
+   * authorized output-repair reissue, or `task_rearm` after a task-lifecycle
+   * re-arm. There is no origin-less attempt.
+   */
+  origin: ReviewAttemptOrigin;
   now: string;
 }): ReviewAttempt {
   return {
@@ -48,6 +62,7 @@ export function createReviewAttempt(input: {
     ordinal: input.ordinal,
     childSessionId: input.childSessionId,
     status: 'created',
+    origin: input.origin,
     createdAt: input.now,
   };
 }
@@ -73,6 +88,13 @@ export function createAttemptForExistingObligation(
   obligation: ReviewObligation,
   childSessionId: string | undefined,
   now: string,
+  /**
+   * Authority-bearing origin, supplied by the caller ONLY after the matching
+   * transition authority was satisfied (`authorizeOutputRepairReissue` or
+   * `authorizeTaskLifecycleRearm`). An architecture test whitelists the
+   * productive call sites so this parameter cannot become a public backdoor.
+   */
+  origin: ReviewAttemptOrigin,
 ): { assurance: ReviewAssuranceState; attempt: ReviewAttempt } {
   const base = ensureReviewAssurance(assurance);
   const ordinal =
@@ -84,6 +106,7 @@ export function createAttemptForExistingObligation(
     reviewMaterial: latestReviewMaterial(base, obligation.obligationId),
     ordinal,
     ...(childSessionId === undefined ? {} : { childSessionId }),
+    origin,
     now,
   });
   const withAttempt = appendReviewAttempt(base, attempt);
@@ -157,7 +180,12 @@ export function updateAttemptStatus(
   attemptId: string,
   status: ReviewAttempt['status'],
   now: string,
-  childSessionId?: string,
+  extra?: {
+    /** Correlate the attempt with a reviewer child session. */
+    childSessionId?: string;
+    /** Structured rejection reason, persisted only for `rejected` status. */
+    rejectionReason?: ReviewAttemptRejectionReason;
+  },
 ): ReviewAssuranceState {
   const base = ensureReviewAssurance(assurance);
   if (!base.attempts) return base;
@@ -170,7 +198,12 @@ export function updateAttemptStatus(
             ...a,
             status,
             completedAt: status !== 'created' ? now : a.completedAt,
-            ...(childSessionId && !a.childSessionId ? { childSessionId } : {}),
+            ...(extra?.childSessionId && !a.childSessionId
+              ? { childSessionId: extra.childSessionId }
+              : {}),
+            ...(status === 'rejected' && extra?.rejectionReason
+              ? { rejectionReason: extra.rejectionReason }
+              : {}),
           },
     ),
   };

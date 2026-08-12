@@ -23,9 +23,10 @@ import {
   appendObligationWithAttempt,
   resolveFrozenReviewProfile,
   findLatestPendingReviewObligation,
-  findBindableAttempt,
   createAttemptForExistingObligation,
 } from '../../review/assurance.js';
+import { authorizeOutputRepairReissue } from '../../review/reissue-authority.js';
+import { blockObligation } from '../../review/obligation-state.js';
 import { fingerprintReviewInput } from './fingerprint.js';
 import { formatMissingContentAnalysis } from './obligation-format.js';
 import { hasReviewContentInput, validateReviewContentSource } from './review-input.js';
@@ -217,24 +218,21 @@ export async function ensureMissingAnalysisObligation(
  * Re-invocation of a still-pending review obligation: hand the host a bindable
  * attempt again.
  *
- * Root cause this closes: after a reviewer Task produced unusable output the
- * host marks the attempt `rejected` (see `persistAttemptStatus`). From then on
- * `findBindableAttempt` — which only accepts `created` attempts without a child
- * session — returns null for this obligation. The canonical retry documented in
- * the `/review` command is a `flowguard_review` call carrying the original
- * content plus `reviewObligationId` and deliberately NO `reviewVerdict` (the
- * agent cannot know a verdict when the reviewer output failed validation), so
- * the verdict-gated `reissueReviewAttempt` path was unreachable. The obligation
- * therefore dead-ended: every further call resolved no attempt, and the missing
- * attempt was surfaced as a frozen-material integrity failure.
+ * A fresh attempt may be issued only after the previous reviewer attempt
+ * produced a non-bindable output-contract failure classified as canonically
+ * repairable (`REVIEW_ATTEMPT_REJECTION_POLICY`). Governance failures,
+ * subject/material integrity failures, scope failures, and execution failures
+ * do not authorize this reissue path.
  *
- * A fresh attempt is issued ONLY when no bindable attempt exists. Reissuing
- * while one is still open would stale the attempt an in-flight reviewer Task is
- * expected to bind to, silently discarding that reviewer's evidence.
+ * Reissue authorization is delegated to `authorizeOutputRepairReissue`:
+ * pending obligation + no bindable attempt + latest attempt `rejected` with an
+ * explicit structured reason + `canonical_output_retry` policy + remaining
+ * frozen budget (`maxReviewerOutputRepairAttempts`, frozen onto the obligation
+ * at creation). On denial the obligation is deterministically blocked with the
+ * denial code — `/status` must not recommend a further reviewer retry.
  *
- * `findLatestPendingReviewObligation` already restricted `existing` to
- * `status === 'pending'`, so fulfilled, consumed, and blocked obligations can
- * never be re-armed here.
+ * Reissuing while a bindable attempt is still open is refused: the open
+ * attempt is returned as-is so an in-flight reviewer Task is never staled.
  */
 async function reissueAttemptForPendingObligation(
   sessDir: string,
@@ -251,15 +249,30 @@ async function reissueAttemptForPendingObligation(
     existing.obligationId,
     state.policySnapshot?.reviewInvocationPolicy === 'host_task_required',
   );
-  const bindable = findBindableAttempt(state.reviewAssurance, existing.obligationId);
-  if (bindable) {
-    return { message, obligation: existing, attemptId: bindable.attemptId };
+  const authorization = authorizeOutputRepairReissue(state.reviewAssurance, existing);
+  if (authorization.kind === 'bindable_exists') {
+    return { message, obligation: existing, attemptId: authorization.attemptId };
+  }
+  if (authorization.kind === 'blocked') {
+    const blockedState = blockObligation(state, existing.obligationId, authorization.code);
+    await writeStateWithArtifacts(sessDir, blockedState);
+    return {
+      message: formatBlocked(authorization.code, {
+        obligationId: existing.obligationId,
+        reason: authorization.reason,
+      }),
+    };
   }
   const reissue = createAttemptForExistingObligation(
     state.reviewAssurance,
     existing,
     undefined,
     now,
+    {
+      kind: 'output_repair',
+      predecessorAttemptId: authorization.predecessorAttemptId,
+      triggerReason: authorization.triggerReason,
+    },
   );
   await writeStateWithArtifacts(sessDir, { ...state, reviewAssurance: reissue.assurance });
   return {

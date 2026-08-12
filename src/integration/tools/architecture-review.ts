@@ -318,9 +318,7 @@ function buildReviewedState(
       verdict: args.reviewVerdict as LoopVerdict,
     },
     reviewAssurance: {
-      obligations: consumedAssurance.obligations,
-      invocations: consumedAssurance.invocations,
-      attempts: consumedAssurance.attempts,
+      ...consumedAssurance,
     },
     error: null,
   };

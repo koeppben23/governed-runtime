@@ -205,6 +205,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
       reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v2' as const,
         obligations: [
           {
             obligationId: OBLIGATION_ID,
@@ -213,6 +214,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
+            maxReviewerOutputRepairAttempts: 1,
             subjectDigest: SUBJECT_DIGEST,
             createdAt: now,
             pluginHandshakeAt: null,
@@ -241,6 +243,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
             subjectDigest: SUBJECT_DIGEST,
             ordinal: 0,
             status: 'created' as const,
+            origin: { kind: 'initial' } as const,
             createdAt: now,
           },
         ],
@@ -557,8 +560,11 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
     const initialHypothesisCount = afterHandshake?.proofGraph?.claims.length ?? 0;
     expect(initialHypothesisCount).toBeGreaterThan(0);
 
-    // Attempt A returns an out-of-scope finding. Binding rejects the capture,
-    // leaving the obligation pending but spending only this attempt.
+    // Attempt A returns schema-invalid output. Binding rejects the capture with
+    // a canonically repairable reason (schema_invalid), leaving the obligation
+    // pending but spending only this attempt. Out-of-scope findings would be a
+    // governance rejection and terminate the obligation instead — covered by
+    // review-repair-retry-e2e.
     await afterHook(
       {
         tool: 'task',
@@ -578,19 +584,11 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
           overallVerdict: 'changes_requested',
           blockingIssues: [
             {
+              // Missing `relation` makes the payload schema-invalid: a
+              // repairable output-contract defect, not a governance rejection.
               severity: 'major',
               category: 'correctness',
               message: 'The changed request is not propagated to its service.',
-              location: 'src/outside-diff.ts',
-              relation: {
-                subjectAnchors: [
-                  {
-                    kind: 'repository_location',
-                    location: { path: 'src/outside-diff.ts', revision: 'head' },
-                  },
-                ],
-                evidenceLocations: [],
-              },
             },
           ],
           majorRisks: [],

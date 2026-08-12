@@ -246,6 +246,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
       },
       reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v2' as const,
         attempts: [],
         obligations: [
           {
@@ -256,6 +257,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
+            maxReviewerOutputRepairAttempts: 1,
             createdAt: now,
             pluginHandshakeAt: now,
             status: 'pending',
@@ -316,6 +318,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
       },
       reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v2' as const,
         obligations: [
           {
             obligationId: OBLIGATION_ID,
@@ -325,6 +328,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
+            maxReviewerOutputRepairAttempts: 1,
             createdAt: now,
             pluginHandshakeAt: now,
             status: 'pending',

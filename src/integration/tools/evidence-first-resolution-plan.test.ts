@@ -286,6 +286,7 @@ function planStateWithEvidence(
       verdict: 'changes_requested',
     },
     reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v2' as const,
       attempts: [
         {
           attemptId: OBLIGATION_ID.replace(/^(\w{8})/, 'd0000001'),
@@ -295,6 +296,7 @@ function planStateWithEvidence(
           childSessionId: 'ses_child',
           ordinal: 0,
           status: 'bound' as const,
+          origin: { kind: 'initial' } as const,
           createdAt: now,
         },
       ],
@@ -307,6 +309,7 @@ function planStateWithEvidence(
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
+          maxReviewerOutputRepairAttempts: 1,
           createdAt: now,
           pluginHandshakeAt: now,
           status: 'fulfilled',
@@ -503,6 +506,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
         verdict: 'changes_requested',
       },
       reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v2' as const,
         obligations: [],
         invocations: [],
         attempts: [],
@@ -715,6 +719,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
         verdict: 'changes_requested',
       },
       reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v2' as const,
         obligations: [
           {
             obligationId: OBLIGATION_ID,
@@ -724,6 +729,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
+            maxReviewerOutputRepairAttempts: 1,
             createdAt: now,
             pluginHandshakeAt: null,
             status: 'fulfilled',

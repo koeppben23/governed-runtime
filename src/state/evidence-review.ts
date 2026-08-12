@@ -59,6 +59,62 @@ export const ReviewAttemptStatusValues = [
 export const ReviewAttemptStatus = z.enum(ReviewAttemptStatusValues);
 export type ReviewAttemptStatus = z.infer<typeof ReviewAttemptStatus>;
 
+/**
+ * Canonical rejection classification persisted on a rejected review attempt.
+ *
+ * `output_*` reasons describe a non-bindable reviewer output whose defect can
+ * plausibly be repaired by a fresh independent reviewer attempt against the
+ * same frozen subject. Governance/execution reasons describe failures that a
+ * new reviewer output cannot legitimately repair. Repairability itself is
+ * classified in the enforcement layer (`REVIEW_ATTEMPT_REJECTION_POLICY`);
+ * this enum only names the reasons structurally.
+ */
+export const ReviewAttemptRejectionReason = z.enum([
+  'schema_invalid',
+  'extraction_invalid',
+  'attestation_invalid',
+  'relation_invalid',
+  'scope_invalid',
+  'evidence_unavailable',
+  'material_integrity_failed',
+  'subject_mismatch',
+  'consistency_invalid',
+  'reviewer_unavailable',
+  'task_failed',
+]);
+export type ReviewAttemptRejectionReason = z.infer<typeof ReviewAttemptRejectionReason>;
+
+/**
+ * Authority-bearing origin of a review attempt.
+ *
+ * Every attempt carries exactly one origin. `initial` marks the first attempt
+ * minted with its obligation. `output_repair` marks a reissue authorized by
+ * the obligation-level output-repair policy (see reissue-authority.ts).
+ * `task_rearm` marks a re-arm driven by the reviewer Task lifecycle
+ * (interruption or spent-attempt retry); it is budgeted by the enforcement
+ * retry gate, NOT by the output-repair budget.
+ *
+ * Invariant: no non-initial attempt exists without an explicit origin.
+ */
+export const ReviewAttemptOrigin = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('initial') }).readonly(),
+  z
+    .object({
+      kind: z.literal('output_repair'),
+      predecessorAttemptId: z.string().uuid(),
+      triggerReason: ReviewAttemptRejectionReason,
+    })
+    .readonly(),
+  z
+    .object({
+      kind: z.literal('task_rearm'),
+      predecessorAttemptId: z.string().uuid(),
+      triggerReason: z.enum(['interrupted', 'rejected', 'stale', 'expired']),
+    })
+    .readonly(),
+]);
+export type ReviewAttemptOrigin = z.infer<typeof ReviewAttemptOrigin>;
+
 /** Immutable normalized bytes delivered to a standalone review attempt. */
 export const ReviewMaterial = z
   .object({
@@ -79,6 +135,17 @@ export const ReviewAttempt = z.object({
   ordinal: z.number().int().nonnegative(),
   childSessionId: z.string().optional(),
   status: ReviewAttemptStatus,
+  /**
+   * Authority-bearing origin. REQUIRED: every attempt names how it came into
+   * existence; attempts without an origin cannot be parsed.
+   */
+  origin: ReviewAttemptOrigin,
+  /**
+   * Structured reason for a `rejected` status. Persisted at the rejection
+   * point; the output-repair gate refuses reissues without an explicit,
+   * canonically repairable reason.
+   */
+  rejectionReason: ReviewAttemptRejectionReason.optional(),
   createdAt: z.string().datetime(),
   completedAt: z.string().datetime().optional(),
 });
@@ -319,6 +386,15 @@ export const ReviewObligation = z
     /** Frozen subject coverage. A review without a subject is not bindable. */
     reviewSubjectScope: ReviewSubjectScope,
     repositoryRevisionProvenance: ReviewRepositoryRevisionProvenanceSchema.optional(),
+    /**
+     * Obligation-level output-repair budget, frozen from the resolved policy
+     * snapshot at obligation creation. Counts `output_repair` attempts only;
+     * task-lifecycle re-arms are budgeted by the enforcement retry gate.
+     * Required: reissue authorization reads this frozen value — never the
+     * live config — so a later policy change cannot re-open a settled
+     * obligation's repair window.
+     */
+    maxReviewerOutputRepairAttempts: z.number().int().min(0).max(5),
   })
   .superRefine((obligation, context) => {
     if (obligation.obligationType !== 'review') return;
@@ -433,9 +509,16 @@ export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;
  * array would make every obligation permanently unbindable while looking valid.
  * Requiring the array makes that state unrepresentable and fails fast at the
  * schema boundary instead of silently at binding time.
+ *
+ * `assuranceSchemaVersion` is a REQUIRED hard version literal. The
+ * `review-assurance.v2` form introduced authority-bearing attempt origins and
+ * frozen output-repair budgets. States persisted under older forms carry
+ * attempts without origins and MUST fail parsing — there is deliberately no
+ * upgrade or defaulting path for authority-bearing fields.
  */
 export const ReviewAssuranceState = z
   .object({
+    assuranceSchemaVersion: z.literal('review-assurance.v2'),
     obligations: z.array(ReviewObligation),
     invocations: z.array(ReviewInvocationEvidence),
     attempts: z.array(ReviewAttempt),

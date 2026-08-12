@@ -240,21 +240,6 @@ export interface ReviewAttemptResult {
   readonly diagnostics?: Record<string, unknown>;
 }
 
-/** Retry budget configuration per phase. */
-export interface ReviewerRetryBudget {
-  readonly capture: number;
-  readonly extraction: number;
-  readonly validation: number;
-  readonly total: number;
-}
-
-export const DEFAULT_RETRY_BUDGET: ReviewerRetryBudget = {
-  capture: 2,
-  extraction: 2,
-  validation: 1,
-  total: 3,
-};
-
 /**
  * Structured result from buildHostTaskEvidence.
  *

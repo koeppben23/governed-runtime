@@ -136,7 +136,9 @@ describe('review repair retry (host-task)', () => {
     );
     expect(firstAttempt?.status).toBe('created');
 
-    // Simulate the host reaction to bindOutcome=schema_invalid.
+    // Simulate the host reaction to bindOutcome=schema_invalid. The host
+    // persists the structured rejection reason at the rejection point; without
+    // it the reissue gate fails closed.
     await writeStateWithArtifacts(sessDir, {
       ...afterFirst!,
       reviewAssurance: {
@@ -148,6 +150,7 @@ describe('review repair retry (host-task)', () => {
                 status: 'rejected' as const,
                 childSessionId: 'reviewer-child-session-1',
                 completedAt: '2026-01-01T00:00:00.000Z',
+                rejectionReason: 'schema_invalid' as const,
               }
             : a,
         ),
@@ -199,5 +202,320 @@ describe('review repair retry (host-task)', () => {
     expect(attempts).toHaveLength(1);
     expect(attempts[0]!.attemptId).toBe(openAttemptId);
     expect(attempts[0]!.status).toBe('created');
+  });
+
+  it('mints the repair attempt with an output_repair origin and trigger reason', async () => {
+    await hydrateSession();
+    const contentArgs = { branch: 'feature-auth', inputOrigin: 'branch' as const };
+    const first = parseToolResult(await review.execute(contentArgs, ctx));
+    const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
+    const sessDir = await currentSessionDir();
+    const afterFirst = await readState(sessDir);
+    const firstAttempt = afterFirst!.reviewAssurance!.attempts.find(
+      (a) => a.obligationId === obligationId,
+    )!;
+    expect(firstAttempt.origin).toEqual({ kind: 'initial' });
+
+    await writeStateWithArtifacts(sessDir, {
+      ...afterFirst!,
+      reviewAssurance: {
+        ...afterFirst!.reviewAssurance!,
+        attempts: afterFirst!.reviewAssurance!.attempts.map((a) =>
+          a.attemptId === firstAttempt.attemptId
+            ? {
+                ...a,
+                status: 'rejected' as const,
+                childSessionId: 'reviewer-child-session-1',
+                completedAt: '2026-01-01T00:00:00.000Z',
+                rejectionReason: 'schema_invalid' as const,
+              }
+            : a,
+        ),
+      },
+    });
+
+    await review.execute({ ...contentArgs, reviewObligationId: obligationId }, ctx);
+    const afterRepair = await readState(sessDir);
+    const repair = afterRepair!.reviewAssurance!.attempts.find(
+      (a) => a.obligationId === obligationId && a.status === 'created' && !a.childSessionId,
+    )!;
+    expect(repair.origin).toEqual({
+      kind: 'output_repair',
+      predecessorAttemptId: firstAttempt.attemptId,
+      triggerReason: 'schema_invalid',
+    });
+  });
+
+  it('terminates with REVIEWER_OUTPUT_RETRY_EXHAUSTED when the frozen budget is spent', async () => {
+    await hydrateSession();
+    const contentArgs = { branch: 'feature-auth', inputOrigin: 'branch' as const };
+    const first = parseToolResult(await review.execute(contentArgs, ctx));
+    const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
+    const sessDir = await currentSessionDir();
+
+    // Repair #1: reject the initial attempt with a repairable reason.
+    const afterFirst = await readState(sessDir);
+    const firstAttempt = afterFirst!.reviewAssurance!.attempts.find(
+      (a) => a.obligationId === obligationId,
+    )!;
+    await writeStateWithArtifacts(sessDir, {
+      ...afterFirst!,
+      reviewAssurance: {
+        ...afterFirst!.reviewAssurance!,
+        attempts: afterFirst!.reviewAssurance!.attempts.map((a) =>
+          a.attemptId === firstAttempt.attemptId
+            ? {
+                ...a,
+                status: 'rejected' as const,
+                childSessionId: 'reviewer-child-session-1',
+                completedAt: '2026-01-01T00:00:00.000Z',
+                rejectionReason: 'schema_invalid' as const,
+              }
+            : a,
+        ),
+      },
+    });
+    const repair1 = parseToolResult(
+      await review.execute({ ...contentArgs, reviewObligationId: obligationId }, ctx),
+    );
+    expect(repair1.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+
+    // Repair #1 also fails with a repairable rejection → budget exhausted.
+    const afterRepair1 = await readState(sessDir);
+    const repairAttempt = afterRepair1!.reviewAssurance!.attempts.find(
+      (a) => a.obligationId === obligationId && a.origin.kind === 'output_repair',
+    )!;
+    await writeStateWithArtifacts(sessDir, {
+      ...afterRepair1!,
+      reviewAssurance: {
+        ...afterRepair1!.reviewAssurance!,
+        attempts: afterRepair1!.reviewAssurance!.attempts.map((a) =>
+          a.attemptId === repairAttempt.attemptId
+            ? {
+                ...a,
+                status: 'rejected' as const,
+                childSessionId: 'reviewer-child-session-2',
+                completedAt: '2026-01-02T00:00:00.000Z',
+                rejectionReason: 'schema_invalid' as const,
+              }
+            : a,
+        ),
+      },
+    });
+
+    const exhausted = parseToolResult(
+      await review.execute({ ...contentArgs, reviewObligationId: obligationId }, ctx),
+    );
+    expect(exhausted.code).toBe('REVIEWER_OUTPUT_RETRY_EXHAUSTED');
+
+    const afterExhausted = await readState(sessDir);
+    const obligation = afterExhausted!.reviewAssurance!.obligations.find(
+      (o) => o.obligationId === obligationId,
+    )!;
+    expect(obligation.status).toBe('blocked');
+    expect(obligation.blockedCode).toBe('REVIEWER_OUTPUT_RETRY_EXHAUSTED');
+    // No further attempt may be minted.
+    expect(
+      afterExhausted!.reviewAssurance!.attempts.filter((a) => a.obligationId === obligationId),
+    ).toHaveLength(2);
+  });
+
+  it('terminates with REVIEW_REPAIR_UNAVAILABLE on a governance rejection', async () => {
+    await hydrateSession();
+    const contentArgs = { branch: 'feature-auth', inputOrigin: 'branch' as const };
+    const first = parseToolResult(await review.execute(contentArgs, ctx));
+    const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
+    const sessDir = await currentSessionDir();
+    const afterFirst = await readState(sessDir);
+    const firstAttempt = afterFirst!.reviewAssurance!.attempts.find(
+      (a) => a.obligationId === obligationId,
+    )!;
+    await writeStateWithArtifacts(sessDir, {
+      ...afterFirst!,
+      reviewAssurance: {
+        ...afterFirst!.reviewAssurance!,
+        attempts: afterFirst!.reviewAssurance!.attempts.map((a) =>
+          a.attemptId === firstAttempt.attemptId
+            ? {
+                ...a,
+                status: 'rejected' as const,
+                childSessionId: 'reviewer-child-session-1',
+                completedAt: '2026-01-01T00:00:00.000Z',
+                rejectionReason: 'scope_invalid' as const,
+              }
+            : a,
+        ),
+      },
+    });
+
+    const blocked = parseToolResult(
+      await review.execute({ ...contentArgs, reviewObligationId: obligationId }, ctx),
+    );
+    expect(blocked.code).toBe('REVIEW_REPAIR_UNAVAILABLE');
+
+    const afterBlocked = await readState(sessDir);
+    const obligation = afterBlocked!.reviewAssurance!.obligations.find(
+      (o) => o.obligationId === obligationId,
+    )!;
+    expect(obligation.status).toBe('blocked');
+    expect(obligation.blockedCode).toBe('REVIEW_REPAIR_UNAVAILABLE');
+    expect(
+      afterBlocked!.reviewAssurance!.attempts.filter((a) => a.obligationId === obligationId),
+    ).toHaveLength(1);
+  });
+
+  it('terminates with REVIEW_REPAIR_UNAVAILABLE on a rejected attempt without a reason', async () => {
+    await hydrateSession();
+    const contentArgs = { branch: 'feature-auth', inputOrigin: 'branch' as const };
+    const first = parseToolResult(await review.execute(contentArgs, ctx));
+    const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
+    const sessDir = await currentSessionDir();
+    const afterFirst = await readState(sessDir);
+    const firstAttempt = afterFirst!.reviewAssurance!.attempts.find(
+      (a) => a.obligationId === obligationId,
+    )!;
+    await writeStateWithArtifacts(sessDir, {
+      ...afterFirst!,
+      reviewAssurance: {
+        ...afterFirst!.reviewAssurance!,
+        attempts: afterFirst!.reviewAssurance!.attempts.map((a) =>
+          a.attemptId === firstAttempt.attemptId
+            ? {
+                ...a,
+                status: 'rejected' as const,
+                childSessionId: 'reviewer-child-session-1',
+                completedAt: '2026-01-01T00:00:00.000Z',
+              }
+            : a,
+        ),
+      },
+    });
+
+    const blocked = parseToolResult(
+      await review.execute({ ...contentArgs, reviewObligationId: obligationId }, ctx),
+    );
+    expect(blocked.code).toBe('REVIEW_REPAIR_UNAVAILABLE');
+  });
+
+  it('frozen budget stays authoritative when the live policy snapshot changes (1→3)', async () => {
+    await hydrateSession();
+    const contentArgs = { branch: 'feature-auth', inputOrigin: 'branch' as const };
+    const first = parseToolResult(await review.execute(contentArgs, ctx));
+    const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
+    const sessDir = await currentSessionDir();
+    const afterFirst = await readState(sessDir);
+    const obligation = afterFirst!.reviewAssurance!.obligations.find(
+      (o) => o.obligationId === obligationId,
+    )!;
+    expect(obligation.maxReviewerOutputRepairAttempts).toBe(1);
+
+    // Simulate a later policy change: the snapshot now allows 3 repairs.
+    await writeStateWithArtifacts(sessDir, {
+      ...afterFirst!,
+      policySnapshot: {
+        ...afterFirst!.policySnapshot!,
+        maxReviewerOutputRepairAttempts: 3,
+      },
+    });
+
+    // The frozen obligation value (1) must keep governing: exhaust it with one
+    // authorized repair, then the second rejection must exhaust.
+    const afterPolicyChange = await readState(sessDir);
+    const firstAttempt = afterPolicyChange!.reviewAssurance!.attempts.find(
+      (a) => a.obligationId === obligationId,
+    )!;
+    await writeStateWithArtifacts(sessDir, {
+      ...afterPolicyChange!,
+      reviewAssurance: {
+        ...afterPolicyChange!.reviewAssurance!,
+        attempts: afterPolicyChange!.reviewAssurance!.attempts.map((a) =>
+          a.attemptId === firstAttempt.attemptId
+            ? {
+                ...a,
+                status: 'rejected' as const,
+                childSessionId: 'reviewer-child-session-1',
+                completedAt: '2026-01-01T00:00:00.000Z',
+                rejectionReason: 'schema_invalid' as const,
+              }
+            : a,
+        ),
+      },
+    });
+    const repair1 = parseToolResult(
+      await review.execute({ ...contentArgs, reviewObligationId: obligationId }, ctx),
+    );
+    expect(repair1.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+
+    const afterRepair1 = await readState(sessDir);
+    const repairAttempt = afterRepair1!.reviewAssurance!.attempts.find(
+      (a) => a.obligationId === obligationId && a.origin.kind === 'output_repair',
+    )!;
+    await writeStateWithArtifacts(sessDir, {
+      ...afterRepair1!,
+      reviewAssurance: {
+        ...afterRepair1!.reviewAssurance!,
+        attempts: afterRepair1!.reviewAssurance!.attempts.map((a) =>
+          a.attemptId === repairAttempt.attemptId
+            ? {
+                ...a,
+                status: 'rejected' as const,
+                childSessionId: 'reviewer-child-session-2',
+                completedAt: '2026-01-02T00:00:00.000Z',
+                rejectionReason: 'schema_invalid' as const,
+              }
+            : a,
+        ),
+      },
+    });
+    const exhausted = parseToolResult(
+      await review.execute({ ...contentArgs, reviewObligationId: obligationId }, ctx),
+    );
+    expect(exhausted.code).toBe('REVIEWER_OUTPUT_RETRY_EXHAUSTED');
+  });
+
+  it('frozen budget stays authoritative when the live policy snapshot changes (1→0)', async () => {
+    await hydrateSession();
+    const contentArgs = { branch: 'feature-auth', inputOrigin: 'branch' as const };
+    const first = parseToolResult(await review.execute(contentArgs, ctx));
+    const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
+    const sessDir = await currentSessionDir();
+    const afterFirst = await readState(sessDir);
+
+    // Simulate a later policy change: the snapshot now forbids repairs.
+    await writeStateWithArtifacts(sessDir, {
+      ...afterFirst!,
+      policySnapshot: {
+        ...afterFirst!.policySnapshot!,
+        maxReviewerOutputRepairAttempts: 0,
+      },
+    });
+
+    // The frozen obligation value (1) must keep governing: one repair is still
+    // authorized even though the live snapshot now says 0.
+    const afterPolicyChange = await readState(sessDir);
+    const firstAttempt = afterPolicyChange!.reviewAssurance!.attempts.find(
+      (a) => a.obligationId === obligationId,
+    )!;
+    await writeStateWithArtifacts(sessDir, {
+      ...afterPolicyChange!,
+      reviewAssurance: {
+        ...afterPolicyChange!.reviewAssurance!,
+        attempts: afterPolicyChange!.reviewAssurance!.attempts.map((a) =>
+          a.attemptId === firstAttempt.attemptId
+            ? {
+                ...a,
+                status: 'rejected' as const,
+                childSessionId: 'reviewer-child-session-1',
+                completedAt: '2026-01-01T00:00:00.000Z',
+                rejectionReason: 'schema_invalid' as const,
+              }
+            : a,
+        ),
+      },
+    });
+    const repair = parseToolResult(
+      await review.execute({ ...contentArgs, reviewObligationId: obligationId }, ctx),
+    );
+    expect(repair.code).toBe('CONTENT_ANALYSIS_REQUIRED');
   });
 });

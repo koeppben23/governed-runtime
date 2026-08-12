@@ -119,6 +119,18 @@ export const DEFAULT_SELF_REVIEW_CONFIG: SelfReviewConfig = {
   strictEnforcement: true,
 };
 
+/**
+ * Canonical default for `maxReviewerOutputRepairAttempts`: exactly ONE
+ * authorized output-repair reissue per obligation.
+ *
+ * initial attempt (does not count) → repairable rejection → repair #1
+ * repair #1 → repairable rejection → REVIEWER_OUTPUT_RETRY_EXHAUSTED
+ *
+ * The value is frozen onto the obligation at creation; presets and the
+ * config override both route through this canonical default.
+ */
+export const DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS = 1;
+
 // ─── Discovery Health Policy ──────────────────────────────────────────────────
 
 /** Master switch for policy-gated Discovery health enforcement. */
@@ -261,6 +273,17 @@ export interface FlowGuardPolicy {
 
   /** Max fresh reviewer captures after an F12-incoherent host-task capture. */
   readonly maxIncoherentReviewerCaptureRetries: number;
+
+  /**
+   * Obligation-level output-repair budget: how many NEW reviewer attempts may
+   * be minted for one obligation after a canonically repairable non-bindable
+   * reviewer output (schema/extraction/attestation/relation contract defects).
+   * Frozen onto the obligation at creation; the reissue gate reads the frozen
+   * value, never the live config. Governance rejections, scope/material
+   * failures, and execution failures do NOT consume this budget — they never
+   * authorize a reissue at all.
+   */
+  readonly maxReviewerOutputRepairAttempts: number;
 
   /**
    * Whether the session initiator can approve at User Gates.

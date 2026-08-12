@@ -1231,7 +1231,12 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
     // deadlock the recovery path must avoid.
     const invocations: ReviewInvocationEvidence[] = [];
     const resolveCorrupt = resolveHostTaskFindings(
-      { obligations: [obligation], invocations, attempts: [] },
+      {
+        assuranceSchemaVersion: 'review-assurance.v2' as const,
+        obligations: [obligation],
+        invocations,
+        attempts: [],
+      },
       obligation,
     );
     expect(resolveCorrupt.kind).not.toBe('resolved');
@@ -1262,7 +1267,12 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
     // Verdict resolution #2 → RESOLVED. The resolver iterates all invocations,
     // skips the still-unparseable corrupt one, and returns the valid re-capture.
     const resolveValid = resolveHostTaskFindings(
-      { obligations: [obligation], invocations, attempts: [] },
+      {
+        assuranceSchemaVersion: 'review-assurance.v2' as const,
+        obligations: [obligation],
+        invocations,
+        attempts: [],
+      },
       obligation,
     );
     expect(resolveValid.kind).toBe('resolved');

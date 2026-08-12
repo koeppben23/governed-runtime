@@ -626,12 +626,24 @@ export const REVIEW_VALIDATION_REASONS = [
     code: 'REVIEWER_OUTPUT_RETRY_EXHAUSTED',
     category: 'state',
     messageTemplate:
-      'Reviewer output failed schema validation after the canonical retry for obligation {obligationId}. The reviewer output cannot be bound.',
+      'Reviewer output could not be bound after the canonical output-repair retry budget was exhausted for obligation {obligationId}. The reviewer output cannot be bound.',
     recoverySteps: [
-      'Report the schema errors to the operator',
+      'Report the rejection reason to the operator',
       'The frozen review subject and material remain unchanged',
       'A terminal block requires operator intervention — the review cannot proceed',
       'Do NOT rewrite the reviewer prompt, fabricate findings, or guess a verdict',
+    ],
+  },
+  {
+    code: 'REVIEW_REPAIR_UNAVAILABLE',
+    category: 'state',
+    messageTemplate:
+      'No output-repair reissue is authorized for obligation {obligationId}: {reason}. A new reviewer attempt cannot be minted for this rejection.',
+    recoverySteps: [
+      'Output-repair reissue requires: pending obligation, latest attempt rejected with an explicit canonically repairable output-contract reason, and remaining frozen repair budget',
+      'Governance, scope, material-integrity, semantic-consistency, and execution failures never authorize a reissue',
+      'The obligation is blocked terminally — operator intervention is required',
+      'Do NOT fabricate findings, guess a verdict, or bypass the frozen subject',
     ],
   },
   {

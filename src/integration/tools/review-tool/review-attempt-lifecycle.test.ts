@@ -98,6 +98,7 @@ describe('subject digest stability', () => {
     const obligationId = '33333333-1111-4111-8111-111111111111';
     const state = makeState('REVIEW', {
       reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v2' as const,
         obligations: [
           {
             obligationId,
@@ -106,6 +107,7 @@ describe('subject digest stability', () => {
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
+            maxReviewerOutputRepairAttempts: 1,
             createdAt: '2026-08-09T00:00:00.000Z',
             pluginHandshakeAt: null,
             status: 'pending',

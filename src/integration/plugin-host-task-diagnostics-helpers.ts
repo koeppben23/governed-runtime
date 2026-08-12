@@ -133,6 +133,7 @@ export function attemptFor(
     ordinal: 0,
     childSessionId,
     status: 'created',
+    origin: { kind: 'initial' },
     createdAt: NOW,
     ...overrides,
   };

@@ -31,6 +31,7 @@ import { readState } from '../adapters/persistence.js';
 import { buildCompactionContext, type CompactionDeps } from './plugin-compaction.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 import { handleHostTaskEvidence } from './plugin-task-evidence.js';
+import { authorizeTaskLifecycleRearm } from './review/reissue-authority.js';
 import {
   REASON_PLUGIN_ENFORCEMENT_UNAVAILABLE,
   REVIEW_ACCEPTANCE_PATH_NATIVE,
@@ -461,16 +462,17 @@ function rearmAttempt(
   childSessionId: string,
   now: string,
 ): ReviewAssuranceState {
-  const obligation = assurance.obligations.find((o) => o.obligationId === spent.obligationId);
-  if (!obligation) throw bindingFailed('rearm_obligation_not_found');
-  if (
-    obligation.status === 'fulfilled' ||
-    obligation.status === 'consumed' ||
-    obligation.status === 'blocked'
-  ) {
-    throw bindingFailed('rearm_obligation_settled');
+  const authorization = authorizeTaskLifecycleRearm(assurance, spent);
+  if (authorization.kind === 'blocked') {
+    throw bindingFailed(authorization.reason);
   }
-  return createAttemptForExistingObligation(assurance, obligation, childSessionId, now).assurance;
+  return createAttemptForExistingObligation(
+    assurance,
+    authorization.obligation,
+    childSessionId,
+    now,
+    authorization.origin,
+  ).assurance;
 }
 
 /**
@@ -492,7 +494,9 @@ function assuranceForBoundSession(
     case 'created':
       // The pre-registered slot is still open.
       if (!attempt.childSessionId) {
-        return updateAttemptStatus(assurance, attempt.attemptId, 'created', now, childSessionId);
+        return updateAttemptStatus(assurance, attempt.attemptId, 'created', now, {
+          childSessionId,
+        });
       }
       // Interrupted: correlated with an earlier child session that never produced
       // a capture. The retry gets its own attempt and the interrupted one is

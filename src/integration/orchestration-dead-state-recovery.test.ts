@@ -101,6 +101,7 @@ function makeBlockedObligation(
     planVersion,
     criteriaVersion: 'p37-v1',
     mandateDigest: 'test-mandate-digest-blocked',
+    maxReviewerOutputRepairAttempts: 1,
     status: 'blocked',
     blockedCode: 'STRICT_REVIEW_ORCHESTRATION_FAILED',
     createdAt: new Date().toISOString(),
@@ -126,6 +127,7 @@ function makePendingObligation(
     planVersion,
     criteriaVersion: 'p37-v1',
     mandateDigest: 'test-mandate-digest-pending',
+    maxReviewerOutputRepairAttempts: 1,
     status: 'pending',
     blockedCode: null,
     createdAt: new Date().toISOString(),
@@ -169,6 +171,7 @@ async function setupPlanDeadState(blockedCount = 1): Promise<void> {
   const updatedState: SessionState = {
     ...state,
     reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v2' as const,
       obligations: blockedObligations,
       invocations: state.reviewAssurance?.invocations ?? [],
       attempts: [],
@@ -221,6 +224,7 @@ async function setupImplementDeadState(blockedCount = 1): Promise<void> {
       executedAt: new Date().toISOString(),
     },
     reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v2' as const,
       obligations: blockedObligations,
       invocations: [],
       attempts: [],
@@ -264,6 +268,7 @@ async function setupArchitectureDeadState(blockedCount = 1): Promise<void> {
       verdict: 'changes_requested',
     },
     reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v2' as const,
       obligations: blockedObligations,
       invocations: [],
       attempts: [],
@@ -477,6 +482,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
       const updatedState: SessionState = {
         ...state,
         reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v2' as const,
           obligations: [makePendingObligation('architecture', 0, 1)],
           invocations: [],
           attempts: [],

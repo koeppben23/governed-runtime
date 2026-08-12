@@ -110,7 +110,12 @@ describe('buildRailConclusion', () => {
         subjectDigest: 'test',
       });
       const state = makeState('READY', {
-        reviewAssurance: { obligations: [obligation], invocations: [], attempts: [] },
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v2' as const,
+          obligations: [obligation],
+          invocations: [],
+          attempts: [],
+        },
       });
       const evalResult: EvalResult = { kind: 'pending', phase: 'READY' };
       const conclusion = buildRailConclusion(state, evalResult);

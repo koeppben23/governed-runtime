@@ -50,6 +50,7 @@ describe('getReviewLoopProgress', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v2' as const,
           attempts: [],
           obligations: [],
           invocations: [
@@ -246,6 +247,7 @@ describe('getReviewLoopProgress', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v2' as const,
           attempts: [],
           obligations: [],
           invocations: [
@@ -291,6 +293,7 @@ describe('getReviewLoopProgress', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v2' as const,
           attempts: [],
           obligations: [],
           invocations: [
