@@ -105,6 +105,7 @@ function trackReviewRequired(
     retryCount: 0,
     lastSchemaErrors: null,
     repairPromptRequired: false,
+    expectedRepairPromptDigest: null,
   });
 }
 
@@ -122,6 +123,7 @@ function trackContentAnalysis(state: SessionEnforcementState, now: string): void
     retryCount: 0,
     lastSchemaErrors: null,
     repairPromptRequired: false,
+    expectedRepairPromptDigest: null,
   });
 }
 
@@ -288,9 +290,10 @@ export function onTaskToolAfter(
     matched.capturedFindings = capturedFindings;
     matched.lastSchemaErrors = extractSchemaErrors(capturedFindings);
     // Enforce repair-prompt requirement: after schema-invalid output, a
-    // fresh canonical repair prompt (from flowguard_review, not a stale
-    // task re-run) must be issued before the next reviewer invocation.
+    // fresh canonical repair prompt must be issued before the next reviewer.
     matched.repairPromptRequired = matched.lastSchemaErrors !== null;
+    // Clear the expected digest — this repair cycle is consumed.
+    matched.expectedRepairPromptDigest = null;
   }
 }
 

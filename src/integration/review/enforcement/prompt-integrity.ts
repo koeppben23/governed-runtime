@@ -9,6 +9,8 @@
  * depends on their internals.
  */
 
+import { createHash } from 'node:crypto';
+
 import {
   type SessionEnforcementState,
   type PendingReview,
@@ -114,13 +116,14 @@ export function enforceBeforeSubagentCall(
   }
 
   // Check repair-prompt requirement: after schema-invalid output, a
-  // fresh canonical repair prompt (from flowguard_review) must be issued
-  // before the next reviewer Task invocation. Direct re-runs of the task
-  // with a stale prompt are blocked here.
-  const needsRepair = unfilledPendingReviews.filter((p) => p.repairPromptRequired);
+  // fresh canonical repair prompt must be issued by flowguard_review.
+  // Validation uses a host-issued opaque SHA256 digest — the parent
+  // cannot fabricate the exact repair prompt bytes.
+  const needsRepair = unfilledPendingReviews.filter((p) => p.expectedRepairPromptDigest !== null);
   if (needsRepair.length > 0) {
-    const hasRetrySection = prompt.includes('## Prior Output Rejected');
-    if (!hasRetrySection) {
+    const promptDigest = createHash('sha256').update(prompt, 'utf8').digest('hex');
+    const matchesRepair = needsRepair.some((p) => p.expectedRepairPromptDigest === promptDigest);
+    if (!matchesRepair) {
       return {
         allowed: false,
         code: 'REPAIR_PROMPT_REQUIRED',
@@ -132,8 +135,8 @@ export function enforceBeforeSubagentCall(
           `reviewerTaskPrompt with the validation errors.`,
       };
     }
-    // Repair prompt received — clear the requirement for this attempt
-    for (const p of needsRepair) p.repairPromptRequired = false;
+    // Note: repairPromptRequired is cleared in onTaskToolAfter after the
+    // task runs — never in this pre-execution validator (fail-closed).
   }
 
   if (prompt.length < MIN_SUBAGENT_PROMPT_LENGTH) {

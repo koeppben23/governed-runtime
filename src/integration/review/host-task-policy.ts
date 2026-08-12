@@ -6,6 +6,7 @@
  * subagent call instead of the SDK-driven path.
  */
 
+import { createHash } from 'node:crypto';
 import { parseToolResult, getToolOutput } from '../plugin-helpers.js';
 import { extractContentMeta } from './enforcement/extraction.js';
 import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
@@ -488,7 +489,7 @@ function buildHostTaskAttestationMeta(
   };
 }
 
-// eslint-disable-next-line max-params
+// eslint-disable-next-line max-params, complexity
 export async function handleHostTaskPolicy(
   deps: OrchestratorDeps,
   sessionState: SessionState,
@@ -515,6 +516,12 @@ export async function handleHostTaskPolicy(
   );
   const retrySchemaErrors = pendingReview?.lastSchemaErrors ?? null;
 
+  // Store the repair prompt digest so enforceBeforeSubagentCall can
+  // verify the prompt was issued by FlowGuard, not fabricated.
+  if (pendingReview && retrySchemaErrors && retrySchemaErrors.length > 0) {
+    pendingReview.expectedRepairPromptDigest = null; // clear stale
+  }
+
   const rawOutput = getToolOutput(output);
   const mutated = buildHostTaskPolicyOutput(
     buildHostTaskOutputInput(
@@ -525,6 +532,22 @@ export async function handleHostTaskPolicy(
       retrySchemaErrors,
     ),
   );
-  if (mutated) output.output = mutated;
+  if (mutated) {
+    output.output = mutated;
+    // Set the repair prompt digest so enforceBeforeSubagentCall can
+    // verify the prompt was host-issued, not parent-fabricated.
+    if (pendingReview && retrySchemaErrors && retrySchemaErrors.length > 0) {
+      const result = parseToolResult(mutated);
+      const rtp =
+        result && !Array.isArray(result) && typeof result === 'object'
+          ? result.reviewerTaskPrompt
+          : undefined;
+      if (typeof rtp === 'string') {
+        pendingReview.expectedRepairPromptDigest = createHash('sha256')
+          .update(rtp, 'utf8')
+          .digest('hex');
+      }
+    }
+  }
   return true;
 }

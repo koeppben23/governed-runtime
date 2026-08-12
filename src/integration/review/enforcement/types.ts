@@ -108,12 +108,17 @@ export interface PendingReview {
   /**
    * Whether a fresh canonical repair prompt (from flowguard_review) is
    * required before the next reviewer Task invocation. Set to true when
-   * the reviewer produces schema-invalid output. Enforced by
-   * enforceBeforeSubagentCall which blocks direct task retries until a
-   * new reviewerTaskPrompt (containing the retry error section) is issued
-   * by handleHostTaskPolicy.
+   * the reviewer produces schema-invalid output.
    */
   repairPromptRequired: boolean;
+  /**
+   * SHA256 digest of the exact canonical repair prompt issued by
+   * flowguard_review. Set when handleHostTaskPolicy generates a retry
+   * prompt. enforceBeforeSubagentCall validates this digest against the
+   * task prompt to prove the prompt was issued by FlowGuard, not
+   * fabricated by the parent.
+   */
+  expectedRepairPromptDigest: string | null;
 }
 
 /** Session-level enforcement state. */
