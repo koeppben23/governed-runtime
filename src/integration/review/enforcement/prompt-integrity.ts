@@ -119,20 +119,28 @@ export function enforceBeforeSubagentCall(
   // fresh canonical repair prompt must be issued by flowguard_review.
   // Validation uses a host-issued opaque SHA256 digest — the parent
   // cannot fabricate the exact repair prompt bytes.
-  const needsRepair = unfilledPendingReviews.filter((p) => p.expectedRepairPromptDigest !== null);
+  const needsRepair = unfilledPendingReviews.filter((p) => p.repairPromptRequired);
   if (needsRepair.length > 0) {
+    // A repair prompt must have been issued (expectedRepairPromptDigest set)
+    // AND the task prompt must match its digest exactly.
     const promptDigest = createHash('sha256').update(prompt, 'utf8').digest('hex');
-    const matchesRepair = needsRepair.some((p) => p.expectedRepairPromptDigest === promptDigest);
+    const matchesRepair = needsRepair.some(
+      (p) => p.expectedRepairPromptDigest !== null && p.expectedRepairPromptDigest === promptDigest,
+    );
     if (!matchesRepair) {
+      const hasDigest = needsRepair.some((p) => p.expectedRepairPromptDigest !== null);
       return {
         allowed: false,
         code: 'REPAIR_PROMPT_REQUIRED',
-        reason:
-          `FlowGuard enforcement: the reviewer produced schema-invalid output. ` +
-          `A fresh canonical repair prompt must be obtained from flowguard_review ` +
-          `before re-running the reviewer Task. Do NOT re-run the Task with the ` +
-          `same stale prompt — call flowguard_review first to get a new ` +
-          `reviewerTaskPrompt with the validation errors.`,
+        reason: hasDigest
+          ? `FlowGuard enforcement: the reviewer produced schema-invalid output. ` +
+            `The repair prompt's cryptographic digest does not match. ` +
+            `Call flowguard_review to obtain a fresh canonical repair prompt, ` +
+            `then pass it VERBATIM to the Task tool — do not modify a single byte.`
+          : `FlowGuard enforcement: the reviewer produced schema-invalid output. ` +
+            `A fresh canonical repair prompt must be obtained from flowguard_review ` +
+            `before re-running the reviewer Task. Call flowguard_review first, ` +
+            `then use the NEW reviewerTaskPrompt — never reuse the stale one.`,
       };
     }
     // Note: repairPromptRequired is cleared in onTaskToolAfter after the
