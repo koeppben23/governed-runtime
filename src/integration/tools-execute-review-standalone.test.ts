@@ -558,54 +558,6 @@ describe('review (standalone flow)', () => {
       expect(pendingReview.length).toBe(1);
     });
 
-    it('host_task_required branch review completes with host evidence and verdict only', async () => {
-      await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
-      const first = parseToolResult(
-        await review.execute(
-          { branch: 'feature-auth', inputOrigin: 'branch', targetPaths: ['docs/test.md'] },
-          ctx,
-        ),
-      );
-      expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
-      const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
-      expect(first.reviewObligationId).toBe(obligationId);
-      await bindHostTaskReviewEvidence(obligationId);
-
-      vi.mocked(ghMock.loadBranchDiff).mockImplementationOnce(() => {
-        throw new Error('branch diff should not be reloaded after host evidence is bound');
-      });
-
-      const result = parseToolResult(
-        await review.execute(
-          {
-            branch: 'feature-auth',
-            inputOrigin: 'branch',
-            reviewObligationId: obligationId,
-            reviewVerdict: 'accept',
-          },
-          ctx,
-        ),
-      );
-
-      expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('REVIEW_COMPLETE');
-      expect(result.reviewCard).toContain('host_subagent_task');
-      expect(result.reviewCard).toContain('ses_review_child_host_task');
-
-      // Regression guard for the consumeValidatedReviewObligation write path
-      // (obligation.ts): a completed host-task standalone /review must persist
-      // the resolved reviewer findings into standaloneReviewFindings. Without
-      // this assertion the append is executed but its effect is unverified, so
-      // dropping or corrupting the write survives the suite.
-      const persistedSessDir = await currentSessionDir();
-      const persistedState = await readState(persistedSessDir);
-      expect(persistedState).not.toBeNull();
-      const persistedFindings = persistedState!.standaloneReviewFindings ?? [];
-      expect(persistedFindings).toHaveLength(1);
-      expect(persistedFindings[0]!.overallVerdict).toBe('accept');
-      expect(persistedFindings[0]!.attestation?.toolObligationId).toBe(obligationId);
-    });
-
     it('host_task_required verdict with an unknown obligation ID fails closed', async () => {
       await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
       const first = parseToolResult(

@@ -215,6 +215,8 @@ real, registered reason.
 | `REVIEW_EVIDENCE_LOCATION_INVALID`            | Finding evidence location is not a valid repository location                   | Use repository-relative evidence paths at the frozen base or head revision                                                                          |
 | `REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE`  | Reviewer finding does not intersect the frozen reviewed subject                | Anchor the finding to the reviewed change or artifact section                                                                                       |
 | `REVIEW_REPOSITORY_REVISION_UNAVAILABLE`      | Finding cites a repository revision unavailable to the reviewed subject        | Use only the frozen base or head revision                                                                                                           |
+| `REVIEW_REPOSITORY_IDENTITY_MISSING`          | Branch source carries no remote or local repository identity                   | Re-run the review from its original content input so the identity is resolved again                                                                 |
+| `REVIEW_SUBJECT_DIGEST_MISMATCH`              | Re-derived review subject differs from the frozen obligation subject           | Start a new review for the changed content; a frozen subject is immutable                                                                           |
 | `REVIEW_SUBJECT_NOT_MATERIALIZED`             | Standalone review source could not be frozen into immutable material           | Resolve exactly one review source before creating or continuing the obligation                                                                      |
 | `REVIEW_SUBJECT_SCOPE_UNAVAILABLE`            | Review obligation has no verifiable frozen subject scope                       | Re-run the review after subject scope resolution succeeds                                                                                           |
 | `REVIEW_OBLIGATION_NOT_FOUND`                 | Review continuation ID is missing, consumed, blocked, or mismatched            | Use the ID from the original `CONTENT_ANALYSIS_REQUIRED` response; otherwise start a fresh `/review`                                                |
@@ -305,6 +307,7 @@ ADR_REVIEW_IN_PROGRESS
 ADR_SUBMISSION_MIXED_INPUTS
 ARCHITECTURE_REVIEW_COMPLETION_REQUIRED
 ARCHITECTURE_REVIEW_LOOP_REQUIRED
+ARTIFACT_SCHEMA_VALIDATION_FAILED
 AUDIT_PERSISTENCE_FAILED
 AUTO_ADVANCE_OVERFLOW
 CENTRAL_POLICY_INVALID_JSON
@@ -458,9 +461,11 @@ REVIEW_OBLIGATION_INPUT_MISMATCH
 REVIEW_OBLIGATION_NOT_FOUND
 REVIEW_OBLIGATION_UNRESOLVED
 REVIEW_PLAN_VERSION_MISMATCH
+REVIEW_REPOSITORY_IDENTITY_MISSING
 REVIEW_REPOSITORY_REVISION_UNAVAILABLE
 REVIEW_SELF_APPROVAL_DENIED
 REVIEW_STATE_INCOMPLETE
+REVIEW_SUBJECT_DIGEST_MISMATCH
 REVIEW_SUBJECT_NOT_MATERIALIZED
 REVIEW_SUBJECT_SCOPE_UNAVAILABLE
 REVIEW_TRANSPORT_EVIDENCE_INVALID

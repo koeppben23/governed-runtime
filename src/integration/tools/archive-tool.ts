@@ -15,10 +15,10 @@
  */
 
 import type { ToolDefinition } from './helpers.js';
+import { formatError } from './error-format.js';
 import {
   resolveWorkspacePaths,
   formatBlocked,
-  formatError,
   appendNextAction,
   writeStateWithArtifacts,
 } from './helpers.js';

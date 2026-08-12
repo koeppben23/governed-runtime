@@ -46,10 +46,10 @@ import type { SessionState } from '../../state/schema.js';
 import { MutationAttempt } from '../../state/evidence-mutation.js';
 import { buildMutationAttempt, loadReportRaw } from '../proofgraph/mutation-provider.js';
 import type { ToolDefinition } from './helpers.js';
+import { formatError } from './error-format.js';
 import {
   appendNextAction,
   formatBlocked,
-  formatError,
   getWorktree,
   withMutableSessionTransaction,
   writeStateWithArtifacts,

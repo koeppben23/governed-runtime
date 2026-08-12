@@ -40,11 +40,11 @@ import { z } from 'zod';
 import { headCommitFull } from '../../adapters/git.js';
 
 import type { ToolDefinition } from './helpers.js';
+import { formatError } from './error-format.js';
 import {
   withMutableSessionTransaction,
   formatBlocked,
   formatAutoAdvanceOverflow,
-  formatError,
   extractSections,
   appendNextAction,
   writeStateWithArtifacts,

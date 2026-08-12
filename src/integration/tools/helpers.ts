@@ -331,16 +331,6 @@ export function formatAutoAdvanceOverflow(overflow: AutoAdvanceOverflow): string
   });
 }
 
-/** Wrap any thrown error into a structured JSON string via the registry. */
-export function formatError(err: unknown): string {
-  const message = err instanceof Error ? err.message : String(err);
-  const code =
-    err instanceof Error && 'code' in err
-      ? String((err as { code: unknown }).code)
-      : 'INTERNAL_ERROR';
-  return formatBlocked(code, { message });
-}
-
 // ─── Workspace Helpers ────────────────────────────────────────────────────────
 
 /** Extract worktree from OpenCode tool context. */

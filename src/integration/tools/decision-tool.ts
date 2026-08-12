@@ -16,11 +16,11 @@
 import { z } from 'zod';
 
 import type { ToolDefinition } from './helpers.js';
+import { formatError } from './error-format.js';
 import {
   withMutableSession,
   withMutableSessionTransaction,
   formatBlocked,
-  formatError,
   persistAndFormat,
 } from './helpers.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';

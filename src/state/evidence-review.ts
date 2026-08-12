@@ -38,6 +38,8 @@ export type { RepositoryPath } from './evidence-findings.js';
 export {
   FrozenReviewSubject,
   RepositoryIdentity,
+  LocalRepositoryIdentity,
+  ReviewRepositoryIdentity,
   ReviewSubjectScope,
 } from './evidence-review-subject.js';
 

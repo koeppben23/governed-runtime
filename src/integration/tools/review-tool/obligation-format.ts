@@ -1,17 +1,35 @@
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
-import type { FrozenReviewSubject } from '../../../state/evidence.js';
+import type { FrozenReviewSubject, ReviewRepositoryIdentity } from '../../../state/evidence.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from '../../review/assurance.js';
 
+/**
+ * Structural equality for a frozen repository identity.
+ *
+ * Replaces a `JSON.stringify` comparison, which silently depended on key order
+ * surviving every persist/parse round trip.
+ */
+function sameRepositoryIdentity(a: ReviewRepositoryIdentity, b: ReviewRepositoryIdentity): boolean {
+  if ('kind' in a) return 'kind' in b && a.rootCommitDigest === b.rootCommitDigest;
+  return !('kind' in b) && a.host === b.host && a.owner === b.owner && a.name === b.name;
+}
+
+/**
+ * The repository identity frozen with a branch review subject.
+ *
+ * Returns BOTH identity shapes. A repository without a parseable `origin`
+ * remote freezes a `{ kind: 'local', rootCommitDigest }` identity, which is a
+ * fully valid `ReviewRepositoryIdentity`. Recognising only the remote shape
+ * dropped that identity on every continuation, so the reviewed subject was
+ * rebuilt without a `baseRepository` and failed schema validation.
+ */
 export function repositoryFromBranchSubject(
   subject: FrozenReviewSubject | undefined,
-): { readonly host: string; readonly owner: string; readonly name: string } | undefined {
+): ReviewRepositoryIdentity | undefined {
   if (subject?.kind !== 'repository_change' || !subject.headRepository) {
     return undefined;
   }
   const base = subject.baseRepository;
-  if (!('host' in base) || JSON.stringify(base) !== JSON.stringify(subject.headRepository))
-    return undefined;
-  return base;
+  return sameRepositoryIdentity(base, subject.headRepository) ? base : undefined;
 }
 
 export function buildRequiredReviewAttestationPayload(obligationId: string): {

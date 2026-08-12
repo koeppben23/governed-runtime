@@ -26,10 +26,10 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { ToolContext, ToolDefinition, ToolResult } from './helpers.js';
+import { formatError } from './error-format.js';
 import {
   withReadOnlySession,
   formatBlocked,
-  formatError,
   formatEval,
   formatAutoAdvanceOverflow,
   appendNextAction,

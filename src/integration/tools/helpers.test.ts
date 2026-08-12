@@ -10,15 +10,16 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { z } from 'zod';
 import {
   formatBlocked,
   formatAutoAdvanceOverflow,
-  formatError,
   getWorktree,
   extractSections,
   formatEval,
   formatRailResult,
 } from './helpers.js';
+import { formatError } from './error-format.js';
 import type { EvalResult } from '../../machine/evaluate.js';
 import type { RailResult, AutoAdvanceOverflow } from '../../rails/types.js';
 import { makeProgressedState } from '../../fixtures.js';
@@ -108,6 +109,33 @@ describe('formatError', () => {
     const err = Object.assign(new Error('custom'), { code: 'E1' });
     const result = parseJSON(formatError(err));
     expect(result.code).toBe('E1');
+  });
+
+  it('reports a schema violation under its own code with the offending paths', () => {
+    // A schema failure is a deterministic contract violation with a known
+    // field, not an unclassifiable crash — and the recoveries differ.
+    const schema = z.object({ reviewSubject: z.object({ baseRepository: z.object({}) }) });
+    const parsed = schema.safeParse({ reviewSubject: {} });
+    expect(parsed.success).toBe(false);
+
+    const result = parseJSON(formatError(parsed.error));
+
+    expect(result.code).toBe('ARTIFACT_SCHEMA_VALIDATION_FAILED');
+    expect(String(result.message)).toContain('reviewSubject.baseRepository');
+    expect(Array.isArray(result.recovery)).toBe(true);
+  });
+
+  it('bounds the reported issues instead of dumping the whole error', () => {
+    const schema = z.object(
+      Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`f${i}`, z.string()])),
+    );
+    const parsed = schema.safeParse({});
+    expect(parsed.success).toBe(false);
+
+    const message = String(parseJSON(formatError((parsed as { error: z.ZodError }).error)).message);
+
+    expect(message).toContain('+7 more');
+    expect(message.length).toBeLessThan(600);
   });
 });
 

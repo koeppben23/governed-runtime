@@ -29,6 +29,27 @@ export const REVIEW_VALIDATION_REASONS = [
     ],
   },
   {
+    code: 'REVIEW_REPOSITORY_IDENTITY_MISSING',
+    category: 'state',
+    messageTemplate:
+      'Branch review cannot freeze a reviewed subject without a repository identity: {reason}.',
+    recoverySteps: [
+      'Re-run the review from its original content input so the repository identity is resolved again',
+      'Ensure the worktree is a git repository; a repository without a parseable remote resolves to a local identity',
+      'Do not submit reviewVerdict or reviewFindings to recover this state',
+    ],
+  },
+  {
+    code: 'REVIEW_SUBJECT_DIGEST_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'Re-derived review subject does not match the frozen obligation subject ({reason}). The reviewed subject is immutable once frozen.',
+    recoverySteps: [
+      'Do not submit a verdict for a subject that differs from the reviewed one',
+      'Start a new review for the changed content instead of continuing this obligation',
+    ],
+  },
+  {
     code: 'REVIEW_URL_CONTENT_ENCODING_INVALID',
     category: 'input',
     messageTemplate: 'URL review content could not be materialized as strict UTF-8: {reason}.',

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { ToolDefinition, ToolContext } from './helpers.js';
-import { formatError, withMutableSession, withMutableSessionTransaction } from './helpers.js';
+import { formatError } from './error-format.js';
+import { withMutableSession, withMutableSessionTransaction } from './helpers.js';
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 import { changedFiles } from '../../adapters/git.js';
 import {

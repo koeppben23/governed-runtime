@@ -16,10 +16,10 @@ import {
   withMutableSession,
   withReadOnlySession,
   formatBlocked,
-  formatError,
   appendNextAction,
   writeStateWithArtifacts,
 } from './helpers.js';
+import { formatError } from './error-format.js';
 import { USER_GATES, TERMINAL } from '../../machine/topology.js';
 import { resolveNextAction } from '../../machine/next-action.js';
 import { buildProductNextAction } from '../../presentation/next-action-copy.js';
