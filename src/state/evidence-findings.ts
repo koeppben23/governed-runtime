@@ -28,17 +28,20 @@ export const RepositoryLocation = z
     message: 'endLine must not precede line',
     path: ['endLine'],
   })
+  .strict()
   .readonly();
 export type RepositoryLocation = z.infer<typeof RepositoryLocation>;
 
 /** A deterministic Markdown heading path, including presentation-only text. */
 export const MarkdownSectionPath = z
   .array(
-    z.object({
-      headingDepth: z.number().int().min(1).max(6),
-      siblingIndex: z.number().int().positive(),
-      headingText: z.string(),
-    }),
+    z
+      .object({
+        headingDepth: z.number().int().min(1).max(6),
+        siblingIndex: z.number().int().positive(),
+        headingText: z.string(),
+      })
+      .strict(),
   )
   .min(1)
   .readonly();
@@ -60,6 +63,7 @@ export const RepositoryLocationAnchor = z
     kind: z.literal('repository_location'),
     location: RepositoryLocation,
   })
+  .strict()
   .readonly();
 export type RepositoryLocationAnchor = z.infer<typeof RepositoryLocationAnchor>;
 
@@ -168,6 +172,7 @@ export const FindingRelation = z
       });
     }
   })
+  .strict()
   .readonly();
 export type FindingRelation = z.infer<typeof FindingRelation>;
 
@@ -180,5 +185,6 @@ export const Finding = z
     relation: FindingRelation,
     findingId: z.string().uuid().optional(),
   })
+  .strict()
   .readonly();
 export type Finding = z.infer<typeof Finding>;

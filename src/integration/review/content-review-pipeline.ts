@@ -7,6 +7,7 @@
  */
 
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
+import type { RepositoryDiscoverySnapshot } from '../../state/evidence.js';
 import { buildReviewContentPrompt, selectReviewerProfileRules } from './prompt-builders.js';
 import { buildReviewContentMutatedOutput, type ReviewerSuccessResult } from './orchestrator.js';
 import { strictBlockedOutput } from '../plugin-helpers.js';
@@ -55,9 +56,11 @@ function countFindings(findings: unknown): number {
  * all. Collapsing both into an integrity failure sent the agent down a restore
  * path that cannot resolve a merely spent attempt.
  */
-async function loadPersistedContentForReview(
-  ctx: PipelineContext,
-): Promise<{ content: string; frozenReviewerContext: FrozenReviewerContext } | null> {
+async function loadPersistedContentForReview(ctx: PipelineContext): Promise<{
+  content: string;
+  frozenReviewerContext: FrozenReviewerContext;
+  repositoryDiscoverySnapshot: RepositoryDiscoverySnapshot | null;
+} | null> {
   const { deps, reviewCtx } = ctx;
   const assurance = ensureReviewAssurance(ctx.sessionState.reviewAssurance);
   const obligation = findReviewObligationById(assurance, reviewCtx.obligationId);
@@ -90,7 +93,14 @@ async function loadPersistedContentForReview(
     });
     return null;
   }
-  return { content: material.content, frozenReviewerContext: verification.context };
+  return {
+    content: material.content,
+    frozenReviewerContext: verification.context,
+    repositoryDiscoverySnapshot:
+      attempt.repositoryDiscovery.kind === 'repository'
+        ? attempt.repositoryDiscovery.snapshot
+        : null,
+  };
 }
 
 async function validateContentFindings(
@@ -160,6 +170,7 @@ export async function runReviewContentPipeline(ctx: PipelineContext): Promise<vo
     profileName,
     profileRules,
     discoveryContext,
+    repositoryDiscoverySnapshot: persistedContent.repositoryDiscoverySnapshot,
     proofGraph: sessionState.proofGraph,
     frozenReviewerContext: persistedContent.frozenReviewerContext,
   });

@@ -205,7 +205,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v2' as const,
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
         obligations: [
           {
             obligationId: OBLIGATION_ID,
@@ -244,6 +244,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
             ordinal: 0,
             status: 'created' as const,
             origin: { kind: 'initial' } as const,
+            repositoryDiscovery: { kind: 'not_applicable' } as const,
             createdAt: now,
           },
         ],
@@ -541,6 +542,15 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
       expect(rewritten.reviewAttemptId).toBe(
         (afterCall1?.reviewAssurance?.attempts ?? [])[0]?.attemptId,
       );
+      // Presentation/code consistency: the orchestrator rewrote the canonical
+      // code, so the operator-facing presentation must carry the SAME reason
+      // code — never the stale pre-rewrite one.
+      const presentationMarkdown = String(
+        (rewritten.presentation as Record<string, unknown> | undefined)?.markdown ?? '',
+      );
+      expect(rewritten.code).toBe('HOST_SUBAGENT_TASK_REQUIRED');
+      expect(presentationMarkdown).toContain('HOST_SUBAGENT_TASK_REQUIRED');
+      expect(presentationMarkdown).not.toContain('CONTENT_ANALYSIS_REQUIRED');
     }
 
     // The obligation must STILL be pending after the handshake (the log shows it
@@ -557,6 +567,13 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
     const attemptA = (afterHandshake?.reviewAssurance?.attempts ?? []).find(
       (attempt) => attempt.obligationId === obligationId,
     );
+    // The repository attempt is born with its host-owned Discovery snapshot:
+    // resolved BEFORE the mint, never mutated afterwards.
+    expect(attemptA?.repositoryDiscovery.kind).toBe('repository');
+    if (attemptA?.repositoryDiscovery.kind === 'repository') {
+      expect(attemptA.repositoryDiscovery.snapshot.discoveryDigest).toBeTypeOf('string');
+      expect(attemptA.repositoryDiscovery.snapshot.health.status).toBeTypeOf('string');
+    }
     const initialHypothesisCount = afterHandshake?.proofGraph?.claims.length ?? 0;
     expect(initialHypothesisCount).toBeGreaterThan(0);
 
@@ -790,17 +807,31 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
       headSha: 'a'.repeat(40),
     });
     expect(obligation?.subjectDigest).toBe(obligation?.reviewSubject?.subjectDigest);
-    // The completed immutable subject contributes one material-bound claim for
-    // each path in the resolved diff; retries themselves must not duplicate them.
-    expect(consumed?.proofGraph?.claims).toHaveLength(initialHypothesisCount + 3);
-    // The rejected reviewer attempt and its retry each retain their prepared
-    // immutable material for auditability.
-    expect(
-      (consumed?.standaloneReviewEvidence ?? []).filter((entry) => entry.kind === 'prepared'),
-    ).toHaveLength(2);
+    // The lifecycle chain projects ONLY the authoritative review task: the
+    // verdict continuation and the retry must not duplicate hypothesis claims.
+    expect(consumed?.proofGraph?.claims).toHaveLength(initialHypothesisCount);
+    expect(consumed?.proofGraph?.claims.every((c) => c.signalClass === 'hypothesis')).toBe(true);
+    // The rejected reviewer attempt and its retry belong to ONE logical review
+    // task: when the continuation re-prepares with a diverged subject digest,
+    // the stale incarnation is kept for audit and structurally superseded —
+    // but the projection still resolves exactly the authoritative task.
+    const prepared = (consumed?.standaloneReviewEvidence ?? []).filter(
+      (entry) => entry.kind === 'prepared',
+    );
+    const superseded = (consumed?.standaloneReviewEvidence ?? []).filter(
+      (entry) => entry.kind === 'superseded',
+    );
+    expect(prepared).toHaveLength(2);
+    expect(superseded).toHaveLength(1);
+    expect(superseded[0]).toMatchObject({
+      supersededPreparedEvidenceId: prepared[0]?.evidenceId,
+      replacementPreparedEvidenceId: prepared[1]?.evidenceId,
+      reason: 'subject_frozen',
+    });
     expect(consumedInvocation?.consumedByObligationId).toBe(obligationId);
     expect(consumed?.standaloneReviewEvidence.at(-1)).toMatchObject({
       kind: 'completed',
+      preparedEvidenceId: prepared[1]?.evidenceId,
       findingsDigest: expect.any(String),
       attestationDigest: expect.any(String),
     });

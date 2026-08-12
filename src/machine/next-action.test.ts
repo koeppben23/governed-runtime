@@ -243,7 +243,7 @@ describe('resolveNextAction', () => {
       });
       const state = makeState('READY', {
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v2' as const,
+          assuranceSchemaVersion: 'review-assurance.v3' as const,
           obligations: [obligation],
           invocations: [],
           attempts: [],
@@ -264,7 +264,7 @@ describe('resolveNextAction', () => {
       });
       const state = makeState('REVIEW', {
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v2' as const,
+          assuranceSchemaVersion: 'review-assurance.v3' as const,
           obligations: [obligation],
           invocations: [],
           attempts: [],

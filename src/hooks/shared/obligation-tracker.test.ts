@@ -8,7 +8,7 @@ const FIXED_DATETIME = '2026-01-01T00:00:00.000Z';
 
 function reviewAssurance(obligations: ReviewObligation[]) {
   return {
-    assuranceSchemaVersion: 'review-assurance.v2' as const,
+    assuranceSchemaVersion: 'review-assurance.v3' as const,
     obligations,
     invocations: [],
     attempts: [],

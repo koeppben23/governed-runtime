@@ -45,8 +45,7 @@ import {
 import { resolvePolicyFromSnapshot } from '../../config/policy.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import { defaultReasonRegistry } from '../../config/reasons.js';
-import { buildBlockedDiagnostics, formatDiagnosticCard } from '../../diagnostics/index.js';
-import type { RuntimeDiagnostics } from '../../diagnostics/index.js';
+import { buildBlockedPresentation } from './blocked-presentation.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
 import { PHASE_LABELS, buildProductNextAction } from '../../presentation/index.js';
 import { renderMarkdown, lookupReasonCopy } from '../../presentation/index.js';
@@ -135,23 +134,6 @@ export function formatEval(ev: EvalResult): string {
 function headlineFields(code: string): { headline?: string } {
   const copy = lookupReasonCopy(code);
   return copy?.headline ? { headline: copy.headline } : {};
-}
-
-/** Blocked-response fields: structured diagnostics and rendered markdown. */
-function buildBlockedPresentation(
-  code: string,
-  message: string,
-  detail: Record<string, string>,
-): {
-  diagnostics?: RuntimeDiagnostics;
-  presentation?: { markdown: string };
-} {
-  const diagnostics = buildBlockedDiagnostics(code, detail);
-  if (!diagnostics) return {};
-  return {
-    diagnostics,
-    presentation: { markdown: formatDiagnosticCard({ code, message, diagnostics }) },
-  };
 }
 
 /**

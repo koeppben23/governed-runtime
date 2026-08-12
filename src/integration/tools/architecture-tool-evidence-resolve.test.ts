@@ -229,7 +229,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v2' as const,
+          assuranceSchemaVersion: 'review-assurance.v3' as const,
           attempts: [],
           obligations: [
             {
@@ -319,7 +319,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v2' as const,
+          assuranceSchemaVersion: 'review-assurance.v3' as const,
           attempts: [],
           obligations: [
             {
@@ -387,7 +387,6 @@ describe('architecture — BUG-15 evidence-resolve', () => {
             severity: 'major',
             category: 'risk',
             message: 'Race condition in in-memory storage',
-            location: 'TaskRepository',
             relation: {
               subjectAnchors: [
                 {
@@ -439,7 +438,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v2' as const,
+          assuranceSchemaVersion: 'review-assurance.v3' as const,
           attempts: [],
           obligations: [
             {
@@ -574,7 +573,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v2' as const,
+          assuranceSchemaVersion: 'review-assurance.v3' as const,
           obligations: [],
           invocations: [],
           attempts: [],

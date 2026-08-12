@@ -68,6 +68,7 @@ function initialAttempt(
     reviewMaterial,
     ordinal: 1,
     origin: { kind: 'initial' },
+    repositoryDiscovery: { kind: 'not_applicable' },
     now: NOW,
   });
 }
@@ -77,7 +78,7 @@ function assuranceWith(
   attempts: ReviewAttempt[],
 ): ReviewAssuranceState {
   return {
-    assuranceSchemaVersion: 'review-assurance.v2',
+    assuranceSchemaVersion: 'review-assurance.v3',
     obligations: [obligation],
     invocations: [],
     attempts,
@@ -220,9 +221,12 @@ describe('authorizeOutputRepairReissue', () => {
       undefined,
       NOW,
       {
-        kind: 'output_repair',
-        predecessorAttemptId: rejectedInitial.attemptId,
-        triggerReason: 'schema_invalid',
+        origin: {
+          kind: 'output_repair',
+          predecessorAttemptId: rejectedInitial.attemptId,
+          triggerReason: 'schema_invalid',
+        },
+        repositoryDiscovery: { kind: 'not_applicable' } as const,
       },
     ).attempt;
     const rejectedRepair = updateAttemptStatus(
@@ -307,9 +311,12 @@ describe('authorizeOutputRepairReissue', () => {
       undefined,
       NOW,
       {
-        kind: 'output_repair',
-        predecessorAttemptId: initial.attemptId,
-        triggerReason: 'schema_invalid',
+        origin: {
+          kind: 'output_repair',
+          predecessorAttemptId: initial.attemptId,
+          triggerReason: 'schema_invalid',
+        },
+        repositoryDiscovery: { kind: 'not_applicable' } as const,
       },
     ).attempt;
     const rearmed = createAttemptForExistingObligation(
@@ -317,7 +324,14 @@ describe('authorizeOutputRepairReissue', () => {
       obligation,
       'child-session-2',
       NOW,
-      { kind: 'task_rearm', predecessorAttemptId: repair.attemptId, triggerReason: 'rejected' },
+      {
+        origin: {
+          kind: 'task_rearm',
+          predecessorAttemptId: repair.attemptId,
+          triggerReason: 'rejected',
+        },
+        repositoryDiscovery: { kind: 'not_applicable' } as const,
+      },
     ).attempt;
     const assurance = assuranceWith(obligation, [initial, repair, rearmed]);
     expect(countOutputRepairAttempts(assurance, obligation.obligationId)).toBe(1);
@@ -332,9 +346,12 @@ describe('authorizeOutputRepairReissue', () => {
       undefined,
       NOW,
       {
-        kind: 'output_repair',
-        predecessorAttemptId: first.attemptId,
-        triggerReason: 'schema_invalid',
+        origin: {
+          kind: 'output_repair',
+          predecessorAttemptId: first.attemptId,
+          triggerReason: 'schema_invalid',
+        },
+        repositoryDiscovery: { kind: 'not_applicable' } as const,
       },
     ).attempt;
     const latest = latestAttemptForObligation(

@@ -30,8 +30,11 @@ import { appendReviewAuditEvent } from './review/audit-events.js';
 import { readState } from '../adapters/persistence.js';
 import { buildCompactionContext, type CompactionDeps } from './plugin-compaction.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
+import type { SessionEnforcementState } from './review/enforcement/types.js';
 import { handleHostTaskEvidence } from './plugin-task-evidence.js';
 import { authorizeTaskLifecycleRearm } from './review/reissue-authority.js';
+import { resolveReviewAttemptDiscoveryContext } from './review/discovery-attempt-context.js';
+import type { ReviewAttemptDiscoveryContext } from '../state/evidence.js';
 import {
   REASON_PLUGIN_ENFORCEMENT_UNAVAILABLE,
   REVIEW_ACCEPTANCE_PATH_NATIVE,
@@ -461,17 +464,24 @@ function rearmAttempt(
   spent: ReviewAttempt,
   childSessionId: string,
   now: string,
+  repositoryDiscovery: ReviewAttemptDiscoveryContext | null,
 ): ReviewAssuranceState {
   const authorization = authorizeTaskLifecycleRearm(assurance, spent);
   if (authorization.kind === 'blocked') {
     throw bindingFailed(authorization.reason);
+  }
+  if (!repositoryDiscovery) {
+    throw bindingFailed('rearm_discovery_unavailable');
   }
   return createAttemptForExistingObligation(
     assurance,
     authorization.obligation,
     childSessionId,
     now,
-    authorization.origin,
+    {
+      origin: authorization.origin,
+      repositoryDiscovery,
+    },
   ).assurance;
 }
 
@@ -489,6 +499,7 @@ function assuranceForBoundSession(
   attempt: ReviewAttempt,
   childSessionId: string,
   now: string,
+  repositoryDiscovery: ReviewAttemptDiscoveryContext | null,
 ): ReviewAssuranceState {
   switch (attempt.status) {
     case 'created':
@@ -501,18 +512,72 @@ function assuranceForBoundSession(
       // Interrupted: correlated with an earlier child session that never produced
       // a capture. The retry gets its own attempt and the interrupted one is
       // staled by createAttemptForExistingObligation.
-      return rearmAttempt(assurance, attempt, childSessionId, now);
+      return rearmAttempt(assurance, attempt, childSessionId, now, repositoryDiscovery);
     case 'rejected':
     case 'stale':
     case 'expired':
       // Spent without usable evidence: an explicit retry is legitimate.
-      return rearmAttempt(assurance, attempt, childSessionId, now);
+      return rearmAttempt(assurance, attempt, childSessionId, now, repositoryDiscovery);
     case 'bound':
     case 'captured':
       // Evidence already exists for this attempt. Re-arming would keep that
       // record AND open a second one under the same obligation.
       throw bindingFailed('attempt_already_bound');
   }
+}
+
+type RearmDiscoveryResolution =
+  | { readonly ok: true; readonly context: ReviewAttemptDiscoveryContext | null }
+  | { readonly ok: false; readonly reason: string };
+
+/**
+ * Resolve the attempt-bound Discovery context for a potential re-arm mint.
+ * A re-arm mints a NEW attempt inside the synchronous assurance-update
+ * callback, so the host-owned snapshot must be resolved BEFORE entering it.
+ * Only re-arm paths mint; a virgin `created` attempt keeps its birth snapshot
+ * and resolves to `null`.
+ */
+async function resolveRearmDiscoveryContext(
+  state: SessionState,
+  attemptId: string,
+  obligationId: string,
+  now: string,
+): Promise<RearmDiscoveryResolution> {
+  const assurance = ensureReviewAssurance(state.reviewAssurance);
+  const attempt = assurance.attempts.find((a) => a.attemptId === attemptId);
+  const obligation = assurance.obligations.find((o) => o.obligationId === obligationId);
+  const needsRearm =
+    attempt !== undefined &&
+    (attempt.status === 'rejected' ||
+      attempt.status === 'stale' ||
+      attempt.status === 'expired' ||
+      (attempt.status === 'created' && Boolean(attempt.childSessionId)));
+  if (!needsRearm) return { ok: true, context: null };
+  const discovery = await resolveReviewAttemptDiscoveryContext({
+    state,
+    worktree: state.binding.worktree,
+    reviewSubjectKind: obligation?.reviewSubject?.kind,
+    now,
+  });
+  if (discovery.kind === 'blocked') return { ok: false, reason: discovery.reason };
+  return { ok: true, context: discovery.context };
+}
+
+type PendingAttemptIdentity =
+  { readonly attemptId: string; readonly obligationId: string } | { readonly reason: string };
+
+function resolvePendingAttemptIdentity(
+  eState: SessionEnforcementState,
+  childSessionId: string,
+): PendingAttemptIdentity {
+  for (const pending of eState.pendingReviews.values()) {
+    if (pending.subagentRecord?.sessionId !== childSessionId) continue;
+    if (!pending.attemptId || !pending.obligationId) {
+      return { reason: 'pending_attempt_id_missing' };
+    }
+    return { attemptId: pending.attemptId, obligationId: pending.obligationId };
+  }
+  return { reason: 'no_matching_pending_review' };
 }
 
 async function bindAttemptSession(
@@ -526,20 +591,21 @@ async function bindAttemptSession(
   const state = await readPersistedState(sessDir);
   if (!state) return { ok: false, reason: 'no_state' };
 
-  const eState = runtime.ws.getEnforcementState(sessionId);
-  let attemptId: string | null = null;
-  let obligationId: string | null = null;
-  for (const pending of eState.pendingReviews.values()) {
-    if (pending.subagentRecord?.sessionId !== childSessionId) continue;
-    if (!pending.attemptId || !pending.obligationId) {
-      return { ok: false, reason: 'pending_attempt_id_missing' };
-    }
-    attemptId = pending.attemptId;
-    obligationId = pending.obligationId;
-    break;
-  }
-  if (!attemptId || !obligationId) {
-    return { ok: false, reason: 'no_matching_pending_review' };
+  const identity = resolvePendingAttemptIdentity(
+    runtime.ws.getEnforcementState(sessionId),
+    childSessionId,
+  );
+  if ('reason' in identity) return { ok: false, reason: identity.reason };
+  const attemptId = identity.attemptId;
+  const obligationId = identity.obligationId;
+
+  const rearmDiscovery = await resolveRearmDiscoveryContext(state, attemptId, obligationId, now);
+  if (!rearmDiscovery.ok) {
+    runtime.log.warn('host-task', 'reviewer discovery context unavailable for re-arm', {
+      reason: rearmDiscovery.reason,
+      attemptId,
+    });
+    return { ok: false, reason: 'reviewer_context_unavailable' };
   }
 
   try {
@@ -565,7 +631,13 @@ async function bindAttemptSession(
       }
       return {
         ...s,
-        reviewAssurance: assuranceForBoundSession(assurance, attempt, childSessionId, now),
+        reviewAssurance: assuranceForBoundSession(
+          assurance,
+          attempt,
+          childSessionId,
+          now,
+          rearmDiscovery.context,
+        ),
       };
     });
     return { ok: true };

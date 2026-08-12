@@ -59,6 +59,12 @@ export const ReviewAttemptStatusValues = [
 export const ReviewAttemptStatus = z.enum(ReviewAttemptStatusValues);
 export type ReviewAttemptStatus = z.infer<typeof ReviewAttemptStatus>;
 
+export {
+  RepositoryDiscoverySnapshot,
+  ReviewAttemptDiscoveryContext,
+} from './evidence-review-attempt-discovery.js';
+import { ReviewAttemptDiscoveryContext } from './evidence-review-attempt-discovery.js';
+
 /**
  * Canonical rejection classification persisted on a rejected review attempt.
  *
@@ -146,6 +152,12 @@ export const ReviewAttempt = z.object({
    * canonically repairable reason.
    */
   rejectionReason: ReviewAttemptRejectionReason.optional(),
+  /**
+   * Attempt-bound repository Discovery context, resolved BEFORE the attempt is
+   * minted. REQUIRED: `repository` for standalone repository reviews,
+   * `not_applicable` otherwise.
+   */
+  repositoryDiscovery: ReviewAttemptDiscoveryContext,
   createdAt: z.string().datetime(),
   completedAt: z.string().datetime().optional(),
 });
@@ -215,6 +227,7 @@ export const ReviewActorInfo = z
     actorSource: z.enum(['env', 'git', 'claim', 'unknown']).optional(),
     actorAssurance: assuranceSchema().optional(),
   })
+  .strict()
   .readonly();
 export type ReviewActorInfo = z.infer<typeof ReviewActorInfo>;
 
@@ -238,6 +251,7 @@ export const ReviewAttestation = z
     planVersion: z.number().int().positive(),
     reviewedBy: z.literal(REVIEWER_SUBAGENT_TYPE),
   })
+  .strict()
   .readonly();
 export type ReviewAttestation = z.infer<typeof ReviewAttestation>;
 
@@ -288,6 +302,7 @@ export const ReviewFindings = z
     /** Reviewer-only verdicts for prior implementation challenge resolutions. */
     challengeResolutionVerdicts: z.array(ChallengeResolutionVerdict).optional(),
   })
+  .strict()
   .readonly();
 export type ReviewFindings = z.infer<typeof ReviewFindings>;
 
@@ -512,13 +527,14 @@ export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;
  *
  * `assuranceSchemaVersion` is a REQUIRED hard version literal. The
  * `review-assurance.v2` form introduced authority-bearing attempt origins and
- * frozen output-repair budgets. States persisted under older forms carry
- * attempts without origins and MUST fail parsing — there is deliberately no
- * upgrade or defaulting path for authority-bearing fields.
+ * frozen output-repair budgets. The `review-assurance.v3` form additionally
+ * binds a host-owned repository Discovery snapshot to every attempt at mint
+ * time. States persisted under older forms MUST fail parsing — there is
+ * deliberately no upgrade or defaulting path for authority-bearing fields.
  */
 export const ReviewAssuranceState = z
   .object({
-    assuranceSchemaVersion: z.literal('review-assurance.v2'),
+    assuranceSchemaVersion: z.literal('review-assurance.v3'),
     obligations: z.array(ReviewObligation),
     invocations: z.array(ReviewInvocationEvidence),
     attempts: z.array(ReviewAttempt),

@@ -776,8 +776,12 @@ describe('review (standalone flow)', () => {
           profileVersion: 'standalone-review-objectives.v1',
           objectives: expect.any(Array),
         },
+        obligationId,
+        schemaVersion: 'standalone-review-evidence.v2',
       });
-      expect(preparedEvidence[0]!.task.claims).toEqual(
+      const prepared = preparedEvidence[0];
+      if (prepared?.kind !== 'prepared') throw new TypeError('Expected prepared review evidence');
+      expect(prepared.task.claims).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ signalClass: 'hypothesis', provenance: null }),
         ]),
@@ -795,8 +799,9 @@ describe('review (standalone flow)', () => {
       const completed = completedEvidence[1]!;
       expect(completed).toMatchObject({
         kind: 'completed',
-        preparedEvidenceId: preparedEvidence[0]!.evidenceId,
-        requestedDigests: preparedEvidence[0]!.requestedDigests,
+        preparedEvidenceId: prepared.evidenceId,
+        obligationId,
+        reviewTaskId: prepared.reviewTaskId,
       });
       if (completed.kind !== 'completed') throw new TypeError('Expected completed review evidence');
       expect(completed.findingsDigest).toMatch(/^[a-f0-9]{64}$/);

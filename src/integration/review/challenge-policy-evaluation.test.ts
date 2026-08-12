@@ -172,7 +172,7 @@ async function resolveCapturedFixture(
   });
   const result = resolveHostTaskFindings(
     {
-      assuranceSchemaVersion: 'review-assurance.v2' as const,
+      assuranceSchemaVersion: 'review-assurance.v3' as const,
       obligations: [obligation],
       invocations: [invocation],
       attempts: [],
@@ -237,7 +237,7 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
   expect(
     resolveHostTaskFindings(
       {
-        assuranceSchemaVersion: 'review-assurance.v2' as const,
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
         obligations: [firstObligation],
         invocations: [firstInvocation],
         attempts: [],
@@ -257,7 +257,7 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
       },
       implReviewFindings: [firstFindings],
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v2' as const,
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
         obligations: [firstObligation],
         invocations: [firstInvocation],
         attempts: [],
@@ -324,7 +324,7 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
   });
   const reReview = resolveHostTaskFindings(
     {
-      assuranceSchemaVersion: 'review-assurance.v2' as const,
+      assuranceSchemaVersion: 'review-assurance.v3' as const,
       obligations: [secondObligation],
       invocations: [secondInvocation],
       attempts: [],

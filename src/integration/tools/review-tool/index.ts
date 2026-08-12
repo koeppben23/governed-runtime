@@ -56,6 +56,7 @@ import {
   appendCompletedReviewEvidence,
   appendPreparedReviewEvidence,
   prepareStandaloneReviewEvidence,
+  resolveReviewTaskIdentity,
 } from './preparation.js';
 import {
   ensureStartedReviewState,
@@ -326,10 +327,10 @@ async function prepareHostTaskVerdictReview(
     const reissue = await reissueReviewAttempt(sessDir, state, obligation, exec.now);
     if (reissue.kind === 'blocked') {
       return formatBlocked(
-        reissue.authorization.code,
+        reissue.code,
         {
           obligationId: obligation.obligationId,
-          reason: reissue.authorization.reason,
+          reason: reissue.reason,
         },
         {
           policy: exec.policy,
@@ -417,7 +418,17 @@ async function prepareReviewWithoutExternalCalls(
     if (typeof prepared === 'string') return prepared;
     // Only a durable obligation may materialize the REVIEW intermediate state.
     if (prepared.blockMessage && !prepared.persistedAssurance) return prepared.blockMessage;
-    const taskEvidence = prepareStandaloneReviewEvidence(args, now, prepared.refInput);
+    const obligationIdentity = prepared.pendingObligation ?? prepared.validatedReviewObligation;
+    const taskEvidence = obligationIdentity
+      ? prepareStandaloneReviewEvidence(
+          args,
+          now,
+          prepared.refInput,
+          resolveReviewTaskIdentity(state.standaloneReviewEvidence, obligationIdentity.obligationId)
+            .reviewTaskId,
+          obligationIdentity.obligationId,
+        )
+      : null;
     const stateWithTaskEvidence: SessionState = {
       // Persist the REVIEW transition materialized by startReviewFlow so the
       // canonical session state reflects the active review obligation. The
@@ -428,10 +439,9 @@ async function prepareReviewWithoutExternalCalls(
       // Re-deriving from `state` (read before that write) dropped the attempt, so
       // the host could never bind reviewer evidence for a standalone /review.
       ...(prepared.persistedAssurance && { reviewAssurance: prepared.persistedAssurance }),
-      standaloneReviewEvidence: appendPreparedReviewEvidence(
-        state.standaloneReviewEvidence,
-        taskEvidence,
-      ),
+      standaloneReviewEvidence: taskEvidence
+        ? appendPreparedReviewEvidence(state.standaloneReviewEvidence, taskEvidence)
+        : state.standaloneReviewEvidence,
     };
     // The prepared entry is durable before a reviewer can be instructed.
     await writeStateWithArtifacts(sessDir, stateWithTaskEvidence);
@@ -472,17 +482,29 @@ async function persistCompletedReview(
         effectiveReviewFindings: prepared.effectiveReviewFindings,
       },
     );
-    const taskEvidence = prepareStandaloneReviewEvidence(args, now, prepared.refInput);
+    const obligationIdentity = prepared.pendingObligation ?? prepared.validatedReviewObligation;
+    const taskEvidence = obligationIdentity
+      ? prepareStandaloneReviewEvidence(
+          args,
+          now,
+          prepared.refInput,
+          resolveReviewTaskIdentity(state.standaloneReviewEvidence, obligationIdentity.obligationId)
+            .reviewTaskId,
+          obligationIdentity.obligationId,
+        )
+      : null;
     result = {
       ...result,
       state: {
         ...result.state,
-        standaloneReviewEvidence: appendCompletedReviewEvidence({
-          evidence: state.standaloneReviewEvidence,
-          prepared: taskEvidence,
-          completedAt: now,
-          findings: prepared.effectiveReviewFindings ?? args.reviewFindings,
-        }),
+        standaloneReviewEvidence: taskEvidence
+          ? appendCompletedReviewEvidence({
+              evidence: state.standaloneReviewEvidence,
+              prepared: taskEvidence,
+              completedAt: now,
+              findings: prepared.effectiveReviewFindings ?? args.reviewFindings,
+            })
+          : state.standaloneReviewEvidence,
       },
     };
     const completion = await persistReviewCompletion(sessDir, result, reviewResult, ctx);

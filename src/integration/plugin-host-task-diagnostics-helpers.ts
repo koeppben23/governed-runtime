@@ -134,6 +134,7 @@ export function attemptFor(
     childSessionId,
     status: 'created',
     origin: { kind: 'initial' },
+    repositoryDiscovery: { kind: 'not_applicable' },
     createdAt: NOW,
     ...overrides,
   };

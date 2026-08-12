@@ -24,6 +24,7 @@ export const PlanAdrSectionRef = z
     sectionPath: MarkdownSectionPath,
     excerptDigest: z.string().min(1),
   })
+  .strict()
   .readonly();
 export type PlanAdrSectionRef = z.infer<typeof PlanAdrSectionRef>;
 
@@ -34,6 +35,7 @@ export const ImplementationRef = z
     implementationDigest: z.string().min(1),
     diffDigest: z.string().min(1).optional(),
   })
+  .strict()
   .readonly();
 export type ImplementationRef = z.infer<typeof ImplementationRef>;
 
@@ -43,6 +45,7 @@ export const ValidationAttemptRef = z
     kind: z.literal('validation_attempt'),
     attemptId: z.string().uuid(),
   })
+  .strict()
   .readonly();
 export type ValidationAttemptRef = z.infer<typeof ValidationAttemptRef>;
 
@@ -52,6 +55,7 @@ export const ContentRef = z
     kind: z.literal('content'),
     digest: z.string().min(1),
   })
+  .strict()
   .readonly();
 export type ContentRef = z.infer<typeof ContentRef>;
 
@@ -99,26 +103,32 @@ const FalsificationChallengeOutcome = z.enum(['supported', 'contradicted', 'not_
 /** Outcome vocabulary of an implementation challenge (executed, not argued). */
 const ImplementationChallengeOutcome = z.enum(['pass', 'fail', 'not_verified']);
 
-const DesignChallenge = z.object({
-  ...ReviewChallengeBase,
-  kind: z.literal('design_challenge'),
-  evidenceRefs: z.array(PlanAdrSectionRef).min(1),
-  outcome: FalsificationChallengeOutcome,
-});
+const DesignChallenge = z
+  .object({
+    ...ReviewChallengeBase,
+    kind: z.literal('design_challenge'),
+    evidenceRefs: z.array(PlanAdrSectionRef).min(1),
+    outcome: FalsificationChallengeOutcome,
+  })
+  .strict();
 
-const ImplementationChallenge = z.object({
-  ...ReviewChallengeBase,
-  kind: z.literal('implementation_challenge'),
-  evidenceRefs: z.array(z.union([ImplementationRef, ValidationAttemptRef])).min(1),
-  outcome: ImplementationChallengeOutcome,
-});
+const ImplementationChallenge = z
+  .object({
+    ...ReviewChallengeBase,
+    kind: z.literal('implementation_challenge'),
+    evidenceRefs: z.array(z.union([ImplementationRef, ValidationAttemptRef])).min(1),
+    outcome: ImplementationChallengeOutcome,
+  })
+  .strict();
 
-const ContentChallenge = z.object({
-  ...ReviewChallengeBase,
-  kind: z.literal('content_challenge'),
-  evidenceRefs: z.array(ContentRef).min(1),
-  outcome: FalsificationChallengeOutcome,
-});
+const ContentChallenge = z
+  .object({
+    ...ReviewChallengeBase,
+    kind: z.literal('content_challenge'),
+    evidenceRefs: z.array(ContentRef).min(1),
+    outcome: FalsificationChallengeOutcome,
+  })
+  .strict();
 
 /**
  * Canonical allowed `outcome` values per challenge kind.
@@ -189,5 +199,6 @@ export const ChallengeResolutionVerdict = z
     challengeId: z.string().uuid(),
     verdict: z.enum(['resolved', 'still_failing', 'not_verified']),
   })
+  .strict()
   .readonly();
 export type ChallengeResolutionVerdict = z.infer<typeof ChallengeResolutionVerdict>;

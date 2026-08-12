@@ -92,7 +92,7 @@ function strictFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings
 }
 
 type ReviewAssuranceFixture = {
-  assuranceSchemaVersion: 'review-assurance.v2';
+  assuranceSchemaVersion: 'review-assurance.v3';
   attempts: [];
   obligations: ReviewObligation[];
   invocations: ReviewInvocationEvidence[];
@@ -102,7 +102,7 @@ function strictAssuranceFixture(
   findings: ReviewFindings = strictFindings(),
 ): ReviewAssuranceFixture {
   return {
-    assuranceSchemaVersion: 'review-assurance.v2' as const,
+    assuranceSchemaVersion: 'review-assurance.v3' as const,
     attempts: [],
     obligations: [
       {
@@ -1013,6 +1013,7 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
             childSessionId: 'ses_child',
             status: 'created',
             origin: { kind: 'initial' } as const,
+            repositoryDiscovery: { kind: 'not_applicable' } as const,
             createdAt: now,
           },
         ],

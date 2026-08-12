@@ -146,7 +146,7 @@ function buildState(
       reviewOutputPolicy,
     },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v2' as const,
+      assuranceSchemaVersion: 'review-assurance.v3' as const,
       obligations: [
         {
           obligationId: OBLIGATION_ID,

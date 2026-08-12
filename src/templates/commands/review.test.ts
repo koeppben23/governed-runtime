@@ -25,9 +25,12 @@ describe('templates/commands/review (#401 Discovery context)', () => {
       expect(REVIEW_COMMAND).toContain('repo-dependent quality claim');
     });
 
-    it('passes Discovery context only to a free-composed reviewer prompt', () => {
+    it('forbids free-composed prompts: the canonical reviewerTaskPrompt is mandatory', () => {
       expect(REVIEW_COMMAND).toContain(REVIEWER_SUBAGENT_TYPE);
-      expect(REVIEW_COMMAND).toMatch(/Only when composing a prompt[\s\S]*Discovery context/);
+      expect(REVIEW_COMMAND).toMatch(
+        /Do NOT free-compose a prompt[\s\S]*REVIEWER_CONTEXT_UNAVAILABLE/,
+      );
+      expect(REVIEW_COMMAND).toContain('attempt-bound Discovery');
     });
   });
 
@@ -35,7 +38,7 @@ describe('templates/commands/review (#401 Discovery context)', () => {
   describe('BAD — NOT_VERIFIED correlation rule', () => {
     it('marks Discovery-dependent claims NOT_VERIFIED when correlation fails', () => {
       expect(REVIEW_COMMAND).toContain('NOT_VERIFIED');
-      expect(REVIEW_COMMAND).toMatch(/cannot be correlated to local repository Discovery/);
+      expect(REVIEW_COMMAND).toMatch(/cannot be correlated to that snapshot/);
     });
 
     it('does not invent repository truth when Discovery is unavailable/degraded/drifted', () => {

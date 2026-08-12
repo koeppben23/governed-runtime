@@ -81,6 +81,17 @@ export const REVIEW_VALIDATION_REASONS = [
     ],
   },
   {
+    code: 'REVIEWER_CONTEXT_UNAVAILABLE',
+    category: 'state',
+    messageTemplate:
+      'The canonical reviewer context could not be materialized for obligation {obligationId}: {reason}. No review attempt was created.',
+    recoverySteps: [
+      'Restore the persisted Discovery basis or resolve the workspace fingerprint, then re-run the review',
+      'A degraded or unchecked Discovery snapshot does NOT block: only a structurally unbuildable reviewer context does',
+      'Do NOT free-compose a reviewer prompt without the canonical context, and do NOT fabricate findings',
+    ],
+  },
+  {
     code: 'IMPL_VALIDATION_EVIDENCE_REQUIRED',
     category: 'state',
     messageTemplate:

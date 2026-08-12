@@ -27,6 +27,8 @@ import {
 } from '../../review/assurance.js';
 import { authorizeOutputRepairReissue } from '../../review/reissue-authority.js';
 import { blockObligation } from '../../review/obligation-state.js';
+import { resolveReviewAttemptDiscoveryContext } from '../../review/discovery-attempt-context.js';
+import type { ReviewAttemptDiscoveryContext } from '../../../state/evidence.js';
 import { fingerprintReviewInput } from './fingerprint.js';
 import { formatMissingContentAnalysis } from './obligation-format.js';
 import { hasReviewContentInput, validateReviewContentSource } from './review-input.js';
@@ -48,12 +50,14 @@ export async function persistReviewObligation(
   state: SessionState,
   obligation: ReviewObligation,
   reviewMaterial?: ReviewMaterial,
+  repositoryDiscovery: ReviewAttemptDiscoveryContext = { kind: 'not_applicable' },
 ): Promise<{ attemptId: string; assurance: ReviewAssuranceState }> {
   const result = appendObligationWithAttempt(
     state.reviewAssurance,
     obligation,
     obligation.createdAt,
     reviewMaterial,
+    repositoryDiscovery,
   );
   await writeStateWithArtifacts(sessDir, {
     ...state,
@@ -274,15 +278,35 @@ async function reissueAttemptForPendingObligation(
       }),
     };
   }
+  // Attempt-bound Discovery context resolved BEFORE the repair attempt is
+  // minted — a fresh host-owned snapshot for repository reviews. A structural
+  // projection failure blocks with zero state mutation.
+  const discovery = await resolveReviewAttemptDiscoveryContext({
+    state,
+    worktree: state.binding.worktree,
+    reviewSubjectKind: existing.reviewSubject?.kind,
+    now,
+  });
+  if (discovery.kind === 'blocked') {
+    return {
+      message: formatBlocked('REVIEWER_CONTEXT_UNAVAILABLE', {
+        obligationId: existing.obligationId,
+        reason: discovery.reason,
+      }),
+    };
+  }
   const reissue = createAttemptForExistingObligation(
     state.reviewAssurance,
     existing,
     undefined,
     now,
     {
-      kind: 'output_repair',
-      predecessorAttemptId: authorization.predecessorAttemptId,
-      triggerReason: authorization.triggerReason,
+      origin: {
+        kind: 'output_repair',
+        predecessorAttemptId: authorization.predecessorAttemptId,
+        triggerReason: authorization.triggerReason,
+      },
+      repositoryDiscovery: discovery.context,
     },
   );
   await writeStateWithArtifacts(sessDir, { ...state, reviewAssurance: reissue.assurance });
@@ -328,6 +352,24 @@ async function createAndPrepareMissingAnalysisObligation(
   if (created.blocked) return { message: created.blocked };
   const obligation = created.obligation!;
   const preparedContent = input.context.preparedContent;
+  // Attempt-bound Discovery context is resolved BEFORE the attempt is minted:
+  // a repository review attempt is born with its host-owned snapshot. The
+  // loader is advisory-total, so this blocks only on a structural projection
+  // failure — a degraded/unavailable snapshot mints with NOT_VERIFIED markers.
+  const discovery = await resolveReviewAttemptDiscoveryContext({
+    state: input.state,
+    worktree: input.context.worktree ?? input.state.binding.worktree,
+    reviewSubjectKind: obligation.reviewSubject?.kind,
+    now: input.now,
+  });
+  if (discovery.kind === 'blocked') {
+    return {
+      message: formatBlocked('REVIEWER_CONTEXT_UNAVAILABLE', {
+        obligationId: obligation.obligationId,
+        reason: discovery.reason,
+      }),
+    };
+  }
   const persisted = await persistReviewObligation(
     input.sessDir,
     input.state,
@@ -338,6 +380,7 @@ async function createAndPrepareMissingAnalysisObligation(
           materialDigest: preparedContent.reviewSubject.materialDigest,
         }
       : undefined,
+    discovery.context,
   );
   return {
     message: formatMissingContentAnalysis(

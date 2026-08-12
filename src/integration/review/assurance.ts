@@ -20,6 +20,7 @@ import type {
   ReviewProfileSource,
   PolicySnapshot,
   ReviewAttempt,
+  ReviewAttemptDiscoveryContext,
   ReviewMaterial,
   FrozenReviewSubject,
 } from '../../state/evidence.js';
@@ -416,6 +417,7 @@ export function createObligationAndAttempt(
   assurance: ReviewAssuranceState | undefined,
   obligationInput: Parameters<typeof createReviewObligation>[0],
   now: string,
+  repositoryDiscovery: ReviewAttemptDiscoveryContext = { kind: 'not_applicable' },
 ): { assurance: ReviewAssuranceState; obligation: ReviewObligation; attempt: ReviewAttempt } {
   const obligation = createReviewObligation(obligationInput);
   const ordinal =
@@ -428,6 +430,7 @@ export function createObligationAndAttempt(
     subjectDigest: obligationInput.subjectDigest,
     ordinal,
     origin: { kind: 'initial' },
+    repositoryDiscovery,
     now,
   });
   const withObligation = appendReviewObligation(assurance, obligation);
@@ -455,6 +458,7 @@ export function appendObligationWithAttempt(
   obligation: ReviewObligation,
   now: string,
   reviewMaterial?: ReviewMaterial,
+  repositoryDiscovery: ReviewAttemptDiscoveryContext = { kind: 'not_applicable' },
 ): { assurance: ReviewAssuranceState; attemptId: string } {
   const base = ensureReviewAssurance(assurance);
   const ordinal =
@@ -466,6 +470,7 @@ export function appendObligationWithAttempt(
     reviewMaterial,
     ordinal,
     origin: { kind: 'initial' },
+    repositoryDiscovery,
     now,
   });
   const withObligation = { ...base, obligations: [...base.obligations, obligation] };

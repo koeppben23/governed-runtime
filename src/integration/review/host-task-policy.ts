@@ -11,6 +11,7 @@ import { parseToolResult, getToolOutput } from '../plugin-helpers.js';
 import { extractContentMeta } from './enforcement/extraction.js';
 import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
 import { renderReviewContext, renderReviewerTaskPrompt } from './prompt-builders.js';
+import { rebuildBlockedPresentation } from '../tools/blocked-presentation.js';
 import {
   verifyFrozenReviewerContext,
   type FrozenReviewerContext,
@@ -31,7 +32,7 @@ import {
 } from './assurance.js';
 import { updateObligation } from './obligation-state.js';
 import type { SessionState } from '../../state/schema.js';
-import type { ReviewObligation } from '../../state/evidence.js';
+import type { RepositoryDiscoverySnapshot, ReviewObligation } from '../../state/evidence.js';
 import { indexMarkdownSections } from '../../shared/markdown-sections.js';
 import type { OrchestratorDeps, ToolCallEvent } from './pipeline-types.js';
 
@@ -89,6 +90,12 @@ interface HostTaskOutputInput {
    * rather than guessing.
    */
   readonly retrySchemaErrors: readonly string[] | null;
+  /**
+   * Attempt-bound repository Discovery snapshot of the attempt the reviewer
+   * will be bound to. For repository reviews this renders the canonical
+   * Discovery envelope; null for not_applicable/content attempts.
+   */
+  readonly repositoryDiscoverySnapshot: RepositoryDiscoverySnapshot | null;
 }
 
 /**
@@ -114,7 +121,7 @@ function applyReviewerContextFailure(
       'Restore the persisted review obligation and material from a trusted source',
       'Abort the session if the frozen material cannot be restored from trusted evidence',
     ];
-    return JSON.stringify(result);
+    return JSON.stringify(refreshBlockedPresentation(result));
   }
   result.code = 'REVIEW_ATTEMPT_UNAVAILABLE';
   result.message =
@@ -126,6 +133,23 @@ function applyReviewerContextFailure(
     'Do NOT submit reviewVerdict or reviewFindings to recover this state',
   ];
   return JSON.stringify(result);
+}
+
+/**
+ * Re-derive the blocked presentation from the FINAL canonical code after a
+ * rewrite so a response never carries two different reason codes. The
+ * presentation authority is the shared blocked-presentation builder; the
+ * canonical `code`/`recovery` fields drive it.
+ */
+function refreshBlockedPresentation(result: Record<string, unknown>): Record<string, unknown> {
+  const code = typeof result.code === 'string' ? result.code : 'HOST_SUBAGENT_TASK_REQUIRED';
+  const rebuilt = rebuildBlockedPresentation(code, String(result.message ?? ''));
+  const refreshed: Record<string, unknown> = { ...result };
+  if (rebuilt.presentation) refreshed.presentation = rebuilt.presentation;
+  else delete refreshed.presentation;
+  if (rebuilt.diagnostics) refreshed.diagnostics = rebuilt.diagnostics;
+  else delete refreshed.diagnostics;
+  return refreshed;
 }
 
 function buildHostTaskPolicyOutput(input: HostTaskOutputInput): string | null {
@@ -192,6 +216,7 @@ function buildReviewerTaskPromptOrNull(
     readonly artifactContext: readonly string[];
     readonly frozenReviewerContext: FrozenReviewerContext | null;
     readonly retrySchemaErrors: readonly string[] | null;
+    readonly repositoryDiscoverySnapshot: RepositoryDiscoverySnapshot | null;
   },
 ): string | null {
   if (!attestationMeta || ctx?.iteration == null) return null;
@@ -207,6 +232,7 @@ function buildReviewerTaskPromptOrNull(
     artifactContext: opts.artifactContext,
     frozenReviewerContext: opts.frozenReviewerContext ?? undefined,
     retrySchemaErrors: opts.retrySchemaErrors ?? undefined,
+    repositoryDiscoverySnapshot: opts.repositoryDiscoverySnapshot,
   });
 }
 
@@ -243,6 +269,7 @@ function buildHostTaskBlockedOutput(
     artifactContext: input.artifactContext,
     frozenReviewerContext: input.frozenReviewerContext,
     retrySchemaErrors: input.retrySchemaErrors,
+    repositoryDiscoverySnapshot: input.repositoryDiscoverySnapshot,
   });
   const copyPromptStr = reviewerTaskPrompt
     ? ` A ready-to-use reviewer prompt is provided in the reviewerTaskPrompt field — pass it ` +
@@ -306,7 +333,7 @@ function buildHostTaskBlockedOutput(
     recovery: [RECOVERY_HOST_SUBAGENT_TASK],
   };
   applyBindableAttemptId(result, input.attemptId);
-  return JSON.stringify(result);
+  return JSON.stringify(refreshBlockedPresentation(result));
 }
 
 /**
@@ -508,6 +535,10 @@ function buildHostTaskOutputInput(
       frozenReviewerContext,
     ),
     retrySchemaErrors,
+    repositoryDiscoverySnapshot:
+      bindableAttempt?.repositoryDiscovery.kind === 'repository'
+        ? bindableAttempt.repositoryDiscovery.snapshot
+        : null,
   };
 }
 

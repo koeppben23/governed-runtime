@@ -15,6 +15,7 @@ import { randomUUID } from 'node:crypto';
 import type {
   ReviewAssuranceState,
   ReviewAttempt,
+  ReviewAttemptDiscoveryContext,
   ReviewAttemptOrigin,
   ReviewAttemptRejectionReason,
   ReviewMaterial,
@@ -24,7 +25,7 @@ import type {
 
 export function emptyReviewAssurance(): ReviewAssuranceState {
   return {
-    assuranceSchemaVersion: 'review-assurance.v2',
+    assuranceSchemaVersion: 'review-assurance.v3',
     obligations: [],
     invocations: [],
     attempts: [],
@@ -51,6 +52,12 @@ export function createReviewAttempt(input: {
    * re-arm. There is no origin-less attempt.
    */
   origin: ReviewAttemptOrigin;
+  /**
+   * Attempt-bound repository Discovery context, resolved BEFORE the attempt is
+   * minted: `repository` with a host-owned snapshot for standalone repository
+   * reviews, `not_applicable` otherwise. Never mutated after creation.
+   */
+  repositoryDiscovery: ReviewAttemptDiscoveryContext;
   now: string;
 }): ReviewAttempt {
   return {
@@ -63,6 +70,7 @@ export function createReviewAttempt(input: {
     childSessionId: input.childSessionId,
     status: 'created',
     origin: input.origin,
+    repositoryDiscovery: input.repositoryDiscovery,
     createdAt: input.now,
   };
 }
@@ -89,12 +97,16 @@ export function createAttemptForExistingObligation(
   childSessionId: string | undefined,
   now: string,
   /**
-   * Authority-bearing origin, supplied by the caller ONLY after the matching
-   * transition authority was satisfied (`authorizeOutputRepairReissue` or
-   * `authorizeTaskLifecycleRearm`). An architecture test whitelists the
-   * productive call sites so this parameter cannot become a public backdoor.
+   * Mint authority, supplied by the caller ONLY after the matching transition
+   * authority was satisfied (`authorizeOutputRepairReissue` or
+   * `authorizeTaskLifecycleRearm`) and the attempt-bound Discovery context was
+   * resolved BEFORE this mint. An architecture test whitelists the productive
+   * call sites so this parameter cannot become a public backdoor.
    */
-  origin: ReviewAttemptOrigin,
+  transition: {
+    readonly origin: ReviewAttemptOrigin;
+    readonly repositoryDiscovery: ReviewAttemptDiscoveryContext;
+  },
 ): { assurance: ReviewAssuranceState; attempt: ReviewAttempt } {
   const base = ensureReviewAssurance(assurance);
   const ordinal =
@@ -106,7 +118,8 @@ export function createAttemptForExistingObligation(
     reviewMaterial: latestReviewMaterial(base, obligation.obligationId),
     ordinal,
     ...(childSessionId === undefined ? {} : { childSessionId }),
-    origin,
+    origin: transition.origin,
+    repositoryDiscovery: transition.repositoryDiscovery,
     now,
   });
   const withAttempt = appendReviewAttempt(base, attempt);

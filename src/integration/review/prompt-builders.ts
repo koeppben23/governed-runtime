@@ -23,7 +23,9 @@ import {
   buildDiscoveryContextSection,
   type DiscoveryReviewContext,
 } from './discovery-context-prompt.js';
+import { buildStackProfileSection, resolveReviewerDiscoverySection } from './prompt-sections.js';
 import type { FrozenReviewerContext } from './frozen-reviewer-context.js';
+import type { RepositoryDiscoverySnapshot } from '../../state/evidence.js';
 
 /**
  * Mandatory-baseline marker appended as the final line of every reviewer prompt.
@@ -51,28 +53,11 @@ export const CORE_REVIEW_PROFILE_MARKER =
  * Canonical serialization of the review cycle-binding context (F9).
  *
  * The `iteration` / `planVersion` values an agent must echo into the reviewer
- * subagent prompt are emitted by multiple blocked-output builders
- * (pending-instruction.ts, host-task-policy.ts) and validated by a third code
- * path (enforcement `promptContainsValue`). Previously each builder produced a
- * subtly different string ("iteration=X, and planVersion=Y" vs.
- * "Context: iteration=X, planVersion=Y"), the exact divergence class behind
- * BUG-16 and the observed first-attempt SUBAGENT_PROMPT_MISSING_CONTEXT block.
- *
- * This is the single canonical form. Both builders MUST use it so the emitted
- * context is byte-identical and always satisfies enforcement on the first
- * attempt. `planVersion` is optional because standalone /review obligations may
- * not carry one.
+ * subagent prompt are emitted by multiple blocked-output builders and validated
+ * by enforcement; the single canonical form lives in prompt-sections.ts.
  */
-export function renderReviewContext(input: {
-  iteration: number;
-  planVersion?: number | null;
-}): string {
-  const parts = [`iteration=${input.iteration}`];
-  if (input.planVersion != null) {
-    parts.push(`planVersion=${input.planVersion}`);
-  }
-  return parts.join(', ');
-}
+export { renderReviewContext } from './prompt-sections.js';
+import { renderReviewContext } from './prompt-sections.js';
 
 /** Serialize the integrity-verified review subject identically for every transport. */
 export function renderFrozenReviewSubjectEnvelope(context: FrozenReviewerContext): string[] {
@@ -126,6 +111,12 @@ export interface ReviewerTaskPromptInput {
    * Host Task paths so no transport has more semantic information than the other.
    */
   readonly discoveryContext?: DiscoveryReviewContext;
+  /**
+   * Attempt-bound repository Discovery snapshot (resolved at attempt mint time).
+   * For repository reviews this is the canonical Discovery envelope; it renders
+   * the scoped Repository Discovery Contract and supersedes `discoveryContext`.
+   */
+  readonly repositoryDiscoverySnapshot?: RepositoryDiscoverySnapshot | null;
   /**
    * Schema validation errors from a prior failed reviewer output for the
    * same obligation. When present, the prompt includes these errors so the
@@ -235,15 +226,46 @@ function renderChallengeContract(
  * (anti-fabrication) and stays above MIN_SUBAGENT_PROMPT_LENGTH so it clears the
  * prompt-length gate on its own.
  */
+function renderReviewerRules(isRepositoryReview: boolean): string[] {
+  const rules = [
+    `- You MUST NOT call any FlowGuard tools (flowguard_plan, flowguard_implement, ` +
+      `flowguard_review_implementation, flowguard_architecture, flowguard_review) in your session.`,
+  ];
+  if (isRepositoryReview) {
+    rules.push(
+      '- Check the supplied Discovery health and drift status before any repo-dependent quality claim; mark claims',
+      '  NOT_VERIFIED when they cannot be correlated to the supplied Discovery snapshot.',
+    );
+  }
+  rules.push(
+    '- Do not fabricate a verdict of convenience; ground every finding in concrete evidence.',
+    '- Output ONLY the ReviewFindings JSON object as the final content of your reply:',
+    '  no prose, no reasoning, and no markdown code fences before or after it.',
+  );
+  return rules;
+}
+
+function renderFindingsObjectRule(input: ReviewerTaskPromptInput): string {
+  return (
+    '- Return a complete ReviewFindings JSON object with overallVerdict, blockingIssues,' +
+    '\n  majorRisks, missingVerification, scopeCreep, unknowns, reviewedBy, reviewedAt, and' +
+    `\n  attestation set to the values above (iteration=${input.iteration}` +
+    `${input.planVersion != null ? `, planVersion=${input.planVersion}` : ''}).`
+  );
+}
+
 export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string {
   const context = renderReviewContext({
     iteration: input.iteration,
     planVersion: input.planVersion,
   });
 
-  const discoverySection = input.discoveryContext
-    ? buildDiscoveryContextSection(input.discoveryContext)
-    : '';
+  const isRepositoryReview =
+    input.frozenReviewerContext?.reviewSubject.kind === 'repository_change';
+  const discoverySection = resolveReviewerDiscoverySection(
+    input.repositoryDiscoverySnapshot,
+    input.discoveryContext,
+  );
 
   return [
     `You are the ${REVIEWER_SUBAGENT_TYPE} subagent performing an independent, ` +
@@ -273,17 +295,8 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
         ]
       : []),
     'Rules:',
-    `- You MUST NOT call any FlowGuard tools (flowguard_plan, flowguard_implement, ` +
-      `flowguard_review_implementation, flowguard_architecture, flowguard_review) in your session.`,
-    '- Check Discovery health and drift before any repo-dependent quality claim; mark claims',
-    '  NOT_VERIFIED when they cannot be correlated to the local repository Discovery snapshot.',
-    '- Do not fabricate a verdict of convenience; ground every finding in concrete evidence.',
-    '- Return a complete ReviewFindings JSON object with overallVerdict, blockingIssues,',
-    '  majorRisks, missingVerification, scopeCreep, unknowns, reviewedBy, reviewedAt, and',
-    `  attestation set to the values above (iteration=${input.iteration}` +
-      `${input.planVersion != null ? `, planVersion=${input.planVersion}` : ''}).`,
-    '- Output ONLY the ReviewFindings JSON object as the final content of your reply:',
-    '  no prose, no reasoning, and no markdown code fences before or after it.',
+    ...renderReviewerRules(isRepositoryReview),
+    renderFindingsObjectRule(input),
     ...renderChallengeContract(input.challengeContract, input.obligationId),
     '',
     ...(input.artifactContext && input.artifactContext.length > 0
@@ -404,21 +417,6 @@ export interface ArchitectureReviewPromptOpts {
  * P9c: injects phase-specific stack guidance so the reviewer receives
  * stack review rules relevant to the current workflow phase.
  */
-function buildStackProfileSection(
-  profileName: string | undefined,
-  profileRules: string | undefined,
-): string {
-  if (!profileName && !profileRules) return '';
-  const lines: string[] = [];
-  if (profileName) {
-    lines.push('## Active Stack Profile', '', profileName, '');
-  }
-  if (profileRules) {
-    lines.push('## Stack Review Rules', '', profileRules, '');
-  }
-  return lines.join('\n');
-}
-
 // ─── Prompt Builders ─────────────────────────────────────────────────────────
 
 /**
@@ -688,13 +686,22 @@ export function buildReviewContentPrompt(opts: {
   // The loader always returns a populated (possibly "unavailable") context, so the
   // section renders even when Discovery is degraded — never silently omitted.
   discoveryContext: DiscoveryReviewContext;
+  /**
+   * Attempt-bound repository Discovery snapshot (resolved at attempt mint time).
+   * For repository reviews this is the canonical Discovery envelope and
+   * supersedes `discoveryContext`.
+   */
+  repositoryDiscoverySnapshot?: RepositoryDiscoverySnapshot | null;
   /** Persisted advisory projection only; prompt construction never evaluates providers. */
   proofGraph?: ProofGraphProjection;
   /** The same integrity-verified context delivered by the host-task path. */
   frozenReviewerContext?: FrozenReviewerContext;
 }): string {
   const stackSection = buildStackProfileSection(opts.profileName, opts.profileRules);
-  const discoverySection = buildDiscoveryContextSection(opts.discoveryContext);
+  const discoverySection = resolveReviewerDiscoverySection(
+    opts.repositoryDiscoverySnapshot,
+    opts.discoveryContext,
+  );
   const lines: string[] = [
     'You are ' + REVIEWER_SUBAGENT_TYPE + ' - a governance reviewer subagent.',
     'Review the following content for issues, risks, and missing verification.',

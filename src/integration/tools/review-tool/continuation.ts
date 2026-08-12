@@ -13,11 +13,9 @@ import {
   findReviewObligationById,
   createAttemptForExistingObligation,
 } from '../../review/assurance.js';
-import {
-  authorizeOutputRepairReissue,
-  type OutputRepairAuthorization,
-} from '../../review/reissue-authority.js';
+import { authorizeOutputRepairReissue } from '../../review/reissue-authority.js';
 import { blockObligation } from '../../review/obligation-state.js';
+import { resolveReviewAttemptDiscoveryContext } from '../../review/discovery-attempt-context.js';
 import { writeStateWithArtifacts } from '../helpers.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { StartedReviewResult } from './types.js';
@@ -91,11 +89,9 @@ export type ReissueReviewAttemptResult =
   | { readonly kind: 'ok'; readonly attempt: ReviewAttempt }
   | {
       readonly kind: 'blocked';
-      readonly authorization: Extract<
-        OutputRepairAuthorization,
-        { readonly kind: 'blocked' | 'integrity_blocked' }
-      >;
-      /** False for integrity failures: the refusal must not mutate state. */
+      readonly code: string;
+      readonly reason: string;
+      /** False for zero-mutation refusals (integrity, context-unavailable). */
       readonly obligationBlocked: boolean;
     };
 
@@ -108,12 +104,22 @@ export async function reissueReviewAttempt(
   const authorization = authorizeOutputRepairReissue(state.reviewAssurance, obligation);
   if (authorization.kind === 'integrity_blocked') {
     // Broken frozen subject/material binding: refuse with ZERO state mutation.
-    return { kind: 'blocked', authorization, obligationBlocked: false };
+    return {
+      kind: 'blocked',
+      code: authorization.code,
+      reason: authorization.reason,
+      obligationBlocked: false,
+    };
   }
   if (authorization.kind === 'blocked') {
     const blockedState = blockObligation(state, obligation.obligationId, authorization.code);
     await writeStateWithArtifacts(sessDir, blockedState);
-    return { kind: 'blocked', authorization, obligationBlocked: true };
+    return {
+      kind: 'blocked',
+      code: authorization.code,
+      reason: authorization.reason,
+      obligationBlocked: true,
+    };
   }
   if (authorization.kind === 'bindable_exists') {
     const existing = state.reviewAssurance?.attempts.find(
@@ -122,15 +128,29 @@ export async function reissueReviewAttempt(
     if (!existing) {
       return {
         kind: 'blocked',
-        authorization: {
-          kind: 'blocked',
-          code: 'REVIEW_REPAIR_UNAVAILABLE',
-          reason: 'bindable attempt referenced by authorization is missing from state',
-        },
+        code: 'REVIEW_REPAIR_UNAVAILABLE',
+        reason: 'bindable attempt referenced by authorization is missing from state',
         obligationBlocked: false,
       };
     }
     return { kind: 'ok', attempt: existing };
+  }
+  // Attempt-bound Discovery context resolved BEFORE the repair attempt is
+  // minted — a fresh host-owned snapshot for repository reviews. A structural
+  // projection failure blocks with zero state mutation.
+  const discovery = await resolveReviewAttemptDiscoveryContext({
+    state,
+    worktree: state.binding.worktree,
+    reviewSubjectKind: obligation.reviewSubject?.kind,
+    now,
+  });
+  if (discovery.kind === 'blocked') {
+    return {
+      kind: 'blocked',
+      code: 'REVIEWER_CONTEXT_UNAVAILABLE',
+      reason: discovery.reason,
+      obligationBlocked: false,
+    };
   }
   const reissue = createAttemptForExistingObligation(
     state.reviewAssurance,
@@ -138,9 +158,12 @@ export async function reissueReviewAttempt(
     undefined,
     now,
     {
-      kind: 'output_repair',
-      predecessorAttemptId: authorization.predecessorAttemptId,
-      triggerReason: authorization.triggerReason,
+      origin: {
+        kind: 'output_repair',
+        predecessorAttemptId: authorization.predecessorAttemptId,
+        triggerReason: authorization.triggerReason,
+      },
+      repositoryDiscovery: discovery.context,
     },
   );
   await writeStateWithArtifacts(sessDir, { ...state, reviewAssurance: reissue.assurance });

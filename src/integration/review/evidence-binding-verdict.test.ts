@@ -164,7 +164,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
     // 4. Append evidence to assurance state
     const assurance = appendInvocationEvidence(
       ensureReviewAssurance({
-        assuranceSchemaVersion: 'review-assurance.v2' as const,
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
         obligations: [
           {
             ...obligation,
@@ -252,7 +252,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
 
     const assurance = appendInvocationEvidence(
       ensureReviewAssurance({
-        assuranceSchemaVersion: 'review-assurance.v2' as const,
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
         obligations: [
           {
             ...obligation,
@@ -332,7 +332,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
 
     const assurance = appendInvocationEvidence(
       ensureReviewAssurance({
-        assuranceSchemaVersion: 'review-assurance.v2' as const,
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
         obligations: [
           {
             ...obligation,
@@ -441,7 +441,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
     // Build assurance with the evidence
     const assurance = appendInvocationEvidence(
       ensureReviewAssurance({
-        assuranceSchemaVersion: 'review-assurance.v2' as const,
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
         obligations: [
           {
             ...obligation,
@@ -497,7 +497,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
 
     const assurance = appendInvocationEvidence(
       ensureReviewAssurance({
-        assuranceSchemaVersion: 'review-assurance.v2' as const,
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
         obligations: [
           {
             ...obligation,
@@ -542,7 +542,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
 
     // Even if we somehow had an invocation, resolve would fail
     const assurance = ensureReviewAssurance({
-      assuranceSchemaVersion: 'review-assurance.v2' as const,
+      assuranceSchemaVersion: 'review-assurance.v3' as const,
       obligations: [
         {
           ...obligation,
@@ -586,7 +586,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
 
     const assurance = appendInvocationEvidence(
       ensureReviewAssurance({
-        assuranceSchemaVersion: 'review-assurance.v2' as const,
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
         obligations: [
           {
             ...obligation,

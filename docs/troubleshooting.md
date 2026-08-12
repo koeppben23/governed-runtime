@@ -233,6 +233,7 @@ real, registered reason.
 | `REVIEW_REPAIR_UNAVAILABLE`                   | No output-repair reissue is authorized for this rejection (governance, scope, integrity, consistency, or execution failure) | Operator intervention required; the obligation is blocked terminally — do not fabricate findings or bypass the frozen subject                       |
 | `REPAIR_PROMPT_REQUIRED`                      | Fresh canonical repair prompt required before re-running reviewer Task                                                      | Call flowguard_review to obtain a new reviewerTaskPrompt with validation errors; never reuse stale prompt                                           |
 | `REVIEWER_OUTPUT_SCHEMA_INVALID`              | Reviewer output failed to validate against the canonical ReviewFindings schema                                              | Re-invoke with exact same frozen subject; ensure output matches grammar in prompt                                                                   |
+| `REVIEWER_CONTEXT_UNAVAILABLE`                | Canonical reviewer context could not be materialized; no review attempt was created                                         | Restore the persisted Discovery basis or workspace fingerprint, then re-run the review                                                              |
 | `INVALID_REVIEW_TOOL_SEQUENCE`                | Review tool call sequence is invalid (e.g. reviewerUnavailable after spawn)                                                 | Follow invocation sequence; do not submit reviewerUnavailable when reviewer spawned                                                                 |
 | `REVIEW_ASSURANCE_STATE_UNAVAILABLE`          | Strict review assurance state cannot be read                                                                                | Re-hydrate; if persistent, restore from archive                                                                                                     |
 | `REVIEW_ATTEMPT_ID_MISSING`                   | Invocation lacks a persisted attemptId (legacy data)                                                                        | Re-invoke the reviewer subagent for a fresh attempt                                                                                                 |
@@ -477,6 +478,7 @@ REVIEW_VERDICT_MISMATCH
 REVIEWER_OUTPUT_RETRY_EXHAUSTED
 REPAIR_PROMPT_REQUIRED
 REVIEWER_OUTPUT_SCHEMA_INVALID
+REVIEWER_CONTEXT_UNAVAILABLE
 INVALID_REVIEW_TOOL_SEQUENCE
 REVIEWER_INVOCATION_EXHAUSTED
 REVIEWER_TASK_REQUIRES_PENDING_OBLIGATION

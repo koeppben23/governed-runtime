@@ -142,7 +142,10 @@ describe('integration/review-assurance', () => {
         obligation,
         'child-session-2',
         NOW,
-        { kind: 'initial' } as const,
+        {
+          origin: { kind: 'initial' } as const,
+          repositoryDiscovery: { kind: 'not_applicable' } as const,
+        },
       );
 
       expect(retried.assurance.attempts.at(-1)?.reviewMaterial).toEqual(material);
@@ -170,7 +173,10 @@ describe('integration/review-assurance', () => {
         obligation,
         undefined,
         NOW,
-        { kind: 'initial' } as const,
+        {
+          origin: { kind: 'initial' } as const,
+          repositoryDiscovery: { kind: 'not_applicable' } as const,
+        },
       );
 
       expect(reissued.attempt.childSessionId).toBeUndefined();
@@ -186,7 +192,7 @@ describe('integration/review-assurance', () => {
   describe('ensureReviewAssurance', () => {
     it('returns the given assurance when defined', () => {
       const existing = {
-        assuranceSchemaVersion: 'review-assurance.v2' as const,
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
         obligations: [makeObligation()],
         invocations: [],
         attempts: [],
@@ -504,7 +510,7 @@ describe('integration/review-assurance', () => {
       const obligation = makeObligation();
       const result = appendReviewObligation(
         {
-          assuranceSchemaVersion: 'review-assurance.v2' as const,
+          assuranceSchemaVersion: 'review-assurance.v3' as const,
           obligations: [],
           invocations: [invocation],
           attempts: [],
@@ -519,7 +525,7 @@ describe('integration/review-assurance', () => {
     it('returns ensured assurance unchanged when obligation is null', () => {
       const result = appendReviewObligation(undefined, null);
       expect(result).toEqual({
-        assuranceSchemaVersion: 'review-assurance.v2',
+        assuranceSchemaVersion: 'review-assurance.v3',
         obligations: [],
         invocations: [],
         attempts: [],
@@ -636,7 +642,7 @@ describe('integration/review-assurance', () => {
       };
       const result = consumeReviewObligation(
         {
-          assuranceSchemaVersion: 'review-assurance.v2' as const,
+          assuranceSchemaVersion: 'review-assurance.v3' as const,
           obligations: [obligation],
           invocations: [invocation],
           attempts: [],
@@ -652,7 +658,7 @@ describe('integration/review-assurance', () => {
 
     it('returns the same assurance when obligation is null', () => {
       const assurance = {
-        assuranceSchemaVersion: 'review-assurance.v2' as const,
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
         obligations: [makeObligation()],
         invocations: [],
         attempts: [],
@@ -680,7 +686,7 @@ describe('integration/review-assurance', () => {
         hostVisible: true,
       });
       const assurance = {
-        assuranceSchemaVersion: 'review-assurance.v2' as const,
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
         obligations: [obligation],
         invocations: [rejectedInvocation, acceptedInvocation],
         attempts: [],
@@ -718,7 +724,7 @@ describe('integration/review-assurance', () => {
         fulfilledAt: NOW,
       };
       const assurance = {
-        assuranceSchemaVersion: 'review-assurance.v2' as const,
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
         obligations: [fulfilledObligation],
         invocations: [duplicateInvocation, boundInvocation],
         attempts: [],
@@ -1169,6 +1175,7 @@ describe('findBindableAttempt', () => {
         subjectDigest: 'subject',
         ordinal: overrides.ordinal,
         origin: { kind: 'initial' } as const,
+        repositoryDiscovery: { kind: 'not_applicable' } as const,
         now: NOW,
       }),
       ...overrides,

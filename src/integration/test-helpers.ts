@@ -358,9 +358,8 @@ export async function fulfillStrictReviewObligation(
 ): Promise<ReviewFindings> {
   const state = await readState(sessDir);
   if (!state) throw new Error('No test session state found');
-
   const assurance = state.reviewAssurance ?? {
-    assuranceSchemaVersion: 'review-assurance.v2' as const,
+    assuranceSchemaVersion: 'review-assurance.v3' as const,
     obligations: [],
     invocations: [],
     attempts: [],

@@ -202,7 +202,15 @@ function resolvedBranchFields(obligation: ReviewObligation): {
         : 'unknown';
   return {
     branch,
-    baseBranch: typeof metadata.baseBranch === 'string' ? metadata.baseBranch : 'unknown',
+    // Presentation label only: the resolved base branch name when known, else
+    // the frozen subject's requested base, else unknown. The baseSha above
+    // remains the authority — this label never weakens it.
+    baseBranch:
+      typeof metadata.baseBranch === 'string'
+        ? metadata.baseBranch
+        : frozenSource?.kind === 'branch' && frozenSource.requestedBase
+          ? frozenSource.requestedBase
+          : 'unknown',
     branchSha: resolvedBranchSha,
     baseSha: resolvedBaseSha,
   };

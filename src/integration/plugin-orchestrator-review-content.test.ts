@@ -151,7 +151,7 @@ function buildSessionState(
       ...(reviewInvocationPolicy ? { reviewInvocationPolicy } : {}),
     },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v2' as const,
+      assuranceSchemaVersion: 'review-assurance.v3' as const,
       obligations: [
         {
           obligationId: OBLIGATION_ID,
@@ -194,6 +194,7 @@ function buildSessionState(
           ordinal: 1,
           status: 'created',
           origin: { kind: 'initial' } as const,
+          repositoryDiscovery: { kind: 'not_applicable' } as const,
           createdAt: NOW,
         },
       ],

@@ -81,6 +81,7 @@ async function seedSession(
     ordinal: 0,
     status: options.attemptStatus ?? 'created',
     origin: { kind: 'initial' } as const,
+    repositoryDiscovery: { kind: 'not_applicable' } as const,
     createdAt: now,
     ...(options.attemptChildSessionId ? { childSessionId: options.attemptChildSessionId } : {}),
   };
@@ -95,7 +96,7 @@ async function seedSession(
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v2' as const,
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
         obligations: [
           {
             obligationId: OBLIGATION_ID,

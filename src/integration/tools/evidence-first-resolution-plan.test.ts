@@ -286,7 +286,7 @@ function planStateWithEvidence(
       verdict: 'changes_requested',
     },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v2' as const,
+      assuranceSchemaVersion: 'review-assurance.v3' as const,
       attempts: [
         {
           attemptId: OBLIGATION_ID.replace(/^(\w{8})/, 'd0000001'),
@@ -297,6 +297,7 @@ function planStateWithEvidence(
           ordinal: 0,
           status: 'bound' as const,
           origin: { kind: 'initial' } as const,
+          repositoryDiscovery: { kind: 'not_applicable' } as const,
           createdAt: now,
         },
       ],
@@ -506,7 +507,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
         verdict: 'changes_requested',
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v2' as const,
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
         obligations: [],
         invocations: [],
         attempts: [],
@@ -719,7 +720,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
         verdict: 'changes_requested',
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v2' as const,
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
         obligations: [
           {
             obligationId: OBLIGATION_ID,

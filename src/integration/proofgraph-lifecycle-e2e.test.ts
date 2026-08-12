@@ -946,7 +946,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
         claimDeclarations: { flow: 'plan', version: 'v2', claims: [CRITICAL_CLAIM] },
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v2' as const,
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
         obligations: [
           {
             obligationId,
@@ -1001,6 +1001,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             ordinal: 0,
             status: 'bound' as const,
             origin: { kind: 'initial' } as const,
+            repositoryDiscovery: { kind: 'not_applicable' } as const,
             createdAt: FIXED_TIME,
           },
         ],

@@ -422,7 +422,7 @@ describe('evidence-review', () => {
 
     it('ReviewAssuranceState parses valid assurance state', () => {
       const state = {
-        assuranceSchemaVersion: 'review-assurance.v2' as const,
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
         obligations: [],
         invocations: [],
         attempts: [],

@@ -58,23 +58,18 @@ Start the compliance review flow for the current FlowGuard session.
     and NO \`pluginReviewFindings\`, manually call the \`${REVIEWER_SUBAGENT_TYPE}\` subagent
     via Task tool:
     - Use \`subagent_type: "${REVIEWER_SUBAGENT_TYPE}"\`
-    - If the response includes a \`reviewerTaskPrompt\` field, pass it VERBATIM as the Task
+    - The response MUST include a \`reviewerTaskPrompt\` field: pass it VERBATIM as the Task
       tool "prompt" argument without appending content, Discovery context, or instructions.
-      This canonical prompt already carries the frozen material and required review context (iteration/planVersion)
-      and attestation, so the FIRST Task attempt is not blocked with
-      \`SUBAGENT_PROMPT_MISSING_CONTEXT\`. Only free-compose a prompt if no \`reviewerTaskPrompt\`
-      is provided, in which case you MUST include the \`requiredReviewAttestation\` values AND the
-      literal \`iteration=<n>, planVersion=<n>\` context in the prompt.
-    - Only when composing a prompt because no \`reviewerTaskPrompt\` was provided: pass the
-      loaded content, \`requiredReviewAttestation\` values, and compact Discovery context (health, drift,
-      detectedStack, verificationCandidates, risk surfaces). This is REQUIRED so the
-      external diff is reviewed against repo-native stack/verification/health/drift.
-    - Instruct the subagent to: check Discovery health and drift BEFORE making any
-      repo-dependent quality claim; correlate the reviewed PR/diff files against the
-      local Discovery snapshot; mark any claim \`NOT_VERIFIED\` when the content
-      cannot be correlated to local repository Discovery (e.g. the diff references
-      files absent from the Discovery snapshot, or local Discovery is drifted relative
-      to the reviewed branch).
+      This canonical prompt already carries the frozen material, the attempt-bound Discovery
+      snapshot, the required review context (iteration/planVersion), and the attestation.
+      Do NOT free-compose a prompt: a repository review without a canonical
+      \`reviewerTaskPrompt\` is blocked with \`REVIEWER_CONTEXT_UNAVAILABLE\` — report that
+      code with its recovery steps and stop instead of assembling a substitute prompt.
+    - Instruct the subagent to: check the supplied Discovery health and drift status BEFORE
+      making any repo-dependent quality claim; correlate the reviewed PR/diff files against
+      the supplied Discovery snapshot; mark any claim \`NOT_VERIFIED\` when the content
+      cannot be correlated to that snapshot (e.g. the diff references files absent from the
+      snapshot, or Discovery is drifted relative to the reviewed branch).
     - Instruct the subagent to return a complete \`ReviewFindings\` JSON object
     - Retain the response unchanged for SDK/manual findings modes. In host-task
       mode, FlowGuard captures it as Task evidence; do not parse or resubmit it.
