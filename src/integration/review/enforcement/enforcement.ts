@@ -336,8 +336,10 @@ export function matchPendingReview(
   if (awaitingCapture.length === 0) return null;
   if (awaitingCapture.length === 1) {
     const candidate = awaitingCapture[0]!;
-    // Retry exhausted: reviewer was re-invoked but still produced unusable output.
-    if (candidate.subagentCalled && (candidate.retryCount ?? 0) >= 1) return null;
+    // Retry limit: allow up to 10 retries before exhaustion (matching the
+    // existing attempt-lifecycle contract). This keeps re-armable reviews
+    // working for the established retry window.
+    if (candidate.subagentCalled && (candidate.retryCount ?? 0) > 10) return null;
     return candidate;
   }
 
