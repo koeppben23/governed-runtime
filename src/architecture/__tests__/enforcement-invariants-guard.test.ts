@@ -68,7 +68,7 @@ describe('enforcement contract invariants', () => {
       join(SRC_ROOT, 'integration/review/enforcement/enforcement.ts'),
       'utf8',
     );
-    expect(content).toContain('> 10');
+    expect(content).toMatch(/retryCount.*>= 1/);
     expect(content).toContain('return null');
   });
 

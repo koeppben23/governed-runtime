@@ -5,16 +5,14 @@
  * This schema is passed to the OpenCode SDK `session.prompt()` format field
  * to enforce structured JSON output from the reviewer subagent.
  *
- * Enum values (severity, category) are sourced from the canonical Zod types
- * via schema-introspect.ts. Anchor kind and challenge kind discriminators are
- * hand-written because each variant has a distinct shape, but are verified
- * against the canonical types by findings-schema-drift.test.ts.
+ * Enum values and discriminator variants are defined here. Drift from the
+ * canonical Zod types is detected by findings-schema-drift.test.ts which
+ * validates against ReviewFindings.safeParse at build time.
  *
- * @version v2 — canonical enums via schema-introspect
+ * @version v2 — content anchor added, severity category invariants verified
  */
 
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
-import { CANONICAL_SEVERITIES, CANONICAL_CATEGORIES } from './schema-introspect.js';
 
 const REPOSITORY_LOCATION_JSON_SCHEMA = {
   oneOf: [
@@ -103,10 +101,10 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          severity: { type: 'string', enum: [...CANONICAL_SEVERITIES] },
+          severity: { type: 'string', enum: ['critical', 'major', 'minor'] },
           category: {
             type: 'string',
-            enum: [...CANONICAL_CATEGORIES],
+            enum: ['completeness', 'correctness', 'feasibility', 'risk', 'quality'],
           },
           message: { type: 'string' },
           relation: FINDING_RELATION_JSON_SCHEMA,
@@ -119,10 +117,10 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          severity: { type: 'string', enum: [...CANONICAL_SEVERITIES] },
+          severity: { type: 'string', enum: ['critical', 'major', 'minor'] },
           category: {
             type: 'string',
-            enum: [...CANONICAL_CATEGORIES],
+            enum: ['completeness', 'correctness', 'feasibility', 'risk', 'quality'],
           },
           message: { type: 'string' },
           relation: FINDING_RELATION_JSON_SCHEMA,

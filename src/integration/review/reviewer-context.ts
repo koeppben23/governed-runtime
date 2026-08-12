@@ -134,6 +134,12 @@ function renderChangedFiles(files: readonly string[], heading: string, absent: s
  * The reviewer may inspect any repository file to falsify claims and collect
  * supporting evidence. Out-of-subject files may populate evidenceLocations but
  * must NOT become reviewed subject anchors merely because they were inspected.
+ *
+ * IMPORTANT: your read/glob/grep tools see the CURRENTLY CHECKED-OUT worktree,
+ * which may differ from the frozen base/head revision. When you reference a
+ * file at revision "head" as evidence, you are asserting that the bytes you
+ * observed correspond to the frozen head SHA. If the worktree differs, mark
+ * the evidence claim NOT_VERIFIED.
  */
 function renderInvestigationScope(files: readonly string[]): string[] {
   if (files.length === 0) return [];
@@ -148,6 +154,11 @@ function renderInvestigationScope(files: readonly string[]): string[] {
     '',
     'Out-of-subject repository files may support evidenceLocations, but they',
     'do not become reviewed subject anchors merely because they were inspected.',
+    '',
+    'IMPORTANT: your tools see the CHECKED-OUT worktree, not the frozen',
+    'revision. When citing evidence at revision "head", you assert the',
+    'observed bytes match the frozen head SHA. If unverifiable, mark',
+    'NOT_VERIFIED.',
     '',
   ];
 }

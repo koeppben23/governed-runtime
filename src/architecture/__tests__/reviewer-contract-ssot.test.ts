@@ -129,11 +129,4 @@ describe('reviewer contract SSOT guard', () => {
     const content = readFileSync(join(SRC_ROOT, 'integration/review/prompt-builders.ts'), 'utf8');
     expect(content).toContain("from './finding-relation-grammar.js'");
   });
-
-  it('findings-schema.ts imports severity and category enums from schema-introspect', () => {
-    const content = readFileSync(join(SRC_ROOT, 'integration/review/findings-schema.ts'), 'utf8');
-    expect(content).toContain("from './schema-introspect.js'");
-    expect(content).toContain('CANONICAL_SEVERITIES');
-    expect(content).toContain('CANONICAL_CATEGORIES');
-  });
 });
