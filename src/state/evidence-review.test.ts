@@ -370,6 +370,59 @@ describe('evidence-review', () => {
   });
 
   describe('Review obligations (HAPPY)', () => {
+    function repositoryReviewObligation() {
+      return {
+        obligationId: FIXED_UUID,
+        obligationType: 'review' as const,
+        subjectDigest: 'a'.repeat(64),
+        iteration: 0,
+        planVersion: 1,
+        criteriaVersion: 'v1',
+        mandateDigest: 'sha256-mandate',
+        createdAt: FIXED_TIME,
+        pluginHandshakeAt: null,
+        status: 'pending' as const,
+        invocationId: null,
+        blockedCode: null,
+        fulfilledAt: null,
+        consumedAt: null,
+        maxReviewerOutputRepairAttempts: 1,
+        reviewSubjectScope: {
+          kind: 'repository_change' as const,
+          paths: ['src/auth.ts'],
+          revisions: ['base', 'head'] as const,
+        },
+        reviewSubject: {
+          kind: 'repository_change' as const,
+          source: { kind: 'branch' as const, branch: 'feature/x', requestedBase: 'main' },
+          baseRepository: { kind: 'local' as const, rootCommitDigest: 'r'.repeat(64) },
+          headRepository: { kind: 'local' as const, rootCommitDigest: 'r'.repeat(64) },
+          baseSha: 'b'.repeat(40),
+          headSha: 'a'.repeat(40),
+          changedPaths: ['src/auth.ts'],
+          materialDigest: 'm'.repeat(64),
+          subjectDigest: 'a'.repeat(64),
+        },
+      };
+    }
+
+    function attemptForObligation(
+      obligation: ReturnType<typeof repositoryReviewObligation> | Record<string, unknown>,
+      repositoryDiscovery: Record<string, unknown>,
+    ) {
+      return {
+        attemptId: '22222222-2222-4222-8222-222222222222',
+        obligationId: (obligation as Record<string, string>).obligationId,
+        obligationType: 'review' as const,
+        subjectDigest: 'a'.repeat(64),
+        ordinal: 0,
+        status: 'created' as const,
+        origin: { kind: 'initial' } as const,
+        repositoryDiscovery,
+        createdAt: FIXED_TIME,
+      };
+    }
+
     it('ReviewObligation parses pending obligation', () => {
       const obligation = {
         obligationId: FIXED_UUID,
@@ -434,6 +487,74 @@ describe('evidence-review', () => {
       // attempts is the invocation envelope binding depends on: an assurance
       // state without it would look valid while being permanently unbindable.
       expect(() => ReviewAssuranceState.parse({ obligations: [], invocations: [] })).toThrow();
+    });
+
+    it('rejects a repository review attempt without a repository Discovery snapshot', () => {
+      const obligation = repositoryReviewObligation();
+      const attempt = attemptForObligation(obligation, { kind: 'not_applicable' });
+      const result = ReviewAssuranceState.safeParse({
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
+        obligations: [obligation],
+        invocations: [],
+        attempts: [attempt],
+      });
+      expect(result.success).toBe(false);
+      if (result.success) throw new TypeError('expected schema rejection');
+      expect(result.error.issues.map((issue) => issue.path.join('.'))).toContain('attempts');
+    });
+
+    it('rejects a non-repository review attempt carrying a repository Discovery snapshot', () => {
+      const obligation = {
+        ...repositoryReviewObligation(),
+        reviewSubject: {
+          kind: 'content' as const,
+          source: { kind: 'inline' as const, mediaType: 'text' as const },
+          materialDigest: 'm'.repeat(64),
+          subjectDigest: 'a'.repeat(64),
+          lineCount: 1,
+        },
+        reviewSubjectScope: {
+          kind: 'content' as const,
+          subjectDigest: 'a'.repeat(64),
+          lineCount: 1,
+        },
+      };
+      const attempt = attemptForObligation(obligation, {
+        kind: 'repository',
+        snapshot: {
+          observedAt: FIXED_TIME,
+          discoveryDigest: 'd'.repeat(64),
+          workspaceFingerprint: 'fp-1',
+          health: {
+            status: 'available',
+            healthy: true,
+            failedCollectorNames: [],
+            hasBudgetExhaustion: false,
+            ageWarning: null,
+            notVerified: [],
+          },
+          drift: {
+            status: 'clean',
+            drifted: false,
+            changedCollectorNames: [],
+            notVerified: [],
+          },
+          detectedStack: null,
+          verificationCandidates: [],
+          riskSurfaces: [],
+          warnings: [],
+          notVerified: [],
+        },
+      });
+      const result = ReviewAssuranceState.safeParse({
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
+        obligations: [obligation],
+        invocations: [],
+        attempts: [attempt],
+      });
+      expect(result.success).toBe(false);
+      if (result.success) throw new TypeError('expected schema rejection');
+      expect(result.error.issues.map((issue) => issue.path.join('.'))).toContain('attempts');
     });
   });
 

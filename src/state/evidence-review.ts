@@ -531,6 +531,12 @@ export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;
  * binds a host-owned repository Discovery snapshot to every attempt at mint
  * time. States persisted under older forms MUST fail parsing — there is
  * deliberately no upgrade or defaulting path for authority-bearing fields.
+ *
+ * Cross-record invariant: an attempt's `repositoryDiscovery` variant must
+ * structurally match its owning obligation's frozen review subject kind. A
+ * repository review obligation with a `not_applicable` attempt — or a
+ * non-repository review with a `repository` snapshot attempt — is an invalid
+ * state, not a prompt-rendering concern.
  */
 export const ReviewAssuranceState = z
   .object({
@@ -538,6 +544,34 @@ export const ReviewAssuranceState = z
     obligations: z.array(ReviewObligation),
     invocations: z.array(ReviewInvocationEvidence),
     attempts: z.array(ReviewAttempt),
+  })
+  .superRefine((assurance, context) => {
+    const obligationsById = new Map(
+      assurance.obligations.map((obligation) => [obligation.obligationId, obligation]),
+    );
+    for (const attempt of assurance.attempts) {
+      const obligation = obligationsById.get(attempt.obligationId);
+      if (!obligation) continue;
+      const repositoryReview =
+        obligation.obligationType === 'review' &&
+        obligation.reviewSubject?.kind === 'repository_change';
+      if (repositoryReview && attempt.repositoryDiscovery.kind !== 'repository') {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['attempts'],
+          message: `attempt ${attempt.attemptId} must carry a repository Discovery snapshot for a repository review obligation`,
+        });
+        return;
+      }
+      if (!repositoryReview && attempt.repositoryDiscovery.kind !== 'not_applicable') {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['attempts'],
+          message: `attempt ${attempt.attemptId} must carry not_applicable Discovery for a non-repository review obligation`,
+        });
+        return;
+      }
+    }
   })
   .readonly();
 export type ReviewAssuranceState = z.infer<typeof ReviewAssuranceState>;
