@@ -31,8 +31,13 @@ import type {
   ReviewAttemptRejectionReason,
   ReviewObligation,
 } from '../../state/evidence.js';
-import { findBindableAttempt } from './attempt-lifecycle.js';
+import {
+  ensureReviewAssurance,
+  findBindableAttempt,
+  latestReviewMaterial,
+} from './attempt-lifecycle.js';
 import { isCanonicallyRepairable } from './enforcement/rejection-policy.js';
+import { verifyFrozenReviewerContext } from './frozen-reviewer-context.js';
 
 export type ReissueBlockCode = 'REVIEW_REPAIR_UNAVAILABLE' | 'REVIEWER_OUTPUT_RETRY_EXHAUSTED';
 
@@ -70,13 +75,27 @@ export type OutputRepairAuthorization =
       readonly kind: 'blocked';
       readonly code: ReissueBlockCode;
       readonly reason: string;
+    }
+  | {
+      /**
+       * The frozen review subject/material binding is broken. This is an
+       * integrity failure, NOT a non-repairable reviewer output: callers must
+       * refuse with `REVIEW_MATERIAL_INTEGRITY_FAILED` and perform ZERO state
+       * mutation (no attempt minting, no staling, no obligation blocking).
+       */
+      readonly kind: 'integrity_blocked';
+      readonly code: 'REVIEW_MATERIAL_INTEGRITY_FAILED';
+      readonly reason: string;
     };
 
 /**
  * Decide whether a pending obligation may receive a new `output_repair` attempt.
  *
- * All conditions must hold:
- *   obligation.status === 'pending'
+ * The immutable authority is verified FIRST — a broken frozen subject/material
+ * binding blocks the transition before any other condition is consulted and
+ * before any state can be mutated:
+ *   verifyFrozenReviewerContext(obligation, latestReviewMaterial) == ok
+ *   AND obligation.status === 'pending'
  *   AND no bindable attempt exists (an open attempt is returned as-is)
  *   AND the latest attempt exists and is `rejected`
  *   AND it carries an explicit structured rejectionReason
@@ -89,6 +108,17 @@ export function authorizeOutputRepairReissue(
   assurance: ReviewAssuranceState | undefined,
   obligation: ReviewObligation,
 ): OutputRepairAuthorization {
+  const materialVerification = verifyFrozenReviewerContext(
+    obligation,
+    latestReviewMaterial(ensureReviewAssurance(assurance), obligation.obligationId),
+  );
+  if (materialVerification.kind === 'blocked') {
+    return {
+      kind: 'integrity_blocked',
+      code: materialVerification.code,
+      reason: materialVerification.reason,
+    };
+  }
   if (obligation.status !== 'pending') {
     return {
       kind: 'blocked',

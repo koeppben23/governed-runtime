@@ -51,10 +51,14 @@ export function isCanonicallyRepairable(reason: ReviewAttemptRejectionReason): b
 }
 
 /**
- * Map a host-task bind outcome to the structural rejection reason persisted on
- * a rejected attempt.
+ * Canonical mapping from every host-task bind outcome to the structural
+ * rejection reason persisted on a rejected attempt.
  *
- * Returns `null` for outcomes that never produce a persisted `rejected`
+ * Deliberately a TOTAL record (satisfies the full outcome type): extending
+ * `HostTaskBindOutcome` without adding a key here is a compile error, so a
+ * new outcome can never silently degrade to a reason-less rejection.
+ *
+ * `null` entries are outcomes that never produce a persisted `rejected`
  * attempt state:
  * - success (`bound`),
  * - environment outcomes without an attempt record (`no_matched_record`,
@@ -66,14 +70,20 @@ export function isCanonicallyRepairable(reason: ReviewAttemptRejectionReason): b
  *   defect — deliberately left without a structured reason so the reissue
  *   gate fails closed (no reason → not repairable).
  */
-const BIND_OUTCOME_TO_REASON: Readonly<
-  Partial<Record<HostTaskBindOutcome, ReviewAttemptRejectionReason>>
-> = {
-  // Output-contract defects (repairable).
-  schema_invalid: 'schema_invalid',
+export const BIND_OUTCOME_TO_REASON = {
+  bound: null,
+  no_matched_record: null,
+  no_child_session: null,
+  no_obligation_type: null,
+  no_findings: null,
+  // Lineage failure: the attempt names a missing/consumed obligation.
+  no_matching_obligation: 'subject_mismatch',
   // Cycle-binding echo (iteration/planVersion/attested obligation) is a
   // reviewer attestation defect — repairable by a fresh reviewer output.
   field_mismatch: 'attestation_invalid',
+  duplicate_evidence: null,
+  // Output-contract defect (repairable).
+  schema_invalid: 'schema_invalid',
   client_reference_invalid: 'relation_invalid',
   // Single cause at the bind boundary: challenge count mismatch
   // (challenge-binding.ts checkChallengeContract). Semantic challenge
@@ -85,13 +95,16 @@ const BIND_OUTCOME_TO_REASON: Readonly<
   findings_incoherent: 'consistency_invalid',
   review_finding_out_of_scope: 'scope_invalid',
   review_finding_scope_unverifiable: 'scope_invalid',
-  no_matching_obligation: 'subject_mismatch',
   // Cross-artifact subject digest mismatch — integrity failure.
   subject_mismatch: 'material_integrity_failed',
-};
+  stale_attempt: null,
+  idempotent_bound: null,
+  idempotent_rejected: null,
+  unknown_attempt: null,
+} satisfies Readonly<Record<HostTaskBindOutcome, ReviewAttemptRejectionReason | null>>;
 
 export function bindOutcomeToRejectionReason(
   outcome: HostTaskBindOutcome,
 ): ReviewAttemptRejectionReason | null {
-  return BIND_OUTCOME_TO_REASON[outcome] ?? null;
+  return BIND_OUTCOME_TO_REASON[outcome];
 }

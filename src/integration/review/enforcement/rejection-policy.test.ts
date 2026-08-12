@@ -5,34 +5,17 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  BIND_OUTCOME_TO_REASON,
   REVIEW_ATTEMPT_REJECTION_POLICY,
   bindOutcomeToRejectionReason,
   isCanonicallyRepairable,
 } from './rejection-policy.js';
 import type { HostTaskBindOutcome } from './types.js';
 
-const ALL_OUTCOMES: readonly HostTaskBindOutcome[] = [
-  'bound',
-  'no_matched_record',
-  'no_child_session',
-  'no_obligation_type',
-  'no_findings',
-  'no_matching_obligation',
-  'field_mismatch',
-  'duplicate_evidence',
-  'schema_invalid',
-  'client_reference_invalid',
-  'challenge_contract_violation',
-  'challenge_evidence_unknown',
-  'findings_incoherent',
-  'review_finding_out_of_scope',
-  'review_finding_scope_unverifiable',
-  'subject_mismatch',
-  'stale_attempt',
-  'idempotent_bound',
-  'idempotent_rejected',
-  'unknown_attempt',
-];
+// Derived from the canonical table — deliberately NOT a manual copy. The
+// table is a TOTAL record (`satisfies Record<HostTaskBindOutcome, ...>`), so
+// extending the outcome union without a policy decision is a compile error.
+const ALL_OUTCOMES = Object.keys(BIND_OUTCOME_TO_REASON) as readonly HostTaskBindOutcome[];
 
 describe('bindOutcomeToRejectionReason', () => {
   it('maps every outcome without throwing', () => {

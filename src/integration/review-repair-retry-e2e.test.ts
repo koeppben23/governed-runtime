@@ -518,4 +518,76 @@ describe('review repair retry (host-task)', () => {
     );
     expect(repair.code).toBe('CONTENT_ANALYSIS_REQUIRED');
   });
+
+  it('tampered persisted material blocks the repair with zero state mutation', async () => {
+    await hydrateSession();
+    const contentArgs = { branch: 'feature-auth', inputOrigin: 'branch' as const };
+    const first = parseToolResult(await review.execute(contentArgs, ctx));
+    const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
+    const sessDir = await currentSessionDir();
+    const afterFirst = await readState(sessDir);
+    const firstAttempt = afterFirst!.reviewAssurance!.attempts.find(
+      (a) => a.obligationId === obligationId,
+    )!;
+    await writeStateWithArtifacts(sessDir, {
+      ...afterFirst!,
+      reviewAssurance: {
+        ...afterFirst!.reviewAssurance!,
+        attempts: afterFirst!.reviewAssurance!.attempts.map((a) =>
+          a.attemptId === firstAttempt.attemptId
+            ? {
+                ...a,
+                status: 'rejected' as const,
+                childSessionId: 'reviewer-child-session-1',
+                completedAt: '2026-01-01T00:00:00.000Z',
+                rejectionReason: 'schema_invalid' as const,
+              }
+            : a,
+        ),
+      },
+    });
+
+    // Tamper the persisted frozen material on the rejected attempt. The
+    // obligation-level frozen subject stays intact, so the gate — not the
+    // frozen-continuation guard — must refuse with the integrity code.
+    const afterRejected = await readState(sessDir);
+    await writeStateWithArtifacts(sessDir, {
+      ...afterRejected!,
+      reviewAssurance: {
+        ...afterRejected!.reviewAssurance!,
+        attempts: afterRejected!.reviewAssurance!.attempts.map((a) =>
+          a.attemptId === firstAttempt.attemptId
+            ? {
+                ...a,
+                reviewMaterial: {
+                  ...a.reviewMaterial!,
+                  content: 'TAMPERED frozen material\n',
+                },
+              }
+            : a,
+        ),
+      },
+    });
+
+    const blocked = parseToolResult(
+      await review.execute({ ...contentArgs, reviewObligationId: obligationId }, ctx),
+    );
+    expect(blocked.code).toBe('REVIEW_MATERIAL_INTEGRITY_FAILED');
+
+    // ZERO state mutation: same attempt IDs, same ordinals, same statuses,
+    // no stale mutation, obligation still pending (NOT blocked).
+    const afterRepairAttempt = await readState(sessDir);
+    const attempts = afterRepairAttempt!.reviewAssurance!.attempts.filter(
+      (a) => a.obligationId === obligationId,
+    );
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0]!.attemptId).toBe(firstAttempt.attemptId);
+    expect(attempts[0]!.ordinal).toBe(firstAttempt.ordinal);
+    expect(attempts[0]!.status).toBe('rejected');
+    const obligation = afterRepairAttempt!.reviewAssurance!.obligations.find(
+      (o) => o.obligationId === obligationId,
+    )!;
+    expect(obligation.status).toBe('pending');
+    expect(obligation.blockedCode).toBeNull();
+  });
 });

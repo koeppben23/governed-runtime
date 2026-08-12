@@ -91,7 +91,12 @@ export type ReissueReviewAttemptResult =
   | { readonly kind: 'ok'; readonly attempt: ReviewAttempt }
   | {
       readonly kind: 'blocked';
-      readonly authorization: Extract<OutputRepairAuthorization, { readonly kind: 'blocked' }>;
+      readonly authorization: Extract<
+        OutputRepairAuthorization,
+        { readonly kind: 'blocked' | 'integrity_blocked' }
+      >;
+      /** False for integrity failures: the refusal must not mutate state. */
+      readonly obligationBlocked: boolean;
     };
 
 export async function reissueReviewAttempt(
@@ -101,10 +106,14 @@ export async function reissueReviewAttempt(
   now: string,
 ): Promise<ReissueReviewAttemptResult> {
   const authorization = authorizeOutputRepairReissue(state.reviewAssurance, obligation);
+  if (authorization.kind === 'integrity_blocked') {
+    // Broken frozen subject/material binding: refuse with ZERO state mutation.
+    return { kind: 'blocked', authorization, obligationBlocked: false };
+  }
   if (authorization.kind === 'blocked') {
     const blockedState = blockObligation(state, obligation.obligationId, authorization.code);
     await writeStateWithArtifacts(sessDir, blockedState);
-    return { kind: 'blocked', authorization };
+    return { kind: 'blocked', authorization, obligationBlocked: true };
   }
   if (authorization.kind === 'bindable_exists') {
     const existing = state.reviewAssurance?.attempts.find(
@@ -118,6 +127,7 @@ export async function reissueReviewAttempt(
           code: 'REVIEW_REPAIR_UNAVAILABLE',
           reason: 'bindable attempt referenced by authorization is missing from state',
         },
+        obligationBlocked: false,
       };
     }
     return { kind: 'ok', attempt: existing };

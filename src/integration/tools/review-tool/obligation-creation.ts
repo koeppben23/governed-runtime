@@ -253,6 +253,17 @@ async function reissueAttemptForPendingObligation(
   if (authorization.kind === 'bindable_exists') {
     return { message, obligation: existing, attemptId: authorization.attemptId };
   }
+  if (authorization.kind === 'integrity_blocked') {
+    // Broken frozen subject/material binding: refuse with ZERO state mutation.
+    // Blocking the obligation or staling attempts would mutate governance
+    // state on top of an unverifiable immutable foundation.
+    return {
+      message: formatBlocked(authorization.code, {
+        obligationId: existing.obligationId,
+        reason: authorization.reason,
+      }),
+    };
+  }
   if (authorization.kind === 'blocked') {
     const blockedState = blockObligation(state, existing.obligationId, authorization.code);
     await writeStateWithArtifacts(sessDir, blockedState);

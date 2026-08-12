@@ -4,9 +4,13 @@
  *              task-lifecycle re-arms.
  */
 import { describe, expect, it } from 'vitest';
-import { createReviewObligation, emptyReviewAssurance } from './assurance.js';
-import { createAttemptForExistingObligation } from './attempt-lifecycle.js';
+import { createReviewObligation } from './assurance.js';
+import { createAttemptForExistingObligation, createReviewAttempt } from './attempt-lifecycle.js';
 import { updateAttemptStatus } from './attempt-lifecycle.js';
+import {
+  hashCanonicalContentSubject,
+  hashCanonicalReviewContent,
+} from '../../shared/review-subject.js';
 import {
   authorizeOutputRepairReissue,
   authorizeTaskLifecycleRearm,
@@ -16,10 +20,21 @@ import {
 import type {
   ReviewAssuranceState,
   ReviewAttempt,
+  ReviewMaterial,
   ReviewObligation,
 } from '../../state/evidence.js';
 
 const NOW = '2026-08-12T00:00:00.000Z';
+
+/** Consistent frozen material so the integrity gate passes for intact fixtures. */
+const MATERIAL_CONTENT = 'frozen review material line 1\nline 2\n';
+const MATERIAL_DIGEST = hashCanonicalReviewContent(MATERIAL_CONTENT);
+const SUBJECT_DIGEST = hashCanonicalContentSubject(MATERIAL_DIGEST);
+
+const FROZEN_MATERIAL: ReviewMaterial = {
+  content: MATERIAL_CONTENT,
+  materialDigest: MATERIAL_DIGEST,
+};
 
 function makeObligation(overrides: Partial<ReviewObligation> = {}): ReviewObligation {
   return {
@@ -28,13 +43,13 @@ function makeObligation(overrides: Partial<ReviewObligation> = {}): ReviewObliga
       iteration: 1,
       planVersion: 1,
       now: NOW,
-      subjectDigest: 'subject-digest',
+      subjectDigest: SUBJECT_DIGEST,
       reviewSubject: {
         kind: 'content',
         source: { kind: 'inline', mediaType: 'text' },
-        materialDigest: 'sha256:' + 'a'.repeat(64),
-        subjectDigest: 'subject-digest',
-        lineCount: 10,
+        materialDigest: MATERIAL_DIGEST,
+        subjectDigest: SUBJECT_DIGEST,
+        lineCount: 2,
       },
       policySnapshot: { maxReviewerOutputRepairAttempts: 1 },
     }),
@@ -42,10 +57,19 @@ function makeObligation(overrides: Partial<ReviewObligation> = {}): ReviewObliga
   };
 }
 
-function initialAttempt(obligation: ReviewObligation): ReviewAttempt {
-  return createAttemptForExistingObligation(emptyReviewAssurance(), obligation, undefined, NOW, {
-    kind: 'initial',
-  }).attempt;
+function initialAttempt(
+  obligation: ReviewObligation,
+  reviewMaterial: ReviewMaterial = FROZEN_MATERIAL,
+): ReviewAttempt {
+  return createReviewAttempt({
+    obligationId: obligation.obligationId,
+    obligationType: obligation.obligationType,
+    subjectDigest: obligation.subjectDigest,
+    reviewMaterial,
+    ordinal: 1,
+    origin: { kind: 'initial' },
+    now: NOW,
+  });
 }
 
 function assuranceWith(
@@ -164,10 +188,13 @@ describe('authorizeOutputRepairReissue', () => {
     expect(result).toMatchObject({ kind: 'blocked', code: 'REVIEW_REPAIR_UNAVAILABLE' });
   });
 
-  it('blocks when no attempt exists', () => {
+  it('blocks when no attempt exists (missing persisted material is an integrity failure)', () => {
     const obligation = makeObligation();
     const result = authorizeOutputRepairReissue(assuranceWith(obligation, []), obligation);
-    expect(result).toMatchObject({ kind: 'blocked', code: 'REVIEW_REPAIR_UNAVAILABLE' });
+    expect(result).toMatchObject({
+      kind: 'integrity_blocked',
+      code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
+    });
   });
 
   it('blocks non-pending obligations', () => {
@@ -218,6 +245,57 @@ describe('authorizeOutputRepairReissue', () => {
     const rejected = rejectedAttempt(obligation, 'schema_invalid');
     const result = authorizeOutputRepairReissue(assuranceWith(obligation, [rejected]), obligation);
     expect(result).toMatchObject({ kind: 'blocked', code: 'REVIEWER_OUTPUT_RETRY_EXHAUSTED' });
+  });
+
+  it('blocks with REVIEW_MATERIAL_INTEGRITY_FAILED when the persisted material is tampered', () => {
+    const obligation = makeObligation();
+    const tampered: ReviewMaterial = {
+      content: 'tampered bytes\n',
+      materialDigest: MATERIAL_DIGEST,
+    };
+    const rejected = rejectedAttempt(obligation, 'schema_invalid');
+    const tamperedAttempt: ReviewAttempt = { ...rejected, reviewMaterial: tampered };
+    const result = authorizeOutputRepairReissue(
+      assuranceWith(obligation, [tamperedAttempt]),
+      obligation,
+    );
+    expect(result).toEqual({
+      kind: 'integrity_blocked',
+      code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
+      reason: expect.stringContaining('material digest'),
+    });
+  });
+
+  it('blocks with REVIEW_MATERIAL_INTEGRITY_FAILED when the persisted material is missing', () => {
+    const obligation = makeObligation();
+    const rejected = rejectedAttempt(obligation, 'schema_invalid');
+    const withoutMaterial: ReviewAttempt = { ...rejected, reviewMaterial: undefined };
+    const result = authorizeOutputRepairReissue(
+      assuranceWith(obligation, [withoutMaterial]),
+      obligation,
+    );
+    expect(result).toEqual({
+      kind: 'integrity_blocked',
+      code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
+      reason: expect.stringContaining('missing'),
+    });
+  });
+
+  it('integrity verification precedes reason and budget authority', () => {
+    // Even a perfectly repairable rejection with budget left must not mint an
+    // attempt when the immutable foundation is broken.
+    const obligation = makeObligation();
+    const tampered: ReviewMaterial = { content: 'other bytes\n', materialDigest: MATERIAL_DIGEST };
+    const rejected = rejectedAttempt(obligation, 'schema_invalid');
+    const tamperedAttempt: ReviewAttempt = { ...rejected, reviewMaterial: tampered };
+    const result = authorizeOutputRepairReissue(
+      assuranceWith(obligation, [tamperedAttempt]),
+      obligation,
+    );
+    expect(result).toMatchObject({
+      kind: 'integrity_blocked',
+      code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
+    });
   });
 
   it('countOutputRepairAttempts counts only output_repair origins', () => {
