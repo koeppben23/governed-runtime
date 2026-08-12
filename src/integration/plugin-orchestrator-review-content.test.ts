@@ -567,7 +567,7 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     });
   });
 
-  it('fails closed without a bindable persisted attempt', async () => {
+  it('fails closed without any persisted attempt for the obligation', async () => {
     const client = buildClient(buildFindings());
     const stateRef = { current: buildSessionState() };
     stateRef.current = {
@@ -587,10 +587,54 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     });
 
     expect(client.session.create).not.toHaveBeenCalled();
+    // No attempt at all means no material was ever persisted for this
+    // obligation: a genuine integrity failure, not a spent retry slot.
     expect(blockReviewOutcome).toHaveBeenCalledWith(
       expect.anything(),
       OBLIGATION_ID,
       'REVIEW_MATERIAL_INTEGRITY_FAILED',
+      expect.objectContaining({ reason: expect.stringContaining('persisted material is missing') }),
+      output,
+    );
+  });
+
+  it('reports a spent attempt as REVIEW_ATTEMPT_UNAVAILABLE, not an integrity failure', async () => {
+    const client = buildClient(buildFindings());
+    const stateRef = { current: buildSessionState() };
+    // The state after a reviewer Task produced schema-invalid output: the
+    // attempt is rejected and correlated to its child session, so it is no
+    // longer bindable — but its frozen material is untouched.
+    stateRef.current = {
+      ...stateRef.current,
+      reviewAssurance: {
+        ...stateRef.current.reviewAssurance!,
+        attempts: [
+          {
+            ...stateRef.current.reviewAssurance!.attempts[0]!,
+            status: 'rejected',
+            childSessionId: CHILD_SESSION_ID,
+            completedAt: NOW,
+          },
+        ],
+      },
+    };
+    vi.mocked(readState).mockResolvedValue(stateRef.current);
+    const { deps, blockReviewOutcome } = buildDeps(client, stateRef);
+    const output = { output: contentAnalysisRequiredOutput() };
+
+    await runReviewOrchestration(deps, {
+      toolName: TOOL_FLOWGUARD_REVIEW,
+      input: { args: { text: 'untrusted replacement' } },
+      output,
+      sessionId: PARENT_SESSION_ID,
+      now: NOW,
+    });
+
+    expect(client.session.create).not.toHaveBeenCalled();
+    expect(blockReviewOutcome).toHaveBeenCalledWith(
+      expect.anything(),
+      OBLIGATION_ID,
+      'REVIEW_ATTEMPT_UNAVAILABLE',
       expect.objectContaining({ reason: expect.stringContaining('bindable attempt') }),
       output,
     );

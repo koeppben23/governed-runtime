@@ -18,6 +18,7 @@ import {
   ensureReviewAssurance,
   findReviewObligationById,
   findBindableAttempt,
+  latestReviewMaterial,
   hasEvidenceReuse,
   buildInvocationEvidence,
   appendInvocationEvidence,
@@ -45,21 +46,40 @@ function countFindings(findings: unknown): number {
   return Array.isArray(findings) ? findings.length : Object.keys(findings ?? {}).length;
 }
 
+/**
+ * Resolve the frozen material for the active review obligation.
+ *
+ * A missing bindable attempt and invalid material are reported under DIFFERENT
+ * reason codes on purpose: the first is recovered by re-running the review call
+ * (which reissues an attempt), the second forbids re-running the reviewer at
+ * all. Collapsing both into an integrity failure sent the agent down a restore
+ * path that cannot resolve a merely spent attempt.
+ */
 async function loadPersistedContentForReview(
   ctx: PipelineContext,
 ): Promise<{ content: string; frozenReviewerContext: FrozenReviewerContext } | null> {
   const { deps, reviewCtx } = ctx;
-  const obligation = findReviewObligationById(
-    ensureReviewAssurance(ctx.sessionState.reviewAssurance),
-    reviewCtx.obligationId,
-  );
+  const assurance = ensureReviewAssurance(ctx.sessionState.reviewAssurance);
+  const obligation = findReviewObligationById(assurance, reviewCtx.obligationId);
   const attempt = findBindableAttempt(ctx.sessionState.reviewAssurance, reviewCtx.obligationId);
   const material = attempt?.reviewMaterial;
   if (!attempt || !material || attempt.subjectDigest !== obligation?.subjectDigest) {
-    await blockReviewOutcomeHelper(deps, ctx, 'REVIEW_MATERIAL_INTEGRITY_FAILED', {
-      obligationId: reviewCtx.obligationId,
-      reason: 'bindable attempt is missing or does not match the frozen obligation subject',
-    });
+    const persisted = latestReviewMaterial(assurance, reviewCtx.obligationId);
+    const materialCheck = verifyFrozenReviewerContext(obligation, persisted);
+    await blockReviewOutcomeHelper(
+      deps,
+      ctx,
+      materialCheck.kind === 'blocked'
+        ? 'REVIEW_MATERIAL_INTEGRITY_FAILED'
+        : 'REVIEW_ATTEMPT_UNAVAILABLE',
+      {
+        obligationId: reviewCtx.obligationId,
+        reason:
+          materialCheck.kind === 'blocked'
+            ? materialCheck.reason
+            : 'bindable attempt is missing or does not match the frozen obligation subject',
+      },
+    );
     return null;
   }
   const verification = verifyFrozenReviewerContext(obligation, material);

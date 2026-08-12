@@ -27,6 +27,7 @@ import {
   findReviewObligationById,
   ensureReviewAssurance,
   findBindableAttempt,
+  latestReviewMaterial,
 } from './assurance.js';
 import { updateObligation } from './obligation-state.js';
 import type { SessionState } from '../../state/schema.js';
@@ -71,7 +72,16 @@ interface HostTaskOutputInput {
    */
   readonly artifactContext: readonly string[];
   readonly frozenReviewerContext: FrozenReviewerContext | null;
-  readonly materialIntegrityFailure: string | null;
+  /**
+   * Why no reviewer context could be handed out, when that is the case.
+   *
+   * `material_integrity` means the persisted bytes or a frozen digest binding
+   * are genuinely invalid — the reviewer must NOT be re-run. `attempt_missing`
+   * means the material verified fine but no attempt can currently accept a
+   * binding; that is a recoverable retry state and must never be reported as an
+   * integrity failure, because the recovery paths are opposites.
+   */
+  readonly reviewerContextFailure: ReviewerContextFailure | null;
   /**
    * Schema validation errors from a prior failed reviewer invocation for
    * the same obligation. When non-null and non-empty, the canonical retry
@@ -81,18 +91,49 @@ interface HostTaskOutputInput {
   readonly retrySchemaErrors: readonly string[] | null;
 }
 
+/**
+ * Why the host could not hand a reviewer context to the agent.
+ *
+ * Kept as a discriminated union so the two states can never collapse into one
+ * output: an integrity failure forbids re-running the reviewer, while a missing
+ * attempt is resolved precisely BY re-running the review call.
+ */
+type ReviewerContextFailure =
+  | { readonly kind: 'material_integrity'; readonly reason: string }
+  | { readonly kind: 'attempt_missing'; readonly obligationId: string; readonly reason: string };
+
+function applyReviewerContextFailure(
+  result: Record<string, unknown>,
+  failure: ReviewerContextFailure,
+): string {
+  if (failure.kind === 'material_integrity') {
+    result.code = 'REVIEW_MATERIAL_INTEGRITY_FAILED';
+    result.message = `Frozen review material integrity verification failed: ${failure.reason}`;
+    result.recovery = [
+      'Do not re-run the reviewer: the persisted material no longer matches its frozen digest binding',
+      'Restore the persisted review obligation and material from a trusted source',
+      'Abort the session if the frozen material cannot be restored from trusted evidence',
+    ];
+    return JSON.stringify(result);
+  }
+  result.code = 'REVIEW_ATTEMPT_UNAVAILABLE';
+  result.message =
+    `No bindable review attempt exists for obligation ${failure.obligationId}: ${failure.reason}. ` +
+    `The frozen review material itself was not invalidated.`;
+  result.recovery = [
+    'Re-run flowguard_review with the original content fields and reviewObligationId to reissue a bindable attempt',
+    'Pass the newly returned reviewerTaskPrompt VERBATIM to the reviewer Task; never reuse a previous prompt',
+    'Do NOT submit reviewVerdict or reviewFindings to recover this state',
+  ];
+  return JSON.stringify(result);
+}
+
 function buildHostTaskPolicyOutput(input: HostTaskOutputInput): string | null {
   const { originalOutput, policy, childSessionId } = input;
   const result = parseToolResult(originalOutput);
   if (!result || Array.isArray(result)) return null;
-  if (input.materialIntegrityFailure) {
-    result.code = 'REVIEW_MATERIAL_INTEGRITY_FAILED';
-    result.message = `Frozen review material integrity verification failed: ${input.materialIntegrityFailure}`;
-    result.recovery = [
-      'Restore the persisted review obligation and material from a trusted source',
-      'Create a new standalone review obligation for the intended content',
-    ];
-    return JSON.stringify(result);
+  if (input.reviewerContextFailure) {
+    return applyReviewerContextFailure(result, input.reviewerContextFailure);
   }
   if (childSessionId) {
     result.next =
@@ -460,11 +501,46 @@ function buildHostTaskOutputInput(
     proofContext: buildReviewerProofContext(sessionState),
     artifactContext: obligation ? buildReviewerArtifactContext(sessionState, obligation) : [],
     frozenReviewerContext,
-    materialIntegrityFailure:
-      obligation?.obligationType === 'review' && !frozenReviewerContext
-        ? 'persisted material or its frozen digest binding is missing or invalid'
-        : null,
+    reviewerContextFailure: resolveReviewerContextFailure(
+      sessionState,
+      obligation,
+      bindableAttempt,
+      frozenReviewerContext,
+    ),
     retrySchemaErrors,
+  };
+}
+
+/**
+ * Classify why no reviewer context is available for a standalone content review.
+ *
+ * The persisted material is looked up per OBLIGATION, not per bindable attempt.
+ * Attempt records carry the material forward, so a rejected or staled attempt
+ * still holds intact bytes; deriving integrity purely from the bindable attempt
+ * reported an integrity breach whenever the previous attempt had merely been
+ * spent, and sent the agent down an unrecoverable restore path.
+ */
+function resolveReviewerContextFailure(
+  sessionState: SessionState,
+  obligation: ReviewObligation | null,
+  bindableAttempt: ReturnType<typeof findBindableAttempt>,
+  frozenReviewerContext: FrozenReviewerContext | null,
+): ReviewerContextFailure | null {
+  if (obligation?.obligationType !== 'review' || frozenReviewerContext) return null;
+  const persistedMaterial = latestReviewMaterial(
+    ensureReviewAssurance(sessionState.reviewAssurance),
+    obligation.obligationId,
+  );
+  const materialCheck = verifyFrozenReviewerContext(obligation, persistedMaterial);
+  if (materialCheck.kind === 'blocked') {
+    return { kind: 'material_integrity', reason: materialCheck.reason };
+  }
+  return {
+    kind: 'attempt_missing',
+    obligationId: obligation.obligationId,
+    reason: bindableAttempt
+      ? 'the bindable attempt carries no persisted review material'
+      : 'every attempt for this obligation is already bound, rejected, staled, or expired',
   };
 }
 

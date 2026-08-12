@@ -43,8 +43,20 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'Frozen review material integrity verification failed: {reason}. The reviewer was not invoked.',
     recoverySteps: [
+      'Do not re-run the reviewer: the persisted material no longer matches its frozen digest binding',
       'Restore the persisted review obligation and material from a trusted source',
-      'Create a new standalone review obligation for the intended content',
+      'Abort the session if the frozen material cannot be restored from trusted evidence',
+    ],
+  },
+  {
+    code: 'REVIEW_ATTEMPT_UNAVAILABLE',
+    category: 'state',
+    messageTemplate:
+      'No bindable review attempt exists for obligation {obligationId}: {reason}. The frozen review material itself was not invalidated.',
+    recoverySteps: [
+      'Re-run flowguard_review with the original content fields and reviewObligationId to reissue a bindable attempt',
+      'Pass the newly returned reviewerTaskPrompt VERBATIM to the reviewer Task; never reuse a previous prompt',
+      'Do NOT submit reviewVerdict or reviewFindings to recover this state',
     ],
   },
   {

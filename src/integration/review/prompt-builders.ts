@@ -15,6 +15,7 @@
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
 import type { FrozenReviewSubject, ReviewSubjectScope } from '../../state/evidence.js';
+import { REVIEW_CHALLENGE_OUTCOMES } from '../../state/evidence.js';
 import { renderPersistedProofGraphContext } from './proof-context.js';
 import { renderFindingRelationGrammar } from './finding-relation-grammar.js';
 import { CANONICAL_PROMPT_APPEND_MARKER } from './enforcement/types.js';
@@ -161,6 +162,24 @@ function challengeOutcome(kind: ReviewerChallengePromptContract['requiredChallen
   }
 }
 
+/**
+ * The complete `outcome` vocabulary the reviewer may use for this challenge kind.
+ *
+ * The example object below shows exactly one value. Without the full enum the
+ * reviewer has to infer the remaining options, and any invented value (e.g. an
+ * implementation vocabulary on a content challenge) is rejected at binding time
+ * as `schema_invalid` — after the reviewer has already run.
+ */
+function challengeOutcomeVocabulary(
+  kind: ReviewerChallengePromptContract['requiredChallengeKind'],
+): string | null {
+  if (kind === undefined) return null;
+  const allowed = REVIEW_CHALLENGE_OUTCOMES[kind];
+  return `- Allowed ${kind} outcome values (exact strings, no others): ${allowed
+    .map((value) => `"${value}"`)
+    .join(' | ')}.`;
+}
+
 function renderChallengeContract(
   contract: ReviewerChallengePromptContract | undefined,
   obligationId: string,
@@ -184,11 +203,13 @@ function renderChallengeContract(
     evidenceRefs,
     outcome: challengeOutcome(contract.requiredChallengeKind),
   };
+  const outcomeVocabulary = challengeOutcomeVocabulary(contract.requiredChallengeKind);
   return [
     `- Challenge contract: return exactly ${contract.requiredChallengeCount} ${contract.requiredChallengeKind} challenge(s).`,
     '- Every challenge MUST use a fresh, unique clientReference (e.g. "c1", "c2") and the exact obligationId below.',
     '- Copy evidenceRefs exactly from the schema below. Do not invent or alter a digest, sectionPath, or attemptId.',
     '- Omit challengeResolutionVerdicts unless the Task prompt explicitly supplies prior challenge IDs to resolve.',
+    ...(outcomeVocabulary ? [outcomeVocabulary] : []),
     `- Required challenge object shape: ${JSON.stringify(challenge)}`,
     ...(evidenceRefs.length === 0
       ? ['- No usable evidence reference was supplied; return unable_to_review.']

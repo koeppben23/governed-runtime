@@ -425,16 +425,7 @@ async function prepareHostTaskVerdictReview(
   if (resolved.kind !== 'resolved') {
     // Reissue an attempt so the next reviewer Task has a registered attempt
     // identity before the host issues retry guidance.
-    const reissue = await reissueReviewAttempt(
-      sessDir,
-      state,
-      {
-        obligationId: obligation.obligationId,
-        subjectDigest: obligation.subjectDigest,
-        obligationType: obligation.obligationType,
-      },
-      exec.now,
-    );
+    const reissue = await reissueReviewAttempt(sessDir, state, obligation, exec.now);
     return formatBlocked(
       'HOST_SUBAGENT_TASK_REQUIRED',
       { reviewerSubagentType: REVIEWER_SUBAGENT_TYPE },

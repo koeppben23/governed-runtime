@@ -81,9 +81,15 @@ export function formatMissingContentAnalysis(
   obligationId: string,
   hostTaskRequired = false,
 ): string {
+  // The host-task branch previously lived inside a plain double-quoted string
+  // nested in this template literal, so `${obligationId}` reached the agent
+  // verbatim instead of the real UUID.
+  const continuation = hostTaskRequired
+    ? `, then re-run flowguard_review with the original content fields, reviewObligationId '${obligationId}', and reviewVerdict matching the captured reviewer verdict. Do not submit or copy reviewFindings in host-task mode.`
+    : ' to analyze the provided content, then re-run flowguard_review with the complete ReviewFindings object. Manual JSON/attestation copy alone is not sufficient in strict mode; FlowGuard must persist matching ReviewInvocationEvidence.';
   return formatBlockedWithAttestation(
     'CONTENT_ANALYSIS_REQUIRED',
-    `Content-aware /review requires subagent analysis. Call the ${REVIEWER_SUBAGENT_TYPE} subagent via Task tool${hostTaskRequired ? ", then re-run flowguard_review with the original content fields, reviewObligationId '${obligationId}', and reviewVerdict matching the captured reviewer verdict. Do not submit or copy reviewFindings in host-task mode." : ' to analyze the provided content, then re-run flowguard_review with the complete ReviewFindings object. Manual JSON/attestation copy alone is not sufficient in strict mode; FlowGuard must persist matching ReviewInvocationEvidence.'}`,
+    `Content-aware /review requires subagent analysis. Call the ${REVIEWER_SUBAGENT_TYPE} subagent via Task tool${continuation}`,
     obligationId,
   );
 }

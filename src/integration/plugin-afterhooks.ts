@@ -470,7 +470,7 @@ function rearmAttempt(
   ) {
     throw bindingFailed('rearm_obligation_settled');
   }
-  return createAttemptForExistingObligation(assurance, obligation, childSessionId, now);
+  return createAttemptForExistingObligation(assurance, obligation, childSessionId, now).assurance;
 }
 
 /**

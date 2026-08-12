@@ -11,10 +11,7 @@ import { formatRailResult } from '../helpers.js';
 import { startReviewFlow } from '../../../rails/review.js';
 import {
   findReviewObligationById,
-  ensureReviewAssurance,
-  createReviewAttempt,
-  appendReviewAttempt,
-  staleObligationAttempts,
+  createAttemptForExistingObligation,
 } from '../../review/assurance.js';
 import { writeStateWithArtifacts } from '../helpers.js';
 import type { SessionState } from '../../../state/schema.js';
@@ -70,6 +67,11 @@ export function buildHostTaskAttestation(obligation: ReviewObligation): Record<s
  * attempt is created without a child session — the after-hook binds the child
  * session when the reviewer Task completes.
  *
+ * Attempt construction is delegated to the canonical
+ * `createAttemptForExistingObligation` authority so ordinal assignment, material
+ * carry-forward, and staling of superseded attempts cannot drift between the
+ * verdict-continuation path and the pre-Task repair path.
+ *
  * Persists the updated assurance state and returns the new `ReviewAttempt` with
  * its `attemptId` for inclusion in the blocked response so enforcement tracking
  * can register it before the next Task invocation.
@@ -77,41 +79,17 @@ export function buildHostTaskAttestation(obligation: ReviewObligation): Record<s
 export async function reissueReviewAttempt(
   sessDir: string,
   state: SessionState,
-  opts: {
-    readonly obligationId: string;
-    readonly subjectDigest: string;
-    readonly obligationType: string;
-  },
+  obligation: ReviewObligation,
   now: string,
 ): Promise<ReviewAttempt> {
-  const base = ensureReviewAssurance(state.reviewAssurance);
-  const ordinal =
-    (base.attempts?.filter((a) => a.obligationId === opts.obligationId).length ?? 0) + 1;
-  const attempt = createReviewAttempt({
-    obligationId: opts.obligationId,
-    obligationType: opts.obligationType as ReviewAttempt['obligationType'],
-    subjectDigest: opts.subjectDigest,
-    reviewMaterial: latestReviewMaterial(base, opts.obligationId),
-    ordinal,
+  const reissue = createAttemptForExistingObligation(
+    state.reviewAssurance,
+    obligation,
+    undefined,
     now,
-  });
-  const withAttempt = appendReviewAttempt(base, attempt);
-  const reissue = staleObligationAttempts(withAttempt, opts.obligationId, attempt.attemptId, now);
-  await writeStateWithArtifacts(sessDir, { ...state, reviewAssurance: reissue });
-  return attempt;
-}
-
-function latestReviewMaterial(
-  assurance: ReturnType<typeof ensureReviewAssurance>,
-  obligationId: string,
-): ReviewAttempt['reviewMaterial'] {
-  for (let index = assurance.attempts.length - 1; index >= 0; index--) {
-    const attempt = assurance.attempts[index];
-    if (attempt?.obligationId === obligationId && attempt.reviewMaterial) {
-      return attempt.reviewMaterial;
-    }
-  }
-  return undefined;
+  );
+  await writeStateWithArtifacts(sessDir, { ...state, reviewAssurance: reissue.assurance });
+  return reissue.attempt;
 }
 
 import { buildReviewReferenceInput } from './obligation.js';

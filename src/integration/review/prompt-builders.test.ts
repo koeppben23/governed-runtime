@@ -73,6 +73,39 @@ describe('renderReviewerTaskPrompt challenge contract', () => {
       }).success,
     ).toBe(true);
   });
+
+  /**
+   * Regression: a reviewer that sees only one example outcome has to guess the
+   * rest of the enum, and a wrong guess is rejected at binding time as
+   * `schema_invalid` — after the reviewer already ran.
+   */
+  it.each([
+    ['content_challenge', ['supported', 'contradicted', 'not_verified']],
+    ['design_challenge', ['supported', 'contradicted', 'not_verified']],
+    ['implementation_challenge', ['pass', 'fail', 'not_verified']],
+  ] as const)('states the complete allowed outcome vocabulary for %s', (kind, allowed) => {
+    const prompt = renderReviewerTaskPrompt({
+      ...BASE_INPUT,
+      challengeContract: {
+        requiredChallengeCount: 1,
+        requiredChallengeKind: kind,
+        evidenceRefs: [{ kind: 'content', digest: 'a'.repeat(64) }],
+      },
+    });
+
+    const line = prompt
+      .split('\n')
+      .find((candidate) => candidate.startsWith(`- Allowed ${kind} outcome values`));
+    expect(line, `prompt must declare the ${kind} outcome vocabulary`).toBeDefined();
+    for (const value of allowed) {
+      expect(line).toContain(`"${value}"`);
+    }
+    // The vocabulary is derived from the canonical schema, so the example value
+    // the prompt shows must itself be part of the declared set.
+    const match = prompt.match(/Required challenge object shape: (.+)/);
+    const rendered = JSON.parse(match![1]!) as { outcome: string };
+    expect(allowed).toContain(rendered.outcome);
+  });
 });
 
 describe('frozen review subject envelope', () => {

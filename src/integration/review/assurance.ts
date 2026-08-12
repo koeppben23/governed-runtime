@@ -61,19 +61,29 @@ function resolveSubjectDigest(input: {
   return input.reviewSubject?.subjectDigest ?? input.subjectDigest;
 }
 
+export {
+  emptyReviewAssurance,
+  ensureReviewAssurance,
+  createReviewAttempt,
+  createAttemptForExistingObligation,
+  latestReviewMaterial,
+  appendReviewAttempt,
+  resolveAttempt,
+  findBindableAttempt,
+  updateAttemptStatus,
+  staleObligationAttempts,
+} from './attempt-lifecycle.js';
+import {
+  ensureReviewAssurance,
+  createReviewAttempt,
+  appendReviewAttempt,
+  staleObligationAttempts,
+} from './attempt-lifecycle.js';
+
 export function getReviewMandateDigest(): string {
   return REVIEW_MANDATE_DIGEST;
 }
 
-export function emptyReviewAssurance(): ReviewAssuranceState {
-  return { obligations: [], invocations: [], attempts: [] };
-}
-
-export function ensureReviewAssurance(
-  assurance: ReviewAssuranceState | undefined,
-): ReviewAssuranceState {
-  return assurance ?? emptyReviewAssurance();
-}
 export function createReviewObligation(input: {
   obligationType: ReviewObligationType;
   iteration: number;
@@ -365,28 +375,6 @@ export function findAcceptedInvocationForFindings(
   );
 }
 
-export function createReviewAttempt(input: {
-  obligationId: string;
-  obligationType: ReviewObligationType;
-  subjectDigest: string;
-  reviewMaterial?: ReviewMaterial;
-  ordinal: number;
-  childSessionId?: string;
-  now: string;
-}): ReviewAttempt {
-  return {
-    attemptId: randomUUID(),
-    obligationId: input.obligationId,
-    obligationType: input.obligationType,
-    subjectDigest: input.subjectDigest,
-    ...(input.reviewMaterial === undefined ? {} : { reviewMaterial: input.reviewMaterial }),
-    ordinal: input.ordinal,
-    childSessionId: input.childSessionId,
-    status: 'created',
-    createdAt: input.now,
-  };
-}
-
 /** Create an obligation and its initial attempt atomically.
  *
  * The attempt is persisted alongside the obligation at creation time,
@@ -460,134 +448,6 @@ export function appendObligationWithAttempt(
       now,
     ),
     attemptId: attempt.attemptId,
-  };
-}
-
-/**
- * Create a new attempt for an EXISTING obligation (retry / re-invocation).
- *
- * Unlike createObligationAndAttempt (which creates a new obligation), this
- * attaches a new attempt to an already-persisted obligation. Previous
- * non-bound attempts for this obligation are staled — so a late callback
- * from the previous reviewer invocation is hard-rejected.
- *
- * @returns Updated assurance state with the new attempt persisted.
- */
-export function createAttemptForExistingObligation(
-  assurance: ReviewAssuranceState | undefined,
-  obligation: ReviewObligation,
-  childSessionId: string,
-  now: string,
-): ReviewAssuranceState {
-  const base = ensureReviewAssurance(assurance);
-  const ordinal =
-    (base.attempts?.filter((a) => a.obligationId === obligation.obligationId).length ?? 0) + 1;
-  const attempt = createReviewAttempt({
-    obligationId: obligation.obligationId,
-    obligationType: obligation.obligationType,
-    subjectDigest: obligation.subjectDigest,
-    reviewMaterial: latestReviewMaterial(base, obligation.obligationId),
-    ordinal,
-    childSessionId,
-    now,
-  });
-  const withAttempt = appendReviewAttempt(base, attempt);
-  return staleObligationAttempts(withAttempt, obligation.obligationId, attempt.attemptId, now);
-}
-
-function latestReviewMaterial(
-  assurance: ReviewAssuranceState,
-  obligationId: string,
-): ReviewMaterial | undefined {
-  for (let index = assurance.attempts.length - 1; index >= 0; index--) {
-    const attempt = assurance.attempts[index];
-    if (attempt?.obligationId === obligationId && attempt.reviewMaterial) {
-      return attempt.reviewMaterial;
-    }
-  }
-  return undefined;
-}
-
-export function appendReviewAttempt(
-  assurance: ReviewAssuranceState,
-  attempt: ReviewAttempt,
-): ReviewAssuranceState {
-  const base = ensureReviewAssurance(assurance);
-  return { ...base, attempts: [...(base.attempts ?? []), attempt] };
-}
-
-export function resolveAttempt(
-  assurance: ReviewAssuranceState | undefined,
-  childSessionId: string,
-): ReviewAttempt | null {
-  const base = ensureReviewAssurance(assurance);
-  return (
-    base.attempts?.find(
-      (a) => a.childSessionId === childSessionId && a.status !== 'stale' && a.status !== 'expired',
-    ) ?? null
-  );
-}
-
-/**
- * The attempt a host Task can still be bound to for `obligationId`.
- *
- * Bindable means: created but not yet correlated with a reviewer child session,
- * and not superseded (`appendObligationWithAttempt` stales earlier attempts, so
- * at most one attempt per obligation qualifies). Returns the highest ordinal if
- * that invariant is ever violated, and null when no attempt can accept a
- * binding — callers must not fall back to an arbitrary attempt.
- */
-export function findBindableAttempt(
-  assurance: ReviewAssuranceState | undefined,
-  obligationId: string,
-): ReviewAttempt | null {
-  const base = ensureReviewAssurance(assurance);
-  const candidates = (base.attempts ?? []).filter(
-    (a) => a.obligationId === obligationId && a.status === 'created' && !a.childSessionId,
-  );
-  if (candidates.length === 0) return null;
-  return candidates.reduce((best, a) => (a.ordinal > best.ordinal ? a : best));
-}
-
-export function updateAttemptStatus(
-  assurance: ReviewAssuranceState,
-  attemptId: string,
-  status: ReviewAttempt['status'],
-  now: string,
-  childSessionId?: string,
-): ReviewAssuranceState {
-  const base = ensureReviewAssurance(assurance);
-  if (!base.attempts) return base;
-  return {
-    ...base,
-    attempts: base.attempts.map((a) =>
-      a.attemptId !== attemptId
-        ? a
-        : {
-            ...a,
-            status,
-            completedAt: status !== 'created' ? now : a.completedAt,
-            ...(childSessionId && !a.childSessionId ? { childSessionId } : {}),
-          },
-    ),
-  };
-}
-
-export function staleObligationAttempts(
-  assurance: ReviewAssuranceState,
-  obligationId: string,
-  exceptAttemptId: string,
-  now: string,
-): ReviewAssuranceState {
-  const base = ensureReviewAssurance(assurance);
-  if (!base.attempts) return base;
-  return {
-    ...base,
-    attempts: base.attempts.map((a) =>
-      a.obligationId === obligationId && a.attemptId !== exceptAttemptId && a.status !== 'bound'
-        ? { ...a, status: 'stale' as const, completedAt: now }
-        : a,
-    ),
   };
 }
 

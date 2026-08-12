@@ -144,8 +144,40 @@ describe('integration/review-assurance', () => {
         NOW,
       );
 
-      expect(retried.attempts.at(-1)?.reviewMaterial).toEqual(material);
-      expect(retried.attempts.at(-1)?.subjectDigest).toBe(subjectDigest);
+      expect(retried.assurance.attempts.at(-1)?.reviewMaterial).toEqual(material);
+      expect(retried.assurance.attempts.at(-1)?.subjectDigest).toBe(subjectDigest);
+      expect(retried.attempt.childSessionId).toBe('child-session-2');
+    });
+
+    it('omits childSessionId so a pre-Task reissue stays bindable', () => {
+      const subjectDigest = 'd'.repeat(64);
+      const material = { content: 'frozen', materialDigest: 'e'.repeat(64) };
+      const obligation = makeObligation({
+        obligationType: 'review',
+        subjectDigest,
+        reviewSubjectScope: { kind: 'content', subjectDigest, lineCount: 2 },
+      });
+      const initial = appendObligationWithAttempt(
+        emptyReviewAssurance(),
+        obligation,
+        NOW,
+        material,
+      );
+
+      const reissued = createAttemptForExistingObligation(
+        initial.assurance,
+        obligation,
+        undefined,
+        NOW,
+      );
+
+      expect(reissued.attempt.childSessionId).toBeUndefined();
+      expect(reissued.attempt.status).toBe('created');
+      expect(reissued.attempt.reviewMaterial).toEqual(material);
+      // Bindable means: resolvable again by the host for a fresh reviewer Task.
+      expect(findBindableAttempt(reissued.assurance, obligation.obligationId)?.attemptId).toBe(
+        reissued.attempt.attemptId,
+      );
     });
   });
 
