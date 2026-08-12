@@ -2,18 +2,19 @@
  * @module integration/review-findings-schema
  * @description JSON Schema definition for the ReviewFindings structured output.
  *
- * Extracted from review-orchestrator.ts (FG-REL-038) for single-responsibility.
  * This schema is passed to the OpenCode SDK `session.prompt()` format field
  * to enforce structured JSON output from the reviewer subagent.
  *
- * Contract: The schema MUST stay in sync with the Zod ReviewFindingsSchema
- * in src/state/evidence.ts. Drift is detected by
- * review-findings-schema-drift.test.ts.
+ * Enum values (severity, category) are sourced from the canonical Zod types
+ * via schema-introspect.ts. Anchor kind and challenge kind discriminators are
+ * hand-written because each variant has a distinct shape, but are verified
+ * against the canonical types by findings-schema-drift.test.ts.
  *
- * @version v1
+ * @version v2 — canonical enums via schema-introspect
  */
 
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
+import { CANONICAL_SEVERITIES, CANONICAL_CATEGORIES } from './schema-introspect.js';
 
 const REPOSITORY_LOCATION_JSON_SCHEMA = {
   oneOf: [
@@ -102,10 +103,10 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          severity: { type: 'string', enum: ['critical', 'major', 'minor'] },
+          severity: { type: 'string', enum: [...CANONICAL_SEVERITIES] },
           category: {
             type: 'string',
-            enum: ['completeness', 'correctness', 'feasibility', 'risk', 'quality'],
+            enum: [...CANONICAL_CATEGORIES],
           },
           message: { type: 'string' },
           relation: FINDING_RELATION_JSON_SCHEMA,
@@ -118,10 +119,10 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          severity: { type: 'string', enum: ['critical', 'major', 'minor'] },
+          severity: { type: 'string', enum: [...CANONICAL_SEVERITIES] },
           category: {
             type: 'string',
-            enum: ['completeness', 'correctness', 'feasibility', 'risk', 'quality'],
+            enum: [...CANONICAL_CATEGORIES],
           },
           message: { type: 'string' },
           relation: FINDING_RELATION_JSON_SCHEMA,

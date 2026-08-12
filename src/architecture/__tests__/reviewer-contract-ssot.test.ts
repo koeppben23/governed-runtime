@@ -46,16 +46,17 @@ describe('reviewer contract SSOT guard', () => {
   });
 
   it('no reviewer contract file duplicates severity enum from canonical source', () => {
-    const sourceFile = 'state/evidence-findings.ts';
-    const sourceContent = readFileSync(join(SRC_ROOT, sourceFile), 'utf8');
-
     for (const filePath of REVIEWER_CONTRACT_FILES) {
       const content = readFileSync(join(SRC_ROOT, filePath), 'utf8');
       // Find arrays that look like severity enums
       const enumPattern = /\bseverity\b[^}]*enum:\s*\[([^\]]+)\]/gs;
       let match: RegExpExecArray | null;
       while ((match = enumPattern.exec(content)) !== null) {
-        const values = (match[1] ?? '').split(',').map((s) => s.trim().replace(/['"]/g, ''));
+        const raw = match[1] ?? '';
+        // Skip spread imports like [...CANONICAL_SEVERITIES] — these are valid
+        // references to canonical types, not hardcoded enum arrays.
+        if (raw.trim().startsWith('...')) continue;
+        const values = raw.split(',').map((s) => s.trim().replace(/['"]/g, ''));
         const missing = CANONICAL_SEVERITIES.filter((s) => !values.includes(s));
         const extra = values.filter((s) => s.length > 0 && !CANONICAL_SEVERITIES.includes(s));
         if (missing.length > 0 || extra.length > 0) {
@@ -127,5 +128,12 @@ describe('reviewer contract SSOT guard', () => {
   it('prompt-builders.ts imports grammar from finding-relation-grammar.ts', () => {
     const content = readFileSync(join(SRC_ROOT, 'integration/review/prompt-builders.ts'), 'utf8');
     expect(content).toContain("from './finding-relation-grammar.js'");
+  });
+
+  it('findings-schema.ts imports severity and category enums from schema-introspect', () => {
+    const content = readFileSync(join(SRC_ROOT, 'integration/review/findings-schema.ts'), 'utf8');
+    expect(content).toContain("from './schema-introspect.js'");
+    expect(content).toContain('CANONICAL_SEVERITIES');
+    expect(content).toContain('CANONICAL_CATEGORIES');
   });
 });
