@@ -786,6 +786,12 @@ describe('review (standalone flow)', () => {
           expect.objectContaining({ signalClass: 'hypothesis', provenance: null }),
         ]),
       );
+      // Content reviews mint attempts with `not_applicable` Discovery context:
+      // the field is structurally required, never silently absent.
+      const contentAttempt = preparedState!.reviewAssurance!.attempts.find(
+        (attempt) => attempt.obligationId === obligationId,
+      );
+      expect(contentAttempt?.repositoryDiscovery).toEqual({ kind: 'not_applicable' });
 
       await review.execute(
         { ...content, reviewFindings: buildAnalysisFindings('accept', obligationId) },

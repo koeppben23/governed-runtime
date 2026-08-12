@@ -551,6 +551,14 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
       expect(rewritten.code).toBe('HOST_SUBAGENT_TASK_REQUIRED');
       expect(presentationMarkdown).toContain('HOST_SUBAGENT_TASK_REQUIRED');
       expect(presentationMarkdown).not.toContain('CONTENT_ANALYSIS_REQUIRED');
+      // Presentation recovery and canonical recovery share one authority: both
+      // route through the host-visible Task invocation with the reviewer
+      // subagent, never through a different code's recovery path.
+      expect(presentationMarkdown).toContain(
+        'Run the FlowGuard reviewer subagent via the OpenCode Task tool.',
+      );
+      expect(String(rewritten.recovery ?? '')).toContain('host-visible subagent invocation');
+      expect(String(rewritten.recovery ?? '')).not.toContain('CONTENT_ANALYSIS_REQUIRED');
     }
 
     // The obligation must STILL be pending after the handshake (the log shows it
@@ -809,8 +817,19 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
     expect(obligation?.subjectDigest).toBe(obligation?.reviewSubject?.subjectDigest);
     // The lifecycle chain projects ONLY the authoritative review task: the
     // verdict continuation and the retry must not duplicate hypothesis claims.
-    expect(consumed?.proofGraph?.claims).toHaveLength(initialHypothesisCount);
+    expect(consumed?.proofGraph?.claims).toHaveLength(3);
     expect(consumed?.proofGraph?.claims.every((c) => c.signalClass === 'hypothesis')).toBe(true);
+    // Gate 3: the projected claimIds are exactly the authoritative (latest
+    // prepared) incarnation's claimIds — no duplicate, no stale-predecessor set.
+    const authoritativePrepared = (consumed?.standaloneReviewEvidence ?? [])
+      .filter((entry) => entry.kind === 'prepared')
+      .at(-1);
+    if (authoritativePrepared?.kind !== 'prepared') {
+      throw new TypeError('expected prepared review evidence');
+    }
+    expect((consumed?.proofGraph?.claims ?? []).map((claim) => claim.claimId).sort()).toEqual(
+      authoritativePrepared.task.claims.map((claim) => claim.claimId).sort(),
+    );
     // The rejected reviewer attempt and its retry belong to ONE logical review
     // task: when the continuation re-prepares with a diverged subject digest,
     // the stale incarnation is kept for audit and structurally superseded —
