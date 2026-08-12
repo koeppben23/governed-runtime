@@ -16,6 +16,7 @@ import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
 import type { FrozenReviewSubject, ReviewSubjectScope } from '../../state/evidence.js';
 import { renderPersistedProofGraphContext } from './proof-context.js';
+import { renderFindingRelationGrammar } from './finding-relation-grammar.js';
 import { CANONICAL_PROMPT_APPEND_MARKER } from './enforcement/types.js';
 import {
   buildDiscoveryContextSection,
@@ -79,7 +80,7 @@ export function renderFrozenReviewSubjectEnvelope(context: FrozenReviewerContext
     JSON.stringify(context.reviewSubject),
     '## Review Subject Scope (frozen obligation scope)',
     JSON.stringify(context.reviewSubjectScope),
-    context.anchorContract,
+    context.anchorContract.contractText,
     `${CANONICAL_PROMPT_APPEND_MARKER} persisted review material below this line:`,
     context.reviewMaterial.content,
   ];
@@ -118,6 +119,18 @@ export interface ReviewerTaskPromptInput {
   readonly artifactContext?: readonly string[];
   /** Integrity-verified standalone-review material, subject, scope, and anchor contract. */
   readonly frozenReviewerContext?: FrozenReviewerContext;
+  /**
+   * Advisory Discovery context (health, drift, detected stack, verification
+   * candidates) for reviewer falsification. Must be supplied for both SDK and
+   * Host Task paths so no transport has more semantic information than the other.
+   */
+  readonly discoveryContext?: DiscoveryReviewContext;
+  /**
+   * Schema validation errors from a prior failed reviewer output for the
+   * same obligation. When present, the prompt includes these errors so the
+   * reviewer can fix specific issues rather than guessing.
+   */
+  readonly retrySchemaErrors?: readonly string[];
 }
 
 export function deriveReviewSubjectScope(subject: FrozenReviewSubject): ReviewSubjectScope {
@@ -206,6 +219,11 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
     iteration: input.iteration,
     planVersion: input.planVersion,
   });
+
+  const discoverySection = input.discoveryContext
+    ? buildDiscoveryContextSection(input.discoveryContext)
+    : '';
+
   return [
     `You are the ${REVIEWER_SUBAGENT_TYPE} subagent performing an independent, ` +
       `falsification-first review of ${input.subjectLabel}.`,
@@ -219,6 +237,20 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
     `  iteration: ${input.iteration}`,
     ...(input.planVersion != null ? [`  planVersion: ${input.planVersion}`] : []),
     '',
+    ...(input.retrySchemaErrors && input.retrySchemaErrors.length > 0
+      ? [
+          '## Prior Output Rejected — Schema Validation Errors',
+          '',
+          'Your previous output for this obligation was rejected. Correct these',
+          'specific errors in your new output:',
+          '',
+          ...input.retrySchemaErrors.map((e) => `- ${e}`),
+          '',
+          'Return a fresh complete ReviewFindings object using the exact output',
+          'contract below. The frozen review subject and material remain unchanged.',
+          '',
+        ]
+      : []),
     'Rules:',
     `- You MUST NOT call any FlowGuard tools (flowguard_plan, flowguard_implement, ` +
       `flowguard_review_implementation, flowguard_architecture, flowguard_review) in your session.`,
@@ -237,12 +269,21 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
       ? [...input.artifactContext]
       : []),
     ...(input.proofContext && input.proofContext.length > 0 ? [...input.proofContext] : []),
+    '',
+    // Finding output contract — derived from canonical Zod, identical for both transports.
+    renderFindingRelationGrammar(),
+    '',
+    // Discovery context — advisory falsification evidence, identical for both transports.
+    ...(discoverySection ? [discoverySection] : []),
+    '',
     ...(input.frozenReviewerContext
       ? renderFrozenReviewSubjectEnvelope(input.frozenReviewerContext)
       : [
           `${CANONICAL_PROMPT_APPEND_MARKER} ${input.subjectLabel} content to review below this line:`,
         ]),
-  ].join('\n');
+  ]
+    .filter((line) => line !== '')
+    .join('\n');
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────

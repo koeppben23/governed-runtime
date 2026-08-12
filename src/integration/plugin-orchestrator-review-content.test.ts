@@ -229,8 +229,7 @@ function buildDeps(
       updateReviewAssurance,
       blockReviewOutcome,
       getEnforcementState: vi.fn().mockReturnValue({
-        sessionId: PARENT_SESSION_ID,
-        pluginReviews: new Map(),
+        pendingReviews: new Map(),
       }),
       log: { info: vi.fn(), warn: vi.fn() },
       client,
@@ -359,7 +358,9 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     expect(reviewerTaskPrompt).toContain(
       JSON.stringify({ kind: 'content', subjectDigest: SUBJECT_DIGEST, lineCount: 1 }),
     );
-    expect(reviewerTaskPrompt).toContain('Content anchor contract:');
+    expect(reviewerTaskPrompt).toContain(
+      'Content review: subjectAnchors must use kind=content with the exact frozen subjectDigest.',
+    );
     expect(reviewerTaskPrompt).not.toContain('content to review below this line:');
   });
 

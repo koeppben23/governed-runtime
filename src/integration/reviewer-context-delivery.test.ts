@@ -312,7 +312,7 @@ describe('reviewer artifact context reaches the delivered prompt', () => {
 
     const prompt = await deliveredReviewerPrompt(state);
 
-    expect(prompt).toContain('120 file(s) in scope');
+    expect(prompt).toContain('120 file(s) define the reviewed subject.');
     expect(prompt).toContain('further file(s)');
     expect(prompt).not.toContain('src/generated/file-119.ts');
   });

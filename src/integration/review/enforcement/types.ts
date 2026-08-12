@@ -96,6 +96,15 @@ export interface PendingReview {
   canonicalPromptAnchor: string | null;
   /** Actual findings from the subagent response (Level 4). */
   capturedFindings: CapturedFindings | null;
+  /** Number of times the reviewer was re-invoked for this obligation. */
+  retryCount: number;
+  /**
+   * Zod schema validation errors from the most recent failed reviewer
+   * output. Set when capturedFindings is non-null but fails
+   * ReviewFindings.safeParse. Used to generate the canonical retry prompt
+   * so the reviewer can fix specific errors instead of guessing.
+   */
+  lastSchemaErrors: readonly string[] | null;
 }
 
 /** Session-level enforcement state. */

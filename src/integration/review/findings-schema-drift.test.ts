@@ -46,6 +46,7 @@ interface JsonSchemaObject {
 type JsonSchemaProperty = JsonSchemaObject & {
   minimum?: number;
   maximum?: number;
+  oneOf?: JsonSchemaProperty[];
 };
 
 function jsonSchemaProperties(): Record<string, JsonSchemaProperty> {
@@ -67,6 +68,20 @@ function zodTopLevelKeys(): string[] {
     throw new Error('Could not unwrap ReviewFindings — schema structure changed');
   }
   return Object.keys(inner.shape);
+}
+
+function collectSubjectAnchorKinds(): string[] {
+  const props = jsonSchemaProperties();
+  const blocking = props.blockingIssues as unknown as JsonSchemaProperty;
+  const findingItems = blocking?.items as JsonSchemaProperty | undefined;
+  const relation = findingItems?.properties?.relation as JsonSchemaProperty | undefined;
+  const subjectAnchors = relation?.properties?.subjectAnchors as JsonSchemaProperty | undefined;
+  const anchorItems = subjectAnchors?.items as JsonSchemaProperty | undefined;
+  const oneOf = anchorItems?.oneOf as JsonSchemaProperty[] | undefined;
+  if (!oneOf) return [];
+  return oneOf
+    .map((variant: JsonSchemaProperty) => variant?.properties?.kind?.const)
+    .filter((v: string | undefined): v is string => typeof v === 'string');
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -178,6 +193,32 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ Zod ReviewFindings drift guard', () =>
     ]);
   });
 
+  it('GOOD: subject anchor oneOf includes all three canonical discriminator variants', () => {
+    // The canonical ReviewSubjectAnchor has three variants:
+    // repository_location, artifact_section, content.
+    // The JSON schema must present all three so the model is not forced to
+    // guess an unsupported variant.
+    const anchorKinds = collectSubjectAnchorKinds();
+    expect(anchorKinds.sort()).toEqual(
+      ['artifact_section', 'content', 'repository_location'].sort(),
+    );
+  });
+
+  it('GOOD: evidenceLocations path type is string, revision enum is base|head', () => {
+    // The JSON schema must not accept revision values like "current" or
+    // "modified" that the Zod schema rejects.
+    const items = jsonSchemaProperties().blockingIssues as unknown as JsonSchemaProperty;
+    const findingItems = items?.items as JsonSchemaProperty | undefined;
+    const relation = findingItems?.properties?.relation as JsonSchemaProperty | undefined;
+    const evLoc = relation?.properties?.evidenceLocations as JsonSchemaProperty | undefined;
+    const evItems = evLoc?.items as JsonSchemaProperty | undefined;
+    // REPOSITORY_LOCATION_JSON_SCHEMA wraps in oneOf
+    const evOneOf = evItems?.oneOf as JsonSchemaProperty[] | undefined;
+    const locationSchema = evOneOf?.[0] ?? evItems;
+    const revision = locationSchema?.properties?.revision as JsonSchemaProperty | undefined;
+    expect(revision?.enum?.sort()).toEqual(['base', 'head']);
+  });
+
   it('CONTRACT: findings require structured relations and reject legacy locations', () => {
     const props = jsonSchemaProperties();
     for (const key of ['blockingIssues', 'majorRisks'] as const) {
@@ -240,6 +281,41 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ Zod ReviewFindings drift guard', () =>
     const props = jsonSchemaProperties();
     expect(props.challenges).toBeDefined();
     expect(jsonSchemaRequired()).not.toContain('challenges');
+  });
+
+  it('GOOD: challenge oneOf includes all three canonical discriminator variants', () => {
+    // The canonical ReviewChallenge has design_challenge, implementation_challenge,
+    // content_challenge. The JSON schema must present all three.
+    const props = jsonSchemaProperties();
+    const challenges = props.challenges as JsonSchemaProperty;
+    const oneOf = challenges?.items?.oneOf as JsonSchemaProperty[] | undefined;
+    expect(oneOf).toBeDefined();
+    expect(oneOf!.length).toBeGreaterThanOrEqual(3);
+    const kinds = oneOf!
+      .map((v) => v.properties?.kind?.const)
+      .filter((k): k is string => typeof k === 'string');
+    expect(kinds.sort()).toEqual(
+      ['content_challenge', 'design_challenge', 'implementation_challenge'].sort(),
+    );
+  });
+
+  it('GOOD: challenge outcome enums match canonical per-type values', () => {
+    // design_challenge and content_challenge: supported, contradicted, not_verified
+    // implementation_challenge: pass, fail, not_verified
+    const props = jsonSchemaProperties();
+    const challenges = props.challenges as JsonSchemaProperty;
+    const oneOf = challenges?.items?.oneOf as JsonSchemaProperty[] | undefined;
+    expect(oneOf).toBeDefined();
+
+    for (const variant of oneOf!) {
+      const kind = variant.properties?.kind?.const as string | undefined;
+      const outcome = variant.properties?.outcome?.enum as string[] | undefined;
+      if (kind === 'implementation_challenge') {
+        expect(outcome?.sort()).toEqual(['fail', 'not_verified', 'pass']);
+      } else if (kind === 'design_challenge' || kind === 'content_challenge') {
+        expect(outcome?.sort()).toEqual(['contradicted', 'not_verified', 'supported']);
+      }
+    }
   });
 
   it('GOOD: round-trip — a minimal valid SDK output passes both JSON-Schema and Zod', () => {

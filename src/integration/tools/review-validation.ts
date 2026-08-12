@@ -583,6 +583,32 @@ interface HostTaskResolutionContext {
   };
 }
 
+/**
+ * Check whether reviewerUnavailable is a misuse: the reviewer WAS spawned
+ * (invocations exist) but the parent is signalling unavailability.
+ */
+function checkReviewerUnavailableMisuse(ctx: HostTaskResolutionContext): string | null {
+  if (ctx.input.reviewerUnavailable !== true) return null;
+  const existingInvs =
+    ctx.state.assurance?.invocations.filter(
+      (inv) =>
+        inv.obligationId === ctx.pendingObligation?.obligationId &&
+        inv.invocationMode === 'host_subagent_task',
+    ) ?? [];
+  if (existingInvs.length > 0) {
+    return formatBlocked('INVALID_REVIEW_TOOL_SEQUENCE', {
+      obligationId: ctx.pendingObligation?.obligationId ?? 'unknown',
+      reason:
+        'reviewerUnavailable submitted but host_subagent_task invocations already exist for this obligation. The reviewer was spawned — use reviewVerdict matching the captured reviewer overallVerdict instead.',
+    });
+  }
+  return formatBlocked('REVIEWER_UNAVAILABLE_STRICT', {
+    reason: 'reviewer unavailable; independent ReviewFindings remain required',
+    recovery:
+      'Invoke a supported reviewer transport or provide policy-gated manual_attested ReviewFindings bound to the active obligation. flowguard_decision does not replace review evidence.',
+  });
+}
+
 interface HostTaskResolutionResult {
   readonly effectiveFindings?: ReviewFindings;
   readonly evidenceInvocationId?: string;
@@ -659,13 +685,8 @@ export function resolveHostTaskEffectiveFindings(
       };
     }
     if (ctx.input.reviewerUnavailable === true) {
-      return {
-        blocked: formatBlocked('REVIEWER_UNAVAILABLE_STRICT', {
-          reason: 'reviewer unavailable; independent ReviewFindings remain required',
-          recovery:
-            'Invoke a supported reviewer transport or provide policy-gated manual_attested ReviewFindings bound to the active obligation. flowguard_decision does not replace review evidence.',
-        }),
-      };
+      const misuse = checkReviewerUnavailableMisuse(ctx);
+      if (misuse) return { blocked: misuse };
     }
     return {};
   }

@@ -71,6 +71,13 @@ interface HostTaskOutputInput {
   readonly artifactContext: readonly string[];
   readonly frozenReviewerContext: FrozenReviewerContext | null;
   readonly materialIntegrityFailure: string | null;
+  /**
+   * Schema validation errors from a prior failed reviewer invocation for
+   * the same obligation. When non-null and non-empty, the canonical retry
+   * prompt includes these errors so the reviewer can fix specific issues
+   * rather than guessing.
+   */
+  readonly retrySchemaErrors: readonly string[] | null;
 }
 
 function buildHostTaskPolicyOutput(input: HostTaskOutputInput): string | null {
@@ -137,9 +144,13 @@ function resolveHostTaskContext(
 function buildReviewerTaskPromptOrNull(
   attestationMeta: HostTaskAttestationMeta | null,
   ctx: { iteration: number; planVersion: number | null } | null,
-  challengeContract: Parameters<typeof renderReviewerTaskPrompt>[0]['challengeContract'],
-  context: { readonly proof: readonly string[]; readonly artifact: readonly string[] },
-  frozenReviewerContext: FrozenReviewerContext | null,
+  opts: {
+    readonly challengeContract: Parameters<typeof renderReviewerTaskPrompt>[0]['challengeContract'];
+    readonly proofContext: readonly string[];
+    readonly artifactContext: readonly string[];
+    readonly frozenReviewerContext: FrozenReviewerContext | null;
+    readonly retrySchemaErrors: readonly string[] | null;
+  },
 ): string | null {
   if (!attestationMeta || ctx?.iteration == null) return null;
   return renderReviewerTaskPrompt({
@@ -149,10 +160,11 @@ function buildReviewerTaskPromptOrNull(
     mandateDigest: attestationMeta.mandateDigest,
     criteriaVersion: attestationMeta.criteriaVersion,
     subjectLabel: 'the artifact under review',
-    challengeContract,
-    proofContext: context.proof,
-    artifactContext: context.artifact,
-    frozenReviewerContext: frozenReviewerContext ?? undefined,
+    challengeContract: opts.challengeContract,
+    proofContext: opts.proofContext,
+    artifactContext: opts.artifactContext,
+    frozenReviewerContext: opts.frozenReviewerContext ?? undefined,
+    retrySchemaErrors: opts.retrySchemaErrors ?? undefined,
   });
 }
 
@@ -183,16 +195,13 @@ function buildHostTaskBlockedOutput(
   // root cause). The prompt embeds the review context via the SAME serializer the
   // matcher validates against. Only emitted when both the attestation and the
   // review context are available.
-  const reviewerTaskPrompt = buildReviewerTaskPromptOrNull(
-    attestationMeta,
-    ctx,
+  const reviewerTaskPrompt = buildReviewerTaskPromptOrNull(attestationMeta, ctx, {
     challengeContract,
-    {
-      proof: proofContext,
-      artifact: input.artifactContext,
-    },
-    input.frozenReviewerContext,
-  );
+    proofContext,
+    artifactContext: input.artifactContext,
+    frozenReviewerContext: input.frozenReviewerContext,
+    retrySchemaErrors: input.retrySchemaErrors,
+  });
   const copyPromptStr = reviewerTaskPrompt
     ? ` A ready-to-use reviewer prompt is provided in the reviewerTaskPrompt field — pass it ` +
       `VERBATIM as the Task tool "prompt" argument without appending content, ` +
@@ -435,6 +444,7 @@ function buildHostTaskOutputInput(
   originalOutput: string,
   obligationId: string,
   interception: NonNullable<ReturnType<typeof resolveHostTaskInterception>>,
+  retrySchemaErrors: readonly string[] | null,
 ): HostTaskOutputInput {
   const { obligation } = interception;
   const bindableAttempt = findBindableAttempt(sessionState.reviewAssurance, obligationId);
@@ -453,6 +463,7 @@ function buildHostTaskOutputInput(
       obligation?.obligationType === 'review' && !frozenReviewerContext
         ? 'persisted material or its frozen digest binding is missing or invalid'
         : null,
+    retrySchemaErrors,
   };
 }
 
@@ -477,12 +488,14 @@ function buildHostTaskAttestationMeta(
   };
 }
 
+// eslint-disable-next-line max-params
 export async function handleHostTaskPolicy(
   deps: OrchestratorDeps,
   sessionState: SessionState,
   sessDir: string,
   reviewCtx: NonNullable<ReturnType<typeof extractReviewContext>>,
   output: ToolCallEvent['output'],
+  sessionId: string,
 ): Promise<boolean> {
   const obligationId = reviewCtx.obligationId;
   const interception = resolveHostTaskInterception(sessionState, obligationId, output);
@@ -495,9 +508,22 @@ export async function handleHostTaskPolicy(
     })),
   );
 
+  // Look up retry schema errors from enforcement state for this obligation
+  const enforcement = deps.getEnforcementState(sessionId);
+  const pendingReview = [...enforcement.pendingReviews.values()].find(
+    (p) => p.obligationId === obligationId,
+  );
+  const retrySchemaErrors = pendingReview?.lastSchemaErrors ?? null;
+
   const rawOutput = getToolOutput(output);
   const mutated = buildHostTaskPolicyOutput(
-    buildHostTaskOutputInput(sessionState, rawOutput, obligationId, interception),
+    buildHostTaskOutputInput(
+      sessionState,
+      rawOutput,
+      obligationId,
+      interception,
+      retrySchemaErrors,
+    ),
   );
   if (mutated) output.output = mutated;
   return true;

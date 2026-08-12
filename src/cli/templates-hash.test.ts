@@ -89,12 +89,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed again for p36->p37: added a Security-as-risk vulnerability bullet
     // (content + implementation) and a root-cause bullet (plan + implementation),
     // which changes the REVIEWER_AGENT body and REVIEW_MANDATE_DIGEST.
-    // p37 -> p38: strict blockingIssues/verdict coherence. p38 -> p39: OpenCode
-    // reviewer capability isolation denies direct and MCP-prefixed FlowGuard tools.
-    // p39 -> p40: reviewer task delegation is denied as part of that boundary.
     // p40 -> p41: material findings require structured subject and evidence relations.
+    // p41 -> p42: mandate semantics fixed (removed 'info' severity, corrected type names,
+    //   evidenceLocations may be empty).
     expect(sha256(REVIEWER_AGENT)).toBe(
-      'eaba0884d2ab1653e77f58b1d33eb9fa678ebb38ef555c2ebcfbcef747dcd558',
+      'bec5b3b140a934127d6f87410917406692fbc54f9aa3ca2419ab0e8fc9927096',
     );
   });
 
