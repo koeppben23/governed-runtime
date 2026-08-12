@@ -55,6 +55,7 @@ export const ArtifactSectionAnchor = z
     artifactDigest: z.string().min(1),
     sectionPath: MarkdownSectionPath,
   })
+  .strict()
   .readonly();
 export type ArtifactSectionAnchor = z.infer<typeof ArtifactSectionAnchor>;
 

@@ -106,15 +106,10 @@ export interface ReviewerTaskPromptInput {
   /** Integrity-verified standalone-review material, subject, scope, and anchor contract. */
   readonly frozenReviewerContext?: FrozenReviewerContext;
   /**
-   * Advisory Discovery context (health, drift, detected stack, verification
-   * candidates) for reviewer falsification. Must be supplied for both SDK and
-   * Host Task paths so no transport has more semantic information than the other.
-   */
-  readonly discoveryContext?: DiscoveryReviewContext;
-  /**
    * Attempt-bound repository Discovery snapshot (resolved at attempt mint time).
-   * For repository reviews this is the canonical Discovery envelope; it renders
-   * the scoped Repository Discovery Contract and supersedes `discoveryContext`.
+   * For repository reviews this renders the canonical Discovery envelope with
+   * the scoped Repository Discovery Contract; other scopes render no Discovery
+   * section at all.
    */
   readonly repositoryDiscoverySnapshot?: RepositoryDiscoverySnapshot | null;
   /**
@@ -263,8 +258,8 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
   const isRepositoryReview =
     input.frozenReviewerContext?.reviewSubject.kind === 'repository_change';
   const discoverySection = resolveReviewerDiscoverySection(
+    isRepositoryReview ? 'repository_change' : 'other',
     input.repositoryDiscoverySnapshot,
-    input.discoveryContext,
   );
 
   return [
@@ -681,15 +676,11 @@ export function buildReviewContentPrompt(opts: {
   planVersion: number;
   profileName?: string;
   profileRules?: string;
-  // #401: Discovery context is REQUIRED for standalone PR/content review so external
-  // diffs are evaluated against repo-native stack/verification/health/drift evidence.
-  // The loader always returns a populated (possibly "unavailable") context, so the
-  // section renders even when Discovery is degraded — never silently omitted.
-  discoveryContext: DiscoveryReviewContext;
   /**
    * Attempt-bound repository Discovery snapshot (resolved at attempt mint time).
-   * For repository reviews this is the canonical Discovery envelope and
-   * supersedes `discoveryContext`.
+   * For repository reviews this renders the canonical Discovery envelope;
+   * content/artifact scopes render NO Discovery section — local repository
+   * Discovery must not confound external or inline content subjects.
    */
   repositoryDiscoverySnapshot?: RepositoryDiscoverySnapshot | null;
   /** Persisted advisory projection only; prompt construction never evaluates providers. */
@@ -699,8 +690,10 @@ export function buildReviewContentPrompt(opts: {
 }): string {
   const stackSection = buildStackProfileSection(opts.profileName, opts.profileRules);
   const discoverySection = resolveReviewerDiscoverySection(
+    opts.frozenReviewerContext?.reviewSubject.kind === 'repository_change'
+      ? 'repository_change'
+      : 'other',
     opts.repositoryDiscoverySnapshot,
-    opts.discoveryContext,
   );
   const lines: string[] = [
     'You are ' + REVIEWER_SUBAGENT_TYPE + ' - a governance reviewer subagent.',

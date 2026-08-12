@@ -20,7 +20,14 @@ import { DetectedStackSchema } from './discovery-schemas.js';
 export const RepositoryDiscoverySnapshot = z
   .object({
     observedAt: z.string().datetime(),
+    /**
+     * SHA-256 digest of the persisted DiscoveryResult at session creation
+     * time (SessionState.discoveryDigest) — the canonical persisted-Discovery
+     * identity. Deliberately NOT the workspace fingerprint.
+     */
     discoveryDigest: z.string().nullable(),
+    /** Workspace fingerprint used to locate the persisted Discovery basis. */
+    workspaceFingerprint: z.string().nullable(),
     health: z
       .object({
         status: z.enum(['available', 'degraded', 'unavailable']),

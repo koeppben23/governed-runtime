@@ -85,6 +85,20 @@ describe('reviewer DTO strict boundary', () => {
     expect(ReviewFindings.safeParse(payload).success).toBe(false);
   });
 
+  it('rejects an unknown key inside an artifact_section anchor', () => {
+    const payload = baseFindingsPayload();
+    payload.majorRisks[0]!.relation.subjectAnchors = [
+      {
+        kind: 'artifact_section',
+        artifactKind: 'plan',
+        artifactDigest: 'a'.repeat(64),
+        sectionPath: [{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }],
+        reviewedBy: { sessionId: 'ses_reviewer' },
+      },
+    ] as never;
+    expect(ReviewFindings.safeParse(payload).success).toBe(false);
+  });
+
   it('rejects an unknown key inside a finding', () => {
     const payload = baseFindingsPayload();
     (payload.majorRisks[0] as Record<string, unknown>).location = 'legacy/path.ts:12';

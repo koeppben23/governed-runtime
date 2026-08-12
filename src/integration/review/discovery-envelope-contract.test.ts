@@ -17,6 +17,7 @@ function snapshot(): RepositoryDiscoverySnapshot {
   return {
     observedAt: NOW,
     discoveryDigest: 'd'.repeat(64),
+    workspaceFingerprint: 'fp-test',
     health: {
       status: 'available',
       healthy: true,
@@ -131,7 +132,6 @@ describe('repository Discovery envelope (both transports)', () => {
       criteriaVersion: 'p40-v1',
       iteration: 1,
       planVersion: 1,
-      discoveryContext: { detectedStack: null, verificationCandidates: [] },
       repositoryDiscoverySnapshot: snap,
       frozenReviewerContext: repositoryFrozenContext(),
     });

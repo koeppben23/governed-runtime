@@ -11,11 +11,7 @@
  */
 
 import type { RepositoryDiscoverySnapshot } from '../../state/evidence.js';
-import {
-  buildDiscoveryContextSection,
-  buildRepositoryDiscoverySnapshotSection,
-  type DiscoveryReviewContext,
-} from './discovery-context-prompt.js';
+import { buildRepositoryDiscoverySnapshotSection } from './discovery-context-prompt.js';
 
 /**
  * Render the review context token (`iteration=.., planVersion=..`) in the
@@ -51,15 +47,19 @@ export function buildStackProfileSection(
 }
 
 /**
- * The canonical Discovery section for a reviewer prompt: the attempt-bound
- * repository snapshot when present (repository reviews), otherwise the legacy
- * pipeline-computed Discovery context. One authority for both transports.
+ * The canonical Discovery section for a reviewer prompt. Decided by the frozen
+ * subject SCOPE, never by snapshot presence:
+ * - `repository_change` → the attempt-bound repository snapshot envelope
+ *   (the mint invariant guarantees the snapshot exists; without one, the
+ *   section is structurally absent — never a local-Repository fallback).
+ * - anything else (content/artifact/lifecycle) → NO Discovery block and NO
+ *   Discovery instruction. Local repository Discovery must not confound
+ *   external or inline content subjects.
  */
 export function resolveReviewerDiscoverySection(
+  scope: 'repository_change' | 'other',
   snapshot: RepositoryDiscoverySnapshot | null | undefined,
-  context?: DiscoveryReviewContext,
 ): string {
-  return snapshot
-    ? buildRepositoryDiscoverySnapshotSection(snapshot)
-    : buildDiscoveryContextSection(context);
+  if (scope !== 'repository_change') return '';
+  return snapshot ? buildRepositoryDiscoverySnapshotSection(snapshot) : '';
 }

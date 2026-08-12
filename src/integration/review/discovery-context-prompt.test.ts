@@ -207,7 +207,7 @@ describe('review prompt Discovery context loading', () => {
     expect(prompt).toContain('workspace fingerprint could not be resolved');
   });
 
-  it('injects Discovery Context into implementation and content review prompts when provided', () => {
+  it('injects Discovery Context into implementation prompts when provided', () => {
     const implPrompt = buildImplReviewPrompt({
       changedFiles: ['src/auth.ts'],
       planText: PLAN_RECORD.current.body,
@@ -227,13 +227,13 @@ describe('review prompt Discovery context loading', () => {
       mandateDigest: 'test-digest',
       iteration: 0,
       planVersion: 1,
-      discoveryContext: BASE_CONTEXT,
     });
 
     expect(implPrompt.match(/## Discovery Context/g)).toHaveLength(1);
-    expect(contentPrompt.match(/## Discovery Context/g)).toHaveLength(1);
     expect(implPrompt).toContain('npm test');
-    expect(contentPrompt).toContain('npm test');
+    // Content scope without a repository frozen subject renders NO local
+    // repository Discovery section at all.
+    expect(contentPrompt).not.toContain('## Discovery Context');
   });
 
   it('injects Discovery Context into architecture review prompts without displacing attestation authority', () => {
@@ -301,7 +301,7 @@ describe('review prompt Discovery context loading', () => {
     expect(prompt).toContain('Set attestation.mandateDigest=test-digest.');
   });
 
-  it('content prompt with unavailable discovery renders Discovery Context as NOT_VERIFIED (#401)', () => {
+  it('content prompt renders NO local repository Discovery section (content scope)', () => {
     const prompt = buildReviewContentPrompt({
       content: 'diff --git a/src/auth.ts b/src/auth.ts',
       ticketText: TICKET.text,
@@ -310,18 +310,12 @@ describe('review prompt Discovery context loading', () => {
       mandateDigest: 'test-digest',
       iteration: 0,
       planVersion: 1,
-      discoveryContext: {
-        health: unavailableDiscoveryHealth('corrupt'),
-        drift: notCheckedDiscoveryDriftStatus('Discovery drift was not checked.'),
-        verificationCandidates: [],
-      },
     });
 
-    // #401: Discovery context is REQUIRED; the section must render even when degraded,
-    // and Discovery-dependent claims must be marked NOT_VERIFIED rather than omitted.
-    expect(prompt).toContain('## Discovery Context');
-    expect(prompt).toContain('status: unavailable');
-    expect(prompt).toContain('NOT_VERIFIED');
+    // The scope rule: local repository Discovery must not confound external or
+    // inline content subjects — no section, no instruction.
+    expect(prompt).not.toContain('## Discovery Context');
+    expect(prompt).not.toContain('Repository Discovery Contract');
     expect(prompt).toContain('toolObligationId: "11111111-1111-4111-8111-111111111111"');
     expect(prompt).toContain('mandateDigest: "test-digest"');
   });
@@ -341,26 +335,6 @@ describe('review prompt Discovery context loading', () => {
 
     expect(driftTimeout.status).toBe('timeout');
     expect(driftTimeout.warnings[0]?.code).toBe('discovery_drift_timeout');
-
-    const prompt = buildReviewContentPrompt({
-      content: 'diff --git a/src/auth.ts b/src/auth.ts',
-      ticketText: TICKET.text,
-      obligationId: '11111111-1111-4111-8111-111111111111',
-      criteriaVersion: 'p37-v1',
-      mandateDigest: 'test-digest',
-      iteration: 0,
-      planVersion: 1,
-      discoveryContext: {
-        health: BASE_CONTEXT.health,
-        drift: driftTimeout,
-        verificationCandidates: [],
-      },
-    });
-
-    expect(prompt).toContain('## Discovery Context');
-    expect(prompt).toContain('status: timeout');
-    expect(prompt).toContain('discovery_drift_timeout');
-    expect(prompt).toContain('NOT_VERIFIED');
   });
 
   it('plan prompt with discovery context preserves attestation wording', () => {
@@ -402,7 +376,7 @@ describe('review prompt Discovery context loading', () => {
     expect(prompt).toContain('Set attestation.mandateDigest=test-digest.');
   });
 
-  it('content prompt with discovery context preserves attestation wording', () => {
+  it('content prompt preserves attestation wording without a Discovery section', () => {
     const prompt = buildReviewContentPrompt({
       content: 'diff --git a/src/auth.ts b/src/auth.ts',
       ticketText: TICKET.text,
@@ -411,10 +385,9 @@ describe('review prompt Discovery context loading', () => {
       mandateDigest: 'test-digest',
       iteration: 0,
       planVersion: 1,
-      discoveryContext: BASE_CONTEXT,
     });
 
-    expect(prompt.match(/## Discovery Context/g)).toHaveLength(1);
+    expect(prompt).not.toContain('## Discovery Context');
     expect(prompt).toContain('toolObligationId: "11111111-1111-4111-8111-111111111111"');
     expect(prompt).toContain('mandateDigest: "test-digest"');
   });

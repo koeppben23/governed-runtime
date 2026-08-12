@@ -439,8 +439,29 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
           challengePolicy: CHALLENGE_POLICY_V1,
           reviewInvocationPolicy: 'host_task_required',
         },
+        // The canonical persisted-Discovery identity the snapshot binds to.
+        discoveryDigest: 'd'.repeat(64),
+        // The real worktree — the attempt-bound Discovery resolution reads the
+        // persisted basis via the workspace fingerprint of THIS worktree.
+        binding: { ...base.binding, worktree: ws.tmpDir },
       }),
     );
+
+    // Seed the persisted Discovery basis the way hydrate does: the attempt-bound
+    // repository Discovery snapshot is resolved at mint time and requires a
+    // host-owned persisted Discovery artifact.
+    const { workspaceDir: resolveWorkspaceDir } = await import('../adapters/workspace/index.js');
+    const { writeDiscovery } = await import('../adapters/persistence-discovery.js');
+    const { runRequiredDiscovery } = await import('./tools/hydrate-discovery.js');
+    const wsDir = resolveWorkspaceDir(fp.fingerprint);
+    const discoveryResult = await runRequiredDiscovery(ws.tmpDir, fp.fingerprint, {
+      files: [],
+      packageFiles: [],
+      configFiles: [],
+      packageFilePaths: [],
+      configFilePaths: [],
+    });
+    await writeDiscovery(wsDir, discoveryResult);
 
     const ctx = {
       sessionID: PARENT_SESSION,
@@ -579,7 +600,12 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
     // resolved BEFORE the mint, never mutated afterwards.
     expect(attemptA?.repositoryDiscovery.kind).toBe('repository');
     if (attemptA?.repositoryDiscovery.kind === 'repository') {
-      expect(attemptA.repositoryDiscovery.snapshot.discoveryDigest).toBeTypeOf('string');
+      // The snapshot binds the CANONICAL persisted-Discovery digest — never the
+      // workspace fingerprint (stored separately).
+      expect(attemptA.repositoryDiscovery.snapshot.discoveryDigest).toBe('d'.repeat(64));
+      expect(attemptA.repositoryDiscovery.snapshot.workspaceFingerprint).toEqual(
+        expect.any(String),
+      );
       expect(attemptA.repositoryDiscovery.snapshot.health.status).toBeTypeOf('string');
     }
     const initialHypothesisCount = afterHandshake?.proofGraph?.claims.length ?? 0;

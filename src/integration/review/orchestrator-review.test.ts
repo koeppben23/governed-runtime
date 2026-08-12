@@ -929,7 +929,6 @@ describe('CORE_REVIEW_PROFILE_MARKER (Wave 1 — #730)', () => {
       criteriaVersion: common.criteriaVersion,
       iteration,
       planVersion,
-      discoveryContext: {},
     }),
   };
 

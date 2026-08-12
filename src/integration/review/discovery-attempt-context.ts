@@ -7,11 +7,11 @@
  * snapshot is advisory investigation context and is deliberately not part of
  * the frozen review subject or material identity.
  *
- * The underlying loader (`buildReviewDiscoveryContext`) is total: it never
- * throws. A missing/corrupt Discovery basis degrades into an advisory
- * `unavailable`/`not_assessed` snapshot — never into a block.
- * `REVIEWER_CONTEXT_UNAVAILABLE` is reserved for the structural case where the
- * resolved context cannot be projected into the canonical snapshot schema.
+ * The underlying loader (`buildReviewDiscoveryContext`) is total and never
+ * throws. Drift uncertainty degrades into an advisory `not_assessed` snapshot;
+ * a missing/corrupt persisted Discovery basis, an unresolvable workspace
+ * fingerprint, or an unprojectable snapshot is a STRUCTURAL failure that
+ * blocks the attempt mint with `REVIEWER_CONTEXT_UNAVAILABLE`.
  *
  * @version v1
  */
@@ -88,10 +88,12 @@ function projectSnapshot(
   context: DiscoveryReviewContext,
   observedAt: string,
   discoveryDigest: string | null,
+  workspaceFingerprint: string | null,
 ): RepositoryDiscoverySnapshot {
   return {
     observedAt,
     discoveryDigest,
+    workspaceFingerprint,
     health: projectHealth(context.health),
     drift: projectDrift(context.drift),
     detectedStack: context.detectedStack ?? null,
@@ -108,8 +110,15 @@ function projectSnapshot(
  * Resolve the attempt-bound Discovery context for a repository review attempt.
  *
  * `reviewSubjectKind` selects the semantics: `repository_change` requires a
- * host-owned snapshot resolved right now (advisory, never a governance gate);
- * anything else is structurally `not_applicable`.
+ * host-owned snapshot resolved right now; anything else is structurally
+ * `not_applicable`.
+ *
+ * Failure classification per the frozen contract:
+ * - drift unavailable/not_assessed → ADVISORY: the snapshot is still minted
+ *   and the reviewer marks drift-dependent claims NOT_VERIFIED.
+ * - missing/corrupt persisted Discovery basis, unresolvable workspace
+ *   fingerprint, or an unprojectable snapshot → STRUCTURAL: the attempt must
+ *   not be minted (`REVIEWER_CONTEXT_UNAVAILABLE`).
  */
 export async function resolveReviewAttemptDiscoveryContext(input: {
   readonly state: SessionState;
@@ -129,14 +138,35 @@ export async function resolveReviewAttemptDiscoveryContext(input: {
       fingerprint = null;
     }
   }
+  if (!fingerprint) {
+    return {
+      kind: 'blocked',
+      reason: 'workspace fingerprint could not be resolved for the repository Discovery basis',
+    };
+  }
   const context = await buildReviewDiscoveryContext({
     sessionState: input.state,
     fingerprint,
     worktree: input.worktree,
     includeDriftCheck: true,
   });
+  // Structural boundary: an unavailable health projection means the persisted
+  // Discovery basis itself is missing/corrupt/unreadable — the host cannot
+  // supply the reviewer contract's host-owned evidence. Degraded-but-available
+  // health stays advisory and mints with NOT_VERIFIED markers.
+  if (!context.health || context.health.status === 'unavailable') {
+    return {
+      kind: 'blocked',
+      reason: 'persisted Discovery basis is unavailable for this repository review',
+    };
+  }
   try {
-    const snapshot = projectSnapshot(context, input.now, fingerprint);
+    const snapshot = projectSnapshot(
+      context,
+      input.now,
+      input.state.discoveryDigest ?? null,
+      fingerprint,
+    );
     return { kind: 'repository', context: { kind: 'repository', snapshot } };
   } catch (error) {
     return {

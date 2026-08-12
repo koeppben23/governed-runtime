@@ -39,8 +39,9 @@ function collectAuthoritativeStandaloneClaims(
 ): Map<string, StandaloneReviewTask['claims'][number]> {
   // Standalone-review claims project ONLY from the single authoritative task per
   // obligation (canonical lifecycle authority in state/standalone-review.ts).
-  // Superseded/predecessor incarnations are audit-only; a structurally broken
-  // chain fails closed and contributes no claims.
+  // Superseded/predecessor incarnations are audit-only. A structurally broken
+  // chain cannot reach this projection: the SessionState schema boundary
+  // rejects it fail-closed (SCHEMA_VALIDATION_FAILED) before any derivation.
   const claims = new Map<string, StandaloneReviewTask['claims'][number]>();
   for (const obligation of state.reviewAssurance?.obligations ?? []) {
     if (obligation.obligationType !== 'review') continue;

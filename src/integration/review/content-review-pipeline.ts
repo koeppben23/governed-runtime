@@ -34,7 +34,6 @@ import {
   getReviewerPolicies,
   buildAttemptFailedLogger,
   buildAttemptSucceededLogger,
-  buildReviewDiscoveryContextForPipeline,
 } from './shared-helpers.js';
 import {
   verifyFrozenReviewerContext,
@@ -158,7 +157,6 @@ export async function runReviewContentPipeline(ctx: PipelineContext): Promise<vo
     'REVIEW',
   );
   const ticketText = sessionState.ticket?.text ?? '';
-  const discoveryContext = await buildReviewDiscoveryContextForPipeline(ctx);
   const prompt = buildReviewContentPrompt({
     content: persistedContent.content,
     ticketText,
@@ -169,7 +167,6 @@ export async function runReviewContentPipeline(ctx: PipelineContext): Promise<vo
     planVersion: reviewCtx.planVersion,
     profileName,
     profileRules,
-    discoveryContext,
     repositoryDiscoverySnapshot: persistedContent.repositoryDiscoverySnapshot,
     proofGraph: sessionState.proofGraph,
     frozenReviewerContext: persistedContent.frozenReviewerContext,

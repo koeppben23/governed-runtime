@@ -9,6 +9,7 @@ import {
 } from './standalone-review.js';
 import { deriveProofGraph } from '../audit/proofgraph/derive.js';
 import { makeState } from '../fixtures.js';
+import { SessionState } from './schema.js';
 import { createReviewObligation } from '../integration/review/assurance.js';
 import {
   appendCompletedReviewEvidence,
@@ -379,5 +380,46 @@ describe('resolveAuthoritativeStandaloneReviewTask lifecycle validation', () => 
   it('returns none for an obligation without evidence', () => {
     const result = resolveAuthoritativeStandaloneReviewTask([], OBLIGATION_ID);
     expect(result).toMatchObject({ kind: 'none' });
+  });
+
+  it('SessionState rejects a structurally broken lifecycle chain fail-closed', () => {
+    const first = preparedEntry({ evidenceId: '00000000-0000-4000-8000-000000000001' });
+    const second = preparedEntry({ evidenceId: '00000000-0000-4000-8000-000000000002' });
+    const brokenEvidence: StandaloneReviewEvidence[] = [
+      first,
+      second,
+      {
+        kind: 'superseded',
+        schemaVersion: STANDALONE_REVIEW_EVIDENCE_SCHEMA_VERSION,
+        evidenceId: '00000000-0000-4000-8000-000000000003',
+        reviewTaskId: REVIEW_TASK_ID,
+        obligationId: OBLIGATION_ID,
+        supersededPreparedEvidenceId: first.evidenceId,
+        replacementPreparedEvidenceId: second.evidenceId,
+        supersededAt: NOW,
+        reason: 'subject_frozen',
+      },
+      {
+        kind: 'superseded',
+        schemaVersion: STANDALONE_REVIEW_EVIDENCE_SCHEMA_VERSION,
+        evidenceId: '00000000-0000-4000-8000-000000000004',
+        reviewTaskId: REVIEW_TASK_ID,
+        obligationId: OBLIGATION_ID,
+        supersededPreparedEvidenceId: second.evidenceId,
+        replacementPreparedEvidenceId: first.evidenceId,
+        supersededAt: NOW,
+        reason: 'subject_frozen',
+      },
+    ];
+    const state = makeState('REVIEW_COMPLETE', {
+      standaloneReviewEvidence: brokenEvidence,
+      reviewAssurance: assuranceWith(OBLIGATION_ID),
+    });
+    const parsed = SessionState.safeParse(state);
+    expect(parsed.success).toBe(false);
+    if (parsed.success) throw new TypeError('expected schema rejection');
+    expect(parsed.error.issues.map((issue) => issue.path.join('.'))).toContain(
+      'standaloneReviewEvidence',
+    );
   });
 });

@@ -137,7 +137,6 @@ describe('frozen review subject envelope', () => {
       criteriaVersion: BASE_INPUT.criteriaVersion,
       iteration: BASE_INPUT.iteration,
       planVersion: BASE_INPUT.planVersion,
-      discoveryContext: {},
       frozenReviewerContext,
     });
     const envelope = renderFrozenReviewSubjectEnvelope(frozenReviewerContext).join('\n');
