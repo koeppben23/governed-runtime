@@ -283,6 +283,41 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ Zod ReviewFindings drift guard', () =>
     expect(jsonSchemaRequired()).not.toContain('challenges');
   });
 
+  it('GOOD: challenge oneOf includes all three canonical discriminator variants', () => {
+    // The canonical ReviewChallenge has design_challenge, implementation_challenge,
+    // content_challenge. The JSON schema must present all three.
+    const props = jsonSchemaProperties();
+    const challenges = props.challenges as JsonSchemaProperty;
+    const oneOf = challenges?.items?.oneOf as JsonSchemaProperty[] | undefined;
+    expect(oneOf).toBeDefined();
+    expect(oneOf!.length).toBeGreaterThanOrEqual(3);
+    const kinds = oneOf!
+      .map((v) => v.properties?.kind?.const)
+      .filter((k): k is string => typeof k === 'string');
+    expect(kinds.sort()).toEqual(
+      ['content_challenge', 'design_challenge', 'implementation_challenge'].sort(),
+    );
+  });
+
+  it('GOOD: challenge outcome enums match canonical per-type values', () => {
+    // design_challenge and content_challenge: supported, contradicted, not_verified
+    // implementation_challenge: pass, fail, not_verified
+    const props = jsonSchemaProperties();
+    const challenges = props.challenges as JsonSchemaProperty;
+    const oneOf = challenges?.items?.oneOf as JsonSchemaProperty[] | undefined;
+    expect(oneOf).toBeDefined();
+
+    for (const variant of oneOf!) {
+      const kind = variant.properties?.kind?.const as string | undefined;
+      const outcome = variant.properties?.outcome?.enum as string[] | undefined;
+      if (kind === 'implementation_challenge') {
+        expect(outcome?.sort()).toEqual(['fail', 'not_verified', 'pass']);
+      } else if (kind === 'design_challenge' || kind === 'content_challenge') {
+        expect(outcome?.sort()).toEqual(['contradicted', 'not_verified', 'supported']);
+      }
+    }
+  });
+
   it('GOOD: round-trip — a minimal valid SDK output passes both JSON-Schema and Zod', () => {
     // Construct a payload that satisfies the JSON-Schema, then run it through
     // the Zod parser. This catches drift where one schema accepts shapes the
