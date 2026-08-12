@@ -16,6 +16,7 @@ import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
 import type { FrozenReviewSubject, ReviewSubjectScope } from '../../state/evidence.js';
 import { renderPersistedProofGraphContext } from './proof-context.js';
+import { renderFindingRelationGrammar } from './finding-relation-grammar.js';
 import { CANONICAL_PROMPT_APPEND_MARKER } from './enforcement/types.js';
 import {
   buildDiscoveryContextSection,
@@ -118,6 +119,12 @@ export interface ReviewerTaskPromptInput {
   readonly artifactContext?: readonly string[];
   /** Integrity-verified standalone-review material, subject, scope, and anchor contract. */
   readonly frozenReviewerContext?: FrozenReviewerContext;
+  /**
+   * Advisory Discovery context (health, drift, detected stack, verification
+   * candidates) for reviewer falsification. Must be supplied for both SDK and
+   * Host Task paths so no transport has more semantic information than the other.
+   */
+  readonly discoveryContext?: DiscoveryReviewContext;
 }
 
 export function deriveReviewSubjectScope(subject: FrozenReviewSubject): ReviewSubjectScope {
@@ -206,6 +213,11 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
     iteration: input.iteration,
     planVersion: input.planVersion,
   });
+
+  const discoverySection = input.discoveryContext
+    ? buildDiscoveryContextSection(input.discoveryContext)
+    : '';
+
   return [
     `You are the ${REVIEWER_SUBAGENT_TYPE} subagent performing an independent, ` +
       `falsification-first review of ${input.subjectLabel}.`,
@@ -237,12 +249,21 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
       ? [...input.artifactContext]
       : []),
     ...(input.proofContext && input.proofContext.length > 0 ? [...input.proofContext] : []),
+    '',
+    // Finding output contract — derived from canonical Zod, identical for both transports.
+    renderFindingRelationGrammar(),
+    '',
+    // Discovery context — advisory falsification evidence, identical for both transports.
+    ...(discoverySection ? [discoverySection] : []),
+    '',
     ...(input.frozenReviewerContext
       ? renderFrozenReviewSubjectEnvelope(input.frozenReviewerContext)
       : [
           `${CANONICAL_PROMPT_APPEND_MARKER} ${input.subjectLabel} content to review below this line:`,
         ]),
-  ].join('\n');
+  ]
+    .filter((line) => line !== '')
+    .join('\n');
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────

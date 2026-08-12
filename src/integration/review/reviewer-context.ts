@@ -120,10 +120,34 @@ function renderChangedFiles(files: readonly string[], heading: string, absent: s
   return [
     '## ' + heading,
     '',
-    `- ${files.length} file(s) in scope. Confine the review to these paths.`,
+    `- ${files.length} file(s) define the reviewed subject.`,
     '',
     ...listed.map((file) => `- ${file}`),
     ...(omitted > 0 ? [`- ... and ${omitted} further file(s)`] : []),
+    '',
+  ];
+}
+
+/**
+ * Investigation scope — repo-wide permission for evidence gathering.
+ *
+ * The reviewer may inspect any repository file to falsify claims and collect
+ * supporting evidence. Out-of-subject files may populate evidenceLocations but
+ * must NOT become reviewed subject anchors merely because they were inspected.
+ */
+function renderInvestigationScope(files: readonly string[]): string[] {
+  if (files.length === 0) return [];
+  return [
+    '## Investigation Scope',
+    '',
+    'You MAY inspect relevant repository files outside the reviewed subject',
+    'to falsify claims and gather supporting evidence.',
+    '',
+    'Examples: callers, service mappings, controllers, persistence mappings,',
+    'serializers, tests, configuration.',
+    '',
+    'Out-of-subject repository files may support evidenceLocations, but they',
+    'do not become reviewed subject anchors merely because they were inspected.',
     '',
   ];
 }
@@ -198,6 +222,7 @@ export function buildReviewerArtifactContext(
           'Changed Files (reviewed revision)',
           'the changed file set could not be resolved; treat scope claims as NOT_VERIFIED.',
         ),
+        ...renderInvestigationScope(obligationTargetPaths(obligation)),
       ];
     default:
       return [];

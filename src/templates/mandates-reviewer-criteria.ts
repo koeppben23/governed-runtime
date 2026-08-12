@@ -30,7 +30,7 @@ export const REVIEWER_CRITERIA: Record<Exclude<ReviewerPromptType, 'all'>, strin
 - Justification: worth recording (hard to reverse, surprising without context, a real trade-off); apply the deletion test to proposed seams.`,
   content: `### Content Review (for /review flow)
 - Analyze provided PR diff, branch diff, URL content, or manual text.
-- Use severity values: "critical" | "major" | "minor" | "info".
+- Use severity values: "critical" | "major" | "minor".
 - Use categories: "completeness" | "correctness" | "feasibility" | "risk" | "quality".
 - Compliance -> correctness; missing validation -> completeness.
 - Security (as risk): trace user input to sensitive sinks and flag concretely exploitable injection (SQL/command/path/template), authn/authz bypass or privilege escalation, hardcoded secrets or weak crypto, unsafe deserialization/RCE, XSS, and sensitive-data/PII exposure; require a clear attack path and skip theoretical hardening.
@@ -96,8 +96,8 @@ Your response must conform to this JSON schema. When structured output is active
   "planVersion": <number>,
   "reviewMode": "subagent",
   "overallVerdict": "accept" | "changes_requested" | "unable_to_review",
-  "blockingIssues": [{ "severity": "critical" | "major" | "minor", "category": "completeness" | "correctness" | "feasibility" | "risk" | "quality", "message": "<specific problem>", "relation": { "subjectAnchors": [<RepositoryLocation | ArtifactAnchor>], "evidenceLocations": [<RepositoryLocation | ArtifactAnchor>] } }],
-  "majorRisks": [{ "severity": "critical" | "major" | "minor", "category": "completeness" | "correctness" | "feasibility" | "risk" | "quality", "message": "<specific risk>", "relation": { "subjectAnchors": [<RepositoryLocation | ArtifactAnchor>], "evidenceLocations": [<RepositoryLocation | ArtifactAnchor>] } }],
+  "blockingIssues": [{ "severity": "critical" | "major" | "minor", "category": "completeness" | "correctness" | "feasibility" | "risk" | "quality", "message": "<specific problem>", "relation": { "subjectAnchors": [<RepositoryLocationAnchor | ArtifactSectionAnchor | ContentSubjectAnchor>], "evidenceLocations": [<RepositoryLocation>] } }],
+  "majorRisks": [{ "severity": "critical" | "major" | "minor", "category": "completeness" | "correctness" | "feasibility" | "risk" | "quality", "message": "<specific risk>", "relation": { "subjectAnchors": [<RepositoryLocationAnchor | ArtifactSectionAnchor | ContentSubjectAnchor>], "evidenceLocations": [<RepositoryLocation>] } }],
   "missingVerification": ["<specific check not run or not provable>"],
   "scopeCreep": ["<specific out-of-scope item>"],
   "unknowns": ["<specific unresolved question>"],
@@ -111,7 +111,8 @@ Your response must conform to this JSON schema. When structured output is active
 - overallVerdict MUST be "changes_requested" whenever blockingIssues is non-empty.
 - overallVerdict MAY be "accept" only if blockingIssues is empty.
 - overallVerdict MAY be "unable_to_review" only under the validity conditions above.
-- Do NOT use "unable_to_review" to avoid producing substantive findings; every finding needs evidence and a relation with non-empty subjectAnchors and evidenceLocations.
+- Do NOT use "unable_to_review" to avoid producing substantive findings; every finding needs evidence and a relation with non-empty subjectAnchors.
+- evidenceLocations MAY be empty; subjectAnchors MUST have at least one entry.
 - Do NOT accept without reading the artifact; "accept" is a reviewer verdict, not user approval; reviewMode is "subagent".
   - iteration and planVersion are provided in your task prompt. Use exactly those values.
   - Honor the obligation's frozen \`requiredChallengeCount\` and \`requiredChallengeKind\`. Required challenges need matching digest-bound evidence. Implementation challenges with \`fail\` or \`not_verified\` cannot support acceptance. For prior author resolutions, return \`challengeResolutionVerdicts\` with your independent \`resolved\`, \`still_failing\`, or \`not_verified\` verdict; author claims have no acceptance authority.
@@ -148,8 +149,8 @@ flowguard_decision is not independent review evidence. A review-evidence file is
   "planVersion": <number>,
   "reviewMode": "subagent",
   "overallVerdict": "accept" | "changes_requested" | "unable_to_review",
-  "blockingIssues": [{ "severity": "critical" | "major" | "minor", "category": "completeness" | "correctness" | "feasibility" | "risk" | "quality", "message": "<specific problem>", "relation": { "subjectAnchors": [<RepositoryLocation | ArtifactAnchor>], "evidenceLocations": [<RepositoryLocation | ArtifactAnchor>] } }],
-  "majorRisks": [{ "severity": "critical" | "major" | "minor", "category": "completeness" | "correctness" | "feasibility" | "risk" | "quality", "message": "<specific risk>", "relation": { "subjectAnchors": [<RepositoryLocation | ArtifactAnchor>], "evidenceLocations": [<RepositoryLocation | ArtifactAnchor>] } }],
+  "blockingIssues": [{ "severity": "critical" | "major" | "minor", "category": "completeness" | "correctness" | "feasibility" | "risk" | "quality", "message": "<specific problem>", "relation": { "subjectAnchors": [<RepositoryLocationAnchor | ArtifactSectionAnchor | ContentSubjectAnchor>], "evidenceLocations": [<RepositoryLocation>] } }],
+  "majorRisks": [{ "severity": "critical" | "major" | "minor", "category": "completeness" | "correctness" | "feasibility" | "risk" | "quality", "message": "<specific risk>", "relation": { "subjectAnchors": [<RepositoryLocationAnchor | ArtifactSectionAnchor | ContentSubjectAnchor>], "evidenceLocations": [<RepositoryLocation>] } }],
   "missingVerification": ["<specific check not run or not provable>"],
   "scopeCreep": ["<specific out-of-scope item>"],
   "unknowns": ["<specific unresolved question>"],

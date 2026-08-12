@@ -573,4 +573,64 @@ export const REVIEW_VALIDATION_REASONS = [
       'Re-run the review if the required revision provenance could not be resolved',
     ],
   },
+  // ─── Reviewer Output Contract Enforcement ────────────────────────────────
+
+  {
+    code: 'REVIEWER_OUTPUT_SCHEMA_INVALID',
+    category: 'state',
+    messageTemplate:
+      'Reviewer output failed schema validation for obligation {obligationId}: {reason}. The reviewer must produce output conforming to the canonical ReviewFindings contract shared by both transports.',
+    recoverySteps: [
+      'Re-invoke the flowguard-reviewer subagent with the exact same frozen subject and material',
+      'Ensure the reviewer output matches the FindingRelation grammar documented in the reviewer prompt',
+      'subjectAnchors.kind must be one of: repository_location, artifact_section, content',
+      'revision must be base or head — never a SHA, never "current" or "modified"',
+      'evidenceLocations are optional but must be valid RepositoryLocation entries when supplied',
+      'Do NOT self-review, fabricate findings, or submit a guessed verdict',
+    ],
+  },
+  {
+    code: 'REVIEWER_OUTPUT_RETRY_EXHAUSTED',
+    category: 'state',
+    messageTemplate:
+      'Reviewer output failed schema validation after the canonical retry for obligation {obligationId}. The reviewer output cannot be bound.',
+    recoverySteps: [
+      'Report the schema errors to the operator',
+      'The frozen review subject and material remain unchanged',
+      'A terminal block requires operator intervention — the review cannot proceed',
+      'Do NOT rewrite the reviewer prompt, fabricate findings, or guess a verdict',
+    ],
+  },
+  {
+    code: 'REVIEW_VERDICT_EVIDENCE_MISSING',
+    category: 'state',
+    messageTemplate:
+      'reviewVerdict submitted for obligation {obligationId} has no matching bound ReviewInvocationEvidence. A verdict cannot be accepted without captured reviewer evidence.',
+    recoverySteps: [
+      'Run the flowguard-reviewer subagent for the active obligation before submitting a verdict',
+      'Do NOT submit a verdict without the reviewer having produced independently captured findings',
+    ],
+  },
+  {
+    code: 'REVIEW_VERDICT_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'Submitted reviewVerdict ({submitted}) does not match the captured reviewer overallVerdict ({captured}) for obligation {obligationId}.',
+    recoverySteps: [
+      'Submit reviewVerdict exactly matching the reviewer subagent overallVerdict',
+      'Do NOT override the reviewer verdict — it is the independent reviewer result, not user approval',
+      'If you disagree with the verdict, run another review iteration with revised input',
+    ],
+  },
+  {
+    code: 'INVALID_REVIEW_TOOL_SEQUENCE',
+    category: 'state',
+    messageTemplate:
+      'Review tool invocation sequence is invalid for obligation {obligationId}: {reason}.',
+    recoverySteps: [
+      'Follow the review invocation sequence documented in the reviewer task instructions',
+      'Do NOT submit reviewerUnavailable when the reviewer subagent successfully spawned',
+      'Do NOT submit reviewFindings in host_task_required mode — only reviewVerdict',
+    ],
+  },
 ] as const satisfies readonly BlockedReason[];

@@ -62,6 +62,22 @@ const REVIEW_SUBJECT_ANCHOR_JSON_SCHEMA = {
       },
       required: ['kind', 'artifactKind', 'artifactDigest', 'sectionPath'],
     },
+    {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', const: 'content' },
+        subjectDigest: { type: 'string', minLength: 1 },
+        range: {
+          type: 'object',
+          properties: {
+            startLine: { type: 'integer', minimum: 1 },
+            endLine: { type: 'integer', minimum: 1 },
+          },
+          required: ['startLine'],
+        },
+      },
+      required: ['kind', 'subjectDigest'],
+    },
   ],
 } as const;
 
