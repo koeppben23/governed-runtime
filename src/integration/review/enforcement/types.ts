@@ -96,6 +96,8 @@ export interface PendingReview {
   canonicalPromptAnchor: string | null;
   /** Actual findings from the subagent response (Level 4). */
   capturedFindings: CapturedFindings | null;
+  /** Number of times the reviewer was re-invoked for this obligation. */
+  retryCount: number;
 }
 
 /** Session-level enforcement state. */

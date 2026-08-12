@@ -9,7 +9,6 @@ import {
   renderReviewerTaskPrompt,
 } from './prompt-builders.js';
 import { renderPersistedProofGraphContext } from './proof-context.js';
-import { FROZEN_REVIEW_ANCHOR_CONTRACT } from './frozen-reviewer-context.js';
 import type { FrozenReviewerContext } from './frozen-reviewer-context.js';
 
 const BASE_INPUT = {
@@ -87,7 +86,12 @@ describe('frozen review subject envelope', () => {
       lineCount: 1,
     },
     reviewSubjectScope: { kind: 'content' as const, subjectDigest: 'b'.repeat(64), lineCount: 1 },
-    anchorContract: FROZEN_REVIEW_ANCHOR_CONTRACT,
+    anchorContract: {
+      kind: 'content' as const,
+      requiredSubjectDigest: 'b'.repeat(64),
+      contractText:
+        'Content review: subjectAnchors must use kind=content with the exact frozen subjectDigest.',
+    },
   };
 
   it('keeps exact persisted material immediately after the anchor in both transports', () => {

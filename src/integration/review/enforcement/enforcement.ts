@@ -102,6 +102,7 @@ function trackReviewRequired(
     contentMeta: extractContentMeta(next),
     canonicalPromptAnchor: binding.canonicalPromptAnchor ?? null,
     capturedFindings: null,
+    retryCount: 0,
   });
 }
 
@@ -116,6 +117,7 @@ function trackContentAnalysis(state: SessionEnforcementState, now: string): void
     contentMeta: { expectedIteration: 1, expectedPlanVersion: 1 },
     canonicalPromptAnchor: null,
     capturedFindings: null,
+    retryCount: 0,
   });
 }
 
@@ -273,6 +275,10 @@ export function onTaskToolAfter(
   // Match exactly ONE pending review obligation (P34 1:1 contract).
   const matched = matchPendingReview(state, args);
   if (matched) {
+    // Track retries: a re-invoke after a prior (unusable) capture is a retry.
+    if (matched.subagentCalled) {
+      matched.retryCount = (matched.retryCount ?? 0) + 1;
+    }
     matched.subagentCalled = true;
     matched.subagentRecord = record;
     matched.capturedFindings = capturedFindings;
@@ -328,7 +334,12 @@ export function matchPendingReview(
   );
 
   if (awaitingCapture.length === 0) return null;
-  if (awaitingCapture.length === 1) return awaitingCapture[0]!;
+  if (awaitingCapture.length === 1) {
+    const candidate = awaitingCapture[0]!;
+    // Retry exhausted: reviewer was re-invoked but still produced unusable output.
+    if (candidate.subagentCalled && (candidate.retryCount ?? 0) >= 1) return null;
+    return candidate;
+  }
 
   // Multiple awaiting capture — match by contentMeta from prompt
   const prompt = typeof taskArgs.prompt === 'string' ? taskArgs.prompt : '';

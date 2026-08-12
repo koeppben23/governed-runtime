@@ -11,14 +11,54 @@ import type {
 } from '../../state/evidence.js';
 import { hashCanonicalReviewContent, normalizeReviewContent } from '../../shared/review-subject.js';
 
-export const FROZEN_REVIEW_ANCHOR_CONTRACT =
-  'Content anchor contract: the exact persisted review material begins immediately after the canonical anchor. Do not append, replace, or supplement it.';
+/** Material envelope contract — the review material follows this marker verbatim. */
+export const FROZEN_REVIEW_MATERIAL_CONTRACT =
+  'The exact persisted review material begins immediately after the canonical anchor. ' +
+  'Do not append, replace, or supplement it.';
+
+/**
+ * Typed anchor contract describing the finding-relation contract that the
+ * reviewer must follow for this reviewed-subject kind.
+ */
+export type ReviewAnchorContract =
+  | {
+      readonly kind: 'repository_change';
+      readonly allowedSubjectAnchorKinds: readonly string[];
+      readonly allowedRevisionAliases: readonly string[];
+      readonly contractText: string;
+    }
+  | {
+      readonly kind: 'content';
+      readonly requiredSubjectDigest: string;
+      readonly contractText: string;
+    };
+
+function buildAnchorContract(subject: FrozenReviewSubject): ReviewAnchorContract {
+  if (subject.kind === 'repository_change') {
+    return {
+      kind: 'repository_change',
+      allowedSubjectAnchorKinds: ['repository_location'],
+      allowedRevisionAliases: ['base', 'head'],
+      contractText:
+        'Repository review: subjectAnchors must use kind=repository_location with ' +
+        'paths inside the reviewed file set. revision is "base" or "head" — never a SHA. ' +
+        'evidenceLocations may reference any repository file and MAY be empty.',
+    };
+  }
+  return {
+    kind: 'content',
+    requiredSubjectDigest: subject.subjectDigest,
+    contractText:
+      'Content review: subjectAnchors must use kind=content with the exact ' +
+      'frozen subjectDigest. evidenceLocations MAY be empty.',
+  };
+}
 
 export interface FrozenReviewerContext {
   readonly reviewMaterial: ReviewMaterial;
   readonly reviewSubject: FrozenReviewSubject;
   readonly reviewSubjectScope: ReviewSubjectScope;
-  readonly anchorContract: typeof FROZEN_REVIEW_ANCHOR_CONTRACT;
+  readonly anchorContract: ReviewAnchorContract;
 }
 
 export type FrozenReviewerContextResult =
@@ -79,7 +119,7 @@ export function verifyFrozenReviewerContext(
       reviewMaterial,
       reviewSubject: obligation.reviewSubject,
       reviewSubjectScope: obligation.reviewSubjectScope,
-      anchorContract: FROZEN_REVIEW_ANCHOR_CONTRACT,
+      anchorContract: buildAnchorContract(obligation.reviewSubject),
     },
   };
 }

@@ -80,7 +80,7 @@ export function renderFrozenReviewSubjectEnvelope(context: FrozenReviewerContext
     JSON.stringify(context.reviewSubject),
     '## Review Subject Scope (frozen obligation scope)',
     JSON.stringify(context.reviewSubjectScope),
-    context.anchorContract,
+    context.anchorContract.contractText,
     `${CANONICAL_PROMPT_APPEND_MARKER} persisted review material below this line:`,
     context.reviewMaterial.content,
   ];

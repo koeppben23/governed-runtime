@@ -53,4 +53,40 @@ describe('enforcement contract invariants', () => {
     expect(content).toContain('host_subagent_task');
     expect(content).toContain('invocationMode');
   });
+
+  it('retryCount is tracked on reviewer re-invocation', () => {
+    const content = readFileSync(
+      join(SRC_ROOT, 'integration/review/enforcement/enforcement.ts'),
+      'utf8',
+    );
+    expect(content).toContain('retryCount');
+    expect(content).toMatch(/matched\.retryCount\s*=/);
+  });
+
+  it('matchPendingReview returns null when retry is exhausted', () => {
+    const content = readFileSync(
+      join(SRC_ROOT, 'integration/review/enforcement/enforcement.ts'),
+      'utf8',
+    );
+    expect(content).toContain('>= 1');
+    expect(content).toContain('return null');
+  });
+
+  it('host-task-policy.ts never says "submit the exact reviewFindings"', () => {
+    const content = readFileSync(join(SRC_ROOT, 'integration/review/host-task-policy.ts'), 'utf8');
+    expect(content).not.toMatch(/\bsubmit\s+the\s+reviewFindings\b/i);
+    expect(content).not.toMatch(/\bsubmit\s+reviewFindings\s+with\b/i);
+    expect(content).toMatch(/do NOT submit/i);
+  });
+
+  it('anchor contract is typed per review subject kind', () => {
+    const content = readFileSync(
+      join(SRC_ROOT, 'integration/review/frozen-reviewer-context.ts'),
+      'utf8',
+    );
+    expect(content).toContain('buildAnchorContract');
+    expect(content).toContain('ReviewAnchorContract');
+    expect(content).toContain("kind: 'repository_change'");
+    expect(content).toContain("kind: 'content'");
+  });
 });
