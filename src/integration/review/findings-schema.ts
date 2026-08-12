@@ -13,7 +13,12 @@
  */
 
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
-import { SEVERITY_VALUES, CATEGORY_VALUES } from './reviewer-contract.js';
+import {
+  SEVERITY_VALUES,
+  CATEGORY_VALUES,
+  REVISION_VALUES,
+  OVERALL_VERDICT_VALUES,
+} from './reviewer-contract.js';
 
 const REPOSITORY_LOCATION_JSON_SCHEMA = {
   oneOf: [
@@ -21,7 +26,7 @@ const REPOSITORY_LOCATION_JSON_SCHEMA = {
       type: 'object',
       properties: {
         path: { type: 'string', minLength: 1 },
-        revision: { type: 'string', enum: ['base', 'head'] },
+        revision: { type: 'string', enum: [...REVISION_VALUES] },
         line: { type: 'integer', minimum: 1 },
         endLine: { type: 'integer', minimum: 1 },
       },
@@ -96,7 +101,7 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
     iteration: { type: 'integer', minimum: 0 },
     planVersion: { type: 'integer', minimum: 1 },
     reviewMode: { type: 'string', const: 'subagent' },
-    overallVerdict: { type: 'string', enum: ['accept', 'changes_requested', 'unable_to_review'] },
+    overallVerdict: { type: 'string', enum: [...OVERALL_VERDICT_VALUES] },
     blockingIssues: {
       type: 'array',
       items: {

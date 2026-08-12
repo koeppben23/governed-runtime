@@ -6,7 +6,12 @@
  * Every reviewer transport MUST receive this grammar so no path can guess the
  * schema that the other path enforces.
  */
-import { SEVERITY_VALUES, CATEGORY_VALUES, REVISION_VALUES } from './reviewer-contract.js';
+import {
+  SEVERITY_VALUES,
+  CATEGORY_VALUES,
+  REVISION_VALUES,
+  ANCHOR_KINDS,
+} from './reviewer-contract.js';
 
 export function renderFindingRelationGrammar(): string {
   const severities = SEVERITY_VALUES.map((s) => `"${s}"`).join(' | ');
@@ -30,7 +35,7 @@ export function renderFindingRelationGrammar(): string {
     '',
     '### subjectAnchors',
     '',
-    'Subject anchors identify what is being criticized. Use ONE of:',
+    `Subject anchors identify what is being criticized. Use ONE of: ${ANCHOR_KINDS.map((k) => `"${k}"`).join(', ')}`,
     '',
     'repository_location (for file-level targets):',
     '{',

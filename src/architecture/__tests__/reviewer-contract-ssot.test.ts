@@ -133,11 +133,25 @@ describe('reviewer contract SSOT guard', () => {
     expect(content).toContain("from './finding-relation-grammar.js'");
   });
 
-  it('findings-schema.ts imports enum values from reviewer-contract.ts', () => {
+  it('findings-schema.ts imports all canonical enum values from reviewer-contract.ts', () => {
     const content = readFileSync(join(SRC_ROOT, 'integration/review/findings-schema.ts'), 'utf8');
     expect(content).toContain("from './reviewer-contract.js'");
     expect(content).toContain('SEVERITY_VALUES');
     expect(content).toContain('CATEGORY_VALUES');
+    expect(content).toContain('REVISION_VALUES');
+    expect(content).toContain('OVERALL_VERDICT_VALUES');
+  });
+
+  it('finding-relation-grammar.ts imports all canonical values from reviewer-contract.ts', () => {
+    const content = readFileSync(
+      join(SRC_ROOT, 'integration/review/finding-relation-grammar.ts'),
+      'utf8',
+    );
+    expect(content).toContain("from './reviewer-contract.js'");
+    expect(content).toContain('SEVERITY_VALUES');
+    expect(content).toContain('CATEGORY_VALUES');
+    expect(content).toContain('REVISION_VALUES');
+    expect(content).toContain('ANCHOR_KINDS');
   });
 
   it('finding-relation-grammar.ts documents reviewer-contract.ts as authority', () => {
