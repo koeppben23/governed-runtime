@@ -659,6 +659,18 @@ export const REVIEW_VALIDATION_REASONS = [
     ],
   },
   {
+    code: 'REVIEW_EVIDENCE_NOT_OBSERVED',
+    category: 'state',
+    messageTemplate:
+      'Reviewer finding evidenceLocations for obligation {obligationId} have no matching authoritative repository observation: {reason}. The location is structurally valid but was not observably obtained by this reviewer attempt.',
+    recoverySteps: [
+      'A repository evidenceLocation is admissible only when the exact frozen bytes were obtained through flowguard_observe_repository during the binding reviewer attempt',
+      'This is a governance rejection (evidence_unavailable) — it is never repairable by resubmitting findings',
+      'Start a fresh review attempt and cite only locations the reviewer observes through the sanctioned observation tool',
+      'Do NOT substitute worktree reads, recalled content, or citations without a matching observation',
+    ],
+  },
+  {
     code: 'REVIEW_REPAIR_UNAVAILABLE',
     category: 'state',
     messageTemplate:

@@ -39,6 +39,7 @@ import {
   buildObservationToolResponse,
   classifyRepresentation,
   contentDigestOf,
+  lineCountOfUtf8,
   responseDigestOf,
 } from './observation-service.js';
 
@@ -68,10 +69,12 @@ function mintObservation(input: {
   contentDigest: string;
   byteLength: number;
   representation: 'utf8_text' | 'binary';
+  /** Canonical line count — REQUIRED for utf8_text, absent for binary. */
+  lineCount: number | null;
   capturedAt: string;
   acquisitionKind: 'local_git_object' | 'remote_commit_blob';
 }): RepositoryObservation {
-  return {
+  const base = {
     observationId: randomUUID(),
     obligationId: input.attempt.obligationId,
     attemptId: input.attempt.attemptId,
@@ -80,13 +83,16 @@ function mintObservation(input: {
     revision: input.revision,
     repositoryIdentity: input.target.repositoryIdentity,
     resolvedObjectSha: input.target.objectSha,
+    resolvedObjectKind: input.target.kind,
     contentDigest: input.contentDigest,
     byteLength: input.byteLength,
-    representation: input.representation,
     capturedAt: input.capturedAt,
     boundAt: input.now,
     acquisition: { kind: input.acquisitionKind },
   };
+  return input.representation === 'utf8_text'
+    ? { ...base, representation: 'utf8_text' as const, lineCount: input.lineCount ?? 0 }
+    : { ...base, representation: 'binary' as const };
 }
 
 /**
@@ -143,6 +149,7 @@ function validateAndMintCapture(input: {
       contentDigest,
       byteLength: acquired.bytes.length,
       representation,
+      lineCount: representation === 'utf8_text' ? lineCountOfUtf8(content) : null,
       capturedAt: capture.capturedAt,
       acquisitionKind: acquired.kind,
     }),

@@ -239,6 +239,7 @@ real, registered reason.
 | `REVIEW_VERDICT_MISMATCH`                     | Submitted verdict does not match captured reviewer overallVerdict                                                           | Use verdict exactly matching reviewer output; do not override                                                                                        |
 | `REVIEWER_OUTPUT_RETRY_EXHAUSTED`             | Reviewer output could not be bound after the canonical output-repair retry budget was exhausted                             | Operator intervention required; do not rewrite prompt or fabricate findings                                                                          |
 | `REVIEWER_OUTPUT_REPAIR_STALLED`              | Targeted repair reproduced the identical schema error set                                                                   | Inspect or correct the reviewer output mechanism first; after operator intervention, start a fresh `/review` if a new independent attempt is desired |
+| `REVIEW_EVIDENCE_NOT_OBSERVED`                | evidenceLocations have no matching authoritative repository observation for this reviewer attempt                           | Cite only locations obtained via flowguard_observe_repository during the attempt; start a fresh review otherwise                                     |
 | `REVIEW_REPAIR_UNAVAILABLE`                   | No output-repair reissue is authorized for this rejection (governance, scope, integrity, consistency, or execution failure) | Operator intervention required; the obligation is blocked terminally — do not fabricate findings or bypass the frozen subject                        |
 | `REPAIR_PROMPT_REQUIRED`                      | Fresh canonical repair prompt required before re-running reviewer Task                                                      | Call flowguard_review to obtain a new reviewerTaskPrompt with validation errors; never reuse stale prompt                                            |
 | `REVIEWER_OUTPUT_SCHEMA_INVALID`              | Reviewer output failed to validate against the canonical ReviewFindings schema                                              | Re-invoke with exact same frozen subject; ensure output matches grammar in prompt                                                                    |
@@ -459,6 +460,7 @@ REVIEW_CARD_ARTIFACT_WRITE_FAILED
 REVIEW_CONTENT_SOURCE_INCOMPLETE
 REVIEW_EVIDENCE_LOCATION_ESCAPES_REPOSITORY
 REVIEW_EVIDENCE_LOCATION_INVALID
+REVIEW_EVIDENCE_NOT_OBSERVED
 REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE
 REVIEW_IMPLEMENTATION_BASE_FREEZE_FAILED
 REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED

@@ -234,6 +234,7 @@ export type HostTaskBindOutcome =
   | 'findings_incoherent'
   | 'review_finding_out_of_scope'
   | 'review_finding_scope_unverifiable'
+  | 'repository_evidence_unbound'
   | 'subject_mismatch'
   | 'stale_attempt'
   | 'idempotent_bound'

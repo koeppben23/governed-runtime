@@ -43,6 +43,7 @@ import {
   validateReviewFindingsScope,
   type FindingWithRelation,
 } from '../review/enforcement/findings-consistency.js';
+import { checkRepositoryEvidenceBinding } from './review-validation-evidence.js';
 
 // ─── Validation Context ───────────────────────────────────────────────────────
 
@@ -271,6 +272,9 @@ export function validateReviewFindings(
 
   const scopeBlock = checkReviewFindingsScope(findings, obligation);
   if (scopeBlock) return scopeBlock;
+
+  const evidenceBlock = checkRepositoryEvidenceBinding(findings, obligation, ctx);
+  if (evidenceBlock) return evidenceBlock;
 
   if (ctx.strictEnforcement) return validateStrictReviewFindings(findings, ctx);
 

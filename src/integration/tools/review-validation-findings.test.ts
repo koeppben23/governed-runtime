@@ -51,7 +51,7 @@ function findingRelation() {
   const location = { path: 'src/foo.ts', revision: 'head' as const, line: 1 };
   return {
     subjectAnchors: [{ kind: 'repository_location' as const, location }],
-    evidenceLocations: [location],
+    evidenceLocations: [],
   };
 }
 

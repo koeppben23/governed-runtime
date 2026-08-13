@@ -28,6 +28,7 @@ import {
   validateReviewFindingsScope,
   type FindingWithRelation,
 } from './enforcement/findings-consistency.js';
+import { bindRepositoryEvidenceLocations } from './observation-binding.js';
 
 /** Transport contract for captured findings: recovered findings downgrade assurance. */
 function transportContract(latest: PendingReviewRecord) {
@@ -195,6 +196,7 @@ export function buildHostTaskEvidence(
     rawFindings,
     obligation: matchedObligation,
     childSessionId,
+    attempt,
     now,
     allowedEvidenceRefs,
   });
@@ -496,10 +498,11 @@ function prepareBindableFindings(input: {
   rawFindings: Record<string, unknown>;
   obligation: ReviewObligation;
   childSessionId: string;
+  attempt: ReviewAttempt;
   now: string;
   allowedEvidenceRefs?: readonly unknown[];
 }): { findings: Record<string, unknown> } | HostTaskBindResult {
-  const { rawFindings, obligation, childSessionId, now, allowedEvidenceRefs } = input;
+  const { rawFindings, obligation, childSessionId, attempt, now, allowedEvidenceRefs } = input;
 
   const prepared = prepareReviewerFindingsForValidation({
     rawFindings,
@@ -557,6 +560,41 @@ function prepareBindableFindings(input: {
     repositoryRevisionProvenance: obligation.repositoryRevisionProvenance,
   });
   if (!scopeResult.ok) return scopeFailure(scopeResult, childSessionId, obligation.obligationId);
+  return bindEvidenceOrReturn(findings, obligation, attempt, childSessionId);
+}
+
+/**
+ * Canonical evidence authorization: every cited repository evidenceLocation
+ * must match an authoritative Observation of THIS attempt/session against the
+ * exact frozen target. Governance rejection — never schema_invalid, never
+ * output-repairable.
+ */
+function bindEvidenceOrReturn(
+  findings: Record<string, unknown>,
+  obligation: ReviewObligation,
+  attempt: ReviewAttempt,
+  childSessionId: string,
+): { findings: Record<string, unknown> } | HostTaskBindResult {
+  const evidenceBinding = bindRepositoryEvidenceLocations({
+    findings: relationFindings(findings),
+    obligation,
+    attempt,
+    childSessionId,
+  });
+  if (!evidenceBinding.ok) {
+    return {
+      evidence: null,
+      bindOutcome: 'repository_evidence_unbound',
+      diagnostic: {
+        childSessionId,
+        obligationId: obligation.obligationId,
+        failingIndexes: [...evidenceBinding.failingIndexes],
+        reasons: [...evidenceBinding.reasons],
+        message:
+          'Repository evidenceLocations have no matching authoritative observation for this reviewer attempt.',
+      },
+    };
+  }
   return { findings };
 }
 

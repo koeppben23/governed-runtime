@@ -68,7 +68,7 @@ function finding(message: string) {
     message,
     relation: {
       subjectAnchors: [{ kind: 'repository_location' as const, location }],
-      evidenceLocations: [location],
+      evidenceLocations: [],
     },
   };
 }

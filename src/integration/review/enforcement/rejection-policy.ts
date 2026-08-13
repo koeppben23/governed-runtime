@@ -95,6 +95,9 @@ export const BIND_OUTCOME_TO_REASON = {
   findings_incoherent: 'consistency_invalid',
   review_finding_out_of_scope: 'scope_invalid',
   review_finding_scope_unverifiable: 'scope_invalid',
+  // Repository evidenceLocations without a matching authoritative Observation.
+  // The citation is a claim, not proof: evidence_unavailable, never repairable.
+  repository_evidence_unbound: 'evidence_unavailable',
   // Cross-artifact subject digest mismatch — integrity failure.
   subject_mismatch: 'material_integrity_failed',
   stale_attempt: null,
