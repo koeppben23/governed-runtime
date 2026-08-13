@@ -150,6 +150,18 @@ function validateAndMintCapture(input: {
 }
 
 /**
+ * Resolve the observation ledger fingerprint. The persisted workspace binding
+ * carries the canonical fingerprint from hydrate time; recomputing it here
+ * would re-run git remote resolution and emit misleading warnings for
+ * legitimate local repositories.
+ */
+async function resolveLedgerFingerprint(state: SessionState, worktree: string): Promise<string> {
+  const bound = state.binding?.fingerprint;
+  if (bound) return bound;
+  return (await computeFingerprint(worktree)).fingerprint;
+}
+
+/**
  * Replay the observation ledger of an attempt AFTER its reviewer child session
  * is known, and return the authoritative observations to persist. Never
  * mutates state; the caller persists via the serialized assurance channel.
@@ -168,7 +180,7 @@ export async function replayObservationCaptures(input: {
   const obligation = assurance?.obligations.find((o) => o.obligationId === attempt.obligationId);
   if (!obligation) return { observations: [], dropped: 0 };
 
-  const fingerprint = (await computeFingerprint(input.worktree)).fingerprint;
+  const fingerprint = await resolveLedgerFingerprint(input.state, input.worktree);
   const ledgerRoot = observationLedgerRoot(workspacesHome(), fingerprint);
   const { captures, skipped } = await readObservationCaptures(
     ledgerRoot,

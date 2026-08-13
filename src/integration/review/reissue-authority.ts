@@ -39,7 +39,10 @@ import {
 import { isCanonicallyRepairable } from './enforcement/rejection-policy.js';
 import { verifyFrozenReviewerContext } from './frozen-reviewer-context.js';
 
-export type ReissueBlockCode = 'REVIEW_REPAIR_UNAVAILABLE' | 'REVIEWER_OUTPUT_RETRY_EXHAUSTED';
+export type ReissueBlockCode =
+  | 'REVIEW_REPAIR_UNAVAILABLE'
+  | 'REVIEWER_OUTPUT_RETRY_EXHAUSTED'
+  | 'REVIEWER_OUTPUT_REPAIR_STALLED';
 
 /** The attempt with the highest ordinal for an obligation, or null. */
 export function latestAttemptForObligation(
@@ -89,6 +92,38 @@ export type OutputRepairAuthorization =
     };
 
 /**
+ * Stall detection: a targeted repair that reproduced the IDENTICAL schema
+ * error set gained no new information — another LLM repair is token burn, not
+ * recovery. Canonical fingerprint comparison only; different error sets keep
+ * the normal budget. Fails safe when either fingerprint is absent (e.g.
+ * SDK-path rejections without machine-readable issues).
+ */
+function repairStallBlock(
+  assurance: ReviewAssuranceState | undefined,
+  latest: ReviewAttempt,
+): { readonly code: ReissueBlockCode; readonly reason: string } | null {
+  if (latest.rejectionReason !== 'schema_invalid' || latest.origin.kind !== 'output_repair') {
+    return null;
+  }
+  const origin = latest.origin;
+  const predecessor = (assurance?.attempts ?? []).find(
+    (a) => a.attemptId === origin.predecessorAttemptId,
+  );
+  if (
+    latest.schemaErrorFingerprint &&
+    predecessor?.schemaErrorFingerprint &&
+    latest.schemaErrorFingerprint === predecessor.schemaErrorFingerprint
+  ) {
+    return {
+      code: 'REVIEWER_OUTPUT_REPAIR_STALLED',
+      reason:
+        'the targeted repair reproduced the identical schema error set; no further reviewer repair is authorized',
+    };
+  }
+  return null;
+}
+
+/**
  * Decide whether a pending obligation may receive a new `output_repair` attempt.
  *
  * The immutable authority is verified FIRST — a broken frozen subject/material
@@ -100,6 +135,7 @@ export type OutputRepairAuthorization =
  *   AND the latest attempt exists and is `rejected`
  *   AND it carries an explicit structured rejectionReason
  *   AND the rejection policy classifies that reason as `canonical_output_retry`
+ *   AND the repair did NOT reproduce the identical schema error set (stall)
  *   AND the frozen budget has remaining capacity
  *
  * Everything else blocks — fail-closed, no defaulting anywhere.
@@ -152,6 +188,10 @@ export function authorizeOutputRepairReissue(
       code: 'REVIEW_REPAIR_UNAVAILABLE',
       reason: `rejection reason ${reason} does not authorize an output repair`,
     };
+  }
+  const stall = repairStallBlock(assurance, latest);
+  if (stall) {
+    return { kind: 'blocked', code: stall.code, reason: stall.reason };
   }
   const used = countOutputRepairAttempts(assurance, obligation.obligationId);
   if (used >= obligation.maxReviewerOutputRepairAttempts) {

@@ -95,13 +95,8 @@ export interface ReviewerTaskPromptInput {
   /**
    * Artifact context lines (approved plan, changed files, executed verification
    * evidence, reviewed-revision provenance), produced by
-   * {@link buildReviewerArtifactContext}. Supplied by the caller for the same
-   * reason as {@link ReviewerTaskPromptInput.proofContext}: this renderer stays
-   * free of state access.
-   *
-   * Without it the host-task reviewer - the reviewer that actually runs under
-   * every shipped policy preset - judges an artifact without knowing what was
-   * promised, what changed, or which checks were executed.
+   * {@link buildReviewerArtifactContext}. Without it the host-task reviewer
+   * judges an artifact without knowing what was promised or which checks ran.
    */
   readonly artifactContext?: readonly string[];
   /** Integrity-verified standalone-review material, subject, scope, and anchor contract. */
@@ -237,6 +232,8 @@ function renderReviewerRules(isRepositoryReview: boolean): string[] {
   }
   rules.push(
     '- Do not fabricate a verdict of convenience; ground every finding in concrete evidence.',
+    // Defensive hardening, NOT a schema guarantee (strict validation enforces regardless).
+    '- reviewedBy and attestation belong ONLY at the TOP LEVEL of ReviewFindings. NEVER place reviewedBy inside relation objects — not in subjectAnchors entries, not in their location objects, not in evidenceLocations entries.',
     '- Output ONLY the ReviewFindings JSON object as the final content of your reply:',
     '  no prose, no reasoning, and no markdown code fences before or after it.',
   );
@@ -367,8 +364,7 @@ export interface ImplReviewPromptOpts {
   }>;
   /**
    * Runtime-executed verification evidence bound to the implementation under
-   * review (FlowGuard-executed, digest-bound by the caller). Absent/empty fails
-   * closed to an explicit NOT_VERIFIED line.
+   * review (FlowGuard-executed, digest-bound by the caller).
    */
   readonly verificationEvidence?: readonly ReviewVerificationEvidenceItem[];
   /** Opaque host-minted observation capability of the attempt under review. */

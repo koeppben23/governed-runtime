@@ -37,6 +37,9 @@ describe('mandates — contract anchors', () => {
     expect(REVIEWER_AGENT).toContain('flowguard_*: deny');
     expect(REVIEWER_AGENT).toContain('mcp__flowguard__*: deny');
     expect(REVIEWER_AGENT).toContain('task: deny');
+    expect(REVIEWER_AGENT).toContain(
+      'reviewedBy and attestation belong ONLY at the TOP LEVEL of ReviewFindings',
+    );
   });
 
   it('CLAUDE_REVIEWER_AGENT contains platform marker', () => {

@@ -22,6 +22,10 @@ import { appendReviewAuditEvent } from './review/audit-events.js';
 import { strictBlockedOutput } from './plugin-helpers.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 import { bindOutcomeToRejectionReason } from './review/enforcement/rejection-policy.js';
+import {
+  schemaErrorFingerprintOf,
+  type SchemaIssueKey,
+} from './review/schema-error-fingerprint.js';
 
 import type { PluginWorkspace } from './plugin-workspace.js';
 import type { SessionState } from '../state/schema.js';
@@ -253,6 +257,15 @@ async function persistAttemptStatus(
   // closed on a rejected attempt without an explicit reason.
   const rejectionReason =
     status === 'rejected' ? bindOutcomeToRejectionReason(bindResult.bindOutcome) : undefined;
+  // Canonical schema-error-set fingerprint for the output-repair stall gate.
+  // Diagnostics only: absent for non-schema rejections and for paths without
+  // machine-readable issue keys.
+  const schemaFingerprint =
+    rejectionReason === 'schema_invalid'
+      ? schemaErrorFingerprintOf(
+          bindResult.diagnostic?.schemaIssueKeys as readonly SchemaIssueKey[] | undefined,
+        )
+      : null;
   await deps.ws.updateReviewAssurance(sessDir, (s: SessionState) => ({
     ...s,
     reviewAssurance: updateAttemptStatus(
@@ -260,7 +273,12 @@ async function persistAttemptStatus(
       attempt.attemptId,
       status,
       now,
-      rejectionReason ? { rejectionReason } : undefined,
+      rejectionReason
+        ? {
+            rejectionReason,
+            ...(schemaFingerprint ? { schemaErrorFingerprint: schemaFingerprint } : {}),
+          }
+        : undefined,
     ),
   }));
 }

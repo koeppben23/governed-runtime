@@ -240,3 +240,11 @@ describe('ProofGraph prompt context', () => {
     }
   });
 });
+
+describe('repository observation and schema-hardening rules', () => {
+  it('renders the defensive nested-reviewedBy rule (hardening, not a schema guarantee)', () => {
+    const prompt = renderReviewerTaskPrompt({ ...BASE_INPUT });
+    expect(prompt).toContain('reviewedBy and attestation belong ONLY at the TOP LEVEL');
+    expect(prompt).toContain('NEVER place reviewedBy inside relation objects');
+  });
+});

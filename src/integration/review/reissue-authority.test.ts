@@ -411,3 +411,83 @@ describe('authorizeTaskLifecycleRearm', () => {
     expect(result).toEqual({ kind: 'blocked', reason: 'rearm_obligation_not_found' });
   });
 });
+
+describe('authorizeOutputRepairReissue — stall detection', () => {
+  const FP_SAME = 'f'.repeat(64);
+  const FP_OTHER = 'a'.repeat(64);
+
+  /**
+   * Build a real repair chain: attempt 1 rejected with a schema fingerprint,
+   * then an authorized output_repair attempt rejected with (optionally) the
+   * repaired fingerprint. Returns the settled assurance state.
+   */
+  function repairChain(fingerprintOfFirst: string, fingerprintOfRepair: string | null) {
+    const obligation = makeObligation({ maxReviewerOutputRepairAttempts: 2 });
+    let assurance = assuranceWith(obligation, [initialAttempt(obligation)]);
+    const firstId = assurance.attempts[0]!.attemptId;
+    assurance = updateAttemptStatus(assurance, firstId, 'rejected', NOW, {
+      childSessionId: 'child-session-1',
+      rejectionReason: 'schema_invalid',
+      schemaErrorFingerprint: fingerprintOfFirst,
+    });
+    const repairMint = createAttemptForExistingObligation(assurance, obligation, undefined, NOW, {
+      origin: {
+        kind: 'output_repair',
+        predecessorAttemptId: firstId,
+        triggerReason: 'schema_invalid',
+      },
+      repositoryDiscovery: { kind: 'not_applicable' },
+    });
+    assurance = updateAttemptStatus(
+      repairMint.assurance,
+      repairMint.attempt.attemptId,
+      'rejected',
+      NOW,
+      {
+        childSessionId: 'child-session-2',
+        rejectionReason: 'schema_invalid',
+        ...(fingerprintOfRepair ? { schemaErrorFingerprint: fingerprintOfRepair } : {}),
+      },
+    );
+    return { obligation, assurance };
+  }
+
+  it('blocks terminally when the targeted repair reproduced the identical error set', () => {
+    const { obligation, assurance } = repairChain(FP_SAME, FP_SAME);
+    const result = authorizeOutputRepairReissue(assurance, obligation);
+    expect(result).toMatchObject({ kind: 'blocked', code: 'REVIEWER_OUTPUT_REPAIR_STALLED' });
+  });
+
+  it('keeps the budget path when the repaired error set differs', () => {
+    const { obligation, assurance } = repairChain(FP_SAME, FP_OTHER);
+    const result = authorizeOutputRepairReissue(assurance, obligation);
+    expect(result).toMatchObject({ kind: 'authorized', triggerReason: 'schema_invalid' });
+  });
+
+  it('fails safe without fingerprints (budget semantics apply)', () => {
+    const obligation = makeObligation({ maxReviewerOutputRepairAttempts: 1 });
+    let assurance = assuranceWith(obligation, [initialAttempt(obligation)]);
+    const firstId = assurance.attempts[0]!.attemptId;
+    assurance = updateAttemptStatus(assurance, firstId, 'rejected', NOW, {
+      childSessionId: 'child-session-1',
+      rejectionReason: 'schema_invalid',
+    });
+    const repairMint = createAttemptForExistingObligation(assurance, obligation, undefined, NOW, {
+      origin: {
+        kind: 'output_repair',
+        predecessorAttemptId: firstId,
+        triggerReason: 'schema_invalid',
+      },
+      repositoryDiscovery: { kind: 'not_applicable' },
+    });
+    assurance = updateAttemptStatus(
+      repairMint.assurance,
+      repairMint.attempt.attemptId,
+      'rejected',
+      NOW,
+      { childSessionId: 'child-session-2', rejectionReason: 'schema_invalid' },
+    );
+    const result = authorizeOutputRepairReissue(assurance, obligation);
+    expect(result).toMatchObject({ kind: 'blocked', code: 'REVIEWER_OUTPUT_RETRY_EXHAUSTED' });
+  });
+});

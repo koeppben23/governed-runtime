@@ -646,6 +646,18 @@ export const REVIEW_VALIDATION_REASONS = [
     ],
   },
   {
+    code: 'REVIEWER_OUTPUT_REPAIR_STALLED',
+    category: 'state',
+    messageTemplate:
+      'A targeted output repair for obligation {obligationId} reproduced the identical schema error set — no further reviewer repair is authorized.',
+    recoverySteps: [
+      'The reviewer produced the same schema errors after a targeted repair instruction; another identical retry cannot recover',
+      'The frozen review subject and material remain unchanged',
+      'Operator intervention is required: start a fresh /review for the same content, or inspect the reviewer agent output format',
+      'Do NOT rewrite the reviewer prompt, fabricate findings, or guess a verdict',
+    ],
+  },
+  {
     code: 'REVIEW_REPAIR_UNAVAILABLE',
     category: 'state',
     messageTemplate:

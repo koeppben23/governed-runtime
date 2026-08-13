@@ -208,6 +208,12 @@ export function updateAttemptStatus(
     childSessionId?: string;
     /** Structured rejection reason, persisted only for `rejected` status. */
     rejectionReason?: ReviewAttemptRejectionReason;
+    /**
+     * Canonical schema-error-set fingerprint, persisted only for `rejected`
+     * status. Repair diagnostics — feeds the stall detection of the
+     * output-repair gate, never authority.
+     */
+    schemaErrorFingerprint?: string;
   },
 ): ReviewAssuranceState {
   const base = ensureReviewAssurance(assurance);
@@ -226,6 +232,9 @@ export function updateAttemptStatus(
               : {}),
             ...(status === 'rejected' && extra?.rejectionReason
               ? { rejectionReason: extra.rejectionReason }
+              : {}),
+            ...(status === 'rejected' && extra?.schemaErrorFingerprint
+              ? { schemaErrorFingerprint: extra.schemaErrorFingerprint }
               : {}),
           },
     ),

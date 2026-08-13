@@ -14,6 +14,7 @@
 import type { SessionState } from '../../../state/schema.js';
 import { resolveBranchReviewSource } from '../../../adapters/gh-cli.js';
 import { findReviewObligationById } from '../../review/assurance.js';
+import type { ReviewObligation } from '../../../state/evidence.js';
 import { formatBlocked } from '../helpers.js';
 import { repositoryFromBranchSubject } from './obligation-format.js';
 import { hasReviewContentInput } from './review-input.js';
@@ -35,23 +36,43 @@ export function resolveObligationBranchSource(
   return resolveBranchReviewSource(exec.args.branch, exec.args.base, exec.context.worktree);
 }
 
+/**
+ * The base BRANCH LABEL of a persisted obligation's frozen subject, when the
+ * subject is a branch-based repository review. Presentation label only — the
+ * resolved SHAs remain the authority.
+ */
+function frozenRequestedBaseOf(obligation: ReviewObligation | undefined): string | undefined {
+  const subject = obligation?.reviewSubject;
+  if (subject?.kind === 'repository_change' && subject.source.kind === 'branch') {
+    return subject.source.requestedBase;
+  }
+  return undefined;
+}
+
+/** Resolve the obligation an explicit reviewObligationId references. */
+function obligationByIdOrAttestation(
+  state: SessionState,
+  exec: ReviewExecutionContext,
+): ReviewObligation | undefined {
+  const findingsObligationId = (
+    exec.args.reviewFindings as { attestation?: { toolObligationId?: string } }
+  )?.attestation?.toolObligationId;
+  const obligationId = exec.args.reviewObligationId ?? findingsObligationId;
+  if (!obligationId) return undefined;
+  return findReviewObligationById(state.reviewAssurance, obligationId) ?? undefined;
+}
+
 function getPersistedObligationBranchSource(
   state: SessionState,
   exec: ReviewExecutionContext,
 ): ReturnType<typeof resolveBranchReviewSource> | undefined {
   if (!exec.args.branch) return undefined;
-  const findingsObligationId = (
-    exec.args.reviewFindings as { attestation?: { toolObligationId?: string } }
-  )?.attestation?.toolObligationId;
-  const obligationId = exec.args.reviewObligationId ?? findingsObligationId;
-  const obligation = obligationId
-    ? findReviewObligationById(state.reviewAssurance, obligationId)
-    : undefined;
+  const obligation = obligationByIdOrAttestation(state, exec);
   const provenance = obligation?.repositoryRevisionProvenance;
   if (provenance?.kind !== 'available' || !provenance.baseSha) return undefined;
   return {
     branch: exec.args.branch,
-    baseBranch: exec.args.base ?? provenance.baseSha,
+    baseBranch: exec.args.base ?? frozenRequestedBaseOf(obligation) ?? provenance.baseSha,
     resolvedBranchSha: provenance.headSha,
     resolvedBaseSha: provenance.baseSha,
     repository: repositoryFromBranchSubject(obligation?.reviewSubject),

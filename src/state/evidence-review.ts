@@ -190,6 +190,15 @@ export const ReviewAttempt = z.object({
    */
   observationCapability: ObservationCapability.optional(),
   /**
+   * Canonical fingerprint of the schema-error issue set that rejected this
+   * attempt (repair DIAGNOSTICS only — never authority). Detects a targeted
+   * repair that reproduced the identical error set (`REVIEWER_OUTPUT_REPAIR_STALLED`).
+   */
+  schemaErrorFingerprint: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
+  /**
    * Authoritative, attempt-bound repository observations. Minted EXCLUSIVELY
    * by the parent replay after the reviewer child session is known; child-side
    * captures never become entries here directly. Optional for attempts

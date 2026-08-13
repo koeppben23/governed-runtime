@@ -303,7 +303,8 @@ describe('phase-aware mandates rendering', () => {
     // 102 -> 105 for frozen-repository-authority: the sanctioned
     // flowguard_observe_repository capability carve-out (permission + native
     // tool allow-lists) and the investigation-vs-observation contract rule.
+    // 105 -> 106 for the defensive nested-reviewedBy hardening rule.
     // Keep new criteria terse; do not treat this as headroom for unbounded growth.
-    expect(roughTokenBudget(REVIEWER_AGENT).lines).toBeLessThanOrEqual(105);
+    expect(roughTokenBudget(REVIEWER_AGENT).lines).toBeLessThanOrEqual(106);
   });
 });

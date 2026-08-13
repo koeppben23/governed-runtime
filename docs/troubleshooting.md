@@ -237,7 +237,8 @@ real, registered reason.
 | `REVIEW_URL_CONTENT_ENCODING_INVALID`         | URL review content is malformed or not strict UTF-8                                                                         | Serve valid UTF-8 content or provide the review content directly                                                                                    |
 | `REVIEW_VERDICT_EVIDENCE_MISSING`             | reviewVerdict submitted without matching bound ReviewInvocationEvidence                                                     | Run flowguard-reviewer subagent before submitting verdict                                                                                           |
 | `REVIEW_VERDICT_MISMATCH`                     | Submitted verdict does not match captured reviewer overallVerdict                                                           | Use verdict exactly matching reviewer output; do not override                                                                                       |
-| `REVIEWER_OUTPUT_RETRY_EXHAUSTED`             | Reviewer output could not be bound after the canonical output-repair retry budget was exhausted                             | Operator intervention required; do not rewrite prompt or fabricate findings                                                                         |
+| `REVIEWER_OUTPUT_RETRY_EXHAUSTED`             | Reviewer output could not be bound after the canonical output-repair retry budget was exhausted                             | Operator intervention required; do not rewrite prompt or fabricate findings                                                                         |                                         | `REVIEWER_OUTPUT_RETRY_EXHAUSTED` | Reviewer output could not be bound after the canonical output-repair retry budget was exhausted | Operator intervention required; do not rewrite prompt or fabricate findings |
+| `REVIEWER_OUTPUT_REPAIR_STALLED`              | Targeted repair reproduced the identical schema error set                                                                   | Start a fresh `/review` for the same content or inspect the reviewer agent output format                                                            |
 | `REVIEW_REPAIR_UNAVAILABLE`                   | No output-repair reissue is authorized for this rejection (governance, scope, integrity, consistency, or execution failure) | Operator intervention required; the obligation is blocked terminally — do not fabricate findings or bypass the frozen subject                       |
 | `REPAIR_PROMPT_REQUIRED`                      | Fresh canonical repair prompt required before re-running reviewer Task                                                      | Call flowguard_review to obtain a new reviewerTaskPrompt with validation errors; never reuse stale prompt                                           |
 | `REVIEWER_OUTPUT_SCHEMA_INVALID`              | Reviewer output failed to validate against the canonical ReviewFindings schema                                              | Re-invoke with exact same frozen subject; ensure output matches grammar in prompt                                                                   |
@@ -493,6 +494,7 @@ REVIEW_URL_CONTENT_ENCODING_INVALID
 REVIEW_VERDICT_EVIDENCE_MISSING
 REVIEW_VERDICT_MISMATCH
 REVIEWER_OUTPUT_RETRY_EXHAUSTED
+REVIEWER_OUTPUT_REPAIR_STALLED
 REPAIR_PROMPT_REQUIRED
 REVIEWER_OUTPUT_SCHEMA_INVALID
 REVIEWER_CONTEXT_UNAVAILABLE

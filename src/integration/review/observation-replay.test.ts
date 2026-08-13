@@ -81,6 +81,7 @@ function buildState(): SessionState {
   });
   capability = attempt.observationCapability!;
   return {
+    binding: { fingerprint: 'testfp' },
     reviewAssurance: {
       assuranceSchemaVersion: 'review-assurance.v4',
       obligations: [obligation],

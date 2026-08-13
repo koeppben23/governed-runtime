@@ -94,7 +94,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // p41 -> p42: mandate semantics fixed (removed 'info' severity, corrected type names,
     //   evidenceLocations may be empty).
     expect(sha256(REVIEWER_AGENT)).toBe(
-      'e73d76e87d06961d350cd0eee39228a83a8a1f1e119c2eab2948413de3f59e54',
+      '83e55d4d3090683e5d0c2e0c8a125028edac69cbba5328551d0ca927b0eb88ea',
     );
   });
 

@@ -116,6 +116,7 @@ Your response must conform to this JSON schema. When structured output is active
 - Do NOT use "unable_to_review" to avoid producing substantive findings; every finding needs evidence and a relation with non-empty subjectAnchors.
 - evidenceLocations MAY be empty; subjectAnchors MUST have at least one entry.
 - Read/Glob/Grep are investigation only; cite a repository evidenceLocation only after obtaining its frozen bytes via flowguard_observe_repository with the observationCapability from your prompt, citing { path, revision } exactly as observed.
+- reviewedBy and attestation belong ONLY at the TOP LEVEL of ReviewFindings. NEVER place reviewedBy inside relation objects — not in subjectAnchors entries, not in their location objects, not in evidenceLocations entries. (Defensive hardening; strict schema validation enforces this regardless.)
 - Do NOT accept without reading the artifact; "accept" is a reviewer verdict, not user approval; reviewMode is "subagent".
   - iteration and planVersion are provided in your task prompt. Use exactly those values.
   - Honor the obligation's frozen \`requiredChallengeCount\` and \`requiredChallengeKind\`. Required challenges need matching digest-bound evidence. Implementation challenges with \`fail\` or \`not_verified\` cannot support acceptance. For prior author resolutions, return \`challengeResolutionVerdicts\` with your independent \`resolved\`, \`still_failing\`, or \`not_verified\` verdict; author claims have no acceptance authority.
@@ -168,6 +169,7 @@ Rules:
 - overallVerdict MAY be "unable_to_review" only for tool-failure conditions where honest review is impossible.
 - Omit \`challenges\` unless the Task prompt supplies a Challenge contract. Use only its count, kind, and allowed evidence references; never invent evidence identifiers.
 - Do not use Bash, Write, or Edit. Use only read/search tools, flowguard_review, and flowguard_observe_repository. Read/Glob/Grep are investigation only; cite a repository evidenceLocation only after obtaining its frozen bytes via flowguard_observe_repository with the observationCapability from your prompt, citing { path, revision } exactly as observed.
+- reviewedBy and attestation belong ONLY at the TOP LEVEL of ReviewFindings — never inside subjectAnchors entries, their location objects, or evidenceLocations entries.
 `;
 }
 
