@@ -38,6 +38,7 @@ import {
   taskResultWithFindings,
   taskResultWithEmbeddedFindings,
   validSubagentPrompt,
+  FIXTURE_OBLIGATION_ID,
 } from './test-helpers.js';
 import {
   TOOL_FLOWGUARD_IMPLEMENT,
@@ -1472,12 +1473,13 @@ describe('review-enforcement', () => {
     // ── L162: filter already-called pending reviews ──
     it('enforceBeforeSubagentCall ignores already-called pending reviews', () => {
       const state = createSessionState();
-      // Register a pending review
+      // Register a pending review with the real production signal shape
+      // (obligation identity + host attestation constants).
       onFlowGuardToolAfter(
         state,
         'flowguard_plan',
         { planText: '## Plan' },
-        modeASubagentResponse(),
+        modeASubagentResponse({ obligationId: FIXTURE_OBLIGATION_ID }),
         NOW,
       );
       // Complete the subagent call (marks subagentCalled=true)
@@ -1621,7 +1623,7 @@ describe('review-enforcement', () => {
         state,
         'flowguard_plan',
         { planText: '## Plan' },
-        modeASubagentResponse(),
+        modeASubagentResponse({ obligationId: FIXTURE_OBLIGATION_ID }),
         NOW,
       );
       // Complete the review (marks subagentCalled)

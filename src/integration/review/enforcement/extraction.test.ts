@@ -22,6 +22,7 @@ import {
   taskResultWithFindings,
   taskResultWithMalformedFindings,
   validSubagentPrompt,
+  FIXTURE_OBLIGATION_ID,
 } from './test-helpers.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -109,7 +110,11 @@ describe('review-enforcement extraction helpers', () => {
         state,
         'flowguard_plan',
         { planText: '## Plan' },
-        modeASubagentResponse({ iteration: 0, planVersion: 1 }),
+        modeASubagentResponse({
+          iteration: 0,
+          planVersion: 1,
+          obligationId: FIXTURE_OBLIGATION_ID,
+        }),
         NOW,
       );
 

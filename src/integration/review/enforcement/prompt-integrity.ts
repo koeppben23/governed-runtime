@@ -19,19 +19,7 @@ import {
 } from './types.js';
 import { promptContainsValue } from './extraction.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../tool-names.js';
-import { ReviewFindings } from '../../../state/evidence-review.js';
-import { validateReviewFindingsConsistency } from './findings-consistency.js';
-
-/** Inlined from enforcement.ts to avoid circular import. */
-function hasUsableCapture(pending: PendingReview): boolean {
-  if (pending.subagentRecord?.terminationReason === 'step_exhausted') return false;
-  const parsed = ReviewFindings.safeParse(pending.capturedFindings?.rawFindings);
-  if (!parsed.success) return false;
-  return validateReviewFindingsConsistency({
-    overallVerdict: parsed.data.overallVerdict,
-    blockingIssueCount: parsed.data.blockingIssues.length,
-  }).ok;
-}
+import { isPendingCaptureUsable } from './prepare-findings.js';
 /**
  * Enforce prompt integrity before allowing a subagent call (Level 3).
  * Called in tool.execute.before for task calls with subagent_type=flowguard-reviewer.
@@ -79,6 +67,30 @@ function checkReviewContext(
   return { hasMatch: false, missingFields };
 }
 
+/**
+ * Structural host-context defect: host-owned review context (obligation +
+ * host attestation constants) could not be materialized for an active pending
+ * review. This is NEVER a reviewer-output failure — no reviewer invocation can
+ * repair it, so dispatch is blocked before any retry/repair logic can run.
+ * Recovery: re-issue the originating FlowGuard command so a fresh canonical
+ * signal replaces the defective pending (see trackRequiredReview).
+ */
+function structuralContextBlock(state: SessionEnforcementState): EnforcementResult | null {
+  const structuralFailure = [...state.pendingReviews.values()].find(
+    (p) => (p.enforcementFailure ?? null) !== null,
+  );
+  if (!structuralFailure) return null;
+  return {
+    allowed: false,
+    code: 'HOST_REVIEW_CONTEXT_UNAVAILABLE',
+    reason:
+      `FlowGuard enforcement: host-owned review context is missing for obligation ` +
+      `${structuralFailure.obligationId ?? 'unknown'} and cannot be repaired by a reviewer invocation. ` +
+      `Re-run the originating FlowGuard command to re-issue the canonical review signal ` +
+      `carrying requiredReviewAttestation.`,
+  };
+}
+
 // eslint-disable-next-line complexity
 export function enforceBeforeSubagentCall(
   state: SessionEnforcementState,
@@ -89,10 +101,14 @@ export function enforceBeforeSubagentCall(
   if (subagentType !== REVIEWER_SUBAGENT_TYPE) return { allowed: true };
 
   const prompt = typeof taskArgs.prompt === 'string' ? taskArgs.prompt : '';
+
+  const structuralBlock = structuralContextBlock(state);
+  if (structuralBlock) return structuralBlock;
+
   // Include pending reviews awaiting capture: never called, or called but
   // capture is unusable (schema-invalid) and a retry is still allowed.
   const unfilledPendingReviews = [...state.pendingReviews.values()].filter(
-    (p) => !p.subagentCalled || !hasUsableCapture(p),
+    (p) => !p.subagentCalled || !isPendingCaptureUsable(p),
   );
   if (unfilledPendingReviews.length === 0) return { allowed: true };
 

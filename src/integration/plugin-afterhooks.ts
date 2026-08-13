@@ -302,6 +302,17 @@ async function handleTaskAfter(
   } catch (err) {
     runtime.logError('enforcement tracking failed', err);
   }
+  // Structural host-context defects are not reviewer repairable; make the
+  // transient marker visible in the plugin log the moment it is detected.
+  for (const pending of runtime.ws.getEnforcementState(ctx.sessionId).pendingReviews.values()) {
+    if ((pending.enforcementFailure ?? null) !== null) {
+      runtime.log.warn('review', 'structural host review context failure at capture', {
+        sessionId: ctx.sessionId,
+        enforcementFailure: pending.enforcementFailure,
+        obligationId: pending.obligationId,
+      });
+    }
+  }
   if (taskArgs.subagent_type === REVIEWER_SUBAGENT_TYPE) {
     // Bind the child session to the pre-created attempt atomically
     // BEFORE the evidence binding callback runs.

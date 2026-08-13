@@ -17,17 +17,17 @@ import { buildInvocationEvidence, hashFindings, hashText } from './assurance.js'
 import { getBranchProvenanceFields } from './review-provenance.js';
 import {
   checkChallengeContract,
-  normalizeFindingsChallenges,
+  bindCanonicalEvidenceRefs,
 } from './enforcement/challenge-binding.js';
+import {
+  prepareReviewerFindingsForValidation,
+  resolveAttestationInfo,
+} from './enforcement/prepare-findings.js';
 import {
   validateReviewFindingsConsistency,
   validateReviewFindingsScope,
   type FindingWithRelation,
 } from './enforcement/findings-consistency.js';
-import {
-  ReviewActorInfo,
-  ReviewFindings as ReviewFindingsSchema,
-} from '../../state/evidence-review.js';
 
 /** Transport contract for captured findings: recovered findings downgrade assurance. */
 function transportContract(latest: PendingReviewRecord) {
@@ -194,7 +194,6 @@ export function buildHostTaskEvidence(
   const prepared = prepareBindableFindings({
     rawFindings,
     obligation: matchedObligation,
-    hasValidAttestation: attestationInfo.hasValidAttestation,
     childSessionId,
     now,
     allowedEvidenceRefs,
@@ -372,20 +371,7 @@ function resolveAttemptBySession(
 }
 
 /** Reviewer-supplied attestation, reduced to what binding decisions depend on. */
-interface AttestationInfo {
-  attestedObligationId: string | null;
-  hasValidAttestation: boolean;
-}
-
-function resolveAttestationInfo(attestation: Record<string, unknown> | undefined): AttestationInfo {
-  const attestedObligationId =
-    typeof attestation?.toolObligationId === 'string' ? attestation.toolObligationId : null;
-  const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  return {
-    attestedObligationId,
-    hasValidAttestation: !!attestedObligationId && uuidRe.test(attestedObligationId),
-  };
-}
+type AttestationInfo = ReturnType<typeof resolveAttestationInfo>;
 
 /**
  * Which provenance carried this binding.
@@ -481,124 +467,26 @@ function hostConstantDivergentFields(
 }
 
 /**
- * Overwrite reviewer-authored provenance with host-authoritative values (F8).
- *
- * The reviewer subagent (an LLM) MUST NOT be an authority for the review
- * execution time or its own session identity. It routinely confabulates both
- * (e.g. reviewedAt="...T00:00:00Z", reviewedBy.sessionId="flowguard-reviewer-session").
- * The host owns the truthful values: the real invocation timestamp (`now`) and
- * the resolved child session id. We stamp those and preserve the original
- * (untrusted) reviewer claims in `reviewerClaimedAt` / `reviewerClaimedBy` for
- * diagnostics only.
- *
- * Host-only attestation constants (mandateDigest/criteriaVersion/reviewedBy
- * literal) are overwritten with the obligation's canonical values, while the
- * reviewer-reliable binding anchors (toolObligationId, iteration, planVersion)
- * are preserved as-is.
+ * Host provenance stamping, attestation host-constant stamping, challenge
+ * identity minting, and the canonical schema gate all live in the single
+ * authority `prepareReviewerFindingsForValidation`
+ * (enforcement/prepare-findings.ts). This module consumes it and adds only
+ * bind-time authorization on top: canonical evidence-ref binding, coherence,
+ * the frozen challenge contract, and scope.
  */
-function normalizeHostTaskFindings(
-  rawFindings: Record<string, unknown>,
-  obligation: ReviewObligation,
-  hasValidAttestation: boolean,
-  childSessionId: string,
-  now: string,
-): Record<string, unknown> {
-  const provenance = applyHostProvenance(rawFindings, childSessionId, now);
-  if (!hasValidAttestation) {
-    const { attestation: _omit, ...rest } = provenance;
-    return rest;
-  }
-  const attestation = (provenance.attestation ?? {}) as Record<string, unknown>;
-  return {
-    ...provenance,
-    attestation: {
-      ...attestation,
-      mandateDigest: obligation.mandateDigest,
-      criteriaVersion: obligation.criteriaVersion,
-      reviewedBy: REVIEWER_SUBAGENT_TYPE,
-    },
-  };
-}
-
-/**
- * Replace model-authored `reviewedAt` / `reviewedBy` with host-authoritative
- * values, retaining the model's originals as untrusted `reviewerClaimedAt` /
- * `reviewerClaimedBy` diagnostics (F8).
- *
- * The ENTIRE reviewedBy block is host-constructed — not just sessionId. A model
- * that echoes the real child session id could otherwise still fabricate actorId,
- * actorSource, or actorAssurance (e.g. actorSource="verified_identity",
- * actorAssurance="cryptographic") and have them persisted as canonical
- * provenance. reviewerClaimedBy always preserves the complete original model
- * block whenever the model supplied one, independent of any field comparison.
- */
-function applyHostProvenance(
-  rawFindings: Record<string, unknown>,
-  childSessionId: string,
-  now: string,
-): Record<string, unknown> {
-  const result: Record<string, unknown> = { ...rawFindings };
-
-  const claimedAt = rawFindings.reviewedAt;
-  if (typeof claimedAt === 'string' && claimedAt && claimedAt !== now) {
-    result.reviewerClaimedAt = claimedAt;
-  }
-  result.reviewedAt = now;
-
-  const claimedBy = rawFindings.reviewedBy;
-  // Preserve the complete original model block whenever one was supplied — not
-  // only when the claimed sessionId diverges. actorId/actorSource/actorAssurance
-  // can be confabulated even when the sessionId happens to match.
-  //
-  // `reviewerClaimedBy` is diagnostics-only and never audit authority, so it must
-  // never be able to fail the bind: a reviewer that emits a malformed block (for
-  // example `reviewedBy: {}`) would otherwise make the whole invocation
-  // schema_invalid even though the host-authoritative `reviewedBy` below is
-  // correct. Retain it only when it actually satisfies the actor shape.
-  if (claimedBy && typeof claimedBy === 'object' && !Array.isArray(claimedBy)) {
-    if (ReviewActorInfo.safeParse(claimedBy).success) {
-      result.reviewerClaimedBy = claimedBy;
-    } else {
-      delete result.reviewerClaimedBy;
-    }
-  }
-  result.reviewedBy = buildHostReviewedBy(childSessionId);
-
-  return result;
-}
-
-/**
- * Build the fully host-authoritative `reviewedBy` block. Every field is a
- * host-known value; NOTHING is carried over from the model payload. When the
- * host has no independently-resolved reviewer identity, neutral truthful values
- * are used that describe exactly what the host knows: the reviewer is the
- * flowguard-reviewer subagent bound to the resolved child session, with an
- * unverified (best-effort) identity assurance.
- *
- * - actorId: the canonical reviewer subagent type (host-known).
- * - actorSource: 'unknown' — the host did not independently verify the actor's
- *   identity source (the ReviewActorInfo enum has no dedicated host-task value;
- *   'unknown' is the truthful neutral choice rather than an invented one).
- * - actorAssurance: 'best_effort' — session-bound but not identity-verified.
- */
-function buildHostReviewedBy(childSessionId: string): Record<string, unknown> {
-  return {
-    sessionId: childSessionId,
-    actorId: REVIEWER_SUBAGENT_TYPE,
-    actorSource: 'unknown',
-    actorAssurance: 'best_effort',
-  };
-}
 
 /**
  * Turn raw reviewer output into findings that may be persisted as evidence.
  *
  * Ordering is a correctness contract, not a preference:
- *  1. Host provenance overwrites reviewer-authored identity and timestamps.
- *  2. Challenge identity is minted host-side. The canonical prompt asks for a
- *     `clientReference` slug and never for a `challengeId`, so skipping this
- *     makes EVERY prompt-compliant reviewer output `schema_invalid`.
- *  3. The canonical schema gate runs — the single authority on payload validity.
+ *  1. `prepareReviewerFindingsForValidation` — host-owned mechanical
+ *     normalization plus the canonical schema gate (single authority on
+ *     payload validity).
+ *  2. Bind-time authorization: canonical evidence-ref binding
+ *     (`challenge_evidence_unknown` is a governance rejection, not a schema
+ *     error).
+ *  3. Verdict coherence is checked, so internally incoherent evidence never
+ *     consumes the attempt.
  *  4. The obligation's frozen challenge contract is checked, so evidence that
  *     the verdict is guaranteed to reject never consumes the attempt.
  *
@@ -607,36 +495,38 @@ function buildHostReviewedBy(childSessionId: string): Record<string, unknown> {
 function prepareBindableFindings(input: {
   rawFindings: Record<string, unknown>;
   obligation: ReviewObligation;
-  hasValidAttestation: boolean;
   childSessionId: string;
   now: string;
   allowedEvidenceRefs?: readonly unknown[];
 }): { findings: Record<string, unknown> } | HostTaskBindResult {
-  const { rawFindings, obligation, hasValidAttestation, childSessionId, now, allowedEvidenceRefs } =
-    input;
+  const { rawFindings, obligation, childSessionId, now, allowedEvidenceRefs } = input;
 
-  const provenanceFindings = normalizeHostTaskFindings(
+  const prepared = prepareReviewerFindingsForValidation({
     rawFindings,
-    obligation,
-    hasValidAttestation,
-    childSessionId,
-    now,
-  );
+    obligationId: obligation.obligationId,
+    hostConstants: {
+      mandateDigest: obligation.mandateDigest,
+      criteriaVersion: obligation.criteriaVersion,
+    },
+    hostProvenance: { childSessionId, reviewedAt: now },
+  });
+  if (!prepared.ok)
+    return preparedFailureToBindResult(prepared, obligation.obligationId, childSessionId);
 
-  const normalization = normalizeFindingsChallenges(
-    provenanceFindings,
-    obligation.obligationId,
-    childSessionId,
-    allowedEvidenceRefs,
-  );
-  if ('bindOutcome' in normalization) return normalization;
-  const schemaCheck = validateNormalizedFindings(
-    normalization.findings,
-    obligation.obligationId,
-    childSessionId,
-  );
-  if ('bindOutcome' in schemaCheck) return schemaCheck;
-  const findings = schemaCheck.findings;
+  let findings = prepared.findings;
+  if (allowedEvidenceRefs) {
+    const challenges = Array.isArray(findings.challenges)
+      ? (findings.challenges as readonly Record<string, unknown>[])
+      : [];
+    const canonical = bindCanonicalEvidenceRefs(
+      challenges,
+      allowedEvidenceRefs,
+      obligation.obligationId,
+      childSessionId,
+    );
+    if ('bindOutcome' in canonical) return canonical;
+    findings = { ...findings, challenges: canonical.challenges };
+  }
 
   const overallVerdict = findings.overallVerdict;
   const blockingIssues = findings.blockingIssues;
@@ -668,6 +558,40 @@ function prepareBindableFindings(input: {
   });
   if (!scopeResult.ok) return scopeFailure(scopeResult, childSessionId, obligation.obligationId);
   return { findings };
+}
+
+/**
+ * Map the shared authority's rejection onto the bind-path outcomes with
+ * byte-identical diagnostics to the pre-authority contract.
+ */
+function preparedFailureToBindResult(
+  prepared: Exclude<ReturnType<typeof prepareReviewerFindingsForValidation>, { readonly ok: true }>,
+  obligationId: string,
+  childSessionId: string,
+): HostTaskBindResult {
+  if (prepared.code === 'client_reference_invalid') {
+    return {
+      evidence: null,
+      bindOutcome: 'client_reference_invalid',
+      diagnostic: {
+        childSessionId,
+        obligationId,
+        clientReference: prepared.details.clientReference,
+        challengeIndex: prepared.details.index,
+        message: `Duplicate clientReference "${prepared.details.clientReference}" in reviewer challenges. Each challenge needs a unique reference.`,
+      },
+    };
+  }
+  return {
+    evidence: null,
+    bindOutcome: 'schema_invalid',
+    diagnostic: {
+      childSessionId,
+      obligationId,
+      schemaErrors: [...prepared.issues].slice(0, 10),
+      message: 'Reviewer output failed schema validation before binding',
+    },
+  };
 }
 
 function relationFindings(findings: Record<string, unknown>): FindingWithRelation[] {
@@ -702,29 +626,6 @@ function scopeFailure(
   };
 }
 
-function validateNormalizedFindings(
-  normalizedFindings: Record<string, unknown>,
-  obligationId: string,
-  childSessionId: string,
-): HostTaskBindResult | { findings: Record<string, unknown> } {
-  const schemaResult = ReviewFindingsSchema.safeParse(normalizedFindings);
-  if (!schemaResult.success) {
-    const issues = schemaResult.error.issues.map(
-      (issue) => `${issue.path.join('.')}: ${issue.message}`,
-    );
-    return {
-      evidence: null,
-      bindOutcome: 'schema_invalid',
-      diagnostic: {
-        childSessionId,
-        obligationId,
-        schemaErrors: issues.slice(0, 10),
-        message: 'Reviewer output failed schema validation before binding',
-      },
-    };
-  }
-  return { findings: schemaResult.data };
-}
 function checkDuplicateHostTaskEvidence(
   invocations: ReviewInvocationEvidence[],
   obligation: ReviewObligation,

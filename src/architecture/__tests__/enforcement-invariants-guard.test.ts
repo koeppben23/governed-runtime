@@ -13,16 +13,21 @@ const SRC_ROOT = join(process.cwd(), 'src');
 
 describe('enforcement contract invariants', () => {
   it('hasUsableCapture returns false for schema-invalid captured findings', () => {
-    // Verify the function exists and contains the expected guard logic
-    const content = readFileSync(
+    // Verify the enforcement wrapper exists and delegates to the shared
+    // authority, which applies the canonical schema gate to captured findings.
+    const enforcement = readFileSync(
       join(SRC_ROOT, 'integration/review/enforcement/enforcement.ts'),
       'utf8',
     );
-    expect(content).toContain('function hasUsableCapture');
-    // Must check ReviewFindings.safeParse of rawFindings
-    expect(content).toContain('ReviewFindings.safeParse');
-    // Must return false when parse fails (no deadlock)
-    expect(content).toContain('return false');
+    expect(enforcement).toContain('function hasUsableCapture');
+    const authority = readFileSync(
+      join(SRC_ROOT, 'integration/review/enforcement/prepare-findings.ts'),
+      'utf8',
+    );
+    // Must check ReviewFindings.safeParse of the normalized candidate
+    expect(authority).toContain('ReviewFindings.safeParse');
+    // Must return false when the parse fails (no deadlock)
+    expect(authority).toContain('return false');
   });
 
   it('checkFindingsMismatch prevents verdict guessing', () => {

@@ -25,13 +25,33 @@ export const CHILD_SESSION_ID = 'ses_child_001';
 
 // ─── Factory Functions ───────────────────────────────────────────────────────
 
-/** Build a Mode A response with INDEPENDENT_REVIEW_REQUIRED containing iteration and planVersion. */
-export function modeAResponse(iteration = 0, planVersion = 1): string {
+/**
+ * Build a Mode A response with INDEPENDENT_REVIEW_REQUIRED containing iteration
+ * and planVersion. When `obligationId` is set, the response additionally carries
+ * the real production signal fields (reviewAttemptId, reviewObligationId,
+ * requiredReviewAttestation) so the pending review satisfies the host
+ * attestation-constants invariant.
+ */
+export function modeAResponse(iteration = 0, planVersion = 1, obligationId?: string): string {
   return JSON.stringify({
     phase: 'PLAN',
     status: `Plan submitted (v${planVersion}).`,
     selfReviewIteration: iteration,
     reviewMode: 'subagent',
+    ...(obligationId
+      ? {
+          reviewAttemptId: `att-${obligationId}`,
+          reviewObligationId: obligationId,
+          requiredReviewAttestation: {
+            reviewedBy: REVIEWER_SUBAGENT_TYPE,
+            mandateDigest: REVIEW_MANDATE_DIGEST,
+            criteriaVersion: REVIEW_CRITERIA_VERSION,
+            toolObligationId: obligationId,
+            iteration,
+            planVersion,
+          },
+        }
+      : {}),
     next:
       `${REVIEW_REQUIRED_PREFIX}: Call the flowguard-reviewer subagent via Task tool. ` +
       `Use subagent_type "flowguard-reviewer" with a prompt that includes: ` +

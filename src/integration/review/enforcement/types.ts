@@ -99,10 +99,33 @@ export interface PendingReview {
   /** Number of times the reviewer was re-invoked for this obligation. */
   retryCount: number;
   /**
-   * Zod schema validation errors from the most recent failed reviewer
-   * output. Set when capturedFindings is non-null but fails
-   * ReviewFindings.safeParse. Used to generate the canonical retry prompt
-   * so the reviewer can fix specific errors instead of guessing.
+   * Host-issued attestation constants (mandateDigest/criteriaVersion) captured
+   * from the review-requirement signal (requiredReviewAttestation, top-level
+   * for /review or under reviewInvocation for plan/implement/architecture).
+   *
+   * Storage-form optional for fixture compatibility only; semantics are
+   * enforced in enforcement.ts: a bindable pending (obligationId != null) MUST
+   * carry them. A bindable pending without them is a structural host-context
+   * defect (see `enforcementFailure`), never a reviewer-output failure.
+   */
+  hostAttestationConstants?: {
+    readonly mandateDigest: string;
+    readonly criteriaVersion: string;
+  } | null;
+  /**
+   * Structural host-context defect detected at the capture/track transition.
+   * NOT a reviewer-output failure — a reviewer invocation can never repair it,
+   * so such pendings are excluded from re-arm/repair and block reviewer
+   * dispatch explicitly (HOST_REVIEW_CONTEXT_UNAVAILABLE).
+   */
+  enforcementFailure?: 'host_attestation_constants_missing' | null;
+  /**
+   * Reviewer-actionable issues from the most recent failed capture, computed
+   * against the host-normalized canonical candidate — the same
+   * `prepareReviewerFindingsForValidation` authority the bind gate uses.
+   * Used to generate the canonical retry prompt so the reviewer can fix
+   * specific errors instead of guessing. Never set for structural
+   * host-context defects.
    */
   lastSchemaErrors: readonly string[] | null;
   /**

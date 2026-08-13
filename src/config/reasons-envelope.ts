@@ -33,6 +33,16 @@ export const ENVELOPE_PRECONDITION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'HOST_REVIEW_CONTEXT_UNAVAILABLE',
+    category: 'precondition',
+    messageTemplate: `FlowGuard enforcement: host-owned review context (obligation {obligationId}) could not be materialized for the pending review. This is a structural host-context defect — a ${REVIEWER_SUBAGENT_TYPE} invocation cannot repair it.`,
+    recoverySteps: [
+      'Re-run the originating FlowGuard command (plan, implement, architecture, or review) to re-issue the canonical review signal carrying requiredReviewAttestation',
+      `Do not re-invoke the ${REVIEWER_SUBAGENT_TYPE} Task — reviewer output cannot replace missing host attestation constants`,
+    ],
+  },
+
+  {
     code: 'ENVELOPE_PAYLOAD_AMBIGUOUS',
     category: 'precondition',
     messageTemplate:
