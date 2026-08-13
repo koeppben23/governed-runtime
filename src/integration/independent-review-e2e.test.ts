@@ -309,7 +309,7 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
     expect(bound?.childSessionId).toBe(CHILD_SESSION);
   });
 
-  it('REGRESSION: confabulated reviewer attestation still binds host-authoritatively', async () => {
+  it('REGRESSION: host stamps canonical attestation after reviewer input binds', async () => {
     const { hooks, sessDir } = await setup();
 
     await driveCaptureThroughHooks(hooks);
@@ -318,7 +318,7 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
     const bound = (state?.reviewAssurance?.invocations ?? []).find(
       (inv) => inv.obligationId === OBLIGATION_ID,
     );
-    expect(bound, 'confabulated attestation still produced bound evidence').toBeDefined();
+    expect(bound, 'reviewer input produced host-stamped bound evidence').toBeDefined();
     expect(bound?.invocationMode).toBe('host_subagent_task');
     const att = bound?.capturedRawFindings?.attestation as Record<string, unknown> | undefined;
     expect(att?.mandateDigest).toBe(REVIEW_MANDATE_DIGEST);

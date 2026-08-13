@@ -190,7 +190,7 @@ function renderChallengeContract(
   const outcomeVocabulary = challengeOutcomeVocabulary(contract.requiredChallengeKind);
   return [
     `- Challenge contract: return exactly ${contract.requiredChallengeCount} ${contract.requiredChallengeKind} challenge(s).`,
-    '- Every challenge MUST use a fresh, unique clientReference (e.g. "c1", "c2") and the exact obligationId below.',
+    '- When provided, clientReference MUST be fresh and unique (e.g. "c1", "c2"); use the exact obligationId below.',
     '- Copy evidenceRefs exactly from the schema below. Do not invent or alter a digest, sectionPath, or attemptId.',
     '- Omit challengeResolutionVerdicts unless the Task prompt explicitly supplies prior challenge IDs to resolve.',
     ...(outcomeVocabulary ? [outcomeVocabulary] : []),
