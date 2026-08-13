@@ -55,7 +55,7 @@ import * as os from 'node:os';
 import * as crypto from 'node:crypto';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import { SessionState } from '../state/schema.js';
-import { RepositoryObservation, ReviewReport } from '../state/evidence.js';
+import { ReviewReport } from '../state/evidence.js';
 import { withSessionWriteLock } from './persistence-lock.js';
 import { ensureDir, PersistenceError, isEnoent } from './persistence-core.js';
 
@@ -270,14 +270,17 @@ function isLegacyApprove(v: unknown): boolean {
  *   observations. Obligations persisted under v3 without frozen authority
  *   remain authority-less (and thus repository-evidence incapable) — never
  *   "repaired" by reading mutable runtime state.
- * - v4 → v5: version literal plus observation-shape capability. The v5 form
- *   requires `resolvedObjectKind` and representation-bound `lineCount`. Pre-v5
- *   observations do NOT satisfy that shape; this migration strips them from
- *   the attempts (they become evidence-incapable). NO authority is invented:
- *   neither `resolvedObjectKind` nor `lineCount` is manufactured — the
- *   transport capture ledgers remain the audit source for the stripped
- *   records. In-flight v3/v4 sessions stay loadable; that is the entire
- *   sanctioned transition.
+ * - v4 → v5: version literal plus observation AUTHORITY invalidation. The v5
+ *   form requires `resolvedObjectKind` and representation-bound `lineCount` —
+ *   fields a VALID v4 observation could not carry (the v4 schema was strict).
+ *   Therefore NO observation persisted under v4 can ever have been valid
+ *   authority: the migration removes ALL `attempt.observations` from v4
+ *   states unconditionally, regardless of their shape. A v5-shaped
+ *   observation inside a v4-declared state is invalid previous-generation
+ *   data, not a retained authority — keeping it would launder invalid state
+ *   into current-generation governance. Nothing is manufactured; the
+ *   transport capture ledgers remain the audit source. Only observations
+ *   persisted under `review-assurance.v5` may ever be v5 evidence authority.
  */
 function migrateReviewAssuranceToV5(node: unknown, acc: { migrated: boolean }): void {
   if (!node || typeof node !== 'object' || Array.isArray(node)) return;
@@ -291,30 +294,22 @@ function migrateReviewAssuranceToV5(node: unknown, acc: { migrated: boolean }): 
   if (record.assuranceSchemaVersion === 'review-assurance.v4') {
     record.assuranceSchemaVersion = 'review-assurance.v5';
     acc.migrated = true;
-    stripNonAuthorizingObservations(record);
+    invalidateV4Observations(record);
   }
 }
 
 /**
- * Strip pre-v5 observation shapes from attempts: an observation that does not
- * satisfy the v5 representation contract can never authorize evidence, so it
- * is removed rather than carried in a non-authorizing state. Fail-closed —
- * nothing is invented to salvage them.
+ * v4 → v5: ALL attempts lose their observations unconditionally. A v4 state
+ * cannot legally contain v5 authority; shape-independent removal is the only
+ * fail-closed semantics. (Migration must not become a general sanitizer —
+ * unrelated malformed authority still fails schema validation.)
  */
-function stripNonAuthorizingObservations(record: Record<string, unknown>): void {
+function invalidateV4Observations(record: Record<string, unknown>): void {
   const attempts = record.attempts;
   if (!Array.isArray(attempts)) return;
   for (const attempt of attempts) {
     if (!attempt || typeof attempt !== 'object') continue;
-    const candidate = attempt as Record<string, unknown>;
-    const observations = candidate.observations;
-    if (!Array.isArray(observations)) continue;
-    const kept = observations.filter(
-      (o) => o !== null && typeof o === 'object' && RepositoryObservation.safeParse(o).success,
-    );
-    if (kept.length !== observations.length) {
-      candidate.observations = kept;
-    }
+    delete (attempt as Record<string, unknown>).observations;
   }
 }
 

@@ -68,7 +68,7 @@ describe('review-assurance shape-only read migrations', () => {
     expect(loadedObligation?.repositoryAuthority).toBeUndefined();
   });
 
-  it('REGRESSION: pre-v5 v4 observation state survives upgrade without gaining authority', async () => {
+  it('REGRESSION: v4 state observations become evidence-incapable regardless of shape', async () => {
     // Build a VALID PR-A v4 state: attempt with old-shape observations
     // (no resolvedObjectKind, no lineCount) minted by the real pre-v5 replay.
     const { assurance, obligation } = createObligationAndAttempt(
@@ -100,7 +100,9 @@ describe('review-assurance shape-only read migrations', () => {
       boundAt: '2026-08-13T10:00:00.000Z',
       acquisition: { kind: 'local_git_object' },
     };
-    const newShapeObservation = {
+    // A v5-shaped observation inside a v4-declared state is INVALID previous
+    // generation data: it must NOT be laundered into current authority.
+    const futureShapeObservation = {
       ...oldShapeObservation,
       observationId: '22222222-2222-4222-8222-222222222222',
       resolvedObjectKind: 'commit',
@@ -109,7 +111,7 @@ describe('review-assurance shape-only read migrations', () => {
     const legacyAssurance = JSON.parse(JSON.stringify(assurance)) as Record<string, unknown>;
     legacyAssurance.assuranceSchemaVersion = 'review-assurance.v4';
     const attempts = legacyAssurance.attempts as Record<string, unknown>[];
-    attempts[0]!.observations = [oldShapeObservation, newShapeObservation];
+    attempts[0]!.observations = [oldShapeObservation, futureShapeObservation];
 
     const legacyState = { ...makeState('PLAN'), reviewAssurance: legacyAssurance };
     fs.writeFileSync(statePath(sessDir), JSON.stringify(legacyState, null, 2) + '\n', 'utf-8');
@@ -117,16 +119,55 @@ describe('review-assurance shape-only read migrations', () => {
     const loaded = await readState(sessDir);
     expect(loaded).not.toBeNull();
     expect(loaded!.reviewAssurance?.assuranceSchemaVersion).toBe('review-assurance.v5');
+    // ALL v4-persisted observations are stripped — old-shape AND v5-shaped.
+    expect(loaded!.reviewAssurance?.attempts[0]?.observations ?? []).toEqual([]);
+  });
+
+  it('REGRESSION: v5-persisted observations are preserved unchanged', async () => {
+    const { assurance, obligation } = createObligationAndAttempt(
+      undefined,
+      {
+        obligationType: 'plan',
+        iteration: 0,
+        planVersion: 1,
+        now: '2026-08-13T10:00:00.000Z',
+        subjectDigest: 'subject-digest',
+        changedFiles: ['src/a.ts'],
+      },
+      '2026-08-13T10:00:00.000Z',
+    );
+    const attempt = assurance.attempts[0]!;
+    const validObservation = {
+      observationId: '33333333-3333-4333-8333-333333333333',
+      obligationId: obligation.obligationId,
+      attemptId: attempt.attemptId,
+      observedBySessionId: 'ses_child_v5',
+      path: 'src/a.ts',
+      revision: 'head',
+      repositoryIdentity: { host: 'github.com', owner: 'acme', name: 'repo' },
+      resolvedObjectSha: 'a'.repeat(40),
+      resolvedObjectKind: 'commit',
+      contentDigest: 'sha256:' + 'b'.repeat(64),
+      byteLength: 4,
+      representation: 'utf8_text',
+      lineCount: 1,
+      capturedAt: '2026-08-13T10:00:00.000Z',
+      boundAt: '2026-08-13T10:00:00.000Z',
+      acquisition: { kind: 'local_git_object' },
+    };
+    const v5Assurance = JSON.parse(JSON.stringify(assurance)) as Record<string, unknown>;
+    const attempts = v5Assurance.attempts as Record<string, unknown>[];
+    attempts[0]!.observations = [validObservation];
+
+    const v5State = { ...makeState('PLAN'), reviewAssurance: v5Assurance };
+    fs.writeFileSync(statePath(sessDir), JSON.stringify(v5State, null, 2) + '\n', 'utf-8');
+
+    const loaded = await readState(sessDir);
+    expect(loaded).not.toBeNull();
+    expect(loaded!.reviewAssurance?.assuranceSchemaVersion).toBe('review-assurance.v5');
     const loadedObservations = loaded!.reviewAssurance?.attempts[0]?.observations ?? [];
-    // Pre-v5 observations are stripped (evidence-incapable); the v5-shaped
-    // observation survives. Nothing is manufactured.
     expect(loadedObservations).toHaveLength(1);
-    expect(loadedObservations[0]!.observationId).toBe('22222222-2222-4222-8222-222222222222');
-    expect(loadedObservations[0]!.resolvedObjectKind).toBe('commit');
-    const loadedObs = loadedObservations[0]!;
-    if (loadedObs.representation === 'utf8_text') {
-      expect(loadedObs.lineCount).toBe(1);
-    }
+    expect(loadedObservations[0]!.observationId).toBe('33333333-3333-4333-8333-333333333333');
   });
 
   it('BAD: corrupt assurance still fails closed', async () => {
