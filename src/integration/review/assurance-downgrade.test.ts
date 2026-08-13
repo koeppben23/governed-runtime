@@ -20,7 +20,6 @@ import {
 import { buildHostTaskEvidence } from './evidence-binding.js';
 import { extractCapturedFindings } from './enforcement/extraction.js';
 import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
-import { REVIEW_MANDATE_DIGEST, REVIEW_CRITERIA_VERSION } from './assurance.js';
 import {
   NOW,
   LATER,
@@ -43,15 +42,8 @@ function findingsJson(obligationId: string): string {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
-    reviewedBy: { sessionId: CHILD_SESSION_ID },
-    reviewedAt: NOW,
     attestation: {
       toolObligationId: obligationId,
-      mandateDigest: REVIEW_MANDATE_DIGEST,
-      criteriaVersion: REVIEW_CRITERIA_VERSION,
-      iteration: 0,
-      planVersion: 1,
-      reviewedBy: REVIEWER_SUBAGENT_TYPE,
     },
   });
 }

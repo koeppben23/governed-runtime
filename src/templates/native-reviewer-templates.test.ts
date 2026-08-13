@@ -57,6 +57,8 @@ describe('reviewer prompt JSON schema integrity', () => {
     const closeBraces = (schemaBlock.match(/\}/g) ?? []).length;
     expect(openBraces).toBeGreaterThan(0);
     expect(openBraces).toBe(closeBraces);
-    expect(schemaBlock).toContain('"reviewedBy"');
+    expect(schemaBlock).toContain('"attestation"');
+    expect(schemaBlock).not.toContain('"reviewedBy"');
+    expect(schemaBlock).not.toContain('"reviewedAt"');
   });
 });

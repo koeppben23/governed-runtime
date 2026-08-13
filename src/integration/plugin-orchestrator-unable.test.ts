@@ -84,15 +84,8 @@ function findingsWithVerdict(verdict: 'approve' | 'unable_to_review'): string {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
-    reviewedBy: { sessionId: CHILD_SESSION_ID },
-    reviewedAt: '2026-04-24T12:00:00.000Z',
     attestation: {
-      mandateDigest: REVIEW_MANDATE_DIGEST,
-      criteriaVersion: REVIEW_CRITERIA_VERSION,
       toolObligationId: OBLIGATION_ID,
-      iteration: 0,
-      planVersion: 1,
-      reviewedBy: 'flowguard-reviewer',
     },
   });
 }

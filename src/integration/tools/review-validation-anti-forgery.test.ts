@@ -219,6 +219,12 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
 
   it('correct-looking attestation without fulfilled obligation is rejected', () => {
     const findings = strictFindings();
+    const reviewerInput: Record<string, unknown> = {
+      ...findings,
+      attestation: { toolObligationId: findings.attestation!.toolObligationId },
+    };
+    delete reviewerInput.reviewedBy;
+    delete reviewerInput.reviewedAt;
     const assurance = strictAssuranceFixture(findings);
     assurance.obligations[0]!.status = 'pending';
     assurance.obligations[0]!.invocationId = null;
@@ -968,6 +974,12 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
   it('task-tool after evidence is available before the next FlowGuard verdict submit validates findings', () => {
     const now = new Date().toISOString();
     const findings = strictFindings();
+    const reviewerInput: Record<string, unknown> = {
+      ...findings,
+      attestation: { toolObligationId: findings.attestation!.toolObligationId },
+    };
+    delete reviewerInput.reviewedBy;
+    delete reviewerInput.reviewedAt;
     const enforcementState = createSessionState();
     const assurance = strictAssuranceFixture(findings);
     assurance.obligations[0] = {
@@ -1008,8 +1020,9 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
         subagent_type: 'flowguard-reviewer',
         prompt: `Review iteration=0 planVersion=1 ${'x'.repeat(240)}`,
       },
-      JSON.stringify(findings),
+      JSON.stringify(reviewerInput),
       now,
+      { metadata: { sessionID: 'ses_child' } },
     );
     const bindResult = buildHostTaskEvidence(enforcementState, 'ses_parent', now, {
       obligations: assurance.obligations,

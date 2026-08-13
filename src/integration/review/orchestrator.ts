@@ -232,13 +232,6 @@ async function executeFormatFreePrompt(
   }
   const extractedFindings = extraction.value;
 
-  const reviewedBy = extractedFindings.reviewedBy as Record<string, unknown> | undefined;
-  if (reviewedBy && typeof reviewedBy === 'object') {
-    reviewedBy.sessionId = sessionId;
-  } else {
-    extractedFindings.reviewedBy = { sessionId: sessionId };
-  }
-
   return {
     sessionId,
     rawResponse: JSON.stringify(extractedFindings),

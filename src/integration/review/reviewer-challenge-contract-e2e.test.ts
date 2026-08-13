@@ -25,7 +25,6 @@ import {
   onTaskToolAfter,
 } from './enforcement/enforcement.js';
 import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
-import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './assurance.js';
 import {
   TOOL_FLOWGUARD_ARCHITECTURE,
   TOOL_FLOWGUARD_IMPLEMENT,
@@ -126,8 +125,8 @@ function reviewerChallengeFromPrompt(
     iteration: 0,
     planVersion: 1,
     obligationId: OBLIGATION_ID,
-    mandateDigest: REVIEW_MANDATE_DIGEST,
-    criteriaVersion: REVIEW_CRITERIA_VERSION,
+    mandateDigest: 'mandate-digest',
+    criteriaVersion: 'criteria-v1',
     subjectLabel: 'the artifact under review',
     challengeContract: {
       requiredChallengeCount: 1,
@@ -155,15 +154,8 @@ function reviewerOutput(challenges: readonly unknown[]): string {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
-    reviewedBy: { sessionId: CHILD_SESSION_ID },
-    reviewedAt: NOW,
     attestation: {
       toolObligationId: OBLIGATION_ID,
-      mandateDigest: REVIEW_MANDATE_DIGEST,
-      criteriaVersion: REVIEW_CRITERIA_VERSION,
-      iteration: 0,
-      planVersion: 1,
-      reviewedBy: REVIEWER_SUBAGENT_TYPE,
     },
     challenges,
   });
@@ -182,6 +174,7 @@ function bind(
     { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt(0, 1) },
     reviewerOutput(challenges),
     LATER,
+    { metadata: { sessionID: childSessionId } },
   );
   return buildHostTaskEvidence(state, SESSION_ID, LATER, {
     obligations: [obligation],
@@ -234,17 +227,13 @@ describe('reviewer challenge contract: what the prompt asks for is what binding 
         expect(bound?.challenges?.[0]?.clientReference).toBe('c1');
       });
 
-      it('EDGE — a reviewer-supplied challengeId is discarded, never trusted', () => {
+      it('EDGE — rejects a reviewer-supplied challengeId', () => {
         const forged = '99999999-9999-4999-8999-999999999999';
         const challenge = reviewerChallengeFromPrompt(challengeKind, evidenceRefs, {
           challengeId: forged,
         });
         const result = bind(tool, obligationFor(obligationType, challengeKind), [challenge]);
-        const bound = result.evidence?.capturedRawFindings as
-          { challenges?: { challengeId?: string }[] } | undefined;
-
-        expect(result.bindOutcome).toBe('bound');
-        expect(bound?.challenges?.[0]?.challengeId).not.toBe(forged);
+        expect(result.bindOutcome).toBe('schema_invalid');
       });
 
       it('EDGE — a challenge naming a foreign obligation is stamped to the bound one', () => {

@@ -71,6 +71,7 @@ describe('buildHostTaskEvidence — capturedVerdict (BUG-15)', () => {
       { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
       taskResult,
       LATER,
+      { metadata: { sessionID: CHILD_SESSION_ID } },
     );
 
     const attempts = [attemptFor(obligation)];
@@ -148,6 +149,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
       { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
       reviewerOutput,
       LATER,
+      { metadata: { sessionID: CHILD_SESSION_ID } },
     );
 
     // 3. Build host-task evidence
@@ -240,6 +242,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
       { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
       reviewerOutput,
       LATER,
+      { metadata: { sessionID: CHILD_SESSION_ID } },
     );
 
     const attempts = [attemptFor(obligation)];
@@ -320,6 +323,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
       { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
       reviewerOutput,
       LATER,
+      { metadata: { sessionID: CHILD_SESSION_ID } },
     );
 
     const attempts = [attemptFor(obligation)];
@@ -485,6 +489,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
       { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
       taskResult,
       LATER,
+      { metadata: { sessionID: CHILD_SESSION_ID } },
     );
 
     const bindResult = buildHostTaskEvidence(freshState, SESSION_ID, LATER, {

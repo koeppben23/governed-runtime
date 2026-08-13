@@ -68,15 +68,8 @@ function buildFindings() {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
-    reviewedBy: { sessionId: CHILD_SESSION_ID },
-    reviewedAt: NOW,
     attestation: {
-      mandateDigest: REVIEW_MANDATE_DIGEST,
-      criteriaVersion: REVIEW_CRITERIA_VERSION,
       toolObligationId: OBLIGATION_ID,
-      iteration: 1,
-      planVersion: 1,
-      reviewedBy: 'flowguard-reviewer',
     },
   };
 }

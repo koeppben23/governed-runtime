@@ -979,7 +979,7 @@ describe('integration/plugin', () => {
       }
     });
 
-    it('blocks with SUBAGENT_MANDATE_MISSING when attestation is missing in strict mode', async () => {
+    it('blocks malformed reviewer input when attestation is missing in strict mode', async () => {
       const ws = await createTestWorkspace();
       try {
         const sessionID = crypto.randomUUID();
@@ -994,8 +994,6 @@ describe('integration/plugin', () => {
           missingVerification: [],
           scopeCreep: [],
           unknowns: [],
-          reviewedBy: { sessionId: 'child-session-1' },
-          reviewedAt: new Date().toISOString(),
         };
 
         const hooks = await FlowGuardAuditPlugin(
@@ -1026,11 +1024,11 @@ describe('integration/plugin', () => {
 
         const blocked = JSON.parse(String(output.output)) as Record<string, unknown>;
         expect(blocked.error).toBe(true);
-        expect(blocked.code).toBe('SUBAGENT_MANDATE_MISSING');
+        expect(blocked.code).toBe('STRICT_REVIEW_ORCHESTRATION_FAILED');
 
         const state = await readState(sessDir);
         expect(state?.reviewAssurance?.obligations[0]?.blockedCode).toBe(
-          'SUBAGENT_MANDATE_MISSING',
+          'STRICT_REVIEW_ORCHESTRATION_FAILED',
         );
       } finally {
         await ws.cleanup();
@@ -1052,15 +1050,8 @@ describe('integration/plugin', () => {
           missingVerification: [],
           scopeCreep: [],
           unknowns: [],
-          reviewedBy: { sessionId: 'child-session-1' },
-          reviewedAt: new Date().toISOString(),
           attestation: {
-            mandateDigest: REVIEW_MANDATE_DIGEST,
-            criteriaVersion: REVIEW_CRITERIA_VERSION,
             toolObligationId: obligationId,
-            iteration: 0,
-            planVersion: 1,
-            reviewedBy: 'flowguard-reviewer',
           },
         };
 
@@ -1121,15 +1112,8 @@ describe('integration/plugin', () => {
           missingVerification: [],
           scopeCreep: [],
           unknowns: [],
-          reviewedBy: { sessionId: 'child-session-1' },
-          reviewedAt: new Date().toISOString(),
           attestation: {
-            mandateDigest: REVIEW_MANDATE_DIGEST,
-            criteriaVersion: REVIEW_CRITERIA_VERSION,
             toolObligationId: obligationId,
-            iteration: 0,
-            planVersion: 1,
-            reviewedBy: 'flowguard-reviewer',
           },
         };
 

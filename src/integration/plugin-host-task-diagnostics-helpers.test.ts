@@ -19,7 +19,6 @@ import {
   SESSION_ID,
   CHILD_SESSION_ID,
 } from './plugin-host-task-diagnostics-helpers.js';
-import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -73,8 +72,8 @@ describe('taskResultWithAttestation', () => {
       expect(parsed.overallVerdict).toBe('accept');
       expect(parsed.reviewMode).toBe('subagent');
       expect(parsed.attestation.toolObligationId).toBe('obl-42');
-      expect(parsed.attestation.reviewedBy).toBe(REVIEWER_SUBAGENT_TYPE);
-      expect(parsed.reviewedBy.sessionId).toBe(CHILD_SESSION_ID);
+      expect(parsed.attestation).toEqual({ toolObligationId: 'obl-42' });
+      expect(parsed.reviewedBy).toBeUndefined();
       expect(parsed.iteration).toBe(0);
       expect(parsed.planVersion).toBe(1);
     });
@@ -85,12 +84,6 @@ describe('taskResultWithAttestation', () => {
       const json = taskResultWithAttestation('obl-1', { verdict: 'changes_requested' });
       const parsed = JSON.parse(json);
       expect(parsed.overallVerdict).toBe('changes_requested');
-    });
-
-    it('accepts custom childSessionId override', () => {
-      const json = taskResultWithAttestation('obl-1', { childSessionId: 'custom-child' });
-      const parsed = JSON.parse(json);
-      expect(parsed.reviewedBy.sessionId).toBe('custom-child');
     });
   });
 });

@@ -142,7 +142,7 @@ function planReviewRequiredOutput(): string {
   });
 }
 
-function reviewerOutput(childSessionId: string): string {
+function reviewerOutput(_childSessionId: string): string {
   return JSON.stringify({
     iteration: 0,
     planVersion: 1,
@@ -153,15 +153,8 @@ function reviewerOutput(childSessionId: string): string {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
-    reviewedBy: { sessionId: childSessionId },
-    reviewedAt: '2026-05-10T12:00:00.000Z',
     attestation: {
       toolObligationId: OBLIGATION_ID,
-      mandateDigest: REVIEW_MANDATE_DIGEST,
-      criteriaVersion: REVIEW_CRITERIA_VERSION,
-      iteration: 0,
-      planVersion: 1,
-      reviewedBy: REVIEWER_SUBAGENT_TYPE,
     },
   });
 }
@@ -221,7 +214,11 @@ describe('reviewer attempt lifecycle through the real hooks', () => {
     );
     await afterHook(
       { tool: 'task', sessionID, callID, args: reviewerArgs },
-      { title: 'task', output: reviewerOutput(childSessionId), metadata: {} },
+      {
+        title: 'task',
+        output: reviewerOutput(childSessionId),
+        metadata: { sessionID: childSessionId },
+      },
     );
     return sessDir;
   }
@@ -373,7 +370,7 @@ describe('reviewer attempt lifecycle through the real hooks', () => {
       {
         title: 'task',
         output: unusableReviewerOutput('ses_child_lifecycle_rejected_0'),
-        metadata: {},
+        metadata: { sessionID: 'ses_child_lifecycle_rejected_0' },
       },
     );
     // Second unusable output: one retry, exhausts the budget (>= 1 retries)
@@ -382,7 +379,7 @@ describe('reviewer attempt lifecycle through the real hooks', () => {
       {
         title: 'task',
         output: unusableReviewerOutput('ses_child_lifecycle_rejected_1'),
-        metadata: {},
+        metadata: { sessionID: 'ses_child_lifecycle_rejected_1' },
       },
     );
     // Third call: must be blocked — matchPendingReview returns null (retry exhausted)
@@ -391,7 +388,7 @@ describe('reviewer attempt lifecycle through the real hooks', () => {
       {
         title: 'task',
         output: reviewerOutput(CHILD_RETRY),
-        metadata: {},
+        metadata: { sessionID: CHILD_RETRY },
       },
     );
 
@@ -445,7 +442,11 @@ describe('reviewer attempt lifecycle through the real hooks', () => {
     // 1. First reviewer returns an unusable capture: the attempt is spent.
     await afterHook(
       { tool: 'task', sessionID, callID: 'call-1', args: reviewerArgs },
-      { title: 'task', output: unusableReviewerOutput(CHILD_FIRST), metadata: {} },
+      {
+        title: 'task',
+        output: unusableReviewerOutput(CHILD_FIRST),
+        metadata: { sessionID: CHILD_FIRST },
+      },
     );
     const afterFirst = await readState(sessDir);
     expect(afterFirst?.reviewAssurance?.invocations ?? []).toHaveLength(0);
@@ -453,7 +454,7 @@ describe('reviewer attempt lifecycle through the real hooks', () => {
     // 2. Retry from a new session: re-arm, bind, evidence recorded.
     await afterHook(
       { tool: 'task', sessionID, callID: 'call-2', args: reviewerArgs },
-      { title: 'task', output: reviewerOutput(CHILD_RETRY), metadata: {} },
+      { title: 'task', output: reviewerOutput(CHILD_RETRY), metadata: { sessionID: CHILD_RETRY } },
     );
     const afterRetry = await readState(sessDir);
     expect(afterRetry?.reviewAssurance?.invocations ?? []).toHaveLength(1);
@@ -461,7 +462,7 @@ describe('reviewer attempt lifecycle through the real hooks', () => {
     // 3. The superseded first session calls back late.
     await afterHook(
       { tool: 'task', sessionID, callID: 'call-late', args: reviewerArgs },
-      { title: 'task', output: reviewerOutput(CHILD_FIRST), metadata: {} },
+      { title: 'task', output: reviewerOutput(CHILD_FIRST), metadata: { sessionID: CHILD_FIRST } },
     );
 
     const finalState = await readState(sessDir);

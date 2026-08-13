@@ -317,7 +317,7 @@ describe('review prompt Discovery context loading', () => {
     expect(prompt).not.toContain('## Discovery Context');
     expect(prompt).not.toContain('Repository Discovery Contract');
     expect(prompt).toContain('toolObligationId: "11111111-1111-4111-8111-111111111111"');
-    expect(prompt).toContain('mandateDigest: "test-digest"');
+    expect(prompt).not.toContain('mandateDigest: "test-digest"');
   });
 
   it('content prompt renders drift timeout as discovery_drift_timeout + NOT_VERIFIED (#401)', async () => {
@@ -389,7 +389,7 @@ describe('review prompt Discovery context loading', () => {
 
     expect(prompt).not.toContain('## Discovery Context');
     expect(prompt).toContain('toolObligationId: "11111111-1111-4111-8111-111111111111"');
-    expect(prompt).toContain('mandateDigest: "test-digest"');
+    expect(prompt).not.toContain('mandateDigest: "test-digest"');
   });
 
   it('renders surfaces and modules from implementation guidance', () => {

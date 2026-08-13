@@ -378,15 +378,8 @@ describe('host-task bind path', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
-      reviewedBy: { sessionId: CHILD_SESSION_ID },
-      reviewedAt: NOW,
       attestation: {
         toolObligationId: obligationId,
-        mandateDigest: REVIEW_MANDATE_DIGEST,
-        criteriaVersion: REVIEW_CRITERIA_VERSION,
-        iteration: 0,
-        planVersion: 1,
-        reviewedBy: REVIEWER_SUBAGENT_TYPE,
       },
     });
   }
@@ -403,6 +396,7 @@ describe('host-task bind path', () => {
       { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt(0, 1) },
       taskResultWithEvidence(obligation.obligationId, locations),
       LATER,
+      { metadata: { sessionID: CHILD_SESSION_ID } },
     );
     return buildHostTaskEvidence(state, SESSION_ID, LATER, {
       obligations: [obligation],

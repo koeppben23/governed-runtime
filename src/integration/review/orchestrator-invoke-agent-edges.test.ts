@@ -260,10 +260,10 @@ describe('invokeReviewer — agent resolution + extraction', () => {
     });
   });
 
-  // ─── EDGE: sessionId injection ─────────────────────────────────────────────
+  // ─── EDGE: reviewer provenance remains untrusted ───────────────────────────
 
-  describe('EDGE — sessionId injection on findings', () => {
-    it('injects childSessionId into reviewedBy', async () => {
+  describe('EDGE — reviewer provenance is not rewritten', () => {
+    it('preserves a reviewer-supplied reviewedBy for the strict boundary to reject', async () => {
       const findings = validFindings({ reviewedBy: { sessionId: 'wrong' } });
       const client = makeClient({
         agents: [{ id: 'flowguard-reviewer' }],
@@ -276,12 +276,10 @@ describe('invokeReviewer — agent resolution + extraction', () => {
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
-      expect(expectReviewerSuccess(result).findings?.reviewedBy).toEqual({
-        sessionId: 'child-session-1',
-      });
+      expect(expectReviewerSuccess(result).findings?.reviewedBy).toEqual({ sessionId: 'wrong' });
     });
 
-    it('creates reviewedBy if missing', async () => {
+    it('does not create reviewedBy when it is absent', async () => {
       const findings = validFindings();
       delete findings.reviewedBy;
       const client = makeClient({
@@ -292,9 +290,7 @@ describe('invokeReviewer — agent resolution + extraction', () => {
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
-      expect(expectReviewerSuccess(result).findings?.reviewedBy).toEqual({
-        sessionId: 'child-session-1',
-      });
+      expect(expectReviewerSuccess(result).findings?.reviewedBy).toBeUndefined();
     });
   });
 

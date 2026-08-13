@@ -75,15 +75,8 @@ function buildFindings(overrides: Record<string, unknown> = {}): Record<string, 
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
-    reviewedBy: { sessionId: CHILD_SESSION_ID },
-    reviewedAt: NOW,
     attestation: {
-      mandateDigest: REVIEW_MANDATE_DIGEST,
-      criteriaVersion: REVIEW_CRITERIA_VERSION,
       toolObligationId: OBLIGATION_ID,
-      iteration: 1,
-      planVersion: 1,
-      reviewedBy: 'flowguard-reviewer',
     },
     ...overrides,
   };
@@ -368,7 +361,7 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     expect(reviewerTaskPrompt).not.toContain('content to review below this line:');
   });
 
-  it('blocks with SUBAGENT_MANDATE_MISMATCH when strict /review attestation obligation mismatches', async () => {
+  it('blocks malformed reviewer attestation at the strict input boundary', async () => {
     const findings = buildFindings({
       attestation: {
         mandateDigest: REVIEW_MANDATE_DIGEST,
@@ -385,17 +378,20 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     expect(blockReviewOutcome).toHaveBeenCalledWith(
       expect.anything(),
       OBLIGATION_ID,
-      'SUBAGENT_MANDATE_MISMATCH',
-      { obligationId: OBLIGATION_ID },
+      'STRICT_REVIEW_ORCHESTRATION_FAILED',
+      {
+        obligationId: OBLIGATION_ID,
+        reason: 'reviewer response did not match ReviewFindings schema',
+      },
       output,
     );
     expect(JSON.parse(output.output)).toMatchObject({
       error: true,
-      code: 'SUBAGENT_MANDATE_MISMATCH',
+      code: 'STRICT_REVIEW_ORCHESTRATION_FAILED',
     });
   });
 
-  it('blocks with SUBAGENT_MANDATE_MISSING when strict /review findings omit attestation', async () => {
+  it('blocks missing reviewer attestation at the strict input boundary', async () => {
     const { attestation: _omit, ...findings } = buildFindings();
     void _omit;
 
@@ -404,13 +400,16 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     expect(blockReviewOutcome).toHaveBeenCalledWith(
       expect.anything(),
       OBLIGATION_ID,
-      'SUBAGENT_MANDATE_MISSING',
-      { obligationId: OBLIGATION_ID },
+      'STRICT_REVIEW_ORCHESTRATION_FAILED',
+      {
+        obligationId: OBLIGATION_ID,
+        reason: 'reviewer response did not match ReviewFindings schema',
+      },
       output,
     );
     expect(JSON.parse(output.output)).toMatchObject({
       error: true,
-      code: 'SUBAGENT_MANDATE_MISSING',
+      code: 'STRICT_REVIEW_ORCHESTRATION_FAILED',
     });
   });
 
@@ -681,7 +680,7 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     );
   });
 
-  it('preserves non-strict /review fallback by injecting findings without blocking mismatch', async () => {
+  it('does not mutate output for non-strict malformed reviewer input', async () => {
     const findings = buildFindings({
       attestation: {
         mandateDigest: 'wrong-digest-value',
@@ -702,10 +701,8 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     expect(blockReviewOutcome).not.toHaveBeenCalled();
     expect(updateReviewAssurance).not.toHaveBeenCalled();
     const parsed = JSON.parse(output.output) as Record<string, unknown>;
-    expect(String(parsed.next)).toContain('PLUGIN_REVIEW_COMPLETED');
-    expect(parsed.pluginReviewFindings).toMatchObject({
-      attestation: { mandateDigest: 'wrong-digest-value' },
-    });
+    expect(parsed.next).toBeUndefined();
+    expect(parsed.pluginReviewFindings).toBeUndefined();
   });
 
   it('blocks with SUBAGENT_EVIDENCE_REUSED when subagent findings were already used (atomic reuse check)', async () => {

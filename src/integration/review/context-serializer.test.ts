@@ -78,11 +78,11 @@ describe('F10: renderReviewerTaskPrompt canonical copy-prompt', () => {
     expect(prompt.length).toBeGreaterThanOrEqual(MIN_SUBAGENT_PROMPT_LENGTH);
   });
 
-  it('carries the attestation values verbatim', () => {
+  it('carries only reviewer-owned attestation values', () => {
     const prompt = renderReviewerTaskPrompt({ iteration: 1, planVersion: 1, ...base });
     expect(prompt).toContain(base.obligationId);
-    expect(prompt).toContain(base.mandateDigest);
-    expect(prompt).toContain(base.criteriaVersion);
+    expect(prompt).not.toContain(base.mandateDigest);
+    expect(prompt).not.toContain(base.criteriaVersion);
     expect(prompt).toContain('flowguard-reviewer');
   });
 
