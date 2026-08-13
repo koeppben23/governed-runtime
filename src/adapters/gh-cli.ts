@@ -318,7 +318,13 @@ export function resolveBranchReviewSource(
   };
 }
 
-function resolveRepositoryIdentity(
+/**
+ * Resolve the review repository identity at freeze time: the canonical remote
+ * identity when an origin remote exists, else the immutable local identity
+ * derived from the repository's root commits. NEVER read after the candidate
+ * freeze — this is the freeze-time authority itself.
+ */
+export function resolveRepositoryIdentity(
   baseSha: string,
   headSha: string,
   cwd?: string,
@@ -342,7 +348,7 @@ function resolveRepositoryIdentity(
   }
 }
 
-function localRepositoryIdentity(
+export function localRepositoryIdentity(
   baseSha: string,
   headSha: string,
   cwd?: string,

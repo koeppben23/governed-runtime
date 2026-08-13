@@ -34,6 +34,8 @@ import type { SessionEnforcementState } from './review/enforcement/types.js';
 import { handleHostTaskEvidence } from './plugin-task-evidence.js';
 import { authorizeTaskLifecycleRearm } from './review/reissue-authority.js';
 import { resolveReviewAttemptDiscoveryContext } from './review/discovery-attempt-context.js';
+import { hasFrozenRepositoryAuthority } from '../state/evidence.js';
+import { replayAndPersistObservations as persistObservations } from './review/observation-replay-persist.js';
 import type { ReviewAttemptDiscoveryContext } from '../state/evidence.js';
 import {
   REASON_PLUGIN_ENFORCEMENT_UNAVAILABLE,
@@ -331,6 +333,21 @@ async function handleTaskAfter(
         });
         return;
       }
+      await persistObservations(
+        {
+          getSessionDir: (sid) => runtime.ws.getSessionDir(sid),
+          updateReviewAssurance: (sd, update) => runtime.ws.updateReviewAssurance(sd, update),
+          log: runtime.log,
+          logError: runtime.logError,
+        },
+        readPersistedState,
+        {
+          sessionId: ctx.sessionId,
+          attemptId: binding.attemptId,
+          childSessionId: resolvedChildSessionId,
+          now: ctx.now,
+        },
+      );
     }
     await handleHostTaskEvidence(
       { ws: runtime.ws, log: runtime.log, logError: runtime.logError },
@@ -567,7 +584,7 @@ async function resolveRearmDiscoveryContext(
   const discovery = await resolveReviewAttemptDiscoveryContext({
     state,
     worktree: state.binding.worktree,
-    reviewSubjectKind: obligation?.reviewSubject?.kind,
+    repositoryGoverned: obligation ? hasFrozenRepositoryAuthority(obligation) : false,
     now,
   });
   if (discovery.kind === 'blocked') return { ok: false, reason: discovery.reason };
@@ -596,7 +613,7 @@ async function bindAttemptSession(
   sessionId: string,
   childSessionId: string,
   now: string,
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+): Promise<{ ok: true; attemptId: string; obligationId: string } | { ok: false; reason: string }> {
   const sessDir = runtime.ws.getSessionDir(sessionId);
   if (!sessDir) return { ok: false, reason: 'no_session_dir' };
   const state = await readPersistedState(sessDir);
@@ -651,7 +668,7 @@ async function bindAttemptSession(
         ),
       };
     });
-    return { ok: true };
+    return { ok: true, attemptId, obligationId };
   } catch (err) {
     if (err instanceof BindingFailure) {
       runtime.log.warn('host-task', 'bind attempt aborted', {

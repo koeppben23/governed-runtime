@@ -63,6 +63,7 @@ import {
 } from './architecture-shared.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
 import { headCommitFull } from '../../adapters/git.js';
+import { freezeContextAuthority } from '../../rails/repository-authority.js';
 
 // ─── Mode-B Internal Types ────────────────────────────────────────────────
 
@@ -543,9 +544,9 @@ async function persistAndFormatNonConvergedReview(
         changedFiles: resolvedTargetPaths,
         claimedTaskClass: advanced.state.claimedTaskClass,
         metadata: targetPathsMetadata(resolvedTargetPaths),
-        repositoryRevisionProvenance: headSha
-          ? { kind: 'available', headSha }
-          : { kind: 'unavailable', reason: 'head_revision_not_resolved' },
+        // Frozen repository context (freeze-time resolution): architecture
+        // reviews may cite repository evidence only against this context.
+        repositoryAuthority: headSha ? freezeContextAuthority(session.wsDir, headSha) : undefined,
       })
     : null;
   let archAttemptId: string | null = null;

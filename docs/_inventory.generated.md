@@ -9,8 +9,8 @@ Verified by `npm run check:doc-drift`.
 | Entity                        | Count | Code Authority                                      |
 | ----------------------------- | ----- | --------------------------------------------------- |
 | Machine Commands              | 11    | `src/machine/commands.ts`                           |
-| Integration Tools             | 17    | `src/integration/tools/index.ts`                    |
-| MCP Tools                     | 16    | `src/mcp-server/server.ts`                          |
+| Integration Tools             | 18    | `src/integration/tools/index.ts`                    |
+| MCP Tools                     | 17    | `src/mcp-server/server.ts`                          |
 | Installed Command Definitions | 25    | `src/integration/installed-commands.ts`             |
 | Phases                        | 15    | `src/state/schema.ts`                               |
 | Policy Modes                  | 4     | `src/state/policy-mode.ts`                          |

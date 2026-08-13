@@ -11,6 +11,7 @@
  */
 
 import type { SessionState } from '../../../state/schema.js';
+import { hasFrozenRepositoryAuthority } from '../../../state/evidence.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
 import type {
   ReviewAssuranceState,
@@ -148,13 +149,9 @@ export async function createNewReviewObligation(
       policySnapshot: input.state.policySnapshot,
       changedFiles: resolvedTargetPaths,
       reviewSubjectScope,
-      repositoryRevisionProvenance: input.resolvedSource
-        ? {
-            kind: 'available',
-            headSha: input.resolvedSource.resolvedBranchSha,
-            baseSha: input.resolvedSource.resolvedBaseSha,
-          }
-        : { kind: 'unavailable', reason: 'repository_revision_not_resolved' },
+      // Revision provenance is derived canonically from the frozen review
+      // subject (base/head SHAs + repository identities) — never from
+      // mutable runtime state.
       // No claimedTaskClass floor here: a standalone /review assesses an EXTERNAL
       // PR/branch/content whose risk is the reviewed diff itself (changedFiles),
       // not the session's own task-class claim. The C1 floor applies only to the
@@ -284,7 +281,7 @@ async function reissueAttemptForPendingObligation(
   const discovery = await resolveReviewAttemptDiscoveryContext({
     state,
     worktree: state.binding.worktree,
-    reviewSubjectKind: existing.reviewSubject?.kind,
+    repositoryGoverned: hasFrozenRepositoryAuthority(existing),
     now,
   });
   if (discovery.kind === 'blocked') {
@@ -359,7 +356,7 @@ async function createAndPrepareMissingAnalysisObligation(
   const discovery = await resolveReviewAttemptDiscoveryContext({
     state: input.state,
     worktree: input.context.worktree ?? input.state.binding.worktree,
-    reviewSubjectKind: obligation.reviewSubject?.kind,
+    repositoryGoverned: hasFrozenRepositoryAuthority(obligation),
     now: input.now,
   });
   if (discovery.kind === 'blocked') {

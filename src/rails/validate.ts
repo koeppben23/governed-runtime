@@ -27,6 +27,8 @@ import type { RailResult, RailContext } from './types.js';
 import { autoAdvance, createPolicyEvalFn } from './types.js';
 import { blockedFromOverflow } from './auto-advance-overflow.js';
 import { blocked } from '../config/reasons.js';
+import { ensureImplementationBase } from './repository-authority.js';
+import { FrozenRepositoryError } from '../adapters/frozen-repository.js';
 
 // ─── Executor Interface ───────────────────────────────────────────────────────
 
@@ -42,6 +44,29 @@ export interface ValidateExecutors {
    * Must return a ValidationResult with cryptographic evidence binding.
    */
   runCheck: (checkId: string, state: SessionState) => Promise<ValidationResult>;
+}
+
+/**
+ * Freeze the pre-mutation implementation base whenever the machine lands in
+ * IMPLEMENTATION. Runs BEFORE any governed mutation; re-entries preserve the
+ * original frozen base. Fails closed: without a frozen base the transition
+ * must not proceed.
+ */
+async function freezeBaseOnImplementationEntry(
+  state: SessionState,
+): Promise<SessionState | RailResult> {
+  if (state.phase !== 'IMPLEMENTATION') return state;
+  try {
+    return await ensureImplementationBase(state, state.binding.worktree);
+  } catch (err) {
+    if (err instanceof FrozenRepositoryError) {
+      return blocked('REVIEW_IMPLEMENTATION_BASE_FREEZE_FAILED', {
+        reason: err.message,
+        phase: state.phase,
+      });
+    }
+    throw err;
+  }
 }
 
 // ─── Rail ─────────────────────────────────────────────────────────────────────
@@ -68,7 +93,9 @@ export async function executeValidate(
       return blockedFromOverflow(advanced);
     }
     const { state: finalState, evalResult, transitions } = advanced;
-    return { kind: 'ok', state: finalState, evalResult, transitions };
+    const withBase = await freezeBaseOnImplementationEntry(finalState);
+    if ('kind' in withBase) return withBase;
+    return { kind: 'ok', state: withBase, evalResult, transitions };
   }
 
   if (!state.plan) {
@@ -93,8 +120,10 @@ export async function executeValidate(
     return blockedFromOverflow(advanced);
   }
   const { state: finalState, evalResult, transitions } = advanced;
+  const withBase = await freezeBaseOnImplementationEntry(finalState);
+  if ('kind' in withBase) return withBase;
 
-  return { kind: 'ok', state: finalState, evalResult, transitions };
+  return { kind: 'ok', state: withBase, evalResult, transitions };
 }
 
 /**

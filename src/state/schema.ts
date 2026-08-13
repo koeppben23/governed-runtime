@@ -22,6 +22,7 @@ import {
   CheckId,
   DecisionIdentitySchema,
   ErrorInfo,
+  FrozenRepositoryRevisionTarget,
   ImplEvidence,
   ImplReviewResult,
   MutationAttempt,
@@ -369,6 +370,16 @@ export const SessionState = z
 
     /** Implementation evidence from /implement. */
     implementation: ImplEvidence.nullable(),
+
+    /**
+     * Pre-mutation frozen implementation base (commit-kind frozen repository
+     * revision target). Frozen at the transition INTO `IMPLEMENTATION`, before
+     * any governed mutation; the implementation review candidate pair resolves
+     * `revision:'base'` against this target. Absent for sessions that entered
+     * IMPLEMENTATION before the frozen-repository-authority generation — such
+     * sessions have no repository evidence authority.
+     */
+    implementationBaseAuthority: FrozenRepositoryRevisionTarget.optional(),
 
     /** Explicit runtime evidence for reducing implementation-review ceremony. */
     reducedCeremony: ReducedCeremonyDecision.nullable().default(null),

@@ -38,6 +38,7 @@
 
 import { z } from 'zod';
 import { headCommitFull } from '../../adapters/git.js';
+import { freezeContextAuthority } from '../../rails/repository-authority.js';
 
 import type { ToolDefinition } from './helpers.js';
 import { formatError } from './error-format.js';
@@ -316,9 +317,10 @@ async function createPlanReviewAttempt(
       changedFiles: classificationFiles,
       claimedTaskClass: scope.state.claimedTaskClass,
       metadata,
-      repositoryRevisionProvenance: headSha
-        ? { kind: 'available', headSha }
-        : { kind: 'unavailable', reason: 'head_revision_not_resolved' },
+      // Frozen repository context (freeze-time resolution): plan reviews may
+      // cite repository evidence only against this context; absence of
+      // authority makes repository evidence unavailable.
+      repositoryAuthority: headSha ? freezeContextAuthority(scope.wsDir, headSha) : undefined,
     },
     scope.ctx.now(),
   );

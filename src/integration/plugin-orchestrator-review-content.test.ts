@@ -151,7 +151,7 @@ function buildSessionState(
       ...(reviewInvocationPolicy ? { reviewInvocationPolicy } : {}),
     },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v3' as const,
+      assuranceSchemaVersion: 'review-assurance.v4' as const,
       obligations: [
         {
           obligationId: OBLIGATION_ID,

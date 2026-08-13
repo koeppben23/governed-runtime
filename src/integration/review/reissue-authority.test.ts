@@ -78,7 +78,7 @@ function assuranceWith(
   attempts: ReviewAttempt[],
 ): ReviewAssuranceState {
   return {
-    assuranceSchemaVersion: 'review-assurance.v3',
+    assuranceSchemaVersion: 'review-assurance.v4',
     obligations: [obligation],
     invocations: [],
     attempts,

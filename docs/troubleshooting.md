@@ -215,6 +215,14 @@ real, registered reason.
 | `REVIEW_EVIDENCE_LOCATION_INVALID`            | Finding evidence location is not a valid repository location                                                                | Use repository-relative evidence paths at the frozen base or head revision                                                                          |
 | `REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE`  | Reviewer finding does not intersect the frozen reviewed subject                                                             | Anchor the finding to the reviewed change or artifact section                                                                                       |
 | `REVIEW_REPOSITORY_REVISION_UNAVAILABLE`      | Finding cites a repository revision unavailable to the reviewed subject                                                     | Use only the frozen base or head revision                                                                                                           |
+| `REVIEW_IMPLEMENTATION_BASE_FREEZE_FAILED`    | Pre-mutation implementation base could not be frozen before IMPLEMENTATION entry                                            | Ensure a git repository with a resolvable identity and at least one commit                                                                          |
+| `REVIEW_OBSERVATION_CAPABILITY_UNKNOWN`       | Observation capability is unknown or its attempt is not usable                                                              | Use exactly the observationCapability from the canonical reviewer prompt for this attempt                                                           |
+| `REVIEW_OBSERVATION_AUTHORITY_UNAVAILABLE`    | Revision has no frozen repository authority for this obligation                                                             | Repository evidence is unavailable; do not substitute worktree reads                                                                                |
+| `REVIEW_OBSERVATION_INVALID_ARGS`             | flowguard_observe_repository arguments are invalid                                                                          | Provide capability, revision ("base"                                                                                                                | "head"), and a repository-relative path |
+| `REVIEW_OBSERVATION_PATH_INVALID`             | Observation path is not repository-relative                                                                                 | Use a repository-relative POSIX path                                                                                                                |
+| `REVIEW_OBSERVATION_UNAVAILABLE`              | Frozen repository object cannot be acquired for observation                                                                 | Immutable acquisition has no mutable fallback; the location cannot become evidence                                                                  |
+| `REVIEW_OBSERVATION_OVERSIZED`                | Observed blob exceeds the repository observation size bound                                                                 | Oversized content is unavailable as evidence; never truncated                                                                                       |
+| `REVIEW_OBSERVATION_UNSUPPORTED_ENTRY`        | Observed path is not materializable at the frozen revision                                                                  | Submodule gitlink entries are not materialized as observations                                                                                      |
 | `REVIEW_REPOSITORY_IDENTITY_MISSING`          | Branch source carries no remote or local repository identity                                                                | Re-run the review from its original content input so the identity is resolved again                                                                 |
 | `REVIEW_SUBJECT_DIGEST_MISMATCH`              | Re-derived review subject differs from the frozen obligation subject                                                        | Start a new review for the changed content; a frozen subject is immutable                                                                           |
 | `REVIEW_SUBJECT_NOT_MATERIALIZED`             | Standalone review source could not be frozen into immutable material                                                        | Resolve exactly one review source before creating or continuing the obligation                                                                      |
@@ -451,6 +459,7 @@ REVIEW_CONTENT_SOURCE_INCOMPLETE
 REVIEW_EVIDENCE_LOCATION_ESCAPES_REPOSITORY
 REVIEW_EVIDENCE_LOCATION_INVALID
 REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE
+REVIEW_IMPLEMENTATION_BASE_FREEZE_FAILED
 REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED
 REVIEW_FINDINGS_HASH_MISMATCH
 REVIEW_FINDINGS_REQUIRED
@@ -459,6 +468,13 @@ REVIEW_ITERATION_MISMATCH
 REVIEW_MATERIAL_INTEGRITY_FAILED
 REVIEW_MODE_SELF_NOT_ALLOWED
 REVIEW_OBLIGATION_AMBIGUOUS
+REVIEW_OBSERVATION_AUTHORITY_UNAVAILABLE
+REVIEW_OBSERVATION_CAPABILITY_UNKNOWN
+REVIEW_OBSERVATION_INVALID_ARGS
+REVIEW_OBSERVATION_OVERSIZED
+REVIEW_OBSERVATION_PATH_INVALID
+REVIEW_OBSERVATION_UNAVAILABLE
+REVIEW_OBSERVATION_UNSUPPORTED_ENTRY
 REVIEW_OBLIGATION_ID_REQUIRED
 REVIEW_OBLIGATION_INPUT_MISMATCH
 REVIEW_OBLIGATION_NOT_FOUND

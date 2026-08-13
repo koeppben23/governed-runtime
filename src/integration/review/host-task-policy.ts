@@ -96,6 +96,13 @@ interface HostTaskOutputInput {
    * Discovery envelope; null for not_applicable/content attempts.
    */
   readonly repositoryDiscoverySnapshot: RepositoryDiscoverySnapshot | null;
+  /**
+   * Opaque host-minted observation capability of the attempt the reviewer
+   * Task will bind to. Null when no bindable attempt exists or the attempt
+   * predates the frozen-repository-authority generation — repository evidence
+   * is then unavailable.
+   */
+  readonly observationCapability: string | null;
 }
 
 /**
@@ -217,6 +224,7 @@ function buildReviewerTaskPromptOrNull(
     readonly frozenReviewerContext: FrozenReviewerContext | null;
     readonly retrySchemaErrors: readonly string[] | null;
     readonly repositoryDiscoverySnapshot: RepositoryDiscoverySnapshot | null;
+    readonly observationCapability: string | null;
   },
 ): string | null {
   if (!attestationMeta || ctx?.iteration == null) return null;
@@ -233,6 +241,7 @@ function buildReviewerTaskPromptOrNull(
     frozenReviewerContext: opts.frozenReviewerContext ?? undefined,
     retrySchemaErrors: opts.retrySchemaErrors ?? undefined,
     repositoryDiscoverySnapshot: opts.repositoryDiscoverySnapshot,
+    ...(opts.observationCapability ? { observationCapability: opts.observationCapability } : {}),
   });
 }
 
@@ -270,6 +279,7 @@ function buildHostTaskBlockedOutput(
     frozenReviewerContext: input.frozenReviewerContext,
     retrySchemaErrors: input.retrySchemaErrors,
     repositoryDiscoverySnapshot: input.repositoryDiscoverySnapshot,
+    observationCapability: input.observationCapability,
   });
   const copyPromptStr = reviewerTaskPrompt
     ? ` A ready-to-use reviewer prompt is provided in the reviewerTaskPrompt field — pass it ` +
@@ -320,6 +330,9 @@ function buildHostTaskBlockedOutput(
       toolObligationId: attestationMeta.toolObligationId,
       iteration: attestationMeta.iteration,
       planVersion: attestationMeta.planVersion,
+      ...(input.observationCapability
+        ? { observationCapability: input.observationCapability }
+        : {}),
     };
   }
 
@@ -539,6 +552,7 @@ function buildHostTaskOutputInput(
       bindableAttempt?.repositoryDiscovery.kind === 'repository'
         ? bindableAttempt.repositoryDiscovery.snapshot
         : null,
+    observationCapability: bindableAttempt?.observationCapability ?? null,
   };
 }
 

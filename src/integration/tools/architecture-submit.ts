@@ -19,6 +19,7 @@ import {
 } from '../review/assurance.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
 import { headCommitFull } from '../../adapters/git.js';
+import { freezeContextAuthority } from '../../rails/repository-authority.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Mode A: ADR Submission
@@ -65,9 +66,9 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
         changedFiles: resolvedTargetPaths,
         claimedTaskClass: ctx.state.claimedTaskClass,
         metadata,
-        repositoryRevisionProvenance: headSha
-          ? { kind: 'available', headSha }
-          : { kind: 'unavailable', reason: 'head_revision_not_resolved' },
+        // Frozen repository context (freeze-time resolution): architecture
+        // reviews may cite repository evidence only against this context.
+        repositoryAuthority: headSha ? freezeContextAuthority(ctx.wsDir, headSha) : undefined,
       })
     : null;
   let archAttemptId: string | null = null;

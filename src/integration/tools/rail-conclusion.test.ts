@@ -111,7 +111,7 @@ describe('buildRailConclusion', () => {
       });
       const state = makeState('READY', {
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v3' as const,
+          assuranceSchemaVersion: 'review-assurance.v4' as const,
           obligations: [obligation],
           invocations: [],
           attempts: [],

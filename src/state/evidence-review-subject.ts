@@ -11,7 +11,9 @@ import {
 } from './evidence-findings.js';
 
 const Sha256Digest = z.string().regex(/^(?:sha256:)?[a-f0-9]{64}$/i);
-const GitSha = z.string().regex(/^[a-f0-9]{40,64}$/i);
+/** Canonical Git object id (commit, tree, blob). */
+export const GitSha = z.string().regex(/^[a-f0-9]{40,64}$/i);
+export type GitSha = z.infer<typeof GitSha>;
 
 export const RepositoryIdentity = z
   .object({

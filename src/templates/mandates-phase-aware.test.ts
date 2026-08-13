@@ -300,7 +300,10 @@ describe('phase-aware mandates rendering', () => {
     // then 98 -> 101 for p40-v1 FlowGuard tool-isolation permissions,
     // then 101 -> 102 for p42-v1 mandate semantics fix (removed info severity,
     // corrected type names, evidenceLocations may be empty).
+    // 102 -> 105 for frozen-repository-authority: the sanctioned
+    // flowguard_observe_repository capability carve-out (permission + native
+    // tool allow-lists) and the investigation-vs-observation contract rule.
     // Keep new criteria terse; do not treat this as headroom for unbounded growth.
-    expect(roughTokenBudget(REVIEWER_AGENT).lines).toBeLessThanOrEqual(102);
+    expect(roughTokenBudget(REVIEWER_AGENT).lines).toBeLessThanOrEqual(105);
   });
 });

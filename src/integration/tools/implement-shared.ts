@@ -18,7 +18,7 @@ import {
   resolveFrozenReviewProfile,
 } from '../review/assurance.js';
 import { classifyToolCallMode } from './review-validation-mode.js';
-import { headCommitFull } from '../../adapters/git.js';
+import { freezeCandidatePairAuthority } from '../../rails/repository-authority.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Shared Types / Helpers
@@ -51,7 +51,12 @@ export async function activateImplementationReviewObligation(
     return { state, obligation: null, attemptId: null };
   }
 
-  const headSha = await headCommitFull(input.worktree);
+  // Frozen repository authority: pre-mutation base (frozen at IMPLEMENTATION
+  // entry) + content-addressed worktree candidate head (isolated index). No
+  // mutable HEAD snapshot — absence of authority makes repository evidence
+  // unavailable, never approximated.
+  const repositoryAuthority = await freezeCandidatePairAuthority(state, input.worktree);
+  const changedFiles = state.implementation?.changedFiles ?? [];
   const obligation = createReviewObligation({
     obligationType: 'implement',
     iteration: input.iteration,
@@ -61,11 +66,13 @@ export async function activateImplementationReviewObligation(
     reviewProfile: resolveFrozenReviewProfile(state.policySnapshot),
     profileSource: 'policy_default',
     policySnapshot: state.policySnapshot,
-    changedFiles: state.implementation?.changedFiles ?? [],
+    changedFiles,
     claimedTaskClass: state.claimedTaskClass,
-    repositoryRevisionProvenance: headSha
-      ? { kind: 'available', headSha }
-      : { kind: 'unavailable', reason: 'head_revision_not_resolved' },
+    reviewSubjectScope:
+      changedFiles.length > 0
+        ? { kind: 'repository_change', paths: [...changedFiles], revisions: ['base', 'head'] }
+        : { kind: 'unavailable', reason: 'scope_not_resolved' },
+    repositoryAuthority,
   });
   const withAttempt = appendObligationWithAttempt(state.reviewAssurance, obligation, input.now);
   return {

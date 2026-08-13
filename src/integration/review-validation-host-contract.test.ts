@@ -147,7 +147,7 @@ function pluginHandshakeAssurance(
   obligationType: (typeof ALL_OBLIGATION_TYPES)[number],
 ): ReviewAssuranceState {
   return {
-    assuranceSchemaVersion: 'review-assurance.v3' as const,
+    assuranceSchemaVersion: 'review-assurance.v4' as const,
     attempts: [],
     obligations: [
       {

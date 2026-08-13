@@ -26,6 +26,13 @@ export interface PendingReviewInstructionInput {
    * copy-ready Task prompt carries the same claim context as the SDK path.
    */
   readonly proofContext?: readonly string[];
+  /**
+   * Opaque host-minted observation capability of the attempt the reviewer Task
+   * will bind to. Renders the Repository Observation Contract into the
+   * copy-ready prompt and the attestation. Absent → repository evidence is
+   * unavailable for this attempt.
+   */
+  readonly observationCapability?: string;
 }
 
 export interface PendingReviewInstruction {
@@ -43,6 +50,8 @@ export interface PendingReviewInstruction {
       readonly toolObligationId: string;
       readonly iteration: number;
       readonly planVersion: number;
+      /** Opaque host-minted observation capability of the bound attempt. */
+      readonly observationCapability?: string;
     };
   };
   readonly next: string;
@@ -87,6 +96,7 @@ function buildHostTaskPrompt(
     mandateDigest: obligation.mandateDigest,
     criteriaVersion: obligation.criteriaVersion,
     subjectLabel: input.subjectLabel,
+    observationCapability: input.observationCapability,
     challengeContract:
       obligation.requiredChallengeCount === undefined
         ? undefined
@@ -117,6 +127,9 @@ export function buildPendingReviewInstruction(
             toolObligationId: obligation.obligationId,
             iteration: input.iteration,
             planVersion: input.planVersion,
+            ...(input.observationCapability
+              ? { observationCapability: input.observationCapability }
+              : {}),
           },
         }
       : {}),

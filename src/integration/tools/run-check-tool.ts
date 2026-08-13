@@ -75,6 +75,7 @@ import {
   resolveReviewOrchestrationMode,
 } from '../review/orchestration-mode.js';
 import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
+import { resolveAttemptObservationCapability } from '../review/assurance.js';
 import { buildReviewerProofContext } from '../review/proof-context.js';
 import {
   activateImplementationReviewObligation,
@@ -702,6 +703,11 @@ function formatRunCheckResponse(input: {
         planVersion: input.nextObligation.planVersion,
         subjectLabel: 'implementation summary, changed files, approved plan text, and ticket text',
         proofContext: buildReviewerProofContext(finalState),
+        observationCapability:
+          resolveAttemptObservationCapability(
+            finalState.reviewAssurance,
+            input.nextObligation.obligationId,
+          ) ?? undefined,
       })
     : null;
   return appendNextAction(

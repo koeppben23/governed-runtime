@@ -17,6 +17,7 @@ import {
   resolveReviewOrchestrationMode,
 } from '../review/orchestration-mode.js';
 import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
+import { resolveAttemptObservationCapability } from '../review/assurance.js';
 import { buildReviewerProofContext } from '../review/proof-context.js';
 
 // ─── Shared Types ─────────────────────────────────────────────────────────
@@ -125,6 +126,12 @@ export function buildArchitectureReviewInstruction(input: {
     planVersion: input.planVersion,
     subjectLabel: input.subjectLabel,
     proofContext: buildReviewerProofContext(input.state),
+    observationCapability: input.obligation
+      ? (resolveAttemptObservationCapability(
+          input.state.reviewAssurance,
+          input.obligation.obligationId,
+        ) ?? undefined)
+      : undefined,
   });
   return { next: instruction.next, reviewInvocation: instruction.reviewInvocation };
 }
