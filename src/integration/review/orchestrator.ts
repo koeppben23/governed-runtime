@@ -623,9 +623,6 @@ function structuredReviewerResult(
   childSessionId: string,
   findings: Record<string, unknown>,
 ): ReviewerSuccessResult {
-  const reviewedBy = findings.reviewedBy as Record<string, unknown> | undefined;
-  if (reviewedBy && typeof reviewedBy === 'object') reviewedBy.sessionId = childSessionId;
-  else findings.reviewedBy = { sessionId: childSessionId };
   return {
     sessionId: childSessionId,
     rawResponse: JSON.stringify(findings),

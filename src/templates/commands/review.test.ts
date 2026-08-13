@@ -98,5 +98,10 @@ describe('templates/commands/review (#401 Discovery context)', () => {
         'without appending content, Discovery context, or instructions',
       );
     });
+
+    it('requires verdict-only completion after host-task evidence binds', () => {
+      expect(REVIEW_COMMAND).toContain('Do NOT submit, copy, or alter `reviewFindings`');
+      expect(REVIEW_COMMAND).toMatch(/reviewObligationId[\s\S]*reviewVerdict/);
+    });
   });
 });

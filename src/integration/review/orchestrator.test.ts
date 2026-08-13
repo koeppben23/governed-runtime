@@ -755,8 +755,9 @@ describe('invokeReviewer', () => {
     expect(result).toBeNull();
   });
 
-  // CORNER: runtime authoritatively overwrites reviewedBy.sessionId with childSessionId (B3)
-  it('overwrites findings.reviewedBy.sessionId with authoritative childSessionId', async () => {
+  // CORNER: transport preserves untrusted input; the shared preparation boundary
+  // adds canonical provenance only after strict input validation.
+  it('does not stamp reviewer provenance in the transport layer', async () => {
     const findingsJson = validFindings({ reviewedBy: { sessionId: 'reviewer-guessed-id' } });
     const client = mockClient({
       promptResult: {
@@ -771,13 +772,10 @@ describe('invokeReviewer', () => {
     expect(result!.structuredOutputUsed).toBe(true);
     expect(result!.reviewAssuranceLevel).toBe('structured_high');
     expect(result!.extractionMethod).toBeUndefined();
-    const reviewedBy = result!.findings!.reviewedBy as Record<string, unknown>;
-    // Authoritative override: real SDK childSessionId, NOT subagent-supplied guess.
-    expect(reviewedBy.sessionId).toBe('child-session-1');
+    expect(result!.findings!.reviewedBy).toEqual({ sessionId: 'reviewer-guessed-id' });
   });
 
-  // CORNER: missing reviewedBy is reconstructed from authoritative childSessionId
-  it('reconstructs reviewedBy when subagent omits it', async () => {
+  it('preserves missing reviewer provenance for the strict input boundary', async () => {
     const findingsJson = validFindings();
     const parsed = JSON.parse(findingsJson) as Record<string, unknown>;
     delete parsed.reviewedBy;
@@ -789,8 +787,7 @@ describe('invokeReviewer', () => {
     });
     const result = await invokeReviewer(client, PROMPT, 'parent-1');
     assertSuccessfulResult(result);
-    const reviewedBy = result!.findings!.reviewedBy as Record<string, unknown>;
-    expect(reviewedBy.sessionId).toBe('child-session-1');
+    expect(result!.findings).not.toHaveProperty('reviewedBy');
   });
 
   // P1.3 slice 4c: third LoopVerdict propagation through invokeReviewer.

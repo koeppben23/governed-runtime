@@ -119,19 +119,10 @@ function planModeAOutput(): { output: string; metadata: Record<string, unknown> 
 function reviewerTaskOutput(
   opts: {
     childSessionId?: string;
-    reviewedBySessionId?: string;
     verdict?: string;
-    mandateDigest?: string;
-    criteriaVersion?: string;
   } = {},
 ): { output: string; metadata: Record<string, unknown> } {
-  const {
-    childSessionId = CHILD_SESSION,
-    reviewedBySessionId = 'ses_reviewer_selfreported',
-    verdict = 'accept',
-    mandateDigest = REVIEW_MANDATE_DIGEST,
-    criteriaVersion = REVIEW_CRITERIA_VERSION,
-  } = opts;
+  const { childSessionId = CHILD_SESSION, verdict = 'accept' } = opts;
   return {
     output: JSON.stringify({
       iteration: 0,
@@ -143,15 +134,8 @@ function reviewerTaskOutput(
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
-      reviewedBy: { sessionId: reviewedBySessionId },
-      reviewedAt: '2026-06-18T00:00:00.000Z',
       attestation: {
         toolObligationId: OBLIGATION_ID,
-        mandateDigest,
-        criteriaVersion,
-        iteration: 0,
-        planVersion: 1,
-        reviewedBy: 'flowguard-reviewer',
       },
     }),
     // Tier 1 host metadata: the authoritative child session id the host observed.
@@ -262,9 +246,6 @@ async function driveCaptureThroughHooks(
   hooks: Hooks,
   opts: {
     verdict?: string;
-    reviewedBySessionId?: string;
-    mandateDigest?: string;
-    criteriaVersion?: string;
   } = {},
 ): Promise<void> {
   const afterHook = hooks['tool.execute.after']!;
@@ -281,7 +262,7 @@ async function driveCaptureThroughHooks(
         subagent_type: 'flowguard-reviewer',
         prompt:
           'Review this plan critically against the ticket. iteration=0, planVersion=1. ' +
-          'Return structured ReviewFindings JSON with your verdict.',
+          'Return structured ReviewerFindingsInput JSON with your verdict.',
       },
     },
     { title: 'Reviewer task', ...reviewerTaskOutput(opts) },
@@ -328,18 +309,10 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
     expect(bound?.childSessionId).toBe(CHILD_SESSION);
   });
 
-  it('REGRESSION: confabulated reviewer attestation still binds host-authoritatively', async () => {
-    // The other shipped bug: the reviewer self-attested host constants
-    // (mandateDigest/criteriaVersion) it was never given and confabulated them;
-    // binding hard-failed with field_mismatch. Through the real Task after-hook,
-    // a confabulated attestation must still bind, and the persisted evidence must
-    // carry the host-authoritative constants — not the reviewer's invented ones.
+  it('REGRESSION: host stamps canonical attestation after reviewer input binds', async () => {
     const { hooks, sessDir } = await setup();
 
-    await driveCaptureThroughHooks(hooks, {
-      mandateDigest: OBLIGATION_ID, // reviewer copied the UUID into the digest slot
-      criteriaVersion: 'plan-review-v1', // invented
-    });
+    await driveCaptureThroughHooks(hooks);
 
     const state = await readState(sessDir);
     const bound = (state?.reviewAssurance?.invocations ?? []).find(
@@ -646,15 +619,8 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
           missingVerification: [],
           scopeCreep: [],
           unknowns: [],
-          reviewedBy: { sessionId: 'ses_reviewer_selfreported' },
-          reviewedAt: '2026-06-22T00:00:00.000Z',
           attestation: {
             toolObligationId: obligationId,
-            mandateDigest: REVIEW_MANDATE_DIGEST,
-            criteriaVersion: REVIEW_CRITERIA_VERSION,
-            iteration: 1,
-            planVersion: 1,
-            reviewedBy: 'flowguard-reviewer',
           },
         }),
         metadata: { sessionID: CHILD_SESSION },
@@ -727,15 +693,8 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
         missingVerification: [],
         scopeCreep: [],
         unknowns: [],
-        reviewedBy: { sessionId: 'ses_reviewer_selfreported' },
-        reviewedAt: '2026-06-22T00:00:00.000Z',
         attestation: {
           toolObligationId: obligationId,
-          mandateDigest: REVIEW_MANDATE_DIGEST,
-          criteriaVersion: REVIEW_CRITERIA_VERSION,
-          iteration: 1,
-          planVersion: 1,
-          reviewedBy: 'flowguard-reviewer',
         },
       }),
       metadata: { sessionID: RETRY_CHILD_SESSION },

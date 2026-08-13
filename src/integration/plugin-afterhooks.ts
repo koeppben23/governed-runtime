@@ -43,10 +43,7 @@ import {
   REASON_SESSION_LOCK_CONTENDED,
   DIAGNOSTIC_SESSION_LOCK_WAITED,
 } from '../shared/flowguard-identifiers.js';
-import {
-  resolveSubagentSessionId,
-  injectSessionIdIntoOutput,
-} from './review/enforcement/extraction.js';
+import { resolveSubagentSessionId } from './review/enforcement/extraction.js';
 import type { ToolHookAfterInput, ToolHookAfterOutput } from './types.js';
 import { FG_PREFIX, getToolTraceId, type FlowGuardPluginRuntime } from './plugin-shared.js';
 import {
@@ -289,11 +286,6 @@ async function handleTaskAfter(
     ctx.hookOutput,
     taskArgs,
   );
-  if (resolvedChildSessionId)
-    ctx.hookOutput.output = injectSessionIdIntoOutput(
-      ctx.hookOutput.output,
-      resolvedChildSessionId,
-    );
   try {
     trackTaskEnforcement(
       runtime.ws.getEnforcementState(ctx.sessionId),

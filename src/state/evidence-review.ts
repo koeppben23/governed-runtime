@@ -257,9 +257,9 @@ export {
   ChallengeClientReference,
   REVIEW_CHALLENGE_OUTCOMES,
   ReviewChallenge,
-  ReviewerChallengeInput,
   ChallengeResolution,
   ChallengeResolutionVerdict,
+  ReviewerChallengeInput,
 } from './evidence-review-challenge.js';
 import { ReviewChallenge, ChallengeResolutionVerdict } from './evidence-review-challenge.js';
 
@@ -316,7 +316,7 @@ export type ReviewAttestation = z.infer<typeof ReviewAttestation>;
  * `reviewerClaimedAt` / `reviewerClaimedBy` for diagnostics only; they never
  * override the host-stamped canonical values.
  */
-export const ReviewFindings = z
+export const ReviewFindingsObject = z
   .object({
     iteration: z.number().int().nonnegative(),
     planVersion: z.number().int().positive(),
@@ -349,8 +349,8 @@ export const ReviewFindings = z
     /** Reviewer-only verdicts for prior implementation challenge resolutions. */
     challengeResolutionVerdicts: z.array(ChallengeResolutionVerdict).optional(),
   })
-  .strict()
-  .readonly();
+  .strict();
+export const ReviewFindings = ReviewFindingsObject.readonly();
 export type ReviewFindings = z.infer<typeof ReviewFindings>;
 
 // ─── Review Obligations and Invocation Evidence ────────────────────────────────

@@ -12,14 +12,7 @@ import { describe, expect, it } from 'vitest';
 import { OPENCODE_JSON_TEMPLATE } from './mandates.js';
 import { REVIEWER_AGENT } from './mandates.js';
 
-const REQUIRED_ATTESTATION_FIELDS = [
-  'mandateDigest',
-  'criteriaVersion',
-  'toolObligationId',
-  'iteration',
-  'planVersion',
-  'reviewedBy',
-] as const;
+const REQUIRED_ATTESTATION_FIELDS = ['toolObligationId'] as const;
 
 describe('REVIEWER_AGENT template: schema integrity (B1)', () => {
   it('contains an attestation block in the output schema', () => {
@@ -34,8 +27,8 @@ describe('REVIEWER_AGENT template: schema integrity (B1)', () => {
     });
   }
 
-  it('binds attestation.reviewedBy to the literal "flowguard-reviewer"', () => {
-    expect(REVIEWER_AGENT).toMatch(/"reviewedBy":\s*"flowguard-reviewer"/);
+  it('forbids model-authored provenance before host stamping', () => {
+    expect(REVIEWER_AGENT).toContain('Do NOT output reviewedBy or reviewedAt anywhere');
   });
 
   it('requires structured finding relations and omits legacy locations', () => {

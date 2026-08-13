@@ -77,7 +77,7 @@ export function validPrompt(iteration = 0, planVersion = 1): string {
   );
 }
 
-/** Build task result JSON with review findings including attestation. */
+/** Build task result JSON with strict reviewer-owned findings input. */
 export function taskResultWithAttestation(
   obligationId: string,
   opts: {
@@ -85,20 +85,13 @@ export function taskResultWithAttestation(
     iteration?: number;
     planVersion?: number;
     verdict?: string;
-    /** Override the reviewer-echoed attestation constants to simulate confabulation. */
-    attestationMandateDigest?: string;
-    attestationCriteriaVersion?: string;
-    attestationReviewedBy?: string;
   } = {},
 ): string {
   const {
-    childSessionId = CHILD_SESSION_ID,
+    childSessionId: _childSessionId = CHILD_SESSION_ID,
     iteration = 0,
     planVersion = 1,
     verdict = 'accept',
-    attestationMandateDigest = REVIEW_MANDATE_DIGEST,
-    attestationCriteriaVersion = REVIEW_CRITERIA_VERSION,
-    attestationReviewedBy = REVIEWER_SUBAGENT_TYPE,
   } = opts;
   return JSON.stringify({
     iteration,
@@ -110,15 +103,8 @@ export function taskResultWithAttestation(
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
-    reviewedBy: { sessionId: childSessionId },
-    reviewedAt: NOW,
     attestation: {
       toolObligationId: obligationId,
-      mandateDigest: attestationMandateDigest,
-      criteriaVersion: attestationCriteriaVersion,
-      iteration,
-      planVersion,
-      reviewedBy: attestationReviewedBy,
     },
   });
 }
@@ -182,10 +168,6 @@ export function setupFullCycle(
     childSessionId?: string;
     iteration?: number;
     planVersion?: number;
-    /** Override reviewer-echoed attestation constants to simulate confabulation. */
-    attestationMandateDigest?: string;
-    attestationCriteriaVersion?: string;
-    attestationReviewedBy?: string;
   } = {},
 ) {
   const {
@@ -193,9 +175,6 @@ export function setupFullCycle(
     childSessionId = CHILD_SESSION_ID,
     iteration = 0,
     planVersion = 1,
-    attestationMandateDigest,
-    attestationCriteriaVersion,
-    attestationReviewedBy,
   } = opts;
 
   const state = createSessionState();
@@ -212,9 +191,6 @@ export function setupFullCycle(
     childSessionId,
     iteration,
     planVersion,
-    ...(attestationMandateDigest !== undefined ? { attestationMandateDigest } : {}),
-    ...(attestationCriteriaVersion !== undefined ? { attestationCriteriaVersion } : {}),
-    ...(attestationReviewedBy !== undefined ? { attestationReviewedBy } : {}),
   });
 
   // Step 2: Task call — onTaskToolAfter records subagent call
@@ -226,6 +202,7 @@ export function setupFullCycle(
     },
     taskResult,
     LATER,
+    { metadata: { sessionID: childSessionId } },
   );
 
   return { state, obligation, attempts: [attemptFor(obligation, childSessionId)] };

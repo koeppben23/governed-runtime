@@ -128,21 +128,14 @@ function noVerdictReviewerOutput(): string {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
-    reviewedBy: { sessionId: 'ses_child_corrupt_e2e' },
-    reviewedAt: '2026-05-10T12:00:00.000Z',
     attestation: {
       toolObligationId: OBLIGATION_ID,
-      mandateDigest: REVIEW_MANDATE_DIGEST,
-      criteriaVersion: REVIEW_CRITERIA_VERSION,
-      iteration: 0,
-      planVersion: 1,
-      reviewedBy: REVIEWER_SUBAGENT_TYPE,
     },
   });
 }
 
 /** Reviewer Task output with a valid, bindable verdict. */
-function validReviewerOutput(childSessionId: string = CHILD_VALID): string {
+function validReviewerOutput(): string {
   return JSON.stringify({
     iteration: 0,
     planVersion: 1,
@@ -153,15 +146,8 @@ function validReviewerOutput(childSessionId: string = CHILD_VALID): string {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
-    reviewedBy: { sessionId: childSessionId },
-    reviewedAt: '2026-05-10T12:00:00.000Z',
     attestation: {
       toolObligationId: OBLIGATION_ID,
-      mandateDigest: REVIEW_MANDATE_DIGEST,
-      criteriaVersion: REVIEW_CRITERIA_VERSION,
-      iteration: 0,
-      planVersion: 1,
-      reviewedBy: REVIEWER_SUBAGENT_TYPE,
     },
   });
 }
@@ -229,7 +215,7 @@ describe('reviewer host-task after-hook: no_matched_record → sequential re-inv
       const firstOutput: { title: string; output: string; metadata: Record<string, unknown> } = {
         title: 'task',
         output: noVerdictReviewerOutput(),
-        metadata: {},
+        metadata: { sessionID: 'ses_child_corrupt_e2e' },
       };
       await afterHook(
         { tool: 'task', sessionID, callID: 'call-1', args: reviewerArgs },
@@ -248,7 +234,7 @@ describe('reviewer host-task after-hook: no_matched_record → sequential re-inv
       const secondOutput: { title: string; output: string; metadata: Record<string, unknown> } = {
         title: 'task',
         output: validReviewerOutput(),
-        metadata: {},
+        metadata: { sessionID: CHILD_VALID },
       };
       await afterHook(
         { tool: 'task', sessionID, callID: 'call-2', args: reviewerArgs },
@@ -358,7 +344,7 @@ describe('reviewer host-task after-hook: no_matched_record → sequential re-inv
       for (const callID of ['call-a', 'call-b']) {
         await afterHook(
           { tool: 'task', sessionID, callID, args: reviewerArgs },
-          { title: 'task', output: validReviewerOutput(), metadata: {} },
+          { title: 'task', output: validReviewerOutput(), metadata: { sessionID: CHILD_VALID } },
         );
       }
 

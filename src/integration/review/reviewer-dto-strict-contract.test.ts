@@ -128,7 +128,9 @@ describe('reviewer DTO strict boundary', () => {
           claim: 'The claim under test.',
           locations: ['src/foo.ts'],
           kind: 'content_challenge' as const,
-          evidenceRefs: [{ kind: 'content', digest: 'a'.repeat(64), cacheKey: 'x' }],
+          evidenceRefs: [
+            { kind: 'content', digest: 'a'.repeat(64), reviewedBy: { sessionId: 'ses_reviewer' } },
+          ],
           outcome: 'supported' as const,
         },
       ],

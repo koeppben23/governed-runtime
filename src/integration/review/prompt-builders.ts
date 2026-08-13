@@ -233,8 +233,8 @@ function renderReviewerRules(isRepositoryReview: boolean): string[] {
   rules.push(
     '- Do not fabricate a verdict of convenience; ground every finding in concrete evidence.',
     // Defensive hardening, NOT a schema guarantee (strict validation enforces regardless).
-    '- reviewedBy and attestation belong ONLY at the TOP LEVEL of ReviewFindings. NEVER place reviewedBy inside relation objects — not in subjectAnchors entries, not in their location objects, not in evidenceLocations entries.',
-    '- Output ONLY the ReviewFindings JSON object as the final content of your reply:',
+    '- Do NOT output reviewedBy or reviewedAt anywhere. The host adds canonical provenance after strict reviewer-input validation.',
+    '- Output ONLY the ReviewerFindingsInput JSON object as the final content of your reply:',
     '  no prose, no reasoning, and no markdown code fences before or after it.',
   );
   return rules;
@@ -242,17 +242,18 @@ function renderReviewerRules(isRepositoryReview: boolean): string[] {
 
 function renderFindingsObjectRule(input: ReviewerTaskPromptInput): string {
   return (
-    '- Return a complete ReviewFindings JSON object with overallVerdict, blockingIssues,' +
-    '\n  majorRisks, missingVerification, scopeCreep, unknowns, reviewedBy, reviewedAt, and' +
-    `\n  attestation set to the values above (iteration=${input.iteration}` +
-    `${input.planVersion != null ? `, planVersion=${input.planVersion}` : ''}).` +
+    '- Return a complete ReviewerFindingsInput JSON object with overallVerdict, blockingIssues,' +
+    '\n  majorRisks, missingVerification, scopeCreep, unknowns, and attestation.' +
+    '\n  The host owns and adds reviewedBy, reviewedAt, mandateDigest, criteriaVersion, and' +
+    ' attestation.reviewedBy after this input validates.' +
     // Top-level required fields the canonical ReviewFindings schema demands —
     // spelled out with their exact values so the reviewer never has to guess
     // them from the surrounding context text.
     '\n  The top-level object MUST also carry these exact fields:' +
     `\n  iteration: ${input.iteration}` +
     (input.planVersion != null ? `\n  planVersion: ${input.planVersion}` : '') +
-    '\n  reviewMode: "subagent"'
+    '\n  reviewMode: "subagent"' +
+    `\n  attestation: { "toolObligationId": "${input.obligationId}" }`
   );
 }
 
@@ -274,13 +275,10 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
       `falsification-first review of ${input.subjectLabel}.`,
     `Review context: ${context}.`,
     '',
-    'Required attestation (return these exact values in your ReviewFindings.attestation):',
-    `  reviewedBy: "${REVIEWER_SUBAGENT_TYPE}"`,
+    'Required reviewer-owned attestation:',
     `  toolObligationId: "${input.obligationId}"`,
-    `  mandateDigest: "${input.mandateDigest}"`,
-    `  criteriaVersion: "${input.criteriaVersion}"`,
-    `  iteration: ${input.iteration}`,
-    ...(input.planVersion != null ? [`  planVersion: ${input.planVersion}`] : []),
+    'The host adds reviewer identity, timestamp, and all other attestation fields after',
+    'your strict reviewer input validates. Do NOT output reviewedBy or reviewedAt anywhere.',
     '',
     ...(input.retrySchemaErrors && input.retrySchemaErrors.length > 0
       ? [
@@ -709,11 +707,10 @@ export function buildReviewContentPrompt(opts: {
     'Obligation: ' + opts.obligationId,
     'Iteration: ' + String(opts.iteration) + ', PlanVersion: ' + String(opts.planVersion),
     '',
-    'ATTESTATION (include these exact values in your ReviewFindings output):',
-    '  reviewedBy: "' + REVIEWER_SUBAGENT_TYPE + '"',
-    '  mandateDigest: "' + opts.mandateDigest + '"',
-    '  criteriaVersion: "' + opts.criteriaVersion + '"',
+    'REVIEWER-OWNED ATTESTATION:',
     '  toolObligationId: "' + opts.obligationId + '"',
+    'The host adds reviewedBy, reviewedAt, mandateDigest, criteriaVersion, and',
+    'attestation.reviewedBy after strict ReviewerFindingsInput validation.',
     '',
   ];
   if (opts.ticketText) {
@@ -733,10 +730,10 @@ export function buildReviewContentPrompt(opts: {
   }
   lines.push(
     '',
-    'Return a complete ReviewFindings JSON object (no markdown fences, no extra text).',
+    'Return a complete ReviewerFindingsInput JSON object (no markdown fences, no extra text).',
     'Fields: reviewMode: "subagent", iteration, planVersion, overallVerdict,',
     '  blockingIssues, majorRisks, missingVerification, scopeCreep, unknowns,',
-    '  reviewedBy: { sessionId }, reviewedAt, attestation.',
+    '  attestation: { toolObligationId }. Do NOT output reviewedBy or reviewedAt.',
     'Use ONLY these categories: completeness, correctness, feasibility, risk, quality.',
     '',
     CORE_REVIEW_PROFILE_MARKER,

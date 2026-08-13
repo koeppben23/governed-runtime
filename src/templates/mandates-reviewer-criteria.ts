@@ -103,9 +103,7 @@ Your response must conform to this JSON schema. When structured output is active
   "missingVerification": ["<specific check not run or not provable>"],
   "scopeCreep": ["<specific out-of-scope item>"],
   "unknowns": ["<specific unresolved question>"],
-  "reviewedBy": { "sessionId": "<assigned session ID recorded in invocation evidence>" },
-  "reviewedAt": "<ISO 8601 timestamp>",
-  "attestation": { "mandateDigest": "<from prompt>", "criteriaVersion": "<from prompt>", "toolObligationId": "<from prompt>", "iteration": <same number>, "planVersion": <same number>, "reviewedBy": "${REVIEWER_SUBAGENT_TYPE}" }
+   "attestation": { "toolObligationId": "<from prompt>" }
 }
 
 ## Rules
@@ -116,7 +114,7 @@ Your response must conform to this JSON schema. When structured output is active
 - Do NOT use "unable_to_review" to avoid producing substantive findings; every finding needs evidence and a relation with non-empty subjectAnchors.
 - evidenceLocations MAY be empty; subjectAnchors MUST have at least one entry.
 - Read/Glob/Grep are investigation only; cite a repository evidenceLocation only after obtaining its frozen bytes via flowguard_observe_repository with the observationCapability from your prompt, citing { path, revision } exactly as observed.
-- reviewedBy and attestation belong ONLY at the TOP LEVEL of ReviewFindings. NEVER place reviewedBy inside relation objects — not in subjectAnchors entries, not in their location objects, not in evidenceLocations entries. (Defensive hardening; strict schema validation enforces this regardless.)
+- Do NOT output reviewedBy or reviewedAt anywhere. The host adds canonical provenance only after this strict reviewer input validates.
 - Do NOT accept without reading the artifact; "accept" is a reviewer verdict, not user approval; reviewMode is "subagent".
   - iteration and planVersion are provided in your task prompt. Use exactly those values.
   - Honor the obligation's frozen \`requiredChallengeCount\` and \`requiredChallengeKind\`. Required challenges need matching digest-bound evidence. Implementation challenges with \`fail\` or \`not_verified\` cannot support acceptance. For prior author resolutions, return \`challengeResolutionVerdicts\` with your independent \`resolved\`, \`still_failing\`, or \`not_verified\` verdict; author claims have no acceptance authority.
@@ -140,9 +138,9 @@ ${renderReviewerCriteria(reviewType)}
 
 ## Required Submission
 
-You MUST submit findings via the mcp__flowguard__flowguard_review tool when available. If the host transport returns findings to the parent agent instead, return one complete ReviewFindings JSON object and nothing else.
+Return one complete ReviewerFindingsInput JSON object to the parent host. Do not call FlowGuard review tools from this reviewer transport; the host captures, validates, and binds the result.
 
-Use the exact attestation values supplied by FlowGuard: mandateDigest, criteriaVersion, toolObligationId, iteration, and planVersion. Do not invent or alter them.
+Use the exact reviewer-owned attestation value supplied by FlowGuard: toolObligationId. The host adds all provenance and remaining attestation fields after strict input validation.
 
 flowguard_decision is not independent review evidence. A review-evidence file is only transport; FlowGuard must parse, validate, bind, and consume ReviewFindings before any review is complete.
 
@@ -158,9 +156,7 @@ flowguard_decision is not independent review evidence. A review-evidence file is
   "missingVerification": ["<specific check not run or not provable>"],
   "scopeCreep": ["<specific out-of-scope item>"],
   "unknowns": ["<specific unresolved question>"],
-  "reviewedBy": { "sessionId": "<reviewer/subagent session id>" },
-  "reviewedAt": "<ISO 8601 timestamp>",
-  "attestation": { "mandateDigest": "<from prompt>", "criteriaVersion": "<from prompt>", "toolObligationId": "<from prompt>", "iteration": <same number>, "planVersion": <same number>, "reviewedBy": "${REVIEWER_SUBAGENT_TYPE}" }
+   "attestation": { "toolObligationId": "<from prompt>" }
 }
 
 Rules:
@@ -168,8 +164,8 @@ Rules:
 - overallVerdict MUST be "changes_requested" whenever blockingIssues is non-empty.
 - overallVerdict MAY be "unable_to_review" only for tool-failure conditions where honest review is impossible.
 - Omit \`challenges\` unless the Task prompt supplies a Challenge contract. Use only its count, kind, and allowed evidence references; never invent evidence identifiers.
-- Do not use Bash, Write, or Edit. Use only read/search tools, flowguard_review, and flowguard_observe_repository. Read/Glob/Grep are investigation only; cite a repository evidenceLocation only after obtaining its frozen bytes via flowguard_observe_repository with the observationCapability from your prompt, citing { path, revision } exactly as observed.
-- reviewedBy and attestation belong ONLY at the TOP LEVEL of ReviewFindings — never inside subjectAnchors entries, their location objects, or evidenceLocations entries.
+- Do not use Bash, Write, or Edit. Use only read/search tools and flowguard_observe_repository. Read/Glob/Grep are investigation only; cite a repository evidenceLocation only after obtaining its frozen bytes via flowguard_observe_repository with the observationCapability from your prompt, citing { path, revision } exactly as observed.
+- Do NOT output reviewedBy or reviewedAt anywhere. The host adds canonical provenance only after this strict reviewer input validates.
 `;
 }
 
@@ -185,7 +181,7 @@ export function renderClaudeReviewerAgent(reviewType: ReviewerPromptType = 'all'
 ---
 name: ${REVIEWER_SUBAGENT_TYPE}
 description: Independent code reviewer for FlowGuard governance
-tools: Read, Glob, Grep, mcp__flowguard__flowguard_review, mcp__flowguard__flowguard_observe_repository
+tools: Read, Glob, Grep, mcp__flowguard__flowguard_observe_repository
 disallowedTools: Bash, Write, Edit
 ---
 
@@ -202,7 +198,6 @@ tools:
     - Read
     - Glob
     - Grep
-    - mcp__flowguard__flowguard_review
     - mcp__flowguard__flowguard_observe_repository
   deny:
     - Bash

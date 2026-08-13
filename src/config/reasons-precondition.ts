@@ -709,7 +709,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     recoverySteps: [
       `Invoke the ${REVIEWER_SUBAGENT_TYPE} subagent via the OpenCode Task tool (subagent_type: "${REVIEWER_SUBAGENT_TYPE}")`,
       `Ensure the build agent has task permission: { "*": "deny", "${REVIEWER_SUBAGENT_TYPE}": "allow" }`,
-      'After the subagent returns ReviewFindings, submit the verdict with reviewFindings',
+      'After captured Task evidence binds, submit only reviewObligationId and reviewVerdict; never submit reviewFindings',
     ],
   },
 
