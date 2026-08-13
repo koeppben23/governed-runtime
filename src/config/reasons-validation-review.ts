@@ -653,7 +653,8 @@ export const REVIEW_VALIDATION_REASONS = [
     recoverySteps: [
       'The reviewer produced the same schema errors after a targeted repair instruction; another identical retry cannot recover',
       'The frozen review subject and material remain unchanged',
-      'Operator intervention is required: start a fresh /review for the same content, or inspect the reviewer agent output format',
+      'Inspect or correct the reviewer output mechanism before any further attempt',
+      'After operator intervention, start a fresh /review if a new independent attempt is desired',
       'Do NOT rewrite the reviewer prompt, fabricate findings, or guess a verdict',
     ],
   },
