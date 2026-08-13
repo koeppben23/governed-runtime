@@ -21,6 +21,22 @@ const BASE_INPUT = {
 };
 
 describe('renderReviewerTaskPrompt challenge contract', () => {
+  it('publishes the exact top-level required field values (iteration/planVersion/reviewMode)', () => {
+    // P3 contract completeness: the canonical ReviewFindings schema demands
+    // top-level iteration/planVersion/reviewMode; the output contract must
+    // state them with the exact dynamic values so the reviewer never has to
+    // infer them from surrounding context text.
+    const prompt = renderReviewerTaskPrompt({
+      ...BASE_INPUT,
+      iteration: 4,
+      planVersion: 7,
+    });
+
+    expect(prompt).toContain('iteration: 4');
+    expect(prompt).toContain('planVersion: 7');
+    expect(prompt).toContain('reviewMode: "subagent"');
+  });
+
   it('requires omitting optional challenges when the frozen count is zero', () => {
     const prompt = renderReviewerTaskPrompt({
       ...BASE_INPUT,

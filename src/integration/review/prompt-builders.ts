@@ -245,7 +245,14 @@ function renderFindingsObjectRule(input: ReviewerTaskPromptInput): string {
     '- Return a complete ReviewFindings JSON object with overallVerdict, blockingIssues,' +
     '\n  majorRisks, missingVerification, scopeCreep, unknowns, reviewedBy, reviewedAt, and' +
     `\n  attestation set to the values above (iteration=${input.iteration}` +
-    `${input.planVersion != null ? `, planVersion=${input.planVersion}` : ''}).`
+    `${input.planVersion != null ? `, planVersion=${input.planVersion}` : ''}).` +
+    // Top-level required fields the canonical ReviewFindings schema demands —
+    // spelled out with their exact values so the reviewer never has to guess
+    // them from the surrounding context text.
+    '\n  The top-level object MUST also carry these exact fields:' +
+    `\n  iteration: ${input.iteration}` +
+    (input.planVersion != null ? `\n  planVersion: ${input.planVersion}` : '') +
+    '\n  reviewMode: "subagent"'
   );
 }
 
