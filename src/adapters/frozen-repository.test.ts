@@ -264,6 +264,34 @@ describe('remote acquisition: exact Git object semantics', () => {
     }
   });
 
+  it('BAD: path traversing through a blob entry fails closed', () => {
+    GH_RESPONSES.push(
+      JSON.stringify({
+        tree: [{ path: 'src', mode: '100644', type: 'blob', sha: 'b'.repeat(40) }],
+      }),
+    );
+    try {
+      acquireRemote('src/foo.ts');
+      throw new Error('expected FrozenRepositoryError');
+    } catch (err) {
+      expect((err as FrozenRepositoryError).code).toBe('PATH_NOT_IN_TREE');
+    }
+  });
+
+  it('BAD: directory as final segment fails closed (not a blob)', () => {
+    GH_RESPONSES.push(
+      JSON.stringify({
+        tree: [{ path: 'foo.ts', mode: '040000', type: 'tree', sha: 'b'.repeat(40) }],
+      }),
+    );
+    try {
+      acquireRemote('foo.ts');
+      throw new Error('expected FrozenRepositoryError');
+    } catch (err) {
+      expect((err as FrozenRepositoryError).code).toBe('PATH_NOT_IN_TREE');
+    }
+  });
+
   it('BAD: missing remote path fails closed with no fallback', () => {
     GH_RESPONSES.push(
       JSON.stringify({
