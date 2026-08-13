@@ -43,6 +43,30 @@ export {
   ReviewSubjectScope,
 } from './evidence-review-subject.js';
 
+export {
+  FrozenRepositoryAuthority,
+  FrozenRepositoryRevisionTarget,
+  MAX_REPOSITORY_OBSERVATION_BYTES,
+  ObservationCapability,
+  RepositoryObservation,
+  RepositoryObservationCapture,
+  deriveRepositoryRevisionProvenance,
+  hasFrozenRepositoryAuthority,
+  resolveFrozenRevisionTarget,
+  verifyFrozenRepositoryAuthority,
+} from './evidence-review-authority.js';
+import {
+  FrozenRepositoryAuthority,
+  ObservationCapability,
+  RepositoryObservation,
+} from './evidence-review-authority.js';
+import {
+  refineAssuranceDiscoveryCoherence,
+  refineAssuranceProvenanceCoherence,
+  refineAuthorityStructure,
+  refineStandaloneSubject,
+} from './evidence-review-refinements.js';
+
 export { classifyRepositoryPath, type RepositoryPathClassification } from './repository-path.js';
 
 // ─── Review Attempt (Invocation Envelope) ─────────────────────────────────────
@@ -158,6 +182,29 @@ export const ReviewAttempt = z.object({
    * `not_applicable` otherwise.
    */
   repositoryDiscovery: ReviewAttemptDiscoveryContext,
+  /**
+   * Opaque host-minted observation capability bound to exactly this attempt.
+   * Transported to the reviewer via the canonical prompt; echoed by the
+   * sanctioned observation tool as routing only. Optional for attempts
+   * persisted before the frozen-repository-authority generation.
+   */
+  observationCapability: ObservationCapability.optional(),
+  /**
+   * Canonical fingerprint of the schema-error issue set that rejected this
+   * attempt (repair DIAGNOSTICS only — never authority). Detects a targeted
+   * repair that reproduced the identical error set (`REVIEWER_OUTPUT_REPAIR_STALLED`).
+   */
+  schemaErrorFingerprint: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
+  /**
+   * Authoritative, attempt-bound repository observations. Minted EXCLUSIVELY
+   * by the parent replay after the reviewer child session is known; child-side
+   * captures never become entries here directly. Optional for attempts
+   * persisted before the frozen-repository-authority generation.
+   */
+  observations: z.array(RepositoryObservation).readonly().optional(),
   createdAt: z.string().datetime(),
   completedAt: z.string().datetime().optional(),
 });
@@ -402,6 +449,20 @@ export const ReviewObligation = z
     reviewSubjectScope: ReviewSubjectScope,
     repositoryRevisionProvenance: ReviewRepositoryRevisionProvenanceSchema.optional(),
     /**
+     * Frozen repository authority for repository-governed obligations.
+     *
+     * `candidate_pair` — implementation reviews (pre-mutation frozen base +
+     * content-addressed worktree candidate head).
+     * `context` — plan/architecture reviews (single frozen repository context;
+     * only `revision:'head'` resolves against it).
+     *
+     * Absence means the obligation has NO repository evidence authority;
+     * repository evidence must surface as `evidence_unavailable`, never as a
+     * snapshot of mutable runtime state. Optional for obligations persisted
+     * before the frozen-repository-authority generation.
+     */
+    repositoryAuthority: FrozenRepositoryAuthority.optional(),
+    /**
      * Obligation-level output-repair budget, frozen from the resolved policy
      * snapshot at obligation creation. Counts `output_repair` attempts only;
      * task-lifecycle re-arms are budgeted by the enforcement retry gate.
@@ -411,25 +472,8 @@ export const ReviewObligation = z
      */
     maxReviewerOutputRepairAttempts: z.number().int().min(0).max(5),
   })
-  .superRefine((obligation, context) => {
-    if (obligation.obligationType !== 'review') return;
-    if (!obligation.reviewSubject) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['reviewSubject'],
-        message: 'Standalone review obligations require a frozen reviewSubject.',
-      });
-      return;
-    }
-    if (obligation.subjectDigest !== obligation.reviewSubject.subjectDigest) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['subjectDigest'],
-        message:
-          'Standalone review obligation subjectDigest must match reviewSubject.subjectDigest.',
-      });
-    }
-  });
+  .superRefine(refineStandaloneSubject)
+  .superRefine(refineAuthorityStructure);
 export type ReviewObligation = z.infer<typeof ReviewObligation>;
 
 /** P35 strict invocation evidence record. */
@@ -527,52 +571,31 @@ export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;
  *
  * `assuranceSchemaVersion` is a REQUIRED hard version literal. The
  * `review-assurance.v2` form introduced authority-bearing attempt origins and
- * frozen output-repair budgets. The `review-assurance.v3` form additionally
+ * frozen output-repair budgets. The `review-assurance.v4` form additionally
  * binds a host-owned repository Discovery snapshot to every attempt at mint
- * time. States persisted under older forms MUST fail parsing — there is
- * deliberately no upgrade or defaulting path for authority-bearing fields.
+ * time. The `review-assurance.v4` form introduces frozen repository authority
+ * (`ReviewObligation.repositoryAuthority`), opaque attempt-bound observation
+ * capabilities, and attempt-owned authoritative observations. States persisted
+ * under older forms MUST fail parsing — there is deliberately no defaulting
+ * path for authority-bearing fields. The single sanctioned transition is the
+ * shape-only v3→v4 read migration in the persistence adapter, which adds NO
+ * authority information that was not already present.
  *
  * Cross-record invariant: an attempt's `repositoryDiscovery` variant must
- * structurally match its owning obligation's frozen review subject kind. A
- * repository review obligation with a `not_applicable` attempt — or a
- * non-repository review with a `repository` snapshot attempt — is an invalid
- * state, not a prompt-rendering concern.
+ * structurally match its owning obligation's frozen repository authority. A
+ * repository-governed obligation with a `not_applicable` attempt — or a
+ * non-repository-governed obligation with a `repository` snapshot attempt — is
+ * an invalid state, not a prompt-rendering concern.
  */
 export const ReviewAssuranceState = z
   .object({
-    assuranceSchemaVersion: z.literal('review-assurance.v3'),
+    assuranceSchemaVersion: z.literal('review-assurance.v4'),
     obligations: z.array(ReviewObligation),
     invocations: z.array(ReviewInvocationEvidence),
     attempts: z.array(ReviewAttempt),
   })
-  .superRefine((assurance, context) => {
-    const obligationsById = new Map(
-      assurance.obligations.map((obligation) => [obligation.obligationId, obligation]),
-    );
-    for (const attempt of assurance.attempts) {
-      const obligation = obligationsById.get(attempt.obligationId);
-      if (!obligation) continue;
-      const repositoryReview =
-        obligation.obligationType === 'review' &&
-        obligation.reviewSubject?.kind === 'repository_change';
-      if (repositoryReview && attempt.repositoryDiscovery.kind !== 'repository') {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['attempts'],
-          message: `attempt ${attempt.attemptId} must carry a repository Discovery snapshot for a repository review obligation`,
-        });
-        return;
-      }
-      if (!repositoryReview && attempt.repositoryDiscovery.kind !== 'not_applicable') {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['attempts'],
-          message: `attempt ${attempt.attemptId} must carry not_applicable Discovery for a non-repository review obligation`,
-        });
-        return;
-      }
-    }
-  })
+  .superRefine(refineAssuranceDiscoveryCoherence)
+  .superRefine(refineAssuranceProvenanceCoherence)
   .readonly();
 export type ReviewAssuranceState = z.infer<typeof ReviewAssuranceState>;
 

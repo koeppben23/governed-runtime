@@ -120,7 +120,7 @@ function buildAssuranceForObligation(
   };
   const assured = appendInvocationEvidence(
     {
-      assuranceSchemaVersion: 'review-assurance.v3' as const,
+      assuranceSchemaVersion: 'review-assurance.v4' as const,
       obligations: [fulfilled],
       invocations: [],
       attempts: [],

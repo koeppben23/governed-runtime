@@ -42,7 +42,10 @@ function buildAnchorContract(subject: FrozenReviewSubject): ReviewAnchorContract
       contractText:
         'Repository review: subjectAnchors must use kind=repository_location with ' +
         'paths inside the reviewed file set. revision is "base" or "head" — never a SHA. ' +
-        'evidenceLocations may reference any repository file and MAY be empty.',
+        'evidenceLocations MAY reference repository locations within the frozen ' +
+        'repository authority of this review and MAY be empty. A cited location does ' +
+        'not itself establish observation: it is admissible only when its frozen ' +
+        'bytes were obtained through flowguard_observe_repository during this attempt.',
     };
   }
   return {
@@ -50,7 +53,8 @@ function buildAnchorContract(subject: FrozenReviewSubject): ReviewAnchorContract
     requiredSubjectDigest: subject.subjectDigest,
     contractText:
       'Content review: subjectAnchors must use kind=content with the exact ' +
-      'frozen subjectDigest. evidenceLocations MAY be empty.',
+      'frozen subjectDigest. evidenceLocations MUST be empty — content subjects ' +
+      'carry no frozen repository authority, so repository evidence is unavailable.',
   };
 }
 

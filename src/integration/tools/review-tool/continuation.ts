@@ -19,6 +19,7 @@ import { resolveReviewAttemptDiscoveryContext } from '../../review/discovery-att
 import { writeStateWithArtifacts } from '../helpers.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { StartedReviewResult } from './types.js';
+import { hasFrozenRepositoryAuthority } from '../../../state/evidence-review.js';
 import type { ReviewAttempt, ReviewObligation } from '../../../state/evidence-review.js';
 
 export function ensureStartedReviewState(
@@ -141,7 +142,7 @@ export async function reissueReviewAttempt(
   const discovery = await resolveReviewAttemptDiscoveryContext({
     state,
     worktree: state.binding.worktree,
-    reviewSubjectKind: obligation.reviewSubject?.kind,
+    repositoryGoverned: hasFrozenRepositoryAuthority(obligation),
     now,
   });
   if (discovery.kind === 'blocked') {

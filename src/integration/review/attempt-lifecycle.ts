@@ -11,7 +11,7 @@
  * @version v1
  */
 
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type {
   ReviewAssuranceState,
   ReviewAttempt,
@@ -25,7 +25,7 @@ import type {
 
 export function emptyReviewAssurance(): ReviewAssuranceState {
   return {
-    assuranceSchemaVersion: 'review-assurance.v3',
+    assuranceSchemaVersion: 'review-assurance.v4',
     obligations: [],
     invocations: [],
     attempts: [],
@@ -36,6 +36,15 @@ export function ensureReviewAssurance(
   assurance: ReviewAssuranceState | undefined,
 ): ReviewAssuranceState {
   return assurance ?? emptyReviewAssurance();
+}
+
+/**
+ * Mint an opaque, attempt-bound observation capability. Cryptographically
+ * unguessable (256-bit). The reviewer echoes it as routing only; authority
+ * always resolves host-side against the owning attempt.
+ */
+export function mintObservationCapability(): string {
+  return `fgc_${randomBytes(32).toString('hex')}`;
 }
 
 export function createReviewAttempt(input: {
@@ -54,7 +63,7 @@ export function createReviewAttempt(input: {
   origin: ReviewAttemptOrigin;
   /**
    * Attempt-bound repository Discovery context, resolved BEFORE the attempt is
-   * minted: `repository` with a host-owned snapshot for standalone repository
+   * minted: `repository` with a host-owned snapshot for repository-governed
    * reviews, `not_applicable` otherwise. Never mutated after creation.
    */
   repositoryDiscovery: ReviewAttemptDiscoveryContext;
@@ -71,6 +80,7 @@ export function createReviewAttempt(input: {
     status: 'created',
     origin: input.origin,
     repositoryDiscovery: input.repositoryDiscovery,
+    observationCapability: mintObservationCapability(),
     createdAt: input.now,
   };
 }
@@ -198,6 +208,12 @@ export function updateAttemptStatus(
     childSessionId?: string;
     /** Structured rejection reason, persisted only for `rejected` status. */
     rejectionReason?: ReviewAttemptRejectionReason;
+    /**
+     * Canonical schema-error-set fingerprint, persisted only for `rejected`
+     * status. Repair diagnostics — feeds the stall detection of the
+     * output-repair gate, never authority.
+     */
+    schemaErrorFingerprint?: string;
   },
 ): ReviewAssuranceState {
   const base = ensureReviewAssurance(assurance);
@@ -216,6 +232,9 @@ export function updateAttemptStatus(
               : {}),
             ...(status === 'rejected' && extra?.rejectionReason
               ? { rejectionReason: extra.rejectionReason }
+              : {}),
+            ...(status === 'rejected' && extra?.schemaErrorFingerprint
+              ? { schemaErrorFingerprint: extra.schemaErrorFingerprint }
               : {}),
           },
     ),

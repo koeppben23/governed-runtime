@@ -37,6 +37,7 @@ import {
   resolveFrozenReviewProfile,
 } from '../review/assurance.js';
 import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
+import { resolveAttemptObservationCapability } from '../review/assurance.js';
 import { buildReviewerProofContext } from '../review/proof-context.js';
 import { buildHeuristicRiskWarning } from '../proofgraph/claim-contract.js';
 import { assessMinimumTaskClass } from '../phase-tool-gate.js';
@@ -142,6 +143,12 @@ export function buildPlanReviewInstruction(input: {
     planVersion: input.planVersion,
     subjectLabel: input.subjectLabel,
     proofContext: buildReviewerProofContext(input.state),
+    observationCapability: input.obligation
+      ? (resolveAttemptObservationCapability(
+          input.state.reviewAssurance,
+          input.obligation.obligationId,
+        ) ?? undefined)
+      : undefined,
   });
 }
 

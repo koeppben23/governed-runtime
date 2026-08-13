@@ -38,6 +38,7 @@ import {
   hasEvidenceReuse,
   buildInvocationEvidence,
   appendInvocationEvidence,
+  resolveAttemptObservationCapability,
 } from './assurance.js';
 import { updateObligation } from './obligation-state.js';
 import type { ReviewObligationType } from '../../state/evidence.js';
@@ -420,6 +421,9 @@ export function buildToolPrompt(params: BuildToolPromptParams): string | null {
       challengeResolutions: stateChallengeResolutions(sessionState),
       verificationEvidence: stateVerificationEvidence(sessionState),
       proofGraph: sessionState.proofGraph,
+      observationCapability:
+        resolveAttemptObservationCapability(sessionState.reviewAssurance, reviewCtx.obligationId) ??
+        undefined,
       ...implRules,
     });
   }
@@ -435,6 +439,9 @@ export function buildToolPrompt(params: BuildToolPromptParams): string | null {
       mandateDigest: reviewCtx.mandateDigest,
       discoveryContext,
       proofGraph: sessionState.proofGraph,
+      observationCapability:
+        resolveAttemptObservationCapability(sessionState.reviewAssurance, reviewCtx.obligationId) ??
+        undefined,
       ...archRules,
     });
   }

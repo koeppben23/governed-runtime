@@ -44,6 +44,7 @@ import {
   TOOL_FLOWGUARD_HELP,
   TOOL_FLOWGUARD_DECLARE_CONTRACT,
   TOOL_FLOWGUARD_RECORD_MUTATION_EVIDENCE,
+  TOOL_FLOWGUARD_OBSERVE_REPOSITORY,
 } from './tool-names.js';
 
 export const TOOL_CLASSIFICATION = {
@@ -67,6 +68,7 @@ export const TOOL_CLASSIFICATION = {
   [TOOL_FLOWGUARD_HELP]: 'operational',
   [TOOL_FLOWGUARD_DECLARE_CONTRACT]: 'operational',
   [TOOL_FLOWGUARD_RECORD_MUTATION_EVIDENCE]: 'operational',
+  [TOOL_FLOWGUARD_OBSERVE_REPOSITORY]: 'operational',
 } as const;
 
 type OperationalToolName =
@@ -74,7 +76,8 @@ type OperationalToolName =
   | typeof TOOL_FLOWGUARD_ARCHIVE
   | typeof TOOL_FLOWGUARD_HELP
   | typeof TOOL_FLOWGUARD_DECLARE_CONTRACT
-  | typeof TOOL_FLOWGUARD_RECORD_MUTATION_EVIDENCE;
+  | typeof TOOL_FLOWGUARD_RECORD_MUTATION_EVIDENCE
+  | typeof TOOL_FLOWGUARD_OBSERVE_REPOSITORY;
 type WorkflowToolName = Exclude<keyof typeof TOOL_CLASSIFICATION, OperationalToolName>;
 
 /**

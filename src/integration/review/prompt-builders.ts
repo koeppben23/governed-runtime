@@ -18,6 +18,7 @@ import type { FrozenReviewSubject, ReviewSubjectScope } from '../../state/eviden
 import { REVIEW_CHALLENGE_OUTCOMES } from '../../state/evidence.js';
 import { renderPersistedProofGraphContext } from './proof-context.js';
 import { renderFindingRelationGrammar } from './finding-relation-grammar.js';
+import { renderRepositoryObservationContract } from './observation-contract-prompt.js';
 import { CANONICAL_PROMPT_APPEND_MARKER } from './enforcement/types.js';
 import {
   buildDiscoveryContextSection,
@@ -94,13 +95,8 @@ export interface ReviewerTaskPromptInput {
   /**
    * Artifact context lines (approved plan, changed files, executed verification
    * evidence, reviewed-revision provenance), produced by
-   * {@link buildReviewerArtifactContext}. Supplied by the caller for the same
-   * reason as {@link ReviewerTaskPromptInput.proofContext}: this renderer stays
-   * free of state access.
-   *
-   * Without it the host-task reviewer - the reviewer that actually runs under
-   * every shipped policy preset - judges an artifact without knowing what was
-   * promised, what changed, or which checks were executed.
+   * {@link buildReviewerArtifactContext}. Without it the host-task reviewer
+   * judges an artifact without knowing what was promised or which checks ran.
    */
   readonly artifactContext?: readonly string[];
   /** Integrity-verified standalone-review material, subject, scope, and anchor contract. */
@@ -112,6 +108,8 @@ export interface ReviewerTaskPromptInput {
    * section at all.
    */
   readonly repositoryDiscoverySnapshot?: RepositoryDiscoverySnapshot | null;
+  /** Opaque host-minted observation capability; present → Repository Observation Contract. */
+  readonly observationCapability?: string;
   /**
    * Schema validation errors from a prior failed reviewer output for the
    * same obligation. When present, the prompt includes these errors so the
@@ -234,6 +232,8 @@ function renderReviewerRules(isRepositoryReview: boolean): string[] {
   }
   rules.push(
     '- Do not fabricate a verdict of convenience; ground every finding in concrete evidence.',
+    // Defensive hardening, NOT a schema guarantee (strict validation enforces regardless).
+    '- reviewedBy and attestation belong ONLY at the TOP LEVEL of ReviewFindings. NEVER place reviewedBy inside relation objects — not in subjectAnchors entries, not in their location objects, not in evidenceLocations entries.',
     '- Output ONLY the ReviewFindings JSON object as the final content of your reply:',
     '  no prose, no reasoning, and no markdown code fences before or after it.',
   );
@@ -299,6 +299,7 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
     'Rules:',
     ...renderReviewerRules(isRepositoryReview),
     renderFindingsObjectRule(input),
+    ...renderRepositoryObservationContract(input.observationCapability),
     ...renderChallengeContract(input.challengeContract, input.obligationId),
     '',
     ...(input.artifactContext && input.artifactContext.length > 0
@@ -363,22 +364,16 @@ export interface ImplReviewPromptOpts {
   }>;
   /**
    * Runtime-executed verification evidence bound to the implementation under
-   * review. These are FlowGuard-executed (not agent-reported) check results, so
-   * the reviewer can falsify verification claims against ground truth instead of
-   * inferring them. Digest binding is the caller's responsibility: only evidence
-   * for the current implementation digest must be passed. When absent or empty,
-   * the section fails closed to an explicit NOT_VERIFIED line rather than being
-   * silently omitted, because "no bound evidence" is itself a review signal.
+   * review (FlowGuard-executed, digest-bound by the caller).
    */
   readonly verificationEvidence?: readonly ReviewVerificationEvidenceItem[];
+  /** Opaque host-minted observation capability of the attempt under review. */
+  readonly observationCapability?: string;
 }
 
-/**
- * A single runtime-executed verification result projected for the reviewer
- * prompt. Fields are drawn from the immutable `ValidationAttempt.result`
- * (executor-produced, tamper-evident via `outputDigest`). No raw stdout/stderr
- * is carried — only the bounded `detail` summary and the integrity digest — so
- * the section stays token-bounded while remaining independently verifiable.
+/** A single runtime-executed verification result projected for the reviewer
+ * prompt (immutable ValidationAttempt.result fields; tamper-evident via
+ * `outputDigest`; no raw stdout/stderr is carried).
  */
 export interface ReviewVerificationEvidenceItem {
   readonly attemptId: string;
@@ -408,6 +403,8 @@ export interface ArchitectureReviewPromptOpts {
   readonly discoveryContext: DiscoveryReviewContext;
   /** Persisted advisory projection only; prompt construction never evaluates providers. */
   readonly proofGraph?: ProofGraphProjection;
+  /** Opaque host-minted observation capability of the attempt under review. */
+  readonly observationCapability?: string;
 }
 
 // ─── Internal Helpers ────────────────────────────────────────────────────────
@@ -563,6 +560,7 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     challengeResolutions = [],
     verificationEvidence = [],
     proofGraph,
+    observationCapability,
   } = opts;
   const stackSection = buildStackProfileSection(profileName, profileRules);
   const discoverySection = buildDiscoveryContextSection(discoveryContext);
@@ -600,6 +598,7 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     'Treat any challenge resolution as advisory NOT_VERIFIED evidence; independently verify it.',
     'Read the changed files using the read/glob/grep tools to verify correctness.',
     'Follow your review criteria for implementations.',
+    ...renderRepositoryObservationContract(observationCapability),
     'Return your findings as a single JSON object matching the ReviewFindings schema.',
     `Set iteration=${iteration} and planVersion=${planVersion} in your response.`,
     `Set attestation.toolObligationId=${obligationId}.`,
@@ -631,6 +630,7 @@ export function buildArchitectureReviewPrompt(opts: ArchitectureReviewPromptOpts
     profileRules,
     discoveryContext,
     proofGraph,
+    observationCapability,
   } = opts;
   const stackSection = buildStackProfileSection(profileName, profileRules);
   const discoverySection = buildDiscoveryContextSection(discoveryContext);
@@ -655,6 +655,7 @@ export function buildArchitectureReviewPrompt(opts: ArchitectureReviewPromptOpts
     'rationale, consequences, reversibility, compatibility, out-of-scope clarity,',
     'and verification path. Use the read/glob/grep tools to verify any claims about',
     'existing files, schemas, or contracts referenced in the ADR.',
+    ...renderRepositoryObservationContract(observationCapability),
     'Return your findings as a single JSON object matching the ReviewFindings schema.',
     `Set iteration=${iteration} and planVersion=${planVersion} in your response.`,
     `Set attestation.toolObligationId=${obligationId}.`,

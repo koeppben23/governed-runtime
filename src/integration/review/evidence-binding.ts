@@ -589,6 +589,7 @@ function preparedFailureToBindResult(
       childSessionId,
       obligationId,
       schemaErrors: [...prepared.issues].slice(0, 10),
+      ...(prepared.issueKeys ? { schemaIssueKeys: prepared.issueKeys } : {}),
       message: 'Reviewer output failed schema validation before binding',
     },
   };

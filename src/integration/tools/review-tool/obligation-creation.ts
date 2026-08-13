@@ -11,6 +11,7 @@
  */
 
 import type { SessionState } from '../../../state/schema.js';
+import { hasFrozenRepositoryAuthority } from '../../../state/evidence.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
 import type {
   ReviewAssuranceState,
@@ -23,6 +24,7 @@ import {
   appendObligationWithAttempt,
   resolveFrozenReviewProfile,
   findLatestPendingReviewObligation,
+  findReviewObligationById,
   createAttemptForExistingObligation,
 } from '../../review/assurance.js';
 import { authorizeOutputRepairReissue } from '../../review/reissue-authority.js';
@@ -148,13 +150,9 @@ export async function createNewReviewObligation(
       policySnapshot: input.state.policySnapshot,
       changedFiles: resolvedTargetPaths,
       reviewSubjectScope,
-      repositoryRevisionProvenance: input.resolvedSource
-        ? {
-            kind: 'available',
-            headSha: input.resolvedSource.resolvedBranchSha,
-            baseSha: input.resolvedSource.resolvedBaseSha,
-          }
-        : { kind: 'unavailable', reason: 'repository_revision_not_resolved' },
+      // Revision provenance is derived canonically from the frozen review
+      // subject (base/head SHAs + repository identities) — never from
+      // mutable runtime state.
       // No claimedTaskClass floor here: a standalone /review assesses an EXTERNAL
       // PR/branch/content whose risk is the reviewed diff itself (changedFiles),
       // not the session's own task-class claim. The C1 floor applies only to the
@@ -165,19 +163,59 @@ export async function createNewReviewObligation(
   };
 }
 
+export interface MissingAnalysisObligationResult {
+  message: string | null;
+  obligation?: ReviewObligation;
+  attemptId?: string;
+  /** Set only when this call wrote state; authoritative over the caller's snapshot. */
+  assurance?: ReviewAssuranceState;
+}
+
+/**
+ * Explicit obligation identity DOMINATES fingerprint matching: a supplied
+ * reviewObligationId resolves the exact obligation or fails closed. There is
+ * deliberately NO fingerprint fallback and NO creation for an unknown id —
+ * mixing two authority identities would reset the per-obligation repair
+ * budget and split the reviewer lineage. (Findings submission with an
+ * explicit id is handled by resolveSubmittedReviewObligation.)
+ */
+async function resolveExplicitObligationIdPath(
+  sessDir: string,
+  state: SessionState,
+  args: ReviewToolArgs,
+  now: string,
+): Promise<
+  | { readonly handled: false }
+  | { readonly handled: true; readonly result: MissingAnalysisObligationResult }
+> {
+  if (!args.reviewObligationId) return { handled: false };
+  if (args.reviewFindings !== undefined) {
+    return { handled: true, result: { message: null } };
+  }
+  const byId = findReviewObligationById(state.reviewAssurance, args.reviewObligationId);
+  if (!byId) {
+    return {
+      handled: true,
+      result: {
+        message: formatBlocked('REVIEW_OBLIGATION_NOT_FOUND', {
+          obligationId: args.reviewObligationId,
+        }),
+      },
+    };
+  }
+  return {
+    handled: true,
+    result: await reissueAttemptForPendingObligation(sessDir, state, byId, now),
+  };
+}
+
 export async function ensureMissingAnalysisObligation(
   sessDir: string,
   state: SessionState,
   args: ReviewToolArgs,
   now: string,
   context: Pick<NewReviewObligationInput, 'worktree' | 'resolvedSource' | 'preparedContent'>,
-): Promise<{
-  message: string | null;
-  obligation?: ReviewObligation;
-  attemptId?: string;
-  /** Set only when this call wrote state; authoritative over the caller's snapshot. */
-  assurance?: ReviewAssuranceState;
-}> {
+): Promise<MissingAnalysisObligationResult> {
   const sourceResult = validateReviewContentSource(args);
   if (sourceResult.kind === 'none') return { message: null };
   if (sourceResult.kind === 'incomplete') {
@@ -185,6 +223,9 @@ export async function ensureMissingAnalysisObligation(
   }
 
   if (!hasReviewContentInput(args)) return { message: null };
+
+  const explicit = await resolveExplicitObligationIdPath(sessDir, state, args, now);
+  if (explicit.handled) return explicit.result;
 
   const fingerprint = fingerprintReviewInput(
     {
@@ -284,7 +325,7 @@ async function reissueAttemptForPendingObligation(
   const discovery = await resolveReviewAttemptDiscoveryContext({
     state,
     worktree: state.binding.worktree,
-    reviewSubjectKind: existing.reviewSubject?.kind,
+    repositoryGoverned: hasFrozenRepositoryAuthority(existing),
     now,
   });
   if (discovery.kind === 'blocked') {
@@ -359,7 +400,7 @@ async function createAndPrepareMissingAnalysisObligation(
   const discovery = await resolveReviewAttemptDiscoveryContext({
     state: input.state,
     worktree: input.context.worktree ?? input.state.binding.worktree,
-    reviewSubjectKind: obligation.reviewSubject?.kind,
+    repositoryGoverned: hasFrozenRepositoryAuthority(obligation),
     now: input.now,
   });
   if (discovery.kind === 'blocked') {

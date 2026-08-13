@@ -6,6 +6,7 @@
  */
 import type { BlockedReason } from './reasons-types.js';
 import { REVIEW_VALIDATION_REASONS } from './reasons-validation-review.js';
+import { OBSERVATION_VALIDATION_REASONS } from './reasons-validation-observation.js';
 
 export const VALIDATION_REASONS: readonly BlockedReason[] = [
   {
@@ -373,4 +374,5 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   },
 
   ...REVIEW_VALIDATION_REASONS,
+  ...OBSERVATION_VALIDATION_REASONS,
 ] as const satisfies readonly BlockedReason[];

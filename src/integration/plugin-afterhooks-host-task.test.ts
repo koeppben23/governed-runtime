@@ -70,7 +70,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v3' as const,
+        assuranceSchemaVersion: 'review-assurance.v4' as const,
         obligations: [
           {
             obligationId: OBLIGATION_ID,

@@ -1235,7 +1235,7 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
     const invocations: ReviewInvocationEvidence[] = [];
     const resolveCorrupt = resolveHostTaskFindings(
       {
-        assuranceSchemaVersion: 'review-assurance.v3' as const,
+        assuranceSchemaVersion: 'review-assurance.v4' as const,
         obligations: [obligation],
         invocations,
         attempts: [],
@@ -1271,7 +1271,7 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
     // skips the still-unparseable corrupt one, and returns the valid re-capture.
     const resolveValid = resolveHostTaskFindings(
       {
-        assuranceSchemaVersion: 'review-assurance.v3' as const,
+        assuranceSchemaVersion: 'review-assurance.v4' as const,
         obligations: [obligation],
         invocations,
         attempts: [],

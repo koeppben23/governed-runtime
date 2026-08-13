@@ -87,6 +87,7 @@ import {
   resolveReviewOrchestrationMode,
 } from '../review/orchestration-mode.js';
 import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
+import { resolveAttemptObservationCapability } from '../review/assurance.js';
 import { buildReviewerProofContext } from '../review/proof-context.js';
 import type { ImplementRuntime, ImplementationCeremony } from './implement-shared.js';
 import { normalizeHostFindings } from './implement-shared.js';
@@ -176,6 +177,12 @@ function buildImplRecordedResponse(input: {
         planVersion: input.planVersion,
         subjectLabel: 'implementation summary, changed files, approved plan text, and ticket text',
         proofContext: buildReviewerProofContext(input.finalState),
+        observationCapability: input.nextObligation
+          ? (resolveAttemptObservationCapability(
+              input.finalState.reviewAssurance,
+              input.nextObligation.obligationId,
+            ) ?? undefined)
+          : undefined,
       })
     : null;
   const nextAction = resolveNextAction(input.finalState.phase, input.finalState);

@@ -23,7 +23,9 @@ import type {
   ReviewAttemptDiscoveryContext,
   ReviewMaterial,
   FrozenReviewSubject,
+  FrozenRepositoryAuthority,
 } from '../../state/evidence.js';
+import { deriveRepositoryRevisionProvenance } from '../../state/evidence.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { assessMinimumTaskClass, maxTaskClass } from '../phase-tool-gate.js';
 import {
@@ -31,11 +33,7 @@ import {
   DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS,
 } from '../../config/policy-types.js';
 import type { TaskClass } from '../../state/schema.js';
-import type {
-  ReviewRepositoryRevisionProvenance,
-  ReviewSubjectScope,
-} from '../../state/evidence-review.js';
-
+import type { ReviewSubjectScope } from '../../state/evidence-review.js';
 // Static import - mandate content is a constant in ESM
 import { REVIEWER_AGENT } from '../../templates/mandates.js';
 export const REVIEW_CRITERIA_VERSION = 'p40-v1';
@@ -88,6 +86,24 @@ export function getReviewMandateDigest(): string {
   return REVIEW_MANDATE_DIGEST;
 }
 
+/**
+ * Resolve the opaque observation capability of the attempt a reviewer Task
+ * will bind to: the highest-ordinal attempt of the obligation. Returns null
+ * when no attempt or capability exists (legacy attempts minted before the
+ * frozen-repository-authority generation) — repository evidence is then
+ * unavailable for the attempt.
+ */
+export function resolveAttemptObservationCapability(
+  assurance: ReviewAssuranceState | undefined,
+  obligationId: string,
+): string | null {
+  const base = ensureReviewAssurance(assurance);
+  const attempts = base.attempts.filter((a) => a.obligationId === obligationId);
+  if (attempts.length === 0) return null;
+  const latest = attempts.reduce((best, a) => (a.ordinal > best.ordinal ? a : best));
+  return latest.observationCapability ?? null;
+}
+
 export function createReviewObligation(input: {
   obligationType: ReviewObligationType;
   iteration: number;
@@ -125,7 +141,13 @@ export function createReviewObligation(input: {
   changedFiles?: readonly string[];
   /** Explicit structured subject scope. Absent → derived from changedFiles only. */
   reviewSubjectScope?: ReviewSubjectScope;
-  repositoryRevisionProvenance?: ReviewRepositoryRevisionProvenance;
+  /**
+   * Frozen repository authority for repository-governed obligations. The
+   * persisted revision-provenance projection is derived CANONICALLY from this
+   * authority (or from the frozen review subject) — never supplied as a
+   * mutable runtime snapshot (e.g. `git rev-parse HEAD`).
+   */
+  repositoryAuthority?: FrozenRepositoryAuthority;
   /**
    * The author's declared task class. Used as a fail-closed FLOOR on the
    * challenge count so a high-risk change cannot collapse the requirement to 0
@@ -188,10 +210,11 @@ export function createReviewObligation(input: {
     metadata: input.metadata,
     ...(input.fingerprintVersion ? { fingerprintVersion: input.fingerprintVersion } : {}),
     reviewSubjectScope,
-    repositoryRevisionProvenance: input.repositoryRevisionProvenance ?? {
-      kind: 'unavailable',
-      reason: 'repository_revision_not_resolved',
-    },
+    repositoryRevisionProvenance: deriveRepositoryRevisionProvenance({
+      repositoryAuthority: input.repositoryAuthority,
+      reviewSubject: input.reviewSubject,
+    }),
+    ...(input.repositoryAuthority ? { repositoryAuthority: input.repositoryAuthority } : {}),
     // Frozen output-repair budget. The canonical policy default applies at
     // creation time only; the reissue gate reads this frozen value, never the
     // live config, so a later policy change cannot re-open a settled

@@ -109,9 +109,11 @@ function projectSnapshot(
 /**
  * Resolve the attempt-bound Discovery context for a repository review attempt.
  *
- * `reviewSubjectKind` selects the semantics: `repository_change` requires a
- * host-owned snapshot resolved right now; anything else is structurally
- * `not_applicable`.
+ * `repositoryGoverned` selects the semantics: `true` requires a host-owned
+ * snapshot resolved right now; anything else is structurally
+ * `not_applicable`. The flag is derived from the obligation's frozen
+ * repository authority (`hasFrozenRepositoryAuthority`) — never from a bare
+ * scope or subject-shape heuristic.
  *
  * Failure classification per the frozen contract:
  * - drift unavailable/not_assessed → ADVISORY: the snapshot is still minted
@@ -123,11 +125,11 @@ function projectSnapshot(
 export async function resolveReviewAttemptDiscoveryContext(input: {
   readonly state: SessionState;
   readonly worktree: string;
-  readonly reviewSubjectKind: string | undefined;
+  readonly repositoryGoverned: boolean;
   readonly now: string;
   readonly fingerprint?: string | null;
 }): Promise<ReviewerDiscoveryResolution> {
-  if (input.reviewSubjectKind !== 'repository_change') {
+  if (!input.repositoryGoverned) {
     return { kind: 'not_applicable', context: { kind: 'not_applicable' } };
   }
   let fingerprint = input.fingerprint ?? null;

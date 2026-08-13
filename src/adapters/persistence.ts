@@ -262,6 +262,28 @@ function isLegacyApprove(v: unknown): boolean {
   return v === 'approve';
 }
 
+/**
+ * Shape-only `review-assurance.v3` → `review-assurance.v4` read migration.
+ *
+ * The v4 form introduces frozen repository authority, opaque attempt-bound
+ * observation capabilities, and attempt-owned observations. This migration
+ * rewrites ONLY the version literal and invents NO authority: obligations
+ * persisted under v3 without frozen authority remain authority-less (and thus
+ * repository-evidence incapable) — never "repaired" by reading mutable
+ * runtime state. In-flight v3 sessions stay loadable; that is the entire
+ * sanctioned transition.
+ */
+function migrateReviewAssuranceV3ToV4(node: unknown, acc: { migrated: boolean }): void {
+  if (!node || typeof node !== 'object' || Array.isArray(node)) return;
+  const assurance = (node as Record<string, unknown>).reviewAssurance;
+  if (!assurance || typeof assurance !== 'object' || Array.isArray(assurance)) return;
+  const record = assurance as Record<string, unknown>;
+  if (record.assuranceSchemaVersion === 'review-assurance.v3') {
+    record.assuranceSchemaVersion = 'review-assurance.v4';
+    acc.migrated = true;
+  }
+}
+
 function findingsOf(node: unknown): unknown {
   return node && typeof node === 'object'
     ? (node as Record<string, unknown>).reviewFindings
@@ -350,6 +372,16 @@ export async function readState(sessionDir: string): Promise<SessionState | null
   }
 
   migrateLegacyValidationOutcomes(json);
+
+  const assuranceMigration = { migrated: false };
+  migrateReviewAssuranceV3ToV4(json, assuranceMigration);
+  if (assuranceMigration.migrated) {
+    getAdapterLogger().warn(
+      'persistence',
+      "Migrated review assurance 'review-assurance.v3' -> 'review-assurance.v4' (shape-only)",
+      { filePath },
+    );
+  }
 
   const result = SessionState.safeParse(json);
   if (!result.success) {

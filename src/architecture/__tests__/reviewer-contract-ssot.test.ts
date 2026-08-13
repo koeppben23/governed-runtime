@@ -125,7 +125,8 @@ describe('reviewer contract SSOT guard', () => {
       'utf8',
     );
     expect(content).toContain('evidenceLocations MAY be empty');
-    expect(content).toContain('do not replace');
+    expect(content).toContain('does not itself establish');
+    expect(content).toContain('flowguard_observe_repository');
   });
 
   it('prompt-builders.ts imports grammar from finding-relation-grammar.ts', () => {

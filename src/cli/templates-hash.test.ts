@@ -20,6 +20,7 @@ import {
   PACKAGE_JSON_TEMPLATE,
 } from './templates.js';
 import {
+  TOOL_FLOWGUARD_OBSERVE_REPOSITORY,
   TOOL_FLOWGUARD_STATUS,
   TOOL_FLOWGUARD_HYDRATE,
   TOOL_FLOWGUARD_TICKET,
@@ -44,7 +45,7 @@ function sha256(value: string): string {
 describe('TEMPLATE_HASH_STABILITY', () => {
   it('TOOL_WRAPPER matches compiled output hash', () => {
     expect(sha256(TOOL_WRAPPER)).toBe(
-      '7b968561ddbf6f4106e602d70362dbc7210d0071a5f1dc6ec3243e1534bc54a3',
+      'e5a8c92750dc027482ce2e1180c1983bf0bcd4444f986f9fcc18bd5cb4c50fa8',
     );
   });
 
@@ -93,7 +94,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // p41 -> p42: mandate semantics fixed (removed 'info' severity, corrected type names,
     //   evidenceLocations may be empty).
     expect(sha256(REVIEWER_AGENT)).toBe(
-      'bec5b3b140a934127d6f87410917406692fbc54f9aa3ca2419ab0e8fc9927096',
+      '83e55d4d3090683e5d0c2e0c8a125028edac69cbba5328551d0ca927b0eb88ea',
     );
   });
 
@@ -302,6 +303,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
       TOOL_FLOWGUARD_ARCHIVE,
       TOOL_FLOWGUARD_ARCHITECTURE,
       TOOL_FLOWGUARD_HELP,
+      TOOL_FLOWGUARD_OBSERVE_REPOSITORY,
     ];
 
     // Parse the actual export identifiers from TOOL_WRAPPER's export block.

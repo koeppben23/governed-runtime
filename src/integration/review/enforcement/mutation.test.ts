@@ -540,7 +540,7 @@ describe('review-enforcement mutation kills', () => {
       // No pending review in transient state
       const sessionState = {
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v3' as const,
+          assuranceSchemaVersion: 'review-assurance.v4' as const,
           obligations: [
             {
               obligationId: '00000000-0000-4000-8000-000000000001',
@@ -587,7 +587,7 @@ describe('review-enforcement mutation kills', () => {
       const state = createSessionState();
       const sessionState = {
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v3' as const,
+          assuranceSchemaVersion: 'review-assurance.v4' as const,
           obligations: [
             {
               obligationId: '00000000-0000-4000-8000-000000000002',
