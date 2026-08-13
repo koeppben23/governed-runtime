@@ -154,6 +154,24 @@ describe('prepareReviewerFindingsForValidation — raw/canonical boundary', () =
     expect(challenges[0]!.clientReference).toBe('c1');
   });
 
+  it('invariant 1b: content challenge input normalizes to canonical host-minted identity', () => {
+    const raw = baseRawFindings({ challenges: [contentChallenge('content-1')] });
+    const result = prepareReviewerFindingsForValidation({
+      rawFindings: raw,
+      obligationId: OBLIGATION_ID,
+      hostConstants: HOST_CONSTANTS,
+      hostProvenance: HOST_PROVENANCE,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new TypeError('expected ok');
+    expect(result.findings.challenges).toMatchObject([
+      { kind: 'content_challenge', obligationId: OBLIGATION_ID, clientReference: 'content-1' },
+    ]);
+    expect((result.findings.challenges as Array<Record<string, unknown>>)[0]!.challengeId).toMatch(
+      /^[0-9a-f]{8}-/i,
+    );
+  });
+
   it('invariant 2: stray key inside RepositoryLocation is exactly one actionable schema error', () => {
     const raw = baseRawFindings({
       majorRisks: [

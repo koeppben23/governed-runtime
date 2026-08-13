@@ -380,7 +380,7 @@ async function enforceStandardStrictGate(
 
   if (!attestation.valid) {
     await blockReviewOutcomeHelper(deps, ctx, attestation.code, attestation.detail);
-    return false; // gate blocked output but don't short-circuit — let strictGateResult check handle it
+    return true;
   }
 
   const promptHash = hashText(prompt);

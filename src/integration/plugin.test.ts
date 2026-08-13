@@ -1097,6 +1097,60 @@ describe('integration/plugin', () => {
       }
     });
 
+    it('does not record evidence or fulfill when strict attestation iteration is wrong', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const { sessDir, obligationId } = await seedStrictPlanSession(ws.tmpDir, sessionID);
+        const findings = {
+          iteration: 1,
+          planVersion: 1,
+          reviewMode: 'subagent',
+          overallVerdict: 'accept',
+          blockingIssues: [],
+          majorRisks: [],
+          missingVerification: [],
+          scopeCreep: [],
+          unknowns: [],
+          attestation: { toolObligationId: obligationId },
+        };
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+            client: {
+              app: { log: async () => {} },
+              session: {
+                create: async () => ({ data: { id: 'child-session-1' } }),
+                prompt: async () => ({ data: { info: { structured_output: findings } } }),
+              },
+            },
+          }),
+        );
+        const output = {
+          title: 'plan',
+          output: strictPlanReviewRequiredOutput(obligationId),
+          metadata: {},
+        };
+
+        await hooks['tool.execute.after']!(
+          { tool: 'flowguard_plan', sessionID, callID: 'c1', args: {} },
+          output,
+        );
+
+        const blocked = JSON.parse(String(output.output)) as Record<string, unknown>;
+        expect(blocked.code).toBe('SUBAGENT_MANDATE_MISMATCH');
+        const state = await readState(sessDir);
+        const obligation = state?.reviewAssurance?.obligations[0];
+        expect(obligation?.status).toBe('blocked');
+        expect(obligation?.invocationId).toBeNull();
+        expect(obligation?.fulfilledAt).toBeNull();
+        expect(state?.reviewAssurance?.invocations).toEqual([]);
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
     it('fulfills strict obligation and mutates output when attestation is valid', async () => {
       const ws = await createTestWorkspace();
       try {

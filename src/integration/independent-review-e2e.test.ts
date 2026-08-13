@@ -309,7 +309,7 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
     expect(bound?.childSessionId).toBe(CHILD_SESSION);
   });
 
-  it('REGRESSION: host stamps canonical attestation after reviewer input binds', async () => {
+  it('REGRESSION: confabulated reviewer attestation still binds host-authoritatively', async () => {
     const { hooks, sessDir } = await setup();
 
     await driveCaptureThroughHooks(hooks);

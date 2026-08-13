@@ -108,13 +108,15 @@ function buildChallengeVariant(kind: (typeof CHALLENGE_KINDS)[number]): Record<s
 
 function challengeBase(kind: string) {
   return {
-    challengeId: {
-      type: 'string',
-      pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
-    },
     obligationId: {
       type: 'string',
       pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+    },
+    clientReference: {
+      type: 'string',
+      minLength: 1,
+      maxLength: 64,
+      pattern: '^[a-zA-Z0-9_-]+$',
     },
     scenario: { type: 'string', minLength: 1 },
     claim: { type: 'string', minLength: 1 },
@@ -124,7 +126,6 @@ function challengeBase(kind: string) {
 }
 
 const CHALLENGE_REQUIRED = [
-  'challengeId',
   'obligationId',
   'scenario',
   'claim',

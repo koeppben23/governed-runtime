@@ -289,7 +289,7 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
           '',
           ...input.retrySchemaErrors.map((e) => `- ${e}`),
           '',
-          'Return a fresh complete ReviewFindings object using the exact output',
+          'Return a fresh complete ReviewerFindingsInput object using the exact output',
           'contract below. The frozen review subject and material remain unchanged.',
           '',
         ]

@@ -92,9 +92,10 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // which changes the REVIEWER_AGENT body and REVIEW_MANDATE_DIGEST.
     // p40 -> p41: material findings require structured subject and evidence relations.
     // p41 -> p42: mandate semantics fixed (removed 'info' severity, corrected type names,
-    //   evidenceLocations may be empty).
+    //   evidenceLocations may be empty). Refreshed for reviewer-owned input DTO:
+    // reviewer provenance is host-stamped after strict input validation.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      '83e55d4d3090683e5d0c2e0c8a125028edac69cbba5328551d0ca927b0eb88ea',
+      'f3521e7fb473e6a78f5219baa3b6eb91b5097c14bfa3a230b8234547cce87b29',
     );
   });
 

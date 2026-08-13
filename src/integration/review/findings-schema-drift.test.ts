@@ -223,11 +223,8 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ ReviewerFindingsInput drift guard', ()
   });
 
   it('GOOD: attestation block requires only reviewer-owned obligation binding', () => {
-    // B1 fix: REVIEWER_AGENT mandate template emits a 6-field attestation
-    // (mandateDigest, criteriaVersion, toolObligationId, iteration, planVersion,
-    // reviewedBy). The JSON-schema MUST require all six so structured output
-    // rejects findings that omit any field. validateStrictAttestation() in
-    // review-assurance.ts performs the runtime check post-parse.
+    // Host-owned attestation fields are stamped after the reviewer input
+    // validates; structured output may carry only the obligation binding.
     const props = jsonSchemaProperties();
     const attestation = props.attestation as JsonSchemaProperty;
     expect(attestation.required).toEqual(['toolObligationId']);
@@ -264,6 +261,19 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ ReviewerFindingsInput drift guard', ()
     expect(kinds.sort()).toEqual(
       ['content_challenge', 'design_challenge', 'implementation_challenge'].sort(),
     );
+  });
+
+  it('CONTRACT: SDK challenges use reviewer input identity, not host-minted identity', () => {
+    const props = jsonSchemaProperties();
+    const challenges = props.challenges as JsonSchemaProperty;
+    const variants = challenges.items!.oneOf!;
+
+    for (const variant of variants) {
+      expect(variant.properties).toHaveProperty('clientReference');
+      expect(variant.properties).not.toHaveProperty('challengeId');
+      expect(variant.required).toContain('obligationId');
+      expect(variant.required).not.toContain('clientReference');
+    }
   });
 
   it('GOOD: challenge outcome enums match canonical per-type values', () => {
