@@ -415,8 +415,8 @@ describe('prepareReviewerFindingsForValidation — raw/canonical boundary', () =
   });
 });
 
-describe('host_attestation_constants_missing — structural, non-repairable blocker', () => {
-  it('invariant 7a: bindable obligation without host constants fails closed at the capture transition', () => {
+describe('structural host-context failure — fail closed at the signal transition', () => {
+  it('invariant 7a: bindable obligation without host constants fails closed at pending creation', () => {
     const state = createSessionState();
     onFlowGuardToolAfter(
       state,
@@ -425,13 +425,21 @@ describe('host_attestation_constants_missing — structural, non-repairable bloc
       signalWithoutAttestation(),
       NOW,
     );
-    captureFor(state, baseRawFindings());
     const pending = [...state.pendingReviews.values()][0]!;
+    // The marker is set at the signal→pending transition — BEFORE any reviewer
+    // Task can run — and no raw-schema fallback exists.
     expect(pending.enforcementFailure).toBe('host_attestation_constants_missing');
     expect(pending.capturedFindings).toBeNull();
     expect(pending.lastSchemaErrors).toBeNull();
     expect(pending.repairPromptRequired).toBe(false);
+    expect(pending.subagentCalled).toBe(false);
     expect(isPendingCaptureUsable(pending)).toBe(false);
+
+    // A capture attempt never even matches the defective pending.
+    captureFor(state, baseRawFindings());
+    const after = [...state.pendingReviews.values()][0]!;
+    expect(after.subagentCalled).toBe(false);
+    expect(after.capturedFindings).toBeNull();
   });
 
   it('invariant 7b: structurally failed pendings are never re-matched (no re-arm, no retry)', () => {
@@ -443,7 +451,6 @@ describe('host_attestation_constants_missing — structural, non-repairable bloc
       signalWithoutAttestation(),
       NOW,
     );
-    captureFor(state, baseRawFindings());
     const before = [...state.pendingReviews.values()][0]!;
     expect(
       matchPendingReview(state, {
@@ -455,7 +462,7 @@ describe('host_attestation_constants_missing — structural, non-repairable bloc
     expect(after.retryCount).toBe(before.retryCount);
   });
 
-  it('invariant 7c: reviewer dispatch is explicitly blocked with HOST_REVIEW_CONTEXT_UNAVAILABLE', () => {
+  it('invariant 7c: the FIRST reviewer dispatch is blocked — zero reviewer execution', () => {
     const state = createSessionState();
     onFlowGuardToolAfter(
       state,
@@ -464,7 +471,7 @@ describe('host_attestation_constants_missing — structural, non-repairable bloc
       signalWithoutAttestation(),
       NOW,
     );
-    captureFor(state, baseRawFindings());
+    // No reviewer Task ran; the gate must block on the very first dispatch.
     const result = enforceBeforeSubagentCall(state, {
       subagent_type: REVIEWER_SUBAGENT_TYPE,
       prompt: validPrompt(0, 1),
@@ -499,7 +506,6 @@ describe('host_attestation_constants_missing — structural, non-repairable bloc
       signalWithoutAttestation(),
       NOW,
     );
-    captureFor(state, baseRawFindings());
     expect([...state.pendingReviews.values()][0]!.enforcementFailure).toBe(
       'host_attestation_constants_missing',
     );
@@ -513,5 +519,53 @@ describe('host_attestation_constants_missing — structural, non-repairable bloc
     const recovered = [...state.pendingReviews.values()][0]!;
     expect(recovered.enforcementFailure ?? null).toBeNull();
     expect(recovered.hostAttestationConstants).toEqual(HOST_CONSTANTS);
+  });
+
+  it('invariant 7f: a REVIEW_REQUIRED signal without an obligation identity fails closed at creation', () => {
+    const state = createSessionState();
+    onFlowGuardToolAfter(
+      state,
+      'flowguard_plan',
+      { planText: '## Plan' },
+      JSON.stringify({
+        phase: 'PLAN',
+        next: `${REVIEW_REQUIRED_PREFIX}: iteration=0, planVersion=1.`,
+      }),
+      NOW,
+    );
+    const pending = [...state.pendingReviews.values()][0]!;
+    expect(pending.enforcementFailure).toBe('host_review_obligation_missing');
+    const result = enforceBeforeSubagentCall(state, {
+      subagent_type: REVIEWER_SUBAGENT_TYPE,
+      prompt: validPrompt(0, 1),
+    });
+    expect(result.allowed).toBe(false);
+    if (result.allowed) throw new TypeError('expected block');
+    expect(result.code).toBe('HOST_REVIEW_CONTEXT_UNAVAILABLE');
+  });
+
+  it('invariant 7g: the CONTENT_ANALYSIS_REQUIRED bootstrap stays non-failed (pre-obligation state)', () => {
+    const state = createSessionState();
+    onFlowGuardToolAfter(
+      state,
+      'flowguard_review',
+      { text: 'content under review' },
+      JSON.stringify({
+        error: true,
+        code: 'CONTENT_ANALYSIS_REQUIRED',
+        requiredReviewAttestation: {
+          reviewedBy: REVIEWER_SUBAGENT_TYPE,
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
+          toolObligationId: OBLIGATION_ID,
+          iteration: 1,
+          planVersion: 1,
+        },
+      }),
+      NOW,
+    );
+    const pending = [...state.pendingReviews.values()][0]!;
+    expect(pending.enforcementFailure ?? null).toBeNull();
+    expect(pending.obligationId).toBeNull();
   });
 });

@@ -113,12 +113,21 @@ export interface PendingReview {
     readonly criteriaVersion: string;
   } | null;
   /**
-   * Structural host-context defect detected at the capture/track transition.
+   * Structural host-context defect detected at the signal→pending transition
+   * (trackRequiredReview) or, as defense-in-depth, at the capture transition.
    * NOT a reviewer-output failure — a reviewer invocation can never repair it,
    * so such pendings are excluded from re-arm/repair and block reviewer
-   * dispatch explicitly (HOST_REVIEW_CONTEXT_UNAVAILABLE).
+   * dispatch explicitly (HOST_REVIEW_CONTEXT_UNAVAILABLE) BEFORE the first
+   * Task runs.
+   *
+   * - 'host_attestation_constants_missing': the REVIEW_REQUIRED signal named an
+   *   obligation but carried no requiredReviewAttestation constants.
+   * - 'host_review_obligation_missing': the REVIEW_REQUIRED signal carried no
+   *   obligation identity at all, although every canonical emitter creates the
+   *   obligation before emitting the signal.
    */
-  enforcementFailure?: 'host_attestation_constants_missing' | null;
+  enforcementFailure?:
+    'host_attestation_constants_missing' | 'host_review_obligation_missing' | null;
   /**
    * Reviewer-actionable issues from the most recent failed capture, computed
    * against the host-normalized canonical candidate — the same

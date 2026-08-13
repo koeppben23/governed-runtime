@@ -985,7 +985,21 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
       enforcementState,
       'flowguard_plan',
       {},
-      JSON.stringify({ next: `${REVIEW_REQUIRED_PREFIX}: iteration=0 planVersion=1` }),
+      JSON.stringify({
+        next: `${REVIEW_REQUIRED_PREFIX}: iteration=0 planVersion=1`,
+        // Canonical production signal shape: obligation identity + host
+        // attestation constants.
+        reviewAttemptId: `att-${assurance.obligations[0]!.obligationId}`,
+        reviewObligationId: assurance.obligations[0]!.obligationId,
+        requiredReviewAttestation: {
+          reviewedBy: 'flowguard-reviewer',
+          mandateDigest: assurance.obligations[0]!.mandateDigest,
+          criteriaVersion: assurance.obligations[0]!.criteriaVersion,
+          toolObligationId: assurance.obligations[0]!.obligationId,
+          iteration: 0,
+          planVersion: 1,
+        },
+      }),
       now,
     );
     onTaskToolAfter(

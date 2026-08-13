@@ -33,12 +33,14 @@ import {
   LATER,
   modeASubagentResponse,
   modeANoReviewRequiredResponse,
+  modeAWithoutContentMeta,
   modeBSuccessResponse,
   modeBErrorResponse,
   taskResultWithFindings,
   taskResultWithEmbeddedFindings,
   validSubagentPrompt,
   FIXTURE_OBLIGATION_ID,
+  hostAttestationFor,
 } from './test-helpers.js';
 import {
   TOOL_FLOWGUARD_IMPLEMENT,
@@ -1008,17 +1010,14 @@ describe('review-enforcement', () => {
     it('L3: allows when contentMeta extraction failed (defensive)', () => {
       const state = createSessionState();
 
-      // Manually set pending review with null contentMeta (simulates extraction failure)
+      // Manually set pending review with null contentMeta (simulates extraction
+      // failure). The signal still carries obligation identity + host
+      // attestation, so it is not structurally failed.
       onFlowGuardToolAfter(
         state,
         'flowguard_plan',
         { planText: '## Plan' },
-        // next field without iteration/planVersion — contentMeta will be null
-        JSON.stringify({
-          phase: 'PLAN',
-          reviewMode: 'subagent',
-          next: `${REVIEW_REQUIRED_PREFIX}: Review the plan.`,
-        }),
+        modeAWithoutContentMeta(),
         NOW,
       );
 
@@ -1910,6 +1909,11 @@ describe('L3 artifact presence', () => {
   function modeAWithCanonicalPrompt(): string {
     return JSON.stringify({
       phase: 'PLAN',
+      // Obligation identity + host attestation: without them the pending is
+      // structurally failed before any reviewer dispatch and L3 never runs.
+      reviewAttemptId: `att-${FIXTURE_OBLIGATION_ID}`,
+      reviewObligationId: FIXTURE_OBLIGATION_ID,
+      requiredReviewAttestation: hostAttestationFor(FIXTURE_OBLIGATION_ID),
       next:
         `${REVIEW_REQUIRED_PREFIX}: Call the flowguard-reviewer subagent via Task tool. ` +
         `iteration=0, planVersion=1.`,

@@ -22,17 +22,22 @@ export const NOW = '2026-05-10T12:00:00.000Z';
 export const LATER = '2026-05-10T12:01:00.000Z';
 export const SESSION_ID = 'ses_parent_001';
 export const CHILD_SESSION_ID = 'ses_child_001';
+export const MODE_A_OBLIGATION_ID = '44444444-4444-4444-8444-444444444444';
 
 // ─── Factory Functions ───────────────────────────────────────────────────────
 
 /**
  * Build a Mode A response with INDEPENDENT_REVIEW_REQUIRED containing iteration
- * and planVersion. When `obligationId` is set, the response additionally carries
- * the real production signal fields (reviewAttemptId, reviewObligationId,
- * requiredReviewAttestation) so the pending review satisfies the host
- * attestation-constants invariant.
+ * and planVersion. `obligationId` defaults to a realistic fixture obligation
+ * identity so the pending review satisfies the host attestation-constants
+ * invariant; pass `null` to deliberately model a signal without obligation/
+ * host attestation.
  */
-export function modeAResponse(iteration = 0, planVersion = 1, obligationId?: string): string {
+export function modeAResponse(
+  iteration = 0,
+  planVersion = 1,
+  obligationId: string | null = MODE_A_OBLIGATION_ID,
+): string {
   return JSON.stringify({
     phase: 'PLAN',
     status: `Plan submitted (v${planVersion}).`,

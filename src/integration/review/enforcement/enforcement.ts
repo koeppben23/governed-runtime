@@ -99,19 +99,32 @@ function trackReviewRequired(
     } | null;
   },
 ): void {
+  const obligationId = binding.obligationId ?? null;
+  const hostAttestationConstants = binding.hostAttestationConstants ?? null;
+  // Structural host-context validation happens HERE, at the signal→pending
+  // transition — before any reviewer Task can run. Every canonical
+  // REVIEW_REQUIRED emitter creates the review obligation before emitting the
+  // signal, so a missing obligation identity or missing host attestation
+  // constants is a broken signal, never a reviewer-repairable output defect.
+  const enforcementFailure: PendingReview['enforcementFailure'] =
+    obligationId == null
+      ? 'host_review_obligation_missing'
+      : hostAttestationConstants == null
+        ? 'host_attestation_constants_missing'
+        : null;
   state.pendingReviews.set(reviewTool, {
     tool: reviewTool,
     requestedAt: now,
     attemptId: binding.attemptId ?? null,
-    obligationId: binding.obligationId ?? null,
+    obligationId,
     subagentCalled: false,
     subagentRecord: null,
     contentMeta: extractContentMeta(next),
     canonicalPromptAnchor: binding.canonicalPromptAnchor ?? null,
     capturedFindings: null,
     retryCount: 0,
-    hostAttestationConstants: binding.hostAttestationConstants ?? null,
-    enforcementFailure: null,
+    hostAttestationConstants,
+    enforcementFailure,
     lastSchemaErrors: null,
     repairPromptRequired: false,
     expectedRepairPromptDigest: null,

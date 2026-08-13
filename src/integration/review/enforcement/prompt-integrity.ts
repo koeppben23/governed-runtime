@@ -68,12 +68,13 @@ function checkReviewContext(
 }
 
 /**
- * Structural host-context defect: host-owned review context (obligation +
- * host attestation constants) could not be materialized for an active pending
- * review. This is NEVER a reviewer-output failure — no reviewer invocation can
- * repair it, so dispatch is blocked before any retry/repair logic can run.
- * Recovery: re-issue the originating FlowGuard command so a fresh canonical
- * signal replaces the defective pending (see trackRequiredReview).
+ * Structural host-context defect detected at the signal→pending transition:
+ * the REVIEW_REQUIRED signal named an obligation without host attestation
+ * constants, or named no obligation at all. This is NEVER a reviewer-output
+ * failure — no reviewer invocation can repair it, so dispatch is blocked
+ * before any retry/repair logic can run. Recovery: re-issue the originating
+ * FlowGuard command so a fresh canonical signal replaces the defective
+ * pending (see trackRequiredReview).
  */
 function structuralContextBlock(state: SessionEnforcementState): EnforcementResult | null {
   const structuralFailure = [...state.pendingReviews.values()].find(
@@ -84,8 +85,9 @@ function structuralContextBlock(state: SessionEnforcementState): EnforcementResu
     allowed: false,
     code: 'HOST_REVIEW_CONTEXT_UNAVAILABLE',
     reason:
-      `FlowGuard enforcement: host-owned review context is missing for obligation ` +
-      `${structuralFailure.obligationId ?? 'unknown'} and cannot be repaired by a reviewer invocation. ` +
+      `FlowGuard enforcement: the canonical review signal for obligation ` +
+      `${structuralFailure.obligationId ?? 'unknown'} is structurally incomplete ` +
+      `(${structuralFailure.enforcementFailure}) and cannot be repaired by a reviewer invocation. ` +
       `Re-run the originating FlowGuard command to re-issue the canonical review signal ` +
       `carrying requiredReviewAttestation.`,
   };

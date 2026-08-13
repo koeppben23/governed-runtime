@@ -13,6 +13,18 @@ export const FIXTURE_OBLIGATION_ID = '11111111-1111-4111-8111-111111111111';
 export const FIXTURE_MANDATE_DIGEST = 'm'.repeat(64);
 export const FIXTURE_CRITERIA_VERSION = 'fixture-criteria-v1';
 
+/** Host-issued attestation constants for a fixture obligation identity. */
+export function hostAttestationFor(obligationId: string): Record<string, unknown> {
+  return {
+    reviewedBy: REVIEWER_SUBAGENT_TYPE,
+    mandateDigest: FIXTURE_MANDATE_DIGEST,
+    criteriaVersion: FIXTURE_CRITERIA_VERSION,
+    toolObligationId: obligationId,
+    iteration: 0,
+    planVersion: 1,
+  };
+}
+
 // ─── Factory Functions ───────────────────────────────────────────────────────
 
 /**
@@ -20,19 +32,24 @@ export const FIXTURE_CRITERIA_VERSION = 'fixture-criteria-v1';
  * and planVersion.
  *
  * `obligationId` models the REAL production signal (plan-response.ts emits
- * reviewObligationId + reviewInvocation.requiredReviewAttestation): only when
- * it is set does the pending review become bindable/usable under the host
- * attestation-constants invariant.
+ * reviewObligationId + reviewInvocation.requiredReviewAttestation): the default
+ * is a realistic fixture obligation identity; pass `null` to deliberately
+ * model a signal without obligation/host attestation.
  */
 export function modeASubagentResponse(
   opts: {
     iteration?: number;
     planVersion?: number;
     phase?: string;
-    obligationId?: string;
+    obligationId?: string | null;
   } = {},
 ): string {
-  const { iteration = 0, planVersion = 1, phase = 'PLAN', obligationId } = opts;
+  const {
+    iteration = 0,
+    planVersion = 1,
+    phase = 'PLAN',
+    obligationId = FIXTURE_OBLIGATION_ID,
+  } = opts;
   return JSON.stringify({
     phase,
     status: `Plan submitted (v${planVersion}).`,
@@ -67,6 +84,30 @@ export function modeANoReviewRequiredResponse(): string {
     status: 'Plan submitted (v1).',
     reviewMode: 'subagent',
     next: 'Plan submitted. Await explicit review routing.',
+  });
+}
+
+/**
+ * A REVIEW_REQUIRED signal whose `next` carries no iteration/planVersion
+ * (contentMeta extraction fails) but which still carries the canonical
+ * obligation identity + host attestation — a production-consistent signal
+ * with a context-metadata defect, not a structural host-context defect.
+ */
+export function modeAWithoutContentMeta(obligationId: string = FIXTURE_OBLIGATION_ID): string {
+  return JSON.stringify({
+    phase: 'PLAN',
+    reviewMode: 'subagent',
+    reviewAttemptId: `att-${obligationId}`,
+    reviewObligationId: obligationId,
+    requiredReviewAttestation: {
+      reviewedBy: REVIEWER_SUBAGENT_TYPE,
+      mandateDigest: FIXTURE_MANDATE_DIGEST,
+      criteriaVersion: FIXTURE_CRITERIA_VERSION,
+      toolObligationId: obligationId,
+      iteration: 0,
+      planVersion: 1,
+    },
+    next: `${REVIEW_REQUIRED_PREFIX}: Review the plan.`,
   });
 }
 
