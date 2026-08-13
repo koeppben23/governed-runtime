@@ -19,8 +19,8 @@ import {
   ReviewRepositoryRevisionProvenance as ReviewRepositoryRevisionProvenanceSchema,
   ReviewVerdict,
 } from './evidence-primitives.js';
-import { ActorInfoSchema, DecisionIdentity } from './evidence-identity.js';
-import { Finding, MarkdownSectionPath } from './evidence-findings.js';
+import { DecisionIdentity } from './evidence-identity.js';
+import { Finding } from './evidence-findings.js';
 import { FrozenReviewSubject, ReviewSubjectScope } from './evidence-review-subject.js';
 export {
   ArtifactSectionAnchor,
@@ -38,6 +38,8 @@ export type { RepositoryPath } from './evidence-findings.js';
 export {
   FrozenReviewSubject,
   RepositoryIdentity,
+  LocalRepositoryIdentity,
+  ReviewRepositoryIdentity,
   ReviewSubjectScope,
 } from './evidence-review-subject.js';
 
@@ -56,6 +58,68 @@ export const ReviewAttemptStatusValues = [
 
 export const ReviewAttemptStatus = z.enum(ReviewAttemptStatusValues);
 export type ReviewAttemptStatus = z.infer<typeof ReviewAttemptStatus>;
+
+export {
+  RepositoryDiscoverySnapshot,
+  ReviewAttemptDiscoveryContext,
+} from './evidence-review-attempt-discovery.js';
+import { ReviewAttemptDiscoveryContext } from './evidence-review-attempt-discovery.js';
+
+/**
+ * Canonical rejection classification persisted on a rejected review attempt.
+ *
+ * `output_*` reasons describe a non-bindable reviewer output whose defect can
+ * plausibly be repaired by a fresh independent reviewer attempt against the
+ * same frozen subject. Governance/execution reasons describe failures that a
+ * new reviewer output cannot legitimately repair. Repairability itself is
+ * classified in the enforcement layer (`REVIEW_ATTEMPT_REJECTION_POLICY`);
+ * this enum only names the reasons structurally.
+ */
+export const ReviewAttemptRejectionReason = z.enum([
+  'schema_invalid',
+  'extraction_invalid',
+  'attestation_invalid',
+  'relation_invalid',
+  'scope_invalid',
+  'evidence_unavailable',
+  'material_integrity_failed',
+  'subject_mismatch',
+  'consistency_invalid',
+  'reviewer_unavailable',
+  'task_failed',
+]);
+export type ReviewAttemptRejectionReason = z.infer<typeof ReviewAttemptRejectionReason>;
+
+/**
+ * Authority-bearing origin of a review attempt.
+ *
+ * Every attempt carries exactly one origin. `initial` marks the first attempt
+ * minted with its obligation. `output_repair` marks a reissue authorized by
+ * the obligation-level output-repair policy (see reissue-authority.ts).
+ * `task_rearm` marks a re-arm driven by the reviewer Task lifecycle
+ * (interruption or spent-attempt retry); it is budgeted by the enforcement
+ * retry gate, NOT by the output-repair budget.
+ *
+ * Invariant: no non-initial attempt exists without an explicit origin.
+ */
+export const ReviewAttemptOrigin = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('initial') }).readonly(),
+  z
+    .object({
+      kind: z.literal('output_repair'),
+      predecessorAttemptId: z.string().uuid(),
+      triggerReason: ReviewAttemptRejectionReason,
+    })
+    .readonly(),
+  z
+    .object({
+      kind: z.literal('task_rearm'),
+      predecessorAttemptId: z.string().uuid(),
+      triggerReason: z.enum(['interrupted', 'rejected', 'stale', 'expired']),
+    })
+    .readonly(),
+]);
+export type ReviewAttemptOrigin = z.infer<typeof ReviewAttemptOrigin>;
 
 /** Immutable normalized bytes delivered to a standalone review attempt. */
 export const ReviewMaterial = z
@@ -77,6 +141,23 @@ export const ReviewAttempt = z.object({
   ordinal: z.number().int().nonnegative(),
   childSessionId: z.string().optional(),
   status: ReviewAttemptStatus,
+  /**
+   * Authority-bearing origin. REQUIRED: every attempt names how it came into
+   * existence; attempts without an origin cannot be parsed.
+   */
+  origin: ReviewAttemptOrigin,
+  /**
+   * Structured reason for a `rejected` status. Persisted at the rejection
+   * point; the output-repair gate refuses reissues without an explicit,
+   * canonically repairable reason.
+   */
+  rejectionReason: ReviewAttemptRejectionReason.optional(),
+  /**
+   * Attempt-bound repository Discovery context, resolved BEFORE the attempt is
+   * minted. REQUIRED: `repository` for standalone repository reviews,
+   * `not_applicable` otherwise.
+   */
+  repositoryDiscovery: ReviewAttemptDiscoveryContext,
   createdAt: z.string().datetime(),
   completedAt: z.string().datetime().optional(),
 });
@@ -120,156 +201,20 @@ export const CompletenessReportSchema = z.object({
   summary: CompletenessSummarySchema,
 });
 
-/** Digest-bound reference to a Plan or ADR section excerpt. */
-export const PlanAdrSectionRef = z
-  .object({
-    kind: z.literal('plan_adr_section'),
-    artifactKind: z.enum(['plan', 'adr']),
-    artifactDigest: z.string().min(1),
-    sectionPath: MarkdownSectionPath,
-    excerptDigest: z.string().min(1),
-  })
-  .readonly();
-export type PlanAdrSectionRef = z.infer<typeof PlanAdrSectionRef>;
-
-/** Digest-bound reference to an implementation and its optional persisted diff. */
-export const ImplementationRef = z
-  .object({
-    kind: z.literal('implementation'),
-    implementationDigest: z.string().min(1),
-    diffDigest: z.string().min(1).optional(),
-  })
-  .readonly();
-export type ImplementationRef = z.infer<typeof ImplementationRef>;
-
-/** Reference to an immutable validation-attempt authority record. */
-export const ValidationAttemptRef = z
-  .object({
-    kind: z.literal('validation_attempt'),
-    attemptId: z.string().uuid(),
-  })
-  .readonly();
-export type ValidationAttemptRef = z.infer<typeof ValidationAttemptRef>;
-
-/** Digest-bound reference to content reviewed outside a Plan, ADR, or implementation. */
-export const ContentRef = z
-  .object({
-    kind: z.literal('content'),
-    digest: z.string().min(1),
-  })
-  .readonly();
-export type ContentRef = z.infer<typeof ContentRef>;
-
-/** Typed evidence references permitted in a structured review challenge. */
-export const ReviewChallengeEvidenceRef = z.discriminatedUnion('kind', [
+export {
   PlanAdrSectionRef,
   ImplementationRef,
   ValidationAttemptRef,
   ContentRef,
-]);
-export type ReviewChallengeEvidenceRef = z.infer<typeof ReviewChallengeEvidenceRef>;
-
-/**
- * Reviewer-supplied correlation slug for a challenge.
- *
- * The reviewer never mints a challenge identity — the host does. This slug is
- * the reviewer's own handle for a challenge within a single payload; the host
- * maps it to the canonical `challengeId` during normalization and retains it so
- * the audit trail stays correlatable to the reviewer's original output.
- */
-export const ChallengeClientReference = z
-  .string()
-  .min(1)
-  .max(64)
-  .regex(/^[a-zA-Z0-9_-]+$/);
-
-const ReviewChallengeBase = {
-  challengeId: z.string().uuid(),
-  obligationId: z.string().uuid(),
-  clientReference: ChallengeClientReference.optional(),
-  scenario: z.string().min(1),
-  claim: z.string().min(1),
-  locations: z.array(z.string().min(1)).min(1),
-};
-
-const DesignChallenge = z.object({
-  ...ReviewChallengeBase,
-  kind: z.literal('design_challenge'),
-  evidenceRefs: z.array(PlanAdrSectionRef).min(1),
-  outcome: z.enum(['supported', 'contradicted', 'not_verified']),
-});
-
-const ImplementationChallenge = z.object({
-  ...ReviewChallengeBase,
-  kind: z.literal('implementation_challenge'),
-  evidenceRefs: z.array(z.union([ImplementationRef, ValidationAttemptRef])).min(1),
-  outcome: z.enum(['pass', 'fail', 'not_verified']),
-});
-
-const ContentChallenge = z.object({
-  ...ReviewChallengeBase,
-  kind: z.literal('content_challenge'),
-  evidenceRefs: z.array(ContentRef).min(1),
-  outcome: z.enum(['supported', 'contradicted', 'not_verified']),
-});
-
-/**
- * An evidence-bound falsification attempt. This is advisory evidence only;
- * challenge requirement and resolution enforcement are deliberately separate.
- */
-export const ReviewChallenge = z.discriminatedUnion('kind', [
-  DesignChallenge.readonly(),
-  ImplementationChallenge.readonly(),
-  ContentChallenge.readonly(),
-]);
-export type ReviewChallenge = z.infer<typeof ReviewChallenge>;
-
-// ─── Reviewer Challenge Input (non-authoritative, pre-normalization) ──────────
-
-/**
- * The challenge shape a reviewer subagent is asked to produce.
- *
- * Derived from the canonical {@link ReviewChallenge} by omitting the
- * host-assigned `challengeId`, so the reviewer-facing contract and the binding
- * authority can never drift apart. A hand-maintained copy previously declared a
- * single flat `outcome` enum, which could not express an implementation
- * challenge (`pass` / `fail`) at all.
- *
- * This type documents the contract; the canonical {@link ReviewFindings} schema
- * remains the sole runtime gate at binding time.
- */
-export const ReviewerChallengeInput = z.discriminatedUnion('kind', [
-  DesignChallenge.omit({ challengeId: true }).readonly(),
-  ImplementationChallenge.omit({ challengeId: true }).readonly(),
-  ContentChallenge.omit({ challengeId: true }).readonly(),
-]);
-export type ReviewerChallengeInput = z.infer<typeof ReviewerChallengeInput>;
-
-/**
- * Advisory evidence that an implementation challenge was addressed by the
- * current implementation and its immutable post-implementation checks.
- * Resolution remains deliberately separate from review acceptance policy.
- */
-export const ChallengeResolution = z
-  .object({
-    challengeId: z.string().uuid(),
-    implementationDigest: z.string().min(1),
-    validationAttemptIds: z.array(z.string().uuid()).min(1),
-    resolvedAt: z.string().datetime(),
-    /** Author evidence is a proposal only; it never resolves a challenge. */
-    author: ActorInfoSchema.optional(),
-  })
-  .readonly();
-export type ChallengeResolution = z.infer<typeof ChallengeResolution>;
-
-/** An independent reviewer's verdict on a prior implementation challenge resolution. */
-export const ChallengeResolutionVerdict = z
-  .object({
-    challengeId: z.string().uuid(),
-    verdict: z.enum(['resolved', 'still_failing', 'not_verified']),
-  })
-  .readonly();
-export type ChallengeResolutionVerdict = z.infer<typeof ChallengeResolutionVerdict>;
+  ReviewChallengeEvidenceRef,
+  ChallengeClientReference,
+  REVIEW_CHALLENGE_OUTCOMES,
+  ReviewChallenge,
+  ReviewerChallengeInput,
+  ChallengeResolution,
+  ChallengeResolutionVerdict,
+} from './evidence-review-challenge.js';
+import { ReviewChallenge, ChallengeResolutionVerdict } from './evidence-review-challenge.js';
 
 /**
  * Identity information for the review actor (subagent or self).
@@ -282,6 +227,7 @@ export const ReviewActorInfo = z
     actorSource: z.enum(['env', 'git', 'claim', 'unknown']).optional(),
     actorAssurance: assuranceSchema().optional(),
   })
+  .strict()
   .readonly();
 export type ReviewActorInfo = z.infer<typeof ReviewActorInfo>;
 
@@ -305,6 +251,7 @@ export const ReviewAttestation = z
     planVersion: z.number().int().positive(),
     reviewedBy: z.literal(REVIEWER_SUBAGENT_TYPE),
   })
+  .strict()
   .readonly();
 export type ReviewAttestation = z.infer<typeof ReviewAttestation>;
 
@@ -355,6 +302,7 @@ export const ReviewFindings = z
     /** Reviewer-only verdicts for prior implementation challenge resolutions. */
     challengeResolutionVerdicts: z.array(ChallengeResolutionVerdict).optional(),
   })
+  .strict()
   .readonly();
 export type ReviewFindings = z.infer<typeof ReviewFindings>;
 
@@ -453,6 +401,15 @@ export const ReviewObligation = z
     /** Frozen subject coverage. A review without a subject is not bindable. */
     reviewSubjectScope: ReviewSubjectScope,
     repositoryRevisionProvenance: ReviewRepositoryRevisionProvenanceSchema.optional(),
+    /**
+     * Obligation-level output-repair budget, frozen from the resolved policy
+     * snapshot at obligation creation. Counts `output_repair` attempts only;
+     * task-lifecycle re-arms are budgeted by the enforcement retry gate.
+     * Required: reissue authorization reads this frozen value — never the
+     * live config — so a later policy change cannot re-open a settled
+     * obligation's repair window.
+     */
+    maxReviewerOutputRepairAttempts: z.number().int().min(0).max(5),
   })
   .superRefine((obligation, context) => {
     if (obligation.obligationType !== 'review') return;
@@ -567,12 +524,54 @@ export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;
  * array would make every obligation permanently unbindable while looking valid.
  * Requiring the array makes that state unrepresentable and fails fast at the
  * schema boundary instead of silently at binding time.
+ *
+ * `assuranceSchemaVersion` is a REQUIRED hard version literal. The
+ * `review-assurance.v2` form introduced authority-bearing attempt origins and
+ * frozen output-repair budgets. The `review-assurance.v3` form additionally
+ * binds a host-owned repository Discovery snapshot to every attempt at mint
+ * time. States persisted under older forms MUST fail parsing — there is
+ * deliberately no upgrade or defaulting path for authority-bearing fields.
+ *
+ * Cross-record invariant: an attempt's `repositoryDiscovery` variant must
+ * structurally match its owning obligation's frozen review subject kind. A
+ * repository review obligation with a `not_applicable` attempt — or a
+ * non-repository review with a `repository` snapshot attempt — is an invalid
+ * state, not a prompt-rendering concern.
  */
 export const ReviewAssuranceState = z
   .object({
+    assuranceSchemaVersion: z.literal('review-assurance.v3'),
     obligations: z.array(ReviewObligation),
     invocations: z.array(ReviewInvocationEvidence),
     attempts: z.array(ReviewAttempt),
+  })
+  .superRefine((assurance, context) => {
+    const obligationsById = new Map(
+      assurance.obligations.map((obligation) => [obligation.obligationId, obligation]),
+    );
+    for (const attempt of assurance.attempts) {
+      const obligation = obligationsById.get(attempt.obligationId);
+      if (!obligation) continue;
+      const repositoryReview =
+        obligation.obligationType === 'review' &&
+        obligation.reviewSubject?.kind === 'repository_change';
+      if (repositoryReview && attempt.repositoryDiscovery.kind !== 'repository') {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['attempts'],
+          message: `attempt ${attempt.attemptId} must carry a repository Discovery snapshot for a repository review obligation`,
+        });
+        return;
+      }
+      if (!repositoryReview && attempt.repositoryDiscovery.kind !== 'not_applicable') {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['attempts'],
+          message: `attempt ${attempt.attemptId} must carry not_applicable Discovery for a non-repository review obligation`,
+        });
+        return;
+      }
+    }
   })
   .readonly();
 export type ReviewAssuranceState = z.infer<typeof ReviewAssuranceState>;

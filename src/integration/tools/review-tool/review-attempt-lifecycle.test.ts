@@ -30,8 +30,13 @@ function evidence(args: {
     },
     '2026-08-09T00:00:00.000Z',
     args.refInput,
+    REVIEW_TASK_ID,
+    OBLIGATION_ID,
   );
 }
+
+const OBLIGATION_ID = '00000000-0000-4000-8000-00000000000a';
+const REVIEW_TASK_ID = '00000000-0000-4000-8000-00000000000b';
 
 describe('subject digest stability', () => {
   const branch = 'feature/add-due-date';
@@ -98,6 +103,7 @@ describe('subject digest stability', () => {
     const obligationId = '33333333-1111-4111-8111-111111111111';
     const state = makeState('REVIEW', {
       reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
         obligations: [
           {
             obligationId,
@@ -106,6 +112,7 @@ describe('subject digest stability', () => {
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
+            maxReviewerOutputRepairAttempts: 1,
             createdAt: '2026-08-09T00:00:00.000Z',
             pluginHandshakeAt: null,
             status: 'pending',
@@ -186,6 +193,16 @@ describe('appendPreparedReviewEvidence dedup', () => {
 
     const afterOne = appendPreparedReviewEvidence([], first);
     const afterTwo = appendPreparedReviewEvidence(afterOne, second);
-    expect(afterTwo).toHaveLength(2);
+    // New lifecycle: the stale incarnation stays for audit and is structurally
+    // superseded by an explicit marker instead of being silently dropped.
+    expect(afterTwo).toHaveLength(3);
+    expect(afterTwo[1]).toMatchObject({
+      kind: 'superseded',
+      supersededPreparedEvidenceId: first.evidenceId,
+      replacementPreparedEvidenceId: second.evidenceId,
+      reason: 'subject_frozen',
+      reviewTaskId: first.reviewTaskId,
+    });
+    expect(afterTwo[2]).toBe(second);
   });
 });

@@ -7,6 +7,7 @@
  */
 
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
+import type { RepositoryDiscoverySnapshot } from '../../state/evidence.js';
 import { buildReviewContentPrompt, selectReviewerProfileRules } from './prompt-builders.js';
 import { buildReviewContentMutatedOutput, type ReviewerSuccessResult } from './orchestrator.js';
 import { strictBlockedOutput } from '../plugin-helpers.js';
@@ -18,6 +19,7 @@ import {
   ensureReviewAssurance,
   findReviewObligationById,
   findBindableAttempt,
+  latestReviewMaterial,
   hasEvidenceReuse,
   buildInvocationEvidence,
   appendInvocationEvidence,
@@ -32,7 +34,6 @@ import {
   getReviewerPolicies,
   buildAttemptFailedLogger,
   buildAttemptSucceededLogger,
-  buildReviewDiscoveryContextForPipeline,
 } from './shared-helpers.js';
 import {
   verifyFrozenReviewerContext,
@@ -45,21 +46,42 @@ function countFindings(findings: unknown): number {
   return Array.isArray(findings) ? findings.length : Object.keys(findings ?? {}).length;
 }
 
-async function loadPersistedContentForReview(
-  ctx: PipelineContext,
-): Promise<{ content: string; frozenReviewerContext: FrozenReviewerContext } | null> {
+/**
+ * Resolve the frozen material for the active review obligation.
+ *
+ * A missing bindable attempt and invalid material are reported under DIFFERENT
+ * reason codes on purpose: the first is recovered by re-running the review call
+ * (which reissues an attempt), the second forbids re-running the reviewer at
+ * all. Collapsing both into an integrity failure sent the agent down a restore
+ * path that cannot resolve a merely spent attempt.
+ */
+async function loadPersistedContentForReview(ctx: PipelineContext): Promise<{
+  content: string;
+  frozenReviewerContext: FrozenReviewerContext;
+  repositoryDiscoverySnapshot: RepositoryDiscoverySnapshot | null;
+} | null> {
   const { deps, reviewCtx } = ctx;
-  const obligation = findReviewObligationById(
-    ensureReviewAssurance(ctx.sessionState.reviewAssurance),
-    reviewCtx.obligationId,
-  );
+  const assurance = ensureReviewAssurance(ctx.sessionState.reviewAssurance);
+  const obligation = findReviewObligationById(assurance, reviewCtx.obligationId);
   const attempt = findBindableAttempt(ctx.sessionState.reviewAssurance, reviewCtx.obligationId);
   const material = attempt?.reviewMaterial;
   if (!attempt || !material || attempt.subjectDigest !== obligation?.subjectDigest) {
-    await blockReviewOutcomeHelper(deps, ctx, 'REVIEW_MATERIAL_INTEGRITY_FAILED', {
-      obligationId: reviewCtx.obligationId,
-      reason: 'bindable attempt is missing or does not match the frozen obligation subject',
-    });
+    const persisted = latestReviewMaterial(assurance, reviewCtx.obligationId);
+    const materialCheck = verifyFrozenReviewerContext(obligation, persisted);
+    await blockReviewOutcomeHelper(
+      deps,
+      ctx,
+      materialCheck.kind === 'blocked'
+        ? 'REVIEW_MATERIAL_INTEGRITY_FAILED'
+        : 'REVIEW_ATTEMPT_UNAVAILABLE',
+      {
+        obligationId: reviewCtx.obligationId,
+        reason:
+          materialCheck.kind === 'blocked'
+            ? materialCheck.reason
+            : 'bindable attempt is missing or does not match the frozen obligation subject',
+      },
+    );
     return null;
   }
   const verification = verifyFrozenReviewerContext(obligation, material);
@@ -70,7 +92,14 @@ async function loadPersistedContentForReview(
     });
     return null;
   }
-  return { content: material.content, frozenReviewerContext: verification.context };
+  return {
+    content: material.content,
+    frozenReviewerContext: verification.context,
+    repositoryDiscoverySnapshot:
+      attempt.repositoryDiscovery.kind === 'repository'
+        ? attempt.repositoryDiscovery.snapshot
+        : null,
+  };
 }
 
 async function validateContentFindings(
@@ -128,7 +157,6 @@ export async function runReviewContentPipeline(ctx: PipelineContext): Promise<vo
     'REVIEW',
   );
   const ticketText = sessionState.ticket?.text ?? '';
-  const discoveryContext = await buildReviewDiscoveryContextForPipeline(ctx);
   const prompt = buildReviewContentPrompt({
     content: persistedContent.content,
     ticketText,
@@ -139,7 +167,7 @@ export async function runReviewContentPipeline(ctx: PipelineContext): Promise<vo
     planVersion: reviewCtx.planVersion,
     profileName,
     profileRules,
-    discoveryContext,
+    repositoryDiscoverySnapshot: persistedContent.repositoryDiscoverySnapshot,
     proofGraph: sessionState.proofGraph,
     frozenReviewerContext: persistedContent.frozenReviewerContext,
   });

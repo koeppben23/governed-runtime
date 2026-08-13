@@ -71,6 +71,13 @@ export const PolicySnapshotSchema = z
     maxImplReviewIterations: z.number().int().positive(),
     /** Frozen retry budget for F12-incoherent reviewer captures. */
     maxIncoherentReviewerCaptureRetries: z.number().int().nonnegative().optional(),
+    /**
+     * Frozen obligation-level reviewer output-repair budget. Optional in the
+     * snapshot schema (pre-existing normalization fills legacy snapshots) —
+     * REQUIRED once frozen onto a ReviewObligation, where the reissue gate
+     * reads it.
+     */
+    maxReviewerOutputRepairAttempts: z.number().int().min(0).max(5).optional(),
     allowSelfApproval: z.boolean(),
     /**
      * P34: Minimum required actor assurance for regulated approval decisions.
@@ -231,6 +238,7 @@ export const PolicySnapshotSchema = z
         ? { enforcement: 'required' as const, allowNoCommands: false }
         : { enforcement: 'off' as const, allowNoCommands: false }),
     maxIncoherentReviewerCaptureRetries: snapshot.maxIncoherentReviewerCaptureRetries ?? 1,
+    maxReviewerOutputRepairAttempts: snapshot.maxReviewerOutputRepairAttempts ?? 1,
   }))
   .readonly();
 export type PolicySnapshot = z.infer<typeof PolicySnapshotSchema>;

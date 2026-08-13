@@ -80,6 +80,8 @@ async function seedSession(
     subjectDigest: SUBJECT_DIGEST,
     ordinal: 0,
     status: options.attemptStatus ?? 'created',
+    origin: { kind: 'initial' } as const,
+    repositoryDiscovery: { kind: 'not_applicable' } as const,
     createdAt: now,
     ...(options.attemptChildSessionId ? { childSessionId: options.attemptChildSessionId } : {}),
   };
@@ -94,6 +96,7 @@ async function seedSession(
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
       reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
         obligations: [
           {
             obligationId: OBLIGATION_ID,
@@ -102,6 +105,7 @@ async function seedSession(
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
+            maxReviewerOutputRepairAttempts: 1,
             createdAt: now,
             pluginHandshakeAt: null,
             status: obligationStatus,

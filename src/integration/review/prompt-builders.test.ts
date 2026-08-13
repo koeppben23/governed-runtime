@@ -21,6 +21,22 @@ const BASE_INPUT = {
 };
 
 describe('renderReviewerTaskPrompt challenge contract', () => {
+  it('publishes the exact top-level required field values (iteration/planVersion/reviewMode)', () => {
+    // P3 contract completeness: the canonical ReviewFindings schema demands
+    // top-level iteration/planVersion/reviewMode; the output contract must
+    // state them with the exact dynamic values so the reviewer never has to
+    // infer them from surrounding context text.
+    const prompt = renderReviewerTaskPrompt({
+      ...BASE_INPUT,
+      iteration: 4,
+      planVersion: 7,
+    });
+
+    expect(prompt).toContain('iteration: 4');
+    expect(prompt).toContain('planVersion: 7');
+    expect(prompt).toContain('reviewMode: "subagent"');
+  });
+
   it('requires omitting optional challenges when the frozen count is zero', () => {
     const prompt = renderReviewerTaskPrompt({
       ...BASE_INPUT,
@@ -73,6 +89,39 @@ describe('renderReviewerTaskPrompt challenge contract', () => {
       }).success,
     ).toBe(true);
   });
+
+  /**
+   * Regression: a reviewer that sees only one example outcome has to guess the
+   * rest of the enum, and a wrong guess is rejected at binding time as
+   * `schema_invalid` — after the reviewer already ran.
+   */
+  it.each([
+    ['content_challenge', ['supported', 'contradicted', 'not_verified']],
+    ['design_challenge', ['supported', 'contradicted', 'not_verified']],
+    ['implementation_challenge', ['pass', 'fail', 'not_verified']],
+  ] as const)('states the complete allowed outcome vocabulary for %s', (kind, allowed) => {
+    const prompt = renderReviewerTaskPrompt({
+      ...BASE_INPUT,
+      challengeContract: {
+        requiredChallengeCount: 1,
+        requiredChallengeKind: kind,
+        evidenceRefs: [{ kind: 'content', digest: 'a'.repeat(64) }],
+      },
+    });
+
+    const line = prompt
+      .split('\n')
+      .find((candidate) => candidate.startsWith(`- Allowed ${kind} outcome values`));
+    expect(line, `prompt must declare the ${kind} outcome vocabulary`).toBeDefined();
+    for (const value of allowed) {
+      expect(line).toContain(`"${value}"`);
+    }
+    // The vocabulary is derived from the canonical schema, so the example value
+    // the prompt shows must itself be part of the declared set.
+    const match = prompt.match(/Required challenge object shape: (.+)/);
+    const rendered = JSON.parse(match![1]!) as { outcome: string };
+    expect(allowed).toContain(rendered.outcome);
+  });
 });
 
 describe('frozen review subject envelope', () => {
@@ -104,7 +153,6 @@ describe('frozen review subject envelope', () => {
       criteriaVersion: BASE_INPUT.criteriaVersion,
       iteration: BASE_INPUT.iteration,
       planVersion: BASE_INPUT.planVersion,
-      discoveryContext: {},
       frozenReviewerContext,
     });
     const envelope = renderFrozenReviewSubjectEnvelope(frozenReviewerContext).join('\n');

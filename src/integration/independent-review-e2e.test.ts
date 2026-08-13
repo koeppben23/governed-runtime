@@ -205,6 +205,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
       reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
         obligations: [
           {
             obligationId: OBLIGATION_ID,
@@ -213,6 +214,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
+            maxReviewerOutputRepairAttempts: 1,
             subjectDigest: SUBJECT_DIGEST,
             createdAt: now,
             pluginHandshakeAt: null,
@@ -241,6 +243,8 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
             subjectDigest: SUBJECT_DIGEST,
             ordinal: 0,
             status: 'created' as const,
+            origin: { kind: 'initial' } as const,
+            repositoryDiscovery: { kind: 'not_applicable' } as const,
             createdAt: now,
           },
         ],
@@ -435,8 +439,29 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
           challengePolicy: CHALLENGE_POLICY_V1,
           reviewInvocationPolicy: 'host_task_required',
         },
+        // The canonical persisted-Discovery identity the snapshot binds to.
+        discoveryDigest: 'd'.repeat(64),
+        // The real worktree — the attempt-bound Discovery resolution reads the
+        // persisted basis via the workspace fingerprint of THIS worktree.
+        binding: { ...base.binding, worktree: ws.tmpDir },
       }),
     );
+
+    // Seed the persisted Discovery basis the way hydrate does: the attempt-bound
+    // repository Discovery snapshot is resolved at mint time and requires a
+    // host-owned persisted Discovery artifact.
+    const { workspaceDir: resolveWorkspaceDir } = await import('../adapters/workspace/index.js');
+    const { writeDiscovery } = await import('../adapters/persistence-discovery.js');
+    const { runRequiredDiscovery } = await import('./tools/hydrate-discovery.js');
+    const wsDir = resolveWorkspaceDir(fp.fingerprint);
+    const discoveryResult = await runRequiredDiscovery(ws.tmpDir, fp.fingerprint, {
+      files: [],
+      packageFiles: [],
+      configFiles: [],
+      packageFilePaths: [],
+      configFilePaths: [],
+    });
+    await writeDiscovery(wsDir, discoveryResult);
 
     const ctx = {
       sessionID: PARENT_SESSION,
@@ -538,6 +563,23 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
       expect(rewritten.reviewAttemptId).toBe(
         (afterCall1?.reviewAssurance?.attempts ?? [])[0]?.attemptId,
       );
+      // Presentation/code consistency: the orchestrator rewrote the canonical
+      // code, so the operator-facing presentation must carry the SAME reason
+      // code — never the stale pre-rewrite one.
+      const presentationMarkdown = String(
+        (rewritten.presentation as Record<string, unknown> | undefined)?.markdown ?? '',
+      );
+      expect(rewritten.code).toBe('HOST_SUBAGENT_TASK_REQUIRED');
+      expect(presentationMarkdown).toContain('HOST_SUBAGENT_TASK_REQUIRED');
+      expect(presentationMarkdown).not.toContain('CONTENT_ANALYSIS_REQUIRED');
+      // Presentation recovery and canonical recovery share one authority: both
+      // route through the host-visible Task invocation with the reviewer
+      // subagent, never through a different code's recovery path.
+      expect(presentationMarkdown).toContain(
+        'Run the FlowGuard reviewer subagent via the OpenCode Task tool.',
+      );
+      expect(String(rewritten.recovery ?? '')).toContain('host-visible subagent invocation');
+      expect(String(rewritten.recovery ?? '')).not.toContain('CONTENT_ANALYSIS_REQUIRED');
     }
 
     // The obligation must STILL be pending after the handshake (the log shows it
@@ -554,11 +596,26 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
     const attemptA = (afterHandshake?.reviewAssurance?.attempts ?? []).find(
       (attempt) => attempt.obligationId === obligationId,
     );
+    // The repository attempt is born with its host-owned Discovery snapshot:
+    // resolved BEFORE the mint, never mutated afterwards.
+    expect(attemptA?.repositoryDiscovery.kind).toBe('repository');
+    if (attemptA?.repositoryDiscovery.kind === 'repository') {
+      // The snapshot binds the CANONICAL persisted-Discovery digest — never the
+      // workspace fingerprint (stored separately).
+      expect(attemptA.repositoryDiscovery.snapshot.discoveryDigest).toBe('d'.repeat(64));
+      expect(attemptA.repositoryDiscovery.snapshot.workspaceFingerprint).toEqual(
+        expect.any(String),
+      );
+      expect(attemptA.repositoryDiscovery.snapshot.health.status).toBeTypeOf('string');
+    }
     const initialHypothesisCount = afterHandshake?.proofGraph?.claims.length ?? 0;
     expect(initialHypothesisCount).toBeGreaterThan(0);
 
-    // Attempt A returns an out-of-scope finding. Binding rejects the capture,
-    // leaving the obligation pending but spending only this attempt.
+    // Attempt A returns schema-invalid output. Binding rejects the capture with
+    // a canonically repairable reason (schema_invalid), leaving the obligation
+    // pending but spending only this attempt. Out-of-scope findings would be a
+    // governance rejection and terminate the obligation instead — covered by
+    // review-repair-retry-e2e.
     await afterHook(
       {
         tool: 'task',
@@ -578,19 +635,11 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
           overallVerdict: 'changes_requested',
           blockingIssues: [
             {
+              // Missing `relation` makes the payload schema-invalid: a
+              // repairable output-contract defect, not a governance rejection.
               severity: 'major',
               category: 'correctness',
               message: 'The changed request is not propagated to its service.',
-              location: 'src/outside-diff.ts',
-              relation: {
-                subjectAnchors: [
-                  {
-                    kind: 'repository_location',
-                    location: { path: 'src/outside-diff.ts', revision: 'head' },
-                  },
-                ],
-                evidenceLocations: [],
-              },
             },
           ],
           majorRisks: [],
@@ -792,17 +841,42 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
       headSha: 'a'.repeat(40),
     });
     expect(obligation?.subjectDigest).toBe(obligation?.reviewSubject?.subjectDigest);
-    // The completed immutable subject contributes one material-bound claim for
-    // each path in the resolved diff; retries themselves must not duplicate them.
-    expect(consumed?.proofGraph?.claims).toHaveLength(initialHypothesisCount + 3);
-    // The rejected reviewer attempt and its retry each retain their prepared
-    // immutable material for auditability.
-    expect(
-      (consumed?.standaloneReviewEvidence ?? []).filter((entry) => entry.kind === 'prepared'),
-    ).toHaveLength(2);
+    // The lifecycle chain projects ONLY the authoritative review task: the
+    // verdict continuation and the retry must not duplicate hypothesis claims.
+    expect(consumed?.proofGraph?.claims).toHaveLength(3);
+    expect(consumed?.proofGraph?.claims.every((c) => c.signalClass === 'hypothesis')).toBe(true);
+    // Gate 3: the projected claimIds are exactly the authoritative (latest
+    // prepared) incarnation's claimIds — no duplicate, no stale-predecessor set.
+    const authoritativePrepared = (consumed?.standaloneReviewEvidence ?? [])
+      .filter((entry) => entry.kind === 'prepared')
+      .at(-1);
+    if (authoritativePrepared?.kind !== 'prepared') {
+      throw new TypeError('expected prepared review evidence');
+    }
+    expect((consumed?.proofGraph?.claims ?? []).map((claim) => claim.claimId).sort()).toEqual(
+      authoritativePrepared.task.claims.map((claim) => claim.claimId).sort(),
+    );
+    // The rejected reviewer attempt and its retry belong to ONE logical review
+    // task: when the continuation re-prepares with a diverged subject digest,
+    // the stale incarnation is kept for audit and structurally superseded —
+    // but the projection still resolves exactly the authoritative task.
+    const prepared = (consumed?.standaloneReviewEvidence ?? []).filter(
+      (entry) => entry.kind === 'prepared',
+    );
+    const superseded = (consumed?.standaloneReviewEvidence ?? []).filter(
+      (entry) => entry.kind === 'superseded',
+    );
+    expect(prepared).toHaveLength(2);
+    expect(superseded).toHaveLength(1);
+    expect(superseded[0]).toMatchObject({
+      supersededPreparedEvidenceId: prepared[0]?.evidenceId,
+      replacementPreparedEvidenceId: prepared[1]?.evidenceId,
+      reason: 'subject_frozen',
+    });
     expect(consumedInvocation?.consumedByObligationId).toBe(obligationId);
     expect(consumed?.standaloneReviewEvidence.at(-1)).toMatchObject({
       kind: 'completed',
+      preparedEvidenceId: prepared[1]?.evidenceId,
       findingsDigest: expect.any(String),
       attestationDigest: expect.any(String),
     });

@@ -9,9 +9,9 @@
  */
 import { z } from 'zod';
 import type { ToolDefinition } from '../helpers.js';
+import { formatError } from '../error-format.js';
 import {
   withMutableSessionTransaction,
-  formatError,
   formatAutoAdvanceOverflow,
   formatBlocked,
 } from '../helpers.js';
@@ -35,7 +35,6 @@ import type { RailBlocked } from '../../../rails/types.js';
 import type { ReviewToolArgs } from './types.js';
 import {
   ensureMissingAnalysisObligation,
-  hasReviewContentInput,
   hasImplicitContentSignal,
   validateHostTaskContinuationInput,
   resolveSubmittedReviewObligation,
@@ -50,7 +49,6 @@ import {
   persistReviewCompletion,
   buildReviewCompletionResponse,
 } from './completion.js';
-import { resolveBranchReviewSource } from '../../../adapters/gh-cli.js';
 import { prepareReviewContent } from '../../../rails/review.js';
 import { findReviewObligationById, updateAttemptStatus } from '../../review/assurance.js';
 import { writeStateWithArtifacts } from '../helpers.js';
@@ -58,6 +56,7 @@ import {
   appendCompletedReviewEvidence,
   appendPreparedReviewEvidence,
   prepareStandaloneReviewEvidence,
+  resolveReviewTaskIdentity,
 } from './preparation.js';
 import {
   ensureStartedReviewState,
@@ -65,7 +64,10 @@ import {
   populateRefInput,
   buildHostTaskAttestation,
 } from './continuation.js';
-import { repositoryFromBranchSubject } from './obligation-format.js';
+import {
+  resolveFrozenContinuationContent,
+  assertFrozenSubjectUnchanged,
+} from './frozen-continuation.js';
 
 // ─── Review preparation orchestrator ─────────────────────────────────────────
 
@@ -79,141 +81,34 @@ function withCwd(
   return { ...refInput, cwd };
 }
 
+export { isHostTaskVerdictContinuation } from './continuation-authority.js';
+import {
+  resolveObligationBranchSource,
+  missingHostTaskVerdictBlock,
+  resolveHostTaskContinuationAuthority,
+} from './continuation-authority.js';
+
 /**
- * Resolve the immutable branch source, but only when an obligation is being
- * created. An explicit host-task continuation is bound to its existing
- * obligation and must not re-resolve refs.
+ * Resolve the reviewed content for this invocation.
+ *
+ * A host-task verdict continuation reuses the persisted frozen subject and
+ * material instead of re-deriving them; any remaining derivation is checked
+ * against the frozen subject digest. Returns the blocked payload as a string.
  */
-function resolveObligationBranchSource(
+async function resolveReviewContentForExecution(
   state: SessionState,
   exec: ReviewExecutionContext,
-): ReturnType<typeof resolveBranchReviewSource> | undefined {
-  if (!exec.args.branch) return undefined;
-  const persistedSource = getPersistedObligationBranchSource(state, exec);
-  if (persistedSource) return persistedSource;
-  if (isHostTaskVerdictContinuation(exec)) return undefined;
-  return resolveBranchReviewSource(exec.args.branch, exec.args.base, exec.context.worktree);
+  refInput: ReviewReferenceInput | undefined,
+): Promise<PreparedReviewContent | null | string> {
+  const frozen = resolveFrozenContinuationContent(state, exec);
+  if (frozen.kind === 'blocked') return frozen.message;
+  if (frozen.kind === 'reuse') return frozen.content;
+
+  const derived = await prepareReviewContent(refInput, undefined);
+  if (derived && 'kind' in derived) return formatBlockedReviewReport(derived);
+  return assertFrozenSubjectUnchanged(state, exec, derived) ?? derived;
 }
 
-function getPersistedObligationBranchSource(
-  state: SessionState,
-  exec: ReviewExecutionContext,
-): ReturnType<typeof resolveBranchReviewSource> | undefined {
-  if (!exec.args.branch) return undefined;
-  const findingsObligationId = (
-    exec.args.reviewFindings as { attestation?: { toolObligationId?: string } }
-  )?.attestation?.toolObligationId;
-  const obligationId = exec.args.reviewObligationId ?? findingsObligationId;
-  const obligation = obligationId
-    ? findReviewObligationById(state.reviewAssurance, obligationId)
-    : undefined;
-  const provenance = obligation?.repositoryRevisionProvenance;
-  if (provenance?.kind !== 'available' || !provenance.baseSha) return undefined;
-  return {
-    branch: exec.args.branch,
-    baseBranch: exec.args.base ?? provenance.baseSha,
-    resolvedBranchSha: provenance.headSha,
-    resolvedBaseSha: provenance.baseSha,
-    repository: repositoryFromBranchSubject(obligation?.reviewSubject),
-  };
-}
-
-function isHostTaskVerdictContinuation(exec: ReviewExecutionContext): boolean {
-  return (
-    exec.policy === 'host_task_required' &&
-    exec.args.reviewVerdict !== undefined &&
-    exec.args.reviewObligationId !== undefined
-  );
-}
-
-type HostTaskContinuationAuthority =
-  | { readonly kind: 'not_applicable' }
-  | {
-      readonly kind: 'explicit';
-      readonly reviewObligationId: string;
-      readonly reviewVerdict: 'accept' | 'changes_requested';
-    }
-  | {
-      readonly kind: 'id_required';
-      readonly compatibleObligationIds: readonly string[];
-    }
-  | {
-      readonly kind: 'ambiguous';
-      readonly compatibleObligationIds: readonly string[];
-    };
-
-function resolveHostTaskContinuationAuthority(
-  state: SessionState,
-  exec: ReviewExecutionContext,
-): HostTaskContinuationAuthority {
-  if (exec.policy !== 'host_task_required' || exec.args.reviewVerdict === undefined) {
-    return { kind: 'not_applicable' };
-  }
-  if (exec.args.reviewObligationId !== undefined) {
-    return {
-      kind: 'explicit',
-      reviewObligationId: exec.args.reviewObligationId,
-      reviewVerdict: exec.args.reviewVerdict,
-    };
-  }
-  // A verdict accompanying content can be the first call; obligation creation
-  // remains authoritative for that path rather than guessing a continuation.
-  if (hasReviewContentInput(exec.args)) return { kind: 'not_applicable' };
-  const compatibleObligationIds = (state.reviewAssurance?.obligations ?? [])
-    .filter(
-      (obligation) =>
-        obligation.obligationType === 'review' &&
-        obligation.status !== 'consumed' &&
-        obligation.status !== 'blocked',
-    )
-    .filter((obligation) =>
-      (state.reviewAssurance?.invocations ?? []).some(
-        (invocation) =>
-          invocation.obligationId === obligation.obligationId &&
-          invocation.invocationMode === 'host_subagent_task' &&
-          invocation.hostVisible === true &&
-          invocation.capturedRawFindings != null &&
-          invocation.capturedVerdict === exec.args.reviewVerdict &&
-          (obligation.invocationId === invocation.invocationId ||
-            invocation.attemptId !== undefined),
-      ),
-    )
-    .map((obligation) => obligation.obligationId);
-  return compatibleObligationIds.length > 1
-    ? { kind: 'ambiguous', compatibleObligationIds }
-    : { kind: 'id_required', compatibleObligationIds };
-}
-
-function formatHostTaskContinuationAuthority(
-  authority: HostTaskContinuationAuthority,
-): string | null {
-  if (authority.kind === 'not_applicable' || authority.kind === 'explicit') return null;
-  if (authority.kind === 'ambiguous') {
-    return formatBlocked('REVIEW_OBLIGATION_AMBIGUOUS', {
-      obligationIds: authority.compatibleObligationIds.join(', '),
-      reason:
-        'More than one compatible host-task review obligation has captured the supplied verdict. Supply reviewObligationId explicitly.',
-    });
-  }
-  return formatBlocked('REVIEW_OBLIGATION_ID_REQUIRED', {
-    reason:
-      'A host-task review verdict requires reviewObligationId unless this is the first content-aware review call.',
-    ...(authority.compatibleObligationIds.length === 1
-      ? { reviewObligationId: authority.compatibleObligationIds[0]! }
-      : {}),
-    continuation:
-      'Call flowguard_review with the original content fields, reviewObligationId, and reviewVerdict.',
-  });
-}
-
-function missingHostTaskVerdictBlock(
-  state: SessionState,
-  exec: ReviewExecutionContext,
-): string | null {
-  return formatHostTaskContinuationAuthority(resolveHostTaskContinuationAuthority(state, exec));
-}
-
-// eslint-disable-next-line complexity -- branch provenance and host continuation fail closed independently
 async function prepareReviewExecution(
   sessDir: string,
   state: SessionState,
@@ -228,10 +123,8 @@ async function prepareReviewExecution(
     const hostVerdict = await prepareHostTaskVerdictReview(sessDir, state, result, exec);
     if (hostVerdict) return withMaterializedHostVerdict(hostVerdict, null);
   }
-  const materializedContent = await prepareReviewContent(refInput, undefined);
-  if (materializedContent && 'kind' in materializedContent) {
-    return formatBlockedReviewReport(materializedContent);
-  }
+  const materializedContent = await resolveReviewContentForExecution(state, exec, refInput);
+  if (typeof materializedContent === 'string') return materializedContent;
   const hostVerdict = await prepareHostTaskVerdictReview(sessDir, state, result, exec);
   if (hostVerdict) return withMaterializedHostVerdict(hostVerdict, materializedContent);
 
@@ -369,9 +262,14 @@ async function rejectIncoherentAttempt(
   if (!attempt) {
     return { ok: false, code: 'REVIEW_ATTEMPT_NOT_FOUND', details: { attemptId } };
   }
+  // Verdict-time incoherence (SUBAGENT_VERDICT_FINDINGS_INCOHERENT and all
+  // SUBAGENT_CHALLENGE_* codes) is a semantic consistency failure — persisted
+  // as `consistency_invalid`, which never authorizes an output repair.
   const rejectedState: SessionState = {
     ...state,
-    reviewAssurance: updateAttemptStatus(assurance, attempt.attemptId, 'rejected', now),
+    reviewAssurance: updateAttemptStatus(assurance, attempt.attemptId, 'rejected', now, {
+      rejectionReason: 'consistency_invalid',
+    }),
   };
   await writeStateWithArtifacts(sessDir, rejectedState);
   return { ok: true };
@@ -424,17 +322,23 @@ async function prepareHostTaskVerdictReview(
 
   if (resolved.kind !== 'resolved') {
     // Reissue an attempt so the next reviewer Task has a registered attempt
-    // identity before the host issues retry guidance.
-    const reissue = await reissueReviewAttempt(
-      sessDir,
-      state,
-      {
-        obligationId: obligation.obligationId,
-        subjectDigest: obligation.subjectDigest,
-        obligationType: obligation.obligationType,
-      },
-      exec.now,
-    );
+    // identity before the host issues retry guidance. Reissue is authorized
+    // by the output-repair gate; a denied gate blocks the obligation.
+    const reissue = await reissueReviewAttempt(sessDir, state, obligation, exec.now);
+    if (reissue.kind === 'blocked') {
+      return formatBlocked(
+        reissue.code,
+        {
+          obligationId: obligation.obligationId,
+          reason: reissue.reason,
+        },
+        {
+          policy: exec.policy,
+          policyMode: exec.policy,
+          bindOutcome: resolved.kind,
+        },
+      );
+    }
     return formatBlocked(
       'HOST_SUBAGENT_TASK_REQUIRED',
       { reviewerSubagentType: REVIEWER_SUBAGENT_TYPE },
@@ -448,7 +352,7 @@ async function prepareHostTaskVerdictReview(
         bindOutcome: resolved.kind,
         reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
         reviewObligationId: obligation.obligationId,
-        reviewAttemptId: reissue.attemptId,
+        reviewAttemptId: reissue.attempt.attemptId,
         next: formatReviewRequiredSignal(obligation.iteration, obligation.planVersion),
         requiredReviewAttestation: buildHostTaskAttestation(obligation),
       },
@@ -514,7 +418,17 @@ async function prepareReviewWithoutExternalCalls(
     if (typeof prepared === 'string') return prepared;
     // Only a durable obligation may materialize the REVIEW intermediate state.
     if (prepared.blockMessage && !prepared.persistedAssurance) return prepared.blockMessage;
-    const taskEvidence = prepareStandaloneReviewEvidence(args, now, prepared.refInput);
+    const obligationIdentity = prepared.pendingObligation ?? prepared.validatedReviewObligation;
+    const taskEvidence = obligationIdentity
+      ? prepareStandaloneReviewEvidence(
+          args,
+          now,
+          prepared.refInput,
+          resolveReviewTaskIdentity(state.standaloneReviewEvidence, obligationIdentity.obligationId)
+            .reviewTaskId,
+          obligationIdentity.obligationId,
+        )
+      : null;
     const stateWithTaskEvidence: SessionState = {
       // Persist the REVIEW transition materialized by startReviewFlow so the
       // canonical session state reflects the active review obligation. The
@@ -525,10 +439,9 @@ async function prepareReviewWithoutExternalCalls(
       // Re-deriving from `state` (read before that write) dropped the attempt, so
       // the host could never bind reviewer evidence for a standalone /review.
       ...(prepared.persistedAssurance && { reviewAssurance: prepared.persistedAssurance }),
-      standaloneReviewEvidence: appendPreparedReviewEvidence(
-        state.standaloneReviewEvidence,
-        taskEvidence,
-      ),
+      standaloneReviewEvidence: taskEvidence
+        ? appendPreparedReviewEvidence(state.standaloneReviewEvidence, taskEvidence)
+        : state.standaloneReviewEvidence,
     };
     // The prepared entry is durable before a reviewer can be instructed.
     await writeStateWithArtifacts(sessDir, stateWithTaskEvidence);
@@ -569,17 +482,29 @@ async function persistCompletedReview(
         effectiveReviewFindings: prepared.effectiveReviewFindings,
       },
     );
-    const taskEvidence = prepareStandaloneReviewEvidence(args, now, prepared.refInput);
+    const obligationIdentity = prepared.pendingObligation ?? prepared.validatedReviewObligation;
+    const taskEvidence = obligationIdentity
+      ? prepareStandaloneReviewEvidence(
+          args,
+          now,
+          prepared.refInput,
+          resolveReviewTaskIdentity(state.standaloneReviewEvidence, obligationIdentity.obligationId)
+            .reviewTaskId,
+          obligationIdentity.obligationId,
+        )
+      : null;
     result = {
       ...result,
       state: {
         ...result.state,
-        standaloneReviewEvidence: appendCompletedReviewEvidence({
-          evidence: state.standaloneReviewEvidence,
-          prepared: taskEvidence,
-          completedAt: now,
-          findings: prepared.effectiveReviewFindings ?? args.reviewFindings,
-        }),
+        standaloneReviewEvidence: taskEvidence
+          ? appendCompletedReviewEvidence({
+              evidence: state.standaloneReviewEvidence,
+              prepared: taskEvidence,
+              completedAt: now,
+              findings: prepared.effectiveReviewFindings ?? args.reviewFindings,
+            })
+          : state.standaloneReviewEvidence,
       },
     };
     const completion = await persistReviewCompletion(sessDir, result, reviewResult, ctx);

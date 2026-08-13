@@ -14,6 +14,7 @@ function obligation(): ReviewObligation {
     planVersion: 1,
     criteriaVersion: 'criteria-v1',
     mandateDigest: 'mandate-digest',
+    maxReviewerOutputRepairAttempts: 1,
     createdAt: FIXED_TIME,
     pluginHandshakeAt: null,
     status: 'pending',

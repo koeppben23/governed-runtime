@@ -272,6 +272,17 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'ARTIFACT_SCHEMA_VALIDATION_FAILED',
+    category: 'adapter',
+    messageTemplate: 'A generated artifact failed canonical schema validation: {issues}',
+    recoverySteps: [
+      'Treat this as a stop condition; the artifact was not persisted',
+      'Report the listed field paths — they identify the offending contract',
+      'Do not retry the same call unchanged; the failure is deterministic',
+    ],
+  },
+
+  {
     code: 'WRITE_FAILED',
     category: 'adapter',
     messageTemplate: 'Failed to write FlowGuard state: {message}',

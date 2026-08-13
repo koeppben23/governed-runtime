@@ -29,6 +29,27 @@ export const REVIEW_VALIDATION_REASONS = [
     ],
   },
   {
+    code: 'REVIEW_REPOSITORY_IDENTITY_MISSING',
+    category: 'state',
+    messageTemplate:
+      'Branch review cannot freeze a reviewed subject without a repository identity: {reason}.',
+    recoverySteps: [
+      'Re-run the review from its original content input so the repository identity is resolved again',
+      'Ensure the worktree is a git repository; a repository without a parseable remote resolves to a local identity',
+      'Do not submit reviewVerdict or reviewFindings to recover this state',
+    ],
+  },
+  {
+    code: 'REVIEW_SUBJECT_DIGEST_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'Re-derived review subject does not match the frozen obligation subject ({reason}). The reviewed subject is immutable once frozen.',
+    recoverySteps: [
+      'Do not submit a verdict for a subject that differs from the reviewed one',
+      'Start a new review for the changed content instead of continuing this obligation',
+    ],
+  },
+  {
     code: 'REVIEW_URL_CONTENT_ENCODING_INVALID',
     category: 'input',
     messageTemplate: 'URL review content could not be materialized as strict UTF-8: {reason}.',
@@ -43,8 +64,31 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'Frozen review material integrity verification failed: {reason}. The reviewer was not invoked.',
     recoverySteps: [
+      'Do not re-run the reviewer: the persisted material no longer matches its frozen digest binding',
       'Restore the persisted review obligation and material from a trusted source',
-      'Create a new standalone review obligation for the intended content',
+      'Abort the session if the frozen material cannot be restored from trusted evidence',
+    ],
+  },
+  {
+    code: 'REVIEW_ATTEMPT_UNAVAILABLE',
+    category: 'state',
+    messageTemplate:
+      'No bindable review attempt exists for obligation {obligationId}: {reason}. The frozen review material itself was not invalidated.',
+    recoverySteps: [
+      'Re-run flowguard_review with the original content fields and reviewObligationId to reissue a bindable attempt',
+      'Pass the newly returned reviewerTaskPrompt VERBATIM to the reviewer Task; never reuse a previous prompt',
+      'Do NOT submit reviewVerdict or reviewFindings to recover this state',
+    ],
+  },
+  {
+    code: 'REVIEWER_CONTEXT_UNAVAILABLE',
+    category: 'state',
+    messageTemplate:
+      'The canonical reviewer context could not be materialized for obligation {obligationId}: {reason}. No review attempt was created.',
+    recoverySteps: [
+      'Restore the persisted Discovery basis or resolve the workspace fingerprint, then re-run the review',
+      'A degraded or unchecked Discovery snapshot does NOT block: only a structurally unbuildable reviewer context does',
+      'Do NOT free-compose a reviewer prompt without the canonical context, and do NOT fabricate findings',
     ],
   },
   {
@@ -593,12 +637,35 @@ export const REVIEW_VALIDATION_REASONS = [
     code: 'REVIEWER_OUTPUT_RETRY_EXHAUSTED',
     category: 'state',
     messageTemplate:
-      'Reviewer output failed schema validation after the canonical retry for obligation {obligationId}. The reviewer output cannot be bound.',
+      'Reviewer output could not be bound after the canonical output-repair retry budget was exhausted for obligation {obligationId}. The reviewer output cannot be bound.',
     recoverySteps: [
-      'Report the schema errors to the operator',
+      'Report the rejection reason to the operator',
       'The frozen review subject and material remain unchanged',
       'A terminal block requires operator intervention — the review cannot proceed',
       'Do NOT rewrite the reviewer prompt, fabricate findings, or guess a verdict',
+    ],
+  },
+  {
+    code: 'REVIEW_REPAIR_UNAVAILABLE',
+    category: 'state',
+    messageTemplate:
+      'No output-repair reissue is authorized for obligation {obligationId}: {reason}. A new reviewer attempt cannot be minted for this rejection.',
+    recoverySteps: [
+      'Output-repair reissue requires: pending obligation, latest attempt rejected with an explicit canonically repairable output-contract reason, and remaining frozen repair budget',
+      'Governance, scope, material-integrity, semantic-consistency, and execution failures never authorize a reissue',
+      'The obligation is blocked terminally — operator intervention is required',
+      'Do NOT fabricate findings, guess a verdict, or bypass the frozen subject',
+    ],
+  },
+  {
+    code: 'REPAIR_PROMPT_REQUIRED',
+    category: 'state',
+    messageTemplate:
+      'The reviewer produced schema-invalid output. A fresh canonical repair prompt (from flowguard_review) must be obtained before re-running the reviewer Task. Do NOT re-run the Task with the same stale prompt.',
+    recoverySteps: [
+      'Call flowguard_review with the original content fields and reviewObligationId to obtain a new reviewerTaskPrompt with the validation errors',
+      'Pass the NEW reviewerTaskPrompt to the Task tool — never reuse the old one',
+      'Do NOT fabricate findings, guess a verdict, or call any other authority path',
     ],
   },
   {

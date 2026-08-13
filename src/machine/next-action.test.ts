@@ -242,7 +242,12 @@ describe('resolveNextAction', () => {
         subjectDigest: 'test',
       });
       const state = makeState('READY', {
-        reviewAssurance: { obligations: [obligation], invocations: [], attempts: [] },
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v3' as const,
+          obligations: [obligation],
+          invocations: [],
+          attempts: [],
+        },
       });
       const action = resolveNextAction('READY', state);
       expectAction(action, ACTION_CODES.RUN_REVIEWER_TASK, []);
@@ -258,7 +263,12 @@ describe('resolveNextAction', () => {
         subjectDigest: 'test',
       });
       const state = makeState('REVIEW', {
-        reviewAssurance: { obligations: [obligation], invocations: [], attempts: [] },
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v3' as const,
+          obligations: [obligation],
+          invocations: [],
+          attempts: [],
+        },
       });
       const action = resolveNextAction('REVIEW', state);
       expectAction(action, ACTION_CODES.RUN_REVIEWER_TASK, []);

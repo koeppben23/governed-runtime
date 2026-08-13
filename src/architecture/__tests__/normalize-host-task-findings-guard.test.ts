@@ -1,28 +1,42 @@
 /**
  * @module architecture/normalize-host-task-findings-guard
- * @description Architecture guard: normalizeHostTaskFindings MUST NOT perform
- * semantic repair of reviewer findings. It only stamps host-authoritative
- * provenance (reviewedAt, reviewedBy, attestation). No kind mapping, no
- * revision aliasing, no location reconstruction, no verdict reinterpretation.
+ * @description Architecture guard: prepareReviewerFindingsForValidation (the
+ * single raw→canonical reviewer-findings authority) MUST NOT perform semantic
+ * repair of reviewer findings. It only stamps host-authoritative provenance
+ * (reviewedAt, reviewedBy, attestation constants, challenge identity). No kind
+ * mapping, no revision aliasing, no location reconstruction, no verdict
+ * reinterpretation.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const NORMALIZE_FILE = 'integration/review/evidence-binding.ts';
-const NORMALIZE_FN = 'normalizeHostTaskFindings';
+const NORMALIZE_FILE = 'integration/review/enforcement/prepare-findings.ts';
+const NORMALIZE_FN = 'prepareReviewerFindingsForValidation';
 
-describe('normalizeHostTaskFindings must not perform semantic repair', () => {
+describe('prepareReviewerFindingsForValidation must not perform semantic repair', () => {
   const content = readFileSync(join(process.cwd(), 'src', NORMALIZE_FILE), 'utf8');
-  // Extract the function body: from 'function normalizeHostTaskFindings' to the next 'function' or 'export' at the same indentation level
   const fnStart = content.indexOf(`function ${NORMALIZE_FN}(`);
   expect(fnStart).toBeGreaterThan(-1);
+
+  // The signature contains the destructured `input: { ... }` object, so body
+  // extraction must match the full declaration (through the return type) and
+  // start brace-tracking at the opening body brace — a naive `) {` search
+  // matches `if (...) {` inside the body itself.
+  const declaration = content.match(
+    new RegExp(`function ${NORMALIZE_FN}\\([\\s\\S]*?\\):\\s*\\w+\\s*\\{`),
+  );
+  expect(declaration).not.toBeNull();
+  const match = declaration as RegExpMatchArray;
+  const matchIndex = match.index ?? -1;
+  expect(matchIndex).toBeGreaterThan(-1);
+  const bodyBrace = matchIndex + match[0].length - 1;
 
   // Find the function body by tracking brace depth
   let depth = 0;
   let fnEnd = -1;
   let inFn = false;
-  for (let i = fnStart; i < content.length; i++) {
+  for (let i = bodyBrace; i < content.length; i++) {
     if (content[i] === '{') {
       depth++;
       inFn = true;
@@ -36,7 +50,7 @@ describe('normalizeHostTaskFindings must not perform semantic repair', () => {
   }
   expect(fnEnd).toBeGreaterThan(-1);
 
-  const fnBody = content.slice(fnStart, fnEnd);
+  const fnBody = content.slice(bodyBrace, fnEnd);
 
   it('does not map kind values', () => {
     // Must not contain kind-repair logic

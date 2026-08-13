@@ -92,6 +92,7 @@ function strictFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings
 }
 
 type ReviewAssuranceFixture = {
+  assuranceSchemaVersion: 'review-assurance.v3';
   attempts: [];
   obligations: ReviewObligation[];
   invocations: ReviewInvocationEvidence[];
@@ -101,6 +102,7 @@ function strictAssuranceFixture(
   findings: ReviewFindings = strictFindings(),
 ): ReviewAssuranceFixture {
   return {
+    assuranceSchemaVersion: 'review-assurance.v3' as const,
     attempts: [],
     obligations: [
       {
@@ -111,6 +113,7 @@ function strictAssuranceFixture(
         planVersion: 1,
         criteriaVersion: REVIEW_CRITERIA_VERSION,
         mandateDigest: REVIEW_MANDATE_DIGEST,
+        maxReviewerOutputRepairAttempts: 1,
         createdAt: new Date().toISOString(),
         pluginHandshakeAt: new Date().toISOString(),
         status: 'fulfilled' as const,
@@ -982,7 +985,21 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
       enforcementState,
       'flowguard_plan',
       {},
-      JSON.stringify({ next: `${REVIEW_REQUIRED_PREFIX}: iteration=0 planVersion=1` }),
+      JSON.stringify({
+        next: `${REVIEW_REQUIRED_PREFIX}: iteration=0 planVersion=1`,
+        // Canonical production signal shape: obligation identity + host
+        // attestation constants.
+        reviewAttemptId: `att-${assurance.obligations[0]!.obligationId}`,
+        reviewObligationId: assurance.obligations[0]!.obligationId,
+        requiredReviewAttestation: {
+          reviewedBy: 'flowguard-reviewer',
+          mandateDigest: assurance.obligations[0]!.mandateDigest,
+          criteriaVersion: assurance.obligations[0]!.criteriaVersion,
+          toolObligationId: assurance.obligations[0]!.obligationId,
+          iteration: 0,
+          planVersion: 1,
+        },
+      }),
       now,
     );
     onTaskToolAfter(
@@ -1009,6 +1026,8 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
             ordinal: 0,
             childSessionId: 'ses_child',
             status: 'created',
+            origin: { kind: 'initial' } as const,
+            repositoryDiscovery: { kind: 'not_applicable' } as const,
             createdAt: now,
           },
         ],

@@ -45,8 +45,7 @@ import {
 import { resolvePolicyFromSnapshot } from '../../config/policy.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import { defaultReasonRegistry } from '../../config/reasons.js';
-import { buildBlockedDiagnostics, formatDiagnosticCard } from '../../diagnostics/index.js';
-import type { RuntimeDiagnostics } from '../../diagnostics/index.js';
+import { buildBlockedPresentation } from './blocked-presentation.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
 import { PHASE_LABELS, buildProductNextAction } from '../../presentation/index.js';
 import { renderMarkdown, lookupReasonCopy } from '../../presentation/index.js';
@@ -135,23 +134,6 @@ export function formatEval(ev: EvalResult): string {
 function headlineFields(code: string): { headline?: string } {
   const copy = lookupReasonCopy(code);
   return copy?.headline ? { headline: copy.headline } : {};
-}
-
-/** Blocked-response fields: structured diagnostics and rendered markdown. */
-function buildBlockedPresentation(
-  code: string,
-  message: string,
-  detail: Record<string, string>,
-): {
-  diagnostics?: RuntimeDiagnostics;
-  presentation?: { markdown: string };
-} {
-  const diagnostics = buildBlockedDiagnostics(code, detail);
-  if (!diagnostics) return {};
-  return {
-    diagnostics,
-    presentation: { markdown: formatDiagnosticCard({ code, message, diagnostics }) },
-  };
 }
 
 /**
@@ -329,16 +311,6 @@ export function formatAutoAdvanceOverflow(overflow: AutoAdvanceOverflow): string
     quickFix: info.quickFix,
     autoAdvanceOverflow: { phase: overflow.phase, limit: overflow.limit },
   });
-}
-
-/** Wrap any thrown error into a structured JSON string via the registry. */
-export function formatError(err: unknown): string {
-  const message = err instanceof Error ? err.message : String(err);
-  const code =
-    err instanceof Error && 'code' in err
-      ? String((err as { code: unknown }).code)
-      : 'INTERNAL_ERROR';
-  return formatBlocked(code, { message });
 }
 
 // ─── Workspace Helpers ────────────────────────────────────────────────────────

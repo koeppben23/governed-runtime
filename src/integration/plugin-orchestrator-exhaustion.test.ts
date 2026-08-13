@@ -69,6 +69,7 @@ function buildState(strictEnforcement: boolean): SessionState {
       reviewOutputPolicy: 'structured_required',
     },
     reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v3' as const,
       obligations: [
         {
           obligationId: OBLIGATION_ID,
@@ -78,6 +79,7 @@ function buildState(strictEnforcement: boolean): SessionState {
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
+          maxReviewerOutputRepairAttempts: 1,
           createdAt: NOW,
           pluginHandshakeAt: null,
           status: 'pending',
@@ -112,6 +114,7 @@ function buildAlreadyBlockedState(): SessionState {
       reviewOutputPolicy: 'structured_required',
     },
     reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v3' as const,
       obligations: [
         {
           obligationId: OBLIGATION_ID,
@@ -121,6 +124,7 @@ function buildAlreadyBlockedState(): SessionState {
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
+          maxReviewerOutputRepairAttempts: 1,
           createdAt: NOW,
           pluginHandshakeAt: NOW,
           status: 'blocked',
@@ -439,6 +443,7 @@ describe('BUG-07: obligation blocked after total invocation failure', () => {
           reviewInvocationPolicy: 'host_task_required',
         },
         reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v3' as const,
           obligations: [
             {
               obligationId: OBLIGATION_ID,
@@ -448,6 +453,7 @@ describe('BUG-07: obligation blocked after total invocation failure', () => {
               planVersion: 1,
               criteriaVersion: REVIEW_CRITERIA_VERSION,
               mandateDigest: REVIEW_MANDATE_DIGEST,
+              maxReviewerOutputRepairAttempts: 1,
               createdAt: NOW,
               pluginHandshakeAt: null,
               status: 'pending',

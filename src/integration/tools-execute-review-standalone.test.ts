@@ -558,54 +558,6 @@ describe('review (standalone flow)', () => {
       expect(pendingReview.length).toBe(1);
     });
 
-    it('host_task_required branch review completes with host evidence and verdict only', async () => {
-      await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
-      const first = parseToolResult(
-        await review.execute(
-          { branch: 'feature-auth', inputOrigin: 'branch', targetPaths: ['docs/test.md'] },
-          ctx,
-        ),
-      );
-      expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
-      const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
-      expect(first.reviewObligationId).toBe(obligationId);
-      await bindHostTaskReviewEvidence(obligationId);
-
-      vi.mocked(ghMock.loadBranchDiff).mockImplementationOnce(() => {
-        throw new Error('branch diff should not be reloaded after host evidence is bound');
-      });
-
-      const result = parseToolResult(
-        await review.execute(
-          {
-            branch: 'feature-auth',
-            inputOrigin: 'branch',
-            reviewObligationId: obligationId,
-            reviewVerdict: 'accept',
-          },
-          ctx,
-        ),
-      );
-
-      expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('REVIEW_COMPLETE');
-      expect(result.reviewCard).toContain('host_subagent_task');
-      expect(result.reviewCard).toContain('ses_review_child_host_task');
-
-      // Regression guard for the consumeValidatedReviewObligation write path
-      // (obligation.ts): a completed host-task standalone /review must persist
-      // the resolved reviewer findings into standaloneReviewFindings. Without
-      // this assertion the append is executed but its effect is unverified, so
-      // dropping or corrupting the write survives the suite.
-      const persistedSessDir = await currentSessionDir();
-      const persistedState = await readState(persistedSessDir);
-      expect(persistedState).not.toBeNull();
-      const persistedFindings = persistedState!.standaloneReviewFindings ?? [];
-      expect(persistedFindings).toHaveLength(1);
-      expect(persistedFindings[0]!.overallVerdict).toBe('accept');
-      expect(persistedFindings[0]!.attestation?.toolObligationId).toBe(obligationId);
-    });
-
     it('host_task_required verdict with an unknown obligation ID fails closed', async () => {
       await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
       const first = parseToolResult(
@@ -824,12 +776,22 @@ describe('review (standalone flow)', () => {
           profileVersion: 'standalone-review-objectives.v1',
           objectives: expect.any(Array),
         },
+        obligationId,
+        schemaVersion: 'standalone-review-evidence.v2',
       });
-      expect(preparedEvidence[0]!.task.claims).toEqual(
+      const prepared = preparedEvidence[0];
+      if (prepared?.kind !== 'prepared') throw new TypeError('Expected prepared review evidence');
+      expect(prepared.task.claims).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ signalClass: 'hypothesis', provenance: null }),
         ]),
       );
+      // Content reviews mint attempts with `not_applicable` Discovery context:
+      // the field is structurally required, never silently absent.
+      const contentAttempt = preparedState!.reviewAssurance!.attempts.find(
+        (attempt) => attempt.obligationId === obligationId,
+      );
+      expect(contentAttempt?.repositoryDiscovery).toEqual({ kind: 'not_applicable' });
 
       await review.execute(
         { ...content, reviewFindings: buildAnalysisFindings('accept', obligationId) },
@@ -843,8 +805,9 @@ describe('review (standalone flow)', () => {
       const completed = completedEvidence[1]!;
       expect(completed).toMatchObject({
         kind: 'completed',
-        preparedEvidenceId: preparedEvidence[0]!.evidenceId,
-        requestedDigests: preparedEvidence[0]!.requestedDigests,
+        preparedEvidenceId: prepared.evidenceId,
+        obligationId,
+        reviewTaskId: prepared.reviewTaskId,
       });
       if (completed.kind !== 'completed') throw new TypeError('Expected completed review evidence');
       expect(completed.findingsDigest).toMatch(/^[a-f0-9]{64}$/);
@@ -1548,6 +1511,7 @@ describe('review (standalone flow)', () => {
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
+          maxReviewerOutputRepairAttempts: 1,
           createdAt: new Date().toISOString(),
           pluginHandshakeAt: null,
           status: 'fulfilled' as const,

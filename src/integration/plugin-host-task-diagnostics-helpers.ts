@@ -22,16 +22,41 @@ export const NOW = '2026-05-10T12:00:00.000Z';
 export const LATER = '2026-05-10T12:01:00.000Z';
 export const SESSION_ID = 'ses_parent_001';
 export const CHILD_SESSION_ID = 'ses_child_001';
+export const MODE_A_OBLIGATION_ID = '44444444-4444-4444-8444-444444444444';
 
 // ─── Factory Functions ───────────────────────────────────────────────────────
 
-/** Build a Mode A response with INDEPENDENT_REVIEW_REQUIRED containing iteration and planVersion. */
-export function modeAResponse(iteration = 0, planVersion = 1): string {
+/**
+ * Build a Mode A response with INDEPENDENT_REVIEW_REQUIRED containing iteration
+ * and planVersion. `obligationId` defaults to a realistic fixture obligation
+ * identity so the pending review satisfies the host attestation-constants
+ * invariant; pass `null` to deliberately model a signal without obligation/
+ * host attestation.
+ */
+export function modeAResponse(
+  iteration = 0,
+  planVersion = 1,
+  obligationId: string | null = MODE_A_OBLIGATION_ID,
+): string {
   return JSON.stringify({
     phase: 'PLAN',
     status: `Plan submitted (v${planVersion}).`,
     selfReviewIteration: iteration,
     reviewMode: 'subagent',
+    ...(obligationId
+      ? {
+          reviewAttemptId: `att-${obligationId}`,
+          reviewObligationId: obligationId,
+          requiredReviewAttestation: {
+            reviewedBy: REVIEWER_SUBAGENT_TYPE,
+            mandateDigest: REVIEW_MANDATE_DIGEST,
+            criteriaVersion: REVIEW_CRITERIA_VERSION,
+            toolObligationId: obligationId,
+            iteration,
+            planVersion,
+          },
+        }
+      : {}),
     next:
       `${REVIEW_REQUIRED_PREFIX}: Call the flowguard-reviewer subagent via Task tool. ` +
       `Use subagent_type "flowguard-reviewer" with a prompt that includes: ` +
@@ -133,6 +158,8 @@ export function attemptFor(
     ordinal: 0,
     childSessionId,
     status: 'created',
+    origin: { kind: 'initial' },
+    repositoryDiscovery: { kind: 'not_applicable' },
     createdAt: NOW,
     ...overrides,
   };

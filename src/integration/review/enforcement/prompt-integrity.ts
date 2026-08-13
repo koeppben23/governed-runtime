@@ -9,6 +9,8 @@
  * depends on their internals.
  */
 
+import { createHash } from 'node:crypto';
+
 import {
   type SessionEnforcementState,
   type PendingReview,
@@ -17,19 +19,7 @@ import {
 } from './types.js';
 import { promptContainsValue } from './extraction.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../tool-names.js';
-import { ReviewFindings } from '../../../state/evidence-review.js';
-import { validateReviewFindingsConsistency } from './findings-consistency.js';
-
-/** Inlined from enforcement.ts to avoid circular import. */
-function hasUsableCapture(pending: PendingReview): boolean {
-  if (pending.subagentRecord?.terminationReason === 'step_exhausted') return false;
-  const parsed = ReviewFindings.safeParse(pending.capturedFindings?.rawFindings);
-  if (!parsed.success) return false;
-  return validateReviewFindingsConsistency({
-    overallVerdict: parsed.data.overallVerdict,
-    blockingIssueCount: parsed.data.blockingIssues.length,
-  }).ok;
-}
+import { isPendingCaptureUsable } from './prepare-findings.js';
 /**
  * Enforce prompt integrity before allowing a subagent call (Level 3).
  * Called in tool.execute.before for task calls with subagent_type=flowguard-reviewer.
@@ -77,6 +67,33 @@ function checkReviewContext(
   return { hasMatch: false, missingFields };
 }
 
+/**
+ * Structural host-context defect detected at the signal→pending transition:
+ * the REVIEW_REQUIRED signal named an obligation without host attestation
+ * constants, or named no obligation at all. This is NEVER a reviewer-output
+ * failure — no reviewer invocation can repair it, so dispatch is blocked
+ * before any retry/repair logic can run. Recovery: re-issue the originating
+ * FlowGuard command so a fresh canonical signal replaces the defective
+ * pending (see trackRequiredReview).
+ */
+function structuralContextBlock(state: SessionEnforcementState): EnforcementResult | null {
+  const structuralFailure = [...state.pendingReviews.values()].find(
+    (p) => (p.enforcementFailure ?? null) !== null,
+  );
+  if (!structuralFailure) return null;
+  return {
+    allowed: false,
+    code: 'HOST_REVIEW_CONTEXT_UNAVAILABLE',
+    reason:
+      `FlowGuard enforcement: the canonical review signal for obligation ` +
+      `${structuralFailure.obligationId ?? 'unknown'} is structurally incomplete ` +
+      `(${structuralFailure.enforcementFailure}) and cannot be repaired by a reviewer invocation. ` +
+      `Re-run the originating FlowGuard command to re-issue the canonical review signal ` +
+      `carrying requiredReviewAttestation.`,
+  };
+}
+
+// eslint-disable-next-line complexity
 export function enforceBeforeSubagentCall(
   state: SessionEnforcementState,
   taskArgs: Record<string, unknown>,
@@ -86,10 +103,14 @@ export function enforceBeforeSubagentCall(
   if (subagentType !== REVIEWER_SUBAGENT_TYPE) return { allowed: true };
 
   const prompt = typeof taskArgs.prompt === 'string' ? taskArgs.prompt : '';
+
+  const structuralBlock = structuralContextBlock(state);
+  if (structuralBlock) return structuralBlock;
+
   // Include pending reviews awaiting capture: never called, or called but
   // capture is unusable (schema-invalid) and a retry is still allowed.
   const unfilledPendingReviews = [...state.pendingReviews.values()].filter(
-    (p) => !p.subagentCalled || !hasUsableCapture(p),
+    (p) => !p.subagentCalled || !isPendingCaptureUsable(p),
   );
   if (unfilledPendingReviews.length === 0) return { allowed: true };
 
@@ -110,6 +131,38 @@ export function enforceBeforeSubagentCall(
         `output and the retry budget (1 retry) is exhausted. The review cannot ` +
         `proceed — report this to the operator.`,
     };
+  }
+
+  // Check repair-prompt requirement: after schema-invalid output, a
+  // fresh canonical repair prompt must be issued by flowguard_review.
+  // Validation uses a host-issued opaque SHA256 digest — the parent
+  // cannot fabricate the exact repair prompt bytes.
+  const needsRepair = unfilledPendingReviews.filter((p) => p.repairPromptRequired);
+  if (needsRepair.length > 0) {
+    // A repair prompt must have been issued (expectedRepairPromptDigest set)
+    // AND the task prompt must match its digest exactly.
+    const promptDigest = createHash('sha256').update(prompt, 'utf8').digest('hex');
+    const matchesRepair = needsRepair.some(
+      (p) => p.expectedRepairPromptDigest !== null && p.expectedRepairPromptDigest === promptDigest,
+    );
+    if (!matchesRepair) {
+      const hasDigest = needsRepair.some((p) => p.expectedRepairPromptDigest !== null);
+      return {
+        allowed: false,
+        code: 'REPAIR_PROMPT_REQUIRED',
+        reason: hasDigest
+          ? `FlowGuard enforcement: the reviewer produced schema-invalid output. ` +
+            `The repair prompt's cryptographic digest does not match. ` +
+            `Call flowguard_review to obtain a fresh canonical repair prompt, ` +
+            `then pass it VERBATIM to the Task tool — do not modify a single byte.`
+          : `FlowGuard enforcement: the reviewer produced schema-invalid output. ` +
+            `A fresh canonical repair prompt must be obtained from flowguard_review ` +
+            `before re-running the reviewer Task. Call flowguard_review first, ` +
+            `then use the NEW reviewerTaskPrompt — never reuse the stale one.`,
+      };
+    }
+    // Note: repairPromptRequired is cleared in onTaskToolAfter after the
+    // task runs — never in this pre-execution validator (fail-closed).
   }
 
   if (prompt.length < MIN_SUBAGENT_PROMPT_LENGTH) {

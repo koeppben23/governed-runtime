@@ -192,6 +192,7 @@ async function inject(
   const aug: SessionState = {
     ...state,
     reviewAssurance: {
+      assuranceSchemaVersion: state.reviewAssurance!.assuranceSchemaVersion,
       obligations: state.reviewAssurance!.obligations.map((o) =>
         o.obligationId === obl.obligationId ? newObl : o,
       ),

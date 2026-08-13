@@ -99,12 +99,58 @@ export interface PendingReview {
   /** Number of times the reviewer was re-invoked for this obligation. */
   retryCount: number;
   /**
-   * Zod schema validation errors from the most recent failed reviewer
-   * output. Set when capturedFindings is non-null but fails
-   * ReviewFindings.safeParse. Used to generate the canonical retry prompt
-   * so the reviewer can fix specific errors instead of guessing.
+   * Host-issued attestation constants (mandateDigest/criteriaVersion) captured
+   * from the review-requirement signal (requiredReviewAttestation, top-level
+   * for /review or under reviewInvocation for plan/implement/architecture).
+   *
+   * Storage-form optional for fixture compatibility only; semantics are
+   * enforced in enforcement.ts: a bindable pending (obligationId != null) MUST
+   * carry them. A bindable pending without them is a structural host-context
+   * defect (see `enforcementFailure`), never a reviewer-output failure.
+   */
+  hostAttestationConstants?: {
+    readonly mandateDigest: string;
+    readonly criteriaVersion: string;
+  } | null;
+  /**
+   * Structural host-context defect detected at the signal→pending transition
+   * (trackRequiredReview) or, as defense-in-depth, at the capture transition.
+   * NOT a reviewer-output failure — a reviewer invocation can never repair it,
+   * so such pendings are excluded from re-arm/repair and block reviewer
+   * dispatch explicitly (HOST_REVIEW_CONTEXT_UNAVAILABLE) BEFORE the first
+   * Task runs.
+   *
+   * - 'host_attestation_constants_missing': the REVIEW_REQUIRED signal named an
+   *   obligation but carried no requiredReviewAttestation constants.
+   * - 'host_review_obligation_missing': the REVIEW_REQUIRED signal carried no
+   *   obligation identity at all, although every canonical emitter creates the
+   *   obligation before emitting the signal.
+   */
+  enforcementFailure?:
+    'host_attestation_constants_missing' | 'host_review_obligation_missing' | null;
+  /**
+   * Reviewer-actionable issues from the most recent failed capture, computed
+   * against the host-normalized canonical candidate — the same
+   * `prepareReviewerFindingsForValidation` authority the bind gate uses.
+   * Used to generate the canonical retry prompt so the reviewer can fix
+   * specific errors instead of guessing. Never set for structural
+   * host-context defects.
    */
   lastSchemaErrors: readonly string[] | null;
+  /**
+   * Whether a fresh canonical repair prompt (from flowguard_review) is
+   * required before the next reviewer Task invocation. Set to true when
+   * the reviewer produces schema-invalid output.
+   */
+  repairPromptRequired: boolean;
+  /**
+   * SHA256 digest of the exact canonical repair prompt issued by
+   * flowguard_review. Set when handleHostTaskPolicy generates a retry
+   * prompt. enforceBeforeSubagentCall validates this digest against the
+   * task prompt to prove the prompt was issued by FlowGuard, not
+   * fabricated by the parent.
+   */
+  expectedRepairPromptDigest: string | null;
 }
 
 /** Session-level enforcement state. */
@@ -225,21 +271,6 @@ export interface ReviewAttemptResult {
   readonly reasonCode?: string;
   readonly diagnostics?: Record<string, unknown>;
 }
-
-/** Retry budget configuration per phase. */
-export interface ReviewerRetryBudget {
-  readonly capture: number;
-  readonly extraction: number;
-  readonly validation: number;
-  readonly total: number;
-}
-
-export const DEFAULT_RETRY_BUDGET: ReviewerRetryBudget = {
-  capture: 2,
-  extraction: 2,
-  validation: 1,
-  total: 3,
-};
 
 /**
  * Structured result from buildHostTaskEvidence.

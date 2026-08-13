@@ -100,10 +100,13 @@ vi.mock('./helpers.js', () => ({
   resolvePolicyFromState: mocks.resolvePolicyFromState,
   createPolicyContext: mocks.createPolicyContext,
   formatBlocked: mocks.formatBlocked,
-  formatError: mocks.formatError,
   appendNextAction: mocks.appendNextAction,
   writeStateWithArtifacts: mocks.writeStateWithArtifacts,
   formatEval: mocks.formatEval,
+}));
+
+vi.mock('./error-format.js', () => ({
+  formatError: mocks.formatError,
 }));
 
 vi.mock('../../machine/commands.js', () => ({

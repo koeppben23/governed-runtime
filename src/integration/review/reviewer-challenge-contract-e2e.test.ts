@@ -287,8 +287,9 @@ describe('the emitted prompt shape satisfies the canonical reviewer input contra
       challengeId: '99999999-9999-4999-8999-999999999999',
     });
 
-    expect(parsed.success).toBe(true);
-    expect(parsed.data).not.toHaveProperty('challengeId');
+    // Strict grammar: the foreign key is a schema violation, never silently
+    // stripped into host-canonical shape.
+    expect(parsed.success).toBe(false);
   });
 
   it('REGRESSION — the input contract accepts a pass/fail implementation outcome', () => {

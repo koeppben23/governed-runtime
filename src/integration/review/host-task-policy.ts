@@ -6,10 +6,12 @@
  * subagent call instead of the SDK-driven path.
  */
 
+import { createHash } from 'node:crypto';
 import { parseToolResult, getToolOutput } from '../plugin-helpers.js';
 import { extractContentMeta } from './enforcement/extraction.js';
 import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
 import { renderReviewContext, renderReviewerTaskPrompt } from './prompt-builders.js';
+import { rebuildBlockedPresentation } from '../tools/blocked-presentation.js';
 import {
   verifyFrozenReviewerContext,
   type FrozenReviewerContext,
@@ -26,10 +28,11 @@ import {
   findReviewObligationById,
   ensureReviewAssurance,
   findBindableAttempt,
+  latestReviewMaterial,
 } from './assurance.js';
 import { updateObligation } from './obligation-state.js';
 import type { SessionState } from '../../state/schema.js';
-import type { ReviewObligation } from '../../state/evidence.js';
+import type { RepositoryDiscoverySnapshot, ReviewObligation } from '../../state/evidence.js';
 import { indexMarkdownSections } from '../../shared/markdown-sections.js';
 import type { OrchestratorDeps, ToolCallEvent } from './pipeline-types.js';
 
@@ -70,7 +73,16 @@ interface HostTaskOutputInput {
    */
   readonly artifactContext: readonly string[];
   readonly frozenReviewerContext: FrozenReviewerContext | null;
-  readonly materialIntegrityFailure: string | null;
+  /**
+   * Why no reviewer context could be handed out, when that is the case.
+   *
+   * `material_integrity` means the persisted bytes or a frozen digest binding
+   * are genuinely invalid — the reviewer must NOT be re-run. `attempt_missing`
+   * means the material verified fine but no attempt can currently accept a
+   * binding; that is a recoverable retry state and must never be reported as an
+   * integrity failure, because the recovery paths are opposites.
+   */
+  readonly reviewerContextFailure: ReviewerContextFailure | null;
   /**
    * Schema validation errors from a prior failed reviewer invocation for
    * the same obligation. When non-null and non-empty, the canonical retry
@@ -78,20 +90,74 @@ interface HostTaskOutputInput {
    * rather than guessing.
    */
   readonly retrySchemaErrors: readonly string[] | null;
+  /**
+   * Attempt-bound repository Discovery snapshot of the attempt the reviewer
+   * will be bound to. For repository reviews this renders the canonical
+   * Discovery envelope; null for not_applicable/content attempts.
+   */
+  readonly repositoryDiscoverySnapshot: RepositoryDiscoverySnapshot | null;
+}
+
+/**
+ * Why the host could not hand a reviewer context to the agent.
+ *
+ * Kept as a discriminated union so the two states can never collapse into one
+ * output: an integrity failure forbids re-running the reviewer, while a missing
+ * attempt is resolved precisely BY re-running the review call.
+ */
+type ReviewerContextFailure =
+  | { readonly kind: 'material_integrity'; readonly reason: string }
+  | { readonly kind: 'attempt_missing'; readonly obligationId: string; readonly reason: string };
+
+function applyReviewerContextFailure(
+  result: Record<string, unknown>,
+  failure: ReviewerContextFailure,
+): string {
+  if (failure.kind === 'material_integrity') {
+    result.code = 'REVIEW_MATERIAL_INTEGRITY_FAILED';
+    result.message = `Frozen review material integrity verification failed: ${failure.reason}`;
+    result.recovery = [
+      'Do not re-run the reviewer: the persisted material no longer matches its frozen digest binding',
+      'Restore the persisted review obligation and material from a trusted source',
+      'Abort the session if the frozen material cannot be restored from trusted evidence',
+    ];
+    return JSON.stringify(refreshBlockedPresentation(result));
+  }
+  result.code = 'REVIEW_ATTEMPT_UNAVAILABLE';
+  result.message =
+    `No bindable review attempt exists for obligation ${failure.obligationId}: ${failure.reason}. ` +
+    `The frozen review material itself was not invalidated.`;
+  result.recovery = [
+    'Re-run flowguard_review with the original content fields and reviewObligationId to reissue a bindable attempt',
+    'Pass the newly returned reviewerTaskPrompt VERBATIM to the reviewer Task; never reuse a previous prompt',
+    'Do NOT submit reviewVerdict or reviewFindings to recover this state',
+  ];
+  return JSON.stringify(result);
+}
+
+/**
+ * Re-derive the blocked presentation from the FINAL canonical code after a
+ * rewrite so a response never carries two different reason codes. The
+ * presentation authority is the shared blocked-presentation builder; the
+ * canonical `code`/`recovery` fields drive it.
+ */
+function refreshBlockedPresentation(result: Record<string, unknown>): Record<string, unknown> {
+  const code = typeof result.code === 'string' ? result.code : 'HOST_SUBAGENT_TASK_REQUIRED';
+  const rebuilt = rebuildBlockedPresentation(code, String(result.message ?? ''));
+  const refreshed: Record<string, unknown> = { ...result };
+  if (rebuilt.presentation) refreshed.presentation = rebuilt.presentation;
+  else delete refreshed.presentation;
+  if (rebuilt.diagnostics) refreshed.diagnostics = rebuilt.diagnostics;
+  else delete refreshed.diagnostics;
+  return refreshed;
 }
 
 function buildHostTaskPolicyOutput(input: HostTaskOutputInput): string | null {
   const { originalOutput, policy, childSessionId } = input;
   const result = parseToolResult(originalOutput);
   if (!result || Array.isArray(result)) return null;
-  if (input.materialIntegrityFailure) {
-    result.code = 'REVIEW_MATERIAL_INTEGRITY_FAILED';
-    result.message = `Frozen review material integrity verification failed: ${input.materialIntegrityFailure}`;
-    result.recovery = [
-      'Restore the persisted review obligation and material from a trusted source',
-      'Create a new standalone review obligation for the intended content',
-    ];
-    return JSON.stringify(result);
+  if (input.reviewerContextFailure) {
+    return applyReviewerContextFailure(result, input.reviewerContextFailure);
   }
   if (childSessionId) {
     result.next =
@@ -150,6 +216,7 @@ function buildReviewerTaskPromptOrNull(
     readonly artifactContext: readonly string[];
     readonly frozenReviewerContext: FrozenReviewerContext | null;
     readonly retrySchemaErrors: readonly string[] | null;
+    readonly repositoryDiscoverySnapshot: RepositoryDiscoverySnapshot | null;
   },
 ): string | null {
   if (!attestationMeta || ctx?.iteration == null) return null;
@@ -165,6 +232,7 @@ function buildReviewerTaskPromptOrNull(
     artifactContext: opts.artifactContext,
     frozenReviewerContext: opts.frozenReviewerContext ?? undefined,
     retrySchemaErrors: opts.retrySchemaErrors ?? undefined,
+    repositoryDiscoverySnapshot: opts.repositoryDiscoverySnapshot,
   });
 }
 
@@ -201,6 +269,7 @@ function buildHostTaskBlockedOutput(
     artifactContext: input.artifactContext,
     frozenReviewerContext: input.frozenReviewerContext,
     retrySchemaErrors: input.retrySchemaErrors,
+    repositoryDiscoverySnapshot: input.repositoryDiscoverySnapshot,
   });
   const copyPromptStr = reviewerTaskPrompt
     ? ` A ready-to-use reviewer prompt is provided in the reviewerTaskPrompt field — pass it ` +
@@ -264,7 +333,7 @@ function buildHostTaskBlockedOutput(
     recovery: [RECOVERY_HOST_SUBAGENT_TASK],
   };
   applyBindableAttemptId(result, input.attemptId);
-  return JSON.stringify(result);
+  return JSON.stringify(refreshBlockedPresentation(result));
 }
 
 /**
@@ -459,11 +528,50 @@ function buildHostTaskOutputInput(
     proofContext: buildReviewerProofContext(sessionState),
     artifactContext: obligation ? buildReviewerArtifactContext(sessionState, obligation) : [],
     frozenReviewerContext,
-    materialIntegrityFailure:
-      obligation?.obligationType === 'review' && !frozenReviewerContext
-        ? 'persisted material or its frozen digest binding is missing or invalid'
-        : null,
+    reviewerContextFailure: resolveReviewerContextFailure(
+      sessionState,
+      obligation,
+      bindableAttempt,
+      frozenReviewerContext,
+    ),
     retrySchemaErrors,
+    repositoryDiscoverySnapshot:
+      bindableAttempt?.repositoryDiscovery.kind === 'repository'
+        ? bindableAttempt.repositoryDiscovery.snapshot
+        : null,
+  };
+}
+
+/**
+ * Classify why no reviewer context is available for a standalone content review.
+ *
+ * The persisted material is looked up per OBLIGATION, not per bindable attempt.
+ * Attempt records carry the material forward, so a rejected or staled attempt
+ * still holds intact bytes; deriving integrity purely from the bindable attempt
+ * reported an integrity breach whenever the previous attempt had merely been
+ * spent, and sent the agent down an unrecoverable restore path.
+ */
+function resolveReviewerContextFailure(
+  sessionState: SessionState,
+  obligation: ReviewObligation | null,
+  bindableAttempt: ReturnType<typeof findBindableAttempt>,
+  frozenReviewerContext: FrozenReviewerContext | null,
+): ReviewerContextFailure | null {
+  if (obligation?.obligationType !== 'review' || frozenReviewerContext) return null;
+  const persistedMaterial = latestReviewMaterial(
+    ensureReviewAssurance(sessionState.reviewAssurance),
+    obligation.obligationId,
+  );
+  const materialCheck = verifyFrozenReviewerContext(obligation, persistedMaterial);
+  if (materialCheck.kind === 'blocked') {
+    return { kind: 'material_integrity', reason: materialCheck.reason };
+  }
+  return {
+    kind: 'attempt_missing',
+    obligationId: obligation.obligationId,
+    reason: bindableAttempt
+      ? 'the bindable attempt carries no persisted review material'
+      : 'every attempt for this obligation is already bound, rejected, staled, or expired',
   };
 }
 
@@ -488,7 +596,7 @@ function buildHostTaskAttestationMeta(
   };
 }
 
-// eslint-disable-next-line max-params
+// eslint-disable-next-line max-params, complexity
 export async function handleHostTaskPolicy(
   deps: OrchestratorDeps,
   sessionState: SessionState,
@@ -515,6 +623,12 @@ export async function handleHostTaskPolicy(
   );
   const retrySchemaErrors = pendingReview?.lastSchemaErrors ?? null;
 
+  // Store the repair prompt digest so enforceBeforeSubagentCall can
+  // verify the prompt was issued by FlowGuard, not fabricated.
+  if (pendingReview && retrySchemaErrors && retrySchemaErrors.length > 0) {
+    pendingReview.expectedRepairPromptDigest = null; // clear stale
+  }
+
   const rawOutput = getToolOutput(output);
   const mutated = buildHostTaskPolicyOutput(
     buildHostTaskOutputInput(
@@ -525,6 +639,22 @@ export async function handleHostTaskPolicy(
       retrySchemaErrors,
     ),
   );
-  if (mutated) output.output = mutated;
+  if (mutated) {
+    output.output = mutated;
+    // Set the repair prompt digest so enforceBeforeSubagentCall can
+    // verify the prompt was host-issued, not parent-fabricated.
+    if (pendingReview && retrySchemaErrors && retrySchemaErrors.length > 0) {
+      const result = parseToolResult(mutated);
+      const rtp =
+        result && !Array.isArray(result) && typeof result === 'object'
+          ? result.reviewerTaskPrompt
+          : undefined;
+      if (typeof rtp === 'string') {
+        pendingReview.expectedRepairPromptDigest = createHash('sha256')
+          .update(rtp, 'utf8')
+          .digest('hex');
+      }
+    }
+  }
   return true;
 }

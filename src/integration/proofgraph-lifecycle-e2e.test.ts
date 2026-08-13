@@ -946,6 +946,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
         claimDeclarations: { flow: 'plan', version: 'v2', claims: [CRITICAL_CLAIM] },
       },
       reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
         obligations: [
           {
             obligationId,
@@ -955,6 +956,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             planVersion: 1,
             criteriaVersion: 'p40-v1',
             mandateDigest: 'e78b6bab98fcf033874fcc07e17d87aaff73fca47b1a28209e5dd4a1a28eedb7',
+            maxReviewerOutputRepairAttempts: 1,
             createdAt: FIXED_TIME,
             pluginHandshakeAt: FIXED_TIME,
             status: 'fulfilled' as const,
@@ -998,6 +1000,8 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             childSessionId: 'ses_child',
             ordinal: 0,
             status: 'bound' as const,
+            origin: { kind: 'initial' } as const,
+            repositoryDiscovery: { kind: 'not_applicable' } as const,
             createdAt: FIXED_TIME,
           },
         ],

@@ -11,7 +11,8 @@ import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logge
 import { executeHydrate } from '../../rails/hydrate.js';
 import { REASON_SESSION_LOCK_CONTENDED } from '../../shared/flowguard-identifiers.js';
 import { PolicyModeSchema } from '../../state/policy-mode.js';
-import { formatBlocked, formatError, getWorktree, withSessionWriteTransaction } from './helpers.js';
+import { formatBlocked, getWorktree, withSessionWriteTransaction } from './helpers.js';
+import { formatError } from './error-format.js';
 import type { ToolContext, ToolDefinition, ToolResult } from './helpers.js';
 import { resolveDiscoveryHydration } from './hydrate-discovery.js';
 import { reconcileHydrateDiscoveryHealthGate } from './hydrate-discovery-health.js';

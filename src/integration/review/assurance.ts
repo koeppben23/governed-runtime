@@ -20,12 +20,16 @@ import type {
   ReviewProfileSource,
   PolicySnapshot,
   ReviewAttempt,
+  ReviewAttemptDiscoveryContext,
   ReviewMaterial,
   FrozenReviewSubject,
 } from '../../state/evidence.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { assessMinimumTaskClass, maxTaskClass } from '../phase-tool-gate.js';
-import { challengeKindForObligation } from '../../config/policy-types.js';
+import {
+  challengeKindForObligation,
+  DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS,
+} from '../../config/policy-types.js';
 import type { TaskClass } from '../../state/schema.js';
 import type {
   ReviewRepositoryRevisionProvenance,
@@ -61,19 +65,29 @@ function resolveSubjectDigest(input: {
   return input.reviewSubject?.subjectDigest ?? input.subjectDigest;
 }
 
+export {
+  emptyReviewAssurance,
+  ensureReviewAssurance,
+  createReviewAttempt,
+  createAttemptForExistingObligation,
+  latestReviewMaterial,
+  appendReviewAttempt,
+  resolveAttempt,
+  findBindableAttempt,
+  updateAttemptStatus,
+  staleObligationAttempts,
+} from './attempt-lifecycle.js';
+import {
+  ensureReviewAssurance,
+  createReviewAttempt,
+  appendReviewAttempt,
+  staleObligationAttempts,
+} from './attempt-lifecycle.js';
+
 export function getReviewMandateDigest(): string {
   return REVIEW_MANDATE_DIGEST;
 }
 
-export function emptyReviewAssurance(): ReviewAssuranceState {
-  return { obligations: [], invocations: [], attempts: [] };
-}
-
-export function ensureReviewAssurance(
-  assurance: ReviewAssuranceState | undefined,
-): ReviewAssuranceState {
-  return assurance ?? emptyReviewAssurance();
-}
 export function createReviewObligation(input: {
   obligationType: ReviewObligationType;
   iteration: number;
@@ -98,8 +112,15 @@ export function createReviewObligation(input: {
   reviewProfile?: ReviewProfile;
   /** Provenance of the frozen profile. Defaults to 'policy_default'. */
   profileSource?: ReviewProfileSource;
-  /** Frozen session policy; without its challenge policy, enforcement is disabled. */
-  policySnapshot?: Pick<PolicySnapshot, 'challengePolicy'> | null;
+  /**
+   * Frozen session policy; without its challenge policy, enforcement is
+   * disabled. The output-repair budget is frozen onto the obligation from the
+   * snapshot at creation — the reissue gate never re-reads live config.
+   */
+  policySnapshot?: Pick<
+    PolicySnapshot,
+    'challengePolicy' | 'maxReviewerOutputRepairAttempts'
+  > | null;
   /** Runtime paths classified by the canonical phase-tool gate. */
   changedFiles?: readonly string[];
   /** Explicit structured subject scope. Absent → derived from changedFiles only. */
@@ -171,6 +192,11 @@ export function createReviewObligation(input: {
       kind: 'unavailable',
       reason: 'repository_revision_not_resolved',
     },
+    // Frozen output-repair budget. The canonical policy default applies at
+    // creation time only; the reissue gate reads this frozen value, never the
+    // live config, so a later policy change cannot re-open a settled
+    // obligation's repair window.
+    maxReviewerOutputRepairAttempts: resolveFrozenOutputRepairBudget(input.policySnapshot),
   };
 }
 
@@ -181,6 +207,20 @@ export function resolveFrozenReviewProfile(
   return raw === 'core' || raw === 'full' ? raw : 'core';
 }
 
+/**
+ * Frozen output-repair budget for an obligation. The canonical policy default
+ * applies at creation time only; the reissue gate reads the frozen obligation
+ * value, never the live config.
+ */
+function resolveFrozenOutputRepairBudget(
+  policySnapshot:
+    Pick<PolicySnapshot, 'challengePolicy' | 'maxReviewerOutputRepairAttempts'> | null | undefined,
+): number {
+  return (
+    policySnapshot?.maxReviewerOutputRepairAttempts ?? DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS
+  );
+}
+
 export function appendReviewObligation(
   assurance: ReviewAssuranceState | undefined,
   obligation: ReviewObligation | null,
@@ -188,9 +228,8 @@ export function appendReviewObligation(
   const base = ensureReviewAssurance(assurance);
   if (!obligation) return base;
   return {
+    ...base,
     obligations: [...base.obligations, obligation],
-    invocations: base.invocations,
-    attempts: base.attempts,
   };
 }
 
@@ -309,6 +348,7 @@ export function consumeReviewObligation(
   if (!obligation) return assurance;
   const invocationId = acceptedInvocationId ?? obligation.invocationId;
   return {
+    ...assurance,
     obligations: assurance.obligations.map((item) => {
       if (item.obligationId !== obligation.obligationId) return item;
       return {
@@ -326,7 +366,6 @@ export function consumeReviewObligation(
         consumedByObligationId: obligation.obligationId,
       };
     }),
-    attempts: assurance.attempts,
   };
 }
 
@@ -365,28 +404,6 @@ export function findAcceptedInvocationForFindings(
   );
 }
 
-export function createReviewAttempt(input: {
-  obligationId: string;
-  obligationType: ReviewObligationType;
-  subjectDigest: string;
-  reviewMaterial?: ReviewMaterial;
-  ordinal: number;
-  childSessionId?: string;
-  now: string;
-}): ReviewAttempt {
-  return {
-    attemptId: randomUUID(),
-    obligationId: input.obligationId,
-    obligationType: input.obligationType,
-    subjectDigest: input.subjectDigest,
-    ...(input.reviewMaterial === undefined ? {} : { reviewMaterial: input.reviewMaterial }),
-    ordinal: input.ordinal,
-    childSessionId: input.childSessionId,
-    status: 'created',
-    createdAt: input.now,
-  };
-}
-
 /** Create an obligation and its initial attempt atomically.
  *
  * The attempt is persisted alongside the obligation at creation time,
@@ -400,6 +417,7 @@ export function createObligationAndAttempt(
   assurance: ReviewAssuranceState | undefined,
   obligationInput: Parameters<typeof createReviewObligation>[0],
   now: string,
+  repositoryDiscovery: ReviewAttemptDiscoveryContext = { kind: 'not_applicable' },
 ): { assurance: ReviewAssuranceState; obligation: ReviewObligation; attempt: ReviewAttempt } {
   const obligation = createReviewObligation(obligationInput);
   const ordinal =
@@ -411,6 +429,8 @@ export function createObligationAndAttempt(
     obligationType: obligation.obligationType,
     subjectDigest: obligationInput.subjectDigest,
     ordinal,
+    origin: { kind: 'initial' },
+    repositoryDiscovery,
     now,
   });
   const withObligation = appendReviewObligation(assurance, obligation);
@@ -438,6 +458,7 @@ export function appendObligationWithAttempt(
   obligation: ReviewObligation,
   now: string,
   reviewMaterial?: ReviewMaterial,
+  repositoryDiscovery: ReviewAttemptDiscoveryContext = { kind: 'not_applicable' },
 ): { assurance: ReviewAssuranceState; attemptId: string } {
   const base = ensureReviewAssurance(assurance);
   const ordinal =
@@ -448,6 +469,8 @@ export function appendObligationWithAttempt(
     subjectDigest: obligation.subjectDigest,
     reviewMaterial,
     ordinal,
+    origin: { kind: 'initial' },
+    repositoryDiscovery,
     now,
   });
   const withObligation = { ...base, obligations: [...base.obligations, obligation] };
@@ -460,134 +483,6 @@ export function appendObligationWithAttempt(
       now,
     ),
     attemptId: attempt.attemptId,
-  };
-}
-
-/**
- * Create a new attempt for an EXISTING obligation (retry / re-invocation).
- *
- * Unlike createObligationAndAttempt (which creates a new obligation), this
- * attaches a new attempt to an already-persisted obligation. Previous
- * non-bound attempts for this obligation are staled — so a late callback
- * from the previous reviewer invocation is hard-rejected.
- *
- * @returns Updated assurance state with the new attempt persisted.
- */
-export function createAttemptForExistingObligation(
-  assurance: ReviewAssuranceState | undefined,
-  obligation: ReviewObligation,
-  childSessionId: string,
-  now: string,
-): ReviewAssuranceState {
-  const base = ensureReviewAssurance(assurance);
-  const ordinal =
-    (base.attempts?.filter((a) => a.obligationId === obligation.obligationId).length ?? 0) + 1;
-  const attempt = createReviewAttempt({
-    obligationId: obligation.obligationId,
-    obligationType: obligation.obligationType,
-    subjectDigest: obligation.subjectDigest,
-    reviewMaterial: latestReviewMaterial(base, obligation.obligationId),
-    ordinal,
-    childSessionId,
-    now,
-  });
-  const withAttempt = appendReviewAttempt(base, attempt);
-  return staleObligationAttempts(withAttempt, obligation.obligationId, attempt.attemptId, now);
-}
-
-function latestReviewMaterial(
-  assurance: ReviewAssuranceState,
-  obligationId: string,
-): ReviewMaterial | undefined {
-  for (let index = assurance.attempts.length - 1; index >= 0; index--) {
-    const attempt = assurance.attempts[index];
-    if (attempt?.obligationId === obligationId && attempt.reviewMaterial) {
-      return attempt.reviewMaterial;
-    }
-  }
-  return undefined;
-}
-
-export function appendReviewAttempt(
-  assurance: ReviewAssuranceState,
-  attempt: ReviewAttempt,
-): ReviewAssuranceState {
-  const base = ensureReviewAssurance(assurance);
-  return { ...base, attempts: [...(base.attempts ?? []), attempt] };
-}
-
-export function resolveAttempt(
-  assurance: ReviewAssuranceState | undefined,
-  childSessionId: string,
-): ReviewAttempt | null {
-  const base = ensureReviewAssurance(assurance);
-  return (
-    base.attempts?.find(
-      (a) => a.childSessionId === childSessionId && a.status !== 'stale' && a.status !== 'expired',
-    ) ?? null
-  );
-}
-
-/**
- * The attempt a host Task can still be bound to for `obligationId`.
- *
- * Bindable means: created but not yet correlated with a reviewer child session,
- * and not superseded (`appendObligationWithAttempt` stales earlier attempts, so
- * at most one attempt per obligation qualifies). Returns the highest ordinal if
- * that invariant is ever violated, and null when no attempt can accept a
- * binding — callers must not fall back to an arbitrary attempt.
- */
-export function findBindableAttempt(
-  assurance: ReviewAssuranceState | undefined,
-  obligationId: string,
-): ReviewAttempt | null {
-  const base = ensureReviewAssurance(assurance);
-  const candidates = (base.attempts ?? []).filter(
-    (a) => a.obligationId === obligationId && a.status === 'created' && !a.childSessionId,
-  );
-  if (candidates.length === 0) return null;
-  return candidates.reduce((best, a) => (a.ordinal > best.ordinal ? a : best));
-}
-
-export function updateAttemptStatus(
-  assurance: ReviewAssuranceState,
-  attemptId: string,
-  status: ReviewAttempt['status'],
-  now: string,
-  childSessionId?: string,
-): ReviewAssuranceState {
-  const base = ensureReviewAssurance(assurance);
-  if (!base.attempts) return base;
-  return {
-    ...base,
-    attempts: base.attempts.map((a) =>
-      a.attemptId !== attemptId
-        ? a
-        : {
-            ...a,
-            status,
-            completedAt: status !== 'created' ? now : a.completedAt,
-            ...(childSessionId && !a.childSessionId ? { childSessionId } : {}),
-          },
-    ),
-  };
-}
-
-export function staleObligationAttempts(
-  assurance: ReviewAssuranceState,
-  obligationId: string,
-  exceptAttemptId: string,
-  now: string,
-): ReviewAssuranceState {
-  const base = ensureReviewAssurance(assurance);
-  if (!base.attempts) return base;
-  return {
-    ...base,
-    attempts: base.attempts.map((a) =>
-      a.obligationId === obligationId && a.attemptId !== exceptAttemptId && a.status !== 'bound'
-        ? { ...a, status: 'stale' as const, completedAt: now }
-        : a,
-    ),
   };
 }
 

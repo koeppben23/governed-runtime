@@ -238,9 +238,13 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // COMMANDS hash.
     // Refreshed for architecture acceptance integrity: every completed ADR
     // reviewer cycle now stops at ARCH_REVIEW and requires a human decision.
+    // Refreshed for the canonical reviewer-prompt contract: the /review command
+    // no longer permits free-composed reviewer prompts — a repository review
+    // without a canonical reviewerTaskPrompt is blocked with
+    // REVIEWER_CONTEXT_UNAVAILABLE.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '2a957bec2209944fe4c8bfc598d83a0245f824da643e748a7eb3663ca5801af0',
+      '5cfb3afc89e0c14b44ba277b66e55ee95261554b7367e990f408f840200e6242',
     );
   });
 

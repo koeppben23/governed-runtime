@@ -40,11 +40,11 @@ import { z } from 'zod';
 import { headCommitFull } from '../../adapters/git.js';
 
 import type { ToolDefinition } from './helpers.js';
+import { formatError } from './error-format.js';
 import {
   withMutableSessionTransaction,
   formatBlocked,
   formatAutoAdvanceOverflow,
-  formatError,
   extractSections,
   appendNextAction,
   writeStateWithArtifacts,
@@ -509,9 +509,7 @@ function buildReviewedPlanState(
       verdict: revision.verdict,
     },
     reviewAssurance: {
-      obligations: consumedAssurance.obligations,
-      invocations: consumedAssurance.invocations,
-      attempts: consumedAssurance.attempts,
+      ...consumedAssurance,
     },
     error: null,
   };

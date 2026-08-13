@@ -58,23 +58,18 @@ Start the compliance review flow for the current FlowGuard session.
     and NO \`pluginReviewFindings\`, manually call the \`${REVIEWER_SUBAGENT_TYPE}\` subagent
     via Task tool:
     - Use \`subagent_type: "${REVIEWER_SUBAGENT_TYPE}"\`
-    - If the response includes a \`reviewerTaskPrompt\` field, pass it VERBATIM as the Task
+    - The response MUST include a \`reviewerTaskPrompt\` field: pass it VERBATIM as the Task
       tool "prompt" argument without appending content, Discovery context, or instructions.
-      This canonical prompt already carries the frozen material and required review context (iteration/planVersion)
-      and attestation, so the FIRST Task attempt is not blocked with
-      \`SUBAGENT_PROMPT_MISSING_CONTEXT\`. Only free-compose a prompt if no \`reviewerTaskPrompt\`
-      is provided, in which case you MUST include the \`requiredReviewAttestation\` values AND the
-      literal \`iteration=<n>, planVersion=<n>\` context in the prompt.
-    - Only when composing a prompt because no \`reviewerTaskPrompt\` was provided: pass the
-      loaded content, \`requiredReviewAttestation\` values, and compact Discovery context (health, drift,
-      detectedStack, verificationCandidates, risk surfaces). This is REQUIRED so the
-      external diff is reviewed against repo-native stack/verification/health/drift.
-    - Instruct the subagent to: check Discovery health and drift BEFORE making any
-      repo-dependent quality claim; correlate the reviewed PR/diff files against the
-      local Discovery snapshot; mark any claim \`NOT_VERIFIED\` when the content
-      cannot be correlated to local repository Discovery (e.g. the diff references
-      files absent from the Discovery snapshot, or local Discovery is drifted relative
-      to the reviewed branch).
+      This canonical prompt already carries the frozen material, the attempt-bound Discovery
+      snapshot, the required review context (iteration/planVersion), and the attestation.
+      Do NOT free-compose a prompt: a repository review without a canonical
+      \`reviewerTaskPrompt\` is blocked with \`REVIEWER_CONTEXT_UNAVAILABLE\` — report that
+      code with its recovery steps and stop instead of assembling a substitute prompt.
+    - Instruct the subagent to: check the supplied Discovery health and drift status BEFORE
+      making any repo-dependent quality claim; correlate the reviewed PR/diff files against
+      the supplied Discovery snapshot; mark any claim \`NOT_VERIFIED\` when the content
+      cannot be correlated to that snapshot (e.g. the diff references files absent from the
+      snapshot, or Discovery is drifted relative to the reviewed branch).
     - Instruct the subagent to return a complete \`ReviewFindings\` JSON object
     - Retain the response unchanged for SDK/manual findings modes. In host-task
       mode, FlowGuard captures it as Task evidence; do not parse or resubmit it.
@@ -89,6 +84,12 @@ Start the compliance review flow for the current FlowGuard session.
       content was unparseable), do NOT submit \`reviewFindings\`. Report the reason to the user.
       The tool will handle this as \`SUBAGENT_UNABLE_TO_REVIEW\` and exit the flow.
       Only submit \`reviewFindings\` when the subagent returns \`accept\` or \`changes_requested\`.
+
+    - **Retry after schema_invalid**: If the Task call returns \`bindOutcome: "schema_invalid"\` (the reviewer's output failed validation), do NOT re-run the Task with the same prompt. Instead:
+      1. Look at the \`schemaErrors\` field (if present) to understand which fields failed.
+      2. Call \`flowguard_review\` again with the original content fields and \`reviewObligationId\` from \`requiredReviewAttestation.toolObligationId\`. This produces a fresh \`reviewerTaskPrompt\` with the validation errors embedded.
+      3. Pass the NEW \`reviewerTaskPrompt\` to the Task tool — never reuse the old one.
+      4. If the Task is blocked with \`REVIEWER_OUTPUT_RETRY_EXHAUSTED\`, the retry budget is exhausted — report to the operator and stop; do NOT fabricate findings, guess a verdict, or call any other authority path.
 
 5. Complete content-aware \`flowguard_review\` according to the review invocation mode:
     - If the response says host-task evidence was verified or policy requires host-visible

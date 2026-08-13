@@ -147,6 +147,7 @@ function pluginHandshakeAssurance(
   obligationType: (typeof ALL_OBLIGATION_TYPES)[number],
 ): ReviewAssuranceState {
   return {
+    assuranceSchemaVersion: 'review-assurance.v3' as const,
     attempts: [],
     obligations: [
       {
@@ -157,6 +158,7 @@ function pluginHandshakeAssurance(
         planVersion: 1,
         criteriaVersion: REVIEW_CRITERIA_VERSION,
         mandateDigest: REVIEW_MANDATE_DIGEST,
+        maxReviewerOutputRepairAttempts: 1,
         createdAt: NOW,
         pluginHandshakeAt: NOW,
         status: 'fulfilled' as const,
@@ -394,6 +396,7 @@ describe('assurance lifecycle persistence across hosts', () => {
         let assurance = appendReviewObligation(undefined, obligationP);
         // Mark obligation fulfilled (as if plugin/agent completed review)
         assurance = {
+          assuranceSchemaVersion: assurance.assuranceSchemaVersion,
           obligations: assurance.obligations.map((o) =>
             o.obligationId === obligationP.obligationId
               ? {
@@ -444,6 +447,7 @@ describe('assurance lifecycle persistence across hosts', () => {
 
         let implAssurance = appendReviewObligation(assurance, obligationI);
         implAssurance = {
+          assuranceSchemaVersion: implAssurance.assuranceSchemaVersion,
           obligations: implAssurance.obligations.map((o) =>
             o.obligationId === obligationI.obligationId
               ? {
@@ -513,6 +517,7 @@ describe('assurance lifecycle persistence across hosts', () => {
 
         let archAssurance = appendReviewObligation(undefined, obligationA);
         archAssurance = {
+          assuranceSchemaVersion: archAssurance.assuranceSchemaVersion,
           obligations: archAssurance.obligations.map((o) =>
             o.obligationId === obligationA.obligationId
               ? {

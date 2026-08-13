@@ -60,7 +60,21 @@ function referenceIdentity(reference: unknown): string | null {
   }
 }
 
-function bindCanonicalEvidenceRefs(
+/**
+ * Bind-time authorization: replace reviewer-supplied evidence references with
+ * the host-authoritative canonical copies from the obligation's frozen
+ * challenge contract.
+ *
+ * Deliberately NOT part of the shared schema/normalization authority
+ * (prepare-findings.ts): an unknown evidence reference is a governance
+ * rejection, not a malformed ReviewerFindings DTO. The schema gate runs
+ * first; this authorization step runs afterwards on the canonical candidate.
+ *
+ * Returns the challenges with canonical evidenceRefs, or a
+ * `challenge_evidence_unknown` rejection when a reference does not match the
+ * host-authoritative challenge contract.
+ */
+export function bindCanonicalEvidenceRefs(
   challenges: readonly Record<string, unknown>[],
   allowedEvidenceRefs: readonly unknown[] | undefined,
   obligationId: string,

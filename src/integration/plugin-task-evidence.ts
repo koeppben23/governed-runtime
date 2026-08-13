@@ -21,6 +21,7 @@ import {
 import { appendReviewAuditEvent } from './review/audit-events.js';
 import { strictBlockedOutput } from './plugin-helpers.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
+import { bindOutcomeToRejectionReason } from './review/enforcement/rejection-policy.js';
 
 import type { PluginWorkspace } from './plugin-workspace.js';
 import type { SessionState } from '../state/schema.js';
@@ -246,6 +247,12 @@ async function persistAttemptStatus(
   if (!attempt) return;
   const status =
     bindResult.bindOutcome === 'stale_attempt' ? ('stale' as const) : ('rejected' as const);
+  // Persist the structured rejection reason at the rejection point, mapped
+  // from the canonical bind outcome. Outcomes without a mapping (lifecycle,
+  // environment, duplicate) persist no reason — the reissue gate fails
+  // closed on a rejected attempt without an explicit reason.
+  const rejectionReason =
+    status === 'rejected' ? bindOutcomeToRejectionReason(bindResult.bindOutcome) : undefined;
   await deps.ws.updateReviewAssurance(sessDir, (s: SessionState) => ({
     ...s,
     reviewAssurance: updateAttemptStatus(
@@ -253,6 +260,7 @@ async function persistAttemptStatus(
       attempt.attemptId,
       status,
       now,
+      rejectionReason ? { rejectionReason } : undefined,
     ),
   }));
 }
@@ -296,5 +304,10 @@ function blockRequiredHostTaskEvidence(
     bindOutcome: bindResult.bindOutcome,
     ...(detail ? { detail } : {}),
     reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
+    // Include schema errors so the agent can fix specific issues via
+    // the canonical repair prompt (obtained by calling flowguard_review).
+    ...(bindResult.bindOutcome === 'schema_invalid' && bindResult.diagnostic?.schemaErrors
+      ? { schemaErrors: (bindResult.diagnostic.schemaErrors as string[]).join('; ') }
+      : {}),
   });
 }

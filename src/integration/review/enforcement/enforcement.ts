@@ -25,7 +25,7 @@
  */
 
 import type { SessionState } from '../../../state/schema.js';
-import { ReviewFindings, type ReviewObligation } from '../../../state/evidence-review.js';
+import { type ReviewObligation } from '../../../state/evidence-review.js';
 import {
   type SessionEnforcementState,
   type PendingReview,
@@ -43,8 +43,11 @@ import {
   resolveSubagentSessionId,
   promptContainsValue,
   detectStepExhaustion,
+  signalAttestationOf,
+  readHostAttestationConstants,
 } from './extraction.js';
 import { validateReviewFindingsConsistency } from './findings-consistency.js';
+import { isPendingCaptureUsable, extractCaptureSchemaErrors } from './prepare-findings.js';
 export { enforceBeforeSubagentCall } from './prompt-integrity.js';
 
 import { REVIEWER_SUBAGENT_TYPE, TOOL_FLOWGUARD_REVIEW } from '../../tool-names.js';
@@ -90,20 +93,41 @@ function trackReviewRequired(
     readonly attemptId?: string | null;
     readonly obligationId?: string | null;
     readonly canonicalPromptAnchor?: string | null;
+    readonly hostAttestationConstants?: {
+      readonly mandateDigest: string;
+      readonly criteriaVersion: string;
+    } | null;
   },
 ): void {
+  const obligationId = binding.obligationId ?? null;
+  const hostAttestationConstants = binding.hostAttestationConstants ?? null;
+  // Structural host-context validation happens HERE, at the signal→pending
+  // transition — before any reviewer Task can run. Every canonical
+  // REVIEW_REQUIRED emitter creates the review obligation before emitting the
+  // signal, so a missing obligation identity or missing host attestation
+  // constants is a broken signal, never a reviewer-repairable output defect.
+  const enforcementFailure: PendingReview['enforcementFailure'] =
+    obligationId == null
+      ? 'host_review_obligation_missing'
+      : hostAttestationConstants == null
+        ? 'host_attestation_constants_missing'
+        : null;
   state.pendingReviews.set(reviewTool, {
     tool: reviewTool,
     requestedAt: now,
     attemptId: binding.attemptId ?? null,
-    obligationId: binding.obligationId ?? null,
+    obligationId,
     subagentCalled: false,
     subagentRecord: null,
     contentMeta: extractContentMeta(next),
     canonicalPromptAnchor: binding.canonicalPromptAnchor ?? null,
     capturedFindings: null,
     retryCount: 0,
+    hostAttestationConstants,
+    enforcementFailure,
     lastSchemaErrors: null,
+    repairPromptRequired: false,
+    expectedRepairPromptDigest: null,
   });
 }
 
@@ -119,7 +143,11 @@ function trackContentAnalysis(state: SessionEnforcementState, now: string): void
     canonicalPromptAnchor: null,
     capturedFindings: null,
     retryCount: 0,
+    hostAttestationConstants: null,
+    enforcementFailure: null,
     lastSchemaErrors: null,
+    repairPromptRequired: false,
+    expectedRepairPromptDigest: null,
   });
 }
 
@@ -209,6 +237,7 @@ function trackRequiredReview(
       attemptId,
       obligationId,
       canonicalPromptAnchor: canonicalPromptAnchorOf(parsed),
+      hostAttestationConstants: readHostAttestationConstants(signalAttestationOf(parsed)),
     });
   }
 }
@@ -277,28 +306,54 @@ export function onTaskToolAfter(
   // Match exactly ONE pending review obligation (P34 1:1 contract).
   const matched = matchPendingReview(state, args);
   if (matched) {
-    // Track retries: a re-invoke after a prior (unusable) capture is a retry.
-    if (matched.subagentCalled) {
-      matched.retryCount = (matched.retryCount ?? 0) + 1;
-    }
-    matched.subagentCalled = true;
-    matched.subagentRecord = record;
-    matched.capturedFindings = capturedFindings;
-    matched.lastSchemaErrors = extractSchemaErrors(capturedFindings);
+    applyCaptureToPending(matched, record, capturedFindings);
   }
 }
 
-function extractSchemaErrors(captured: CapturedFindings | null): readonly string[] | null {
-  if (!captured?.rawFindings) return null;
-  const parseResult = ReviewFindings.safeParse(captured.rawFindings);
-  if (parseResult.success) return null;
-  return parseResult.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`);
+/**
+ * Apply the completed reviewer invocation to the matched pending review.
+ *
+ * Structural host-context defect first: a bindable obligation without the
+ * host-issued attestation constants is NEVER a reviewer-output failure — a
+ * reviewer invocation cannot repair it. No capture is kept, no schema errors
+ * are computed (no raw-schema fallback), and the pending is excluded from
+ * re-arm/repair from here on.
+ */
+function applyCaptureToPending(
+  matched: PendingReview,
+  record: SubagentRecord,
+  capturedFindings: CapturedFindings | null,
+): void {
+  if (matched.obligationId != null && (matched.hostAttestationConstants ?? null) == null) {
+    matched.subagentCalled = true;
+    matched.subagentRecord = record;
+    matched.enforcementFailure = 'host_attestation_constants_missing';
+    matched.capturedFindings = null;
+    matched.lastSchemaErrors = null;
+    matched.repairPromptRequired = false;
+    matched.expectedRepairPromptDigest = null;
+    return;
+  }
+  // Track retries: a re-invoke after a prior (unusable) capture is a retry.
+  if (matched.subagentCalled) {
+    matched.retryCount = (matched.retryCount ?? 0) + 1;
+  }
+  matched.subagentCalled = true;
+  matched.subagentRecord = record;
+  matched.capturedFindings = capturedFindings;
+  matched.lastSchemaErrors = extractCaptureSchemaErrors(matched);
+  // Enforce repair-prompt requirement: after schema-invalid output, a
+  // fresh canonical repair prompt must be issued before the next reviewer.
+  matched.repairPromptRequired = matched.lastSchemaErrors !== null;
+  // Clear the expected digest — this repair cycle is consumed.
+  matched.expectedRepairPromptDigest = null;
 }
 
 /**
  * Whether a pending review already holds a usable capture — reviewer findings
- * that parse against the ReviewFindings schema and satisfy the canonical verdict
- * coherence rule applied by the verdict-time resolver.
+ * that pass the shared host-normalization authority plus the canonical schema
+ * gate (see prepare-findings.ts) and satisfy the canonical verdict coherence
+ * rule applied by the verdict-time resolver.
  *
  * A capture that is absent (null), schema-invalid (e.g. the reviewer emitted
  * non-JSON, or mistyped a required field such as `majorRisks`) is NOT good: it
@@ -311,15 +366,14 @@ function extractSchemaErrors(captured: CapturedFindings | null): readonly string
  * or internally incoherent (accept with blocking issues) is NOT usable. Returning
  * false keeps the review re-armable so a subsequent reviewer run can replace the
  * bad capture (new child session + new findings hash → no duplicate).
+ *
+ * This is a PURE query over the shared authority — it never mutates the pending
+ * review. A structural host-context defect (enforcementFailure) is reported as
+ * unusable here but is handled as an explicit, non-repairable blocker in
+ * prompt-integrity.ts, never as a reviewer-output retry.
  */
 function hasUsableCapture(pending: PendingReview): boolean {
-  if (pending.subagentRecord?.terminationReason === 'step_exhausted') return false;
-  const parsed = ReviewFindings.safeParse(pending.capturedFindings?.rawFindings);
-  if (!parsed.success) return false;
-  return validateReviewFindingsConsistency({
-    overallVerdict: parsed.data.overallVerdict,
-    blockingIssueCount: parsed.data.blockingIssues.length,
-  }).ok;
+  return isPendingCaptureUsable(pending);
 }
 
 /**
@@ -340,7 +394,10 @@ export function matchPendingReview(
   taskArgs: Record<string, unknown>,
 ): PendingReview | null {
   const awaitingCapture = [...state.pendingReviews.values()].filter(
-    (p) => !p.subagentCalled || !hasUsableCapture(p),
+    // A structural host-context defect (enforcementFailure) is NOT "awaiting
+    // capture": it can never be repaired by another reviewer run, so such
+    // pendings are excluded from matching, re-arm, and retry counting.
+    (p) => (p.enforcementFailure ?? null) === null && (!p.subagentCalled || !hasUsableCapture(p)),
   );
 
   if (awaitingCapture.length === 0) return null;
@@ -599,6 +656,17 @@ export function recordPluginReview(
     sessionId,
     completedAt: now,
   };
+  // Same structural host-context rule as onTaskToolAfter: a bindable
+  // obligation without host attestation constants is never repaired by a
+  // reviewer capture — fail closed with the explicit marker.
+  if (pending.obligationId != null && (pending.hostAttestationConstants ?? null) == null) {
+    pending.enforcementFailure = 'host_attestation_constants_missing';
+    pending.capturedFindings = null;
+    pending.lastSchemaErrors = null;
+    pending.repairPromptRequired = false;
+    pending.expectedRepairPromptDigest = null;
+    return true;
+  }
   pending.capturedFindings = capturedFindings;
   return true;
 }

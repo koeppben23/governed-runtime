@@ -8,7 +8,8 @@
 import { z } from 'zod';
 
 import type { ToolDefinition } from './helpers.js';
-import { withMutableSessionTransaction, formatError } from './helpers.js';
+import { formatError } from './error-format.js';
+import { withMutableSessionTransaction } from './helpers.js';
 
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 import { ArchitectureClaimDeclarationInput as ArchitectureClaimDeclarationSchema } from '../../state/proofgraph-approval.js';

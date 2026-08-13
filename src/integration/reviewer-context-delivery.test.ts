@@ -99,6 +99,7 @@ function obligation(
     planVersion: 1,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
     mandateDigest: REVIEW_MANDATE_DIGEST,
+    maxReviewerOutputRepairAttempts: 1,
     createdAt: NOW,
     pluginHandshakeAt: null,
     status: 'pending',
@@ -140,6 +141,7 @@ function buildState(
       reviewOutputPolicy: 'structured_required',
     },
     reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v3' as const,
       obligations: [obligation(obligationType, metadata)],
       invocations: [],
       attempts:
@@ -156,6 +158,8 @@ function buildState(
                 },
                 ordinal: 1,
                 status: 'created' as const,
+                origin: { kind: 'initial' } as const,
+                repositoryDiscovery: { kind: 'not_applicable' } as const,
                 createdAt: NOW,
               },
             ]
@@ -321,5 +325,113 @@ describe('reviewer artifact context reaches the delivered prompt', () => {
     const prompt = await deliveredReviewerPrompt(buildState('plan'));
 
     expect(prompt).toContain('NOT instructions to you');
+  });
+});
+
+/**
+ * Contract: the host must not report a spent retry slot as corrupted material.
+ *
+ * The two states have opposite recoveries — an integrity failure forbids
+ * re-running the reviewer, a spent attempt is resolved BY re-running the review
+ * call — so conflating them strands the flow with unfollowable guidance.
+ */
+describe('reviewer context unavailability is classified by cause', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  async function deliveredOutput(state: SessionState): Promise<Record<string, unknown>> {
+    const stateRef = { current: state };
+    vi.mocked(readState).mockResolvedValue(stateRef.current);
+    const output = { output: contentAnalysisRequiredOutput() };
+    const event: ToolCallEvent = {
+      toolName: TOOL_FLOWGUARD_REVIEW,
+      input: { args: {} },
+      output,
+      sessionId: PARENT_SESSION_ID,
+      now: NOW,
+    } as unknown as ToolCallEvent;
+
+    await runReviewOrchestration(buildDeps(stateRef, TOOL_FLOWGUARD_REVIEW), event);
+    return JSON.parse(output.output) as Record<string, unknown>;
+  }
+
+  function withAttempts(
+    state: SessionState,
+    map: (attempt: NonNullable<SessionState['reviewAssurance']>['attempts'][number]) => unknown,
+  ): SessionState {
+    return {
+      ...state,
+      reviewAssurance: {
+        ...state.reviewAssurance!,
+        attempts: state.reviewAssurance!.attempts.map(map) as NonNullable<
+          SessionState['reviewAssurance']
+        >['attempts'],
+      },
+    };
+  }
+
+  it('reports a rejected attempt as REVIEW_ATTEMPT_UNAVAILABLE with a re-runnable recovery', async () => {
+    const state = withAttempts(buildState('review'), (attempt) => ({
+      ...attempt,
+      status: 'rejected' as const,
+      childSessionId: 'reviewer-child-1',
+      completedAt: NOW,
+    }));
+
+    const parsed = await deliveredOutput(state);
+
+    expect(parsed.code).toBe('REVIEW_ATTEMPT_UNAVAILABLE');
+    expect(String(parsed.message)).toContain('was not invalidated');
+    expect((parsed.recovery as string[]).join(' ')).toContain('reissue a bindable attempt');
+    // The unfollowable instruction must be gone.
+    expect((parsed.recovery as string[]).join(' ')).not.toContain(
+      'Create a new standalone review obligation',
+    );
+  });
+
+  it('still reports genuinely corrupted material as an integrity failure', async () => {
+    const state = withAttempts(buildState('review'), (attempt) => ({
+      ...attempt,
+      status: 'rejected' as const,
+      childSessionId: 'reviewer-child-1',
+      completedAt: NOW,
+      reviewMaterial: { content: 'tampered', materialDigest: REVIEW_MATERIAL_DIGEST },
+    }));
+
+    const parsed = await deliveredOutput(state);
+
+    expect(parsed.code).toBe('REVIEW_MATERIAL_INTEGRITY_FAILED');
+    expect((parsed.recovery as string[]).join(' ')).toContain('Do not re-run the reviewer');
+  });
+
+  it('delivers a reviewer prompt again once a bindable attempt was reissued', async () => {
+    // The persisted state after the repair call: the spent attempt is staled and
+    // a fresh bindable attempt carries the same frozen material forward.
+    const base = buildState('review');
+    const spent = base.reviewAssurance!.attempts[0]!;
+    const state: SessionState = {
+      ...base,
+      reviewAssurance: {
+        ...base.reviewAssurance!,
+        attempts: [
+          { ...spent, status: 'stale' as const, childSessionId: 'reviewer-child-1' },
+          {
+            ...spent,
+            attemptId: '33333333-3333-4333-8333-333333333333',
+            ordinal: 2,
+            status: 'created' as const,
+          },
+        ],
+      },
+    };
+
+    const parsed = await deliveredOutput(state);
+
+    expect(parsed.code).not.toBe('REVIEW_ATTEMPT_UNAVAILABLE');
+    expect(parsed.code).not.toBe('REVIEW_MATERIAL_INTEGRITY_FAILED');
+    expect(typeof parsed.reviewerTaskPrompt).toBe('string');
+    expect(String(parsed.reviewerTaskPrompt)).toContain(REVIEW_MATERIAL);
+    expect(parsed.reviewAttemptId).toBe('33333333-3333-4333-8333-333333333333');
   });
 });

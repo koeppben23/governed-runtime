@@ -16,6 +16,7 @@ const obligation = {
   planVersion: 1,
   criteriaVersion: 'criteria-v1',
   mandateDigest: 'a'.repeat(64),
+  maxReviewerOutputRepairAttempts: 1,
   createdAt: '2026-01-01T00:00:00.000Z',
   pluginHandshakeAt: null,
   status: 'pending' as const,

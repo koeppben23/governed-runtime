@@ -43,7 +43,10 @@ import {
 } from './discovery-schemas.js';
 import { ProofGraphProjection } from './proofgraph.js';
 import { ProofContract, ProofContractCoverage } from './proofgraph-contract.js';
-import { StandaloneReviewEvidence } from './standalone-review.js';
+import {
+  StandaloneReviewEvidence,
+  resolveAuthoritativeStandaloneReviewTask,
+} from './standalone-review.js';
 
 // ─── Phase ────────────────────────────────────────────────────────────────────
 
@@ -294,302 +297,328 @@ export type Transition = z.infer<typeof Transition>;
  *
  * The evaluator reads these slots to determine which guards pass.
  */
-export const SessionState = z.object({
-  /** Unique session identifier. */
-  id: z.string().uuid(),
+export const SessionState = z
+  .object({
+    /** Unique session identifier. */
+    id: z.string().uuid(),
 
-  /** Schema version — always "v1" for this generation. */
-  schemaVersion: z.literal('v1'),
+    /** Schema version — always "v1" for this generation. */
+    schemaVersion: z.literal('v1'),
 
-  /** Current FlowGuard phase. */
-  phase: Phase,
+    /** Current FlowGuard phase. */
+    phase: Phase,
 
-  /** Agent/operator risk-classification claim. Not runtime authority. */
-  claimedTaskClass: TaskClass.optional(),
+    /** Agent/operator risk-classification claim. Not runtime authority. */
+    claimedTaskClass: TaskClass.optional(),
 
-  /** Persistent runtime risk gate block state for mutating host tools. */
-  riskGate: RiskGate.optional(),
+    /** Persistent runtime risk gate block state for mutating host tools. */
+    riskGate: RiskGate.optional(),
 
-  /**
-   * Revision-bound risk classification of the recorded implementation (#762).
-   * Optional for backward compatibility with sessions recorded before this field.
-   */
-  implementationRiskAssessment: ImplementationRiskAssessment.optional(),
+    /**
+     * Revision-bound risk classification of the recorded implementation (#762).
+     * Optional for backward compatibility with sessions recorded before this field.
+     */
+    implementationRiskAssessment: ImplementationRiskAssessment.optional(),
 
-  /** Persistent Discovery health gate block state for mutating host tools (#399). */
-  discoveryHealthGate: DiscoveryHealthGate.optional(),
+    /** Persistent Discovery health gate block state for mutating host tools (#399). */
+    discoveryHealthGate: DiscoveryHealthGate.optional(),
 
-  /** Workspace binding (OpenCode session <-> git worktree). */
-  binding: BindingInfo,
+    /** Workspace binding (OpenCode session <-> git worktree). */
+    binding: BindingInfo,
 
-  // ── Evidence Slots ──────────────────────────────────────────
+    // ── Evidence Slots ──────────────────────────────────────────
 
-  /** Ticket/task evidence from /ticket. */
-  ticket: TicketEvidence.nullable(),
+    /** Ticket/task evidence from /ticket. */
+    ticket: TicketEvidence.nullable(),
 
-  /** Architecture Decision Record from /architecture. */
-  architecture: ArchitectureDecision.nullable(),
+    /** Architecture Decision Record from /architecture. */
+    architecture: ArchitectureDecision.nullable(),
 
-  /** Plan record with version history from /plan. */
-  plan: PlanRecord.nullable(),
+    /** Plan record with version history from /plan. */
+    plan: PlanRecord.nullable(),
 
-  /** Self-review loop state (PLAN phase, digest-stop). */
-  selfReview: SelfReviewLoop.nullable(),
+    /** Self-review loop state (PLAN phase, digest-stop). */
+    selfReview: SelfReviewLoop.nullable(),
 
-  /** Validation check results (VALIDATION phase, N checks in one phase). */
-  validation: z.array(ValidationResult),
+    /** Validation check results (VALIDATION phase, N checks in one phase). */
+    validation: z.array(ValidationResult),
 
-  /**
-   * Append-only execution ledger. Unlike the current per-check projections above,
-   * this preserves every successful validation-result persistence for audit.
-   */
-  validationAttempts: z.array(ValidationAttempt).default([]),
+    /**
+     * Append-only execution ledger. Unlike the current per-check projections above,
+     * this preserves every successful validation-result persistence for audit.
+     */
+    validationAttempts: z.array(ValidationAttempt).default([]),
 
-  /**
-   * Append-only mutation-attempt ledger (#762). Records every FlowGuard-attested
-   * mutation report observation, with implementation binding, artifact/projection
-   * digests, and reproducibility metadata. Produced by flowguard_record_mutation_evidence.
-   */
-  mutationAttempts: z.array(MutationAttempt).default([]),
+    /**
+     * Append-only mutation-attempt ledger (#762). Records every FlowGuard-attested
+     * mutation report observation, with implementation binding, artifact/projection
+     * digests, and reproducibility metadata. Produced by flowguard_record_mutation_evidence.
+     */
+    mutationAttempts: z.array(MutationAttempt).default([]),
 
-  /** Advisory challenge-resolution evidence; defaults for legacy sessions. */
-  challengeResolutions: z.array(ChallengeResolution).default([]),
+    /** Advisory challenge-resolution evidence; defaults for legacy sessions. */
+    challengeResolutions: z.array(ChallengeResolution).default([]),
 
-  /**
-   * Post-implementation validation check results (IMPL_VALIDATION phase). Kept
-   * separate from `validation` (the pre-implementation baseline run) so the audit
-   * trail retains both the baseline and the re-run of checks against the fixed code.
-   * Defaulted to [] for backward compatibility with pre-IMPL_VALIDATION sessions.
-   */
-  implValidation: z.array(ValidationResult).default([]),
+    /**
+     * Post-implementation validation check results (IMPL_VALIDATION phase). Kept
+     * separate from `validation` (the pre-implementation baseline run) so the audit
+     * trail retains both the baseline and the re-run of checks against the fixed code.
+     * Defaulted to [] for backward compatibility with pre-IMPL_VALIDATION sessions.
+     */
+    implValidation: z.array(ValidationResult).default([]),
 
-  /** Implementation evidence from /implement. */
-  implementation: ImplEvidence.nullable(),
+    /** Implementation evidence from /implement. */
+    implementation: ImplEvidence.nullable(),
 
-  /** Explicit runtime evidence for reducing implementation-review ceremony. */
-  reducedCeremony: ReducedCeremonyDecision.nullable().default(null),
+    /** Explicit runtime evidence for reducing implementation-review ceremony. */
+    reducedCeremony: ReducedCeremonyDecision.nullable().default(null),
 
-  /** Implementation review iteration result (IMPL_REVIEW phase, digest-stop). */
-  implReview: ImplReviewResult.nullable(),
+    /** Implementation review iteration result (IMPL_REVIEW phase, digest-stop). */
+    implReview: ImplReviewResult.nullable(),
 
-  /** Independent review findings for /implement (parallel, NOT mixed with ImplEvidence). */
-  implReviewFindings: z.array(ReviewFindings).optional(),
+    /** Independent review findings for /implement (parallel, NOT mixed with ImplEvidence). */
+    implReviewFindings: z.array(ReviewFindings).optional(),
 
-  /** Independent review findings for standalone /review, retained append-only for audit. */
-  standaloneReviewFindings: z.array(ReviewFindings).optional(),
+    /** Independent review findings for standalone /review, retained append-only for audit. */
+    standaloneReviewFindings: z.array(ReviewFindings).optional(),
 
-  /** P35 strict independent-review obligations and invocation evidence. */
-  reviewAssurance: ReviewAssuranceState.optional(),
+    /** P35 strict independent-review obligations and invocation evidence. */
+    reviewAssurance: ReviewAssuranceState.optional(),
 
-  /** Human review decision at PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW. */
-  reviewDecision: ReviewDecision.nullable(),
+    /** Human review decision at PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW. */
+    reviewDecision: ReviewDecision.nullable(),
 
-  /** Absolute path to the generated review report file (REVIEW phase, P8b). */
-  reviewReportPath: z.string().nullable().default(null),
+    /** Absolute path to the generated review report file (REVIEW phase, P8b). */
+    reviewReportPath: z.string().nullable().default(null),
 
-  /** Append-only deterministic task preparation and completion evidence for /review. */
-  standaloneReviewEvidence: z.array(StandaloneReviewEvidence).default([]),
+    /** Append-only deterministic task preparation and completion evidence for /review. */
+    standaloneReviewEvidence: z.array(StandaloneReviewEvidence).default([]),
 
-  /**
-   * Thin ProofGraph contract declaration (advisory; #762).
-   *
-   * Declaration-only: names the claims a change asserts and their approved
-   * sources. Additive/`.optional()`; never a runtime authority. The evaluator
-   * derives `proofGraph` from these claims plus executed evidence.
-   */
-  proofContract: ProofContract.optional(),
+    /**
+     * Thin ProofGraph contract declaration (advisory; #762).
+     *
+     * Declaration-only: names the claims a change asserts and their approved
+     * sources. Additive/`.optional()`; never a runtime authority. The evaluator
+     * derives `proofGraph` from these claims plus executed evidence.
+     */
+    proofContract: ProofContract.optional(),
 
-  /** Cause-specific gaps from the most recent approved-plan materialization. */
-  proofContractCoverage: z.array(ProofContractCoverage).optional(),
+    /** Cause-specific gaps from the most recent approved-plan materialization. */
+    proofContractCoverage: z.array(ProofContractCoverage).optional(),
 
-  /**
-   * Compact ProofGraph projection (advisory; #762).
-   *
-   * Additive and `.optional()` for backward compatibility: sessions created
-   * before ProofGraph have no projection, and its absence is treated as "no
-   * graph". It never gates a workflow on its own — blocking eligibility is a
-   * policy-layer decision. Large provider artifacts live outside session state.
-   */
-  proofGraph: ProofGraphProjection.optional(),
+    /**
+     * Compact ProofGraph projection (advisory; #762).
+     *
+     * Additive and `.optional()` for backward compatibility: sessions created
+     * before ProofGraph have no projection, and its absence is treated as "no
+     * graph". It never gates a workflow on its own — blocking eligibility is a
+     * policy-layer decision. Large provider artifacts live outside session state.
+     */
+    proofGraph: ProofGraphProjection.optional(),
 
-  /** Next auto-generated ADR sequence number for /architecture. */
-  nextAdrNumber: z.number().int().positive(),
+    /** Next auto-generated ADR sequence number for /architecture. */
+    nextAdrNumber: z.number().int().positive(),
 
-  // ── Configuration ───────────────────────────────────────────
+    // ── Configuration ───────────────────────────────────────────
 
-  /**
-   * Active profile information — resolved at hydrate time.
-   * Contains the profile ID, name, and LLM rule content.
-   * The ruleContent is the stack-specific guidance text injected into
-   * tool responses when commands reference "profile rules".
-   * phaseRuleContent maps Phase values to additional phase-specific text
-   * that is appended to ruleContent when the session is in that phase.
-   * Null only if no profile was resolved (should not happen — baseline is always available).
-   */
-  activeProfile: z
-    .object({
-      id: z.string().min(1),
-      name: z.string().min(1),
-      ruleContent: z.string(),
-      phaseRuleContent: z.record(z.string(), z.string()).optional(),
-    })
-    .nullable(),
+    /**
+     * Active profile information — resolved at hydrate time.
+     * Contains the profile ID, name, and LLM rule content.
+     * The ruleContent is the stack-specific guidance text injected into
+     * tool responses when commands reference "profile rules".
+     * phaseRuleContent maps Phase values to additional phase-specific text
+     * that is appended to ruleContent when the session is in that phase.
+     * Null only if no profile was resolved (should not happen — baseline is always available).
+     */
+    activeProfile: z
+      .object({
+        id: z.string().min(1),
+        name: z.string().min(1),
+        ruleContent: z.string(),
+        phaseRuleContent: z.record(z.string(), z.string()).optional(),
+      })
+      .nullable(),
 
-  /**
-   * Active validation checks for this session.
-   * Derived from verificationCandidates at hydrate-time (unique kinds).
-   * Empty if no verification commands were discovered.
-   */
-  activeChecks: z.array(CheckId),
+    /**
+     * Active validation checks for this session.
+     * Derived from verificationCandidates at hydrate-time (unique kinds).
+     * Empty if no verification commands were discovered.
+     */
+    activeChecks: z.array(CheckId),
 
-  /**
-   * Immutable policy snapshot — frozen at session creation.
-   * Records which FlowGuard rules governed this session.
-   * The hash provides non-repudiation for auditors.
-   */
-  policySnapshot: PolicySnapshotSchema,
+    /**
+     * Immutable policy snapshot — frozen at session creation.
+     * Records which FlowGuard rules governed this session.
+     * The hash provides non-repudiation for auditors.
+     */
+    policySnapshot: PolicySnapshotSchema,
 
-  /**
-   * Identity of the session initiator (author).
-   * Set once at hydrate time, never mutated.
-   * Used for regulated approval four-eyes enforcement:
-   * initiatedBy !== reviewDecision.decidedBy (approve path).
-   *
-   * P30: For regulated sessions, this MUST be a known actor identity,
-   * not the technical session ID. Use initiatedByIdentity for full provenance.
-   */
-  initiatedBy: z.string().min(1),
+    /**
+     * Identity of the session initiator (author).
+     * Set once at hydrate time, never mutated.
+     * Used for regulated approval four-eyes enforcement:
+     * initiatedBy !== reviewDecision.decidedBy (approve path).
+     *
+     * P30: For regulated sessions, this MUST be a known actor identity,
+     * not the technical session ID. Use initiatedByIdentity for full provenance.
+     */
+    initiatedBy: z.string().min(1),
 
-  /**
-   * Structured initiator identity for regulated approval (P30).
-   * Persists actor identity at session creation for four-eyes proof.
-   * Required for regulated mode.
-   */
-  initiatedByIdentity: DecisionIdentitySchema.optional(),
+    /**
+     * Structured initiator identity for regulated approval (P30).
+     * Persists actor identity at session creation for four-eyes proof.
+     * Required for regulated mode.
+     */
+    initiatedByIdentity: DecisionIdentitySchema.optional(),
 
-  /**
-   * Resolved actor identity at hydrate time (P27).
-   * Best-effort operator identity — NOT an authentication claim.
-   * Absent when no actor identity was resolved; null is not a valid state value.
-   */
-  actorInfo: ActorInfoSchema.optional(),
+    /**
+     * Resolved actor identity at hydrate time (P27).
+     * Best-effort operator identity — NOT an authentication claim.
+     * Absent when no actor identity was resolved; null is not a valid state value.
+     */
+    actorInfo: ActorInfoSchema.optional(),
 
-  // ── Discovery ───────────────────────────────────────────────
+    // ── Discovery ───────────────────────────────────────────────
 
-  /**
-   * SHA-256 digest of the DiscoveryResult at session creation time.
-   * Used for drift detection: if the workspace discovery changes,
-   * this digest will no longer match the current discovery.json.
-   * Null for sessions created before Phase 5 (discovery system).
-   */
-  discoveryDigest: z.string().nullable().optional(),
+    /**
+     * SHA-256 digest of the DiscoveryResult at session creation time.
+     * Used for drift detection: if the workspace discovery changes,
+     * this digest will no longer match the current discovery.json.
+     * Null for sessions created before Phase 5 (discovery system).
+     */
+    discoveryDigest: z.string().nullable().optional(),
 
-  /**
-   * Lightweight discovery summary for quick consumption by Plan/Review/Implement.
-   * NOT the full DiscoveryResult — just the most useful fields.
-   * Null for sessions created before Phase 5 (discovery system).
-   */
-  discoverySummary: DiscoverySummarySchema.nullable().optional(),
+    /**
+     * Lightweight discovery summary for quick consumption by Plan/Review/Implement.
+     * NOT the full DiscoveryResult — just the most useful fields.
+     * Null for sessions created before Phase 5 (discovery system).
+     */
+    discoverySummary: DiscoverySummarySchema.nullable().optional(),
 
-  /**
-   * Compact detected stack evidence for surfacing in flowguard_status.
-   *
-   * Derived evidence — NOT SSOT. The authoritative stack data lives in
-   * DiscoveryResult.stack. This is a compact projection of all detected
-   * stack items (versioned and unversioned), sorted deterministically
-   * by category then id.
-   *
-   * Null when no items were detected or for pre-discovery sessions.
-   */
-  detectedStack: DetectedStackSchema.nullable().optional(),
+    /**
+     * Compact detected stack evidence for surfacing in flowguard_status.
+     *
+     * Derived evidence — NOT SSOT. The authoritative stack data lives in
+     * DiscoveryResult.stack. This is a compact projection of all detected
+     * stack items (versioned and unversioned), sorted deterministically
+     * by category then id.
+     *
+     * Null when no items were detected or for pre-discovery sessions.
+     */
+    detectedStack: DetectedStackSchema.nullable().optional(),
 
-  /**
-   * Advisory verification command candidates derived from stack + manifest evidence.
-   *
-   * Derived evidence — NOT SSOT. These candidates are planning hints only and
-   * MUST NOT be treated as executed checks.
-   */
-  verificationCandidates: VerificationCandidatesSchema.optional(),
+    /**
+     * Advisory verification command candidates derived from stack + manifest evidence.
+     *
+     * Derived evidence — NOT SSOT. These candidates are planning hints only and
+     * MUST NOT be treated as executed checks.
+     */
+    verificationCandidates: VerificationCandidatesSchema.optional(),
 
-  /**
-   * Execution-subject inputs keyed by verification kind.
-   *
-   * Produced by the planner alongside verificationCandidates. Each entry declares
-   * which surfaces (implementation files, config files) must be attested before
-   * and after the check runs.
-   */
-  executionSubjectInputsByKind: z
-    .record(z.string(), z.array(ExecutionSubjectInputSchema))
-    .optional(),
+    /**
+     * Execution-subject inputs keyed by verification kind.
+     *
+     * Produced by the planner alongside verificationCandidates. Each entry declares
+     * which surfaces (implementation files, config files) must be attested before
+     * and after the check runs.
+     */
+    executionSubjectInputsByKind: z
+      .record(z.string(), z.array(ExecutionSubjectInputSchema))
+      .optional(),
 
-  /**
-   * Candidate-specific execution-subject inputs. Takes precedence over the
-   * kind map when a candidateId is available; the kind map supports legacy state.
-   */
-  executionSubjectInputsByCandidateId: z
-    .record(z.string(), z.array(ExecutionSubjectInputSchema))
-    .optional(),
+    /**
+     * Candidate-specific execution-subject inputs. Takes precedence over the
+     * kind map when a candidateId is available; the kind map supports legacy state.
+     */
+    executionSubjectInputsByCandidateId: z
+      .record(z.string(), z.array(ExecutionSubjectInputSchema))
+      .optional(),
 
-  /**
-   * Pre-implementation worktree baseline (P-baseline).
-   *
-   * Snapshot of files already dirty at session start (hydrate), used by
-   * flowguard_implement to scope recorded evidence to files the task actually
-   * changed — pre-existing dirty files (e.g. a stale opencode.json) are
-   * subtracted so they are not attributed to the implementation or used to
-   * raise the risk floor.
-   *
-   * `.optional()` for backward compatibility (no schema version bump): legacy
-   * sessions and sessions hydrated by an older plugin have no baseline. When
-   * absent, implement does NOT subtract (it records the full worktree exactly
-   * as before) and surfaces `baselineScoping: "unavailable"` — it never hides
-   * evidence. Null is treated identically to absent.
-   */
-  implementationBaseline: z
-    .object({
-      /**
-       * Files dirty at capture time, each with the git blob hash of its content
-       * at session start. A pre-dirty file is scoped out of implementation
-       * evidence ONLY if its current hash still matches — so a file the task
-       * actually modified (hash changed) is never hidden. `hash` is null for a
-       * path that was unreadable/deleted at capture time.
-       */
-      dirtyFiles: z.array(
-        z.object({
-          path: z.string(),
-          hash: z.string().nullable(),
-        }),
-      ),
-      /** ISO-8601 capture timestamp (hydrate time). */
-      capturedAt: z.string().datetime(),
-    })
-    .nullable()
-    .optional(),
+    /**
+     * Pre-implementation worktree baseline (P-baseline).
+     *
+     * Snapshot of files already dirty at session start (hydrate), used by
+     * flowguard_implement to scope recorded evidence to files the task actually
+     * changed — pre-existing dirty files (e.g. a stale opencode.json) are
+     * subtracted so they are not attributed to the implementation or used to
+     * raise the risk floor.
+     *
+     * `.optional()` for backward compatibility (no schema version bump): legacy
+     * sessions and sessions hydrated by an older plugin have no baseline. When
+     * absent, implement does NOT subtract (it records the full worktree exactly
+     * as before) and surfaces `baselineScoping: "unavailable"` — it never hides
+     * evidence. Null is treated identically to absent.
+     */
+    implementationBaseline: z
+      .object({
+        /**
+         * Files dirty at capture time, each with the git blob hash of its content
+         * at session start. A pre-dirty file is scoped out of implementation
+         * evidence ONLY if its current hash still matches — so a file the task
+         * actually modified (hash changed) is never hidden. `hash` is null for a
+         * path that was unreadable/deleted at capture time.
+         */
+        dirtyFiles: z.array(
+          z.object({
+            path: z.string(),
+            hash: z.string().nullable(),
+          }),
+        ),
+        /** ISO-8601 capture timestamp (hydrate time). */
+        capturedAt: z.string().datetime(),
+      })
+      .nullable()
+      .optional(),
 
-  // ── Metadata ────────────────────────────────────────────────
+    // ── Metadata ────────────────────────────────────────────────
 
-  /** Last transition (from → to via event). Null before first transition. */
-  transition: Transition.nullable(),
+    /** Last transition (from → to via event). Null before first transition. */
+    transition: Transition.nullable(),
 
-  /** Error state. Non-null triggers ERROR event in guard evaluation. */
-  error: ErrorInfo.nullable(),
+    /** Error state. Non-null triggers ERROR event in guard evaluation. */
+    error: ErrorInfo.nullable(),
 
-  /** Session creation timestamp (set once by init()). */
-  createdAt: z.string().datetime(),
+    /** Session creation timestamp (set once by init()). */
+    createdAt: z.string().datetime(),
 
-  /** @deprecated Legacy combined archive status. New writes use the fields below. */
-  archiveStatus: z
-    .enum(['pending', 'created', 'verified', 'not_verifiable', 'failed'])
-    .nullable()
-    .optional(),
-  /** Lifecycle of the immutable raw-evidence package required at regulated completion. */
-  regulatedArchiveStatus: z
-    .enum(['pending', 'created', 'verified', 'failed'])
-    .nullable()
-    .optional(),
-  /** Result of the most recent user-requested archive export. */
-  lastExportStatus: z.enum(['verified', 'not_verifiable', 'failed']).nullable().optional(),
-  /** Classification of the most recent user-requested archive export. */
-  lastExportKind: z.enum(['redacted', 'raw']).nullable().optional(),
-});
+    /** @deprecated Legacy combined archive status. New writes use the fields below. */
+    archiveStatus: z
+      .enum(['pending', 'created', 'verified', 'not_verifiable', 'failed'])
+      .nullable()
+      .optional(),
+    /** Lifecycle of the immutable raw-evidence package required at regulated completion. */
+    regulatedArchiveStatus: z
+      .enum(['pending', 'created', 'verified', 'failed'])
+      .nullable()
+      .optional(),
+    /** Result of the most recent user-requested archive export. */
+    lastExportStatus: z.enum(['verified', 'not_verifiable', 'failed']).nullable().optional(),
+    /** Classification of the most recent user-requested archive export. */
+    lastExportKind: z.enum(['redacted', 'raw']).nullable().optional(),
+  })
+  .superRefine((state, context) => {
+    // Standalone-review lifecycle invariant: a structurally broken evidence
+    // chain (dangling supersession, cycles, completions on superseded entries,
+    // multiple authoritative incarnations) makes the STATE invalid — it must
+    // fail closed at the schema boundary instead of silently collapsing to an
+    // empty ProofGraph projection. The resolver is the single lifecycle
+    // authority (state/standalone-review.ts).
+    const assurance = state.reviewAssurance;
+    if (!assurance) return;
+    for (const obligation of assurance.obligations) {
+      if (obligation.obligationType !== 'review') continue;
+      const resolved = resolveAuthoritativeStandaloneReviewTask(
+        state.standaloneReviewEvidence,
+        obligation.obligationId,
+      );
+      if (resolved.kind === 'blocked') {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['standaloneReviewEvidence'],
+          message: `standalone review lifecycle is invalid: ${resolved.reason}`,
+        });
+        return;
+      }
+    }
+  });
 export type SessionState = z.infer<typeof SessionState>;

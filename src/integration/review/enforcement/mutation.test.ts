@@ -276,6 +276,8 @@ describe('review-enforcement mutation kills', () => {
           capturedFindings: null,
           retryCount: 0,
           lastSchemaErrors: null,
+          repairPromptRequired: false,
+          expectedRepairPromptDigest: null,
         });
 
         const shortPrompt = 'Short';
@@ -301,6 +303,8 @@ describe('review-enforcement mutation kills', () => {
           capturedFindings: null,
           retryCount: 0,
           lastSchemaErrors: null,
+          repairPromptRequired: false,
+          expectedRepairPromptDigest: null,
         });
 
         const result = enforceBeforeSubagentCall(
@@ -329,6 +333,8 @@ describe('review-enforcement mutation kills', () => {
           capturedFindings: null,
           retryCount: 0,
           lastSchemaErrors: null,
+          repairPromptRequired: false,
+          expectedRepairPromptDigest: null,
         });
 
         const result = enforceBeforeSubagentCall(state, {
@@ -352,6 +358,8 @@ describe('review-enforcement mutation kills', () => {
           capturedFindings: null,
           retryCount: 0,
           lastSchemaErrors: null,
+          repairPromptRequired: false,
+          expectedRepairPromptDigest: null,
         });
 
         const prompt = 'A'.repeat(100) + ' version=1 ' + 'B'.repeat(150);
@@ -377,6 +385,8 @@ describe('review-enforcement mutation kills', () => {
           capturedFindings: null,
           retryCount: 0,
           lastSchemaErrors: null,
+          repairPromptRequired: false,
+          expectedRepairPromptDigest: null,
         });
 
         const prompt = 'A'.repeat(100) + ' iteration=0 ' + 'B'.repeat(150);
@@ -402,6 +412,8 @@ describe('review-enforcement mutation kills', () => {
           capturedFindings: null,
           retryCount: 0,
           lastSchemaErrors: null,
+          repairPromptRequired: false,
+          expectedRepairPromptDigest: null,
         });
 
         const prompt = 'A'.repeat(50) + ' iteration=1 ' + ' planVersion=2 ' + 'B'.repeat(200);
@@ -437,6 +449,8 @@ describe('review-enforcement mutation kills', () => {
           capturedFindings: null,
           retryCount: 0,
           lastSchemaErrors: null,
+          repairPromptRequired: false,
+          expectedRepairPromptDigest: null,
         });
 
         // Mode B: submit verdict with success
@@ -464,6 +478,8 @@ describe('review-enforcement mutation kills', () => {
           capturedFindings: null,
           retryCount: 0,
           lastSchemaErrors: null,
+          repairPromptRequired: false,
+          expectedRepairPromptDigest: null,
         });
 
         // Mode B: submit verdict with error
@@ -524,6 +540,7 @@ describe('review-enforcement mutation kills', () => {
       // No pending review in transient state
       const sessionState = {
         reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v3' as const,
           obligations: [
             {
               obligationId: '00000000-0000-4000-8000-000000000001',
@@ -533,6 +550,7 @@ describe('review-enforcement mutation kills', () => {
               planVersion: 1,
               criteriaVersion: 'v1',
               mandateDigest: 'digest-abc',
+              maxReviewerOutputRepairAttempts: 1,
               createdAt: NOW,
               pluginHandshakeAt: null,
               status: 'pending' as const,
@@ -569,6 +587,7 @@ describe('review-enforcement mutation kills', () => {
       const state = createSessionState();
       const sessionState = {
         reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v3' as const,
           obligations: [
             {
               obligationId: '00000000-0000-4000-8000-000000000002',
@@ -578,6 +597,7 @@ describe('review-enforcement mutation kills', () => {
               planVersion: 1,
               criteriaVersion: 'v1',
               mandateDigest: 'digest-abc',
+              maxReviewerOutputRepairAttempts: 1,
               createdAt: NOW,
               pluginHandshakeAt: null,
               status: 'fulfilled' as const,

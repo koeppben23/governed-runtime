@@ -406,9 +406,7 @@ function appendImplReviewState(input: {
     },
     implReviewFindings: newReviewFindings.length > 0 ? newReviewFindings : undefined,
     reviewAssurance: {
-      obligations: consumedAssurance.obligations,
-      invocations: consumedAssurance.invocations,
-      attempts: consumedAssurance.attempts,
+      ...consumedAssurance,
     },
     error: null,
   };
@@ -557,6 +555,20 @@ function handlePreferredTaskTransportFailure(
         'OpenCode Task reviewer transport failure reported. Attempting the configured SDK review transport.',
       next: 'INDEPENDENT_REVIEW_REQUIRED: Host Task transport failure was reported for the pending implementation review.',
       ...reviewObligationResponseFields(pendingObligation),
+      // The canonical REVIEW_REQUIRED signal must carry the host attestation
+      // constants for the obligation it names; enforcement treats a signal
+      // without them as a structural host-context defect before any reviewer
+      // dispatch (mirrors pending-instruction.ts requiredReviewAttestation).
+      reviewInvocation: {
+        requiredReviewAttestation: {
+          reviewedBy: REVIEWER_SUBAGENT_TYPE,
+          mandateDigest: pendingObligation.mandateDigest,
+          criteriaVersion: pendingObligation.criteriaVersion,
+          toolObligationId: pendingObligation.obligationId,
+          iteration: pendingObligation.iteration,
+          planVersion: pendingObligation.planVersion,
+        },
+      },
       reviewTransportFailure: { transport: 'host_task', reported: true },
     }),
     input.state,

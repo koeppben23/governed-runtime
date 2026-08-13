@@ -104,7 +104,7 @@ describe('strictBlockedOutput', () => {
     expect(diagnostics.diagnosticCode).toBe('REVIEW_HOST_TASK_EVIDENCE_MISSING');
     expect(diagnostics.rootCause).toContain('host-visible');
     expect(diagnostics.safeNextActions).toEqual(
-      expect.arrayContaining([expect.stringContaining('Do not submit manual')]),
+      expect.arrayContaining([expect.stringContaining('Do NOT submit')]),
     );
     expect(parsed.diagnosticCard).toBeUndefined();
   });

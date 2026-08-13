@@ -5,11 +5,11 @@ import { Command, isCommandAllowed } from '../../machine/commands.js';
 import type { ChallengeResolution } from '../../state/evidence.js';
 import type { SessionState } from '../../state/schema.js';
 import type { ToolDefinition } from './helpers.js';
+import { formatError } from './error-format.js';
 import { isOpenImplementationChallenge } from './implement-review.js';
 import {
   appendNextAction,
   formatBlocked,
-  formatError,
   withMutableSessionTransaction,
   writeStateWithArtifacts,
 } from './helpers.js';

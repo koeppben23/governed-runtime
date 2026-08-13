@@ -259,6 +259,24 @@ describe('BAD: blocked paths', () => {
     }
   });
 
+  it('loadExternalContent with a branch but no repository identity returns blocked', async () => {
+    // Defense in depth: the identity was previously asserted non-null, so a
+    // missing one produced a frozen subject without `baseRepository` that only
+    // surfaced later as an opaque schema error, with the subject already unusable.
+    const result = await loadExternalContent({
+      branch: 'feature/x',
+      resolvedBranchSha: 'a'.repeat(40),
+      resolvedBaseSha: 'b'.repeat(40),
+    });
+
+    expect(result).not.toBeNull();
+    expect('content' in (result ?? {})).toBe(false);
+    if (result && 'kind' in result) {
+      expect(result.kind).toBe('blocked');
+      expect(result.code).toBe('REVIEW_REPOSITORY_IDENTITY_MISSING');
+    }
+  });
+
   it('loadExternalContent with blocked URL returns blocked', async () => {
     const result = await loadExternalContent({ url: 'http://0.0.0.0/secret' });
     expect(result).not.toBeNull();

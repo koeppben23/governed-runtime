@@ -125,6 +125,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
         },
       },
       reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
         obligations: [
           {
             obligationId,
@@ -134,6 +135,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
+            maxReviewerOutputRepairAttempts: 1,
             createdAt: now,
             pluginHandshakeAt: null,
             status: 'pending',

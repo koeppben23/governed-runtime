@@ -47,10 +47,10 @@ import {
 const MUTATION_PROFILE_ENUM = MUTATION_PROFILE_IDS as [string, ...string[]];
 import { refreshProofGraph } from '../proofgraph/refresh.js';
 import type { ToolDefinition } from './helpers.js';
+import { formatError } from './error-format.js';
 import {
   appendNextAction,
   formatBlocked,
-  formatError,
   getWorktree,
   withMutableSessionTransaction,
   writeStateWithArtifacts,

@@ -229,6 +229,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v3' as const,
           attempts: [],
           obligations: [
             {
@@ -239,6 +240,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
               planVersion: 1,
               criteriaVersion: REVIEW_CRITERIA_VERSION,
               mandateDigest: REVIEW_MANDATE_DIGEST,
+              maxReviewerOutputRepairAttempts: 1,
               createdAt: now,
               pluginHandshakeAt: now,
               status: 'fulfilled',
@@ -317,6 +319,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v3' as const,
           attempts: [],
           obligations: [
             {
@@ -327,6 +330,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
               planVersion: 1,
               criteriaVersion: REVIEW_CRITERIA_VERSION,
               mandateDigest: REVIEW_MANDATE_DIGEST,
+              maxReviewerOutputRepairAttempts: 1,
               createdAt: now,
               pluginHandshakeAt: now,
               status: 'fulfilled',
@@ -383,7 +387,6 @@ describe('architecture — BUG-15 evidence-resolve', () => {
             severity: 'major',
             category: 'risk',
             message: 'Race condition in in-memory storage',
-            location: 'TaskRepository',
             relation: {
               subjectAnchors: [
                 {
@@ -435,6 +438,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v3' as const,
           attempts: [],
           obligations: [
             {
@@ -445,6 +449,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
               planVersion: 1,
               criteriaVersion: REVIEW_CRITERIA_VERSION,
               mandateDigest: REVIEW_MANDATE_DIGEST,
+              maxReviewerOutputRepairAttempts: 1,
               createdAt: now,
               pluginHandshakeAt: now,
               status: 'fulfilled',
@@ -568,6 +573,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v3' as const,
           obligations: [],
           invocations: [],
           attempts: [],

@@ -14,11 +14,11 @@
 import { z } from 'zod';
 
 import type { ToolDefinition } from './helpers.js';
+import { formatError } from './error-format.js';
 import {
   resolveWorkspacePaths,
   withReadOnlySession,
   formatBlocked,
-  formatError,
   formatEval,
   appendNextAction,
   enrichWithNextAction,

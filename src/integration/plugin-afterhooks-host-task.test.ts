@@ -70,6 +70,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
       reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
         obligations: [
           {
             obligationId: OBLIGATION_ID,
@@ -78,6 +79,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
+            maxReviewerOutputRepairAttempts: 1,
             createdAt: now,
             pluginHandshakeAt: null,
             status: 'pending',
@@ -104,6 +106,8 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
             subjectDigest: SUBJECT_DIGEST,
             ordinal: 0,
             status: 'created' as const,
+            origin: { kind: 'initial' } as const,
+            repositoryDiscovery: { kind: 'not_applicable' } as const,
             createdAt: now,
           },
         ],

@@ -119,7 +119,12 @@ function buildAssuranceForObligation(
     pluginHandshakeAt: s === 'plugin_handshake' ? NOW() : null,
   };
   const assured = appendInvocationEvidence(
-    { obligations: [fulfilled], invocations: [], attempts: [] },
+    {
+      assuranceSchemaVersion: 'review-assurance.v3' as const,
+      obligations: [fulfilled],
+      invocations: [],
+      attempts: [],
+    },
     invocation,
   );
   return { ...assured };

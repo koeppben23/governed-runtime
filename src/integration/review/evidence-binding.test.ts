@@ -281,11 +281,14 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
 
   describe('CORNER', () => {
     it('multiple matched records — latest by completedAt wins', () => {
+      const PLAN_OBL_ID = '22222222-2222-4222-8222-222222222222';
+      const IMPL_OBL_ID = '33333333-3333-4333-8333-333333333333';
       const state = createSessionState();
 
-      // Register Mode A signals for both plan and implement tools
-      onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(), NOW);
-      onFlowGuardToolAfter(state, 'flowguard_implement', {}, modeAResponse(), NOW);
+      // Register Mode A signals for both plan and implement tools, carrying the
+      // real production signal shape (obligation identity + host attestation).
+      onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(0, 1, PLAN_OBL_ID), NOW);
+      onFlowGuardToolAfter(state, 'flowguard_implement', {}, modeAResponse(0, 1, IMPL_OBL_ID), NOW);
 
       // Create obligation matching implement type (the latest tool)
       const obligation = pendingObligation({ obligationType: 'implement' });
@@ -1231,7 +1234,12 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
     // deadlock the recovery path must avoid.
     const invocations: ReviewInvocationEvidence[] = [];
     const resolveCorrupt = resolveHostTaskFindings(
-      { obligations: [obligation], invocations, attempts: [] },
+      {
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
+        obligations: [obligation],
+        invocations,
+        attempts: [],
+      },
       obligation,
     );
     expect(resolveCorrupt.kind).not.toBe('resolved');
@@ -1262,7 +1270,12 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
     // Verdict resolution #2 → RESOLVED. The resolver iterates all invocations,
     // skips the still-unparseable corrupt one, and returns the valid re-capture.
     const resolveValid = resolveHostTaskFindings(
-      { obligations: [obligation], invocations, attempts: [] },
+      {
+        assuranceSchemaVersion: 'review-assurance.v3' as const,
+        obligations: [obligation],
+        invocations,
+        attempts: [],
+      },
       obligation,
     );
     expect(resolveValid.kind).toBe('resolved');

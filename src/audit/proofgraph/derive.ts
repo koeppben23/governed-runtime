@@ -12,6 +12,10 @@
  */
 
 import type { SessionState } from '../../state/schema.js';
+import {
+  resolveAuthoritativeStandaloneReviewTask,
+  type StandaloneReviewTask,
+} from '../../state/standalone-review.js';
 import type {
   ProofGraphProjection,
   ProofProviderResult,
@@ -30,6 +34,29 @@ import { evaluateProofGraph } from './evaluate.js';
  * @param currentSurfaceDigests Current digest per surface id for `surface_set`-bound results.
  * @param claimDiagnostics Per-claim binding diagnostic codes persisted alongside the projection.
  */
+function collectAuthoritativeStandaloneClaims(
+  state: SessionState,
+): Map<string, StandaloneReviewTask['claims'][number]> {
+  // Standalone-review claims project ONLY from the single authoritative task per
+  // obligation (canonical lifecycle authority in state/standalone-review.ts).
+  // Superseded/predecessor incarnations are audit-only. A structurally broken
+  // chain cannot reach this projection: the SessionState schema boundary
+  // rejects it fail-closed (SCHEMA_VALIDATION_FAILED) before any derivation.
+  const claims = new Map<string, StandaloneReviewTask['claims'][number]>();
+  for (const obligation of state.reviewAssurance?.obligations ?? []) {
+    if (obligation.obligationType !== 'review') continue;
+    const resolved = resolveAuthoritativeStandaloneReviewTask(
+      state.standaloneReviewEvidence,
+      obligation.obligationId,
+    );
+    if (resolved.kind !== 'ok') continue;
+    for (const claim of resolved.task.claims) {
+      claims.set(claim.claimId, claim);
+    }
+  }
+  return claims;
+}
+
 export function deriveProofGraph(
   state: SessionState,
   providerResults: readonly ProofProviderResult[],
@@ -40,11 +67,9 @@ export function deriveProofGraph(
     claimDiagnostics?: Readonly<Record<string, AssertionBindingReasonCode>>;
   },
 ): ProofGraphProjection {
-  const standaloneClaims = new Map(
-    state.standaloneReviewEvidence.flatMap((evidence) =>
-      evidence.task.claims.map((claim) => [claim.claimId, claim] as const),
-    ),
-  );
+  // Standalone-review claims project ONLY from the single authoritative task per
+  // obligation (canonical lifecycle authority in state/standalone-review.ts).
+  const standaloneClaims = collectAuthoritativeStandaloneClaims(state);
   const contractClaims = normalizeContractClaims(state);
   const base = evaluateProofGraph(
     {
