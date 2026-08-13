@@ -103,6 +103,11 @@ function validateAndMintCapture(input: {
   readonly capture: import('../../state/evidence.js').RepositoryObservationCapture;
 }): { observation: RepositoryObservation } | { drop: true } {
   const { capture, obligation, worktree } = input;
+  // Execution boundary: the capture must have been produced by the EXACT
+  // session the replay binds. A parent-side tool call (or any other session)
+  // never becomes reviewer observation authority — the session identity was
+  // recorded at capture time, not invented here.
+  if (capture.capturedSessionId !== input.childSessionId) return { drop: true };
   const target = resolveFrozenRevisionTarget(obligation, capture.revision);
   if (!target || target.objectSha !== capture.resolvedObjectSha) return { drop: true };
   let acquired;

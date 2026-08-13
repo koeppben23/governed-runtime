@@ -69,6 +69,21 @@ export function freezeContextAuthority(
 }
 
 /**
+ * Freeze-time resolution of the CURRENT commit as a plan/architecture
+ * repository context. This is the ONLY sanctioned place outside the adapter
+ * layer that resolves the mutable HEAD — it is the freeze point itself.
+ * Returns `undefined` when the commit or identity cannot be frozen
+ * (repository evidence becomes unavailable).
+ */
+export async function freezeContextAuthorityAtHead(
+  worktree: string,
+): Promise<FrozenRepositoryAuthority | undefined> {
+  const objectSha = await headCommitFull(worktree);
+  if (!objectSha) return undefined;
+  return freezeContextAuthority(worktree, objectSha);
+}
+
+/**
  * Freeze the pre-mutation implementation base. Runs at the transition INTO
  * `IMPLEMENTATION`, before any governed mutation. Throws
  * {@link FrozenRepositoryError} on failure — callers must block the

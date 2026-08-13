@@ -78,6 +78,91 @@ function frozenErrorToBlocked(err: FrozenRepositoryError): string {
   }
 }
 
+/** Validate args, capture a usable execution session identity, and normalize. */
+function validateObservationRequest(
+  args: Record<string, unknown>,
+  sessionId: string | undefined,
+): { blocked: string } | { normalizedPath: string } {
+  const parsed = ARGS.safeParse(args);
+  if (!parsed.success) {
+    return {
+      blocked: formatBlocked('REVIEW_OBSERVATION_INVALID_ARGS', {
+        reason: parsed.error.issues.map((i) => i.message).join('; '),
+      }),
+    };
+  }
+  void parsed.data;
+  // The executing session identity is recorded in the capture and later
+  // enforced by the parent replay against the actual reviewer child session.
+  // Without a session identity the tool fails closed: a capture without an
+  // execution reference can never become authority.
+  const capturedSessionId = String(sessionId ?? '').trim();
+  if (!capturedSessionId) {
+    return {
+      blocked: formatBlocked('REVIEW_OBSERVATION_INVALID_ARGS', {
+        reason: 'execution session identity unavailable — observation cannot be captured',
+      }),
+    };
+  }
+  const normalized = normalizeRepositoryPath(parsed.data.path);
+  if (!normalized) {
+    return {
+      blocked: formatBlocked('REVIEW_OBSERVATION_PATH_INVALID', { path: parsed.data.path }),
+    };
+  }
+  return { normalizedPath: normalized };
+}
+
+/**
+ * Resolve capability + session + frozen target into an acquirable revision
+ * target. The child session has no state of its own: the capability resolves
+ * through the workspace registry; once the attempt is bound to a reviewer
+ * child session, only THAT session may use the capability — the parent agent
+ * legitimately receives the capability in the host-task output, but must
+ * never be able to mint captures on the reviewer's behalf.
+ */
+async function resolveObservationTarget(input: {
+  capability: string;
+  revision: 'base' | 'head';
+  fingerprint: string;
+  capturedSessionId: string;
+}): Promise<
+  { blocked: string } | { target: NonNullable<ReturnType<typeof resolveFrozenRevisionTarget>> }
+> {
+  const resolution = await resolveAttemptByCapability({
+    workspaceHome: workspacesHome(),
+    fingerprint: input.fingerprint,
+    capability: input.capability,
+  });
+  if (!resolution) {
+    return {
+      blocked: formatBlocked('REVIEW_OBSERVATION_CAPABILITY_UNKNOWN', {
+        reason: 'The observation capability is unknown or its attempt is not currently usable.',
+      }),
+    };
+  }
+  if (
+    resolution.attempt.childSessionId &&
+    resolution.attempt.childSessionId !== input.capturedSessionId
+  ) {
+    return {
+      blocked: formatBlocked('REVIEW_OBSERVATION_CAPABILITY_UNKNOWN', {
+        reason: 'The observation capability belongs to a different reviewer session.',
+      }),
+    };
+  }
+  const target = resolveFrozenRevisionTarget(resolution.obligation, input.revision);
+  if (!target) {
+    return {
+      blocked: formatBlocked('REVIEW_OBSERVATION_AUTHORITY_UNAVAILABLE', {
+        revision: input.revision,
+        obligationId: resolution.obligation.obligationId,
+      }),
+    };
+  }
+  return { target };
+}
+
 export const observe_repository: ToolDefinition = {
   description:
     'Obtain the exact frozen repository bytes for a revision ("base" | "head") and ' +
@@ -92,41 +177,24 @@ export const observe_repository: ToolDefinition = {
   },
   async execute(args, context) {
     try {
-      const parsed = ARGS.safeParse(args);
-      if (!parsed.success) {
-        return formatBlocked('REVIEW_OBSERVATION_INVALID_ARGS', {
-          reason: parsed.error.issues.map((i) => i.message).join('; '),
-        });
-      }
-      const { capability, revision, path: rawPath } = parsed.data;
+      const validation = validateObservationRequest(args, context.sessionID);
+      if ('blocked' in validation) return validation.blocked;
+      const { normalizedPath: normalized } = validation;
+
       const worktree = getWorktree(context);
       const { fingerprint } = await resolveWorkspacePaths(context);
+      const capturedSessionId = String(context.sessionID ?? '').trim();
 
-      const normalized = normalizeRepositoryPath(rawPath);
-      if (!normalized) {
-        return formatBlocked('REVIEW_OBSERVATION_PATH_INVALID', { path: rawPath });
-      }
-
-      // The child session has no state of its own: resolve the capability to
-      // its exact owning attempt + obligation via the workspace registry.
-      const resolution = await resolveAttemptByCapability({
-        workspaceHome: workspacesHome(),
+      const resolved = await resolveObservationTarget({
+        capability: (args as Record<string, unknown>).capability as string,
+        revision: (args as Record<string, unknown>).revision as 'base' | 'head',
         fingerprint,
-        capability,
+        capturedSessionId,
       });
-      if (!resolution) {
-        return formatBlocked('REVIEW_OBSERVATION_CAPABILITY_UNKNOWN', {
-          reason: 'The observation capability is unknown or its attempt is not currently usable.',
-        });
-      }
-
-      const target = resolveFrozenRevisionTarget(resolution.obligation, revision);
-      if (!target) {
-        return formatBlocked('REVIEW_OBSERVATION_AUTHORITY_UNAVAILABLE', {
-          revision,
-          obligationId: resolution.obligation.obligationId,
-        });
-      }
+      if ('blocked' in resolved) return resolved.blocked;
+      const { target } = resolved;
+      const revision = (args as Record<string, unknown>).revision as 'base' | 'head';
+      const capability = (args as Record<string, unknown>).capability as string;
 
       let acquired;
       try {
@@ -150,6 +218,7 @@ export const observe_repository: ToolDefinition = {
 
       const capture = {
         capabilityDigest: observationCapabilityDigest(capability),
+        capturedSessionId,
         path: normalized,
         revision,
         resolvedObjectSha: target.objectSha,

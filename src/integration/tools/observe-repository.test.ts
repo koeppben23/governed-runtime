@@ -190,6 +190,7 @@ describe('observe_repository', () => {
     );
     expect(read.captures).toHaveLength(1);
     const capture = read.captures[0]!;
+    expect(capture.capturedSessionId).toBe('child-session');
     expect(capture.contentDigest).toBe(contentDigestOf(Buffer.from('frozen-content\n')));
     expect(capture.responseDigest).toBe(
       responseDigestOf(

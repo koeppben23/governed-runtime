@@ -115,6 +115,14 @@ export const MAX_REPOSITORY_OBSERVATION_BYTES = 1024 * 1024;
 export const RepositoryObservationCapture = z
   .object({
     capabilityDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    /**
+     * Host-visible identity of the session that EXECUTED the observation tool
+     * call. Recorded at capture time from the tool context — never invented
+     * later. The parent replay drops any capture whose captured session does
+     * not equal the actual reviewer child session; a parent-side tool call can
+     * therefore never become reviewer observation authority.
+     */
+    capturedSessionId: z.string().min(1),
     path: RepositoryPathSchema,
     revision: z.enum(['base', 'head']),
     resolvedObjectSha: GitSha,

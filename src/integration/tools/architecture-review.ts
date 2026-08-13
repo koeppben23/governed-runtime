@@ -62,8 +62,7 @@ import {
   buildArchitectureReviewInstruction,
 } from './architecture-shared.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
-import { headCommitFull } from '../../adapters/git.js';
-import { freezeContextAuthority } from '../../rails/repository-authority.js';
+import { freezeContextAuthorityAtHead } from '../../rails/repository-authority.js';
 
 // ─── Mode-B Internal Types ────────────────────────────────────────────────
 
@@ -530,7 +529,7 @@ async function persistAndFormatNonConvergedReview(
   );
   const resolvedTargetPaths =
     classification.kind === 'available' ? [...classification.changedFiles] : undefined;
-  const headSha = await headCommitFull(session.wsDir);
+  const repositoryAuthority = await freezeContextAuthorityAtHead(session.wsDir);
   const nextObligation = review.subagentEnabled
     ? createReviewObligation({
         obligationType: 'architecture',
@@ -546,7 +545,7 @@ async function persistAndFormatNonConvergedReview(
         metadata: targetPathsMetadata(resolvedTargetPaths),
         // Frozen repository context (freeze-time resolution): architecture
         // reviews may cite repository evidence only against this context.
-        repositoryAuthority: headSha ? freezeContextAuthority(session.wsDir, headSha) : undefined,
+        repositoryAuthority,
       })
     : null;
   let archAttemptId: string | null = null;

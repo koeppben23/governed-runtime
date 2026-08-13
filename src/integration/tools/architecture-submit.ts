@@ -18,8 +18,7 @@ import {
   resolveFrozenReviewProfile,
 } from '../review/assurance.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
-import { headCommitFull } from '../../adapters/git.js';
-import { freezeContextAuthority } from '../../rails/repository-authority.js';
+import { freezeContextAuthorityAtHead } from '../../rails/repository-authority.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Mode A: ADR Submission
@@ -52,7 +51,7 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
   if (resolvedTargetPaths && resolvedTargetPaths.length > 0) {
     metadata.targetPaths = resolvedTargetPaths;
   }
-  const headSha = await headCommitFull(ctx.wsDir);
+  const repositoryAuthority = await freezeContextAuthorityAtHead(ctx.wsDir);
   const obligation = ctx.subagentEnabled
     ? createReviewObligation({
         obligationType: 'architecture',
@@ -68,7 +67,7 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
         metadata,
         // Frozen repository context (freeze-time resolution): architecture
         // reviews may cite repository evidence only against this context.
-        repositoryAuthority: headSha ? freezeContextAuthority(ctx.wsDir, headSha) : undefined,
+        repositoryAuthority,
       })
     : null;
   let archAttemptId: string | null = null;

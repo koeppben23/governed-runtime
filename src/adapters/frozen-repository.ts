@@ -221,13 +221,25 @@ export async function freezeWorktreeCandidate(
   }
 }
 
-/** The exact blob entry of `path` inside a frozen tree/commit object. */
+/**
+ * The exact blob entry of `path` inside a frozen tree/commit object.
+ *
+ * Git treats the argument as a PATHPEC, not a literal name — a leading `:`
+ * would trigger pathspec magic (e.g. `:foo.ts` resolves as `:(top)foo.ts`).
+ * The query therefore forces `:(literal)` semantics, and the name Git returns
+ * is parsed from the `-z` record and verified for EXACT equality with the
+ * requested repository path. A pathspec shortcut resolving a different file
+ * can never produce an observation.
+ */
 export function resolveFrozenBlobEntry(
   worktree: string,
   objectSha: string,
   repositoryPath: string,
 ): { readonly mode: string; readonly type: 'blob' | 'commit'; readonly objectSha: string } {
-  const raw = gitSyncText(['ls-tree', '-z', objectSha, '--', repositoryPath], worktree);
+  const raw = gitSyncText(
+    ['ls-tree', '-z', objectSha, '--', `:(literal)${repositoryPath}`],
+    worktree,
+  );
   const records = raw.split('\0').filter(Boolean);
   if (records.length === 0) {
     throw new FrozenRepositoryError(
@@ -242,7 +254,22 @@ export function resolveFrozenBlobEntry(
       `path '${repositoryPath}' does not exist in frozen object ${objectSha}`,
     );
   }
-  const match = /^(\d+)\s(blob|commit)\s([a-f0-9]{40,64})\t/.exec(first);
+  const tabIndex = first.indexOf('\t');
+  if (tabIndex < 0) {
+    throw new FrozenRepositoryError(
+      'ACQUISITION_FAILED',
+      `unparseable ls-tree record for '${repositoryPath}' in ${objectSha}`,
+    );
+  }
+  const meta = first.slice(0, tabIndex);
+  const resolvedName = first.slice(tabIndex + 1);
+  if (resolvedName !== repositoryPath) {
+    throw new FrozenRepositoryError(
+      'PATH_NOT_IN_TREE',
+      `path '${repositoryPath}' resolved to a different tree entry '${resolvedName}' in ${objectSha}`,
+    );
+  }
+  const match = /^(\d+)\s(blob|commit)\s([a-f0-9]{40,64})$/.exec(meta);
   if (!match) {
     throw new FrozenRepositoryError(
       'ACQUISITION_FAILED',
@@ -277,22 +304,120 @@ export function readFrozenBlob(worktree: string, blobSha: string): Buffer {
   return bytes;
 }
 
-/** Immutable remote blob acquisition: exact repository + exact commit + exact path. */
-function readRemoteCommitBlob(
+/**
+ * Immutable remote acquisition: exact repository host + exact commit + exact
+ * path, with IDENTICAL Git object semantics to the local backend.
+ *
+ * Resolution: walk the git trees API (`/git/trees/{sha}`) segment by segment
+ * to obtain the EXACT tree entry (mode + object sha). Gitlink (submodule)
+ * entries fail closed; truncated trees fail closed.
+ *
+ * Acquisition: fetch exactly that blob object via `/git/blobs/{blobSha}` with
+ * the raw media type — the raw Git blob bytes, never a contents-API projection
+ * (which resolves symlinks and special-cases submodules).
+ */
+interface RemoteTreeEntry {
+  readonly path: string;
+  readonly mode: string;
+  readonly type: 'blob' | 'tree' | 'commit';
+  readonly sha: string;
+}
+
+function ghApiJson(
+  identity: RepositoryIdentity,
+  hostnameArgs: string[],
+  pathSegments: string[],
+): unknown {
+  try {
+    const stdout = execFileSync(
+      'gh',
+      ['api', '--hostname', identity.host, '--method', 'GET', ...hostnameArgs],
+      { encoding: 'utf-8', stdio: 'pipe', timeout: 20000 },
+    );
+    return JSON.parse(stdout) as unknown;
+  } catch (err) {
+    throw classifyExecFailure(`gh api ${pathSegments.join('/')}`, err);
+  }
+}
+
+function resolveRemoteTreeEntry(
   identity: RepositoryIdentity,
   commitSha: string,
   repositoryPath: string,
-): Buffer {
+): { readonly mode: string; readonly objectSha: string } {
+  const segments = repositoryPath.split('/').filter((segment) => segment.length > 0);
+  if (segments.length === 0) {
+    throw new FrozenRepositoryError('PATH_NOT_IN_TREE', 'empty repository path');
+  }
+  let currentSha = commitSha;
+  for (let index = 0; index < segments.length; index++) {
+    const segment = segments[index];
+    if (!segment) throw new FrozenRepositoryError('PATH_NOT_IN_TREE', 'empty path segment');
+    const data = ghApiJson(
+      identity,
+      [`repos/${identity.owner}/${identity.name}/git/trees/${currentSha}`],
+      segments.slice(0, index + 1),
+    ) as { readonly tree?: readonly RemoteTreeEntry[]; readonly truncated?: boolean };
+    if (data.truncated) {
+      throw new FrozenRepositoryError(
+        'OBJECT_UNAVAILABLE',
+        `remote tree ${currentSha} is truncated; exact entry resolution is not possible`,
+      );
+    }
+    const entry = (data.tree ?? []).find((candidate) => candidate.path === segment);
+    if (!entry) {
+      throw new FrozenRepositoryError(
+        'PATH_NOT_IN_TREE',
+        `path '${repositoryPath}' does not exist in remote commit ${commitSha}`,
+      );
+    }
+    const last = index === segments.length - 1;
+    if (entry.type === 'commit') {
+      throw new FrozenRepositoryError(
+        'UNSUPPORTED_ENTRY',
+        `path '${repositoryPath}' is a submodule gitlink; submodule entries are not materialized`,
+      );
+    }
+    if (last) {
+      if (entry.type !== 'blob') {
+        throw new FrozenRepositoryError(
+          'PATH_NOT_IN_TREE',
+          `path '${repositoryPath}' is not a blob in remote commit ${commitSha}`,
+        );
+      }
+      return { mode: entry.mode, objectSha: entry.sha };
+    }
+    if (entry.type !== 'tree') {
+      throw new FrozenRepositoryError(
+        'PATH_NOT_IN_TREE',
+        `path '${repositoryPath}' traverses through a non-tree entry in remote commit ${commitSha}`,
+      );
+    }
+    currentSha = entry.sha;
+  }
+  throw new FrozenRepositoryError(
+    'ACQUISITION_FAILED',
+    `could not resolve remote tree entry for '${repositoryPath}'`,
+  );
+}
+
+/** Fetch the exact raw Git blob bytes from the remote object database. */
+function readRemoteBlob(identity: RepositoryIdentity, blobSha: string): Buffer {
+  if (!/^[a-f0-9]{40,64}$/i.test(blobSha)) {
+    throw new FrozenRepositoryError('ACQUISITION_FAILED', 'invalid remote blob sha');
+  }
   try {
     const stdout = execFileSync(
       'gh',
       [
         'api',
+        '--hostname',
+        identity.host,
         '--method',
         'GET',
         '--header',
         'Accept: application/vnd.github.raw',
-        `repos/${identity.owner}/${identity.name}/contents/${repositoryPath}?ref=${commitSha}`,
+        `repos/${identity.owner}/${identity.name}/git/blobs/${blobSha}`,
       ],
       { encoding: 'buffer', stdio: 'pipe', timeout: 20000, maxBuffer: MAX_BUFFER },
     );
@@ -300,13 +425,22 @@ function readRemoteCommitBlob(
     if (bytes.length > MAX_REPOSITORY_OBSERVATION_BYTES) {
       throw new FrozenRepositoryError(
         'OVERSIZED_BLOB',
-        `remote blob at ${identity.owner}/${identity.name}:${repositoryPath}@${commitSha} exceeds the size bound`,
+        `remote blob ${blobSha} exceeds the size bound`,
       );
     }
     return bytes;
   } catch (err) {
-    throw classifyExecFailure('remote commit blob acquisition', err);
+    throw classifyExecFailure('remote blob acquisition', err);
   }
+}
+
+function readRemoteCommitBlob(
+  identity: RepositoryIdentity,
+  commitSha: string,
+  repositoryPath: string,
+): Buffer {
+  const entry = resolveRemoteTreeEntry(identity, commitSha, repositoryPath);
+  return readRemoteBlob(identity, entry.objectSha);
 }
 
 /**

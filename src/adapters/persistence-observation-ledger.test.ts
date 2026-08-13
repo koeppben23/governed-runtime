@@ -30,6 +30,7 @@ function capture(
 ): RepositoryObservationCapture {
   return {
     capabilityDigest: 'a'.repeat(64),
+    capturedSessionId: 'child-session',
     path: 'src/foo.ts',
     revision: 'head',
     resolvedObjectSha: 'b'.repeat(40),

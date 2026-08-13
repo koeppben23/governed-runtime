@@ -102,6 +102,7 @@ async function writeCapture(overrides: Record<string, unknown> = {}): Promise<vo
   });
   const capture = {
     capabilityDigest: observationCapabilityDigest(capability),
+    capturedSessionId: CHILD_SESSION,
     path: 'src/foo.ts',
     revision: 'head',
     resolvedObjectSha: headTreeSha,

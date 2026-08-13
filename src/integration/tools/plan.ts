@@ -37,8 +37,7 @@
  */
 
 import { z } from 'zod';
-import { headCommitFull } from '../../adapters/git.js';
-import { freezeContextAuthority } from '../../rails/repository-authority.js';
+import { freezeContextAuthorityAtHead } from '../../rails/repository-authority.js';
 
 import type { ToolDefinition } from './helpers.js';
 import { formatError } from './error-format.js';
@@ -302,7 +301,7 @@ async function createPlanReviewAttempt(
   if (classificationFiles && classificationFiles.length > 0) {
     metadata.targetPaths = [...classificationFiles];
   }
-  const headSha = await headCommitFull(scope.wsDir);
+  const repositoryAuthority = await freezeContextAuthorityAtHead(scope.wsDir);
   return createObligationAndAttempt(
     scope.state.reviewAssurance,
     {
@@ -320,7 +319,7 @@ async function createPlanReviewAttempt(
       // Frozen repository context (freeze-time resolution): plan reviews may
       // cite repository evidence only against this context; absence of
       // authority makes repository evidence unavailable.
-      repositoryAuthority: headSha ? freezeContextAuthority(scope.wsDir, headSha) : undefined,
+      repositoryAuthority,
     },
     scope.ctx.now(),
   );

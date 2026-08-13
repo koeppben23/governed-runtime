@@ -81,23 +81,21 @@ describe('Guard 2: no mutable revision resolution in review-authority constructi
   it('obligation creation sites never resolve mutable revisions directly', () => {
     const violations: string[] = [];
     for (const relative of OBLIGATION_CREATION_FILES) {
-      // The only sanctioned mutable-resolving form at these sites is the
-      // freeze-time resolution feeding `repositoryAuthority` — a raw
-      // provenance projection from mutable state is the forbidden pattern.
+      const hits = mutableResolutionCalls(relative);
+      if (hits.length > 0) {
+        violations.push(`${relative}: mutable resolution (${hits.join(', ')})`);
+      }
+      // Raw provenance projections fed from mutable state are the forbidden
+      // pattern the authority abstraction replaced.
       const content = fileContent(relative);
-      const passesRawProvenance = /repositoryRevisionProvenance\s*:/.test(content);
-      if (passesRawProvenance) violations.push(`${relative}: raw provenance projection`);
-      if (content.includes('repositoryAuthority') === false && content.includes('reviewSubject')) {
-        // plan/architecture/implement must consume frozen authority.
-        if (
-          ['integration/tools/plan.ts', 'integration/tools/implement-shared.ts'].includes(
-            relative,
-          ) &&
-          !content.includes('freezeContextAuthority') &&
-          !content.includes('freezeCandidatePairAuthority')
-        ) {
-          violations.push(`${relative}: missing frozen authority construction`);
-        }
+      if (/repositoryRevisionProvenance\s*:/.test(content)) {
+        violations.push(`${relative}: raw provenance projection`);
+      }
+      if (
+        ['integration/tools/plan.ts', 'integration/tools/implement-shared.ts'].includes(relative) &&
+        !content.includes('repositoryAuthority')
+      ) {
+        violations.push(`${relative}: missing frozen authority consumption`);
       }
     }
     expect(violations).toEqual([]);
@@ -110,16 +108,8 @@ describe('Guard 2: no mutable revision resolution in review-authority constructi
       if (relative.endsWith('.test.ts')) continue;
       if (FREEZE_AUTHORITY_FILES.includes(relative)) continue;
       if (relative.startsWith('adapters/')) continue;
-      // freeze-time resolution feeding frozen authority construction remains
-      // allowed at the identified creation sites.
-      if (OBLIGATION_CREATION_FILES.includes(relative)) continue;
       const content = readFileSync(file, 'utf-8');
-      if (
-        /headCommitFull\(/.test(content) &&
-        !/freezeContextAuthority|freezeCommitRevisionTarget|freezeImplementationBaseAuthority/.test(
-          content,
-        )
-      ) {
+      if (/headCommitFull\(/.test(content)) {
         offenders.push(relative);
       }
     }
