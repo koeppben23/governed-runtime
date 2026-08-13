@@ -539,7 +539,7 @@ describe('BUG-20: attestation-free fallback binding', () => {
     // Simulate persisting and reading back
     const assurance = appendInvocationEvidence(
       ensureReviewAssurance({
-        assuranceSchemaVersion: 'review-assurance.v4' as const,
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [
           {
             ...obligation,
@@ -633,7 +633,7 @@ describe('BUG-20: attestation-free fallback binding', () => {
     // Step 4: Resolve findings from evidence (what plan.ts:380 does)
     const assurance = appendInvocationEvidence(
       ensureReviewAssurance({
-        assuranceSchemaVersion: 'review-assurance.v4' as const,
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [obligation],
         invocations: [],
         attempts: [],

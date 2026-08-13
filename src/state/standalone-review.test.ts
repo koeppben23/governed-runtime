@@ -43,7 +43,7 @@ function reviewObligation(): ReturnType<typeof createReviewObligation> {
 function assuranceWith(obligationId: string): ReviewAssuranceState {
   const obligation = { ...reviewObligation(), obligationId };
   return {
-    assuranceSchemaVersion: 'review-assurance.v4',
+    assuranceSchemaVersion: 'review-assurance.v5',
     obligations: [obligation],
     invocations: [],
     attempts: [],

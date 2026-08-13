@@ -59,7 +59,7 @@ async function resolveCapability(
   return attempt.observationCapability;
 }
 
-function mintObservation(input: {
+type MintObservationBase = {
   attempt: ReviewAttempt;
   childSessionId: string;
   now: string;
@@ -68,12 +68,21 @@ function mintObservation(input: {
   target: NonNullable<ReturnType<typeof resolveFrozenRevisionTarget>>;
   contentDigest: string;
   byteLength: number;
-  representation: 'utf8_text' | 'binary';
-  /** Canonical line count — REQUIRED for utf8_text, absent for binary. */
-  lineCount: number | null;
   capturedAt: string;
   acquisitionKind: 'local_git_object' | 'remote_commit_blob';
-}): RepositoryObservation {
+};
+
+/**
+ * The input is discriminated on representation so an impossible state
+ * (utf8_text without a canonical line count) is UNREPRESENTABLE at the type
+ * level — an internal invariant break must explode, never silently mint a
+ * zero-line observation.
+ */
+type MintObservationInput =
+  | (MintObservationBase & { representation: 'utf8_text'; lineCount: number })
+  | (MintObservationBase & { representation: 'binary'; lineCount: null });
+
+function mintObservation(input: MintObservationInput): RepositoryObservation {
   const base = {
     observationId: randomUUID(),
     obligationId: input.attempt.obligationId,
@@ -91,7 +100,7 @@ function mintObservation(input: {
     acquisition: { kind: input.acquisitionKind },
   };
   return input.representation === 'utf8_text'
-    ? { ...base, representation: 'utf8_text' as const, lineCount: input.lineCount ?? 0 }
+    ? { ...base, representation: 'utf8_text' as const, lineCount: input.lineCount }
     : { ...base, representation: 'binary' as const };
 }
 
@@ -138,21 +147,27 @@ function validateAndMintCapture(input: {
     content,
   });
   if (responseDigestOf(response) !== capture.responseDigest) return { drop: true };
+  const base = {
+    attempt: input.attempt,
+    childSessionId: input.childSessionId,
+    now: input.now,
+    path: capture.path,
+    revision: capture.revision,
+    target,
+    contentDigest,
+    byteLength: acquired.bytes.length,
+    capturedAt: capture.capturedAt,
+    acquisitionKind: acquired.kind,
+  };
   return {
-    observation: mintObservation({
-      attempt: input.attempt,
-      childSessionId: input.childSessionId,
-      now: input.now,
-      path: capture.path,
-      revision: capture.revision,
-      target,
-      contentDigest,
-      byteLength: acquired.bytes.length,
-      representation,
-      lineCount: representation === 'utf8_text' ? lineCountOfUtf8(content) : null,
-      capturedAt: capture.capturedAt,
-      acquisitionKind: acquired.kind,
-    }),
+    observation:
+      representation === 'utf8_text'
+        ? mintObservation({
+            ...base,
+            representation: 'utf8_text' as const,
+            lineCount: lineCountOfUtf8(content),
+          })
+        : mintObservation({ ...base, representation: 'binary' as const, lineCount: null }),
   };
 }
 

@@ -166,7 +166,7 @@ function assuranceWith(
   attempt: ReviewAttempt | null,
 ): ReviewAssuranceState {
   return {
-    assuranceSchemaVersion: 'review-assurance.v4',
+    assuranceSchemaVersion: 'review-assurance.v5',
     obligations: [obligation],
     invocations: [],
     attempts: attempt ? [attempt] : [],
@@ -478,6 +478,7 @@ describe('direct/submitted validator path', () => {
   it('HAPPY: submitted findings with matching attempt observations pass', () => {
     const obligation = candidateObligation();
     const attempt = attemptFor(obligation, CHILD_SESSION_ID);
+    attempt.status = 'bound';
     attempt.observations = [makeObservation(obligation, attempt)];
     const result = validateReviewFindings(
       directFindings(obligation.obligationId, [{ path: 'src/foo.ts', revision: 'head' }]),
@@ -486,9 +487,53 @@ describe('direct/submitted validator path', () => {
     expect(result).toBeNull();
   });
 
+  it('BAD: rejected attempt observations are audit-only — direct findings cannot cite them', () => {
+    const obligation = candidateObligation();
+    const attempt = attemptFor(obligation, CHILD_SESSION_ID);
+    attempt.status = 'rejected';
+    attempt.rejectionReason = 'schema_invalid';
+    attempt.observations = [makeObservation(obligation, attempt)];
+    const result = validateReviewFindings(
+      directFindings(obligation.obligationId, [{ path: 'src/foo.ts', revision: 'head' }]),
+      directCtx(assuranceWith(obligation, attempt), obligation),
+    );
+    expect(result).not.toBeNull();
+    expect(JSON.parse(result!).code).toBe('REVIEW_EVIDENCE_NOT_OBSERVED');
+  });
+
+  it('EDGE: reused child session resolves the BOUND attempt, never an older rejected one', () => {
+    const obligation = candidateObligation();
+    const rejected = attemptFor(obligation, CHILD_SESSION_ID);
+    rejected.status = 'rejected';
+    rejected.rejectionReason = 'schema_invalid';
+    rejected.observations = [makeObservation(obligation, rejected, { path: 'src/foo.ts' })];
+    const bound = attemptFor(obligation, CHILD_SESSION_ID);
+    bound.ordinal = 2;
+    bound.status = 'bound';
+    bound.observations = [makeObservation(obligation, bound, { path: 'src/bar.ts' })];
+    const assurance = {
+      ...assuranceWith(obligation, null),
+      attempts: [rejected, bound],
+    };
+    // Citation of the OLD rejected attempt's observation must fail...
+    const staleCitation = validateReviewFindings(
+      directFindings(obligation.obligationId, [{ path: 'src/foo.ts', revision: 'head' }]),
+      directCtx(assurance, obligation),
+    );
+    expect(staleCitation).not.toBeNull();
+    expect(JSON.parse(staleCitation!).code).toBe('REVIEW_EVIDENCE_NOT_OBSERVED');
+    // ...while the BOUND attempt's observation authorizes.
+    const freshCitation = validateReviewFindings(
+      directFindings(obligation.obligationId, [{ path: 'src/bar.ts', revision: 'head' }]),
+      directCtx(assurance, obligation),
+    );
+    expect(freshCitation).toBeNull();
+  });
+
   it('BAD: submitted evidenceLocations without observations -> REVIEW_EVIDENCE_NOT_OBSERVED', () => {
     const obligation = candidateObligation();
     const attempt = attemptFor(obligation, CHILD_SESSION_ID);
+    attempt.status = 'bound';
     const result = validateReviewFindings(
       directFindings(obligation.obligationId, [{ path: 'src/foo.ts', revision: 'head' }]),
       directCtx(assuranceWith(obligation, attempt), obligation),

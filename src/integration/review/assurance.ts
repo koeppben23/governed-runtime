@@ -71,6 +71,8 @@ export {
   latestReviewMaterial,
   appendReviewAttempt,
   resolveAttempt,
+  resolveEvidenceAuthorizingAttempt,
+  EVIDENCE_AUTHORIZING_ATTEMPT_STATUSES,
   findBindableAttempt,
   updateAttemptStatus,
   staleObligationAttempts,

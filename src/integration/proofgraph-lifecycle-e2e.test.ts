@@ -946,7 +946,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
         claimDeclarations: { flow: 'plan', version: 'v2', claims: [CRITICAL_CLAIM] },
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v4' as const,
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [
           {
             obligationId,

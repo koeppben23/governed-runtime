@@ -55,7 +55,7 @@ import * as os from 'node:os';
 import * as crypto from 'node:crypto';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import { SessionState } from '../state/schema.js';
-import { ReviewReport } from '../state/evidence.js';
+import { RepositoryObservation, ReviewReport } from '../state/evidence.js';
 import { withSessionWriteLock } from './persistence-lock.js';
 import { ensureDir, PersistenceError, isEnoent } from './persistence-core.js';
 
@@ -263,17 +263,23 @@ function isLegacyApprove(v: unknown): boolean {
 }
 
 /**
- * Shape-only `review-assurance.v3` → `review-assurance.v4` read migration.
+ * Shape-only review-assurance read migrations, chained at the read boundary:
  *
- * The v4 form introduces frozen repository authority, opaque attempt-bound
- * observation capabilities, and attempt-owned observations. This migration
- * rewrites ONLY the version literal and invents NO authority: obligations
- * persisted under v3 without frozen authority remain authority-less (and thus
- * repository-evidence incapable) — never "repaired" by reading mutable
- * runtime state. In-flight v3 sessions stay loadable; that is the entire
- * sanctioned transition.
+ * - v3 → v4: version literal only. The v4 form introduced frozen repository
+ *   authority, opaque observation capabilities, and attempt-owned
+ *   observations. Obligations persisted under v3 without frozen authority
+ *   remain authority-less (and thus repository-evidence incapable) — never
+ *   "repaired" by reading mutable runtime state.
+ * - v4 → v5: version literal plus observation-shape capability. The v5 form
+ *   requires `resolvedObjectKind` and representation-bound `lineCount`. Pre-v5
+ *   observations do NOT satisfy that shape; this migration strips them from
+ *   the attempts (they become evidence-incapable). NO authority is invented:
+ *   neither `resolvedObjectKind` nor `lineCount` is manufactured — the
+ *   transport capture ledgers remain the audit source for the stripped
+ *   records. In-flight v3/v4 sessions stay loadable; that is the entire
+ *   sanctioned transition.
  */
-function migrateReviewAssuranceV3ToV4(node: unknown, acc: { migrated: boolean }): void {
+function migrateReviewAssuranceToV5(node: unknown, acc: { migrated: boolean }): void {
   if (!node || typeof node !== 'object' || Array.isArray(node)) return;
   const assurance = (node as Record<string, unknown>).reviewAssurance;
   if (!assurance || typeof assurance !== 'object' || Array.isArray(assurance)) return;
@@ -281,6 +287,34 @@ function migrateReviewAssuranceV3ToV4(node: unknown, acc: { migrated: boolean })
   if (record.assuranceSchemaVersion === 'review-assurance.v3') {
     record.assuranceSchemaVersion = 'review-assurance.v4';
     acc.migrated = true;
+  }
+  if (record.assuranceSchemaVersion === 'review-assurance.v4') {
+    record.assuranceSchemaVersion = 'review-assurance.v5';
+    acc.migrated = true;
+    stripNonAuthorizingObservations(record);
+  }
+}
+
+/**
+ * Strip pre-v5 observation shapes from attempts: an observation that does not
+ * satisfy the v5 representation contract can never authorize evidence, so it
+ * is removed rather than carried in a non-authorizing state. Fail-closed —
+ * nothing is invented to salvage them.
+ */
+function stripNonAuthorizingObservations(record: Record<string, unknown>): void {
+  const attempts = record.attempts;
+  if (!Array.isArray(attempts)) return;
+  for (const attempt of attempts) {
+    if (!attempt || typeof attempt !== 'object') continue;
+    const candidate = attempt as Record<string, unknown>;
+    const observations = candidate.observations;
+    if (!Array.isArray(observations)) continue;
+    const kept = observations.filter(
+      (o) => o !== null && typeof o === 'object' && RepositoryObservation.safeParse(o).success,
+    );
+    if (kept.length !== observations.length) {
+      candidate.observations = kept;
+    }
   }
 }
 
@@ -374,11 +408,11 @@ export async function readState(sessionDir: string): Promise<SessionState | null
   migrateLegacyValidationOutcomes(json);
 
   const assuranceMigration = { migrated: false };
-  migrateReviewAssuranceV3ToV4(json, assuranceMigration);
+  migrateReviewAssuranceToV5(json, assuranceMigration);
   if (assuranceMigration.migrated) {
     getAdapterLogger().warn(
       'persistence',
-      "Migrated review assurance 'review-assurance.v3' -> 'review-assurance.v4' (shape-only)",
+      "Migrated review assurance to 'review-assurance.v5' (shape-only)",
       { filePath },
     );
   }

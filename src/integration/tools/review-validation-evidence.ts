@@ -15,7 +15,7 @@
 
 import type { ReviewFindings, ReviewObligation } from '../../state/evidence.js';
 import { formatBlocked } from './helpers.js';
-import { resolveAttempt } from '../review/assurance.js';
+import { resolveEvidenceAuthorizingAttempt } from '../review/assurance.js';
 import type { FindingWithRelation } from '../review/enforcement/findings-consistency.js';
 import { bindRepositoryEvidenceLocations } from '../review/observation-binding.js';
 
@@ -52,7 +52,13 @@ export function checkRepositoryEvidenceBinding(
     });
   }
   const childSessionId = findings.reviewedBy.sessionId;
-  const attempt = ctx.assurance ? resolveAttempt(ctx.assurance, childSessionId) : null;
+  // Fail-closed evidence-authorizing attempt: ONLY a `bound` attempt of this
+  // exact obligation and child session may authorize repository evidence.
+  // Rejected/stale/expired/created attempts are audit-only; a reused child
+  // session can never resurface an older rejected attempt's observations.
+  const attempt = ctx.assurance
+    ? resolveEvidenceAuthorizingAttempt(ctx.assurance, obligation.obligationId, childSessionId)
+    : null;
   const binding = bindRepositoryEvidenceLocations({
     findings: relations,
     obligation,

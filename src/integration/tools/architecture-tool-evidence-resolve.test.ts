@@ -229,7 +229,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v4' as const,
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
           attempts: [],
           obligations: [
             {
@@ -319,7 +319,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v4' as const,
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
           attempts: [],
           obligations: [
             {
@@ -438,7 +438,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v4' as const,
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
           attempts: [],
           obligations: [
             {
@@ -573,7 +573,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v4' as const,
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
           obligations: [],
           invocations: [],
           attempts: [],

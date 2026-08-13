@@ -475,7 +475,7 @@ describe('evidence-review', () => {
 
     it('ReviewAssuranceState parses valid assurance state', () => {
       const state = {
-        assuranceSchemaVersion: 'review-assurance.v4' as const,
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [],
         invocations: [],
         attempts: [],
@@ -493,7 +493,7 @@ describe('evidence-review', () => {
       const obligation = repositoryReviewObligation();
       const attempt = attemptForObligation(obligation, { kind: 'not_applicable' });
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v4' as const,
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [obligation],
         invocations: [],
         attempts: [attempt],
@@ -547,7 +547,7 @@ describe('evidence-review', () => {
         },
       });
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v4' as const,
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [obligation],
         invocations: [],
         attempts: [attempt],

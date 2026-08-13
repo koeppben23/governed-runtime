@@ -60,7 +60,7 @@ function obligation(): ReviewObligation {
 function stateWithMaterial(material: { content: string; materialDigest: string } | undefined) {
   return makeState('REVIEW', {
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v4' as const,
+      assuranceSchemaVersion: 'review-assurance.v5' as const,
       obligations: [obligation()],
       invocations: [],
       attempts: [

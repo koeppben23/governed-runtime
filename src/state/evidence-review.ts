@@ -569,17 +569,17 @@ export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;
  * Requiring the array makes that state unrepresentable and fails fast at the
  * schema boundary instead of silently at binding time.
  *
- * `assuranceSchemaVersion` is a REQUIRED hard version literal. The
- * `review-assurance.v2` form introduced authority-bearing attempt origins and
- * frozen output-repair budgets. The `review-assurance.v4` form additionally
- * binds a host-owned repository Discovery snapshot to every attempt at mint
- * time. The `review-assurance.v4` form introduces frozen repository authority
- * (`ReviewObligation.repositoryAuthority`), opaque attempt-bound observation
- * capabilities, and attempt-owned authoritative observations. States persisted
- * under older forms MUST fail parsing — there is deliberately no defaulting
- * path for authority-bearing fields. The single sanctioned transition is the
- * shape-only v3→v4 read migration in the persistence adapter, which adds NO
- * authority information that was not already present.
+ * `assuranceSchemaVersion` is a REQUIRED hard version literal:
+ * v2 introduced authority-bearing attempt origins and frozen output-repair
+ * budgets; v3 bound host-owned repository Discovery snapshots to attempts;
+ * v4 introduced frozen repository authority, observation capabilities, and
+ * attempt-owned observations; v5 makes observations representation-typed
+ * (`resolvedObjectKind` required; `utf8_text` requires `lineCount`, `binary`
+ * forbids it). States persisted under older forms MUST fail parsing — there
+ * is deliberately no defaulting path for authority-bearing fields. The
+ * sanctioned transitions are the shape-only read migrations in the
+ * persistence adapter (v3→v4 literal; v4→v5 literal + evidence-incapability
+ * of pre-v5 observations), which add NO authority that was not present.
  *
  * Cross-record invariant: an attempt's `repositoryDiscovery` variant must
  * structurally match its owning obligation's frozen repository authority. A
@@ -589,7 +589,7 @@ export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;
  */
 export const ReviewAssuranceState = z
   .object({
-    assuranceSchemaVersion: z.literal('review-assurance.v4'),
+    assuranceSchemaVersion: z.literal('review-assurance.v5'),
     obligations: z.array(ReviewObligation),
     invocations: z.array(ReviewInvocationEvidence),
     attempts: z.array(ReviewAttempt),

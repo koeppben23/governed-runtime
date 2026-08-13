@@ -137,7 +137,7 @@ beforeAll(async () => {
   const parentState = {
     ...makeState('IMPL_REVIEW'),
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v4',
+      assuranceSchemaVersion: 'review-assurance.v5',
       obligations: [obligation],
       invocations: [],
       attempts: [attempt],
