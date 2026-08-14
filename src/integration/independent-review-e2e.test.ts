@@ -66,6 +66,7 @@ import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './review/assurance.js';
+import { renderReviewerTaskPrompt } from './review/prompt-builders.js';
 import type { SessionState } from '../state/schema.js';
 import { computeRecordDigest } from '../state/evidence-plan.js';
 import { CHALLENGE_POLICY_V1 } from '../config/policy-types.js';
@@ -114,6 +115,14 @@ function planModeAOutput(): { output: string; metadata: Record<string, unknown> 
       reviewAttemptId: ATTEMPT_ID,
       reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
       reviewMandateDigest: REVIEW_MANDATE_DIGEST,
+      reviewerTaskPrompt: renderReviewerTaskPrompt({
+        iteration: 0,
+        planVersion: 1,
+        obligationId: OBLIGATION_ID,
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+        criteriaVersion: REVIEW_CRITERIA_VERSION,
+        subjectLabel: 'the plan',
+      }),
       next: 'INDEPENDENT_REVIEW_REQUIRED: iteration=0, planVersion=1',
     }),
     metadata: {},
@@ -145,6 +154,14 @@ function reviewerTaskOutput(
     // Tier 1 host metadata: the authoritative child session id the host observed.
     metadata: { sessionID: childSessionId },
   };
+}
+
+function reviewerArgsFromReviewRequiredOutput(output: string) {
+  const reviewerTaskPrompt = (JSON.parse(output) as Record<string, unknown>).reviewerTaskPrompt;
+  if (typeof reviewerTaskPrompt !== 'string') {
+    throw new TypeError('Expected canonical reviewerTaskPrompt in review-required output');
+  }
+  return { subagent_type: 'flowguard-reviewer', prompt: reviewerTaskPrompt };
 }
 
 async function seedHostTaskPlanSession(worktree: string, sessionID: string): Promise<string> {
@@ -255,22 +272,24 @@ async function driveCaptureThroughHooks(
     verdict?: string;
   } = {},
 ): Promise<void> {
+  const beforeHook = hooks['tool.execute.before']!;
   const afterHook = hooks['tool.execute.after']!;
+  const planOutput = { title: 'Plan', ...planModeAOutput() };
   await afterHook(
     { tool: 'flowguard_plan', sessionID: PARENT_SESSION, callID: 'c-plan', args: {} },
-    { title: 'Plan', ...planModeAOutput() },
+    planOutput,
+  );
+  const reviewerArgs = reviewerArgsFromReviewRequiredOutput(planOutput.output);
+  await beforeHook(
+    { tool: 'task', sessionID: PARENT_SESSION, callID: 'c-task' },
+    { args: reviewerArgs },
   );
   await afterHook(
     {
       tool: 'task',
       sessionID: PARENT_SESSION,
       callID: 'c-task',
-      args: {
-        subagent_type: 'flowguard-reviewer',
-        prompt:
-          'Review this plan critically against the ticket. iteration=0, planVersion=1. ' +
-          'Return structured ReviewerFindingsInput JSON with your verdict.',
-      },
+      args: reviewerArgs,
     },
     { title: 'Reviewer task', ...reviewerTaskOutput(opts) },
   );
@@ -527,6 +546,7 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
       worktree: ws.tmpDir,
       serverUrl: new URL('http://localhost:3000'),
     } as Parameters<typeof FlowGuardAuditPlugin>[0]);
+    const beforeHook = hooks['tool.execute.before']!;
     const afterHook = hooks['tool.execute.after']!;
 
     // flowguard_review after-hook: the orchestrator runs handleHostTaskPolicy
@@ -591,21 +611,23 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
     }
     const initialHypothesisCount = afterHandshake?.proofGraph?.claims.length ?? 0;
     expect(initialHypothesisCount).toBeGreaterThan(0);
+    const reviewerArgsA = reviewerArgsFromReviewRequiredOutput(reviewOut.output);
 
     // Attempt A returns schema-invalid output. Binding rejects the capture with
     // a canonically repairable reason (schema_invalid), leaving the obligation
     // pending but spending only this attempt. Out-of-scope findings would be a
     // governance rejection and terminate the obligation instead — covered by
     // review-repair-retry-e2e.
+    await beforeHook(
+      { tool: 'task', sessionID: PARENT_SESSION, callID: 'c-task-a' },
+      { args: reviewerArgsA },
+    );
     await afterHook(
       {
         tool: 'task',
         sessionID: PARENT_SESSION,
         callID: 'c-task-a',
-        args: {
-          subagent_type: 'flowguard-reviewer',
-          prompt: `Review this content. iteration=1, planVersion=1. toolObligationId=${obligationId}. Return ReviewFindings JSON.`,
-        },
+        args: reviewerArgsA,
       },
       {
         title: 'Reviewer task',
@@ -707,15 +729,17 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
       }),
       metadata: { sessionID: RETRY_CHILD_SESSION },
     };
+    const reviewerArgsB = { subagent_type: 'flowguard-reviewer', prompt: retryPrompt };
+    await beforeHook(
+      { tool: 'task', sessionID: PARENT_SESSION, callID: 'c-task-b' },
+      { args: reviewerArgsB },
+    );
     await afterHook(
       {
         tool: 'task',
         sessionID: PARENT_SESSION,
         callID: 'c-task-b',
-        args: {
-          subagent_type: 'flowguard-reviewer',
-          prompt: `${retryPrompt}\n\n## Reviewed content\nbranch feature-add-due-date`,
-        },
+        args: reviewerArgsB,
       },
       taskBOut,
     );

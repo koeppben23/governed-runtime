@@ -246,7 +246,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // REVIEWER_CONTEXT_UNAVAILABLE.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '81b75c9464dd2a8396248817e6b2c57a4e41250462b35ca36ccaa22b9867eea9',
+      '2e76204933632daa01ce3bac16404626e7a4fa3f64ccaab2639c9e1ae36118e5',
     );
   });
 

@@ -58,10 +58,11 @@ Start the compliance review flow for the current FlowGuard session.
     and NO \`pluginReviewFindings\`, manually call the \`${REVIEWER_SUBAGENT_TYPE}\` subagent
     via Task tool:
     - Use \`subagent_type: "${REVIEWER_SUBAGENT_TYPE}"\`
-    - The response MUST include a \`reviewerTaskPrompt\` field: pass it VERBATIM as the Task
-      tool "prompt" argument without appending content, Discovery context, or instructions.
-      This canonical prompt already carries the frozen material, the attempt-bound Discovery
-      snapshot, the required review context (iteration/planVersion), and the attestation.
+    - The response MUST include a \`reviewerTaskPrompt\` field. Call Task only with
+      \`subagent_type: "${REVIEWER_SUBAGENT_TYPE}"\`; FlowGuard injects the canonical prompt
+      at the host boundary. Do not add a Task \`prompt\` or append review instructions.
+      The injected prompt carries the frozen material, attempt-bound Discovery snapshot,
+      required review context (iteration/planVersion), and attestation.
       Do NOT free-compose a prompt: a repository review without a canonical
       \`reviewerTaskPrompt\` is blocked with \`REVIEWER_CONTEXT_UNAVAILABLE\` — report that
       code with its recovery steps and stop instead of assembling a substitute prompt.
@@ -86,7 +87,7 @@ Start the compliance review flow for the current FlowGuard session.
     - **Retry after schema_invalid**: If the Task call returns \`bindOutcome: "schema_invalid"\` (the reviewer's output failed validation), do NOT re-run the Task with the same prompt. Instead:
       1. Look at the \`schemaErrors\` field (if present) to understand which fields failed.
       2. Call \`flowguard_review\` again with the original content fields and \`reviewObligationId\` from \`requiredReviewAttestation.toolObligationId\`. This produces a fresh \`reviewerTaskPrompt\` with the validation errors embedded.
-      3. Pass the NEW \`reviewerTaskPrompt\` to the Task tool — never reuse the old one.
+       3. Invoke a new Task with only \`subagent_type: "${REVIEWER_SUBAGENT_TYPE}"\`; FlowGuard injects the new canonical prompt.
       4. If the Task is blocked with \`REVIEWER_OUTPUT_RETRY_EXHAUSTED\`, the retry budget is exhausted — report to the operator and stop; do NOT fabricate findings, guess a verdict, or call any other authority path.
 
 5. Complete content-aware \`flowguard_review\` according to the review invocation mode:

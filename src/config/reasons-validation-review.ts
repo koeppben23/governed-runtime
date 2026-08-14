@@ -725,4 +725,24 @@ export const REVIEW_VALIDATION_REASONS = [
       'Do NOT submit reviewFindings in host_task_required mode — only reviewVerdict',
     ],
   },
+  {
+    code: 'SUBAGENT_PROMPT_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'The reviewer Task prompt differs from the host-issued prompt and could not be safely substituted.',
+    recoverySteps: [
+      'Re-run the originating FlowGuard command to issue a fresh reviewer Task request',
+      'Do not modify reviewer instructions or append material outside FlowGuard',
+    ],
+  },
+  {
+    code: 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+    category: 'state',
+    messageTemplate:
+      'The reviewer Task completed without a host-owned execution provenance record. Its output cannot bind to a review obligation.',
+    recoverySteps: [
+      'Re-run the originating FlowGuard command to issue a fresh reviewer Task request',
+      'Do not reuse the prior reviewer output or submit copied findings',
+    ],
+  },
 ] as const satisfies readonly BlockedReason[];

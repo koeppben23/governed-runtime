@@ -32,6 +32,7 @@ import {
   REVIEW_MANDATE_DIGEST,
 } from './review/assurance.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
+import { renderReviewerTaskPrompt } from './review/prompt-builders.js';
 import { executeReviewDecision } from '../rails/review-decision.js';
 import { computeRecordDigest } from '../state/evidence-plan.js';
 import { createTestContext } from '../testing.js';
@@ -174,8 +175,25 @@ function planReviewRequiredOutput(): string {
     reviewAttemptId: ATTEMPT_ID,
     reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
     reviewMandateDigest: REVIEW_MANDATE_DIGEST,
+    reviewerTaskPrompt:
+      renderReviewerTaskPrompt({
+        iteration: 0,
+        planVersion: 1,
+        obligationId: OBLIGATION_ID,
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+        criteriaVersion: REVIEW_CRITERIA_VERSION,
+        subjectLabel: 'the plan',
+      }) + '\n## Plan\n1. Fix the auth feature.',
     next: 'INDEPENDENT_REVIEW_REQUIRED: iteration=0, planVersion=1',
   });
+}
+
+function reviewerArgsFromReviewRequiredOutput(output: string) {
+  const reviewerTaskPrompt = (JSON.parse(output) as Record<string, unknown>).reviewerTaskPrompt;
+  if (typeof reviewerTaskPrompt !== 'string') {
+    throw new TypeError('Expected canonical reviewerTaskPrompt in review-required output');
+  }
+  return { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: reviewerTaskPrompt };
 }
 
 describe('reviewer host-task after-hook: no_matched_record → sequential re-invocation → bound', () => {
@@ -205,18 +223,21 @@ describe('reviewer host-task after-hook: no_matched_record → sequential re-inv
       const hooks = await FlowGuardAuditPlugin(
         createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
       );
+      const beforeHook = hooks['tool.execute.before']!;
       const afterHook = hooks['tool.execute.after']!;
-      const reviewerArgs = {
-        subagent_type: REVIEWER_SUBAGENT_TYPE,
-        prompt: 'iteration=0, planVersion=1 — review this plan critically for the auth feature.',
+      const planOutput = {
+        title: 'flowguard_plan',
+        output: planReviewRequiredOutput(),
+        metadata: {},
       };
 
       // ── Mode A: flowguard_plan signals INDEPENDENT_REVIEW_REQUIRED ───────────
       // Registers the in-memory pending review the reviewer Task will match.
       await afterHook(
         { tool: 'flowguard_plan', sessionID, callID: 'call-plan', args: {} },
-        { title: 'flowguard_plan', output: planReviewRequiredOutput(), metadata: {} },
+        planOutput,
       );
+      const reviewerArgs = reviewerArgsFromReviewRequiredOutput(planOutput.output);
 
       // ── Reviewer Task #1: not-yet-bindable findings (no overallVerdict) ──────
       const firstOutput: { title: string; output: string; metadata: Record<string, unknown> } = {
@@ -224,6 +245,7 @@ describe('reviewer host-task after-hook: no_matched_record → sequential re-inv
         output: noVerdictReviewerOutput(),
         metadata: { sessionID: 'ses_child_corrupt_e2e' },
       };
+      await beforeHook({ tool: 'task', sessionID, callID: 'call-1' }, { args: reviewerArgs });
       await afterHook(
         { tool: 'task', sessionID, callID: 'call-1', args: reviewerArgs },
         firstOutput,
@@ -238,11 +260,16 @@ describe('reviewer host-task after-hook: no_matched_record → sequential re-inv
       expect(afterFirst?.reviewAssurance?.invocations ?? []).toHaveLength(0);
 
       // ── Reviewer Task #2: sequential re-invocation with valid findings ───────
+      await afterHook(
+        { tool: 'flowguard_plan', sessionID, callID: 'call-plan-retry', args: {} },
+        planOutput,
+      );
       const secondOutput: { title: string; output: string; metadata: Record<string, unknown> } = {
         title: 'task',
         output: validReviewerOutput(),
         metadata: { sessionID: CHILD_VALID },
       };
+      await beforeHook({ tool: 'task', sessionID, callID: 'call-2' }, { args: reviewerArgs });
       await afterHook(
         { tool: 'task', sessionID, callID: 'call-2', args: reviewerArgs },
         secondOutput,
@@ -272,19 +299,23 @@ describe('reviewer host-task after-hook: no_matched_record → sequential re-inv
       const hooks = await FlowGuardAuditPlugin(
         createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
       );
+      const beforeHook = hooks['tool.execute.before']!;
       const afterHook = hooks['tool.execute.after']!;
-      const reviewerArgs = {
-        subagent_type: REVIEWER_SUBAGENT_TYPE,
-        prompt: 'iteration=0, planVersion=1 - review this plan critically for the auth feature.',
+      const planOutput = {
+        title: 'flowguard_plan',
+        output: planReviewRequiredOutput(),
+        metadata: {},
       };
 
       await afterHook(
         { tool: 'flowguard_plan', sessionID, callID: 'call-plan', args: {} },
-        { title: 'flowguard_plan', output: planReviewRequiredOutput(), metadata: {} },
+        planOutput,
       );
+      const reviewerArgs = reviewerArgsFromReviewRequiredOutput(planOutput.output);
 
       // A first reviewer Task returns an unusable capture, so the attempt is
       // spent but the obligation is still awaiting review.
+      await beforeHook({ tool: 'task', sessionID, callID: 'call-first' }, { args: reviewerArgs });
       await afterHook(
         { tool: 'task', sessionID, callID: 'call-first', args: reviewerArgs },
         { title: 'task', output: noVerdictReviewerOutput(), metadata: {} },
@@ -307,12 +338,9 @@ describe('reviewer host-task after-hook: no_matched_record → sequential re-inv
 
       // The retry would have to re-arm the spent attempt. A settled obligation
       // must refuse that, otherwise a late reviewer reopens a closed decision.
-      const output: { title: string; output: string; metadata: Record<string, unknown> } = {
-        title: 'task',
-        output: validReviewerOutput(),
-        metadata: {},
-      };
-      await afterHook({ tool: 'task', sessionID, callID: 'call-late', args: reviewerArgs }, output);
+      await expect(
+        beforeHook({ tool: 'task', sessionID, callID: 'call-late' }, { args: reviewerArgs }),
+      ).rejects.toThrow('REVIEWER_TASK_REQUIRES_PENDING_OBLIGATION');
 
       // Fail closed: no invocation, and no fresh attempt minted to carry one.
       const after = await readState(sessDir);
@@ -336,23 +364,35 @@ describe('reviewer host-task after-hook: no_matched_record → sequential re-inv
       const hooks = await FlowGuardAuditPlugin(
         createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
       );
+      const beforeHook = hooks['tool.execute.before']!;
       const afterHook = hooks['tool.execute.after']!;
-      const reviewerArgs = {
-        subagent_type: REVIEWER_SUBAGENT_TYPE,
-        prompt: 'iteration=0, planVersion=1 - review this plan critically for the auth feature.',
+      const planOutput = {
+        title: 'flowguard_plan',
+        output: planReviewRequiredOutput(),
+        metadata: {},
       };
 
       await afterHook(
         { tool: 'flowguard_plan', sessionID, callID: 'call-plan', args: {} },
-        { title: 'flowguard_plan', output: planReviewRequiredOutput(), metadata: {} },
+        planOutput,
       );
+      const reviewerArgs = reviewerArgsFromReviewRequiredOutput(planOutput.output);
 
       // Both Task callbacks report the SAME reviewer session id.
       for (const callID of ['call-a', 'call-b']) {
-        await afterHook(
-          { tool: 'task', sessionID, callID, args: reviewerArgs },
-          { title: 'task', output: validReviewerOutput(), metadata: { sessionID: CHILD_VALID } },
+        const dispatched = await beforeHook(
+          { tool: 'task', sessionID, callID },
+          { args: reviewerArgs },
+        ).then(
+          () => true,
+          () => false,
         );
+        if (dispatched) {
+          await afterHook(
+            { tool: 'task', sessionID, callID, args: reviewerArgs },
+            { title: 'task', output: validReviewerOutput(), metadata: { sessionID: CHILD_VALID } },
+          );
+        }
       }
 
       // One reviewer session satisfies at most one attempt.
@@ -394,17 +434,20 @@ describe('host-task evidence → plan certificate lineage', () => {
       const hooks = await FlowGuardAuditPlugin(
         createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
       );
+      const beforeHook = hooks['tool.execute.before']!;
       const afterHook = hooks['tool.execute.after']!;
-      const reviewerArgs = {
-        subagent_type: REVIEWER_SUBAGENT_TYPE,
-        prompt: 'iteration=0, planVersion=1 — review this plan critically for the auth feature.',
+      const planOutput = {
+        title: 'flowguard_plan',
+        output: planReviewRequiredOutput(),
+        metadata: {},
       };
 
       // Register the pending review (same pattern as the recovery test).
       await afterHook(
         { tool: 'flowguard_plan', sessionID, callID: 'call-plan', args: {} },
-        { title: 'flowguard_plan', output: planReviewRequiredOutput(), metadata: {} },
+        planOutput,
       );
+      const reviewerArgs = reviewerArgsFromReviewRequiredOutput(planOutput.output);
 
       // Simulate reviewer Task completion — exercises plugin-task-evidence.ts.
       const taskOutput: { title: string; output: string; metadata: Record<string, unknown> } = {
@@ -412,6 +455,7 @@ describe('host-task evidence → plan certificate lineage', () => {
         output: validReviewerOutput(),
         metadata: {},
       };
+      await beforeHook({ tool: 'task', sessionID, callID: 'call-task' }, { args: reviewerArgs });
       await afterHook(
         { tool: 'task', sessionID, callID: 'call-task', args: reviewerArgs },
         taskOutput,

@@ -185,7 +185,7 @@ export function buildPendingReviewInstruction(
       `Use subagent_type "${REVIEWER_SUBAGENT_TYPE}" with a prompt that includes the ${input.subjectLabel}, ` +
       `${renderReviewContext({ iteration: input.iteration, planVersion: input.planVersion })}. ` +
       (reviewerTaskPrompt
-        ? 'A ready-to-use reviewer prompt is provided in the reviewerTaskPrompt field — pass it VERBATIM as the Task tool "prompt" argument (append the artifact content), so the required review context is present on the first attempt. '
+        ? 'A canonical reviewer prompt is available for diagnostics and audit. Call the Task tool with the reviewer subagent type only; FlowGuard injects the host-issued prompt at the Task boundary. Do not append or modify reviewer instructions. '
         : '') +
       'After the reviewer returns, submit ONLY the verdict via reviewVerdict; the plugin resolves the reviewer findings from captured evidence automatically. ' +
       'Do NOT submit, copy, or alter reviewFindings in host-task mode — hand-edited or mismatched findings are rejected (SUBAGENT_SESSION_MISMATCH / findings hash mismatch). ' +

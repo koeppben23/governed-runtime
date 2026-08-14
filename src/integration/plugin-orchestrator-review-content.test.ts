@@ -236,6 +236,7 @@ function buildDeps(
       blockReviewOutcome,
       getEnforcementState: vi.fn().mockReturnValue({
         pendingReviews: new Map(),
+        executedTaskPrompts: new Map(),
       }),
       log: { info: vi.fn(), warn: vi.fn() },
       client,

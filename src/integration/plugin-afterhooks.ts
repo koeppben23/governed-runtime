@@ -59,6 +59,7 @@ import {
 import { enforceRiskClassificationAfterBash as enforceRiskAfterBash } from './plugin-risk.js';
 import { enforceDiscoveryHealthAfterBash } from './plugin-discovery-health.js';
 import { trackTaskEnforcement } from './plugin-enforcement-tracking.js';
+import { takeExecutedTaskPrompt } from './review/enforcement/execution-provenance.js';
 import { strictBlockedOutput, getToolMetadata, getToolCallID } from './plugin-helpers.js';
 import {
   ensureReviewAssurance,
@@ -281,33 +282,31 @@ async function handleTaskAfter(
   ctx: AfterHookContext,
 ): Promise<void> {
   const taskArgs = getToolArgs(ctx.input);
+  const enforcement = runtime.ws.getEnforcementState(ctx.sessionId);
+  const executionContext = resolveTaskExecutionContext(enforcement, ctx, taskArgs);
+  const { isReviewerTask, execution, executedTaskInput, executedTaskArgs } = executionContext;
+  if (isReviewerTask && !execution) {
+    ctx.hookOutput.output = strictBlockedOutput('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE', {
+      reason: 'No host-owned execution record exists for this reviewer Task call.',
+    });
+    runtime.log.warn('host-task', 'reviewer capture rejected without execution provenance', {
+      sessionId: ctx.sessionId,
+      callId: getToolCallID(ctx.hookInput),
+    });
+    return;
+  }
   const resolvedChildSessionId = resolveReviewerTaskSessionId(
     ctx.hookInput,
     ctx.hookOutput,
-    taskArgs,
+    executedTaskArgs,
   );
   try {
-    trackTaskEnforcement(
-      runtime.ws.getEnforcementState(ctx.sessionId),
-      ctx.input,
-      ctx.hookOutput,
-      ctx.now,
-    );
+    trackTaskEnforcement(enforcement, executedTaskInput, ctx.hookOutput, ctx.now);
   } catch (err) {
     runtime.logError('enforcement tracking failed', err);
   }
-  // Structural host-context defects are not reviewer repairable; make the
-  // transient marker visible in the plugin log the moment it is detected.
-  for (const pending of runtime.ws.getEnforcementState(ctx.sessionId).pendingReviews.values()) {
-    if ((pending.enforcementFailure ?? null) !== null) {
-      runtime.log.warn('review', 'structural host review context failure at capture', {
-        sessionId: ctx.sessionId,
-        enforcementFailure: pending.enforcementFailure,
-        obligationId: pending.obligationId,
-      });
-    }
-  }
-  if (taskArgs.subagent_type === REVIEWER_SUBAGENT_TYPE) {
+  logStructuralContextFailures(runtime, ctx.sessionId, enforcement);
+  if (isReviewerTask) {
     // Bind the child session to the pre-created attempt atomically
     // BEFORE the evidence binding callback runs.
     if (resolvedChildSessionId) {
@@ -349,6 +348,46 @@ async function handleTaskAfter(
       ctx.hookOutput,
     );
   }
+}
+
+function logStructuralContextFailures(
+  runtime: FlowGuardPluginRuntime,
+  sessionId: string,
+  enforcement: SessionEnforcementState,
+): void {
+  for (const pending of enforcement.pendingReviews.values()) {
+    if ((pending.enforcementFailure ?? null) === null) continue;
+    runtime.log.warn('review', 'structural host review context failure at capture', {
+      sessionId,
+      enforcementFailure: pending.enforcementFailure,
+      obligationId: pending.obligationId,
+    });
+  }
+}
+
+function resolveTaskExecutionContext(
+  enforcement: SessionEnforcementState,
+  ctx: AfterHookContext,
+  taskArgs: Record<string, unknown>,
+): {
+  readonly isReviewerTask: boolean;
+  readonly execution: ReturnType<typeof takeExecutedTaskPrompt>;
+  readonly executedTaskInput: unknown;
+  readonly executedTaskArgs: Record<string, unknown>;
+} {
+  const isReviewerTask = taskArgs.subagent_type === REVIEWER_SUBAGENT_TYPE;
+  const execution = isReviewerTask
+    ? takeExecutedTaskPrompt(enforcement, getToolCallID(ctx.hookInput))
+    : null;
+  const executedTaskArgs = execution
+    ? { ...taskArgs, prompt: execution.canonicalPrompt }
+    : taskArgs;
+  return {
+    isReviewerTask,
+    execution,
+    executedTaskInput: execution ? { ...ctx.hookInput, args: executedTaskArgs } : ctx.input,
+    executedTaskArgs,
+  };
 }
 
 function resolveReviewerTaskSessionId(

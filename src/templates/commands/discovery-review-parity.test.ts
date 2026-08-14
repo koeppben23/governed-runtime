@@ -33,11 +33,11 @@ describe('templates/commands Discovery review parity (Item 2)', () => {
         expect(template).toContain('detectedStack');
       });
 
-      // HAPPY — the full canonical prompt transports the frozen review context.
-      it('requires the canonical reviewer prompt verbatim', () => {
+      // HAPPY — the host injects the canonical prompt with frozen review context.
+      it('requires host injection of the canonical reviewer prompt', () => {
         expect(template).toContain(REVIEWER_SUBAGENT_TYPE);
-        expect(template).toContain('pass it byte-for-byte as the Task tool "prompt" argument');
-        expect(template).toContain('Do not append artifact content, Discovery context');
+        expect(template).toContain('FlowGuard injects the canonical prompt at the host boundary');
+        expect(template).toContain('Do not add a Task `prompt`');
       });
 
       // BAD — unverifiable Discovery yields NOT_VERIFIED, never invented truth.

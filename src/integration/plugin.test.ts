@@ -1350,7 +1350,7 @@ describe('integration/plugin', () => {
     });
 
     // ── C2 regression: before hook reads args from output, not input ──
-    it('C2 HAPPY — before hook reads task subagent_type from output.args, not input', async () => {
+    it('C2 BAD — reviewer Task without host execution provenance is blocked', async () => {
       const ws = await createTestWorkspace();
       try {
         const sessionID = crypto.randomUUID();
@@ -1373,7 +1373,9 @@ describe('integration/plugin', () => {
         // because input does NOT carry args per the documented contract.
         const input = { tool: 'task', sessionID, callID: 'c1' };
         const output = { args: { subagent_type: 'flowguard-reviewer', prompt: 'test' } };
-        await expect(beforeHook!(input, output)).resolves.toBeUndefined();
+        await expect(beforeHook!(input, output)).rejects.toThrow(
+          'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+        );
       } finally {
         await ws.cleanup();
       }
@@ -1415,7 +1417,7 @@ describe('integration/plugin', () => {
       }
     });
 
-    it('C2 CORNER — input.args is ignored even if present (only output.args matters)', async () => {
+    it('C2 CORNER — input.args cannot supply reviewer execution provenance', async () => {
       const ws = await createTestWorkspace();
       try {
         const sessionID = crypto.randomUUID();
@@ -1440,7 +1442,9 @@ describe('integration/plugin', () => {
         const output = { args: { subagent_type: 'flowguard-reviewer', prompt: 'test' } };
         // The hook should read output.args (flowguard-reviewer), not input.args (WRONG_TYPE)
         // If it reads input.args, it would miss the enforcement logic for flowguard-reviewer
-        await expect(beforeHook!(input, output)).resolves.toBeUndefined();
+        await expect(beforeHook!(input, output)).rejects.toThrow(
+          'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+        );
       } finally {
         await ws.cleanup();
       }

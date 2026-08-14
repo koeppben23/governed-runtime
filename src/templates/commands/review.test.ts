@@ -93,10 +93,9 @@ describe('templates/commands/review (#401 Discovery context)', () => {
       expect(REVIEW_COMMAND).not.toContain('git diff <base>...<branch>');
     });
 
-    it('uses a supplied reviewer task prompt without appending material', () => {
-      expect(REVIEW_COMMAND).toContain(
-        'without appending content, Discovery context, or instructions',
-      );
+    it('uses host injection for the supplied reviewer task prompt', () => {
+      expect(REVIEW_COMMAND).toContain('FlowGuard injects the canonical prompt');
+      expect(REVIEW_COMMAND).toContain('Do not add a Task `prompt`');
     });
 
     it('requires verdict-only completion after host-task evidence binds', () => {

@@ -5,6 +5,7 @@ export type ReviewSignalBinding = {
   readonly attemptId?: string | null;
   readonly obligationId?: string | null;
   readonly canonicalPromptAnchor?: string | null;
+  readonly canonicalPrompt?: string | null;
   readonly canonicalPromptDigest?: string | null;
   readonly hostAttestationConstants?: {
     readonly mandateDigest: string;
@@ -31,6 +32,7 @@ export function buildPendingReview(
     subagentRecord: null,
     contentMeta: extractContentMeta(next),
     canonicalPromptAnchor: binding.canonicalPromptAnchor ?? null,
+    canonicalPrompt: binding.canonicalPrompt ?? null,
     capturedFindings: null,
     ...retryState,
     expectedPromptDigest: binding.canonicalPromptDigest ?? null,

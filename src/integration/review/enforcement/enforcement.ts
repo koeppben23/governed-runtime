@@ -36,7 +36,11 @@ import {
   type PendingReviewTool,
   REVIEW_REQUIRED_PREFIX,
 } from './types.js';
-import { canonicalPromptAnchorOf, canonicalPromptDigestOf } from './prompt-contract.js';
+import {
+  canonicalPromptAnchorOf,
+  canonicalPromptDigestOf,
+  canonicalPromptOf,
+} from './prompt-contract.js';
 import {
   extractCapturedFindings,
   resolveSubagentSessionId,
@@ -63,7 +67,7 @@ import { parseToolResult } from '../../plugin-helpers.js';
 
 /** Create a fresh enforcement state for a session. */
 export function createSessionState(): SessionEnforcementState {
-  return { pendingReviews: new Map() };
+  return { pendingReviews: new Map(), executedTaskPrompts: new Map() };
 }
 
 // ─── Hook handlers (pure functions) ──────────────────────────────────────────
@@ -105,6 +109,7 @@ function trackContentAnalysis(state: SessionEnforcementState, now: string): void
     subagentRecord: null,
     contentMeta: { expectedIteration: 1, expectedPlanVersion: 1 },
     canonicalPromptAnchor: null,
+    canonicalPrompt: null,
     capturedFindings: null,
     retryCount: 0,
     hostAttestationConstants: null,
@@ -202,6 +207,7 @@ function trackRequiredReview(
       attemptId,
       obligationId,
       canonicalPromptAnchor: canonicalPromptAnchorOf(parsed),
+      canonicalPrompt: canonicalPromptOf(parsed),
       canonicalPromptDigest: canonicalPromptDigestOf(parsed),
       hostAttestationConstants: readHostAttestationConstants(signalAttestationOf(parsed)),
     });
