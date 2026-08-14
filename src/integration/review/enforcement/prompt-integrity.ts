@@ -17,6 +17,7 @@ import {
   type EnforcementResult,
   MIN_SUBAGENT_PROMPT_LENGTH,
 } from './types.js';
+import type { ReviewAssuranceState } from '../../../state/evidence.js';
 import { promptContainsValue } from './extraction.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../tool-names.js';
 import { isPendingCaptureUsable } from './prepare-findings.js';
@@ -93,10 +94,60 @@ function structuralContextBlock(state: SessionEnforcementState): EnforcementResu
   };
 }
 
+/**
+ * Whether a pending review may be dispatched by the reviewer Task RIGHT NOW.
+ *
+ * Dispatch authority is the DURABLE attempt lifecycle, never the transient
+ * capture: a Task call may run only when its pending review names a durable
+ * attempt that is still `created` (bindable, no child session). A rejected,
+ * bound, staled, or expired attempt is never re-dispatched by a bare Task
+ * call — only the originating FlowGuard command re-issues an attempt
+ * (canonical output repair) and emits a fresh signal first.
+ *
+ * The transient capture is consulted only when NO durable assurance is
+ * available to the gate (legacy fallback for callers without state access).
+ */
+function isDispatchable(
+  pending: PendingReview,
+  assurance: ReviewAssuranceState | null | undefined,
+): boolean {
+  const namesAttempt = pending.obligationId != null && pending.attemptId != null;
+  if (assurance && namesAttempt) {
+    const durable = assurance.attempts.find(
+      (a) => a.obligationId === pending.obligationId && a.attemptId === pending.attemptId,
+    );
+    return durable !== undefined && durable.status === 'created' && !durable.childSessionId;
+  }
+  if (pending.subagentCalled === false) return true;
+  if (!assurance) return !isPendingCaptureUsable(pending);
+  return false;
+}
+
+/**
+ * With durable authority, a pending review without a bindable attempt is NOT
+ * dispatchable: a bare Task call must never re-arm a rejected attempt. Only
+ * the originating FlowGuard command re-issues attempts.
+ */
+function notDispatchableBlock(
+  state: SessionEnforcementState,
+  assurance: ReviewAssuranceState | null | undefined,
+): EnforcementResult | null {
+  if (!assurance || state.pendingReviews.size === 0) return null;
+  return {
+    allowed: false,
+    code: 'REVIEWER_TASK_NOT_DISPATCHABLE',
+    reason:
+      'FlowGuard enforcement: no reviewer Task can be dispatched — the review ' +
+      'obligation has no durable bindable attempt. Re-run the originating ' +
+      'FlowGuard command to authorize a fresh review attempt.',
+  };
+}
+
 export function enforceBeforeSubagentCall(
   state: SessionEnforcementState,
   taskArgs: Record<string, unknown>,
   strictEnforcement = false,
+  assurance?: ReviewAssuranceState | null,
 ): EnforcementResult {
   const subagentType = typeof taskArgs.subagent_type === 'string' ? taskArgs.subagent_type : '';
   if (subagentType !== REVIEWER_SUBAGENT_TYPE) return { allowed: true };
@@ -106,12 +157,13 @@ export function enforceBeforeSubagentCall(
   const structuralBlock = structuralContextBlock(state);
   if (structuralBlock) return structuralBlock;
 
-  // Include pending reviews awaiting capture: never called, or called but
-  // capture is unusable (schema-invalid) and a retry is still allowed.
-  const unfilledPendingReviews = [...state.pendingReviews.values()].filter(
-    (p) => !p.subagentCalled || !isPendingCaptureUsable(p),
+  // Include pending reviews dispatchable against a durable bindable attempt.
+  const unfilledPendingReviews = [...state.pendingReviews.values()].filter((p) =>
+    isDispatchable(p, assurance),
   );
-  if (unfilledPendingReviews.length === 0) return { allowed: true };
+  if (unfilledPendingReviews.length === 0) {
+    return notDispatchableBlock(state, assurance) ?? { allowed: true };
+  }
 
   return enforcePendingReviewPrompt(unfilledPendingReviews, prompt, strictEnforcement);
 }

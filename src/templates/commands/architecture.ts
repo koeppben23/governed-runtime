@@ -63,7 +63,7 @@ ${SHARED_REVIEW_LOOP({
   iterationNote: '(max iterations from policy.maxSelfReviewIterations)',
   repeatStep: 5,
   subagentExtra:
-    ' with subagent_type "flowguard-reviewer", supplying the ADR text, ADR title, ticket text, iteration, and planVersion as instructed',
+    ' with subagent_type "flowguard-reviewer" only — FlowGuard supplies the frozen ADR, ticket/context, iteration, planVersion, and all canonical reviewer instructions by host injection',
   fallbackExtra: '',
   unableDescription:
     'e.g., contradictory context, missing prerequisites, or scope ambiguity that prevents critique',

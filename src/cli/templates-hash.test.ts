@@ -244,12 +244,13 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // no longer permits free-composed reviewer prompts — a repository review
     // without a canonical reviewerTaskPrompt is blocked with
     // REVIEWER_CONTEXT_UNAVAILABLE.
-    // Refreshed for repairable unextractable reviewer output: /review and the
-    // shared review loop now direct schema_invalid/extraction_invalid Task
-    // results through the canonical FlowGuard reissue path.
+    // Refreshed for /architecture re-invocation routing: the reviewer Task
+    // instruction no longer asks the agent to supply ADR/ticket text (the host
+    // injects the canonical prompt); re-runs route to output repair or review
+    // orchestration restart.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'ac0dfaebe75ad902f871a1ca872eff59cfc16246294bd53ee4e753acd31b4952',
+      '7c84d8357f173a0d0006d59d8e6425426446e2c4f8fa790a1e4cbe946c83e615',
     );
   });
 

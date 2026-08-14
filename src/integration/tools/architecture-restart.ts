@@ -210,9 +210,10 @@ async function restartArchitectureReview(
     // recreated because the empty-text block fires before executeArchitecture.
     return null;
   }
-  if (restartBlockedCount(state) >= 3) {
+  const blockedCount = restartBlockedCount(state);
+  if (blockedCount >= 3) {
     return formatBlocked('ORCHESTRATION_PERMANENTLY_FAILED', {
-      attempts: String(restartBlockedCount(state)),
+      attempts: String(blockedCount),
     });
   }
 
@@ -225,14 +226,18 @@ async function restartArchitectureReview(
   const nextAdr = revision.nextAdr;
 
   const obligation = await mintRestartObligation(args, session, subagentEnabled, nextAdr, now);
+  let restartAttemptId: string | null = null;
+  const withAttempt = obligation
+    ? appendObligationWithAttempt(state.reviewAssurance, obligation, now)
+    : null;
+  if (withAttempt) restartAttemptId = withAttempt.attemptId;
   const augmentedState = buildRestartedState(state, {
     nextAdr,
     sameRevision,
     revisionDelta: revision.revisionDelta,
     obligation,
-    now,
+    assurance: withAttempt?.assurance ?? state.reviewAssurance,
   });
-  const augmentedSelfReview = augmentedState.selfReview!;
   await writeStateWithArtifacts(session.sessDir, augmentedState);
 
   const instruction = buildArchitectureReviewInstruction({
@@ -244,22 +249,51 @@ async function restartArchitectureReview(
     subjectLabel: 'full ADR text, ADR title, and ticket text',
     state: augmentedState,
   });
-  const response: Record<string, unknown> = {
+  return appendNextAction(
+    JSON.stringify(
+      buildRestartResponse(augmentedState, {
+        nextAdr,
+        sameRevision,
+        revisionDelta: revision.revisionDelta,
+        subagentEnabled,
+        obligation,
+        restartAttemptId,
+        instruction,
+      }),
+    ),
+    augmentedState,
+  );
+}
+
+function buildRestartResponse(
+  augmentedState: SessionState,
+  input: {
+    nextAdr: NonNullable<SessionState['architecture']>;
+    sameRevision: boolean;
+    revisionDelta: 'none' | 'minor';
+    subagentEnabled: boolean;
+    obligation: ReturnType<typeof createReviewObligation> | null;
+    restartAttemptId: string | null;
+    instruction: ReturnType<typeof buildArchitectureReviewInstruction>;
+  },
+): Record<string, unknown> {
+  return {
     phase: augmentedState.phase,
-    status: sameRevision
-      ? `ADR ${nextAdr.id} review orchestration restarted (same revision).`
-      : `ADR ${nextAdr.id} revised after blocked review; fresh review orchestration started.`,
-    adrId: nextAdr.id,
-    adrDigest: nextAdr.digest,
-    selfReviewIteration: augmentedSelfReview.iteration,
-    revisionDelta: revision.revisionDelta,
-    reviewMode: subagentEnabled ? 'subagent' : 'self',
-    ...reviewObligationResponseFields(obligation, null),
-    next: instruction.next,
-    ...(instruction.reviewInvocation ? { reviewInvocation: instruction.reviewInvocation } : {}),
+    status: input.sameRevision
+      ? `ADR ${input.nextAdr.id} review orchestration restarted (same revision).`
+      : `ADR ${input.nextAdr.id} revised after blocked review; fresh review orchestration started.`,
+    adrId: input.nextAdr.id,
+    adrDigest: input.nextAdr.digest,
+    selfReviewIteration: augmentedState.selfReview!.iteration,
+    revisionDelta: input.revisionDelta,
+    reviewMode: input.subagentEnabled ? 'subagent' : 'self',
+    ...reviewObligationResponseFields(input.obligation, input.restartAttemptId),
+    next: input.instruction.next,
+    ...(input.instruction.reviewInvocation
+      ? { reviewInvocation: input.instruction.reviewInvocation }
+      : {}),
     _audit: { transitions: [] },
   };
-  return appendNextAction(JSON.stringify(response), augmentedState);
 }
 
 function buildRestartedState(
@@ -269,7 +303,7 @@ function buildRestartedState(
     sameRevision: boolean;
     revisionDelta: 'none' | 'minor';
     obligation: ReturnType<typeof createReviewObligation> | null;
-    now: string;
+    assurance: SessionState['reviewAssurance'];
   },
 ): SessionState {
   // ADR identity, createdAt, and nextAdrNumber are NEVER mutated here:
@@ -284,9 +318,7 @@ function buildRestartedState(
       revisionDelta: input.sameRevision ? state.selfReview!.revisionDelta : input.revisionDelta,
       verdict: 'changes_requested',
     },
-    reviewAssurance: input.obligation
-      ? appendObligationWithAttempt(state.reviewAssurance, input.obligation, input.now).assurance
-      : state.reviewAssurance,
+    reviewAssurance: input.assurance,
   };
 }
 
