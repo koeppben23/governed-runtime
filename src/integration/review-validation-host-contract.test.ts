@@ -52,6 +52,7 @@ import {
   appendReviewObligation,
   consumeReviewObligation,
   appendInvocationEvidence,
+  freezeReviewMaterial,
   hashFindings,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
@@ -387,6 +388,7 @@ describe('assurance lifecycle persistence across hosts', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen plan review material', 'test'),
           changedFiles: ['src/foo.ts'],
         });
         const findingsP = strictFindings({ iteration: 0, planVersion: 1 });
@@ -439,6 +441,7 @@ describe('assurance lifecycle persistence across hosts', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen implementation review material', 'test'),
           changedFiles: ['src/foo.ts'],
         });
         const findingsI = strictFindings({ iteration: 0, planVersion: 1 });
@@ -509,6 +512,7 @@ describe('assurance lifecycle persistence across hosts', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen architecture review material', 'test'),
           changedFiles: ['src/foo.ts'],
         });
         const findingsA = strictFindings({ iteration: 0, planVersion: 1 });

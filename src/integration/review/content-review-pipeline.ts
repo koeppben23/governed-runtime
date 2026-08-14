@@ -234,7 +234,7 @@ async function enforceContentStrictGate(
   },
   prompt: string,
 ): Promise<boolean> {
-  const { deps, sessDir, reviewCtx, output, sessionId, now } = ctx;
+  const { deps, reviewCtx } = ctx;
 
   const attestation = validatePipelineAttestation(findings, {
     obligationId: reviewCtx.obligationId,
@@ -251,6 +251,15 @@ async function enforceContentStrictGate(
     return true;
   }
 
+  return persistStrictReviewInvocation(ctx, reviewerResult, prompt);
+}
+
+async function persistStrictReviewInvocation(
+  ctx: PipelineContext,
+  reviewerResult: ReviewerSuccessResult & { findings: Record<string, unknown> },
+  prompt: string,
+): Promise<boolean> {
+  const { deps, sessDir, reviewCtx, output, sessionId, now } = ctx;
   const promptHash = hashText(prompt);
   const findingsHash = hashFindings(reviewerResult.findings);
 

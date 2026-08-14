@@ -88,6 +88,7 @@ function hostPrompt(snapshotValue: RepositoryDiscoverySnapshot, retryErrors?: st
     mandateDigest: 'mandate',
     criteriaVersion: 'p40-v1',
     subjectLabel: 'the branch diff',
+    repositoryReview: true,
     frozenReviewerContext: repositoryFrozenContext(),
     repositoryDiscoverySnapshot: snapshotValue,
     ...(retryErrors ? { retrySchemaErrors: retryErrors } : {}),

@@ -32,6 +32,7 @@ import {
 } from '../adapters/workspace/index.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
+import { hashCanonicalReviewContent } from '../shared/review-subject.js';
 import type { ReviewAttempt, ReviewAttemptStatus } from '../state/evidence-review.js';
 import type { ReviewObligationStatus } from '../state/evidence-primitives.js';
 
@@ -40,6 +41,8 @@ const execFileAsync = promisify(execFile);
 const OBLIGATION_ID = '33333333-1111-4111-8111-111111111111';
 const ATTEMPT_ID = '33333333-2222-4111-8111-111111111111';
 const SUBJECT_DIGEST = 'lifecycle-plan-subject-digest';
+const REVIEW_MATERIAL_CONTENT = '## Plan Artifact\n\nLifecycle review fixture.\n';
+const REVIEW_MATERIAL_DIGEST = hashCanonicalReviewContent(REVIEW_MATERIAL_CONTENT);
 const CHILD_FIRST = 'ses_child_lifecycle_first';
 const CHILD_RETRY = 'ses_child_lifecycle_retry';
 
@@ -78,6 +81,11 @@ async function seedSession(
     obligationId: OBLIGATION_ID,
     obligationType: 'plan',
     subjectDigest: SUBJECT_DIGEST,
+    reviewMaterial: {
+      content: REVIEW_MATERIAL_CONTENT,
+      materialDigest: REVIEW_MATERIAL_DIGEST,
+      subjectDigest: SUBJECT_DIGEST,
+    },
     ordinal: 0,
     status: options.attemptStatus ?? 'created',
     origin: { kind: 'initial' } as const,
@@ -114,6 +122,11 @@ async function seedSession(
             fulfilledAt: obligationStatus === 'pending' ? null : now,
             consumedAt: obligationStatus === 'consumed' ? now : null,
             subjectDigest: SUBJECT_DIGEST,
+            reviewMaterial: {
+              content: REVIEW_MATERIAL_CONTENT,
+              materialDigest: REVIEW_MATERIAL_DIGEST,
+              subjectDigest: SUBJECT_DIGEST,
+            },
             reviewSubjectScope: {
               kind: 'repository_change',
               paths: ['src/plan.ts'],
@@ -138,6 +151,12 @@ function planReviewRequiredOutput(): string {
     reviewAttemptId: ATTEMPT_ID,
     reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
     reviewMandateDigest: REVIEW_MANDATE_DIGEST,
+    reviewInvocation: {
+      requiredReviewAttestation: {
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+        criteriaVersion: REVIEW_CRITERIA_VERSION,
+      },
+    },
     next: 'INDEPENDENT_REVIEW_REQUIRED: iteration=0, planVersion=1',
   });
 }

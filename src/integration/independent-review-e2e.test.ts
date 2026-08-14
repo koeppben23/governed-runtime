@@ -61,7 +61,11 @@ import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
-import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
+import {
+  freezeReviewMaterial,
+  REVIEW_CRITERIA_VERSION,
+  REVIEW_MANDATE_DIGEST,
+} from './review/assurance.js';
 import type { SessionState } from '../state/schema.js';
 import { computeRecordDigest } from '../state/evidence-plan.js';
 import { CHALLENGE_POLICY_V1 } from '../config/policy-types.js';
@@ -147,6 +151,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
   const now = new Date().toISOString();
   const fp = await computeFingerprint(worktree);
   const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+  const reviewMaterial = freezeReviewMaterial('## Plan\n1. Implement X', SUBJECT_DIGEST);
   await fs.mkdir(sessDir, { recursive: true });
   const base = makeState('PLAN');
   await writeState(
@@ -212,6 +217,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
               paths: ['docs/test.md'],
               revisions: ['base', 'head'],
             },
+            reviewMaterial,
           },
         ],
         invocations: [],
@@ -225,6 +231,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
             obligationId: OBLIGATION_ID,
             obligationType: 'plan' as const,
             subjectDigest: SUBJECT_DIGEST,
+            reviewMaterial,
             ordinal: 0,
             status: 'created' as const,
             origin: { kind: 'initial' } as const,
@@ -473,9 +480,10 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
       'bindable attempt persisted by Call 1',
     ).toHaveLength(1);
     const initialAttempt = (afterCall1?.reviewAssurance?.attempts ?? [])[0];
-    expect(initialAttempt?.reviewMaterial).toEqual({
+    expect(initialAttempt?.reviewMaterial).toMatchObject({
       content: expect.any(String),
       materialDigest: expect.any(String),
+      subjectDigest: expect.any(String),
     });
     const pendingAfterCall1 = (afterCall1?.reviewAssurance?.obligations ?? []).filter(
       (o) => o.obligationType === 'review' && o.status === 'pending',

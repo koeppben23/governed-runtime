@@ -93,7 +93,6 @@ function structuralContextBlock(state: SessionEnforcementState): EnforcementResu
   };
 }
 
-// eslint-disable-next-line complexity
 export function enforceBeforeSubagentCall(
   state: SessionEnforcementState,
   taskArgs: Record<string, unknown>,
@@ -114,7 +113,42 @@ export function enforceBeforeSubagentCall(
   );
   if (unfilledPendingReviews.length === 0) return { allowed: true };
 
+  return enforcePendingReviewPrompt(unfilledPendingReviews, prompt, strictEnforcement);
+}
+
+function enforcePendingReviewPrompt(
+  unfilledPendingReviews: PendingReview[],
+  prompt: string,
+  strictEnforcement: boolean,
+): EnforcementResult {
   const promptDigest = createHash('sha256').update(prompt, 'utf8').digest('hex');
+  const canonicalPromptBlock = checkCanonicalPrompt(unfilledPendingReviews, promptDigest);
+  if (canonicalPromptBlock) return canonicalPromptBlock;
+
+  if (prompt.length < MIN_SUBAGENT_PROMPT_LENGTH) {
+    return {
+      allowed: false,
+      code: 'SUBAGENT_PROMPT_EMPTY',
+      reason: `FlowGuard enforcement: the prompt for ${REVIEWER_SUBAGENT_TYPE} is too short (${prompt.length} chars, minimum ${MIN_SUBAGENT_PROMPT_LENGTH}). Include the plan/implementation text, ticket text, iteration, and planVersion.`,
+    };
+  }
+
+  const ctx = checkReviewContext(unfilledPendingReviews, prompt, strictEnforcement);
+  if (ctx.blockReason) return ctx.blockReason;
+  if (!ctx.hasMatch) {
+    return {
+      allowed: false,
+      code: 'SUBAGENT_PROMPT_MISSING_CONTEXT',
+      reason: `FlowGuard enforcement: the prompt for ${REVIEWER_SUBAGENT_TYPE} does not contain the expected review context. Missing: ${[...new Set(ctx.missingFields)].join(', ')}. Include the iteration and planVersion values from the FlowGuard tool response.`,
+    };
+  }
+  return checkArtifactAppended(unfilledPendingReviews, prompt);
+}
+
+function checkCanonicalPrompt(
+  unfilledPendingReviews: PendingReview[],
+  promptDigest: string,
+): EnforcementResult | null {
   const expectedPrompt = unfilledPendingReviews.find(
     (pending) => pending.expectedPromptDigest !== null,
   );
@@ -185,24 +219,7 @@ export function enforceBeforeSubagentCall(
     // task runs — never in this pre-execution validator (fail-closed).
   }
 
-  if (prompt.length < MIN_SUBAGENT_PROMPT_LENGTH) {
-    return {
-      allowed: false,
-      code: 'SUBAGENT_PROMPT_EMPTY',
-      reason: `FlowGuard enforcement: the prompt for ${REVIEWER_SUBAGENT_TYPE} is too short (${prompt.length} chars, minimum ${MIN_SUBAGENT_PROMPT_LENGTH}). Include the plan/implementation text, ticket text, iteration, and planVersion.`,
-    };
-  }
-
-  const ctx = checkReviewContext(unfilledPendingReviews, prompt, strictEnforcement);
-  if (ctx.blockReason) return ctx.blockReason;
-  if (!ctx.hasMatch) {
-    return {
-      allowed: false,
-      code: 'SUBAGENT_PROMPT_MISSING_CONTEXT',
-      reason: `FlowGuard enforcement: the prompt for ${REVIEWER_SUBAGENT_TYPE} does not contain the expected review context. Missing: ${[...new Set(ctx.missingFields)].join(', ')}. Include the iteration and planVersion values from the FlowGuard tool response.`,
-    };
-  }
-  return checkArtifactAppended(unfilledPendingReviews, prompt);
+  return null;
 }
 
 /**

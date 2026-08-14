@@ -26,7 +26,11 @@ import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
-import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
+import {
+  freezeReviewMaterial,
+  REVIEW_CRITERIA_VERSION,
+  REVIEW_MANDATE_DIGEST,
+} from './review/assurance.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 import { executeReviewDecision } from '../rails/review-decision.js';
 import { computeRecordDigest } from '../state/evidence-plan.js';
@@ -58,6 +62,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
   const now = new Date().toISOString();
   const fp = await computeFingerprint(worktree);
   const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+  const reviewMaterial = freezeReviewMaterial('## Plan\n1. Fix the auth feature.', SUBJECT_DIGEST);
   await fs.mkdir(sessDir, { recursive: true });
 
   const base = makeState('PLAN');
@@ -93,6 +98,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
               paths: ['src/plan.ts'],
               revisions: ['base', 'head'],
             },
+            reviewMaterial,
           },
         ],
         invocations: [],
@@ -104,6 +110,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
             obligationId: OBLIGATION_ID,
             obligationType: 'plan' as const,
             subjectDigest: SUBJECT_DIGEST,
+            reviewMaterial,
             ordinal: 0,
             status: 'created' as const,
             origin: { kind: 'initial' } as const,

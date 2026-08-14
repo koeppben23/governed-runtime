@@ -599,13 +599,15 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     });
 
     expect(client.session.create).not.toHaveBeenCalled();
-    // No attempt at all means no material was ever persisted for this
-    // obligation: a genuine integrity failure, not a spent retry slot.
+    // No attempt means the obligation predates the frozen-material contract:
+    // current mutable state must not be used to reconstruct reviewer input.
     expect(blockReviewOutcome).toHaveBeenCalledWith(
       expect.anything(),
       OBLIGATION_ID,
       'REVIEW_MATERIAL_INTEGRITY_FAILED',
-      expect.objectContaining({ reason: expect.stringContaining('persisted material is missing') }),
+      expect.objectContaining({
+        reason: expect.stringContaining('predates frozen review material'),
+      }),
       output,
     );
   });

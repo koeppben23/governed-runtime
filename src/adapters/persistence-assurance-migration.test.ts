@@ -16,10 +16,12 @@ import { readState, statePath, writeState } from './persistence.js';
 import {
   createReviewObligation,
   createObligationAndAttempt,
+  freezeReviewMaterial,
 } from '../integration/review/assurance.js';
 import { makeState } from '../fixtures.js';
 
 let sessDir: string;
+const FROZEN_MATERIAL = freezeReviewMaterial('frozen review material\n', 'subject-digest');
 
 beforeAll(async () => {
   sessDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fg-migrate-'));
@@ -40,6 +42,7 @@ describe('review-assurance shape-only read migrations', () => {
         planVersion: 1,
         now: '2026-08-13T10:00:00.000Z',
         subjectDigest: 'subject-digest',
+        reviewMaterial: FROZEN_MATERIAL,
         changedFiles: ['src/a.ts'],
       },
       '2026-08-13T10:00:00.000Z',
@@ -79,6 +82,7 @@ describe('review-assurance shape-only read migrations', () => {
         planVersion: 1,
         now: '2026-08-13T10:00:00.000Z',
         subjectDigest: 'subject-digest',
+        reviewMaterial: FROZEN_MATERIAL,
         changedFiles: ['src/a.ts'],
       },
       '2026-08-13T10:00:00.000Z',
@@ -132,6 +136,7 @@ describe('review-assurance shape-only read migrations', () => {
         planVersion: 1,
         now: '2026-08-13T10:00:00.000Z',
         subjectDigest: 'subject-digest',
+        reviewMaterial: FROZEN_MATERIAL,
         changedFiles: ['src/a.ts'],
       },
       '2026-08-13T10:00:00.000Z',
@@ -188,6 +193,7 @@ describe('review-assurance shape-only read migrations', () => {
       planVersion: 1,
       now: '2026-08-13T10:00:00.000Z',
       subjectDigest: 'subject-digest',
+      reviewMaterial: FROZEN_MATERIAL,
       changedFiles: [],
     });
     const { assurance } = createObligationAndAttempt(
@@ -198,6 +204,7 @@ describe('review-assurance shape-only read migrations', () => {
         planVersion: 1,
         now: '2026-08-13T10:00:00.000Z',
         subjectDigest: 'subject-digest',
+        reviewMaterial: FROZEN_MATERIAL,
         changedFiles: [],
       },
       '2026-08-13T10:00:00.000Z',

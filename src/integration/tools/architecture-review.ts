@@ -543,44 +543,20 @@ async function persistAndFormatNonConvergedReview(
   const resolvedTargetPaths =
     classification.kind === 'available' ? [...classification.changedFiles] : undefined;
   const repositoryAuthority = await freezeContextAuthorityAtHead(session.wsDir);
-  const nextObligation = review.subagentEnabled
-    ? createReviewObligation({
-        obligationType: 'architecture',
-        iteration,
-        planVersion: review.expectedPlanVersion,
-        now: session.ctx.now(),
-        subjectDigest: advanced.state.architecture?.digest ?? `arch-${review.expectedPlanVersion}`,
-        reviewMaterial: frozenArchitectureReviewMaterial(
-          advanced.state,
-          revision.currentAdr.adrText,
-          advanced.state.architecture?.digest ?? `arch-${review.expectedPlanVersion}`,
-        ),
-        reviewProfile: resolveFrozenReviewProfile(advanced.state.policySnapshot),
-        profileSource: 'policy_default',
-        policySnapshot: advanced.state.policySnapshot,
-        changedFiles: resolvedTargetPaths,
-        claimedTaskClass: advanced.state.claimedTaskClass,
-        metadata: targetPathsMetadata(resolvedTargetPaths),
-        // Frozen repository context (freeze-time resolution): architecture
-        // reviews may cite repository evidence only against this context.
-        repositoryAuthority,
-      })
-    : null;
-  let archAttemptId: string | null = null;
-  const stateToPersist = nextObligation
-    ? (() => {
-        const withAttempt = appendObligationWithAttempt(
-          advanced.state.reviewAssurance,
-          nextObligation,
-          session.ctx.now(),
-        );
-        archAttemptId = withAttempt.attemptId;
-        return {
-          ...advanced.state,
-          reviewAssurance: withAttempt.assurance,
-        };
-      })()
-    : advanced.state;
+  const nextObligation = createNextArchitectureReviewObligation({
+    state: advanced.state,
+    session,
+    review,
+    revision,
+    iteration,
+    resolvedTargetPaths,
+    repositoryAuthority,
+  });
+  const { stateToPersist, attemptId } = persistableArchitectureReviewState(
+    advanced.state,
+    nextObligation,
+    session.ctx.now(),
+  );
   const persisted = await writeStateWithArtifacts(session.sessDir, stateToPersist);
   const instruction = buildArchitectureReviewInstruction({
     policy: session.policy,
@@ -600,10 +576,64 @@ async function persistAndFormatNonConvergedReview(
     selfReviewIteration: iteration,
     revisionDelta: revision.revisionDelta,
     reviewMode: review.subagentEnabled ? 'subagent' : 'self',
-    ...reviewObligationResponseFields(nextObligation, archAttemptId),
+    ...reviewObligationResponseFields(nextObligation, attemptId),
     next: instruction.next,
     ...(instruction.reviewInvocation ? { reviewInvocation: instruction.reviewInvocation } : {}),
     _audit: { transitions: advanced.transitions },
   };
   return appendNextAction(JSON.stringify(resp), stateToPersist);
+}
+
+function createNextArchitectureReviewObligation(input: {
+  state: SessionState;
+  session: ArchitectureSession;
+  review: ResolvedReview;
+  revision: AdrRevision;
+  iteration: number;
+  resolvedTargetPaths: string[] | undefined;
+  repositoryAuthority: Awaited<ReturnType<typeof freezeContextAuthorityAtHead>>;
+}) {
+  const { state, session, review, revision, iteration, resolvedTargetPaths, repositoryAuthority } =
+    input;
+  if (!review.subagentEnabled) return null;
+  const subjectDigest = state.architecture?.digest ?? `arch-${review.expectedPlanVersion}`;
+  return createReviewObligation({
+    obligationType: 'architecture',
+    iteration,
+    planVersion: review.expectedPlanVersion,
+    now: session.ctx.now(),
+    subjectDigest,
+    reviewMaterial: frozenArchitectureReviewMaterial(
+      state,
+      revision.currentAdr.adrText,
+      subjectDigest,
+    ),
+    reviewProfile: resolveFrozenReviewProfile(state.policySnapshot),
+    profileSource: 'policy_default',
+    policySnapshot: state.policySnapshot,
+    changedFiles: resolvedTargetPaths,
+    claimedTaskClass: state.claimedTaskClass,
+    metadata: targetPathsMetadata(resolvedTargetPaths),
+    // Frozen repository context (freeze-time resolution): architecture reviews may cite it only.
+    repositoryAuthority,
+  });
+}
+
+function persistableArchitectureReviewState(
+  state: SessionState,
+  nextObligation: ReturnType<typeof createNextArchitectureReviewObligation>,
+  now: string,
+): { stateToPersist: SessionState; attemptId: string | null } {
+  let archAttemptId: string | null = null;
+  const stateToPersist = nextObligation
+    ? (() => {
+        const withAttempt = appendObligationWithAttempt(state.reviewAssurance, nextObligation, now);
+        archAttemptId = withAttempt.attemptId;
+        return {
+          ...state,
+          reviewAssurance: withAttempt.assurance,
+        };
+      })()
+    : state;
+  return { stateToPersist, attemptId: archAttemptId };
 }

@@ -38,7 +38,6 @@ import {
 } from './types.js';
 import { canonicalPromptAnchorOf, canonicalPromptDigestOf } from './prompt-contract.js';
 import {
-  extractContentMeta,
   extractCapturedFindings,
   resolveSubagentSessionId,
   promptContainsValue,
@@ -46,6 +45,7 @@ import {
   signalAttestationOf,
   readHostAttestationConstants,
 } from './extraction.js';
+import { buildPendingReview, type ReviewSignalBinding } from './pending-review.js';
 import { validateReviewFindingsConsistency } from './findings-consistency.js';
 import { isPendingCaptureUsable, extractCaptureSchemaErrors } from './prepare-findings.js';
 export { enforceBeforeSubagentCall } from './prompt-integrity.js';
@@ -89,51 +89,10 @@ function trackReviewRequired(
   next: string,
   now: string,
   /** Identifiers the emitting tool published so the host can bind the reviewer. */
-  binding: {
-    readonly attemptId?: string | null;
-    readonly obligationId?: string | null;
-    readonly canonicalPromptAnchor?: string | null;
-    readonly canonicalPromptDigest?: string | null;
-    readonly hostAttestationConstants?: {
-      readonly mandateDigest: string;
-      readonly criteriaVersion: string;
-    } | null;
-  },
+  binding: ReviewSignalBinding,
 ): void {
   const prior = state.pendingReviews.get(reviewTool);
-  const obligationId = binding.obligationId ?? null;
-  const hostAttestationConstants = binding.hostAttestationConstants ?? null;
-  // Structural host-context validation happens HERE, at the signal→pending
-  // transition — before any reviewer Task can run. Every canonical
-  // REVIEW_REQUIRED emitter creates the review obligation before emitting the
-  // signal, so a missing obligation identity or missing host attestation
-  // constants is a broken signal, never a reviewer-repairable output defect.
-  const enforcementFailure: PendingReview['enforcementFailure'] =
-    obligationId == null
-      ? 'host_review_obligation_missing'
-      : hostAttestationConstants == null
-        ? 'host_attestation_constants_missing'
-        : null;
-  const sameObligation = prior?.obligationId !== null && prior?.obligationId === obligationId;
-  const isRepairReissue = sameObligation && prior.repairPromptRequired;
-  state.pendingReviews.set(reviewTool, {
-    tool: reviewTool,
-    requestedAt: now,
-    attemptId: binding.attemptId ?? null,
-    obligationId,
-    subagentCalled: false,
-    subagentRecord: null,
-    contentMeta: extractContentMeta(next),
-    canonicalPromptAnchor: binding.canonicalPromptAnchor ?? null,
-    capturedFindings: null,
-    retryCount: sameObligation ? prior.retryCount : 0,
-    hostAttestationConstants,
-    enforcementFailure,
-    lastSchemaErrors: isRepairReissue ? prior.lastSchemaErrors : null,
-    repairPromptRequired: isRepairReissue,
-    expectedRepairPromptDigest: isRepairReissue ? (binding.canonicalPromptDigest ?? null) : null,
-    expectedPromptDigest: binding.canonicalPromptDigest ?? null,
-  });
+  state.pendingReviews.set(reviewTool, buildPendingReview(reviewTool, next, now, binding, prior));
 }
 
 function trackContentAnalysis(state: SessionEnforcementState, now: string): void {

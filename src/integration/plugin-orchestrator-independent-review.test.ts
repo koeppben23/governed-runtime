@@ -25,7 +25,11 @@ import {
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_PLAN,
 } from './tool-names.js';
-import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
+import {
+  freezeReviewMaterial,
+  REVIEW_CRITERIA_VERSION,
+  REVIEW_MANDATE_DIGEST,
+} from './review/assurance.js';
 import type { SessionState } from '../state/schema.js';
 import type { OrchestratorClient } from './review/types.js';
 import type { PendingReviewTool } from './review/enforcement/types.js';
@@ -113,6 +117,7 @@ function buildState(
   obligationType: ReviewableCase['obligationType'],
   reviewOutputPolicy: 'structured_required' | 'text_compat_allowed' = 'structured_required',
 ) {
+  const reviewMaterial = freezeReviewMaterial('frozen review material', 'test-subject-digest');
   return makeState(phase, {
     ticket: TICKET,
     plan: PLAN_RECORD,
@@ -162,10 +167,24 @@ function buildState(
             paths: ['src/foo.ts'],
             revisions: ['base', 'head'],
           },
+          reviewMaterial,
         },
       ],
       invocations: [],
-      attempts: [],
+      attempts: [
+        {
+          attemptId: '22222222-2222-4222-8222-222222222222',
+          obligationId: OBLIGATION_ID,
+          obligationType,
+          subjectDigest: 'test-subject-digest',
+          reviewMaterial,
+          ordinal: 1,
+          status: 'created',
+          origin: { kind: 'initial' },
+          repositoryDiscovery: { kind: 'not_applicable' },
+          createdAt: NOW,
+        },
+      ],
     },
   });
 }

@@ -15,8 +15,10 @@ import {
   appendObservationCapture,
   observationCapabilityDigest,
   observationLedgerPath,
+  observationLedgerRoot,
   readObservationCaptures,
 } from '../../adapters/persistence-observation-ledger.js';
+import { freezeReviewMaterial } from '../review/assurance.js';
 import {
   buildObservationToolResponse,
   contentDigestOf,
@@ -80,6 +82,7 @@ beforeAll(async () => {
     planVersion: 1,
     now: '2026-08-13T10:00:00.000Z',
     subjectDigest: 'impl-digest',
+    reviewMaterial: freezeReviewMaterial('frozen implementation material\n', 'impl-digest'),
     changedFiles: ['src/foo.ts'],
     repositoryAuthority: {
       kind: 'candidate_pair',
@@ -185,7 +188,7 @@ describe('observe_repository', () => {
 
     const digest = observationCapabilityDigest(capability);
     const read = await readObservationCaptures(
-      path.join(LEDGER_HOME, 'observation-ledgers', 'ab'.repeat(12)),
+      observationLedgerRoot(LEDGER_HOME, 'ab'.repeat(12)),
       digest,
     );
     expect(read.captures).toHaveLength(1);
@@ -209,7 +212,7 @@ describe('observe_repository', () => {
       }),
     );
     expect(
-      observationLedgerPath(path.join(LEDGER_HOME, 'observation-ledgers', 'ab'.repeat(12)), digest),
+      observationLedgerPath(observationLedgerRoot(LEDGER_HOME, 'ab'.repeat(12)), digest),
     ).toContain(digest);
   });
 
@@ -248,7 +251,7 @@ describe('observe_repository', () => {
     expect(String(output)).toContain('REVIEW_OBSERVATION_PATH_INVALID');
   });
 
-  it('BAD: unavailable revision fails closed (context has no base)', async () => {
+  it('HAPPY: candidate-pair base resolves to frozen commit bytes', async () => {
     const { observe_repository } = await import('./observe-repository.js');
     const capability = (globalThis as Record<string, unknown>).__OBS_CAPABILITY as string;
     const output = await observe_repository.execute(

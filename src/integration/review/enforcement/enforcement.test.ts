@@ -1945,7 +1945,7 @@ describe('L3 artifact presence', () => {
     if (!result.allowed) expect(result.code).toBe('SUBAGENT_PROMPT_ARTIFACT_MISSING');
   });
 
-  it('blocks when only whitespace follows the instruction block', () => {
+  it('blocks when whitespace changes the frozen instruction prompt', () => {
     const state = pendingStateWithCanonicalPrompt();
 
     const result = enforceBeforeSubagentCall(state, {
@@ -1954,10 +1954,10 @@ describe('L3 artifact presence', () => {
     });
 
     expect(result.allowed).toBe(false);
-    if (!result.allowed) expect(result.code).toBe('SUBAGENT_PROMPT_ARTIFACT_MISSING');
+    if (!result.allowed) expect(result.code).toBe('SUBAGENT_PROMPT_MISMATCH');
   });
 
-  it('allows a prompt with the artifact appended below the instruction block', () => {
+  it('blocks an artifact appended to the frozen instruction prompt', () => {
     const state = pendingStateWithCanonicalPrompt();
 
     const result = enforceBeforeSubagentCall(state, {
@@ -1965,7 +1965,8 @@ describe('L3 artifact presence', () => {
       prompt: canonicalPrompt() + '\n\n## Plan\n1. Fix the auth bug\n2. Add a regression test\n',
     });
 
-    expect(result.allowed).toBe(true);
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) expect(result.code).toBe('SUBAGENT_PROMPT_MISMATCH');
   });
 
   it('does not apply when FlowGuard emitted no canonical prompt', () => {

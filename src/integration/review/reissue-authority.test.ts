@@ -283,7 +283,7 @@ describe('authorizeOutputRepairReissue', () => {
     expect(result).toEqual({
       kind: 'integrity_blocked',
       code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
-      reason: expect.stringContaining('missing'),
+      reason: expect.stringContaining('predates frozen review material'),
     });
   });
 

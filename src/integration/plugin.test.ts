@@ -35,7 +35,11 @@ import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
-import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
+import {
+  freezeReviewMaterial,
+  REVIEW_CRITERIA_VERSION,
+  REVIEW_MANDATE_DIGEST,
+} from './review/assurance.js';
 import { computeRecordDigest } from '../state/evidence-plan.js';
 import { NATIVE_ATTESTATION_REJECTION_FIELD } from '../shared/flowguard-identifiers.js';
 import { fileURLToPath } from 'node:url';
@@ -75,6 +79,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
   const fp = await computeFingerprint(worktree);
   const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
   const obligationId = '11111111-1111-4111-8111-111111111111';
+  const reviewMaterial = freezeReviewMaterial('## Plan\n1. Fix auth', 'test-subject-digest');
 
   await fs.mkdir(sessDir, { recursive: true });
   await writeState(
@@ -148,10 +153,24 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
               paths: ['src/foo.ts'],
               revisions: ['base', 'head'],
             },
+            reviewMaterial,
           },
         ],
         invocations: [],
-        attempts: [],
+        attempts: [
+          {
+            attemptId: '11111111-2222-4111-8111-111111111111',
+            obligationId,
+            obligationType: 'plan' as const,
+            subjectDigest: 'test-subject-digest',
+            reviewMaterial,
+            ordinal: 0,
+            status: 'created' as const,
+            origin: { kind: 'initial' } as const,
+            repositoryDiscovery: { kind: 'not_applicable' } as const,
+            createdAt: now,
+          },
+        ],
       },
     }),
   );
