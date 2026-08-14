@@ -16,6 +16,7 @@ import {
   type BindingFindingRelation,
 } from './observation-binding.js';
 import {
+  artifactReviewSubjectScope,
   createReviewAttempt,
   createReviewObligation,
   ensureReviewAssurance,
@@ -63,6 +64,11 @@ function candidateObligation(
     planVersion: 1,
     now: NOW_ISO,
     subjectDigest: 'impl-digest',
+    ...(obligationType === 'plan'
+      ? {
+          reviewSubjectScope: artifactReviewSubjectScope('plan', '# Plan\nBody', 'impl-digest'),
+        }
+      : {}),
     changedFiles: ['src/foo.ts'],
     repositoryAuthority: {
       kind: 'candidate_pair',
@@ -364,10 +370,15 @@ describe('host-task bind path', () => {
           category: 'correctness',
           message: 'flawed',
           relation: {
+            // Plan reviews are artifact-scoped: the subject anchor targets the
+            // plan artifact; repository evidenceLocations bind against the
+            // attempt's authoritative observations.
             subjectAnchors: [
               {
-                kind: 'repository_location',
-                location: { path: 'src/foo.ts', revision: 'head', line: 1 },
+                kind: 'artifact_section',
+                artifactKind: 'plan',
+                artifactDigest: 'impl-digest',
+                sectionPath: [{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }],
               },
             ],
             evidenceLocations: locations,

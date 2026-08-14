@@ -373,6 +373,18 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     ],
   },
 
+  {
+    code: 'REVIEWER_TASK_NOT_DISPATCHABLE',
+    category: 'state',
+    messageTemplate:
+      'No reviewer Task can be dispatched: the review obligation has no durable bindable attempt; a bare Task call never re-arms a rejected or spent attempt.',
+    recoverySteps: [
+      'Re-run the originating FlowGuard command to authorize a fresh review attempt',
+      'Only a freshly minted bindable attempt makes the reviewer Task dispatchable',
+      'Do NOT retry the Task call directly and do NOT fabricate findings',
+    ],
+  },
+
   ...REVIEW_VALIDATION_REASONS,
   ...OBSERVATION_VALIDATION_REASONS,
 ] as const satisfies readonly BlockedReason[];

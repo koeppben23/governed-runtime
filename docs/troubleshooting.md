@@ -253,7 +253,7 @@ real, registered reason.
 | `REVIEW_ASSURANCE_UNAVAILABLE`                 | Review assurance state missing; cannot reject an incoherent attempt                                                         | Ensure the session has an active review obligation with an attempt                                                                                   |
 | `REVIEW_ATTEMPT_UNAVAILABLE`                   | No attempt can currently bind reviewer evidence; the frozen material is intact                                              | Re-run `flowguard_review` with the original content and `reviewObligationId` to reissue an attempt, then pass the new `reviewerTaskPrompt` verbatim  |
 | `REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE` | Reviewer Task completed without host-owned execution provenance                                                             | Re-run the originating FlowGuard command; do not reuse the prior reviewer output or submit copied findings                                           |
-| `REVIEWER_TASK_NOT_DISPATCHABLE`               | Reviewer Task has no durable bindable attempt — a bare Task call never re-arms a rejected or spent attempt                  | Re-run the originating FlowGuard command to authorize a fresh review attempt; do not retry the Task directly or fabricate findings                    |
+| `REVIEWER_TASK_NOT_DISPATCHABLE`               | Reviewer Task has no durable bindable attempt — a bare Task call never re-arms a rejected or spent attempt                  | Re-run the originating FlowGuard command to authorize a fresh review attempt; do not retry the Task directly or fabricate findings                   |
 
 ### Review Envelope Validation
 

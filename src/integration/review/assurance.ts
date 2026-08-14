@@ -270,7 +270,6 @@ export function createReviewObligation(input: {
     subjectDigest,
     ...(input.reviewMaterial ? { reviewMaterial: input.reviewMaterial } : {}),
     reviewSubject: input.reviewSubject,
-    ...(input.reviewMaterial ? { reviewMaterial: input.reviewMaterial } : {}),
     metadata: input.metadata,
     ...(input.fingerprintVersion ? { fingerprintVersion: input.fingerprintVersion } : {}),
     reviewSubjectScope,
