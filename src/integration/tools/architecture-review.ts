@@ -37,6 +37,7 @@ import {
   findLatestUnconsumedObligation,
   reviewObligationResponseFields,
   resolveFrozenReviewProfile,
+  freezeReviewMaterial,
 } from '../review/assurance.js';
 
 import { requireReviewFindings, resolveHostTaskEffectiveFindings } from './review-validation.js';
@@ -537,6 +538,7 @@ async function persistAndFormatNonConvergedReview(
         planVersion: review.expectedPlanVersion,
         now: session.ctx.now(),
         subjectDigest: advanced.state.architecture?.digest ?? `arch-${review.expectedPlanVersion}`,
+        reviewMaterial: freezeReviewMaterial(revision.currentAdr.adrText),
         reviewProfile: resolveFrozenReviewProfile(advanced.state.policySnapshot),
         profileSource: 'policy_default',
         policySnapshot: advanced.state.policySnapshot,

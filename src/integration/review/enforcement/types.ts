@@ -94,6 +94,8 @@ export interface PendingReview {
    * with no artifact at all and nothing would notice.
    */
   canonicalPromptAnchor: string | null;
+  /** SHA-256 of the complete host-issued reviewer prompt. */
+  expectedPromptDigest: string | null;
   /** Actual findings from the subagent response (Level 4). */
   capturedFindings: CapturedFindings | null;
   /** Number of times the reviewer was re-invoked for this obligation. */

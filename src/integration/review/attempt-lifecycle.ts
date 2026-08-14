@@ -125,7 +125,7 @@ export function createAttemptForExistingObligation(
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
     subjectDigest: obligation.subjectDigest,
-    reviewMaterial: latestReviewMaterial(base, obligation.obligationId),
+    reviewMaterial: obligation.reviewMaterial,
     ordinal,
     ...(childSessionId === undefined ? {} : { childSessionId }),
     origin: transition.origin,

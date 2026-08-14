@@ -24,6 +24,7 @@
  * @version v4
  */
 
+import { createHash } from 'node:crypto';
 import type { SessionState } from '../../../state/schema.js';
 import { type ReviewObligation } from '../../../state/evidence-review.js';
 import {
@@ -93,12 +94,14 @@ function trackReviewRequired(
     readonly attemptId?: string | null;
     readonly obligationId?: string | null;
     readonly canonicalPromptAnchor?: string | null;
+    readonly canonicalPromptDigest?: string | null;
     readonly hostAttestationConstants?: {
       readonly mandateDigest: string;
       readonly criteriaVersion: string;
     } | null;
   },
 ): void {
+  const prior = state.pendingReviews.get(reviewTool);
   const obligationId = binding.obligationId ?? null;
   const hostAttestationConstants = binding.hostAttestationConstants ?? null;
   // Structural host-context validation happens HERE, at the signal→pending
@@ -112,6 +115,8 @@ function trackReviewRequired(
       : hostAttestationConstants == null
         ? 'host_attestation_constants_missing'
         : null;
+  const sameObligation = prior?.obligationId !== null && prior?.obligationId === obligationId;
+  const isRepairReissue = sameObligation && prior.repairPromptRequired;
   state.pendingReviews.set(reviewTool, {
     tool: reviewTool,
     requestedAt: now,
@@ -122,12 +127,13 @@ function trackReviewRequired(
     contentMeta: extractContentMeta(next),
     canonicalPromptAnchor: binding.canonicalPromptAnchor ?? null,
     capturedFindings: null,
-    retryCount: 0,
+    retryCount: sameObligation ? prior.retryCount : 0,
     hostAttestationConstants,
     enforcementFailure,
-    lastSchemaErrors: null,
-    repairPromptRequired: false,
-    expectedRepairPromptDigest: null,
+    lastSchemaErrors: isRepairReissue ? prior.lastSchemaErrors : null,
+    repairPromptRequired: isRepairReissue,
+    expectedRepairPromptDigest: isRepairReissue ? (binding.canonicalPromptDigest ?? null) : null,
+    expectedPromptDigest: binding.canonicalPromptDigest ?? null,
   });
 }
 
@@ -148,6 +154,7 @@ function trackContentAnalysis(state: SessionEnforcementState, now: string): void
     lastSchemaErrors: null,
     repairPromptRequired: false,
     expectedRepairPromptDigest: null,
+    expectedPromptDigest: null,
   });
 }
 
@@ -237,6 +244,7 @@ function trackRequiredReview(
       attemptId,
       obligationId,
       canonicalPromptAnchor: canonicalPromptAnchorOf(parsed),
+      canonicalPromptDigest: canonicalPromptDigestOf(parsed),
       hostAttestationConstants: readHostAttestationConstants(signalAttestationOf(parsed)),
     });
   }
@@ -254,6 +262,13 @@ function canonicalPromptAnchorOf(parsed: Record<string, unknown>): string | null
   const lines = prompt.split('\n');
   const anchor = lines.reverse().find((line) => line.startsWith(CANONICAL_PROMPT_APPEND_MARKER));
   return anchor ?? null;
+}
+
+function canonicalPromptDigestOf(parsed: Record<string, unknown>): string | null {
+  const prompt = parsed.reviewerTaskPrompt;
+  return typeof prompt === 'string'
+    ? createHash('sha256').update(prompt, 'utf8').digest('hex')
+    : null;
 }
 
 /**
@@ -332,6 +347,7 @@ function applyCaptureToPending(
     matched.lastSchemaErrors = null;
     matched.repairPromptRequired = false;
     matched.expectedRepairPromptDigest = null;
+    matched.expectedPromptDigest = null;
     return;
   }
   // Track retries: a re-invoke after a prior (unusable) capture is a retry.
@@ -347,6 +363,7 @@ function applyCaptureToPending(
   matched.repairPromptRequired = matched.lastSchemaErrors !== null;
   // Clear the expected digest — this repair cycle is consumed.
   matched.expectedRepairPromptDigest = null;
+  matched.expectedPromptDigest = null;
 }
 
 /**

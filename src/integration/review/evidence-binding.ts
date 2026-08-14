@@ -11,7 +11,7 @@ import type {
   ReviewAttempt,
 } from '../../state/evidence.js';
 import type { SessionEnforcementState, HostTaskBindResult } from './enforcement/types.js';
-import { REVIEWER_SUBAGENT_TYPE, TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
+import { TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
 import { obligationTypeForTool } from './obligation-tools.js';
 import { buildInvocationEvidence, hashFindings, hashText } from './assurance.js';
 import { getBranchProvenanceFields } from './review-provenance.js';
@@ -184,14 +184,6 @@ export function buildHostTaskEvidence(
   const fieldMismatch = checkBindingFieldMismatch(rawFindings, matchedObligation, attestationInfo);
   if (fieldMismatch) return { ...fieldMismatch, attempt: staleAttempt(attempt, now) };
 
-  // Host-only constants (mandateDigest/criteriaVersion/reviewedBy) are installed-mandate
-  // values the host already owns; they are NOT reviewer-chosen. The LLM reviewer cannot
-  // reliably echo a 64-hex digest it was never given and tends to confabulate it, so we
-  // bind host-authoritatively and overwrite them — mirroring how reviewedBy.sessionId is
-  // overwritten in orchestrator.structuredReviewerResult. Divergence is surfaced for
-  // diagnostics rather than fatally rejected.
-  const hostConstantDivergence = hostConstantDivergentFields(matchedObligation, attestation);
-
   const prepared = prepareBindableFindings({
     rawFindings,
     obligation: matchedObligation,
@@ -227,7 +219,6 @@ export function buildHostTaskEvidence(
     obligation: matchedObligation,
     normalizedFindings,
     findingsHash,
-    hostConstantDivergence,
     attestationInfo,
     now,
   });
@@ -243,7 +234,6 @@ function assembleBoundEvidence(input: {
   obligation: ReviewObligation;
   normalizedFindings: Record<string, unknown>;
   findingsHash: string;
-  hostConstantDivergence: readonly string[];
   attestationInfo: AttestationInfo;
   now: string;
   allowedEvidenceRefs?: readonly unknown[];
@@ -254,6 +244,8 @@ function assembleBoundEvidence(input: {
   const evidence = buildInvocationEvidence({
     obligationId: obligation.obligationId,
     obligationType: oType,
+    mandateDigest: obligation.mandateDigest,
+    criteriaVersion: obligation.criteriaVersion,
     parentSessionId: input.sessionId,
     childSessionId,
     invocationMode: 'host_subagent_task',
@@ -278,9 +270,6 @@ function assembleBoundEvidence(input: {
       childSessionId,
       findingsHash,
       bindingMode: bindingModeOf(input.attestationInfo),
-      ...(input.hostConstantDivergence.length > 0
-        ? { hostConstantDivergence: input.hostConstantDivergence }
-        : {}),
     },
   };
 }
@@ -446,25 +435,6 @@ function bindingMismatchFields(
   const fields: string[] = [];
   if (rawFindings.iteration !== obligation.iteration) fields.push('iteration');
   if (rawFindings.planVersion !== obligation.planVersion) fields.push('planVersion');
-  return fields;
-}
-
-/**
- * Host-only attestation constants the reviewer is asked to echo but does not choose.
- * In host-task capture mode these are authoritative on the host (installed-mandate
- * digest, criteria version, reviewer identity) and are enforced by install-time hash
- * guards — not by the reviewer's echo. A divergence means the reviewer confabulated a
- * value it was never given; it is advisory (diagnostics only), never fatal.
- */
-function hostConstantDivergentFields(
-  obligation: ReviewObligation,
-  attestation: Record<string, unknown> | undefined,
-): string[] {
-  if (!attestation) return [];
-  const fields: string[] = [];
-  if (attestation.mandateDigest !== obligation.mandateDigest) fields.push('mandateDigest');
-  if (attestation.criteriaVersion !== obligation.criteriaVersion) fields.push('criteriaVersion');
-  if (attestation.reviewedBy !== REVIEWER_SUBAGENT_TYPE) fields.push('reviewedBy');
   return fields;
 }
 

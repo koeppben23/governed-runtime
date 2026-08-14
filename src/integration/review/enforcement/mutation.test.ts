@@ -277,6 +277,7 @@ describe('review-enforcement mutation kills', () => {
           retryCount: 0,
           lastSchemaErrors: null,
           repairPromptRequired: false,
+          expectedPromptDigest: null,
           expectedRepairPromptDigest: null,
         });
 
@@ -304,6 +305,7 @@ describe('review-enforcement mutation kills', () => {
           retryCount: 0,
           lastSchemaErrors: null,
           repairPromptRequired: false,
+          expectedPromptDigest: null,
           expectedRepairPromptDigest: null,
         });
 
@@ -334,6 +336,7 @@ describe('review-enforcement mutation kills', () => {
           retryCount: 0,
           lastSchemaErrors: null,
           repairPromptRequired: false,
+          expectedPromptDigest: null,
           expectedRepairPromptDigest: null,
         });
 
@@ -359,6 +362,7 @@ describe('review-enforcement mutation kills', () => {
           retryCount: 0,
           lastSchemaErrors: null,
           repairPromptRequired: false,
+          expectedPromptDigest: null,
           expectedRepairPromptDigest: null,
         });
 
@@ -386,6 +390,7 @@ describe('review-enforcement mutation kills', () => {
           retryCount: 0,
           lastSchemaErrors: null,
           repairPromptRequired: false,
+          expectedPromptDigest: null,
           expectedRepairPromptDigest: null,
         });
 
@@ -413,6 +418,7 @@ describe('review-enforcement mutation kills', () => {
           retryCount: 0,
           lastSchemaErrors: null,
           repairPromptRequired: false,
+          expectedPromptDigest: null,
           expectedRepairPromptDigest: null,
         });
 
@@ -450,6 +456,7 @@ describe('review-enforcement mutation kills', () => {
           retryCount: 0,
           lastSchemaErrors: null,
           repairPromptRequired: false,
+          expectedPromptDigest: null,
           expectedRepairPromptDigest: null,
         });
 
@@ -479,6 +486,7 @@ describe('review-enforcement mutation kills', () => {
           retryCount: 0,
           lastSchemaErrors: null,
           repairPromptRequired: false,
+          expectedPromptDigest: null,
           expectedRepairPromptDigest: null,
         });
 

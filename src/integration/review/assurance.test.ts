@@ -44,6 +44,8 @@ import { ReviewInvocationEvidence as ReviewInvocationEvidenceSchema } from '../.
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
 const NOW = '2026-04-27T00:00:00.000Z';
+const FIXTURE_MANDATE_DIGEST = 'fixture-mandate-digest';
+const FIXTURE_CRITERIA_VERSION = 'fixture-criteria-v1';
 
 function makeObligation(overrides?: Partial<ReviewObligation>): ReviewObligation {
   return createReviewObligation({
@@ -57,10 +59,17 @@ function makeObligation(overrides?: Partial<ReviewObligation>): ReviewObligation
 }
 
 function makeInvocation(overrides?: Partial<ReviewInvocationEvidence>): ReviewInvocationEvidence {
-  const { fulfilledAt, ...rest } = overrides ?? {};
+  const {
+    fulfilledAt,
+    mandateDigest = FIXTURE_MANDATE_DIGEST,
+    criteriaVersion = FIXTURE_CRITERIA_VERSION,
+    ...rest
+  } = overrides ?? {};
   return buildInvocationEvidence({
     obligationId: '00000000-0000-4000-8000-000000000001',
     obligationType: 'plan',
+    mandateDigest,
+    criteriaVersion,
     parentSessionId: 'parent-session-1',
     childSessionId: 'child-session-1',
     promptHash: hashText('test prompt'),
@@ -129,14 +138,10 @@ describe('integration/review-assurance', () => {
           subjectDigest,
           lineCount: 2,
         },
+        reviewMaterial: material,
         reviewSubjectScope: { kind: 'content', subjectDigest, lineCount: 2 },
       });
-      const initial = appendObligationWithAttempt(
-        emptyReviewAssurance(),
-        obligation,
-        NOW,
-        material,
-      );
+      const initial = appendObligationWithAttempt(emptyReviewAssurance(), obligation, NOW);
       const retried = createAttemptForExistingObligation(
         initial.assurance,
         obligation,
@@ -159,14 +164,10 @@ describe('integration/review-assurance', () => {
       const obligation = makeObligation({
         obligationType: 'review',
         subjectDigest,
+        reviewMaterial: material,
         reviewSubjectScope: { kind: 'content', subjectDigest, lineCount: 2 },
       });
-      const initial = appendObligationWithAttempt(
-        emptyReviewAssurance(),
-        obligation,
-        NOW,
-        material,
-      );
+      const initial = appendObligationWithAttempt(emptyReviewAssurance(), obligation, NOW);
 
       const reissued = createAttemptForExistingObligation(
         initial.assurance,
@@ -342,7 +343,7 @@ describe('integration/review-assurance', () => {
       expect(result.challengePolicyVersion).toBeUndefined();
     });
 
-    it('creates p40 obligations without rewriting prior attestation values', () => {
+    it('creates p41 obligations without rewriting prior attestation values', () => {
       const priorObligations: ReviewObligation[] = [
         {
           ...makeObligation(),
@@ -366,9 +367,9 @@ describe('integration/review-assurance', () => {
       );
       const fresh = makeObligation();
 
-      expect(REVIEW_CRITERIA_VERSION).toBe('p40-v1');
+      expect(REVIEW_CRITERIA_VERSION).toBe('p41-v1');
       expect(assurance.obligations).toEqual(priorObligations);
-      expect(fresh.criteriaVersion).toBe('p40-v1');
+      expect(fresh.criteriaVersion).toBe('p41-v1');
       expect(fresh.mandateDigest).toBe(REVIEW_MANDATE_DIGEST);
     });
   });
@@ -759,6 +760,8 @@ describe('integration/review-assurance', () => {
       const result = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
+        mandateDigest: FIXTURE_MANDATE_DIGEST,
+        criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         promptHash: hashText('prompt'),
@@ -769,7 +772,7 @@ describe('integration/review-assurance', () => {
         hostVisible: false,
       });
       expect(result.agentType).toBe(REVIEWER_SUBAGENT_TYPE);
-      expect(result.mandateDigest).toBe(REVIEW_MANDATE_DIGEST);
+      expect(result.mandateDigest).toBe(FIXTURE_MANDATE_DIGEST);
       expect(result.consumedByObligationId).toBeNull();
       expect(result.reviewOutputMode).toBe('structured_output');
       expect(result.structuredOutputUsed).toBe(true);
@@ -798,6 +801,8 @@ describe('integration/review-assurance', () => {
       const result = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000002',
         obligationType: 'review',
+        mandateDigest: FIXTURE_MANDATE_DIGEST,
+        criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         promptHash: hashText('prompt'),
@@ -821,6 +826,8 @@ describe('integration/review-assurance', () => {
       const result = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
+        mandateDigest: FIXTURE_MANDATE_DIGEST,
+        criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         promptHash: hashText('prompt'),
@@ -838,6 +845,8 @@ describe('integration/review-assurance', () => {
       const result = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
+        mandateDigest: FIXTURE_MANDATE_DIGEST,
+        criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         promptHash: hashText('prompt'),
@@ -854,6 +863,8 @@ describe('integration/review-assurance', () => {
       const result = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
+        mandateDigest: FIXTURE_MANDATE_DIGEST,
+        criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         promptHash: hashText('prompt'),
@@ -869,6 +880,8 @@ describe('integration/review-assurance', () => {
       const evidence = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
+        mandateDigest: FIXTURE_MANDATE_DIGEST,
+        criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         invocationMode: 'host_subagent_task',
@@ -886,6 +899,8 @@ describe('integration/review-assurance', () => {
       const evidence = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
+        mandateDigest: FIXTURE_MANDATE_DIGEST,
+        criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         invocationMode: 'sdk_session_prompt',
@@ -921,6 +936,8 @@ describe('integration/review-assurance', () => {
       const result = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
+        mandateDigest: FIXTURE_MANDATE_DIGEST,
+        criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         invocationMode: 'host_subagent_task',
@@ -938,6 +955,8 @@ describe('integration/review-assurance', () => {
       const result = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
+        mandateDigest: FIXTURE_MANDATE_DIGEST,
+        criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         invocationMode: 'sdk_session_prompt',
@@ -953,6 +972,8 @@ describe('integration/review-assurance', () => {
       const evidence = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
+        mandateDigest: FIXTURE_MANDATE_DIGEST,
+        criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         invocationMode: 'host_subagent_task',
@@ -973,6 +994,8 @@ describe('integration/review-assurance', () => {
       const evidence = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
+        mandateDigest: FIXTURE_MANDATE_DIGEST,
+        criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         invocationMode: 'sdk_session_prompt',
@@ -994,6 +1017,8 @@ describe('integration/review-assurance', () => {
       const evidence = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
+        mandateDigest: FIXTURE_MANDATE_DIGEST,
+        criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         invocationMode: 'host_subagent_task',

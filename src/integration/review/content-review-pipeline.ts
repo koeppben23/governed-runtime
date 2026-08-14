@@ -257,6 +257,8 @@ async function enforceContentStrictGate(
   const invocation = buildInvocationEvidence({
     obligationId: reviewCtx.obligationId,
     obligationType: 'review',
+    mandateDigest: reviewCtx.mandateDigest,
+    criteriaVersion: reviewCtx.criteriaVersion,
     parentSessionId: sessionId,
     childSessionId: reviewerResult.sessionId,
     invocationMode: INVOCATION_MODE_SDK_SESSION,

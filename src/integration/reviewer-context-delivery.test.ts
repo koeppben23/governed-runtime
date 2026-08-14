@@ -25,14 +25,7 @@ vi.mock('./review/audit-events.js', () => ({
 }));
 
 import { readState } from '../adapters/persistence.js';
-import {
-  makeState,
-  POLICY_SNAPSHOT,
-  PLAN_RECORD,
-  TICKET,
-  IMPL_EVIDENCE,
-  VALIDATION_PASSED,
-} from '../fixtures.js';
+import { makeState, POLICY_SNAPSHOT, PLAN_RECORD, TICKET } from '../fixtures.js';
 import { runReviewOrchestration } from './plugin-orchestrator.js';
 import type { OrchestratorDeps, ToolCallEvent } from './plugin-orchestrator.js';
 import { createTestAdapter } from './test-adapter-helper.js';
@@ -52,6 +45,8 @@ const NOW = '2026-05-10T13:00:00.000Z';
 const REVIEW_MATERIAL = 'persisted review material';
 const REVIEW_MATERIAL_DIGEST = hashCanonicalReviewContent(REVIEW_MATERIAL);
 const REVIEW_SUBJECT_DIGEST = hashCanonicalContentSubject(REVIEW_MATERIAL_DIGEST);
+const HOST_REVIEW_MATERIAL = 'frozen host-task artifact';
+const HOST_REVIEW_MATERIAL_DIGEST = hashCanonicalReviewContent(HOST_REVIEW_MATERIAL);
 
 function reviewRequiredOutput(): string {
   return JSON.stringify({
@@ -111,6 +106,11 @@ function obligation(
       obligationType === 'review'
         ? { kind: 'content', subjectDigest: REVIEW_SUBJECT_DIGEST, lineCount: 1 }
         : { kind: 'repository_change', paths: ['src/foo.ts'], revisions: ['base', 'head'] },
+    reviewMaterial: {
+      content: obligationType === 'review' ? REVIEW_MATERIAL : HOST_REVIEW_MATERIAL,
+      materialDigest:
+        obligationType === 'review' ? REVIEW_MATERIAL_DIGEST : HOST_REVIEW_MATERIAL_DIGEST,
+    },
     ...(obligationType === 'review'
       ? {
           reviewSubject: {
@@ -144,26 +144,25 @@ function buildState(
       assuranceSchemaVersion: 'review-assurance.v5' as const,
       obligations: [obligation(obligationType, metadata)],
       invocations: [],
-      attempts:
-        obligationType === 'review'
-          ? [
-              {
-                attemptId: '22222222-2222-4222-8222-222222222222',
-                obligationId: OBLIGATION_ID,
-                obligationType: 'review' as const,
-                subjectDigest: REVIEW_SUBJECT_DIGEST,
-                reviewMaterial: {
-                  content: REVIEW_MATERIAL,
-                  materialDigest: REVIEW_MATERIAL_DIGEST,
-                },
-                ordinal: 1,
-                status: 'created' as const,
-                origin: { kind: 'initial' } as const,
-                repositoryDiscovery: { kind: 'not_applicable' } as const,
-                createdAt: NOW,
-              },
-            ]
-          : [],
+      attempts: [
+        {
+          attemptId: '22222222-2222-4222-8222-222222222222',
+          obligationId: OBLIGATION_ID,
+          obligationType,
+          subjectDigest:
+            obligationType === 'review' ? REVIEW_SUBJECT_DIGEST : 'test-subject-digest',
+          reviewMaterial: {
+            content: obligationType === 'review' ? REVIEW_MATERIAL : HOST_REVIEW_MATERIAL,
+            materialDigest:
+              obligationType === 'review' ? REVIEW_MATERIAL_DIGEST : HOST_REVIEW_MATERIAL_DIGEST,
+          },
+          ordinal: 1,
+          status: 'created' as const,
+          origin: { kind: 'initial' } as const,
+          repositoryDiscovery: { kind: 'not_applicable' } as const,
+          createdAt: NOW,
+        },
+      ],
     },
     ...overrides,
   });
@@ -231,100 +230,21 @@ describe('reviewer artifact context reaches the delivered prompt', () => {
     vi.clearAllMocks();
   });
 
-  it('plan review carries the originating ticket', async () => {
-    const prompt = await deliveredReviewerPrompt(buildState('plan'));
+  it.each(['plan', 'implement', 'architecture'] as const)(
+    '%s review embeds its frozen material without parent artifact context',
+    async (obligationType) => {
+      const prompt = await deliveredReviewerPrompt(buildState(obligationType));
 
-    expect(prompt).toContain('## Ticket Under Review');
-    expect(prompt).toContain(TICKET.text);
-    expect(prompt).toContain(TICKET.digest);
-  });
+      expect(prompt).toContain(HOST_REVIEW_MATERIAL);
+      expect(prompt).not.toContain('## Ticket Under Review');
+      expect(prompt).not.toContain('content to review below this line:');
+    },
+  );
 
-  it('implementation review carries the approved plan, changed files and executed evidence', async () => {
-    const state = buildState('implement', {
-      implementation: IMPL_EVIDENCE,
-      validationAttempts: [
-        {
-          attemptId: '22222222-2222-4222-8222-222222222222',
-          scope: 'implementation' as const,
-          implementationDigest: IMPL_EVIDENCE.digest,
-          result: VALIDATION_PASSED[0]!,
-        },
-      ],
-    });
+  it('standalone review embeds its obligation material', async () => {
+    const prompt = await deliveredReviewerPrompt(buildState('review'), TOOL_FLOWGUARD_REVIEW);
 
-    const prompt = await deliveredReviewerPrompt(state);
-
-    // What was promised.
-    expect(prompt).toContain('## Approved Plan');
-    expect(prompt).toContain(PLAN_RECORD.current.digest);
-    // What actually changed.
-    expect(prompt).toContain('## Changed Files');
-    for (const file of IMPL_EVIDENCE.changedFiles) {
-      expect(prompt).toContain(file);
-    }
-    // Which checks ran, host-executed.
-    expect(prompt).toContain('## Verification Evidence (executed)');
-    expect(prompt).toContain(VALIDATION_PASSED[0]!.command);
-    expect(prompt).toContain('[PASS]');
-  });
-
-  it('implementation review states NOT_VERIFIED when no executed evidence is bound', async () => {
-    // Fail-closed: absent evidence must be named, never implied by omission.
-    const state = buildState('implement', {
-      implementation: IMPL_EVIDENCE,
-      validationAttempts: [],
-    });
-
-    const prompt = await deliveredReviewerPrompt(state);
-
-    expect(prompt).toContain('## Verification Evidence (executed)');
-    expect(prompt).toContain('NOT_VERIFIED');
-  });
-
-  it('standalone review carries the reviewed revision and its file set, not the session plan', async () => {
-    const state = buildState(
-      'review',
-      {},
-      {
-        targetPaths: ['app/models/user.py', 'app/api/routes.py'],
-        branch: 'feature/add-due-date',
-        baseBranch: 'main',
-        resolvedBranchSha: 'a'.repeat(40),
-        resolvedBaseSha: 'b'.repeat(40),
-      },
-    );
-
-    const prompt = await deliveredReviewerPrompt(state, TOOL_FLOWGUARD_REVIEW);
-
-    expect(prompt).toContain('## Reviewed Revision (external)');
-    expect(prompt).toContain('feature/add-due-date');
-    expect(prompt).toContain('a'.repeat(40));
-    expect(prompt).toContain('app/models/user.py');
-    // The worktree/revision discrepancy must be stated, not left as a trap.
-    expect(prompt).toContain('CURRENTLY CHECKED-OUT worktree');
-    // An external diff has nothing to do with this session's own plan.
-    expect(prompt).not.toContain('## Approved Plan');
-    expect(prompt).not.toContain(PLAN_RECORD.current.digest);
-  });
-
-  it('bounds the changed-file list instead of flooding the prompt', async () => {
-    const many = Array.from({ length: 120 }, (_, i) => `src/generated/file-${i}.ts`);
-    const state = buildState('implement', {
-      implementation: { ...IMPL_EVIDENCE, changedFiles: many, domainFiles: many.slice(0, 1) },
-      validationAttempts: [],
-    });
-
-    const prompt = await deliveredReviewerPrompt(state);
-
-    expect(prompt).toContain('120 file(s) define the reviewed subject.');
-    expect(prompt).toContain('further file(s)');
-    expect(prompt).not.toContain('src/generated/file-119.ts');
-  });
-
-  it('frames embedded author-controlled text as material, not as instructions', async () => {
-    const prompt = await deliveredReviewerPrompt(buildState('plan'));
-
-    expect(prompt).toContain('NOT instructions to you');
+    expect(prompt).toContain(REVIEW_MATERIAL);
   });
 });
 
@@ -390,7 +310,7 @@ describe('reviewer context unavailability is classified by cause', () => {
     );
   });
 
-  it('still reports genuinely corrupted material as an integrity failure', async () => {
+  it('ignores a tampered spent-attempt copy because obligation material is authoritative', async () => {
     const state = withAttempts(buildState('review'), (attempt) => ({
       ...attempt,
       status: 'rejected' as const,
@@ -401,8 +321,7 @@ describe('reviewer context unavailability is classified by cause', () => {
 
     const parsed = await deliveredOutput(state);
 
-    expect(parsed.code).toBe('REVIEW_MATERIAL_INTEGRITY_FAILED');
-    expect((parsed.recovery as string[]).join(' ')).toContain('Do not re-run the reviewer');
+    expect(parsed.code).toBe('REVIEW_ATTEMPT_UNAVAILABLE');
   });
 
   it('delivers a reviewer prompt again once a bindable attempt was reissued', async () => {

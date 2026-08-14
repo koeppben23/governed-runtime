@@ -70,11 +70,9 @@ Start the compliance review flow for the current FlowGuard session.
       the supplied Discovery snapshot; mark any claim \`NOT_VERIFIED\` when the content
       cannot be correlated to that snapshot (e.g. the diff references files absent from the
       snapshot, or Discovery is drifted relative to the reviewed branch).
-    - Instruct the subagent to return a complete \`ReviewFindings\` JSON object
-    - Retain the response unchanged for SDK/manual findings modes. In host-task
-      mode, FlowGuard captures it as Task evidence; do not parse or resubmit it.
-    - Set \`attestation.toolObligationId\` to the value from \`requiredReviewAttestation\`
-      (FlowGuard provides this UUID for every content-aware /review)
+    - The canonical prompt already requires a complete \`ReviewerFindingsInput\` object. Do not
+      restate output instructions or construct attestation fields outside that prompt.
+    - In host-task mode, FlowGuard captures Task evidence; do not parse or resubmit it.
     Strict governance is not satisfied by copied JSON or attestation fields alone.
     Those fields are diagnostic/context only until FlowGuard persists matching
     \`ReviewInvocationEvidence\` for the obligation.

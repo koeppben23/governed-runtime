@@ -245,6 +245,8 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
       const existingInvocation = buildInvocationEvidence({
         obligationId: obligation.obligationId,
         obligationType: 'plan',
+        mandateDigest: obligation.mandateDigest,
+        criteriaVersion: obligation.criteriaVersion,
         parentSessionId: SESSION_ID,
         childSessionId: CHILD_SESSION_ID,
         invocationMode: 'host_subagent_task',

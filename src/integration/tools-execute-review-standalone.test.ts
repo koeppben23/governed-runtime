@@ -309,9 +309,15 @@ describe('review (standalone flow)', () => {
     const sessDir = await currentSessionDir();
     const state = await readState(sessDir);
     if (!state) throw new TypeError('Expected persisted session state');
+    const obligation = state.reviewAssurance?.obligations.find(
+      (item) => item.obligationId === obligationId,
+    );
+    if (!obligation) throw new TypeError('Expected persisted review obligation');
     const invocation = buildInvocationEvidence({
       obligationId,
       obligationType: 'review',
+      mandateDigest: obligation.mandateDigest,
+      criteriaVersion: obligation.criteriaVersion,
       parentSessionId: ctx.sessionID,
       childSessionId: 'ses_review_child_host_task',
       invocationMode: 'host_subagent_task',
@@ -1564,6 +1570,8 @@ describe('review (standalone flow)', () => {
         const inv = buildInvocationEvidence({
           obligationId: '11111111-2222-3333-8444-555555555555',
           obligationType: 'review',
+          mandateDigest: 'fixture-mandate-digest',
+          criteriaVersion: 'fixture-criteria-v1',
           parentSessionId: 'parent-session',
           childSessionId: 'child-session',
           invocationMode: 'sdk_session_prompt',

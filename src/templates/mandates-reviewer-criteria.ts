@@ -35,7 +35,7 @@ export const REVIEWER_CRITERIA: Record<Exclude<ReviewerPromptType, 'all'>, strin
 - Compliance -> correctness; missing validation -> completeness.
 - Security (as risk): trace user input to sensitive sinks and flag concretely exploitable injection (SQL/command/path/template), authn/authz bypass or privilege escalation, hardcoded secrets or weak crypto, unsafe deserialization/RCE, XSS, and sensitive-data/PII exposure; require a clear attack path and skip theoretical hardening.
 - Scope: review only changed code (flag newly changed files over ~1000 lines); report high-conviction findings with structured subject and evidence anchors plus a concrete remedy, not style preferences.
-- Return complete ReviewFindings; do not drop reviewMode, reviewedBy, reviewedAt, attestation, overallVerdict, missingVerification, scopeCreep, or unknowns.
+ - Return complete ReviewerFindingsInput; do not drop reviewMode, attestation.toolObligationId, overallVerdict, missingVerification, scopeCreep, or unknowns. The host adds reviewedBy, reviewedAt, and remaining attestation fields after strict validation.
 - Include attestation.toolObligationId exactly as FlowGuard provides it.`,
 };
 

@@ -174,19 +174,6 @@ async function persistHostTaskEvidence(
       },
     );
   }
-  const divergence = bindResult.diagnostic?.hostConstantDivergence;
-  if (Array.isArray(divergence) && divergence.length > 0) {
-    deps.log.warn(
-      'host-task',
-      'reviewer attestation diverged from host constants; bound host-authoritatively',
-      {
-        sessionId,
-        obligationId: evidence.obligationId,
-        childSessionId: evidence.childSessionId,
-        divergentFields: divergence,
-      },
-    );
-  }
   deps.log.info('host-task', 'evidence created', {
     sessionId,
     bindOutcome: bindResult.bindOutcome,

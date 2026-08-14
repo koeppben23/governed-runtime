@@ -175,9 +175,15 @@ async function bindHostTaskReviewEvidence(
   const sessDir = await currentSessionDir();
   const state = await readState(sessDir);
   if (!state) throw new TypeError('Expected persisted session state');
+  const obligation = state.reviewAssurance?.obligations.find(
+    (item) => item.obligationId === obligationId,
+  );
+  if (!obligation) throw new TypeError('Expected persisted review obligation');
   const invocation = buildInvocationEvidence({
     obligationId,
     obligationType: 'review',
+    mandateDigest: obligation.mandateDigest,
+    criteriaVersion: obligation.criteriaVersion,
     parentSessionId: ctx.sessionID,
     childSessionId: 'ses_review_child_host_task',
     invocationMode: 'host_subagent_task',

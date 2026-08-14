@@ -153,6 +153,10 @@ export async function recordEvidenceOrBlockReuse(
   let reused = false;
   await deps.updateReviewAssurance(sessDir, (s, now2) => {
     const assurance = ensureReviewAssurance(s.reviewAssurance);
+    const obligation = assurance.obligations.find(
+      (item) => item.obligationId === params.obligationId,
+    );
+    if (!obligation) return s;
     if (hasEvidenceReuse(assurance.invocations, params.childSessionId, params.findingsHash)) {
       reused = true;
       return updateObligation(s, params.obligationId, (item) => ({
@@ -165,6 +169,8 @@ export async function recordEvidenceOrBlockReuse(
     const invocation = buildInvocationEvidence({
       obligationId: params.obligationId,
       obligationType: params.obligationType,
+      mandateDigest: obligation.mandateDigest,
+      criteriaVersion: obligation.criteriaVersion,
       parentSessionId: params.sessionId,
       childSessionId: params.childSessionId,
       invocationMode: INVOCATION_MODE_SDK_SESSION,

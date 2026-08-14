@@ -17,7 +17,6 @@ import {
   type FrozenReviewerContext,
 } from './frozen-reviewer-context.js';
 import { buildReviewerProofContext } from './proof-context.js';
-import { buildReviewerArtifactContext } from './reviewer-context.js';
 import { REVIEW_COMPLETED_PREFIX, extractReviewContext } from './orchestrator.js';
 import {
   REASON_HOST_SUBAGENT_TASK_REQUIRED,
@@ -28,7 +27,6 @@ import {
   findReviewObligationById,
   ensureReviewAssurance,
   findBindableAttempt,
-  latestReviewMaterial,
 } from './assurance.js';
 import { updateObligation } from './obligation-state.js';
 import type { SessionState } from '../../state/schema.js';
@@ -287,16 +285,11 @@ function buildHostTaskBlockedOutput(
       `so the required review context is present on the first attempt.`
     : '';
 
-  // Forward the host-authoritative attestation so the agent passes a concrete
-  // toolObligationId (UUID) to the reviewer subagent. Without this the
-  // standalone /review instruction omitted the attestation, the reviewer
-  // defaulted toolObligationId to "NOT_VERIFIED", and the verdict could not bind
-  // host-task evidence (HOST_SUBAGENT_TASK_REQUIRED).
+  // requiredReviewAttestation is host/parent context. The canonical prompt is
+  // the sole reviewer-output contract and contains only toolObligationId.
   const attestationStr = attestationMeta
-    ? ` Required attestation (forward verbatim to the reviewer): ` +
-      `toolObligationId=${attestationMeta.toolObligationId}, ` +
-      `mandateDigest=${attestationMeta.mandateDigest}, ` +
-      `criteriaVersion=${attestationMeta.criteriaVersion}.`
+    ? ` Host context identifies obligation ${attestationMeta.toolObligationId}; do not construct ` +
+      `reviewer attestation fields outside reviewerTaskPrompt.`
     : '';
 
   const fallback =
@@ -539,7 +532,7 @@ function buildHostTaskOutputInput(
     attemptId: bindableAttempt?.attemptId ?? null,
     challengeContract: buildHostTaskChallengeContract(sessionState, obligation),
     proofContext: buildReviewerProofContext(sessionState),
-    artifactContext: obligation ? buildReviewerArtifactContext(sessionState, obligation) : [],
+    artifactContext: [],
     frozenReviewerContext,
     reviewerContextFailure: resolveReviewerContextFailure(
       sessionState,
@@ -571,15 +564,12 @@ function resolveReviewerContextFailure(
   bindableAttempt: ReturnType<typeof findBindableAttempt>,
   frozenReviewerContext: FrozenReviewerContext | null,
 ): ReviewerContextFailure | null {
-  if (obligation?.obligationType !== 'review' || frozenReviewerContext) return null;
-  const persistedMaterial = latestReviewMaterial(
-    ensureReviewAssurance(sessionState.reviewAssurance),
-    obligation.obligationId,
-  );
-  const materialCheck = verifyFrozenReviewerContext(obligation, persistedMaterial);
+  if (!obligation) return null;
+  const materialCheck = verifyFrozenReviewerContext(obligation, obligation.reviewMaterial);
   if (materialCheck.kind === 'blocked') {
     return { kind: 'material_integrity', reason: materialCheck.reason };
   }
+  if (frozenReviewerContext) return null;
   return {
     kind: 'attempt_missing',
     obligationId: obligation.obligationId,
@@ -593,7 +583,8 @@ function resolveFrozenReviewerContext(
   obligation: ReviewObligation | null,
   attempt: ReturnType<typeof findBindableAttempt>,
 ): FrozenReviewerContext | null {
-  const verified = verifyFrozenReviewerContext(obligation, attempt?.reviewMaterial);
+  if (!attempt) return null;
+  const verified = verifyFrozenReviewerContext(obligation, obligation?.reviewMaterial);
   return verified.kind === 'ok' ? verified.context : null;
 }
 

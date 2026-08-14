@@ -33,6 +33,7 @@ import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import {
   reviewObligationResponseFields,
   createObligationAndAttempt,
+  freezeReviewMaterial,
   findLatestObligation,
   resolveFrozenReviewProfile,
 } from '../review/assurance.js';
@@ -273,6 +274,7 @@ export async function persistNonConvergedPlanReview(
           planVersion: nextPlanVersion,
           now: scope.ctx.now(),
           subjectDigest: revision.currentPlan.digest,
+          reviewMaterial: freezeReviewMaterial(revision.currentPlan.body),
           reviewProfile: resolveFrozenReviewProfile(finalState.policySnapshot),
           profileSource: 'policy_default',
           policySnapshot: finalState.policySnapshot,

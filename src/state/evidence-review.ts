@@ -433,7 +433,7 @@ export const ReviewObligation = z
      * surfaces any site that forgets to freeze the subject.
      */
     subjectDigest: z.string().min(1),
-    /** Present for standalone content reviews and authoritative for their attempts. */
+    reviewMaterial: ReviewMaterial.optional(),
     reviewSubject: FrozenReviewSubject.optional(),
     /** Missing means the legacy v1 fingerprint algorithm. */
     fingerprintVersion: ReviewInputFingerprintVersion.optional(),

@@ -257,6 +257,8 @@ function buildManualTransportInvocation(
   return buildInvocationEvidence({
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
+    mandateDigest: obligation.mandateDigest,
+    criteriaVersion: obligation.criteriaVersion,
     parentSessionId: opts.parentSessionId,
     childSessionId: findings.reviewedBy.sessionId,
     invocationMode: 'manual_attested',

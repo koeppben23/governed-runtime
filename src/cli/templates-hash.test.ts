@@ -95,7 +95,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     //   evidenceLocations may be empty). Refreshed for reviewer-owned input DTO:
     // reviewer provenance is host-stamped after strict input validation.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      'f3521e7fb473e6a78f5219baa3b6eb91b5097c14bfa3a230b8234547cce87b29',
+      '5f0f74912c51e1fab914de853e705ab62fdd93c1370010c419dc274d5a3cc93a',
     );
   });
 
@@ -246,7 +246,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // REVIEWER_CONTEXT_UNAVAILABLE.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '5cfb3afc89e0c14b44ba277b66e55ee95261554b7367e990f408f840200e6242',
+      '81b75c9464dd2a8396248817e6b2c57a4e41250462b35ca36ccaa22b9867eea9',
     );
   });
 

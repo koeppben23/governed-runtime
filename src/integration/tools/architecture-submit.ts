@@ -16,6 +16,7 @@ import {
   createReviewObligation,
   reviewObligationResponseFields,
   resolveFrozenReviewProfile,
+  freezeReviewMaterial,
 } from '../review/assurance.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
 import { freezeContextAuthorityAtHead } from '../../rails/repository-authority.js';
@@ -59,6 +60,7 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
         planVersion: ctx.archPlanVersion,
         now: ctx.now,
         subjectDigest: ctx.state.architecture?.digest ?? `arch-submit-${ctx.archPlanVersion}`,
+        reviewMaterial: freezeReviewMaterial(ctx.state.architecture?.adrText ?? ''),
         reviewProfile: resolveFrozenReviewProfile(ctx.policySnapshot),
         profileSource: 'policy_default',
         policySnapshot: ctx.policySnapshot,

@@ -114,6 +114,27 @@ export function enforceBeforeSubagentCall(
   );
   if (unfilledPendingReviews.length === 0) return { allowed: true };
 
+  const promptDigest = createHash('sha256').update(prompt, 'utf8').digest('hex');
+  const expectedPrompt = unfilledPendingReviews.find(
+    (pending) => pending.expectedPromptDigest !== null,
+  );
+  const expectedPromptDigest = expectedPrompt?.expectedPromptDigest;
+  if (
+    expectedPromptDigest !== null &&
+    expectedPromptDigest !== undefined &&
+    expectedPromptDigest !== promptDigest
+  ) {
+    return {
+      allowed: false,
+      code: expectedPrompt!.repairPromptRequired
+        ? 'REPAIR_PROMPT_REQUIRED'
+        : 'SUBAGENT_PROMPT_MISMATCH',
+      reason: expectedPrompt!.repairPromptRequired
+        ? 'FlowGuard enforcement: the repair prompt does not exactly match the host-issued bytes.'
+        : 'FlowGuard enforcement: the reviewer prompt does not exactly match the host-issued bytes.',
+    };
+  }
+
   // Check retry exhaustion: a review that was already called and has
   // exhausted its retry budget (>= 1 retry) cannot be re-invoked.
   const retryExhausted = unfilledPendingReviews.filter(
@@ -141,7 +162,6 @@ export function enforceBeforeSubagentCall(
   if (needsRepair.length > 0) {
     // A repair prompt must have been issued (expectedRepairPromptDigest set)
     // AND the task prompt must match its digest exactly.
-    const promptDigest = createHash('sha256').update(prompt, 'utf8').digest('hex');
     const matchesRepair = needsRepair.some(
       (p) => p.expectedRepairPromptDigest !== null && p.expectedRepairPromptDigest === promptDigest,
     );

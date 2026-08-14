@@ -161,6 +161,8 @@ async function resolveCapturedFixture(
   const invocation = buildInvocationEvidence({
     obligationId: obligation.obligationId,
     obligationType: 'implement',
+    mandateDigest: obligation.mandateDigest,
+    criteriaVersion: obligation.criteriaVersion,
     parentSessionId: 'evaluation-parent',
     childSessionId: findings.reviewedBy.sessionId,
     invocationMode: 'host_subagent_task',
@@ -225,6 +227,8 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
   const firstInvocation = buildInvocationEvidence({
     obligationId: firstObligation.obligationId,
     obligationType: 'implement',
+    mandateDigest: firstObligation.mandateDigest,
+    criteriaVersion: firstObligation.criteriaVersion,
     parentSessionId: sessionID,
     childSessionId: firstFindings.reviewedBy.sessionId,
     invocationMode: 'host_subagent_task',
@@ -313,6 +317,8 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
   const secondInvocation = buildInvocationEvidence({
     obligationId: secondObligation.obligationId,
     obligationType: 'implement',
+    mandateDigest: secondObligation.mandateDigest,
+    criteriaVersion: secondObligation.criteriaVersion,
     parentSessionId: sessionID,
     childSessionId: secondFindings.reviewedBy.sessionId,
     invocationMode: 'host_subagent_task',

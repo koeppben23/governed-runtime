@@ -446,6 +446,8 @@ export async function fulfillStrictReviewObligation(
   const invocation = buildInvocationEvidence({
     obligationId: obligation.obligationId,
     obligationType: input.obligationType,
+    mandateDigest: obligation.mandateDigest,
+    criteriaVersion: obligation.criteriaVersion,
     parentSessionId: state.binding.sessionId,
     childSessionId: findings.reviewedBy.sessionId,
     invocationMode: isHostTask ? 'host_subagent_task' : 'sdk_session_prompt',

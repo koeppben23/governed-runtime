@@ -16,6 +16,7 @@ import {
   appendObligationWithAttempt,
   createReviewObligation,
   resolveFrozenReviewProfile,
+  freezeReviewMaterial,
 } from '../review/assurance.js';
 import { classifyToolCallMode } from './review-validation-mode.js';
 import { freezeCandidatePairAuthority } from '../../rails/repository-authority.js';
@@ -63,6 +64,7 @@ export async function activateImplementationReviewObligation(
     planVersion: input.planVersion,
     now: input.now,
     subjectDigest: state.implementation?.digest ?? `impl-${input.now}`,
+    reviewMaterial: freezeReviewMaterial(JSON.stringify(state.implementation)),
     reviewProfile: resolveFrozenReviewProfile(state.policySnapshot),
     profileSource: 'policy_default',
     policySnapshot: state.policySnapshot,

@@ -62,6 +62,12 @@ import { renderReviewContext } from './prompt-sections.js';
 
 /** Serialize the integrity-verified review subject identically for every transport. */
 export function renderFrozenReviewSubjectEnvelope(context: FrozenReviewerContext): string[] {
+  if (!context.reviewSubject || !context.reviewSubjectScope || !context.anchorContract) {
+    return [
+      `${CANONICAL_PROMPT_APPEND_MARKER} persisted review material below this line:`,
+      context.reviewMaterial.content,
+    ];
+  }
   return [
     '## Frozen Review Subject',
     JSON.stringify(context.reviewSubject),
@@ -264,7 +270,7 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
   });
 
   const isRepositoryReview =
-    input.frozenReviewerContext?.reviewSubject.kind === 'repository_change';
+    input.frozenReviewerContext?.reviewSubject?.kind === 'repository_change';
   const discoverySection = resolveReviewerDiscoverySection(
     isRepositoryReview ? 'repository_change' : 'other',
     input.repositoryDiscoverySnapshot,
@@ -448,8 +454,6 @@ export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {
     iteration,
     planVersion,
     obligationId,
-    criteriaVersion,
-    mandateDigest,
     profileName,
     profileRules,
     discoveryContext,
@@ -474,15 +478,10 @@ export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {
     '## Instructions',
     '',
     'Review this plan against the ticket requirements. Follow your review criteria',
-    'for plans. Return your findings as a single JSON object matching the',
-    'ReviewFindings schema. Use the exact iteration and planVersion values above.',
+    'for plans. Return your findings as a single ReviewerFindingsInput JSON object.',
     `Set iteration=${iteration} and planVersion=${planVersion} in your response.`,
     `Set attestation.toolObligationId=${obligationId}.`,
-    `Set attestation.criteriaVersion=${criteriaVersion}.`,
-    `Set attestation.mandateDigest=${mandateDigest}.`,
-    `Set attestation.iteration=${iteration}.`,
-    `Set attestation.planVersion=${planVersion}.`,
-    `Set attestation.reviewedBy="${REVIEWER_SUBAGENT_TYPE}".`,
+    'Do not output reviewedBy, reviewedAt, mandateDigest, criteriaVersion, or attestation.reviewedBy; the host stamps them after strict validation.',
     '',
     CORE_REVIEW_PROFILE_MARKER,
   ].join('\n');
@@ -550,8 +549,6 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     iteration,
     planVersion,
     obligationId,
-    criteriaVersion,
-    mandateDigest,
     profileName,
     profileRules,
     discoveryContext,
@@ -597,14 +594,10 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     'Read the changed files using the read/glob/grep tools to verify correctness.',
     'Follow your review criteria for implementations.',
     ...renderRepositoryObservationContract(observationCapability),
-    'Return your findings as a single JSON object matching the ReviewFindings schema.',
+    'Return your findings as a single ReviewerFindingsInput JSON object.',
     `Set iteration=${iteration} and planVersion=${planVersion} in your response.`,
     `Set attestation.toolObligationId=${obligationId}.`,
-    `Set attestation.criteriaVersion=${criteriaVersion}.`,
-    `Set attestation.mandateDigest=${mandateDigest}.`,
-    `Set attestation.iteration=${iteration}.`,
-    `Set attestation.planVersion=${planVersion}.`,
-    `Set attestation.reviewedBy="${REVIEWER_SUBAGENT_TYPE}".`,
+    'Do not output reviewedBy, reviewedAt, mandateDigest, criteriaVersion, or attestation.reviewedBy; the host stamps them after strict validation.',
     '',
     CORE_REVIEW_PROFILE_MARKER,
   ].join('\n');
@@ -622,8 +615,6 @@ export function buildArchitectureReviewPrompt(opts: ArchitectureReviewPromptOpts
     iteration,
     planVersion,
     obligationId,
-    criteriaVersion,
-    mandateDigest,
     profileName,
     profileRules,
     discoveryContext,
@@ -654,14 +645,10 @@ export function buildArchitectureReviewPrompt(opts: ArchitectureReviewPromptOpts
     'and verification path. Use the read/glob/grep tools to verify any claims about',
     'existing files, schemas, or contracts referenced in the ADR.',
     ...renderRepositoryObservationContract(observationCapability),
-    'Return your findings as a single JSON object matching the ReviewFindings schema.',
+    'Return your findings as a single ReviewerFindingsInput JSON object.',
     `Set iteration=${iteration} and planVersion=${planVersion} in your response.`,
     `Set attestation.toolObligationId=${obligationId}.`,
-    `Set attestation.criteriaVersion=${criteriaVersion}.`,
-    `Set attestation.mandateDigest=${mandateDigest}.`,
-    `Set attestation.iteration=${iteration}.`,
-    `Set attestation.planVersion=${planVersion}.`,
-    `Set attestation.reviewedBy="${REVIEWER_SUBAGENT_TYPE}".`,
+    'Do not output reviewedBy, reviewedAt, mandateDigest, criteriaVersion, or attestation.reviewedBy; the host stamps them after strict validation.',
     '',
     CORE_REVIEW_PROFILE_MARKER,
   ].join('\n');
@@ -696,7 +683,7 @@ export function buildReviewContentPrompt(opts: {
 }): string {
   const stackSection = buildStackProfileSection(opts.profileName, opts.profileRules);
   const discoverySection = resolveReviewerDiscoverySection(
-    opts.frozenReviewerContext?.reviewSubject.kind === 'repository_change'
+    opts.frozenReviewerContext?.reviewSubject?.kind === 'repository_change'
       ? 'repository_change'
       : 'other',
     opts.repositoryDiscoverySnapshot,
