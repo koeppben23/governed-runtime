@@ -24,7 +24,6 @@
  * @version v4
  */
 
-import { createHash } from 'node:crypto';
 import type { SessionState } from '../../../state/schema.js';
 import { type ReviewObligation } from '../../../state/evidence-review.js';
 import {
@@ -36,8 +35,8 @@ import {
   type EnforcementResult,
   type PendingReviewTool,
   REVIEW_REQUIRED_PREFIX,
-  CANONICAL_PROMPT_APPEND_MARKER,
 } from './types.js';
+import { canonicalPromptAnchorOf, canonicalPromptDigestOf } from './prompt-contract.js';
 import {
   extractContentMeta,
   extractCapturedFindings,
@@ -248,27 +247,6 @@ function trackRequiredReview(
       hostAttestationConstants: readHostAttestationConstants(signalAttestationOf(parsed)),
     });
   }
-}
-
-/**
- * Trailing append instruction of the canonical reviewer prompt FlowGuard emitted.
- *
- * Returns null when no canonical prompt was emitted, in which case the agent
- * legitimately free-composes and the append check does not apply.
- */
-function canonicalPromptAnchorOf(parsed: Record<string, unknown>): string | null {
-  const prompt = parsed.reviewerTaskPrompt;
-  if (typeof prompt !== 'string') return null;
-  const lines = prompt.split('\n');
-  const anchor = lines.reverse().find((line) => line.startsWith(CANONICAL_PROMPT_APPEND_MARKER));
-  return anchor ?? null;
-}
-
-function canonicalPromptDigestOf(parsed: Record<string, unknown>): string | null {
-  const prompt = parsed.reviewerTaskPrompt;
-  return typeof prompt === 'string'
-    ? createHash('sha256').update(prompt, 'utf8').digest('hex')
-    : null;
 }
 
 /**

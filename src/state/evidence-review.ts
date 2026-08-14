@@ -462,14 +462,6 @@ export const ReviewObligation = z
      * before the frozen-repository-authority generation.
      */
     repositoryAuthority: FrozenRepositoryAuthority.optional(),
-    /**
-     * Obligation-level output-repair budget, frozen from the resolved policy
-     * snapshot at obligation creation. Counts `output_repair` attempts only;
-     * task-lifecycle re-arms are budgeted by the enforcement retry gate.
-     * Required: reissue authorization reads this frozen value — never the
-     * live config — so a later policy change cannot re-open a settled
-     * obligation's repair window.
-     */
     maxReviewerOutputRepairAttempts: z.number().int().min(0).max(5),
   })
   .superRefine(refineStandaloneSubject)
