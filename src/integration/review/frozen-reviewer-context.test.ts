@@ -123,6 +123,55 @@ describe('verifyFrozenMaterialForObligation', () => {
     });
   });
 
+  it('blocks an artifact obligation whose scope digest diverges from the subject digest', () => {
+    // Fully self-consistent material block (D2) with a scope tampered to D1:
+    // the subject identity chain must be transitively closed.
+    const tampered: ReviewObligation = {
+      ...artifactObligation,
+      reviewSubjectScope: {
+        kind: 'artifact',
+        artifact: {
+          ...(
+            artifactObligation.reviewSubjectScope as Extract<
+              ReviewObligation['reviewSubjectScope'],
+              { kind: 'artifact' }
+            >
+          ).artifact,
+          digest: 'artifact-digest-D1',
+        },
+      },
+    };
+    const result = verifyFrozenMaterialForObligation(tampered, tampered.reviewMaterial!);
+    expect(result).toEqual({
+      kind: 'blocked',
+      code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
+      reason: 'frozen artifact scope does not match the obligation subject digest',
+    });
+  });
+
+  it('blocks an artifact obligation whose artifactKind does not match the obligation type', () => {
+    const tampered: ReviewObligation = {
+      ...artifactObligation,
+      reviewSubjectScope: {
+        kind: 'artifact',
+        artifact: {
+          ...(
+            artifactObligation.reviewSubjectScope as Extract<
+              ReviewObligation['reviewSubjectScope'],
+              { kind: 'artifact' }
+            >
+          ).artifact,
+          kind: 'plan',
+        },
+      },
+    };
+    const result = verifyFrozenMaterialForObligation(tampered, tampered.reviewMaterial!);
+    expect(result).toMatchObject({
+      kind: 'blocked',
+      code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
+    });
+  });
+
   it('routes standalone subjects through the full frozen context verification', () => {
     const result = verifyFrozenMaterialForObligation(obligation, {
       content,

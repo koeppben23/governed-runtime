@@ -47,6 +47,12 @@ export type ReviewContinuation =
       readonly obligation: ReviewObligation;
       readonly authorization: Extract<OutputRepairAuthorization, { readonly kind: 'authorized' }>;
     }
+  | {
+      readonly kind: 'integrity_blocked';
+      readonly obligation: ReviewObligation;
+      readonly code: string;
+      readonly reason: string;
+    }
   | { readonly kind: 'awaiting_verdict'; readonly obligation: ReviewObligation }
   | { readonly kind: 'blocked'; readonly obligation: ReviewObligation }
   | { readonly kind: 'none' };
@@ -81,6 +87,14 @@ export function resolveReviewContinuation(
   const authorization = authorizeOutputRepairReissue(assurance, obligation);
   if (authorization.kind === 'authorized') {
     return { kind: 'output_repair', obligation, authorization };
+  }
+  if (authorization.kind === 'integrity_blocked') {
+    return {
+      kind: 'integrity_blocked',
+      obligation,
+      code: authorization.code,
+      reason: authorization.reason,
+    };
   }
   return { kind: 'none' };
 }

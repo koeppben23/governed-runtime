@@ -484,11 +484,13 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
     });
   });
 
-  describe('EDGE: normal ADR_REVIEW_IN_PROGRESS still works', () => {
-    it('blocks re-submission when obligation is pending (not blocked)', async () => {
+  describe('EDGE: pending obligations without frozen material surface the integrity failure', () => {
+    it('blocks re-submission when the pending obligation predates frozen review material', async () => {
       await setupArchitectureDeadState(1);
 
-      // Change the obligation to pending instead of blocked
+      // Change the obligation to pending instead of blocked — but keep it
+      // material-less, modelling a legacy/corrupt obligation that can never
+      // dispatch a reviewer Task.
       const sessDir = await currentSessionDir();
       const state = await readState(sessDir);
       if (!state) throw new Error('No state');
@@ -515,7 +517,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
       const result = parseToolResult(raw);
 
       expect(result.error).toBe(true);
-      expect(result.code).toBe('ADR_REVIEW_IN_PROGRESS');
+      expect(result.code).toBe('REVIEW_MATERIAL_INTEGRITY_FAILED');
     });
   });
 
@@ -654,6 +656,72 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
       expect(attempts.length).toBe(2);
       expect(attempts.filter((a) => a.status === 'created').length).toBe(1);
       expect(attempts.at(-1)!.origin.kind).toBe('output_repair');
+    });
+
+    it('fails closed on reissue when the persisted artifact scope is tampered to another digest', async () => {
+      await setupArchitectureDeadState(1);
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      if (!state) throw new Error('No state');
+
+      const pending = createReviewObligation({
+        obligationType: 'architecture',
+        iteration: 0,
+        planVersion: 1,
+        now: CREATED_AT,
+        subjectDigest: hashText(ADR_TEXT),
+        reviewMaterial: freezeReviewMaterial(ADR_TEXT, hashText(ADR_TEXT)),
+        reviewSubjectScope: artifactReviewSubjectScope('adr', ADR_TEXT, hashText(ADR_TEXT)),
+        changedFiles: [],
+        policySnapshot: state.policySnapshot,
+      });
+      // Fully self-consistent material generation with a tampered scope: the
+      // subject identity chain must be transitively closed on the reissue path.
+      const tampered: ReviewObligation = {
+        ...pending,
+        reviewSubjectScope: {
+          kind: 'artifact',
+          artifact: {
+            ...(
+              pending.reviewSubjectScope as Extract<
+                ReviewObligation['reviewSubjectScope'],
+                { kind: 'artifact' }
+              >
+            ).artifact,
+            digest: hashText('## Context\nOther\n## Decision\nOther\n## Consequences\nOther'),
+          },
+        },
+      };
+      const rejectedAttempt: ReviewAttempt = {
+        attemptId: crypto.randomUUID(),
+        obligationId: tampered.obligationId,
+        obligationType: 'architecture',
+        subjectDigest: tampered.subjectDigest,
+        reviewMaterial: tampered.reviewMaterial,
+        ordinal: 1,
+        status: 'rejected',
+        origin: { kind: 'initial' },
+        rejectionReason: 'schema_invalid',
+        repositoryDiscovery: { kind: 'not_applicable' },
+        createdAt: CREATED_AT,
+      };
+      await writeState(sessDir, {
+        ...state,
+        architecture: { ...state.architecture!, adrText: ADR_TEXT, digest: hashText(ADR_TEXT) },
+        selfReview: { ...state.selfReview!, currDigest: hashText(ADR_TEXT) },
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          obligations: [tampered],
+          invocations: [],
+          attempts: [rejectedAttempt],
+        },
+      });
+
+      const raw = await architecture.execute({ title: 'Test Decision', adrText: ADR_TEXT }, ctx);
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_MATERIAL_INTEGRITY_FAILED');
     });
 
     it('restart continues the current review cycle: predecessor, flow state, fresh obligation, and prompt share the iteration', async () => {

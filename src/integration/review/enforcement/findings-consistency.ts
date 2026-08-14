@@ -15,6 +15,7 @@ import {
   type ReviewRepositoryRevisionProvenance,
   type ReviewSubjectScope as ReviewSubjectScopeValue,
 } from '../../../state/evidence-review.js';
+import type { ReviewObligation } from '../../../state/evidence.js';
 
 /** Boundary-neutral result of the verdict/blocking-issues coherence check. */
 export type ReviewFindingsConsistencyResult =
@@ -252,4 +253,21 @@ export function validateReviewFindingsScope(input: {
     };
   }
   return { ok: true };
+}
+
+/**
+ * Subject-identity cross-check (defense in depth): the artifact scope the
+ * binder validates against must be bound to the obligation's own subject
+ * digest — a tampered persisted scope must never authorize findings for a
+ * different artifact identity.
+ */
+export function artifactScopeSubjectIdentityMatches(obligation: ReviewObligation): boolean {
+  const scope = obligation.reviewSubjectScope;
+  if (scope?.kind !== 'artifact') return true;
+  const expectedKind = obligation.obligationType === 'plan' ? 'plan' : 'adr';
+  return (
+    (obligation.obligationType === 'plan' || obligation.obligationType === 'architecture') &&
+    scope.artifact.kind === expectedKind &&
+    scope.artifact.digest === obligation.subjectDigest
+  );
 }

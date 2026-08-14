@@ -67,6 +67,11 @@ export async function routeArchitectureInitialSubmission(
     case 'awaiting_task':
     case 'output_repair':
       return routePendingArchitectureContinuation(args, session, continuation);
+    case 'integrity_blocked':
+      return formatBlocked(continuation.code, {
+        obligationId: continuation.obligation.obligationId,
+        reason: continuation.reason,
+      });
     case 'blocked':
       return restartArchitectureReview(args, session, subagentEnabled, continuation.obligation);
     case 'awaiting_verdict':

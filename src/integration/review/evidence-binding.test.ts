@@ -284,8 +284,17 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
       onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(0, 1, PLAN_OBL_ID), NOW);
       onFlowGuardToolAfter(state, 'flowguard_implement', {}, modeAResponse(0, 1, IMPL_OBL_ID), NOW);
 
-      // Create obligation matching implement type (the latest tool)
-      const obligation = pendingObligation({ obligationType: 'implement' });
+      // Create obligation matching implement type (the latest tool). Implement
+      // reviews are repository-scoped by contract (artifact scopes would fail
+      // the subject-identity cross-check at bind time).
+      const obligation = pendingObligation({
+        obligationType: 'implement',
+        reviewSubjectScope: {
+          kind: 'repository_change',
+          paths: ['src/foo.ts'],
+          revisions: ['base', 'head'],
+        },
+      });
 
       // First Task call (earlier timestamp) — matches plan pending review
       onTaskToolAfter(
@@ -543,6 +552,11 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
         obligationType: 'implement',
         iteration: 1,
         planVersion: 2,
+        reviewSubjectScope: {
+          kind: 'repository_change',
+          paths: ['src/foo.ts'],
+          revisions: ['base', 'head'],
+        },
       });
 
       const taskResult = taskResultWithAttestation(obligation.obligationId, {
@@ -1042,7 +1056,14 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
       const state = createSessionState();
       onFlowGuardToolAfter(state, 'flowguard_implement', {}, modeAResponse(0, 1), NOW);
 
-      const obligation = pendingObligation({ obligationType: 'implement' });
+      const obligation = pendingObligation({
+        obligationType: 'implement',
+        reviewSubjectScope: {
+          kind: 'repository_change',
+          paths: ['src/foo.ts'],
+          revisions: ['base', 'head'],
+        },
+      });
       const taskResult = taskResultNoSessionId(obligation.obligationId);
 
       // Tier 3 resolution

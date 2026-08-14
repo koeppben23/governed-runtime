@@ -177,13 +177,37 @@ export function renderArtifactAnchorContract(
 /**
  * Verify the frozen material binding of an artifact-scoped obligation
  * (plan/ADR). Artifact obligations have no standalone review subject; their
- * frozen material generation must still be canonically normalized and bound
- * to the exact artifact subject digest.
+ * frozen material generation AND their artifact subject scope must both bind
+ * to the exact artifact subject digest, so the subject identity chain is
+ * transitively closed:
+ *
+ *   material.subjectDigest
+ *   == obligation.subjectDigest
+ *   == reviewSubjectScope.artifact.digest
  */
 export function verifyFrozenArtifactMaterial(
   obligation: ReviewObligation,
   reviewMaterial: ReviewMaterial | null | undefined,
 ): FrozenArtifactMaterialVerification {
+  const expectedArtifactKind =
+    obligation.obligationType === 'plan'
+      ? ('plan' as const)
+      : obligation.obligationType === 'architecture'
+        ? ('adr' as const)
+        : null;
+  const scope = obligation.reviewSubjectScope;
+  if (
+    !expectedArtifactKind ||
+    scope?.kind !== 'artifact' ||
+    scope.artifact.kind !== expectedArtifactKind ||
+    scope.artifact.digest !== obligation.subjectDigest
+  ) {
+    return {
+      kind: 'blocked',
+      code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
+      reason: 'frozen artifact scope does not match the obligation subject digest',
+    };
+  }
   if (!reviewMaterial) {
     return {
       kind: 'blocked',

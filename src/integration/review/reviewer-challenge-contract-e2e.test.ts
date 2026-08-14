@@ -25,6 +25,7 @@ import {
   onTaskToolAfter,
 } from './enforcement/enforcement.js';
 import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
+import { artifactReviewSubjectScope } from './assurance.js';
 import {
   TOOL_FLOWGUARD_ARCHITECTURE,
   TOOL_FLOWGUARD_IMPLEMENT,
@@ -193,6 +194,33 @@ function obligationFor(
     obligationType,
     requiredChallengeCount,
     requiredChallengeKind: challengeKind,
+    // Scope must match the obligation type (the bind path cross-checks the
+    // persisted scope against the obligation subject identity).
+    ...(obligationType === 'implement'
+      ? {
+          reviewSubjectScope: {
+            kind: 'repository_change',
+            paths: ['src/foo.ts'],
+            revisions: ['base', 'head'],
+          },
+        }
+      : obligationType === 'review'
+        ? {
+            reviewSubjectScope: {
+              kind: 'content',
+              subjectDigest: 'diagnostics-test-subject',
+              lineCount: 1,
+            },
+          }
+        : obligationType === 'architecture'
+          ? {
+              reviewSubjectScope: artifactReviewSubjectScope(
+                'adr',
+                '# Diagnostics\nBody',
+                'diagnostics-test-subject',
+              ),
+            }
+          : {}),
   });
 }
 

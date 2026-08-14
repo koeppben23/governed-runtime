@@ -24,6 +24,7 @@ import {
   resolveAttestationInfo,
 } from './enforcement/prepare-findings.js';
 import {
+  artifactScopeSubjectIdentityMatches,
   validateReviewFindingsConsistency,
   validateReviewFindingsScope,
   type FindingWithRelation,
@@ -594,6 +595,19 @@ function prepareBindableFindings(input: {
   }
   const contractCheck = checkChallengeContract(findings, obligation, childSessionId);
   if (contractCheck) return contractCheck;
+  // Subject-identity cross-check (defense in depth): a tampered persisted
+  // artifact scope must never authorize findings for another subject identity.
+  if (!artifactScopeSubjectIdentityMatches(obligation)) {
+    return {
+      evidence: null,
+      bindOutcome: 'subject_mismatch',
+      diagnostic: {
+        childSessionId,
+        obligationId: obligation.obligationId,
+        message: 'The persisted artifact scope is not bound to the obligation subject digest.',
+      },
+    };
+  }
   const scopeResult = validateReviewFindingsScope({
     findings: relationFindings(findings),
     reviewSubjectScope: obligation.reviewSubjectScope,

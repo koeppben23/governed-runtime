@@ -131,6 +131,40 @@ describe('artifact-scoped initial host-task integrity', () => {
     expect(output.output).not.toContain('reviewerTaskPrompt');
   });
 
+  it('BAD: a scope tampered to another artifact digest fails closed before dispatch (no reviewerTaskPrompt)', async () => {
+    const obligation = architectureObligation(ADR_DIGEST);
+    const tampered: ReviewObligation = {
+      ...obligation,
+      reviewSubjectScope: {
+        kind: 'artifact',
+        artifact: {
+          ...(
+            obligation.reviewSubjectScope as Extract<
+              ReviewObligation['reviewSubjectScope'],
+              { kind: 'artifact' }
+            >
+          ).artifact,
+          digest: 'adr-digest-D1',
+        },
+      },
+    };
+    const state = sessionWith(tampered);
+    const output = { output: architectureOutput(tampered) };
+    const reviewCtx = extractReviewContext('flowguard_architecture', JSON.parse(output.output))!;
+
+    await handleHostTaskPolicy(
+      mockDeps(),
+      state,
+      '/tmp/sess-integrity',
+      reviewCtx,
+      output,
+      SESSION_ID,
+    );
+
+    expect(output.output).toContain('REVIEW_MATERIAL_INTEGRITY_FAILED');
+    expect(output.output).not.toContain('reviewerTaskPrompt');
+  });
+
   it('HAPPY: a valid artifact obligation emits the exact host-enforced anchor contract', async () => {
     const obligation = architectureObligation(ADR_DIGEST);
     const state = sessionWith(obligation);

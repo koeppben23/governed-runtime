@@ -64,6 +64,11 @@ export async function routePlanInitialSubmission(
     }
     case 'output_repair':
       return routePlanOutputRepair(scope, continuation.obligation);
+    case 'integrity_blocked':
+      return formatBlocked(continuation.code, {
+        obligationId: continuation.obligation.obligationId,
+        reason: continuation.reason,
+      });
     // A blocked plan obligation is recovered by the regular submission path
     // (fresh plan revision + fresh obligation), and an obligation awaiting a
     // verdict or an absent obligation fall through to the existing gates.
