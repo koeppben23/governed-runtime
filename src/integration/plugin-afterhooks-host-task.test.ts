@@ -381,6 +381,61 @@ describe('reviewer host-task after-hook: no_matched_record → sequential re-inv
     }
   });
 
+  it('replaces reviewer findings when the persisted attempt cannot bind', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      await execFileAsync('git', ['init'], { cwd: ws.tmpDir });
+      const sessionID = crypto.randomUUID();
+      const sessDir = await seedHostTaskPlanSession(ws.tmpDir, sessionID);
+      const hooks = await FlowGuardAuditPlugin(
+        createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+      );
+      const beforeHook = hooks['tool.execute.before']!;
+      const afterHook = hooks['tool.execute.after']!;
+      const planOutput = {
+        title: 'flowguard_plan',
+        output: planReviewRequiredOutput(),
+        metadata: {},
+      };
+      await afterHook(
+        { tool: 'flowguard_plan', sessionID, callID: 'call-plan', args: {} },
+        planOutput,
+      );
+      const reviewerArgs = reviewerArgsFromReviewRequiredOutput(planOutput.output);
+      await beforeHook({ tool: 'task', sessionID, callID: 'call-task' }, { args: reviewerArgs });
+
+      const state = await readState(sessDir);
+      await writeState(sessDir, {
+        ...state!,
+        reviewAssurance: {
+          ...state!.reviewAssurance!,
+          attempts: state!.reviewAssurance!.attempts.map((attempt) => ({
+            ...attempt,
+            status: 'bound' as const,
+            childSessionId: CHILD_VALID,
+            completedAt: new Date().toISOString(),
+          })),
+        },
+      });
+
+      const taskOutput = {
+        title: 'task',
+        output: validReviewerOutput(),
+        metadata: { sessionID: CHILD_VALID },
+      };
+      await afterHook(
+        { tool: 'task', sessionID, callID: 'call-task', args: reviewerArgs },
+        taskOutput,
+      );
+
+      expect(taskOutput.output).toContain('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
+      expect(taskOutput.output).not.toContain('"overallVerdict":"accept"');
+      expect((await readState(sessDir))?.reviewAssurance?.invocations ?? []).toHaveLength(0);
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
   it('rejects a reviewer Task with an empty host callID before prompt injection', async () => {
     const ws = await createTestWorkspace();
     try {

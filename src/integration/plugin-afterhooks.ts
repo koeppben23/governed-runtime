@@ -322,6 +322,12 @@ async function handleTaskAfter(
           sessionId: ctx.sessionId,
           childSessionId: resolvedChildSessionId,
         });
+        ctx.hookOutput.output = strictBlockedOutput(
+          'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+          {
+            reason: binding.reason,
+          },
+        );
         return;
       }
       await persistObservations(
