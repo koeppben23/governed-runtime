@@ -276,6 +276,8 @@ export async function persistNonConvergedPlanReview(
           planVersion: nextPlanVersion,
           now: scope.ctx.now(),
           subjectDigest: revision.currentPlan.digest,
+          // Frozen review material: the exact (possibly revised) plan artifact
+          // plus originating ticket context, digest-bound at creation time.
           reviewMaterial: freezeReviewMaterial(
             buildFrozenReviewMaterialContent({
               obligationType: 'plan',

@@ -428,7 +428,7 @@ describe('plan', () => {
       expect(result.status).toContain('Plan submitted');
     });
 
-    it('blocks plan-only resubmission while review loop is active', async () => {
+    it('re-emits the review instruction for a plan-only resubmission while the review loop is active', async () => {
       await hydrateAndTicket();
       const firstRaw = await plan.execute(
         { planText: '## Plan', targetPaths: ['docs/test.md'] },
@@ -442,8 +442,12 @@ describe('plan', () => {
         ctx,
       );
       const result = parseToolResult(raw);
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('PLAN_REVIEW_IN_PROGRESS');
+      // No new plan/obligation: the existing review obligation re-emits its
+      // instruction (awaiting_task continuation).
+      expect(result.error).not.toBe(true);
+      expect(result.phase).toBe('PLAN');
+      expect(result.reviewObligationId).toBe(first.reviewObligationId);
+      expect(result.status).toContain('pending');
     });
 
     it('blocks verdict before any plan exists with PLAN_SUBMISSION_REQUIRED', async () => {

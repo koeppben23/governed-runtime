@@ -128,32 +128,13 @@ import type {
 // ---- internal helpers ----
 
 import { classifyPlanCall, planInputFlags, planReviewPolicy } from './plan-types.js';
+import { routePlanInitialSubmission, blockedPlanReviewInProgress } from './plan-route.js';
 import {
   buildPlanSubmissionResponse as buildSubmissionResponse,
   persistPlanReview as persistReview,
 } from './plan-response.js';
 
-function blockedPlanReviewInProgress(state: SessionState): string | null {
-  const assurance = ensureReviewAssurance(state.reviewAssurance);
-  const blockedPlanObligations = assurance.obligations.filter(
-    (o) => o.obligationType === 'plan' && o.status === 'blocked',
-  );
-  const lastPlanObligation = [...assurance.obligations]
-    .reverse()
-    .find((o) => o.obligationType === 'plan');
-
-  if (lastPlanObligation?.status !== 'blocked') {
-    return formatBlocked('PLAN_REVIEW_IN_PROGRESS');
-  }
-  if (blockedPlanObligations.length >= 3) {
-    return formatBlocked('ORCHESTRATION_PERMANENTLY_FAILED', {
-      attempts: String(blockedPlanObligations.length),
-    });
-  }
-  return null;
-}
-
-function validatePlanRequest(scope: PlanExecutionScope): string | null {
+function validatePlanCallShape(scope: PlanExecutionScope): string | null {
   const { input, state } = scope;
   if (!isCommandAllowed(state.phase, Command.PLAN)) {
     return formatBlocked('COMMAND_NOT_ALLOWED', { command: '/plan', phase: state.phase });
@@ -162,16 +143,6 @@ function validatePlanRequest(scope: PlanExecutionScope): string | null {
 
   const mixedInputBlocked = validatePlanInputShape(scope.args, input, state);
   if (mixedInputBlocked) return mixedInputBlocked;
-
-  if (
-    input.isInitialSubmission &&
-    input.hasPlanText &&
-    state.phase === 'PLAN' &&
-    state.selfReview
-  ) {
-    const blocked = blockedPlanReviewInProgress(state);
-    if (blocked) return blocked;
-  }
 
   return validateInitialPlanFindings(scope);
 }
@@ -313,6 +284,8 @@ async function createPlanReviewAttempt(
       planVersion,
       now: scope.ctx.now(),
       subjectDigest: planEvidence.digest,
+      // Frozen review material: the exact plan artifact plus originating
+      // ticket context, canonicalized and digest-bound at creation time.
       reviewMaterial: freezeReviewMaterial(
         buildFrozenReviewMaterialContent({
           obligationType: 'plan',
@@ -726,8 +699,27 @@ export const plan: ToolDefinition = {
           reviewPolicy: planReviewPolicy(mutableSession),
           maxSelfReviewIterations: mutableSession.policy.maxSelfReviewIterations,
         };
-        const blocked = validatePlanRequest(scope);
-        if (blocked) return blocked;
+        // Call-shape validation runs FIRST: mixed inputs are rejected before
+        // any lifecycle routing can re-emit a review instruction.
+        const shapeBlocked = validatePlanCallShape(scope);
+        if (shapeBlocked) return shapeBlocked;
+        if (scope.input.isInitialSubmission) {
+          // Re-invocation routing for an existing plan obligation:
+          // output-repair reissue or attempt re-emission. A blocked plan
+          // obligation falls through to the regular submission path (fresh
+          // plan revision + fresh obligation).
+          const routed = await routePlanInitialSubmission(scope);
+          if (routed !== null) return routed;
+        }
+        if (
+          scope.input.isInitialSubmission &&
+          scope.input.hasPlanText &&
+          scope.state.phase === 'PLAN' &&
+          scope.state.selfReview
+        ) {
+          const gateBlocked = blockedPlanReviewInProgress(scope.state);
+          if (gateBlocked) return gateBlocked;
+        }
         return scope.input.isInitialSubmission
           ? handlePlanSubmission(scope)
           : handlePlanReview(scope);

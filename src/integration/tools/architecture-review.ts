@@ -36,9 +36,9 @@ import {
   findAcceptedInvocationForFindings,
   findLatestObligation,
   findLatestUnconsumedObligation,
+  freezeReviewMaterial,
   reviewObligationResponseFields,
   resolveFrozenReviewProfile,
-  freezeReviewMaterial,
 } from '../review/assurance.js';
 import { buildFrozenReviewMaterialContent } from '../review/reviewer-context.js';
 

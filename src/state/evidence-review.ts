@@ -144,7 +144,6 @@ export const ReviewAttemptOrigin = z.discriminatedUnion('kind', [
 ]);
 export type ReviewAttemptOrigin = z.infer<typeof ReviewAttemptOrigin>;
 
-/** Immutable normalized bytes delivered to a standalone review attempt. */
 export const ReviewMaterial = z
   .object({
     content: z.string(),
@@ -426,11 +425,9 @@ export const ReviewObligation = z
      * frozen at obligation creation. This is the host-authoritative identity of
      * what must be reviewed — never supplied by or echoed from the reviewer.
      * Used at binding time to prevent cross-artifact evidence attachment.
-     *
-     * NOTE: `ReviewAttempt.subjectDigest` is REQUIRED and binding compares the two
-     * for equality, so an obligation without a subject digest can never bind.
-     * Required here as well, so the compiler — not a runtime bind failure —
-     * surfaces any site that forgets to freeze the subject.
+     * NOTE: `ReviewAttempt.subjectDigest` is REQUIRED, so an obligation without
+     * a subject digest can never bind — the compiler, not a runtime bind
+     * failure, surfaces any site that forgets to freeze the subject.
      */
     subjectDigest: z.string().min(1),
     reviewMaterial: ReviewMaterial.optional(),

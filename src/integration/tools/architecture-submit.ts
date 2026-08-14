@@ -15,9 +15,9 @@ import {
   appendObligationWithAttempt,
   artifactReviewSubjectScope,
   createReviewObligation,
+  freezeReviewMaterial,
   reviewObligationResponseFields,
   resolveFrozenReviewProfile,
-  freezeReviewMaterial,
 } from '../review/assurance.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
 import { freezeContextAuthorityAtHead } from '../../rails/repository-authority.js';
@@ -54,40 +54,7 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
   if (resolvedTargetPaths && resolvedTargetPaths.length > 0) {
     metadata.targetPaths = resolvedTargetPaths;
   }
-  const repositoryAuthority = await freezeContextAuthorityAtHead(ctx.wsDir);
-  const obligation = ctx.subagentEnabled
-    ? createReviewObligation({
-        obligationType: 'architecture',
-        iteration: 0,
-        planVersion: ctx.archPlanVersion,
-        now: ctx.now,
-        subjectDigest: ctx.state.architecture?.digest ?? `arch-submit-${ctx.archPlanVersion}`,
-        reviewMaterial: freezeReviewMaterial(
-          buildFrozenReviewMaterialContent({
-            obligationType: 'architecture',
-            state: ctx.state,
-            artifact: ctx.state.architecture?.adrText ?? '',
-          }),
-          ctx.state.architecture?.digest ?? `arch-submit-${ctx.archPlanVersion}`,
-        ),
-        // The ADR artifact is the review SUBJECT; changedFiles below stay
-        // challenge-classification and repository-evidence context only.
-        reviewSubjectScope: artifactReviewSubjectScope(
-          'adr',
-          ctx.state.architecture?.adrText ?? '',
-          ctx.state.architecture?.digest ?? `arch-submit-${ctx.archPlanVersion}`,
-        ),
-        reviewProfile: resolveFrozenReviewProfile(ctx.policySnapshot),
-        profileSource: 'policy_default',
-        policySnapshot: ctx.policySnapshot,
-        changedFiles: resolvedTargetPaths,
-        claimedTaskClass: ctx.state.claimedTaskClass,
-        metadata,
-        // Frozen repository context (freeze-time resolution): architecture
-        // reviews may cite repository evidence only against this context.
-        repositoryAuthority,
-      })
-    : null;
+  const obligation = await mintArchSubmissionObligation(ctx, resolvedTargetPaths, metadata);
   let archAttemptId: string | null = null;
   const augmentedState = obligation
     ? (() => {
@@ -104,6 +71,46 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
       })()
     : ctx.state;
   return { state: augmentedState, obligation, attemptId: archAttemptId };
+}
+
+async function mintArchSubmissionObligation(
+  ctx: ArchObligationContext,
+  resolvedTargetPaths: readonly string[] | undefined,
+  metadata: Record<string, unknown>,
+): Promise<ReturnType<typeof createReviewObligation> | null> {
+  if (!ctx.subagentEnabled) return null;
+  const digest = ctx.state.architecture?.digest ?? `arch-submit-${ctx.archPlanVersion}`;
+  const adrText = ctx.state.architecture?.adrText ?? '';
+  const repositoryAuthority = await freezeContextAuthorityAtHead(ctx.wsDir);
+  return createReviewObligation({
+    obligationType: 'architecture',
+    iteration: 0,
+    planVersion: ctx.archPlanVersion,
+    now: ctx.now,
+    subjectDigest: digest,
+    // Frozen review material: the exact ADR artifact plus originating
+    // ticket context, canonicalized and digest-bound at creation time.
+    reviewMaterial: freezeReviewMaterial(
+      buildFrozenReviewMaterialContent({
+        obligationType: 'architecture',
+        state: ctx.state,
+        artifact: adrText,
+      }),
+      digest,
+    ),
+    // The ADR artifact is the review SUBJECT; changedFiles below stay
+    // challenge-classification and repository-evidence context only.
+    reviewSubjectScope: artifactReviewSubjectScope('adr', adrText, digest),
+    reviewProfile: resolveFrozenReviewProfile(ctx.policySnapshot),
+    profileSource: 'policy_default',
+    policySnapshot: ctx.policySnapshot,
+    changedFiles: resolvedTargetPaths,
+    claimedTaskClass: ctx.state.claimedTaskClass,
+    metadata,
+    // Frozen repository context (freeze-time resolution): architecture
+    // reviews may cite repository evidence only against this context.
+    repositoryAuthority,
+  });
 }
 
 export async function handleAdrSubmission(

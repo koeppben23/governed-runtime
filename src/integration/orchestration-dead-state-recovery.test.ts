@@ -30,8 +30,14 @@ import {
 } from './test-helpers.js';
 import { plan, implement, architecture } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
+import { hashText } from '../shared/hashing.js';
+import {
+  artifactReviewSubjectScope,
+  createReviewObligation,
+  freezeReviewMaterial,
+} from './review/assurance.js';
 import type { SessionState } from '../state/schema.js';
-import type { ReviewObligation } from '../state/evidence.js';
+import type { ReviewAttempt, ReviewObligation } from '../state/evidence.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -343,12 +349,12 @@ describe('plan — dead-state recovery (Fix 2a)', () => {
     });
   });
 
-  describe('EDGE: normal PLAN_REVIEW_IN_PROGRESS still works', () => {
-    it('blocks re-submission when obligation is pending (not blocked)', async () => {
+  describe('EDGE: pending review loop re-emits its instruction', () => {
+    it('re-emits the existing obligation instead of blocking a plan-only re-submission', async () => {
       const { hydrate, ticket: ticketTool } = await import('./tools/index.js');
       await hydrate.execute({ policyMode: 'solo' }, ctx);
       await ticketTool.execute({ text: 'Test task', source: 'user' }, ctx);
-      await plan.execute(
+      const firstRaw = await plan.execute(
         {
           planText:
             '## Objective\nTest\n## Approach\nTest\n## Steps\n1. test\n## Files to Modify\ntest.ts\n## Edge Cases\n1. none\n## Validation Criteria\n1. pass\n## Verification Plan\n1. test',
@@ -356,8 +362,11 @@ describe('plan — dead-state recovery (Fix 2a)', () => {
         },
         ctx,
       );
+      const first = parseToolResult(firstRaw);
 
-      // State now has selfReview and a pending obligation — re-submission should be blocked
+      // State now has selfReview and a pending obligation — a plan-only
+      // re-submission re-emits the existing review obligation (awaiting_task
+      // continuation), never a new plan revision.
       const sessDir = await currentSessionDir();
       const state = await readState(sessDir);
       const obligations = state!.reviewAssurance?.obligations ?? [];
@@ -375,8 +384,8 @@ describe('plan — dead-state recovery (Fix 2a)', () => {
       );
       const result = parseToolResult(raw);
 
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('PLAN_REVIEW_IN_PROGRESS');
+      expect(result.error).not.toBe(true);
+      expect(result.reviewObligationId).toBe(lastObl?.obligationId ?? first.reviewObligationId);
     });
   });
 });
@@ -502,6 +511,144 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
 
       expect(result.error).toBe(true);
       expect(result.code).toBe('ADR_REVIEW_IN_PROGRESS');
+    });
+  });
+
+  describe('restart identity, revision, and output repair', () => {
+    const ADR_TEXT = '## Context\nTest\n## Decision\nTest\n## Consequences\nTest';
+    const CREATED_AT = '2026-01-01T00:00:00.000Z';
+
+    async function setArchitectureState(adrText: string): Promise<string> {
+      await setupArchitectureDeadState(1);
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      if (!state) throw new Error('No state');
+      const updated: SessionState = {
+        ...state,
+        architecture: {
+          ...state.architecture!,
+          adrText,
+          digest: hashText(adrText),
+          createdAt: CREATED_AT,
+        },
+        selfReview: { ...state.selfReview!, currDigest: hashText(adrText) },
+        nextAdrNumber: 2,
+      };
+      await writeState(sessDir, updated);
+      return sessDir;
+    }
+
+    it('restart with the same ADR digest preserves ADR identity and mints a fresh obligation', async () => {
+      const sessDir = await setArchitectureState(ADR_TEXT);
+      const before = await readState(sessDir);
+      const blockedObligationId = before!.reviewAssurance!.obligations.find(
+        (o) => o.status === 'blocked',
+      )!.obligationId;
+
+      const raw = await architecture.execute({ title: 'Test Decision', adrText: ADR_TEXT }, ctx);
+      const result = parseToolResult(raw);
+
+      expect(result.error).not.toBe(true);
+      expect(result.status).toContain('restarted');
+      expect(result.adrId).toBe('ADR-001');
+      expect(result.adrDigest).toBe(hashText(ADR_TEXT));
+      expect(result.reviewObligationId).toBeDefined();
+      expect(result.reviewObligationId).not.toBe(blockedObligationId);
+
+      const after = await readState(sessDir);
+      // A blocked review obligation is a new review generation — never a new ADR.
+      expect(after!.architecture!.id).toBe('ADR-001');
+      expect(after!.architecture!.digest).toBe(hashText(ADR_TEXT));
+      expect(after!.architecture!.createdAt).toBe(CREATED_AT);
+      expect(after!.nextAdrNumber).toBe(2);
+      const pending = after!.reviewAssurance!.obligations.filter((o) => o.status === 'pending');
+      expect(pending.length).toBe(1);
+      expect(pending[0]!.subjectDigest).toBe(hashText(ADR_TEXT));
+      expect(pending[0]!.reviewSubjectScope?.kind).toBe('artifact');
+    });
+
+    it('restart with a changed ADR digest revises the same ADR identity with a fresh obligation', async () => {
+      const sessDir = await setArchitectureState(ADR_TEXT);
+      const revisedText = '## Context\nRevised\n## Decision\nRevised\n## Consequences\nRevised';
+
+      const raw = await architecture.execute({ title: 'Test Decision', adrText: revisedText }, ctx);
+      const result = parseToolResult(raw);
+
+      expect(result.error).not.toBe(true);
+      expect(result.status).toContain('revised');
+      expect(result.adrId).toBe('ADR-001');
+      expect(result.adrDigest).toBe(hashText(revisedText));
+
+      const after = await readState(sessDir);
+      expect(after!.architecture!.id).toBe('ADR-001');
+      expect(after!.architecture!.digest).toBe(hashText(revisedText));
+      expect(after!.architecture!.createdAt).toBe(CREATED_AT);
+      expect(after!.nextAdrNumber).toBe(2);
+      expect(after!.selfReview!.prevDigest).toBe(hashText(ADR_TEXT));
+      // The blocked predecessor stays bound to the old digest.
+      const blocked = after!.reviewAssurance!.obligations.filter((o) => o.status === 'blocked');
+      expect(blocked.length).toBe(1);
+      const pending = after!.reviewAssurance!.obligations.filter((o) => o.status === 'pending');
+      expect(pending.length).toBe(1);
+      expect(pending[0]!.subjectDigest).toBe(hashText(revisedText));
+    });
+
+    it('output repair: a repairable rejection reissues a fresh attempt on the SAME obligation', async () => {
+      await setupArchitectureDeadState(1);
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      if (!state) throw new Error('No state');
+
+      const pending = createReviewObligation({
+        obligationType: 'architecture',
+        iteration: 0,
+        planVersion: 1,
+        now: CREATED_AT,
+        subjectDigest: hashText(ADR_TEXT),
+        reviewMaterial: freezeReviewMaterial(ADR_TEXT, hashText(ADR_TEXT)),
+        reviewSubjectScope: artifactReviewSubjectScope('adr', ADR_TEXT, hashText(ADR_TEXT)),
+        changedFiles: [],
+        policySnapshot: state.policySnapshot,
+      });
+      const rejectedAttempt: ReviewAttempt = {
+        attemptId: crypto.randomUUID(),
+        obligationId: pending.obligationId,
+        obligationType: 'architecture',
+        subjectDigest: pending.subjectDigest,
+        reviewMaterial: pending.reviewMaterial,
+        ordinal: 1,
+        status: 'rejected',
+        origin: { kind: 'initial' },
+        rejectionReason: 'schema_invalid',
+        repositoryDiscovery: { kind: 'not_applicable' },
+        createdAt: CREATED_AT,
+      };
+      await writeState(sessDir, {
+        ...state,
+        architecture: { ...state.architecture!, adrText: ADR_TEXT, digest: hashText(ADR_TEXT) },
+        selfReview: { ...state.selfReview!, currDigest: hashText(ADR_TEXT) },
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          obligations: [pending],
+          invocations: [],
+          attempts: [rejectedAttempt],
+        },
+      });
+
+      const raw = await architecture.execute({ title: 'Test Decision', adrText: ADR_TEXT }, ctx);
+      const result = parseToolResult(raw);
+
+      expect(result.error).not.toBe(true);
+      expect(result.status).toContain('repair');
+      expect(result.reviewObligationId).toBe(pending.obligationId);
+
+      const after = await readState(sessDir);
+      const attempts = after!.reviewAssurance!.attempts.filter(
+        (a) => a.obligationId === pending.obligationId,
+      );
+      expect(attempts.length).toBe(2);
+      expect(attempts.filter((a) => a.status === 'created').length).toBe(1);
+      expect(attempts.at(-1)!.origin.kind).toBe('output_repair');
     });
   });
 });

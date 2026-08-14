@@ -142,3 +142,54 @@ export function verifyFrozenReviewerContext(
     },
   };
 }
+
+export type FrozenArtifactMaterialVerification =
+  | { readonly kind: 'ok' }
+  | {
+      readonly kind: 'blocked';
+      readonly code: 'REVIEW_MATERIAL_INTEGRITY_FAILED';
+      readonly reason: string;
+    };
+
+/**
+ * Verify the frozen material binding of an artifact-scoped obligation
+ * (plan/ADR). Artifact obligations have no standalone review subject; their
+ * frozen material generation must still be canonically normalized and bound
+ * to the exact artifact subject digest.
+ */
+export function verifyFrozenArtifactMaterial(
+  obligation: ReviewObligation,
+  reviewMaterial: ReviewMaterial | null | undefined,
+): FrozenArtifactMaterialVerification {
+  if (!reviewMaterial) {
+    return {
+      kind: 'blocked',
+      code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
+      reason:
+        'this obligation predates frozen review material and cannot be safely reconstructed from mutable state',
+    };
+  }
+  if (reviewMaterial.content !== normalizeReviewContent(reviewMaterial.content)) {
+    return {
+      kind: 'blocked',
+      code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
+      reason: 'persisted material is not canonically normalized',
+    };
+  }
+  const actualDigest = hashCanonicalReviewContent(reviewMaterial.content);
+  if (actualDigest !== reviewMaterial.materialDigest) {
+    return {
+      kind: 'blocked',
+      code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
+      reason: 'persisted material digest does not match its canonical content',
+    };
+  }
+  if (reviewMaterial.subjectDigest !== obligation.subjectDigest) {
+    return {
+      kind: 'blocked',
+      code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
+      reason: 'frozen material generation does not match the artifact subject digest',
+    };
+  }
+  return { kind: 'ok' };
+}
