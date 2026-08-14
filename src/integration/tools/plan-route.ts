@@ -55,28 +55,15 @@ export async function routePlanInitialSubmission(
   const continuation = resolveReviewContinuation(state.reviewAssurance, 'plan');
 
   switch (continuation.kind) {
-    case 'awaiting_task':
+    case 'awaiting_task': {
+      // A pending continuation reviews the FROZEN subject: a submitted plan
+      // with a different digest must never be silently ignored — fail closed.
+      const changed = changedSubjectWhilePending(scope, continuation.obligation);
+      if (changed) return changed;
       return planInstructionResponse(scope, continuation.obligation, continuation.attemptId);
-    case 'output_repair': {
-      const reissue = await reissueReviewAttempt(
-        scope.sessDir,
-        state,
-        continuation.obligation,
-        scope.ctx.now(),
-      );
-      if (reissue.kind === 'blocked') {
-        return formatBlocked(reissue.code, {
-          obligationId: continuation.obligation.obligationId,
-          reason: reissue.reason,
-        });
-      }
-      const fresh = (await readState(scope.sessDir)) ?? state;
-      return planInstructionResponse(
-        { ...scope, state: fresh },
-        continuation.obligation,
-        reissue.attempt.attemptId,
-      );
     }
+    case 'output_repair':
+      return routePlanOutputRepair(scope, continuation.obligation);
     // A blocked plan obligation is recovered by the regular submission path
     // (fresh plan revision + fresh obligation), and an obligation awaiting a
     // verdict or an absent obligation fall through to the existing gates.
@@ -85,6 +72,43 @@ export async function routePlanInitialSubmission(
     case 'none':
       return null;
   }
+}
+
+async function routePlanOutputRepair(
+  scope: PlanExecutionScope,
+  obligation: NonNullable<PlanExecutionScope['state']['reviewAssurance']>['obligations'][number],
+): Promise<string> {
+  const changed = changedSubjectWhilePending(scope, obligation);
+  if (changed) return changed;
+  const reissue = await reissueReviewAttempt(
+    scope.sessDir,
+    scope.state,
+    obligation,
+    scope.ctx.now(),
+  );
+  if (reissue.kind === 'blocked') {
+    return formatBlocked(reissue.code, {
+      obligationId: obligation.obligationId,
+      reason: reissue.reason,
+    });
+  }
+  const fresh = (await readState(scope.sessDir)) ?? scope.state;
+  return planInstructionResponse({ ...scope, state: fresh }, obligation, reissue.attempt.attemptId);
+}
+
+function changedSubjectWhilePending(
+  scope: PlanExecutionScope,
+  obligation: NonNullable<PlanExecutionScope['state']['reviewAssurance']>['obligations'][number],
+): string | null {
+  const planText = scope.args.planText;
+  if (typeof planText !== 'string' || !planText.trim()) return null;
+  const submittedDigest = scope.ctx.digest(planText);
+  if (submittedDigest === obligation.subjectDigest) return null;
+  return formatBlocked('REVIEW_SUBJECT_CHANGED_WHILE_PENDING', {
+    obligationId: obligation.obligationId,
+    subjectDigest: obligation.subjectDigest,
+    submittedDigest,
+  });
 }
 
 function planInstructionResponse(

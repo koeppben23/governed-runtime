@@ -13,7 +13,8 @@ import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
 import { renderReviewContext, renderReviewerTaskPrompt } from './prompt-builders.js';
 import { rebuildBlockedPresentation } from '../tools/blocked-presentation.js';
 import {
-  verifyFrozenReviewerContext,
+  renderArtifactAnchorContract,
+  verifyFrozenMaterialForObligation,
   type FrozenReviewerContext,
 } from './frozen-reviewer-context.js';
 import { buildReviewerProofContext } from './proof-context.js';
@@ -75,6 +76,11 @@ interface HostTaskOutputInput {
    */
   readonly artifactContext: readonly string[];
   readonly frozenReviewerContext: FrozenReviewerContext | null;
+  /**
+   * Host-enforced artifact anchor contract for artifact-scoped obligations
+   * (plan/ADR). Empty for standalone subjects.
+   */
+  readonly artifactAnchorContract: readonly string[];
   /**
    * Why no reviewer context could be handed out, when that is the case.
    *
@@ -225,6 +231,11 @@ function buildReviewerTaskPromptOrNull(
     readonly proofContext: readonly string[];
     readonly artifactContext: readonly string[];
     readonly frozenReviewerContext: FrozenReviewerContext | null;
+    /**
+     * Host-enforced artifact anchor contract for artifact-scoped obligations
+     * (plan/ADR). Empty for standalone subjects.
+     */
+    readonly artifactAnchorContract: readonly string[];
     readonly retrySchemaErrors: readonly string[] | null;
     readonly repositoryDiscoverySnapshot: RepositoryDiscoverySnapshot | null;
     readonly observationCapability: string | null;
@@ -244,6 +255,7 @@ function buildReviewerTaskPromptOrNull(
     proofContext: opts.proofContext,
     artifactContext: opts.artifactContext,
     frozenReviewerContext: opts.frozenReviewerContext ?? undefined,
+    artifactAnchorContract: opts.artifactAnchorContract,
     retrySchemaErrors: opts.retrySchemaErrors ?? undefined,
     repositoryDiscoverySnapshot: opts.repositoryDiscoverySnapshot,
     ...(opts.observationCapability ? { observationCapability: opts.observationCapability } : {}),
@@ -282,6 +294,7 @@ function buildHostTaskBlockedOutput(
     proofContext,
     artifactContext: input.artifactContext,
     frozenReviewerContext: input.frozenReviewerContext,
+    artifactAnchorContract: input.artifactAnchorContract,
     retrySchemaErrors: input.retrySchemaErrors,
     repositoryDiscoverySnapshot: input.repositoryDiscoverySnapshot,
     observationCapability: input.observationCapability,
@@ -542,6 +555,10 @@ function buildHostTaskOutputInput(
     proofContext: buildReviewerProofContext(sessionState),
     artifactContext: [],
     frozenReviewerContext,
+    artifactAnchorContract:
+      obligation?.reviewSubjectScope?.kind === 'artifact'
+        ? renderArtifactAnchorContract(obligation.reviewSubjectScope)
+        : [],
     reviewerContextFailure: resolveReviewerContextFailure(
       sessionState,
       obligation,
@@ -574,10 +591,17 @@ function resolveReviewerContextFailure(
   frozenReviewerContext: FrozenReviewerContext | null,
 ): ReviewerContextFailure | null {
   if (!obligation) return null;
-  const materialCheck = verifyFrozenReviewerContext(obligation, obligation.reviewMaterial);
+  // Single frozen-material authority (prompt emission side): artifact-scoped
+  // obligations bind their material generation to the exact artifact subject
+  // digest — the same check the output-repair authority enforces.
+  const materialCheck = verifyFrozenMaterialForObligation(obligation, obligation.reviewMaterial);
   if (materialCheck.kind === 'blocked') {
     return { kind: 'material_integrity', reason: materialCheck.reason };
   }
+  // Artifact-scoped obligations (plan/ADR) carry their reviewer context via
+  // the frozen material and the artifact anchor contract — there is no
+  // standalone frozen envelope, so a null envelope is not a failure.
+  if (obligation.reviewSubjectScope?.kind === 'artifact') return null;
   if (frozenReviewerContext) return null;
   return {
     kind: 'attempt_missing',
@@ -593,7 +617,7 @@ function resolveFrozenReviewerContext(
   attempt: ReturnType<typeof findBindableAttempt>,
 ): FrozenReviewerContext | null {
   if (!attempt) return null;
-  const verified = verifyFrozenReviewerContext(obligation, obligation?.reviewMaterial);
+  const verified = verifyFrozenMaterialForObligation(obligation, obligation?.reviewMaterial);
   return verified.kind === 'ok' ? verified.context : null;
 }
 

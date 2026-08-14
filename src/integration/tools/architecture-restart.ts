@@ -38,7 +38,10 @@ import {
   reviewObligationResponseFields,
   resolveFrozenReviewProfile,
 } from '../review/assurance.js';
-import { resolveReviewContinuation } from '../review/review-continuation.js';
+import {
+  resolveReviewContinuation,
+  type ReviewContinuation,
+} from '../review/review-continuation.js';
 import { reissueReviewAttempt } from './review-tool/continuation.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
 import { freezeContextAuthorityAtHead } from '../../rails/repository-authority.js';
@@ -62,21 +65,51 @@ export async function routeArchitectureInitialSubmission(
 
   switch (continuation.kind) {
     case 'awaiting_task':
-      return architectureInstructionResponse(session, {
-        obligation: continuation.obligation,
-        attemptId: continuation.attemptId,
-        status: 'Architecture review is pending.',
-        iteration: continuation.obligation.iteration,
-        planVersion: continuation.obligation.planVersion,
-      });
     case 'output_repair':
-      return routeArchitectureOutputRepair(session, continuation.obligation);
+      return routePendingArchitectureContinuation(args, session, continuation);
     case 'blocked':
-      return restartArchitectureReview(args, session, subagentEnabled);
+      return restartArchitectureReview(args, session, subagentEnabled, continuation.obligation);
     case 'awaiting_verdict':
     case 'none':
       return null;
   }
+}
+
+async function routePendingArchitectureContinuation(
+  args: ArchitectureArgs,
+  session: ArchitectureSession,
+  continuation: Extract<ReviewContinuation, { readonly kind: 'awaiting_task' | 'output_repair' }>,
+): Promise<string> {
+  // A pending continuation reviews the FROZEN subject: a submitted artifact
+  // with a different digest must never be silently ignored (or trigger a
+  // repair of the old subject) — fail closed instead.
+  const changed = changedSubjectWhilePending(args, continuation.obligation, session);
+  if (changed) return changed;
+  if (continuation.kind === 'awaiting_task') {
+    return architectureInstructionResponse(session, {
+      obligation: continuation.obligation,
+      attemptId: continuation.attemptId,
+      status: 'Architecture review is pending.',
+      iteration: continuation.obligation.iteration,
+      planVersion: continuation.obligation.planVersion,
+    });
+  }
+  return routeArchitectureOutputRepair(session, continuation.obligation);
+}
+
+function changedSubjectWhilePending(
+  args: ArchitectureArgs,
+  obligation: ReviewObligation,
+  session: ArchitectureSession,
+): string | null {
+  if (!args.adrText || !args.adrText.trim()) return null;
+  const submittedDigest = session.ctx.digest(args.adrText);
+  if (submittedDigest === obligation.subjectDigest) return null;
+  return formatBlocked('REVIEW_SUBJECT_CHANGED_WHILE_PENDING', {
+    obligationId: obligation.obligationId,
+    subjectDigest: obligation.subjectDigest,
+    submittedDigest,
+  });
 }
 
 async function routeArchitectureOutputRepair(
@@ -155,7 +188,7 @@ async function mintRestartObligation(
   session: ArchitectureSession,
   subagentEnabled: boolean,
   nextAdr: NonNullable<SessionState['architecture']>,
-  now: string,
+  cycle: { readonly now: string; readonly iteration: number; readonly planVersion: number },
 ): Promise<ReturnType<typeof createReviewObligation> | null> {
   if (!subagentEnabled) return null;
   const classification = await resolvePreImplementationChallengeClassification(
@@ -173,9 +206,9 @@ async function mintRestartObligation(
   const repositoryAuthority = await freezeContextAuthorityAtHead(session.wsDir);
   return createReviewObligation({
     obligationType: 'architecture',
-    iteration: 0,
-    planVersion: 1,
-    now,
+    iteration: cycle.iteration,
+    planVersion: cycle.planVersion,
+    now: cycle.now,
     subjectDigest: nextAdr.digest,
     // Frozen review material: the exact ADR artifact plus originating
     // ticket context, canonicalized and digest-bound at creation time.
@@ -202,6 +235,7 @@ async function restartArchitectureReview(
   args: ArchitectureArgs,
   session: ArchitectureSession,
   subagentEnabled: boolean,
+  predecessor: ReviewObligation,
 ): Promise<string | null> {
   const { state } = session;
   if (!state.architecture || !state.selfReview) return null;
@@ -209,6 +243,16 @@ async function restartArchitectureReview(
     // Handled by the regular Mode A path (EMPTY_ADR_TEXT) — the ADR is never
     // recreated because the empty-text block fires before executeArchitecture.
     return null;
+  }
+  // Cycle-binding consistency: the fresh review generation continues the
+  // current review cycle — the blocked predecessor, the flow state, and the
+  // fresh obligation must all carry the same iteration.
+  if (predecessor.iteration !== state.selfReview.iteration) {
+    return formatBlocked('RESTART_CYCLE_ITERATION_MISMATCH', {
+      obligationId: predecessor.obligationId,
+      predecessorIteration: String(predecessor.iteration),
+      selfReviewIteration: String(state.selfReview.iteration),
+    });
   }
   const blockedCount = restartBlockedCount(state);
   if (blockedCount >= 3) {
@@ -225,7 +269,13 @@ async function restartArchitectureReview(
   if (revision.kind === 'blocked') return revision.blocked;
   const nextAdr = revision.nextAdr;
 
-  const obligation = await mintRestartObligation(args, session, subagentEnabled, nextAdr, now);
+  const iteration = state.selfReview.iteration;
+  const planVersion = predecessor.planVersion;
+  const obligation = await mintRestartObligation(args, session, subagentEnabled, nextAdr, {
+    now,
+    iteration,
+    planVersion,
+  });
   let restartAttemptId: string | null = null;
   const withAttempt = obligation
     ? appendObligationWithAttempt(state.reviewAssurance, obligation, now)
@@ -244,8 +294,8 @@ async function restartArchitectureReview(
     policy: session.policy,
     subagentEnabled,
     obligation,
-    iteration: 0,
-    planVersion: 1,
+    iteration,
+    planVersion,
     subjectLabel: 'full ADR text, ADR title, and ticket text',
     state: augmentedState,
   });

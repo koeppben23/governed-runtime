@@ -109,6 +109,8 @@ export interface ReviewerTaskPromptInput {
   readonly artifactContext?: readonly string[];
   /** Integrity-verified standalone-review material, subject, scope, and anchor contract. */
   readonly frozenReviewerContext?: FrozenReviewerContext;
+  /** Host-enforced anchor contract lines for artifact-scoped plan/ADR reviews. */
+  readonly artifactAnchorContract?: readonly string[];
   /**
    * Attempt-bound repository Discovery snapshot (resolved at attempt mint time).
    * For repository reviews this renders the canonical Discovery envelope with
@@ -312,6 +314,11 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
       : []),
     ...(input.proofContext && input.proofContext.length > 0 ? [...input.proofContext] : []),
     '',
+    // Host-enforced anchor contract for artifact reviews — rendered before the
+    // generic grammar so the reviewer anchors to the exact frozen artifact.
+    ...(input.artifactAnchorContract && input.artifactAnchorContract.length > 0
+      ? [...input.artifactAnchorContract, '']
+      : []),
     // Finding output contract — derived from canonical Zod, identical for both transports.
     renderFindingRelationGrammar(),
     '',

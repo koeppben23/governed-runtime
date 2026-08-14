@@ -385,6 +385,29 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     ],
   },
 
+  {
+    code: 'REVIEW_SUBJECT_CHANGED_WHILE_PENDING',
+    category: 'input',
+    messageTemplate:
+      'The submitted artifact revision ({submittedDigest}) does not match the frozen subject ({subjectDigest}) of the pending review obligation {obligationId}. A pending review never silently reviews a different artifact revision.',
+    recoverySteps: [
+      'Submit the same artifact revision to continue the active review (reissue/repair of the pending obligation)',
+      'Wait for the pending obligation to settle (verdict or terminal block) before reviewing a changed revision',
+      'A changed revision after a blocked obligation starts a fresh review via revision semantics',
+    ],
+  },
+
+  {
+    code: 'RESTART_CYCLE_ITERATION_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'Architecture review restart refused: the blocked predecessor obligation {obligationId} carries iteration {predecessorIteration} but the flow state carries iteration {selfReviewIteration}. The review cycle binding is inconsistent.',
+    recoverySteps: [
+      'Inspect the session state and audit trail before further workflow actions',
+      'Restore a consistent review cycle from trusted evidence or abort the session',
+    ],
+  },
+
   ...REVIEW_VALIDATION_REASONS,
   ...OBSERVATION_VALIDATION_REASONS,
 ] as const satisfies readonly BlockedReason[];

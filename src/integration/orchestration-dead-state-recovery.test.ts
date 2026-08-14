@@ -32,6 +32,7 @@ import { plan, implement, architecture } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import { hashText } from '../shared/hashing.js';
 import {
+  appendObligationWithAttempt,
   artifactReviewSubjectScope,
   createReviewObligation,
   freezeReviewMaterial,
@@ -350,31 +351,36 @@ describe('plan — dead-state recovery (Fix 2a)', () => {
   });
 
   describe('EDGE: pending review loop re-emits its instruction', () => {
-    it('re-emits the existing obligation instead of blocking a plan-only re-submission', async () => {
+    it('re-emits the existing obligation for the SAME plan text and blocks a changed revision', async () => {
       const { hydrate, ticket: ticketTool } = await import('./tools/index.js');
       await hydrate.execute({ policyMode: 'solo' }, ctx);
       await ticketTool.execute({ text: 'Test task', source: 'user' }, ctx);
+      const PLAN_TEXT =
+        '## Objective\nTest\n## Approach\nTest\n## Steps\n1. test\n## Files to Modify\ntest.ts\n## Edge Cases\n1. none\n## Validation Criteria\n1. pass\n## Verification Plan\n1. test';
       const firstRaw = await plan.execute(
-        {
-          planText:
-            '## Objective\nTest\n## Approach\nTest\n## Steps\n1. test\n## Files to Modify\ntest.ts\n## Edge Cases\n1. none\n## Validation Criteria\n1. pass\n## Verification Plan\n1. test',
-          targetPaths: ['docs/test.md'],
-        },
+        { planText: PLAN_TEXT, targetPaths: ['docs/test.md'] },
         ctx,
       );
       const first = parseToolResult(firstRaw);
 
-      // State now has selfReview and a pending obligation — a plan-only
-      // re-submission re-emits the existing review obligation (awaiting_task
-      // continuation), never a new plan revision.
+      // State now has selfReview and a pending obligation.
       const sessDir = await currentSessionDir();
       const state = await readState(sessDir);
       const obligations = state!.reviewAssurance?.obligations ?? [];
-      // Verify at least one obligation exists and it's NOT blocked
       const lastObl = obligations[obligations.length - 1];
       expect(lastObl?.status).not.toBe('blocked');
 
-      const raw = await plan.execute(
+      // SAME revision: the pending obligation re-emits its instruction.
+      const sameRaw = await plan.execute(
+        { planText: PLAN_TEXT, targetPaths: ['docs/test.md'] },
+        ctx,
+      );
+      const same = parseToolResult(sameRaw);
+      expect(same.error).not.toBe(true);
+      expect(same.reviewObligationId).toBe(lastObl?.obligationId ?? first.reviewObligationId);
+
+      // CHANGED revision while pending: fail closed — never silently ignored.
+      const changedRaw = await plan.execute(
         {
           planText:
             '## Objective\nNew\n## Approach\nNew\n## Steps\n1. new\n## Files to Modify\nnew.ts\n## Edge Cases\n1. none\n## Validation Criteria\n1. pass\n## Verification Plan\n1. test',
@@ -382,10 +388,9 @@ describe('plan — dead-state recovery (Fix 2a)', () => {
         },
         ctx,
       );
-      const result = parseToolResult(raw);
-
-      expect(result.error).not.toBe(true);
-      expect(result.reviewObligationId).toBe(lastObl?.obligationId ?? first.reviewObligationId);
+      const changed = parseToolResult(changedRaw);
+      expect(changed.error).toBe(true);
+      expect(changed.code).toBe('REVIEW_SUBJECT_CHANGED_WHILE_PENDING');
     });
   });
 });
@@ -649,6 +654,121 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
       expect(attempts.length).toBe(2);
       expect(attempts.filter((a) => a.status === 'created').length).toBe(1);
       expect(attempts.at(-1)!.origin.kind).toBe('output_repair');
+    });
+
+    it('restart continues the current review cycle: predecessor, flow state, fresh obligation, and prompt share the iteration', async () => {
+      const sessDir = await setArchitectureState(ADR_TEXT);
+      const state = await readState(sessDir);
+      if (!state) throw new Error('No state');
+
+      const blocked = state.reviewAssurance!.obligations.find((o) => o.status === 'blocked')!;
+      await writeState(sessDir, {
+        ...state,
+        selfReview: { ...state.selfReview!, iteration: 2 },
+        reviewAssurance: {
+          ...state.reviewAssurance!,
+          obligations: [{ ...blocked, iteration: 2 }],
+        },
+      });
+
+      const raw = await architecture.execute({ title: 'Test Decision', adrText: ADR_TEXT }, ctx);
+      const result = parseToolResult(raw);
+
+      expect(result.error).not.toBe(true);
+      expect(result.status).toContain('restarted');
+      expect(result.reviewObligationIteration).toBe(2);
+      expect(result.selfReviewIteration).toBe(2);
+      expect(String(result.next)).toContain('iteration=2');
+
+      const after = await readState(sessDir);
+      const pending = after!.reviewAssurance!.obligations.filter((o) => o.status === 'pending');
+      expect(pending.length).toBe(1);
+      expect(pending[0]!.iteration).toBe(2);
+    });
+
+    it('fails closed when the blocked predecessor iteration does not match the flow state cycle', async () => {
+      const sessDir = await setArchitectureState(ADR_TEXT);
+      const state = await readState(sessDir);
+      if (!state) throw new Error('No state');
+
+      // Blocked predecessor carries iteration 0 while the flow state already
+      // advanced to iteration 2 — an inconsistent review cycle.
+      await writeState(sessDir, {
+        ...state,
+        selfReview: { ...state.selfReview!, iteration: 2 },
+      });
+
+      const raw = await architecture.execute({ title: 'Test Decision', adrText: ADR_TEXT }, ctx);
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('RESTART_CYCLE_ITERATION_MISMATCH');
+    });
+
+    it('fails closed when a pending continuation receives a changed ADR digest', async () => {
+      await setupArchitectureDeadState(1);
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      if (!state) throw new Error('No state');
+
+      const pending = createReviewObligation({
+        obligationType: 'architecture',
+        iteration: 0,
+        planVersion: 1,
+        now: CREATED_AT,
+        subjectDigest: hashText(ADR_TEXT),
+        reviewMaterial: freezeReviewMaterial(ADR_TEXT, hashText(ADR_TEXT)),
+        reviewSubjectScope: artifactReviewSubjectScope('adr', ADR_TEXT, hashText(ADR_TEXT)),
+        changedFiles: [],
+        policySnapshot: state.policySnapshot,
+      });
+      const withAttempt = appendObligationWithAttempt(undefined, pending, CREATED_AT);
+      await writeState(sessDir, {
+        ...state,
+        architecture: { ...state.architecture!, adrText: ADR_TEXT, digest: hashText(ADR_TEXT) },
+        selfReview: { ...state.selfReview!, currDigest: hashText(ADR_TEXT) },
+        reviewAssurance: withAttempt.assurance,
+      });
+
+      const changedText = '## Context\nChanged\n## Decision\nChanged\n## Consequences\nChanged';
+      const raw = await architecture.execute({ title: 'Test Decision', adrText: changedText }, ctx);
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_SUBJECT_CHANGED_WHILE_PENDING');
+    });
+
+    it('re-emits the pending review for the same ADR digest', async () => {
+      await setupArchitectureDeadState(1);
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      if (!state) throw new Error('No state');
+
+      const pending = createReviewObligation({
+        obligationType: 'architecture',
+        iteration: 0,
+        planVersion: 1,
+        now: CREATED_AT,
+        subjectDigest: hashText(ADR_TEXT),
+        reviewMaterial: freezeReviewMaterial(ADR_TEXT, hashText(ADR_TEXT)),
+        reviewSubjectScope: artifactReviewSubjectScope('adr', ADR_TEXT, hashText(ADR_TEXT)),
+        changedFiles: [],
+        policySnapshot: state.policySnapshot,
+      });
+      const withAttempt = appendObligationWithAttempt(undefined, pending, CREATED_AT);
+      await writeState(sessDir, {
+        ...state,
+        architecture: { ...state.architecture!, adrText: ADR_TEXT, digest: hashText(ADR_TEXT) },
+        selfReview: { ...state.selfReview!, currDigest: hashText(ADR_TEXT) },
+        reviewAssurance: withAttempt.assurance,
+      });
+
+      const raw = await architecture.execute({ title: 'Test Decision', adrText: ADR_TEXT }, ctx);
+      const result = parseToolResult(raw);
+
+      expect(result.error).not.toBe(true);
+      expect(result.reviewObligationId).toBe(pending.obligationId);
+      expect(result.status).toContain('pending');
     });
   });
 });

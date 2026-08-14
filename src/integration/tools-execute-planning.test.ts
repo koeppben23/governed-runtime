@@ -437,10 +437,8 @@ describe('plan', () => {
       const first = parseToolResult(firstRaw);
       expect(first.phase).toBe('PLAN');
 
-      const raw = await plan.execute(
-        { planText: '## Replacement Plan', targetPaths: ['docs/test.md'] },
-        ctx,
-      );
+      // SAME revision: the pending obligation re-emits its instruction.
+      const raw = await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
       const result = parseToolResult(raw);
       // No new plan/obligation: the existing review obligation re-emits its
       // instruction (awaiting_task continuation).
@@ -448,6 +446,15 @@ describe('plan', () => {
       expect(result.phase).toBe('PLAN');
       expect(result.reviewObligationId).toBe(first.reviewObligationId);
       expect(result.status).toContain('pending');
+
+      // CHANGED revision while pending: fail closed — never silently ignored.
+      const changedRaw = await plan.execute(
+        { planText: '## Replacement Plan', targetPaths: ['docs/test.md'] },
+        ctx,
+      );
+      const changed = parseToolResult(changedRaw);
+      expect(changed.error).toBe(true);
+      expect(changed.code).toBe('REVIEW_SUBJECT_CHANGED_WHILE_PENDING');
     });
 
     it('blocks verdict before any plan exists with PLAN_SUBMISSION_REQUIRED', async () => {

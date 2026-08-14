@@ -3,7 +3,11 @@ import {
   hashCanonicalContentSubject,
   hashCanonicalReviewContent,
 } from '../../shared/review-subject.js';
-import { verifyFrozenReviewerContext } from './frozen-reviewer-context.js';
+import {
+  verifyFrozenMaterialForObligation,
+  verifyFrozenReviewerContext,
+} from './frozen-reviewer-context.js';
+import type { ReviewObligation } from '../../state/evidence.js';
 
 const content = 'canonical content\n';
 const materialDigest = hashCanonicalReviewContent(content);
@@ -63,5 +67,71 @@ describe('verifyFrozenReviewerContext', () => {
       code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
       reason: 'persisted material digest does not match its canonical content',
     });
+  });
+});
+
+describe('verifyFrozenMaterialForObligation', () => {
+  const artifactObligation: ReviewObligation = {
+    obligationId: '44444444-4444-4444-8444-444444444444',
+    obligationType: 'architecture',
+    iteration: 0,
+    planVersion: 1,
+    criteriaVersion: 'p41-v1',
+    mandateDigest: 'mandate-digest',
+    maxReviewerOutputRepairAttempts: 1,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    pluginHandshakeAt: null,
+    status: 'pending',
+    invocationId: null,
+    blockedCode: null,
+    fulfilledAt: null,
+    consumedAt: null,
+    subjectDigest: 'artifact-digest-D2',
+    reviewMaterial: {
+      content: '# ADR\nBody',
+      materialDigest: hashCanonicalReviewContent('# ADR\nBody'),
+      subjectDigest: 'artifact-digest-D2',
+    },
+    reviewSubjectScope: {
+      kind: 'artifact',
+      artifact: {
+        kind: 'adr',
+        digest: 'artifact-digest-D2',
+        sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'ADR' }]],
+      },
+    },
+  };
+
+  it('accepts an artifact obligation whose material generation matches the subject digest', () => {
+    const result = verifyFrozenMaterialForObligation(
+      artifactObligation,
+      artifactObligation.reviewMaterial!,
+    );
+    expect(result).toEqual({ kind: 'ok', context: null });
+  });
+
+  it('blocks an artifact obligation whose material generation binds to a different digest', () => {
+    const mismatched = {
+      ...artifactObligation.reviewMaterial!,
+      subjectDigest: 'artifact-digest-D1',
+    };
+    const result = verifyFrozenMaterialForObligation(artifactObligation, mismatched);
+    expect(result).toEqual({
+      kind: 'blocked',
+      code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
+      reason: 'frozen material generation does not match the artifact subject digest',
+    });
+  });
+
+  it('routes standalone subjects through the full frozen context verification', () => {
+    const result = verifyFrozenMaterialForObligation(obligation, {
+      content,
+      materialDigest,
+      subjectDigest,
+    });
+    expect(result.kind).toBe('ok');
+    if (result.kind === 'ok') {
+      expect(result.context?.reviewSubject).toEqual(obligation.reviewSubject);
+    }
   });
 });

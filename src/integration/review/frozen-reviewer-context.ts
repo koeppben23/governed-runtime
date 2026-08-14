@@ -152,6 +152,29 @@ export type FrozenArtifactMaterialVerification =
     };
 
 /**
+ * The exact anchor contract the host binder enforces for an artifact-scoped
+ * obligation (plan/ADR), rendered into the reviewer prompt: subjectAnchors
+ * MUST be artifact_section with the exact artifactKind and artifactDigest,
+ * sectionPath MUST be one of the frozen paths, and repository locations are
+ * evidenceLocations only.
+ */
+export function renderArtifactAnchorContract(
+  scope: Extract<ReviewSubjectScope, { readonly kind: 'artifact' }>,
+): string[] {
+  const { kind, digest, sectionPaths } = scope.artifact;
+  return [
+    '## Frozen Artifact Anchor Contract (host-enforced)',
+    `The review subject is a ${kind} artifact. The host binder enforces this exact contract:`,
+    '- subjectAnchors MUST use kind "artifact_section"',
+    `- artifactKind MUST be "${kind}"`,
+    `- artifactDigest MUST be "${digest}"`,
+    '- sectionPath MUST be one of the exact frozen section paths below:',
+    JSON.stringify(sectionPaths),
+    '- Repository paths are evidenceLocations only — never subjectAnchors.',
+  ];
+}
+
+/**
  * Verify the frozen material binding of an artifact-scoped obligation
  * (plan/ADR). Artifact obligations have no standalone review subject; their
  * frozen material generation must still be canonically normalized and bound
@@ -192,4 +215,41 @@ export function verifyFrozenArtifactMaterial(
     };
   }
   return { kind: 'ok' };
+}
+
+export type FrozenMaterialVerificationResult =
+  | { readonly kind: 'ok'; readonly context: FrozenReviewerContext | null }
+  | {
+      readonly kind: 'blocked';
+      readonly code: 'REVIEW_MATERIAL_INTEGRITY_FAILED';
+      readonly reason: string;
+    };
+
+/**
+ * Single frozen-material verification authority. BOTH reviewer prompt
+ * emission and output-repair reissue must route through this function so the
+ * integrity policy never depends on which attempt is being served:
+ *
+ *   reviewSubjectScope.kind === 'artifact'
+ *     → verifyFrozenArtifactMaterial (exact artifact→material digest binding)
+ *   otherwise
+ *     → verifyFrozenReviewerContext (standalone subject binding)
+ */
+export function verifyFrozenMaterialForObligation(
+  obligation: ReviewObligation | null | undefined,
+  reviewMaterial: ReviewMaterial | null | undefined,
+): FrozenMaterialVerificationResult {
+  if (!obligation) {
+    return {
+      kind: 'blocked',
+      code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
+      reason: 'review obligation is missing',
+    };
+  }
+  if (obligation.reviewSubjectScope?.kind === 'artifact') {
+    const artifact = verifyFrozenArtifactMaterial(obligation, reviewMaterial);
+    return artifact.kind === 'ok' ? { kind: 'ok', context: null } : artifact;
+  }
+  const verified = verifyFrozenReviewerContext(obligation, reviewMaterial);
+  return verified.kind === 'ok' ? { kind: 'ok', context: verified.context } : verified;
 }

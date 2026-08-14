@@ -37,10 +37,7 @@ import {
   latestReviewMaterial,
 } from './attempt-lifecycle.js';
 import { isCanonicallyRepairable } from './enforcement/rejection-policy.js';
-import {
-  verifyFrozenArtifactMaterial,
-  verifyFrozenReviewerContext,
-} from './frozen-reviewer-context.js';
+import { verifyFrozenMaterialForObligation } from './frozen-reviewer-context.js';
 
 export type ReissueBlockCode =
   | 'REVIEW_REPAIR_UNAVAILABLE'
@@ -148,13 +145,10 @@ export function authorizeOutputRepairReissue(
   obligation: ReviewObligation,
 ): OutputRepairAuthorization {
   const material = latestReviewMaterial(ensureReviewAssurance(assurance), obligation.obligationId);
-  // Artifact-scoped obligations (plan/ADR) have no standalone review subject:
-  // their frozen material generation is verified against the artifact subject
-  // digest. Standalone subjects verify through the full frozen context.
-  const materialVerification =
-    obligation.reviewSubjectScope?.kind === 'artifact'
-      ? verifyFrozenArtifactMaterial(obligation, material)
-      : verifyFrozenReviewerContext(obligation, material);
+  // Single frozen-material authority: artifact-scoped obligations bind their
+  // material generation to the exact artifact subject digest; standalone
+  // subjects verify through the full frozen context.
+  const materialVerification = verifyFrozenMaterialForObligation(obligation, material);
   if (materialVerification.kind === 'blocked') {
     return {
       kind: 'integrity_blocked',

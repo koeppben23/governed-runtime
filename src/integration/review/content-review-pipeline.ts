@@ -37,7 +37,7 @@ import {
   buildAttemptSucceededLogger,
 } from './shared-helpers.js';
 import {
-  verifyFrozenReviewerContext,
+  verifyFrozenMaterialForObligation,
   type FrozenReviewerContext,
 } from './frozen-reviewer-context.js';
 
@@ -68,7 +68,7 @@ async function loadPersistedContentForReview(ctx: PipelineContext): Promise<{
   const material = attempt?.reviewMaterial;
   if (!attempt || !material || attempt.subjectDigest !== obligation?.subjectDigest) {
     const persisted = latestReviewMaterial(assurance, reviewCtx.obligationId);
-    const materialCheck = verifyFrozenReviewerContext(obligation, persisted);
+    const materialCheck = verifyFrozenMaterialForObligation(obligation, persisted);
     await blockReviewOutcomeHelper(
       deps,
       ctx,
@@ -85,11 +85,18 @@ async function loadPersistedContentForReview(ctx: PipelineContext): Promise<{
     );
     return null;
   }
-  const verification = verifyFrozenReviewerContext(obligation, material);
+  const verification = verifyFrozenMaterialForObligation(obligation, material);
   if (verification.kind === 'blocked') {
     await blockReviewOutcomeHelper(deps, ctx, verification.code, {
       obligationId: reviewCtx.obligationId,
       reason: verification.reason,
+    });
+    return null;
+  }
+  if (!verification.context) {
+    await blockReviewOutcomeHelper(deps, ctx, 'REVIEW_MATERIAL_INTEGRITY_FAILED', {
+      obligationId: reviewCtx.obligationId,
+      reason: 'frozen reviewer context missing after successful material verification',
     });
     return null;
   }
