@@ -31,6 +31,7 @@ import type { OrchestratorDeps, ToolCallEvent } from './plugin-orchestrator.js';
 import { createTestAdapter } from './test-adapter-helper.js';
 import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
+import { buildFrozenReviewMaterialContent } from './review/reviewer-context.js';
 import type { SessionState } from '../state/schema.js';
 import type { ReviewObligation, ReviewObligationType } from '../state/evidence.js';
 import {
@@ -45,8 +46,7 @@ const NOW = '2026-05-10T13:00:00.000Z';
 const REVIEW_MATERIAL = 'persisted review material';
 const REVIEW_MATERIAL_DIGEST = hashCanonicalReviewContent(REVIEW_MATERIAL);
 const REVIEW_SUBJECT_DIGEST = hashCanonicalContentSubject(REVIEW_MATERIAL_DIGEST);
-const HOST_REVIEW_MATERIAL = 'frozen host-task artifact';
-const HOST_REVIEW_MATERIAL_DIGEST = hashCanonicalReviewContent(HOST_REVIEW_MATERIAL);
+const HOST_ARTIFACT = 'frozen host-task artifact';
 
 function reviewRequiredOutput(): string {
   return JSON.stringify({
@@ -107,9 +107,9 @@ function obligation(
         ? { kind: 'content', subjectDigest: REVIEW_SUBJECT_DIGEST, lineCount: 1 }
         : { kind: 'repository_change', paths: ['src/foo.ts'], revisions: ['base', 'head'] },
     reviewMaterial: {
-      content: obligationType === 'review' ? REVIEW_MATERIAL : HOST_REVIEW_MATERIAL,
-      materialDigest:
-        obligationType === 'review' ? REVIEW_MATERIAL_DIGEST : HOST_REVIEW_MATERIAL_DIGEST,
+      content: REVIEW_MATERIAL,
+      materialDigest: REVIEW_MATERIAL_DIGEST,
+      subjectDigest: obligationType === 'review' ? REVIEW_SUBJECT_DIGEST : 'test-subject-digest',
     },
     ...(obligationType === 'review'
       ? {
@@ -131,9 +131,15 @@ function buildState(
   overrides: Partial<SessionState> = {},
   metadata?: Record<string, unknown>,
 ): SessionState {
-  return makeState('PLAN', {
+  const baseState = makeState('PLAN', {
     ticket: TICKET,
     plan: PLAN_RECORD,
+    implementation: {
+      changedFiles: ['src/foo.ts'],
+      domainFiles: ['src/foo.ts'],
+      digest: 'implementation-subject-digest',
+      executedAt: NOW,
+    },
     policySnapshot: {
       ...POLICY_SNAPSHOT,
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
@@ -142,20 +148,42 @@ function buildState(
     },
     reviewAssurance: {
       assuranceSchemaVersion: 'review-assurance.v5' as const,
-      obligations: [obligation(obligationType, metadata)],
+      obligations: [],
       invocations: [],
+      attempts: [],
+    },
+    ...overrides,
+  });
+  const material =
+    obligationType === 'review'
+      ? REVIEW_MATERIAL
+      : buildFrozenReviewMaterialContent({
+          obligationType,
+          state: baseState,
+          artifact: HOST_ARTIFACT,
+        });
+  const materialDigest = hashCanonicalReviewContent(material);
+  const item = obligation(obligationType, metadata);
+  const obligationWithMaterial = {
+    ...item,
+    reviewMaterial: {
+      content: material,
+      materialDigest,
+      subjectDigest: item.subjectDigest,
+    },
+  };
+  return {
+    ...baseState,
+    reviewAssurance: {
+      ...baseState.reviewAssurance!,
+      obligations: [obligationWithMaterial],
       attempts: [
         {
           attemptId: '22222222-2222-4222-8222-222222222222',
           obligationId: OBLIGATION_ID,
           obligationType,
-          subjectDigest:
-            obligationType === 'review' ? REVIEW_SUBJECT_DIGEST : 'test-subject-digest',
-          reviewMaterial: {
-            content: obligationType === 'review' ? REVIEW_MATERIAL : HOST_REVIEW_MATERIAL,
-            materialDigest:
-              obligationType === 'review' ? REVIEW_MATERIAL_DIGEST : HOST_REVIEW_MATERIAL_DIGEST,
-          },
+          subjectDigest: item.subjectDigest,
+          reviewMaterial: obligationWithMaterial.reviewMaterial,
           ordinal: 1,
           status: 'created' as const,
           origin: { kind: 'initial' } as const,
@@ -164,8 +192,7 @@ function buildState(
         },
       ],
     },
-    ...overrides,
-  });
+  };
 }
 
 function buildDeps(stateRef: { current: SessionState }, tool: string): OrchestratorDeps {
@@ -231,12 +258,24 @@ describe('reviewer artifact context reaches the delivered prompt', () => {
   });
 
   it.each(['plan', 'implement', 'architecture'] as const)(
-    '%s review embeds its frozen material without parent artifact context',
+    '%s review embeds all frozen comparison material without parent-appended context',
     async (obligationType) => {
       const prompt = await deliveredReviewerPrompt(buildState(obligationType));
 
-      expect(prompt).toContain(HOST_REVIEW_MATERIAL);
-      expect(prompt).not.toContain('## Ticket Under Review');
+      expect(prompt).toContain(HOST_ARTIFACT);
+      expect(prompt).toContain('## Ticket Under Review (originating request)');
+      expect(prompt).toContain(TICKET.text);
+      if (obligationType === 'plan') expect(prompt).toContain('## Plan Artifact');
+      if (obligationType === 'architecture') {
+        expect(prompt).toContain('## Architecture Decision Artifact');
+      }
+      if (obligationType === 'implement') {
+        expect(prompt).toContain('## Approved Plan (identity and content)');
+        expect(prompt).toContain('## Changed Files');
+        expect(prompt).toContain('## Verification Evidence (host-executed)');
+        expect(prompt).toContain('## Implementation Subject Metadata');
+      }
+      expect(prompt.match(/## Ticket Under Review \(originating request\)/g)).toHaveLength(1);
       expect(prompt).not.toContain('content to review below this line:');
     },
   );
@@ -316,7 +355,11 @@ describe('reviewer context unavailability is classified by cause', () => {
       status: 'rejected' as const,
       childSessionId: 'reviewer-child-1',
       completedAt: NOW,
-      reviewMaterial: { content: 'tampered', materialDigest: REVIEW_MATERIAL_DIGEST },
+      reviewMaterial: {
+        content: 'tampered',
+        materialDigest: REVIEW_MATERIAL_DIGEST,
+        subjectDigest: REVIEW_SUBJECT_DIGEST,
+      },
     }));
 
     const parsed = await deliveredOutput(state);

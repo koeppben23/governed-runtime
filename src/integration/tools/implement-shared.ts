@@ -20,6 +20,7 @@ import {
 } from '../review/assurance.js';
 import { classifyToolCallMode } from './review-validation-mode.js';
 import { freezeCandidatePairAuthority } from '../../rails/repository-authority.js';
+import { buildFrozenReviewMaterialContent } from '../review/reviewer-context.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Shared Types / Helpers
@@ -64,7 +65,14 @@ export async function activateImplementationReviewObligation(
     planVersion: input.planVersion,
     now: input.now,
     subjectDigest: state.implementation?.digest ?? `impl-${input.now}`,
-    reviewMaterial: freezeReviewMaterial(JSON.stringify(state.implementation)),
+    reviewMaterial: freezeReviewMaterial(
+      buildFrozenReviewMaterialContent({
+        obligationType: 'implement',
+        state,
+        artifact: JSON.stringify(state.implementation),
+      }),
+      state.implementation?.digest ?? `impl-${input.now}`,
+    ),
     reviewProfile: resolveFrozenReviewProfile(state.policySnapshot),
     profileSource: 'policy_default',
     policySnapshot: state.policySnapshot,

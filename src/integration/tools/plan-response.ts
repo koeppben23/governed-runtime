@@ -37,6 +37,7 @@ import {
   findLatestObligation,
   resolveFrozenReviewProfile,
 } from '../review/assurance.js';
+import { buildFrozenReviewMaterialContent } from '../review/reviewer-context.js';
 import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
 import { resolveAttemptObservationCapability } from '../review/assurance.js';
 import { buildReviewerProofContext } from '../review/proof-context.js';
@@ -274,7 +275,14 @@ export async function persistNonConvergedPlanReview(
           planVersion: nextPlanVersion,
           now: scope.ctx.now(),
           subjectDigest: revision.currentPlan.digest,
-          reviewMaterial: freezeReviewMaterial(revision.currentPlan.body),
+          reviewMaterial: freezeReviewMaterial(
+            buildFrozenReviewMaterialContent({
+              obligationType: 'plan',
+              state: finalState,
+              artifact: revision.currentPlan.body,
+            }),
+            revision.currentPlan.digest,
+          ),
           reviewProfile: resolveFrozenReviewProfile(finalState.policySnapshot),
           profileSource: 'policy_default',
           policySnapshot: finalState.policySnapshot,

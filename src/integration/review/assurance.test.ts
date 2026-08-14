@@ -120,11 +120,13 @@ describe('integration/review-assurance', () => {
 
   describe('standalone review material', () => {
     it('copies persisted normalized material to a reissued attempt', () => {
+      const materialDigest = hashText('line one\nline two\n');
+      const subjectDigest = hashText(`content:${materialDigest}`);
       const material = {
         content: 'line one\nline two\n',
-        materialDigest: hashText('line one\nline two\n'),
+        materialDigest,
+        subjectDigest,
       };
-      const subjectDigest = hashText(`content:${material.materialDigest}`);
       const obligation = createReviewObligation({
         obligationType: 'review',
         iteration: 1,
@@ -160,7 +162,11 @@ describe('integration/review-assurance', () => {
 
     it('omits childSessionId so a pre-Task reissue stays bindable', () => {
       const subjectDigest = 'd'.repeat(64);
-      const material = { content: 'frozen', materialDigest: 'e'.repeat(64) };
+      const material = {
+        content: 'frozen',
+        materialDigest: 'e'.repeat(64),
+        subjectDigest,
+      };
       const obligation = makeObligation({
         obligationType: 'review',
         subjectDigest,

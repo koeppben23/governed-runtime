@@ -36,6 +36,9 @@ export interface ObligationRefinementShape {
   readonly obligationType: string;
   readonly obligationId: string;
   readonly subjectDigest: string;
+  readonly reviewMaterial?: {
+    readonly subjectDigest: string;
+  } | null;
   readonly reviewSubject?: {
     readonly kind: string;
     readonly subjectDigest: string;
@@ -55,6 +58,24 @@ export interface AttemptRefinementShape {
 export interface AssuranceRefinementShape {
   readonly obligations: readonly ObligationRefinementShape[];
   readonly attempts: readonly AttemptRefinementShape[];
+}
+
+/** Frozen material must belong to the same subject as its obligation. */
+export function refineReviewMaterialSubject(
+  obligation: ObligationRefinementShape,
+  context: z.RefinementCtx,
+): void {
+  if (
+    !obligation.reviewMaterial ||
+    obligation.reviewMaterial.subjectDigest === obligation.subjectDigest
+  ) {
+    return;
+  }
+  context.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: ['reviewMaterial', 'subjectDigest'],
+    message: 'Review obligation reviewMaterial.subjectDigest must match obligation.subjectDigest.',
+  });
 }
 
 /** Standalone review obligations require a frozen, digest-matching subject. */

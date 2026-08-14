@@ -81,11 +81,19 @@ export function verifyFrozenReviewerContext(
   obligation: ReviewObligation | null | undefined,
   reviewMaterial: ReviewMaterial | null | undefined,
 ): FrozenReviewerContextResult {
-  if (!obligation || !reviewMaterial) {
+  if (!obligation) {
     return {
       kind: 'blocked',
       code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
-      reason: 'frozen subject or persisted material is missing',
+      reason: 'review obligation is missing',
+    };
+  }
+  if (!reviewMaterial) {
+    return {
+      kind: 'blocked',
+      code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
+      reason:
+        'this obligation predates frozen review material and cannot be safely reconstructed from mutable state',
     };
   }
   if (reviewMaterial.content !== normalizeReviewContent(reviewMaterial.content)) {

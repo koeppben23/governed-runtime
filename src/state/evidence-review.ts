@@ -64,12 +64,10 @@ import {
   refineAssuranceDiscoveryCoherence,
   refineAssuranceProvenanceCoherence,
   refineAuthorityStructure,
+  refineReviewMaterialSubject,
   refineStandaloneSubject,
 } from './evidence-review-refinements.js';
-
 export { classifyRepositoryPath, type RepositoryPathClassification } from './repository-path.js';
-
-// ─── Review Attempt (Invocation Envelope) ─────────────────────────────────────
 
 export const ReviewAttemptStatusValues = [
   'created',
@@ -150,6 +148,7 @@ export const ReviewMaterial = z
   .object({
     content: z.string(),
     materialDigest: z.string().min(1),
+    subjectDigest: z.string().min(1),
   })
   .strict()
   .readonly();
@@ -473,6 +472,7 @@ export const ReviewObligation = z
     maxReviewerOutputRepairAttempts: z.number().int().min(0).max(5),
   })
   .superRefine(refineStandaloneSubject)
+  .superRefine(refineReviewMaterialSubject)
   .superRefine(refineAuthorityStructure);
 export type ReviewObligation = z.infer<typeof ReviewObligation>;
 

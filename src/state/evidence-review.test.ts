@@ -449,6 +449,25 @@ describe('evidence-review', () => {
       expect(ReviewObligation.parse(obligation)).toEqual(obligation);
     });
 
+    it('rejects self-consistent foreign review material under a different obligation subject', () => {
+      const obligation = {
+        ...repositoryReviewObligation(),
+        reviewMaterial: {
+          content: 'foreign material B',
+          materialDigest: 'b'.repeat(64),
+          subjectDigest: 'b'.repeat(64),
+        },
+      };
+
+      const result = ReviewObligation.safeParse(obligation);
+
+      expect(result.success).toBe(false);
+      if (result.success) throw new TypeError('expected schema rejection');
+      expect(result.error.issues.map((issue) => issue.path.join('.'))).toContain(
+        'reviewMaterial.subjectDigest',
+      );
+    });
+
     it('ReviewInvocationEvidence parses host-task invocation', () => {
       const invocation = {
         invocationId: FIXED_UUID,

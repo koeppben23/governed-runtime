@@ -230,9 +230,13 @@ export function createReviewObligation(input: {
 }
 
 /** Freeze review bytes with the canonical standalone-content normalization and digest. */
-export function freezeReviewMaterial(content: string): ReviewMaterial {
+export function freezeReviewMaterial(content: string, subjectDigest: string): ReviewMaterial {
   const normalized = normalizeReviewContent(content);
-  return { content: normalized, materialDigest: hashCanonicalReviewContent(normalized) };
+  return {
+    content: normalized,
+    materialDigest: hashCanonicalReviewContent(normalized),
+    subjectDigest,
+  };
 }
 
 export function resolveFrozenReviewProfile(

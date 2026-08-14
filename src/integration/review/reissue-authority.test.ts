@@ -34,6 +34,7 @@ const SUBJECT_DIGEST = hashCanonicalContentSubject(MATERIAL_DIGEST);
 const FROZEN_MATERIAL: ReviewMaterial = {
   content: MATERIAL_CONTENT,
   materialDigest: MATERIAL_DIGEST,
+  subjectDigest: SUBJECT_DIGEST,
 };
 
 function makeObligation(overrides: Partial<ReviewObligation> = {}): ReviewObligation {
@@ -256,6 +257,7 @@ describe('authorizeOutputRepairReissue', () => {
     const tampered: ReviewMaterial = {
       content: 'tampered bytes\n',
       materialDigest: MATERIAL_DIGEST,
+      subjectDigest: SUBJECT_DIGEST,
     };
     const rejected = rejectedAttempt(obligation, 'schema_invalid');
     const tamperedAttempt: ReviewAttempt = { ...rejected, reviewMaterial: tampered };
@@ -289,7 +291,11 @@ describe('authorizeOutputRepairReissue', () => {
     // Even a perfectly repairable rejection with budget left must not mint an
     // attempt when the immutable foundation is broken.
     const obligation = makeObligation();
-    const tampered: ReviewMaterial = { content: 'other bytes\n', materialDigest: MATERIAL_DIGEST };
+    const tampered: ReviewMaterial = {
+      content: 'other bytes\n',
+      materialDigest: MATERIAL_DIGEST,
+      subjectDigest: SUBJECT_DIGEST,
+    };
     const rejected = rejectedAttempt(obligation, 'schema_invalid');
     const tamperedAttempt: ReviewAttempt = { ...rejected, reviewMaterial: tampered };
     const result = authorizeOutputRepairReissue(

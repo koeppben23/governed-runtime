@@ -143,6 +143,7 @@ export async function createNewReviewObligation(
         ? {
             content: input.preparedContent.content,
             materialDigest: input.preparedContent.reviewSubject.materialDigest,
+            subjectDigest: reviewSubject.subjectDigest,
           }
         : undefined,
       reviewProfile: resolveFrozenReviewProfile(input.state.policySnapshot),

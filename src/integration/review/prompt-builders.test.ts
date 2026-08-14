@@ -126,7 +126,11 @@ describe('renderReviewerTaskPrompt challenge contract', () => {
 
 describe('frozen review subject envelope', () => {
   const frozenReviewerContext: FrozenReviewerContext = {
-    reviewMaterial: { content: 'exact persisted material', materialDigest: 'a'.repeat(64) },
+    reviewMaterial: {
+      content: 'exact persisted material',
+      materialDigest: 'a'.repeat(64),
+      subjectDigest: 'b'.repeat(64),
+    },
     reviewSubject: {
       kind: 'content' as const,
       source: { kind: 'inline' as const, mediaType: 'text' as const },

@@ -20,6 +20,7 @@ import {
 } from '../review/assurance.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
 import { freezeContextAuthorityAtHead } from '../../rails/repository-authority.js';
+import { buildFrozenReviewMaterialContent } from '../review/reviewer-context.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Mode A: ADR Submission
@@ -60,7 +61,14 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
         planVersion: ctx.archPlanVersion,
         now: ctx.now,
         subjectDigest: ctx.state.architecture?.digest ?? `arch-submit-${ctx.archPlanVersion}`,
-        reviewMaterial: freezeReviewMaterial(ctx.state.architecture?.adrText ?? ''),
+        reviewMaterial: freezeReviewMaterial(
+          buildFrozenReviewMaterialContent({
+            obligationType: 'architecture',
+            state: ctx.state,
+            artifact: ctx.state.architecture?.adrText ?? '',
+          }),
+          ctx.state.architecture?.digest ?? `arch-submit-${ctx.archPlanVersion}`,
+        ),
         reviewProfile: resolveFrozenReviewProfile(ctx.policySnapshot),
         profileSource: 'policy_default',
         policySnapshot: ctx.policySnapshot,

@@ -174,6 +174,11 @@ function buildSessionState(
             subjectDigest: SUBJECT_DIGEST,
             lineCount: 1,
           },
+          reviewMaterial: {
+            content: PERSISTED_CONTENT,
+            materialDigest: MATERIAL_DIGEST,
+            subjectDigest: SUBJECT_DIGEST,
+          },
         },
       ],
       invocations: seedInvocations,
@@ -183,7 +188,11 @@ function buildSessionState(
           obligationId: OBLIGATION_ID,
           obligationType: 'review',
           subjectDigest: SUBJECT_DIGEST,
-          reviewMaterial: { content: PERSISTED_CONTENT, materialDigest: MATERIAL_DIGEST },
+          reviewMaterial: {
+            content: PERSISTED_CONTENT,
+            materialDigest: MATERIAL_DIGEST,
+            subjectDigest: SUBJECT_DIGEST,
+          },
           ordinal: 1,
           status: 'created',
           origin: { kind: 'initial' } as const,
@@ -341,13 +350,13 @@ describe('runReviewOrchestration strict /review content analysis', () => {
       planVersion: 1,
     });
 
-    // The next-instruction text carries the cycle context and a concrete UUID
-    // (not "NOT_VERIFIED"), so the agent can forward them to the reviewer.
+    // The host instruction identifies the obligation without asking the parent
+    // agent to construct reviewer attestation fields.
     const next = String(parsed.next);
     expect(next).toContain('iteration=1');
     expect(next).toContain('planVersion=1');
-    expect(next).toContain(`toolObligationId=${OBLIGATION_ID}`);
-    expect(next).not.toContain('toolObligationId=NOT_VERIFIED');
+    expect(next).toContain(`Host context identifies obligation ${OBLIGATION_ID}`);
+    expect(next).toContain('do not construct reviewer attestation fields');
     const reviewerTaskPrompt = String(parsed.reviewerTaskPrompt);
     expect(reviewerTaskPrompt).toContain('persisted diff content');
     expect(reviewerTaskPrompt).toContain('## Frozen Review Subject');
@@ -653,7 +662,11 @@ describe('runReviewOrchestration strict /review content analysis', () => {
         attempts: [
           {
             ...stateRef.current.reviewAssurance!.attempts[0]!,
-            reviewMaterial: { content: 'wrong material', materialDigest: 'b'.repeat(64) },
+            reviewMaterial: {
+              content: 'wrong material',
+              materialDigest: 'b'.repeat(64),
+              subjectDigest: SUBJECT_DIGEST,
+            },
           },
         ],
       },

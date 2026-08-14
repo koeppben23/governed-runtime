@@ -124,7 +124,7 @@ function applyReviewerContextFailure(
     result.recovery = [
       'Do not re-run the reviewer: the persisted material no longer matches its frozen digest binding',
       'Restore the persisted review obligation and material from a trusted source',
-      'Abort the session if the frozen material cannot be restored from trusted evidence',
+      'If this obligation predates frozen review material, start a new review cycle; do not reconstruct material from current state or the worktree',
     ];
     return JSON.stringify(refreshBlockedPresentation(result));
   }

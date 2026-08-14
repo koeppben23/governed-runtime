@@ -85,6 +85,7 @@ import {
   findLatestObligation,
   resolveFrozenReviewProfile,
 } from '../review/assurance.js';
+import { buildFrozenReviewMaterialContent } from '../review/reviewer-context.js';
 import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
 import { buildHostTaskChallengeContract } from '../review/host-task-policy.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
@@ -311,7 +312,14 @@ async function createPlanReviewAttempt(
       planVersion,
       now: scope.ctx.now(),
       subjectDigest: planEvidence.digest,
-      reviewMaterial: freezeReviewMaterial(planEvidence.body),
+      reviewMaterial: freezeReviewMaterial(
+        buildFrozenReviewMaterialContent({
+          obligationType: 'plan',
+          state: scope.state,
+          artifact: planEvidence.body,
+        }),
+        planEvidence.digest,
+      ),
       reviewProfile: resolveFrozenReviewProfile(scope.state.policySnapshot),
       profileSource: 'policy_default',
       policySnapshot: scope.state.policySnapshot,

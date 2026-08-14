@@ -39,6 +39,7 @@ import {
   resolveFrozenReviewProfile,
   freezeReviewMaterial,
 } from '../review/assurance.js';
+import { buildFrozenReviewMaterialContent } from '../review/reviewer-context.js';
 
 import { requireReviewFindings, resolveHostTaskEffectiveFindings } from './review-validation.js';
 import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.js';
@@ -509,6 +510,17 @@ function targetPathsMetadata(resolved: readonly string[] | undefined): Record<st
   return resolved && resolved.length > 0 ? { targetPaths: [...resolved] } : {};
 }
 
+function frozenArchitectureReviewMaterial(
+  state: SessionState,
+  artifact: string,
+  subjectDigest: string,
+) {
+  return freezeReviewMaterial(
+    buildFrozenReviewMaterialContent({ obligationType: 'architecture', state, artifact }),
+    subjectDigest,
+  );
+}
+
 async function persistAndFormatNonConvergedReview(
   input: ReviewResultContext,
   verdict: LoopVerdict,
@@ -538,7 +550,11 @@ async function persistAndFormatNonConvergedReview(
         planVersion: review.expectedPlanVersion,
         now: session.ctx.now(),
         subjectDigest: advanced.state.architecture?.digest ?? `arch-${review.expectedPlanVersion}`,
-        reviewMaterial: freezeReviewMaterial(revision.currentAdr.adrText),
+        reviewMaterial: frozenArchitectureReviewMaterial(
+          advanced.state,
+          revision.currentAdr.adrText,
+          advanced.state.architecture?.digest ?? `arch-${review.expectedPlanVersion}`,
+        ),
         reviewProfile: resolveFrozenReviewProfile(advanced.state.policySnapshot),
         profileSource: 'policy_default',
         policySnapshot: advanced.state.policySnapshot,
