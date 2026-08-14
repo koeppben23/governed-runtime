@@ -819,6 +819,17 @@ describe('BUG-17: plan evidence-first resolution', () => {
     expect(obligations.length).toBeGreaterThanOrEqual(2);
     expect(obligations.at(-1)?.obligationType).toBe('plan');
     expect(obligations.at(-1)?.metadata?.targetPaths).toBeUndefined();
+    // The plan artifact is the review SUBJECT — never the repository diff or
+    // discovery risk surfaces (regression: review_finding_out_of_scope on
+    // artifact-anchored findings because the scope was repository_change).
+    const planScope = obligations.at(-1)?.reviewSubjectScope;
+    expect(planScope?.kind).toBe('artifact');
+    if (planScope?.kind === 'artifact') {
+      expect(planScope.artifact.kind).toBe('plan');
+      expect(planScope.artifact.sectionPaths).toEqual([
+        [{ headingDepth: 2, siblingIndex: 1, headingText: 'Plan' }],
+      ]);
+    }
   });
 
   it('revision loop: unions author targetPaths with discovery risk surfaces on the next obligation', async () => {

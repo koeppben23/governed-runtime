@@ -4,7 +4,7 @@ import {
   normalizeReviewHostPlatform,
 } from './orchestration-mode.js';
 import { buildPendingReviewInstruction } from './pending-instruction.js';
-import { createReviewObligation } from './assurance.js';
+import { artifactReviewSubjectScope, createReviewObligation } from './assurance.js';
 
 describe('review orchestration mode projection', () => {
   it('keeps OpenCode on host_task_sync', () => {
@@ -71,6 +71,7 @@ describe('pending review instruction renderer', () => {
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
       subjectDigest: 'test',
+      reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
     });
     const instruction = buildPendingReviewInstruction({
       mode: 'external_instruction_pending',

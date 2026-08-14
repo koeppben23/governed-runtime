@@ -77,6 +77,7 @@ import {
 import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.js';
 import {
   appendReviewObligation,
+  artifactReviewSubjectScope,
   consumeReviewObligation,
   createObligationAndAttempt,
   freezeReviewMaterial,
@@ -318,6 +319,13 @@ async function createPlanReviewAttempt(
           state: scope.state,
           artifact: planEvidence.body,
         }),
+        planEvidence.digest,
+      ),
+      // The frozen plan artifact is the review SUBJECT; changedFiles below stay
+      // challenge-classification and repository-evidence context only.
+      reviewSubjectScope: artifactReviewSubjectScope(
+        'plan',
+        planEvidence.body,
         planEvidence.digest,
       ),
       reviewProfile: resolveFrozenReviewProfile(scope.state.policySnapshot),

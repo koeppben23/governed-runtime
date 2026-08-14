@@ -48,6 +48,7 @@ import {
   type ReviewFindingsValidationContext,
 } from './tools/review-validation.js';
 import {
+  artifactReviewSubjectScope,
   createReviewObligation,
   appendReviewObligation,
   consumeReviewObligation,
@@ -389,6 +390,7 @@ describe('assurance lifecycle persistence across hosts', () => {
           now: NOW,
           subjectDigest: 'test',
           reviewMaterial: freezeReviewMaterial('frozen plan review material', 'test'),
+          reviewSubjectScope: artifactReviewSubjectScope('plan', '# Plan\nBody', 'test'),
           changedFiles: ['src/foo.ts'],
         });
         const findingsP = strictFindings({ iteration: 0, planVersion: 1 });
@@ -513,6 +515,11 @@ describe('assurance lifecycle persistence across hosts', () => {
           now: NOW,
           subjectDigest: 'test',
           reviewMaterial: freezeReviewMaterial('frozen architecture review material', 'test'),
+          reviewSubjectScope: artifactReviewSubjectScope(
+            'adr',
+            '## Context\nC\n## Decision\nD',
+            'test',
+          ),
           changedFiles: ['src/foo.ts'],
         });
         const findingsA = strictFindings({ iteration: 0, planVersion: 1 });

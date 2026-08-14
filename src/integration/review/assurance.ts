@@ -27,6 +27,7 @@ import type {
 } from '../../state/evidence.js';
 import { hashCanonicalReviewContent, normalizeReviewContent } from '../../shared/review-subject.js';
 import { deriveRepositoryRevisionProvenance } from '../../state/evidence.js';
+import { indexMarkdownSections } from '../../shared/markdown-sections.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { assessMinimumTaskClass, maxTaskClass } from '../phase-tool-gate.js';
 import {
@@ -62,6 +63,34 @@ function resolveSubjectDigest(input: {
   reviewSubject?: FrozenReviewSubject;
 }): string {
   return input.reviewSubject?.subjectDigest ?? input.subjectDigest;
+}
+
+/**
+ * Mint the canonical artifact subject scope for pre-implementation reviews
+ * (plan, ADR). The subject is the exact frozen artifact, indexed by the same
+ * canonical Markdown section authority that feeds the reviewer prompt's
+ * evidence refs (`indexMarkdownSections`), so scope sections and reviewer-
+ * visible sections are structurally identical.
+ *
+ * Fail-closed: an artifact without ATX headings cannot produce section anchors
+ * and therefore cannot support a bindable artifact review.
+ */
+export function artifactReviewSubjectScope(
+  kind: 'plan' | 'adr',
+  markdown: string,
+  digest: string,
+): ReviewSubjectScope {
+  const sectionPaths = indexMarkdownSections(markdown).map((section) => section.sectionPath);
+  if (sectionPaths.length === 0) {
+    throw new Error(
+      `FAIL_CLOSED: cannot mint a ${kind} artifact review subject scope from Markdown ` +
+        'without ATX headings; artifact review findings must anchor to concrete sections.',
+    );
+  }
+  return {
+    kind: 'artifact',
+    artifact: { kind, digest, sectionPaths },
+  };
 }
 
 export {
@@ -107,6 +136,27 @@ export function resolveAttemptObservationCapability(
   return latest.observationCapability ?? null;
 }
 
+/**
+ * Pre-implementation artifact reviews (plan, ADR) MUST mint an explicit
+ * artifact subject scope. changedFiles, targetPaths, and discovery risk
+ * surfaces are challenge classification and repository evidence context —
+ * they must never become the primary subject authority of an artifact review.
+ */
+function requireArtifactSubjectScope(
+  obligationType: ReviewObligationType,
+  reviewSubjectScope: ReviewSubjectScope | undefined,
+): void {
+  if (
+    (obligationType === 'plan' || obligationType === 'architecture') &&
+    reviewSubjectScope?.kind !== 'artifact'
+  ) {
+    throw new Error(
+      'FAIL_CLOSED: plan/architecture review obligations require an explicit artifact ' +
+        'reviewSubjectScope.',
+    );
+  }
+}
+
 export function createReviewObligation(input: {
   obligationType: ReviewObligationType;
   iteration: number;
@@ -144,7 +194,13 @@ export function createReviewObligation(input: {
   > | null;
   /** Runtime paths classified by the canonical phase-tool gate. */
   changedFiles?: readonly string[];
-  /** Explicit structured subject scope. Absent → derived from changedFiles only. */
+  /**
+   * Explicit structured subject scope. Absent → derived from changedFiles only
+   * for implementation and standalone review obligations. Plan and architecture
+   * obligations MUST pass an artifact scope: their subject is the frozen
+   * plan/ADR artifact, never the repository diff (fail-closed, see
+   * `artifactReviewSubjectScope`).
+   */
   reviewSubjectScope?: ReviewSubjectScope;
   /**
    * Frozen repository authority for repository-governed obligations. The
@@ -171,6 +227,7 @@ export function createReviewObligation(input: {
         'Obligations without an authoritative subject identity cannot produce bindable evidence.',
     );
   }
+  requireArtifactSubjectScope(input.obligationType, input.reviewSubjectScope);
   const challengePolicy = input.policySnapshot?.challengePolicy;
   const subjectDigest = resolveSubjectDigest(input);
   const reviewSubjectScope = resolveSubjectScope(

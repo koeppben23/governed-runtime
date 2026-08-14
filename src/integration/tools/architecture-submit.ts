@@ -13,6 +13,7 @@ import { executeArchitecture } from '../../rails/architecture.js';
 import { normalizeArchitectureClaims } from '../../state/proofgraph-approval.js';
 import {
   appendObligationWithAttempt,
+  artifactReviewSubjectScope,
   createReviewObligation,
   reviewObligationResponseFields,
   resolveFrozenReviewProfile,
@@ -67,6 +68,13 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
             state: ctx.state,
             artifact: ctx.state.architecture?.adrText ?? '',
           }),
+          ctx.state.architecture?.digest ?? `arch-submit-${ctx.archPlanVersion}`,
+        ),
+        // The ADR artifact is the review SUBJECT; changedFiles below stay
+        // challenge-classification and repository-evidence context only.
+        reviewSubjectScope: artifactReviewSubjectScope(
+          'adr',
+          ctx.state.architecture?.adrText ?? '',
           ctx.state.architecture?.digest ?? `arch-submit-${ctx.archPlanVersion}`,
         ),
         reviewProfile: resolveFrozenReviewProfile(ctx.policySnapshot),

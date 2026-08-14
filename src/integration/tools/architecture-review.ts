@@ -29,6 +29,7 @@ import { validateAdrSections } from '../../state/evidence.js';
 
 import {
   appendObligationWithAttempt,
+  artifactReviewSubjectScope,
   consumeReviewObligation,
   createReviewObligation,
   ensureReviewAssurance,
@@ -608,6 +609,9 @@ function createNextArchitectureReviewObligation(input: {
       revision.currentAdr.adrText,
       subjectDigest,
     ),
+    // The (possibly revised) ADR artifact is the review SUBJECT; changedFiles
+    // below stay challenge-classification and repository-evidence context only.
+    reviewSubjectScope: artifactReviewSubjectScope('adr', revision.currentAdr.adrText, subjectDigest),
     reviewProfile: resolveFrozenReviewProfile(state.policySnapshot),
     profileSource: 'policy_default',
     policySnapshot: state.policySnapshot,

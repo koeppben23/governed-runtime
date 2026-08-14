@@ -309,6 +309,19 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(obligation?.obligationType).toBe('architecture');
     expect(obligation?.requiredChallengeCount).toBe(0);
     expect(obligation?.metadata?.targetPaths).toBeUndefined();
+    // The ADR artifact is the review SUBJECT — never the repository diff or
+    // discovery risk surfaces (regression: review_finding_out_of_scope on
+    // artifact-anchored findings because the scope was repository_change).
+    expect(obligation?.reviewSubjectScope?.kind).toBe('artifact');
+    if (obligation?.reviewSubjectScope?.kind === 'artifact') {
+      expect(obligation.reviewSubjectScope.artifact.kind).toBe('adr');
+      expect(obligation.reviewSubjectScope.artifact.digest).toBe('digest-adr');
+      expect(obligation.reviewSubjectScope.artifact.sectionPaths).toEqual([
+        [{ headingDepth: 2, siblingIndex: 1, headingText: 'Context' }],
+        [{ headingDepth: 2, siblingIndex: 2, headingText: 'Decision' }],
+        [{ headingDepth: 2, siblingIndex: 3, headingText: 'Consequences' }],
+      ]);
+    }
   });
 
   it('floors the Mode A challenge count on discovery risk surfaces (no targetPaths, no git diff)', async () => {

@@ -32,6 +32,7 @@ import { autoAdvance } from '../../rails/types.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import {
   reviewObligationResponseFields,
+  artifactReviewSubjectScope,
   createObligationAndAttempt,
   freezeReviewMaterial,
   findLatestObligation,
@@ -281,6 +282,13 @@ export async function persistNonConvergedPlanReview(
               state: finalState,
               artifact: revision.currentPlan.body,
             }),
+            revision.currentPlan.digest,
+          ),
+          // The (possibly revised) plan artifact is the review SUBJECT; changedFiles
+          // below stay challenge-classification and repository-evidence context only.
+          reviewSubjectScope: artifactReviewSubjectScope(
+            'plan',
+            revision.currentPlan.body,
             revision.currentPlan.digest,
           ),
           reviewProfile: resolveFrozenReviewProfile(finalState.policySnapshot),

@@ -29,6 +29,7 @@ import {
   createReviewAttempt,
   appendObligationWithAttempt,
   createAttemptForExistingObligation,
+  artifactReviewSubjectScope,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './assurance.js';
@@ -54,6 +55,7 @@ function makeObligation(overrides?: Partial<ReviewObligation>): ReviewObligation
     planVersion: 1,
     now: NOW,
     subjectDigest: 'test',
+    reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
     ...overrides,
   });
 }
@@ -221,6 +223,7 @@ describe('integration/review-assurance', () => {
         planVersion: 1,
         now: NOW,
         subjectDigest: 'test',
+        reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
       });
       expect(result.obligationType).toBe('plan');
       expect(result.status).toBe('pending');
@@ -252,6 +255,17 @@ describe('integration/review-assurance', () => {
           now: NOW,
           subjectDigest: 'test',
           changedFiles,
+          ...(obligationType === 'plan'
+            ? { reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test') }
+            : obligationType === 'architecture'
+              ? {
+                  reviewSubjectScope: artifactReviewSubjectScope(
+                    'adr',
+                    '## Context\nC\n## Decision\nD',
+                    'test',
+                  ),
+                }
+              : {}),
           policySnapshot: {
             challengePolicy: {
               version: 'challenge-policy.v1',
@@ -286,6 +300,7 @@ describe('integration/review-assurance', () => {
           now: NOW,
           subjectDigest: 'test',
           changedFiles: ['docs/x.md'],
+          reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
           claimedTaskClass: 'HIGH-RISK',
           policySnapshot,
         });
@@ -314,6 +329,7 @@ describe('integration/review-assurance', () => {
           now: NOW,
           subjectDigest: 'test',
           changedFiles: ['docs/x.md'],
+          reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
           claimedTaskClass: 'STANDARD',
           policySnapshot,
         });
@@ -328,6 +344,7 @@ describe('integration/review-assurance', () => {
           now: NOW,
           subjectDigest: 'test',
           changedFiles: ['docs/x.md'],
+          reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
           policySnapshot,
         });
         expect(result.requiredChallengeCount).toBe(0);
@@ -381,18 +398,60 @@ describe('integration/review-assurance', () => {
   });
 
   describe('createReviewObligation — reviewSubjectScope construction', () => {
-    it('plan + undefined changedFiles → unavailable', () => {
-      const result = createReviewObligation({
-        obligationType: 'plan',
-        iteration: 0,
-        planVersion: 1,
-        now: NOW,
-        subjectDigest: 'test',
-      });
-      expect(result.reviewSubjectScope).toEqual({
-        kind: 'unavailable',
-        reason: 'scope_not_resolved',
-      });
+    it('plan without explicit artifact scope → fail-closed', () => {
+      expect(() =>
+        createReviewObligation({
+          obligationType: 'plan',
+          iteration: 0,
+          planVersion: 1,
+          now: NOW,
+          subjectDigest: 'test',
+        }),
+      ).toThrow(/FAIL_CLOSED/);
+    });
+
+    it('architecture without explicit artifact scope → fail-closed', () => {
+      expect(() =>
+        createReviewObligation({
+          obligationType: 'architecture',
+          iteration: 0,
+          planVersion: 1,
+          now: NOW,
+          subjectDigest: 'test',
+        }),
+      ).toThrow(/FAIL_CLOSED/);
+    });
+
+    it('plan with non-artifact explicit scope → fail-closed', () => {
+      expect(() =>
+        createReviewObligation({
+          obligationType: 'plan',
+          iteration: 0,
+          planVersion: 1,
+          now: NOW,
+          subjectDigest: 'test',
+          changedFiles: ['src/foo.ts'],
+          reviewSubjectScope: { kind: 'unavailable', reason: 'diff_resolution_failed' },
+        }),
+      ).toThrow(/FAIL_CLOSED/);
+    });
+
+    it('architecture with repository_change scope → fail-closed', () => {
+      expect(() =>
+        createReviewObligation({
+          obligationType: 'architecture',
+          iteration: 0,
+          planVersion: 1,
+          now: NOW,
+          subjectDigest: 'test',
+          changedFiles: ['src/foo.ts'],
+          reviewSubjectScope: {
+            kind: 'repository_change',
+            paths: ['src/foo.ts'],
+            revisions: ['head'],
+          },
+        }),
+      ).toThrow(/FAIL_CLOSED/);
     });
 
     it('review + undefined changedFiles → unavailable', () => {
@@ -423,23 +482,9 @@ describe('integration/review-assurance', () => {
       });
     });
 
-    it('architecture + undefined changedFiles → unavailable', () => {
+    it('implement + empty changedFiles → unavailable', () => {
       const result = createReviewObligation({
-        obligationType: 'architecture',
-        iteration: 0,
-        planVersion: 1,
-        now: NOW,
-        subjectDigest: 'test',
-      });
-      expect(result.reviewSubjectScope).toEqual({
-        kind: 'unavailable',
-        reason: 'scope_not_resolved',
-      });
-    });
-
-    it('any type + empty changedFiles → unavailable', () => {
-      const result = createReviewObligation({
-        obligationType: 'plan',
+        obligationType: 'implement',
         iteration: 0,
         planVersion: 1,
         now: NOW,
@@ -452,9 +497,9 @@ describe('integration/review-assurance', () => {
       });
     });
 
-    it('any type + concrete changedFiles → repository_change with paths', () => {
+    it('implement + concrete changedFiles → repository_change with paths', () => {
       const result = createReviewObligation({
-        obligationType: 'plan',
+        obligationType: 'implement',
         iteration: 0,
         planVersion: 1,
         now: NOW,
@@ -468,9 +513,9 @@ describe('integration/review-assurance', () => {
       });
     });
 
-    it('explicit reviewSubjectScope overrides derivation', () => {
+    it('implement: explicit reviewSubjectScope overrides derivation', () => {
       const result = createReviewObligation({
-        obligationType: 'plan',
+        obligationType: 'implement',
         iteration: 0,
         planVersion: 1,
         now: NOW,
@@ -508,6 +553,53 @@ describe('integration/review-assurance', () => {
           sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Overview' }]],
         },
       });
+    });
+  });
+
+  describe('artifactReviewSubjectScope', () => {
+    it('mints adr scope from canonical Markdown sections', () => {
+      const scope = artifactReviewSubjectScope(
+        'adr',
+        '# Title\n\n## Context\nBody\n\n## Decision\nD\n',
+        'd1',
+      );
+      expect(scope).toEqual({
+        kind: 'artifact',
+        artifact: {
+          kind: 'adr',
+          digest: 'd1',
+          sectionPaths: [
+            [{ headingDepth: 1, siblingIndex: 1, headingText: 'Title' }],
+            [
+              { headingDepth: 1, siblingIndex: 1, headingText: 'Title' },
+              { headingDepth: 2, siblingIndex: 1, headingText: 'Context' },
+            ],
+            [
+              { headingDepth: 1, siblingIndex: 1, headingText: 'Title' },
+              { headingDepth: 2, siblingIndex: 2, headingText: 'Decision' },
+            ],
+          ],
+        },
+      });
+    });
+
+    it('mints plan scope with kind plan', () => {
+      const scope = artifactReviewSubjectScope('plan', '## Approach\nText\n', 'p1');
+      expect(scope.kind).toBe('artifact');
+      if (scope.kind === 'artifact') {
+        expect(scope.artifact.kind).toBe('plan');
+        expect(scope.artifact.digest).toBe('p1');
+        expect(scope.artifact.sectionPaths).toEqual([
+          [{ headingDepth: 2, siblingIndex: 1, headingText: 'Approach' }],
+        ]);
+      }
+    });
+
+    it('fails closed on Markdown without headings', () => {
+      expect(() => artifactReviewSubjectScope('adr', 'plain text only', 'd1')).toThrow(
+        /FAIL_CLOSED/,
+      );
+      expect(() => artifactReviewSubjectScope('plan', '', 'd1')).toThrow(/FAIL_CLOSED/);
     });
   });
 
