@@ -179,8 +179,8 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // blocker field verbatim (buildBlockedProjection) instead of unspecified
     // "blockers and warnings", changing the /finish body and COMMANDS hash.
     // Refreshed for F10: the /review, /check, and shared review-loop templates
-    // now instruct the agent to pass the FlowGuard-provided reviewerTaskPrompt
-    // VERBATIM as the Task tool prompt (canonical copy-prompt) to eliminate the
+    // now instruct the agent to invoke the reviewer Task without a prompt so
+    // FlowGuard injects the canonical bytes at the host boundary to eliminate the
     // first-attempt SUBAGENT_PROMPT_MISSING_CONTEXT block. New command bodies
     // change the COMMANDS hash.
     // Refreshed for #686: /implement template now documents the IMPL_VALIDATION

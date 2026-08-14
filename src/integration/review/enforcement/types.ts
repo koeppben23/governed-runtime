@@ -86,12 +86,9 @@ export interface PendingReview {
    * Trailing marker of the canonical reviewer prompt FlowGuard emitted, when it
    * emitted one.
    *
-   * The canonical prompt ends by instructing the agent to append the artifact
-   * below that line. Recording the marker lets enforcement verify that the agent
-   * actually appended something instead of pasting the instruction block alone:
-   * the prompt-length and iteration/planVersion checks are all satisfied by the
-   * canonical prompt by itself, so without this a reviewer could be dispatched
-   * with no artifact at all and nothing would notice.
+   * The host-issued prompt contains frozen review material below this line.
+   * Recording the marker lets enforcement verify that the canonical prompt
+   * includes a reviewable artifact rather than only an instruction block.
    */
   canonicalPromptAnchor: string | null;
   /** SHA-256 of the complete host-issued reviewer prompt. */

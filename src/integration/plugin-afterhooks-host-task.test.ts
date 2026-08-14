@@ -33,6 +33,7 @@ import {
 } from './review/assurance.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 import { renderReviewerTaskPrompt } from './review/prompt-builders.js';
+import { createAttemptForExistingObligation } from './review/attempt-lifecycle.js';
 import { executeReviewDecision } from '../rails/review-decision.js';
 import { computeRecordDigest } from '../state/evidence-plan.js';
 import { createTestContext } from '../testing.js';
@@ -166,13 +167,13 @@ function validReviewerOutput(): string {
  * review (enforcement state), which the subsequent reviewer Task calls match
  * and re-arm. Without this prior signal there is no pendingReview to bind.
  */
-function planReviewRequiredOutput(): string {
+function planReviewRequiredOutput(attemptId = ATTEMPT_ID): string {
   return JSON.stringify({
     phase: 'PLAN',
     selfReviewIteration: 0,
     reviewMode: 'subagent',
     reviewObligationId: OBLIGATION_ID,
-    reviewAttemptId: ATTEMPT_ID,
+    reviewAttemptId: attemptId,
     reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
     reviewMandateDigest: REVIEW_MANDATE_DIGEST,
     reviewerTaskPrompt:
@@ -186,6 +187,57 @@ function planReviewRequiredOutput(): string {
       }) + '\n## Plan\n1. Fix the auth feature.',
     next: 'INDEPENDENT_REVIEW_REQUIRED: iteration=0, planVersion=1',
   });
+}
+
+/** Mint and advertise a retry before dispatching its reviewer Task. */
+async function reissuePlanReviewRequiredOutput(
+  sessDir: string,
+  afterHook: NonNullable<Awaited<ReturnType<typeof FlowGuardAuditPlugin>>['tool.execute.after']>,
+  sessionID: string,
+  callID: string,
+): Promise<string> {
+  const state = await readState(sessDir);
+  const assurance = state?.reviewAssurance;
+  const predecessor = assurance?.attempts.at(-1);
+  const obligation = assurance?.obligations.find((item) => item.obligationId === OBLIGATION_ID);
+  if (!state || !assurance || !predecessor || !obligation) {
+    throw new TypeError('Expected persisted attempt and obligation for retry fixture');
+  }
+  let triggerReason: 'interrupted' | 'rejected' | 'stale' | 'expired';
+  switch (predecessor.status) {
+    case 'created':
+      triggerReason = 'interrupted';
+      break;
+    case 'rejected':
+    case 'stale':
+    case 'expired':
+      triggerReason = predecessor.status;
+      break;
+    default:
+      throw new TypeError(`Cannot reissue ${predecessor.status} attempt in retry fixture`);
+  }
+  const reissue = createAttemptForExistingObligation(
+    assurance,
+    obligation,
+    undefined,
+    new Date().toISOString(),
+    {
+      origin: {
+        kind: 'task_rearm',
+        predecessorAttemptId: predecessor.attemptId,
+        triggerReason,
+      },
+      repositoryDiscovery: predecessor.repositoryDiscovery,
+    },
+  );
+  await writeState(sessDir, { ...state, reviewAssurance: reissue.assurance });
+
+  const output = planReviewRequiredOutput(reissue.attempt.attemptId);
+  await afterHook(
+    { tool: 'flowguard_plan', sessionID, callID, args: {} },
+    { title: 'flowguard_plan', output, metadata: {} },
+  );
+  return output;
 }
 
 function reviewerArgsFromReviewRequiredOutput(output: string) {
@@ -260,18 +312,21 @@ describe('reviewer host-task after-hook: no_matched_record → sequential re-inv
       expect(afterFirst?.reviewAssurance?.invocations ?? []).toHaveLength(0);
 
       // ── Reviewer Task #2: sequential re-invocation with valid findings ───────
-      await afterHook(
-        { tool: 'flowguard_plan', sessionID, callID: 'call-plan-retry', args: {} },
-        planOutput,
+      const retryOutput = await reissuePlanReviewRequiredOutput(
+        sessDir,
+        afterHook,
+        sessionID,
+        'call-plan-retry',
       );
+      const retryReviewerArgs = reviewerArgsFromReviewRequiredOutput(retryOutput);
       const secondOutput: { title: string; output: string; metadata: Record<string, unknown> } = {
         title: 'task',
         output: validReviewerOutput(),
         metadata: { sessionID: CHILD_VALID },
       };
-      await beforeHook({ tool: 'task', sessionID, callID: 'call-2' }, { args: reviewerArgs });
+      await beforeHook({ tool: 'task', sessionID, callID: 'call-2' }, { args: retryReviewerArgs });
       await afterHook(
-        { tool: 'task', sessionID, callID: 'call-2', args: reviewerArgs },
+        { tool: 'task', sessionID, callID: 'call-2', args: retryReviewerArgs },
         secondOutput,
       );
 

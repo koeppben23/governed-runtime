@@ -33,6 +33,7 @@ import {
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 import { renderReviewerTaskPrompt } from './review/prompt-builders.js';
+import { createAttemptForExistingObligation } from './review/attempt-lifecycle.js';
 import { hashCanonicalReviewContent } from '../shared/review-subject.js';
 import type { ReviewAttempt, ReviewAttemptStatus } from '../state/evidence-review.js';
 import type { ReviewObligationStatus } from '../state/evidence-primitives.js';
@@ -143,13 +144,13 @@ async function seedSession(
   return sessDir;
 }
 
-function planReviewRequiredOutput(): string {
+function planReviewRequiredOutput(attemptId = ATTEMPT_ID): string {
   return JSON.stringify({
     phase: 'PLAN',
     selfReviewIteration: 0,
     reviewMode: 'subagent',
     reviewObligationId: OBLIGATION_ID,
-    reviewAttemptId: ATTEMPT_ID,
+    reviewAttemptId: attemptId,
     reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
     reviewMandateDigest: REVIEW_MANDATE_DIGEST,
     reviewInvocation: {
@@ -169,6 +170,57 @@ function planReviewRequiredOutput(): string {
       }) + `\n${REVIEW_MATERIAL_CONTENT}`,
     next: 'INDEPENDENT_REVIEW_REQUIRED: iteration=0, planVersion=1',
   });
+}
+
+/** Mint and advertise a retry before dispatching its reviewer Task. */
+async function reissuePlanReviewRequiredOutput(
+  sessDir: string,
+  afterHook: NonNullable<Awaited<ReturnType<typeof FlowGuardAuditPlugin>>['tool.execute.after']>,
+  sessionID: string,
+  callID: string,
+): Promise<string> {
+  const state = await readState(sessDir);
+  const assurance = state?.reviewAssurance;
+  const predecessor = assurance?.attempts.at(-1);
+  const obligation = assurance?.obligations.find((item) => item.obligationId === OBLIGATION_ID);
+  if (!state || !assurance || !predecessor || !obligation) {
+    throw new TypeError('Expected persisted attempt and obligation for retry fixture');
+  }
+  let triggerReason: 'interrupted' | 'rejected' | 'stale' | 'expired';
+  switch (predecessor.status) {
+    case 'created':
+      triggerReason = 'interrupted';
+      break;
+    case 'rejected':
+    case 'stale':
+    case 'expired':
+      triggerReason = predecessor.status;
+      break;
+    default:
+      throw new TypeError(`Cannot reissue ${predecessor.status} attempt in retry fixture`);
+  }
+  const reissue = createAttemptForExistingObligation(
+    assurance,
+    obligation,
+    undefined,
+    new Date().toISOString(),
+    {
+      origin: {
+        kind: 'task_rearm',
+        predecessorAttemptId: predecessor.attemptId,
+        triggerReason,
+      },
+      repositoryDiscovery: predecessor.repositoryDiscovery,
+    },
+  );
+  await writeState(sessDir, { ...state, reviewAssurance: reissue.assurance });
+
+  const output = planReviewRequiredOutput(reissue.attempt.attemptId);
+  await afterHook(
+    { tool: 'flowguard_plan', sessionID, callID, args: {} },
+    { title: 'flowguard_plan', output, metadata: {} },
+  );
+  return output;
 }
 
 function reviewerOutput(_childSessionId: string): string {
@@ -240,17 +292,22 @@ describe('reviewer attempt lifecycle through the real hooks', () => {
     );
     const beforeHook = hooks['tool.execute.before']!;
     const afterHook = hooks['tool.execute.after']!;
-    const planOutput = {
-      title: 'flowguard_plan',
-      output: planReviewRequiredOutput(),
-      metadata: {},
-    };
-
-    await afterHook(
-      { tool: 'flowguard_plan', sessionID, callID: 'call-plan', args: {} },
-      planOutput,
-    );
-    const reviewerArgs = reviewerArgsFromReviewRequiredOutput(planOutput.output);
+    const needsReissue =
+      (options.obligationStatus ?? 'pending') === 'pending' &&
+      (options.attemptStatus === 'rejected' ||
+        options.attemptStatus === 'stale' ||
+        options.attemptStatus === 'expired' ||
+        (options.attemptStatus === 'created' && Boolean(options.attemptChildSessionId)));
+    const reviewRequiredOutput = needsReissue
+      ? await reissuePlanReviewRequiredOutput(sessDir, afterHook, sessionID, 'call-plan-retry')
+      : planReviewRequiredOutput();
+    if (!needsReissue) {
+      await afterHook(
+        { tool: 'flowguard_plan', sessionID, callID: 'call-plan', args: {} },
+        { title: 'flowguard_plan', output: reviewRequiredOutput, metadata: {} },
+      );
+    }
+    const reviewerArgs = reviewerArgsFromReviewRequiredOutput(reviewRequiredOutput);
     const dispatched = await beforeHook(
       { tool: 'task', sessionID, callID },
       { args: reviewerArgs },
@@ -433,16 +490,19 @@ describe('reviewer attempt lifecycle through the real hooks', () => {
       },
     );
     // Second unusable output: one retry, exhausts the budget (>= 1 retries)
-    await afterHook(
-      { tool: 'flowguard_plan', sessionID, callID: 'call-plan-retry', args: {} },
-      planOutput,
+    const retryOutput = await reissuePlanReviewRequiredOutput(
+      sessDir,
+      afterHook,
+      sessionID,
+      'call-plan-retry',
     );
+    const retryReviewerArgs = reviewerArgsFromReviewRequiredOutput(retryOutput);
     await beforeHook(
       { tool: 'task', sessionID, callID: 'call-rejected-1' },
-      { args: reviewerArgs },
+      { args: retryReviewerArgs },
     );
     await afterHook(
-      { tool: 'task', sessionID, callID: 'call-rejected-1', args: reviewerArgs },
+      { tool: 'task', sessionID, callID: 'call-rejected-1', args: retryReviewerArgs },
       {
         title: 'task',
         output: unusableReviewerOutput('ses_child_lifecycle_rejected_1'),
@@ -522,13 +582,16 @@ describe('reviewer attempt lifecycle through the real hooks', () => {
     expect(afterFirst?.reviewAssurance?.invocations ?? []).toHaveLength(0);
 
     // 2. Retry from a new session: re-arm, bind, evidence recorded.
-    await afterHook(
-      { tool: 'flowguard_plan', sessionID, callID: 'call-plan-retry', args: {} },
-      planOutput,
+    const retryOutput = await reissuePlanReviewRequiredOutput(
+      sessDir,
+      afterHook,
+      sessionID,
+      'call-plan-retry',
     );
-    await beforeHook({ tool: 'task', sessionID, callID: 'call-2' }, { args: reviewerArgs });
+    const retryReviewerArgs = reviewerArgsFromReviewRequiredOutput(retryOutput);
+    await beforeHook({ tool: 'task', sessionID, callID: 'call-2' }, { args: retryReviewerArgs });
     await afterHook(
-      { tool: 'task', sessionID, callID: 'call-2', args: reviewerArgs },
+      { tool: 'task', sessionID, callID: 'call-2', args: retryReviewerArgs },
       { title: 'task', output: reviewerOutput(CHILD_RETRY), metadata: { sessionID: CHILD_RETRY } },
     );
     const afterRetry = await readState(sessDir);

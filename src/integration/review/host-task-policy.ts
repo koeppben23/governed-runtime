@@ -139,7 +139,7 @@ function applyReviewerContextFailure(
     `The frozen review material itself was not invalidated.`;
   result.recovery = [
     'Re-run flowguard_review with the original content fields and reviewObligationId to reissue a bindable attempt',
-    'Pass the newly returned reviewerTaskPrompt VERBATIM to the reviewer Task; never reuse a previous prompt',
+    'Invoke a new reviewer Task with only subagent_type="flowguard-reviewer"; FlowGuard injects the newly issued canonical prompt',
     'Do NOT submit reviewVerdict or reviewFindings to recover this state',
   ];
   return JSON.stringify(result);
@@ -271,8 +271,8 @@ function buildHostTaskBlockedOutput(
       ? renderReviewContext({ iteration: ctx.iteration, planVersion: ctx.planVersion })
       : '';
 
-  // F10: hand the agent a canonical, verbatim copy-ready reviewer prompt so it
-  // does not free-compose one and omit the iteration=/planVersion= tokens the
+  // F10: issue the host-injected canonical reviewer prompt so the agent does
+  // not free-compose one and omit the iteration=/planVersion= tokens the
   // enforcement matcher requires (the first-attempt SUBAGENT_PROMPT_MISSING_CONTEXT
   // root cause). The prompt embeds the review context via the SAME serializer the
   // matcher validates against. Only emitted when both the attestation and the
@@ -288,9 +288,9 @@ function buildHostTaskBlockedOutput(
     repositoryReview: input.repositoryReview,
   });
   const copyPromptStr = reviewerTaskPrompt
-    ? ` A ready-to-use reviewer prompt is provided in the reviewerTaskPrompt field — pass it ` +
-      `VERBATIM as the Task tool "prompt" argument without appending content, ` +
-      `so the required review context is present on the first attempt.`
+    ? ` A canonical reviewer prompt is provided in the reviewerTaskPrompt field. Call Task only ` +
+      `with subagent_type="${REVIEWER_SUBAGENT_TYPE}"; FlowGuard injects the canonical bytes ` +
+      `at the host boundary, so the required review context is present on the first attempt.`
     : '';
 
   // requiredReviewAttestation is host/parent context. The canonical prompt is

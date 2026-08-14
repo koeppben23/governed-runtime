@@ -385,9 +385,9 @@ describe('BUG-16: buildHostTaskPolicyOutput preserves iteration/planVersion', ()
     expect(parsed.reviewerTaskPrompt).toContain(OBLIGATION_ID);
     // Anti-fabrication: the canonical prompt must not prefill a verdict.
     expect(parsed.reviewerTaskPrompt).not.toMatch(/overallVerdict"\s*:\s*"accept/i);
-    // The next prose instructs verbatim use.
+    // The next prose delegates canonical prompt transport to the host.
     expect(parsed.next).toContain('reviewerTaskPrompt');
-    expect(parsed.next).toContain('VERBATIM');
+    expect(parsed.next).toContain('FlowGuard injects the canonical bytes');
   });
 
   it('F10: the emitted reviewerTaskPrompt passes enforcement on the FIRST attempt', async () => {

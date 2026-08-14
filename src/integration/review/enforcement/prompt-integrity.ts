@@ -208,11 +208,13 @@ function checkCanonicalPrompt(
           ? `FlowGuard enforcement: the reviewer produced schema-invalid output. ` +
             `The repair prompt's cryptographic digest does not match. ` +
             `Call flowguard_review to obtain a fresh canonical repair prompt, ` +
-            `then pass it VERBATIM to the Task tool — do not modify a single byte.`
+            `then invoke Task only with subagent_type="${REVIEWER_SUBAGENT_TYPE}". ` +
+            `FlowGuard injects the canonical bytes at the host boundary.`
           : `FlowGuard enforcement: the reviewer produced schema-invalid output. ` +
             `A fresh canonical repair prompt must be obtained from flowguard_review ` +
-            `before re-running the reviewer Task. Call flowguard_review first, ` +
-            `then use the NEW reviewerTaskPrompt — never reuse the stale one.`,
+            `before re-running the reviewer Task. Call flowguard_review first, then invoke ` +
+            `a new Task only with subagent_type="${REVIEWER_SUBAGENT_TYPE}"; never reuse ` +
+            `a stale prompt.`,
       };
     }
     // Note: repairPromptRequired is cleared in onTaskToolAfter after the
@@ -223,15 +225,15 @@ function checkCanonicalPrompt(
 }
 
 /**
- * Verify that the artifact was appended below the canonical prompt.
+ * Verify that the host-issued canonical prompt includes the artifact.
  *
  * The length floor and the iteration/planVersion match are all satisfied by the
- * canonical prompt on its own, so without this check a reviewer could be
- * dispatched with the instruction block and nothing to review, and every
- * enforcement level would still report success.
+ * canonical prompt's instruction block alone, so without this check a reviewer
+ * could be dispatched with nothing to review and every enforcement level would
+ * still report success.
  *
  * Only applies where FlowGuard actually emitted a canonical prompt; a legitimate
- * free-composed prompt is unaffected.
+ * host-issued prompt is unaffected.
  */
 function checkArtifactAppended(
   pendingReviews: readonly PendingReview[],
@@ -247,7 +249,7 @@ function checkArtifactAppended(
       return {
         allowed: false,
         code: 'SUBAGENT_PROMPT_ARTIFACT_MISSING',
-        reason: `FlowGuard enforcement: the prompt for ${REVIEWER_SUBAGENT_TYPE} ends at the canonical instruction block with no artifact appended below it. Append the content to review (plan text, implementation diff, ADR, or reviewed diff) below that line; a reviewer cannot review an empty subject.`,
+        reason: `FlowGuard enforcement: the host-issued prompt for ${REVIEWER_SUBAGENT_TYPE} contains no artifact below the canonical instruction block. Reissue the review so FlowGuard can provide reviewable material; a reviewer cannot review an empty subject.`,
       };
     }
   }

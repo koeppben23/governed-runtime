@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { ReviewAssuranceState } from '../../../state/evidence.js';
+import { findBindableAttempt } from '../attempt-lifecycle.js';
 import { isPendingCaptureUsable } from './prepare-findings.js';
 import type { ExecutedTaskPrompt, PendingReview, SessionEnforcementState } from './types.js';
 
@@ -29,18 +30,14 @@ export function registerExecutedTaskPrompt(
   const obligation = assurance?.obligations.find(
     (item) => item.obligationId === pending.obligationId,
   );
-  const attempt = assurance?.attempts.find((item) => item.attemptId === pending.attemptId);
   if (!obligation || obligation.status !== 'pending') {
     return { kind: 'blocked', reason: 'pending obligation is absent or no longer pending' };
   }
-  if (
-    !attempt ||
-    attempt.obligationId !== obligation.obligationId ||
-    !dispatchableAttempt(attempt.status)
-  ) {
+  const attempt = findBindableAttempt(assurance, obligation.obligationId);
+  if (!attempt || attempt.attemptId !== pending.attemptId) {
     return {
       kind: 'blocked',
-      reason: 'pending attempt is absent, mismatched, or not dispatchable',
+      reason: 'pending attempt is absent, superseded, or not bindable',
     };
   }
   const canonicalPrompt = pending.canonicalPrompt!;
@@ -85,12 +82,6 @@ function isExecutablePending(pending: PendingReview): boolean {
     pending.expectedPromptDigest !== null &&
     (!pending.subagentCalled || !isPendingCaptureUsable(pending)) &&
     (!pending.subagentCalled || pending.retryCount < 1)
-  );
-}
-
-function dispatchableAttempt(status: string): boolean {
-  return (
-    status === 'created' || status === 'rejected' || status === 'stale' || status === 'expired'
   );
 }
 
