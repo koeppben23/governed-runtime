@@ -76,6 +76,7 @@ export const BIND_OUTCOME_TO_REASON = {
   no_child_session: null,
   no_obligation_type: null,
   no_findings: null,
+  extraction_invalid: 'extraction_invalid',
   // Lineage failure: the attempt names a missing/consumed obligation.
   no_matching_obligation: 'subject_mismatch',
   // Cycle-binding echo (iteration/planVersion/attested obligation) is a

@@ -127,6 +127,9 @@ async function bindReviewerEvidence(
           modelPromptDigest: execution.modelPromptDigest,
         }
       : undefined,
+    execution: execution
+      ? { obligationId: execution.obligationId, attemptId: execution.attemptId }
+      : undefined,
   });
   return { sessDir, policy, bindResult };
 }
@@ -328,6 +331,12 @@ function blockRequiredHostTaskEvidence(
     // the canonical repair prompt (obtained by calling flowguard_review).
     ...(bindResult.bindOutcome === 'schema_invalid' && bindResult.diagnostic?.schemaErrors
       ? { schemaErrors: (bindResult.diagnostic.schemaErrors as string[]).join('; ') }
+      : {}),
+    ...(bindResult.bindOutcome === 'extraction_invalid'
+      ? {
+          nextAction:
+            'Re-run the originating FlowGuard command to issue a fresh canonical reviewer prompt.',
+        }
       : {}),
   });
 }

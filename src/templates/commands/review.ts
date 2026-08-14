@@ -84,9 +84,9 @@ Start the compliance review flow for the current FlowGuard session.
       The tool will handle this as \`SUBAGENT_UNABLE_TO_REVIEW\` and exit the flow.
       Only submit \`reviewFindings\` when the subagent returns \`accept\` or \`changes_requested\`.
 
-    - **Retry after schema_invalid**: If the Task call returns \`bindOutcome: "schema_invalid"\` (the reviewer's output failed validation), do NOT re-run the Task with the same prompt. Instead:
-      1. Look at the \`schemaErrors\` field (if present) to understand which fields failed.
-      2. Call \`flowguard_review\` again with the original content fields and \`reviewObligationId\` from \`requiredReviewAttestation.toolObligationId\`. This produces a fresh \`reviewerTaskPrompt\` with the validation errors embedded.
+    - **Retry after schema_invalid or extraction_invalid**: If the Task call returns either bindOutcome, do NOT re-run the Task with the same prompt. Instead:
+      1. Look at the \`schemaErrors\` field when present. \`extraction_invalid\` means no complete reviewer findings payload could be extracted.
+      2. Call \`flowguard_review\` again with the original content fields and \`reviewObligationId\` from \`requiredReviewAttestation.toolObligationId\`. This produces a fresh \`reviewerTaskPrompt\`; validation errors are embedded when available.
        3. Invoke a new Task with only \`subagent_type: "${REVIEWER_SUBAGENT_TYPE}"\`; FlowGuard injects the new canonical prompt.
       4. If the Task is blocked with \`REVIEWER_OUTPUT_RETRY_EXHAUSTED\`, the retry budget is exhausted — report to the operator and stop; do NOT fabricate findings, guess a verdict, or call any other authority path.
 

@@ -1231,16 +1231,6 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
     expect(resolveValid.invocation.childSessionId).toBe(CHILD_VALID);
   });
 
-  /**
-   * Live-runtime symptom (implement-run demo): the FIRST bind attempt emits
-   * `no_matched_record` with calledCount:1 — a reviewer Task WAS called, but its
-   * captured findings are absent because the reviewer output carried no string
-   * `overallVerdict`, so `extractCapturedFindings` returns null and the record is
-   * excluded from `matched[]` (unlike the malformed-but-parseable case above,
-   * which binds at #1). host_task_required blocks fail-closed. A sequential
-   * reviewer re-invocation with valid findings re-arms the same pending review
-   * and binds `bound`. This locks the observed first-failure → clean-retry path.
-   */
   function noVerdictTaskResult(obligationId: string): string {
     return JSON.stringify({
       iteration: 0,
@@ -1265,10 +1255,16 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
     });
   }
 
-  it('first bind emits no_matched_record (calledCount:1), sequential re-invocation binds bound', () => {
+  it('marks a host-owned Task without extractable findings as extraction_invalid', () => {
     const state = createSessionState();
-    onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(0, 1), NOW);
     const obligation = pendingObligation();
+    onFlowGuardToolAfter(
+      state,
+      'flowguard_plan',
+      {},
+      modeAResponse(0, 1, obligation.obligationId),
+      NOW,
+    );
 
     // ── Reviewer run #1: Task called, but findings carry no overallVerdict ────
     onTaskToolAfter(
@@ -1279,39 +1275,19 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
       { metadata: { sessionID: CHILD_CORRUPT } },
     );
 
-    // Bind #1 → no_matched_record: the record is subagentCalled=true but has no
-    // usable capturedFindings, so it is excluded from matched[]. This is the exact
-    // live-log diagnostic (pendingCount:1, calledCount:1).
-    // Run #2 below re-invokes with a new child session, so both envelopes exist.
-    const attemptsSequential = [attemptFor(obligation, CHILD_VALID)];
+    const attempt = attemptFor(obligation, CHILD_CORRUPT);
     const bindFirst = buildHostTaskEvidence(state, SESSION_ID, LATER, {
       obligations: [obligation],
       invocations: [],
-      attempts: attemptsSequential,
+      attempts: [attempt],
+      execution: { obligationId: obligation.obligationId, attemptId: attempt.attemptId },
     });
     expect(bindFirst.evidence).toBeNull();
-    expect(bindFirst.bindOutcome).toBe('no_matched_record');
-    expect(bindFirst.diagnostic).toHaveProperty('pendingCount', 1);
-    expect(bindFirst.diagnostic).toHaveProperty('calledCount', 1);
-
-    // ── Reviewer run #2 (sequential re-invocation): valid findings ────────────
-    onTaskToolAfter(
-      state,
-      { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
-      taskResultWithAttestation(obligation.obligationId, { childSessionId: CHILD_VALID }),
-      LATER,
-      { metadata: { sessionID: CHILD_VALID } },
-    );
-
-    // Bind #2 → bound: the re-arm replaced the empty capture with a usable one.
-    const bindSecond = buildHostTaskEvidence(state, SESSION_ID, LATER, {
-      obligations: [obligation],
-      invocations: [],
-      attempts: attemptsSequential,
+    expect(bindFirst.bindOutcome).toBe('extraction_invalid');
+    expect(bindFirst.attempt?.attemptId).toBe(attempt.attemptId);
+    expect(bindFirst.diagnostic).toMatchObject({
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD_CORRUPT,
     });
-    expect(bindSecond.bindOutcome).toBe('bound');
-    expect(bindSecond.evidence).not.toBeNull();
-    expect(bindSecond.evidence!.childSessionId).toBe(CHILD_VALID);
-    expect(bindSecond.evidence!.obligationId).toBe(obligation.obligationId);
   });
 });

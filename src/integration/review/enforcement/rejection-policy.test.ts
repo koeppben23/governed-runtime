@@ -26,6 +26,7 @@ describe('bindOutcomeToRejectionReason', () => {
 
   it('maps output-contract outcomes to repairable reasons', () => {
     expect(bindOutcomeToRejectionReason('schema_invalid')).toBe('schema_invalid');
+    expect(bindOutcomeToRejectionReason('extraction_invalid')).toBe('extraction_invalid');
     expect(bindOutcomeToRejectionReason('field_mismatch')).toBe('attestation_invalid');
     expect(bindOutcomeToRejectionReason('client_reference_invalid')).toBe('relation_invalid');
     expect(bindOutcomeToRejectionReason('challenge_contract_violation')).toBe('relation_invalid');

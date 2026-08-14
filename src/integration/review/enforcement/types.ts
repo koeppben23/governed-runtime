@@ -238,6 +238,7 @@ export type HostTaskBindOutcome =
   | 'no_child_session'
   | 'no_obligation_type'
   | 'no_findings'
+  | 'extraction_invalid'
   | 'no_matching_obligation'
   | 'field_mismatch'
   | 'duplicate_evidence'

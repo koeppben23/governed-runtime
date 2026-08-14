@@ -98,6 +98,12 @@ describe('templates/commands/review (#401 Discovery context)', () => {
       expect(REVIEW_COMMAND).toContain('Do not add a Task `prompt`');
     });
 
+    it('routes unextractable reviewer output through a fresh repair prompt', () => {
+      expect(REVIEW_COMMAND).toContain('extraction_invalid');
+      expect(REVIEW_COMMAND).toMatch(/do NOT re-run the Task with the same prompt/);
+      expect(REVIEW_COMMAND).toMatch(/fresh `reviewerTaskPrompt`/);
+    });
+
     it('requires verdict-only completion after host-task evidence binds', () => {
       expect(REVIEW_COMMAND).toContain('Do NOT submit, copy, or alter `reviewFindings`');
       expect(REVIEW_COMMAND).toMatch(/reviewObligationId[\s\S]*reviewVerdict/);

@@ -160,9 +160,16 @@ export function buildHostTaskEvidence(
       readonly canonicalPromptDigest: string;
       readonly modelPromptDigest: string | null;
     };
+    /** Exact host-owned execution that produced this Task completion. */
+    readonly execution?: {
+      readonly obligationId: string;
+      readonly attemptId: string;
+    };
   },
 ): HostTaskBindResult & { attempt?: ReviewAttempt } {
   const { obligations, invocations, attempts, allowedEvidenceRefs } = records;
+  const extractionFailure = extractionFailureForExecution(state, attempts, records.execution);
+  if (extractionFailure) return extractionFailure;
   const latestResult = latestBindableReviewRecord(state);
   if ('bindOutcome' in latestResult) return latestResult;
   const { latest, childSessionId, obligationType: oType, rawFindings } = latestResult;
@@ -328,6 +335,51 @@ function noMatchedRecord(allPending: PendingReviewRecord[]): HostTaskBindResult 
     diagnostic: {
       pendingCount: allPending.length,
       calledCount: allPending.filter((p) => p.subagentCalled).length,
+    },
+  };
+}
+
+/**
+ * A host-observed reviewer Task that produced no extractable findings is an
+ * output failure, not an environment failure. Preserve its exact attempt so
+ * the canonical output-repair authority can issue a fresh prompt.
+ */
+function extractionFailureForExecution(
+  state: SessionEnforcementState,
+  attempts: readonly ReviewAttempt[],
+  execution: { readonly obligationId: string; readonly attemptId: string } | undefined,
+): HostTaskBindResult | null {
+  if (!execution) return null;
+  const pending = [...state.pendingReviews.values()].find(
+    (item) =>
+      item.obligationId === execution.obligationId && item.attemptId === execution.attemptId,
+  );
+  const childSessionId = pending?.subagentRecord?.sessionId;
+  if (
+    !pending?.subagentCalled ||
+    !childSessionId ||
+    pending.capturedFindings?.rawFindings ||
+    pending.subagentRecord?.terminationReason === 'step_exhausted'
+  ) {
+    return null;
+  }
+  const attempt = attempts.find(
+    (item) =>
+      item.attemptId === execution.attemptId &&
+      item.obligationId === execution.obligationId &&
+      item.status === 'created' &&
+      item.childSessionId === childSessionId,
+  );
+  if (!attempt) return null;
+  return {
+    evidence: null,
+    bindOutcome: 'extraction_invalid',
+    attempt,
+    diagnostic: {
+      obligationId: execution.obligationId,
+      attemptId: execution.attemptId,
+      childSessionId,
+      message: 'Reviewer Task output did not contain extractable ReviewerFindings.',
     },
   };
 }

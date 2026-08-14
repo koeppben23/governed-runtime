@@ -613,11 +613,9 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
     expect(initialHypothesisCount).toBeGreaterThan(0);
     const reviewerArgsA = reviewerArgsFromReviewRequiredOutput(reviewOut.output);
 
-    // Attempt A returns schema-invalid output. Binding rejects the capture with
-    // a canonically repairable reason (schema_invalid), leaving the obligation
-    // pending but spending only this attempt. Out-of-scope findings would be a
-    // governance rejection and terminate the obligation instead — covered by
-    // review-repair-retry-e2e.
+    // Attempt A returns no overallVerdict. The host must persist the exact
+    // attempt as extraction_invalid so the normal /review repair authority can
+    // mint a fresh canonical prompt instead of stranding a child-bound attempt.
     await beforeHook(
       { tool: 'task', sessionID: PARENT_SESSION, callID: 'c-task-a' },
       { args: reviewerArgsA },
@@ -635,16 +633,8 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
           iteration: 1,
           planVersion: 1,
           reviewMode: 'subagent',
-          overallVerdict: 'changes_requested',
-          blockingIssues: [
-            {
-              // Missing `relation` makes the payload schema-invalid: a
-              // repairable output-contract defect, not a governance rejection.
-              severity: 'major',
-              category: 'correctness',
-              message: 'The changed request is not propagated to its service.',
-            },
-          ],
+          // overallVerdict intentionally omitted: extraction returns no payload.
+          blockingIssues: [],
           majorRisks: [],
           missingVerification: [],
           scopeCreep: [],
@@ -664,6 +654,11 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
         (attempt) => attempt.attemptId === attemptA?.attemptId,
       )?.status,
     ).toBe('rejected');
+    expect(
+      afterRejectedA?.reviewAssurance?.attempts.find(
+        (attempt) => attempt.attemptId === attemptA?.attemptId,
+      )?.rejectionReason,
+    ).toBe('extraction_invalid');
 
     // The actual standalone continuation creates attempt B, emits the canonical
     // retry signal, and the review after-hook registers B for Task binding.
@@ -672,21 +667,11 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
         branch: 'feature-add-due-date',
         inputOrigin: 'branch',
         reviewObligationId: obligationId,
-        reviewVerdict: 'changes_requested',
       },
       ctx,
     );
     const retry = JSON.parse(String(retryRaw)) as Record<string, unknown>;
-    expect(retry.code).toBe('HOST_SUBAGENT_TASK_REQUIRED');
-    const afterReissue = await readState(sessDir);
-    const attemptB = (afterReissue?.reviewAssurance?.attempts ?? []).find(
-      (attempt) => attempt.attemptId === retry.reviewAttemptId,
-    );
-    expect(attemptB).toMatchObject({ obligationId, status: 'created' });
-    expect(afterReissue?.proofGraph?.claims).toHaveLength(initialHypothesisCount);
-    expect(
-      (afterReissue?.standaloneReviewEvidence ?? []).filter((entry) => entry.kind === 'prepared'),
-    ).toHaveLength(1);
+    expect(retry.code).toBe('CONTENT_ANALYSIS_REQUIRED');
 
     const retryOut = { title: 'Review retry', output: String(retryRaw), metadata: {} };
     await afterHook(
@@ -699,12 +684,21 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
           inputOrigin: 'branch',
           targetPaths: ['docs/test.md'],
           reviewObligationId: obligationId,
-          reviewVerdict: 'changes_requested',
         },
       },
       retryOut,
     );
     const trackedRetry = JSON.parse(retryOut.output) as Record<string, unknown>;
+    expect(trackedRetry.code).toBe('HOST_SUBAGENT_TASK_REQUIRED');
+    const afterReissue = await readState(sessDir);
+    const attemptB = (afterReissue?.reviewAssurance?.attempts ?? []).find(
+      (attempt) => attempt.attemptId === trackedRetry.reviewAttemptId,
+    );
+    expect(attemptB).toMatchObject({ obligationId, status: 'created' });
+    expect(afterReissue?.proofGraph?.claims).toHaveLength(initialHypothesisCount);
+    expect(
+      (afterReissue?.standaloneReviewEvidence ?? []).filter((entry) => entry.kind === 'prepared'),
+    ).toHaveLength(1);
     expect(trackedRetry.reviewAttemptId).toBe(attemptB?.attemptId);
     expect(typeof trackedRetry.reviewerTaskPrompt).toBe('string');
     const retryPrompt = trackedRetry.reviewerTaskPrompt as string;

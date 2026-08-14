@@ -4,9 +4,9 @@
  *
  * Drives the real `tool.execute.after` hook exposed by FlowGuardAuditPlugin for
  * a flowguard-reviewer Task. Locks the live-runtime symptom observed in the
- * demo implement-run: a reviewer Task whose captured findings are not
- * bindable emits a fail-closed `HOST_SUBAGENT_TASK_REQUIRED` block with
- * `bindOutcome: no_matched_record`; a SEQUENTIAL re-invocation with valid
+ * demo implement-run: a reviewer Task whose output has no extractable findings
+ * emits a fail-closed `HOST_SUBAGENT_TASK_REQUIRED` block with
+ * `bindOutcome: extraction_invalid`; a SEQUENTIAL re-invocation with valid
  * findings then binds and persists the invocation evidence (`bindOutcome: bound`).
  *
  * @test-policy STANDARD — host-task binding recovery (after-hook E2E)
@@ -248,7 +248,7 @@ function reviewerArgsFromReviewRequiredOutput(output: string) {
   return { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: reviewerTaskPrompt };
 }
 
-describe('reviewer host-task after-hook: no_matched_record → sequential re-invocation → bound', () => {
+describe('reviewer host-task after-hook: extraction_invalid → sequential re-invocation → bound', () => {
   let configDir: string;
   let cleanupEnv: () => void;
 
@@ -305,11 +305,15 @@ describe('reviewer host-task after-hook: no_matched_record → sequential re-inv
 
       // Fail-closed: host_task_required blocks with no bindable evidence.
       expect(firstOutput.output).toContain('HOST_SUBAGENT_TASK_REQUIRED');
-      expect(firstOutput.output).toContain('no_matched_record');
+      expect(firstOutput.output).toContain('extraction_invalid');
 
       // No invocation evidence persisted yet.
       const afterFirst = await readState(sessDir);
       expect(afterFirst?.reviewAssurance?.invocations ?? []).toHaveLength(0);
+      expect(afterFirst?.reviewAssurance?.attempts[0]).toMatchObject({
+        status: 'rejected',
+        rejectionReason: 'extraction_invalid',
+      });
 
       // ── Reviewer Task #2: sequential re-invocation with valid findings ───────
       const retryOutput = await reissuePlanReviewRequiredOutput(
