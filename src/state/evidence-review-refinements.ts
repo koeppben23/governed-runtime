@@ -36,6 +36,7 @@ export interface ObligationRefinementShape {
   readonly obligationType: string;
   readonly obligationId: string;
   readonly subjectDigest: string;
+  readonly criteriaVersion: string;
   readonly reviewMaterial?: {
     readonly subjectDigest: string;
   } | null;
@@ -75,6 +76,19 @@ export function refineReviewMaterialSubject(
     code: z.ZodIssueCode.custom,
     path: ['reviewMaterial', 'subjectDigest'],
     message: 'Review obligation reviewMaterial.subjectDigest must match obligation.subjectDigest.',
+  });
+}
+
+/** Material authority is mandatory from the p41 generation onward. */
+export function refineCurrentGenerationMaterial(
+  obligation: ObligationRefinementShape,
+  context: z.RefinementCtx,
+): void {
+  if (obligation.criteriaVersion !== 'p41-v1' || obligation.reviewMaterial) return;
+  context.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: ['reviewMaterial'],
+    message: 'p41 review obligations require frozen reviewMaterial.',
   });
 }
 

@@ -30,7 +30,11 @@ import {
 } from './assurance.js';
 import { updateObligation } from './obligation-state.js';
 import type { SessionState } from '../../state/schema.js';
-import type { RepositoryDiscoverySnapshot, ReviewObligation } from '../../state/evidence.js';
+import {
+  hasFrozenRepositoryAuthority,
+  type RepositoryDiscoverySnapshot,
+  type ReviewObligation,
+} from '../../state/evidence.js';
 import { indexMarkdownSections } from '../../shared/markdown-sections.js';
 import type { OrchestratorDeps, ToolCallEvent } from './pipeline-types.js';
 
@@ -101,6 +105,7 @@ interface HostTaskOutputInput {
    * is then unavailable.
    */
   readonly observationCapability: string | null;
+  readonly repositoryReview: boolean;
 }
 
 /**
@@ -233,6 +238,7 @@ function buildReviewerTaskPromptOrNull(
     mandateDigest: attestationMeta.mandateDigest,
     criteriaVersion: attestationMeta.criteriaVersion,
     subjectLabel: 'the artifact under review',
+    repositoryReview: opts.repositoryReview,
     challengeContract: opts.challengeContract,
     proofContext: opts.proofContext,
     artifactContext: opts.artifactContext,
@@ -278,6 +284,7 @@ function buildHostTaskBlockedOutput(
     retrySchemaErrors: input.retrySchemaErrors,
     repositoryDiscoverySnapshot: input.repositoryDiscoverySnapshot,
     observationCapability: input.observationCapability,
+    repositoryReview: input.repositoryReview,
   });
   const copyPromptStr = reviewerTaskPrompt
     ? ` A ready-to-use reviewer prompt is provided in the reviewerTaskPrompt field — pass it ` +
@@ -546,6 +553,7 @@ function buildHostTaskOutputInput(
         ? bindableAttempt.repositoryDiscovery.snapshot
         : null,
     observationCapability: bindableAttempt?.observationCapability ?? null,
+    repositoryReview: obligation ? hasFrozenRepositoryAuthority(obligation) : false,
   };
 }
 

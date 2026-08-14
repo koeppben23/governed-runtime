@@ -62,6 +62,7 @@ import {
 } from './evidence-review-authority.js';
 import {
   refineAssuranceDiscoveryCoherence,
+  refineCurrentGenerationMaterial,
   refineAssuranceProvenanceCoherence,
   refineAuthorityStructure,
   refineReviewMaterialSubject,
@@ -473,6 +474,7 @@ export const ReviewObligation = z
   })
   .superRefine(refineStandaloneSubject)
   .superRefine(refineReviewMaterialSubject)
+  .superRefine(refineCurrentGenerationMaterial)
   .superRefine(refineAuthorityStructure);
 export type ReviewObligation = z.infer<typeof ReviewObligation>;
 

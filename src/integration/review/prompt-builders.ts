@@ -88,6 +88,8 @@ export interface ReviewerTaskPromptInput {
   readonly criteriaVersion: string;
   /** Short human label of what is under review, e.g. "the plan", "the branch diff". */
   readonly subjectLabel: string;
+  /** Repository-governed review, independent of standalone subject representation. */
+  readonly repositoryReview?: boolean;
   /** Frozen challenge contract and host-authoritative references, when available. */
   readonly challengeContract?: ReviewerChallengePromptContract;
   /**
@@ -269,8 +271,7 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
     planVersion: input.planVersion,
   });
 
-  const isRepositoryReview =
-    input.frozenReviewerContext?.reviewSubject?.kind === 'repository_change';
+  const isRepositoryReview = input.repositoryReview === true;
   const discoverySection = resolveReviewerDiscoverySection(
     isRepositoryReview ? 'repository_change' : 'other',
     input.repositoryDiscoverySnapshot,
