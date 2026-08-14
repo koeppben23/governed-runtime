@@ -659,6 +659,18 @@ export const REVIEW_VALIDATION_REASONS = [
     ],
   },
   {
+    code: 'REVIEW_EVIDENCE_NOT_OBSERVED',
+    category: 'state',
+    messageTemplate:
+      'Reviewer finding evidenceLocations for obligation {obligationId} have no matching authoritative repository observation: {reason}. The location is structurally valid but was not observably obtained by this reviewer attempt.',
+    recoverySteps: [
+      'A repository evidenceLocation is admissible only when the exact frozen bytes were obtained through flowguard_observe_repository during the binding reviewer attempt',
+      'This is a governance rejection (evidence_unavailable) — it is never repairable by resubmitting findings',
+      'Start a fresh review attempt and cite only locations the reviewer observes through the sanctioned observation tool',
+      'Do NOT substitute worktree reads, recalled content, or citations without a matching observation',
+    ],
+  },
+  {
     code: 'REVIEW_REPAIR_UNAVAILABLE',
     category: 'state',
     messageTemplate:
@@ -711,6 +723,26 @@ export const REVIEW_VALIDATION_REASONS = [
       'Follow the review invocation sequence documented in the reviewer task instructions',
       'Do NOT submit reviewerUnavailable when the reviewer subagent successfully spawned',
       'Do NOT submit reviewFindings in host_task_required mode — only reviewVerdict',
+    ],
+  },
+  {
+    code: 'SUBAGENT_PROMPT_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'The reviewer Task prompt differs from the host-issued prompt and could not be safely substituted.',
+    recoverySteps: [
+      'Re-run the originating FlowGuard command to issue a fresh reviewer Task request',
+      'Do not modify reviewer instructions or append material outside FlowGuard',
+    ],
+  },
+  {
+    code: 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+    category: 'state',
+    messageTemplate:
+      'The reviewer Task completed without a host-owned execution provenance record. Its output cannot bind to a review obligation.',
+    recoverySteps: [
+      'Re-run the originating FlowGuard command to issue a fresh reviewer Task request',
+      'Do not reuse the prior reviewer output or submit copied findings',
     ],
   },
 ] as const satisfies readonly BlockedReason[];

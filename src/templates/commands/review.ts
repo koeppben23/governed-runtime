@@ -58,10 +58,11 @@ Start the compliance review flow for the current FlowGuard session.
     and NO \`pluginReviewFindings\`, manually call the \`${REVIEWER_SUBAGENT_TYPE}\` subagent
     via Task tool:
     - Use \`subagent_type: "${REVIEWER_SUBAGENT_TYPE}"\`
-    - The response MUST include a \`reviewerTaskPrompt\` field: pass it VERBATIM as the Task
-      tool "prompt" argument without appending content, Discovery context, or instructions.
-      This canonical prompt already carries the frozen material, the attempt-bound Discovery
-      snapshot, the required review context (iteration/planVersion), and the attestation.
+    - The response MUST include a \`reviewerTaskPrompt\` field. Call Task only with
+      \`subagent_type: "${REVIEWER_SUBAGENT_TYPE}"\`; FlowGuard injects the canonical prompt
+      at the host boundary. Do not add a Task \`prompt\` or append review instructions.
+      The injected prompt carries the frozen material, attempt-bound Discovery snapshot,
+      required review context (iteration/planVersion), and attestation.
       Do NOT free-compose a prompt: a repository review without a canonical
       \`reviewerTaskPrompt\` is blocked with \`REVIEWER_CONTEXT_UNAVAILABLE\` — report that
       code with its recovery steps and stop instead of assembling a substitute prompt.
@@ -70,11 +71,9 @@ Start the compliance review flow for the current FlowGuard session.
       the supplied Discovery snapshot; mark any claim \`NOT_VERIFIED\` when the content
       cannot be correlated to that snapshot (e.g. the diff references files absent from the
       snapshot, or Discovery is drifted relative to the reviewed branch).
-    - Instruct the subagent to return a complete \`ReviewFindings\` JSON object
-    - Retain the response unchanged for SDK/manual findings modes. In host-task
-      mode, FlowGuard captures it as Task evidence; do not parse or resubmit it.
-    - Set \`attestation.toolObligationId\` to the value from \`requiredReviewAttestation\`
-      (FlowGuard provides this UUID for every content-aware /review)
+    - The canonical prompt already requires a complete \`ReviewerFindingsInput\` object. Do not
+      restate output instructions or construct attestation fields outside that prompt.
+    - In host-task mode, FlowGuard captures Task evidence; do not parse or resubmit it.
     Strict governance is not satisfied by copied JSON or attestation fields alone.
     Those fields are diagnostic/context only until FlowGuard persists matching
     \`ReviewInvocationEvidence\` for the obligation.
@@ -85,10 +84,10 @@ Start the compliance review flow for the current FlowGuard session.
       The tool will handle this as \`SUBAGENT_UNABLE_TO_REVIEW\` and exit the flow.
       Only submit \`reviewFindings\` when the subagent returns \`accept\` or \`changes_requested\`.
 
-    - **Retry after schema_invalid**: If the Task call returns \`bindOutcome: "schema_invalid"\` (the reviewer's output failed validation), do NOT re-run the Task with the same prompt. Instead:
-      1. Look at the \`schemaErrors\` field (if present) to understand which fields failed.
-      2. Call \`flowguard_review\` again with the original content fields and \`reviewObligationId\` from \`requiredReviewAttestation.toolObligationId\`. This produces a fresh \`reviewerTaskPrompt\` with the validation errors embedded.
-      3. Pass the NEW \`reviewerTaskPrompt\` to the Task tool — never reuse the old one.
+    - **Retry after schema_invalid or extraction_invalid**: If the Task call returns either bindOutcome, do NOT re-run the Task with the same prompt. Instead:
+      1. Look at the \`schemaErrors\` field when present. \`extraction_invalid\` means no complete reviewer findings payload could be extracted.
+      2. Call \`flowguard_review\` again with the original content fields and \`reviewObligationId\` from \`requiredReviewAttestation.toolObligationId\`. This produces a fresh \`reviewerTaskPrompt\`; validation errors are embedded when available.
+       3. Invoke a new Task with only \`subagent_type: "${REVIEWER_SUBAGENT_TYPE}"\`; FlowGuard injects the new canonical prompt.
       4. If the Task is blocked with \`REVIEWER_OUTPUT_RETRY_EXHAUSTED\`, the retry budget is exhausted — report to the operator and stop; do NOT fabricate findings, guess a verdict, or call any other authority path.
 
 5. Complete content-aware \`flowguard_review\` according to the review invocation mode:

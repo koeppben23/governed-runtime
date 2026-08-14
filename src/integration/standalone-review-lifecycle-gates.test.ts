@@ -43,7 +43,7 @@ function obligation(id: string): ReturnType<typeof createReviewObligation> {
 
 function assuranceWith(obligationId: string): ReviewAssuranceState {
   return {
-    assuranceSchemaVersion: 'review-assurance.v4',
+    assuranceSchemaVersion: 'review-assurance.v5',
     obligations: [obligation(obligationId)],
     invocations: [],
     attempts: [],
@@ -100,7 +100,7 @@ describe('standalone-review lifecycle gates', () => {
       makeState('REVIEW_COMPLETE', {
         standaloneReviewEvidence: [...evidenceA, ...evidenceB],
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v4',
+          assuranceSchemaVersion: 'review-assurance.v5',
           obligations: [obligation(OBLIGATION_A), obligation(OBLIGATION_B)],
           invocations: [],
           attempts: [],

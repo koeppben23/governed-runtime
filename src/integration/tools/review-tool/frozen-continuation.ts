@@ -17,7 +17,7 @@
 
 import type { SessionState } from '../../../state/schema.js';
 import type { PreparedReviewContent } from '../../../rails/review.js';
-import { findReviewObligationById, latestReviewMaterial } from '../../review/assurance.js';
+import { findReviewObligationById } from '../../review/assurance.js';
 import { ensureReviewAssurance } from '../../review/attempt-lifecycle.js';
 import { verifyFrozenReviewerContext } from '../../review/frozen-reviewer-context.js';
 import { formatBlocked } from '../helpers.js';
@@ -71,8 +71,7 @@ export function resolveFrozenContinuationContent(
   // decision: the existing obligation-resolution guards own that outcome.
   if (!obligation?.reviewSubject) return { kind: 'not_applicable' };
 
-  const material = latestReviewMaterial(assurance, obligationId);
-  const verified = verifyFrozenReviewerContext(obligation, material);
+  const verified = verifyFrozenReviewerContext(obligation, obligation.reviewMaterial);
   if (verified.kind === 'blocked') {
     return {
       kind: 'blocked',
@@ -84,7 +83,7 @@ export function resolveFrozenContinuationContent(
     content: {
       content: verified.context.reviewMaterial.content,
       reviewedContentDigest: verified.context.reviewMaterial.materialDigest,
-      reviewSubject: verified.context.reviewSubject,
+      reviewSubject: obligation.reviewSubject,
     },
   };
 }

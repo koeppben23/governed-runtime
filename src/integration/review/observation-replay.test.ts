@@ -83,7 +83,7 @@ function buildState(): SessionState {
   return {
     binding: { fingerprint: 'testfp' },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v4',
+      assuranceSchemaVersion: 'review-assurance.v5',
       obligations: [obligation],
       invocations: [],
       attempts: [attempt],

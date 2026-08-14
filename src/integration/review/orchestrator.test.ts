@@ -239,18 +239,13 @@ describe('buildPlanReviewPrompt', () => {
       'Review this plan against the ticket requirements. Follow your review criteria',
     );
     expect(prompt).toContain(
-      'for plans. Return your findings as a single JSON object matching the',
-    );
-    expect(prompt).toContain(
-      'ReviewFindings schema. Use the exact iteration and planVersion values above.',
+      'for plans. Return your findings as a single ReviewerFindingsInput JSON object.',
     );
     expect(prompt).toContain('Set iteration=5 and planVersion=7 in your response.');
     expect(prompt).toContain('Set attestation.toolObligationId=OBL-42.');
-    expect(prompt).toContain('Set attestation.criteriaVersion=CRIT-v9.');
-    expect(prompt).toContain('Set attestation.mandateDigest=MD-deadbeef.');
-    expect(prompt).toContain('Set attestation.iteration=5.');
-    expect(prompt).toContain('Set attestation.planVersion=7.');
-    expect(prompt).toContain('Set attestation.reviewedBy="flowguard-reviewer".');
+    expect(prompt).toContain(
+      'Do not output reviewedBy, reviewedAt, mandateDigest, criteriaVersion',
+    );
   });
 
   it('joins prompt lines with "\\n" (kills join-char string mutant)', () => {
@@ -471,16 +466,12 @@ describe('buildImplReviewPrompt', () => {
       'Read the changed files using the read/glob/grep tools to verify correctness.',
     );
     expect(prompt).toContain('Follow your review criteria for implementations.');
-    expect(prompt).toContain(
-      'Return your findings as a single JSON object matching the ReviewFindings schema.',
-    );
+    expect(prompt).toContain('Return your findings as a single ReviewerFindingsInput JSON object.');
     expect(prompt).toContain('Set iteration=4 and planVersion=6 in your response.');
     expect(prompt).toContain('Set attestation.toolObligationId=OBL-99.');
-    expect(prompt).toContain('Set attestation.criteriaVersion=CRIT-impl-v3.');
-    expect(prompt).toContain('Set attestation.mandateDigest=MD-cafebabe.');
-    expect(prompt).toContain('Set attestation.iteration=4.');
-    expect(prompt).toContain('Set attestation.planVersion=6.');
-    expect(prompt).toContain('Set attestation.reviewedBy="flowguard-reviewer".');
+    expect(prompt).toContain(
+      'Do not output reviewedBy, reviewedAt, mandateDigest, criteriaVersion',
+    );
   });
 
   it('joins changed files with "\\n" using "- " bullet prefix', () => {
@@ -549,8 +540,9 @@ describe('buildArchitectureReviewPrompt', () => {
     });
     expect(prompt).toContain('iteration=2, planVersion=3');
     expect(prompt).toContain('Set iteration=2 and planVersion=3');
-    expect(prompt).toContain('Set attestation.iteration=2.');
-    expect(prompt).toContain('Set attestation.planVersion=3.');
+    expect(prompt).toContain(
+      'Do not output reviewedBy, reviewedAt, mandateDigest, criteriaVersion',
+    );
   });
 
   it('embeds obligationId, criteriaVersion, and mandateDigest in attestation block', () => {
@@ -558,8 +550,9 @@ describe('buildArchitectureReviewPrompt', () => {
     expect(prompt).toContain(
       'Set attestation.toolObligationId=11111111-1111-4111-8111-111111111111.',
     );
-    expect(prompt).toContain('Set attestation.criteriaVersion=p37-v1.');
-    expect(prompt).toContain('Set attestation.mandateDigest=test-mandate-digest.');
+    expect(prompt).toContain(
+      'Do not output reviewedBy, reviewedAt, mandateDigest, criteriaVersion',
+    );
   });
 
   it('includes the ticket text for scope-creep verification', () => {
@@ -755,8 +748,9 @@ describe('invokeReviewer', () => {
     expect(result).toBeNull();
   });
 
-  // CORNER: runtime authoritatively overwrites reviewedBy.sessionId with childSessionId (B3)
-  it('overwrites findings.reviewedBy.sessionId with authoritative childSessionId', async () => {
+  // CORNER: transport preserves untrusted input; the shared preparation boundary
+  // adds canonical provenance only after strict input validation.
+  it('does not stamp reviewer provenance in the transport layer', async () => {
     const findingsJson = validFindings({ reviewedBy: { sessionId: 'reviewer-guessed-id' } });
     const client = mockClient({
       promptResult: {
@@ -771,13 +765,10 @@ describe('invokeReviewer', () => {
     expect(result!.structuredOutputUsed).toBe(true);
     expect(result!.reviewAssuranceLevel).toBe('structured_high');
     expect(result!.extractionMethod).toBeUndefined();
-    const reviewedBy = result!.findings!.reviewedBy as Record<string, unknown>;
-    // Authoritative override: real SDK childSessionId, NOT subagent-supplied guess.
-    expect(reviewedBy.sessionId).toBe('child-session-1');
+    expect(result!.findings!.reviewedBy).toEqual({ sessionId: 'reviewer-guessed-id' });
   });
 
-  // CORNER: missing reviewedBy is reconstructed from authoritative childSessionId
-  it('reconstructs reviewedBy when subagent omits it', async () => {
+  it('preserves missing reviewer provenance for the strict input boundary', async () => {
     const findingsJson = validFindings();
     const parsed = JSON.parse(findingsJson) as Record<string, unknown>;
     delete parsed.reviewedBy;
@@ -789,8 +780,7 @@ describe('invokeReviewer', () => {
     });
     const result = await invokeReviewer(client, PROMPT, 'parent-1');
     assertSuccessfulResult(result);
-    const reviewedBy = result!.findings!.reviewedBy as Record<string, unknown>;
-    expect(reviewedBy.sessionId).toBe('child-session-1');
+    expect(result!.findings).not.toHaveProperty('reviewedBy');
   });
 
   // P1.3 slice 4c: third LoopVerdict propagation through invokeReviewer.

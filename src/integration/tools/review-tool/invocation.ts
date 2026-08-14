@@ -202,6 +202,8 @@ function buildManualInvocationState(input: {
   const invocation = buildInvocationEvidence({
     obligationId: obligation.obligationId,
     obligationType: 'review',
+    mandateDigest: obligation.mandateDigest,
+    criteriaVersion: obligation.criteriaVersion,
     parentSessionId: context.sessionID,
     childSessionId,
     invocationMode: attestation.invocationMode,

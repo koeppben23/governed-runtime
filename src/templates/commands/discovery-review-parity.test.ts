@@ -33,10 +33,11 @@ describe('templates/commands Discovery review parity (Item 2)', () => {
         expect(template).toContain('detectedStack');
       });
 
-      // HAPPY — Discovery context is passed to the reviewer subagent.
-      it('passes Discovery context to the reviewer subagent', () => {
+      // HAPPY — the host injects the canonical prompt with frozen review context.
+      it('requires host injection of the canonical reviewer prompt', () => {
         expect(template).toContain(REVIEWER_SUBAGENT_TYPE);
-        expect(template).toMatch(/Pass the compact Discovery context captured in Phase 1/);
+        expect(template).toContain('FlowGuard injects the canonical prompt at the host boundary');
+        expect(template).toContain('Do not add a Task `prompt`');
       });
 
       // BAD — unverifiable Discovery yields NOT_VERIFIED, never invented truth.
@@ -45,12 +46,10 @@ describe('templates/commands Discovery review parity (Item 2)', () => {
         expect(template).toContain('do not invent repository truth');
       });
 
-      // CORNER — subagent must check Discovery BEFORE repo-dependent claims.
-      it('instructs the subagent to check health/drift before repo-dependent claims', () => {
-        expect(template).toMatch(
-          /check Discovery health and drift BEFORE any repo-dependent quality claim/,
-        );
-        expect(template).toMatch(/cannot be correlated to local repository Discovery/);
+      // CORNER — Discovery context is carried by the full canonical prompt.
+      it('forbids reconstructing the frozen reviewer context', () => {
+        expect(template).toContain('reviewerTaskPrompt');
+        expect(template).toContain('never free-compose a governed reviewer prompt');
       });
 
       // EDGE — Discovery is evidence, not verdict authority.

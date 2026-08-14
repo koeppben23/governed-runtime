@@ -30,6 +30,7 @@ import {
 import type { PluginWorkspace } from './plugin-workspace.js';
 import type { SessionState } from '../state/schema.js';
 import type { HostTaskBindResult } from './review/enforcement/types.js';
+import type { ExecutedTaskPrompt } from './review/enforcement/types.js';
 
 interface HostTaskEvidenceDeps {
   ws: PluginWorkspace;
@@ -44,12 +45,14 @@ interface HostTaskEvidenceDeps {
  * Bind host-task evidence for a completed flowguard-reviewer subagent call.
  * Mutates hookOutput.output on blocking failures.
  */
+// eslint-disable-next-line max-params -- hook lifecycle values are intentionally explicit
 export async function handleHostTaskEvidence(
   deps: HostTaskEvidenceDeps,
   sessionId: string,
   resolvedChildSessionId: string | null,
   now: string,
   hookOutput: { output?: string },
+  execution?: ExecutedTaskPrompt,
 ): Promise<void> {
   deps.log.info('host-task', 'reviewer task completed', {
     sessionId,
@@ -57,7 +60,7 @@ export async function handleHostTaskEvidence(
   });
 
   try {
-    const bound = await bindReviewerEvidence(deps, sessionId, now);
+    const bound = await bindReviewerEvidence(deps, sessionId, now, execution);
     if (!bound) return;
     await applyHostTaskBindResult({ ...bound, deps, sessionId, hookOutput, now });
   } catch (err) {
@@ -82,6 +85,7 @@ async function bindReviewerEvidence(
   deps: HostTaskEvidenceDeps,
   sessionId: string,
   now: string,
+  execution: ExecutedTaskPrompt | undefined,
 ): Promise<{
   sessDir: string;
   policy: 'host_task_required' | 'host_task_preferred';
@@ -116,6 +120,16 @@ async function bindReviewerEvidence(
       state,
       obligations.find((o) => o.status === 'pending') ?? null,
     )?.evidenceRefs,
+    promptProvenance: execution
+      ? {
+          callId: execution.callId,
+          canonicalPromptDigest: execution.canonicalPromptDigest,
+          modelPromptDigest: execution.modelPromptDigest,
+        }
+      : undefined,
+    execution: execution
+      ? { obligationId: execution.obligationId, attemptId: execution.attemptId }
+      : undefined,
   });
   return { sessDir, policy, bindResult };
 }
@@ -174,19 +188,6 @@ async function persistHostTaskEvidence(
       },
     );
   }
-  const divergence = bindResult.diagnostic?.hostConstantDivergence;
-  if (Array.isArray(divergence) && divergence.length > 0) {
-    deps.log.warn(
-      'host-task',
-      'reviewer attestation diverged from host constants; bound host-authoritatively',
-      {
-        sessionId,
-        obligationId: evidence.obligationId,
-        childSessionId: evidence.childSessionId,
-        divergentFields: divergence,
-      },
-    );
-  }
   deps.log.info('host-task', 'evidence created', {
     sessionId,
     bindOutcome: bindResult.bindOutcome,
@@ -235,8 +236,12 @@ async function persistHostTaskEvidence(
       invocationId: evidence.invocationId,
       childSessionId: evidence.childSessionId,
       findingsHash: evidence.findingsHash,
+      hostTaskCallId: evidence.hostTaskCallId,
+      canonicalPromptDigest: evidence.canonicalPromptDigest,
+      modelPromptDigest: evidence.modelPromptDigest,
       capturedVerdict: evidence.capturedVerdict,
       bindOutcome: bindResult.bindOutcome,
+      callId: evidence.hostTaskCallId,
     },
   );
 }
@@ -326,6 +331,12 @@ function blockRequiredHostTaskEvidence(
     // the canonical repair prompt (obtained by calling flowguard_review).
     ...(bindResult.bindOutcome === 'schema_invalid' && bindResult.diagnostic?.schemaErrors
       ? { schemaErrors: (bindResult.diagnostic.schemaErrors as string[]).join('; ') }
+      : {}),
+    ...(bindResult.bindOutcome === 'extraction_invalid'
+      ? {
+          nextAction:
+            'Re-run the originating FlowGuard command to issue a fresh canonical reviewer prompt.',
+        }
       : {}),
   });
 }

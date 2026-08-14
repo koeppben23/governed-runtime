@@ -7,6 +7,7 @@
  */
 
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
+import { prepareReviewerFindingsForValidation } from './enforcement/prepare-findings.js';
 import type { RepositoryDiscoverySnapshot } from '../../state/evidence.js';
 import { buildReviewContentPrompt, selectReviewerProfileRules } from './prompt-builders.js';
 import { buildReviewContentMutatedOutput, type ReviewerSuccessResult } from './orchestrator.js';
@@ -120,7 +121,18 @@ async function validateContentFindings(
     return false;
   }
 
-  const parsedFindings = ReviewFindingsSchema.safeParse(reviewerResult.findings);
+  const prepared = prepareReviewerFindingsForValidation({
+    rawFindings: reviewerResult.findings,
+    obligationId: reviewCtx.obligationId,
+    hostConstants: {
+      mandateDigest: reviewCtx.mandateDigest,
+      criteriaVersion: reviewCtx.criteriaVersion,
+    },
+    hostProvenance: { childSessionId: reviewerResult.sessionId, reviewedAt: ctx.now },
+  });
+  const parsedFindings = prepared.ok
+    ? ReviewFindingsSchema.safeParse(prepared.findings)
+    : { success: false as const };
   if (!parsedFindings.success) {
     if (strictEnforcement) {
       await blockReviewOutcomeHelper(deps, ctx, 'STRICT_REVIEW_ORCHESTRATION_FAILED', {
@@ -130,16 +142,18 @@ async function validateContentFindings(
     }
     return false;
   }
+  if (!prepared.ok) return false;
+  const canonicalReviewerResult = { ...reviewerResult, findings: prepared.findings };
 
   if (strictEnforcement) {
-    const narrowed = reviewerResult as ReviewerSuccessResult & {
+    const narrowed = canonicalReviewerResult as ReviewerSuccessResult & {
       findings: Record<string, unknown>;
     };
     const blocked = await enforceContentStrictGate(ctx, narrowed, parsedFindings.data, prompt);
     if (blocked) return false;
   }
 
-  const mutated = buildReviewContentMutatedOutput(rawOutput, reviewerResult);
+  const mutated = buildReviewContentMutatedOutput(rawOutput, canonicalReviewerResult);
   if (mutated) output.output = mutated;
   return true;
 }
@@ -220,7 +234,7 @@ async function enforceContentStrictGate(
   },
   prompt: string,
 ): Promise<boolean> {
-  const { deps, sessDir, reviewCtx, output, sessionId, now } = ctx;
+  const { deps, reviewCtx } = ctx;
 
   const attestation = validatePipelineAttestation(findings, {
     obligationId: reviewCtx.obligationId,
@@ -237,12 +251,23 @@ async function enforceContentStrictGate(
     return true;
   }
 
+  return persistStrictReviewInvocation(ctx, reviewerResult, prompt);
+}
+
+async function persistStrictReviewInvocation(
+  ctx: PipelineContext,
+  reviewerResult: ReviewerSuccessResult & { findings: Record<string, unknown> },
+  prompt: string,
+): Promise<boolean> {
+  const { deps, sessDir, reviewCtx, output, sessionId, now } = ctx;
   const promptHash = hashText(prompt);
   const findingsHash = hashFindings(reviewerResult.findings);
 
   const invocation = buildInvocationEvidence({
     obligationId: reviewCtx.obligationId,
     obligationType: 'review',
+    mandateDigest: reviewCtx.mandateDigest,
+    criteriaVersion: reviewCtx.criteriaVersion,
     parentSessionId: sessionId,
     childSessionId: reviewerResult.sessionId,
     invocationMode: INVOCATION_MODE_SDK_SESSION,

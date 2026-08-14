@@ -11,7 +11,7 @@ import type {
   ReviewAttempt,
 } from '../../state/evidence.js';
 import type { SessionEnforcementState, HostTaskBindResult } from './enforcement/types.js';
-import { REVIEWER_SUBAGENT_TYPE, TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
+import { TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
 import { obligationTypeForTool } from './obligation-tools.js';
 import { buildInvocationEvidence, hashFindings, hashText } from './assurance.js';
 import { getBranchProvenanceFields } from './review-provenance.js';
@@ -28,6 +28,7 @@ import {
   validateReviewFindingsScope,
   type FindingWithRelation,
 } from './enforcement/findings-consistency.js';
+import { bindRepositoryEvidenceLocations } from './observation-binding.js';
 
 /** Transport contract for captured findings: recovered findings downgrade assurance. */
 function transportContract(latest: PendingReviewRecord) {
@@ -154,9 +155,21 @@ export function buildHostTaskEvidence(
     readonly invocations: ReviewInvocationEvidence[];
     readonly attempts: readonly ReviewAttempt[];
     readonly allowedEvidenceRefs?: readonly unknown[];
+    readonly promptProvenance?: {
+      readonly callId: string;
+      readonly canonicalPromptDigest: string;
+      readonly modelPromptDigest: string | null;
+    };
+    /** Exact host-owned execution that produced this Task completion. */
+    readonly execution?: {
+      readonly obligationId: string;
+      readonly attemptId: string;
+    };
   },
 ): HostTaskBindResult & { attempt?: ReviewAttempt } {
   const { obligations, invocations, attempts, allowedEvidenceRefs } = records;
+  const extractionFailure = extractionFailureForExecution(state, attempts, records.execution);
+  if (extractionFailure) return extractionFailure;
   const latestResult = latestBindableReviewRecord(state);
   if ('bindOutcome' in latestResult) return latestResult;
   const { latest, childSessionId, obligationType: oType, rawFindings } = latestResult;
@@ -183,18 +196,11 @@ export function buildHostTaskEvidence(
   const fieldMismatch = checkBindingFieldMismatch(rawFindings, matchedObligation, attestationInfo);
   if (fieldMismatch) return { ...fieldMismatch, attempt: staleAttempt(attempt, now) };
 
-  // Host-only constants (mandateDigest/criteriaVersion/reviewedBy) are installed-mandate
-  // values the host already owns; they are NOT reviewer-chosen. The LLM reviewer cannot
-  // reliably echo a 64-hex digest it was never given and tends to confabulate it, so we
-  // bind host-authoritatively and overwrite them — mirroring how reviewedBy.sessionId is
-  // overwritten in orchestrator.structuredReviewerResult. Divergence is surfaced for
-  // diagnostics rather than fatally rejected.
-  const hostConstantDivergence = hostConstantDivergentFields(matchedObligation, attestation);
-
   const prepared = prepareBindableFindings({
     rawFindings,
     obligation: matchedObligation,
     childSessionId,
+    attempt,
     now,
     allowedEvidenceRefs,
   });
@@ -225,8 +231,8 @@ export function buildHostTaskEvidence(
     obligation: matchedObligation,
     normalizedFindings,
     findingsHash,
-    hostConstantDivergence,
     attestationInfo,
+    promptProvenance: records.promptProvenance,
     now,
   });
 }
@@ -241,8 +247,12 @@ function assembleBoundEvidence(input: {
   obligation: ReviewObligation;
   normalizedFindings: Record<string, unknown>;
   findingsHash: string;
-  hostConstantDivergence: readonly string[];
   attestationInfo: AttestationInfo;
+  promptProvenance?: {
+    readonly callId: string;
+    readonly canonicalPromptDigest: string;
+    readonly modelPromptDigest: string | null;
+  };
   now: string;
   allowedEvidenceRefs?: readonly unknown[];
 }): HostTaskBindResult & { attempt?: ReviewAttempt } {
@@ -252,11 +262,20 @@ function assembleBoundEvidence(input: {
   const evidence = buildInvocationEvidence({
     obligationId: obligation.obligationId,
     obligationType: oType,
+    mandateDigest: obligation.mandateDigest,
+    criteriaVersion: obligation.criteriaVersion,
     parentSessionId: input.sessionId,
     childSessionId,
     invocationMode: 'host_subagent_task',
     hostVisible: true,
     promptHash,
+    ...(input.promptProvenance
+      ? {
+          hostTaskCallId: input.promptProvenance.callId,
+          canonicalPromptDigest: input.promptProvenance.canonicalPromptDigest,
+          modelPromptDigest: input.promptProvenance.modelPromptDigest,
+        }
+      : {}),
     findingsHash,
     invokedAt: now,
     source: 'host-orchestrated',
@@ -276,9 +295,6 @@ function assembleBoundEvidence(input: {
       childSessionId,
       findingsHash,
       bindingMode: bindingModeOf(input.attestationInfo),
-      ...(input.hostConstantDivergence.length > 0
-        ? { hostConstantDivergence: input.hostConstantDivergence }
-        : {}),
     },
   };
 }
@@ -319,6 +335,51 @@ function noMatchedRecord(allPending: PendingReviewRecord[]): HostTaskBindResult 
     diagnostic: {
       pendingCount: allPending.length,
       calledCount: allPending.filter((p) => p.subagentCalled).length,
+    },
+  };
+}
+
+/**
+ * A host-observed reviewer Task that produced no extractable findings is an
+ * output failure, not an environment failure. Preserve its exact attempt so
+ * the canonical output-repair authority can issue a fresh prompt.
+ */
+function extractionFailureForExecution(
+  state: SessionEnforcementState,
+  attempts: readonly ReviewAttempt[],
+  execution: { readonly obligationId: string; readonly attemptId: string } | undefined,
+): HostTaskBindResult | null {
+  if (!execution) return null;
+  const pending = [...state.pendingReviews.values()].find(
+    (item) =>
+      item.obligationId === execution.obligationId && item.attemptId === execution.attemptId,
+  );
+  const childSessionId = pending?.subagentRecord?.sessionId;
+  if (
+    !pending?.subagentCalled ||
+    !childSessionId ||
+    pending.capturedFindings?.rawFindings ||
+    pending.subagentRecord?.terminationReason === 'step_exhausted'
+  ) {
+    return null;
+  }
+  const attempt = attempts.find(
+    (item) =>
+      item.attemptId === execution.attemptId &&
+      item.obligationId === execution.obligationId &&
+      item.status === 'created' &&
+      item.childSessionId === childSessionId,
+  );
+  if (!attempt) return null;
+  return {
+    evidence: null,
+    bindOutcome: 'extraction_invalid',
+    attempt,
+    diagnostic: {
+      obligationId: execution.obligationId,
+      attemptId: execution.attemptId,
+      childSessionId,
+      message: 'Reviewer Task output did not contain extractable ReviewerFindings.',
     },
   };
 }
@@ -448,25 +509,6 @@ function bindingMismatchFields(
 }
 
 /**
- * Host-only attestation constants the reviewer is asked to echo but does not choose.
- * In host-task capture mode these are authoritative on the host (installed-mandate
- * digest, criteria version, reviewer identity) and are enforced by install-time hash
- * guards — not by the reviewer's echo. A divergence means the reviewer confabulated a
- * value it was never given; it is advisory (diagnostics only), never fatal.
- */
-function hostConstantDivergentFields(
-  obligation: ReviewObligation,
-  attestation: Record<string, unknown> | undefined,
-): string[] {
-  if (!attestation) return [];
-  const fields: string[] = [];
-  if (attestation.mandateDigest !== obligation.mandateDigest) fields.push('mandateDigest');
-  if (attestation.criteriaVersion !== obligation.criteriaVersion) fields.push('criteriaVersion');
-  if (attestation.reviewedBy !== REVIEWER_SUBAGENT_TYPE) fields.push('reviewedBy');
-  return fields;
-}
-
-/**
  * Host provenance stamping, attestation host-constant stamping, challenge
  * identity minting, and the canonical schema gate all live in the single
  * authority `prepareReviewerFindingsForValidation`
@@ -496,10 +538,11 @@ function prepareBindableFindings(input: {
   rawFindings: Record<string, unknown>;
   obligation: ReviewObligation;
   childSessionId: string;
+  attempt: ReviewAttempt;
   now: string;
   allowedEvidenceRefs?: readonly unknown[];
 }): { findings: Record<string, unknown> } | HostTaskBindResult {
-  const { rawFindings, obligation, childSessionId, now, allowedEvidenceRefs } = input;
+  const { rawFindings, obligation, childSessionId, attempt, now, allowedEvidenceRefs } = input;
 
   const prepared = prepareReviewerFindingsForValidation({
     rawFindings,
@@ -557,6 +600,41 @@ function prepareBindableFindings(input: {
     repositoryRevisionProvenance: obligation.repositoryRevisionProvenance,
   });
   if (!scopeResult.ok) return scopeFailure(scopeResult, childSessionId, obligation.obligationId);
+  return bindEvidenceOrReturn(findings, obligation, attempt, childSessionId);
+}
+
+/**
+ * Canonical evidence authorization: every cited repository evidenceLocation
+ * must match an authoritative Observation of THIS attempt/session against the
+ * exact frozen target. Governance rejection — never schema_invalid, never
+ * output-repairable.
+ */
+function bindEvidenceOrReturn(
+  findings: Record<string, unknown>,
+  obligation: ReviewObligation,
+  attempt: ReviewAttempt,
+  childSessionId: string,
+): { findings: Record<string, unknown> } | HostTaskBindResult {
+  const evidenceBinding = bindRepositoryEvidenceLocations({
+    findings: relationFindings(findings),
+    obligation,
+    attempt,
+    childSessionId,
+  });
+  if (!evidenceBinding.ok) {
+    return {
+      evidence: null,
+      bindOutcome: 'repository_evidence_unbound',
+      diagnostic: {
+        childSessionId,
+        obligationId: obligation.obligationId,
+        failingIndexes: [...evidenceBinding.failingIndexes],
+        reasons: [...evidenceBinding.reasons],
+        message:
+          'Repository evidenceLocations have no matching authoritative observation for this reviewer attempt.',
+      },
+    };
+  }
   return { findings };
 }
 

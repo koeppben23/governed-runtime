@@ -359,7 +359,7 @@ export async function fulfillStrictReviewObligation(
   const state = await readState(sessDir);
   if (!state) throw new Error('No test session state found');
   const assurance = state.reviewAssurance ?? {
-    assuranceSchemaVersion: 'review-assurance.v4' as const,
+    assuranceSchemaVersion: 'review-assurance.v5' as const,
     obligations: [],
     invocations: [],
     attempts: [],
@@ -446,6 +446,8 @@ export async function fulfillStrictReviewObligation(
   const invocation = buildInvocationEvidence({
     obligationId: obligation.obligationId,
     obligationType: input.obligationType,
+    mandateDigest: obligation.mandateDigest,
+    criteriaVersion: obligation.criteriaVersion,
     parentSessionId: state.binding.sessionId,
     childSessionId: findings.reviewedBy.sessionId,
     invocationMode: isHostTask ? 'host_subagent_task' : 'sdk_session_prompt',

@@ -35,10 +35,13 @@ import {
   type EnforcementResult,
   type PendingReviewTool,
   REVIEW_REQUIRED_PREFIX,
-  CANONICAL_PROMPT_APPEND_MARKER,
 } from './types.js';
 import {
-  extractContentMeta,
+  canonicalPromptAnchorOf,
+  canonicalPromptDigestOf,
+  canonicalPromptOf,
+} from './prompt-contract.js';
+import {
   extractCapturedFindings,
   resolveSubagentSessionId,
   promptContainsValue,
@@ -46,6 +49,7 @@ import {
   signalAttestationOf,
   readHostAttestationConstants,
 } from './extraction.js';
+import { buildPendingReview, type ReviewSignalBinding } from './pending-review.js';
 import { validateReviewFindingsConsistency } from './findings-consistency.js';
 import { isPendingCaptureUsable, extractCaptureSchemaErrors } from './prepare-findings.js';
 export { enforceBeforeSubagentCall } from './prompt-integrity.js';
@@ -63,7 +67,7 @@ import { parseToolResult } from '../../plugin-helpers.js';
 
 /** Create a fresh enforcement state for a session. */
 export function createSessionState(): SessionEnforcementState {
-  return { pendingReviews: new Map() };
+  return { pendingReviews: new Map(), executedTaskPrompts: new Map() };
 }
 
 // ─── Hook handlers (pure functions) ──────────────────────────────────────────
@@ -89,46 +93,10 @@ function trackReviewRequired(
   next: string,
   now: string,
   /** Identifiers the emitting tool published so the host can bind the reviewer. */
-  binding: {
-    readonly attemptId?: string | null;
-    readonly obligationId?: string | null;
-    readonly canonicalPromptAnchor?: string | null;
-    readonly hostAttestationConstants?: {
-      readonly mandateDigest: string;
-      readonly criteriaVersion: string;
-    } | null;
-  },
+  binding: ReviewSignalBinding,
 ): void {
-  const obligationId = binding.obligationId ?? null;
-  const hostAttestationConstants = binding.hostAttestationConstants ?? null;
-  // Structural host-context validation happens HERE, at the signal→pending
-  // transition — before any reviewer Task can run. Every canonical
-  // REVIEW_REQUIRED emitter creates the review obligation before emitting the
-  // signal, so a missing obligation identity or missing host attestation
-  // constants is a broken signal, never a reviewer-repairable output defect.
-  const enforcementFailure: PendingReview['enforcementFailure'] =
-    obligationId == null
-      ? 'host_review_obligation_missing'
-      : hostAttestationConstants == null
-        ? 'host_attestation_constants_missing'
-        : null;
-  state.pendingReviews.set(reviewTool, {
-    tool: reviewTool,
-    requestedAt: now,
-    attemptId: binding.attemptId ?? null,
-    obligationId,
-    subagentCalled: false,
-    subagentRecord: null,
-    contentMeta: extractContentMeta(next),
-    canonicalPromptAnchor: binding.canonicalPromptAnchor ?? null,
-    capturedFindings: null,
-    retryCount: 0,
-    hostAttestationConstants,
-    enforcementFailure,
-    lastSchemaErrors: null,
-    repairPromptRequired: false,
-    expectedRepairPromptDigest: null,
-  });
+  const prior = state.pendingReviews.get(reviewTool);
+  state.pendingReviews.set(reviewTool, buildPendingReview(reviewTool, next, now, binding, prior));
 }
 
 function trackContentAnalysis(state: SessionEnforcementState, now: string): void {
@@ -141,6 +109,7 @@ function trackContentAnalysis(state: SessionEnforcementState, now: string): void
     subagentRecord: null,
     contentMeta: { expectedIteration: 1, expectedPlanVersion: 1 },
     canonicalPromptAnchor: null,
+    canonicalPrompt: null,
     capturedFindings: null,
     retryCount: 0,
     hostAttestationConstants: null,
@@ -148,6 +117,7 @@ function trackContentAnalysis(state: SessionEnforcementState, now: string): void
     lastSchemaErrors: null,
     repairPromptRequired: false,
     expectedRepairPromptDigest: null,
+    expectedPromptDigest: null,
   });
 }
 
@@ -237,23 +207,11 @@ function trackRequiredReview(
       attemptId,
       obligationId,
       canonicalPromptAnchor: canonicalPromptAnchorOf(parsed),
+      canonicalPrompt: canonicalPromptOf(parsed),
+      canonicalPromptDigest: canonicalPromptDigestOf(parsed),
       hostAttestationConstants: readHostAttestationConstants(signalAttestationOf(parsed)),
     });
   }
-}
-
-/**
- * Trailing append instruction of the canonical reviewer prompt FlowGuard emitted.
- *
- * Returns null when no canonical prompt was emitted, in which case the agent
- * legitimately free-composes and the append check does not apply.
- */
-function canonicalPromptAnchorOf(parsed: Record<string, unknown>): string | null {
-  const prompt = parsed.reviewerTaskPrompt;
-  if (typeof prompt !== 'string') return null;
-  const lines = prompt.split('\n');
-  const anchor = lines.reverse().find((line) => line.startsWith(CANONICAL_PROMPT_APPEND_MARKER));
-  return anchor ?? null;
 }
 
 /**
@@ -332,6 +290,7 @@ function applyCaptureToPending(
     matched.lastSchemaErrors = null;
     matched.repairPromptRequired = false;
     matched.expectedRepairPromptDigest = null;
+    matched.expectedPromptDigest = null;
     return;
   }
   // Track retries: a re-invoke after a prior (unusable) capture is a retry.
@@ -347,6 +306,7 @@ function applyCaptureToPending(
   matched.repairPromptRequired = matched.lastSchemaErrors !== null;
   // Clear the expected digest — this repair cycle is consumed.
   matched.expectedRepairPromptDigest = null;
+  matched.expectedPromptDigest = null;
 }
 
 /**

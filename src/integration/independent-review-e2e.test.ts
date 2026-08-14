@@ -61,7 +61,12 @@ import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
-import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
+import {
+  freezeReviewMaterial,
+  REVIEW_CRITERIA_VERSION,
+  REVIEW_MANDATE_DIGEST,
+} from './review/assurance.js';
+import { renderReviewerTaskPrompt } from './review/prompt-builders.js';
 import type { SessionState } from '../state/schema.js';
 import { computeRecordDigest } from '../state/evidence-plan.js';
 import { CHALLENGE_POLICY_V1 } from '../config/policy-types.js';
@@ -110,6 +115,14 @@ function planModeAOutput(): { output: string; metadata: Record<string, unknown> 
       reviewAttemptId: ATTEMPT_ID,
       reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
       reviewMandateDigest: REVIEW_MANDATE_DIGEST,
+      reviewerTaskPrompt: renderReviewerTaskPrompt({
+        iteration: 0,
+        planVersion: 1,
+        obligationId: OBLIGATION_ID,
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+        criteriaVersion: REVIEW_CRITERIA_VERSION,
+        subjectLabel: 'the plan',
+      }),
       next: 'INDEPENDENT_REVIEW_REQUIRED: iteration=0, planVersion=1',
     }),
     metadata: {},
@@ -119,19 +132,10 @@ function planModeAOutput(): { output: string; metadata: Record<string, unknown> 
 function reviewerTaskOutput(
   opts: {
     childSessionId?: string;
-    reviewedBySessionId?: string;
     verdict?: string;
-    mandateDigest?: string;
-    criteriaVersion?: string;
   } = {},
 ): { output: string; metadata: Record<string, unknown> } {
-  const {
-    childSessionId = CHILD_SESSION,
-    reviewedBySessionId = 'ses_reviewer_selfreported',
-    verdict = 'accept',
-    mandateDigest = REVIEW_MANDATE_DIGEST,
-    criteriaVersion = REVIEW_CRITERIA_VERSION,
-  } = opts;
+  const { childSessionId = CHILD_SESSION, verdict = 'accept' } = opts;
   return {
     output: JSON.stringify({
       iteration: 0,
@@ -143,15 +147,8 @@ function reviewerTaskOutput(
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
-      reviewedBy: { sessionId: reviewedBySessionId },
-      reviewedAt: '2026-06-18T00:00:00.000Z',
       attestation: {
         toolObligationId: OBLIGATION_ID,
-        mandateDigest,
-        criteriaVersion,
-        iteration: 0,
-        planVersion: 1,
-        reviewedBy: 'flowguard-reviewer',
       },
     }),
     // Tier 1 host metadata: the authoritative child session id the host observed.
@@ -159,10 +156,19 @@ function reviewerTaskOutput(
   };
 }
 
+function reviewerArgsFromReviewRequiredOutput(output: string) {
+  const reviewerTaskPrompt = (JSON.parse(output) as Record<string, unknown>).reviewerTaskPrompt;
+  if (typeof reviewerTaskPrompt !== 'string') {
+    throw new TypeError('Expected canonical reviewerTaskPrompt in review-required output');
+  }
+  return { subagent_type: 'flowguard-reviewer', prompt: reviewerTaskPrompt };
+}
+
 async function seedHostTaskPlanSession(worktree: string, sessionID: string): Promise<string> {
   const now = new Date().toISOString();
   const fp = await computeFingerprint(worktree);
   const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+  const reviewMaterial = freezeReviewMaterial('## Plan\n1. Implement X', SUBJECT_DIGEST);
   await fs.mkdir(sessDir, { recursive: true });
   const base = makeState('PLAN');
   await writeState(
@@ -205,7 +211,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v4' as const,
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [
           {
             obligationId: OBLIGATION_ID,
@@ -228,6 +234,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
               paths: ['docs/test.md'],
               revisions: ['base', 'head'],
             },
+            reviewMaterial,
           },
         ],
         invocations: [],
@@ -241,6 +248,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
             obligationId: OBLIGATION_ID,
             obligationType: 'plan' as const,
             subjectDigest: SUBJECT_DIGEST,
+            reviewMaterial,
             ordinal: 0,
             status: 'created' as const,
             origin: { kind: 'initial' } as const,
@@ -262,27 +270,26 @@ async function driveCaptureThroughHooks(
   hooks: Hooks,
   opts: {
     verdict?: string;
-    reviewedBySessionId?: string;
-    mandateDigest?: string;
-    criteriaVersion?: string;
   } = {},
 ): Promise<void> {
+  const beforeHook = hooks['tool.execute.before']!;
   const afterHook = hooks['tool.execute.after']!;
+  const planOutput = { title: 'Plan', ...planModeAOutput() };
   await afterHook(
     { tool: 'flowguard_plan', sessionID: PARENT_SESSION, callID: 'c-plan', args: {} },
-    { title: 'Plan', ...planModeAOutput() },
+    planOutput,
+  );
+  const reviewerArgs = reviewerArgsFromReviewRequiredOutput(planOutput.output);
+  await beforeHook(
+    { tool: 'task', sessionID: PARENT_SESSION, callID: 'c-task' },
+    { args: reviewerArgs },
   );
   await afterHook(
     {
       tool: 'task',
       sessionID: PARENT_SESSION,
       callID: 'c-task',
-      args: {
-        subagent_type: 'flowguard-reviewer',
-        prompt:
-          'Review this plan critically against the ticket. iteration=0, planVersion=1. ' +
-          'Return structured ReviewFindings JSON with your verdict.',
-      },
+      args: reviewerArgs,
     },
     { title: 'Reviewer task', ...reviewerTaskOutput(opts) },
   );
@@ -328,24 +335,16 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
     expect(bound?.childSessionId).toBe(CHILD_SESSION);
   });
 
-  it('REGRESSION: confabulated reviewer attestation still binds host-authoritatively', async () => {
-    // The other shipped bug: the reviewer self-attested host constants
-    // (mandateDigest/criteriaVersion) it was never given and confabulated them;
-    // binding hard-failed with field_mismatch. Through the real Task after-hook,
-    // a confabulated attestation must still bind, and the persisted evidence must
-    // carry the host-authoritative constants — not the reviewer's invented ones.
+  it('REGRESSION: host stamps canonical attestation after reviewer input binds', async () => {
     const { hooks, sessDir } = await setup();
 
-    await driveCaptureThroughHooks(hooks, {
-      mandateDigest: OBLIGATION_ID, // reviewer copied the UUID into the digest slot
-      criteriaVersion: 'plan-review-v1', // invented
-    });
+    await driveCaptureThroughHooks(hooks);
 
     const state = await readState(sessDir);
     const bound = (state?.reviewAssurance?.invocations ?? []).find(
       (inv) => inv.obligationId === OBLIGATION_ID,
     );
-    expect(bound, 'confabulated attestation still produced bound evidence').toBeDefined();
+    expect(bound, 'reviewer input produced host-stamped bound evidence').toBeDefined();
     expect(bound?.invocationMode).toBe('host_subagent_task');
     const att = bound?.capturedRawFindings?.attestation as Record<string, unknown> | undefined;
     expect(att?.mandateDigest).toBe(REVIEW_MANDATE_DIGEST);
@@ -500,9 +499,10 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
       'bindable attempt persisted by Call 1',
     ).toHaveLength(1);
     const initialAttempt = (afterCall1?.reviewAssurance?.attempts ?? [])[0];
-    expect(initialAttempt?.reviewMaterial).toEqual({
+    expect(initialAttempt?.reviewMaterial).toMatchObject({
       content: expect.any(String),
       materialDigest: expect.any(String),
+      subjectDigest: expect.any(String),
     });
     const pendingAfterCall1 = (afterCall1?.reviewAssurance?.obligations ?? []).filter(
       (o) => o.obligationType === 'review' && o.status === 'pending',
@@ -546,6 +546,7 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
       worktree: ws.tmpDir,
       serverUrl: new URL('http://localhost:3000'),
     } as Parameters<typeof FlowGuardAuditPlugin>[0]);
+    const beforeHook = hooks['tool.execute.before']!;
     const afterHook = hooks['tool.execute.after']!;
 
     // flowguard_review after-hook: the orchestrator runs handleHostTaskPolicy
@@ -610,21 +611,21 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
     }
     const initialHypothesisCount = afterHandshake?.proofGraph?.claims.length ?? 0;
     expect(initialHypothesisCount).toBeGreaterThan(0);
+    const reviewerArgsA = reviewerArgsFromReviewRequiredOutput(reviewOut.output);
 
-    // Attempt A returns schema-invalid output. Binding rejects the capture with
-    // a canonically repairable reason (schema_invalid), leaving the obligation
-    // pending but spending only this attempt. Out-of-scope findings would be a
-    // governance rejection and terminate the obligation instead — covered by
-    // review-repair-retry-e2e.
+    // Attempt A returns no overallVerdict. The host must persist the exact
+    // attempt as extraction_invalid so the normal /review repair authority can
+    // mint a fresh canonical prompt instead of stranding a child-bound attempt.
+    await beforeHook(
+      { tool: 'task', sessionID: PARENT_SESSION, callID: 'c-task-a' },
+      { args: reviewerArgsA },
+    );
     await afterHook(
       {
         tool: 'task',
         sessionID: PARENT_SESSION,
         callID: 'c-task-a',
-        args: {
-          subagent_type: 'flowguard-reviewer',
-          prompt: `Review this content. iteration=1, planVersion=1. toolObligationId=${obligationId}. Return ReviewFindings JSON.`,
-        },
+        args: reviewerArgsA,
       },
       {
         title: 'Reviewer task',
@@ -632,29 +633,14 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
           iteration: 1,
           planVersion: 1,
           reviewMode: 'subagent',
-          overallVerdict: 'changes_requested',
-          blockingIssues: [
-            {
-              // Missing `relation` makes the payload schema-invalid: a
-              // repairable output-contract defect, not a governance rejection.
-              severity: 'major',
-              category: 'correctness',
-              message: 'The changed request is not propagated to its service.',
-            },
-          ],
+          // overallVerdict intentionally omitted: extraction returns no payload.
+          blockingIssues: [],
           majorRisks: [],
           missingVerification: [],
           scopeCreep: [],
           unknowns: [],
-          reviewedBy: { sessionId: 'ses_reviewer_selfreported' },
-          reviewedAt: '2026-06-22T00:00:00.000Z',
           attestation: {
             toolObligationId: obligationId,
-            mandateDigest: REVIEW_MANDATE_DIGEST,
-            criteriaVersion: REVIEW_CRITERIA_VERSION,
-            iteration: 1,
-            planVersion: 1,
-            reviewedBy: 'flowguard-reviewer',
           },
         }),
         metadata: { sessionID: CHILD_SESSION },
@@ -668,6 +654,11 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
         (attempt) => attempt.attemptId === attemptA?.attemptId,
       )?.status,
     ).toBe('rejected');
+    expect(
+      afterRejectedA?.reviewAssurance?.attempts.find(
+        (attempt) => attempt.attemptId === attemptA?.attemptId,
+      )?.rejectionReason,
+    ).toBe('extraction_invalid');
 
     // The actual standalone continuation creates attempt B, emits the canonical
     // retry signal, and the review after-hook registers B for Task binding.
@@ -676,21 +667,11 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
         branch: 'feature-add-due-date',
         inputOrigin: 'branch',
         reviewObligationId: obligationId,
-        reviewVerdict: 'changes_requested',
       },
       ctx,
     );
     const retry = JSON.parse(String(retryRaw)) as Record<string, unknown>;
-    expect(retry.code).toBe('HOST_SUBAGENT_TASK_REQUIRED');
-    const afterReissue = await readState(sessDir);
-    const attemptB = (afterReissue?.reviewAssurance?.attempts ?? []).find(
-      (attempt) => attempt.attemptId === retry.reviewAttemptId,
-    );
-    expect(attemptB).toMatchObject({ obligationId, status: 'created' });
-    expect(afterReissue?.proofGraph?.claims).toHaveLength(initialHypothesisCount);
-    expect(
-      (afterReissue?.standaloneReviewEvidence ?? []).filter((entry) => entry.kind === 'prepared'),
-    ).toHaveLength(1);
+    expect(retry.code).toBe('CONTENT_ANALYSIS_REQUIRED');
 
     const retryOut = { title: 'Review retry', output: String(retryRaw), metadata: {} };
     await afterHook(
@@ -703,12 +684,21 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
           inputOrigin: 'branch',
           targetPaths: ['docs/test.md'],
           reviewObligationId: obligationId,
-          reviewVerdict: 'changes_requested',
         },
       },
       retryOut,
     );
     const trackedRetry = JSON.parse(retryOut.output) as Record<string, unknown>;
+    expect(trackedRetry.code).toBe('HOST_SUBAGENT_TASK_REQUIRED');
+    const afterReissue = await readState(sessDir);
+    const attemptB = (afterReissue?.reviewAssurance?.attempts ?? []).find(
+      (attempt) => attempt.attemptId === trackedRetry.reviewAttemptId,
+    );
+    expect(attemptB).toMatchObject({ obligationId, status: 'created' });
+    expect(afterReissue?.proofGraph?.claims).toHaveLength(initialHypothesisCount);
+    expect(
+      (afterReissue?.standaloneReviewEvidence ?? []).filter((entry) => entry.kind === 'prepared'),
+    ).toHaveLength(1);
     expect(trackedRetry.reviewAttemptId).toBe(attemptB?.attemptId);
     expect(typeof trackedRetry.reviewerTaskPrompt).toBe('string');
     const retryPrompt = trackedRetry.reviewerTaskPrompt as string;
@@ -727,28 +717,23 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
         missingVerification: [],
         scopeCreep: [],
         unknowns: [],
-        reviewedBy: { sessionId: 'ses_reviewer_selfreported' },
-        reviewedAt: '2026-06-22T00:00:00.000Z',
         attestation: {
           toolObligationId: obligationId,
-          mandateDigest: REVIEW_MANDATE_DIGEST,
-          criteriaVersion: REVIEW_CRITERIA_VERSION,
-          iteration: 1,
-          planVersion: 1,
-          reviewedBy: 'flowguard-reviewer',
         },
       }),
       metadata: { sessionID: RETRY_CHILD_SESSION },
     };
+    const reviewerArgsB = { subagent_type: 'flowguard-reviewer', prompt: retryPrompt };
+    await beforeHook(
+      { tool: 'task', sessionID: PARENT_SESSION, callID: 'c-task-b' },
+      { args: reviewerArgsB },
+    );
     await afterHook(
       {
         tool: 'task',
         sessionID: PARENT_SESSION,
         callID: 'c-task-b',
-        args: {
-          subagent_type: 'flowguard-reviewer',
-          prompt: `${retryPrompt}\n\n## Reviewed content\nbranch feature-add-due-date`,
-        },
+        args: reviewerArgsB,
       },
       taskBOut,
     );

@@ -54,7 +54,11 @@ function snapshot(): RepositoryDiscoverySnapshot {
 
 function repositoryFrozenContext(): FrozenReviewerContext {
   return {
-    reviewMaterial: { content: 'diff --git a/x b/x\n+x\n', materialDigest: 'm'.repeat(64) },
+    reviewMaterial: {
+      content: 'diff --git a/x b/x\n+x\n',
+      materialDigest: 'm'.repeat(64),
+      subjectDigest: 's'.repeat(64),
+    },
     reviewSubject: {
       kind: 'repository_change',
       source: { kind: 'branch', branch: 'feature/x', requestedBase: 'main' },
@@ -84,6 +88,7 @@ function hostPrompt(snapshotValue: RepositoryDiscoverySnapshot, retryErrors?: st
     mandateDigest: 'mandate',
     criteriaVersion: 'p40-v1',
     subjectLabel: 'the branch diff',
+    repositoryReview: true,
     frozenReviewerContext: repositoryFrozenContext(),
     repositoryDiscoverySnapshot: snapshotValue,
     ...(retryErrors ? { retrySchemaErrors: retryErrors } : {}),
@@ -115,6 +120,8 @@ describe('repository Discovery envelope (both transports)', () => {
   it('repair prompt keeps the envelope before the material marker', () => {
     const prompt = hostPrompt(snapshot(), ['severity: invalid literal value']);
     expect(prompt).toContain('## Prior Output Rejected — Schema Validation Errors');
+    expect(prompt).toContain('Return a fresh complete ReviewerFindingsInput object');
+    expect(prompt).not.toContain('Return a fresh complete ReviewFindings object');
     expect(prompt).toContain('## Repository Discovery Contract');
     expect(prompt.indexOf('## Repository Discovery Context')).toBeLessThan(
       prompt.indexOf(CANONICAL_PROMPT_APPEND_MARKER),
@@ -162,7 +169,11 @@ describe('repository Discovery envelope (both transports)', () => {
       criteriaVersion: 'p40-v1',
       subjectLabel: 'the artifact',
       frozenReviewerContext: {
-        reviewMaterial: { content: 'text', materialDigest: 'm'.repeat(64) },
+        reviewMaterial: {
+          content: 'text',
+          materialDigest: 'm'.repeat(64),
+          subjectDigest: 's'.repeat(64),
+        },
         reviewSubject: {
           kind: 'content',
           source: { kind: 'inline', mediaType: 'text' },

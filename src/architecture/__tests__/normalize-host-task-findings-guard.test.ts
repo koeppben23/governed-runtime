@@ -78,6 +78,11 @@ describe('prepareReviewerFindingsForValidation must not perform semantic repair'
   });
 
   it('only stamps host-authoritative identity and attestation', () => {
+    // Input validation is the mandatory pre-provenance boundary: no host-owned
+    // field may be added before the reviewer-owned payload is strict-parsed.
+    expect(fnBody.indexOf('ReviewerFindingsInput.safeParse')).toBeLessThan(
+      fnBody.indexOf('applyHostProvenance'),
+    );
     // The function should call applyHostProvenance (identity stamping)
     expect(fnBody).toContain('applyHostProvenance');
     // The function should deal with attestation

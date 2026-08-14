@@ -71,6 +71,7 @@ describe('buildHostTaskEvidence — capturedVerdict (BUG-15)', () => {
       { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
       taskResult,
       LATER,
+      { metadata: { sessionID: CHILD_SESSION_ID } },
     );
 
     const attempts = [attemptFor(obligation)];
@@ -148,6 +149,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
       { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
       reviewerOutput,
       LATER,
+      { metadata: { sessionID: CHILD_SESSION_ID } },
     );
 
     // 3. Build host-task evidence
@@ -164,7 +166,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
     // 4. Append evidence to assurance state
     const assurance = appendInvocationEvidence(
       ensureReviewAssurance({
-        assuranceSchemaVersion: 'review-assurance.v4' as const,
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [
           {
             ...obligation,
@@ -240,6 +242,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
       { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
       reviewerOutput,
       LATER,
+      { metadata: { sessionID: CHILD_SESSION_ID } },
     );
 
     const attempts = [attemptFor(obligation)];
@@ -252,7 +255,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
 
     const assurance = appendInvocationEvidence(
       ensureReviewAssurance({
-        assuranceSchemaVersion: 'review-assurance.v4' as const,
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [
           {
             ...obligation,
@@ -320,6 +323,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
       { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
       reviewerOutput,
       LATER,
+      { metadata: { sessionID: CHILD_SESSION_ID } },
     );
 
     const attempts = [attemptFor(obligation)];
@@ -332,7 +336,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
 
     const assurance = appendInvocationEvidence(
       ensureReviewAssurance({
-        assuranceSchemaVersion: 'review-assurance.v4' as const,
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [
           {
             ...obligation,
@@ -367,7 +371,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
                 location: { path: 'src/foo.ts', revision: 'head', line: 1 },
               },
             ],
-            evidenceLocations: [{ path: 'src/foo.ts', revision: 'head', line: 1 }],
+            evidenceLocations: [],
           },
         },
       ],
@@ -441,7 +445,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
     // Build assurance with the evidence
     const assurance = appendInvocationEvidence(
       ensureReviewAssurance({
-        assuranceSchemaVersion: 'review-assurance.v4' as const,
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [
           {
             ...obligation,
@@ -485,6 +489,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
       { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
       taskResult,
       LATER,
+      { metadata: { sessionID: CHILD_SESSION_ID } },
     );
 
     const bindResult = buildHostTaskEvidence(freshState, SESSION_ID, LATER, {
@@ -497,7 +502,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
 
     const assurance = appendInvocationEvidence(
       ensureReviewAssurance({
-        assuranceSchemaVersion: 'review-assurance.v4' as const,
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [
           {
             ...obligation,
@@ -542,7 +547,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
 
     // Even if we somehow had an invocation, resolve would fail
     const assurance = ensureReviewAssurance({
-      assuranceSchemaVersion: 'review-assurance.v4' as const,
+      assuranceSchemaVersion: 'review-assurance.v5' as const,
       obligations: [
         {
           ...obligation,
@@ -586,7 +591,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
 
     const assurance = appendInvocationEvidence(
       ensureReviewAssurance({
-        assuranceSchemaVersion: 'review-assurance.v4' as const,
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [
           {
             ...obligation,

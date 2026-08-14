@@ -17,7 +17,7 @@ import {
 } from './frozen-continuation.js';
 import { makeState } from '../../../fixtures.js';
 import type { SessionState } from '../../../state/schema.js';
-import type { ReviewObligation } from '../../../state/evidence.js';
+import type { ReviewMaterial, ReviewObligation } from '../../../state/evidence.js';
 import {
   hashCanonicalContentSubject,
   hashCanonicalReviewContent,
@@ -30,7 +30,7 @@ const MATERIAL = 'frozen review material';
 const MATERIAL_DIGEST = hashCanonicalReviewContent(MATERIAL);
 const SUBJECT_DIGEST = hashCanonicalContentSubject(MATERIAL_DIGEST);
 
-function obligation(): ReviewObligation {
+function obligation(reviewMaterial?: ReviewMaterial): ReviewObligation {
   return {
     obligationId: OBLIGATION_ID,
     obligationType: 'review',
@@ -54,14 +54,17 @@ function obligation(): ReviewObligation {
       subjectDigest: SUBJECT_DIGEST,
       lineCount: 1,
     },
+    ...(reviewMaterial ? { reviewMaterial } : {}),
   } as ReviewObligation;
 }
 
-function stateWithMaterial(material: { content: string; materialDigest: string } | undefined) {
+function stateWithMaterial(
+  material: { content: string; materialDigest: string; subjectDigest: string } | undefined,
+) {
   return makeState('REVIEW', {
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v4' as const,
-      obligations: [obligation()],
+      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      obligations: [obligation(material)],
       invocations: [],
       attempts: [
         {
@@ -93,7 +96,11 @@ const VERDICT_CONTINUATION = {
 describe('resolveFrozenContinuationContent', () => {
   it('reuses the persisted subject and material for a verdict continuation', () => {
     const result = resolveFrozenContinuationContent(
-      stateWithMaterial({ content: MATERIAL, materialDigest: MATERIAL_DIGEST }),
+      stateWithMaterial({
+        content: MATERIAL,
+        materialDigest: MATERIAL_DIGEST,
+        subjectDigest: SUBJECT_DIGEST,
+      }),
       VERDICT_CONTINUATION,
     );
 
@@ -108,7 +115,11 @@ describe('resolveFrozenContinuationContent', () => {
     // The attempt is `rejected`; its bytes remain authoritative for the
     // obligation, so a verdict continuation must not fall back to re-derivation.
     const result = resolveFrozenContinuationContent(
-      stateWithMaterial({ content: MATERIAL, materialDigest: MATERIAL_DIGEST }),
+      stateWithMaterial({
+        content: MATERIAL,
+        materialDigest: MATERIAL_DIGEST,
+        subjectDigest: SUBJECT_DIGEST,
+      }),
       VERDICT_CONTINUATION,
     );
     expect(result.kind).toBe('reuse');
@@ -127,7 +138,11 @@ describe('resolveFrozenContinuationContent', () => {
 
   it('fails closed when the persisted material no longer matches its digest', () => {
     const result = resolveFrozenContinuationContent(
-      stateWithMaterial({ content: 'tampered', materialDigest: MATERIAL_DIGEST }),
+      stateWithMaterial({
+        content: 'tampered',
+        materialDigest: MATERIAL_DIGEST,
+        subjectDigest: SUBJECT_DIGEST,
+      }),
       VERDICT_CONTINUATION,
     );
 
@@ -138,7 +153,11 @@ describe('resolveFrozenContinuationContent', () => {
 
   it('does not apply without a verdict — the repair retry still derives content', () => {
     const result = resolveFrozenContinuationContent(
-      stateWithMaterial({ content: MATERIAL, materialDigest: MATERIAL_DIGEST }),
+      stateWithMaterial({
+        content: MATERIAL,
+        materialDigest: MATERIAL_DIGEST,
+        subjectDigest: SUBJECT_DIGEST,
+      }),
       {
         policy: 'host_task_required',
         args: { branch: 'feature-x', reviewObligationId: OBLIGATION_ID },
@@ -148,7 +167,11 @@ describe('resolveFrozenContinuationContent', () => {
   });
 
   it('does not apply when the named obligation carries no frozen subject', () => {
-    const base = stateWithMaterial({ content: MATERIAL, materialDigest: MATERIAL_DIGEST });
+    const base = stateWithMaterial({
+      content: MATERIAL,
+      materialDigest: MATERIAL_DIGEST,
+      subjectDigest: SUBJECT_DIGEST,
+    });
     const withoutSubject = {
       ...base,
       reviewAssurance: {
@@ -164,7 +187,11 @@ describe('resolveFrozenContinuationContent', () => {
 });
 
 describe('assertFrozenSubjectUnchanged', () => {
-  const state = stateWithMaterial({ content: MATERIAL, materialDigest: MATERIAL_DIGEST });
+  const state = stateWithMaterial({
+    content: MATERIAL,
+    materialDigest: MATERIAL_DIGEST,
+    subjectDigest: SUBJECT_DIGEST,
+  });
   const repairRetry = {
     policy: 'host_task_required',
     args: { branch: 'feature-x', reviewObligationId: OBLIGATION_ID },

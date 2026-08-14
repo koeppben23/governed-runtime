@@ -62,14 +62,13 @@ import {
 } from './evidence-review-authority.js';
 import {
   refineAssuranceDiscoveryCoherence,
+  refineCurrentGenerationMaterial,
   refineAssuranceProvenanceCoherence,
   refineAuthorityStructure,
+  refineReviewMaterialSubject,
   refineStandaloneSubject,
 } from './evidence-review-refinements.js';
-
 export { classifyRepositoryPath, type RepositoryPathClassification } from './repository-path.js';
-
-// ─── Review Attempt (Invocation Envelope) ─────────────────────────────────────
 
 export const ReviewAttemptStatusValues = [
   'created',
@@ -150,6 +149,7 @@ export const ReviewMaterial = z
   .object({
     content: z.string(),
     materialDigest: z.string().min(1),
+    subjectDigest: z.string().min(1),
   })
   .strict()
   .readonly();
@@ -257,9 +257,9 @@ export {
   ChallengeClientReference,
   REVIEW_CHALLENGE_OUTCOMES,
   ReviewChallenge,
-  ReviewerChallengeInput,
   ChallengeResolution,
   ChallengeResolutionVerdict,
+  ReviewerChallengeInput,
 } from './evidence-review-challenge.js';
 import { ReviewChallenge, ChallengeResolutionVerdict } from './evidence-review-challenge.js';
 
@@ -316,7 +316,7 @@ export type ReviewAttestation = z.infer<typeof ReviewAttestation>;
  * `reviewerClaimedAt` / `reviewerClaimedBy` for diagnostics only; they never
  * override the host-stamped canonical values.
  */
-export const ReviewFindings = z
+export const ReviewFindingsObject = z
   .object({
     iteration: z.number().int().nonnegative(),
     planVersion: z.number().int().positive(),
@@ -349,8 +349,8 @@ export const ReviewFindings = z
     /** Reviewer-only verdicts for prior implementation challenge resolutions. */
     challengeResolutionVerdicts: z.array(ChallengeResolutionVerdict).optional(),
   })
-  .strict()
-  .readonly();
+  .strict();
+export const ReviewFindings = ReviewFindingsObject.readonly();
 export type ReviewFindings = z.infer<typeof ReviewFindings>;
 
 // ─── Review Obligations and Invocation Evidence ────────────────────────────────
@@ -433,7 +433,7 @@ export const ReviewObligation = z
      * surfaces any site that forgets to freeze the subject.
      */
     subjectDigest: z.string().min(1),
-    /** Present for standalone content reviews and authoritative for their attempts. */
+    reviewMaterial: ReviewMaterial.optional(),
     reviewSubject: FrozenReviewSubject.optional(),
     /** Missing means the legacy v1 fingerprint algorithm. */
     fingerprintVersion: ReviewInputFingerprintVersion.optional(),
@@ -462,21 +462,16 @@ export const ReviewObligation = z
      * before the frozen-repository-authority generation.
      */
     repositoryAuthority: FrozenRepositoryAuthority.optional(),
-    /**
-     * Obligation-level output-repair budget, frozen from the resolved policy
-     * snapshot at obligation creation. Counts `output_repair` attempts only;
-     * task-lifecycle re-arms are budgeted by the enforcement retry gate.
-     * Required: reissue authorization reads this frozen value — never the
-     * live config — so a later policy change cannot re-open a settled
-     * obligation's repair window.
-     */
     maxReviewerOutputRepairAttempts: z.number().int().min(0).max(5),
   })
   .superRefine(refineStandaloneSubject)
+  .superRefine(refineReviewMaterialSubject)
+  .superRefine(refineCurrentGenerationMaterial)
   .superRefine(refineAuthorityStructure);
 export type ReviewObligation = z.infer<typeof ReviewObligation>;
 
-/** P35 strict invocation evidence record. */
+const Sha256Digest = z.string().regex(/^[a-f0-9]{64}$/);
+
 export const ReviewInvocationEvidence = z
   .object({
     invocationId: z.string().uuid(),
@@ -500,6 +495,9 @@ export const ReviewInvocationEvidence = z
     /** Whether this invocation produced a host-visible child session in the OpenCode GUI. */
     hostVisible: z.boolean(),
     promptHash: z.string().min(1),
+    canonicalPromptDigest: Sha256Digest.optional(),
+    modelPromptDigest: Sha256Digest.nullable().optional(),
+    hostTaskCallId: z.string().min(1).optional(),
     mandateDigest: z.string().min(1),
     criteriaVersion: z.string().min(1),
     findingsHash: z.string().min(1),
@@ -569,17 +567,17 @@ export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;
  * Requiring the array makes that state unrepresentable and fails fast at the
  * schema boundary instead of silently at binding time.
  *
- * `assuranceSchemaVersion` is a REQUIRED hard version literal. The
- * `review-assurance.v2` form introduced authority-bearing attempt origins and
- * frozen output-repair budgets. The `review-assurance.v4` form additionally
- * binds a host-owned repository Discovery snapshot to every attempt at mint
- * time. The `review-assurance.v4` form introduces frozen repository authority
- * (`ReviewObligation.repositoryAuthority`), opaque attempt-bound observation
- * capabilities, and attempt-owned authoritative observations. States persisted
- * under older forms MUST fail parsing — there is deliberately no defaulting
- * path for authority-bearing fields. The single sanctioned transition is the
- * shape-only v3→v4 read migration in the persistence adapter, which adds NO
- * authority information that was not already present.
+ * `assuranceSchemaVersion` is a REQUIRED hard version literal:
+ * v2 introduced authority-bearing attempt origins and frozen output-repair
+ * budgets; v3 bound host-owned repository Discovery snapshots to attempts;
+ * v4 introduced frozen repository authority, observation capabilities, and
+ * attempt-owned observations; v5 makes observations representation-typed
+ * (`resolvedObjectKind` required; `utf8_text` requires `lineCount`, `binary`
+ * forbids it). States persisted under older forms MUST fail parsing — there
+ * is deliberately no defaulting path for authority-bearing fields. The
+ * sanctioned transitions are the shape-only read migrations in the
+ * persistence adapter (v3→v4 literal; v4→v5 literal + evidence-incapability
+ * of pre-v5 observations), which add NO authority that was not present.
  *
  * Cross-record invariant: an attempt's `repositoryDiscovery` variant must
  * structurally match its owning obligation's frozen repository authority. A
@@ -589,7 +587,7 @@ export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;
  */
 export const ReviewAssuranceState = z
   .object({
-    assuranceSchemaVersion: z.literal('review-assurance.v4'),
+    assuranceSchemaVersion: z.literal('review-assurance.v5'),
     obligations: z.array(ReviewObligation),
     invocations: z.array(ReviewInvocationEvidence),
     attempts: z.array(ReviewAttempt),

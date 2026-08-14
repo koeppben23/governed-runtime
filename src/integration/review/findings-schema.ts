@@ -12,7 +12,6 @@
  * @version v3 — canonical SSOT via reviewer-contract
  */
 
-import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import {
   SEVERITY_VALUES,
   CATEGORY_VALUES,
@@ -33,6 +32,7 @@ const REPOSITORY_LOCATION_JSON_SCHEMA = {
         endLine: { type: 'integer', minimum: 1 },
       },
       required: ['path', 'revision'],
+      additionalProperties: false,
     },
   ],
 } as const;
@@ -46,6 +46,7 @@ function buildAnchorVariant(kind: (typeof ANCHOR_KINDS)[number]): Record<string,
         location: REPOSITORY_LOCATION_JSON_SCHEMA,
       },
       required: ['kind', 'location'],
+      additionalProperties: false,
     };
   }
   if (kind === 'artifact_section') {
@@ -66,10 +67,12 @@ function buildAnchorVariant(kind: (typeof ANCHOR_KINDS)[number]): Record<string,
               headingText: { type: 'string' },
             },
             required: ['headingDepth', 'siblingIndex', 'headingText'],
+            additionalProperties: false,
           },
         },
       },
       required: ['kind', 'artifactKind', 'artifactDigest', 'sectionPath'],
+      additionalProperties: false,
     };
   }
   if (kind === 'content') {
@@ -85,9 +88,11 @@ function buildAnchorVariant(kind: (typeof ANCHOR_KINDS)[number]): Record<string,
             endLine: { type: 'integer', minimum: 1 },
           },
           required: ['startLine'],
+          additionalProperties: false,
         },
       },
       required: ['kind', 'subjectDigest'],
+      additionalProperties: false,
     };
   }
   throw new Error(`Unknown anchor kind: ${kind} — update findings-schema.ts`);
@@ -103,13 +108,15 @@ function buildChallengeVariant(kind: (typeof CHALLENGE_KINDS)[number]): Record<s
 
 function challengeBase(kind: string) {
   return {
-    challengeId: {
-      type: 'string',
-      pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
-    },
     obligationId: {
       type: 'string',
       pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+    },
+    clientReference: {
+      type: 'string',
+      minLength: 1,
+      maxLength: 64,
+      pattern: '^[a-zA-Z0-9_-]+$',
     },
     scenario: { type: 'string', minLength: 1 },
     claim: { type: 'string', minLength: 1 },
@@ -119,7 +126,6 @@ function challengeBase(kind: string) {
 }
 
 const CHALLENGE_REQUIRED = [
-  'challengeId',
   'obligationId',
   'scenario',
   'claim',
@@ -154,16 +160,19 @@ function buildDesignChallenge(base: Record<string, unknown>) {
                   headingText: { type: 'string' },
                 },
                 required: ['headingDepth', 'siblingIndex', 'headingText'],
+                additionalProperties: false,
               },
             },
             excerptDigest: { type: 'string', minLength: 1 },
           },
           required: ['kind', 'artifactKind', 'artifactDigest', 'sectionPath', 'excerptDigest'],
+          additionalProperties: false,
         },
       },
       outcome: { type: 'string', enum: ['supported', 'contradicted', 'not_verified'] },
     },
     required: CHALLENGE_REQUIRED,
+    additionalProperties: false,
   };
 }
 
@@ -185,6 +194,7 @@ function buildImplementationChallenge(base: Record<string, unknown>) {
                 diffDigest: { type: 'string', minLength: 1 },
               },
               required: ['kind', 'implementationDigest'],
+              additionalProperties: false,
             },
             {
               type: 'object',
@@ -197,6 +207,7 @@ function buildImplementationChallenge(base: Record<string, unknown>) {
                 },
               },
               required: ['kind', 'attemptId'],
+              additionalProperties: false,
             },
           ],
         },
@@ -204,6 +215,7 @@ function buildImplementationChallenge(base: Record<string, unknown>) {
       outcome: { type: 'string', enum: ['pass', 'fail', 'not_verified'] },
     },
     required: CHALLENGE_REQUIRED,
+    additionalProperties: false,
   };
 }
 
@@ -222,11 +234,13 @@ function buildContentChallenge(base: Record<string, unknown>) {
             digest: { type: 'string', minLength: 1 },
           },
           required: ['kind', 'digest'],
+          additionalProperties: false,
         },
       },
       outcome: { type: 'string', enum: ['supported', 'contradicted', 'not_verified'] },
     },
     required: CHALLENGE_REQUIRED,
+    additionalProperties: false,
   };
 }
 
@@ -241,6 +255,7 @@ const FINDING_RELATION_JSON_SCHEMA = {
     evidenceLocations: { type: 'array', items: REPOSITORY_LOCATION_JSON_SCHEMA },
   },
   required: ['subjectAnchors', 'evidenceLocations'],
+  additionalProperties: false,
 } as const;
 
 export const REVIEW_FINDINGS_JSON_SCHEMA = {
@@ -264,6 +279,7 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
           relation: FINDING_RELATION_JSON_SCHEMA,
         },
         required: ['severity', 'category', 'message', 'relation'],
+        additionalProperties: false,
       },
     },
     majorRisks: {
@@ -280,6 +296,7 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
           relation: FINDING_RELATION_JSON_SCHEMA,
         },
         required: ['severity', 'category', 'message', 'relation'],
+        additionalProperties: false,
       },
     },
     missingVerification: { type: 'array', items: { type: 'string' } },
@@ -304,27 +321,12 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
           verdict: { type: 'string', enum: ['resolved', 'still_failing', 'not_verified'] },
         },
         required: ['challengeId', 'verdict'],
+        additionalProperties: false,
       },
     },
-    reviewedBy: {
-      type: 'object',
-      properties: {
-        sessionId: { type: 'string' },
-        actorId: { type: 'string' },
-        actorSource: { type: 'string', enum: ['env', 'git', 'claim', 'unknown'] },
-        actorAssurance: {
-          type: 'string',
-          enum: ['verified', 'best_effort', 'claim_validated', 'idp_verified'],
-        },
-      },
-      required: ['sessionId'],
-    },
-    reviewedAt: { type: 'string' },
     attestation: {
       type: 'object',
       properties: {
-        mandateDigest: { type: 'string' },
-        criteriaVersion: { type: 'string' },
         toolObligationId: {
           type: 'string',
           // RFC 4122 UUID pattern. Must stay in sync with z.string().uuid() in
@@ -332,18 +334,9 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
           // Drift guard: src/integration/review-findings-schema-drift.test.ts.
           pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
         },
-        iteration: { type: 'integer', minimum: 0 },
-        planVersion: { type: 'integer', minimum: 1 },
-        reviewedBy: { type: 'string', const: REVIEWER_SUBAGENT_TYPE },
       },
-      required: [
-        'mandateDigest',
-        'criteriaVersion',
-        'toolObligationId',
-        'iteration',
-        'planVersion',
-        'reviewedBy',
-      ],
+      required: ['toolObligationId'],
+      additionalProperties: false,
     },
   },
   required: [
@@ -356,8 +349,6 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
     'missingVerification',
     'scopeCreep',
     'unknowns',
-    'reviewedBy',
-    'reviewedAt',
     'attestation',
   ],
   additionalProperties: false,

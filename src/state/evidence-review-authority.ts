@@ -142,29 +142,52 @@ export type RepositoryObservationCapture = z.infer<typeof RepositoryObservationC
  * Authoritative, attempt-bound repository observation. Minted EXCLUSIVELY by
  * the parent replay after the reviewer child session is known; a capture
  * alone never becomes authority.
+ *
+ * Structural invariants (enforced at the type level):
+ * - `utf8_text` REQUIRES a `lineCount` (line citations are only admissible
+ *   against it);
+ * - `binary` FORBIDS `lineCount` (line citations against binary content fail
+ *   closed);
+ * - `resolvedObjectKind` carries the frozen target kind (commit | tree) so the
+ *   evidence binder can compare the COMPLETE resolved target.
  */
-export const RepositoryObservation = z
-  .object({
-    observationId: z.string().uuid(),
-    obligationId: z.string().uuid(),
-    attemptId: z.string().uuid(),
-    observedBySessionId: z.string().min(1),
-    path: RepositoryPathSchema,
-    revision: z.enum(['base', 'head']),
-    repositoryIdentity: ReviewRepositoryIdentity,
-    resolvedObjectSha: GitSha,
-    contentDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
-    byteLength: z.number().int().nonnegative(),
-    representation: z.enum(['utf8_text', 'binary']),
-    capturedAt: z.string().datetime(),
-    boundAt: z.string().datetime(),
-    acquisition: z
-      .object({ kind: z.enum(['local_git_object', 'remote_commit_blob']) })
-      .strict()
-      .readonly(),
-  })
-  .strict()
-  .readonly();
+const RepositoryObservationBase = {
+  observationId: z.string().uuid(),
+  obligationId: z.string().uuid(),
+  attemptId: z.string().uuid(),
+  observedBySessionId: z.string().min(1),
+  path: RepositoryPathSchema,
+  revision: z.enum(['base', 'head']),
+  repositoryIdentity: ReviewRepositoryIdentity,
+  resolvedObjectSha: GitSha,
+  resolvedObjectKind: z.enum(['commit', 'tree']),
+  contentDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+  byteLength: z.number().int().nonnegative(),
+  capturedAt: z.string().datetime(),
+  boundAt: z.string().datetime(),
+  acquisition: z
+    .object({ kind: z.enum(['local_git_object', 'remote_commit_blob']) })
+    .strict()
+    .readonly(),
+};
+
+export const RepositoryObservation = z.discriminatedUnion('representation', [
+  z
+    .object({
+      ...RepositoryObservationBase,
+      representation: z.literal('utf8_text'),
+      lineCount: z.number().int().nonnegative(),
+    })
+    .strict()
+    .readonly(),
+  z
+    .object({
+      ...RepositoryObservationBase,
+      representation: z.literal('binary'),
+    })
+    .strict()
+    .readonly(),
+]);
 export type RepositoryObservation = z.infer<typeof RepositoryObservation>;
 
 // ─── Authority Predicates and Resolution ───────────────────────────────────────

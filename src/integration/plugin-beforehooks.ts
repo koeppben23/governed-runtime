@@ -21,6 +21,7 @@ import { runWithLogContextAsync } from '../logging/log-context.js';
 import type { SessionState } from '../state/schema.js';
 import { enforceRiskClassificationBefore as enforceRiskBefore } from './plugin-risk.js';
 import { enforceDiscoveryHealthBefore } from './plugin-discovery-health.js';
+import { registerExecutedTaskPrompt } from './review/enforcement/execution-provenance.js';
 
 export async function commandBefore(
   runtime: FlowGuardPluginRuntime,
@@ -60,8 +61,9 @@ export async function toolBefore(
   output: unknown,
 ): Promise<void> {
   return runWithAdapterLoggerAsync(runtime.adapterLog, async () => {
-    const toolName = (input as ToolHookBeforeInput)?.tool ?? '';
-    const sessionId = (input as ToolHookBeforeInput)?.sessionID ?? 'unknown';
+    const hookInput = input as ToolHookBeforeInput;
+    const toolName = hookInput?.tool ?? '';
+    const sessionId = hookInput?.sessionID ?? 'unknown';
     const traceId = getToolTraceId(runtime, input, 'before');
     return runWithLogContextAsync({ traceId, sessionId }, async () => {
       runtime.setCurrentSessionId(sessionId);
@@ -69,7 +71,7 @@ export async function toolBefore(
       runtime.log.info('hook', 'tool.execute.before', {
         tool: toolName,
       });
-      await enforceBeforeRules(runtime, toolName, sessionId, args);
+      await enforceBeforeRules(runtime, toolName, sessionId, hookInput?.callID ?? '', args);
     });
   });
 }
@@ -100,11 +102,12 @@ async function enforceBeforeRules(
   runtime: FlowGuardPluginRuntime,
   toolName: string,
   sessionId: string,
+  callId: string,
   args: Record<string, unknown>,
 ): Promise<void> {
   await enforceCommandScope(runtime, toolName, sessionId);
   if (toolName === 'task') {
-    await enforceTaskBefore(runtime, toolName, sessionId, args);
+    await enforceTaskBefore(runtime, toolName, sessionId, callId, args);
     return;
   }
   await enforceMutatingToolCheck(runtime, toolName, sessionId, args);
@@ -152,10 +155,17 @@ async function enforceTaskBefore(
   runtime: FlowGuardPluginRuntime,
   toolName: string,
   sessionId: string,
+  callId: string,
   args: Record<string, unknown>,
 ): Promise<void> {
   const subagentType = typeof args.subagent_type === 'string' ? args.subagent_type : '';
   if (subagentType === REVIEWER_SUBAGENT_TYPE) {
+    if (!callId) {
+      throw buildEnforcementError(
+        'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+        'Reviewer Task requires a non-empty host callID.',
+      );
+    }
     const eState = runtime.ws.getEnforcementState(sessionId);
     const { strictEnforcement, sessionState } = await resolveEnforcement(
       runtime,
@@ -164,8 +174,21 @@ async function enforceTaskBefore(
     );
     await enforceReviewerObligationCheck(runtime, sessionState, strictEnforcement);
 
+    const execution = registerExecutedTaskPrompt(
+      eState,
+      sessionState?.reviewAssurance,
+      callId,
+      args.prompt,
+      new Date().toISOString(),
+    );
+    if (execution.kind === 'blocked') {
+      throw buildEnforcementError('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE', execution.reason);
+    }
+    args.prompt = execution.prompt.canonicalPrompt;
+
     const result = enforceBeforeSubagentCall(eState, args, strictEnforcement);
     if (result.allowed) return;
+    eState.executedTaskPrompts.delete(callId);
     runtime.log.warn('enforcement', 'blocked subagent call', {
       tool: toolName,
       sessionId,

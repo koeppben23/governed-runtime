@@ -22,10 +22,6 @@ import {
 } from './enforcement/enforcement.js';
 import { buildHostTaskEvidence } from './evidence-binding.js';
 import {
-  resolveSessionIdFromMetadata,
-  injectSessionIdIntoOutput,
-} from './enforcement/extraction.js';
-import {
   REVIEW_REQUIRED_PREFIX,
   REVIEWER_SUBAGENT_TYPE,
   type HostTaskBindOutcome,
@@ -152,7 +148,7 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
       expect(result.diagnostic).toHaveProperty('tool', 'flowguard_plan');
     });
 
-    it('no_attestation fallback — toolObligationId missing triggers tool-based matching', () => {
+    it('missing attestation is rejected at the strict reviewer-input boundary', () => {
       const state = createSessionState();
       onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(), NOW);
 
@@ -168,18 +164,16 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
         missingVerification: [],
         scopeCreep: [],
         unknowns: [],
-        reviewedBy: { sessionId: CHILD_SESSION_ID },
-        reviewedAt: NOW,
-        // No attestation field → toolObligationId is null → fallback to tool matching
+        // No attestation field.
       });
       onTaskToolAfter(
         state,
         { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
         taskResultNoAttestation,
         LATER,
+        { metadata: { sessionID: CHILD_SESSION_ID } },
       );
 
-      // BUG-20: With the fallback, this now BINDS successfully instead of failing
       const attempts = [attemptFor(obligation)];
       const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
         obligations: [obligation],
@@ -187,10 +181,8 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
         attempts: attempts,
       });
 
-      expect(result.evidence).not.toBeNull();
-      expect(result.bindOutcome).toBe('bound');
-      expect(result.diagnostic).toHaveProperty('obligationId', obligation.obligationId);
-      expect(result.diagnostic).toHaveProperty('bindingMode', 'tool_fallback');
+      expect(result.evidence).toBeNull();
+      expect(result.bindOutcome).toBe('schema_invalid');
     });
 
     it('no_matching_obligation — attestedObligationId does not match any obligation', () => {
@@ -253,6 +245,8 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
       const existingInvocation = buildInvocationEvidence({
         obligationId: obligation.obligationId,
         obligationType: 'plan',
+        mandateDigest: obligation.mandateDigest,
+        criteriaVersion: obligation.criteriaVersion,
         parentSessionId: SESSION_ID,
         childSessionId: CHILD_SESSION_ID,
         invocationMode: 'host_subagent_task',
@@ -299,6 +293,7 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
         { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
         taskResultWithAttestation(obligation.obligationId, { childSessionId: 'ses_earlier' }),
         '2026-05-10T12:00:30.000Z',
+        { metadata: { sessionID: 'ses_earlier' } },
       );
 
       // Second Task call (later timestamp) — matches implement pending review
@@ -307,6 +302,7 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
         { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
         taskResultWithAttestation(obligation.obligationId, { childSessionId: 'ses_latest' }),
         '2026-05-10T12:01:00.000Z',
+        { metadata: { sessionID: 'ses_latest' } },
       );
 
       const attempts = [
@@ -329,12 +325,8 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
       expect(result.evidence!.obligationType).toBe('implement');
     });
 
-    it('host-authoritative — confabulated mandateDigest binds, surfaced as divergence', () => {
-      // Real reviewer behavior: the LLM was given the obligation UUID but not the
-      // 64-hex mandateDigest, so it confabulated one. The obligation itself is correct.
-      const { state, obligation, attempts } = setupFullCycle({
-        attestationMandateDigest: '2a768e45-aef2-4951-b5aa-f178c78afcab',
-      });
+    it('host stamps mandateDigest on strict reviewer input', () => {
+      const { state, obligation, attempts } = setupFullCycle();
 
       const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
         obligations: [obligation],
@@ -342,21 +334,15 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
         attempts: attempts,
       });
 
-      // Binds host-authoritatively instead of fatally rejecting on the echoed constant.
       expect(result.bindOutcome).toBe('bound');
       expect(result.evidence).not.toBeNull();
-      expect(result.diagnostic.hostConstantDivergence).toContain('mandateDigest');
-
-      // Persisted evidence carries the host-authoritative digest, not the confabulation.
       const att = result.evidence!.capturedRawFindings?.attestation as Record<string, unknown>;
       expect(att.mandateDigest).toBe(REVIEW_MANDATE_DIGEST);
       expect(att.criteriaVersion).toBe(REVIEW_CRITERIA_VERSION);
     });
 
-    it('host-authoritative — confabulated criteriaVersion binds, surfaced as divergence', () => {
-      const { state, obligation, attempts } = setupFullCycle({
-        attestationCriteriaVersion: 'plan-review-v1',
-      });
+    it('host stamps criteriaVersion on strict reviewer input', () => {
+      const { state, obligation, attempts } = setupFullCycle();
 
       const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
         obligations: [obligation],
@@ -365,7 +351,6 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
       });
 
       expect(result.bindOutcome).toBe('bound');
-      expect(result.diagnostic.hostConstantDivergence).toContain('criteriaVersion');
       const att = result.evidence!.capturedRawFindings?.attestation as Record<string, unknown>;
       expect(att.criteriaVersion).toBe(REVIEW_CRITERIA_VERSION);
     });
@@ -569,6 +554,7 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
         { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt(1, 2) },
         taskResult,
         LATER,
+        { metadata: { sessionID: CHILD_SESSION_ID } },
       );
 
       const attempts = [attemptFor(obligation)];
@@ -587,10 +573,7 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
       // Reproduces the real run: the reviewer copied the obligation UUID into
       // mandateDigest and invented criteriaVersion. Binding must succeed AND the
       // bound evidence must resolve cleanly through resolveHostTaskFindings.
-      const { state, obligation, attempts } = setupFullCycle({
-        attestationMandateDigest: '2a768e45-aef2-4951-b5aa-f178c78afcab',
-        attestationCriteriaVersion: 'plan-review-v1',
-      });
+      const { state, obligation, attempts } = setupFullCycle();
 
       const bind = buildHostTaskEvidence(state, SESSION_ID, LATER, {
         obligations: [obligation],
@@ -598,9 +581,6 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
         attempts: attempts,
       });
       expect(bind.bindOutcome).toBe('bound');
-      expect(bind.diagnostic.hostConstantDivergence).toEqual(
-        expect.arrayContaining(['mandateDigest', 'criteriaVersion']),
-      );
 
       const assurance = appendInvocationEvidence(ensureReviewAssurance(undefined), bind.evidence!);
       const resolved = resolveHostTaskFindings(assurance, obligation);
@@ -622,7 +602,7 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
 describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () => {
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
-  /** Build task result JSON WITHOUT a reviewedBy.sessionId (simulates real reviewer output). */
+  /** Build strict reviewer input without host-owned session provenance. */
   function taskResultNoSessionId(
     obligationId: string,
     opts: { iteration?: number; planVersion?: number; verdict?: string } = {},
@@ -638,25 +618,14 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
-      reviewedBy: {},
-      reviewedAt: NOW,
       attestation: {
         toolObligationId: obligationId,
-        mandateDigest: REVIEW_MANDATE_DIGEST,
-        criteriaVersion: REVIEW_CRITERIA_VERSION,
-        // ReviewAttestation requires the reviewed iteration/planVersion: the
-        // attestation states WHAT was reviewed, so omitting them makes the
-        // findings schema-invalid before binding.
-        iteration,
-        planVersion,
-        reviewedBy: REVIEWER_SUBAGENT_TYPE,
       },
     });
   }
 
   /**
    * Full cycle with TaskToolContext (BUG-14 flow).
-   * Optionally pre-injects session ID into output (mirrors plugin.ts logic).
    */
   function setupCycleWithContext(
     opts: {
@@ -684,17 +653,11 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
       taskResult = taskResultNoSessionId(obligation.obligationId, { iteration, planVersion });
     }
 
-    // Mirror plugin.ts BUG-14 fix: resolve session ID and inject BEFORE tracking
-    let resolvedChildSessionId: string | null = null;
-    if (context) {
-      resolvedChildSessionId = resolveSessionIdFromMetadata(context.metadata);
-      if (!resolvedChildSessionId && context.callID) {
-        resolvedChildSessionId = `derived:call:${context.callID}`;
-      }
-      if (resolvedChildSessionId) {
-        taskResult = injectSessionIdIntoOutput(taskResult, resolvedChildSessionId);
-      }
-    }
+    const resolvedChildSessionId =
+      (typeof context?.metadata?.sessionID === 'string' && context.metadata.sessionID) ||
+      (typeof context?.metadata?.sessionId === 'string' && context.metadata.sessionId) ||
+      (typeof context?.metadata?.id === 'string' && context.metadata.id) ||
+      (context?.callID ? `derived:call:${context.callID}` : null);
 
     onTaskToolAfter(
       state,
@@ -854,13 +817,12 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
       expect(result.evidence!.childSessionId).toBe('ses_meta_override');
     });
 
-    it('Tier 2 text extraction used when metadata missing but output has sessionId', () => {
-      // No metadata context but output contains embedded reviewedBy.sessionId
+    it('does not bind reviewer-authored session provenance without host metadata', () => {
       const state = createSessionState();
       onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(), NOW);
       const obligation = pendingObligation();
 
-      // Task result WITH embedded sessionId, NO metadata context
+      // Reviewer input does not contain host-owned session provenance.
       const taskResult = taskResultWithAttestation(obligation.obligationId, {
         childSessionId: 'ses_text_extracted',
       });
@@ -869,7 +831,7 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
         { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
         taskResult,
         LATER,
-        // No context — Tier 2 text extraction kicks in
+        // No host context.
       );
 
       const attempts = [attemptFor(obligation, 'ses_text_extracted')];
@@ -879,8 +841,7 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
         attempts: attempts,
       });
 
-      expect(result.bindOutcome).toBe('bound');
-      expect(result.evidence!.childSessionId).toBe('ses_text_extracted');
+      expect(result.bindOutcome).toBe('no_child_session');
     });
 
     it('metadata.id (generic) resolves as Tier 1 fallback field', () => {
@@ -952,7 +913,7 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
       expect(r2.diagnostic).toHaveProperty('findingsHash', r1.diagnostic.findingsHash);
     });
 
-    it('non-JSON output is unchanged by injection — no_child_session if no other tier', () => {
+    it('non-JSON output has no findings even when the host resolves the session', () => {
       const state = createSessionState();
       onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(), NOW);
       const obligation = pendingObligation();
@@ -961,10 +922,6 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
       const rawOutput = 'This is a plain text reviewer response with no JSON structure.';
       // Tier 3 with callID still resolves
       const ctx: TaskToolContext = { callID: 'call-raw-text' };
-      const injected = injectSessionIdIntoOutput(rawOutput, `derived:call:${ctx.callID}`);
-      // No reviewedBy marker in non-JSON → output unchanged
-      expect(injected).toBe(rawOutput);
-
       // But onTaskToolAfter with context still gets Tier 3 session ID
       onTaskToolAfter(
         state,
@@ -1008,7 +965,7 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
   // ─── SMOKE ─────────────────────────────────────────────────
 
   describe('SMOKE', () => {
-    it('full pipeline: resolve → inject → track → build → bound', () => {
+    it('full pipeline: resolve → track → build → bound', () => {
       const metadata = { sessionID: 'ses_smoke_full' };
       const callID = 'call-smoke-full';
 
@@ -1016,23 +973,16 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
       onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(1, 2), NOW);
 
       const obligation = pendingObligation({ iteration: 1, planVersion: 2 });
-      let taskResult = taskResultNoSessionId(obligation.obligationId, {
+      const taskResult = taskResultNoSessionId(obligation.obligationId, {
         iteration: 1,
         planVersion: 2,
       });
 
-      // Step 1: Resolve session ID (mirrors plugin.ts)
-      let resolved = resolveSessionIdFromMetadata(metadata);
-      if (!resolved && callID) resolved = `derived:call:${callID}`;
+      // Step 1: Resolve session ID from host metadata.
+      const resolved = metadata.sessionID;
       expect(resolved).toBe('ses_smoke_full');
 
-      // Step 2: Inject into output
-      taskResult = injectSessionIdIntoOutput(taskResult, resolved!);
-      const parsed = JSON.parse(taskResult) as Record<string, unknown>;
-      const rb = parsed.reviewedBy as Record<string, unknown>;
-      expect(rb.sessionId).toBe('ses_smoke_full');
-
-      // Step 3: Track
+      // Step 2: Track the strict reviewer input with host context.
       onTaskToolAfter(
         state,
         { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt(1, 2) },
@@ -1041,15 +991,15 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
         { metadata, callID },
       );
 
-      // Step 4: Build evidence — the envelope is bound to the resolved session
-      const attempts = [attemptFor(obligation, resolved!)];
+      // Step 3: Build evidence — the envelope is bound to the resolved session
+      const attempts = [attemptFor(obligation, resolved)];
       const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
         obligations: [obligation],
         invocations: [],
         attempts: attempts,
       });
 
-      // Step 5: Verify bound
+      // Step 4: Verify bound
       expect(result.bindOutcome).toBe('bound');
       expect(result.evidence).not.toBeNull();
       expect(result.evidence!.childSessionId).toBe('ses_smoke_full');
@@ -1093,13 +1043,11 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
       onFlowGuardToolAfter(state, 'flowguard_implement', {}, modeAResponse(0, 1), NOW);
 
       const obligation = pendingObligation({ obligationType: 'implement' });
-      let taskResult = taskResultNoSessionId(obligation.obligationId);
+      const taskResult = taskResultNoSessionId(obligation.obligationId);
 
       // Tier 3 resolution
       const callID = 'call-impl-001';
       const resolved = `derived:call:${callID}`;
-      taskResult = injectSessionIdIntoOutput(taskResult, resolved);
-
       onTaskToolAfter(
         state,
         { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
@@ -1121,9 +1069,7 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
       expect(result.evidence!.obligationType).toBe('implement');
     });
 
-    it('pre-BUG-14 path without context still works when output has embedded sessionId', () => {
-      // Backward compatibility: if no TaskToolContext is passed but the reviewer
-      // output includes a valid reviewedBy.sessionId, Tier 2 extraction works
+    it('rejects a missing host context even when the fixture names a reviewer session', () => {
       const state = createSessionState();
       onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(), NOW);
       const obligation = pendingObligation();
@@ -1147,8 +1093,7 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
         attempts: attempts,
       });
 
-      expect(result.bindOutcome).toBe('bound');
-      expect(result.evidence!.childSessionId).toBe('ses_backward_compat');
+      expect(result.bindOutcome).toBe('no_child_session');
     });
   });
 });
@@ -1209,6 +1154,7 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
       { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
       corruptTaskResult(obligation.obligationId),
       LATER,
+      { metadata: { sessionID: CHILD_CORRUPT } },
     );
 
     // Bind #1 is REFUSED: malformed reviewer output never becomes evidence.
@@ -1235,7 +1181,7 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
     const invocations: ReviewInvocationEvidence[] = [];
     const resolveCorrupt = resolveHostTaskFindings(
       {
-        assuranceSchemaVersion: 'review-assurance.v4' as const,
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [obligation],
         invocations,
         attempts: [],
@@ -1253,6 +1199,7 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
       { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
       validResult,
       LATER,
+      { metadata: { sessionID: CHILD_VALID } },
     );
 
     // Bind #2 — the re-arm replaced the corrupt capture with the valid one, so
@@ -1271,7 +1218,7 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
     // skips the still-unparseable corrupt one, and returns the valid re-capture.
     const resolveValid = resolveHostTaskFindings(
       {
-        assuranceSchemaVersion: 'review-assurance.v4' as const,
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [obligation],
         invocations,
         attempts: [],
@@ -1284,16 +1231,6 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
     expect(resolveValid.invocation.childSessionId).toBe(CHILD_VALID);
   });
 
-  /**
-   * Live-runtime symptom (implement-run demo): the FIRST bind attempt emits
-   * `no_matched_record` with calledCount:1 — a reviewer Task WAS called, but its
-   * captured findings are absent because the reviewer output carried no string
-   * `overallVerdict`, so `extractCapturedFindings` returns null and the record is
-   * excluded from `matched[]` (unlike the malformed-but-parseable case above,
-   * which binds at #1). host_task_required blocks fail-closed. A sequential
-   * reviewer re-invocation with valid findings re-arms the same pending review
-   * and binds `bound`. This locks the observed first-failure → clean-retry path.
-   */
   function noVerdictTaskResult(obligationId: string): string {
     return JSON.stringify({
       iteration: 0,
@@ -1318,10 +1255,16 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
     });
   }
 
-  it('first bind emits no_matched_record (calledCount:1), sequential re-invocation binds bound', () => {
+  it('marks a host-owned Task without extractable findings as extraction_invalid', () => {
     const state = createSessionState();
-    onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(0, 1), NOW);
     const obligation = pendingObligation();
+    onFlowGuardToolAfter(
+      state,
+      'flowguard_plan',
+      {},
+      modeAResponse(0, 1, obligation.obligationId),
+      NOW,
+    );
 
     // ── Reviewer run #1: Task called, but findings carry no overallVerdict ────
     onTaskToolAfter(
@@ -1329,40 +1272,22 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
       { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
       noVerdictTaskResult(obligation.obligationId),
       LATER,
+      { metadata: { sessionID: CHILD_CORRUPT } },
     );
 
-    // Bind #1 → no_matched_record: the record is subagentCalled=true but has no
-    // usable capturedFindings, so it is excluded from matched[]. This is the exact
-    // live-log diagnostic (pendingCount:1, calledCount:1).
-    // Run #2 below re-invokes with a new child session, so both envelopes exist.
-    const attemptsSequential = [attemptFor(obligation, CHILD_VALID)];
+    const attempt = attemptFor(obligation, CHILD_CORRUPT);
     const bindFirst = buildHostTaskEvidence(state, SESSION_ID, LATER, {
       obligations: [obligation],
       invocations: [],
-      attempts: attemptsSequential,
+      attempts: [attempt],
+      execution: { obligationId: obligation.obligationId, attemptId: attempt.attemptId },
     });
     expect(bindFirst.evidence).toBeNull();
-    expect(bindFirst.bindOutcome).toBe('no_matched_record');
-    expect(bindFirst.diagnostic).toHaveProperty('pendingCount', 1);
-    expect(bindFirst.diagnostic).toHaveProperty('calledCount', 1);
-
-    // ── Reviewer run #2 (sequential re-invocation): valid findings ────────────
-    onTaskToolAfter(
-      state,
-      { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
-      taskResultWithAttestation(obligation.obligationId, { childSessionId: CHILD_VALID }),
-      LATER,
-    );
-
-    // Bind #2 → bound: the re-arm replaced the empty capture with a usable one.
-    const bindSecond = buildHostTaskEvidence(state, SESSION_ID, LATER, {
-      obligations: [obligation],
-      invocations: [],
-      attempts: attemptsSequential,
+    expect(bindFirst.bindOutcome).toBe('extraction_invalid');
+    expect(bindFirst.attempt?.attemptId).toBe(attempt.attemptId);
+    expect(bindFirst.diagnostic).toMatchObject({
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD_CORRUPT,
     });
-    expect(bindSecond.bindOutcome).toBe('bound');
-    expect(bindSecond.evidence).not.toBeNull();
-    expect(bindSecond.evidence!.childSessionId).toBe(CHILD_VALID);
-    expect(bindSecond.evidence!.obligationId).toBe(obligation.obligationId);
   });
 });

@@ -60,9 +60,9 @@ function buildAnchorContract(subject: FrozenReviewSubject): ReviewAnchorContract
 
 export interface FrozenReviewerContext {
   readonly reviewMaterial: ReviewMaterial;
-  readonly reviewSubject: FrozenReviewSubject;
-  readonly reviewSubjectScope: ReviewSubjectScope;
-  readonly anchorContract: ReviewAnchorContract;
+  readonly reviewSubject?: FrozenReviewSubject;
+  readonly reviewSubjectScope?: ReviewSubjectScope;
+  readonly anchorContract?: ReviewAnchorContract;
 }
 
 export type FrozenReviewerContextResult =
@@ -81,11 +81,19 @@ export function verifyFrozenReviewerContext(
   obligation: ReviewObligation | null | undefined,
   reviewMaterial: ReviewMaterial | null | undefined,
 ): FrozenReviewerContextResult {
-  if (!obligation?.reviewSubject || !reviewMaterial) {
+  if (!obligation) {
     return {
       kind: 'blocked',
       code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
-      reason: 'frozen subject or persisted material is missing',
+      reason: 'review obligation is missing',
+    };
+  }
+  if (!reviewMaterial) {
+    return {
+      kind: 'blocked',
+      code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
+      reason:
+        'this obligation predates frozen review material and cannot be safely reconstructed from mutable state',
     };
   }
   if (reviewMaterial.content !== normalizeReviewContent(reviewMaterial.content)) {
@@ -103,14 +111,17 @@ export function verifyFrozenReviewerContext(
       reason: 'persisted material digest does not match its canonical content',
     };
   }
-  if (actualDigest !== obligation.reviewSubject.materialDigest) {
+  if (obligation.reviewSubject && actualDigest !== obligation.reviewSubject.materialDigest) {
     return {
       kind: 'blocked',
       code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
       reason: 'persisted material digest does not match the frozen review subject',
     };
   }
-  if (obligation.subjectDigest !== obligation.reviewSubject.subjectDigest) {
+  if (
+    obligation.reviewSubject &&
+    obligation.subjectDigest !== obligation.reviewSubject.subjectDigest
+  ) {
     return {
       kind: 'blocked',
       code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
@@ -121,9 +132,13 @@ export function verifyFrozenReviewerContext(
     kind: 'ok',
     context: {
       reviewMaterial,
-      reviewSubject: obligation.reviewSubject,
-      reviewSubjectScope: obligation.reviewSubjectScope,
-      anchorContract: buildAnchorContract(obligation.reviewSubject),
+      ...(obligation.reviewSubject
+        ? {
+            reviewSubject: obligation.reviewSubject,
+            reviewSubjectScope: obligation.reviewSubjectScope,
+            anchorContract: buildAnchorContract(obligation.reviewSubject),
+          }
+        : {}),
     },
   };
 }

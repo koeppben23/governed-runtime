@@ -31,6 +31,7 @@
  */
 
 import { ReviewActorInfo, ReviewFindings } from '../../../state/evidence-review.js';
+import { ReviewerFindingsInput } from '../../../state/evidence-review-input.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../tool-names.js';
 import { normalizeChallenges } from './normalize.js';
 import type { PendingReview } from './types.js';
@@ -160,13 +161,20 @@ export type PrepareReviewerFindingsResult =
       readonly details: { readonly clientReference: string; readonly index: number };
     };
 
+function schemaIssuePath(issue: {
+  path: readonly PropertyKey[];
+  keys?: readonly PropertyKey[];
+}): string {
+  const path = issue.path.length > 0 ? issue.path : (issue.keys ?? []);
+  return path.map(String).join('.');
+}
+
 /**
  * Host-owned mechanical normalization followed by the canonical schema gate.
  *
  * Ordering is a correctness contract, not a preference:
- *  1. Host provenance overwrites reviewer-authored identity and timestamps.
- *  2. Attestation host constants are stamped onto a valid reviewer attestation;
- *     an invalid one is dropped (the reviewer never chose those values).
+ *  1. The untrusted reviewer-owned input clears its strict DTO boundary.
+ *  2. Host provenance and attestation constants are stamped only after that.
  *  3. Challenge identity is minted host-side. The canonical prompt asks for a
  *     `clientReference` slug and never for a `challengeId`, so skipping this
  *     makes EVERY prompt-compliant reviewer output `schema_invalid`.
@@ -182,29 +190,40 @@ export function prepareReviewerFindingsForValidation(input: {
 }): PrepareReviewerFindingsResult {
   const { rawFindings, obligationId, hostConstants, hostProvenance } = input;
 
+  const reviewerInput = ReviewerFindingsInput.safeParse(rawFindings);
+  if (!reviewerInput.success) {
+    return {
+      ok: false,
+      code: 'schema_invalid',
+      issues: reviewerInput.error.issues.map(
+        (issue) => `${schemaIssuePath(issue)}: ${issue.message}`,
+      ),
+      issueKeys: reviewerInput.error.issues.map((issue) => ({
+        path: schemaIssuePath(issue),
+        code: issue.code,
+        message: issue.message,
+      })),
+    };
+  }
+
   const provenanceFindings = applyHostProvenance(
-    rawFindings,
+    reviewerInput.data,
     hostProvenance.childSessionId,
     hostProvenance.reviewedAt,
   );
 
-  const attestation = provenanceFindings.attestation as Record<string, unknown> | undefined;
-  const { hasValidAttestation } = resolveAttestationInfo(attestation);
-  let hostAttestationFindings: Record<string, unknown>;
-  if (!hasValidAttestation) {
-    const { attestation: _omit, ...rest } = provenanceFindings;
-    hostAttestationFindings = rest;
-  } else {
-    hostAttestationFindings = {
-      ...provenanceFindings,
-      attestation: {
-        ...(attestation ?? {}),
-        mandateDigest: hostConstants.mandateDigest,
-        criteriaVersion: hostConstants.criteriaVersion,
-        reviewedBy: REVIEWER_SUBAGENT_TYPE,
-      },
-    };
-  }
+  const attestation = provenanceFindings.attestation as { toolObligationId: string };
+  let hostAttestationFindings: Record<string, unknown> = {
+    ...provenanceFindings,
+    attestation: {
+      toolObligationId: attestation.toolObligationId,
+      iteration: reviewerInput.data.iteration,
+      planVersion: reviewerInput.data.planVersion,
+      mandateDigest: hostConstants.mandateDigest,
+      criteriaVersion: hostConstants.criteriaVersion,
+      reviewedBy: REVIEWER_SUBAGENT_TYPE,
+    },
+  };
 
   const rawChallenges = hostAttestationFindings.challenges;
   if (Array.isArray(rawChallenges)) {
@@ -230,14 +249,14 @@ export function prepareReviewerFindingsForValidation(input: {
     return {
       ok: false,
       code: 'schema_invalid',
-      issues: parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`),
+      issues: parsed.error.issues.map((issue) => `${schemaIssuePath(issue)}: ${issue.message}`),
       // Machine-readable issue keys for the canonical repair fingerprint.
       // The human-readable `issues` above remain the display form; these keys
       // are sorted and hashed into ReviewAttempt.schemaErrorFingerprint so the
       // output-repair gate can detect a repair that reproduced the identical
       // error set.
       issueKeys: parsed.error.issues.map((issue) => ({
-        path: issue.path.join('.'),
+        path: schemaIssuePath(issue),
         code: issue.code,
         message: issue.message,
       })),

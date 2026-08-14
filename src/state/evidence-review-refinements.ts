@@ -36,6 +36,10 @@ export interface ObligationRefinementShape {
   readonly obligationType: string;
   readonly obligationId: string;
   readonly subjectDigest: string;
+  readonly criteriaVersion: string;
+  readonly reviewMaterial?: {
+    readonly subjectDigest: string;
+  } | null;
   readonly reviewSubject?: {
     readonly kind: string;
     readonly subjectDigest: string;
@@ -55,6 +59,41 @@ export interface AttemptRefinementShape {
 export interface AssuranceRefinementShape {
   readonly obligations: readonly ObligationRefinementShape[];
   readonly attempts: readonly AttemptRefinementShape[];
+}
+
+/** Frozen material must belong to the same subject as its obligation. */
+export function refineReviewMaterialSubject(
+  obligation: ObligationRefinementShape,
+  context: z.RefinementCtx,
+): void {
+  if (
+    !obligation.reviewMaterial ||
+    obligation.reviewMaterial.subjectDigest === obligation.subjectDigest
+  ) {
+    return;
+  }
+  context.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: ['reviewMaterial', 'subjectDigest'],
+    message: 'Review obligation reviewMaterial.subjectDigest must match obligation.subjectDigest.',
+  });
+}
+
+/** Known generations persisted before frozen review material existed. */
+const PRE_FROZEN_MATERIAL_CRITERIA = new Set(['p37-v1', 'p38-v1', 'p39-v1', 'p40-v1']);
+
+/** All non-legacy generations require frozen material. */
+export function refineCurrentGenerationMaterial(
+  obligation: ObligationRefinementShape,
+  context: z.RefinementCtx,
+): void {
+  if (obligation.reviewMaterial || PRE_FROZEN_MATERIAL_CRITERIA.has(obligation.criteriaVersion))
+    return;
+  context.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: ['reviewMaterial'],
+    message: 'Non-legacy review obligations require frozen reviewMaterial.',
+  });
 }
 
 /** Standalone review obligations require a frozen, digest-matching subject. */

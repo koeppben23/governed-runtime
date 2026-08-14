@@ -34,7 +34,10 @@ import type {
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function makeEState(): SessionEnforcementState {
-  return { pendingReviews: new Map<PendingReviewTool, PendingReview>() };
+  return {
+    pendingReviews: new Map<PendingReviewTool, PendingReview>(),
+    executedTaskPrompts: new Map(),
+  };
 }
 
 const FIXED_NOW = '2026-05-15T12:00:00.000Z';

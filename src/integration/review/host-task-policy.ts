@@ -17,7 +17,6 @@ import {
   type FrozenReviewerContext,
 } from './frozen-reviewer-context.js';
 import { buildReviewerProofContext } from './proof-context.js';
-import { buildReviewerArtifactContext } from './reviewer-context.js';
 import { REVIEW_COMPLETED_PREFIX, extractReviewContext } from './orchestrator.js';
 import {
   REASON_HOST_SUBAGENT_TASK_REQUIRED,
@@ -28,11 +27,14 @@ import {
   findReviewObligationById,
   ensureReviewAssurance,
   findBindableAttempt,
-  latestReviewMaterial,
 } from './assurance.js';
 import { updateObligation } from './obligation-state.js';
 import type { SessionState } from '../../state/schema.js';
-import type { RepositoryDiscoverySnapshot, ReviewObligation } from '../../state/evidence.js';
+import {
+  hasFrozenRepositoryAuthority,
+  type RepositoryDiscoverySnapshot,
+  type ReviewObligation,
+} from '../../state/evidence.js';
 import { indexMarkdownSections } from '../../shared/markdown-sections.js';
 import type { OrchestratorDeps, ToolCallEvent } from './pipeline-types.js';
 
@@ -103,6 +105,7 @@ interface HostTaskOutputInput {
    * is then unavailable.
    */
   readonly observationCapability: string | null;
+  readonly repositoryReview: boolean;
 }
 
 /**
@@ -126,7 +129,7 @@ function applyReviewerContextFailure(
     result.recovery = [
       'Do not re-run the reviewer: the persisted material no longer matches its frozen digest binding',
       'Restore the persisted review obligation and material from a trusted source',
-      'Abort the session if the frozen material cannot be restored from trusted evidence',
+      'If this obligation predates frozen review material, start a new review cycle; do not reconstruct material from current state or the worktree',
     ];
     return JSON.stringify(refreshBlockedPresentation(result));
   }
@@ -136,7 +139,7 @@ function applyReviewerContextFailure(
     `The frozen review material itself was not invalidated.`;
   result.recovery = [
     'Re-run flowguard_review with the original content fields and reviewObligationId to reissue a bindable attempt',
-    'Pass the newly returned reviewerTaskPrompt VERBATIM to the reviewer Task; never reuse a previous prompt',
+    'Invoke a new reviewer Task with only subagent_type="flowguard-reviewer"; FlowGuard injects the newly issued canonical prompt',
     'Do NOT submit reviewVerdict or reviewFindings to recover this state',
   ];
   return JSON.stringify(result);
@@ -225,6 +228,7 @@ function buildReviewerTaskPromptOrNull(
     readonly retrySchemaErrors: readonly string[] | null;
     readonly repositoryDiscoverySnapshot: RepositoryDiscoverySnapshot | null;
     readonly observationCapability: string | null;
+    readonly repositoryReview: boolean;
   },
 ): string | null {
   if (!attestationMeta || ctx?.iteration == null) return null;
@@ -235,6 +239,7 @@ function buildReviewerTaskPromptOrNull(
     mandateDigest: attestationMeta.mandateDigest,
     criteriaVersion: attestationMeta.criteriaVersion,
     subjectLabel: 'the artifact under review',
+    repositoryReview: opts.repositoryReview,
     challengeContract: opts.challengeContract,
     proofContext: opts.proofContext,
     artifactContext: opts.artifactContext,
@@ -266,8 +271,8 @@ function buildHostTaskBlockedOutput(
       ? renderReviewContext({ iteration: ctx.iteration, planVersion: ctx.planVersion })
       : '';
 
-  // F10: hand the agent a canonical, verbatim copy-ready reviewer prompt so it
-  // does not free-compose one and omit the iteration=/planVersion= tokens the
+  // F10: issue the host-injected canonical reviewer prompt so the agent does
+  // not free-compose one and omit the iteration=/planVersion= tokens the
   // enforcement matcher requires (the first-attempt SUBAGENT_PROMPT_MISSING_CONTEXT
   // root cause). The prompt embeds the review context via the SAME serializer the
   // matcher validates against. Only emitted when both the attestation and the
@@ -280,23 +285,19 @@ function buildHostTaskBlockedOutput(
     retrySchemaErrors: input.retrySchemaErrors,
     repositoryDiscoverySnapshot: input.repositoryDiscoverySnapshot,
     observationCapability: input.observationCapability,
+    repositoryReview: input.repositoryReview,
   });
   const copyPromptStr = reviewerTaskPrompt
-    ? ` A ready-to-use reviewer prompt is provided in the reviewerTaskPrompt field — pass it ` +
-      `VERBATIM as the Task tool "prompt" argument without appending content, ` +
-      `so the required review context is present on the first attempt.`
+    ? ` A canonical reviewer prompt is provided in the reviewerTaskPrompt field. Call Task only ` +
+      `with subagent_type="${REVIEWER_SUBAGENT_TYPE}"; FlowGuard injects the canonical bytes ` +
+      `at the host boundary, so the required review context is present on the first attempt.`
     : '';
 
-  // Forward the host-authoritative attestation so the agent passes a concrete
-  // toolObligationId (UUID) to the reviewer subagent. Without this the
-  // standalone /review instruction omitted the attestation, the reviewer
-  // defaulted toolObligationId to "NOT_VERIFIED", and the verdict could not bind
-  // host-task evidence (HOST_SUBAGENT_TASK_REQUIRED).
+  // requiredReviewAttestation is host/parent context. The canonical prompt is
+  // the sole reviewer-output contract and contains only toolObligationId.
   const attestationStr = attestationMeta
-    ? ` Required attestation (forward verbatim to the reviewer): ` +
-      `toolObligationId=${attestationMeta.toolObligationId}, ` +
-      `mandateDigest=${attestationMeta.mandateDigest}, ` +
-      `criteriaVersion=${attestationMeta.criteriaVersion}.`
+    ? ` Host context identifies obligation ${attestationMeta.toolObligationId}; do not construct ` +
+      `reviewer attestation fields outside reviewerTaskPrompt.`
     : '';
 
   const fallback =
@@ -539,7 +540,7 @@ function buildHostTaskOutputInput(
     attemptId: bindableAttempt?.attemptId ?? null,
     challengeContract: buildHostTaskChallengeContract(sessionState, obligation),
     proofContext: buildReviewerProofContext(sessionState),
-    artifactContext: obligation ? buildReviewerArtifactContext(sessionState, obligation) : [],
+    artifactContext: [],
     frozenReviewerContext,
     reviewerContextFailure: resolveReviewerContextFailure(
       sessionState,
@@ -553,6 +554,7 @@ function buildHostTaskOutputInput(
         ? bindableAttempt.repositoryDiscovery.snapshot
         : null,
     observationCapability: bindableAttempt?.observationCapability ?? null,
+    repositoryReview: obligation ? hasFrozenRepositoryAuthority(obligation) : false,
   };
 }
 
@@ -571,15 +573,12 @@ function resolveReviewerContextFailure(
   bindableAttempt: ReturnType<typeof findBindableAttempt>,
   frozenReviewerContext: FrozenReviewerContext | null,
 ): ReviewerContextFailure | null {
-  if (obligation?.obligationType !== 'review' || frozenReviewerContext) return null;
-  const persistedMaterial = latestReviewMaterial(
-    ensureReviewAssurance(sessionState.reviewAssurance),
-    obligation.obligationId,
-  );
-  const materialCheck = verifyFrozenReviewerContext(obligation, persistedMaterial);
+  if (!obligation) return null;
+  const materialCheck = verifyFrozenReviewerContext(obligation, obligation.reviewMaterial);
   if (materialCheck.kind === 'blocked') {
     return { kind: 'material_integrity', reason: materialCheck.reason };
   }
+  if (frozenReviewerContext) return null;
   return {
     kind: 'attempt_missing',
     obligationId: obligation.obligationId,
@@ -593,7 +592,8 @@ function resolveFrozenReviewerContext(
   obligation: ReviewObligation | null,
   attempt: ReturnType<typeof findBindableAttempt>,
 ): FrozenReviewerContext | null {
-  const verified = verifyFrozenReviewerContext(obligation, attempt?.reviewMaterial);
+  if (!attempt) return null;
+  const verified = verifyFrozenReviewerContext(obligation, obligation?.reviewMaterial);
   return verified.kind === 'ok' ? verified.context : null;
 }
 

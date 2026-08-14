@@ -69,7 +69,7 @@ function buildState(strictEnforcement: boolean): SessionState {
       reviewOutputPolicy: 'structured_required',
     },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v4' as const,
+      assuranceSchemaVersion: 'review-assurance.v5' as const,
       obligations: [
         {
           obligationId: OBLIGATION_ID,
@@ -114,7 +114,7 @@ function buildAlreadyBlockedState(): SessionState {
       reviewOutputPolicy: 'structured_required',
     },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v4' as const,
+      assuranceSchemaVersion: 'review-assurance.v5' as const,
       obligations: [
         {
           obligationId: OBLIGATION_ID,
@@ -443,7 +443,7 @@ describe('BUG-07: obligation blocked after total invocation failure', () => {
           reviewInvocationPolicy: 'host_task_required',
         },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v4' as const,
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
           obligations: [
             {
               obligationId: OBLIGATION_ID,

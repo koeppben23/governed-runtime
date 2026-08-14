@@ -51,7 +51,7 @@ function findingRelation() {
   const location = { path: 'src/foo.ts', revision: 'head' as const, line: 1 };
   return {
     subjectAnchors: [{ kind: 'repository_location' as const, location }],
-    evidenceLocations: [location],
+    evidenceLocations: [],
   };
 }
 
@@ -74,7 +74,7 @@ function strictAssuranceFixture(
   findings: ReviewFindings = strictFindings(),
 ): NonNullable<ReviewFindingsValidationContext['assurance']> {
   return {
-    assuranceSchemaVersion: 'review-assurance.v4' as const,
+    assuranceSchemaVersion: 'review-assurance.v5' as const,
     attempts: [],
     obligations: [
       {
@@ -680,7 +680,7 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
     return makeCtx({
       obligationType: 'implement',
       assurance: {
-        assuranceSchemaVersion: 'review-assurance.v4' as const,
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [implObligation()],
         invocations: [],
         attempts: [],

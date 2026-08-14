@@ -4,7 +4,7 @@
  *              authority (prepare-findings.ts).
  *
  * The invariants pinned here close the two-stage boundary bug: raw reviewer
- * output (clientReference challenges, model-authored provenance) and the
+ * output (clientReference challenges) and the
  * canonical ReviewFindings DTO (host-minted challengeId, host provenance) were
  * previously validated by three separate raw parsers, so the transient
  * enforcement path reported phantom schema errors (challengeId) that the bind
@@ -67,7 +67,7 @@ function contentChallenge(clientReference: string, digest = 'd'.repeat(64)) {
   };
 }
 
-/** Prompt-compliant reviewer payload (clientReference, no challengeId). */
+/** Prompt-compliant reviewer input (clientReference, no host provenance). */
 function baseRawFindings(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     iteration: 0,
@@ -79,15 +79,8 @@ function baseRawFindings(overrides: Record<string, unknown> = {}): Record<string
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
-    reviewedBy: { sessionId: CHILD_SESSION_ID },
-    reviewedAt: NOW,
     attestation: {
       toolObligationId: OBLIGATION_ID,
-      mandateDigest: REVIEW_MANDATE_DIGEST,
-      criteriaVersion: REVIEW_CRITERIA_VERSION,
-      iteration: 0,
-      planVersion: 1,
-      reviewedBy: REVIEWER_SUBAGENT_TYPE,
     },
     ...overrides,
   };
@@ -117,7 +110,7 @@ function captureFor(
   );
 }
 
-/** Remove exactly the host-owned keys from a findings-shaped object. */
+/** Remove all host-owned fields for input/persisted semantic comparison. */
 function stripHostOwned(input: Record<string, unknown>): Record<string, unknown> {
   const clone = JSON.parse(JSON.stringify(input)) as Record<string, unknown>;
   delete clone.reviewedBy;
@@ -128,6 +121,8 @@ function stripHostOwned(input: Record<string, unknown>): Record<string, unknown>
     const attestation = clone.attestation as Record<string, unknown>;
     delete attestation.mandateDigest;
     delete attestation.criteriaVersion;
+    delete attestation.iteration;
+    delete attestation.planVersion;
     delete attestation.reviewedBy;
   }
   if (Array.isArray(clone.challenges)) {
@@ -157,6 +152,24 @@ describe('prepareReviewerFindingsForValidation — raw/canonical boundary', () =
     );
     expect(challenges[0]!.obligationId).toBe(OBLIGATION_ID);
     expect(challenges[0]!.clientReference).toBe('c1');
+  });
+
+  it('invariant 1b: content challenge input normalizes to canonical host-minted identity', () => {
+    const raw = baseRawFindings({ challenges: [contentChallenge('content-1')] });
+    const result = prepareReviewerFindingsForValidation({
+      rawFindings: raw,
+      obligationId: OBLIGATION_ID,
+      hostConstants: HOST_CONSTANTS,
+      hostProvenance: HOST_PROVENANCE,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new TypeError('expected ok');
+    expect(result.findings.challenges).toMatchObject([
+      { kind: 'content_challenge', obligationId: OBLIGATION_ID, clientReference: 'content-1' },
+    ]);
+    expect((result.findings.challenges as Array<Record<string, unknown>>)[0]!.challengeId).toMatch(
+      /^[0-9a-f]{8}-/i,
+    );
   });
 
   it('invariant 2: stray key inside RepositoryLocation is exactly one actionable schema error', () => {
@@ -368,7 +381,7 @@ describe('prepareReviewerFindingsForValidation — raw/canonical boundary', () =
     expect(bind.bindOutcome).toBe('challenge_evidence_unknown');
   });
 
-  it('invariant 8: reviewer-confabulated host constants lose to the host value and stay observable', () => {
+  it('invariant 8: reviewer-owned input rejects host constants before host stamping', () => {
     const raw = baseRawFindings({
       attestation: {
         toolObligationId: OBLIGATION_ID,
@@ -385,34 +398,26 @@ describe('prepareReviewerFindingsForValidation — raw/canonical boundary', () =
       hostConstants: HOST_CONSTANTS,
       hostProvenance: HOST_PROVENANCE,
     });
-    expect(prepared.ok).toBe(true);
-    if (!prepared.ok) throw new TypeError('expected ok');
-    const attestation = prepared.findings.attestation as Record<string, unknown>;
-    expect(attestation.criteriaVersion).toBe(REVIEW_CRITERIA_VERSION);
-
-    const state = createSessionState();
-    onFlowGuardToolAfter(
-      state,
-      'flowguard_plan',
-      { planText: '## Plan' },
-      modeAResponse(0, 1, OBLIGATION_ID),
-      NOW,
-    );
-    captureFor(state, raw);
-    const obligation = pendingObligation({
-      obligationId: OBLIGATION_ID,
-      obligationType: 'plan',
-      iteration: 0,
-      planVersion: 1,
-    });
-    const bind = buildHostTaskEvidence(state, SESSION_ID, LATER, {
-      obligations: [obligation],
-      invocations: [],
-      attempts: [attemptFor(obligation, CHILD_SESSION_ID)],
-    });
-    expect(bind.bindOutcome).toBe('bound');
-    expect(bind.diagnostic?.hostConstantDivergence).toContain('criteriaVersion');
+    expect(prepared.ok).toBe(false);
+    if (prepared.ok) throw new TypeError('expected rejection');
+    expect(prepared.code).toBe('schema_invalid');
+    expect(prepared.issues.some((issue) => issue.includes('mandateDigest'))).toBe(true);
   });
+
+  it.each(['reviewedBy', 'reviewedAt'])(
+    'rejects top-level host-owned %s before stamping',
+    (key) => {
+      const prepared = prepareReviewerFindingsForValidation({
+        rawFindings: { ...baseRawFindings(), [key]: key === 'reviewedBy' ? {} : NOW },
+        obligationId: OBLIGATION_ID,
+        hostConstants: HOST_CONSTANTS,
+        hostProvenance: HOST_PROVENANCE,
+      });
+      expect(prepared.ok).toBe(false);
+      if (prepared.ok) throw new TypeError('expected rejection');
+      expect(prepared.issues.some((issue) => issue.includes(`"${key}"`))).toBe(true);
+    },
+  );
 });
 
 describe('structural host-context failure — fail closed at the signal transition', () => {

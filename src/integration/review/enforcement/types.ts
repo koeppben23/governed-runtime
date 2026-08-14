@@ -86,14 +86,15 @@ export interface PendingReview {
    * Trailing marker of the canonical reviewer prompt FlowGuard emitted, when it
    * emitted one.
    *
-   * The canonical prompt ends by instructing the agent to append the artifact
-   * below that line. Recording the marker lets enforcement verify that the agent
-   * actually appended something instead of pasting the instruction block alone:
-   * the prompt-length and iteration/planVersion checks are all satisfied by the
-   * canonical prompt by itself, so without this a reviewer could be dispatched
-   * with no artifact at all and nothing would notice.
+   * The host-issued prompt contains frozen review material below this line.
+   * Recording the marker lets enforcement verify that the canonical prompt
+   * includes a reviewable artifact rather than only an instruction block.
    */
   canonicalPromptAnchor: string | null;
+  /** SHA-256 of the complete host-issued reviewer prompt. */
+  expectedPromptDigest: string | null;
+  /** Exact host-issued prompt bytes. Never derive execution provenance from model args. */
+  canonicalPrompt?: string | null;
   /** Actual findings from the subagent response (Level 4). */
   capturedFindings: CapturedFindings | null;
   /** Number of times the reviewer was re-invoked for this obligation. */
@@ -157,6 +158,19 @@ export interface PendingReview {
 export interface SessionEnforcementState {
   /** Pending reviews keyed by tool name. */
   readonly pendingReviews: Map<PendingReviewTool, PendingReview>;
+  /** Host-owned before/after Task transport binding, keyed by the host call ID. */
+  readonly executedTaskPrompts: Map<string, ExecutedTaskPrompt>;
+}
+
+/** Exact prompt bytes injected by the host for one Task execution. */
+export interface ExecutedTaskPrompt {
+  readonly callId: string;
+  readonly obligationId: string;
+  readonly attemptId: string;
+  readonly canonicalPrompt: string;
+  readonly canonicalPromptDigest: string;
+  readonly modelPromptDigest: string | null;
+  readonly createdAt: string;
 }
 
 /**
@@ -224,6 +238,7 @@ export type HostTaskBindOutcome =
   | 'no_child_session'
   | 'no_obligation_type'
   | 'no_findings'
+  | 'extraction_invalid'
   | 'no_matching_obligation'
   | 'field_mismatch'
   | 'duplicate_evidence'
@@ -234,6 +249,7 @@ export type HostTaskBindOutcome =
   | 'findings_incoherent'
   | 'review_finding_out_of_scope'
   | 'review_finding_scope_unverifiable'
+  | 'repository_evidence_unbound'
   | 'subject_mismatch'
   | 'stale_attempt'
   | 'idempotent_bound'

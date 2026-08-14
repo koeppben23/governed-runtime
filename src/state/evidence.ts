@@ -60,6 +60,8 @@ export type * from './proofgraph-approval.js';
 
 export * from './evidence-review.js';
 export type * from './evidence-review.js';
+export * from './evidence-review-input.js';
+export type * from './evidence-review-input.js';
 
 // ─── Identity ──────────────────────────────────────────────────────────────────
 

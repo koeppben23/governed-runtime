@@ -25,7 +25,7 @@ import type {
 
 export function emptyReviewAssurance(): ReviewAssuranceState {
   return {
-    assuranceSchemaVersion: 'review-assurance.v4',
+    assuranceSchemaVersion: 'review-assurance.v5',
     obligations: [],
     invocations: [],
     attempts: [],
@@ -125,7 +125,7 @@ export function createAttemptForExistingObligation(
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
     subjectDigest: obligation.subjectDigest,
-    reviewMaterial: latestReviewMaterial(base, obligation.obligationId),
+    reviewMaterial: obligation.reviewMaterial,
     ordinal,
     ...(childSessionId === undefined ? {} : { childSessionId }),
     origin: transition.origin,
@@ -175,6 +175,48 @@ export function resolveAttempt(
       (a) => a.childSessionId === childSessionId && a.status !== 'stale' && a.status !== 'expired',
     ) ?? null
   );
+}
+
+/**
+ * Attempt statuses that may AUTHORIZE repository evidence. Only a `bound`
+ * attempt holds authoritative evidence; `captured` would need an explicit
+ * justification and dedicated tests before joining this set. Rejected, stale,
+ * expired, and created attempts are audit-only and can never strengthen
+ * later findings.
+ */
+export const EVIDENCE_AUTHORIZING_ATTEMPT_STATUSES: ReadonlySet<ReviewAttempt['status']> = new Set([
+  'bound',
+]);
+
+/**
+ * Fail-closed evidence-authorizing attempt resolution for DIRECT submitted
+ * findings (manual/SDK transports). A child session may be reused after a
+ * rejected attempt, so generic session lookup could pick an OLDER rejected
+ * attempt and let its audit-only observations strengthen new findings. This
+ * resolver requires:
+ *
+ * ```text
+ * attempt.obligationId === obligationId
+ * attempt.childSessionId === childSessionId
+ * attempt.status is evidence-authorizing
+ * EXACTLY ONE eligible attempt
+ * ```
+ *
+ * Returns null otherwise — ambiguity or absence fails closed.
+ */
+export function resolveEvidenceAuthorizingAttempt(
+  assurance: ReviewAssuranceState | undefined,
+  obligationId: string,
+  childSessionId: string,
+): ReviewAttempt | null {
+  const base = ensureReviewAssurance(assurance);
+  const eligible = base.attempts.filter(
+    (a) =>
+      a.obligationId === obligationId &&
+      a.childSessionId === childSessionId &&
+      EVIDENCE_AUTHORIZING_ATTEMPT_STATUSES.has(a.status),
+  );
+  return eligible.length === 1 ? eligible[0]! : null;
 }
 
 /**

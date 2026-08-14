@@ -5,7 +5,7 @@ import { renderReviewerPrompt } from './mandates-reviewer-criteria.js';
 describe('native reviewer templates', () => {
   it('renders Claude reviewer as transport-only with restricted tools', () => {
     expect(CLAUDE_REVIEWER_AGENT).toContain('name: flowguard-reviewer');
-    expect(CLAUDE_REVIEWER_AGENT).toContain('mcp__flowguard__flowguard_review');
+    expect(CLAUDE_REVIEWER_AGENT).not.toContain('mcp__flowguard__flowguard_review');
     expect(CLAUDE_REVIEWER_AGENT).toContain('Bash');
     expect(CLAUDE_REVIEWER_AGENT).toContain('transport/isolation artifacts only');
     expect(CLAUDE_REVIEWER_AGENT).toContain('validated, obligation-bound ReviewFindings');
@@ -13,7 +13,7 @@ describe('native reviewer templates', () => {
 
   it('renders Codex reviewer as transport-only with restricted tools', () => {
     expect(CODEX_REVIEWER_SUBAGENT).toContain('name: flowguard-reviewer');
-    expect(CODEX_REVIEWER_SUBAGENT).toContain('mcp__flowguard__flowguard_review');
+    expect(CODEX_REVIEWER_SUBAGENT).not.toContain('mcp__flowguard__flowguard_review');
     expect(CODEX_REVIEWER_SUBAGENT).toContain('Write');
     expect(CODEX_REVIEWER_SUBAGENT).toContain('transport/isolation artifacts only');
     expect(CODEX_REVIEWER_SUBAGENT).toContain(
@@ -57,6 +57,8 @@ describe('reviewer prompt JSON schema integrity', () => {
     const closeBraces = (schemaBlock.match(/\}/g) ?? []).length;
     expect(openBraces).toBeGreaterThan(0);
     expect(openBraces).toBe(closeBraces);
-    expect(schemaBlock).toContain('"reviewedBy"');
+    expect(schemaBlock).toContain('"attestation"');
+    expect(schemaBlock).not.toContain('"reviewedBy"');
+    expect(schemaBlock).not.toContain('"reviewedAt"');
   });
 });

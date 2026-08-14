@@ -93,7 +93,6 @@ function structuralContextBlock(state: SessionEnforcementState): EnforcementResu
   };
 }
 
-// eslint-disable-next-line complexity
 export function enforceBeforeSubagentCall(
   state: SessionEnforcementState,
   taskArgs: Record<string, unknown>,
@@ -113,6 +112,62 @@ export function enforceBeforeSubagentCall(
     (p) => !p.subagentCalled || !isPendingCaptureUsable(p),
   );
   if (unfilledPendingReviews.length === 0) return { allowed: true };
+
+  return enforcePendingReviewPrompt(unfilledPendingReviews, prompt, strictEnforcement);
+}
+
+function enforcePendingReviewPrompt(
+  unfilledPendingReviews: PendingReview[],
+  prompt: string,
+  strictEnforcement: boolean,
+): EnforcementResult {
+  const promptDigest = createHash('sha256').update(prompt, 'utf8').digest('hex');
+  const canonicalPromptBlock = checkCanonicalPrompt(unfilledPendingReviews, promptDigest);
+  if (canonicalPromptBlock) return canonicalPromptBlock;
+
+  if (prompt.length < MIN_SUBAGENT_PROMPT_LENGTH) {
+    return {
+      allowed: false,
+      code: 'SUBAGENT_PROMPT_EMPTY',
+      reason: `FlowGuard enforcement: the prompt for ${REVIEWER_SUBAGENT_TYPE} is too short (${prompt.length} chars, minimum ${MIN_SUBAGENT_PROMPT_LENGTH}). Include the plan/implementation text, ticket text, iteration, and planVersion.`,
+    };
+  }
+
+  const ctx = checkReviewContext(unfilledPendingReviews, prompt, strictEnforcement);
+  if (ctx.blockReason) return ctx.blockReason;
+  if (!ctx.hasMatch) {
+    return {
+      allowed: false,
+      code: 'SUBAGENT_PROMPT_MISSING_CONTEXT',
+      reason: `FlowGuard enforcement: the prompt for ${REVIEWER_SUBAGENT_TYPE} does not contain the expected review context. Missing: ${[...new Set(ctx.missingFields)].join(', ')}. Include the iteration and planVersion values from the FlowGuard tool response.`,
+    };
+  }
+  return checkArtifactAppended(unfilledPendingReviews, prompt);
+}
+
+function checkCanonicalPrompt(
+  unfilledPendingReviews: PendingReview[],
+  promptDigest: string,
+): EnforcementResult | null {
+  const expectedPrompt = unfilledPendingReviews.find(
+    (pending) => pending.expectedPromptDigest !== null,
+  );
+  const expectedPromptDigest = expectedPrompt?.expectedPromptDigest;
+  if (
+    expectedPromptDigest !== null &&
+    expectedPromptDigest !== undefined &&
+    expectedPromptDigest !== promptDigest
+  ) {
+    return {
+      allowed: false,
+      code: expectedPrompt!.repairPromptRequired
+        ? 'REPAIR_PROMPT_REQUIRED'
+        : 'SUBAGENT_PROMPT_MISMATCH',
+      reason: expectedPrompt!.repairPromptRequired
+        ? 'FlowGuard enforcement: the repair prompt does not exactly match the host-issued bytes.'
+        : 'FlowGuard enforcement: the reviewer prompt does not exactly match the host-issued bytes.',
+    };
+  }
 
   // Check retry exhaustion: a review that was already called and has
   // exhausted its retry budget (>= 1 retry) cannot be re-invoked.
@@ -141,7 +196,6 @@ export function enforceBeforeSubagentCall(
   if (needsRepair.length > 0) {
     // A repair prompt must have been issued (expectedRepairPromptDigest set)
     // AND the task prompt must match its digest exactly.
-    const promptDigest = createHash('sha256').update(prompt, 'utf8').digest('hex');
     const matchesRepair = needsRepair.some(
       (p) => p.expectedRepairPromptDigest !== null && p.expectedRepairPromptDigest === promptDigest,
     );
@@ -154,47 +208,32 @@ export function enforceBeforeSubagentCall(
           ? `FlowGuard enforcement: the reviewer produced schema-invalid output. ` +
             `The repair prompt's cryptographic digest does not match. ` +
             `Call flowguard_review to obtain a fresh canonical repair prompt, ` +
-            `then pass it VERBATIM to the Task tool — do not modify a single byte.`
+            `then invoke Task only with subagent_type="${REVIEWER_SUBAGENT_TYPE}". ` +
+            `FlowGuard injects the canonical bytes at the host boundary.`
           : `FlowGuard enforcement: the reviewer produced schema-invalid output. ` +
             `A fresh canonical repair prompt must be obtained from flowguard_review ` +
-            `before re-running the reviewer Task. Call flowguard_review first, ` +
-            `then use the NEW reviewerTaskPrompt — never reuse the stale one.`,
+            `before re-running the reviewer Task. Call flowguard_review first, then invoke ` +
+            `a new Task only with subagent_type="${REVIEWER_SUBAGENT_TYPE}"; never reuse ` +
+            `a stale prompt.`,
       };
     }
     // Note: repairPromptRequired is cleared in onTaskToolAfter after the
     // task runs — never in this pre-execution validator (fail-closed).
   }
 
-  if (prompt.length < MIN_SUBAGENT_PROMPT_LENGTH) {
-    return {
-      allowed: false,
-      code: 'SUBAGENT_PROMPT_EMPTY',
-      reason: `FlowGuard enforcement: the prompt for ${REVIEWER_SUBAGENT_TYPE} is too short (${prompt.length} chars, minimum ${MIN_SUBAGENT_PROMPT_LENGTH}). Include the plan/implementation text, ticket text, iteration, and planVersion.`,
-    };
-  }
-
-  const ctx = checkReviewContext(unfilledPendingReviews, prompt, strictEnforcement);
-  if (ctx.blockReason) return ctx.blockReason;
-  if (!ctx.hasMatch) {
-    return {
-      allowed: false,
-      code: 'SUBAGENT_PROMPT_MISSING_CONTEXT',
-      reason: `FlowGuard enforcement: the prompt for ${REVIEWER_SUBAGENT_TYPE} does not contain the expected review context. Missing: ${[...new Set(ctx.missingFields)].join(', ')}. Include the iteration and planVersion values from the FlowGuard tool response.`,
-    };
-  }
-  return checkArtifactAppended(unfilledPendingReviews, prompt);
+  return null;
 }
 
 /**
- * Verify that the artifact was appended below the canonical prompt.
+ * Verify that the host-issued canonical prompt includes the artifact.
  *
  * The length floor and the iteration/planVersion match are all satisfied by the
- * canonical prompt on its own, so without this check a reviewer could be
- * dispatched with the instruction block and nothing to review, and every
- * enforcement level would still report success.
+ * canonical prompt's instruction block alone, so without this check a reviewer
+ * could be dispatched with nothing to review and every enforcement level would
+ * still report success.
  *
  * Only applies where FlowGuard actually emitted a canonical prompt; a legitimate
- * free-composed prompt is unaffected.
+ * host-issued prompt is unaffected.
  */
 function checkArtifactAppended(
   pendingReviews: readonly PendingReview[],
@@ -210,7 +249,7 @@ function checkArtifactAppended(
       return {
         allowed: false,
         code: 'SUBAGENT_PROMPT_ARTIFACT_MISSING',
-        reason: `FlowGuard enforcement: the prompt for ${REVIEWER_SUBAGENT_TYPE} ends at the canonical instruction block with no artifact appended below it. Append the content to review (plan text, implementation diff, ADR, or reviewed diff) below that line; a reviewer cannot review an empty subject.`,
+        reason: `FlowGuard enforcement: the host-issued prompt for ${REVIEWER_SUBAGENT_TYPE} contains no artifact below the canonical instruction block. Reissue the review so FlowGuard can provide reviewable material; a reviewer cannot review an empty subject.`,
       };
     }
   }

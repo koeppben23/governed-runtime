@@ -32,6 +32,9 @@ import {
 } from '../adapters/workspace/index.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
+import { renderReviewerTaskPrompt } from './review/prompt-builders.js';
+import { createAttemptForExistingObligation } from './review/attempt-lifecycle.js';
+import { hashCanonicalReviewContent } from '../shared/review-subject.js';
 import type { ReviewAttempt, ReviewAttemptStatus } from '../state/evidence-review.js';
 import type { ReviewObligationStatus } from '../state/evidence-primitives.js';
 
@@ -40,6 +43,8 @@ const execFileAsync = promisify(execFile);
 const OBLIGATION_ID = '33333333-1111-4111-8111-111111111111';
 const ATTEMPT_ID = '33333333-2222-4111-8111-111111111111';
 const SUBJECT_DIGEST = 'lifecycle-plan-subject-digest';
+const REVIEW_MATERIAL_CONTENT = '## Plan Artifact\n\nLifecycle review fixture.\n';
+const REVIEW_MATERIAL_DIGEST = hashCanonicalReviewContent(REVIEW_MATERIAL_CONTENT);
 const CHILD_FIRST = 'ses_child_lifecycle_first';
 const CHILD_RETRY = 'ses_child_lifecycle_retry';
 
@@ -78,6 +83,11 @@ async function seedSession(
     obligationId: OBLIGATION_ID,
     obligationType: 'plan',
     subjectDigest: SUBJECT_DIGEST,
+    reviewMaterial: {
+      content: REVIEW_MATERIAL_CONTENT,
+      materialDigest: REVIEW_MATERIAL_DIGEST,
+      subjectDigest: SUBJECT_DIGEST,
+    },
     ordinal: 0,
     status: options.attemptStatus ?? 'created',
     origin: { kind: 'initial' } as const,
@@ -96,7 +106,7 @@ async function seedSession(
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v4' as const,
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [
           {
             obligationId: OBLIGATION_ID,
@@ -114,6 +124,11 @@ async function seedSession(
             fulfilledAt: obligationStatus === 'pending' ? null : now,
             consumedAt: obligationStatus === 'consumed' ? now : null,
             subjectDigest: SUBJECT_DIGEST,
+            reviewMaterial: {
+              content: REVIEW_MATERIAL_CONTENT,
+              materialDigest: REVIEW_MATERIAL_DIGEST,
+              subjectDigest: SUBJECT_DIGEST,
+            },
             reviewSubjectScope: {
               kind: 'repository_change',
               paths: ['src/plan.ts'],
@@ -129,20 +144,86 @@ async function seedSession(
   return sessDir;
 }
 
-function planReviewRequiredOutput(): string {
+function planReviewRequiredOutput(attemptId = ATTEMPT_ID): string {
   return JSON.stringify({
     phase: 'PLAN',
     selfReviewIteration: 0,
     reviewMode: 'subagent',
     reviewObligationId: OBLIGATION_ID,
-    reviewAttemptId: ATTEMPT_ID,
+    reviewAttemptId: attemptId,
     reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
     reviewMandateDigest: REVIEW_MANDATE_DIGEST,
+    reviewInvocation: {
+      requiredReviewAttestation: {
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+        criteriaVersion: REVIEW_CRITERIA_VERSION,
+      },
+    },
+    reviewerTaskPrompt:
+      renderReviewerTaskPrompt({
+        iteration: 0,
+        planVersion: 1,
+        obligationId: OBLIGATION_ID,
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+        criteriaVersion: REVIEW_CRITERIA_VERSION,
+        subjectLabel: 'the plan',
+      }) + `\n${REVIEW_MATERIAL_CONTENT}`,
     next: 'INDEPENDENT_REVIEW_REQUIRED: iteration=0, planVersion=1',
   });
 }
 
-function reviewerOutput(childSessionId: string): string {
+/** Mint and advertise a retry before dispatching its reviewer Task. */
+async function reissuePlanReviewRequiredOutput(
+  sessDir: string,
+  afterHook: NonNullable<Awaited<ReturnType<typeof FlowGuardAuditPlugin>>['tool.execute.after']>,
+  sessionID: string,
+  callID: string,
+): Promise<string> {
+  const state = await readState(sessDir);
+  const assurance = state?.reviewAssurance;
+  const predecessor = assurance?.attempts.at(-1);
+  const obligation = assurance?.obligations.find((item) => item.obligationId === OBLIGATION_ID);
+  if (!state || !assurance || !predecessor || !obligation) {
+    throw new TypeError('Expected persisted attempt and obligation for retry fixture');
+  }
+  let triggerReason: 'interrupted' | 'rejected' | 'stale' | 'expired';
+  switch (predecessor.status) {
+    case 'created':
+      triggerReason = 'interrupted';
+      break;
+    case 'rejected':
+    case 'stale':
+    case 'expired':
+      triggerReason = predecessor.status;
+      break;
+    default:
+      throw new TypeError(`Cannot reissue ${predecessor.status} attempt in retry fixture`);
+  }
+  const reissue = createAttemptForExistingObligation(
+    assurance,
+    obligation,
+    undefined,
+    new Date().toISOString(),
+    {
+      origin: {
+        kind: 'task_rearm',
+        predecessorAttemptId: predecessor.attemptId,
+        triggerReason,
+      },
+      repositoryDiscovery: predecessor.repositoryDiscovery,
+    },
+  );
+  await writeState(sessDir, { ...state, reviewAssurance: reissue.assurance });
+
+  const output = planReviewRequiredOutput(reissue.attempt.attemptId);
+  await afterHook(
+    { tool: 'flowguard_plan', sessionID, callID, args: {} },
+    { title: 'flowguard_plan', output, metadata: {} },
+  );
+  return output;
+}
+
+function reviewerOutput(_childSessionId: string): string {
   return JSON.stringify({
     iteration: 0,
     planVersion: 1,
@@ -153,15 +234,8 @@ function reviewerOutput(childSessionId: string): string {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
-    reviewedBy: { sessionId: childSessionId },
-    reviewedAt: '2026-05-10T12:00:00.000Z',
     attestation: {
       toolObligationId: OBLIGATION_ID,
-      mandateDigest: REVIEW_MANDATE_DIGEST,
-      criteriaVersion: REVIEW_CRITERIA_VERSION,
-      iteration: 0,
-      planVersion: 1,
-      reviewedBy: REVIEWER_SUBAGENT_TYPE,
     },
   });
 }
@@ -173,10 +247,13 @@ function unusableReviewerOutput(childSessionId: string): string {
   return JSON.stringify(parsed);
 }
 
-const reviewerArgs = {
-  subagent_type: REVIEWER_SUBAGENT_TYPE,
-  prompt: 'iteration=0, planVersion=1 - review this plan critically for the auth feature.',
-};
+function reviewerArgsFromReviewRequiredOutput(output: string) {
+  const reviewerTaskPrompt = (JSON.parse(output) as Record<string, unknown>).reviewerTaskPrompt;
+  if (typeof reviewerTaskPrompt !== 'string') {
+    throw new TypeError('Expected canonical reviewerTaskPrompt in review-required output');
+  }
+  return { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: reviewerTaskPrompt };
+}
 
 describe('reviewer attempt lifecycle through the real hooks', () => {
   let configDir: string;
@@ -213,16 +290,41 @@ describe('reviewer attempt lifecycle through the real hooks', () => {
     const hooks = await FlowGuardAuditPlugin(
       createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
     );
+    const beforeHook = hooks['tool.execute.before']!;
     const afterHook = hooks['tool.execute.after']!;
-
-    await afterHook(
-      { tool: 'flowguard_plan', sessionID, callID: 'call-plan', args: {} },
-      { title: 'flowguard_plan', output: planReviewRequiredOutput(), metadata: {} },
+    const needsReissue =
+      (options.obligationStatus ?? 'pending') === 'pending' &&
+      (options.attemptStatus === 'rejected' ||
+        options.attemptStatus === 'stale' ||
+        options.attemptStatus === 'expired' ||
+        (options.attemptStatus === 'created' && Boolean(options.attemptChildSessionId)));
+    const reviewRequiredOutput = needsReissue
+      ? await reissuePlanReviewRequiredOutput(sessDir, afterHook, sessionID, 'call-plan-retry')
+      : planReviewRequiredOutput();
+    if (!needsReissue) {
+      await afterHook(
+        { tool: 'flowguard_plan', sessionID, callID: 'call-plan', args: {} },
+        { title: 'flowguard_plan', output: reviewRequiredOutput, metadata: {} },
+      );
+    }
+    const reviewerArgs = reviewerArgsFromReviewRequiredOutput(reviewRequiredOutput);
+    const dispatched = await beforeHook(
+      { tool: 'task', sessionID, callID },
+      { args: reviewerArgs },
+    ).then(
+      () => true,
+      () => false,
     );
-    await afterHook(
-      { tool: 'task', sessionID, callID, args: reviewerArgs },
-      { title: 'task', output: reviewerOutput(childSessionId), metadata: {} },
-    );
+    if (dispatched) {
+      await afterHook(
+        { tool: 'task', sessionID, callID, args: reviewerArgs },
+        {
+          title: 'task',
+          output: reviewerOutput(childSessionId),
+          metadata: { sessionID: childSessionId },
+        },
+      );
+    }
     return sessDir;
   }
 
@@ -361,39 +463,56 @@ describe('reviewer attempt lifecycle through the real hooks', () => {
     const hooks = await FlowGuardAuditPlugin(
       createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
     );
+    const beforeHook = hooks['tool.execute.before']!;
     const afterHook = hooks['tool.execute.after']!;
+    const planOutput = {
+      title: 'flowguard_plan',
+      output: planReviewRequiredOutput(),
+      metadata: {},
+    };
 
     await afterHook(
       { tool: 'flowguard_plan', sessionID, callID: 'call-plan', args: {} },
-      { title: 'flowguard_plan', output: planReviewRequiredOutput(), metadata: {} },
+      planOutput,
     );
+    const reviewerArgs = reviewerArgsFromReviewRequiredOutput(planOutput.output);
     // First unusable output: initial capture, rejected by hasUsableCapture
+    await beforeHook(
+      { tool: 'task', sessionID, callID: 'call-rejected-0' },
+      { args: reviewerArgs },
+    );
     await afterHook(
       { tool: 'task', sessionID, callID: 'call-rejected-0', args: reviewerArgs },
       {
         title: 'task',
         output: unusableReviewerOutput('ses_child_lifecycle_rejected_0'),
-        metadata: {},
+        metadata: { sessionID: 'ses_child_lifecycle_rejected_0' },
       },
     );
     // Second unusable output: one retry, exhausts the budget (>= 1 retries)
+    const retryOutput = await reissuePlanReviewRequiredOutput(
+      sessDir,
+      afterHook,
+      sessionID,
+      'call-plan-retry',
+    );
+    const retryReviewerArgs = reviewerArgsFromReviewRequiredOutput(retryOutput);
+    await beforeHook(
+      { tool: 'task', sessionID, callID: 'call-rejected-1' },
+      { args: retryReviewerArgs },
+    );
     await afterHook(
-      { tool: 'task', sessionID, callID: 'call-rejected-1', args: reviewerArgs },
+      { tool: 'task', sessionID, callID: 'call-rejected-1', args: retryReviewerArgs },
       {
         title: 'task',
         output: unusableReviewerOutput('ses_child_lifecycle_rejected_1'),
-        metadata: {},
+        metadata: { sessionID: 'ses_child_lifecycle_rejected_1' },
       },
     );
     // Third call: must be blocked — matchPendingReview returns null (retry exhausted)
-    await afterHook(
-      { tool: 'task', sessionID, callID: 'call-blocked', args: reviewerArgs },
-      {
-        title: 'task',
-        output: reviewerOutput(CHILD_RETRY),
-        metadata: {},
-      },
-    );
+    await expect(
+      beforeHook({ tool: 'task', sessionID, callID: 'call-blocked' }, { args: reviewerArgs }),
+    ).rejects.toThrow('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
 
     const state = await readState(sessDir);
     const attempts = state?.reviewAssurance?.attempts ?? [];
@@ -435,34 +554,53 @@ describe('reviewer attempt lifecycle through the real hooks', () => {
     const hooks = await FlowGuardAuditPlugin(
       createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
     );
+    const beforeHook = hooks['tool.execute.before']!;
     const afterHook = hooks['tool.execute.after']!;
+    const planOutput = {
+      title: 'flowguard_plan',
+      output: planReviewRequiredOutput(),
+      metadata: {},
+    };
 
     await afterHook(
       { tool: 'flowguard_plan', sessionID, callID: 'call-plan', args: {} },
-      { title: 'flowguard_plan', output: planReviewRequiredOutput(), metadata: {} },
+      planOutput,
     );
+    const reviewerArgs = reviewerArgsFromReviewRequiredOutput(planOutput.output);
 
     // 1. First reviewer returns an unusable capture: the attempt is spent.
+    await beforeHook({ tool: 'task', sessionID, callID: 'call-1' }, { args: reviewerArgs });
     await afterHook(
       { tool: 'task', sessionID, callID: 'call-1', args: reviewerArgs },
-      { title: 'task', output: unusableReviewerOutput(CHILD_FIRST), metadata: {} },
+      {
+        title: 'task',
+        output: unusableReviewerOutput(CHILD_FIRST),
+        metadata: { sessionID: CHILD_FIRST },
+      },
     );
     const afterFirst = await readState(sessDir);
     expect(afterFirst?.reviewAssurance?.invocations ?? []).toHaveLength(0);
 
     // 2. Retry from a new session: re-arm, bind, evidence recorded.
+    const retryOutput = await reissuePlanReviewRequiredOutput(
+      sessDir,
+      afterHook,
+      sessionID,
+      'call-plan-retry',
+    );
+    const retryReviewerArgs = reviewerArgsFromReviewRequiredOutput(retryOutput);
+    await beforeHook({ tool: 'task', sessionID, callID: 'call-2' }, { args: retryReviewerArgs });
     await afterHook(
-      { tool: 'task', sessionID, callID: 'call-2', args: reviewerArgs },
-      { title: 'task', output: reviewerOutput(CHILD_RETRY), metadata: {} },
+      { tool: 'task', sessionID, callID: 'call-2', args: retryReviewerArgs },
+      { title: 'task', output: reviewerOutput(CHILD_RETRY), metadata: { sessionID: CHILD_RETRY } },
     );
     const afterRetry = await readState(sessDir);
     expect(afterRetry?.reviewAssurance?.invocations ?? []).toHaveLength(1);
 
     // 3. The superseded first session calls back late.
-    await afterHook(
-      { tool: 'task', sessionID, callID: 'call-late', args: reviewerArgs },
-      { title: 'task', output: reviewerOutput(CHILD_FIRST), metadata: {} },
-    );
+    await expect(
+      beforeHook({ tool: 'task', sessionID, callID: 'call-late' }, { args: reviewerArgs }),
+    ).rejects.toThrow('REVIEWER_TASK_REQUIRES_PENDING_OBLIGATION');
 
     const finalState = await readState(sessDir);
     const forObligation = (finalState?.reviewAssurance?.invocations ?? []).filter(

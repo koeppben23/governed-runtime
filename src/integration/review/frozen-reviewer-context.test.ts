@@ -36,7 +36,11 @@ const obligation = {
 
 describe('verifyFrozenReviewerContext', () => {
   it('returns the frozen subject, obligation scope, and anchor contract', () => {
-    const result = verifyFrozenReviewerContext(obligation, { content, materialDigest });
+    const result = verifyFrozenReviewerContext(obligation, {
+      content,
+      materialDigest,
+      subjectDigest,
+    });
 
     expect(result).toMatchObject({
       kind: 'ok',
@@ -49,7 +53,11 @@ describe('verifyFrozenReviewerContext', () => {
 
   it('fails closed when persisted content does not match its material digest', () => {
     expect(
-      verifyFrozenReviewerContext(obligation, { content: 'tampered\n', materialDigest }),
+      verifyFrozenReviewerContext(obligation, {
+        content: 'tampered\n',
+        materialDigest,
+        subjectDigest,
+      }),
     ).toEqual({
       kind: 'blocked',
       code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',

@@ -1469,8 +1469,8 @@ describe('review-enforcement', () => {
       expect(result.allowed).toBe(true);
     });
 
-    // ── L162: filter already-called pending reviews ──
-    it('enforceBeforeSubagentCall ignores already-called pending reviews', () => {
+    // ── L162: schema-invalid captures remain eligible for a repair retry ──
+    it('enforceBeforeSubagentCall requires the canonical repair prompt after schema-invalid findings', () => {
       const state = createSessionState();
       // Register a pending review with the real production signal shape
       // (obligation identity + host attestation constants).
@@ -1488,13 +1488,13 @@ describe('review-enforcement', () => {
         taskResultWithFindings('s1'),
         LATER,
       );
-      // Now the pending review is subagentCalled=true
-      // A new subagent call should see 0 uncalled pending → allowed (no enforcement)
+      // The old payload is schema-invalid, so a retry requires the canonical
+      // repair prompt rather than an arbitrary reviewer invocation.
       const result = enforceBeforeSubagentCall(state, {
         subagent_type: REVIEWER_SUBAGENT_TYPE,
-        prompt: 'x',
+        prompt: `iteration=0, planVersion=1. ${'x'.repeat(MIN_SUBAGENT_PROMPT_LENGTH)}`,
       });
-      expect(result.allowed).toBe(true);
+      expect(result.allowed).toBe(false);
     });
 
     // ── L170: prompt length boundary (MIN_SUBAGENT_PROMPT_LENGTH) ──
@@ -1615,8 +1615,8 @@ describe('review-enforcement', () => {
       expect(pending.subagentCalled).toBe(false);
     });
 
-    // ── L302: matchPendingReview with 0 uncalled returns null ──
-    it('matchPendingReview returns null when all pending reviews already called', () => {
+    // ── L302: schema-invalid captures remain eligible for a repair retry ──
+    it('matchPendingReview returns the pending review for a schema-repair retry', () => {
       const state = createSessionState();
       onFlowGuardToolAfter(
         state,
@@ -1632,12 +1632,12 @@ describe('review-enforcement', () => {
         taskResultWithFindings('s1'),
         LATER,
       );
-      // Now matchPendingReview should return null (0 uncalled)
+      // The invalid capture requires a fresh reviewer invocation.
       const result = matchPendingReview(state, {
         subagent_type: REVIEWER_SUBAGENT_TYPE,
         prompt: 'another review',
       });
-      expect(result).toBeNull();
+      expect(result).not.toBeNull();
     });
 
     // ── L314: matchPendingReview planVersion matching ──
@@ -1945,7 +1945,7 @@ describe('L3 artifact presence', () => {
     if (!result.allowed) expect(result.code).toBe('SUBAGENT_PROMPT_ARTIFACT_MISSING');
   });
 
-  it('blocks when only whitespace follows the instruction block', () => {
+  it('blocks when whitespace changes the frozen instruction prompt', () => {
     const state = pendingStateWithCanonicalPrompt();
 
     const result = enforceBeforeSubagentCall(state, {
@@ -1954,10 +1954,10 @@ describe('L3 artifact presence', () => {
     });
 
     expect(result.allowed).toBe(false);
-    if (!result.allowed) expect(result.code).toBe('SUBAGENT_PROMPT_ARTIFACT_MISSING');
+    if (!result.allowed) expect(result.code).toBe('SUBAGENT_PROMPT_MISMATCH');
   });
 
-  it('allows a prompt with the artifact appended below the instruction block', () => {
+  it('blocks an artifact appended to the frozen instruction prompt', () => {
     const state = pendingStateWithCanonicalPrompt();
 
     const result = enforceBeforeSubagentCall(state, {
@@ -1965,7 +1965,8 @@ describe('L3 artifact presence', () => {
       prompt: canonicalPrompt() + '\n\n## Plan\n1. Fix the auth bug\n2. Add a regression test\n',
     });
 
-    expect(result.allowed).toBe(true);
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) expect(result.code).toBe('SUBAGENT_PROMPT_MISMATCH');
   });
 
   it('does not apply when FlowGuard emitted no canonical prompt', () => {

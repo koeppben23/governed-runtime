@@ -35,6 +35,33 @@ export function responseDigestOf(response: string): string {
   return `sha256:${sha256Hex(response)}`;
 }
 
+/**
+ * Canonical line count of strictly UTF-8 materialized bytes.
+ *
+ * A terminal LF does NOT open a phantom trailing line:
+ *
+ * ```text
+ * ""        → 0
+ * "a"       → 1
+ * "a\n"     → 1
+ * "a\nb"    → 2
+ * "a\nb\n"  → 2
+ * "\n"      → 1
+ * ```
+ *
+ * The evidence binder validates `line`/`endLine` citations against exactly
+ * this count. Authority over the bytes themselves remains the raw-byte
+ * content digest — the line count is a derived presentation index.
+ */
+export function lineCountOfUtf8(content: string): number {
+  if (content.length === 0) return 0;
+  let newlines = 0;
+  for (let index = 0; index < content.length; index++) {
+    if (content[index] === '\n') newlines++;
+  }
+  return content.endsWith('\n') ? newlines : newlines + 1;
+}
+
 /** Canonical digest of a frozen repository identity: `sha256:<hex>`. */
 export function repositoryIdentityDigest(identity: ReviewRepositoryIdentity): string {
   return `sha256:${sha256Hex(canonicalJsonStringify(identity))}`;

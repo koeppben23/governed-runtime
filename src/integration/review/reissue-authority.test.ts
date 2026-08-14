@@ -34,6 +34,7 @@ const SUBJECT_DIGEST = hashCanonicalContentSubject(MATERIAL_DIGEST);
 const FROZEN_MATERIAL: ReviewMaterial = {
   content: MATERIAL_CONTENT,
   materialDigest: MATERIAL_DIGEST,
+  subjectDigest: SUBJECT_DIGEST,
 };
 
 function makeObligation(overrides: Partial<ReviewObligation> = {}): ReviewObligation {
@@ -78,7 +79,7 @@ function assuranceWith(
   attempts: ReviewAttempt[],
 ): ReviewAssuranceState {
   return {
-    assuranceSchemaVersion: 'review-assurance.v4',
+    assuranceSchemaVersion: 'review-assurance.v5',
     obligations: [obligation],
     invocations: [],
     attempts,
@@ -256,6 +257,7 @@ describe('authorizeOutputRepairReissue', () => {
     const tampered: ReviewMaterial = {
       content: 'tampered bytes\n',
       materialDigest: MATERIAL_DIGEST,
+      subjectDigest: SUBJECT_DIGEST,
     };
     const rejected = rejectedAttempt(obligation, 'schema_invalid');
     const tamperedAttempt: ReviewAttempt = { ...rejected, reviewMaterial: tampered };
@@ -281,7 +283,7 @@ describe('authorizeOutputRepairReissue', () => {
     expect(result).toEqual({
       kind: 'integrity_blocked',
       code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
-      reason: expect.stringContaining('missing'),
+      reason: expect.stringContaining('predates frozen review material'),
     });
   });
 
@@ -289,7 +291,11 @@ describe('authorizeOutputRepairReissue', () => {
     // Even a perfectly repairable rejection with budget left must not mint an
     // attempt when the immutable foundation is broken.
     const obligation = makeObligation();
-    const tampered: ReviewMaterial = { content: 'other bytes\n', materialDigest: MATERIAL_DIGEST };
+    const tampered: ReviewMaterial = {
+      content: 'other bytes\n',
+      materialDigest: MATERIAL_DIGEST,
+      subjectDigest: SUBJECT_DIGEST,
+    };
     const rejected = rejectedAttempt(obligation, 'schema_invalid');
     const tamperedAttempt: ReviewAttempt = { ...rejected, reviewMaterial: tampered };
     const result = authorizeOutputRepairReissue(

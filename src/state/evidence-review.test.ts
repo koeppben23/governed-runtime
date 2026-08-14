@@ -377,7 +377,7 @@ describe('evidence-review', () => {
         subjectDigest: 'a'.repeat(64),
         iteration: 0,
         planVersion: 1,
-        criteriaVersion: 'v1',
+        criteriaVersion: 'p40-v1',
         mandateDigest: 'sha256-mandate',
         createdAt: FIXED_TIME,
         pluginHandshakeAt: null,
@@ -430,7 +430,7 @@ describe('evidence-review', () => {
         subjectDigest: 'a'.repeat(64),
         iteration: 0,
         planVersion: 1,
-        criteriaVersion: 'v1',
+        criteriaVersion: 'p40-v1',
         mandateDigest: 'sha256-mandate',
         createdAt: FIXED_TIME,
         pluginHandshakeAt: null,
@@ -447,6 +447,38 @@ describe('evidence-review', () => {
         maxReviewerOutputRepairAttempts: 1,
       };
       expect(ReviewObligation.parse(obligation)).toEqual(obligation);
+    });
+
+    it('rejects self-consistent foreign review material under a different obligation subject', () => {
+      const obligation = {
+        ...repositoryReviewObligation(),
+        reviewMaterial: {
+          content: 'foreign material B',
+          materialDigest: 'b'.repeat(64),
+          subjectDigest: 'b'.repeat(64),
+        },
+      };
+
+      const result = ReviewObligation.safeParse(obligation);
+
+      expect(result.success).toBe(false);
+      if (result.success) throw new TypeError('expected schema rejection');
+      expect(result.error.issues.map((issue) => issue.path.join('.'))).toContain(
+        'reviewMaterial.subjectDigest',
+      );
+    });
+
+    it('requires frozen material for future criteria generations', () => {
+      const { reviewSubject: _, ...legacy } = {
+        ...repositoryReviewObligation(),
+        obligationType: 'plan' as const,
+      };
+      expect(ReviewObligation.safeParse(legacy).success).toBe(true);
+
+      const future = ReviewObligation.safeParse({ ...legacy, criteriaVersion: 'p42-v1' });
+      expect(future.success).toBe(false);
+      if (future.success) throw new TypeError('expected schema rejection');
+      expect(future.error.issues.map((issue) => issue.path.join('.'))).toContain('reviewMaterial');
     });
 
     it('ReviewInvocationEvidence parses host-task invocation', () => {
@@ -475,7 +507,7 @@ describe('evidence-review', () => {
 
     it('ReviewAssuranceState parses valid assurance state', () => {
       const state = {
-        assuranceSchemaVersion: 'review-assurance.v4' as const,
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [],
         invocations: [],
         attempts: [],
@@ -493,7 +525,7 @@ describe('evidence-review', () => {
       const obligation = repositoryReviewObligation();
       const attempt = attemptForObligation(obligation, { kind: 'not_applicable' });
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v4' as const,
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [obligation],
         invocations: [],
         attempts: [attempt],
@@ -547,7 +579,7 @@ describe('evidence-review', () => {
         },
       });
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v4' as const,
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [obligation],
         invocations: [],
         attempts: [attempt],
@@ -782,7 +814,7 @@ describe('evidence-review', () => {
         subjectDigest: 'a'.repeat(64),
         iteration: 0,
         planVersion: 1,
-        criteriaVersion: 'v1',
+        criteriaVersion: 'p40-v1',
         mandateDigest: 'sha256-mandate',
         createdAt: FIXED_TIME,
         pluginHandshakeAt: null,
@@ -903,7 +935,7 @@ describe('evidence-review', () => {
         subjectDigest: 'sha256-subject',
         iteration: 0,
         planVersion: 1,
-        criteriaVersion: 'v1',
+        criteriaVersion: 'p40-v1',
         mandateDigest: 'sha256-mandate',
         createdAt: FIXED_TIME,
         pluginHandshakeAt: null,
@@ -931,7 +963,7 @@ describe('evidence-review', () => {
         subjectDigest: 'sha256-subject',
         iteration: 0,
         planVersion: 1,
-        criteriaVersion: 'v1',
+        criteriaVersion: 'p40-v1',
         mandateDigest: 'sha256-mandate',
         createdAt: FIXED_TIME,
         pluginHandshakeAt: null,

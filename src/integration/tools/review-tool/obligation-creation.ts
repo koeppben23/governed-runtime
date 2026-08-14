@@ -13,11 +13,7 @@
 import type { SessionState } from '../../../state/schema.js';
 import { hasFrozenRepositoryAuthority } from '../../../state/evidence.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
-import type {
-  ReviewAssuranceState,
-  ReviewMaterial,
-  ReviewSubjectScope,
-} from '../../../state/evidence-review.js';
+import type { ReviewAssuranceState, ReviewSubjectScope } from '../../../state/evidence-review.js';
 import type { PreparedReviewContent } from '../../../rails/review.js';
 import {
   createReviewObligation,
@@ -51,14 +47,12 @@ export async function persistReviewObligation(
   sessDir: string,
   state: SessionState,
   obligation: ReviewObligation,
-  reviewMaterial?: ReviewMaterial,
   repositoryDiscovery: ReviewAttemptDiscoveryContext = { kind: 'not_applicable' },
 ): Promise<{ attemptId: string; assurance: ReviewAssuranceState }> {
   const result = appendObligationWithAttempt(
     state.reviewAssurance,
     obligation,
     obligation.createdAt,
-    reviewMaterial,
     repositoryDiscovery,
   );
   await writeStateWithArtifacts(sessDir, {
@@ -145,6 +139,13 @@ export async function createNewReviewObligation(
       now: input.now,
       subjectDigest: reviewSubject.subjectDigest,
       reviewSubject,
+      reviewMaterial: input.preparedContent
+        ? {
+            content: input.preparedContent.content,
+            materialDigest: input.preparedContent.reviewSubject.materialDigest,
+            subjectDigest: reviewSubject.subjectDigest,
+          }
+        : undefined,
       reviewProfile: resolveFrozenReviewProfile(input.state.policySnapshot),
       profileSource: 'policy_default',
       policySnapshot: input.state.policySnapshot,
@@ -392,7 +393,6 @@ async function createAndPrepareMissingAnalysisObligation(
   });
   if (created.blocked) return { message: created.blocked };
   const obligation = created.obligation!;
-  const preparedContent = input.context.preparedContent;
   // Attempt-bound Discovery context is resolved BEFORE the attempt is minted:
   // a repository review attempt is born with its host-owned snapshot. The
   // loader is advisory-total, so this blocks only on a structural projection
@@ -415,12 +415,6 @@ async function createAndPrepareMissingAnalysisObligation(
     input.sessDir,
     input.state,
     obligation,
-    preparedContent
-      ? {
-          content: preparedContent.content,
-          materialDigest: preparedContent.reviewSubject.materialDigest,
-        }
-      : undefined,
     discovery.context,
   );
   return {

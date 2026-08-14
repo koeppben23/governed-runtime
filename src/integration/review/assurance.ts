@@ -25,6 +25,7 @@ import type {
   FrozenReviewSubject,
   FrozenRepositoryAuthority,
 } from '../../state/evidence.js';
+import { hashCanonicalReviewContent, normalizeReviewContent } from '../../shared/review-subject.js';
 import { deriveRepositoryRevisionProvenance } from '../../state/evidence.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { assessMinimumTaskClass, maxTaskClass } from '../phase-tool-gate.js';
@@ -36,7 +37,7 @@ import type { TaskClass } from '../../state/schema.js';
 import type { ReviewSubjectScope } from '../../state/evidence-review.js';
 // Static import - mandate content is a constant in ESM
 import { REVIEWER_AGENT } from '../../templates/mandates.js';
-export const REVIEW_CRITERIA_VERSION = 'p40-v1';
+export const REVIEW_CRITERIA_VERSION = 'p41-v1';
 // Mandate digest - computed from actual REVIEWER_AGENT template at module load
 export const REVIEW_MANDATE_DIGEST = hashText(REVIEWER_AGENT);
 const defaultScope = (changedFiles: readonly string[] | undefined): ReviewSubjectScope =>
@@ -71,6 +72,8 @@ export {
   latestReviewMaterial,
   appendReviewAttempt,
   resolveAttempt,
+  resolveEvidenceAuthorizingAttempt,
+  EVIDENCE_AUTHORIZING_ATTEMPT_STATUSES,
   findBindableAttempt,
   updateAttemptStatus,
   staleObligationAttempts,
@@ -121,6 +124,8 @@ export function createReviewObligation(input: {
   subjectDigest: string;
   /** Frozen standalone content/repository subject, when this is a standalone review. */
   reviewSubject?: FrozenReviewSubject;
+  /** Exact normalized artifact bytes frozen for host-task delivery. */
+  reviewMaterial?: ReviewMaterial;
   /**
    * Mandatory review coverage profile frozen into the obligation at creation,
    * before any reviewer invocation. Defaults to the fail-closed 'core' baseline.
@@ -206,6 +211,7 @@ export function createReviewObligation(input: {
     profileSource: input.profileSource ?? 'policy_default',
     ...requirements,
     subjectDigest,
+    ...(input.reviewMaterial ? { reviewMaterial: input.reviewMaterial } : {}),
     reviewSubject: input.reviewSubject,
     metadata: input.metadata,
     ...(input.fingerprintVersion ? { fingerprintVersion: input.fingerprintVersion } : {}),
@@ -220,6 +226,16 @@ export function createReviewObligation(input: {
     // live config, so a later policy change cannot re-open a settled
     // obligation's repair window.
     maxReviewerOutputRepairAttempts: resolveFrozenOutputRepairBudget(input.policySnapshot),
+  };
+}
+
+/** Freeze review bytes with the canonical standalone-content normalization and digest. */
+export function freezeReviewMaterial(content: string, subjectDigest: string): ReviewMaterial {
+  const normalized = normalizeReviewContent(content);
+  return {
+    content: normalized,
+    materialDigest: hashCanonicalReviewContent(normalized),
+    subjectDigest,
   };
 }
 
@@ -451,6 +467,7 @@ export function createObligationAndAttempt(
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
     subjectDigest: obligationInput.subjectDigest,
+    reviewMaterial: obligation.reviewMaterial,
     ordinal,
     origin: { kind: 'initial' },
     repositoryDiscovery,
@@ -480,7 +497,6 @@ export function appendObligationWithAttempt(
   assurance: ReviewAssuranceState | undefined,
   obligation: ReviewObligation,
   now: string,
-  reviewMaterial?: ReviewMaterial,
   repositoryDiscovery: ReviewAttemptDiscoveryContext = { kind: 'not_applicable' },
 ): { assurance: ReviewAssuranceState; attemptId: string } {
   const base = ensureReviewAssurance(assurance);
@@ -490,7 +506,7 @@ export function appendObligationWithAttempt(
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
     subjectDigest: obligation.subjectDigest,
-    reviewMaterial,
+    reviewMaterial: obligation.reviewMaterial,
     ordinal,
     origin: { kind: 'initial' },
     repositoryDiscovery,
@@ -512,11 +528,18 @@ export function appendObligationWithAttempt(
 export function buildInvocationEvidence(input: {
   obligationId: string;
   obligationType: ReviewObligationType;
+  /** Frozen mandate generation of the bound obligation, never live runtime defaults. */
+  mandateDigest: string;
+  /** Frozen criteria generation of the bound obligation, never live runtime defaults. */
+  criteriaVersion: string;
   parentSessionId: string;
   childSessionId: string;
   invocationMode: ReviewInvocationMode;
   hostVisible: boolean;
   promptHash: string;
+  canonicalPromptDigest?: string;
+  modelPromptDigest?: string | null;
+  hostTaskCallId?: string;
   findingsHash: string;
   invokedAt: string;
   fulfilledAt?: string;
@@ -560,8 +583,11 @@ export function buildInvocationEvidence(input: {
     invocationMode: input.invocationMode,
     hostVisible: input.hostVisible,
     promptHash: input.promptHash,
-    mandateDigest: REVIEW_MANDATE_DIGEST,
-    criteriaVersion: REVIEW_CRITERIA_VERSION,
+    canonicalPromptDigest: input.canonicalPromptDigest,
+    modelPromptDigest: input.modelPromptDigest,
+    hostTaskCallId: input.hostTaskCallId,
+    mandateDigest: input.mandateDigest,
+    criteriaVersion: input.criteriaVersion,
     findingsHash: input.findingsHash,
     invokedAt: input.invokedAt,
     fulfilledAt: input.fulfilledAt ?? null,
