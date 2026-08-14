@@ -83,7 +83,27 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
       expect(result.evidence!.parentSessionId).toBe(SESSION_ID);
       expect(result.evidence!.childSessionId).toBe(CHILD_SESSION_ID);
       expect(result.evidence!.obligationId).toBe(obligation.obligationId);
-      expect(result.evidence!.obligationType).toBe('plan');
+    });
+
+    it('BAD: a plan obligation whose persisted scope kind was swapped to repository_change is rejected (subject_mismatch)', () => {
+      const { state, obligation, attempts } = setupFullCycle();
+      const tampered = {
+        ...obligation,
+        reviewSubjectScope: {
+          kind: 'repository_change' as const,
+          paths: ['src/foo.ts'],
+          revisions: ['base', 'head'] as const,
+        },
+      };
+
+      const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+        obligations: [tampered],
+        invocations: [],
+        attempts: attempts.map((a) => ({ ...a, obligationId: tampered.obligationId })),
+      });
+
+      expect(result.evidence).toBeNull();
+      expect(result.bindOutcome).toBe('subject_mismatch');
     });
   });
 

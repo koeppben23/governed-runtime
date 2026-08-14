@@ -230,9 +230,12 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
             fulfilledAt: null,
             consumedAt: null,
             reviewSubjectScope: {
-              kind: 'repository_change',
-              paths: ['docs/test.md'],
-              revisions: ['base', 'head'],
+              kind: 'artifact',
+              artifact: {
+                kind: 'plan',
+                digest: SUBJECT_DIGEST,
+                sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }]],
+              },
             },
             reviewMaterial,
           },

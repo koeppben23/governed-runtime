@@ -105,7 +105,23 @@ function obligation(
     reviewSubjectScope:
       obligationType === 'review'
         ? { kind: 'content', subjectDigest: REVIEW_SUBJECT_DIGEST, lineCount: 1 }
-        : { kind: 'repository_change', paths: ['src/foo.ts'], revisions: ['base', 'head'] },
+        : obligationType === 'architecture'
+          ? {
+              kind: 'artifact',
+              artifact: {
+                kind: 'adr',
+                digest: 'test-subject-digest',
+                sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'ADR' }]],
+              },
+            }
+          : {
+              kind: 'artifact',
+              artifact: {
+                kind: 'plan',
+                digest: 'test-subject-digest',
+                sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }]],
+              },
+            },
     reviewMaterial: {
       content: REVIEW_MATERIAL,
       materialDigest: REVIEW_MATERIAL_DIGEST,

@@ -724,6 +724,66 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
       expect(result.code).toBe('REVIEW_MATERIAL_INTEGRITY_FAILED');
     });
 
+    it('fails closed on reissue when the persisted scope kind is swapped to repository_change', async () => {
+      await setupArchitectureDeadState(1);
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      if (!state) throw new Error('No state');
+
+      const pending = createReviewObligation({
+        obligationType: 'architecture',
+        iteration: 0,
+        planVersion: 1,
+        now: CREATED_AT,
+        subjectDigest: hashText(ADR_TEXT),
+        reviewMaterial: freezeReviewMaterial(ADR_TEXT, hashText(ADR_TEXT)),
+        reviewSubjectScope: artifactReviewSubjectScope('adr', ADR_TEXT, hashText(ADR_TEXT)),
+        changedFiles: [],
+        policySnapshot: state.policySnapshot,
+      });
+      // The required scope class follows the OBLIGATION TYPE, never the
+      // persisted scope kind: swapping the scope class must not route the
+      // obligation around the artifact verification.
+      const tampered: ReviewObligation = {
+        ...pending,
+        reviewSubjectScope: {
+          kind: 'repository_change',
+          paths: ['src/foo.ts'],
+          revisions: ['base', 'head'],
+        },
+      };
+      const rejectedAttempt: ReviewAttempt = {
+        attemptId: crypto.randomUUID(),
+        obligationId: tampered.obligationId,
+        obligationType: 'architecture',
+        subjectDigest: tampered.subjectDigest,
+        reviewMaterial: tampered.reviewMaterial,
+        ordinal: 1,
+        status: 'rejected',
+        origin: { kind: 'initial' },
+        rejectionReason: 'schema_invalid',
+        repositoryDiscovery: { kind: 'not_applicable' },
+        createdAt: CREATED_AT,
+      };
+      await writeState(sessDir, {
+        ...state,
+        architecture: { ...state.architecture!, adrText: ADR_TEXT, digest: hashText(ADR_TEXT) },
+        selfReview: { ...state.selfReview!, currDigest: hashText(ADR_TEXT) },
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          obligations: [tampered],
+          invocations: [],
+          attempts: [rejectedAttempt],
+        },
+      });
+
+      const raw = await architecture.execute({ title: 'Test Decision', adrText: ADR_TEXT }, ctx);
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_MATERIAL_INTEGRITY_FAILED');
+    });
+
     it('restart continues the current review cycle: predecessor, flow state, fresh obligation, and prompt share the iteration', async () => {
       const sessDir = await setArchitectureState(ADR_TEXT);
       const state = await readState(sessDir);

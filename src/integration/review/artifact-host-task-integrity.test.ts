@@ -165,6 +165,36 @@ describe('artifact-scoped initial host-task integrity', () => {
     expect(output.output).not.toContain('reviewerTaskPrompt');
   });
 
+  it('BAD: a scope kind tampered to repository_change fails closed before dispatch (no reviewerTaskPrompt)', async () => {
+    // The required scope class follows the OBLIGATION TYPE, never the
+    // persisted scope kind: swapping the scope class must not route the
+    // obligation around the artifact verification.
+    const obligation = architectureObligation(ADR_DIGEST);
+    const tampered: ReviewObligation = {
+      ...obligation,
+      reviewSubjectScope: {
+        kind: 'repository_change',
+        paths: ['src/foo.ts'],
+        revisions: ['base', 'head'],
+      },
+    };
+    const state = sessionWith(tampered);
+    const output = { output: architectureOutput(tampered) };
+    const reviewCtx = extractReviewContext('flowguard_architecture', JSON.parse(output.output))!;
+
+    await handleHostTaskPolicy(
+      mockDeps(),
+      state,
+      '/tmp/sess-integrity',
+      reviewCtx,
+      output,
+      SESSION_ID,
+    );
+
+    expect(output.output).toContain('REVIEW_MATERIAL_INTEGRITY_FAILED');
+    expect(output.output).not.toContain('reviewerTaskPrompt');
+  });
+
   it('HAPPY: a valid artifact obligation emits the exact host-enforced anchor contract', async () => {
     const obligation = architectureObligation(ADR_DIGEST);
     const state = sessionWith(obligation);

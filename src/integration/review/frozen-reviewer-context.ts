@@ -252,10 +252,16 @@ export type FrozenMaterialVerificationResult =
 /**
  * Single frozen-material verification authority. BOTH reviewer prompt
  * emission and output-repair reissue must route through this function so the
- * integrity policy never depends on which attempt is being served:
+ * integrity policy never depends on which attempt is being served.
  *
- *   reviewSubjectScope.kind === 'artifact'
- *     → verifyFrozenArtifactMaterial (exact artifact→material digest binding)
+ * The OBLIGATION TYPE determines the required subject-scope class — never the
+ * persisted scope kind, which is itself integrity-checked state and therefore
+ * untrusted at this boundary:
+ *
+ *   plan / architecture
+ *     → verifyFrozenArtifactMaterial (scope MUST be artifact, kind bound to
+ *       the type, artifact digest == subject digest, material generation
+ *       bound to the subject digest)
  *   otherwise
  *     → verifyFrozenReviewerContext (standalone subject binding)
  */
@@ -270,7 +276,7 @@ export function verifyFrozenMaterialForObligation(
       reason: 'review obligation is missing',
     };
   }
-  if (obligation.reviewSubjectScope?.kind === 'artifact') {
+  if (obligation.obligationType === 'plan' || obligation.obligationType === 'architecture') {
     const artifact = verifyFrozenArtifactMaterial(obligation, reviewMaterial);
     return artifact.kind === 'ok' ? { kind: 'ok', context: null } : artifact;
   }

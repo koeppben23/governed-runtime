@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  artifactScopeSubjectIdentityMatches,
   validateReviewFindingsConsistency,
   validateReviewFindingsScope,
 } from './findings-consistency.js';
+import type { ReviewObligation } from '../../../state/evidence.js';
 
 const REPOSITORY_SCOPE = {
   kind: 'repository_change' as const,
@@ -30,6 +32,91 @@ describe('review/enforcement/findings-consistency', () => {
       ok: false,
       code: 'SUBAGENT_VERDICT_FINDINGS_INCOHERENT',
       details: { overallVerdict: 'accept', blockingIssueCount: 1 },
+    });
+  });
+
+  describe('artifactScopeSubjectIdentityMatches', () => {
+    const baseObligation = {
+      obligationId: '22222222-2222-4222-8222-222222222222',
+      iteration: 0,
+      planVersion: 1,
+      criteriaVersion: 'p41-v1',
+      mandateDigest: 'mandate-digest',
+      maxReviewerOutputRepairAttempts: 1,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      pluginHandshakeAt: null,
+      status: 'pending',
+      invocationId: null,
+      blockedCode: null,
+      fulfilledAt: null,
+      consumedAt: null,
+      subjectDigest: 'artifact-digest',
+      reviewMaterial: {
+        content: '# Plan\nBody',
+        materialDigest: 'md',
+        subjectDigest: 'artifact-digest',
+      },
+    } as const;
+
+    it('accepts a plan obligation with a bound plan artifact scope', () => {
+      const obligation: ReviewObligation = {
+        ...baseObligation,
+        obligationType: 'plan',
+        reviewSubjectScope: {
+          kind: 'artifact',
+          artifact: {
+            kind: 'plan',
+            digest: 'artifact-digest',
+            sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }]],
+          },
+        },
+      };
+      expect(artifactScopeSubjectIdentityMatches(obligation)).toBe(true);
+    });
+
+    it('rejects a plan obligation whose persisted scope was replaced by repository_change', () => {
+      const obligation: ReviewObligation = {
+        ...baseObligation,
+        obligationType: 'plan',
+        reviewSubjectScope: {
+          kind: 'repository_change',
+          paths: ['src/foo.ts'],
+          revisions: ['base', 'head'],
+        },
+      };
+      expect(artifactScopeSubjectIdentityMatches(obligation)).toBe(false);
+    });
+
+    it('rejects an architecture obligation with a plan-kind artifact scope', () => {
+      const obligation: ReviewObligation = {
+        ...baseObligation,
+        obligationType: 'architecture',
+        reviewSubjectScope: {
+          kind: 'artifact',
+          artifact: {
+            kind: 'plan',
+            digest: 'artifact-digest',
+            sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }]],
+          },
+        },
+      };
+      expect(artifactScopeSubjectIdentityMatches(obligation)).toBe(false);
+    });
+
+    it('rejects a non-artifact obligation type carrying an artifact scope', () => {
+      const obligation: ReviewObligation = {
+        ...baseObligation,
+        obligationType: 'implement',
+        reviewSubjectScope: {
+          kind: 'artifact',
+          artifact: {
+            kind: 'plan',
+            digest: 'artifact-digest',
+            sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }]],
+          },
+        },
+      };
+      expect(artifactScopeSubjectIdentityMatches(obligation)).toBe(false);
     });
   });
 

@@ -555,10 +555,7 @@ function buildHostTaskOutputInput(
     proofContext: buildReviewerProofContext(sessionState),
     artifactContext: [],
     frozenReviewerContext,
-    artifactAnchorContract:
-      obligation?.reviewSubjectScope?.kind === 'artifact'
-        ? renderArtifactAnchorContract(obligation.reviewSubjectScope)
-        : [],
+    artifactAnchorContract: buildArtifactAnchorContractLines(obligation),
     reviewerContextFailure: resolveReviewerContextFailure(
       sessionState,
       obligation,
@@ -584,6 +581,17 @@ function buildHostTaskOutputInput(
  * reported an integrity breach whenever the previous attempt had merely been
  * spent, and sent the agent down an unrecoverable restore path.
  */
+function buildArtifactAnchorContractLines(obligation: ReviewObligation | null): readonly string[] {
+  if (
+    !obligation ||
+    (obligation.obligationType !== 'plan' && obligation.obligationType !== 'architecture') ||
+    obligation.reviewSubjectScope?.kind !== 'artifact'
+  ) {
+    return [];
+  }
+  return renderArtifactAnchorContract(obligation.reviewSubjectScope);
+}
+
 function resolveReviewerContextFailure(
   sessionState: SessionState,
   obligation: ReviewObligation | null,
@@ -598,10 +606,14 @@ function resolveReviewerContextFailure(
   if (materialCheck.kind === 'blocked') {
     return { kind: 'material_integrity', reason: materialCheck.reason };
   }
-  // Artifact-scoped obligations (plan/ADR) carry their reviewer context via
-  // the frozen material and the artifact anchor contract — there is no
-  // standalone frozen envelope, so a null envelope is not a failure.
-  if (obligation.reviewSubjectScope?.kind === 'artifact') return null;
+  // Plan/architecture obligations carry their reviewer context via the
+  // frozen material and the artifact anchor contract — there is no
+  // standalone frozen envelope, so a null envelope is not a failure. The
+  // required scope class follows the OBLIGATION TYPE, never the persisted
+  // scope kind.
+  if (obligation.obligationType === 'plan' || obligation.obligationType === 'architecture') {
+    return null;
+  }
   if (frozenReviewerContext) return null;
   return {
     kind: 'attempt_missing',
@@ -618,7 +630,13 @@ function resolveFrozenReviewerContext(
 ): FrozenReviewerContext | null {
   if (!attempt) return null;
   const verified = verifyFrozenMaterialForObligation(obligation, obligation?.reviewMaterial);
-  return verified.kind === 'ok' ? verified.context : null;
+  if (verified.kind !== 'ok') return null;
+  // Artifact obligations have no standalone frozen envelope, but the reviewer
+  // prompt must still append the frozen material below the canonical marker.
+  if (!verified.context && obligation?.reviewMaterial) {
+    return { reviewMaterial: obligation.reviewMaterial };
+  }
+  return verified.context;
 }
 
 function buildHostTaskAttestationMeta(

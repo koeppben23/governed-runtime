@@ -172,6 +172,26 @@ describe('verifyFrozenMaterialForObligation', () => {
     });
   });
 
+  it('blocks an architecture obligation whose persisted scope kind was replaced by repository_change', () => {
+    // The required scope class follows the OBLIGATION TYPE, never the
+    // persisted scope kind: swapping the scope class must not route the
+    // obligation around the artifact verification.
+    const tampered: ReviewObligation = {
+      ...artifactObligation,
+      reviewSubjectScope: {
+        kind: 'repository_change',
+        paths: ['src/foo.ts'],
+        revisions: ['base', 'head'],
+      },
+    };
+    const result = verifyFrozenMaterialForObligation(tampered, tampered.reviewMaterial!);
+    expect(result).toEqual({
+      kind: 'blocked',
+      code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
+      reason: 'frozen artifact scope does not match the obligation subject digest',
+    });
+  });
+
   it('routes standalone subjects through the full frozen context verification', () => {
     const result = verifyFrozenMaterialForObligation(obligation, {
       content,

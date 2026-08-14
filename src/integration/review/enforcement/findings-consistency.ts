@@ -256,18 +256,20 @@ export function validateReviewFindingsScope(input: {
 }
 
 /**
- * Subject-identity cross-check (defense in depth): the artifact scope the
- * binder validates against must be bound to the obligation's own subject
- * digest — a tampered persisted scope must never authorize findings for a
- * different artifact identity.
+ * Subject-identity cross-check (defense in depth): the obligation type
+ * determines the required subject-scope class — never the persisted scope
+ * kind. Plan/architecture obligations MUST carry an artifact scope whose
+ * artifactKind and digest are bound to the obligation subject identity;
+ * other obligation types MUST NOT carry an artifact scope.
  */
 export function artifactScopeSubjectIdentityMatches(obligation: ReviewObligation): boolean {
+  const isArtifactType =
+    obligation.obligationType === 'plan' || obligation.obligationType === 'architecture';
+  if (!isArtifactType) {
+    return obligation.reviewSubjectScope?.kind !== 'artifact';
+  }
   const scope = obligation.reviewSubjectScope;
-  if (scope?.kind !== 'artifact') return true;
+  if (scope?.kind !== 'artifact') return false;
   const expectedKind = obligation.obligationType === 'plan' ? 'plan' : 'adr';
-  return (
-    (obligation.obligationType === 'plan' || obligation.obligationType === 'architecture') &&
-    scope.artifact.kind === expectedKind &&
-    scope.artifact.digest === obligation.subjectDigest
-  );
+  return scope.artifact.kind === expectedKind && scope.artifact.digest === obligation.subjectDigest;
 }
