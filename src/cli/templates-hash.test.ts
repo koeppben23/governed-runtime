@@ -244,9 +244,12 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // no longer permits free-composed reviewer prompts — a repository review
     // without a canonical reviewerTaskPrompt is blocked with
     // REVIEWER_CONTEXT_UNAVAILABLE.
+    // Refreshed for repairable unextractable reviewer output: /review and the
+    // shared review loop now direct schema_invalid/extraction_invalid Task
+    // results through the canonical FlowGuard reissue path.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '2e76204933632daa01ce3bac16404626e7a4fa3f64ccaab2639c9e1ae36118e5',
+      'ac0dfaebe75ad902f871a1ca872eff59cfc16246294bd53ee4e753acd31b4952',
     );
   });
 
