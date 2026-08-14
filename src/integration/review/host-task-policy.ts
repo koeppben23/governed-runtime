@@ -228,6 +228,7 @@ function buildReviewerTaskPromptOrNull(
     readonly retrySchemaErrors: readonly string[] | null;
     readonly repositoryDiscoverySnapshot: RepositoryDiscoverySnapshot | null;
     readonly observationCapability: string | null;
+    readonly repositoryReview: boolean;
   },
 ): string | null {
   if (!attestationMeta || ctx?.iteration == null) return null;

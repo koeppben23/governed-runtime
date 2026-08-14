@@ -79,16 +79,20 @@ export function refineReviewMaterialSubject(
   });
 }
 
-/** Material authority is mandatory from the p41 generation onward. */
+/** Known generations persisted before frozen review material existed. */
+const PRE_FROZEN_MATERIAL_CRITERIA = new Set(['p37-v1', 'p38-v1', 'p39-v1', 'p40-v1']);
+
+/** All non-legacy generations require frozen material. */
 export function refineCurrentGenerationMaterial(
   obligation: ObligationRefinementShape,
   context: z.RefinementCtx,
 ): void {
-  if (obligation.criteriaVersion !== 'p41-v1' || obligation.reviewMaterial) return;
+  if (obligation.reviewMaterial || PRE_FROZEN_MATERIAL_CRITERIA.has(obligation.criteriaVersion))
+    return;
   context.addIssue({
     code: z.ZodIssueCode.custom,
     path: ['reviewMaterial'],
-    message: 'p41 review obligations require frozen reviewMaterial.',
+    message: 'Non-legacy review obligations require frozen reviewMaterial.',
   });
 }
 
