@@ -537,6 +537,9 @@ export function buildInvocationEvidence(input: {
   invocationMode: ReviewInvocationMode;
   hostVisible: boolean;
   promptHash: string;
+  canonicalPromptDigest?: string;
+  modelPromptDigest?: string | null;
+  hostTaskCallId?: string;
   findingsHash: string;
   invokedAt: string;
   fulfilledAt?: string;
@@ -580,6 +583,9 @@ export function buildInvocationEvidence(input: {
     invocationMode: input.invocationMode,
     hostVisible: input.hostVisible,
     promptHash: input.promptHash,
+    canonicalPromptDigest: input.canonicalPromptDigest,
+    modelPromptDigest: input.modelPromptDigest,
+    hostTaskCallId: input.hostTaskCallId,
     mandateDigest: input.mandateDigest,
     criteriaVersion: input.criteriaVersion,
     findingsHash: input.findingsHash,

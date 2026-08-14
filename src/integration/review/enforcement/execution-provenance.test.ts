@@ -54,6 +54,39 @@ describe('registerExecutedTaskPrompt', () => {
     expect(result).toMatchObject({ kind: 'ready', prompt: { attemptId: attempt.attemptId } });
   });
 
+  it('reserves an attempt for exactly one in-flight reviewer Task', () => {
+    const { enforcement, assurance } = setup();
+
+    const first = registerExecutedTaskPrompt(enforcement, assurance, 'call-a', PROMPT, NOW);
+    const concurrent = registerExecutedTaskPrompt(enforcement, assurance, 'call-b', PROMPT, NOW);
+
+    expect(first).toMatchObject({ kind: 'ready' });
+    expect(concurrent).toMatchObject({ kind: 'blocked' });
+    expect(enforcement.executedTaskPrompts).toHaveLength(1);
+    expect(enforcement.executedTaskPrompts.has('call-a')).toBe(true);
+  });
+
+  it('rejects missing and duplicate host call IDs without overwriting a reservation', () => {
+    const { enforcement, assurance } = setup();
+
+    expect(registerExecutedTaskPrompt(enforcement, assurance, '', PROMPT, NOW)).toMatchObject({
+      kind: 'blocked',
+    });
+    expect(registerExecutedTaskPrompt(enforcement, assurance, 'call-a', PROMPT, NOW)).toMatchObject(
+      {
+        kind: 'ready',
+      },
+    );
+    expect(
+      registerExecutedTaskPrompt(enforcement, assurance, 'call-a', 'other', NOW),
+    ).toMatchObject({
+      kind: 'blocked',
+    });
+    expect(enforcement.executedTaskPrompts.get('call-a')?.modelPromptDigest).toBe(
+      createHash('sha256').update(PROMPT, 'utf8').digest('hex'),
+    );
+  });
+
   it.each<ReviewAttemptStatus>(['rejected', 'stale', 'expired'])(
     'blocks a %s attempt',
     (status) => {

@@ -155,6 +155,11 @@ export function buildHostTaskEvidence(
     readonly invocations: ReviewInvocationEvidence[];
     readonly attempts: readonly ReviewAttempt[];
     readonly allowedEvidenceRefs?: readonly unknown[];
+    readonly promptProvenance?: {
+      readonly callId: string;
+      readonly canonicalPromptDigest: string;
+      readonly modelPromptDigest: string | null;
+    };
   },
 ): HostTaskBindResult & { attempt?: ReviewAttempt } {
   const { obligations, invocations, attempts, allowedEvidenceRefs } = records;
@@ -220,6 +225,7 @@ export function buildHostTaskEvidence(
     normalizedFindings,
     findingsHash,
     attestationInfo,
+    promptProvenance: records.promptProvenance,
     now,
   });
 }
@@ -235,6 +241,11 @@ function assembleBoundEvidence(input: {
   normalizedFindings: Record<string, unknown>;
   findingsHash: string;
   attestationInfo: AttestationInfo;
+  promptProvenance?: {
+    readonly callId: string;
+    readonly canonicalPromptDigest: string;
+    readonly modelPromptDigest: string | null;
+  };
   now: string;
   allowedEvidenceRefs?: readonly unknown[];
 }): HostTaskBindResult & { attempt?: ReviewAttempt } {
@@ -251,6 +262,13 @@ function assembleBoundEvidence(input: {
     invocationMode: 'host_subagent_task',
     hostVisible: true,
     promptHash,
+    ...(input.promptProvenance
+      ? {
+          hostTaskCallId: input.promptProvenance.callId,
+          canonicalPromptDigest: input.promptProvenance.canonicalPromptDigest,
+          modelPromptDigest: input.promptProvenance.modelPromptDigest,
+        }
+      : {}),
     findingsHash,
     invokedAt: now,
     source: 'host-orchestrated',

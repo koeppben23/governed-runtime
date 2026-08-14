@@ -470,7 +470,8 @@ export const ReviewObligation = z
   .superRefine(refineAuthorityStructure);
 export type ReviewObligation = z.infer<typeof ReviewObligation>;
 
-/** P35 strict invocation evidence record. */
+const Sha256Digest = z.string().regex(/^[a-f0-9]{64}$/);
+
 export const ReviewInvocationEvidence = z
   .object({
     invocationId: z.string().uuid(),
@@ -494,6 +495,9 @@ export const ReviewInvocationEvidence = z
     /** Whether this invocation produced a host-visible child session in the OpenCode GUI. */
     hostVisible: z.boolean(),
     promptHash: z.string().min(1),
+    canonicalPromptDigest: Sha256Digest.optional(),
+    modelPromptDigest: Sha256Digest.nullable().optional(),
+    hostTaskCallId: z.string().min(1).optional(),
     mandateDigest: z.string().min(1),
     criteriaVersion: z.string().min(1),
     findingsHash: z.string().min(1),

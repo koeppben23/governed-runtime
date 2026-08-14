@@ -19,6 +19,12 @@ export function registerExecutedTaskPrompt(
   modelPrompt: unknown,
   now: string,
 ): DispatchResolution {
+  if (!callId) {
+    return { kind: 'blocked', reason: 'reviewer Task requires a non-empty host call ID' };
+  }
+  if (enforcement.executedTaskPrompts.has(callId)) {
+    return { kind: 'blocked', reason: 'host call ID already has an execution record' };
+  }
   const candidates = [...enforcement.pendingReviews.values()].filter(isExecutablePending);
   if (candidates.length !== 1) {
     return {
@@ -40,6 +46,9 @@ export function registerExecutedTaskPrompt(
       reason: 'pending attempt is absent, superseded, or not bindable',
     };
   }
+  if (hasInFlightAttempt(enforcement, obligation.obligationId, attempt.attemptId)) {
+    return { kind: 'blocked', reason: 'pending attempt already has an in-flight reviewer Task' };
+  }
   const canonicalPrompt = pending.canonicalPrompt!;
   const canonicalPromptDigest = digest(canonicalPrompt);
   if (canonicalPromptDigest !== pending.expectedPromptDigest) {
@@ -59,6 +68,16 @@ export function registerExecutedTaskPrompt(
   };
   enforcement.executedTaskPrompts.set(callId, prompt);
   return { kind: 'ready', prompt };
+}
+
+function hasInFlightAttempt(
+  enforcement: SessionEnforcementState,
+  obligationId: string,
+  attemptId: string,
+): boolean {
+  return [...enforcement.executedTaskPrompts.values()].some(
+    (record) => record.obligationId === obligationId && record.attemptId === attemptId,
+  );
 }
 
 /** Atomically consume the host-owned Task execution record. */

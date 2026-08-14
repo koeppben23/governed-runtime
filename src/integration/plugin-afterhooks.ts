@@ -346,6 +346,7 @@ async function handleTaskAfter(
       resolvedChildSessionId,
       ctx.now,
       ctx.hookOutput,
+      execution ?? undefined,
     );
   }
 }

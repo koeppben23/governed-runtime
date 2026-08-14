@@ -339,6 +339,74 @@ describe('reviewer host-task after-hook: no_matched_record → sequential re-inv
       expect(invocations[0]!.childSessionId).toBe(CHILD_VALID);
       expect(invocations[0]!.hostVisible).toBe(true);
       expect(invocations[0]!.invocationMode).toBe('host_subagent_task');
+      expect(invocations[0]!.hostTaskCallId).toBe('call-2');
+      expect(invocations[0]!.canonicalPromptDigest).toMatch(/^[a-f0-9]{64}$/);
+      expect(invocations[0]!.modelPromptDigest).toMatch(/^[a-f0-9]{64}$/);
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('blocks a concurrent reviewer dispatch before either Task can bind the attempt', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      await execFileAsync('git', ['init'], { cwd: ws.tmpDir });
+      const sessionID = crypto.randomUUID();
+      await seedHostTaskPlanSession(ws.tmpDir, sessionID);
+      const hooks = await FlowGuardAuditPlugin(
+        createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+      );
+      const beforeHook = hooks['tool.execute.before']!;
+      const afterHook = hooks['tool.execute.after']!;
+      const planOutput = {
+        title: 'flowguard_plan',
+        output: planReviewRequiredOutput(),
+        metadata: {},
+      };
+      await afterHook(
+        { tool: 'flowguard_plan', sessionID, callID: 'call-plan', args: {} },
+        planOutput,
+      );
+      const reviewerArgs = reviewerArgsFromReviewRequiredOutput(planOutput.output);
+
+      const results = await Promise.allSettled([
+        beforeHook({ tool: 'task', sessionID, callID: 'call-a' }, { args: { ...reviewerArgs } }),
+        beforeHook({ tool: 'task', sessionID, callID: 'call-b' }, { args: { ...reviewerArgs } }),
+      ]);
+
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('rejects a reviewer Task with an empty host callID before prompt injection', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      await execFileAsync('git', ['init'], { cwd: ws.tmpDir });
+      const sessionID = crypto.randomUUID();
+      await seedHostTaskPlanSession(ws.tmpDir, sessionID);
+      const hooks = await FlowGuardAuditPlugin(
+        createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+      );
+      const beforeHook = hooks['tool.execute.before']!;
+      const afterHook = hooks['tool.execute.after']!;
+      const planOutput = {
+        title: 'flowguard_plan',
+        output: planReviewRequiredOutput(),
+        metadata: {},
+      };
+      await afterHook(
+        { tool: 'flowguard_plan', sessionID, callID: 'call-plan', args: {} },
+        planOutput,
+      );
+      const reviewerArgs = { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'model prompt' };
+
+      await expect(
+        beforeHook({ tool: 'task', sessionID, callID: '' }, { args: reviewerArgs }),
+      ).rejects.toThrow('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
+      expect(reviewerArgs.prompt).toBe('model prompt');
     } finally {
       await ws.cleanup();
     }

@@ -160,6 +160,12 @@ async function enforceTaskBefore(
 ): Promise<void> {
   const subagentType = typeof args.subagent_type === 'string' ? args.subagent_type : '';
   if (subagentType === REVIEWER_SUBAGENT_TYPE) {
+    if (!callId) {
+      throw buildEnforcementError(
+        'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+        'Reviewer Task requires a non-empty host callID.',
+      );
+    }
     const eState = runtime.ws.getEnforcementState(sessionId);
     const { strictEnforcement, sessionState } = await resolveEnforcement(
       runtime,
