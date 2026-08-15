@@ -61,20 +61,28 @@ function parseDiagnosticCode(result: string): string | undefined {
 }
 
 function finding(message: string) {
-  const location = { path: 'src/foo.ts', revision: 'head' as const, line: 1 };
   return {
     severity: 'major' as const,
     category: 'risk' as const,
     message,
     relation: {
-      subjectAnchors: [{ kind: 'repository_location' as const, location }],
+      // Plan reviews are artifact-scoped: findings anchor to the frozen plan
+      // artifact, never to repository locations.
+      subjectAnchors: [
+        {
+          kind: 'artifact_section' as const,
+          artifactKind: 'plan' as const,
+          artifactDigest: ANTI_FORGERY_SUBJECT_DIGEST,
+          sectionPath: [{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }],
+        },
+      ],
       evidenceLocations: [],
     },
   };
 }
 
-/** Subject digest shared by the plan obligation and its reviewer attempt. */
-const ANTI_FORGERY_SUBJECT_DIGEST = 'anti-forgery-plan-subject-digest';
+/** Subject digest shared by the plan obligation, its reviewer attempt, and the artifact scope. */
+const ANTI_FORGERY_SUBJECT_DIGEST = 'test-subject-digest';
 
 function strictFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings {
   return makeFindings({
@@ -122,9 +130,12 @@ function strictAssuranceFixture(
         fulfilledAt: new Date().toISOString(),
         consumedAt: null,
         reviewSubjectScope: {
-          kind: 'repository_change',
-          paths: ['src/foo.ts'],
-          revisions: ['base', 'head'],
+          kind: 'artifact',
+          artifact: {
+            kind: 'plan',
+            digest: 'test-subject-digest',
+            sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }]],
+          },
         },
         repositoryRevisionProvenance: {
           kind: 'available',
@@ -990,6 +1001,14 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
       fulfilledAt: null,
       // Binding requires the obligation and its attempt to name the same subject.
       subjectDigest: ANTI_FORGERY_SUBJECT_DIGEST,
+      reviewSubjectScope: {
+        kind: 'artifact',
+        artifact: {
+          kind: 'plan',
+          digest: ANTI_FORGERY_SUBJECT_DIGEST,
+          sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }]],
+        },
+      },
     };
     assurance.invocations = [];
 

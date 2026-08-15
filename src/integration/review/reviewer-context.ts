@@ -7,9 +7,18 @@ import type { SessionState } from '../../state/schema.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { stateVerificationEvidence } from './shared-helpers.js';
 
+/**
+ * Presentation cleanup (NOT requirement provenance): when no ticket was
+ * recorded, the frozen material renders an explicit marker instead of the
+ * JSON literal `null`. Referenced ticket documents such as ADR_TICKET.md
+ * remain unfrozen working-tree content and are deliberately not part of the
+ * review material.
+ */
 function ticketProjection(state: SessionState): unknown {
   const ticket = state.ticket;
-  return ticket ? { digest: ticket.digest, text: ticket.text } : null;
+  return ticket
+    ? { digest: ticket.digest, text: ticket.text }
+    : 'No ticket recorded for this session.';
 }
 
 function section(heading: string, content: string): string[] {

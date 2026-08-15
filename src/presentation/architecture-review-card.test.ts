@@ -76,6 +76,44 @@ describe('buildArchitectureReviewCard', () => {
     expect(card).toContain('**Review iteration:** 2');
   });
 
+  it('renders reviewed provenance rows when a reviewed digest is bound', () => {
+    const card = buildArchitectureReviewCard({
+      ...baseInput,
+      adrId: 'ADR-001',
+      adrDigest: 'current-digest',
+      reviewedDigest: 'reviewed-digest',
+      reviewedObligationId: '00000000-0000-4000-8000-000000000001',
+    });
+    expect(card).toContain('**Reviewed ADR digest:** `reviewed-digest`');
+    expect(card).toContain('**Reviewed obligation:** `00000000-0000-4000-8000-000000000001`');
+  });
+
+  it('warns explicitly when the displayed findings apply to a prior artifact revision', () => {
+    const card = buildArchitectureReviewCard({
+      ...baseInput,
+      adrId: 'ADR-001',
+      adrDigest: 'current-digest',
+      reviewedDigest: 'prior-digest',
+      reviewCompletion: 'review_exhausted',
+    });
+    expect(card).toContain('⚠ These reviewer findings apply to a prior artifact revision.');
+    expect(card).toContain('Reviewed digest: `prior-digest`');
+    expect(card).toContain('Current digest:  `current-digest`');
+    expect(card).toContain(
+      'The current revision was submitted after the final independent review ' +
+        'and has not itself been independently reviewed.',
+    );
+  });
+
+  it('omits the mismatch warning when the reviewed digest matches the current digest', () => {
+    const card = buildArchitectureReviewCard({
+      ...baseInput,
+      adrDigest: 'same-digest',
+      reviewedDigest: 'same-digest',
+    });
+    expect(card).not.toContain('These reviewer findings apply to a prior artifact revision.');
+  });
+
   it('renders the ADR body under the Architecture Decision heading, demoting embedded headings', () => {
     const adrText = '## Context\nfoo\n\n## Decision\nbar\n\n## Consequences\nbaz\n';
     const card = buildArchitectureReviewCard({ ...baseInput, adrText });

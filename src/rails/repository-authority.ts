@@ -10,8 +10,11 @@
  *
  * Fail-closed semantics:
  * - plan/architecture context freezing tolerates a missing repository
- *   (content-only reviews remain legitimate) by returning `undefined`, which
- *   makes repository evidence permanently `evidence_unavailable`.
+ *   (content-only reviews remain legitimate) by returning a typed
+ *   {@link RepositoryAuthorityFreezeResult} whose `unavailable` variant
+ *   carries the exact reason and diagnostic; repository evidence is then
+ *   permanently `evidence_unavailable`, and the outcome is frozen onto the
+ *   obligation as durable audit evidence.
  * - implementation base freezing THROWS: an implementation review governs
  *   repository work, so a session that cannot freeze its base cannot
  *   authoritatively enter implementation review.
@@ -19,7 +22,7 @@
  * @version v1
  */
 
-import { headCommitFull } from '../adapters/git.js';
+import { headCommitFull, isGitRepo } from '../adapters/git.js';
 import {
   FrozenRepositoryError,
   freezeRepositoryIdentity,
@@ -30,6 +33,49 @@ import type {
   FrozenRepositoryAuthority,
   FrozenRepositoryRevisionTarget,
 } from '../state/evidence.js';
+import type {
+  RepositoryEvidenceFreeze,
+  RepositoryEvidenceFreezeReason,
+} from '../state/evidence-review-freeze.js';
+
+/** Why a plan/architecture repository context could not be frozen. */
+export type RepositoryAuthorityFreezeReason = RepositoryEvidenceFreezeReason;
+
+/**
+ * Typed freeze outcome for plan/architecture repository context. `unavailable`
+ * never blocks the artifact review itself — repository evidence simply becomes
+ * unavailable — but the cause is explicit, observable in responses, and
+ * durable once frozen onto the obligation.
+ */
+export type RepositoryAuthorityFreezeResult =
+  | { readonly kind: 'available'; readonly authority: FrozenRepositoryAuthority }
+  | {
+      readonly kind: 'unavailable';
+      readonly reason: RepositoryAuthorityFreezeReason;
+      readonly diagnostic?: string;
+    };
+
+/** Extract the frozen authority from a typed freeze result, if available. */
+export function frozenAuthorityOrUndefined(
+  result: RepositoryAuthorityFreezeResult,
+): FrozenRepositoryAuthority | undefined {
+  return result.kind === 'available' ? result.authority : undefined;
+}
+
+/**
+ * Durable obligation record of a freeze outcome: the exact cause of a
+ * degradation is persisted, not only rendered into the immediate response.
+ */
+export function freezeOutcomeRecord(
+  result: RepositoryAuthorityFreezeResult,
+): RepositoryEvidenceFreeze {
+  if (result.kind === 'available') return { kind: 'available' };
+  return {
+    kind: 'unavailable',
+    reason: result.reason,
+    ...(result.diagnostic ? { diagnostic: result.diagnostic } : {}),
+  };
+}
 
 /**
  * Freeze a commit-kind revision target: exact object sha plus the repository
@@ -50,21 +96,29 @@ export function freezeCommitRevisionTarget(
 /**
  * Freeze a single-context repository authority (plan / architecture
  * obligations). `revision:'head'` resolves against the context; `'base'` is
- * unavailable. Returns `undefined` when the repository identity cannot be
- * frozen — repository evidence becomes unavailable, the review itself is not
- * blocked.
+ * unavailable. Degradation is typed and audit-friendly: the review itself is
+ * never blocked, but the absence of repository evidence is explicit.
  */
 export function freezeContextAuthority(
   worktree: string,
   objectSha: string,
-): FrozenRepositoryAuthority | undefined {
+): RepositoryAuthorityFreezeResult {
   try {
     return {
-      kind: 'context',
-      context: freezeCommitRevisionTarget(worktree, objectSha),
+      kind: 'available',
+      authority: {
+        kind: 'context',
+        context: freezeCommitRevisionTarget(worktree, objectSha),
+      },
     };
-  } catch {
-    return undefined;
+  } catch (err) {
+    const identityFailure =
+      err instanceof FrozenRepositoryError && err.code === 'IDENTITY_UNAVAILABLE';
+    return {
+      kind: 'unavailable',
+      reason: identityFailure ? 'repository_identity_unavailable' : 'freeze_failed',
+      diagnostic: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 
@@ -72,14 +126,24 @@ export function freezeContextAuthority(
  * Freeze-time resolution of the CURRENT commit as a plan/architecture
  * repository context. This is the ONLY sanctioned place outside the adapter
  * layer that resolves the mutable HEAD — it is the freeze point itself.
- * Returns `undefined` when the commit or identity cannot be frozen
- * (repository evidence becomes unavailable).
+ * Returns a typed `unavailable` result when the repository, its HEAD, or the
+ * immutable identity cannot be frozen (repository evidence becomes
+ * unavailable; the artifact review itself remains legitimate).
  */
 export async function freezeContextAuthorityAtHead(
   worktree: string,
-): Promise<FrozenRepositoryAuthority | undefined> {
+): Promise<RepositoryAuthorityFreezeResult> {
   const objectSha = await headCommitFull(worktree);
-  if (!objectSha) return undefined;
+  if (!objectSha) {
+    const repoExists = await isGitRepo(worktree);
+    return {
+      kind: 'unavailable',
+      reason: repoExists ? 'head_unavailable' : 'repository_unavailable',
+      diagnostic: repoExists
+        ? 'No resolvable HEAD commit exists in the repository.'
+        : 'Workspace is not a Git repository.',
+    };
+  }
   return freezeContextAuthority(worktree, objectSha);
 }
 

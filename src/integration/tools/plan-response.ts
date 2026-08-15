@@ -6,7 +6,14 @@
  */
 
 import type { SessionState } from '../../state/schema.js';
-import type { ReviewFindings } from '../../state/evidence.js';
+import type { PlanEvidence, ReviewFindings, ReviewObligation } from '../../state/evidence.js';
+import {
+  freezeContextAuthorityAtHead,
+  freezeOutcomeRecord,
+  frozenAuthorityOrUndefined,
+  type RepositoryAuthorityFreezeResult,
+} from '../../rails/repository-authority.js';
+import { resolveAttemptDiscoveryOrBlock } from '../review/discovery-attempt-context.js';
 import type {
   PlanExecutionScope,
   PlanRevisionResult,
@@ -16,6 +23,7 @@ import type {
 import {
   formatEval,
   formatAutoAdvanceOverflow,
+  formatBlocked,
   appendNextAction,
   writeStateWithArtifacts,
 } from './helpers.js';
@@ -32,6 +40,7 @@ import { autoAdvance } from '../../rails/types.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import {
   reviewObligationResponseFields,
+  artifactReviewSubjectScope,
   createObligationAndAttempt,
   freezeReviewMaterial,
   findLatestObligation,
@@ -40,6 +49,11 @@ import {
 import { buildFrozenReviewMaterialContent } from '../review/reviewer-context.js';
 import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
 import { resolveAttemptObservationCapability } from '../review/assurance.js';
+import { repositoryEvidenceUnavailableField } from '../review/observation-access.js';
+import {
+  resolveReviewedArtifactIdentity,
+  reviewedIdentityFields,
+} from '../review/reviewed-digest.js';
 import { buildReviewerProofContext } from '../review/proof-context.js';
 import { buildHeuristicRiskWarning } from '../proofgraph/claim-contract.js';
 import { assessMinimumTaskClass } from '../phase-tool-gate.js';
@@ -73,6 +87,62 @@ export function firstLine(text: string | undefined): string | undefined {
   return line.length > 120 ? line.slice(0, 117) + '...' : line;
 }
 
+/**
+ * Build the canonical plan review obligation input for the initial submission.
+ * The frozen plan artifact is the review SUBJECT; changedFiles stay
+ * challenge-classification and repository-evidence context only. The frozen
+ * repository authority (freeze-time resolution) is carried here so absence of
+ * authority makes repository evidence unavailable.
+ */
+export function buildPlanReviewObligationInput(
+  scope: PlanExecutionScope,
+  planEvidence: PlanEvidence,
+  planVersion: number,
+  classificationFiles: readonly string[] | undefined,
+  freeze: RepositoryAuthorityFreezeResult,
+): Parameters<typeof createObligationAndAttempt>[1] {
+  const metadata: Record<string, unknown> = {};
+  if (classificationFiles && classificationFiles.length > 0) {
+    metadata.targetPaths = [...classificationFiles];
+  }
+  return {
+    obligationType: 'plan',
+    iteration: 0,
+    planVersion,
+    now: scope.ctx.now(),
+    subjectDigest: planEvidence.digest,
+    // Frozen review material: the exact plan artifact plus originating
+    // ticket context, canonicalized and digest-bound at creation time.
+    reviewMaterial: freezeReviewMaterial(
+      buildFrozenReviewMaterialContent({
+        obligationType: 'plan',
+        state: scope.state,
+        artifact: planEvidence.body,
+      }),
+      planEvidence.digest,
+    ),
+    reviewSubjectScope: artifactReviewSubjectScope('plan', planEvidence.body, planEvidence.digest),
+    reviewProfile: resolveFrozenReviewProfile(scope.state.policySnapshot),
+    profileSource: 'policy_default',
+    policySnapshot: scope.state.policySnapshot,
+    changedFiles: classificationFiles,
+    claimedTaskClass: scope.state.claimedTaskClass,
+    metadata,
+    repositoryAuthority: frozenAuthorityOrUndefined(freeze),
+    // Durable freeze outcome: continuations and forensics render the exact
+    // degradation cause from persisted state.
+    repositoryEvidenceFreeze: freezeOutcomeRecord(freeze),
+  };
+}
+
+function planRepositoryEvidenceWarning(
+  nextObligation: ReviewObligation | null,
+): Record<string, unknown> {
+  return nextObligation
+    ? repositoryEvidenceUnavailableField(nextObligation.repositoryEvidenceFreeze)
+    : {};
+}
+
 export function buildPlanSubmissionResponse(
   input: PlanSubmissionResponseInput,
 ): Record<string, unknown> {
@@ -101,13 +171,19 @@ export function buildPlanSubmissionResponse(
     maxSelfReviewIterations: scope.maxSelfReviewIterations,
     reviewMode: scope.reviewPolicy.subagentEnabled ? 'subagent' : 'self',
     ...reviewObligationResponseFields(nextObligation, planAttemptId),
+    ...planRepositoryEvidenceWarning(nextObligation),
     next: reviewInstruction.next,
     reviewInvocation: reviewInstruction.reviewInvocation,
     _audit: { transitions },
   };
   const riskWarning = planRiskWarning(scope);
   if (riskWarning) response.proofGraphRiskWarning = riskWarning;
-  if (reviewFindings) response.latestReview = latestPlanReviewSummary(reviewFindings, planVersion);
+  if (reviewFindings)
+    response.latestReview = latestPlanReviewSummary(
+      finalState.reviewAssurance,
+      reviewFindings,
+      planVersion,
+    );
   return response;
 }
 
@@ -155,6 +231,7 @@ export function buildPlanReviewInstruction(input: {
 }
 
 export function latestPlanReviewSummary(
+  assurance: SessionState['reviewAssurance'],
   reviewFindings: ReviewFindings,
   planVersion: number,
 ): Record<string, unknown> {
@@ -167,6 +244,7 @@ export function latestPlanReviewSummary(
     missingVerificationCount: reviewFindings.missingVerification.length,
     reviewMode: reviewFindings.reviewMode,
     reviewedAt: reviewFindings.reviewedAt,
+    ...reviewedIdentityFields(resolveReviewedArtifactIdentity(assurance, 'plan', reviewFindings)),
   };
 }
 
@@ -190,6 +268,11 @@ export async function convergedPlanReviewCardResponse(
   const { scope, finalState, ev, transitions, revision, iteration, forcedConvergence } = input;
   const nextAction = resolveNextAction(finalState.phase, finalState);
   const productNext = buildProductNextAction(nextAction, finalState.phase);
+  const reviewedIdentity = resolveReviewedArtifactIdentity(
+    finalState.reviewAssurance,
+    'plan',
+    finalState.plan?.reviewFindings?.at(-1),
+  );
   const reviewCardInput = {
     planText: revision.currentPlan.body,
     phase: finalState.phase,
@@ -200,6 +283,9 @@ export async function convergedPlanReviewCardResponse(
     taskTitle: firstLine(finalState.ticket?.text),
     forcedConvergence,
     proofSummary: projectPlanProofStatus(finalState),
+    currentPlanDigest: revision.currentPlan.digest,
+    reviewedDigest: reviewedIdentity?.reviewedDigest,
+    reviewedObligationId: reviewedIdentity?.reviewedObligationId,
   };
   // Cards and artifacts are canonical Unicode; only host-visible Markdown uses preferences.
   const reviewCard = buildPlanReviewCard(reviewCardInput);
@@ -266,33 +352,17 @@ export async function persistNonConvergedPlanReview(
   if (resolvedTargetPaths && resolvedTargetPaths.length > 0) {
     metadata.targetPaths = resolvedTargetPaths;
   }
-  const attemptResult = scope.reviewPolicy.subagentEnabled
-    ? createObligationAndAttempt(
-        finalState.reviewAssurance,
-        {
-          obligationType: 'plan',
-          iteration,
-          planVersion: nextPlanVersion,
-          now: scope.ctx.now(),
-          subjectDigest: revision.currentPlan.digest,
-          reviewMaterial: freezeReviewMaterial(
-            buildFrozenReviewMaterialContent({
-              obligationType: 'plan',
-              state: finalState,
-              artifact: revision.currentPlan.body,
-            }),
-            revision.currentPlan.digest,
-          ),
-          reviewProfile: resolveFrozenReviewProfile(finalState.policySnapshot),
-          profileSource: 'policy_default',
-          policySnapshot: finalState.policySnapshot,
-          changedFiles: resolvedTargetPaths,
-          claimedTaskClass: finalState.claimedTaskClass,
-          metadata,
-        },
-        scope.ctx.now(),
-      )
-    : null;
+  const mint = await mintPlanRevisionAttempt({
+    scope,
+    finalState,
+    revision,
+    iteration,
+    nextPlanVersion,
+    resolvedTargetPaths,
+    metadata,
+  });
+  if (mint.kind === 'blocked') return mint.message;
+  const attemptResult = mint.attemptResult;
   const nextObligation = attemptResult?.obligation ?? null;
   const stateToPersist = attemptResult
     ? { ...finalState, reviewAssurance: attemptResult.assurance }
@@ -304,6 +374,85 @@ export async function persistNonConvergedPlanReview(
     ),
     stateToPersist,
   );
+}
+
+/**
+ * Mint the plan revision obligation with its first attempt. Plan revisions
+ * freeze their repository context exactly like the initial submission: the
+ * durable freeze record is MANDATORY for plan obligations, and a
+ * repository-governed attempt is born with its host-owned Discovery snapshot
+ * (persistence coherence).
+ */
+async function mintPlanRevisionAttempt(input: {
+  scope: PlanExecutionScope;
+  finalState: SessionState;
+  revision: PlanRevisionResult;
+  iteration: number;
+  nextPlanVersion: number;
+  resolvedTargetPaths: readonly string[];
+  metadata: Record<string, unknown>;
+}): Promise<
+  | { kind: 'ok'; attemptResult: ReturnType<typeof createObligationAndAttempt> | null }
+  | { kind: 'blocked'; message: string }
+> {
+  const { scope, finalState, revision, iteration, nextPlanVersion, resolvedTargetPaths, metadata } =
+    input;
+  const freeze = await freezeContextAuthorityAtHead(scope.wsDir);
+  const authority = frozenAuthorityOrUndefined(freeze);
+  const discovery = await resolveAttemptDiscoveryOrBlock({
+    state: finalState,
+    worktree: scope.wsDir,
+    repositoryGoverned: authority !== undefined,
+    now: scope.ctx.now(),
+  });
+  if (discovery.kind === 'blocked') {
+    return {
+      kind: 'blocked',
+      message: formatBlocked('REVIEWER_CONTEXT_UNAVAILABLE', {
+        reason: discovery.reason,
+      }),
+    };
+  }
+  const attemptResult = scope.reviewPolicy.subagentEnabled
+    ? createObligationAndAttempt(
+        finalState.reviewAssurance,
+        {
+          obligationType: 'plan',
+          iteration,
+          planVersion: nextPlanVersion,
+          now: scope.ctx.now(),
+          subjectDigest: revision.currentPlan.digest,
+          // Frozen review material: the exact (possibly revised) plan artifact
+          // plus originating ticket context, digest-bound at creation time.
+          reviewMaterial: freezeReviewMaterial(
+            buildFrozenReviewMaterialContent({
+              obligationType: 'plan',
+              state: finalState,
+              artifact: revision.currentPlan.body,
+            }),
+            revision.currentPlan.digest,
+          ),
+          // The (possibly revised) plan artifact is the review SUBJECT; changedFiles
+          // below stay challenge-classification and repository-evidence context only.
+          reviewSubjectScope: artifactReviewSubjectScope(
+            'plan',
+            revision.currentPlan.body,
+            revision.currentPlan.digest,
+          ),
+          reviewProfile: resolveFrozenReviewProfile(finalState.policySnapshot),
+          profileSource: 'policy_default',
+          policySnapshot: finalState.policySnapshot,
+          changedFiles: resolvedTargetPaths,
+          claimedTaskClass: finalState.claimedTaskClass,
+          metadata,
+          repositoryAuthority: authority,
+          repositoryEvidenceFreeze: freezeOutcomeRecord(freeze),
+        },
+        scope.ctx.now(),
+        discovery.context,
+      )
+    : null;
+  return { kind: 'ok', attemptResult };
 }
 
 export function nonConvergedPlanResponse(

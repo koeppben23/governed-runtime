@@ -70,6 +70,7 @@ function initialAttempt(
     ordinal: 1,
     origin: { kind: 'initial' },
     repositoryDiscovery: { kind: 'not_applicable' },
+    observationCapability: null,
     now: NOW,
   });
 }

@@ -13,13 +13,21 @@ import { executeArchitecture } from '../../rails/architecture.js';
 import { normalizeArchitectureClaims } from '../../state/proofgraph-approval.js';
 import {
   appendObligationWithAttempt,
+  artifactReviewSubjectScope,
   createReviewObligation,
+  freezeReviewMaterial,
   reviewObligationResponseFields,
   resolveFrozenReviewProfile,
-  freezeReviewMaterial,
 } from '../review/assurance.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
-import { freezeContextAuthorityAtHead } from '../../rails/repository-authority.js';
+import {
+  freezeContextAuthorityAtHead,
+  freezeOutcomeRecord,
+  frozenAuthorityOrUndefined,
+} from '../../rails/repository-authority.js';
+import { resolveAttemptDiscoveryOrBlock } from '../review/discovery-attempt-context.js';
+import { repositoryEvidenceUnavailableField } from '../review/observation-access.js';
+import { hasFrozenRepositoryAuthority } from '../../state/evidence.js';
 import { buildFrozenReviewMaterialContent } from '../review/reviewer-context.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -36,11 +44,15 @@ interface ArchObligationContext {
   readonly policySnapshot: NonNullable<SessionState['policySnapshot']>;
 }
 
-async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Promise<{
-  state: SessionState;
-  obligation: ReturnType<typeof createReviewObligation> | null;
-  attemptId: string | null;
-}> {
+async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Promise<
+  | {
+      kind: 'ok';
+      state: SessionState;
+      obligation: ReturnType<typeof createReviewObligation> | null;
+      attemptId: string | null;
+    }
+  | { kind: 'blocked'; message: string }
+> {
   const classification = await resolvePreImplementationChallengeClassification(
     ctx.state,
     ctx.wsDir,
@@ -53,40 +65,35 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
   if (resolvedTargetPaths && resolvedTargetPaths.length > 0) {
     metadata.targetPaths = resolvedTargetPaths;
   }
-  const repositoryAuthority = await freezeContextAuthorityAtHead(ctx.wsDir);
-  const obligation = ctx.subagentEnabled
-    ? createReviewObligation({
-        obligationType: 'architecture',
-        iteration: 0,
-        planVersion: ctx.archPlanVersion,
-        now: ctx.now,
-        subjectDigest: ctx.state.architecture?.digest ?? `arch-submit-${ctx.archPlanVersion}`,
-        reviewMaterial: freezeReviewMaterial(
-          buildFrozenReviewMaterialContent({
-            obligationType: 'architecture',
-            state: ctx.state,
-            artifact: ctx.state.architecture?.adrText ?? '',
-          }),
-          ctx.state.architecture?.digest ?? `arch-submit-${ctx.archPlanVersion}`,
-        ),
-        reviewProfile: resolveFrozenReviewProfile(ctx.policySnapshot),
-        profileSource: 'policy_default',
-        policySnapshot: ctx.policySnapshot,
-        changedFiles: resolvedTargetPaths,
-        claimedTaskClass: ctx.state.claimedTaskClass,
-        metadata,
-        // Frozen repository context (freeze-time resolution): architecture
-        // reviews may cite repository evidence only against this context.
-        repositoryAuthority,
-      })
-    : null;
+  const minted = await mintArchSubmissionObligation(ctx, resolvedTargetPaths, metadata);
+  // Repository-governed attempts are minted WITH their host-owned Discovery
+  // snapshot (persistence coherence). A structural projection failure blocks
+  // before any state mutation, mirroring the standalone review path.
+  const repositoryGoverned = minted ? hasFrozenRepositoryAuthority(minted) : false;
+  const discovery = await resolveAttemptDiscoveryOrBlock({
+    state: ctx.state,
+    worktree: ctx.wsDir,
+    repositoryGoverned,
+    now: ctx.now,
+    ...(minted ? { obligationId: minted.obligationId } : {}),
+  });
+  if (discovery.kind === 'blocked') {
+    return {
+      kind: 'blocked',
+      message: formatBlocked('REVIEWER_CONTEXT_UNAVAILABLE', {
+        ...(discovery.obligationId ? { obligationId: discovery.obligationId } : {}),
+        reason: discovery.reason,
+      }),
+    };
+  }
   let archAttemptId: string | null = null;
-  const augmentedState = obligation
+  const augmentedState = minted
     ? (() => {
         const withAttempt = appendObligationWithAttempt(
           ctx.state.reviewAssurance,
-          obligation,
+          minted,
           ctx.now,
+          discovery.context,
         );
         archAttemptId = withAttempt.attemptId;
         return {
@@ -95,7 +102,55 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
         };
       })()
     : ctx.state;
-  return { state: augmentedState, obligation, attemptId: archAttemptId };
+  return {
+    kind: 'ok',
+    state: augmentedState,
+    obligation: minted,
+    attemptId: archAttemptId,
+  };
+}
+
+async function mintArchSubmissionObligation(
+  ctx: ArchObligationContext,
+  resolvedTargetPaths: readonly string[] | undefined,
+  metadata: Record<string, unknown>,
+): Promise<ReturnType<typeof createReviewObligation> | null> {
+  if (!ctx.subagentEnabled) return null;
+  const digest = ctx.state.architecture?.digest ?? `arch-submit-${ctx.archPlanVersion}`;
+  const adrText = ctx.state.architecture?.adrText ?? '';
+  const freeze = await freezeContextAuthorityAtHead(ctx.wsDir);
+  return createReviewObligation({
+    obligationType: 'architecture',
+    iteration: 0,
+    planVersion: ctx.archPlanVersion,
+    now: ctx.now,
+    subjectDigest: digest,
+    // Frozen review material: the exact ADR artifact plus originating
+    // ticket context, canonicalized and digest-bound at creation time.
+    reviewMaterial: freezeReviewMaterial(
+      buildFrozenReviewMaterialContent({
+        obligationType: 'architecture',
+        state: ctx.state,
+        artifact: adrText,
+      }),
+      digest,
+    ),
+    // The ADR artifact is the review SUBJECT; changedFiles below stay
+    // challenge-classification and repository-evidence context only.
+    reviewSubjectScope: artifactReviewSubjectScope('adr', adrText, digest),
+    reviewProfile: resolveFrozenReviewProfile(ctx.policySnapshot),
+    profileSource: 'policy_default',
+    policySnapshot: ctx.policySnapshot,
+    changedFiles: resolvedTargetPaths,
+    claimedTaskClass: ctx.state.claimedTaskClass,
+    metadata,
+    // Frozen repository context (freeze-time resolution): architecture
+    // reviews may cite repository evidence only against this context.
+    repositoryAuthority: frozenAuthorityOrUndefined(freeze),
+    // Durable freeze outcome: continuations, restarts, and re-emits render
+    // the exact degradation cause from persisted state.
+    repositoryEvidenceFreeze: freezeOutcomeRecord(freeze),
+  });
 }
 
 export async function handleAdrSubmission(
@@ -135,6 +190,7 @@ export async function handleAdrSubmission(
     now,
     policySnapshot: result.state.policySnapshot,
   });
+  if (classification.kind === 'blocked') return classification.message;
   const {
     state: augmentedState,
     obligation: nextObligation,
@@ -161,6 +217,7 @@ export async function handleAdrSubmission(
     maxSelfReviewIterations: policy.maxSelfReviewIterations,
     reviewMode: subagentEnabled ? 'subagent' : 'self',
     ...reviewObligationResponseFields(nextObligation, subAttemptId),
+    ...repositoryEvidenceUnavailableField(nextObligation?.repositoryEvidenceFreeze),
     next: instruction.next,
     ...(instruction.reviewInvocation ? { reviewInvocation: instruction.reviewInvocation } : {}),
     _audit: { transitions: result.transitions },

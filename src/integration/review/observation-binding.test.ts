@@ -16,12 +16,14 @@ import {
   type BindingFindingRelation,
 } from './observation-binding.js';
 import {
+  artifactReviewSubjectScope,
   createReviewAttempt,
   createReviewObligation,
   ensureReviewAssurance,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './assurance.js';
+import { mintObservationCapability } from './attempt-lifecycle.js';
 import { buildHostTaskEvidence } from './evidence-binding.js';
 import { validateReviewFindings } from '../tools/review-validation.js';
 import {
@@ -63,12 +65,18 @@ function candidateObligation(
     planVersion: 1,
     now: NOW_ISO,
     subjectDigest: 'impl-digest',
+    ...(obligationType === 'plan'
+      ? {
+          reviewSubjectScope: artifactReviewSubjectScope('plan', '# Plan\nBody', 'impl-digest'),
+        }
+      : {}),
     changedFiles: ['src/foo.ts'],
     repositoryAuthority: {
       kind: 'candidate_pair',
       base: { kind: 'commit', repositoryIdentity: UPSTREAM, objectSha: BASE_SHA },
       head: { kind: headKind, repositoryIdentity: FORK, objectSha: HEAD_SHA },
     },
+    ...(obligationType === 'plan' ? { repositoryEvidenceFreeze: { kind: 'available' } } : {}),
   });
 }
 
@@ -107,6 +115,7 @@ function attemptFor(obligation: ReviewObligation, sessionId: string): ReviewAtte
     childSessionId: sessionId,
     origin: { kind: 'initial' },
     repositoryDiscovery: { kind: 'repository', snapshot: snapshot() },
+    observationCapability: mintObservationCapability(),
     now: NOW_ISO,
   });
 }
@@ -364,10 +373,15 @@ describe('host-task bind path', () => {
           category: 'correctness',
           message: 'flawed',
           relation: {
+            // Plan reviews are artifact-scoped: the subject anchor targets the
+            // plan artifact; repository evidenceLocations bind against the
+            // attempt's authoritative observations.
             subjectAnchors: [
               {
-                kind: 'repository_location',
-                location: { path: 'src/foo.ts', revision: 'head', line: 1 },
+                kind: 'artifact_section',
+                artifactKind: 'plan',
+                artifactDigest: 'impl-digest',
+                sectionPath: [{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }],
               },
             ],
             evidenceLocations: locations,

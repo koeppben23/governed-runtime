@@ -162,11 +162,21 @@ function buildState(
           blockedCode: null,
           fulfilledAt: null,
           consumedAt: null,
-          reviewSubjectScope: {
-            kind: 'repository_change',
-            paths: ['src/foo.ts'],
-            revisions: ['base', 'head'],
-          },
+          reviewSubjectScope:
+            obligationType === 'implement'
+              ? {
+                  kind: 'repository_change',
+                  paths: ['src/foo.ts'],
+                  revisions: ['base', 'head'],
+                }
+              : {
+                  kind: 'artifact',
+                  artifact: {
+                    kind: obligationType === 'architecture' ? 'adr' : 'plan',
+                    digest: 'test-subject-digest',
+                    sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }]],
+                  },
+                },
           reviewMaterial,
         },
       ],

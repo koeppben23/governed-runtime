@@ -40,13 +40,9 @@ export function hasText(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-export function validateInitialSubmissionGate(
-  args: ArchitectureArgs,
-  state: SessionState,
-  isInitialSubmission: boolean,
-): string | null {
+/** Argument-shape validation only — never gates on obligation lifecycle state. */
+export function validateArchitectureCallShape(args: ArchitectureArgs): string | null {
   const hasTitle = hasText(args.title);
-  const hasAdrText = hasText(args.adrText);
 
   // title + verdict keeps its distinct code (submission metadata with a verdict).
   if (hasTitle && hasText(args.reviewVerdict)) {
@@ -63,6 +59,18 @@ export function validateInitialSubmissionGate(
     reviewerUnavailable: args.reviewerUnavailable,
   });
   if (mode.kind === 'invalid') return formatBlocked(mode.code, mode.params);
+  return null;
+}
+
+export function validateInitialSubmissionGate(
+  args: ArchitectureArgs,
+  state: SessionState,
+  isInitialSubmission: boolean,
+): string | null {
+  const shapeBlocked = validateArchitectureCallShape(args);
+  if (shapeBlocked) return shapeBlocked;
+  const hasTitle = hasText(args.title);
+  const hasAdrText = hasText(args.adrText);
 
   if (!isInitialSubmission || (!hasTitle && !hasAdrText) || state.phase !== 'ARCHITECTURE') {
     return null;

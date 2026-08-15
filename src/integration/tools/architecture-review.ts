@@ -29,15 +29,16 @@ import { validateAdrSections } from '../../state/evidence.js';
 
 import {
   appendObligationWithAttempt,
+  artifactReviewSubjectScope,
   consumeReviewObligation,
   createReviewObligation,
   ensureReviewAssurance,
   findAcceptedInvocationForFindings,
   findLatestObligation,
   findLatestUnconsumedObligation,
+  freezeReviewMaterial,
   reviewObligationResponseFields,
   resolveFrozenReviewProfile,
-  freezeReviewMaterial,
 } from '../review/assurance.js';
 import { buildFrozenReviewMaterialContent } from '../review/reviewer-context.js';
 
@@ -64,7 +65,16 @@ import {
   buildArchitectureReviewInstruction,
 } from './architecture-shared.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
-import { freezeContextAuthorityAtHead } from '../../rails/repository-authority.js';
+import {
+  freezeContextAuthorityAtHead,
+  freezeOutcomeRecord,
+  frozenAuthorityOrUndefined,
+  type RepositoryAuthorityFreezeResult,
+} from '../../rails/repository-authority.js';
+import { resolveAttemptDiscoveryOrBlock } from '../review/discovery-attempt-context.js';
+import { repositoryEvidenceUnavailableField } from '../review/observation-access.js';
+import { hasFrozenRepositoryAuthority } from '../../state/evidence.js';
+import type { ReviewAttemptDiscoveryContext } from '../../state/evidence.js';
 
 // ─── Mode-B Internal Types ────────────────────────────────────────────────
 
@@ -413,7 +423,7 @@ async function persistAndFormatConvergedReview(input: ReviewResultContext): Prom
     next: formatEval(advanced.evalResult),
     _audit: { transitions: advanced.transitions },
   };
-  attachLatestReview(resp, review.effectiveFindings, review.expectedPlanVersion, iteration);
+  attachLatestReview(resp, review, iteration);
   await attachReviewCard({
     resp,
     reviewFindings: review.effectiveFindings,
@@ -422,26 +432,58 @@ async function persistAndFormatConvergedReview(input: ReviewResultContext): Prom
     finalState: advanced.state,
     iteration,
     reviewCompletion: completion,
+    reviewedIdentity: resolveArchReviewedIdentity(review),
   });
   return appendNextAction(JSON.stringify(resp), advanced.state);
 }
 
+/**
+ * Direct producer identity for the architecture Mode-B response: the
+ * pending obligation was resolved BEFORE the verdict was applied and the
+ * effective findings were bound against exactly that obligation. An
+ * attestation contradicting it is an inconsistency that must never be
+ * projected as reviewed identity.
+ */
+function resolveArchReviewedIdentity(review: ResolvedReview): {
+  reviewedDigest?: string;
+  reviewedObligationId?: string;
+} {
+  const pending = review.pendingObligation;
+  const findings = review.effectiveFindings;
+  if (!pending || !findings) return {};
+  const attestationId = findings.attestation?.toolObligationId;
+  if (attestationId && attestationId !== pending.obligationId) {
+    getAdapterLogger().warn('review', 'arch_reviewed_identity_attestation_mismatch', {
+      obligationId: pending.obligationId,
+      attestationObligationId: attestationId,
+    });
+    return {};
+  }
+  return {
+    reviewedDigest: pending.subjectDigest,
+    reviewedObligationId: pending.obligationId,
+  };
+}
+
 function attachLatestReview(
   resp: Record<string, unknown>,
-  reviewFindings: ReviewFindings | undefined,
-  expectedPlanVersion: number,
+  review: ResolvedReview,
   hostIteration: number,
 ): void {
+  const reviewFindings = review.effectiveFindings;
   if (!reviewFindings) return;
   resp.latestReview = {
     iteration: hostIteration,
-    planVersion: expectedPlanVersion,
+    planVersion: review.expectedPlanVersion,
     overallVerdict: reviewFindings.overallVerdict,
     blockingIssueCount: reviewFindings.blockingIssues.length,
     majorRiskCount: reviewFindings.majorRisks.length,
     missingVerificationCount: reviewFindings.missingVerification.length,
     reviewMode: reviewFindings.reviewMode,
     reviewedAt: reviewFindings.reviewedAt,
+    reviewerIteration: reviewFindings.iteration,
+    reviewedPlanVersion: reviewFindings.planVersion,
+    ...resolveArchReviewedIdentity(review),
   };
 }
 
@@ -453,6 +495,7 @@ async function attachReviewCard(input: {
   finalState: SessionState;
   iteration: number;
   reviewCompletion: ArchitectureReviewCompletion | undefined;
+  reviewedIdentity: { reviewedDigest?: string; reviewedObligationId?: string };
 }): Promise<void> {
   const { resp, reviewFindings, session, revision, finalState, iteration } = input;
   const nextAction = resolveNextAction(finalState.phase, finalState);
@@ -476,6 +519,8 @@ async function attachReviewCard(input: {
     isApproved: finalState.architecture?.status === 'accepted',
     reviewCompletion: input.reviewCompletion,
     proofSummary: projectArchitectureProofStatus(finalState),
+    reviewedDigest: input.reviewedIdentity.reviewedDigest,
+    reviewedObligationId: input.reviewedIdentity.reviewedObligationId,
   };
   // Cards and artifacts are canonical Unicode; only host-visible Markdown uses preferences.
   resp.reviewCard = buildArchitectureReviewCard(reviewCardInput);
@@ -542,7 +587,7 @@ async function persistAndFormatNonConvergedReview(
   );
   const resolvedTargetPaths =
     classification.kind === 'available' ? [...classification.changedFiles] : undefined;
-  const repositoryAuthority = await freezeContextAuthorityAtHead(session.wsDir);
+  const freeze = await freezeContextAuthorityAtHead(session.wsDir);
   const nextObligation = createNextArchitectureReviewObligation({
     state: advanced.state,
     session,
@@ -550,14 +595,57 @@ async function persistAndFormatNonConvergedReview(
     revision,
     iteration,
     resolvedTargetPaths,
-    repositoryAuthority,
+    freeze,
   });
+  // Repository-governed attempts are minted WITH their host-owned Discovery
+  // snapshot (persistence coherence); a structural projection failure blocks
+  // the re-review dispatch before any state mutation.
+  const discovery = await resolveAttemptDiscoveryOrBlock({
+    state: advanced.state,
+    worktree: session.wsDir,
+    repositoryGoverned: nextObligation ? hasFrozenRepositoryAuthority(nextObligation) : false,
+    now: session.ctx.now(),
+    ...(nextObligation ? { obligationId: nextObligation.obligationId } : {}),
+  });
+  if (discovery.kind === 'blocked') {
+    return formatBlocked('REVIEWER_CONTEXT_UNAVAILABLE', {
+      ...(discovery.obligationId ? { obligationId: discovery.obligationId } : {}),
+      reason: discovery.reason,
+    });
+  }
   const { stateToPersist, attemptId } = persistableArchitectureReviewState(
     advanced.state,
     nextObligation,
     session.ctx.now(),
+    discovery.context,
   );
   const persisted = await writeStateWithArtifacts(session.sessDir, stateToPersist);
+  const resp = buildNonConvergedReviewResponse({
+    session,
+    review,
+    revision,
+    advanced,
+    iteration,
+    verdict,
+    nextObligation,
+    attemptId,
+    persisted,
+  });
+  return appendNextAction(JSON.stringify(resp), stateToPersist);
+}
+
+function buildNonConvergedReviewResponse(input: {
+  readonly session: ArchitectureSession;
+  readonly review: ResolvedReview;
+  readonly revision: AdrRevision;
+  readonly advanced: { readonly state: SessionState; readonly transitions: unknown };
+  readonly iteration: number;
+  readonly verdict: LoopVerdict;
+  readonly nextObligation: ReturnType<typeof createNextArchitectureReviewObligation>;
+  readonly attemptId: string | null;
+  readonly persisted: SessionState;
+}): Record<string, unknown> {
+  const { session, review, revision, advanced, iteration, verdict, nextObligation } = input;
   const instruction = buildArchitectureReviewInstruction({
     policy: session.policy,
     subagentEnabled: review.subagentEnabled,
@@ -565,10 +653,9 @@ async function persistAndFormatNonConvergedReview(
     iteration,
     planVersion: review.expectedPlanVersion,
     subjectLabel: 'revised ADR text, ADR title, and ticket text',
-    state: persisted,
+    state: input.persisted,
   });
-
-  const resp: Record<string, unknown> = {
+  return {
     phase: advanced.state.phase,
     status: `${review.subagentEnabled ? 'Independent review' : 'ADR self-review'} iteration ${iteration}/${session.policy.maxSelfReviewIterations}. Verdict: ${verdict}.`,
     adrId: revision.currentAdr.id,
@@ -576,12 +663,14 @@ async function persistAndFormatNonConvergedReview(
     selfReviewIteration: iteration,
     revisionDelta: revision.revisionDelta,
     reviewMode: review.subagentEnabled ? 'subagent' : 'self',
-    ...reviewObligationResponseFields(nextObligation, attemptId),
+    ...reviewObligationResponseFields(nextObligation, input.attemptId),
+    ...(review.subagentEnabled
+      ? repositoryEvidenceUnavailableField(nextObligation?.repositoryEvidenceFreeze)
+      : {}),
     next: instruction.next,
     ...(instruction.reviewInvocation ? { reviewInvocation: instruction.reviewInvocation } : {}),
     _audit: { transitions: advanced.transitions },
   };
-  return appendNextAction(JSON.stringify(resp), stateToPersist);
 }
 
 function createNextArchitectureReviewObligation(input: {
@@ -591,10 +680,9 @@ function createNextArchitectureReviewObligation(input: {
   revision: AdrRevision;
   iteration: number;
   resolvedTargetPaths: string[] | undefined;
-  repositoryAuthority: Awaited<ReturnType<typeof freezeContextAuthorityAtHead>>;
+  freeze: RepositoryAuthorityFreezeResult;
 }) {
-  const { state, session, review, revision, iteration, resolvedTargetPaths, repositoryAuthority } =
-    input;
+  const { state, session, review, revision, iteration, resolvedTargetPaths, freeze } = input;
   if (!review.subagentEnabled) return null;
   const subjectDigest = state.architecture?.digest ?? `arch-${review.expectedPlanVersion}`;
   return createReviewObligation({
@@ -608,6 +696,13 @@ function createNextArchitectureReviewObligation(input: {
       revision.currentAdr.adrText,
       subjectDigest,
     ),
+    // The (possibly revised) ADR artifact is the review SUBJECT; changedFiles
+    // below stay challenge-classification and repository-evidence context only.
+    reviewSubjectScope: artifactReviewSubjectScope(
+      'adr',
+      revision.currentAdr.adrText,
+      subjectDigest,
+    ),
     reviewProfile: resolveFrozenReviewProfile(state.policySnapshot),
     profileSource: 'policy_default',
     policySnapshot: state.policySnapshot,
@@ -615,7 +710,10 @@ function createNextArchitectureReviewObligation(input: {
     claimedTaskClass: state.claimedTaskClass,
     metadata: targetPathsMetadata(resolvedTargetPaths),
     // Frozen repository context (freeze-time resolution): architecture reviews may cite it only.
-    repositoryAuthority,
+    repositoryAuthority: frozenAuthorityOrUndefined(freeze),
+    // Durable freeze outcome: continuations, restarts, and re-emits render
+    // the exact degradation cause from persisted state.
+    repositoryEvidenceFreeze: freezeOutcomeRecord(freeze),
   });
 }
 
@@ -623,11 +721,17 @@ function persistableArchitectureReviewState(
   state: SessionState,
   nextObligation: ReturnType<typeof createNextArchitectureReviewObligation>,
   now: string,
+  repositoryDiscovery: ReviewAttemptDiscoveryContext = { kind: 'not_applicable' },
 ): { stateToPersist: SessionState; attemptId: string | null } {
   let archAttemptId: string | null = null;
   const stateToPersist = nextObligation
     ? (() => {
-        const withAttempt = appendObligationWithAttempt(state.reviewAssurance, nextObligation, now);
+        const withAttempt = appendObligationWithAttempt(
+          state.reviewAssurance,
+          nextObligation,
+          now,
+          repositoryDiscovery,
+        );
         archAttemptId = withAttempt.attemptId;
         return {
           ...state,

@@ -30,6 +30,7 @@ import { architecture } from './tools/architecture.js';
 import type { ToolContext } from './tools/helpers.js';
 import type { ReviewFindings, ReviewObligation } from '../state/evidence.js';
 import {
+  artifactReviewSubjectScope,
   createReviewObligation,
   appendReviewObligation,
   appendInvocationEvidence,
@@ -206,10 +207,12 @@ describe('plan / architecture Mode-B review contract', () => {
         const obl = {
           ...createReviewObligation({
             obligationType: 'plan',
+            repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
             iteration: 0,
             planVersion: 1,
             now: NOW(),
             subjectDigest: 'test',
+            reviewSubjectScope: artifactReviewSubjectScope('plan', '# Plan\nBody', 'test'),
             changedFiles: ['src/foo.ts'],
           }),
           reviewMaterial: {
@@ -254,10 +257,16 @@ describe('plan / architecture Mode-B review contract', () => {
         const obl = {
           ...createReviewObligation({
             obligationType: 'architecture',
+            repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
             iteration: 0,
             planVersion: 1,
             now: NOW(),
             subjectDigest: 'test',
+            reviewSubjectScope: artifactReviewSubjectScope(
+              'adr',
+              '## Context\nC\n## Decision\nD',
+              'test',
+            ),
             changedFiles: ['src/foo.ts'],
           }),
           reviewMaterial: {

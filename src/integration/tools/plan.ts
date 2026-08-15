@@ -37,7 +37,11 @@
  */
 
 import { z } from 'zod';
-import { freezeContextAuthorityAtHead } from '../../rails/repository-authority.js';
+import {
+  freezeContextAuthorityAtHead,
+  frozenAuthorityOrUndefined,
+} from '../../rails/repository-authority.js';
+import { resolveAttemptDiscoveryOrBlock } from '../review/discovery-attempt-context.js';
 
 import type { ToolDefinition } from './helpers.js';
 import { formatError } from './error-format.js';
@@ -79,13 +83,10 @@ import {
   appendReviewObligation,
   consumeReviewObligation,
   createObligationAndAttempt,
-  freezeReviewMaterial,
   ensureReviewAssurance,
   findAcceptedInvocationForFindings,
   findLatestObligation,
-  resolveFrozenReviewProfile,
 } from '../review/assurance.js';
-import { buildFrozenReviewMaterialContent } from '../review/reviewer-context.js';
 import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
 import { buildHostTaskChallengeContract } from '../review/host-task-policy.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
@@ -127,32 +128,14 @@ import type {
 // ---- internal helpers ----
 
 import { classifyPlanCall, planInputFlags, planReviewPolicy } from './plan-types.js';
+import { routePlanInitialSubmission, blockedPlanReviewInProgress } from './plan-route.js';
 import {
   buildPlanSubmissionResponse as buildSubmissionResponse,
+  buildPlanReviewObligationInput,
   persistPlanReview as persistReview,
 } from './plan-response.js';
 
-function blockedPlanReviewInProgress(state: SessionState): string | null {
-  const assurance = ensureReviewAssurance(state.reviewAssurance);
-  const blockedPlanObligations = assurance.obligations.filter(
-    (o) => o.obligationType === 'plan' && o.status === 'blocked',
-  );
-  const lastPlanObligation = [...assurance.obligations]
-    .reverse()
-    .find((o) => o.obligationType === 'plan');
-
-  if (lastPlanObligation?.status !== 'blocked') {
-    return formatBlocked('PLAN_REVIEW_IN_PROGRESS');
-  }
-  if (blockedPlanObligations.length >= 3) {
-    return formatBlocked('ORCHESTRATION_PERMANENTLY_FAILED', {
-      attempts: String(blockedPlanObligations.length),
-    });
-  }
-  return null;
-}
-
-function validatePlanRequest(scope: PlanExecutionScope): string | null {
+function validatePlanCallShape(scope: PlanExecutionScope): string | null {
   const { input, state } = scope;
   if (!isCommandAllowed(state.phase, Command.PLAN)) {
     return formatBlocked('COMMAND_NOT_ALLOWED', { command: '/plan', phase: state.phase });
@@ -161,16 +144,6 @@ function validatePlanRequest(scope: PlanExecutionScope): string | null {
 
   const mixedInputBlocked = validatePlanInputShape(scope.args, input, state);
   if (mixedInputBlocked) return mixedInputBlocked;
-
-  if (
-    input.isInitialSubmission &&
-    input.hasPlanText &&
-    state.phase === 'PLAN' &&
-    state.selfReview
-  ) {
-    const blocked = blockedPlanReviewInProgress(state);
-    if (blocked) return blocked;
-  }
 
   return validateInitialPlanFindings(scope);
 }
@@ -297,59 +270,51 @@ async function createPlanReviewAttempt(
   planEvidence: PlanEvidence,
   planVersion: number,
   classificationFiles?: readonly string[],
-): Promise<ReturnType<typeof createObligationAndAttempt> | null> {
-  if (!scope.reviewPolicy.subagentEnabled) return null;
-  const metadata: Record<string, unknown> = {};
-  if (classificationFiles && classificationFiles.length > 0) {
-    metadata.targetPaths = [...classificationFiles];
+): Promise<
+  | {
+      kind: 'ok';
+      attemptResult: ReturnType<typeof createObligationAndAttempt> | null;
+    }
+  | { kind: 'blocked'; message: string }
+> {
+  if (!scope.reviewPolicy.subagentEnabled) return { kind: 'ok', attemptResult: null };
+  const freeze = await freezeContextAuthorityAtHead(scope.wsDir);
+  const authority = frozenAuthorityOrUndefined(freeze);
+  // Repository-governed attempts are minted WITH their host-owned Discovery
+  // snapshot (persistence coherence); a structural projection failure blocks
+  // the submission before any state mutation.
+  const discovery = await resolveAttemptDiscoveryOrBlock({
+    state: scope.state,
+    worktree: scope.wsDir,
+    repositoryGoverned: authority !== undefined,
+    now: scope.ctx.now(),
+  });
+  if (discovery.kind === 'blocked') {
+    return {
+      kind: 'blocked',
+      message: formatBlocked('REVIEWER_CONTEXT_UNAVAILABLE', {
+        reason: discovery.reason,
+      }),
+    };
   }
-  const repositoryAuthority = await freezeContextAuthorityAtHead(scope.wsDir);
-  return createObligationAndAttempt(
+  const attemptResult = createObligationAndAttempt(
     scope.state.reviewAssurance,
-    {
-      obligationType: 'plan',
-      iteration: 0,
-      planVersion,
-      now: scope.ctx.now(),
-      subjectDigest: planEvidence.digest,
-      reviewMaterial: freezeReviewMaterial(
-        buildFrozenReviewMaterialContent({
-          obligationType: 'plan',
-          state: scope.state,
-          artifact: planEvidence.body,
-        }),
-        planEvidence.digest,
-      ),
-      reviewProfile: resolveFrozenReviewProfile(scope.state.policySnapshot),
-      profileSource: 'policy_default',
-      policySnapshot: scope.state.policySnapshot,
-      changedFiles: classificationFiles,
-      claimedTaskClass: scope.state.claimedTaskClass,
-      metadata,
-      // Frozen repository context (freeze-time resolution): plan reviews may
-      // cite repository evidence only against this context; absence of
-      // authority makes repository evidence unavailable.
-      repositoryAuthority,
-    },
+    buildPlanReviewObligationInput(scope, planEvidence, planVersion, classificationFiles, freeze),
     scope.ctx.now(),
+    discovery.context,
   );
+  return { kind: 'ok', attemptResult };
 }
 
-async function buildPlanSubmissionState(
+function buildPlanSubmissionState(
   scope: PlanExecutionScope,
   planEvidence: PlanEvidence,
   planVersion: number,
   reviewFindings: ReviewFindings | null,
-  classificationFiles?: readonly string[],
-): Promise<SessionState> {
+  attempt: Extract<Awaited<ReturnType<typeof createPlanReviewAttempt>>, { kind: 'ok' }>,
+): SessionState {
   const history = scope.state.plan ? [scope.state.plan.current, ...scope.state.plan.history] : [];
-  const attemptResult = await createPlanReviewAttempt(
-    scope,
-    planEvidence,
-    planVersion,
-    classificationFiles,
-  );
-  const nextObligation = attemptResult?.obligation ?? null;
+  const nextObligation = attempt.attemptResult?.obligation ?? null;
 
   return {
     ...scope.state,
@@ -360,7 +325,11 @@ async function buildPlanSubmissionState(
         ? [...(scope.state.plan?.reviewFindings ?? []), reviewFindings]
         : scope.state.plan?.reviewFindings,
       claimDeclarations: scope.args.claims
-        ? { flow: 'plan', version: 'v2' as const, claims: normalizePlanClaims(scope.args.claims)! }
+        ? {
+            flow: 'plan',
+            version: 'v2' as const,
+            claims: normalizePlanClaims(scope.args.claims)!,
+          }
         : scope.state.plan?.claimDeclarations,
     },
     // #428: a new plan invalidates any prior validation evidence. Without this
@@ -379,7 +348,7 @@ async function buildPlanSubmissionState(
       verdict: 'changes_requested',
     },
     reviewAssurance:
-      attemptResult?.assurance ??
+      attempt.attemptResult?.assurance ??
       appendReviewObligation(scope.state.reviewAssurance, nextObligation),
     error: null,
   };
@@ -573,12 +542,19 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
     scope.reviewPolicy.subagentEnabled,
     scope.args.targetPaths,
   );
-  const nextState = await buildPlanSubmissionState(
+  const attempt = await createPlanReviewAttempt(
+    scope,
+    planEvidence,
+    planVersion,
+    classification.kind === 'available' ? classification.changedFiles : [],
+  );
+  if (attempt.kind === 'blocked') return attempt.message;
+  const nextState = buildPlanSubmissionState(
     scope,
     planEvidence,
     planVersion,
     reviewFindings,
-    classification.kind === 'available' ? classification.changedFiles : [],
+    attempt,
   );
   const evalFn = (s: SessionState) => evaluate(s, scope.policy);
   const advanced = autoAdvance(nextState, evalFn, scope.ctx);
@@ -718,8 +694,27 @@ export const plan: ToolDefinition = {
           reviewPolicy: planReviewPolicy(mutableSession),
           maxSelfReviewIterations: mutableSession.policy.maxSelfReviewIterations,
         };
-        const blocked = validatePlanRequest(scope);
-        if (blocked) return blocked;
+        // Call-shape validation runs FIRST: mixed inputs are rejected before
+        // any lifecycle routing can re-emit a review instruction.
+        const shapeBlocked = validatePlanCallShape(scope);
+        if (shapeBlocked) return shapeBlocked;
+        if (scope.input.isInitialSubmission) {
+          // Re-invocation routing for an existing plan obligation:
+          // output-repair reissue or attempt re-emission. A blocked plan
+          // obligation falls through to the regular submission path (fresh
+          // plan revision + fresh obligation).
+          const routed = await routePlanInitialSubmission(scope);
+          if (routed !== null) return routed;
+        }
+        if (
+          scope.input.isInitialSubmission &&
+          scope.input.hasPlanText &&
+          scope.state.phase === 'PLAN' &&
+          scope.state.selfReview
+        ) {
+          const gateBlocked = blockedPlanReviewInProgress(scope.state);
+          if (gateBlocked) return gateBlocked;
+        }
         return scope.input.isInitialSubmission
           ? handlePlanSubmission(scope)
           : handlePlanReview(scope);

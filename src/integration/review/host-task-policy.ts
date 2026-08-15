@@ -13,7 +13,8 @@ import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
 import { renderReviewContext, renderReviewerTaskPrompt } from './prompt-builders.js';
 import { rebuildBlockedPresentation } from '../tools/blocked-presentation.js';
 import {
-  verifyFrozenReviewerContext,
+  renderArtifactAnchorContract,
+  verifyFrozenMaterialForObligation,
   type FrozenReviewerContext,
 } from './frozen-reviewer-context.js';
 import { buildReviewerProofContext } from './proof-context.js';
@@ -29,6 +30,7 @@ import {
   findBindableAttempt,
 } from './assurance.js';
 import { updateObligation } from './obligation-state.js';
+import { resolveRepositoryObservationAccess } from './observation-access.js';
 import type { SessionState } from '../../state/schema.js';
 import {
   hasFrozenRepositoryAuthority,
@@ -76,6 +78,11 @@ interface HostTaskOutputInput {
   readonly artifactContext: readonly string[];
   readonly frozenReviewerContext: FrozenReviewerContext | null;
   /**
+   * Host-enforced artifact anchor contract for artifact-scoped obligations
+   * (plan/ADR). Empty for standalone subjects.
+   */
+  readonly artifactAnchorContract: readonly string[];
+  /**
    * Why no reviewer context could be handed out, when that is the case.
    *
    * `material_integrity` means the persisted bytes or a frozen digest binding
@@ -105,6 +112,12 @@ interface HostTaskOutputInput {
    * is then unavailable.
    */
   readonly observationCapability: string | null;
+  /**
+   * Exact frozen revisions the reviewer may observe, derived from the owning
+   * obligation's frozen authority (context → ['head'], candidate_pair →
+   * ['base', 'head']). Empty when no frozen revision resolves.
+   */
+  readonly observationRevisions: readonly ('base' | 'head')[];
   readonly repositoryReview: boolean;
 }
 
@@ -225,9 +238,21 @@ function buildReviewerTaskPromptOrNull(
     readonly proofContext: readonly string[];
     readonly artifactContext: readonly string[];
     readonly frozenReviewerContext: FrozenReviewerContext | null;
+    /**
+     * Host-enforced artifact anchor contract for artifact-scoped obligations
+     * (plan/ADR). Empty for standalone subjects.
+     */
+    readonly artifactAnchorContract: readonly string[];
     readonly retrySchemaErrors: readonly string[] | null;
     readonly repositoryDiscoverySnapshot: RepositoryDiscoverySnapshot | null;
     readonly observationCapability: string | null;
+    /**
+     * Exact frozen revisions the reviewer may observe, derived from the owning
+     * obligation's frozen authority. Empty when no frozen revision resolves —
+     * the renderer then advertises no observation contract even if a stale
+     * capability string exists on the attempt.
+     */
+    readonly observationRevisions: readonly ('base' | 'head')[];
     readonly repositoryReview: boolean;
   },
 ): string | null {
@@ -244,9 +269,11 @@ function buildReviewerTaskPromptOrNull(
     proofContext: opts.proofContext,
     artifactContext: opts.artifactContext,
     frozenReviewerContext: opts.frozenReviewerContext ?? undefined,
+    artifactAnchorContract: opts.artifactAnchorContract,
     retrySchemaErrors: opts.retrySchemaErrors ?? undefined,
     repositoryDiscoverySnapshot: opts.repositoryDiscoverySnapshot,
     ...(opts.observationCapability ? { observationCapability: opts.observationCapability } : {}),
+    observationRevisions: opts.observationRevisions,
   });
 }
 
@@ -282,9 +309,11 @@ function buildHostTaskBlockedOutput(
     proofContext,
     artifactContext: input.artifactContext,
     frozenReviewerContext: input.frozenReviewerContext,
+    artifactAnchorContract: input.artifactAnchorContract,
     retrySchemaErrors: input.retrySchemaErrors,
     repositoryDiscoverySnapshot: input.repositoryDiscoverySnapshot,
     observationCapability: input.observationCapability,
+    observationRevisions: input.observationRevisions,
     repositoryReview: input.repositoryReview,
   });
   const copyPromptStr = reviewerTaskPrompt
@@ -532,6 +561,10 @@ function buildHostTaskOutputInput(
   const { obligation } = interception;
   const bindableAttempt = findBindableAttempt(sessionState.reviewAssurance, obligationId);
   const frozenReviewerContext = resolveFrozenReviewerContext(obligation, bindableAttempt);
+  const observationAccess =
+    obligation && bindableAttempt
+      ? resolveRepositoryObservationAccess(obligation, bindableAttempt)
+      : null;
   return {
     originalOutput,
     policy: interception.policy,
@@ -542,6 +575,7 @@ function buildHostTaskOutputInput(
     proofContext: buildReviewerProofContext(sessionState),
     artifactContext: [],
     frozenReviewerContext,
+    artifactAnchorContract: buildArtifactAnchorContractLines(obligation),
     reviewerContextFailure: resolveReviewerContextFailure(
       sessionState,
       obligation,
@@ -553,7 +587,9 @@ function buildHostTaskOutputInput(
       bindableAttempt?.repositoryDiscovery.kind === 'repository'
         ? bindableAttempt.repositoryDiscovery.snapshot
         : null,
-    observationCapability: bindableAttempt?.observationCapability ?? null,
+    observationCapability:
+      observationAccess?.available === true ? observationAccess.capability : null,
+    observationRevisions: observationAccess?.revisions ?? [],
     repositoryReview: obligation ? hasFrozenRepositoryAuthority(obligation) : false,
   };
 }
@@ -567,6 +603,17 @@ function buildHostTaskOutputInput(
  * reported an integrity breach whenever the previous attempt had merely been
  * spent, and sent the agent down an unrecoverable restore path.
  */
+function buildArtifactAnchorContractLines(obligation: ReviewObligation | null): readonly string[] {
+  if (
+    !obligation ||
+    (obligation.obligationType !== 'plan' && obligation.obligationType !== 'architecture') ||
+    obligation.reviewSubjectScope?.kind !== 'artifact'
+  ) {
+    return [];
+  }
+  return renderArtifactAnchorContract(obligation.reviewSubjectScope);
+}
+
 function resolveReviewerContextFailure(
   sessionState: SessionState,
   obligation: ReviewObligation | null,
@@ -574,9 +621,20 @@ function resolveReviewerContextFailure(
   frozenReviewerContext: FrozenReviewerContext | null,
 ): ReviewerContextFailure | null {
   if (!obligation) return null;
-  const materialCheck = verifyFrozenReviewerContext(obligation, obligation.reviewMaterial);
+  // Single frozen-material authority (prompt emission side): artifact-scoped
+  // obligations bind their material generation to the exact artifact subject
+  // digest — the same check the output-repair authority enforces.
+  const materialCheck = verifyFrozenMaterialForObligation(obligation, obligation.reviewMaterial);
   if (materialCheck.kind === 'blocked') {
     return { kind: 'material_integrity', reason: materialCheck.reason };
+  }
+  // Plan/architecture obligations carry their reviewer context via the
+  // frozen material and the artifact anchor contract — there is no
+  // standalone frozen envelope, so a null envelope is not a failure. The
+  // required scope class follows the OBLIGATION TYPE, never the persisted
+  // scope kind.
+  if (obligation.obligationType === 'plan' || obligation.obligationType === 'architecture') {
+    return null;
   }
   if (frozenReviewerContext) return null;
   return {
@@ -593,8 +651,14 @@ function resolveFrozenReviewerContext(
   attempt: ReturnType<typeof findBindableAttempt>,
 ): FrozenReviewerContext | null {
   if (!attempt) return null;
-  const verified = verifyFrozenReviewerContext(obligation, obligation?.reviewMaterial);
-  return verified.kind === 'ok' ? verified.context : null;
+  const verified = verifyFrozenMaterialForObligation(obligation, obligation?.reviewMaterial);
+  if (verified.kind !== 'ok') return null;
+  // Artifact obligations have no standalone frozen envelope, but the reviewer
+  // prompt must still append the frozen material below the canonical marker.
+  if (!verified.context && obligation?.reviewMaterial) {
+    return { reviewMaterial: obligation.reviewMaterial };
+  }
+  return verified.context;
 }
 
 function buildHostTaskAttestationMeta(

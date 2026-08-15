@@ -45,6 +45,10 @@ export interface ObligationRefinementShape {
     readonly subjectDigest: string;
   } | null;
   readonly repositoryAuthority?: FrozenRepositoryAuthority;
+  readonly repositoryEvidenceFreeze?: {
+    readonly kind: 'available' | 'unavailable';
+    readonly reason?: string;
+  } | null;
   readonly repositoryRevisionProvenance?: ProvenanceValue;
 }
 
@@ -131,6 +135,63 @@ export function refineAuthorityStructure(
       code: z.ZodIssueCode.custom,
       path: ['repositoryAuthority'],
       message: `Invalid frozen repository authority: ${structural}`,
+    });
+  }
+}
+
+/**
+ * Durable audit coherence: the persisted freeze outcome must agree with the
+ * actual frozen repository authority — and plan/architecture obligations MUST
+ * carry the record (no third state, no legacy exception).
+ *
+ *   obligationType ∈ {plan, architecture}
+ *     ⇒ repositoryEvidenceFreeze MUST exist
+ *   freeze.kind === 'available'   ⇔ repositoryAuthority present
+ *   freeze.kind === 'unavailable' ⇔ repositoryAuthority absent
+ *
+ * Review/implement obligations never run the context freeze and must not
+ * carry the record.
+ */
+export function refineRepositoryEvidenceFreezeCoherence(
+  obligation: ObligationRefinementShape,
+  context: z.RefinementCtx,
+): void {
+  const freeze = obligation.repositoryEvidenceFreeze;
+  const contextFreezeObligation =
+    obligation.obligationType === 'plan' || obligation.obligationType === 'architecture';
+  if (!freeze) {
+    if (contextFreezeObligation) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['repositoryEvidenceFreeze'],
+        message: 'plan/architecture obligations require a repository evidence freeze outcome',
+      });
+    }
+    return;
+  }
+  if (!contextFreezeObligation) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['repositoryEvidenceFreeze'],
+      message: 'only plan/architecture obligations carry a repository evidence freeze outcome',
+    });
+    return;
+  }
+  if (freeze.kind === 'available' && !obligation.repositoryAuthority) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['repositoryEvidenceFreeze'],
+      message:
+        'repositoryEvidenceFreeze claims an available repository freeze but the obligation carries no frozen repository authority',
+    });
+    return;
+  }
+  if (freeze.kind === 'unavailable' && obligation.repositoryAuthority) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['repositoryEvidenceFreeze'],
+      message:
+        'repositoryEvidenceFreeze records an unavailable repository freeze but the obligation carries a frozen repository authority',
     });
   }
 }

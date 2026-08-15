@@ -60,6 +60,7 @@ describe('Guard 2: no mutable revision resolution in review-authority constructi
   /** Review-obligation creation call sites that must consume frozen authority. */
   const OBLIGATION_CREATION_FILES = [
     'integration/tools/plan.ts',
+    'integration/tools/plan-response.ts',
     'integration/tools/implement-shared.ts',
     'integration/tools/architecture-review.ts',
     'integration/tools/architecture-submit.ts',
@@ -92,7 +93,9 @@ describe('Guard 2: no mutable revision resolution in review-authority constructi
         violations.push(`${relative}: raw provenance projection`);
       }
       if (
-        ['integration/tools/plan.ts', 'integration/tools/implement-shared.ts'].includes(relative) &&
+        ['integration/tools/plan-response.ts', 'integration/tools/implement-shared.ts'].includes(
+          relative,
+        ) &&
         !content.includes('repositoryAuthority')
       ) {
         violations.push(`${relative}: missing frozen authority consumption`);

@@ -27,41 +27,53 @@ import type {
 } from '../../state/evidence.js';
 import { hashCanonicalReviewContent, normalizeReviewContent } from '../../shared/review-subject.js';
 import { deriveRepositoryRevisionProvenance } from '../../state/evidence.js';
+import { indexMarkdownSections } from '../../shared/markdown-sections.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
-import { assessMinimumTaskClass, maxTaskClass } from '../phase-tool-gate.js';
-import {
-  challengeKindForObligation,
-  DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS,
-} from '../../config/policy-types.js';
+import { DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS } from '../../config/policy-types.js';
 import type { TaskClass } from '../../state/schema.js';
 import type { ReviewSubjectScope } from '../../state/evidence-review.js';
+import type { RepositoryEvidenceFreeze } from '../../state/evidence-review-freeze.js';
+import { assertRepositoryFreezeCoherence } from './freeze-coherence.js';
 // Static import - mandate content is a constant in ESM
 import { REVIEWER_AGENT } from '../../templates/mandates.js';
 export const REVIEW_CRITERIA_VERSION = 'p41-v1';
 // Mandate digest - computed from actual REVIEWER_AGENT template at module load
 export const REVIEW_MANDATE_DIGEST = hashText(REVIEWER_AGENT);
-const defaultScope = (changedFiles: readonly string[] | undefined): ReviewSubjectScope =>
-  changedFiles && changedFiles.length > 0
-    ? { kind: 'repository_change', paths: [...changedFiles], revisions: ['head'] }
-    : { kind: 'unavailable', reason: 'scope_not_resolved' };
-
-function resolveSubjectScope(
-  subjectDigest: string,
-  explicitScope: ReviewSubjectScope | undefined,
-  changedFiles: readonly string[] | undefined,
-): ReviewSubjectScope {
-  if (explicitScope?.kind !== 'artifact') return explicitScope ?? defaultScope(changedFiles);
-  return {
-    ...explicitScope,
-    artifact: { ...explicitScope.artifact, digest: subjectDigest },
-  };
-}
+import { resolveSubjectScope, resolveChallengeRequirements } from './subject-scope.js';
 
 function resolveSubjectDigest(input: {
   subjectDigest: string;
   reviewSubject?: FrozenReviewSubject;
 }): string {
   return input.reviewSubject?.subjectDigest ?? input.subjectDigest;
+}
+
+/**
+ * Mint the canonical artifact subject scope for pre-implementation reviews
+ * (plan, ADR). The subject is the exact frozen artifact, indexed by the same
+ * canonical Markdown section authority that feeds the reviewer prompt's
+ * evidence refs (`indexMarkdownSections`), so scope sections and reviewer-
+ * visible sections are structurally identical.
+ *
+ * Fail-closed: an artifact without ATX headings cannot produce section anchors
+ * and therefore cannot support a bindable artifact review.
+ */
+export function artifactReviewSubjectScope(
+  kind: 'plan' | 'adr',
+  markdown: string,
+  digest: string,
+): ReviewSubjectScope {
+  const sectionPaths = indexMarkdownSections(markdown).map((section) => section.sectionPath);
+  if (sectionPaths.length === 0) {
+    throw new Error(
+      `FAIL_CLOSED: cannot mint a ${kind} artifact review subject scope from Markdown ` +
+        'without ATX headings; artifact review findings must anchor to concrete sections.',
+    );
+  }
+  return {
+    kind: 'artifact',
+    artifact: { kind, digest, sectionPaths },
+  };
 }
 
 export {
@@ -83,6 +95,7 @@ import {
   createReviewAttempt,
   appendReviewAttempt,
   staleObligationAttempts,
+  mintObservationCapabilityIfResolvable,
 } from './attempt-lifecycle.js';
 
 export function getReviewMandateDigest(): string {
@@ -105,6 +118,36 @@ export function resolveAttemptObservationCapability(
   if (attempts.length === 0) return null;
   const latest = attempts.reduce((best, a) => (a.ordinal > best.ordinal ? a : best));
   return latest.observationCapability ?? null;
+}
+
+/**
+ * Pre-implementation artifact reviews (plan, ADR) MUST mint an explicit
+ * artifact subject scope. changedFiles, targetPaths, and discovery risk
+ * surfaces are challenge classification and repository evidence context —
+ * they must never become the primary subject authority of an artifact review.
+ */
+function requireArtifactSubjectScope(
+  obligationType: ReviewObligationType,
+  reviewSubjectScope: ReviewSubjectScope | undefined,
+): void {
+  if (
+    (obligationType === 'plan' || obligationType === 'architecture') &&
+    reviewSubjectScope?.kind !== 'artifact'
+  ) {
+    throw new Error(
+      'FAIL_CLOSED: plan/architecture review obligations require an explicit artifact ' +
+        'reviewSubjectScope.',
+    );
+  }
+}
+
+function assertSubjectDigest(subjectDigest: string): void {
+  if (!subjectDigest || subjectDigest.length === 0) {
+    throw new Error(
+      'FAIL_CLOSED: createReviewObligation requires a non-empty subjectDigest. ' +
+        'Obligations without an authoritative subject identity cannot produce bindable evidence.',
+    );
+  }
 }
 
 export function createReviewObligation(input: {
@@ -144,20 +187,22 @@ export function createReviewObligation(input: {
   > | null;
   /** Runtime paths classified by the canonical phase-tool gate. */
   changedFiles?: readonly string[];
-  /** Explicit structured subject scope. Absent → derived from changedFiles only. */
-  reviewSubjectScope?: ReviewSubjectScope;
   /**
-   * Frozen repository authority for repository-governed obligations. The
-   * persisted revision-provenance projection is derived CANONICALLY from this
-   * authority (or from the frozen review subject) — never supplied as a
-   * mutable runtime snapshot (e.g. `git rev-parse HEAD`).
+   * Explicit structured subject scope. Absent → derived from changedFiles only
+   * for implementation and standalone review obligations. Plan and architecture
+   * obligations MUST pass an artifact scope: their subject is the frozen
+   * plan/ADR artifact, never the repository diff (fail-closed, see
+   * `artifactReviewSubjectScope`).
    */
+  reviewSubjectScope?: ReviewSubjectScope;
+  /** Frozen repository authority for repository-governed obligations. Provenance is derived CANONICALLY from this authority (or the frozen review subject) — never a mutable runtime snapshot. */
   repositoryAuthority?: FrozenRepositoryAuthority;
+  /** Durable freeze outcome of the plan/architecture repository-context freeze (see {@link RepositoryEvidenceFreeze}); continuations, restarts, re-emits, archives, and forensics render the exact degradation cause. */
+  repositoryEvidenceFreeze?: RepositoryEvidenceFreeze;
   /**
    * The author's declared task class. Used as a fail-closed FLOOR on the
    * challenge count so a high-risk change cannot collapse the requirement to 0
-   * by declaring doc-only `targetPaths` (finding C1). The count is
-   * `counts[max(computedFromChangedFiles, claimedTaskClass)]`. NOT supplied for
+   * by declaring doc-only `targetPaths` (finding C1). NOT supplied for
    * standalone /review, whose risk is the reviewed external diff, not the
    * session's own task-class claim.
    */
@@ -165,12 +210,9 @@ export function createReviewObligation(input: {
   metadata?: Record<string, unknown>;
   fingerprintVersion?: 'v1' | 'v2';
 }): ReviewObligation {
-  if (!input.subjectDigest || input.subjectDigest.length === 0) {
-    throw new Error(
-      'FAIL_CLOSED: createReviewObligation requires a non-empty subjectDigest. ' +
-        'Obligations without an authoritative subject identity cannot produce bindable evidence.',
-    );
-  }
+  assertSubjectDigest(input.subjectDigest);
+  assertRepositoryFreezeCoherence(input);
+  requireArtifactSubjectScope(input.obligationType, input.reviewSubjectScope);
   const challengePolicy = input.policySnapshot?.challengePolicy;
   const subjectDigest = resolveSubjectDigest(input);
   const reviewSubjectScope = resolveSubjectScope(
@@ -178,19 +220,6 @@ export function createReviewObligation(input: {
     input.reviewSubjectScope,
     input.changedFiles,
   );
-  const requirements = challengePolicy
-    ? {
-        requiredChallengeCount:
-          challengePolicy.counts[
-            maxTaskClass(
-              assessMinimumTaskClass(input.changedFiles ?? []).minimumTaskClass,
-              input.claimedTaskClass ?? 'TRIVIAL',
-            )
-          ],
-        requiredChallengeKind: challengeKindForObligation(input.obligationType),
-        challengePolicyVersion: challengePolicy.version,
-      }
-    : {};
   return {
     obligationId: randomUUID(),
     obligationType: input.obligationType,
@@ -209,7 +238,7 @@ export function createReviewObligation(input: {
     // supplied. The profile is fixed here, before the reviewer is invoked.
     reviewProfile: input.reviewProfile ?? 'core',
     profileSource: input.profileSource ?? 'policy_default',
-    ...requirements,
+    ...resolveChallengeRequirements(challengePolicy, input),
     subjectDigest,
     ...(input.reviewMaterial ? { reviewMaterial: input.reviewMaterial } : {}),
     reviewSubject: input.reviewSubject,
@@ -220,7 +249,8 @@ export function createReviewObligation(input: {
       repositoryAuthority: input.repositoryAuthority,
       reviewSubject: input.reviewSubject,
     }),
-    ...(input.repositoryAuthority ? { repositoryAuthority: input.repositoryAuthority } : {}),
+    repositoryAuthority: input.repositoryAuthority,
+    repositoryEvidenceFreeze: input.repositoryEvidenceFreeze,
     // Frozen output-repair budget. The canonical policy default applies at
     // creation time only; the reissue gate reads this frozen value, never the
     // live config, so a later policy change cannot re-open a settled
@@ -471,6 +501,7 @@ export function createObligationAndAttempt(
     ordinal,
     origin: { kind: 'initial' },
     repositoryDiscovery,
+    observationCapability: mintObservationCapabilityIfResolvable(obligation),
     now,
   });
   const withObligation = appendReviewObligation(assurance, obligation);
@@ -510,6 +541,7 @@ export function appendObligationWithAttempt(
     ordinal,
     origin: { kind: 'initial' },
     repositoryDiscovery,
+    observationCapability: mintObservationCapabilityIfResolvable(obligation),
     now,
   });
   const withObligation = { ...base, obligations: [...base.obligations, obligation] };

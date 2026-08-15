@@ -14,6 +14,7 @@ import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { readState, statePath, writeState } from './persistence.js';
 import {
+  artifactReviewSubjectScope,
   createReviewObligation,
   createObligationAndAttempt,
   freezeReviewMaterial,
@@ -38,11 +39,13 @@ describe('review-assurance shape-only read migrations', () => {
       undefined,
       {
         obligationType: 'plan',
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,
         now: '2026-08-13T10:00:00.000Z',
         subjectDigest: 'subject-digest',
         reviewMaterial: FROZEN_MATERIAL,
+        reviewSubjectScope: artifactReviewSubjectScope('plan', '# Plan\nBody', 'subject-digest'),
         changedFiles: ['src/a.ts'],
       },
       '2026-08-13T10:00:00.000Z',
@@ -78,11 +81,13 @@ describe('review-assurance shape-only read migrations', () => {
       undefined,
       {
         obligationType: 'plan',
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,
         now: '2026-08-13T10:00:00.000Z',
         subjectDigest: 'subject-digest',
         reviewMaterial: FROZEN_MATERIAL,
+        reviewSubjectScope: artifactReviewSubjectScope('plan', '# Plan\nBody', 'subject-digest'),
         changedFiles: ['src/a.ts'],
       },
       '2026-08-13T10:00:00.000Z',
@@ -132,11 +137,13 @@ describe('review-assurance shape-only read migrations', () => {
       undefined,
       {
         obligationType: 'plan',
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,
         now: '2026-08-13T10:00:00.000Z',
         subjectDigest: 'subject-digest',
         reviewMaterial: FROZEN_MATERIAL,
+        reviewSubjectScope: artifactReviewSubjectScope('plan', '# Plan\nBody', 'subject-digest'),
         changedFiles: ['src/a.ts'],
       },
       '2026-08-13T10:00:00.000Z',
@@ -189,22 +196,26 @@ describe('review-assurance shape-only read migrations', () => {
   it('EDGE: writeState persists the v5 literal', async () => {
     const obligation = createReviewObligation({
       obligationType: 'plan',
+      repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
       iteration: 0,
       planVersion: 1,
       now: '2026-08-13T10:00:00.000Z',
       subjectDigest: 'subject-digest',
       reviewMaterial: FROZEN_MATERIAL,
+      reviewSubjectScope: artifactReviewSubjectScope('plan', '# Plan\nBody', 'subject-digest'),
       changedFiles: [],
     });
     const { assurance } = createObligationAndAttempt(
       undefined,
       {
         obligationType: 'plan',
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,
         now: '2026-08-13T10:00:00.000Z',
         subjectDigest: 'subject-digest',
         reviewMaterial: FROZEN_MATERIAL,
+        reviewSubjectScope: artifactReviewSubjectScope('plan', '# Plan\nBody', 'subject-digest'),
         changedFiles: [],
       },
       '2026-08-13T10:00:00.000Z',

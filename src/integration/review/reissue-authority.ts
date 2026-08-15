@@ -37,7 +37,7 @@ import {
   latestReviewMaterial,
 } from './attempt-lifecycle.js';
 import { isCanonicallyRepairable } from './enforcement/rejection-policy.js';
-import { verifyFrozenReviewerContext } from './frozen-reviewer-context.js';
+import { verifyFrozenMaterialForObligation } from './frozen-reviewer-context.js';
 
 export type ReissueBlockCode =
   | 'REVIEW_REPAIR_UNAVAILABLE'
@@ -144,10 +144,11 @@ export function authorizeOutputRepairReissue(
   assurance: ReviewAssuranceState | undefined,
   obligation: ReviewObligation,
 ): OutputRepairAuthorization {
-  const materialVerification = verifyFrozenReviewerContext(
-    obligation,
-    latestReviewMaterial(ensureReviewAssurance(assurance), obligation.obligationId),
-  );
+  const material = latestReviewMaterial(ensureReviewAssurance(assurance), obligation.obligationId);
+  // Single frozen-material authority: artifact-scoped obligations bind their
+  // material generation to the exact artifact subject digest; standalone
+  // subjects verify through the full frozen context.
+  const materialVerification = verifyFrozenMaterialForObligation(obligation, material);
   if (materialVerification.kind === 'blocked') {
     return {
       kind: 'integrity_blocked',

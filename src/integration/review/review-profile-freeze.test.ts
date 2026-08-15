@@ -8,7 +8,11 @@ import { describe, it, expect } from 'vitest';
 
 import { ReviewProfile as StateReviewProfile } from '../../state/evidence.js';
 import type { ReviewProfile as ConfigReviewProfile } from '../../config/policy-types.js';
-import { createReviewObligation, resolveFrozenReviewProfile } from './assurance.js';
+import {
+  artifactReviewSubjectScope,
+  createReviewObligation,
+  resolveFrozenReviewProfile,
+} from './assurance.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
 
@@ -48,10 +52,12 @@ describe('review profile freeze (Wave 1 — #730)', () => {
     it('defaults to the mandatory core baseline when no profile is supplied', () => {
       const obligation = createReviewObligation({
         obligationType: 'plan',
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,
         now: NOW,
         subjectDigest: 'test',
+        reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
       });
       expect(obligation.reviewProfile).toBe('core');
       expect(obligation.profileSource).toBe('policy_default');

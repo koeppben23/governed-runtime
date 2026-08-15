@@ -186,7 +186,15 @@ async function enforceTaskBefore(
     }
     args.prompt = execution.prompt.canonicalPrompt;
 
-    const result = enforceBeforeSubagentCall(eState, args, strictEnforcement);
+    // Dispatch authority is the DURABLE attempt lifecycle (session assurance),
+    // never the transient capture: a bare Task call cannot re-arm a rejected
+    // attempt — only the originating FlowGuard command can re-issue one.
+    const result = enforceBeforeSubagentCall(
+      eState,
+      args,
+      strictEnforcement,
+      sessionState?.reviewAssurance,
+    );
     if (result.allowed) return;
     eState.executedTaskPrompts.delete(callId);
     runtime.log.warn('enforcement', 'blocked subagent call', {

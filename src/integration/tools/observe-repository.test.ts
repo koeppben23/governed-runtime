@@ -11,6 +11,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createReviewAttempt, createReviewObligation } from '../review/assurance.js';
+import { mintObservationCapability } from '../review/attempt-lifecycle.js';
 import {
   appendObservationCapture,
   observationCapabilityDigest,
@@ -104,6 +105,7 @@ beforeAll(async () => {
     subjectDigest: obligation.subjectDigest,
     ordinal: 1,
     origin: { kind: 'initial' },
+    observationCapability: mintObservationCapability(),
     repositoryDiscovery: {
       kind: 'repository',
       snapshot: {

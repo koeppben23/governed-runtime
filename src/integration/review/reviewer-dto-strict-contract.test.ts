@@ -9,7 +9,7 @@ import { ReviewFindings } from '../../state/evidence.js';
 import { buildHostTaskChallengeContract } from './host-task-policy.js';
 import { normalizeFindingsChallenges } from './enforcement/challenge-binding.js';
 import { makeState } from '../../fixtures.js';
-import { createReviewObligation } from './assurance.js';
+import { artifactReviewSubjectScope, createReviewObligation } from './assurance.js';
 import { CHALLENGE_POLICY_V1 } from '../../config/policy-types.js';
 
 const OBLIGATION_ID = '00000000-0000-4000-8000-0000000000aa';
@@ -18,10 +18,12 @@ const NOW = '2026-01-01T00:00:00.000Z';
 function planObligation(): ReturnType<typeof createReviewObligation> {
   return createReviewObligation({
     obligationType: 'plan',
+    repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
     iteration: 1,
     planVersion: 1,
     now: NOW,
     subjectDigest: 'plan-subject-digest',
+    reviewSubjectScope: artifactReviewSubjectScope('plan', '# Plan\nBody', 'plan-subject-digest'),
     changedFiles: ['src/foo.ts'],
     policySnapshot: {
       challengePolicy: CHALLENGE_POLICY_V1,

@@ -15,6 +15,7 @@ import {
   type ReviewRepositoryRevisionProvenance,
   type ReviewSubjectScope as ReviewSubjectScopeValue,
 } from '../../../state/evidence-review.js';
+import type { ReviewObligation } from '../../../state/evidence.js';
 
 /** Boundary-neutral result of the verdict/blocking-issues coherence check. */
 export type ReviewFindingsConsistencyResult =
@@ -252,4 +253,23 @@ export function validateReviewFindingsScope(input: {
     };
   }
   return { ok: true };
+}
+
+/**
+ * Subject-identity cross-check (defense in depth): the obligation type
+ * determines the required subject-scope class — never the persisted scope
+ * kind. Plan/architecture obligations MUST carry an artifact scope whose
+ * artifactKind and digest are bound to the obligation subject identity;
+ * other obligation types MUST NOT carry an artifact scope.
+ */
+export function artifactScopeSubjectIdentityMatches(obligation: ReviewObligation): boolean {
+  const isArtifactType =
+    obligation.obligationType === 'plan' || obligation.obligationType === 'architecture';
+  if (!isArtifactType) {
+    return obligation.reviewSubjectScope?.kind !== 'artifact';
+  }
+  const scope = obligation.reviewSubjectScope;
+  if (scope?.kind !== 'artifact') return false;
+  const expectedKind = obligation.obligationType === 'plan' ? 'plan' : 'adr';
+  return scope.artifact.kind === expectedKind && scope.artifact.digest === obligation.subjectDigest;
 }

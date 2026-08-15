@@ -10,6 +10,7 @@ import {
 } from './review/enforcement/enforcement.js';
 import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 import {
+  artifactReviewSubjectScope,
   createReviewObligation,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
@@ -117,6 +118,11 @@ export function pendingObligation(overrides: Partial<ReviewObligation> = {}): Re
     planVersion: 1,
     now: NOW,
     subjectDigest: 'diagnostics-test-subject',
+    reviewSubjectScope: artifactReviewSubjectScope(
+      'plan',
+      '# Diagnostics\nBody',
+      'diagnostics-test-subject',
+    ),
     changedFiles: ['src/foo.ts'],
     repositoryAuthority: {
       kind: 'context',
@@ -126,6 +132,7 @@ export function pendingObligation(overrides: Partial<ReviewObligation> = {}): Re
         objectSha: 'a'.repeat(40),
       },
     },
+    repositoryEvidenceFreeze: { kind: 'available' },
   });
   return { ...base, ...overrides };
 }

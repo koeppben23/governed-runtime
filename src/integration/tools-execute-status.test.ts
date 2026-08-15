@@ -38,6 +38,16 @@ import { writeStateWithArtifacts } from './tools/helpers.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
 import { REVIEW_REPORT_SCHEMA_ID } from '../shared/flowguard-identifiers.js';
 import { computeRecordDigest } from '../state/evidence-plan.js';
+import {
+  artifactReviewSubjectScope,
+  buildInvocationEvidence,
+  createReviewObligation,
+  freezeReviewMaterial,
+  REVIEW_CRITERIA_VERSION,
+  REVIEW_MANDATE_DIGEST,
+} from './review/assurance.js';
+import { hashFindings } from './review/findings-hash.js';
+import type { ReviewFindings } from '../state/evidence.js';
 // ─── Zod v4 Metadata Regression (P1 review gate) ──────────────────────────────
 describe('tool-schemas-zod-v4', () => {
   const allTools = {
@@ -691,6 +701,110 @@ describe('status', () => {
       await status.execute({ finish: true }, ctx);
       const after = await readState(sessDir);
       expect(after).toEqual(before);
+    });
+
+    it('projects reviewed artifact identity for architecture review verdicts (incl. consumed history)', async () => {
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const current = await readState(sessDir);
+      if (!current) throw new Error('expected hydrated state');
+
+      const obligation = createReviewObligation({
+        obligationType: 'architecture',
+        iteration: 0,
+        planVersion: 1,
+        now: '2026-01-01T00:00:00.000Z',
+        subjectDigest: 'adr-digest-reviewed',
+        reviewSubjectScope: artifactReviewSubjectScope(
+          'adr',
+          '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+          'adr-digest-reviewed',
+        ),
+        reviewMaterial: freezeReviewMaterial(
+          '## Ticket Under Review (originating request)\n\nNo ticket recorded for this session.\n\n## Architecture Decision Artifact\n\n## Context\nA\n\n## Decision\nB\n\n## Consequences\nC\n',
+          'adr-digest-reviewed',
+        ),
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+      });
+      const findings = {
+        iteration: 0,
+        planVersion: 1,
+        reviewMode: 'subagent',
+        overallVerdict: 'changes_requested',
+        blockingIssues: [],
+        majorRisks: [],
+        missingVerification: [],
+        scopeCreep: [],
+        unknowns: [],
+        reviewedBy: { sessionId: 'ses-child' },
+        reviewedAt: '2026-01-01T00:00:00.000Z',
+        attestation: {
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
+          toolObligationId: obligation.obligationId,
+          iteration: 0,
+          planVersion: 1,
+          reviewedBy: 'flowguard-reviewer',
+        },
+      } as ReviewFindings;
+      const invocation = {
+        ...buildInvocationEvidence({
+          obligationId: obligation.obligationId,
+          obligationType: 'architecture',
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
+          parentSessionId: ctx.sessionID,
+          childSessionId: 'ses-child',
+          invocationMode: 'host_subagent_task',
+          hostVisible: true,
+          promptHash: 'sha256-prompt',
+          findingsHash: hashFindings(findings),
+          invokedAt: '2026-01-01T00:00:00.000Z',
+          source: 'host-orchestrated',
+        }),
+        consumedByObligationId: obligation.obligationId,
+      };
+      const state = {
+        ...current,
+        phase: 'ARCH_REVIEW' as const,
+        architecture: {
+          id: 'ADR-001',
+          title: 'ADR',
+          adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+          digest: 'adr-digest-current',
+          status: 'proposed' as const,
+          reviewCompletion: 'review_exhausted' as const,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          reviewFindings: [findings],
+        },
+        selfReview: {
+          iteration: 1,
+          maxIterations: 3,
+          prevDigest: 'adr-digest-reviewed',
+          currDigest: 'adr-digest-current',
+          revisionDelta: 'minor' as const,
+          verdict: 'changes_requested' as const,
+        },
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          obligations: [{ ...obligation, status: 'consumed' as const }],
+          invocations: [invocation],
+          attempts: [],
+        },
+      };
+      await writeState(sessDir, state);
+
+      const result = parseToolResult(await status.execute({}, ctx));
+      const arch = result.latestArchitectureReview as Record<string, unknown>;
+      expect(arch.reviewedDigest).toBe('adr-digest-reviewed');
+      expect(arch.reviewedObligationId).toBe(obligation.obligationId);
+      expect(arch.reviewerIteration).toBe(0);
+      expect(arch.reviewedPlanVersion).toBe(1);
+      // Existing host-iteration contract stays authoritative.
+      expect(arch.iteration).toBe(result.selfReviewIteration);
     });
 
     it('returns a blocked error (no card) when session state is unreadable', async () => {

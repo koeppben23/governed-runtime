@@ -20,6 +20,7 @@ import {
 } from './review/assurance.js';
 import { appendReviewAuditEvent } from './review/audit-events.js';
 import { strictBlockedOutput } from './plugin-helpers.js';
+import { settleReviewObligationAfterAttempt } from './review/obligation-settlement.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 import { bindOutcomeToRejectionReason } from './review/enforcement/rejection-policy.js';
 import {
@@ -271,21 +272,31 @@ async function persistAttemptStatus(
           bindResult.diagnostic?.schemaIssueKeys as readonly SchemaIssueKey[] | undefined,
         )
       : null;
-  await deps.ws.updateReviewAssurance(sessDir, (s: SessionState) => ({
-    ...s,
-    reviewAssurance: updateAttemptStatus(
-      ensureReviewAssurance(s.reviewAssurance),
-      attempt.attemptId,
-      status,
-      now,
-      rejectionReason
-        ? {
-            rejectionReason,
-            ...(schemaFingerprint ? { schemaErrorFingerprint: schemaFingerprint } : {}),
-          }
-        : undefined,
-    ),
-  }));
+  await deps.ws.updateReviewAssurance(sessDir, (s: SessionState) => {
+    const withRejection = {
+      ...s,
+      reviewAssurance: updateAttemptStatus(
+        ensureReviewAssurance(s.reviewAssurance),
+        attempt.attemptId,
+        status,
+        now,
+        rejectionReason
+          ? {
+              rejectionReason,
+              ...(schemaFingerprint ? { schemaErrorFingerprint: schemaFingerprint } : {}),
+            }
+          : undefined,
+      ),
+    };
+    // A rejected attempt that leaves no legal continuation (no bindable
+    // attempt, no authorized output repair) terminates the obligation:
+    // a pending obligation with no continuation is an illegal persisted
+    // state. Stale attempts never settle (they are superseded by a newer
+    // attempt, not terminal for the obligation).
+    return status === 'rejected'
+      ? settleReviewObligationAfterAttempt(withRejection, attempt.obligationId)
+      : withRejection;
+  });
 }
 
 /** Upper bound for the diagnostic detail surfaced to the calling agent. */

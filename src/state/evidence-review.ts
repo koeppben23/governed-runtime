@@ -8,6 +8,7 @@
 
 import { z } from 'zod';
 import { REVIEWER_SUBAGENT_TYPE, REVIEW_REPORT_SCHEMA_ID } from './evidence-identifiers.js';
+import { RepositoryEvidenceFreeze } from './evidence-review-freeze.js';
 import { assuranceSchema } from './evidence-assurance-internal.js';
 import {
   CheckId,
@@ -65,6 +66,7 @@ import {
   refineCurrentGenerationMaterial,
   refineAssuranceProvenanceCoherence,
   refineAuthorityStructure,
+  refineRepositoryEvidenceFreezeCoherence,
   refineReviewMaterialSubject,
   refineStandaloneSubject,
 } from './evidence-review-refinements.js';
@@ -144,7 +146,6 @@ export const ReviewAttemptOrigin = z.discriminatedUnion('kind', [
 ]);
 export type ReviewAttemptOrigin = z.infer<typeof ReviewAttemptOrigin>;
 
-/** Immutable normalized bytes delivered to a standalone review attempt. */
 export const ReviewMaterial = z
   .object({
     content: z.string(),
@@ -426,11 +427,9 @@ export const ReviewObligation = z
      * frozen at obligation creation. This is the host-authoritative identity of
      * what must be reviewed — never supplied by or echoed from the reviewer.
      * Used at binding time to prevent cross-artifact evidence attachment.
-     *
-     * NOTE: `ReviewAttempt.subjectDigest` is REQUIRED and binding compares the two
-     * for equality, so an obligation without a subject digest can never bind.
-     * Required here as well, so the compiler — not a runtime bind failure —
-     * surfaces any site that forgets to freeze the subject.
+     * NOTE: `ReviewAttempt.subjectDigest` is REQUIRED, so an obligation without
+     * a subject digest can never bind — the compiler, not a runtime bind
+     * failure, surfaces any site that forgets to freeze the subject.
      */
     subjectDigest: z.string().min(1),
     reviewMaterial: ReviewMaterial.optional(),
@@ -462,12 +461,15 @@ export const ReviewObligation = z
      * before the frozen-repository-authority generation.
      */
     repositoryAuthority: FrozenRepositoryAuthority.optional(),
+    /** Durable plan/architecture repository-context freeze outcome (see {@link RepositoryEvidenceFreeze}); plan/architecture obligations MUST carry it — continuations, restarts, re-emits, archives, and forensics render the exact degradation cause. */
+    repositoryEvidenceFreeze: RepositoryEvidenceFreeze.optional(),
     maxReviewerOutputRepairAttempts: z.number().int().min(0).max(5),
   })
   .superRefine(refineStandaloneSubject)
   .superRefine(refineReviewMaterialSubject)
   .superRefine(refineCurrentGenerationMaterial)
-  .superRefine(refineAuthorityStructure);
+  .superRefine(refineAuthorityStructure)
+  .superRefine(refineRepositoryEvidenceFreezeCoherence);
 export type ReviewObligation = z.infer<typeof ReviewObligation>;
 
 const Sha256Digest = z.string().regex(/^[a-f0-9]{64}$/);

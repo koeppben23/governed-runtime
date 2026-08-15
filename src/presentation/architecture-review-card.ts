@@ -80,6 +80,10 @@ export interface ArchitectureReviewCardInput {
   reviewCompletion?: ArchitectureReviewCompletion;
   /** Compact ProofGraph summary for the review card (decision claims). */
   proofSummary: CompactProofPresentation;
+  /** Digest of the artifact revision these findings were bound to. */
+  reviewedDigest?: string;
+  /** Obligation that produced these findings. */
+  reviewedObligationId?: string;
 }
 
 // ─── Action Descriptions ───────────────────────────────────────────────────────
@@ -163,15 +167,43 @@ export function buildArchitectureReviewDocument(
     });
   }
 
+  // ── Prior-revision provenance mismatch ─────────────────────────────
+  // The displayed findings were bound to a different artifact revision than
+  // the one at this gate (e.g. the final revision was submitted after the
+  // last independent review and exhausted the iteration budget unreviewed).
+  if (input.reviewedDigest && adrDigest && input.reviewedDigest !== adrDigest) {
+    sections.push({
+      kind: 'notice',
+      level: 'warning',
+      message: 'These reviewer findings apply to a prior artifact revision.',
+      additionalMessages: [
+        `Reviewed digest: \`${input.reviewedDigest}\``,
+        `Current digest:  \`${adrDigest}\``,
+        'The current revision was submitted after the final independent review ' +
+          'and has not itself been independently reviewed.',
+      ],
+      details: [],
+    });
+  }
+
   // ── Decision claims (advisory) ──────────────────────────────────────
   sections.push(buildProofGraphSection(input.proofSummary));
 
   // ── ADR Details ────────────────────────────────────────────────────
-  if (adrId || adrDigest || iteration > 0) {
+  if (adrId || adrDigest || iteration > 0 || input.reviewedDigest) {
     const details: KeyValueItem[] = [];
     if (adrId) details.push({ label: 'ID', value: `\`${adrId}\`` });
     if (adrDigest) details.push({ label: 'Digest', value: `\`${adrDigest}\`` });
     if (iteration > 0) details.push({ label: 'Review iteration', value: String(iteration) });
+    if (input.reviewedDigest) {
+      details.push({ label: 'Reviewed ADR digest', value: `\`${input.reviewedDigest}\`` });
+    }
+    if (input.reviewedObligationId) {
+      details.push({
+        label: 'Reviewed obligation',
+        value: `\`${input.reviewedObligationId}\``,
+      });
+    }
     sections.push({ kind: 'keyValue', heading: 'ADR Details', items: details });
   }
 

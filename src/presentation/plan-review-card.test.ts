@@ -122,6 +122,46 @@ describe('buildPlanReviewCard', () => {
     );
   });
 
+  it('renders reviewed provenance rows when a reviewed digest is bound', () => {
+    const card = buildPlanReviewCard({
+      planText: 'Plan.',
+      phase: 'PLAN_REVIEW',
+      phaseLabel: 'Ready for plan approval',
+      productNextAction,
+      reviewedDigest: 'reviewed-digest',
+      reviewedObligationId: '00000000-0000-4000-8000-000000000001',
+    });
+    expect(card).toContain('**Reviewed plan digest:** `reviewed-digest`');
+    expect(card).toContain('**Reviewed obligation:** `00000000-0000-4000-8000-000000000001`');
+  });
+
+  it('warns explicitly when the displayed findings apply to a prior plan revision', () => {
+    const card = buildPlanReviewCard({
+      planText: 'Plan.',
+      phase: 'PLAN_REVIEW',
+      phaseLabel: 'Ready for plan approval',
+      productNextAction,
+      forcedConvergence: true,
+      currentPlanDigest: 'current-digest',
+      reviewedDigest: 'prior-digest',
+    });
+    expect(card).toContain('⚠ These reviewer findings apply to a prior plan revision.');
+    expect(card).toContain('Reviewed digest: `prior-digest`');
+    expect(card).toContain('Current digest:  `current-digest`');
+  });
+
+  it('omits the mismatch warning when the reviewed digest matches the current digest', () => {
+    const card = buildPlanReviewCard({
+      planText: 'Plan.',
+      phase: 'PLAN_REVIEW',
+      phaseLabel: 'Ready for plan approval',
+      productNextAction,
+      currentPlanDigest: 'same-digest',
+      reviewedDigest: 'same-digest',
+    });
+    expect(card).not.toContain('These reviewer findings apply to a prior plan revision.');
+  });
+
   describe('HAPPY', () => {
     it('renders the full plan body without truncation', () => {
       const card = buildPlanReviewCard({
