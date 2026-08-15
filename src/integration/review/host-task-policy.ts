@@ -13,10 +13,13 @@ import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
 import { renderReviewContext, renderReviewerTaskPrompt } from './prompt-builders.js';
 import { rebuildBlockedPresentation } from '../tools/blocked-presentation.js';
 import {
-  renderArtifactAnchorContract,
   verifyFrozenMaterialForObligation,
   type FrozenReviewerContext,
 } from './frozen-reviewer-context.js';
+import {
+  buildArtifactAnchorContractLines,
+  buildImplementationAnchorContractLines,
+} from './anchor-contract-lines.js';
 import { buildReviewerProofContext } from './proof-context.js';
 import { REVIEW_COMPLETED_PREFIX, extractReviewContext } from './orchestrator.js';
 import {
@@ -82,6 +85,12 @@ interface HostTaskOutputInput {
    * (plan/ADR). Empty for standalone subjects.
    */
   readonly artifactAnchorContract: readonly string[];
+  /**
+   * Host-enforced subject anchor contract for implementation-scoped
+   * obligations. Empty for other obligation types. The embedded evidence
+   * rule derives from the same observation authority enforcement uses.
+   */
+  readonly implementationAnchorContract: readonly string[];
   /**
    * Why no reviewer context could be handed out, when that is the case.
    *
@@ -243,6 +252,11 @@ function buildReviewerTaskPromptOrNull(
      * (plan/ADR). Empty for standalone subjects.
      */
     readonly artifactAnchorContract: readonly string[];
+    /**
+     * Host-enforced subject anchor contract for implementation-scoped
+     * obligations. Empty for other obligation types.
+     */
+    readonly implementationAnchorContract: readonly string[];
     readonly retrySchemaErrors: readonly string[] | null;
     readonly repositoryDiscoverySnapshot: RepositoryDiscoverySnapshot | null;
     readonly observationCapability: string | null;
@@ -270,6 +284,7 @@ function buildReviewerTaskPromptOrNull(
     artifactContext: opts.artifactContext,
     frozenReviewerContext: opts.frozenReviewerContext ?? undefined,
     artifactAnchorContract: opts.artifactAnchorContract,
+    implementationAnchorContract: opts.implementationAnchorContract,
     retrySchemaErrors: opts.retrySchemaErrors ?? undefined,
     repositoryDiscoverySnapshot: opts.repositoryDiscoverySnapshot,
     ...(opts.observationCapability ? { observationCapability: opts.observationCapability } : {}),
@@ -310,6 +325,7 @@ function buildHostTaskBlockedOutput(
     artifactContext: input.artifactContext,
     frozenReviewerContext: input.frozenReviewerContext,
     artifactAnchorContract: input.artifactAnchorContract,
+    implementationAnchorContract: input.implementationAnchorContract,
     retrySchemaErrors: input.retrySchemaErrors,
     repositoryDiscoverySnapshot: input.repositoryDiscoverySnapshot,
     observationCapability: input.observationCapability,
@@ -576,6 +592,10 @@ function buildHostTaskOutputInput(
     artifactContext: [],
     frozenReviewerContext,
     artifactAnchorContract: buildArtifactAnchorContractLines(obligation),
+    implementationAnchorContract: buildImplementationAnchorContractLines(
+      obligation,
+      observationAccess,
+    ),
     reviewerContextFailure: resolveReviewerContextFailure(
       sessionState,
       obligation,
@@ -603,16 +623,6 @@ function buildHostTaskOutputInput(
  * reported an integrity breach whenever the previous attempt had merely been
  * spent, and sent the agent down an unrecoverable restore path.
  */
-function buildArtifactAnchorContractLines(obligation: ReviewObligation | null): readonly string[] {
-  if (
-    !obligation ||
-    (obligation.obligationType !== 'plan' && obligation.obligationType !== 'architecture') ||
-    obligation.reviewSubjectScope?.kind !== 'artifact'
-  ) {
-    return [];
-  }
-  return renderArtifactAnchorContract(obligation.reviewSubjectScope);
-}
 
 function resolveReviewerContextFailure(
   sessionState: SessionState,

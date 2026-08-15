@@ -46,6 +46,8 @@ export default defineConfig({
       'src/integration/review/enforcement/extraction.test.ts',
       'src/integration/review/enforcement/session.test.ts',
       'src/integration/review/verification-evidence-prompt.test.ts',
+      'src/integration/review/anchor-contract-lines.test.ts',
+      'src/integration/review/impl-review-prompt.test.ts',
       'src/integration/review/verification-evidence-projection.test.ts',
 
       'src/shared/canonical-json.test.ts',

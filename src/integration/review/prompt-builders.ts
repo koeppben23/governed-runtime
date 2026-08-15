@@ -24,29 +24,13 @@ import {
   buildDiscoveryContextSection,
   type DiscoveryReviewContext,
 } from './discovery-context-prompt.js';
-import { buildStackProfileSection, resolveReviewerDiscoverySection } from './prompt-sections.js';
+import {
+  buildStackProfileSection,
+  resolveReviewerDiscoverySection,
+  CORE_REVIEW_PROFILE_MARKER,
+} from './prompt-sections.js';
 import type { FrozenReviewerContext } from './frozen-reviewer-context.js';
 import type { RepositoryDiscoverySnapshot } from '../../state/evidence.js';
-
-/**
- * Mandatory-baseline marker appended as the final line of every reviewer prompt.
- *
- * This declares that the review runs under the canonical 'core' coverage
- * profile — the non-optional baseline whose criteria are owned by
- * src/templates/mandates-reviewer-criteria.ts (REVIEWER_CRITERIA). It adds NO
- * new criteria (no duplicate review authority); it only names the profile and
- * marks it mandatory.
- *
- * Enforcement safety (verified against promptContainsValue in
- * enforcement/extraction.ts): this string MUST NOT contain the tokens
- * "iteration" or "version" followed within 30 non-digit characters by a number,
- * and it is always appended AFTER the attestation/context block so it can never
- * displace the real iteration=/planVersion= tokens the enforcement matcher
- * requires. It is intentionally digit-free.
- */
-export const CORE_REVIEW_PROFILE_MARKER =
-  'Review coverage profile: core (mandatory baseline; not optional). ' +
-  'Apply your full reviewer criteria for this review type as the required floor.';
 
 // ─── Canonical Review Context Serializer ─────────────────────────────────────
 
@@ -57,7 +41,13 @@ export const CORE_REVIEW_PROFILE_MARKER =
  * subagent prompt are emitted by multiple blocked-output builders and validated
  * by enforcement; the single canonical form lives in prompt-sections.ts.
  */
-export { renderReviewContext } from './prompt-sections.js';
+export { renderReviewContext, CORE_REVIEW_PROFILE_MARKER } from './prompt-sections.js';
+export { renderVerificationEvidence } from './impl-review-prompt.js';
+export {
+  buildImplReviewPrompt,
+  type ImplReviewPromptOpts,
+  type ReviewVerificationEvidenceItem,
+} from './impl-review-prompt.js';
 import { renderReviewContext } from './prompt-sections.js';
 
 /** Serialize the integrity-verified review subject identically for every transport. */
@@ -111,6 +101,8 @@ export interface ReviewerTaskPromptInput {
   readonly frozenReviewerContext?: FrozenReviewerContext;
   /** Host-enforced anchor contract lines for artifact-scoped plan/ADR reviews. */
   readonly artifactAnchorContract?: readonly string[];
+  /** Host-enforced subject anchor contract lines for implementation-scoped reviews. */
+  readonly implementationAnchorContract?: readonly string[];
   /**
    * Attempt-bound repository Discovery snapshot (resolved at attempt mint time).
    * For repository reviews this renders the canonical Discovery envelope with
@@ -275,6 +267,24 @@ function renderObservationContractLines(input: ReviewerTaskPromptInput): string[
   );
 }
 
+/**
+ * Render the host-enforced anchor contract lines (artifact and implementation
+ * subjects) before the generic finding grammar.
+ */
+function renderAnchorContractLines(input: {
+  readonly artifactAnchorContract?: readonly string[];
+  readonly implementationAnchorContract?: readonly string[];
+}): string[] {
+  const lines: string[] = [];
+  if (input.artifactAnchorContract && input.artifactAnchorContract.length > 0) {
+    lines.push(...input.artifactAnchorContract, '');
+  }
+  if (input.implementationAnchorContract && input.implementationAnchorContract.length > 0) {
+    lines.push(...input.implementationAnchorContract, '');
+  }
+  return lines;
+}
+
 export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string {
   const context = renderReviewContext({
     iteration: input.iteration,
@@ -322,11 +332,9 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
       : []),
     ...(input.proofContext && input.proofContext.length > 0 ? [...input.proofContext] : []),
     '',
-    // Host-enforced anchor contract for artifact reviews — rendered before the
-    // generic grammar so the reviewer anchors to the exact frozen artifact.
-    ...(input.artifactAnchorContract && input.artifactAnchorContract.length > 0
-      ? [...input.artifactAnchorContract, '']
-      : []),
+    // Host-enforced anchor contracts — rendered before the generic grammar so
+    // the reviewer anchors to the exact frozen subject.
+    ...renderAnchorContractLines(input),
     // Finding output contract — derived from canonical Zod, identical for both transports.
     renderFindingRelationGrammar(),
     '',
@@ -359,54 +367,6 @@ export interface PlanReviewPromptOpts {
   readonly discoveryContext: DiscoveryReviewContext;
   /** Persisted advisory projection only; prompt construction never evaluates providers. */
   readonly proofGraph?: ProofGraphProjection;
-}
-
-/** Options for building an implementation review prompt. */
-export interface ImplReviewPromptOpts {
-  readonly changedFiles: string[];
-  readonly planText: string;
-  readonly ticketText: string;
-  readonly iteration: number;
-  readonly planVersion: number;
-  readonly obligationId: string;
-  readonly criteriaVersion: string;
-  readonly mandateDigest: string;
-  readonly profileName?: string;
-  readonly profileRules?: string;
-  readonly discoveryContext: DiscoveryReviewContext;
-  /** Persisted advisory projection only; prompt construction never evaluates providers. */
-  readonly proofGraph?: ProofGraphProjection;
-  readonly challengeResolutions?: ReadonlyArray<{
-    challengeId: string;
-    implementationDigest: string;
-    validationAttemptIds: string[];
-    resolvedAt: string;
-  }>;
-  /**
-   * Runtime-executed verification evidence bound to the implementation under
-   * review (FlowGuard-executed, digest-bound by the caller).
-   */
-  readonly verificationEvidence?: readonly ReviewVerificationEvidenceItem[];
-  /** Opaque host-minted observation capability of the attempt under review. */
-  readonly observationCapability?: string;
-  readonly observationRevisions?: readonly ('base' | 'head')[];
-}
-
-/** A single runtime-executed verification result projected for the reviewer
- * prompt (immutable ValidationAttempt.result fields; tamper-evident via
- * `outputDigest`; no raw stdout/stderr is carried).
- */
-export interface ReviewVerificationEvidenceItem {
-  readonly attemptId: string;
-  readonly kind: string;
-  readonly command: string;
-  readonly passed: boolean;
-  readonly exitCode: number;
-  readonly timedOut: boolean;
-  readonly executionMs: number;
-  readonly outputDigest: string;
-  readonly detail: string;
-  readonly executedAt: string;
 }
 
 /** Options for building an architecture (ADR) review prompt. F13 slice 6. */
@@ -497,123 +457,6 @@ export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {
     '',
     'Review this plan against the ticket requirements. Follow your review criteria',
     'for plans. Return your findings as a single ReviewerFindingsInput JSON object.',
-    `Set iteration=${iteration} and planVersion=${planVersion} in your response.`,
-    `Set attestation.toolObligationId=${obligationId}.`,
-    'Do not output reviewedBy, reviewedAt, mandateDigest, criteriaVersion, or attestation.reviewedBy; the host stamps them after strict validation.',
-    '',
-    CORE_REVIEW_PROFILE_MARKER,
-  ].join('\n');
-}
-
-/**
- * Build a prompt for implementation review by the flowguard-reviewer subagent.
- */
-/**
- * Render the executed verification evidence section for the implementation
- * review prompt.
- *
- * Fail-closed: an empty list renders an explicit NOT_VERIFIED line instead of
- * omitting the section, so the reviewer is told that no runtime evidence is
- * bound to the current implementation — a genuine review signal, not silence.
- *
- * Enforcement safety: this section is emitted AFTER the attestation/context
- * block and BEFORE the CORE_REVIEW_PROFILE_MARKER. Its own field LABELS are
- * neutral (`durationMs`, `digest`, `exitCode`, `kind`) — no "iteration"/"version"
- * adjacent to digits. The `command` and `detail` VALUES are executor-derived and
- * NOT sanitized, so they could in principle contain such a token. That is safe:
- * the L3 matcher (promptContainsValue in enforcement/extraction.ts) is a positive
- * `.test()` presence check on the whole prompt, so an extra token here cannot
- * REMOVE the legitimate iteration=/planVersion= tokens emitted by
- * renderReviewContext, and injecting the CORRECT expected value is not a bypass.
- * The section therefore cannot flip enforcement in either direction.
- */
-export function renderVerificationEvidence(
-  evidence: readonly ReviewVerificationEvidenceItem[],
-): string[] {
-  if (evidence.length === 0) {
-    return [
-      '## Verification Evidence (executed)',
-      '',
-      '- NOT_VERIFIED: no executed verification evidence is bound to the current implementation digest.',
-      '  Treat every plan verification claim as NOT_VERIFIED unless you can independently confirm it; do not assume checks passed.',
-      '',
-    ];
-  }
-  const rows = evidence.map((item) => {
-    const status = item.timedOut ? 'TIMED_OUT' : item.passed ? 'PASS' : 'FAIL';
-    return (
-      `- [${status}] kind=${item.kind} exitCode=${item.exitCode} durationMs=${item.executionMs} ` +
-      `digest=${item.outputDigest}\n` +
-      `  command: ${item.command}\n` +
-      `  detail: ${item.detail}`
-    );
-  });
-  return [
-    '## Verification Evidence (executed)',
-    '',
-    'FlowGuard executed these checks itself (not agent-reported); exitCode/digest are tamper-evident.',
-    'Verify plan verification claims against these results. A claim not supported by a PASS here is NOT_VERIFIED.',
-    '',
-    ...rows,
-    '',
-  ];
-}
-
-export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
-  const {
-    changedFiles,
-    planText,
-    ticketText,
-    iteration,
-    planVersion,
-    obligationId,
-    profileName,
-    profileRules,
-    discoveryContext,
-    challengeResolutions = [],
-    verificationEvidence = [],
-    proofGraph,
-    observationCapability,
-    observationRevisions,
-  } = opts;
-  const stackSection = buildStackProfileSection(profileName, profileRules);
-  const discoverySection = buildDiscoveryContextSection(discoveryContext);
-  return [
-    `You are reviewing an implementation for iteration=${iteration}, planVersion=${planVersion}.`,
-    '',
-    '## Ticket',
-    '',
-    ticketText,
-    '',
-    '## Approved Plan',
-    '',
-    planText,
-    '',
-    '## Changed Files',
-    '',
-    changedFiles.map((f) => `- ${f}`).join('\n'),
-    '',
-    ...(stackSection ? [stackSection, ''] : []),
-    ...(discoverySection ? [discoverySection, ''] : []),
-    ...renderPersistedProofGraphContext(proofGraph),
-    ...(challengeResolutions.length > 0
-      ? [
-          '## Advisory Challenge Resolutions (NOT_VERIFIED)',
-          '',
-          'These author-recorded bindings do not establish correctness or alter acceptance. Inspect the referenced challenge and validation attempts independently:',
-          JSON.stringify(challengeResolutions),
-          '',
-        ]
-      : []),
-    ...renderVerificationEvidence(verificationEvidence),
-    '## Instructions',
-    '',
-    'Review this implementation against the approved plan and ticket.',
-    'Treat any challenge resolution as advisory NOT_VERIFIED evidence; independently verify it.',
-    'Read the changed files using the read/glob/grep tools to verify correctness.',
-    'Follow your review criteria for implementations.',
-    ...renderRepositoryObservationContract(observationCapability, observationRevisions ?? []),
-    'Return your findings as a single ReviewerFindingsInput JSON object.',
     `Set iteration=${iteration} and planVersion=${planVersion} in your response.`,
     `Set attestation.toolObligationId=${obligationId}.`,
     'Do not output reviewedBy, reviewedAt, mandateDigest, criteriaVersion, or attestation.reviewedBy; the host stamps them after strict validation.',

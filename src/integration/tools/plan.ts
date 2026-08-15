@@ -285,7 +285,7 @@ async function createPlanReviewAttempt(
   // the submission before any state mutation.
   const discovery = await resolveAttemptDiscoveryOrBlock({
     state: scope.state,
-    worktree: scope.wsDir,
+    worktree: scope.worktree,
     repositoryGoverned: authority !== undefined,
     now: scope.ctx.now(),
   });

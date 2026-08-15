@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as crypto from 'node:crypto';
 import { FlowGuardAuditPlugin, isUsableWorktree } from './plugin.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
-import { makeState } from '../fixtures.js';
+import { makeState, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
 import type { PolicyMode } from '../config/policy.js';
 import * as barrel from './index.js';
 import * as fs from 'node:fs/promises';
@@ -431,7 +431,10 @@ describe('plugin bootstrap fail-closed', () => {
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
         await fs.mkdir(sessDir, { recursive: true });
-        await writeState(sessDir, makeState('IMPLEMENTATION'));
+        await writeState(
+          sessDir,
+          makeState('IMPLEMENTATION', { implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE }),
+        );
 
         const hooks = await FlowGuardAuditPlugin(
           createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
@@ -454,7 +457,10 @@ describe('plugin bootstrap fail-closed', () => {
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
         await fs.mkdir(sessDir, { recursive: true });
-        await writeState(sessDir, makeState('IMPLEMENTATION'));
+        await writeState(
+          sessDir,
+          makeState('IMPLEMENTATION', { implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE }),
+        );
 
         const hooks = await FlowGuardAuditPlugin(
           createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
@@ -544,7 +550,10 @@ describe('plugin bootstrap fail-closed', () => {
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
         await fs.mkdir(sessDir, { recursive: true });
-        await writeState(sessDir, makeState('IMPLEMENTATION'));
+        await writeState(
+          sessDir,
+          makeState('IMPLEMENTATION', { implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE }),
+        );
 
         const hooks = await FlowGuardAuditPlugin(
           createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
@@ -799,9 +808,12 @@ describe('plugin bootstrap fail-closed', () => {
         await writeState(
           sessDir,
           makeState('IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             claimedTaskClass: 'TRIVIAL',
             policySnapshot: {
-              ...makeState('IMPLEMENTATION').policySnapshot,
+              ...makeState('IMPLEMENTATION', {
+                implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+              }).policySnapshot,
               mode: 'regulated',
               requestedMode: 'regulated',
               enforceRiskClassification: true,
@@ -838,8 +850,11 @@ describe('plugin bootstrap fail-closed', () => {
         await writeState(
           sessDir,
           makeState('IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             policySnapshot: {
-              ...makeState('IMPLEMENTATION').policySnapshot,
+              ...makeState('IMPLEMENTATION', {
+                implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+              }).policySnapshot,
               mode: 'regulated',
               requestedMode: 'regulated',
               enforceRiskClassification: true,
@@ -871,9 +886,12 @@ describe('plugin bootstrap fail-closed', () => {
         await writeState(
           sessDir,
           makeState('IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             claimedTaskClass: 'HIGH-RISK',
             policySnapshot: {
-              ...makeState('IMPLEMENTATION').policySnapshot,
+              ...makeState('IMPLEMENTATION', {
+                implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+              }).policySnapshot,
               mode: 'regulated',
               requestedMode: 'regulated',
               enforceRiskClassification: true,
@@ -919,9 +937,12 @@ describe('plugin bootstrap fail-closed', () => {
         await writeState(
           sessDir,
           makeState('IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             claimedTaskClass: 'TRIVIAL',
             policySnapshot: {
-              ...makeState('IMPLEMENTATION').policySnapshot,
+              ...makeState('IMPLEMENTATION', {
+                implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+              }).policySnapshot,
               mode: 'regulated',
               requestedMode: 'regulated',
               enforceRiskClassification: true,
@@ -966,9 +987,12 @@ describe('plugin bootstrap fail-closed', () => {
         await writeState(
           sessDir,
           makeState('IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             claimedTaskClass: 'HIGH-RISK',
             policySnapshot: {
-              ...makeState('IMPLEMENTATION').policySnapshot,
+              ...makeState('IMPLEMENTATION', {
+                implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+              }).policySnapshot,
               mode: 'regulated',
               requestedMode: 'regulated',
               enforceRiskClassification: true,
@@ -1008,6 +1032,7 @@ describe('plugin bootstrap fail-closed', () => {
         await writeState(
           sessDir,
           makeState('IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             error: {
               code: 'TSA_TIMESTAMP_ASSURANCE_FAILED',
               message: 'Strict timestamp assurance failed for lifecycle: TSA request failed',

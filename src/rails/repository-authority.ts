@@ -15,28 +15,32 @@
  *   carries the exact reason and diagnostic; repository evidence is then
  *   permanently `evidence_unavailable`, and the outcome is frozen onto the
  *   obligation as durable audit evidence.
- * - implementation base freezing THROWS: an implementation review governs
- *   repository work, so a session that cannot freeze its base cannot
- *   authoritatively enter implementation review.
+ * - the implementation base freeze and the IMPLEMENTATION-entry invariant
+ *   live in the adapter-layer authority
+ *   `adapters/implementation-base-authority.ts` and are enforced at the
+ *   persistence boundary — rails no longer duplicate that enforcement.
  *
- * @version v1
+ * @version v2
  */
 
 import { headCommitFull, isGitRepo } from '../adapters/git.js';
-import {
-  FrozenRepositoryError,
-  freezeRepositoryIdentity,
-  freezeWorktreeCandidate,
-} from '../adapters/frozen-repository.js';
+import { FrozenRepositoryError, freezeWorktreeCandidate } from '../adapters/frozen-repository.js';
 import type { SessionState } from '../state/schema.js';
-import type {
-  FrozenRepositoryAuthority,
-  FrozenRepositoryRevisionTarget,
-} from '../state/evidence.js';
+import type { FrozenRepositoryAuthority } from '../state/evidence.js';
 import type {
   RepositoryEvidenceFreeze,
   RepositoryEvidenceFreezeReason,
 } from '../state/evidence-review-freeze.js';
+
+// Single source of truth for commit-kind revision targets and the
+// pre-mutation implementation-base freeze: the adapter-layer authority
+// `adapters/implementation-base-authority.ts`, which also hosts the
+// IMPLEMENTATION-entry finalizer. Rails re-export the revision-target freeze
+// so context freezes (plan/architecture) keep a single definition; the
+// implementation-entry enforcement itself lives exclusively at the
+// persistence boundary.
+export { freezeCommitRevisionTarget } from '../adapters/implementation-base-authority.js';
+import { freezeCommitRevisionTarget } from '../adapters/implementation-base-authority.js';
 
 /** Why a plan/architecture repository context could not be frozen. */
 export type RepositoryAuthorityFreezeReason = RepositoryEvidenceFreezeReason;
@@ -74,22 +78,6 @@ export function freezeOutcomeRecord(
     kind: 'unavailable',
     reason: result.reason,
     ...(result.diagnostic ? { diagnostic: result.diagnostic } : {}),
-  };
-}
-
-/**
- * Freeze a commit-kind revision target: exact object sha plus the repository
- * identity resolved AT freeze time. Throws {@link FrozenRepositoryError} when
- * the identity cannot be resolved immutably.
- */
-export function freezeCommitRevisionTarget(
-  worktree: string,
-  objectSha: string,
-): FrozenRepositoryRevisionTarget {
-  return {
-    kind: 'commit',
-    repositoryIdentity: freezeRepositoryIdentity(worktree, objectSha),
-    objectSha,
   };
 }
 
@@ -148,25 +136,6 @@ export async function freezeContextAuthorityAtHead(
 }
 
 /**
- * Freeze the pre-mutation implementation base. Runs at the transition INTO
- * `IMPLEMENTATION`, before any governed mutation. Throws
- * {@link FrozenRepositoryError} on failure — callers must block the
- * transition fail-closed.
- */
-export async function freezeImplementationBaseAuthority(
-  worktree: string,
-): Promise<FrozenRepositoryRevisionTarget> {
-  const objectSha = await headCommitFull(worktree);
-  if (!objectSha) {
-    throw new FrozenRepositoryError(
-      'FREEZE_FAILED',
-      'No commit exists to freeze as the pre-mutation implementation base',
-    );
-  }
-  return freezeCommitRevisionTarget(worktree, objectSha);
-}
-
-/**
  * Freeze the implementation candidate pair: the persisted pre-mutation base
  * plus a content-addressed worktree candidate head materialized through an
  * isolated index. Returns `undefined` when the base authority is missing or
@@ -193,19 +162,4 @@ export async function freezeCandidatePairAuthority(
   } catch {
     return undefined;
   }
-}
-
-/**
- * Idempotently ensure the pre-mutation implementation base is frozen on the
- * session state. Called at every rail that can transition INTO
- * `IMPLEMENTATION`; re-entries (CHANGES_REQUESTED loops) preserve the original
- * base. Throws {@link FrozenRepositoryError} when the freeze fails.
- */
-export async function ensureImplementationBase(
-  state: SessionState,
-  worktree: string,
-): Promise<SessionState> {
-  if (state.implementationBaseAuthority) return state;
-  const base = await freezeImplementationBaseAuthority(worktree);
-  return { ...state, implementationBaseAuthority: base };
 }

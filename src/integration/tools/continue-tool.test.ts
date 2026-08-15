@@ -172,6 +172,27 @@ describe('flowguard_continue (runtime)', () => {
     expect(parsed.status).toBe('Implementation review is pending.');
   });
 
+  it('IMPL_REVIEW with a blocked implement obligation surfaces the blocker instead of claiming a pending review', async () => {
+    setPhase('IMPL_REVIEW');
+    mocks.state = {
+      phase: 'IMPL_REVIEW',
+      reviewAssurance: {
+        obligations: [
+          {
+            obligationType: 'implement',
+            status: 'blocked',
+            blockedCode: 'REVIEW_REPAIR_UNAVAILABLE',
+          },
+        ],
+      },
+    };
+    const { continue_cmd } = await import('./continue-tool.js');
+    const res = await continue_cmd.execute({}, {} as never);
+    const parsed = JSON.parse(String(res));
+    expect(parsed.status).toContain('blocked (REVIEW_REPAIR_UNAVAILABLE)');
+    expect(parsed.status).not.toContain('Implementation review is pending.');
+  });
+
   // ── BAD: blocking on ambiguous / unknown ──────────────────────────────────
 
   it('blocks READY phase with CONTINUE_AMBIGUOUS', async () => {

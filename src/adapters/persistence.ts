@@ -57,6 +57,7 @@ import { getAdapterLogger } from '../logging/adapter-logger.js';
 import { SessionState } from '../state/schema.js';
 import { ReviewReport } from '../state/evidence.js';
 import { withSessionWriteLock } from './persistence-lock.js';
+import { assertImplementationEntryFrozen } from './implementation-entry-guard.js';
 import { ensureDir, PersistenceError, isEnoent } from './persistence-core.js';
 
 export {
@@ -450,6 +451,13 @@ export async function writeStateAlreadyLocked(
       `Refusing to persist invalid state: ${result.error.message}`,
     );
   }
+
+  // Single persistence-boundary guard for the implementation-entry invariant:
+  // no IMPLEMENTATION-phase state may be written without a frozen pre-mutation
+  // base authority. The governed tool path performs the freeze via
+  // finalizeImplementationEntry before reaching this write; any other writer
+  // fails closed here instead of persisting an unreviewable implementation.
+  assertImplementationEntryFrozen(result.data);
 
   await ensureDir(sessionDir);
   const json = JSON.stringify(result.data, null, 2) + '\n';

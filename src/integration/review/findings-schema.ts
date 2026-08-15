@@ -95,6 +95,17 @@ function buildAnchorVariant(kind: (typeof ANCHOR_KINDS)[number]): Record<string,
       additionalProperties: false,
     };
   }
+  if (kind === 'implementation') {
+    return {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', const: kind },
+        implementationDigest: { type: 'string', minLength: 1 },
+      },
+      required: ['kind', 'implementationDigest'],
+      additionalProperties: false,
+    };
+  }
   throw new Error(`Unknown anchor kind: ${kind} — update findings-schema.ts`);
 }
 

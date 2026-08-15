@@ -68,6 +68,7 @@ vi.mock('../adapters/git', async (importOriginal) => {
     ...original,
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
     changedFiles: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.changedFiles),
+    headCommitFull: vi.fn().mockResolvedValue('d'.repeat(40)),
     listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
     // Deterministic per-path content hash so baseline scoping is testable: a
     // file is "unchanged since baseline" iff the baseline recorded this same
@@ -81,6 +82,18 @@ vi.mock('../adapters/git', async (importOriginal) => {
     // Defaults to the real helper (which returns '' on the non-repo temp worktree);
     // F3 tests override it per-call to exercise diff-artifact capture.
     worktreeDiff: vi.fn(original.worktreeDiff),
+  };
+});
+
+vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/frozen-repository.js')>();
+  return {
+    ...original,
+    freezeRepositoryIdentity: vi.fn(() => ({
+      kind: 'local' as const,
+      rootCommitDigest: 'sha256:' + 'b'.repeat(64),
+    })),
+    freezeWorktreeCandidate: vi.fn().mockResolvedValue('c'.repeat(40)),
   };
 });
 

@@ -48,6 +48,7 @@ export const ACTION_CODES = {
   VALIDATION_EVIDENCE_REQUIRED: 'VALIDATION_EVIDENCE_REQUIRED',
   VALIDATION_EVIDENCE_UNVERIFIED: 'VALIDATION_EVIDENCE_UNVERIFIED',
   RUN_IMPLEMENT: 'RUN_IMPLEMENT',
+  IMPLEMENTATION_REVIEW_BLOCKED: 'IMPLEMENTATION_REVIEW_BLOCKED',
   RUN_ARCHITECTURE: 'RUN_ARCHITECTURE',
   RUN_REVIEWER_TASK: 'RUN_REVIEWER_TASK',
   REVIEW_STATE_INCOMPLETE: 'REVIEW_STATE_INCOMPLETE',
@@ -188,11 +189,32 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
           commands: ['/continue'],
         },
 
-  IMPL_REVIEW: () => ({
-    code: ACTION_CODES.RUN_CONTINUE,
-    text: 'Implementation review is pending. Invoke the flowguard-reviewer task, then submit its verdict with flowguard_review_implementation.',
-    commands: ['/continue'],
-  }),
+  IMPL_REVIEW: (state) => {
+    const obligations = state.reviewAssurance?.obligations ?? [];
+    const implObligations = obligations.filter((o) => o.obligationType === 'implement');
+    const last = implObligations.at(-1);
+    if (last?.status === 'blocked') {
+      if (implObligations.filter((o) => o.status === 'blocked').length >= 3) {
+        return {
+          code: ACTION_CODES.IMPLEMENTATION_REVIEW_BLOCKED,
+          text:
+            'Implementation review orchestration failed permanently after repeated blocked review obligations. ' +
+            'Abort the session or start over with a new ticket.',
+          commands: ['/abort'],
+        };
+      }
+      return {
+        code: ACTION_CODES.IMPLEMENTATION_REVIEW_BLOCKED,
+        text: `Implementation review obligation is blocked (${last.blockedCode ?? 'unknown'}). Re-run /implement to re-record the implementation and mint a fresh review obligation.`,
+        commands: ['/implement'],
+      };
+    }
+    return {
+      code: ACTION_CODES.RUN_CONTINUE,
+      text: 'Implementation review is pending. Invoke the flowguard-reviewer task, then submit its verdict with flowguard_review_implementation.',
+      commands: ['/continue'],
+    };
+  },
 
   EVIDENCE_REVIEW: () => ({
     code: ACTION_CODES.RUN_REVIEW_DECISION,

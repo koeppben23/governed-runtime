@@ -274,6 +274,21 @@ export const ERROR_INFO: ErrorInfo = {
   occurredAt: FIXED_TIME,
 };
 
+/**
+ * Synthetic frozen pre-mutation implementation base for progressed fixtures.
+ * The persistence boundary refuses IMPLEMENTATION-phase states without a
+ * frozen base authority; progressed states (VALIDATION and beyond in the
+ * ticket flow) therefore carry this deterministic commit-kind target.
+ */
+export const FROZEN_IMPLEMENTATION_BASE = {
+  kind: 'commit' as const,
+  repositoryIdentity: {
+    kind: 'local' as const,
+    rootCommitDigest: 'sha256:' + 'f'.repeat(64),
+  },
+  objectSha: 'd'.repeat(40),
+};
+
 // ─── State Factory ────────────────────────────────────────────────────────────
 
 /**
@@ -336,6 +351,7 @@ export function makeProgressedState(phase: Phase): SessionState {
       });
     case 'VALIDATION':
       return makeState('VALIDATION', {
+        implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
         ticket: TICKET,
         plan: PLAN_RECORD,
         selfReview: SELF_REVIEW_CONVERGED,
@@ -343,6 +359,7 @@ export function makeProgressedState(phase: Phase): SessionState {
       });
     case 'IMPLEMENTATION':
       return makeState('IMPLEMENTATION', {
+        implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
         ticket: TICKET,
         plan: PLAN_RECORD,
         selfReview: SELF_REVIEW_CONVERGED,
@@ -351,6 +368,7 @@ export function makeProgressedState(phase: Phase): SessionState {
       });
     case 'IMPL_VALIDATION':
       return makeState('IMPL_VALIDATION', {
+        implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
         ticket: TICKET,
         plan: PLAN_RECORD,
         selfReview: SELF_REVIEW_CONVERGED,
@@ -362,6 +380,7 @@ export function makeProgressedState(phase: Phase): SessionState {
       });
     case 'IMPL_REVIEW':
       return makeState('IMPL_REVIEW', {
+        implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
         ticket: TICKET,
         plan: PLAN_RECORD,
         selfReview: SELF_REVIEW_CONVERGED,
@@ -372,6 +391,7 @@ export function makeProgressedState(phase: Phase): SessionState {
       });
     case 'EVIDENCE_REVIEW':
       return makeState('EVIDENCE_REVIEW', {
+        implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
         ticket: TICKET,
         plan: PLAN_RECORD,
         selfReview: SELF_REVIEW_CONVERGED,
@@ -383,6 +403,7 @@ export function makeProgressedState(phase: Phase): SessionState {
       });
     case 'COMPLETE':
       return makeState('COMPLETE', {
+        implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
         ticket: TICKET,
         plan: PLAN_RECORD,
         selfReview: SELF_REVIEW_CONVERGED,

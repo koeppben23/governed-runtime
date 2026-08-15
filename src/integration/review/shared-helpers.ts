@@ -393,6 +393,23 @@ interface BuildToolPromptParams {
   discoveryContext: DiscoveryReviewContext;
 }
 
+/**
+ * Canonical implementation subject digest for the host-enforced anchor
+ * contract: the recorded implementation digest, falling back to the bound
+ * obligation's subject digest.
+ */
+function resolveImplementationSubjectDigest(
+  state: SessionState,
+  obligationId: string,
+): string | undefined {
+  return (
+    state.implementation?.digest ??
+    state.reviewAssurance?.obligations.find((o) => o.obligationId === obligationId)
+      ?.subjectDigest ??
+    undefined
+  );
+}
+
 export function buildToolPrompt(params: BuildToolPromptParams): string | null {
   const { toolName, texts, reviewCtx, parsedOutput, sessionState, rules, deps, discoveryContext } =
     params;
@@ -428,6 +445,12 @@ export function buildToolPrompt(params: BuildToolPromptParams): string | null {
       challengeResolutions: stateChallengeResolutions(sessionState),
       verificationEvidence: stateVerificationEvidence(sessionState),
       proofGraph: sessionState.proofGraph,
+      // Canonical subject identity: the implementation digest the obligation
+      // is bound to — same digest as subjectDigest and the review material.
+      implementationDigest: resolveImplementationSubjectDigest(
+        sessionState,
+        reviewCtx.obligationId,
+      ),
       observationCapability:
         resolveAttemptObservationCapability(sessionState.reviewAssurance, reviewCtx.obligationId) ??
         undefined,

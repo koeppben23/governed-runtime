@@ -31,6 +31,7 @@ import path from 'node:path';
 import { writeState, readState } from '../adapters/persistence.js';
 import {
   makeState,
+  FROZEN_IMPLEMENTATION_BASE,
   TICKET,
   PLAN_RECORD,
   ARCHITECTURE_DECISION,
@@ -434,6 +435,7 @@ describe('assurance lifecycle persistence across hosts', () => {
 
         // Phase 2: IMPLEMENTATION — create impl review obligation
         const implState = makeState('IMPLEMENTATION', {
+          implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
           ticket: TICKET,
           plan: PLAN_RECORD,
           implementation: IMPL_EVIDENCE,

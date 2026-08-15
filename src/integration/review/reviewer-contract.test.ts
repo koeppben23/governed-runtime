@@ -89,10 +89,27 @@ describe('reviewer-contract ↔ canonical Zod drift guard', () => {
     };
     expect(ReviewFindings.safeParse(content).success).toBe(true);
 
+    const implementation = {
+      ...payload,
+      blockingIssues: [
+        {
+          severity: 'major',
+          category: 'completeness',
+          message: 'x',
+          relation: {
+            subjectAnchors: [{ kind: 'implementation', implementationDigest: 'abc' }],
+            evidenceLocations: [],
+          },
+        },
+      ],
+    };
+    expect(ReviewFindings.safeParse(implementation).success).toBe(true);
+
     // Verify the contract list matches exactly (order-stable)
     expect([...ANCHOR_KINDS].sort()).toEqual([
       'artifact_section',
       'content',
+      'implementation',
       'repository_location',
     ]);
   });

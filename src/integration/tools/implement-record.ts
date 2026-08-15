@@ -92,10 +92,10 @@ import { buildReviewerProofContext } from '../review/proof-context.js';
 import type { ImplementRuntime, ImplementationCeremony } from './implement-shared.js';
 import { normalizeHostFindings } from './implement-shared.js';
 import {
-  activateImplementationReviewObligation,
+  activateReviewObligationAndPersist,
+  materializeImplReviewContract,
   nextImplementationReviewIteration,
 } from './implement-shared.js';
-import { materializeApprovedPlanContractResult } from '../proofgraph/materialize-contract.js';
 // Mode A
 export function validateInitialReviewFindings(input: ImplementRuntime): string | null {
   if (!input.args.reviewFindings) return null;
@@ -406,24 +406,28 @@ export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): 
     return formatAutoAdvanceOverflow(advanced);
   }
   const { state: finalState, transitions } = advanced;
-  const materialized =
-    finalState.phase === 'IMPL_REVIEW'
-      ? await materializeApprovedPlanContractResult(finalState, input.worktree)
-      : null;
-  const stateWithMaterializedContract = materialized
-    ? {
-        ...finalState,
-        proofContract: materialized.contract,
-        proofContractCoverage: [...materialized.coverage],
-      }
-    : finalState;
-  const activated = await activateImplementationReviewObligation(stateWithMaterializedContract, {
+  const stateWithMaterializedContract = await materializeImplReviewContract(
+    finalState,
+    input.worktree,
+  );
+  const activation = await activateReviewObligationAndPersist({
+    state: stateWithMaterializedContract,
+    preAdvanceState: nextState,
     subagentEnabled: input.subagentEnabled,
     iteration: reviewIteration,
     planVersion,
     now: input.ctx.now(),
     worktree: input.worktree,
+    sessDir: input.sessDir,
+    locked: false,
+    // Mint-gate block: keep the recorded implementation evidence on the
+    // first-record path (persisting the IMPLEMENTATION-phase state performs
+    // the implementation-entry freeze); persist nothing on the re-record
+    // path — an IMPL_REVIEW state without a review obligation is illegal.
+    persistPreAdvance: input.state.phase === 'IMPLEMENTATION',
   });
+  if ('response' in activation) return activation.response;
+  const { activated } = activation;
   // The persisted state carries the REFRESHED ProofGraph derived from the freshly
   // materialized contract; rendering `activated.state` would emit the pre-write
   // projection and understate claim coverage in the reviewer prompt (#762).

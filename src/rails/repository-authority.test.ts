@@ -36,10 +36,9 @@ import {
 } from '../adapters/frozen-repository.js';
 import {
   ensureImplementationBase,
-  freezeCandidatePairAuthority,
-  freezeContextAuthority,
   freezeImplementationBaseAuthority,
-} from './repository-authority.js';
+} from '../adapters/implementation-base-authority.js';
+import { freezeCandidatePairAuthority, freezeContextAuthority } from './repository-authority.js';
 
 const SHA = 'a'.repeat(40);
 

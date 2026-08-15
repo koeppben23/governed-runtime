@@ -115,6 +115,13 @@ function relationIntersectsScope(
         anchor.kind === 'artifact_section' && artifactAnchorIntersectsScope(anchor, scope),
     );
   }
+  if (scope.kind === 'implementation') {
+    return relation.subjectAnchors.some(
+      (anchor) =>
+        anchor.kind === 'implementation' &&
+        anchor.implementationDigest === scope.implementationDigest,
+    );
+  }
   if (scope.kind === 'content') {
     return relation.subjectAnchors.some(
       (anchor) =>

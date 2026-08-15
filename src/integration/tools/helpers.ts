@@ -29,6 +29,7 @@ import { AUTO_ADVANCE_OVERFLOW_CODE } from '../../rails/auto-advance-overflow.js
 
 // Adapters
 import { readState, writeStateAlreadyLocked } from '../../adapters/persistence.js';
+import { finalizeImplementationEntry } from '../../adapters/implementation-base-authority.js';
 import { acquireSessionWriteLock, withSessionWriteLock } from '../../adapters/persistence-lock.js';
 import { createRailContext } from '../../adapters/context.js';
 
@@ -411,14 +412,18 @@ export async function writeStateWithArtifactsAlreadyLocked(
     });
   }
 
-  // 2. Persist a graph for every flow. This only evaluates explicitly declared,
+  // 2. Single transition finalizer: entering IMPLEMENTATION freezes the
+  // pre-mutation implementation base BEFORE any derived artifact (ProofGraph,
+  // evidence artifacts) is computed, so the persisted state, its hashes, and
+  // its artifacts always include the frozen authority. Fail-closed: a freeze
+  // failure throws the canonical code and NOTHING is written.
+  const finalized = await finalizeImplementationEntry(result.data);
+
+  // 3. Persist a graph for every flow. This only evaluates explicitly declared,
   // structured claims; an absent contract therefore remains an empty projection.
   const stateWithProofGraph = {
-    ...result.data,
-    proofGraph: await refreshProofGraph(
-      result.data,
-      result.data.transition?.at ?? result.data.createdAt,
-    ),
+    ...finalized,
+    proofGraph: await refreshProofGraph(finalized, finalized.transition?.at ?? finalized.createdAt),
   };
   const refreshed = SessionState.safeParse(stateWithProofGraph);
   if (!refreshed.success) {

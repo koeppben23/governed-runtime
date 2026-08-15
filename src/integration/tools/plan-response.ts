@@ -401,7 +401,7 @@ async function mintPlanRevisionAttempt(input: {
   const authority = frozenAuthorityOrUndefined(freeze);
   const discovery = await resolveAttemptDiscoveryOrBlock({
     state: finalState,
-    worktree: scope.wsDir,
+    worktree: scope.worktree,
     repositoryGoverned: authority !== undefined,
     now: scope.ctx.now(),
   });

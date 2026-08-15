@@ -126,6 +126,13 @@ export const ReviewSubjectScope = z.discriminatedUnion('kind', [
         .readonly(),
     })
     .readonly(),
+  z
+    .object({
+      kind: z.literal('implementation'),
+      implementationDigest: z.string().min(1),
+    })
+    .strict()
+    .readonly(),
   z.object({ kind: z.literal('unavailable'), reason: z.string().min(1) }).readonly(),
 ]);
 export type ReviewSubjectScope = z.infer<typeof ReviewSubjectScope>;

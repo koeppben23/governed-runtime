@@ -7,7 +7,7 @@ import { performance } from 'node:perf_hooks';
 import { initWorkspace } from '../adapters/workspace/index.js';
 import { writeState } from '../adapters/persistence.js';
 import { readReviewerCaptures } from '../adapters/persistence-reviewer-capture.js';
-import { makeState } from '../fixtures.js';
+import { makeState, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
 
 const HOOK_TIMEOUT_MS = 3000;
 const SESSION_ID = 'hook-smoke-session';
@@ -90,7 +90,10 @@ describe('command hook binaries', () => {
 
     it('runs post-tool-use and persists a reviewer capture', async () => {
       const initialized = await initWorkspace(worktree, SESSION_ID);
-      await writeState(initialized.sessionDir, makeState('IMPLEMENTATION'));
+      await writeState(
+        initialized.sessionDir,
+        makeState('IMPLEMENTATION', { implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE }),
+      );
 
       const result = await runHook(
         'post-tool-use',
@@ -145,7 +148,10 @@ describe('command hook binaries', () => {
   describe('EDGE', () => {
     it('runs subagent-stop and persists a capture only through the real session transport', async () => {
       const initialized = await initWorkspace(worktree, SESSION_ID);
-      await writeState(initialized.sessionDir, makeState('IMPLEMENTATION'));
+      await writeState(
+        initialized.sessionDir,
+        makeState('IMPLEMENTATION', { implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE }),
+      );
 
       const result = await runHook(
         'subagent-stop',

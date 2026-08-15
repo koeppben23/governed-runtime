@@ -15,7 +15,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { writeState } from '../adapters/persistence.js';
-import { makeState } from '../fixtures.js';
+import { makeState, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
 import { resolveSessionErrorPhaseDetail } from './plugin-afterhooks.js';
 
 describe('resolveSessionErrorPhaseDetail (session.error phase enrichment)', () => {
@@ -37,7 +37,10 @@ describe('resolveSessionErrorPhaseDetail (session.error phase enrichment)', () =
   });
 
   it('reflects the actual phase (IMPLEMENTATION) rather than a fixed value', async () => {
-    await writeState(sessDir, makeState('IMPLEMENTATION'));
+    await writeState(
+      sessDir,
+      makeState('IMPLEMENTATION', { implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE }),
+    );
 
     expect(await resolveSessionErrorPhaseDetail(sessDir)).toEqual({ phase: 'IMPLEMENTATION' });
   });

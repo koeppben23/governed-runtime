@@ -18,7 +18,12 @@ export const CATEGORY_VALUES = [
   'quality',
 ] as const;
 
-export const ANCHOR_KINDS = ['repository_location', 'artifact_section', 'content'] as const;
+export const ANCHOR_KINDS = [
+  'repository_location',
+  'artifact_section',
+  'content',
+  'implementation',
+] as const;
 
 export const REVISION_VALUES = ['base', 'head'] as const;
 
@@ -44,6 +49,10 @@ export const REVIEWER_ANCHOR_SHAPES: Record<(typeof ANCHOR_KINDS)[number], Ancho
       requiredFields: ['kind', 'artifactKind', 'artifactDigest', 'sectionPath'],
     },
     content: { kind: 'content', requiredFields: ['kind', 'subjectDigest'] },
+    implementation: {
+      kind: 'implementation',
+      requiredFields: ['kind', 'implementationDigest'],
+    },
   };
 
 /** Canonical shape descriptor for each challenge kind. */

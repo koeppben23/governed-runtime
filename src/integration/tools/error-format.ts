@@ -49,5 +49,7 @@ export function formatError(err: unknown): string {
     err instanceof Error && 'code' in err
       ? String((err as { code: unknown }).code)
       : 'INTERNAL_ERROR';
-  return formatBlocked(code, { message });
+  // Pass `reason` alongside `message` so templates using a `{reason}`
+  // placeholder render the underlying cause instead of leaking the literal.
+  return formatBlocked(code, { message, reason: message });
 }

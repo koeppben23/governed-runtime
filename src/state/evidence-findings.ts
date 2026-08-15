@@ -134,11 +134,29 @@ export const ContentSubjectAnchor = z
   .readonly();
 export type ContentSubjectAnchor = z.infer<typeof ContentSubjectAnchor>;
 
+/**
+ * A digest-bound anchor for an implementation review subject. It proves ONLY
+ * the subject relationship (this finding concerns that exact implementation)
+ * — it is never repository evidence: no path, line, revision, or diffDigest
+ * belongs here. Repository citations are evidenceLocations, admissible only
+ * with an authoritative attempt-bound observation; the diff digest belongs to
+ * `ImplementationRef` in the challenge evidence model.
+ */
+export const ImplementationSubjectAnchor = z
+  .object({
+    kind: z.literal('implementation'),
+    implementationDigest: z.string().min(1),
+  })
+  .strict()
+  .readonly();
+export type ImplementationSubjectAnchor = z.infer<typeof ImplementationSubjectAnchor>;
+
 /** A structured target or evidence anchor for a review finding. */
 export const ReviewSubjectAnchor = z.discriminatedUnion('kind', [
   RepositoryLocationAnchor,
   ArtifactSectionAnchor,
   ContentSubjectAnchor,
+  ImplementationSubjectAnchor,
 ]);
 export type ReviewSubjectAnchor = z.infer<typeof ReviewSubjectAnchor>;
 

@@ -78,10 +78,10 @@ import { buildPendingReviewInstruction } from '../review/pending-instruction.js'
 import { resolveAttemptObservationCapability } from '../review/assurance.js';
 import { buildReviewerProofContext } from '../review/proof-context.js';
 import {
-  activateImplementationReviewObligation,
+  activateReviewObligationAndPersist,
+  materializeImplReviewContract,
   nextImplementationReviewIteration,
 } from './implement-shared.js';
-import { materializeApprovedPlanContractResult } from '../proofgraph/materialize-contract.js';
 import {
   attestExecutionSubject,
   reattestExecutionSubject,
@@ -324,6 +324,7 @@ async function persistAfterAttestation(params: {
       sessionId: params.sessionId,
       executionObservedStateDigest: params.executionObservedStateDigest,
       classificationReasonOverride: `VERIFICATION_SUBJECT_CHANGED: ${postAttestation.detail}`,
+      worktree: params.worktree,
     });
   }
 
@@ -341,6 +342,7 @@ async function persistAfterAttestation(params: {
     sessDir: params.sessDir,
     sessionId: params.sessionId,
     executionObservedStateDigest: params.executionObservedStateDigest,
+    worktree: params.worktree,
   });
 }
 
@@ -360,6 +362,7 @@ interface PersistCheckInput {
   sessionId: string;
   executionObservedStateDigest: string;
   classificationReasonOverride?: string;
+  worktree: string;
 }
 
 // The lock-retry callback keeps execution and persistence intentionally separated.
@@ -379,6 +382,7 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
     sessionId,
     executionObservedStateDigest,
     classificationReasonOverride,
+    worktree,
   } = input;
   const logger = getAdapterLogger();
   return withSessionWriteLockRetry(
@@ -413,29 +417,24 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
       const advanced = autoAdvance(nextState, (s) => evaluate(s, railCtx.policy), railCtx);
       if (advanced.kind === 'overflow') return formatAutoAdvanceOverflow(advanced);
 
-      const materialized =
-        advanced.state.phase === 'IMPL_REVIEW'
-          ? await materializeApprovedPlanContractResult(advanced.state, freshState.binding.worktree)
-          : null;
-      const stateWithMaterializedContract = materialized
-        ? {
-            ...advanced.state,
-            proofContract: materialized.contract,
-            proofContractCoverage: [...materialized.coverage],
-          }
-        : advanced.state;
-      const activated = await activateImplementationReviewObligation(
-        stateWithMaterializedContract,
-        {
-          subagentEnabled: freshPolicy.selfReview?.subagentEnabled ?? false,
-          iteration: nextImplementationReviewIteration(advanced.state),
-          planVersion: (advanced.state.plan?.history.length ?? 0) + 1,
-          now: railCtx.now(),
-          worktree: freshState.binding.worktree,
-        },
+      const stateWithMaterializedContract = await materializeImplReviewContract(
+        advanced.state,
+        freshState.binding.worktree,
       );
-      // The persisted state carries the REFRESHED ProofGraph derived from the
-      // freshly materialized contract (#762).
+      const activation = await activateReviewObligationAndPersist({
+        state: stateWithMaterializedContract,
+        preAdvanceState: nextState,
+        subagentEnabled: freshPolicy.selfReview?.subagentEnabled ?? false,
+        iteration: nextImplementationReviewIteration(advanced.state),
+        planVersion: (advanced.state.plan?.history.length ?? 0) + 1,
+        now: railCtx.now(),
+        worktree,
+        sessDir,
+        locked: true,
+        persistPreAdvance: true,
+      });
+      if ('response' in activation) return activation.response;
+      const { activated } = activation;
       const persisted = await writeStateWithArtifactsAlreadyLocked(sessDir, activated.state);
       logger.info('tool', 'check_persisted', {
         sessionId,

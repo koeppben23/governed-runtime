@@ -47,8 +47,6 @@ import {
 } from './types.js';
 import { blocked } from '../config/reasons.js';
 import { blockedFromOverflow } from './auto-advance-overflow.js';
-import { ensureImplementationBase } from './repository-authority.js';
-import { FrozenRepositoryError } from '../adapters/frozen-repository.js';
 
 // ─── Executor Interface ───────────────────────────────────────────────────────
 
@@ -145,32 +143,9 @@ export async function executeContinue(
   const advanced = autoAdvance(workState, evalFn, ctx);
   if (advanced.kind === 'overflow') return blockedFromOverflow(advanced);
 
-  // Freeze the pre-mutation implementation base whenever the machine lands in
-  // IMPLEMENTATION. Fails closed: without a frozen base the transition must
-  // not proceed.
-  if (advanced.state.phase === 'IMPLEMENTATION') {
-    try {
-      const withBase = await ensureImplementationBase(
-        advanced.state,
-        advanced.state.binding.worktree,
-      );
-      return {
-        kind: 'ok',
-        state: withBase,
-        evalResult: advanced.evalResult,
-        transitions: advanced.transitions,
-      };
-    } catch (err) {
-      if (err instanceof FrozenRepositoryError) {
-        return blocked('REVIEW_IMPLEMENTATION_BASE_FREEZE_FAILED', {
-          reason: err.message,
-          phase: advanced.state.phase,
-        });
-      }
-      throw err;
-    }
-  }
-
+  // The IMPLEMENTATION-entry invariant (frozen pre-mutation base) is enforced
+  // at the single persistence boundary by the adapter-layer transition
+  // finalizer — rails no longer duplicate that enforcement.
   return {
     kind: 'ok',
     state: advanced.state,

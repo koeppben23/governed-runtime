@@ -178,7 +178,7 @@ describe('P10c — reason code split', () => {
     }
   });
 
-  it('VALIDATION_REASONS has exactly 110 entries', async () => {
+  it('VALIDATION_REASONS has exactly 113 entries', async () => {
     const { VALIDATION_REASONS } = await import('./reasons-validation.js');
     expect(VALIDATION_REASONS.length).toBe(113);
     const allowed = new Set(['input', 'state', 'config', 'admissibility']);

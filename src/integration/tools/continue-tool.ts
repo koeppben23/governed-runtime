@@ -28,7 +28,7 @@ import type { SessionState } from '../../state/schema.js';
 import { bindExternalReviewEvidence } from '../review/transport-evidence.js';
 import { REVIEW_IDENTITY_REJECTION_FIELD } from '../../shared/flowguard-identifiers.js';
 
-const PHASE_GUIDANCE: Record<string, { status: string }> = {
+const PHASE_GUIDANCE: Record<string, { status: string | ((state: SessionState) => string) }> = {
   TICKET: {
     status: 'Ticket captured.',
   },
@@ -42,7 +42,7 @@ const PHASE_GUIDANCE: Record<string, { status: string }> = {
     status: 'Implementation phase active.',
   },
   IMPL_REVIEW: {
-    status: 'Implementation review is pending.',
+    status: implReviewContinueStatus,
   },
   ARCHITECTURE: {
     status: 'Architecture review is pending.',
@@ -54,6 +54,28 @@ const PHASE_GUIDANCE: Record<string, { status: string }> = {
     status: 'Workflow complete.',
   },
 };
+
+/**
+ * State-aware /continue status for IMPL_REVIEW: a blocked implementation
+ * review obligation must surface its blocker and the executable recovery
+ * instead of claiming a pending review the runtime itself refuses to run.
+ */
+function implReviewContinueStatus(state: SessionState): string {
+  const obligations = state.reviewAssurance?.obligations ?? [];
+  const implObligations = obligations.filter((o) => o.obligationType === 'implement');
+  const last = implObligations.at(-1);
+  if (last?.status !== 'blocked') return 'Implementation review is pending.';
+  if (implObligations.filter((o) => o.status === 'blocked').length >= 3) {
+    return (
+      'Implementation review orchestration failed permanently after repeated blocked ' +
+      'review obligations. Abort the session or start over with a new ticket.'
+    );
+  }
+  return (
+    `Implementation review obligation is blocked (${last.blockedCode ?? 'unknown'}). ` +
+    'Re-run /implement to re-record the implementation and mint a fresh review obligation.'
+  );
+}
 
 export const continue_cmd: ToolDefinition = {
   description:
@@ -81,7 +103,11 @@ export const continue_cmd: ToolDefinition = {
 
       // All other phases: lookup guidance
       const guidance = PHASE_GUIDANCE[phase];
-      if (guidance) return formatDeterministicGuidance(state, guidance);
+      if (guidance) {
+        const status =
+          typeof guidance.status === 'function' ? guidance.status(state) : guidance.status;
+        return formatDeterministicGuidance(state, { status });
+      }
 
       // Unknown phase — fail closed
       return formatBlocked('CONTINUE_UNKNOWN_PHASE', { phase });
@@ -141,7 +167,6 @@ function formatDeterministicGuidance(state: SessionState, guidance: { status: st
     state,
   );
 }
-
 function formatContinueResponse(value: Record<string, unknown>, state: SessionState): string {
   const response = JSON.parse(appendNextAction(JSON.stringify(value), state)) as Record<
     string,
