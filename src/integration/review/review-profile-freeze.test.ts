@@ -52,6 +52,7 @@ describe('review profile freeze (Wave 1 — #730)', () => {
     it('defaults to the mandatory core baseline when no profile is supplied', () => {
       const obligation = createReviewObligation({
         obligationType: 'plan',
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,
         now: NOW,

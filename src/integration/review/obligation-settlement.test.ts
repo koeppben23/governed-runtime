@@ -28,6 +28,7 @@ const LATER = '2026-01-01T00:01:00.000Z';
 function planObligation(): ReviewObligation {
   return createReviewObligation({
     obligationType: 'plan',
+    repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
     iteration: 0,
     planVersion: 1,
     now: NOW,

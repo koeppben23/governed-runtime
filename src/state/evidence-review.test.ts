@@ -395,12 +395,12 @@ describe('evidence-review', () => {
         reviewSubject: {
           kind: 'repository_change' as const,
           source: { kind: 'branch' as const, branch: 'feature/x', requestedBase: 'main' },
-          baseRepository: { kind: 'local' as const, rootCommitDigest: 'r'.repeat(64) },
-          headRepository: { kind: 'local' as const, rootCommitDigest: 'r'.repeat(64) },
+          baseRepository: { kind: 'local' as const, rootCommitDigest: 'a'.repeat(64) },
+          headRepository: { kind: 'local' as const, rootCommitDigest: 'a'.repeat(64) },
           baseSha: 'b'.repeat(40),
           headSha: 'a'.repeat(40),
           changedPaths: ['src/auth.ts'],
-          materialDigest: 'm'.repeat(64),
+          materialDigest: 'a'.repeat(64),
           subjectDigest: 'a'.repeat(64),
         },
       };
@@ -445,6 +445,10 @@ describe('evidence-review', () => {
           revisions: ['base', 'head'],
         },
         maxReviewerOutputRepairAttempts: 1,
+        repositoryEvidenceFreeze: {
+          kind: 'unavailable' as const,
+          reason: 'repository_unavailable' as const,
+        },
       };
       expect(ReviewObligation.parse(obligation)).toEqual(obligation);
     });
@@ -472,6 +476,10 @@ describe('evidence-review', () => {
       const { reviewSubject: _, ...legacy } = {
         ...repositoryReviewObligation(),
         obligationType: 'plan' as const,
+        repositoryEvidenceFreeze: {
+          kind: 'unavailable' as const,
+          reason: 'repository_unavailable' as const,
+        },
       };
       expect(ReviewObligation.safeParse(legacy).success).toBe(true);
 
@@ -514,6 +522,7 @@ describe('evidence-review', () => {
             objectSha: 'c'.repeat(40),
           },
         },
+        repositoryEvidenceFreeze: { kind: 'available' as const },
         ...overrides,
       };
     }
@@ -538,9 +547,50 @@ describe('evidence-review', () => {
       expect(ReviewObligation.safeParse(obligation).success).toBe(true);
     });
 
-    it('HAPPY: missing freeze record remains legal (legacy and non-context flows)', () => {
-      const { repositoryAuthority: _, ...withoutAuthority } = contextAuthorityPlanObligation();
-      expect(ReviewObligation.safeParse(withoutAuthority).success).toBe(true);
+    it('HAPPY: review obligations without a freeze record remain legal', () => {
+      expect(ReviewObligation.safeParse(repositoryReviewObligation()).success).toBe(true);
+    });
+
+    it('BAD: plan obligation without a freeze record is schema-rejected', () => {
+      const withoutRecord = {
+        ...contextAuthorityPlanObligation(),
+        repositoryEvidenceFreeze: undefined,
+      };
+      const result = ReviewObligation.safeParse(withoutRecord);
+      expect(result.success).toBe(false);
+      if (result.success) throw new TypeError('expected schema rejection');
+      expect(result.error.issues.map((issue) => issue.path.join('.'))).toContain(
+        'repositoryEvidenceFreeze',
+      );
+    });
+
+    it('BAD: architecture obligation without a freeze record is schema-rejected', () => {
+      const obligation = {
+        ...contextAuthorityPlanObligation({ obligationType: 'architecture' as const }),
+        repositoryEvidenceFreeze: undefined,
+      };
+      const result = ReviewObligation.safeParse(obligation);
+      expect(result.success).toBe(false);
+      if (result.success) throw new TypeError('expected schema rejection');
+      expect(result.error.issues.map((issue) => issue.path.join('.'))).toContain(
+        'repositoryEvidenceFreeze',
+      );
+    });
+
+    it('BAD: review obligations must not carry the record', () => {
+      const obligation = {
+        ...repositoryReviewObligation(),
+        repositoryEvidenceFreeze: {
+          kind: 'unavailable',
+          reason: 'repository_unavailable',
+        },
+      };
+      const result = ReviewObligation.safeParse(obligation);
+      expect(result.success).toBe(false);
+      if (result.success) throw new TypeError('expected schema rejection');
+      expect(result.error.issues.map((issue) => issue.path.join('.'))).toContain(
+        'repositoryEvidenceFreeze',
+      );
     });
 
     it('BAD: available freeze record without authority is schema-rejected', () => {
@@ -1040,6 +1090,10 @@ describe('evidence-review', () => {
         reviewProfile: 'core' as const,
         profileSource: 'policy_default' as const,
         maxReviewerOutputRepairAttempts: 1,
+        repositoryEvidenceFreeze: {
+          kind: 'unavailable' as const,
+          reason: 'repository_unavailable' as const,
+        },
       };
       expect(ReviewObligation.parse(obligation)).toEqual(obligation);
     });
@@ -1066,6 +1120,10 @@ describe('evidence-review', () => {
           revisions: ['base', 'head'],
         },
         maxReviewerOutputRepairAttempts: 1,
+        repositoryEvidenceFreeze: {
+          kind: 'unavailable' as const,
+          reason: 'repository_unavailable' as const,
+        },
       };
       const parsed = ReviewObligation.parse(legacy);
       expect(parsed.reviewProfile).toBeUndefined();

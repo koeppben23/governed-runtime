@@ -111,6 +111,7 @@ async function seedSession(
           {
             obligationId: OBLIGATION_ID,
             obligationType: 'plan',
+            repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
             iteration: 0,
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,

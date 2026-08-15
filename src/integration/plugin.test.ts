@@ -135,6 +135,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
           {
             obligationId,
             obligationType: 'plan',
+            repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
             subjectDigest: 'test-subject-digest',
             iteration: 0,
             planVersion: 1,

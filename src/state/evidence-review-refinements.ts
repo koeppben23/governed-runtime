@@ -141,21 +141,42 @@ export function refineAuthorityStructure(
 
 /**
  * Durable audit coherence: the persisted freeze outcome must agree with the
- * actual frozen repository authority.
+ * actual frozen repository authority — and plan/architecture obligations MUST
+ * carry the record (no third state, no legacy exception).
  *
+ *   obligationType ∈ {plan, architecture}
+ *     ⇒ repositoryEvidenceFreeze MUST exist
  *   freeze.kind === 'available'   ⇔ repositoryAuthority present
- *   freeze.kind === 'unavailable' ⇒ repositoryAuthority absent
+ *   freeze.kind === 'unavailable' ⇔ repositoryAuthority absent
  *
- * A missing freeze record is legal (legacy obligations, standalone /review,
- * implement flows). Anything else is a tampered or buggy persisted state and
- * must not survive schema validation.
+ * Review/implement obligations never run the context freeze and must not
+ * carry the record.
  */
 export function refineRepositoryEvidenceFreezeCoherence(
   obligation: ObligationRefinementShape,
   context: z.RefinementCtx,
 ): void {
   const freeze = obligation.repositoryEvidenceFreeze;
-  if (!freeze) return;
+  const contextFreezeObligation =
+    obligation.obligationType === 'plan' || obligation.obligationType === 'architecture';
+  if (!freeze) {
+    if (contextFreezeObligation) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['repositoryEvidenceFreeze'],
+        message: 'plan/architecture obligations require a repository evidence freeze outcome',
+      });
+    }
+    return;
+  }
+  if (!contextFreezeObligation) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['repositoryEvidenceFreeze'],
+      message: 'only plan/architecture obligations carry a repository evidence freeze outcome',
+    });
+    return;
+  }
   if (freeze.kind === 'available' && !obligation.repositoryAuthority) {
     context.addIssue({
       code: z.ZodIssueCode.custom,

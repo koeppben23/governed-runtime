@@ -37,6 +37,7 @@ function contextObligation(
 ): ReviewObligation {
   return createReviewObligation({
     obligationType: 'architecture',
+    repositoryEvidenceFreeze: { kind: 'available' },
     iteration: 0,
     planVersion: 1,
     now: NOW,
@@ -93,6 +94,7 @@ function standaloneRepositoryObligation(): ReviewObligation {
 function artifactOnlyObligation(): ReviewObligation {
   return createReviewObligation({
     obligationType: 'plan',
+    repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
     iteration: 0,
     planVersion: 1,
     now: NOW,
@@ -189,6 +191,7 @@ describe('authority-bound capability minting', () => {
       undefined,
       {
         obligationType: 'architecture',
+        repositoryEvidenceFreeze: { kind: 'available' },
         iteration: 0,
         planVersion: 1,
         now: NOW,
@@ -211,6 +214,7 @@ describe('authority-bound capability minting', () => {
       undefined,
       {
         obligationType: 'plan',
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,
         now: NOW,

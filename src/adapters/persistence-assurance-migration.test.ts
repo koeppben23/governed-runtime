@@ -39,6 +39,7 @@ describe('review-assurance shape-only read migrations', () => {
       undefined,
       {
         obligationType: 'plan',
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,
         now: '2026-08-13T10:00:00.000Z',
@@ -80,6 +81,7 @@ describe('review-assurance shape-only read migrations', () => {
       undefined,
       {
         obligationType: 'plan',
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,
         now: '2026-08-13T10:00:00.000Z',
@@ -135,6 +137,7 @@ describe('review-assurance shape-only read migrations', () => {
       undefined,
       {
         obligationType: 'plan',
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,
         now: '2026-08-13T10:00:00.000Z',
@@ -193,6 +196,7 @@ describe('review-assurance shape-only read migrations', () => {
   it('EDGE: writeState persists the v5 literal', async () => {
     const obligation = createReviewObligation({
       obligationType: 'plan',
+      repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
       iteration: 0,
       planVersion: 1,
       now: '2026-08-13T10:00:00.000Z',
@@ -205,6 +209,7 @@ describe('review-assurance shape-only read migrations', () => {
       undefined,
       {
         obligationType: 'plan',
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,
         now: '2026-08-13T10:00:00.000Z',

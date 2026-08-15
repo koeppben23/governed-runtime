@@ -207,6 +207,7 @@ describe('plan / architecture Mode-B review contract', () => {
         const obl = {
           ...createReviewObligation({
             obligationType: 'plan',
+            repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
             iteration: 0,
             planVersion: 1,
             now: NOW(),
@@ -256,6 +257,7 @@ describe('plan / architecture Mode-B review contract', () => {
         const obl = {
           ...createReviewObligation({
             obligationType: 'architecture',
+            repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
             iteration: 0,
             planVersion: 1,
             now: NOW(),

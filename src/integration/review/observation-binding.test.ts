@@ -76,6 +76,7 @@ function candidateObligation(
       base: { kind: 'commit', repositoryIdentity: UPSTREAM, objectSha: BASE_SHA },
       head: { kind: headKind, repositoryIdentity: FORK, objectSha: HEAD_SHA },
     },
+    ...(obligationType === 'plan' ? { repositoryEvidenceFreeze: { kind: 'available' } } : {}),
   });
 }
 

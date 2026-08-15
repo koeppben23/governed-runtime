@@ -117,6 +117,14 @@ function makeBlockedObligation(
     fulfilledAt: null,
     consumedAt: null,
     reviewSubjectScope: { kind: 'unavailable', reason: 'blocked obligation fixture' },
+    ...(obligationType === 'plan' || obligationType === 'architecture'
+      ? {
+          repositoryEvidenceFreeze: {
+            kind: 'unavailable',
+            reason: 'repository_unavailable',
+          },
+        }
+      : {}),
   };
 }
 
@@ -147,6 +155,14 @@ function makePendingObligation(
       paths: ['src/foo.ts'],
       revisions: ['base', 'head'],
     },
+    ...(obligationType === 'plan' || obligationType === 'architecture'
+      ? {
+          repositoryEvidenceFreeze: {
+            kind: 'unavailable',
+            reason: 'repository_unavailable',
+          },
+        }
+      : {}),
   };
 }
 
@@ -608,6 +624,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
 
       const pending = createReviewObligation({
         obligationType: 'architecture',
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,
         now: CREATED_AT,
@@ -666,6 +683,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
 
       const pending = createReviewObligation({
         obligationType: 'architecture',
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,
         now: CREATED_AT,
@@ -732,6 +750,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
 
       const pending = createReviewObligation({
         obligationType: 'architecture',
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,
         now: CREATED_AT,
@@ -841,6 +860,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
 
       const pending = createReviewObligation({
         obligationType: 'architecture',
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,
         now: CREATED_AT,
@@ -874,6 +894,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
 
       const pending = createReviewObligation({
         obligationType: 'architecture',
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,
         now: CREATED_AT,

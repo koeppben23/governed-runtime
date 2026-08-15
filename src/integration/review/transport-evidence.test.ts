@@ -53,6 +53,7 @@ describe('external review transport evidence binding', () => {
     await writeFile(join(sessDir, 'review-evidence', 'bad.json'), '{"not":"findings"}', 'utf-8');
     const obligation = createReviewObligation({
       obligationType: 'plan',
+      repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
       iteration: 0,
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
@@ -83,6 +84,7 @@ describe('external review transport evidence binding', () => {
     await mkdir(join(sessDir, 'review-evidence'));
     const obligation = createReviewObligation({
       obligationType: 'plan',
+      repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
       iteration: 0,
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
@@ -118,6 +120,7 @@ describe('external review transport evidence binding', () => {
     await mkdir(join(sessDir, 'review-evidence'));
     const obligation = createReviewObligation({
       obligationType: 'plan',
+      repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
       iteration: 0,
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
@@ -162,6 +165,7 @@ describe('external review transport evidence binding', () => {
     await mkdir(join(sessDir, 'review-evidence'));
     const obligation = createReviewObligation({
       obligationType: 'plan',
+      repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
       iteration: 0,
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
@@ -200,6 +204,7 @@ describe('external review transport evidence binding', () => {
     await mkdir(join(sessDir, 'review-evidence'));
     const obligation = createReviewObligation({
       obligationType: 'plan',
+      repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
       iteration: 0,
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',

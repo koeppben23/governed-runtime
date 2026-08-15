@@ -10,24 +10,40 @@
  *
  * @version v1
  */
-
 import type { FrozenRepositoryAuthority } from '../../state/evidence.js';
+import type { ReviewObligationType } from '../../state/evidence.js';
 import type { RepositoryEvidenceFreeze } from '../../state/evidence-review-freeze.js';
 
 /**
- * Invariant:
+ * Invariant (no third state, no legacy exception):
+ *   obligationType ∈ {plan, architecture} ⇒ the record MUST exist
  *   freeze.kind === 'available'   ⇔ repositoryAuthority present
  *   freeze.kind === 'unavailable' ⇒ repositoryAuthority absent
  *
- * A missing freeze record is legal (legacy obligations, standalone /review,
- * implement flows).
+ * Review/implement obligations never run the context freeze and must not
+ * carry the record.
  */
 export function assertRepositoryFreezeCoherence(input: {
+  obligationType: ReviewObligationType;
   repositoryAuthority?: FrozenRepositoryAuthority;
   repositoryEvidenceFreeze?: RepositoryEvidenceFreeze;
 }): void {
+  const contextFreezeObligation =
+    input.obligationType === 'plan' || input.obligationType === 'architecture';
   const freeze = input.repositoryEvidenceFreeze;
-  if (!freeze) return;
+  if (!contextFreezeObligation) {
+    if (freeze) {
+      throw new Error(
+        'FAIL_CLOSED: only plan/architecture obligations carry a repository evidence freeze record',
+      );
+    }
+    return;
+  }
+  if (!freeze) {
+    throw new Error(
+      'FAIL_CLOSED: plan/architecture obligations require a repository evidence freeze record',
+    );
+  }
   if (freeze.kind === 'available' && !input.repositoryAuthority) {
     throw new Error(
       'FAIL_CLOSED: an available repository freeze record requires a frozen repository authority',

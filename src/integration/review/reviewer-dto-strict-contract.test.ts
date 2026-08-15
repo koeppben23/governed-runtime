@@ -18,6 +18,7 @@ const NOW = '2026-01-01T00:00:00.000Z';
 function planObligation(): ReturnType<typeof createReviewObligation> {
   return createReviewObligation({
     obligationType: 'plan',
+    repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
     iteration: 1,
     planVersion: 1,
     now: NOW,

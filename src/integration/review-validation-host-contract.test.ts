@@ -385,6 +385,7 @@ describe('assurance lifecycle persistence across hosts', () => {
         const planState = makeState('PLAN', { ticket: TICKET, plan: PLAN_RECORD });
         const obligationP = createReviewObligation({
           obligationType: 'plan',
+          repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
           iteration: 0,
           planVersion: 1,
           now: NOW,
@@ -510,6 +511,7 @@ describe('assurance lifecycle persistence across hosts', () => {
         });
         const obligationA = createReviewObligation({
           obligationType: 'architecture',
+          repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
           iteration: 0,
           planVersion: 1,
           now: NOW,

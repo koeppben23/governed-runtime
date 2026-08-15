@@ -8,10 +8,12 @@
 import type { SessionState } from '../../state/schema.js';
 import type { PlanEvidence, ReviewFindings, ReviewObligation } from '../../state/evidence.js';
 import {
+  freezeContextAuthorityAtHead,
   freezeOutcomeRecord,
   frozenAuthorityOrUndefined,
   type RepositoryAuthorityFreezeResult,
 } from '../../rails/repository-authority.js';
+import { resolveAttemptDiscoveryOrBlock } from '../review/discovery-attempt-context.js';
 import type {
   PlanExecutionScope,
   PlanRevisionResult,
@@ -21,6 +23,7 @@ import type {
 import {
   formatEval,
   formatAutoAdvanceOverflow,
+  formatBlocked,
   appendNextAction,
   writeStateWithArtifacts,
 } from './helpers.js';
@@ -330,6 +333,67 @@ export async function persistNonConvergedPlanReview(
   if (resolvedTargetPaths && resolvedTargetPaths.length > 0) {
     metadata.targetPaths = resolvedTargetPaths;
   }
+  const mint = await mintPlanRevisionAttempt({
+    scope,
+    finalState,
+    revision,
+    iteration,
+    nextPlanVersion,
+    resolvedTargetPaths,
+    metadata,
+  });
+  if (mint.kind === 'blocked') return mint.message;
+  const attemptResult = mint.attemptResult;
+  const nextObligation = attemptResult?.obligation ?? null;
+  const stateToPersist = attemptResult
+    ? { ...finalState, reviewAssurance: attemptResult.assurance }
+    : finalState;
+  await writeStateWithArtifacts(scope.sessDir, stateToPersist);
+  return appendNextAction(
+    JSON.stringify(
+      nonConvergedPlanResponse(scope, finalState, transitions, revision, nextObligation),
+    ),
+    stateToPersist,
+  );
+}
+
+/**
+ * Mint the plan revision obligation with its first attempt. Plan revisions
+ * freeze their repository context exactly like the initial submission: the
+ * durable freeze record is MANDATORY for plan obligations, and a
+ * repository-governed attempt is born with its host-owned Discovery snapshot
+ * (persistence coherence).
+ */
+async function mintPlanRevisionAttempt(input: {
+  scope: PlanExecutionScope;
+  finalState: SessionState;
+  revision: PlanRevisionResult;
+  iteration: number;
+  nextPlanVersion: number;
+  resolvedTargetPaths: readonly string[];
+  metadata: Record<string, unknown>;
+}): Promise<
+  | { kind: 'ok'; attemptResult: ReturnType<typeof createObligationAndAttempt> | null }
+  | { kind: 'blocked'; message: string }
+> {
+  const { scope, finalState, revision, iteration, nextPlanVersion, resolvedTargetPaths, metadata } =
+    input;
+  const freeze = await freezeContextAuthorityAtHead(scope.wsDir);
+  const authority = frozenAuthorityOrUndefined(freeze);
+  const discovery = await resolveAttemptDiscoveryOrBlock({
+    state: finalState,
+    worktree: scope.wsDir,
+    repositoryGoverned: authority !== undefined,
+    now: scope.ctx.now(),
+  });
+  if (discovery.kind === 'blocked') {
+    return {
+      kind: 'blocked',
+      message: formatBlocked('REVIEWER_CONTEXT_UNAVAILABLE', {
+        reason: discovery.reason,
+      }),
+    };
+  }
   const attemptResult = scope.reviewPolicy.subagentEnabled
     ? createObligationAndAttempt(
         finalState.reviewAssurance,
@@ -362,21 +426,14 @@ export async function persistNonConvergedPlanReview(
           changedFiles: resolvedTargetPaths,
           claimedTaskClass: finalState.claimedTaskClass,
           metadata,
+          repositoryAuthority: authority,
+          repositoryEvidenceFreeze: freezeOutcomeRecord(freeze),
         },
         scope.ctx.now(),
+        discovery.context,
       )
     : null;
-  const nextObligation = attemptResult?.obligation ?? null;
-  const stateToPersist = attemptResult
-    ? { ...finalState, reviewAssurance: attemptResult.assurance }
-    : finalState;
-  await writeStateWithArtifacts(scope.sessDir, stateToPersist);
-  return appendNextAction(
-    JSON.stringify(
-      nonConvergedPlanResponse(scope, finalState, transitions, revision, nextObligation),
-    ),
-    stateToPersist,
-  );
+  return { kind: 'ok', attemptResult };
 }
 
 export function nonConvergedPlanResponse(

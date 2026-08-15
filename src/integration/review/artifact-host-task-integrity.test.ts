@@ -37,6 +37,7 @@ const ADR_DIGEST = 'adr-digest-D2';
 function architectureObligation(materialSubjectDigest: string): ReviewObligation {
   return createReviewObligation({
     obligationType: 'architecture',
+    repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
     iteration: 0,
     planVersion: 1,
     now: NOW,
@@ -232,6 +233,7 @@ describe('host-task observation contract wiring', () => {
   function contextAuthorityObligation(): ReviewObligation {
     return createReviewObligation({
       obligationType: 'architecture',
+      repositoryEvidenceFreeze: { kind: 'available' },
       iteration: 0,
       planVersion: 1,
       now: NOW,

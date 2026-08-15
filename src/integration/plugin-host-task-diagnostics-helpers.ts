@@ -132,6 +132,7 @@ export function pendingObligation(overrides: Partial<ReviewObligation> = {}): Re
         objectSha: 'a'.repeat(40),
       },
     },
+    repositoryEvidenceFreeze: { kind: 'available' },
   });
   return { ...base, ...overrides };
 }

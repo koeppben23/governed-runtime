@@ -67,6 +67,7 @@ describe('pending review instruction renderer', () => {
   it('states external agents are transport only and includes binding envelope', () => {
     const obligation = createReviewObligation({
       obligationType: 'plan',
+      repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
       iteration: 0,
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',

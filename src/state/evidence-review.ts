@@ -461,7 +461,7 @@ export const ReviewObligation = z
      * before the frozen-repository-authority generation.
      */
     repositoryAuthority: FrozenRepositoryAuthority.optional(),
-    /** Durable plan/architecture repository-context freeze outcome (see {@link RepositoryEvidenceFreeze}); continuations, restarts, re-emits, archives, and forensics render the exact degradation cause. */
+    /** Durable plan/architecture repository-context freeze outcome (see {@link RepositoryEvidenceFreeze}); plan/architecture obligations MUST carry it — continuations, restarts, re-emits, archives, and forensics render the exact degradation cause. */
     repositoryEvidenceFreeze: RepositoryEvidenceFreeze.optional(),
     maxReviewerOutputRepairAttempts: z.number().int().min(0).max(5),
   })
