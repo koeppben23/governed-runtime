@@ -415,3 +415,62 @@ describe('buildToolPrompt — implementation subject authority', () => {
     );
   });
 });
+
+it('fails closed when the orchestration context does not resolve an exact implement obligation', () => {
+  const params = implementPromptState({ implementationDigest: null });
+  params.sessionState = {
+    ...params.sessionState,
+    reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v5',
+      obligations: [],
+      invocations: [],
+      attempts: [],
+    },
+  };
+  expect(() => buildToolPrompt(params)).toThrowError(
+    expect.objectContaining({ code: 'REVIEW_MATERIAL_INTEGRITY_FAILED' }),
+  );
+});
+
+it('fails closed when the resolved obligation is not an implement obligation', () => {
+  const params = implementPromptState({ implementationDigest: null });
+  const wrongType = {
+    obligationId: 'ob-1',
+    obligationType: 'plan' as const,
+    iteration: 1,
+    planVersion: 1,
+    criteriaVersion: 'p41-v1',
+    mandateDigest: 'mandate-digest',
+    maxReviewerOutputRepairAttempts: 1,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    pluginHandshakeAt: null,
+    status: 'pending' as const,
+    invocationId: null,
+    blockedCode: null,
+    fulfilledAt: null,
+    consumedAt: null,
+    subjectDigest: 'subject-A',
+    reviewProfile: 'core' as const,
+    profileSource: 'policy_default' as const,
+    reviewSubjectScope: {
+      kind: 'artifact' as const,
+      artifact: {
+        kind: 'plan' as const,
+        digest: 'subject-A',
+        sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }]],
+      },
+    },
+  };
+  params.sessionState = {
+    ...params.sessionState,
+    reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v5',
+      obligations: [wrongType],
+      invocations: [],
+      attempts: [],
+    },
+  };
+  expect(() => buildToolPrompt(params)).toThrowError(
+    expect.objectContaining({ code: 'REVIEW_MATERIAL_INTEGRITY_FAILED' }),
+  );
+});

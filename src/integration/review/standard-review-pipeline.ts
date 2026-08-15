@@ -63,6 +63,25 @@ export async function runStandardReviewPipeline(
 
   const strictEnforcement = isStrictEnforcementEnabled(sessionState);
 
+  // Hard subject-authority gate: no exact obligation ⇒ no reviewer execution.
+  // A missing or type-mismatched obligation must never let the pipeline fall
+  // back to mutable implementation identity (the prompt derives its anchor
+  // contract from the obligation; without it there is no frozen subject).
+  const exactObligation = sessionState.reviewAssurance?.obligations.find(
+    (o) => o.obligationId === ctx.reviewCtx.obligationId,
+  );
+  if (!exactObligation || exactObligation.obligationType !== obligationType) {
+    output.output = strictBlockedOutput('REVIEW_MATERIAL_INTEGRITY_FAILED', {
+      reason: `review orchestration requires an exact ${obligationType} review obligation for ${ctx.reviewCtx.obligationId}`,
+    });
+    deps.log.warn('orchestrator', 'missing or mismatched review obligation — blocked', {
+      tool: toolName,
+      obligationId: ctx.reviewCtx.obligationId,
+      obligationType,
+    });
+    return;
+  }
+
   const assuranceResult = await recordObligationHandshake(ctx, obligationType, strictEnforcement);
 
   if (blockOnAuditFailure(ctx, assuranceResult)) return;
@@ -418,6 +437,12 @@ async function enforceStandardStrictGate(
   if (result === 'reused') {
     output.output = strictBlockedOutput('SUBAGENT_EVIDENCE_REUSED', {
       obligationId: reviewCtx.obligationId,
+    });
+    return true;
+  }
+  if (result === 'missing') {
+    output.output = strictBlockedOutput('REVIEW_MATERIAL_INTEGRITY_FAILED', {
+      reason: `no exact review obligation resolved for ${reviewCtx.obligationId}; evidence was not recorded`,
     });
     return true;
   }
