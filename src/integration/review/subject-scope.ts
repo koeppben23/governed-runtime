@@ -11,6 +11,11 @@
  */
 
 import type { ReviewSubjectScope } from '../../state/evidence-review.js';
+import type { TaskClass } from '../../state/schema.js';
+import { assessMinimumTaskClass, maxTaskClass } from '../phase-tool-gate.js';
+import { challengeKindForObligation } from '../../config/policy-types.js';
+import type { PolicySnapshot } from '../../state/evidence.js';
+import type { ReviewObligationType } from '../../state/evidence.js';
 
 export const defaultScope = (changedFiles: readonly string[] | undefined): ReviewSubjectScope =>
   changedFiles && changedFiles.length > 0
@@ -26,5 +31,33 @@ export function resolveSubjectScope(
   return {
     ...explicitScope,
     artifact: { ...explicitScope.artifact, digest: subjectDigest },
+  };
+}
+
+/**
+ * Frozen challenge coverage requirements: the fail-closed FLOOR derives from
+ * `max(computedFromChangedFiles, claimedTaskClass)` so a high-risk change
+ * cannot collapse the requirement to 0 by declaring doc-only target paths.
+ * Empty when no challenge policy is frozen on the obligation.
+ */
+export function resolveChallengeRequirements(
+  challengePolicy: Pick<PolicySnapshot, 'challengePolicy'>['challengePolicy'],
+  input: {
+    obligationType: ReviewObligationType;
+    changedFiles?: readonly string[];
+    claimedTaskClass?: TaskClass;
+  },
+): Record<string, unknown> {
+  if (!challengePolicy) return {};
+  return {
+    requiredChallengeCount:
+      challengePolicy.counts[
+        maxTaskClass(
+          assessMinimumTaskClass(input.changedFiles ?? []).minimumTaskClass,
+          input.claimedTaskClass ?? 'TRIVIAL',
+        )
+      ],
+    requiredChallengeKind: challengeKindForObligation(input.obligationType),
+    challengePolicyVersion: challengePolicy.version,
   };
 }

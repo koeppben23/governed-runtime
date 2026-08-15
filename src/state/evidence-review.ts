@@ -66,6 +66,7 @@ import {
   refineCurrentGenerationMaterial,
   refineAssuranceProvenanceCoherence,
   refineAuthorityStructure,
+  refineRepositoryEvidenceFreezeCoherence,
   refineReviewMaterialSubject,
   refineStandaloneSubject,
 } from './evidence-review-refinements.js';
@@ -467,7 +468,8 @@ export const ReviewObligation = z
   .superRefine(refineStandaloneSubject)
   .superRefine(refineReviewMaterialSubject)
   .superRefine(refineCurrentGenerationMaterial)
-  .superRefine(refineAuthorityStructure);
+  .superRefine(refineAuthorityStructure)
+  .superRefine(refineRepositoryEvidenceFreezeCoherence);
 export type ReviewObligation = z.infer<typeof ReviewObligation>;
 
 const Sha256Digest = z.string().regex(/^[a-f0-9]{64}$/);

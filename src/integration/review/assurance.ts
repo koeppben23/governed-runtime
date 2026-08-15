@@ -29,20 +29,17 @@ import { hashCanonicalReviewContent, normalizeReviewContent } from '../../shared
 import { deriveRepositoryRevisionProvenance } from '../../state/evidence.js';
 import { indexMarkdownSections } from '../../shared/markdown-sections.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
-import { assessMinimumTaskClass, maxTaskClass } from '../phase-tool-gate.js';
-import {
-  challengeKindForObligation,
-  DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS,
-} from '../../config/policy-types.js';
+import { DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS } from '../../config/policy-types.js';
 import type { TaskClass } from '../../state/schema.js';
 import type { ReviewSubjectScope } from '../../state/evidence-review.js';
 import type { RepositoryEvidenceFreeze } from '../../state/evidence-review-freeze.js';
+import { assertRepositoryFreezeCoherence } from './freeze-coherence.js';
 // Static import - mandate content is a constant in ESM
 import { REVIEWER_AGENT } from '../../templates/mandates.js';
 export const REVIEW_CRITERIA_VERSION = 'p41-v1';
 // Mandate digest - computed from actual REVIEWER_AGENT template at module load
 export const REVIEW_MANDATE_DIGEST = hashText(REVIEWER_AGENT);
-import { resolveSubjectScope } from './subject-scope.js';
+import { resolveSubjectScope, resolveChallengeRequirements } from './subject-scope.js';
 
 function resolveSubjectDigest(input: {
   subjectDigest: string;
@@ -214,6 +211,7 @@ export function createReviewObligation(input: {
   fingerprintVersion?: 'v1' | 'v2';
 }): ReviewObligation {
   assertSubjectDigest(input.subjectDigest);
+  assertRepositoryFreezeCoherence(input);
   requireArtifactSubjectScope(input.obligationType, input.reviewSubjectScope);
   const challengePolicy = input.policySnapshot?.challengePolicy;
   const subjectDigest = resolveSubjectDigest(input);
@@ -222,19 +220,6 @@ export function createReviewObligation(input: {
     input.reviewSubjectScope,
     input.changedFiles,
   );
-  const requirements = challengePolicy
-    ? {
-        requiredChallengeCount:
-          challengePolicy.counts[
-            maxTaskClass(
-              assessMinimumTaskClass(input.changedFiles ?? []).minimumTaskClass,
-              input.claimedTaskClass ?? 'TRIVIAL',
-            )
-          ],
-        requiredChallengeKind: challengeKindForObligation(input.obligationType),
-        challengePolicyVersion: challengePolicy.version,
-      }
-    : {};
   return {
     obligationId: randomUUID(),
     obligationType: input.obligationType,
@@ -253,7 +238,7 @@ export function createReviewObligation(input: {
     // supplied. The profile is fixed here, before the reviewer is invoked.
     reviewProfile: input.reviewProfile ?? 'core',
     profileSource: input.profileSource ?? 'policy_default',
-    ...requirements,
+    ...resolveChallengeRequirements(challengePolicy, input),
     subjectDigest,
     ...(input.reviewMaterial ? { reviewMaterial: input.reviewMaterial } : {}),
     reviewSubject: input.reviewSubject,

@@ -45,6 +45,10 @@ export interface ObligationRefinementShape {
     readonly subjectDigest: string;
   } | null;
   readonly repositoryAuthority?: FrozenRepositoryAuthority;
+  readonly repositoryEvidenceFreeze?: {
+    readonly kind: 'available' | 'unavailable';
+    readonly reason?: string;
+  } | null;
   readonly repositoryRevisionProvenance?: ProvenanceValue;
 }
 
@@ -131,6 +135,42 @@ export function refineAuthorityStructure(
       code: z.ZodIssueCode.custom,
       path: ['repositoryAuthority'],
       message: `Invalid frozen repository authority: ${structural}`,
+    });
+  }
+}
+
+/**
+ * Durable audit coherence: the persisted freeze outcome must agree with the
+ * actual frozen repository authority.
+ *
+ *   freeze.kind === 'available'   ⇔ repositoryAuthority present
+ *   freeze.kind === 'unavailable' ⇒ repositoryAuthority absent
+ *
+ * A missing freeze record is legal (legacy obligations, standalone /review,
+ * implement flows). Anything else is a tampered or buggy persisted state and
+ * must not survive schema validation.
+ */
+export function refineRepositoryEvidenceFreezeCoherence(
+  obligation: ObligationRefinementShape,
+  context: z.RefinementCtx,
+): void {
+  const freeze = obligation.repositoryEvidenceFreeze;
+  if (!freeze) return;
+  if (freeze.kind === 'available' && !obligation.repositoryAuthority) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['repositoryEvidenceFreeze'],
+      message:
+        'repositoryEvidenceFreeze claims an available repository freeze but the obligation carries no frozen repository authority',
+    });
+    return;
+  }
+  if (freeze.kind === 'unavailable' && obligation.repositoryAuthority) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['repositoryEvidenceFreeze'],
+      message:
+        'repositoryEvidenceFreeze records an unavailable repository freeze but the obligation carries a frozen repository authority',
     });
   }
 }
