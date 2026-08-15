@@ -423,7 +423,7 @@ async function persistAndFormatConvergedReview(input: ReviewResultContext): Prom
     next: formatEval(advanced.evalResult),
     _audit: { transitions: advanced.transitions },
   };
-  attachLatestReview(resp, review.effectiveFindings, review.expectedPlanVersion, iteration);
+  attachLatestReview(resp, review, iteration);
   await attachReviewCard({
     resp,
     reviewFindings: review.effectiveFindings,
@@ -432,26 +432,58 @@ async function persistAndFormatConvergedReview(input: ReviewResultContext): Prom
     finalState: advanced.state,
     iteration,
     reviewCompletion: completion,
+    reviewedIdentity: resolveArchReviewedIdentity(review),
   });
   return appendNextAction(JSON.stringify(resp), advanced.state);
 }
 
+/**
+ * Direct producer identity for the architecture Mode-B response: the
+ * pending obligation was resolved BEFORE the verdict was applied and the
+ * effective findings were bound against exactly that obligation. An
+ * attestation contradicting it is an inconsistency that must never be
+ * projected as reviewed identity.
+ */
+function resolveArchReviewedIdentity(review: ResolvedReview): {
+  reviewedDigest?: string;
+  reviewedObligationId?: string;
+} {
+  const pending = review.pendingObligation;
+  const findings = review.effectiveFindings;
+  if (!pending || !findings) return {};
+  const attestationId = findings.attestation?.toolObligationId;
+  if (attestationId && attestationId !== pending.obligationId) {
+    getAdapterLogger().warn('review', 'arch_reviewed_identity_attestation_mismatch', {
+      obligationId: pending.obligationId,
+      attestationObligationId: attestationId,
+    });
+    return {};
+  }
+  return {
+    reviewedDigest: pending.subjectDigest,
+    reviewedObligationId: pending.obligationId,
+  };
+}
+
 function attachLatestReview(
   resp: Record<string, unknown>,
-  reviewFindings: ReviewFindings | undefined,
-  expectedPlanVersion: number,
+  review: ResolvedReview,
   hostIteration: number,
 ): void {
+  const reviewFindings = review.effectiveFindings;
   if (!reviewFindings) return;
   resp.latestReview = {
     iteration: hostIteration,
-    planVersion: expectedPlanVersion,
+    planVersion: review.expectedPlanVersion,
     overallVerdict: reviewFindings.overallVerdict,
     blockingIssueCount: reviewFindings.blockingIssues.length,
     majorRiskCount: reviewFindings.majorRisks.length,
     missingVerificationCount: reviewFindings.missingVerification.length,
     reviewMode: reviewFindings.reviewMode,
     reviewedAt: reviewFindings.reviewedAt,
+    reviewerIteration: reviewFindings.iteration,
+    reviewedPlanVersion: reviewFindings.planVersion,
+    ...resolveArchReviewedIdentity(review),
   };
 }
 
@@ -463,6 +495,7 @@ async function attachReviewCard(input: {
   finalState: SessionState;
   iteration: number;
   reviewCompletion: ArchitectureReviewCompletion | undefined;
+  reviewedIdentity: { reviewedDigest?: string; reviewedObligationId?: string };
 }): Promise<void> {
   const { resp, reviewFindings, session, revision, finalState, iteration } = input;
   const nextAction = resolveNextAction(finalState.phase, finalState);
@@ -486,6 +519,8 @@ async function attachReviewCard(input: {
     isApproved: finalState.architecture?.status === 'accepted',
     reviewCompletion: input.reviewCompletion,
     proofSummary: projectArchitectureProofStatus(finalState),
+    reviewedDigest: input.reviewedIdentity.reviewedDigest,
+    reviewedObligationId: input.reviewedIdentity.reviewedObligationId,
   };
   // Cards and artifacts are canonical Unicode; only host-visible Markdown uses preferences.
   resp.reviewCard = buildArchitectureReviewCard(reviewCardInput);

@@ -50,6 +50,10 @@ import { buildFrozenReviewMaterialContent } from '../review/reviewer-context.js'
 import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
 import { resolveAttemptObservationCapability } from '../review/assurance.js';
 import { repositoryEvidenceUnavailableField } from '../review/observation-access.js';
+import {
+  resolveReviewedArtifactIdentity,
+  reviewedIdentityFields,
+} from '../review/reviewed-digest.js';
 import { buildReviewerProofContext } from '../review/proof-context.js';
 import { buildHeuristicRiskWarning } from '../proofgraph/claim-contract.js';
 import { assessMinimumTaskClass } from '../phase-tool-gate.js';
@@ -174,7 +178,12 @@ export function buildPlanSubmissionResponse(
   };
   const riskWarning = planRiskWarning(scope);
   if (riskWarning) response.proofGraphRiskWarning = riskWarning;
-  if (reviewFindings) response.latestReview = latestPlanReviewSummary(reviewFindings, planVersion);
+  if (reviewFindings)
+    response.latestReview = latestPlanReviewSummary(
+      finalState.reviewAssurance,
+      reviewFindings,
+      planVersion,
+    );
   return response;
 }
 
@@ -222,6 +231,7 @@ export function buildPlanReviewInstruction(input: {
 }
 
 export function latestPlanReviewSummary(
+  assurance: SessionState['reviewAssurance'],
   reviewFindings: ReviewFindings,
   planVersion: number,
 ): Record<string, unknown> {
@@ -234,6 +244,7 @@ export function latestPlanReviewSummary(
     missingVerificationCount: reviewFindings.missingVerification.length,
     reviewMode: reviewFindings.reviewMode,
     reviewedAt: reviewFindings.reviewedAt,
+    ...reviewedIdentityFields(resolveReviewedArtifactIdentity(assurance, 'plan', reviewFindings)),
   };
 }
 
@@ -257,6 +268,11 @@ export async function convergedPlanReviewCardResponse(
   const { scope, finalState, ev, transitions, revision, iteration, forcedConvergence } = input;
   const nextAction = resolveNextAction(finalState.phase, finalState);
   const productNext = buildProductNextAction(nextAction, finalState.phase);
+  const reviewedIdentity = resolveReviewedArtifactIdentity(
+    finalState.reviewAssurance,
+    'plan',
+    finalState.plan?.reviewFindings?.at(-1),
+  );
   const reviewCardInput = {
     planText: revision.currentPlan.body,
     phase: finalState.phase,
@@ -267,6 +283,9 @@ export async function convergedPlanReviewCardResponse(
     taskTitle: firstLine(finalState.ticket?.text),
     forcedConvergence,
     proofSummary: projectPlanProofStatus(finalState),
+    currentPlanDigest: revision.currentPlan.digest,
+    reviewedDigest: reviewedIdentity?.reviewedDigest,
+    reviewedObligationId: reviewedIdentity?.reviewedObligationId,
   };
   // Cards and artifacts are canonical Unicode; only host-visible Markdown uses preferences.
   const reviewCard = buildPlanReviewCard(reviewCardInput);

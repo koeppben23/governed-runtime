@@ -29,7 +29,11 @@ import { makeState, POLICY_SNAPSHOT, PLAN_RECORD, TICKET } from '../fixtures.js'
 import { runReviewOrchestration } from './plugin-orchestrator.js';
 import type { OrchestratorDeps, ToolCallEvent } from './plugin-orchestrator.js';
 import { createTestAdapter } from './test-adapter-helper.js';
-import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
+import {
+  TOOL_FLOWGUARD_ARCHITECTURE,
+  TOOL_FLOWGUARD_PLAN,
+  TOOL_FLOWGUARD_REVIEW,
+} from './tool-names.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import { buildFrozenReviewMaterialContent } from './review/reviewer-context.js';
 import type { SessionState } from '../state/schema.js';
@@ -296,9 +300,18 @@ describe('reviewer artifact context reaches the delivered prompt', () => {
     },
   );
 
+  it('renders an explicit marker instead of a JSON null when no ticket was recorded', async () => {
+    const prompt = await deliveredReviewerPrompt(
+      buildState('architecture', { ticket: null }),
+      TOOL_FLOWGUARD_ARCHITECTURE,
+    );
+    expect(prompt).toContain('## Ticket Under Review (originating request)');
+    expect(prompt).toContain('No ticket recorded for this session.');
+    expect(prompt).not.toContain('null');
+  });
+
   it('standalone review embeds its obligation material', async () => {
     const prompt = await deliveredReviewerPrompt(buildState('review'), TOOL_FLOWGUARD_REVIEW);
-
     expect(prompt).toContain(REVIEW_MATERIAL);
   });
 });

@@ -49,6 +49,12 @@ export interface PlanReviewCardInput {
   forcedConvergence?: boolean;
   /** Compact ProofGraph summary for the review card (pre-approval declarations). */
   proofSummary: CompactProofPresentation;
+  /** Digest of the plan revision currently at the gate. */
+  currentPlanDigest?: string;
+  /** Digest of the plan revision these findings were bound to. */
+  reviewedDigest?: string;
+  /** Obligation that produced these findings. */
+  reviewedObligationId?: string;
 }
 
 // ─── Action Descriptions ───────────────────────────────────────────────────────
@@ -119,6 +125,39 @@ export function buildPlanReviewDocument(input: PlanReviewCardInput): ReviewCardD
       ],
       details: [],
     });
+  }
+
+  // ── Prior-revision provenance mismatch ─────────────────────────────
+  if (
+    input.reviewedDigest &&
+    input.currentPlanDigest &&
+    input.reviewedDigest !== input.currentPlanDigest
+  ) {
+    sections.push({
+      kind: 'notice',
+      level: 'warning',
+      message: 'These reviewer findings apply to a prior plan revision.',
+      additionalMessages: [
+        `Reviewed digest: \`${input.reviewedDigest}\``,
+        `Current digest:  \`${input.currentPlanDigest}\``,
+        'The current revision was submitted after the final independent review ' +
+          'and has not itself been independently reviewed.',
+      ],
+      details: [],
+    });
+  }
+
+  // ── Review provenance details ─────────────────────────────────────
+  if (input.reviewedDigest) {
+    const provenance: KeyValueItem[] = [];
+    provenance.push({ label: 'Reviewed plan digest', value: `\`${input.reviewedDigest}\`` });
+    if (input.reviewedObligationId) {
+      provenance.push({
+        label: 'Reviewed obligation',
+        value: `\`${input.reviewedObligationId}\``,
+      });
+    }
+    sections.push({ kind: 'keyValue', heading: 'Review Provenance', items: provenance });
   }
 
   // ── Proof obligations (pre-approval) ───────────────────────────────

@@ -25,7 +25,7 @@ import {
 } from './helpers.js';
 
 import type { SessionState } from '../../state/schema.js';
-import type { ReviewFindings } from '../../state/evidence.js';
+import { latestReviewSummary } from './status-summary.js';
 import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval.js';
 import {
   computeProviderCapabilities,
@@ -301,25 +301,6 @@ async function resolveProjection(input: ResolveProjectionInput): Promise<string 
 
 // ─── Full status builder ──────────────────────────────────────────────────────
 
-function latestReviewSummary(
-  findings: ReadonlyArray<ReviewFindings> | null | undefined,
-  opts: { includePlanVersion: boolean; hostIteration?: number },
-): Record<string, unknown> | null {
-  if (!findings || findings.length === 0) return null;
-  const latest = findings.at(-1);
-  if (!latest) return null;
-  return {
-    iteration: opts.hostIteration ?? latest.iteration,
-    ...(opts.includePlanVersion ? { planVersion: latest.planVersion } : {}),
-    overallVerdict: latest.overallVerdict,
-    blockingIssueCount: latest.blockingIssues.length,
-    majorRiskCount: latest.majorRisks.length,
-    missingVerificationCount: latest.missingVerification.length,
-    reviewMode: latest.reviewMode,
-    reviewedAt: latest.reviewedAt,
-  };
-}
-
 function selfReviewConverged(state: SessionState): boolean | null {
   if (!state.selfReview) return null;
   return (
@@ -527,6 +508,8 @@ function buildEvidenceStatus(state: SessionState): Record<string, unknown> {
     selfReviewConverged: selfReviewConverged(state),
     latestReview: latestReviewSummary(state.plan?.reviewFindings ?? null, {
       includePlanVersion: true,
+      assurance: state.reviewAssurance,
+      obligationType: 'plan',
     }),
     validationResults: state.validation.map((v) => ({
       checkId: v.checkId,
@@ -548,10 +531,14 @@ function buildImplementationStatus(state: SessionState): Record<string, unknown>
     implReviewConverged: implReviewConverged(state),
     latestImplementationReview: latestReviewSummary(state.implReviewFindings ?? null, {
       includePlanVersion: false,
+      assurance: state.reviewAssurance,
+      obligationType: 'implement',
     }),
     latestArchitectureReview: latestReviewSummary(state.architecture?.reviewFindings ?? null, {
       includePlanVersion: true,
       hostIteration: state.selfReview?.iteration,
+      assurance: state.reviewAssurance,
+      obligationType: 'architecture',
     }),
     architectureReviewCompletion: state.architecture?.reviewCompletion ?? null,
     hasReviewDecision: state.reviewDecision !== null,

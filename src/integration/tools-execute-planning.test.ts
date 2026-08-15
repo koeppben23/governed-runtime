@@ -18,6 +18,7 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import type { ReviewFindings } from '../state/evidence.js';
 import {
   createToolContext,
   createTestWorkspace,
@@ -677,6 +678,26 @@ describe('plan', () => {
       expect(state!.reviewDecision).toBeNull();
     });
 
+    it('TEAM: force-converged card binds reviewer findings to the prior plan revision (F1)', async () => {
+      await hydrateSession({ policyMode: 'team' });
+      await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
+
+      const result = await exhaustPlanReviews(3);
+      expect(result.phase).toBe('PLAN_REVIEW');
+
+      const state = await readState(await currentSessionDir());
+      const reviewed = state!.reviewAssurance!.obligations.find(
+        (o) => o.obligationType === 'plan' && o.iteration === 2 && o.planVersion === 3,
+      );
+      expect(reviewed).toBeDefined();
+
+      const card = String(result.reviewCard);
+      expect(card).toContain('⚠ These reviewer findings apply to a prior plan revision.');
+      expect(card).toContain(`Reviewed digest: \`${reviewed!.subjectDigest}\``);
+      expect(card).toContain(`Current digest:  \`${state!.plan!.current.digest}\``);
+      expect(reviewed!.subjectDigest).not.toBe(state!.plan!.current.digest);
+    });
+
     it('TEAM: human approve advances the force-converged plan to VALIDATION', async () => {
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
@@ -1132,6 +1153,127 @@ describe('plan', () => {
       // code so a future validation reorder doesn't break this contract pin.
       expect(typeof result.code).toBe('string');
       expect(String(result.code).length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('latestPlanReviewSummary provenance (F1 wiring)', () => {
+    const NOW = '2026-01-01T00:00:00.000Z';
+
+    async function dependencies() {
+      const assuranceMod = await import('./review/assurance.js');
+      const findingsHashMod = await import('./review/findings-hash.js');
+      const planResponseMod = await import('./tools/plan-response.js');
+      return {
+        artifactReviewSubjectScope: assuranceMod.artifactReviewSubjectScope,
+        buildInvocationEvidence: assuranceMod.buildInvocationEvidence,
+        createReviewObligation: assuranceMod.createReviewObligation,
+        REVIEW_CRITERIA_VERSION: assuranceMod.REVIEW_CRITERIA_VERSION,
+        REVIEW_MANDATE_DIGEST: assuranceMod.REVIEW_MANDATE_DIGEST,
+        hashFindings: findingsHashMod.hashFindings,
+        latestPlanReviewSummary: planResponseMod.latestPlanReviewSummary,
+      };
+    }
+
+    type Dependencies = Awaited<ReturnType<typeof dependencies>>;
+
+    function producerObligation(deps: Dependencies, subjectDigest: string) {
+      return deps.createReviewObligation({
+        obligationType: 'plan',
+        iteration: 0,
+        planVersion: 1,
+        now: NOW,
+        subjectDigest,
+        reviewSubjectScope: deps.artifactReviewSubjectScope(
+          'plan',
+          '## Approach\nBody',
+          subjectDigest,
+        ),
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+      });
+    }
+
+    function findingsFor(
+      deps: Dependencies,
+      obligation: ReturnType<Dependencies['createReviewObligation']>,
+    ) {
+      return {
+        iteration: 0,
+        planVersion: 1,
+        reviewMode: 'subagent',
+        overallVerdict: 'changes_requested',
+        blockingIssues: [],
+        majorRisks: [],
+        missingVerification: [],
+        scopeCreep: [],
+        unknowns: [],
+        reviewedBy: { sessionId: 'ses-child' },
+        reviewedAt: NOW,
+        attestation: {
+          mandateDigest: deps.REVIEW_MANDATE_DIGEST,
+          criteriaVersion: deps.REVIEW_CRITERIA_VERSION,
+          toolObligationId: obligation.obligationId,
+          iteration: 0,
+          planVersion: 1,
+          reviewedBy: 'flowguard-reviewer',
+        },
+      } as ReviewFindings;
+    }
+
+    function invocationFor(
+      deps: Dependencies,
+      obligation: ReturnType<Dependencies['createReviewObligation']>,
+      findings: ReviewFindings,
+      consumedBy: string | null = null,
+    ) {
+      return {
+        ...deps.buildInvocationEvidence({
+          obligationId: obligation.obligationId,
+          obligationType: 'plan',
+          mandateDigest: deps.REVIEW_MANDATE_DIGEST,
+          criteriaVersion: deps.REVIEW_CRITERIA_VERSION,
+          parentSessionId: 'ses-parent',
+          childSessionId: 'ses-child',
+          invocationMode: 'host_subagent_task',
+          hostVisible: true,
+          promptHash: 'sha256-prompt',
+          findingsHash: deps.hashFindings(findings),
+          invokedAt: NOW,
+          source: 'host-orchestrated',
+        }),
+        consumedByObligationId: consumedBy,
+      };
+    }
+
+    it('projects the producer identity for evidence-bound findings (incl. own consumption)', async () => {
+      const deps = await dependencies();
+      const obligation = producerObligation(deps, 'plan-digest-reviewed');
+      const findings = findingsFor(deps, obligation);
+      const assuranceState = {
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        obligations: [obligation],
+        invocations: [invocationFor(deps, obligation, findings, obligation.obligationId)],
+        attempts: [],
+      };
+      const summary = deps.latestPlanReviewSummary(assuranceState, findings, 1);
+      expect(summary.reviewedDigest).toBe('plan-digest-reviewed');
+      expect(summary.reviewedObligationId).toBe(obligation.obligationId);
+      expect(summary.reviewerIteration).toBe(0);
+      expect(summary.reviewedPlanVersion).toBe(1);
+    });
+
+    it('omits the identity when the attested obligation has no evidence binding (unsafe nextObligation case)', async () => {
+      const deps = await dependencies();
+      const obligation = producerObligation(deps, 'plan-digest-unbound');
+      const findings = findingsFor(deps, obligation);
+      const assuranceState = {
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        obligations: [obligation],
+        invocations: [],
+        attempts: [],
+      };
+      const summary = deps.latestPlanReviewSummary(assuranceState, findings, 1);
+      expect(summary.reviewedDigest).toBeUndefined();
+      expect(summary.reviewedObligationId).toBeUndefined();
     });
   });
 
