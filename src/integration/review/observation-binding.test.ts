@@ -23,6 +23,7 @@ import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './assurance.js';
+import { mintObservationCapability } from './attempt-lifecycle.js';
 import { buildHostTaskEvidence } from './evidence-binding.js';
 import { validateReviewFindings } from '../tools/review-validation.js';
 import {
@@ -113,6 +114,7 @@ function attemptFor(obligation: ReviewObligation, sessionId: string): ReviewAtte
     childSessionId: sessionId,
     origin: { kind: 'initial' },
     repositoryDiscovery: { kind: 'repository', snapshot: snapshot() },
+    observationCapability: mintObservationCapability(),
     now: NOW_ISO,
   });
 }

@@ -41,22 +41,7 @@ import { REVIEWER_AGENT } from '../../templates/mandates.js';
 export const REVIEW_CRITERIA_VERSION = 'p41-v1';
 // Mandate digest - computed from actual REVIEWER_AGENT template at module load
 export const REVIEW_MANDATE_DIGEST = hashText(REVIEWER_AGENT);
-const defaultScope = (changedFiles: readonly string[] | undefined): ReviewSubjectScope =>
-  changedFiles && changedFiles.length > 0
-    ? { kind: 'repository_change', paths: [...changedFiles], revisions: ['head'] }
-    : { kind: 'unavailable', reason: 'scope_not_resolved' };
-
-function resolveSubjectScope(
-  subjectDigest: string,
-  explicitScope: ReviewSubjectScope | undefined,
-  changedFiles: readonly string[] | undefined,
-): ReviewSubjectScope {
-  if (explicitScope?.kind !== 'artifact') return explicitScope ?? defaultScope(changedFiles);
-  return {
-    ...explicitScope,
-    artifact: { ...explicitScope.artifact, digest: subjectDigest },
-  };
-}
+import { resolveSubjectScope } from './subject-scope.js';
 
 function resolveSubjectDigest(input: {
   subjectDigest: string;
@@ -112,6 +97,7 @@ import {
   createReviewAttempt,
   appendReviewAttempt,
   staleObligationAttempts,
+  mintObservationCapabilityIfResolvable,
 } from './attempt-lifecycle.js';
 
 export function getReviewMandateDigest(): string {
@@ -528,6 +514,7 @@ export function createObligationAndAttempt(
     ordinal,
     origin: { kind: 'initial' },
     repositoryDiscovery,
+    observationCapability: mintObservationCapabilityIfResolvable(obligation),
     now,
   });
   const withObligation = appendReviewObligation(assurance, obligation);
@@ -567,6 +554,7 @@ export function appendObligationWithAttempt(
     ordinal,
     origin: { kind: 'initial' },
     repositoryDiscovery,
+    observationCapability: mintObservationCapabilityIfResolvable(obligation),
     now,
   });
   const withObligation = { ...base, obligations: [...base.obligations, obligation] };

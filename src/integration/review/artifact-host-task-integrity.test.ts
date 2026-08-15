@@ -227,3 +227,86 @@ describe('artifact-scoped initial host-task integrity', () => {
     expect(text).toContain('evidenceLocations only');
   });
 });
+
+describe('host-task observation contract wiring', () => {
+  function contextAuthorityObligation(): ReviewObligation {
+    return createReviewObligation({
+      obligationType: 'architecture',
+      iteration: 0,
+      planVersion: 1,
+      now: NOW,
+      subjectDigest: ADR_DIGEST,
+      reviewMaterial: freezeReviewMaterial(
+        `## Ticket Under Review (originating request)\n\nnull\n\n## Architecture Decision Artifact\n\n${ADR_TEXT}\n`,
+        ADR_DIGEST,
+      ),
+      reviewSubjectScope: artifactReviewSubjectScope('adr', ADR_TEXT, ADR_DIGEST),
+      changedFiles: ['src/foo.ts'],
+      policySnapshot: {
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
+        maxReviewerOutputRepairAttempts: 1,
+      },
+      repositoryAuthority: {
+        kind: 'context',
+        context: {
+          kind: 'commit',
+          repositoryIdentity: { kind: 'local', rootCommitDigest: 'sha256:' + 'b'.repeat(64) },
+          objectSha: 'c'.repeat(40),
+        },
+      },
+    });
+  }
+
+  async function dispatch(obligation: ReviewObligation): Promise<string> {
+    const state = sessionWith(obligation);
+    const output = { output: architectureOutput(obligation) };
+    const reviewCtx = extractReviewContext('flowguard_architecture', JSON.parse(output.output))!;
+    await handleHostTaskPolicy(
+      mockDeps(),
+      state,
+      '/tmp/sess-integrity',
+      reviewCtx,
+      output,
+      SESSION_ID,
+    );
+    const parsed = JSON.parse(output.output) as Record<string, unknown>;
+    return String(parsed.reviewerTaskPrompt ?? '');
+  }
+
+  it('HAPPY: context authority advertises the capability with revision "head" only', async () => {
+    const text = await dispatch(contextAuthorityObligation());
+    expect(text).toContain('flowguard_observe_repository({');
+    expect(text).toContain('revision: "head"');
+    expect(text).not.toContain('<base|head>');
+  });
+
+  it('BAD: a forged capability without obligation authority renders NO executable contract', async () => {
+    const obligation = architectureObligation(ADR_DIGEST);
+    const state = sessionWith(obligation);
+    // Persisted attempts are untrusted: forge a capability that no frozen
+    // authority backs. The SSOT must not translate it into a contract.
+    state.reviewAssurance!.attempts[0]!.observationCapability = 'fgc_forged';
+    const output = { output: architectureOutput(obligation) };
+    const reviewCtx = extractReviewContext('flowguard_architecture', JSON.parse(output.output))!;
+    await handleHostTaskPolicy(
+      mockDeps(),
+      state,
+      '/tmp/sess-integrity',
+      reviewCtx,
+      output,
+      SESSION_ID,
+    );
+    const text = String((JSON.parse(output.output) as Record<string, unknown>).reviewerTaskPrompt);
+    expect(text).toContain('NO frozen repository observation authority');
+    expect(text).not.toContain('flowguard_observe_repository({');
+  });
+
+  it('BAD: artifact-only obligation mints no capability and emits the unavailable branch', async () => {
+    const text = await dispatch(architectureObligation(ADR_DIGEST));
+    expect(text).toContain('NO frozen repository observation authority');
+    expect(text).not.toContain('flowguard_observe_repository({');
+  });
+});

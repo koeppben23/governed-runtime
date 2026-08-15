@@ -1299,6 +1299,7 @@ describe('findBindableAttempt', () => {
         ordinal: overrides.ordinal,
         origin: { kind: 'initial' } as const,
         repositoryDiscovery: { kind: 'not_applicable' } as const,
+        observationCapability: null,
         now: NOW,
       }),
       ...overrides,

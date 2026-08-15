@@ -20,7 +20,14 @@ import {
   resolveFrozenReviewProfile,
 } from '../review/assurance.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
-import { freezeContextAuthorityAtHead } from '../../rails/repository-authority.js';
+import {
+  freezeContextAuthorityAtHead,
+  frozenAuthorityOrUndefined,
+  type RepositoryAuthorityFreezeResult,
+} from '../../rails/repository-authority.js';
+import { resolveAttemptDiscoveryOrBlock } from '../review/discovery-attempt-context.js';
+import { repositoryEvidenceUnavailableField } from '../review/observation-access.js';
+import { hasFrozenRepositoryAuthority } from '../../state/evidence.js';
 import { buildFrozenReviewMaterialContent } from '../review/reviewer-context.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -37,11 +44,16 @@ interface ArchObligationContext {
   readonly policySnapshot: NonNullable<SessionState['policySnapshot']>;
 }
 
-async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Promise<{
-  state: SessionState;
-  obligation: ReturnType<typeof createReviewObligation> | null;
-  attemptId: string | null;
-}> {
+async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Promise<
+  | {
+      kind: 'ok';
+      state: SessionState;
+      obligation: ReturnType<typeof createReviewObligation> | null;
+      attemptId: string | null;
+      repositoryEvidenceFreeze: RepositoryAuthorityFreezeResult | null;
+    }
+  | { kind: 'blocked'; message: string }
+> {
   const classification = await resolvePreImplementationChallengeClassification(
     ctx.state,
     ctx.wsDir,
@@ -54,14 +66,37 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
   if (resolvedTargetPaths && resolvedTargetPaths.length > 0) {
     metadata.targetPaths = resolvedTargetPaths;
   }
-  const obligation = await mintArchSubmissionObligation(ctx, resolvedTargetPaths, metadata);
+  const minted = await mintArchSubmissionObligation(ctx, resolvedTargetPaths, metadata);
+  // Repository-governed attempts are minted WITH their host-owned Discovery
+  // snapshot (persistence coherence). A structural projection failure blocks
+  // before any state mutation, mirroring the standalone review path.
+  const repositoryGoverned = minted.obligation
+    ? hasFrozenRepositoryAuthority(minted.obligation)
+    : false;
+  const discovery = await resolveAttemptDiscoveryOrBlock({
+    state: ctx.state,
+    worktree: ctx.wsDir,
+    repositoryGoverned,
+    now: ctx.now,
+    ...(minted.obligation ? { obligationId: minted.obligation.obligationId } : {}),
+  });
+  if (discovery.kind === 'blocked') {
+    return {
+      kind: 'blocked',
+      message: formatBlocked('REVIEWER_CONTEXT_UNAVAILABLE', {
+        ...(discovery.obligationId ? { obligationId: discovery.obligationId } : {}),
+        reason: discovery.reason,
+      }),
+    };
+  }
   let archAttemptId: string | null = null;
-  const augmentedState = obligation
+  const augmentedState = minted.obligation
     ? (() => {
         const withAttempt = appendObligationWithAttempt(
           ctx.state.reviewAssurance,
-          obligation,
+          minted.obligation,
           ctx.now,
+          discovery.context,
         );
         archAttemptId = withAttempt.attemptId;
         return {
@@ -70,19 +105,28 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
         };
       })()
     : ctx.state;
-  return { state: augmentedState, obligation, attemptId: archAttemptId };
+  return {
+    kind: 'ok',
+    state: augmentedState,
+    obligation: minted.obligation,
+    attemptId: archAttemptId,
+    repositoryEvidenceFreeze: minted.freeze,
+  };
 }
 
 async function mintArchSubmissionObligation(
   ctx: ArchObligationContext,
   resolvedTargetPaths: readonly string[] | undefined,
   metadata: Record<string, unknown>,
-): Promise<ReturnType<typeof createReviewObligation> | null> {
-  if (!ctx.subagentEnabled) return null;
+): Promise<{
+  obligation: ReturnType<typeof createReviewObligation> | null;
+  freeze: RepositoryAuthorityFreezeResult | null;
+}> {
+  if (!ctx.subagentEnabled) return { obligation: null, freeze: null };
   const digest = ctx.state.architecture?.digest ?? `arch-submit-${ctx.archPlanVersion}`;
   const adrText = ctx.state.architecture?.adrText ?? '';
-  const repositoryAuthority = await freezeContextAuthorityAtHead(ctx.wsDir);
-  return createReviewObligation({
+  const freeze = await freezeContextAuthorityAtHead(ctx.wsDir);
+  const obligation = createReviewObligation({
     obligationType: 'architecture',
     iteration: 0,
     planVersion: ctx.archPlanVersion,
@@ -109,8 +153,9 @@ async function mintArchSubmissionObligation(
     metadata,
     // Frozen repository context (freeze-time resolution): architecture
     // reviews may cite repository evidence only against this context.
-    repositoryAuthority,
+    repositoryAuthority: frozenAuthorityOrUndefined(freeze),
   });
+  return { obligation, freeze };
 }
 
 export async function handleAdrSubmission(
@@ -150,10 +195,12 @@ export async function handleAdrSubmission(
     now,
     policySnapshot: result.state.policySnapshot,
   });
+  if (classification.kind === 'blocked') return classification.message;
   const {
     state: augmentedState,
     obligation: nextObligation,
     attemptId: subAttemptId,
+    repositoryEvidenceFreeze,
   } = classification;
 
   const persisted = await writeStateWithArtifacts(sessDir, augmentedState);
@@ -176,6 +223,7 @@ export async function handleAdrSubmission(
     maxSelfReviewIterations: policy.maxSelfReviewIterations,
     reviewMode: subagentEnabled ? 'subagent' : 'self',
     ...reviewObligationResponseFields(nextObligation, subAttemptId),
+    ...repositoryEvidenceUnavailableField(repositoryEvidenceFreeze),
     next: instruction.next,
     ...(instruction.reviewInvocation ? { reviewInvocation: instruction.reviewInvocation } : {}),
     _audit: { transitions: result.transitions },

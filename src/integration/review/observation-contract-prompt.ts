@@ -11,8 +11,11 @@
  * @version v1
  */
 
-export function renderRepositoryObservationContract(capability: string | undefined): string[] {
-  if (!capability) {
+export function renderRepositoryObservationContract(
+  capability: string | undefined,
+  revisions: readonly ('base' | 'head')[],
+): string[] {
+  if (!capability || revisions.length === 0) {
     return [
       '## Repository Observation',
       '',
@@ -22,6 +25,7 @@ export function renderRepositoryObservationContract(capability: string | undefin
       '',
     ];
   }
+  const revisionExpression = revisions.length === 1 ? `"${revisions[0]}"` : '<base|head>';
   return [
     '## Repository Observation Contract',
     '',
@@ -30,7 +34,7 @@ export function renderRepositoryObservationContract(capability: string | undefin
     'frozen material through the sanctioned observation tool during THIS review',
     'attempt:',
     '',
-    `  flowguard_observe_repository({ capability: "${capability}", revision: "<base|head>", path: "<repository-relative path>" })`,
+    `  flowguard_observe_repository({ capability: "${capability}", revision: ${revisionExpression}, path: "<repository-relative path>" })`,
     '',
     'The returned observation is the ONLY admissible basis for citing that',
     'location. Cite { path, revision } exactly as observed. Worktree reads,',

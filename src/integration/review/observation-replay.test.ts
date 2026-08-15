@@ -12,6 +12,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createReviewAttempt, createReviewObligation } from './assurance.js';
+import { mintObservationCapability } from './attempt-lifecycle.js';
 import type { SessionState } from '../../state/schema.js';
 import {
   appendObservationCapture,
@@ -77,6 +78,7 @@ function buildState(): SessionState {
     ordinal: 1,
     origin: { kind: 'initial' },
     repositoryDiscovery: { kind: 'not_applicable' },
+    observationCapability: mintObservationCapability(),
     now: '2026-08-13T10:00:00.000Z',
   });
   capability = attempt.observationCapability!;
@@ -233,6 +235,7 @@ describe('replayObservationCaptures', () => {
       ordinal: 9,
       origin: { kind: 'initial' },
       repositoryDiscovery: { kind: 'not_applicable' },
+      observationCapability: null,
       now: '2026-08-13T10:00:00.000Z',
     });
     const legacy = { ...attempt, observationCapability: undefined } as never;

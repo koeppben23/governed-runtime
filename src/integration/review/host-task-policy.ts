@@ -30,6 +30,7 @@ import {
   findBindableAttempt,
 } from './assurance.js';
 import { updateObligation } from './obligation-state.js';
+import { resolveRepositoryObservationAccess } from './observation-access.js';
 import type { SessionState } from '../../state/schema.js';
 import {
   hasFrozenRepositoryAuthority,
@@ -111,6 +112,12 @@ interface HostTaskOutputInput {
    * is then unavailable.
    */
   readonly observationCapability: string | null;
+  /**
+   * Exact frozen revisions the reviewer may observe, derived from the owning
+   * obligation's frozen authority (context → ['head'], candidate_pair →
+   * ['base', 'head']). Empty when no frozen revision resolves.
+   */
+  readonly observationRevisions: readonly ('base' | 'head')[];
   readonly repositoryReview: boolean;
 }
 
@@ -239,6 +246,13 @@ function buildReviewerTaskPromptOrNull(
     readonly retrySchemaErrors: readonly string[] | null;
     readonly repositoryDiscoverySnapshot: RepositoryDiscoverySnapshot | null;
     readonly observationCapability: string | null;
+    /**
+     * Exact frozen revisions the reviewer may observe, derived from the owning
+     * obligation's frozen authority. Empty when no frozen revision resolves —
+     * the renderer then advertises no observation contract even if a stale
+     * capability string exists on the attempt.
+     */
+    readonly observationRevisions: readonly ('base' | 'head')[];
     readonly repositoryReview: boolean;
   },
 ): string | null {
@@ -259,6 +273,7 @@ function buildReviewerTaskPromptOrNull(
     retrySchemaErrors: opts.retrySchemaErrors ?? undefined,
     repositoryDiscoverySnapshot: opts.repositoryDiscoverySnapshot,
     ...(opts.observationCapability ? { observationCapability: opts.observationCapability } : {}),
+    observationRevisions: opts.observationRevisions,
   });
 }
 
@@ -298,6 +313,7 @@ function buildHostTaskBlockedOutput(
     retrySchemaErrors: input.retrySchemaErrors,
     repositoryDiscoverySnapshot: input.repositoryDiscoverySnapshot,
     observationCapability: input.observationCapability,
+    observationRevisions: input.observationRevisions,
     repositoryReview: input.repositoryReview,
   });
   const copyPromptStr = reviewerTaskPrompt
@@ -545,6 +561,10 @@ function buildHostTaskOutputInput(
   const { obligation } = interception;
   const bindableAttempt = findBindableAttempt(sessionState.reviewAssurance, obligationId);
   const frozenReviewerContext = resolveFrozenReviewerContext(obligation, bindableAttempt);
+  const observationAccess =
+    obligation && bindableAttempt
+      ? resolveRepositoryObservationAccess(obligation, bindableAttempt)
+      : null;
   return {
     originalOutput,
     policy: interception.policy,
@@ -567,7 +587,9 @@ function buildHostTaskOutputInput(
       bindableAttempt?.repositoryDiscovery.kind === 'repository'
         ? bindableAttempt.repositoryDiscovery.snapshot
         : null,
-    observationCapability: bindableAttempt?.observationCapability ?? null,
+    observationCapability:
+      observationAccess?.available === true ? observationAccess.capability : null,
+    observationRevisions: observationAccess?.revisions ?? [],
     repositoryReview: obligation ? hasFrozenRepositoryAuthority(obligation) : false,
   };
 }

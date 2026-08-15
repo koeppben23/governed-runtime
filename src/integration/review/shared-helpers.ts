@@ -40,6 +40,7 @@ import {
   appendInvocationEvidence,
   resolveAttemptObservationCapability,
 } from './assurance.js';
+import { resolveObservationRevisions } from './observation-access.js';
 import { updateObligation } from './obligation-state.js';
 import type { ReviewObligationType } from '../../state/evidence.js';
 import type {
@@ -430,6 +431,10 @@ export function buildToolPrompt(params: BuildToolPromptParams): string | null {
       observationCapability:
         resolveAttemptObservationCapability(sessionState.reviewAssurance, reviewCtx.obligationId) ??
         undefined,
+      observationRevisions: resolveReviewerObservationRevisions(
+        sessionState,
+        reviewCtx.obligationId,
+      ),
       ...implRules,
     });
   }
@@ -448,11 +453,32 @@ export function buildToolPrompt(params: BuildToolPromptParams): string | null {
       observationCapability:
         resolveAttemptObservationCapability(sessionState.reviewAssurance, reviewCtx.obligationId) ??
         undefined,
+      observationRevisions: resolveReviewerObservationRevisions(
+        sessionState,
+        reviewCtx.obligationId,
+      ),
       ...archRules,
     });
   }
   deps.log.warn('orchestrator', 'unsupported reviewable tool — skipping', { tool: toolName });
   return null;
+}
+
+/**
+ * Exact frozen revisions a reviewer may observe for one obligation, derived
+ * from the obligation's frozen repository authority (context → ['head'],
+ * candidate_pair → ['base', 'head']). Empty when the obligation is missing or
+ * no frozen revision resolves — the prompt then advertises no observation
+ * contract even if a stale capability string exists on the attempt.
+ */
+function resolveReviewerObservationRevisions(
+  sessionState: SessionState,
+  obligationId: string,
+): readonly ('base' | 'head')[] {
+  const obligation = sessionState.reviewAssurance?.obligations.find(
+    (o) => o.obligationId === obligationId,
+  );
+  return obligation ? resolveObservationRevisions(obligation) : [];
 }
 
 function stateChallengeResolutions(state: SessionState) {

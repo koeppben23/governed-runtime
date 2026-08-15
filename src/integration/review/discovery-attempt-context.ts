@@ -179,3 +179,27 @@ export async function resolveReviewAttemptDiscoveryContext(input: {
     };
   }
 }
+
+/**
+ * Resolve the attempt-bound Discovery context for a repository-governed mint
+ * or fail with a typed, formattable block. Single shared shape for every
+ * artifact-flow call site (plan, architecture submit/review/restart), so the
+ * coherence contract — repository-governed attempts are born with their
+ * host-owned snapshot — has one implementation.
+ */
+export async function resolveAttemptDiscoveryOrBlock(input: {
+  readonly state: SessionState;
+  readonly worktree: string;
+  readonly repositoryGoverned: boolean;
+  readonly now: string;
+  readonly obligationId?: string;
+}): Promise<
+  | { readonly kind: 'ok'; readonly context: ReviewAttemptDiscoveryContext }
+  | { readonly kind: 'blocked'; readonly reason: string; readonly obligationId?: string }
+> {
+  const resolved = await resolveReviewAttemptDiscoveryContext(input);
+  if (resolved.kind === 'blocked') {
+    return { kind: 'blocked', reason: resolved.reason, obligationId: input.obligationId };
+  }
+  return { kind: 'ok', context: resolved.context };
+}

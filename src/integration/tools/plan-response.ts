@@ -6,7 +6,11 @@
  */
 
 import type { SessionState } from '../../state/schema.js';
-import type { ReviewFindings } from '../../state/evidence.js';
+import type {
+  FrozenRepositoryAuthority,
+  PlanEvidence,
+  ReviewFindings,
+} from '../../state/evidence.js';
 import type {
   PlanExecutionScope,
   PlanRevisionResult,
@@ -41,6 +45,7 @@ import {
 import { buildFrozenReviewMaterialContent } from '../review/reviewer-context.js';
 import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
 import { resolveAttemptObservationCapability } from '../review/assurance.js';
+import { repositoryEvidenceUnavailableField } from '../review/observation-access.js';
 import { buildReviewerProofContext } from '../review/proof-context.js';
 import { buildHeuristicRiskWarning } from '../proofgraph/claim-contract.js';
 import { assessMinimumTaskClass } from '../phase-tool-gate.js';
@@ -74,10 +79,63 @@ export function firstLine(text: string | undefined): string | undefined {
   return line.length > 120 ? line.slice(0, 117) + '...' : line;
 }
 
+/**
+ * Build the canonical plan review obligation input for the initial submission.
+ * The frozen plan artifact is the review SUBJECT; changedFiles stay
+ * challenge-classification and repository-evidence context only. The frozen
+ * repository authority (freeze-time resolution) is carried here so absence of
+ * authority makes repository evidence unavailable.
+ */
+export function buildPlanReviewObligationInput(
+  scope: PlanExecutionScope,
+  planEvidence: PlanEvidence,
+  planVersion: number,
+  classificationFiles: readonly string[] | undefined,
+  authority: FrozenRepositoryAuthority | undefined,
+): Parameters<typeof createObligationAndAttempt>[1] {
+  const metadata: Record<string, unknown> = {};
+  if (classificationFiles && classificationFiles.length > 0) {
+    metadata.targetPaths = [...classificationFiles];
+  }
+  return {
+    obligationType: 'plan',
+    iteration: 0,
+    planVersion,
+    now: scope.ctx.now(),
+    subjectDigest: planEvidence.digest,
+    // Frozen review material: the exact plan artifact plus originating
+    // ticket context, canonicalized and digest-bound at creation time.
+    reviewMaterial: freezeReviewMaterial(
+      buildFrozenReviewMaterialContent({
+        obligationType: 'plan',
+        state: scope.state,
+        artifact: planEvidence.body,
+      }),
+      planEvidence.digest,
+    ),
+    reviewSubjectScope: artifactReviewSubjectScope('plan', planEvidence.body, planEvidence.digest),
+    reviewProfile: resolveFrozenReviewProfile(scope.state.policySnapshot),
+    profileSource: 'policy_default',
+    policySnapshot: scope.state.policySnapshot,
+    changedFiles: classificationFiles,
+    claimedTaskClass: scope.state.claimedTaskClass,
+    metadata,
+    repositoryAuthority: authority,
+  };
+}
+
 export function buildPlanSubmissionResponse(
   input: PlanSubmissionResponseInput,
 ): Record<string, unknown> {
-  const { scope, finalState, planEvidence, planVersion, reviewFindings, transitions } = input;
+  const {
+    scope,
+    finalState,
+    planEvidence,
+    planVersion,
+    reviewFindings,
+    transitions,
+    repositoryEvidenceFreeze,
+  } = input;
   const nextObligation = scope.reviewPolicy.subagentEnabled
     ? findLatestObligation(finalState.reviewAssurance?.obligations ?? [], 'plan', 0, planVersion)
     : null;
@@ -102,6 +160,7 @@ export function buildPlanSubmissionResponse(
     maxSelfReviewIterations: scope.maxSelfReviewIterations,
     reviewMode: scope.reviewPolicy.subagentEnabled ? 'subagent' : 'self',
     ...reviewObligationResponseFields(nextObligation, planAttemptId),
+    ...repositoryEvidenceUnavailableField(repositoryEvidenceFreeze),
     next: reviewInstruction.next,
     reviewInvocation: reviewInstruction.reviewInvocation,
     _audit: { transitions },

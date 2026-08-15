@@ -22,6 +22,7 @@ import type {
   ReviewObligation,
   ReviewObligationType,
 } from '../../state/evidence.js';
+import { resolveObservationRevisions } from './observation-access.js';
 
 export function emptyReviewAssurance(): ReviewAssuranceState {
   return {
@@ -47,6 +48,17 @@ export function mintObservationCapability(): string {
   return `fgc_${randomBytes(32).toString('hex')}`;
 }
 
+/**
+ * Mint an attempt-bound observation capability ONLY when the owning obligation
+ * actually backs at least one frozen repository revision. This is the
+ * authority-derived minting decision used by every attempt-creation wrapper:
+ * no resolvable frozen revision means no capability, so the reviewer prompt
+ * advertises no executable observation contract.
+ */
+export function mintObservationCapabilityIfResolvable(obligation: ReviewObligation): string | null {
+  return resolveObservationRevisions(obligation).length > 0 ? mintObservationCapability() : null;
+}
+
 export function createReviewAttempt(input: {
   obligationId: string;
   obligationType: ReviewObligationType;
@@ -54,6 +66,15 @@ export function createReviewAttempt(input: {
   reviewMaterial?: ReviewMaterial;
   ordinal: number;
   childSessionId?: string;
+  /**
+   * Authority-derived observation permission. The attempt carries ONLY the
+   * opaque capability derived from the owning obligation's frozen repository
+   * authority — the frozen authority itself remains authoritative on the
+   * obligation, never duplicated here. `null` when no frozen repository
+   * revision is resolvable: the reviewer prompt then advertises no executable
+   * observation contract.
+   */
+  observationCapability: string | null;
   /**
    * Authority-bearing origin. Every attempt must name how it came into
    * existence: `initial` at obligation creation, `output_repair` after an
@@ -80,7 +101,9 @@ export function createReviewAttempt(input: {
     status: 'created',
     origin: input.origin,
     repositoryDiscovery: input.repositoryDiscovery,
-    observationCapability: mintObservationCapability(),
+    ...(input.observationCapability === null
+      ? {}
+      : { observationCapability: input.observationCapability }),
     createdAt: input.now,
   };
 }
@@ -130,6 +153,7 @@ export function createAttemptForExistingObligation(
     ...(childSessionId === undefined ? {} : { childSessionId }),
     origin: transition.origin,
     repositoryDiscovery: transition.repositoryDiscovery,
+    observationCapability: mintObservationCapabilityIfResolvable(obligation),
     now,
   });
   const withAttempt = appendReviewAttempt(base, attempt);

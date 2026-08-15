@@ -98,22 +98,29 @@ describe('freezeImplementationBaseAuthority', () => {
 
 describe('freezeContextAuthority', () => {
   it('HAPPY: builds a context authority from the frozen commit', () => {
-    const authority = freezeContextAuthority('/tmp/repo', SHA);
-    expect(authority).toEqual({
-      kind: 'context',
-      context: {
-        kind: 'commit',
-        repositoryIdentity: { kind: 'local', rootCommitDigest: 'sha256:' + 'b'.repeat(64) },
-        objectSha: SHA,
+    const result = freezeContextAuthority('/tmp/repo', SHA);
+    expect(result).toEqual({
+      kind: 'available',
+      authority: {
+        kind: 'context',
+        context: {
+          kind: 'commit',
+          repositoryIdentity: { kind: 'local', rootCommitDigest: 'sha256:' + 'b'.repeat(64) },
+          objectSha: SHA,
+        },
       },
     });
   });
 
-  it('BAD: unresolvable identity returns undefined (evidence unavailable, not a block)', () => {
+  it('BAD: unresolvable identity degrades typed (evidence unavailable, not a block)', () => {
     vi.mocked(freezeRepositoryIdentity).mockImplementationOnce(() => {
       throw new FrozenRepositoryError('IDENTITY_UNAVAILABLE', 'no identity');
     });
-    expect(freezeContextAuthority('/tmp/repo', SHA)).toBeUndefined();
+    expect(freezeContextAuthority('/tmp/repo', SHA)).toEqual({
+      kind: 'unavailable',
+      reason: 'repository_identity_unavailable',
+      diagnostic: 'no identity',
+    });
   });
 });
 

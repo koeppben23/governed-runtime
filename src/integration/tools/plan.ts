@@ -37,7 +37,12 @@
  */
 
 import { z } from 'zod';
-import { freezeContextAuthorityAtHead } from '../../rails/repository-authority.js';
+import {
+  freezeContextAuthorityAtHead,
+  frozenAuthorityOrUndefined,
+  type RepositoryAuthorityFreezeResult,
+} from '../../rails/repository-authority.js';
+import { resolveAttemptDiscoveryOrBlock } from '../review/discovery-attempt-context.js';
 
 import type { ToolDefinition } from './helpers.js';
 import { formatError } from './error-format.js';
@@ -77,16 +82,12 @@ import {
 import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.js';
 import {
   appendReviewObligation,
-  artifactReviewSubjectScope,
   consumeReviewObligation,
   createObligationAndAttempt,
-  freezeReviewMaterial,
   ensureReviewAssurance,
   findAcceptedInvocationForFindings,
   findLatestObligation,
-  resolveFrozenReviewProfile,
 } from '../review/assurance.js';
-import { buildFrozenReviewMaterialContent } from '../review/reviewer-context.js';
 import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
 import { buildHostTaskChallengeContract } from '../review/host-task-policy.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
@@ -131,6 +132,7 @@ import { classifyPlanCall, planInputFlags, planReviewPolicy } from './plan-types
 import { routePlanInitialSubmission, blockedPlanReviewInProgress } from './plan-route.js';
 import {
   buildPlanSubmissionResponse as buildSubmissionResponse,
+  buildPlanReviewObligationInput,
   persistPlanReview as persistReview,
 } from './plan-response.js';
 
@@ -269,100 +271,97 @@ async function createPlanReviewAttempt(
   planEvidence: PlanEvidence,
   planVersion: number,
   classificationFiles?: readonly string[],
-): Promise<ReturnType<typeof createObligationAndAttempt> | null> {
-  if (!scope.reviewPolicy.subagentEnabled) return null;
-  const metadata: Record<string, unknown> = {};
-  if (classificationFiles && classificationFiles.length > 0) {
-    metadata.targetPaths = [...classificationFiles];
+): Promise<
+  | {
+      kind: 'ok';
+      attemptResult: ReturnType<typeof createObligationAndAttempt> | null;
+      freeze: RepositoryAuthorityFreezeResult | null;
+    }
+  | { kind: 'blocked'; message: string }
+> {
+  if (!scope.reviewPolicy.subagentEnabled) return { kind: 'ok', attemptResult: null, freeze: null };
+  const freeze = await freezeContextAuthorityAtHead(scope.wsDir);
+  const authority = frozenAuthorityOrUndefined(freeze);
+  // Repository-governed attempts are minted WITH their host-owned Discovery
+  // snapshot (persistence coherence); a structural projection failure blocks
+  // the submission before any state mutation.
+  const discovery = await resolveAttemptDiscoveryOrBlock({
+    state: scope.state,
+    worktree: scope.wsDir,
+    repositoryGoverned: authority !== undefined,
+    now: scope.ctx.now(),
+  });
+  if (discovery.kind === 'blocked') {
+    return {
+      kind: 'blocked',
+      message: formatBlocked('REVIEWER_CONTEXT_UNAVAILABLE', {
+        reason: discovery.reason,
+      }),
+    };
   }
-  const repositoryAuthority = await freezeContextAuthorityAtHead(scope.wsDir);
-  return createObligationAndAttempt(
+  const attemptResult = createObligationAndAttempt(
     scope.state.reviewAssurance,
-    {
-      obligationType: 'plan',
-      iteration: 0,
+    buildPlanReviewObligationInput(
+      scope,
+      planEvidence,
       planVersion,
-      now: scope.ctx.now(),
-      subjectDigest: planEvidence.digest,
-      // Frozen review material: the exact plan artifact plus originating
-      // ticket context, canonicalized and digest-bound at creation time.
-      reviewMaterial: freezeReviewMaterial(
-        buildFrozenReviewMaterialContent({
-          obligationType: 'plan',
-          state: scope.state,
-          artifact: planEvidence.body,
-        }),
-        planEvidence.digest,
-      ),
-      // The frozen plan artifact is the review SUBJECT; changedFiles below stay
-      // challenge-classification and repository-evidence context only.
-      reviewSubjectScope: artifactReviewSubjectScope(
-        'plan',
-        planEvidence.body,
-        planEvidence.digest,
-      ),
-      reviewProfile: resolveFrozenReviewProfile(scope.state.policySnapshot),
-      profileSource: 'policy_default',
-      policySnapshot: scope.state.policySnapshot,
-      changedFiles: classificationFiles,
-      claimedTaskClass: scope.state.claimedTaskClass,
-      metadata,
-      // Frozen repository context (freeze-time resolution): plan reviews may
-      // cite repository evidence only against this context; absence of
-      // authority makes repository evidence unavailable.
-      repositoryAuthority,
-    },
+      classificationFiles,
+      authority,
+    ),
     scope.ctx.now(),
+    discovery.context,
   );
+  return { kind: 'ok', attemptResult, freeze };
 }
 
-async function buildPlanSubmissionState(
+function buildPlanSubmissionState(
   scope: PlanExecutionScope,
   planEvidence: PlanEvidence,
   planVersion: number,
   reviewFindings: ReviewFindings | null,
-  classificationFiles?: readonly string[],
-): Promise<SessionState> {
+  attempt: Extract<Awaited<ReturnType<typeof createPlanReviewAttempt>>, { kind: 'ok' }>,
+): { state: SessionState; repositoryEvidenceFreeze: RepositoryAuthorityFreezeResult | null } {
   const history = scope.state.plan ? [scope.state.plan.current, ...scope.state.plan.history] : [];
-  const attemptResult = await createPlanReviewAttempt(
-    scope,
-    planEvidence,
-    planVersion,
-    classificationFiles,
-  );
-  const nextObligation = attemptResult?.obligation ?? null;
+  const nextObligation = attempt.attemptResult?.obligation ?? null;
 
   return {
-    ...scope.state,
-    plan: {
-      current: planEvidence,
-      history,
-      reviewFindings: reviewFindings
-        ? [...(scope.state.plan?.reviewFindings ?? []), reviewFindings]
-        : scope.state.plan?.reviewFindings,
-      claimDeclarations: scope.args.claims
-        ? { flow: 'plan', version: 'v2' as const, claims: normalizePlanClaims(scope.args.claims)! }
-        : scope.state.plan?.claimDeclarations,
+    state: {
+      ...scope.state,
+      plan: {
+        current: planEvidence,
+        history,
+        reviewFindings: reviewFindings
+          ? [...(scope.state.plan?.reviewFindings ?? []), reviewFindings]
+          : scope.state.plan?.reviewFindings,
+        claimDeclarations: scope.args.claims
+          ? {
+              flow: 'plan',
+              version: 'v2' as const,
+              claims: normalizePlanClaims(scope.args.claims)!,
+            }
+          : scope.state.plan?.claimDeclarations,
+      },
+      // #428: a new plan invalidates any prior validation evidence. Without this
+      // reset, a stale failed-check result (passed:false) survives the re-plan and
+      // makes VALIDATION re-entry fire CHECK_FAILED → PLAN before any check is
+      // re-executed — an infinite PLAN→PLAN_REVIEW→VALIDATION→PLAN cycle that
+      // auto-advance now (correctly) fails closed on. Clearing validation returns
+      // VALIDATION to the "checks pending" WAIT state so checks must be re-run.
+      validation: [],
+      selfReview: {
+        iteration: 0,
+        maxIterations: scope.maxSelfReviewIterations,
+        prevDigest: null,
+        currDigest: planEvidence.digest,
+        revisionDelta: 'major',
+        verdict: 'changes_requested',
+      },
+      reviewAssurance:
+        attempt.attemptResult?.assurance ??
+        appendReviewObligation(scope.state.reviewAssurance, nextObligation),
+      error: null,
     },
-    // #428: a new plan invalidates any prior validation evidence. Without this
-    // reset, a stale failed-check result (passed:false) survives the re-plan and
-    // makes VALIDATION re-entry fire CHECK_FAILED → PLAN before any check is
-    // re-executed — an infinite PLAN→PLAN_REVIEW→VALIDATION→PLAN cycle that
-    // auto-advance now (correctly) fails closed on. Clearing validation returns
-    // VALIDATION to the "checks pending" WAIT state so checks must be re-run.
-    validation: [],
-    selfReview: {
-      iteration: 0,
-      maxIterations: scope.maxSelfReviewIterations,
-      prevDigest: null,
-      currDigest: planEvidence.digest,
-      revisionDelta: 'major',
-      verdict: 'changes_requested',
-    },
-    reviewAssurance:
-      attemptResult?.assurance ??
-      appendReviewObligation(scope.state.reviewAssurance, nextObligation),
-    error: null,
+    repositoryEvidenceFreeze: attempt.freeze,
   };
 }
 
@@ -554,15 +553,22 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
     scope.reviewPolicy.subagentEnabled,
     scope.args.targetPaths,
   );
-  const nextState = await buildPlanSubmissionState(
+  const attempt = await createPlanReviewAttempt(
+    scope,
+    planEvidence,
+    planVersion,
+    classification.kind === 'available' ? classification.changedFiles : [],
+  );
+  if (attempt.kind === 'blocked') return attempt.message;
+  const nextState = buildPlanSubmissionState(
     scope,
     planEvidence,
     planVersion,
     reviewFindings,
-    classification.kind === 'available' ? classification.changedFiles : [],
+    attempt,
   );
   const evalFn = (s: SessionState) => evaluate(s, scope.policy);
-  const advanced = autoAdvance(nextState, evalFn, scope.ctx);
+  const advanced = autoAdvance(nextState.state, evalFn, scope.ctx);
   // #428: fail closed on overflow BEFORE persisting — no partially-advanced write.
   if (advanced.kind === 'overflow') {
     return formatAutoAdvanceOverflow(advanced);
@@ -577,6 +583,7 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
     planVersion,
     reviewFindings,
     transitions,
+    repositoryEvidenceFreeze: nextState.repositoryEvidenceFreeze,
   });
   return appendNextAction(JSON.stringify(response), finalState);
 }

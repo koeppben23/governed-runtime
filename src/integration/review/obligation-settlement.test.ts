@@ -70,6 +70,7 @@ function attemptFor(
     ordinal,
     origin: { kind: 'initial' },
     repositoryDiscovery: { kind: 'not_applicable' },
+    observationCapability: null,
     now: NOW,
   });
   if (status === 'created') return base;

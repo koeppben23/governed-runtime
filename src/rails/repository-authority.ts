@@ -19,7 +19,7 @@
  * @version v1
  */
 
-import { headCommitFull } from '../adapters/git.js';
+import { headCommitFull, isGitRepo } from '../adapters/git.js';
 import {
   FrozenRepositoryError,
   freezeRepositoryIdentity,
@@ -30,6 +30,37 @@ import type {
   FrozenRepositoryAuthority,
   FrozenRepositoryRevisionTarget,
 } from '../state/evidence.js';
+
+/**
+ * Why a plan/architecture repository context could not be frozen. Distinct
+ * reasons keep the degradation auditable instead of collapsing every cause
+ * into an indistinguishable `undefined`.
+ */
+export type RepositoryAuthorityFreezeReason =
+  | 'repository_unavailable'
+  | 'head_unavailable'
+  | 'repository_identity_unavailable'
+  | 'freeze_failed';
+
+/**
+ * Typed freeze outcome for plan/architecture repository context. `unavailable`
+ * never blocks the artifact review itself — repository evidence simply becomes
+ * unavailable — but the cause is now explicit and observable in responses.
+ */
+export type RepositoryAuthorityFreezeResult =
+  | { readonly kind: 'available'; readonly authority: FrozenRepositoryAuthority }
+  | {
+      readonly kind: 'unavailable';
+      readonly reason: RepositoryAuthorityFreezeReason;
+      readonly diagnostic?: string;
+    };
+
+/** Extract the frozen authority from a typed freeze result, if available. */
+export function frozenAuthorityOrUndefined(
+  result: RepositoryAuthorityFreezeResult,
+): FrozenRepositoryAuthority | undefined {
+  return result.kind === 'available' ? result.authority : undefined;
+}
 
 /**
  * Freeze a commit-kind revision target: exact object sha plus the repository
@@ -50,21 +81,29 @@ export function freezeCommitRevisionTarget(
 /**
  * Freeze a single-context repository authority (plan / architecture
  * obligations). `revision:'head'` resolves against the context; `'base'` is
- * unavailable. Returns `undefined` when the repository identity cannot be
- * frozen — repository evidence becomes unavailable, the review itself is not
- * blocked.
+ * unavailable. Degradation is typed and audit-friendly: the review itself is
+ * never blocked, but the absence of repository evidence is explicit.
  */
 export function freezeContextAuthority(
   worktree: string,
   objectSha: string,
-): FrozenRepositoryAuthority | undefined {
+): RepositoryAuthorityFreezeResult {
   try {
     return {
-      kind: 'context',
-      context: freezeCommitRevisionTarget(worktree, objectSha),
+      kind: 'available',
+      authority: {
+        kind: 'context',
+        context: freezeCommitRevisionTarget(worktree, objectSha),
+      },
     };
-  } catch {
-    return undefined;
+  } catch (err) {
+    const identityFailure =
+      err instanceof FrozenRepositoryError && err.code === 'IDENTITY_UNAVAILABLE';
+    return {
+      kind: 'unavailable',
+      reason: identityFailure ? 'repository_identity_unavailable' : 'freeze_failed',
+      diagnostic: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 
@@ -72,14 +111,24 @@ export function freezeContextAuthority(
  * Freeze-time resolution of the CURRENT commit as a plan/architecture
  * repository context. This is the ONLY sanctioned place outside the adapter
  * layer that resolves the mutable HEAD — it is the freeze point itself.
- * Returns `undefined` when the commit or identity cannot be frozen
- * (repository evidence becomes unavailable).
+ * Returns a typed `unavailable` result when the repository, its HEAD, or the
+ * immutable identity cannot be frozen (repository evidence becomes
+ * unavailable; the artifact review itself remains legitimate).
  */
 export async function freezeContextAuthorityAtHead(
   worktree: string,
-): Promise<FrozenRepositoryAuthority | undefined> {
+): Promise<RepositoryAuthorityFreezeResult> {
   const objectSha = await headCommitFull(worktree);
-  if (!objectSha) return undefined;
+  if (!objectSha) {
+    const repoExists = await isGitRepo(worktree);
+    return {
+      kind: 'unavailable',
+      reason: repoExists ? 'head_unavailable' : 'repository_unavailable',
+      diagnostic: repoExists
+        ? 'No resolvable HEAD commit exists in the repository.'
+        : 'Workspace is not a Git repository.',
+    };
+  }
   return freezeContextAuthority(worktree, objectSha);
 }
 

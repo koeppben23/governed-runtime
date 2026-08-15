@@ -120,6 +120,7 @@ export interface ReviewerTaskPromptInput {
   readonly repositoryDiscoverySnapshot?: RepositoryDiscoverySnapshot | null;
   /** Opaque host-minted observation capability; present → Repository Observation Contract. */
   readonly observationCapability?: string;
+  readonly observationRevisions?: readonly ('base' | 'head')[];
   /**
    * Schema validation errors from a prior failed reviewer output for the
    * same obligation. When present, the prompt includes these errors so the
@@ -267,6 +268,13 @@ function renderFindingsObjectRule(input: ReviewerTaskPromptInput): string {
   );
 }
 
+function renderObservationContractLines(input: ReviewerTaskPromptInput): string[] {
+  return renderRepositoryObservationContract(
+    input.observationCapability,
+    input.observationRevisions ?? [],
+  );
+}
+
 export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string {
   const context = renderReviewContext({
     iteration: input.iteration,
@@ -306,7 +314,7 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
     'Rules:',
     ...renderReviewerRules(isRepositoryReview),
     renderFindingsObjectRule(input),
-    ...renderRepositoryObservationContract(input.observationCapability),
+    ...renderObservationContractLines(input),
     ...renderChallengeContract(input.challengeContract, input.obligationId),
     '',
     ...(input.artifactContext && input.artifactContext.length > 0
@@ -381,6 +389,7 @@ export interface ImplReviewPromptOpts {
   readonly verificationEvidence?: readonly ReviewVerificationEvidenceItem[];
   /** Opaque host-minted observation capability of the attempt under review. */
   readonly observationCapability?: string;
+  readonly observationRevisions?: readonly ('base' | 'head')[];
 }
 
 /** A single runtime-executed verification result projected for the reviewer
@@ -417,6 +426,7 @@ export interface ArchitectureReviewPromptOpts {
   readonly proofGraph?: ProofGraphProjection;
   /** Opaque host-minted observation capability of the attempt under review. */
   readonly observationCapability?: string;
+  readonly observationRevisions?: readonly ('base' | 'head')[];
 }
 
 // ─── Internal Helpers ────────────────────────────────────────────────────────
@@ -564,6 +574,7 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     verificationEvidence = [],
     proofGraph,
     observationCapability,
+    observationRevisions,
   } = opts;
   const stackSection = buildStackProfileSection(profileName, profileRules);
   const discoverySection = buildDiscoveryContextSection(discoveryContext);
@@ -601,7 +612,7 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     'Treat any challenge resolution as advisory NOT_VERIFIED evidence; independently verify it.',
     'Read the changed files using the read/glob/grep tools to verify correctness.',
     'Follow your review criteria for implementations.',
-    ...renderRepositoryObservationContract(observationCapability),
+    ...renderRepositoryObservationContract(observationCapability, observationRevisions ?? []),
     'Return your findings as a single ReviewerFindingsInput JSON object.',
     `Set iteration=${iteration} and planVersion=${planVersion} in your response.`,
     `Set attestation.toolObligationId=${obligationId}.`,
@@ -628,6 +639,7 @@ export function buildArchitectureReviewPrompt(opts: ArchitectureReviewPromptOpts
     discoveryContext,
     proofGraph,
     observationCapability,
+    observationRevisions,
   } = opts;
   const stackSection = buildStackProfileSection(profileName, profileRules);
   const discoverySection = buildDiscoveryContextSection(discoveryContext);
@@ -652,7 +664,7 @@ export function buildArchitectureReviewPrompt(opts: ArchitectureReviewPromptOpts
     'rationale, consequences, reversibility, compatibility, out-of-scope clarity,',
     'and verification path. Use the read/glob/grep tools to verify any claims about',
     'existing files, schemas, or contracts referenced in the ADR.',
-    ...renderRepositoryObservationContract(observationCapability),
+    ...renderRepositoryObservationContract(observationCapability, observationRevisions ?? []),
     'Return your findings as a single ReviewerFindingsInput JSON object.',
     `Set iteration=${iteration} and planVersion=${planVersion} in your response.`,
     `Set attestation.toolObligationId=${obligationId}.`,

@@ -21,6 +21,7 @@ import type { AutoAdvanceResult } from '../../rails/types.js';
 
 import type {
   ArchitectureReviewCompletion,
+  FrozenRepositoryAuthority,
   LoopVerdict,
   RevisionDelta,
   ReviewFindings,
@@ -65,7 +66,15 @@ import {
   buildArchitectureReviewInstruction,
 } from './architecture-shared.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
-import { freezeContextAuthorityAtHead } from '../../rails/repository-authority.js';
+import {
+  freezeContextAuthorityAtHead,
+  frozenAuthorityOrUndefined,
+  type RepositoryAuthorityFreezeResult,
+} from '../../rails/repository-authority.js';
+import { resolveAttemptDiscoveryOrBlock } from '../review/discovery-attempt-context.js';
+import { repositoryEvidenceUnavailableField } from '../review/observation-access.js';
+import { hasFrozenRepositoryAuthority } from '../../state/evidence.js';
+import type { ReviewAttemptDiscoveryContext } from '../../state/evidence.js';
 
 // ─── Mode-B Internal Types ────────────────────────────────────────────────
 
@@ -543,7 +552,7 @@ async function persistAndFormatNonConvergedReview(
   );
   const resolvedTargetPaths =
     classification.kind === 'available' ? [...classification.changedFiles] : undefined;
-  const repositoryAuthority = await freezeContextAuthorityAtHead(session.wsDir);
+  const freeze = await freezeContextAuthorityAtHead(session.wsDir);
   const nextObligation = createNextArchitectureReviewObligation({
     state: advanced.state,
     session,
@@ -551,14 +560,59 @@ async function persistAndFormatNonConvergedReview(
     revision,
     iteration,
     resolvedTargetPaths,
-    repositoryAuthority,
+    repositoryAuthority: frozenAuthorityOrUndefined(freeze),
   });
+  // Repository-governed attempts are minted WITH their host-owned Discovery
+  // snapshot (persistence coherence); a structural projection failure blocks
+  // the re-review dispatch before any state mutation.
+  const discovery = await resolveAttemptDiscoveryOrBlock({
+    state: advanced.state,
+    worktree: session.wsDir,
+    repositoryGoverned: nextObligation ? hasFrozenRepositoryAuthority(nextObligation) : false,
+    now: session.ctx.now(),
+    ...(nextObligation ? { obligationId: nextObligation.obligationId } : {}),
+  });
+  if (discovery.kind === 'blocked') {
+    return formatBlocked('REVIEWER_CONTEXT_UNAVAILABLE', {
+      ...(discovery.obligationId ? { obligationId: discovery.obligationId } : {}),
+      reason: discovery.reason,
+    });
+  }
   const { stateToPersist, attemptId } = persistableArchitectureReviewState(
     advanced.state,
     nextObligation,
     session.ctx.now(),
+    discovery.context,
   );
   const persisted = await writeStateWithArtifacts(session.sessDir, stateToPersist);
+  const resp = buildNonConvergedReviewResponse({
+    session,
+    review,
+    revision,
+    advanced,
+    iteration,
+    verdict,
+    freeze,
+    nextObligation,
+    attemptId,
+    persisted,
+  });
+  return appendNextAction(JSON.stringify(resp), stateToPersist);
+}
+
+function buildNonConvergedReviewResponse(input: {
+  readonly session: ArchitectureSession;
+  readonly review: ResolvedReview;
+  readonly revision: AdrRevision;
+  readonly advanced: { readonly state: SessionState; readonly transitions: unknown };
+  readonly iteration: number;
+  readonly verdict: LoopVerdict;
+  readonly freeze: RepositoryAuthorityFreezeResult;
+  readonly nextObligation: ReturnType<typeof createNextArchitectureReviewObligation>;
+  readonly attemptId: string | null;
+  readonly persisted: SessionState;
+}): Record<string, unknown> {
+  const { session, review, revision, advanced, iteration, verdict, freeze, nextObligation } = input;
   const instruction = buildArchitectureReviewInstruction({
     policy: session.policy,
     subagentEnabled: review.subagentEnabled,
@@ -566,10 +620,9 @@ async function persistAndFormatNonConvergedReview(
     iteration,
     planVersion: review.expectedPlanVersion,
     subjectLabel: 'revised ADR text, ADR title, and ticket text',
-    state: persisted,
+    state: input.persisted,
   });
-
-  const resp: Record<string, unknown> = {
+  return {
     phase: advanced.state.phase,
     status: `${review.subagentEnabled ? 'Independent review' : 'ADR self-review'} iteration ${iteration}/${session.policy.maxSelfReviewIterations}. Verdict: ${verdict}.`,
     adrId: revision.currentAdr.id,
@@ -577,12 +630,12 @@ async function persistAndFormatNonConvergedReview(
     selfReviewIteration: iteration,
     revisionDelta: revision.revisionDelta,
     reviewMode: review.subagentEnabled ? 'subagent' : 'self',
-    ...reviewObligationResponseFields(nextObligation, attemptId),
+    ...reviewObligationResponseFields(nextObligation, input.attemptId),
+    ...(review.subagentEnabled ? repositoryEvidenceUnavailableField(freeze) : {}),
     next: instruction.next,
     ...(instruction.reviewInvocation ? { reviewInvocation: instruction.reviewInvocation } : {}),
     _audit: { transitions: advanced.transitions },
   };
-  return appendNextAction(JSON.stringify(resp), stateToPersist);
 }
 
 function createNextArchitectureReviewObligation(input: {
@@ -592,7 +645,7 @@ function createNextArchitectureReviewObligation(input: {
   revision: AdrRevision;
   iteration: number;
   resolvedTargetPaths: string[] | undefined;
-  repositoryAuthority: Awaited<ReturnType<typeof freezeContextAuthorityAtHead>>;
+  repositoryAuthority: FrozenRepositoryAuthority | undefined;
 }) {
   const { state, session, review, revision, iteration, resolvedTargetPaths, repositoryAuthority } =
     input;
@@ -631,11 +684,17 @@ function persistableArchitectureReviewState(
   state: SessionState,
   nextObligation: ReturnType<typeof createNextArchitectureReviewObligation>,
   now: string,
+  repositoryDiscovery: ReviewAttemptDiscoveryContext = { kind: 'not_applicable' },
 ): { stateToPersist: SessionState; attemptId: string | null } {
   let archAttemptId: string | null = null;
   const stateToPersist = nextObligation
     ? (() => {
-        const withAttempt = appendObligationWithAttempt(state.reviewAssurance, nextObligation, now);
+        const withAttempt = appendObligationWithAttempt(
+          state.reviewAssurance,
+          nextObligation,
+          now,
+          repositoryDiscovery,
+        );
         archAttemptId = withAttempt.attemptId;
         return {
           ...state,
