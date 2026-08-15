@@ -40,7 +40,6 @@ import { z } from 'zod';
 import {
   freezeContextAuthorityAtHead,
   frozenAuthorityOrUndefined,
-  type RepositoryAuthorityFreezeResult,
 } from '../../rails/repository-authority.js';
 import { resolveAttemptDiscoveryOrBlock } from '../review/discovery-attempt-context.js';
 
@@ -275,11 +274,10 @@ async function createPlanReviewAttempt(
   | {
       kind: 'ok';
       attemptResult: ReturnType<typeof createObligationAndAttempt> | null;
-      freeze: RepositoryAuthorityFreezeResult | null;
     }
   | { kind: 'blocked'; message: string }
 > {
-  if (!scope.reviewPolicy.subagentEnabled) return { kind: 'ok', attemptResult: null, freeze: null };
+  if (!scope.reviewPolicy.subagentEnabled) return { kind: 'ok', attemptResult: null };
   const freeze = await freezeContextAuthorityAtHead(scope.wsDir);
   const authority = frozenAuthorityOrUndefined(freeze);
   // Repository-governed attempts are minted WITH their host-owned Discovery
@@ -301,17 +299,11 @@ async function createPlanReviewAttempt(
   }
   const attemptResult = createObligationAndAttempt(
     scope.state.reviewAssurance,
-    buildPlanReviewObligationInput(
-      scope,
-      planEvidence,
-      planVersion,
-      classificationFiles,
-      authority,
-    ),
+    buildPlanReviewObligationInput(scope, planEvidence, planVersion, classificationFiles, freeze),
     scope.ctx.now(),
     discovery.context,
   );
-  return { kind: 'ok', attemptResult, freeze };
+  return { kind: 'ok', attemptResult };
 }
 
 function buildPlanSubmissionState(
@@ -320,48 +312,45 @@ function buildPlanSubmissionState(
   planVersion: number,
   reviewFindings: ReviewFindings | null,
   attempt: Extract<Awaited<ReturnType<typeof createPlanReviewAttempt>>, { kind: 'ok' }>,
-): { state: SessionState; repositoryEvidenceFreeze: RepositoryAuthorityFreezeResult | null } {
+): SessionState {
   const history = scope.state.plan ? [scope.state.plan.current, ...scope.state.plan.history] : [];
   const nextObligation = attempt.attemptResult?.obligation ?? null;
 
   return {
-    state: {
-      ...scope.state,
-      plan: {
-        current: planEvidence,
-        history,
-        reviewFindings: reviewFindings
-          ? [...(scope.state.plan?.reviewFindings ?? []), reviewFindings]
-          : scope.state.plan?.reviewFindings,
-        claimDeclarations: scope.args.claims
-          ? {
-              flow: 'plan',
-              version: 'v2' as const,
-              claims: normalizePlanClaims(scope.args.claims)!,
-            }
-          : scope.state.plan?.claimDeclarations,
-      },
-      // #428: a new plan invalidates any prior validation evidence. Without this
-      // reset, a stale failed-check result (passed:false) survives the re-plan and
-      // makes VALIDATION re-entry fire CHECK_FAILED → PLAN before any check is
-      // re-executed — an infinite PLAN→PLAN_REVIEW→VALIDATION→PLAN cycle that
-      // auto-advance now (correctly) fails closed on. Clearing validation returns
-      // VALIDATION to the "checks pending" WAIT state so checks must be re-run.
-      validation: [],
-      selfReview: {
-        iteration: 0,
-        maxIterations: scope.maxSelfReviewIterations,
-        prevDigest: null,
-        currDigest: planEvidence.digest,
-        revisionDelta: 'major',
-        verdict: 'changes_requested',
-      },
-      reviewAssurance:
-        attempt.attemptResult?.assurance ??
-        appendReviewObligation(scope.state.reviewAssurance, nextObligation),
-      error: null,
+    ...scope.state,
+    plan: {
+      current: planEvidence,
+      history,
+      reviewFindings: reviewFindings
+        ? [...(scope.state.plan?.reviewFindings ?? []), reviewFindings]
+        : scope.state.plan?.reviewFindings,
+      claimDeclarations: scope.args.claims
+        ? {
+            flow: 'plan',
+            version: 'v2' as const,
+            claims: normalizePlanClaims(scope.args.claims)!,
+          }
+        : scope.state.plan?.claimDeclarations,
     },
-    repositoryEvidenceFreeze: attempt.freeze,
+    // #428: a new plan invalidates any prior validation evidence. Without this
+    // reset, a stale failed-check result (passed:false) survives the re-plan and
+    // makes VALIDATION re-entry fire CHECK_FAILED → PLAN before any check is
+    // re-executed — an infinite PLAN→PLAN_REVIEW→VALIDATION→PLAN cycle that
+    // auto-advance now (correctly) fails closed on. Clearing validation returns
+    // VALIDATION to the "checks pending" WAIT state so checks must be re-run.
+    validation: [],
+    selfReview: {
+      iteration: 0,
+      maxIterations: scope.maxSelfReviewIterations,
+      prevDigest: null,
+      currDigest: planEvidence.digest,
+      revisionDelta: 'major',
+      verdict: 'changes_requested',
+    },
+    reviewAssurance:
+      attempt.attemptResult?.assurance ??
+      appendReviewObligation(scope.state.reviewAssurance, nextObligation),
+    error: null,
   };
 }
 
@@ -568,7 +557,7 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
     attempt,
   );
   const evalFn = (s: SessionState) => evaluate(s, scope.policy);
-  const advanced = autoAdvance(nextState.state, evalFn, scope.ctx);
+  const advanced = autoAdvance(nextState, evalFn, scope.ctx);
   // #428: fail closed on overflow BEFORE persisting — no partially-advanced write.
   if (advanced.kind === 'overflow') {
     return formatAutoAdvanceOverflow(advanced);
@@ -583,7 +572,6 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
     planVersion,
     reviewFindings,
     transitions,
-    repositoryEvidenceFreeze: nextState.repositoryEvidenceFreeze,
   });
   return appendNextAction(JSON.stringify(response), finalState);
 }

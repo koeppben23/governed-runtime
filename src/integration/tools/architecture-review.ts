@@ -21,7 +21,6 @@ import type { AutoAdvanceResult } from '../../rails/types.js';
 
 import type {
   ArchitectureReviewCompletion,
-  FrozenRepositoryAuthority,
   LoopVerdict,
   RevisionDelta,
   ReviewFindings,
@@ -68,6 +67,7 @@ import {
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
 import {
   freezeContextAuthorityAtHead,
+  freezeOutcomeRecord,
   frozenAuthorityOrUndefined,
   type RepositoryAuthorityFreezeResult,
 } from '../../rails/repository-authority.js';
@@ -560,7 +560,7 @@ async function persistAndFormatNonConvergedReview(
     revision,
     iteration,
     resolvedTargetPaths,
-    repositoryAuthority: frozenAuthorityOrUndefined(freeze),
+    freeze,
   });
   // Repository-governed attempts are minted WITH their host-owned Discovery
   // snapshot (persistence coherence); a structural projection failure blocks
@@ -592,7 +592,6 @@ async function persistAndFormatNonConvergedReview(
     advanced,
     iteration,
     verdict,
-    freeze,
     nextObligation,
     attemptId,
     persisted,
@@ -607,12 +606,11 @@ function buildNonConvergedReviewResponse(input: {
   readonly advanced: { readonly state: SessionState; readonly transitions: unknown };
   readonly iteration: number;
   readonly verdict: LoopVerdict;
-  readonly freeze: RepositoryAuthorityFreezeResult;
   readonly nextObligation: ReturnType<typeof createNextArchitectureReviewObligation>;
   readonly attemptId: string | null;
   readonly persisted: SessionState;
 }): Record<string, unknown> {
-  const { session, review, revision, advanced, iteration, verdict, freeze, nextObligation } = input;
+  const { session, review, revision, advanced, iteration, verdict, nextObligation } = input;
   const instruction = buildArchitectureReviewInstruction({
     policy: session.policy,
     subagentEnabled: review.subagentEnabled,
@@ -631,7 +629,9 @@ function buildNonConvergedReviewResponse(input: {
     revisionDelta: revision.revisionDelta,
     reviewMode: review.subagentEnabled ? 'subagent' : 'self',
     ...reviewObligationResponseFields(nextObligation, input.attemptId),
-    ...(review.subagentEnabled ? repositoryEvidenceUnavailableField(freeze) : {}),
+    ...(review.subagentEnabled
+      ? repositoryEvidenceUnavailableField(nextObligation?.repositoryEvidenceFreeze)
+      : {}),
     next: instruction.next,
     ...(instruction.reviewInvocation ? { reviewInvocation: instruction.reviewInvocation } : {}),
     _audit: { transitions: advanced.transitions },
@@ -645,10 +645,9 @@ function createNextArchitectureReviewObligation(input: {
   revision: AdrRevision;
   iteration: number;
   resolvedTargetPaths: string[] | undefined;
-  repositoryAuthority: FrozenRepositoryAuthority | undefined;
+  freeze: RepositoryAuthorityFreezeResult;
 }) {
-  const { state, session, review, revision, iteration, resolvedTargetPaths, repositoryAuthority } =
-    input;
+  const { state, session, review, revision, iteration, resolvedTargetPaths, freeze } = input;
   if (!review.subagentEnabled) return null;
   const subjectDigest = state.architecture?.digest ?? `arch-${review.expectedPlanVersion}`;
   return createReviewObligation({
@@ -676,7 +675,10 @@ function createNextArchitectureReviewObligation(input: {
     claimedTaskClass: state.claimedTaskClass,
     metadata: targetPathsMetadata(resolvedTargetPaths),
     // Frozen repository context (freeze-time resolution): architecture reviews may cite it only.
-    repositoryAuthority,
+    repositoryAuthority: frozenAuthorityOrUndefined(freeze),
+    // Durable freeze outcome: continuations, restarts, and re-emits render
+    // the exact degradation cause from persisted state.
+    repositoryEvidenceFreeze: freezeOutcomeRecord(freeze),
   });
 }
 

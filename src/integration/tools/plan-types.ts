@@ -77,8 +77,6 @@ export type PlanSubmissionResponseInput = {
   planVersion: number;
   reviewFindings: ReviewFindings | null;
   transitions: unknown;
-  repositoryEvidenceFreeze:
-    import('../../rails/repository-authority.js').RepositoryAuthorityFreezeResult | null;
 };
 
 export type ConvergedPlanReviewInput = {

@@ -6,11 +6,12 @@
  */
 
 import type { SessionState } from '../../state/schema.js';
-import type {
-  FrozenRepositoryAuthority,
-  PlanEvidence,
-  ReviewFindings,
-} from '../../state/evidence.js';
+import type { PlanEvidence, ReviewFindings, ReviewObligation } from '../../state/evidence.js';
+import {
+  freezeOutcomeRecord,
+  frozenAuthorityOrUndefined,
+  type RepositoryAuthorityFreezeResult,
+} from '../../rails/repository-authority.js';
 import type {
   PlanExecutionScope,
   PlanRevisionResult,
@@ -91,7 +92,7 @@ export function buildPlanReviewObligationInput(
   planEvidence: PlanEvidence,
   planVersion: number,
   classificationFiles: readonly string[] | undefined,
-  authority: FrozenRepositoryAuthority | undefined,
+  freeze: RepositoryAuthorityFreezeResult,
 ): Parameters<typeof createObligationAndAttempt>[1] {
   const metadata: Record<string, unknown> = {};
   if (classificationFiles && classificationFiles.length > 0) {
@@ -120,22 +121,25 @@ export function buildPlanReviewObligationInput(
     changedFiles: classificationFiles,
     claimedTaskClass: scope.state.claimedTaskClass,
     metadata,
-    repositoryAuthority: authority,
+    repositoryAuthority: frozenAuthorityOrUndefined(freeze),
+    // Durable freeze outcome: continuations and forensics render the exact
+    // degradation cause from persisted state.
+    repositoryEvidenceFreeze: freezeOutcomeRecord(freeze),
   };
+}
+
+function planRepositoryEvidenceWarning(
+  nextObligation: ReviewObligation | null,
+): Record<string, unknown> {
+  return nextObligation
+    ? repositoryEvidenceUnavailableField(nextObligation.repositoryEvidenceFreeze)
+    : {};
 }
 
 export function buildPlanSubmissionResponse(
   input: PlanSubmissionResponseInput,
 ): Record<string, unknown> {
-  const {
-    scope,
-    finalState,
-    planEvidence,
-    planVersion,
-    reviewFindings,
-    transitions,
-    repositoryEvidenceFreeze,
-  } = input;
+  const { scope, finalState, planEvidence, planVersion, reviewFindings, transitions } = input;
   const nextObligation = scope.reviewPolicy.subagentEnabled
     ? findLatestObligation(finalState.reviewAssurance?.obligations ?? [], 'plan', 0, planVersion)
     : null;
@@ -160,7 +164,7 @@ export function buildPlanSubmissionResponse(
     maxSelfReviewIterations: scope.maxSelfReviewIterations,
     reviewMode: scope.reviewPolicy.subagentEnabled ? 'subagent' : 'self',
     ...reviewObligationResponseFields(nextObligation, planAttemptId),
-    ...repositoryEvidenceUnavailableField(repositoryEvidenceFreeze),
+    ...planRepositoryEvidenceWarning(nextObligation),
     next: reviewInstruction.next,
     reviewInvocation: reviewInstruction.reviewInvocation,
     _audit: { transitions },

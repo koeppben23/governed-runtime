@@ -146,10 +146,11 @@ describe('resolveRepositoryObservationAccess', () => {
     }
   });
 
-  it('BAD: missing capability → unavailable even with authority', () => {
+  it('BAD: missing capability → unavailable even with authority (attempt_capability_unavailable)', () => {
     const obligation = contextObligation();
     const access = resolveRepositoryObservationAccess(obligation, attemptFor(obligation, null));
     expect(access.available).toBe(false);
+    if (!access.available) expect(access.reason).toBe('attempt_capability_unavailable');
   });
 
   it('BAD: forged capability without obligation authority → unavailable (defense-in-depth)', () => {

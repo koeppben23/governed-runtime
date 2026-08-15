@@ -8,6 +8,7 @@
 
 import { z } from 'zod';
 import { REVIEWER_SUBAGENT_TYPE, REVIEW_REPORT_SCHEMA_ID } from './evidence-identifiers.js';
+import { RepositoryEvidenceFreeze } from './evidence-review-freeze.js';
 import { assuranceSchema } from './evidence-assurance-internal.js';
 import {
   CheckId,
@@ -459,6 +460,8 @@ export const ReviewObligation = z
      * before the frozen-repository-authority generation.
      */
     repositoryAuthority: FrozenRepositoryAuthority.optional(),
+    /** Durable plan/architecture repository-context freeze outcome (see {@link RepositoryEvidenceFreeze}); continuations, restarts, re-emits, archives, and forensics render the exact degradation cause. */
+    repositoryEvidenceFreeze: RepositoryEvidenceFreeze.optional(),
     maxReviewerOutputRepairAttempts: z.number().int().min(0).max(5),
   })
   .superRefine(refineStandaloneSubject)

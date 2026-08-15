@@ -10,8 +10,11 @@
  *
  * Fail-closed semantics:
  * - plan/architecture context freezing tolerates a missing repository
- *   (content-only reviews remain legitimate) by returning `undefined`, which
- *   makes repository evidence permanently `evidence_unavailable`.
+ *   (content-only reviews remain legitimate) by returning a typed
+ *   {@link RepositoryAuthorityFreezeResult} whose `unavailable` variant
+ *   carries the exact reason and diagnostic; repository evidence is then
+ *   permanently `evidence_unavailable`, and the outcome is frozen onto the
+ *   obligation as durable audit evidence.
  * - implementation base freezing THROWS: an implementation review governs
  *   repository work, so a session that cannot freeze its base cannot
  *   authoritatively enter implementation review.
@@ -30,22 +33,19 @@ import type {
   FrozenRepositoryAuthority,
   FrozenRepositoryRevisionTarget,
 } from '../state/evidence.js';
+import type {
+  RepositoryEvidenceFreeze,
+  RepositoryEvidenceFreezeReason,
+} from '../state/evidence-review-freeze.js';
 
-/**
- * Why a plan/architecture repository context could not be frozen. Distinct
- * reasons keep the degradation auditable instead of collapsing every cause
- * into an indistinguishable `undefined`.
- */
-export type RepositoryAuthorityFreezeReason =
-  | 'repository_unavailable'
-  | 'head_unavailable'
-  | 'repository_identity_unavailable'
-  | 'freeze_failed';
+/** Why a plan/architecture repository context could not be frozen. */
+export type RepositoryAuthorityFreezeReason = RepositoryEvidenceFreezeReason;
 
 /**
  * Typed freeze outcome for plan/architecture repository context. `unavailable`
  * never blocks the artifact review itself — repository evidence simply becomes
- * unavailable — but the cause is now explicit and observable in responses.
+ * unavailable — but the cause is explicit, observable in responses, and
+ * durable once frozen onto the obligation.
  */
 export type RepositoryAuthorityFreezeResult =
   | { readonly kind: 'available'; readonly authority: FrozenRepositoryAuthority }
@@ -60,6 +60,21 @@ export function frozenAuthorityOrUndefined(
   result: RepositoryAuthorityFreezeResult,
 ): FrozenRepositoryAuthority | undefined {
   return result.kind === 'available' ? result.authority : undefined;
+}
+
+/**
+ * Durable obligation record of a freeze outcome: the exact cause of a
+ * degradation is persisted, not only rendered into the immediate response.
+ */
+export function freezeOutcomeRecord(
+  result: RepositoryAuthorityFreezeResult,
+): RepositoryEvidenceFreeze {
+  if (result.kind === 'available') return { kind: 'available' };
+  return {
+    kind: 'unavailable',
+    reason: result.reason,
+    ...(result.diagnostic ? { diagnostic: result.diagnostic } : {}),
+  };
 }
 
 /**

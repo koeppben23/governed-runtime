@@ -46,8 +46,8 @@ import { reissueReviewAttempt } from './review-tool/continuation.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
 import {
   freezeContextAuthorityAtHead,
+  freezeOutcomeRecord,
   frozenAuthorityOrUndefined,
-  type RepositoryAuthorityFreezeResult,
 } from '../../rails/repository-authority.js';
 import { resolveAttemptDiscoveryOrBlock } from '../review/discovery-attempt-context.js';
 import { repositoryEvidenceUnavailableField } from '../review/observation-access.js';
@@ -182,6 +182,9 @@ function architectureInstructionResponse(
     selfReviewIteration: state.selfReview?.iteration ?? 0,
     reviewMode: subagentEnabled ? 'subagent' : 'self',
     ...reviewObligationResponseFields(input.obligation, input.attemptId),
+    // Durable degradation: re-emits and repairs render the persisted freeze
+    // cause, not only the immediate Mode-A response.
+    ...repositoryEvidenceUnavailableField(input.obligation.repositoryEvidenceFreeze),
     next: instruction.next,
     ...(instruction.reviewInvocation ? { reviewInvocation: instruction.reviewInvocation } : {}),
     _audit: { transitions: [] },
@@ -201,11 +204,8 @@ async function mintRestartObligation(
   subagentEnabled: boolean,
   nextAdr: NonNullable<SessionState['architecture']>,
   cycle: { readonly now: string; readonly iteration: number; readonly planVersion: number },
-): Promise<{
-  obligation: ReturnType<typeof createReviewObligation> | null;
-  freeze: RepositoryAuthorityFreezeResult | null;
-}> {
-  if (!subagentEnabled) return { obligation: null, freeze: null };
+): Promise<ReturnType<typeof createReviewObligation> | null> {
+  if (!subagentEnabled) return null;
   const classification = await resolvePreImplementationChallengeClassification(
     session.state,
     session.wsDir,
@@ -219,7 +219,7 @@ async function mintRestartObligation(
     metadata.targetPaths = resolvedTargetPaths;
   }
   const freeze = await freezeContextAuthorityAtHead(session.wsDir);
-  const obligation = createReviewObligation({
+  return createReviewObligation({
     obligationType: 'architecture',
     iteration: cycle.iteration,
     planVersion: cycle.planVersion,
@@ -243,8 +243,10 @@ async function mintRestartObligation(
     claimedTaskClass: session.state.claimedTaskClass,
     metadata,
     repositoryAuthority: frozenAuthorityOrUndefined(freeze),
+    // Durable freeze outcome: continuations, restarts, and re-emits render
+    // the exact degradation cause from persisted state.
+    repositoryEvidenceFreeze: freezeOutcomeRecord(freeze),
   });
-  return { obligation, freeze };
 }
 
 async function restartArchitectureReview(
@@ -329,7 +331,6 @@ async function restartArchitectureReview(
         obligation,
         restartAttemptId,
         instruction,
-        repositoryEvidenceFreeze: mintResult.freeze,
       }),
     ),
     augmentedState,
@@ -353,19 +354,17 @@ async function mintRestartObligationWithAttempt(
       kind: 'ok';
       obligation: ReturnType<typeof createReviewObligation> | null;
       attemptId: string | null;
-      freeze: RepositoryAuthorityFreezeResult | null;
       assurance: SessionState['reviewAssurance'];
     }
   | { kind: 'blocked'; message: string }
 > {
   const minted = await mintRestartObligation(args, session, subagentEnabled, nextAdr, cycle);
-  const obligation = minted.obligation;
+  const obligation = minted;
   if (!obligation) {
     return {
       kind: 'ok',
       obligation: null,
       attemptId: null,
-      freeze: minted.freeze,
       assurance: session.state.reviewAssurance,
     };
   }
@@ -395,7 +394,6 @@ async function mintRestartObligationWithAttempt(
     kind: 'ok',
     obligation,
     attemptId: withAttempt.attemptId,
-    freeze: minted.freeze,
     assurance: withAttempt.assurance,
   };
 }
@@ -410,7 +408,6 @@ function buildRestartResponse(
     obligation: ReturnType<typeof createReviewObligation> | null;
     restartAttemptId: string | null;
     instruction: ReturnType<typeof buildArchitectureReviewInstruction>;
-    repositoryEvidenceFreeze: RepositoryAuthorityFreezeResult | null;
   },
 ): Record<string, unknown> {
   return {
@@ -424,7 +421,7 @@ function buildRestartResponse(
     revisionDelta: input.revisionDelta,
     reviewMode: input.subagentEnabled ? 'subagent' : 'self',
     ...reviewObligationResponseFields(input.obligation, input.restartAttemptId),
-    ...repositoryEvidenceUnavailableField(input.repositoryEvidenceFreeze),
+    ...repositoryEvidenceUnavailableField(input.obligation?.repositoryEvidenceFreeze),
     next: input.instruction.next,
     ...(input.instruction.reviewInvocation
       ? { reviewInvocation: input.instruction.reviewInvocation }

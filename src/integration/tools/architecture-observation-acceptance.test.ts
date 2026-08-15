@@ -33,6 +33,7 @@ import { TEAM_POLICY } from '../../config/policy-presets.js';
 import { readState } from '../../adapters/persistence.js';
 import { createPolicyContext } from './helpers.js';
 import { handleAdrSubmission } from './architecture-submit.js';
+import { routeArchitectureInitialSubmission } from './architecture-restart.js';
 import { indexMarkdownSections } from '../../shared/markdown-sections.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { TOOL_FLOWGUARD_ARCHITECTURE } from '../tool-names.js';
@@ -236,6 +237,7 @@ describe('architecture observation acceptance', () => {
     );
     expect(obligation).toBeDefined();
     expect(obligation!.repositoryAuthority?.kind).toBe('context');
+    expect(obligation!.repositoryEvidenceFreeze).toEqual({ kind: 'available' });
     const attempt = persisted!.reviewAssurance!.attempts.find(
       (a) => a.obligationId === obligation!.obligationId,
     );
@@ -319,11 +321,29 @@ describe('architecture observation acceptance', () => {
       (o) => o.obligationType === 'architecture',
     );
     expect(obligation!.repositoryAuthority).toBeUndefined();
+    expect(obligation!.repositoryEvidenceFreeze).toMatchObject({
+      kind: 'unavailable',
+      reason: 'repository_unavailable',
+    });
     const attempt = persisted!.reviewAssurance!.attempts.find(
       (a) => a.obligationId === obligation!.obligationId,
     );
     expect(attempt).toBeDefined();
     expect(attempt!.observationCapability).toBeUndefined();
+
+    // Durable degradation: a later continuation re-emits the exact persisted
+    // freeze cause from the obligation, not from a lost local freeze result.
+    const continuation = await routeArchitectureInitialSubmission(
+      { title: 'ADR Test', adrText: ADR_TEXT },
+      { ...session, state: persisted! },
+    );
+    expect(continuation).not.toBeNull();
+    const reEmitted = JSON.parse(continuation!) as Record<string, unknown>;
+    expect(reEmitted.repositoryEvidence).toMatchObject({
+      available: false,
+      reason: 'repository_unavailable',
+    });
+    expect(reEmitted.status).toBe('Architecture review is pending.');
 
     // No capability exists, so no observation invocation can ever succeed.
     const { observe_repository } = await import('./observe-repository.js');
