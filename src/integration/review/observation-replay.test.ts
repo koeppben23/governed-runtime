@@ -57,6 +57,7 @@ function buildState(): SessionState {
     now: '2026-08-13T10:00:00.000Z',
     subjectDigest: 'impl-digest',
     changedFiles: ['src/foo.ts'],
+    reviewSubjectScope: { kind: 'implementation', implementationDigest: 'impl-digest' },
     repositoryAuthority: {
       kind: 'candidate_pair',
       base: {

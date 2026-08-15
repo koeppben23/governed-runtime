@@ -121,7 +121,8 @@ function buildState(
   return makeState(phase, {
     ticket: TICKET,
     plan: PLAN_RECORD,
-    implementation: phase === 'IMPLEMENTATION' ? IMPL_EVIDENCE : null,
+    implementation:
+      phase === 'IMPLEMENTATION' ? { ...IMPL_EVIDENCE, digest: 'test-subject-digest' } : null,
     architecture:
       phase === 'ARCHITECTURE'
         ? {
@@ -165,9 +166,8 @@ function buildState(
           reviewSubjectScope:
             obligationType === 'implement'
               ? {
-                  kind: 'repository_change',
-                  paths: ['src/foo.ts'],
-                  revisions: ['base', 'head'],
+                  kind: 'implementation',
+                  implementationDigest: 'test-subject-digest',
                 }
               : {
                   kind: 'artifact',

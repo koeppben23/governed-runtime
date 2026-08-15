@@ -278,7 +278,11 @@ describe('integration/review-assurance', () => {
                     'test',
                   ),
                 }
-              : {}),
+              : obligationType === 'implement'
+                ? {
+                    reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
+                  }
+                : {}),
           policySnapshot: {
             challengePolicy: {
               version: 'challenge-policy.v1',
@@ -329,6 +333,7 @@ describe('integration/review-assurance', () => {
           now: NOW,
           subjectDigest: 'test',
           changedFiles: ['src/state/schema.ts'],
+          reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
           claimedTaskClass: 'TRIVIAL',
           policySnapshot,
         });
@@ -375,6 +380,7 @@ describe('integration/review-assurance', () => {
         now: NOW,
         subjectDigest: 'test',
         changedFiles: ['src/state/schema.ts'],
+        reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
         policySnapshot: { maxReviewerOutputRepairAttempts: 1 },
       });
       expect(result.requiredChallengeCount).toBeUndefined();
@@ -488,36 +494,58 @@ describe('integration/review-assurance', () => {
       });
     });
 
-    it('implement + undefined changedFiles → unavailable', () => {
-      const result = createReviewObligation({
-        obligationType: 'implement',
-        iteration: 0,
-        planVersion: 1,
-        now: NOW,
-        subjectDigest: 'test',
-      });
-      expect(result.reviewSubjectScope).toEqual({
-        kind: 'unavailable',
-        reason: 'scope_not_resolved',
-      });
+    it('implement without an explicit scope fails closed (no changedFiles-derived subject)', () => {
+      expect(() =>
+        createReviewObligation({
+          obligationType: 'implement',
+          iteration: 0,
+          planVersion: 1,
+          now: NOW,
+          subjectDigest: 'test',
+        }),
+      ).toThrowError('implementation reviewSubjectScope');
     });
 
-    it('implement + empty changedFiles → unavailable', () => {
-      const result = createReviewObligation({
-        obligationType: 'implement',
-        iteration: 0,
-        planVersion: 1,
-        now: NOW,
-        subjectDigest: 'test',
-        changedFiles: [],
-      });
-      expect(result.reviewSubjectScope).toEqual({
-        kind: 'unavailable',
-        reason: 'scope_not_resolved',
-      });
+    it('implement + changedFiles without an explicit scope fails closed (repository_change is never derived)', () => {
+      expect(() =>
+        createReviewObligation({
+          obligationType: 'implement',
+          iteration: 0,
+          planVersion: 1,
+          now: NOW,
+          subjectDigest: 'test',
+          changedFiles: ['src/foo.ts'],
+        }),
+      ).toThrowError('implementation reviewSubjectScope');
     });
 
-    it('implement + concrete changedFiles → repository_change with paths', () => {
+    it('implement with a non-implementation explicit scope fails closed', () => {
+      expect(() =>
+        createReviewObligation({
+          obligationType: 'implement',
+          iteration: 0,
+          planVersion: 1,
+          now: NOW,
+          subjectDigest: 'test',
+          reviewSubjectScope: { kind: 'unavailable', reason: 'diff_resolution_failed' },
+        }),
+      ).toThrowError('implementation reviewSubjectScope');
+    });
+
+    it('implement with a digest-divergent implementation scope fails closed', () => {
+      expect(() =>
+        createReviewObligation({
+          obligationType: 'implement',
+          iteration: 0,
+          planVersion: 1,
+          now: NOW,
+          subjectDigest: 'test',
+          reviewSubjectScope: { kind: 'implementation', implementationDigest: 'other' },
+        }),
+      ).toThrowError('does not match the obligation subject digest');
+    });
+
+    it('implement with a bound implementation scope mints the digest-bound subject', () => {
       const result = createReviewObligation({
         obligationType: 'implement',
         iteration: 0,
@@ -525,27 +553,11 @@ describe('integration/review-assurance', () => {
         now: NOW,
         subjectDigest: 'test',
         changedFiles: ['src/foo.ts'],
+        reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
       });
       expect(result.reviewSubjectScope).toEqual({
-        kind: 'repository_change',
-        paths: ['src/foo.ts'],
-        revisions: ['head'],
-      });
-    });
-
-    it('implement: explicit reviewSubjectScope overrides derivation', () => {
-      const result = createReviewObligation({
-        obligationType: 'implement',
-        iteration: 0,
-        planVersion: 1,
-        now: NOW,
-        subjectDigest: 'test',
-        changedFiles: ['src/foo.ts'],
-        reviewSubjectScope: { kind: 'unavailable', reason: 'diff_resolution_failed' },
-      });
-      expect(result.reviewSubjectScope).toEqual({
-        kind: 'unavailable',
-        reason: 'diff_resolution_failed',
+        kind: 'implementation',
+        implementationDigest: 'test',
       });
     });
 

@@ -395,19 +395,45 @@ interface BuildToolPromptParams {
 
 /**
  * Canonical implementation subject digest for the host-enforced anchor
- * contract: the recorded implementation digest, falling back to the bound
- * obligation's subject digest.
+ * contract: the digest the ACTIVE review obligation is bound to — never the
+ * mutable current implementation. The obligation is the exact frozen subject
+ * authority; a divergence between the two is an integrity failure (the binder
+ * would reject every prompt-conform anchor, producing an unsatisfiable
+ * reviewer contract).
  */
 function resolveImplementationSubjectDigest(
   state: SessionState,
   obligationId: string,
 ): string | undefined {
-  return (
-    state.implementation?.digest ??
-    state.reviewAssurance?.obligations.find((o) => o.obligationId === obligationId)
-      ?.subjectDigest ??
-    undefined
+  const obligation = state.reviewAssurance?.obligations.find(
+    (o) => o.obligationId === obligationId,
   );
+  if (!obligation || obligation.obligationType !== 'implement') {
+    return state.implementation?.digest ?? undefined;
+  }
+  const scope = obligation.reviewSubjectScope;
+  if (scope?.kind !== 'implementation' || scope.implementationDigest !== obligation.subjectDigest) {
+    throw Object.assign(
+      new Error(
+        'The bound implementation review subject is incoherent: the obligation scope ' +
+          'does not carry the implementation digest it is bound to.',
+      ),
+      { code: 'REVIEW_MATERIAL_INTEGRITY_FAILED' },
+    );
+  }
+  if (
+    state.implementation?.digest !== undefined &&
+    state.implementation.digest !== obligation.subjectDigest
+  ) {
+    throw Object.assign(
+      new Error(
+        'The current implementation digest diverges from the bound implementation ' +
+          'review subject digest.',
+      ),
+      { code: 'REVIEW_MATERIAL_INTEGRITY_FAILED' },
+    );
+  }
+  return obligation.subjectDigest;
 }
 
 export function buildToolPrompt(params: BuildToolPromptParams): string | null {

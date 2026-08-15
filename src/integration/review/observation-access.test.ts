@@ -63,6 +63,7 @@ function candidatePairObligation(): ReviewObligation {
     now: NOW,
     subjectDigest: 'impl-digest',
     changedFiles: ['src/foo.ts'],
+    reviewSubjectScope: { kind: 'implementation', implementationDigest: 'impl-digest' },
     repositoryAuthority: {
       kind: 'candidate_pair',
       base: { kind: 'commit', repositoryIdentity: LOCAL_IDENTITY, objectSha: SHA },

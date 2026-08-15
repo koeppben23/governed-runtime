@@ -448,6 +448,7 @@ describe('assurance lifecycle persistence across hosts', () => {
           subjectDigest: 'test',
           reviewMaterial: freezeReviewMaterial('frozen implementation review material', 'test'),
           changedFiles: ['src/foo.ts'],
+          reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
         });
         const findingsI = strictFindings({ iteration: 0, planVersion: 1 });
         const fhI = hashFindings(findingsI);

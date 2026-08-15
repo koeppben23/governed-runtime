@@ -286,3 +286,132 @@ describe('buildAttemptSucceededLogger', () => {
     expect(extra.durationMs).toBe(7);
   });
 });
+
+// ─── Implementation Subject Authority (SDK prompt) ───────────────────────────
+
+import { buildToolPrompt } from './shared-helpers.js';
+import { buildImplReviewPrompt } from './prompt-builders.js';
+import { makeState, FROZEN_IMPLEMENTATION_BASE } from '../../fixtures.js';
+import { TOOL_FLOWGUARD_IMPLEMENT } from '../tool-names.js';
+
+function implementPromptState(overrides: {
+  implementationDigest?: string | null;
+  scopeKind?: 'implementation' | 'repository_change';
+  scopeDigest?: string;
+}): Parameters<typeof buildToolPrompt>[0] {
+  const {
+    implementationDigest = null,
+    scopeKind = 'implementation',
+    scopeDigest = 'subject-A',
+  } = overrides;
+  const obligation = {
+    obligationId: 'ob-1',
+    obligationType: 'implement' as const,
+    iteration: 1,
+    planVersion: 1,
+    criteriaVersion: 'p41-v1',
+    mandateDigest: 'mandate-digest',
+    maxReviewerOutputRepairAttempts: 1,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    pluginHandshakeAt: null,
+    status: 'pending' as const,
+    invocationId: null,
+    blockedCode: null,
+    fulfilledAt: null,
+    consumedAt: null,
+    subjectDigest: 'subject-A',
+    reviewProfile: 'core' as const,
+    profileSource: 'policy_default' as const,
+    reviewSubjectScope:
+      scopeKind === 'implementation'
+        ? ({ kind: 'implementation', implementationDigest: scopeDigest } as const)
+        : ({
+            kind: 'repository_change',
+            paths: ['src/a.ts'],
+            revisions: ['base', 'head'],
+          } as const),
+  };
+  const state = makeState('IMPL_REVIEW', {
+    implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+    implementation: implementationDigest
+      ? {
+          changedFiles: ['src/a.ts'],
+          domainFiles: ['src/a.ts'],
+          digest: implementationDigest,
+          executedAt: '2026-01-01T00:00:00.000Z',
+        }
+      : null,
+    reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v5',
+      obligations: [obligation],
+      invocations: [],
+      attempts: [],
+    },
+  });
+  return {
+    toolName: TOOL_FLOWGUARD_IMPLEMENT,
+    texts: { planText: '## Plan\nFix', ticketText: '## Ticket\nTask', adrText: '', adrTitle: '' },
+    reviewCtx: {
+      obligationId: 'ob-1',
+      iteration: 1,
+      planVersion: 1,
+      criteriaVersion: 'p41-v1',
+      mandateDigest: 'mandate-digest',
+    },
+    parsedOutput: { changedFiles: ['src/a.ts'] },
+    sessionState: state,
+    rules: {
+      planRules: {},
+      implRules: {},
+      archRules: {},
+    },
+    deps: {} as never,
+    discoveryContext: {
+      health: null,
+      drift: null,
+      detectedStack: null,
+      verificationCandidates: [],
+      implementationGuidance: null,
+      notVerified: [],
+    },
+  };
+}
+
+describe('buildToolPrompt — implementation subject authority', () => {
+  it('uses the OBLIGATION subject digest, not the mutable current implementation', () => {
+    const params = implementPromptState({ implementationDigest: null });
+    buildToolPrompt(params);
+    expect(vi.mocked(buildImplReviewPrompt)).toHaveBeenCalledWith(
+      expect.objectContaining({ implementationDigest: 'subject-A' }),
+    );
+  });
+
+  it('accepts a coherent current implementation digest equal to the subject digest', () => {
+    const params = implementPromptState({ implementationDigest: 'subject-A' });
+    buildToolPrompt(params);
+    expect(vi.mocked(buildImplReviewPrompt)).toHaveBeenCalledWith(
+      expect.objectContaining({ implementationDigest: 'subject-A' }),
+    );
+  });
+
+  it('fails closed when the current implementation digest diverges from the bound subject', () => {
+    const params = implementPromptState({ implementationDigest: 'subject-B' });
+    expect(() => buildToolPrompt(params)).toThrowError(
+      expect.objectContaining({ code: 'REVIEW_MATERIAL_INTEGRITY_FAILED' }),
+    );
+  });
+
+  it('fails closed when the bound scope digest diverges from the obligation subject digest', () => {
+    const params = implementPromptState({ scopeDigest: 'other-digest' });
+    expect(() => buildToolPrompt(params)).toThrowError(
+      expect.objectContaining({ code: 'REVIEW_MATERIAL_INTEGRITY_FAILED' }),
+    );
+  });
+
+  it('fails closed for a legacy repository_change scope on an implement obligation', () => {
+    const params = implementPromptState({ scopeKind: 'repository_change' });
+    expect(() => buildToolPrompt(params)).toThrowError(
+      expect.objectContaining({ code: 'REVIEW_MATERIAL_INTEGRITY_FAILED' }),
+    );
+  });
+});

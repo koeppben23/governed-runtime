@@ -171,9 +171,8 @@ describe('resolveNextAction', () => {
         planVersion: 1,
         subjectDigest: 'impl-digest',
         reviewSubjectScope: {
-          kind: 'repository_change',
-          paths: ['src/a.ts'],
-          revisions: ['base', 'head'],
+          kind: 'implementation',
+          implementationDigest: 'impl-digest',
         },
         changedFiles: ['src/a.ts'],
         policySnapshot: null,
@@ -207,9 +206,8 @@ describe('resolveNextAction', () => {
           planVersion: 1,
           subjectDigest: `impl-digest-${iteration}`,
           reviewSubjectScope: {
-            kind: 'repository_change',
-            paths: ['src/a.ts'],
-            revisions: ['base', 'head'],
+            kind: 'implementation',
+            implementationDigest: `impl-digest-${iteration}`,
           },
           changedFiles: ['src/a.ts'],
           policySnapshot: null,

@@ -50,6 +50,37 @@ export interface ObligationRefinementShape {
     readonly reason?: string;
   } | null;
   readonly repositoryRevisionProvenance?: ProvenanceValue;
+  readonly reviewSubjectScope?: {
+    readonly kind: string;
+    readonly implementationDigest?: string;
+  } | null;
+}
+
+/**
+ * Implementation-scoped obligations must bind their scope digest to the
+ * obligation subject digest. Kind-level enforcement (repository_change is
+ * never a legal implementation scope) lives at the minting boundary —
+ * legacy persisted records predating the implementation subject model keep
+ * parsing; this refinement only rejects a MODERN implementation scope whose
+ * digest diverges from the subject identity it is bound to.
+ */
+export function refineImplementationScopeSubjectCoherence(
+  obligation: ObligationRefinementShape,
+  context: z.RefinementCtx,
+): void {
+  if (obligation.obligationType !== 'implement') return;
+  const scope = obligation.reviewSubjectScope;
+  if (
+    scope?.kind === 'implementation' &&
+    scope.implementationDigest !== undefined &&
+    scope.implementationDigest !== obligation.subjectDigest
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['reviewSubjectScope'],
+      message: 'implementation reviewSubjectScope digest must equal the obligation subject digest',
+    });
+  }
 }
 
 /** Minimal structural attempt shape for the Discovery-coherence refinement. */
@@ -128,6 +159,9 @@ export function refineAuthorityStructure(
   obligation: ObligationRefinementShape,
   context: z.RefinementCtx,
 ): void {
+  // Subject-scope coherence is part of the same authority-structure boundary:
+  // a modern implementation scope must bind to the obligation subject digest.
+  refineImplementationScopeSubjectCoherence(obligation, context);
   if (!obligation.repositoryAuthority) return;
   const structural = verifyFrozenRepositoryAuthority(obligation.repositoryAuthority);
   if (structural) {
