@@ -112,6 +112,7 @@ function makeValidAuditEvent(overrides: Partial<AuditEvent> = {}): AuditEvent {
 /** Create a minimal valid ReviewReport for persistence tests. */
 function makeValidReport(): ReviewReport {
   return {
+    reviewKind: 'lifecycle_review',
     schemaVersion: 'flowguard-review-report.v1',
     sessionId: FIXED_SESSION_UUID,
     generatedAt: FIXED_TIME,

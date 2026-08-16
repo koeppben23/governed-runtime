@@ -37,12 +37,29 @@ import type {
   ValidationResult,
   DecisionIdentity,
 } from '../state/evidence.js';
+import type {
+  ArchitectureApprovalCertificate,
+  ArchitectureReviewBinding,
+  PlanApprovalCertificate,
+} from '../state/proofgraph-approval.js';
+import {
+  authorizedCriticalPlanClaimIds,
+  emptyClaimDeclarations,
+} from '../state/proofgraph-approval.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import { evaluate, evaluateWithEvent } from '../machine/evaluate.js';
 import type { RailResult, RailBlocked, RailContext, TransitionRecord } from './types.js';
 import { applyTransition } from './types.js';
 import { blocked } from '../config/reasons.js';
 import { compareActorIdentity, isAssuranceAtLeast } from '../identity/actor-info.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { digestToId } from '../shared/hashing.js';
+import { evaluateProofGraphGate } from '../audit/proofgraph/gate.js';
+import { mapEnforcementReasonToRegistryCode } from '../audit/proofgraph/reason-code-mapping.js';
+import {
+  resolveArchitectureReviewEvidence,
+  type ArchitectureReviewEvidenceResolution,
+} from './review-evidence-resolution.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -158,7 +175,17 @@ function applyStateClearingPattern(state: SessionState, verdict: ReviewVerdict):
     };
   }
   if (state.phase === 'ARCH_REVIEW') {
-    return { ...state, selfReview: null };
+    return {
+      ...state,
+      architecture: state.architecture
+        ? {
+            ...state.architecture,
+            reviewCompletion: 'pending',
+            approvalCertificate: undefined,
+          }
+        : null,
+      selfReview: null,
+    };
   }
 
   return state;
@@ -242,6 +269,269 @@ function enforceApprovalIdentity(
   return verifyAssuranceThreshold(input, ctx);
 }
 
+/** Enforce ProofGraph only for the governed lifecycle's final evidence approval. */
+function enforceProofGraphEvidenceApproval(
+  state: SessionState,
+  input: ReviewDecisionInput,
+): RailBlocked | null {
+  if (state.phase !== 'EVIDENCE_REVIEW' || input.verdict !== 'approve') {
+    return null;
+  }
+  const authorization = authorizedCriticalPlanClaimIds(state.plan);
+  const decision = evaluateProofGraphGate({
+    projection: state.proofGraph,
+    authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
+    certificateValid: authorization.kind === 'authorized',
+    implementationDigest: state.implementation?.digest,
+    riskAssessment: state.implementationRiskAssessment,
+  });
+  if (!decision.gated) return null;
+  if (decision.kind === 'critical_fact_required') {
+    return blocked('PROOFGRAPH_CRITICAL_FACT_REQUIRED', {
+      triggers: decision.relevantTriggers.join(', '),
+    });
+  }
+  if (decision.kind === 'facts_unproven') {
+    // facts_unproven — include per-claim registry details in the message
+    const claimDetails = decision.blockingClaims
+      .map((bc) => `${bc.claimId} (${bc.registryCode})`)
+      .join(', ');
+    return blocked('PROOFGRAPH_CRITICAL_FACTS_UNPROVEN', {
+      claimDetails,
+      claimIds: decision.blockingClaimIds.join(', '),
+    });
+  }
+  const registryCode = mapEnforcementReasonToRegistryCode(decision.reasonCode);
+  if (decision.kind === 'evaluation_unavailable') {
+    return blocked(registryCode, { claimIds: decision.blockingClaimIds.join(', ') });
+  }
+  return blocked(registryCode, undefined);
+}
+
+/** Architecture approval requires a completed reviewer cycle, never a pending loop. */
+function enforceArchitectureReviewCompletion(
+  state: SessionState,
+  input: ReviewDecisionInput,
+): RailBlocked | null {
+  if (state.phase !== 'ARCH_REVIEW' || input.verdict !== 'approve') return null;
+  const completion = state.architecture?.reviewCompletion;
+  if (completion === 'reviewer_accepted' || completion === 'review_exhausted') return null;
+  return blocked('ARCHITECTURE_REVIEW_COMPLETION_REQUIRED', {
+    reviewCompletion: completion ?? 'missing',
+  });
+}
+
+/**
+ * Architecture approval requires bindable independent-review evidence:
+ * `reviewer_accepted` demands exact-subject evidence for the current ADR
+ * digest; `review_exhausted` demands the latest real bound evidence so the
+ * override provenance stays explicit. Receives the already-resolved binding so
+ * gate and certificate minting share ONE resolution — no second resolver run,
+ * no drift inside one decision operation.
+ */
+function enforceArchitectureReviewEvidence(
+  state: SessionState,
+  resolution: ArchitectureReviewEvidenceResolution | null,
+): RailBlocked | null {
+  // Called only from the approve path; keeping the phase guard alone avoids
+  // dead operands.
+  if (state.phase !== 'ARCH_REVIEW') return null;
+  if (resolution?.kind === 'bound') return null;
+  const reviewCompletion = state.architecture?.reviewCompletion ?? 'missing';
+  if (resolution?.kind === 'exhaustion_contradiction') {
+    return blocked('ARCHITECTURE_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION', {
+      reviewCompletion,
+      capturedVerdict: resolution.capturedVerdict,
+    });
+  }
+  return blocked('ARCHITECTURE_REVIEW_EVIDENCE_REQUIRED', {
+    reviewCompletion,
+  });
+}
+
+/**
+ * Bind the human approval to the exact immutable plan version and its claims.
+ * The certificate digest deliberately excludes itself and uses the injected
+ * digest authority so rail callers retain control of cryptographic hashing.
+ */
+function createPlanApprovalCertificate(
+  plan: NonNullable<SessionState['plan']>,
+  decision: ReviewDecision,
+  ctx: RailContext,
+  reviewObligationId?: string | null,
+  reviewEvidenceDigest?: string | null,
+): PlanApprovalCertificate {
+  const claimDeclarations = plan.claimDeclarations ?? emptyClaimDeclarations('plan');
+  const claimDeclarationsDigest = ctx.digest(canonicalJsonStringify(claimDeclarations));
+  const decisionAttestationDigest = ctx.digest(canonicalJsonStringify(decision));
+  const planVersion = plan.current.planVersion;
+  const planRecordDigest = plan.current.recordDigest;
+  const obligationId = reviewObligationId ?? null;
+  const evidenceDigest = reviewEvidenceDigest ?? null;
+
+  const certificateIdDigest = ctx.digest(
+    canonicalJsonStringify({
+      authorityDigest: plan.current.digest,
+      claimDeclarationsDigest,
+      decisionAttestationDigest,
+      planVersion,
+      planRecordDigest,
+      reviewObligationId: obligationId,
+      reviewEvidenceDigest: evidenceDigest,
+      approvedAt: decision.decidedAt,
+      approvedBy: decision.decidedBy,
+    }),
+  );
+  const certificateId = digestToId(certificateIdDigest, 4);
+  return {
+    flow: 'plan',
+    authorityDigest: plan.current.digest,
+    claimDeclarationsDigest,
+    decisionAttestationDigest,
+    approvedAt: decision.decidedAt,
+    approvedBy: decision.decidedBy,
+    certificateId,
+    planVersion,
+    planRecordDigest,
+    reviewObligationId: obligationId,
+    reviewEvidenceDigest: evidenceDigest,
+  };
+}
+
+function createArchitectureApprovalCertificate(
+  architecture: NonNullable<SessionState['architecture']>,
+  decision: ReviewDecision,
+  ctx: RailContext,
+  reviewBinding: ArchitectureReviewBinding,
+): ArchitectureApprovalCertificate {
+  const claimDeclarations =
+    architecture.claimDeclarations ?? emptyClaimDeclarations('architecture');
+  const claimDeclarationsDigest = ctx.digest(canonicalJsonStringify(claimDeclarations));
+  const decisionAttestationDigest = ctx.digest(canonicalJsonStringify(decision));
+  const certificateIdDigest = ctx.digest(
+    canonicalJsonStringify({
+      authorityDigest: architecture.digest,
+      claimDeclarationsDigest,
+      decisionAttestationDigest,
+      // The binding block co-signs the certificate identity: relabeling the
+      // binding kind or swapping the reviewed digest changes the certificateId.
+      reviewBinding,
+      approvedAt: decision.decidedAt,
+      approvedBy: decision.decidedBy,
+    }),
+  );
+  const certificateId = digestToId(certificateIdDigest, 4);
+  return {
+    flow: 'architecture',
+    authorityDigest: architecture.digest,
+    claimDeclarationsDigest,
+    decisionAttestationDigest,
+    approvedAt: decision.decidedAt,
+    approvedBy: decision.decidedBy,
+    certificateId,
+    reviewBinding,
+  };
+}
+
+function resolveAcceptedPlanReviewEvidence(
+  state: SessionState,
+  plan: NonNullable<SessionState['plan']>,
+): [string | null, string | null] {
+  // Match the obligation that is bound to the exact plan subject being approved.
+  // Prefer obligations whose subjectDigest matches the current plan's digest.
+  // Fall back to the latest fulfilled/consumed obligation of type 'plan'.
+  const candidates = [...(state.reviewAssurance?.obligations ?? [])]
+    .filter(
+      (o) => o.obligationType === 'plan' && (o.status === 'fulfilled' || o.status === 'consumed'),
+    )
+    .reverse();
+
+  const subjectMatched = candidates.find((o) => o.subjectDigest === plan.current.digest);
+  const acceptedObligation = subjectMatched ?? candidates[0] ?? null;
+
+  const acceptedEvidence = acceptedObligation?.invocationId
+    ? state.reviewAssurance?.invocations.find(
+        (inv) => inv.invocationId === acceptedObligation.invocationId,
+      )
+    : null;
+  return [acceptedObligation?.obligationId ?? null, acceptedEvidence?.findingsHash ?? null];
+}
+
+function approvalCertificatePatch(
+  state: SessionState,
+  input: ReviewDecisionInput,
+  decision: ReviewDecision,
+  ctx: RailContext,
+  architectureReviewBinding: ArchitectureReviewBinding | null,
+): Partial<Pick<SessionState, 'plan' | 'architecture'>> {
+  if (
+    state.phase === 'PLAN_REVIEW' &&
+    input.verdict === 'approve' &&
+    state.plan &&
+    !state.plan.approvalCertificate
+  ) {
+    return {
+      plan: {
+        ...state.plan,
+        approvalCertificate: createPlanApprovalCertificate(
+          state.plan,
+          decision,
+          ctx,
+          ...resolveAcceptedPlanReviewEvidence(state, state.plan),
+        ),
+      },
+    };
+  }
+  if (
+    state.phase === 'ARCH_REVIEW' &&
+    input.verdict === 'approve' &&
+    state.architecture &&
+    !state.architecture.approvalCertificate &&
+    architectureReviewBinding
+  ) {
+    return {
+      architecture: {
+        ...state.architecture,
+        approvalCertificate: createArchitectureApprovalCertificate(
+          state.architecture,
+          decision,
+          ctx,
+          architectureReviewBinding,
+        ),
+      },
+    };
+  }
+  return {};
+}
+
+/**
+ * Approval preconditions: four-eyes, decision identity, architecture review
+ * completion, architecture evidence coherence, and the ProofGraph gate.
+ * Resolves the architecture evidence ONCE per decision operation; the same
+ * resolved binding is returned to the caller and used later by the certificate
+ * patch, so gate and mint can never disagree within this operation.
+ */
+function enforceApprovalPreconditions(
+  state: SessionState,
+  input: ReviewDecisionInput,
+  ctx: RailContext,
+): { block: RailBlocked | null; evidence: ArchitectureReviewEvidenceResolution | null } {
+  if (input.verdict !== 'approve') return { block: null, evidence: null };
+  const identityBlock = enforceApprovalIdentity(state, input, ctx);
+  if (identityBlock) return { block: identityBlock, evidence: null };
+  const architectureReviewBlock = enforceArchitectureReviewCompletion(state, input);
+  if (architectureReviewBlock) return { block: architectureReviewBlock, evidence: null };
+  // The phase guard lives in the gate and the patch; resolving is a pure read
+  // and stays side-effect free for non-ARCH phases.
+  const evidence = state.architecture
+    ? resolveArchitectureReviewEvidence(state, state.architecture)
+    : null;
+  const architectureEvidenceBlock = enforceArchitectureReviewEvidence(state, evidence);
+  if (architectureEvidenceBlock) return { block: architectureEvidenceBlock, evidence };
+  const proofGraphBlock = enforceProofGraphEvidenceApproval(state, input);
+  return { block: proofGraphBlock, evidence };
+}
+
 // ─── Rail ─────────────────────────────────────────────────────────────────────
 
 export function executeReviewDecision(
@@ -263,11 +553,10 @@ export function executeReviewDecision(
     return blocked('INVALID_VERDICT', { verdict: String(input.verdict) });
   }
 
-  // 3. Four-eyes and decision identity enforcement (approval only).
-  if (input.verdict === 'approve') {
-    const identityBlock = enforceApprovalIdentity(state, input, ctx);
-    if (identityBlock) return identityBlock;
-  }
+  // 3. Approval preconditions (four-eyes, identity, architecture evidence, ProofGraph).
+  const { block: preconditionBlock, evidence: architectureEvidenceResolution } =
+    enforceApprovalPreconditions(state, input, ctx);
+  if (preconditionBlock) return preconditionBlock;
 
   // 4. Resolve target phase via topology
   const target = evaluateWithEvent(state.phase, event);
@@ -288,9 +577,27 @@ export function executeReviewDecision(
     ...(input.decisionIdentity ? { decisionIdentity: input.decisionIdentity } : {}),
   };
 
+  // A certificate is created only for the first human approval at its flow's gate;
+  // an existing immutable certificate is never rewritten.
+  const architectureReviewBinding =
+    architectureEvidenceResolution?.kind === 'bound'
+      ? architectureEvidenceResolution.binding
+      : null;
+  const certificatePatch = approvalCertificatePatch(
+    state,
+    input,
+    decision,
+    ctx,
+    architectureReviewBinding,
+  );
+
   // 6. Apply state clearing pattern based on gate + verdict
   const clearedState = applyStateClearingPattern(
-    { ...state, reviewDecision: decision },
+    {
+      ...state,
+      reviewDecision: decision,
+      ...certificatePatch,
+    },
     input.verdict,
   );
 

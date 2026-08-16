@@ -34,6 +34,7 @@ import {
 } from './policy-types.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import { PolicyConfigurationError } from './policy-errors.js';
+import { normalizeCoreFields } from './policy-snapshot-core-normalize.js';
 
 /**
  * Normalize a legacy or weakened selfReview config to the mandatory strict default.
@@ -214,55 +215,6 @@ function normalizeHash(s: Record<string, unknown>): NormalizedField<string> {
   const raw = s.hash;
   if (typeof raw === 'string' && raw.length > 0) return { value: raw, normalized: false };
   return { value: 'UNKNOWN_LEGACY', normalized: true };
-}
-
-function normalizeCoreFields(
-  s: Record<string, unknown>,
-  defaults: ReturnType<typeof modeConsistentDefaults>,
-): {
-  requireHumanGates: boolean;
-  maxSelfReviewIterations: number;
-  maxImplReviewIterations: number;
-  maxIncoherentReviewerCaptureRetries: number;
-  allowSelfApproval: boolean;
-  normalized: boolean;
-} {
-  let norm = false;
-
-  const rawHuman = s.requireHumanGates;
-  const requireHumanGates = typeof rawHuman === 'boolean' ? rawHuman : defaults.requireHumanGates;
-  if (typeof rawHuman !== 'boolean') norm = true;
-
-  const rawMaxSelf = s.maxSelfReviewIterations;
-  const maxSelfReviewIterations =
-    typeof rawMaxSelf === 'number' ? rawMaxSelf : defaults.maxSelfReviewIterations;
-  if (typeof rawMaxSelf !== 'number') norm = true;
-
-  const rawMaxImpl = s.maxImplReviewIterations;
-  const maxImplReviewIterations =
-    typeof rawMaxImpl === 'number' ? rawMaxImpl : defaults.maxImplReviewIterations;
-  if (typeof rawMaxImpl !== 'number') norm = true;
-
-  const rawApprove = s.allowSelfApproval;
-  const allowSelfApproval =
-    typeof rawApprove === 'boolean' ? rawApprove : defaults.allowSelfApproval;
-  if (typeof rawApprove !== 'boolean') norm = true;
-
-  const rawCaptureRetries = s.maxIncoherentReviewerCaptureRetries;
-  const maxIncoherentReviewerCaptureRetries =
-    typeof rawCaptureRetries === 'number'
-      ? rawCaptureRetries
-      : defaults.maxIncoherentReviewerCaptureRetries;
-  if (typeof rawCaptureRetries !== 'number') norm = true;
-
-  return {
-    requireHumanGates,
-    maxSelfReviewIterations,
-    maxImplReviewIterations,
-    maxIncoherentReviewerCaptureRetries,
-    allowSelfApproval,
-    normalized: norm,
-  };
 }
 
 function normalizePolicyFields(
@@ -621,6 +573,7 @@ export function normalizePolicySnapshotWithMeta(
       maxSelfReviewIterations: core.maxSelfReviewIterations,
       maxImplReviewIterations: core.maxImplReviewIterations,
       maxIncoherentReviewerCaptureRetries: core.maxIncoherentReviewerCaptureRetries,
+      maxReviewerOutputRepairAttempts: core.maxReviewerOutputRepairAttempts,
       allowSelfApproval: core.allowSelfApproval,
       requireVerifiedActorsForApproval: policy.requireVerifiedActorsForApproval,
       audit,
@@ -650,6 +603,7 @@ const SOLO_DEFAULTS = {
   maxSelfReviewIterations: 2,
   maxImplReviewIterations: 1,
   maxIncoherentReviewerCaptureRetries: 1,
+  maxReviewerOutputRepairAttempts: 1,
   allowSelfApproval: true as const,
   minimumActorAssuranceForApproval: 'best_effort' as const,
   effectiveGateBehavior: 'auto_approve' as const,
@@ -666,6 +620,7 @@ const REGULATED_DEFAULTS = {
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
   maxIncoherentReviewerCaptureRetries: 1,
+  maxReviewerOutputRepairAttempts: 1,
   allowSelfApproval: false as const,
   minimumActorAssuranceForApproval: 'claim_validated' as const,
   effectiveGateBehavior: 'human_gated' as const,
@@ -682,6 +637,7 @@ const TEAM_DEFAULTS = {
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
   maxIncoherentReviewerCaptureRetries: 1,
+  maxReviewerOutputRepairAttempts: 1,
   allowSelfApproval: true as const,
   minimumActorAssuranceForApproval: 'best_effort' as const,
   effectiveGateBehavior: 'human_gated' as const,
@@ -698,6 +654,7 @@ const TEAM_CI_DEFAULTS = {
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
   maxIncoherentReviewerCaptureRetries: 1,
+  maxReviewerOutputRepairAttempts: 1,
   allowSelfApproval: true as const,
   minimumActorAssuranceForApproval: 'best_effort' as const,
   effectiveGateBehavior: 'human_gated' as const,
@@ -717,6 +674,7 @@ export function modeConsistentDefaults(mode: PolicyMode): {
   readonly maxSelfReviewIterations: number;
   readonly maxImplReviewIterations: number;
   readonly maxIncoherentReviewerCaptureRetries: number;
+  readonly maxReviewerOutputRepairAttempts: number;
   readonly allowSelfApproval: boolean;
   readonly minimumActorAssuranceForApproval: 'best_effort' | 'claim_validated' | 'idp_verified';
   readonly effectiveGateBehavior: EffectiveGateBehavior;

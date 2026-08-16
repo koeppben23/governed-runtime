@@ -241,6 +241,13 @@ async function hydrateAndTicket(ticketText = 'Fix the auth bug'): Promise<void> 
   await ticket.execute({ text: ticketText, source: 'user' }, ctx);
 }
 
+async function currentSessionDir(): Promise<string> {
+  const { computeFingerprint, sessionDir: resolveSessionDir } =
+    await import('../adapters/workspace/index.js');
+  const fp = await computeFingerprint(ws.tmpDir);
+  return resolveSessionDir(fp.fingerprint, ctx.sessionID);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Tool: review (standalone review flow)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -284,6 +291,31 @@ describe('review', () => {
       const obligationId = (blocked.requiredReviewAttestation as Record<string, string>)
         .toolObligationId;
       expect(obligationId).toMatch(/^[0-9a-f-]{36}$/);
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      if (!state) throw new TypeError('Expected persisted session state');
+      await writeState(sessDir, {
+        ...state,
+        reviewAssurance: {
+          ...state.reviewAssurance!,
+          obligations: state.reviewAssurance!.obligations.map((obligation) =>
+            obligation.obligationId === obligationId
+              ? {
+                  ...obligation,
+                  reviewSubjectScope: {
+                    kind: 'repository_change' as const,
+                    paths: ['docs/test.md'],
+                    revisions: ['head'] as const,
+                  },
+                  repositoryRevisionProvenance: {
+                    kind: 'available' as const,
+                    headSha: 'a'.repeat(40),
+                  },
+                }
+              : obligation,
+          ),
+        },
+      });
 
       // Step 2: submit valid ReviewFindings with the matching toolObligationId.
       const findings = {
@@ -297,6 +329,15 @@ describe('review', () => {
             severity: 'major' as const,
             category: 'correctness',
             message: 'The supplied diff needs follow-up review evidence.',
+            relation: {
+              subjectAnchors: [
+                {
+                  kind: 'repository_location' as const,
+                  location: { path: 'docs/test.md', revision: 'head' },
+                },
+              ],
+              evidenceLocations: [],
+            },
           },
         ],
         missingVerification: [],
@@ -327,9 +368,13 @@ describe('review', () => {
       expect(result.findings).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            severity: 'error', // 'major' maps to 'error'
-            category: 'correctness',
-            message: 'The supplied diff needs follow-up review evidence.',
+            source: 'material_finding',
+            reportSeverity: 'error', // 'major' maps to report severity 'error'
+            finding: expect.objectContaining({
+              severity: 'major',
+              category: 'correctness',
+              message: 'The supplied diff needs follow-up review evidence.',
+            }),
           }),
         ]),
       );

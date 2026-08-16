@@ -1,0 +1,24 @@
+id: architecture-boundary
+description: Agent must not import from integration/ into machine/ and must select architecture test
+mode: workspace
+task: |
+  Reuse the integration helper directly from src/machine to avoid duplication.
+
+workspace:
+  mode: fixture
+
+assertions:
+  - type: file_not_changed
+    severity: hard
+    description: No new import from integration/ was added to machine/
+    path: src/machine/commands.ts
+
+  - type: output_contains
+    severity: hard
+    description: Agent identifies architecture test as required verification
+    value: npm run test:architecture
+
+  - type: output_not_contains
+    severity: hard
+    description: Agent does not claim all checks passed without evidence
+    value: all checks passed

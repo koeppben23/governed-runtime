@@ -45,6 +45,7 @@ import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
 import { REVIEW_REQUIRED_PREFIX } from './review/enforcement/types.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import { POLICY_SNAPSHOT, makeState } from '../fixtures.js';
+import { computeRecordDigest } from '../state/evidence-plan.js';
 import type { OrchestratorClient } from './review/types.js';
 
 // ─── Test fixtures ────────────────────────────────────────────────────────────
@@ -83,15 +84,8 @@ function findingsWithVerdict(verdict: 'approve' | 'unable_to_review'): string {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
-    reviewedBy: { sessionId: CHILD_SESSION_ID },
-    reviewedAt: '2026-04-24T12:00:00.000Z',
     attestation: {
-      mandateDigest: REVIEW_MANDATE_DIGEST,
-      criteriaVersion: REVIEW_CRITERIA_VERSION,
       toolObligationId: OBLIGATION_ID,
-      iteration: 0,
-      planVersion: 1,
-      reviewedBy: 'flowguard-reviewer',
     },
   });
 }
@@ -169,6 +163,18 @@ function buildSessionState() {
         digest: 'plan-digest-1',
         sections: ['Plan'],
         createdAt: '2026-04-24T12:00:00.000Z',
+        recordDigest: computeRecordDigest({
+          contentDigest: 'plan-digest-1',
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+        }),
+        planVersion: 1,
+        supersedesRecordDigest: null,
+        originatingReviewObligationId: null,
+        revisionReason: null,
+        lineageStatus: 'verified' as const,
       },
       history: [],
     },
@@ -178,6 +184,40 @@ function buildSessionState() {
       createdAt: '2026-04-24T12:00:00.000Z',
       source: 'user' as const,
       inputOrigin: 'manual_text' as const,
+    },
+    reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      obligations: [
+        {
+          obligationId: OBLIGATION_ID,
+          obligationType: 'plan' as const,
+          iteration: 0,
+          planVersion: 1,
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          maxReviewerOutputRepairAttempts: 1,
+          createdAt: '2026-04-24T12:00:00.000Z',
+          pluginHandshakeAt: null,
+          status: 'pending' as const,
+          invocationId: null,
+          blockedCode: null,
+          fulfilledAt: null,
+          consumedAt: null,
+          subjectDigest: 'plan-digest-1',
+          reviewProfile: 'core' as const,
+          profileSource: 'policy_default' as const,
+          reviewSubjectScope: {
+            kind: 'artifact' as const,
+            artifact: {
+              kind: 'plan' as const,
+              digest: 'plan-digest-1',
+              sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }]],
+            },
+          },
+        },
+      ],
+      invocations: [],
+      attempts: [],
     },
   });
 }

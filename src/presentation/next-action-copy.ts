@@ -31,9 +31,9 @@ export interface ProductNextAction {
   readonly presentationForm?: 'review_pending';
 }
 
-const PRODUCT_GUIDANCE = {
+const PRODUCT_GUIDANCE: Partial<Record<ActionCode, ProductNextAction>> = {
   CHOOSE_FLOW: {
-    text: 'Choose your workflow: /task (development), /architecture (ADR), /review (compliance).',
+    text: 'Choose your workflow: /task (development), /architecture (ADR), /review (compliance/content).',
     commands: ['/task', '/architecture', '/review'],
   },
   RUN_TICKET: {
@@ -86,7 +86,11 @@ const PRODUCT_GUIDANCE = {
     commands: [],
     presentationForm: 'review_pending',
   },
-} satisfies Partial<Record<ActionCode, ProductNextAction>>;
+  REVIEW_STATE_INCOMPLETE: {
+    text: 'Review state is incomplete: no pending reviewer obligation or persisted report is available. Inspect the session with /status or abort it; /continue cannot complete this state.',
+    commands: [],
+  },
+};
 
 /**
  * Resolve product-friendly next action text and commands for a phase.
@@ -136,6 +140,14 @@ export function buildProductNextAction(
       return {
         text: `${phaseLabel}. The audit package has been verified. Inspect the session with /status.`,
         commands: ['/status'],
+      };
+    }
+    if (archiveStatus === 'not_verifiable') {
+      return {
+        text:
+          `${phaseLabel}. A redacted sharing archive was created, but it cannot verify the canonical audit chain without raw evidence. ` +
+          'Create a confidential raw archive only when authorized.',
+        commands: ['/status', '/export'],
       };
     }
     if (archiveStatus === 'failed') {

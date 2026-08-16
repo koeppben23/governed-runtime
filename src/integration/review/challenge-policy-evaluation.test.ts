@@ -12,6 +12,7 @@ import { makeState } from '../../fixtures.js';
 import type { ReviewFindings } from '../../state/evidence.js';
 import { readState, writeState } from '../../adapters/persistence.js';
 import { computeFingerprint, sessionDir } from '../../adapters/workspace/index.js';
+import { hashCanonicalReviewContent } from '../../shared/review-subject.js';
 import { createTestWorkspace, createToolContext, parseToolResult } from '../test-helpers.js';
 import { resolve_implementation_challenge } from '../tools/challenge-resolution.js';
 import { resolveHostTaskFindings } from '../tools/review-validation-host-task.js';
@@ -42,6 +43,28 @@ type Metrics = {
   readonly pipelineValidationLatencyMs: number;
   readonly fixtureReviewerLatencyMs: number;
 };
+
+const REVIEW_MATERIAL_CONTENT = '## Frozen Test Review Material\n\nChallenge policy fixture.\n';
+const REVIEW_MATERIAL_DIGEST = hashCanonicalReviewContent(REVIEW_MATERIAL_CONTENT);
+
+function withReviewMaterial<T extends { readonly subjectDigest: string }>(
+  obligation: T,
+): T & {
+  readonly reviewMaterial: {
+    readonly content: string;
+    readonly materialDigest: string;
+    readonly subjectDigest: string;
+  };
+} {
+  return {
+    ...obligation,
+    reviewMaterial: {
+      content: REVIEW_MATERIAL_CONTENT,
+      materialDigest: REVIEW_MATERIAL_DIGEST,
+      subjectDigest: obligation.subjectDigest,
+    },
+  };
+}
 
 const FIXTURES: readonly Fixture[] = [
   {
@@ -140,14 +163,20 @@ async function resolveCapturedFixture(
   fixture: Fixture,
   frozen: boolean,
 ): Promise<{ blocked: boolean; reviewerLatencyMs: number }> {
-  const obligation = createReviewObligation({
-    obligationType: 'implement',
-    iteration: 0,
-    planVersion: 1,
-    now: '2026-07-26T00:00:00.000Z',
-    changedFiles: ['src/example.ts'],
-    policySnapshot: frozen ? { challengePolicy: CHALLENGE_POLICY_V1 } : {},
-  });
+  const obligation = withReviewMaterial(
+    createReviewObligation({
+      obligationType: 'implement',
+      iteration: 0,
+      planVersion: 1,
+      now: '2026-07-26T00:00:00.000Z',
+      subjectDigest: 'test',
+      changedFiles: ['src/example.ts'],
+      reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
+      policySnapshot: frozen
+        ? { challengePolicy: CHALLENGE_POLICY_V1, maxReviewerOutputRepairAttempts: 1 }
+        : { maxReviewerOutputRepairAttempts: 1 },
+    }),
+  );
   const reviewerStartedAt = performance.now();
   const findings = await fixtureReviewer({
     obligationId: obligation.obligationId,
@@ -158,6 +187,8 @@ async function resolveCapturedFixture(
   const invocation = buildInvocationEvidence({
     obligationId: obligation.obligationId,
     obligationType: 'implement',
+    mandateDigest: obligation.mandateDigest,
+    criteriaVersion: obligation.criteriaVersion,
     parentSessionId: 'evaluation-parent',
     childSessionId: findings.reviewedBy.sessionId,
     invocationMode: 'host_subagent_task',
@@ -168,7 +199,12 @@ async function resolveCapturedFixture(
     capturedRawFindings: findings,
   });
   const result = resolveHostTaskFindings(
-    { obligations: [obligation], invocations: [invocation] },
+    {
+      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      obligations: [obligation],
+      invocations: [invocation],
+      attempts: [],
+    },
     obligation,
   );
   return { blocked: result.kind !== 'resolved', reviewerLatencyMs };
@@ -183,14 +219,20 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
   const sessDir = sessionDir(fingerprint.fingerprint, sessionID);
   await fs.mkdir(sessDir, { recursive: true });
 
-  const firstObligation = createReviewObligation({
-    obligationType: 'implement',
-    iteration: 0,
-    planVersion: 1,
-    now: '2026-07-26T00:00:00.000Z',
-    changedFiles: ['src/example.ts'],
-    policySnapshot: frozen ? { challengePolicy: CHALLENGE_POLICY_V1 } : {},
-  });
+  const firstObligation = withReviewMaterial(
+    createReviewObligation({
+      obligationType: 'implement',
+      iteration: 0,
+      planVersion: 1,
+      now: '2026-07-26T00:00:00.000Z',
+      subjectDigest: 'test',
+      changedFiles: ['src/example.ts'],
+      reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
+      policySnapshot: frozen
+        ? { challengePolicy: CHALLENGE_POLICY_V1, maxReviewerOutputRepairAttempts: 1 }
+        : { maxReviewerOutputRepairAttempts: 1 },
+    }),
+  );
   const challengeId = '22222222-2222-4222-8222-222222222222';
   const firstFindings = capturedFindings(firstObligation.obligationId, 0, 'structurally_valid', {
     overallVerdict: 'changes_requested',
@@ -214,6 +256,8 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
   const firstInvocation = buildInvocationEvidence({
     obligationId: firstObligation.obligationId,
     obligationType: 'implement',
+    mandateDigest: firstObligation.mandateDigest,
+    criteriaVersion: firstObligation.criteriaVersion,
     parentSessionId: sessionID,
     childSessionId: firstFindings.reviewedBy.sessionId,
     invocationMode: 'host_subagent_task',
@@ -225,7 +269,12 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
   });
   expect(
     resolveHostTaskFindings(
-      { obligations: [firstObligation], invocations: [firstInvocation] },
+      {
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        obligations: [firstObligation],
+        invocations: [firstInvocation],
+        attempts: [],
+      },
       firstObligation,
     ).kind,
   ).toBe('resolved');
@@ -240,7 +289,12 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
         executedAt: '2026-07-26T00:00:00.000Z',
       },
       implReviewFindings: [firstFindings],
-      reviewAssurance: { obligations: [firstObligation], invocations: [firstInvocation] },
+      reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        obligations: [firstObligation],
+        invocations: [firstInvocation],
+        attempts: [],
+      },
       validationAttempts: [
         {
           attemptId,
@@ -257,6 +311,7 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
             executionMs: 1,
             outputDigest: 'a'.repeat(64),
             timedOut: false,
+            outcome: 'supported' as const,
           },
         },
       ],
@@ -273,14 +328,20 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
   const state = await readState(sessDir);
   expect(state?.challengeResolutions).toHaveLength(1);
 
-  const secondObligation = createReviewObligation({
-    obligationType: 'implement',
-    iteration: 1,
-    planVersion: 1,
-    now: '2026-07-26T00:01:00.000Z',
-    changedFiles: ['src/example.ts'],
-    policySnapshot: frozen ? { challengePolicy: CHALLENGE_POLICY_V1 } : {},
-  });
+  const secondObligation = withReviewMaterial(
+    createReviewObligation({
+      obligationType: 'implement',
+      iteration: 1,
+      planVersion: 1,
+      now: '2026-07-26T00:01:00.000Z',
+      subjectDigest: 'test',
+      changedFiles: ['src/example.ts'],
+      reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
+      policySnapshot: frozen
+        ? { challengePolicy: CHALLENGE_POLICY_V1, maxReviewerOutputRepairAttempts: 1 }
+        : { maxReviewerOutputRepairAttempts: 1 },
+    }),
+  );
   const secondFindings = capturedFindings(secondObligation.obligationId, 1, 'structurally_valid', {
     reviewedBy: { sessionId: 'captured-reviewer-second' },
     challengeResolutionVerdicts: [{ challengeId, verdict: 'resolved' }],
@@ -288,6 +349,8 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
   const secondInvocation = buildInvocationEvidence({
     obligationId: secondObligation.obligationId,
     obligationType: 'implement',
+    mandateDigest: secondObligation.mandateDigest,
+    criteriaVersion: secondObligation.criteriaVersion,
     parentSessionId: sessionID,
     childSessionId: secondFindings.reviewedBy.sessionId,
     invocationMode: 'host_subagent_task',
@@ -298,7 +361,12 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
     capturedRawFindings: secondFindings,
   });
   const reReview = resolveHostTaskFindings(
-    { obligations: [secondObligation], invocations: [secondInvocation] },
+    {
+      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      obligations: [secondObligation],
+      invocations: [secondInvocation],
+      attempts: [],
+    },
     secondObligation,
     state ? computeTargetedResolutionChallengeIds(state) : undefined,
     undefined,

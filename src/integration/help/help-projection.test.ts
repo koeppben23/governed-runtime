@@ -3,7 +3,7 @@ import { getPolicyPreset, TEAM_POLICY } from '../../config/policy.js';
 import * as crypto from 'node:crypto';
 import { makeProgressedState, makeState, TICKET } from '../../fixtures.js';
 import { buildHelpResult, finishToReadiness } from './help-projection.js';
-import { buildFinishCard } from '../status.js';
+import { buildFinishCard } from '../status-finish.js';
 import { resolveCurrentReviewReport } from '../review/report-coherence.js';
 import type { ReviewReport } from '../../state/evidence.js';
 import { evaluateCompleteness } from '../../audit/completeness.js';
@@ -27,9 +27,10 @@ import { DEFAULT_CONFIG } from '../../config/flowguard-config.js';
 function makeReviewReport(
   state: ReturnType<typeof makeProgressedState>,
   overallStatus: ReviewReport['overallStatus'],
-  overrides?: Partial<ReviewReport>,
+  overrides?: Partial<Extract<ReviewReport, { readonly reviewKind: 'lifecycle_review' }>>,
 ): ReviewReport {
   return {
+    reviewKind: 'lifecycle_review',
     schemaVersion: 'flowguard-review-report.v1',
     sessionId: state.id,
     generatedAt: '2026-01-01T00:00:00.000Z',
@@ -75,6 +76,16 @@ describe('buildHelpResult', () => {
     });
     expect(result.evidenceCompleteness.status).toBe('complete');
     expect(result.archiveVerification.status).toBe('not_created');
+  });
+
+  it('surfaces a redacted archive as not verifiable rather than failed', () => {
+    const result = buildHelpResult(
+      { ...makeProgressedState('COMPLETE'), archiveStatus: 'not_verifiable' },
+      TEAM_POLICY,
+      { view: 'context' },
+    );
+    expect(result.archiveVerification.status).toBe('not_verifiable');
+    expect(result.archiveVerification.summary).toContain('intentionally excludes raw evidence');
   });
 
   it('blocks export for aborted sessions', () => {

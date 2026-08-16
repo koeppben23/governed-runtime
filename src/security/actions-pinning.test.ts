@@ -168,7 +168,10 @@ runs:
     });
   });
 
+  // Network-dependent verification: each external action ref triggers a
+  // bounded GitHub API existence check (4s per request in the checker
+  // script). The 15s project default flaked on loaded CI runners.
   it('passes against the repository workflow files end to end', async () => {
     await expect(runCheck()).resolves.toMatchObject({ stdout: expect.stringContaining('passed') });
-  });
+  }, 120_000);
 });

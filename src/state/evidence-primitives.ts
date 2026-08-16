@@ -72,9 +72,37 @@ export type ReviewObligationType = z.infer<typeof ReviewObligationType>;
 export const ReviewObligationStatus = z.enum(['pending', 'fulfilled', 'consumed', 'blocked']);
 export type ReviewObligationStatus = z.infer<typeof ReviewObligationStatus>;
 
+export const ReviewRepositoryRevisionProvenance = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('available'),
+      headSha: z.string().regex(/^[0-9a-f]{40,64}$/i),
+      baseSha: z
+        .string()
+        .regex(/^[0-9a-f]{40,64}$/i)
+        .optional(),
+    })
+    .readonly(),
+  z.object({ kind: z.literal('unavailable'), reason: z.string().min(1) }).readonly(),
+]);
+export type ReviewRepositoryRevisionProvenance = z.infer<typeof ReviewRepositoryRevisionProvenance>;
+
 /** Status of an Architecture Decision Record. */
 export const AdrStatus = z.enum(['proposed', 'accepted', 'deprecated']);
 export type AdrStatus = z.infer<typeof AdrStatus>;
+
+/**
+ * Completion of the independent ADR review cycle.
+ *
+ * This is lifecycle evidence for the current ADR text, not part of the ADR
+ * content identity and never a substitute for a human ReviewVerdict.
+ */
+export const ArchitectureReviewCompletion = z.enum([
+  'pending',
+  'reviewer_accepted',
+  'review_exhausted',
+]);
+export type ArchitectureReviewCompletion = z.infer<typeof ArchitectureReviewCompletion>;
 
 /** Where the content of a ticket or review originated. */
 export const InputOriginSchema = z.enum([

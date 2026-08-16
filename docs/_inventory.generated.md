@@ -9,8 +9,8 @@ Verified by `npm run check:doc-drift`.
 | Entity                        | Count | Code Authority                                      |
 | ----------------------------- | ----- | --------------------------------------------------- |
 | Machine Commands              | 11    | `src/machine/commands.ts`                           |
-| Integration Tools             | 15    | `src/integration/tools/index.ts`                    |
-| MCP Tools                     | 14    | `src/mcp-server/server.ts`                          |
+| Integration Tools             | 18    | `src/integration/tools/index.ts`                    |
+| MCP Tools                     | 17    | `src/mcp-server/server.ts`                          |
 | Installed Command Definitions | 25    | `src/integration/installed-commands.ts`             |
 | Phases                        | 15    | `src/state/schema.ts`                               |
 | Policy Modes                  | 4     | `src/state/policy-mode.ts`                          |
@@ -22,7 +22,7 @@ Verified by `npm run check:doc-drift`.
 | Archive Finding Codes         | 20    | `src/archive/types.ts`                              |
 | Archive Verify Checks (JSDoc) | 9     | `src/adapters/workspace/archive-verify-chain.ts`    |
 | CLI Bins                      | 7     | `package.json` `bin`                                |
-| Mutation Files                | 47    | `stryker.conf.json` `mutate`                        |
+| Mutation Files                | 58    | `stryker.conf.json` `mutate`                        |
 
 ---
 

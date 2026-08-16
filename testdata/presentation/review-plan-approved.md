@@ -5,6 +5,12 @@
 **Policy:** team
 **Task:** Add payment validation
 
+## Verification
+
+Status: NOT_DECLARED
+No verification obligations declared.
+Approval evidence: Not recorded
+
 ## Proposed Plan
 
 ### Implementation Plan

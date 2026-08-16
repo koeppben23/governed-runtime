@@ -18,10 +18,12 @@ function reviewObligation(): ReviewObligation {
   return {
     obligationId: OBLIGATION_ID,
     obligationType: 'review',
+    subjectDigest: 'test-subject-digest',
     iteration: 0,
     planVersion: 1,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
     mandateDigest: REVIEW_MANDATE_DIGEST,
+    maxReviewerOutputRepairAttempts: 1,
     createdAt: '2026-01-01T00:00:00.000Z',
     pluginHandshakeAt: null,
     status: 'pending',
@@ -29,10 +31,15 @@ function reviewObligation(): ReviewObligation {
     blockedCode: null,
     fulfilledAt: null,
     consumedAt: null,
+    reviewSubjectScope: {
+      kind: 'repository_change',
+      paths: ['src/foo.ts'],
+      revisions: ['base', 'head'],
+    },
     requiredChallengeCount: 1,
     requiredChallengeKind: 'content_challenge',
     metadata: { fingerprint: FINGERPRINT },
-  } as ReviewObligation;
+  };
 }
 
 function contentChallenge(overrides: Record<string, unknown> = {}) {

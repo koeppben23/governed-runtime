@@ -47,8 +47,15 @@ import type {
   HelpArtifactSection,
   EmbeddedMarkdownSection,
 } from './model.js';
+import {
+  formatFindingAffected,
+  formatFindingEvidence,
+  formatFindingLocation,
+  formatFindingSubject,
+} from './finding-relation.js';
 import { validateCodeLanguage, normalizedMarkdown, PresentationContractError } from './model.js';
 import { GUIDANCE_STATUS_LABELS } from './labels.js';
+import { renderProofGraphMarkdown } from './proof-summary.js';
 import {
   presentationGlyphs,
   type PresentationGlyphs,
@@ -203,11 +210,16 @@ function renderSection(section: PresentationSection, glyphs: PresentationGlyphs)
     case 'artifactList':
       return sectionHeading(section) + renderArtifactList(section.items, glyphs);
     case 'findings':
-      return sectionHeading(section) + renderFindings(section.groups);
+      return sectionHeading(section) + renderFindings(section.groups, section.detail ?? 'compact');
     case 'checklist':
       return sectionHeading(section) + renderChecklist(section);
     case 'text':
       return sectionHeading(section) + renderText(section);
+    case 'proofGraph':
+      return renderProofGraphMarkdown(section.proof, {
+        detail: section.detail,
+        humanSummary: section.humanSummary,
+      });
     case 'code':
       return sectionHeading(section) + renderCode(section);
     case 'notice':
@@ -250,10 +262,35 @@ function renderCommandList(
 }
 
 function renderBlocker(section: BlockerSection, warning: string): string {
-  const lines: string[] = [];
   const symbol = warning;
+  // Migrated codes carry human projection detail fields (canonicalMessage /
+  // explanation); the reason code is diagnostic identity and moves out of the
+  // primary Blocked line into Details. Unmigrated sections keep the legacy
+  // layout byte-for-byte.
+  if (section.explanation || section.canonicalMessage) {
+    const lines: string[] = [`${symbol} **Blocked:** ${section.text}`];
+    if (section.recovery) {
+      lines.push(`**Recovery:** ${section.recovery}`);
+    }
+    if (section.explanation) {
+      lines.push(`**Why:** ${section.explanation}`);
+    }
+    if (section.impact) {
+      lines.push(`**Impact:** ${section.impact}`);
+    }
+    if (section.canonicalMessage || section.code) {
+      lines.push('**Details:**');
+      if (section.code) {
+        lines.push(`\`${section.code}\``);
+      }
+      if (section.canonicalMessage) {
+        lines.push(section.canonicalMessage);
+      }
+    }
+    return lines.join('\n');
+  }
   const codeBlock = section.code ? ` \`${section.code}\`` : '';
-  lines.push(`${symbol} **Blocked:**${codeBlock} — ${section.text}`);
+  const lines: string[] = [`${symbol} **Blocked:**${codeBlock} — ${section.text}`];
   if (section.recovery) {
     lines.push(`**Recovery:** ${section.recovery}`);
   }
@@ -284,13 +321,13 @@ function artifactStatusSymbol(status: ArtifactItem['status'], glyphs: Presentati
   }
 }
 
-function renderFindings(groups: readonly FindingGroup[]): string {
+function renderFindings(groups: readonly FindingGroup[], detail: 'compact' | 'expanded'): string {
   const blocks: string[] = [];
   for (const group of groups) {
     if (group.items.length === 0) continue;
     const lines: string[] = [`### ${group.label} (${group.items.length})`];
     for (const item of group.items) {
-      lines.push(renderFindingItem(item));
+      lines.push(renderFindingItem(item, detail));
     }
     blocks.push(lines.join('\n'));
   }
@@ -299,9 +336,18 @@ function renderFindings(groups: readonly FindingGroup[]): string {
   return blocks.join('\n\n');
 }
 
-function renderFindingItem(item: FindingItem): string {
-  const loc = item.location ? ` \`${item.location}\`` : '';
-  return `- **${item.category}:** ${item.message}${loc}`;
+function renderFindingItem(item: FindingItem, detail: 'compact' | 'expanded'): string {
+  const lines = [`- **${item.category}:** ${item.message}`];
+  if (item.subjects === undefined && item.evidence === undefined) return lines[0]!;
+
+  const subjects = item.subjects ?? [];
+  const evidence = item.evidence ?? [];
+  lines.push(`  ${formatFindingAffected(subjects)} · ${formatFindingEvidence(evidence)}`);
+  if (detail === 'expanded') {
+    lines.push(...subjects.map((subject) => `  - ${formatFindingSubject(subject)}`));
+    lines.push(...evidence.map((location) => `  - ${formatFindingLocation(location)}`));
+  }
+  return lines.join('\n');
 }
 
 function renderChecklist(section: ChecklistSection): string {

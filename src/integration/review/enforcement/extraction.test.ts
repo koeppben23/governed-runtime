@@ -22,6 +22,7 @@ import {
   taskResultWithFindings,
   taskResultWithMalformedFindings,
   validSubagentPrompt,
+  FIXTURE_OBLIGATION_ID,
 } from './test-helpers.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -103,17 +104,22 @@ describe('review-enforcement extraction helpers', () => {
       expect(result!.tool).toBe('flowguard_implement');
     });
 
-    it('skips already-satisfied pending reviews', () => {
+    it('re-arms a pending review with schema-invalid captured findings', () => {
       const state = createSessionState();
       onFlowGuardToolAfter(
         state,
         'flowguard_plan',
         { planText: '## Plan' },
-        modeASubagentResponse({ iteration: 0, planVersion: 1 }),
+        modeASubagentResponse({
+          iteration: 0,
+          planVersion: 1,
+          obligationId: FIXTURE_OBLIGATION_ID,
+        }),
         NOW,
       );
 
-      // Mark as satisfied
+      // This legacy capture is schema-invalid at the ReviewerFindingsInput
+      // boundary, so a canonical repair attempt remains eligible.
       onTaskToolAfter(
         state,
         { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'Review' },
@@ -124,7 +130,7 @@ describe('review-enforcement extraction helpers', () => {
       const result = matchPendingReview(state, {
         prompt: validSubagentPrompt({ iteration: 0, planVersion: 1 }),
       });
-      expect(result).toBeNull();
+      expect(result).not.toBeNull();
     });
 
     // ─── Structural re-arm (host-task deadlock recovery) ───────────

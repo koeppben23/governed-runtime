@@ -52,6 +52,12 @@ describe('config/reasons', () => {
     it('defaultReasonRegistry has 30+ codes', () => {
       expect(defaultReasonRegistry.size).toBeGreaterThanOrEqual(30);
     });
+
+    it('architecture review completion recovery reopens the current review gate', () => {
+      const reason = defaultReasonRegistry.get('ARCHITECTURE_REVIEW_COMPLETION_REQUIRED');
+      expect(reason?.quickFixCommand).toBe('/review-decision changes_requested');
+      expect(reason?.recoverySteps[0]).toContain('Request changes');
+    });
   });
 
   // ─── BAD ───────────────────────────────────────────────────

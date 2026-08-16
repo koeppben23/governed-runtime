@@ -31,6 +31,7 @@ import path from 'node:path';
 import { writeState, readState } from '../adapters/persistence.js';
 import {
   makeState,
+  FROZEN_IMPLEMENTATION_BASE,
   TICKET,
   PLAN_RECORD,
   ARCHITECTURE_DECISION,
@@ -48,10 +49,12 @@ import {
   type ReviewFindingsValidationContext,
 } from './tools/review-validation.js';
 import {
+  artifactReviewSubjectScope,
   createReviewObligation,
   appendReviewObligation,
   consumeReviewObligation,
   appendInvocationEvidence,
+  freezeReviewMaterial,
   hashFindings,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
@@ -147,14 +150,18 @@ function pluginHandshakeAssurance(
   obligationType: (typeof ALL_OBLIGATION_TYPES)[number],
 ): ReviewAssuranceState {
   return {
+    assuranceSchemaVersion: 'review-assurance.v5' as const,
+    attempts: [],
     obligations: [
       {
         obligationId: OBLIGATION_ID,
         obligationType,
+        subjectDigest: 'test-subject-digest',
         iteration: 0,
         planVersion: 1,
         criteriaVersion: REVIEW_CRITERIA_VERSION,
         mandateDigest: REVIEW_MANDATE_DIGEST,
+        maxReviewerOutputRepairAttempts: 1,
         createdAt: NOW,
         pluginHandshakeAt: NOW,
         status: 'fulfilled' as const,
@@ -162,6 +169,11 @@ function pluginHandshakeAssurance(
         blockedCode: null,
         fulfilledAt: NOW,
         consumedAt: null,
+        reviewSubjectScope: {
+          kind: 'repository_change',
+          paths: ['src/foo.ts'],
+          revisions: ['base', 'head'],
+        },
       },
     ],
     invocations: [
@@ -374,9 +386,14 @@ describe('assurance lifecycle persistence across hosts', () => {
         const planState = makeState('PLAN', { ticket: TICKET, plan: PLAN_RECORD });
         const obligationP = createReviewObligation({
           obligationType: 'plan',
+          repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
           iteration: 0,
           planVersion: 1,
           now: NOW,
+          subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen plan review material', 'test'),
+          reviewSubjectScope: artifactReviewSubjectScope('plan', '# Plan\nBody', 'test'),
+          changedFiles: ['src/foo.ts'],
         });
         const findingsP = strictFindings({ iteration: 0, planVersion: 1 });
         const fhP = hashFindings(findingsP);
@@ -385,6 +402,7 @@ describe('assurance lifecycle persistence across hosts', () => {
         let assurance = appendReviewObligation(undefined, obligationP);
         // Mark obligation fulfilled (as if plugin/agent completed review)
         assurance = {
+          assuranceSchemaVersion: assurance.assuranceSchemaVersion,
           obligations: assurance.obligations.map((o) =>
             o.obligationId === obligationP.obligationId
               ? {
@@ -396,6 +414,7 @@ describe('assurance lifecycle persistence across hosts', () => {
               : o,
           ),
           invocations: assurance.invocations,
+          attempts: [],
         };
         assurance = appendInvocationEvidence(assurance, invocationP);
         assurance = consumeReviewObligation(assurance, obligationP, NOW, INVOCATION_ID_PLAN);
@@ -416,6 +435,7 @@ describe('assurance lifecycle persistence across hosts', () => {
 
         // Phase 2: IMPLEMENTATION — create impl review obligation
         const implState = makeState('IMPLEMENTATION', {
+          implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
           ticket: TICKET,
           plan: PLAN_RECORD,
           implementation: IMPL_EVIDENCE,
@@ -425,6 +445,10 @@ describe('assurance lifecycle persistence across hosts', () => {
           iteration: 0,
           planVersion: 1,
           now: NOW,
+          subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen implementation review material', 'test'),
+          changedFiles: ['src/foo.ts'],
+          reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
         });
         const findingsI = strictFindings({ iteration: 0, planVersion: 1 });
         const fhI = hashFindings(findingsI);
@@ -432,6 +456,7 @@ describe('assurance lifecycle persistence across hosts', () => {
 
         let implAssurance = appendReviewObligation(assurance, obligationI);
         implAssurance = {
+          assuranceSchemaVersion: implAssurance.assuranceSchemaVersion,
           obligations: implAssurance.obligations.map((o) =>
             o.obligationId === obligationI.obligationId
               ? {
@@ -443,6 +468,7 @@ describe('assurance lifecycle persistence across hosts', () => {
               : o,
           ),
           invocations: implAssurance.invocations,
+          attempts: [],
         };
         implAssurance = appendInvocationEvidence(implAssurance, invocationI);
         implAssurance = consumeReviewObligation(
@@ -488,9 +514,18 @@ describe('assurance lifecycle persistence across hosts', () => {
         });
         const obligationA = createReviewObligation({
           obligationType: 'architecture',
+          repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
           iteration: 0,
           planVersion: 1,
           now: NOW,
+          subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen architecture review material', 'test'),
+          reviewSubjectScope: artifactReviewSubjectScope(
+            'adr',
+            '## Context\nC\n## Decision\nD',
+            'test',
+          ),
+          changedFiles: ['src/foo.ts'],
         });
         const findingsA = strictFindings({ iteration: 0, planVersion: 1 });
         const fhA = hashFindings(findingsA);
@@ -498,6 +533,7 @@ describe('assurance lifecycle persistence across hosts', () => {
 
         let archAssurance = appendReviewObligation(undefined, obligationA);
         archAssurance = {
+          assuranceSchemaVersion: archAssurance.assuranceSchemaVersion,
           obligations: archAssurance.obligations.map((o) =>
             o.obligationId === obligationA.obligationId
               ? {
@@ -509,6 +545,7 @@ describe('assurance lifecycle persistence across hosts', () => {
               : o,
           ),
           invocations: archAssurance.invocations,
+          attempts: [],
         };
         archAssurance = appendInvocationEvidence(archAssurance, invocationA);
         archAssurance = consumeReviewObligation(

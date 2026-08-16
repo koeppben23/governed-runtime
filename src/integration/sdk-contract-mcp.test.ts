@@ -20,6 +20,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import * as path from 'node:path';
+import { FLOWGUARD_TOOLS } from '../mcp-server/server.js';
 
 // ─── Baseline Loading ────────────────────────────────────────────────────────
 
@@ -48,6 +49,8 @@ const EXPECTED_TOOLS = [
   'flowguard_archive',
   'flowguard_continue',
   'flowguard_help',
+  'flowguard_declare_contract',
+  'flowguard_record_mutation_evidence',
 ] as const;
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -55,6 +58,10 @@ const EXPECTED_TOOLS = [
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('SDK Contract: MCP tool registry', () => {
+  it('registers flowguard_declare_contract in the live MCP server tool map', () => {
+    expect(FLOWGUARD_TOOLS.declare_contract).toBeDefined();
+  });
+
   describe('HAPPY: baseline directory and version.json exist', () => {
     it('.sdk-baselines/mcp/ directory exists', () => {
       expect(existsSync(mcpBaseDir)).toBe(true);
@@ -69,13 +76,13 @@ describe('SDK Contract: MCP tool registry', () => {
       );
     });
 
-    it('version.json lists all 14 tool schemas', () => {
+    it('version.json lists all 15 tool schemas', () => {
       const version = loadSchema('version.json');
-      expect((version.schemas as string[]).length).toBe(14);
+      expect((version.schemas as string[]).length).toBe(16);
     });
   });
 
-  describe('HAPPY: all 14 tool schema files exist', () => {
+  describe('HAPPY: all 15 tool schema files exist', () => {
     for (const tool of EXPECTED_TOOLS) {
       it(`${tool}.json exists`, () => {
         expect(existsSync(path.join(mcpBaseDir, `${tool}.json`))).toBe(true);

@@ -69,14 +69,17 @@ function buildState(strictEnforcement: boolean): SessionState {
       reviewOutputPolicy: 'structured_required',
     },
     reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v5' as const,
       obligations: [
         {
           obligationId: OBLIGATION_ID,
           obligationType: 'plan',
+          subjectDigest: 'test-subject-digest',
           iteration: 1,
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
+          maxReviewerOutputRepairAttempts: 1,
           createdAt: NOW,
           pluginHandshakeAt: null,
           status: 'pending',
@@ -84,9 +87,15 @@ function buildState(strictEnforcement: boolean): SessionState {
           blockedCode: null,
           fulfilledAt: null,
           consumedAt: null,
+          reviewSubjectScope: {
+            kind: 'repository_change',
+            paths: ['src/foo.ts'],
+            revisions: ['base', 'head'],
+          },
         },
       ],
       invocations: [],
+      attempts: [],
     },
   });
 }
@@ -105,14 +114,17 @@ function buildAlreadyBlockedState(): SessionState {
       reviewOutputPolicy: 'structured_required',
     },
     reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v5' as const,
       obligations: [
         {
           obligationId: OBLIGATION_ID,
           obligationType: 'plan',
+          subjectDigest: 'test-subject-digest',
           iteration: 1,
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
+          maxReviewerOutputRepairAttempts: 1,
           createdAt: NOW,
           pluginHandshakeAt: NOW,
           status: 'blocked',
@@ -120,9 +132,15 @@ function buildAlreadyBlockedState(): SessionState {
           blockedCode: 'REVIEWER_INVOCATION_EXHAUSTED',
           fulfilledAt: null,
           consumedAt: null,
+          reviewSubjectScope: {
+            kind: 'repository_change',
+            paths: ['src/foo.ts'],
+            revisions: ['base', 'head'],
+          },
         },
       ],
       invocations: [],
+      attempts: [],
     },
   });
 }
@@ -425,14 +443,17 @@ describe('BUG-07: obligation blocked after total invocation failure', () => {
           reviewInvocationPolicy: 'host_task_required',
         },
         reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
           obligations: [
             {
               obligationId: OBLIGATION_ID,
               obligationType: 'plan',
+              subjectDigest: 'test-subject-digest',
               iteration: 1,
               planVersion: 1,
               criteriaVersion: REVIEW_CRITERIA_VERSION,
               mandateDigest: REVIEW_MANDATE_DIGEST,
+              maxReviewerOutputRepairAttempts: 1,
               createdAt: NOW,
               pluginHandshakeAt: null,
               status: 'pending',
@@ -440,9 +461,15 @@ describe('BUG-07: obligation blocked after total invocation failure', () => {
               blockedCode: null,
               fulfilledAt: null,
               consumedAt: null,
+              reviewSubjectScope: {
+                kind: 'repository_change',
+                paths: ['src/foo.ts'],
+                revisions: ['base', 'head'],
+              },
             },
           ],
           invocations: [],
+          attempts: [],
         },
       });
       const stateRef = { current: state };

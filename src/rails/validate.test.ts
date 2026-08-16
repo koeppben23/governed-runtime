@@ -14,6 +14,23 @@ import { makeState, FIXED_TIME, TICKET } from '../fixtures.js';
 import type { RailContext } from './types.js';
 import type { PlanRecord, ValidationResult } from '../state/evidence.js';
 import { TEAM_POLICY } from '../config/policy.js';
+import { computeRecordDigest } from '../state/evidence-plan.js';
+
+vi.mock('../adapters/git.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/git.js')>();
+  return { ...original, headCommitFull: vi.fn().mockResolvedValue('a'.repeat(40)) };
+});
+
+vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/frozen-repository.js')>();
+  return {
+    ...original,
+    freezeRepositoryIdentity: vi.fn(() => ({
+      kind: 'local',
+      rootCommitDigest: 'sha256:' + 'b'.repeat(64),
+    })),
+  };
+});
 
 const ctx: RailContext = {
   now: () => FIXED_TIME,
@@ -23,7 +40,24 @@ const ctx: RailContext = {
 
 function planWith(body: string): PlanRecord {
   return {
-    current: { body, digest: 'd', sections: [], createdAt: FIXED_TIME },
+    current: {
+      body,
+      digest: 'd',
+      sections: [],
+      createdAt: FIXED_TIME,
+      recordDigest: computeRecordDigest({
+        contentDigest: 'd',
+        planVersion: 1,
+        supersedesRecordDigest: null,
+        originatingReviewObligationId: null,
+        revisionReason: null,
+      }),
+      planVersion: 1,
+      supersedesRecordDigest: null,
+      originatingReviewObligationId: null,
+      revisionReason: null,
+      lineageStatus: 'verified' as const,
+    },
     history: [],
   };
 }
@@ -41,6 +75,7 @@ function makeValidationResult(checkId: string, passed: boolean, detail: string):
     executionMs: 1000,
     outputDigest: 'a'.repeat(64),
     timedOut: false,
+    outcome: (passed ? 'supported' : 'inconclusive') as 'supported' | 'inconclusive',
   };
 }
 
@@ -269,6 +304,7 @@ describe('validate rail', () => {
           executionMs: 300_000,
           outputDigest: 'a'.repeat(64),
           timedOut: true,
+          outcome: 'blocked' as const,
         })),
       };
       const result = await executeValidate(state, ctx, executors);

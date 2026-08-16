@@ -57,6 +57,7 @@ import { getAdapterLogger } from '../logging/adapter-logger.js';
 import { SessionState } from '../state/schema.js';
 import { ReviewReport } from '../state/evidence.js';
 import { withSessionWriteLock } from './persistence-lock.js';
+import { assertImplementationEntryFrozen } from './implementation-entry-guard.js';
 import { ensureDir, PersistenceError, isEnoent } from './persistence-core.js';
 
 export {
@@ -235,8 +236,82 @@ function migrateLegacyReviewerVerdicts(json: unknown): boolean {
   return acc.migrated;
 }
 
+function migrateLegacyValidationOutcomes(json: unknown): void {
+  if (!json || typeof json !== 'object') return;
+  walk(json);
+}
+
+function walk(node: unknown): void {
+  if (Array.isArray(node)) {
+    for (const item of node) walk(item);
+    return;
+  }
+  if (!node || typeof node !== 'object') return;
+  const obj = node as Record<string, unknown>;
+  if (
+    typeof obj.checkId === 'string' &&
+    typeof obj.passed === 'boolean' &&
+    typeof obj.executedAt === 'string' &&
+    obj.outcome === undefined
+  ) {
+    obj.outcome = obj.passed ? 'supported' : 'inconclusive';
+  }
+  for (const v of Object.values(obj)) walk(v);
+}
+
 function isLegacyApprove(v: unknown): boolean {
   return v === 'approve';
+}
+
+/**
+ * Shape-only review-assurance read migrations, chained at the read boundary:
+ *
+ * - v3 → v4: version literal only. The v4 form introduced frozen repository
+ *   authority, opaque observation capabilities, and attempt-owned
+ *   observations. Obligations persisted under v3 without frozen authority
+ *   remain authority-less (and thus repository-evidence incapable) — never
+ *   "repaired" by reading mutable runtime state.
+ * - v4 → v5: version literal plus observation AUTHORITY invalidation. The v5
+ *   form requires `resolvedObjectKind` and representation-bound `lineCount` —
+ *   fields a VALID v4 observation could not carry (the v4 schema was strict).
+ *   Therefore NO observation persisted under v4 can ever have been valid
+ *   authority: the migration removes ALL `attempt.observations` from v4
+ *   states unconditionally, regardless of their shape. A v5-shaped
+ *   observation inside a v4-declared state is invalid previous-generation
+ *   data, not a retained authority — keeping it would launder invalid state
+ *   into current-generation governance. Nothing is manufactured; the
+ *   transport capture ledgers remain the audit source. Only observations
+ *   persisted under `review-assurance.v5` may ever be v5 evidence authority.
+ */
+function migrateReviewAssuranceToV5(node: unknown, acc: { migrated: boolean }): void {
+  if (!node || typeof node !== 'object' || Array.isArray(node)) return;
+  const assurance = (node as Record<string, unknown>).reviewAssurance;
+  if (!assurance || typeof assurance !== 'object' || Array.isArray(assurance)) return;
+  const record = assurance as Record<string, unknown>;
+  if (record.assuranceSchemaVersion === 'review-assurance.v3') {
+    record.assuranceSchemaVersion = 'review-assurance.v4';
+    acc.migrated = true;
+  }
+  if (record.assuranceSchemaVersion === 'review-assurance.v4') {
+    record.assuranceSchemaVersion = 'review-assurance.v5';
+    acc.migrated = true;
+    invalidateV4Observations(record);
+  }
+}
+
+/**
+ * v4 → v5: ALL attempts lose their observations unconditionally. A v4 state
+ * cannot legally contain v5 authority; shape-independent removal is the only
+ * fail-closed semantics. (Migration must not become a general sanitizer —
+ * unrelated malformed authority still fails schema validation.)
+ */
+function invalidateV4Observations(record: Record<string, unknown>): void {
+  const attempts = record.attempts;
+  if (!Array.isArray(attempts)) return;
+  for (const attempt of attempts) {
+    if (!attempt || typeof attempt !== 'object') continue;
+    delete (attempt as Record<string, unknown>).observations;
+  }
 }
 
 function findingsOf(node: unknown): unknown {
@@ -326,6 +401,18 @@ export async function readState(sessionDir: string): Promise<SessionState | null
     );
   }
 
+  migrateLegacyValidationOutcomes(json);
+
+  const assuranceMigration = { migrated: false };
+  migrateReviewAssuranceToV5(json, assuranceMigration);
+  if (assuranceMigration.migrated) {
+    getAdapterLogger().warn(
+      'persistence',
+      "Migrated review assurance to 'review-assurance.v5' (shape-only)",
+      { filePath },
+    );
+  }
+
   const result = SessionState.safeParse(json);
   if (!result.success) {
     throw new PersistenceError(
@@ -364,6 +451,13 @@ export async function writeStateAlreadyLocked(
       `Refusing to persist invalid state: ${result.error.message}`,
     );
   }
+
+  // Single persistence-boundary guard for the implementation-entry invariant:
+  // no IMPLEMENTATION-phase state may be written without a frozen pre-mutation
+  // base authority. The governed tool path performs the freeze via
+  // finalizeImplementationEntry before reaching this write; any other writer
+  // fails closed here instead of persisting an unreviewable implementation.
+  assertImplementationEntryFrozen(result.data);
 
   await ensureDir(sessionDir);
   const json = JSON.stringify(result.data, null, 2) + '\n';

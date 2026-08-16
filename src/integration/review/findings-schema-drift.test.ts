@@ -30,7 +30,7 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 import { REVIEW_FINDINGS_JSON_SCHEMA } from './findings-schema.js';
-import { ReviewFindings } from '../../state/evidence.js';
+import { ReviewFindings, ReviewerFindingsInput } from '../../state/evidence.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -46,6 +46,7 @@ interface JsonSchemaObject {
 type JsonSchemaProperty = JsonSchemaObject & {
   minimum?: number;
   maximum?: number;
+  oneOf?: JsonSchemaProperty[];
 };
 
 function jsonSchemaProperties(): Record<string, JsonSchemaProperty> {
@@ -59,34 +60,37 @@ function jsonSchemaRequired(): string[] {
 }
 
 function zodTopLevelKeys(): string[] {
-  // ReviewFindings is z.object(...).readonly() — unwrap to access shape.
-  // The readonly wrapper preserves the inner ZodObject.
-  const inner = (ReviewFindings as unknown as { _def: { innerType?: z.ZodObject<z.ZodRawShape> } })
-    ._def.innerType;
+  const inner = (
+    ReviewerFindingsInput as unknown as { _def: { innerType?: z.ZodObject<z.ZodRawShape> } }
+  )._def.innerType;
   if (!inner) {
-    throw new Error('Could not unwrap ReviewFindings — schema structure changed');
+    throw new Error('Could not unwrap ReviewerFindingsInput — schema structure changed');
   }
   return Object.keys(inner.shape);
+}
+
+function collectSubjectAnchorKinds(): string[] {
+  const props = jsonSchemaProperties();
+  const blocking = props.blockingIssues as unknown as JsonSchemaProperty;
+  const findingItems = blocking?.items as JsonSchemaProperty | undefined;
+  const relation = findingItems?.properties?.relation as JsonSchemaProperty | undefined;
+  const subjectAnchors = relation?.properties?.subjectAnchors as JsonSchemaProperty | undefined;
+  const anchorItems = subjectAnchors?.items as JsonSchemaProperty | undefined;
+  const oneOf = anchorItems?.oneOf as JsonSchemaProperty[] | undefined;
+  if (!oneOf) return [];
+  return oneOf
+    .map((variant: JsonSchemaProperty) => variant?.properties?.kind?.const)
+    .filter((v: string | undefined): v is string => typeof v === 'string');
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 /**
- * Host-authoritative provenance fields (F8) that exist on the Zod ReviewFindings
- * schema but are intentionally absent from the SDK JSON-Schema.
- *
- * These are NEVER produced by the reviewer subagent. The host injects them at
- * binding time (normalizeHostTaskFindings) to preserve the model's untrusted
- * original `reviewedAt` / `reviewedBy` after overwriting those fields with the
- * real invocation timestamp and resolved child-session identity. Emitting them
- * in the SDK output schema would (a) invite the model to author values it must
- * not control and (b) collide with `additionalProperties: false`. They are
- * therefore documented intentional drift, mirroring the `attestation`
- * required-vs-optional contract below.
+ * The SDK schema represents ReviewerFindingsInput, not canonical persisted
+ * ReviewFindings. Host provenance is added only after this strict boundary.
  */
-const HOST_INJECTED_PROVENANCE_FIELDS = ['reviewerClaimedAt', 'reviewerClaimedBy'] as const;
 
-describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ Zod ReviewFindings drift guard', () => {
+describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ ReviewerFindingsInput drift guard', () => {
   it('GOOD: every JSON-Schema property is also a Zod property', () => {
     const jsonProps = Object.keys(jsonSchemaProperties());
     const zodProps = zodTopLevelKeys();
@@ -94,26 +98,35 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ Zod ReviewFindings drift guard', () =>
     expect(missing).toEqual([]);
   });
 
-  it('GOOD: every Zod property is a JSON-Schema property, except host-injected provenance', () => {
+  it('GOOD: every ReviewerFindingsInput property is a JSON-Schema property', () => {
     const jsonProps = Object.keys(jsonSchemaProperties());
     const zodProps = zodTopLevelKeys();
-    const missing = zodProps.filter(
-      (p) =>
-        !jsonProps.includes(p) &&
-        !HOST_INJECTED_PROVENANCE_FIELDS.includes(
-          p as (typeof HOST_INJECTED_PROVENANCE_FIELDS)[number],
-        ),
-    );
+    const missing = zodProps.filter((p) => !jsonProps.includes(p));
     expect(missing).toEqual([]);
   });
 
-  it('CONTRACT: host-injected provenance fields are Zod-only and absent from the SDK schema (F8)', () => {
+  it('CONTRACT: host-owned provenance is absent from the reviewer input schema', () => {
     const jsonProps = Object.keys(jsonSchemaProperties());
-    const zodProps = zodTopLevelKeys();
-    for (const field of HOST_INJECTED_PROVENANCE_FIELDS) {
-      expect(zodProps).toContain(field);
-      expect(jsonProps).not.toContain(field);
-    }
+    expect(jsonProps).not.toHaveProperty('reviewedBy');
+    expect(jsonProps).not.toHaveProperty('reviewedAt');
+  });
+
+  it('CONTRACT: every nested object boundary rejects unknown keys', () => {
+    const props = jsonSchemaProperties();
+    const finding = props.blockingIssues!.items!;
+    const relation = finding.properties!.relation!;
+    const anchorItems = relation.properties!.subjectAnchors!.items!;
+    const location = (relation.properties!.evidenceLocations!.items!.oneOf ?? [])[0]!;
+    const challenge = props.challenges!.items!.oneOf![0]!;
+    const evidenceRef = challenge.properties!.evidenceRefs!.items!;
+
+    expect(finding.additionalProperties).toBe(false);
+    expect(relation.additionalProperties).toBe(false);
+    expect(location.additionalProperties).toBe(false);
+    expect(anchorItems.oneOf?.every((item) => item.additionalProperties === false)).toBe(true);
+    expect(challenge.additionalProperties).toBe(false);
+    expect(evidenceRef.additionalProperties).toBe(false);
+    expect(props.attestation!.additionalProperties).toBe(false);
   });
 
   it('GOOD: overallVerdict enum matches LoopVerdict (accept | changes_requested | unable_to_review)', () => {
@@ -126,30 +139,6 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ Zod ReviewFindings drift guard', () =>
     const props = jsonSchemaProperties();
     const mode = props.reviewMode as JsonSchemaProperty;
     expect(mode.const).toBe('subagent');
-  });
-
-  it('GOOD: reviewedBy.actorSource enum matches Zod ReviewActorInfo', () => {
-    const props = jsonSchemaProperties();
-    const reviewedBy = props.reviewedBy as JsonSchemaProperty;
-    const actorSource = reviewedBy.properties?.actorSource as JsonSchemaProperty;
-    // Zod source: ReviewActorInfo uses z.enum(['env', 'git', 'claim', 'unknown'])
-    // (decision-receipt actorSource is the broader 5-value enum but is a
-    // different schema — see evidence.ts:184 vs evidence.ts:444).
-    expect(actorSource.enum?.sort()).toEqual(['claim', 'env', 'git', 'unknown']);
-  });
-
-  it('GOOD: reviewedBy.actorAssurance enum includes all four Zod assurance values', () => {
-    const props = jsonSchemaProperties();
-    const reviewedBy = props.reviewedBy as JsonSchemaProperty;
-    const actorAssurance = reviewedBy.properties?.actorAssurance as JsonSchemaProperty;
-    // Zod assuranceSchema(): verified | best_effort | claim_validated | idp_verified.
-    // Drift: 'verified' was missing pre-fix and would silently reject valid findings.
-    expect(actorAssurance.enum?.sort()).toEqual([
-      'best_effort',
-      'claim_validated',
-      'idp_verified',
-      'verified',
-    ]);
   });
 
   it('GOOD: blockingIssues and majorRisks share the Finding shape (same enums)', () => {
@@ -178,6 +167,42 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ Zod ReviewFindings drift guard', () =>
     ]);
   });
 
+  it('GOOD: subject anchor oneOf includes all three canonical discriminator variants', () => {
+    // The canonical ReviewSubjectAnchor has three variants:
+    // repository_location, artifact_section, content.
+    // The JSON schema must present all three so the model is not forced to
+    // guess an unsupported variant.
+    const anchorKinds = collectSubjectAnchorKinds();
+    expect(anchorKinds.sort()).toEqual(
+      ['artifact_section', 'content', 'implementation', 'repository_location'].sort(),
+    );
+  });
+
+  it('GOOD: evidenceLocations path type is string, revision enum is base|head', () => {
+    // The JSON schema must not accept revision values like "current" or
+    // "modified" that the Zod schema rejects.
+    const items = jsonSchemaProperties().blockingIssues as unknown as JsonSchemaProperty;
+    const findingItems = items?.items as JsonSchemaProperty | undefined;
+    const relation = findingItems?.properties?.relation as JsonSchemaProperty | undefined;
+    const evLoc = relation?.properties?.evidenceLocations as JsonSchemaProperty | undefined;
+    const evItems = evLoc?.items as JsonSchemaProperty | undefined;
+    // REPOSITORY_LOCATION_JSON_SCHEMA wraps in oneOf
+    const evOneOf = evItems?.oneOf as JsonSchemaProperty[] | undefined;
+    const locationSchema = evOneOf?.[0] ?? evItems;
+    const revision = locationSchema?.properties?.revision as JsonSchemaProperty | undefined;
+    expect(revision?.enum?.sort()).toEqual(['base', 'head']);
+  });
+
+  it('CONTRACT: findings require structured relations and reject legacy locations', () => {
+    const props = jsonSchemaProperties();
+    for (const key of ['blockingIssues', 'majorRisks'] as const) {
+      const finding = props[key]!.items!;
+      expect(finding.properties?.relation).toBeDefined();
+      expect(finding.required).toContain('relation');
+      expect(finding.properties?.location).toBeUndefined();
+    }
+  });
+
   it('GOOD: attestation.toolObligationId enforces UUID pattern (matches z.string().uuid())', () => {
     // Drift guard: Zod ReviewAttestation.toolObligationId is z.string().uuid().
     // Pre-fix the JSON-Schema only required `type: string`, so the SDK could
@@ -197,22 +222,12 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ Zod ReviewFindings drift guard', () =>
     expect(re.test('obl_test')).toBe(false);
   });
 
-  it('GOOD: attestation block requires all six strict fields', () => {
-    // B1 fix: REVIEWER_AGENT mandate template emits a 6-field attestation
-    // (mandateDigest, criteriaVersion, toolObligationId, iteration, planVersion,
-    // reviewedBy). The JSON-schema MUST require all six so structured output
-    // rejects findings that omit any field. validateStrictAttestation() in
-    // review-assurance.ts performs the runtime check post-parse.
+  it('GOOD: attestation block requires only reviewer-owned obligation binding', () => {
+    // Host-owned attestation fields are stamped after the reviewer input
+    // validates; structured output may carry only the obligation binding.
     const props = jsonSchemaProperties();
     const attestation = props.attestation as JsonSchemaProperty;
-    expect(attestation.required?.sort()).toEqual([
-      'criteriaVersion',
-      'iteration',
-      'mandateDigest',
-      'planVersion',
-      'reviewedBy',
-      'toolObligationId',
-    ]);
+    expect(attestation.required).toEqual(['toolObligationId']);
   });
 
   it('CONTRACT: attestation is required at the top level of JSON-Schema', () => {
@@ -232,6 +247,54 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ Zod ReviewFindings drift guard', () =>
     expect(jsonSchemaRequired()).not.toContain('challenges');
   });
 
+  it('GOOD: challenge oneOf includes all three canonical discriminator variants', () => {
+    // The canonical ReviewChallenge has design_challenge, implementation_challenge,
+    // content_challenge. The JSON schema must present all three.
+    const props = jsonSchemaProperties();
+    const challenges = props.challenges as JsonSchemaProperty;
+    const oneOf = challenges?.items?.oneOf as JsonSchemaProperty[] | undefined;
+    expect(oneOf).toBeDefined();
+    expect(oneOf!.length).toBeGreaterThanOrEqual(3);
+    const kinds = oneOf!
+      .map((v) => v.properties?.kind?.const)
+      .filter((k): k is string => typeof k === 'string');
+    expect(kinds.sort()).toEqual(
+      ['content_challenge', 'design_challenge', 'implementation_challenge'].sort(),
+    );
+  });
+
+  it('CONTRACT: SDK challenges use reviewer input identity, not host-minted identity', () => {
+    const props = jsonSchemaProperties();
+    const challenges = props.challenges as JsonSchemaProperty;
+    const variants = challenges.items!.oneOf!;
+
+    for (const variant of variants) {
+      expect(variant.properties).toHaveProperty('clientReference');
+      expect(variant.properties).not.toHaveProperty('challengeId');
+      expect(variant.required).toContain('obligationId');
+      expect(variant.required).not.toContain('clientReference');
+    }
+  });
+
+  it('GOOD: challenge outcome enums match canonical per-type values', () => {
+    // design_challenge and content_challenge: supported, contradicted, not_verified
+    // implementation_challenge: pass, fail, not_verified
+    const props = jsonSchemaProperties();
+    const challenges = props.challenges as JsonSchemaProperty;
+    const oneOf = challenges?.items?.oneOf as JsonSchemaProperty[] | undefined;
+    expect(oneOf).toBeDefined();
+
+    for (const variant of oneOf!) {
+      const kind = variant.properties?.kind?.const as string | undefined;
+      const outcome = variant.properties?.outcome?.enum as string[] | undefined;
+      if (kind === 'implementation_challenge') {
+        expect(outcome?.sort()).toEqual(['fail', 'not_verified', 'pass']);
+      } else if (kind === 'design_challenge' || kind === 'content_challenge') {
+        expect(outcome?.sort()).toEqual(['contradicted', 'not_verified', 'supported']);
+      }
+    }
+  });
+
   it('GOOD: round-trip — a minimal valid SDK output passes both JSON-Schema and Zod', () => {
     // Construct a payload that satisfies the JSON-Schema, then run it through
     // the Zod parser. This catches drift where one schema accepts shapes the
@@ -246,26 +309,15 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ Zod ReviewFindings drift guard', () =>
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
-      reviewedBy: {
-        sessionId: 'sess_abc123',
-        actorAssurance: 'best_effort' as const,
-      },
-      reviewedAt: new Date().toISOString(),
       attestation: {
-        mandateDigest: 'sha256:placeholder',
-        criteriaVersion: '1.0.0',
         toolObligationId: '00000000-0000-4000-8000-000000000000',
-        iteration: 1,
-        planVersion: 1,
-        reviewedBy: 'flowguard-reviewer' as const,
       },
     };
-    const result = ReviewFindings.safeParse(payload);
-    if (!result.success) console.log('zod errors:', JSON.stringify(result.error.issues, null, 2));
+    const result = ReviewerFindingsInput.safeParse(payload);
     expect(result.success).toBe(true);
   });
 
-  it('GOOD: round-trip with verified assurance — passes both schemas', () => {
+  it('GOOD: host-stamped canonical findings pass ReviewFindings after input validation', () => {
     // Regression guard: pre-fix, JSON-Schema enum lacked 'verified' but Zod
     // accepted it. SDK structured-output would reject; Zod would accept.
     const payload = {
@@ -278,28 +330,28 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ Zod ReviewFindings drift guard', () =>
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
-      reviewedBy: {
-        sessionId: 'sess_abc123',
-        actorAssurance: 'verified' as const,
-      },
-      reviewedAt: new Date().toISOString(),
       attestation: {
-        mandateDigest: 'sha256:placeholder',
-        criteriaVersion: '1.0.0',
         toolObligationId: '00000000-0000-4000-8000-000000000000',
-        iteration: 1,
-        planVersion: 1,
-        reviewedBy: 'flowguard-reviewer' as const,
       },
     };
-    const result = ReviewFindings.safeParse(payload);
+    const result = ReviewerFindingsInput.safeParse(payload);
     expect(result.success).toBe(true);
 
-    // Also assert it's in the JSON-Schema enum (the actual runtime check).
-    const props = jsonSchemaProperties();
-    const reviewedBy = props.reviewedBy as JsonSchemaProperty;
-    const actorAssurance = reviewedBy.properties?.actorAssurance as JsonSchemaProperty;
-    expect(actorAssurance.enum).toContain('verified');
+    expect(
+      ReviewFindings.safeParse({
+        ...payload,
+        reviewedBy: { sessionId: 'sess_abc123', actorAssurance: 'verified' },
+        reviewedAt: new Date().toISOString(),
+        attestation: {
+          toolObligationId: payload.attestation.toolObligationId,
+          mandateDigest: 'sha256:placeholder',
+          criteriaVersion: '1.0.0',
+          iteration: 1,
+          planVersion: 1,
+          reviewedBy: 'flowguard-reviewer',
+        },
+      }).success,
+    ).toBe(true);
   });
 
   it('GOOD: round-trip with overallVerdict=unable_to_review — passes both schemas (P1.3 third-verdict)', () => {
@@ -318,22 +370,11 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ Zod ReviewFindings drift guard', () =>
       missingVerification: ['plan text malformed at line 42'],
       scopeCreep: [],
       unknowns: ['cannot parse the proposed schema diff'],
-      reviewedBy: {
-        sessionId: 'sess_abc123',
-        actorAssurance: 'best_effort' as const,
-      },
-      reviewedAt: new Date().toISOString(),
       attestation: {
-        mandateDigest: 'sha256:placeholder',
-        criteriaVersion: '1.0.0',
         toolObligationId: '00000000-0000-4000-8000-000000000000',
-        iteration: 1,
-        planVersion: 1,
-        reviewedBy: 'flowguard-reviewer' as const,
       },
     };
-    const result = ReviewFindings.safeParse(payload);
-    if (!result.success) console.log('zod errors:', JSON.stringify(result.error.issues, null, 2));
+    const result = ReviewerFindingsInput.safeParse(payload);
     expect(result.success).toBe(true);
 
     // Also assert the JSON-Schema enum admits the value.

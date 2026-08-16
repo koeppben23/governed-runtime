@@ -2,7 +2,13 @@
 
 **Status:** Review complete
 **Overall:** clean
-**Input:** manual_text
+
+## Verification
+
+No verification obligations declared.
+Approval evidence: Not recorded
+
+Diagnostic: `flowguard_status({ proofGraph: true })`
 
 ## Findings
 
@@ -23,4 +29,4 @@
 
 - No follow-up required from this review. Re-run `/review` after changes if needed.
 
-Review report complete.
+→ `/export` — Export the review evidence.

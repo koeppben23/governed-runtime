@@ -10,17 +10,19 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { z } from 'zod';
 import {
   formatBlocked,
   formatAutoAdvanceOverflow,
-  formatError,
   getWorktree,
   extractSections,
   formatEval,
   formatRailResult,
 } from './helpers.js';
+import { formatError } from './error-format.js';
 import type { EvalResult } from '../../machine/evaluate.js';
 import type { RailResult, AutoAdvanceOverflow } from '../../rails/types.js';
+import { makeProgressedState } from '../../fixtures.js';
 
 function parseJSON(s: string): Record<string, unknown> {
   return JSON.parse(s);
@@ -68,6 +70,20 @@ describe('formatBlocked', () => {
     expect(presentation!.markdown.startsWith('\n')).toBe(false);
     expect(presentation!.markdown.endsWith('\n')).toBe(false);
   });
+
+  it('adds the migrated headline field only for migrated codes', () => {
+    const migrated = parseJSON(
+      formatBlocked('DISCOVERY_DRIFT_BLOCKED', { driftStatus: 'drifted' }),
+    );
+    expect(migrated.headline).toBe('Discovery drift blocks mutating tools');
+    // The registry-verbatim interpolated message is preserved in `message`,
+    // distinct from the context-free headline.
+    expect(migrated.message).toContain('Discovery drift verdict is drifted');
+    expect(migrated.message).not.toBe(migrated.headline);
+
+    const unmigrated = parseJSON(formatBlocked('COMMAND_NOT_ALLOWED'));
+    expect(unmigrated.headline).toBeUndefined();
+  });
 });
 
 describe('formatAutoAdvanceOverflow', () => {
@@ -93,6 +109,33 @@ describe('formatError', () => {
     const err = Object.assign(new Error('custom'), { code: 'E1' });
     const result = parseJSON(formatError(err));
     expect(result.code).toBe('E1');
+  });
+
+  it('reports a schema violation under its own code with the offending paths', () => {
+    // A schema failure is a deterministic contract violation with a known
+    // field, not an unclassifiable crash — and the recoveries differ.
+    const schema = z.object({ reviewSubject: z.object({ baseRepository: z.object({}) }) });
+    const parsed = schema.safeParse({ reviewSubject: {} });
+    expect(parsed.success).toBe(false);
+
+    const result = parseJSON(formatError(parsed.error));
+
+    expect(result.code).toBe('ARTIFACT_SCHEMA_VALIDATION_FAILED');
+    expect(String(result.message)).toContain('reviewSubject.baseRepository');
+    expect(Array.isArray(result.recovery)).toBe(true);
+  });
+
+  it('bounds the reported issues instead of dumping the whole error', () => {
+    const schema = z.object(
+      Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`f${i}`, z.string()])),
+    );
+    const parsed = schema.safeParse({});
+    expect(parsed.success).toBe(false);
+
+    const message = String(parseJSON(formatError((parsed as { error: z.ZodError }).error)).message);
+
+    expect(message).toContain('+7 more');
+    expect(message.length).toBeLessThan(600);
   });
 });
 
@@ -143,5 +186,30 @@ describe('formatRailResult', () => {
     expect(parsed.error).toBe(true);
     expect(parsed.code).toBe('TICKET_REQUIRED');
     expect(parsed.message).toBe('No ticket');
+  });
+
+  it('renders ProofGraph and only /export after evidence approval completes', () => {
+    const state = makeProgressedState('COMPLETE');
+    const result = formatRailResult(
+      {
+        kind: 'ok',
+        state,
+        evalResult: { kind: 'terminal' },
+        transitions: [
+          {
+            from: 'EVIDENCE_REVIEW',
+            to: 'COMPLETE',
+            event: 'APPROVE',
+            at: '2025-01-01T00:00:00Z',
+          },
+        ],
+      } as RailResult,
+      { evidenceApprovalCompletion: true },
+    );
+    const output = typeof result === 'string' ? result : result.output;
+    const presentation = parseJSON(output).presentation as { markdown: string };
+    expect(presentation.markdown).toContain('## Verification');
+    expect(presentation.markdown).toContain('/export');
+    expect(presentation.markdown).not.toContain('/approve');
   });
 });

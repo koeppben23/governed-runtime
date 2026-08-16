@@ -61,6 +61,8 @@ import {
 import { appendAuditEvent, readAuditTrail } from './persistence-audit.js';
 import type { SessionState } from '../state/schema.js';
 import type { AuditEvent, ReviewReport } from '../state/evidence.js';
+import { buildReviewReportCard } from '../presentation/review-report-card.js';
+import type { CompactProofPresentation } from '../presentation/proof-model.js';
 import { withTestEnv } from '../integration/test-helpers.js';
 import {
   makeState,
@@ -111,6 +113,7 @@ function makeValidAuditEvent(overrides: Partial<AuditEvent> = {}): AuditEvent {
 /** Create a minimal valid ReviewReport for persistence tests. */
 function makeValidReport(): ReviewReport {
   return {
+    reviewKind: 'lifecycle_review',
     schemaVersion: 'flowguard-review-report.v1',
     sessionId: FIXED_SESSION_UUID,
     generatedAt: FIXED_TIME,
@@ -207,6 +210,81 @@ describe('persistence', () => {
       expect(loaded!.overallStatus).toBe('clean');
     });
 
+    it('preserves canonical material relations across report persistence and card projection', async () => {
+      const finding = {
+        severity: 'major' as const,
+        category: 'correctness' as const,
+        message: 'The implementation omits the approved rollback step.',
+        relation: {
+          subjectAnchors: [
+            {
+              kind: 'artifact_section' as const,
+              artifactKind: 'plan' as const,
+              artifactDigest: 'a'.repeat(64),
+              sectionPath: [
+                { headingDepth: 1, siblingIndex: 1, headingText: 'Rollback procedure' },
+              ],
+            },
+          ],
+          evidenceLocations: [{ path: 'src/rollback.ts', revision: 'head' as const, line: 42 }],
+        },
+      };
+      await writeReport(tmpDir, {
+        ...makeValidReport(),
+        reviewKind: 'content_review',
+        reviewSubject: {
+          kind: 'content',
+          source: { kind: 'inline', mediaType: 'text' },
+          materialDigest: 'b'.repeat(64),
+          subjectDigest: 'a'.repeat(64),
+          lineCount: 1,
+        },
+        overallStatus: 'issues',
+        findings: [{ source: 'material_finding', reportSeverity: 'error', finding }],
+      });
+      const loaded = await readReport(tmpDir);
+      expect(loaded?.findings).toEqual([
+        { source: 'material_finding', reportSeverity: 'error', finding },
+      ]);
+      if (!loaded || loaded.findings[0]?.source !== 'material_finding') {
+        throw new Error('Expected persisted material finding');
+      }
+      const proofSummary = {
+        kind: 'evaluation',
+        overallStatus: 'NOT_DECLARED',
+        claimCount: 0,
+        criticalCount: 0,
+        criticalProvenCount: 0,
+        provenCount: 0,
+        contradictedCount: 0,
+        blockedCount: 0,
+        staleCount: 0,
+        unprovenCount: 0,
+        notVerifiedCount: 0,
+        coverage: 'NOT_DECLARED',
+        unmetCriticalClaims: [],
+        otherHighlightedClaims: [],
+        approval: { attestations: [] },
+        decisionContext: 'completion',
+      } satisfies CompactProofPresentation;
+      const card = buildReviewReportCard({
+        phase: 'COMPLETE',
+        phaseLabel: 'Complete',
+        overallStatus: 'issues',
+        findings: loaded.findings,
+        completeness: { overallComplete: true, fourEyes: false, total: 0, summary: '0/0 complete' },
+        proofSummary,
+        productNextAction: { text: 'Export.', commands: ['/export'] },
+        conclusionAction: {
+          invocation: '/export',
+          description: 'Export.',
+          visibility: 'recommended',
+        },
+      });
+      expect(card).toContain('Plan · Rollback procedure');
+      expect(card).not.toContain(finding.relation.subjectAnchors[0]!.artifactDigest);
+    });
+
     it('appendAuditEvent + readAuditTrail round-trip', async () => {
       const event1 = makeValidAuditEvent();
       const event2 = makeValidAuditEvent({
@@ -300,6 +378,168 @@ describe('persistence', () => {
       } catch (err) {
         expect((err as PersistenceError).code).toBe('SCHEMA_VALIDATION_FAILED');
       }
+    });
+
+    it('rejects legacy counterexampleCheckId field', async () => {
+      const state = makeProgressedState('PLAN_REVIEW');
+      const json = JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
+      const plan = json.plan as Record<string, unknown>;
+      plan.claimDeclarations = {
+        flow: 'plan',
+        claims: [
+          {
+            claimId: '00000000-0000-4000-8000-000000000001',
+            statement: 'legacy',
+            critical: true,
+            authoritySectionId: 's1',
+            expectedCheckId: 'test',
+            counterexampleCheckId: 'security',
+          },
+        ],
+      };
+      await fs.mkdir(tmpDir, { recursive: true });
+      await fs.writeFile(statePath(tmpDir), JSON.stringify(json), 'utf-8');
+      await expect(readState(tmpDir)).rejects.toThrow(PersistenceError);
+    });
+
+    it('rejects counterexampleRequirement with mode field', async () => {
+      const state = makeProgressedState('PLAN_REVIEW');
+      const json = JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
+      const plan = json.plan as Record<string, unknown>;
+      plan.claimDeclarations = {
+        flow: 'plan',
+        claims: [
+          {
+            claimId: '00000000-0000-4000-8000-000000000001',
+            statement: 'with mode',
+            critical: true,
+            authoritySectionId: 's1',
+            expectedCheckId: 'test',
+            counterexampleRequirement: {
+              mode: 'assertion',
+              checkId: 'security',
+              assertion: { providerId: 'junit', localId: 'x#y' },
+            },
+          },
+        ],
+      };
+      await fs.mkdir(tmpDir, { recursive: true });
+      await fs.writeFile(statePath(tmpDir), JSON.stringify(json), 'utf-8');
+      await expect(readState(tmpDir)).rejects.toThrow(PersistenceError);
+    });
+
+    it('rejects assertionId in StructuredAssertionEvidence', async () => {
+      const state = makeProgressedState('IMPL_REVIEW');
+      const json = JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
+      json.implementation = {
+        changedFiles: ['a.ts'],
+        domainFiles: ['a.ts'],
+        digest: 'impl-digest',
+        executedAt: '2026-01-01T00:00:00.000Z',
+      };
+      json.validationAttempts = [
+        {
+          attemptId: '00000000-0000-4000-8000-000000000001',
+          scope: 'implementation',
+          implementationDigest: 'impl-digest',
+          result: {
+            checkId: 'security',
+            passed: true,
+            detail: '',
+            executedAt: '2026-01-01T00:00:00.000Z',
+            kind: 'security',
+            command: 'run',
+            exitCode: 0,
+            executionMs: 5,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
+            outcome: 'supported',
+            assertionExtraction: {
+              status: 'extracted',
+              attemptId: '00000000-0000-4000-8000-000000000002',
+              format: 'junit_xml',
+              reportDigests: ['b'.repeat(64)],
+              assertions: [
+                {
+                  assertionId: 'junit:Test#m',
+                  assertion: { providerId: 'junit', localId: 'Test#m' },
+                  providerId: 'junit',
+                  status: 'passed',
+                  testName: 'm',
+                },
+              ],
+              summary: {
+                assertionCount: 1,
+                passedCount: 1,
+                failedCount: 0,
+                erroredCount: 0,
+                skippedCount: 0,
+                suiteInfrastructureError: false,
+              },
+            },
+          },
+        },
+      ];
+      await fs.mkdir(tmpDir, { recursive: true });
+      await fs.writeFile(statePath(tmpDir), JSON.stringify(json), 'utf-8');
+      await expect(readState(tmpDir)).rejects.toThrow(PersistenceError);
+    });
+
+    it('rejects framework in StructuredAssertionEvidence', async () => {
+      const state = makeProgressedState('IMPL_REVIEW');
+      const json = JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
+      json.implementation = {
+        changedFiles: ['a.ts'],
+        domainFiles: ['a.ts'],
+        digest: 'impl-digest',
+        executedAt: '2026-01-01T00:00:00.000Z',
+      };
+      json.validationAttempts = [
+        {
+          attemptId: '00000000-0000-4000-8000-000000000001',
+          scope: 'implementation',
+          implementationDigest: 'impl-digest',
+          result: {
+            checkId: 'security',
+            passed: true,
+            detail: '',
+            executedAt: '2026-01-01T00:00:00.000Z',
+            kind: 'security',
+            command: 'run',
+            exitCode: 0,
+            executionMs: 5,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
+            outcome: 'supported',
+            assertionExtraction: {
+              status: 'extracted',
+              attemptId: '00000000-0000-4000-8000-000000000002',
+              format: 'junit_xml',
+              reportDigests: ['b'.repeat(64)],
+              assertions: [
+                {
+                  framework: 'junit',
+                  assertion: { providerId: 'junit', localId: 'Test#m' },
+                  providerId: 'junit',
+                  status: 'passed',
+                  testName: 'm',
+                },
+              ],
+              summary: {
+                assertionCount: 1,
+                passedCount: 1,
+                failedCount: 0,
+                erroredCount: 0,
+                skippedCount: 0,
+                suiteInfrastructureError: false,
+              },
+            },
+          },
+        },
+      ];
+      await fs.mkdir(tmpDir, { recursive: true });
+      await fs.writeFile(statePath(tmpDir), JSON.stringify(json), 'utf-8');
+      await expect(readState(tmpDir)).rejects.toThrow(PersistenceError);
     });
   });
 

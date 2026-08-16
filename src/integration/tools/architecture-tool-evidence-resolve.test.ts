@@ -42,8 +42,8 @@ const mocks = vi.hoisted(() => {
       JSON.stringify({ error: true, code: 'INTERNAL_ERROR', message: String(err) }),
     ),
     appendNextAction: vi.fn((payload: string) => payload),
-    writeStateWithArtifacts: vi.fn<(sessDir: string, state: SessionState) => Promise<void>>(
-      async () => undefined,
+    writeStateWithArtifacts: vi.fn<(sessDir: string, state: SessionState) => Promise<SessionState>>(
+      async (_sessDir: string, state: SessionState) => state,
     ),
     readDiscovery: vi.fn(async () => null as DiscoveryResult | null),
   };
@@ -157,6 +157,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
           digest: 'digest-adr',
           status: 'proposed',
+          reviewCompletion: 'pending',
           createdAt: '2026-01-01T00:00:00.000Z',
         },
       }),
@@ -171,6 +172,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
           digest: 'digest-adr',
           status: 'proposed',
+          reviewCompletion: 'pending',
           createdAt: '2026-01-01T00:00:00.000Z',
         },
       }),
@@ -215,6 +217,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
           digest: 'digest-adr',
           status: 'proposed',
+          reviewCompletion: 'pending',
           createdAt: now,
         },
         selfReview: {
@@ -226,14 +229,18 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          attempts: [],
           obligations: [
             {
               obligationId: OBLIGATION_ID,
               obligationType: 'architecture',
+              subjectDigest: 'test-subject-digest',
               iteration: 0,
               planVersion: 1,
               criteriaVersion: REVIEW_CRITERIA_VERSION,
               mandateDigest: REVIEW_MANDATE_DIGEST,
+              maxReviewerOutputRepairAttempts: 1,
               createdAt: now,
               pluginHandshakeAt: now,
               status: 'fulfilled',
@@ -241,6 +248,11 @@ describe('architecture — BUG-15 evidence-resolve', () => {
               blockedCode: null,
               fulfilledAt: now,
               consumedAt: null,
+              reviewSubjectScope: {
+                kind: 'repository_change',
+                paths: ['src/architecture.ts'],
+                revisions: ['base', 'head'],
+              },
             },
           ],
           invocations: [
@@ -295,6 +307,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
           digest: 'digest-adr',
           status: 'proposed',
+          reviewCompletion: 'pending',
           createdAt: now,
         },
         selfReview: {
@@ -306,21 +319,30 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          attempts: [],
           obligations: [
             {
               obligationId: OBLIGATION_ID,
               obligationType: 'architecture',
+              subjectDigest: 'test-subject-digest',
               iteration: 0,
               planVersion: 1,
               criteriaVersion: REVIEW_CRITERIA_VERSION,
               mandateDigest: REVIEW_MANDATE_DIGEST,
+              maxReviewerOutputRepairAttempts: 1,
               createdAt: now,
-              pluginHandshakeAt: null,
+              pluginHandshakeAt: now,
               status: 'fulfilled',
               invocationId: INVOCATION_ID,
               blockedCode: null,
               fulfilledAt: now,
               consumedAt: null,
+              reviewSubjectScope: {
+                kind: 'repository_change',
+                paths: ['src/architecture.ts'],
+                revisions: ['base', 'head'],
+              },
             },
           ],
           invocations: [
@@ -365,12 +387,29 @@ describe('architecture — BUG-15 evidence-resolve', () => {
             severity: 'major',
             category: 'risk',
             message: 'Race condition in in-memory storage',
-            location: 'TaskRepository',
+            relation: {
+              subjectAnchors: [
+                {
+                  kind: 'repository_location',
+                  location: { path: 'src/architecture.ts', revision: 'head' },
+                },
+              ],
+              evidenceLocations: [],
+            },
           },
           {
             severity: 'minor',
             category: 'quality',
             message: 'Lack of architectural coupling guard',
+            relation: {
+              subjectAnchors: [
+                {
+                  kind: 'repository_location',
+                  location: { path: 'src/architecture.ts', revision: 'head' },
+                },
+              ],
+              evidenceLocations: [],
+            },
           },
         ],
         missingVerification: ['No negative-path integration test'],
@@ -387,6 +426,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           adrText: '## Context\nctx\n\n## Decision\ndec\n\n## Consequences\ncons\n',
           digest: 'digest-adr',
           status: 'proposed',
+          reviewCompletion: 'pending',
           createdAt: now,
         },
         selfReview: {
@@ -398,14 +438,18 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          attempts: [],
           obligations: [
             {
               obligationId: OBLIGATION_ID,
               obligationType: 'architecture',
+              subjectDigest: 'test-subject-digest',
               iteration: 0,
               planVersion: 1,
               criteriaVersion: REVIEW_CRITERIA_VERSION,
               mandateDigest: REVIEW_MANDATE_DIGEST,
+              maxReviewerOutputRepairAttempts: 1,
               createdAt: now,
               pluginHandshakeAt: now,
               status: 'fulfilled',
@@ -413,6 +457,11 @@ describe('architecture — BUG-15 evidence-resolve', () => {
               blockedCode: null,
               fulfilledAt: now,
               consumedAt: null,
+              reviewSubjectScope: {
+                kind: 'repository_change',
+                paths: ['src/architecture.ts'],
+                revisions: ['base', 'head'],
+              },
             },
           ],
           invocations: [
@@ -449,14 +498,13 @@ describe('architecture — BUG-15 evidence-resolve', () => {
         reviewInvocationPolicy: 'host_task_required',
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
       });
-      // autoAdvance retains ARCHITECTURE — converged path is triggered by
-      // approvedConverged (revisionDelta=none + verdict=accept), not by phase.
-      mocks.autoAdvance.mockReturnValue({
+      // Preserve the reviewed candidate and stop at the mandatory human gate.
+      mocks.autoAdvance.mockImplementation((state: SessionState) => ({
         kind: 'advanced',
-        state: mocks.state,
-        evalResult: { kind: 'pending' },
+        state: { ...state, phase: 'ARCH_REVIEW' },
+        evalResult: { kind: 'waiting', phase: 'ARCH_REVIEW', reason: 'human decision required' },
         transitions: [],
-      });
+      }));
 
       const { architecture } = await import('./architecture.js');
       // Agent submits ONLY the verdict — no reviewFindings (host_task_required contract)
@@ -513,6 +561,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
           digest: 'digest-adr',
           status: 'proposed',
+          reviewCompletion: 'pending',
           createdAt: now,
         },
         selfReview: {
@@ -524,8 +573,10 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
           obligations: [],
           invocations: [],
+          attempts: [],
         },
       });
       mocks.state = stateNoEvidence;

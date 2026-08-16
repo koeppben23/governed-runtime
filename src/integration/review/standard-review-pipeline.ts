@@ -11,6 +11,7 @@ import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js'
 import type { ReviewObligationType } from '../../state/evidence.js';
 import type { CapturedFindings } from './enforcement/types.js';
 import { recordPluginReview } from './enforcement/enforcement.js';
+import { prepareReviewerFindingsForValidation } from './enforcement/prepare-findings.js';
 import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
@@ -61,6 +62,25 @@ export async function runStandardReviewPipeline(
   }
 
   const strictEnforcement = isStrictEnforcementEnabled(sessionState);
+
+  // Hard subject-authority gate: no exact obligation ⇒ no reviewer execution.
+  // A missing or type-mismatched obligation must never let the pipeline fall
+  // back to mutable implementation identity (the prompt derives its anchor
+  // contract from the obligation; without it there is no frozen subject).
+  const exactObligation = sessionState.reviewAssurance?.obligations.find(
+    (o) => o.obligationId === ctx.reviewCtx.obligationId,
+  );
+  if (!exactObligation || exactObligation.obligationType !== obligationType) {
+    output.output = strictBlockedOutput('REVIEW_MATERIAL_INTEGRITY_FAILED', {
+      reason: `review orchestration requires an exact ${obligationType} review obligation for ${ctx.reviewCtx.obligationId}`,
+    });
+    deps.log.warn('orchestrator', 'missing or mismatched review obligation — blocked', {
+      tool: toolName,
+      obligationId: ctx.reviewCtx.obligationId,
+      obligationType,
+    });
+    return;
+  }
 
   const assuranceResult = await recordObligationHandshake(ctx, obligationType, strictEnforcement);
 
@@ -254,40 +274,23 @@ async function handleReviewerSuccess(ctx: PipelineContext, opts: ReviewSuccessOp
   const { deps, output, sessionId, rawOutput } = ctx;
 
   if (!reviewerResult.findings) {
-    deps.log.warn(
-      'orchestrator',
-      'reviewer returned unparseable response — fallback to LLM-driven path',
-      {
-        tool: toolName,
-        sessionId,
-        childSessionId: reviewerResult.sessionId,
-        rawResponseLength: reviewerResult.rawResponse.length,
-      },
-    );
-    if (strictEnforcement) {
-      await blockReviewOutcomeHelper(deps, ctx, 'STRICT_REVIEW_ORCHESTRATION_FAILED', {
-        reason: 'reviewer response was not parseable as ReviewFindings',
-      });
-    }
+    await handleUnparseableReviewerResult(ctx, opts);
     return;
   }
 
-  const parsedFindings = ReviewFindingsSchema.safeParse(reviewerResult.findings);
-  if (!parsedFindings.success && strictEnforcement) {
-    await blockReviewOutcomeHelper(deps, ctx, 'STRICT_REVIEW_ORCHESTRATION_FAILED', {
-      reason: 'reviewer response did not match ReviewFindings schema',
-    });
-  }
+  const canonicalReviewerResult = await prepareStandardReviewerResult(
+    ctx,
+    reviewerResult,
+    strictEnforcement,
+  );
+  if (!canonicalReviewerResult) return;
+  const parsedFindings = ReviewFindingsSchema.parse(canonicalReviewerResult.findings);
 
-  if (strictEnforcement && parsedFindings.success) {
-    // parsedFindings.success guarantees reviewerResult.findings is non-null
-    const narrowed = reviewerResult as ReviewerSuccessResult & {
-      findings: Record<string, unknown>;
-    };
+  if (strictEnforcement) {
     const gateBlocked = await enforceStandardStrictGate(
       ctx,
-      narrowed,
-      parsedFindings.data,
+      canonicalReviewerResult,
+      parsedFindings,
       prompt,
       obligationType,
     );
@@ -296,15 +299,12 @@ async function handleReviewerSuccess(ctx: PipelineContext, opts: ReviewSuccessOp
 
   if (strictEnforcement && isOutputAlreadyBlocked(output)) return;
 
-  const mutated = buildMutatedOutput(rawOutput, reviewerResult);
+  const mutated = buildMutatedOutput(rawOutput, canonicalReviewerResult);
   if (mutated) {
     // buildMutatedOutput returns non-null only when findings is non-null
-    const narrowed = reviewerResult as ReviewerSuccessResult & {
-      findings: Record<string, unknown>;
-    };
     await finalizeReviewOutput(ctx, {
       toolName,
-      reviewerResult: narrowed,
+      reviewerResult: canonicalReviewerResult,
       mutated,
       strictEnforcement,
     });
@@ -319,6 +319,59 @@ async function handleReviewerSuccess(ctx: PipelineContext, opts: ReviewSuccessOp
       });
     }
   }
+}
+
+async function handleUnparseableReviewerResult(
+  ctx: PipelineContext,
+  opts: ReviewSuccessOpts,
+): Promise<void> {
+  const { deps, sessionId } = ctx;
+  const { toolName, reviewerResult, strictEnforcement } = opts;
+  deps.log.warn(
+    'orchestrator',
+    'reviewer returned unparseable response — fallback to LLM-driven path',
+    {
+      tool: toolName,
+      sessionId,
+      childSessionId: reviewerResult.sessionId,
+      rawResponseLength: reviewerResult.rawResponse.length,
+    },
+  );
+  if (strictEnforcement) {
+    await blockReviewOutcomeHelper(deps, ctx, 'STRICT_REVIEW_ORCHESTRATION_FAILED', {
+      reason: 'reviewer response was not parseable as ReviewFindings',
+    });
+  }
+}
+
+async function prepareStandardReviewerResult(
+  ctx: PipelineContext,
+  reviewerResult: ReviewerSuccessResult,
+  strictEnforcement: boolean,
+): Promise<(ReviewerSuccessResult & { findings: Record<string, unknown> }) | null> {
+  const prepared = prepareReviewerFindingsForValidation({
+    rawFindings: reviewerResult.findings!,
+    obligationId: ctx.reviewCtx.obligationId,
+    hostConstants: {
+      mandateDigest: REVIEW_MANDATE_DIGEST,
+      criteriaVersion: REVIEW_CRITERIA_VERSION,
+    },
+    hostProvenance: {
+      childSessionId: reviewerResult.sessionId,
+      reviewedAt: new Date().toISOString(),
+    },
+  });
+  if (!prepared.ok) {
+    if (strictEnforcement) {
+      await blockReviewOutcomeHelper(ctx.deps, ctx, 'STRICT_REVIEW_ORCHESTRATION_FAILED', {
+        reason: 'reviewer response did not match ReviewFindings schema',
+      });
+    }
+    return null;
+  }
+  const parsed = ReviewFindingsSchema.safeParse(prepared.findings);
+  if (!parsed.success) return null;
+  return { ...reviewerResult, findings: prepared.findings };
 }
 
 async function enforceStandardStrictGate(
@@ -346,7 +399,7 @@ async function enforceStandardStrictGate(
 
   if (!attestation.valid) {
     await blockReviewOutcomeHelper(deps, ctx, attestation.code, attestation.detail);
-    return false; // gate blocked output but don't short-circuit — let strictGateResult check handle it
+    return true;
   }
 
   const promptHash = hashText(prompt);
@@ -384,6 +437,12 @@ async function enforceStandardStrictGate(
   if (result === 'reused') {
     output.output = strictBlockedOutput('SUBAGENT_EVIDENCE_REUSED', {
       obligationId: reviewCtx.obligationId,
+    });
+    return true;
+  }
+  if (result === 'missing') {
+    output.output = strictBlockedOutput('REVIEW_MATERIAL_INTEGRITY_FAILED', {
+      reason: `no exact review obligation resolved for ${reviewCtx.obligationId}; evidence was not recorded`,
     });
     return true;
   }

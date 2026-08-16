@@ -6,11 +6,28 @@
  * - detected stack items (tool/framework/package-manager evidence)
  * - root package.json scripts
  * - root Java wrapper files (mvnw/gradlew)
+ * - execution profiles from the assertion provider catalog
  *
  * Planner only: it never executes commands.
+ *
+ * @version v3
  */
 
 import type { DetectedStack, VerificationCandidate, VerificationCandidateKind } from './types.js';
+import type { ExecutionSubjectInput } from '../state/discovery-schemas.js';
+import {
+  ASSERTION_PROFILES,
+  PROFILE_BY_ID,
+  SCRIPT_SIGNATURES_BY_PROVIDER,
+  type PlannerContext,
+  type ScriptSignature,
+} from '../providers/registry.js';
+import { buildScriptInvocation, type PackageManager } from './package-script-command.js';
+import { analyzeVerificationScript } from './verification-script-analysis.js';
+import type { ProviderId } from '../state/assertion-identity.js';
+import type { PlannedVerificationCandidate } from './verification-candidate-planned.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { hashText } from '../shared/hashing.js';
 
 type ReadFileFn = (relativePath: string) => Promise<string | undefined>;
 
@@ -19,8 +36,6 @@ interface VerificationPlannerInput {
   readonly allFiles: readonly string[];
   readonly readFile: ReadFileFn;
 }
-
-type PackageManager = 'pnpm' | 'yarn' | 'bun' | 'npm';
 
 const KIND_ORDER: Record<VerificationCandidateKind, number> = {
   build: 0,
@@ -35,29 +50,138 @@ const KIND_ORDER: Record<VerificationCandidateKind, number> = {
 const BUILD_TOOL_PM_ORDER: readonly PackageManager[] = ['pnpm', 'yarn', 'bun', 'npm'];
 
 /**
+ * Order planned candidates by verification kind, then by command. Extracted so
+ * the comparator is directly testable (array sorts of small candidate sets are
+ * insertion-based in V8 and mask comparator regressions).
+ */
+export function comparePlannedCandidates(
+  a: PlannedVerificationCandidate,
+  b: PlannedVerificationCandidate,
+): number {
+  const orderDiff = KIND_ORDER[a.candidate.kind] - KIND_ORDER[b.candidate.kind];
+  if (orderDiff !== 0) return orderDiff;
+  return a.candidate.command.localeCompare(b.candidate.command);
+}
+
+/**
  * Plan advisory verification candidates using repo-first precedence:
- * 1) package.json scripts
- * 2) wrapper commands (mvnw/gradlew)
- * 3) tool defaults from detected stack
+ * 1) package.json scripts (highest priority — never overwritten by fallbacks)
+ * 2) wrapper commands via execution profiles (mvnw/gradlew)
+ * 3) tool defaults from detected stack (non-assertion: eslint, tsc)
+ * 4) assertion execution profile fallbacks
  */
 export async function planVerificationCandidates(
   input: VerificationPlannerInput,
-): Promise<VerificationCandidate[]> {
-  const byKind = new Map<VerificationCandidateKind, VerificationCandidate>();
+): Promise<PlannedVerificationCandidate[]> {
+  const byKind = new Map<string, PlannedVerificationCandidate>();
   const rootFiles = new Set(input.allFiles.filter((f) => !f.includes('/') && !f.includes('\\')));
   const packageManager = detectPackageManager(input.detectedStack, rootFiles);
+  const detectedStackIds = new Set(
+    (input.detectedStack?.items ?? []).map((item) => `${item.kind}:${item.id}`),
+  );
+
+  const ctx: PlannerContext = {
+    rootFiles,
+    packageManager,
+    detectedStackIds,
+  };
 
   const scripts = await readPackageScripts(input.readFile);
-  addScriptCandidates(byKind, scripts, packageManager);
+  addScriptCandidates(byKind, scripts, packageManager, ctx);
 
-  addWrapperCandidates(byKind, rootFiles);
-  addFallbackCandidates(byKind, input.detectedStack, packageManager);
+  applyProfiles(byKind, ctx, ASSERTION_PROFILES);
 
-  return [...byKind.values()].sort((a, b) => {
-    const orderDiff = KIND_ORDER[a.kind] - KIND_ORDER[b.kind];
-    if (orderDiff !== 0) return orderDiff;
-    return a.command.localeCompare(b.command);
-  });
+  addNonAssertionFallbacks(byKind, detectedStackIds, packageManager);
+
+  const ordered = [...byKind.values()].sort(comparePlannedCandidates);
+  return ordered.map((planned) => ({
+    ...planned,
+    candidate: {
+      ...planned.candidate,
+      candidateId: `vc_${hashText(canonicalJsonStringify(planned.candidate))}`,
+    },
+  }));
+}
+
+/**
+ * Strip executionProfileId from planned candidates to produce the
+ * provider-neutral VerificationCandidate[] for state persistence.
+ */
+export function stripToCandidates(
+  planned: readonly PlannedVerificationCandidate[],
+): VerificationCandidate[] {
+  return planned.map((p) => p.candidate);
+}
+
+/**
+ * Extract execution subject inputs from planned candidates, keyed by kind,
+ * for persistence alongside the provider-neutral VerificationCandidate list.
+ */
+export function extractExecutionSubjectInputs(
+  planned: readonly PlannedVerificationCandidate[],
+): Record<string, ExecutionSubjectInput[]> {
+  const map: Record<string, ExecutionSubjectInput[]> = {};
+  for (const p of planned) {
+    if (p.executionSubjectInputs.length > 0) {
+      map[p.candidate.kind] = [...p.executionSubjectInputs];
+    }
+  }
+  return map;
+}
+
+/** Extract candidate-specific execution subject inputs for exact candidate execution. */
+export function extractExecutionSubjectInputsByCandidateId(
+  planned: readonly PlannedVerificationCandidate[],
+): Record<string, ExecutionSubjectInput[]> {
+  const map: Record<string, ExecutionSubjectInput[]> = {};
+  for (const p of planned) {
+    if (p.candidate.candidateId && p.executionSubjectInputs.length > 0) {
+      map[p.candidate.candidateId] = [...p.executionSubjectInputs];
+    }
+  }
+  return map;
+}
+
+function applyProfiles(
+  byKind: Map<string, PlannedVerificationCandidate>,
+  ctx: PlannerContext,
+  profiles: ReadonlyArray<{
+    readonly profileId?: string;
+    readonly kind: VerificationCandidateKind;
+    readonly alternate?: boolean;
+    createCandidate(ctx: PlannerContext): VerificationCandidate | null;
+    attestFullCheckScope?(command: string): boolean;
+    resolveExecutionSubjectInputs?(ctx: PlannerContext): readonly ExecutionSubjectInput[];
+  }>,
+): void {
+  for (const profile of profiles) {
+    if (byKind.has(profile.kind) && !profile.alternate) continue;
+
+    const raw = profile.createCandidate(ctx);
+    if (raw) {
+      const defaultPlan = byKind.get(profile.kind);
+      const defaultCandidate = defaultPlan?.candidate;
+      // Alternate evidence routes preserve the repo-native execution authority.
+      const routed =
+        profile.alternate && defaultCandidate
+          ? { ...raw, command: defaultCandidate.command, source: defaultCandidate.source }
+          : raw;
+      const scopeSemanticCommand =
+        profile.alternate && defaultPlan?.scopeSemanticCommand
+          ? defaultPlan.scopeSemanticCommand
+          : raw.command;
+      const candidate = attestFullCheckScope(profile, routed, scopeSemanticCommand);
+      const subjectInputs: ExecutionSubjectInput[] = [{ kind: 'implementation' as const }];
+      const profileFiles = profile.resolveExecutionSubjectInputs?.(ctx) ?? [];
+      for (const f of profileFiles) subjectInputs.push(f);
+      byKind.set(profile.alternate ? profile.profileId! : raw.kind, {
+        candidate,
+        executionProfileId: profile.profileId,
+        scopeSemanticCommand,
+        executionSubjectInputs: subjectInputs,
+      });
+    }
+  }
 }
 
 function detectPackageManager(
@@ -76,14 +200,6 @@ function detectPackageManager(
   if (rootFiles.has('yarn.lock')) return 'yarn';
   if (rootFiles.has('bun.lock') || rootFiles.has('bun.lockb')) return 'bun';
   return 'npm';
-}
-
-function addCandidate(
-  byKind: Map<VerificationCandidateKind, VerificationCandidate>,
-  candidate: VerificationCandidate,
-): void {
-  if (byKind.has(candidate.kind)) return;
-  byKind.set(candidate.kind, candidate);
 }
 
 async function readPackageScripts(readFile: ReadFileFn): Promise<Record<string, string>> {
@@ -110,16 +226,11 @@ async function readPackageScripts(readFile: ReadFileFn): Promise<Record<string, 
   return result;
 }
 
-function scriptCommand(packageManager: PackageManager, scriptName: string): string {
-  if (packageManager === 'npm') return `npm run ${scriptName}`;
-  if (packageManager === 'bun') return `bun run ${scriptName}`;
-  return `${packageManager} ${scriptName}`;
-}
-
 function addScriptCandidates(
-  byKind: Map<VerificationCandidateKind, VerificationCandidate>,
+  byKind: Map<string, PlannedVerificationCandidate>,
   scripts: Record<string, string>,
   packageManager: PackageManager,
+  _ctx: PlannerContext,
 ): void {
   const mappings: Array<{ kind: VerificationCandidateKind; script: string }> = [
     { kind: 'test', script: 'test' },
@@ -133,120 +244,167 @@ function addScriptCandidates(
     { kind: 'security', script: 'audit' },
   ];
 
+  const signatureMap = buildSignatureMap();
+
   for (const mapping of mappings) {
     if (!(mapping.script in scripts)) continue;
-    if (isLikelyPlaceholderScript(scripts[mapping.script]!)) {
-      continue;
+    const command = scripts[mapping.script]!;
+    if (isLikelyPlaceholderScript(command)) continue;
+    if (byKind.has(mapping.kind)) continue;
+
+    const analysis = analyzeVerificationScript(mapping.script, command, signatureMap);
+
+    const canEnrich =
+      analysis.provider.status === 'identified' &&
+      !analysis.isCompound &&
+      !analysis.reporterConfigurationPresent &&
+      analysis.argumentForwarding === 'supported';
+
+    if (canEnrich) {
+      const profileId = analysis.provider.executionProfileId;
+      if (analysis.provider.candidateKind !== mapping.kind) continue;
+      const profile = PROFILE_BY_ID.get(profileId);
+      if (profile) {
+        byKind.set(mapping.kind, {
+          candidate: attestFullCheckScope(
+            profile,
+            {
+              assertionCapability: 'structured' as const,
+              kind: mapping.kind,
+              command: buildScriptInvocation(packageManager, mapping.script).command,
+              source: `package.json:scripts.${mapping.script}`,
+              confidence: 'high',
+              reason: `Repo-native ${mapping.script} script enriched via ${profileId}`,
+              assertionReport: profile.assertionReport,
+            },
+            command,
+          ),
+          executionProfileId: profileId,
+          scopeSemanticCommand: command,
+          executionSubjectInputs: [
+            { kind: 'implementation' as const },
+            { kind: 'file' as const, path: 'package.json' },
+            ...(profile.resolveExecutionSubjectInputs?.(_ctx) ?? []),
+          ],
+        });
+        continue;
+      }
     }
-    addCandidate(byKind, {
-      kind: mapping.kind,
-      command: scriptCommand(packageManager, mapping.script),
-      source: `package.json:scripts.${mapping.script}`,
-      confidence: 'high',
-      reason: `Repo-native ${mapping.script} script detected and ${packageManager} package manager detected`,
+
+    let reason = `Repo-native ${mapping.script} script detected and ${packageManager} package manager detected`;
+    if (analysis.provider.status === 'identified') {
+      if (analysis.isCompound) {
+        reason += `; provider '${analysis.provider.providerId}' detected but script is a compound shell command`;
+      } else if (analysis.reporterConfigurationPresent) {
+        reason += `; existing reporter configuration detected, cannot safely enrich`;
+      }
+    }
+
+    byKind.set(mapping.kind, {
+      candidate: {
+        assertionCapability: 'unsupported' as const,
+        kind: mapping.kind,
+        command: buildScriptInvocation(packageManager, mapping.script).command,
+        source: `package.json:scripts.${mapping.script}`,
+        confidence: 'high',
+        reason,
+      },
+      executionSubjectInputs: [
+        { kind: 'implementation' as const },
+        { kind: 'file' as const, path: 'package.json' },
+      ],
     });
   }
 }
 
-function addWrapperCandidates(
-  byKind: Map<VerificationCandidateKind, VerificationCandidate>,
-  rootFiles: ReadonlySet<string>,
-): void {
-  if (rootFiles.has('mvnw') || rootFiles.has('mvnw.cmd')) {
-    const hasPosixWrapper = rootFiles.has('mvnw');
-    addCandidate(byKind, {
-      kind: 'build',
-      command: hasPosixWrapper ? './mvnw verify' : 'mvnw.cmd verify',
-      source: hasPosixWrapper ? 'repo:mvnw' : 'repo:mvnw.cmd',
-      confidence: 'high',
-      reason: 'Maven wrapper detected; wrapper command is preferred over global Maven binary',
-    });
+function attestFullCheckScope(
+  profile: { attestFullCheckScope?(command: string): boolean },
+  candidate: VerificationCandidate,
+  scopeSemanticCommand: string,
+): VerificationCandidate {
+  if (
+    candidate.assertionCapability === 'structured' &&
+    profile.attestFullCheckScope?.(scopeSemanticCommand) === true
+  ) {
+    return { ...candidate, fullCheckScopeAttestation: 'full_check' };
   }
-
-  if (rootFiles.has('gradlew') || rootFiles.has('gradlew.bat')) {
-    const hasPosixWrapper = rootFiles.has('gradlew');
-    addCandidate(byKind, {
-      kind: 'test',
-      command: hasPosixWrapper ? './gradlew check' : 'gradlew.bat check',
-      source: hasPosixWrapper ? 'repo:gradlew' : 'repo:gradlew.bat',
-      confidence: 'high',
-      reason: 'Gradle wrapper detected; wrapper command is preferred over global Gradle binary',
-    });
-  }
+  return candidate;
 }
 
-function addFallbackCandidates(
-  byKind: Map<VerificationCandidateKind, VerificationCandidate>,
-  detectedStack: DetectedStack | null | undefined,
+function buildSignatureMap(): ReadonlyMap<ProviderId, readonly ScriptSignature[]> {
+  const map = new Map<ProviderId, ScriptSignature[]>();
+  for (const [providerId, sigs] of SCRIPT_SIGNATURES_BY_PROVIDER) {
+    if (sigs.length > 0) {
+      map.set(providerId, [...sigs]);
+    }
+  }
+  return map;
+}
+
+function addNonAssertionFallbacks(
+  byKind: Map<string, PlannedVerificationCandidate>,
+  ids: ReadonlySet<string>,
   packageManager: PackageManager,
 ): void {
-  if (!detectedStack) return;
-
-  const ids = new Set(detectedStack.items.map((item) => `${item.kind}:${item.id}`));
-
-  if (ids.has('buildTool:maven')) {
-    addCandidate(byKind, {
-      kind: 'build',
-      command: 'mvn verify',
-      source: 'detectedStack:buildTool:maven',
-      confidence: 'medium',
-      reason: 'Maven build tool detected without wrapper evidence',
+  if (ids.has('buildTool:maven') && !byKind.has('build')) {
+    byKind.set('build', {
+      candidate: {
+        assertionCapability: 'unsupported' as const,
+        kind: 'build',
+        command: 'mvn verify',
+        source: 'detectedStack:buildTool:maven',
+        confidence: 'medium',
+        reason: 'Maven build tool detected without wrapper evidence',
+      },
+      executionSubjectInputs: [{ kind: 'implementation' as const }],
     });
   }
 
-  if (ids.has('buildTool:gradle') || ids.has('buildTool:gradle-kotlin')) {
-    addCandidate(byKind, {
-      kind: 'test',
-      command: 'gradle check',
-      source: ids.has('buildTool:gradle')
-        ? 'detectedStack:buildTool:gradle'
-        : 'detectedStack:buildTool:gradle-kotlin',
-      confidence: 'medium',
-      reason: 'Gradle build tool detected without wrapper evidence',
+  if ((ids.has('buildTool:gradle') || ids.has('buildTool:gradle-kotlin')) && !byKind.has('test')) {
+    byKind.set('test', {
+      candidate: {
+        assertionCapability: 'unsupported' as const,
+        kind: 'test',
+        command: 'gradle check',
+        source: ids.has('buildTool:gradle')
+          ? 'detectedStack:buildTool:gradle'
+          : 'detectedStack:buildTool:gradle-kotlin',
+        confidence: 'medium',
+        reason: 'Gradle build tool detected without wrapper evidence',
+      },
+      executionSubjectInputs: [{ kind: 'implementation' as const }],
     });
   }
 
-  if (ids.has('testFramework:vitest')) {
-    addCandidate(byKind, {
-      kind: 'test',
-      command: fallbackCommand(packageManager, 'vitest run'),
-      source: 'detectedStack:testFramework:vitest',
-      confidence: 'medium',
-      reason: `Vitest detected and no repo-native test script found; using ${packageManager} fallback`,
+  if ((ids.has('qualityTool:eslint') || ids.has('tool:eslint')) && !byKind.has('lint')) {
+    byKind.set('lint', {
+      candidate: {
+        assertionCapability: 'unsupported' as const,
+        kind: 'lint',
+        command: fallbackCommand(packageManager, 'eslint .'),
+        source: ids.has('qualityTool:eslint')
+          ? 'detectedStack:qualityTool:eslint'
+          : 'detectedStack:tool:eslint',
+        confidence: 'medium',
+        reason: `ESLint detected and no repo-native lint script found; using ${packageManager} fallback`,
+      },
+      executionSubjectInputs: [{ kind: 'implementation' as const }],
     });
   }
 
-  if (ids.has('testFramework:jest')) {
-    addCandidate(byKind, {
-      kind: 'test',
-      command: fallbackCommand(packageManager, 'jest'),
-      source: 'detectedStack:testFramework:jest',
-      confidence: 'medium',
-      reason: `Jest detected and no repo-native test script found; using ${packageManager} fallback`,
-    });
-  }
-
-  if (ids.has('qualityTool:eslint') || ids.has('tool:eslint')) {
-    addCandidate(byKind, {
-      kind: 'lint',
-      command: fallbackCommand(packageManager, 'eslint .'),
-      source: ids.has('qualityTool:eslint')
-        ? 'detectedStack:qualityTool:eslint'
-        : 'detectedStack:tool:eslint',
-      confidence: 'medium',
-      reason: `ESLint detected and no repo-native lint script found; using ${packageManager} fallback`,
-    });
-  }
-
-  if (ids.has('language:typescript') || ids.has('tool:typescript')) {
-    addCandidate(byKind, {
-      kind: 'typecheck',
-      command: fallbackCommand(packageManager, 'tsc --noEmit'),
-      source: ids.has('language:typescript')
-        ? 'detectedStack:language:typescript'
-        : 'detectedStack:tool:typescript',
-      confidence: 'low',
-      reason: `TypeScript detected and no repo-native typecheck script found; using ${packageManager} fallback`,
+  if ((ids.has('language:typescript') || ids.has('tool:typescript')) && !byKind.has('typecheck')) {
+    byKind.set('typecheck', {
+      candidate: {
+        assertionCapability: 'unsupported' as const,
+        kind: 'typecheck',
+        command: fallbackCommand(packageManager, 'tsc --noEmit'),
+        source: ids.has('language:typescript')
+          ? 'detectedStack:language:typescript'
+          : 'detectedStack:tool:typescript',
+        confidence: 'low',
+        reason: `TypeScript detected and no repo-native typecheck script found; using ${packageManager} fallback`,
+      },
+      executionSubjectInputs: [{ kind: 'implementation' as const }],
     });
   }
 }

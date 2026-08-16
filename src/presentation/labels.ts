@@ -95,6 +95,7 @@ const ARCHIVE_LABELS = {
   pending: 'Pending',
   created: 'Created',
   verified: 'Verified',
+  not_verifiable: 'Not verifiable',
   failed: 'Failed',
 } as const satisfies Record<KnownArchiveStatus, string>;
 

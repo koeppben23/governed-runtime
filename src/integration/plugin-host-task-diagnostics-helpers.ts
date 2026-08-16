@@ -10,11 +10,12 @@ import {
 } from './review/enforcement/enforcement.js';
 import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 import {
+  artifactReviewSubjectScope,
   createReviewObligation,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './review/assurance.js';
-import type { ReviewObligation } from '../state/evidence.js';
+import type { ReviewAttempt, ReviewObligation } from '../state/evidence.js';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -22,16 +23,41 @@ export const NOW = '2026-05-10T12:00:00.000Z';
 export const LATER = '2026-05-10T12:01:00.000Z';
 export const SESSION_ID = 'ses_parent_001';
 export const CHILD_SESSION_ID = 'ses_child_001';
+export const MODE_A_OBLIGATION_ID = '44444444-4444-4444-8444-444444444444';
 
 // ─── Factory Functions ───────────────────────────────────────────────────────
 
-/** Build a Mode A response with INDEPENDENT_REVIEW_REQUIRED containing iteration and planVersion. */
-export function modeAResponse(iteration = 0, planVersion = 1): string {
+/**
+ * Build a Mode A response with INDEPENDENT_REVIEW_REQUIRED containing iteration
+ * and planVersion. `obligationId` defaults to a realistic fixture obligation
+ * identity so the pending review satisfies the host attestation-constants
+ * invariant; pass `null` to deliberately model a signal without obligation/
+ * host attestation.
+ */
+export function modeAResponse(
+  iteration = 0,
+  planVersion = 1,
+  obligationId: string | null = MODE_A_OBLIGATION_ID,
+): string {
   return JSON.stringify({
     phase: 'PLAN',
     status: `Plan submitted (v${planVersion}).`,
     selfReviewIteration: iteration,
     reviewMode: 'subagent',
+    ...(obligationId
+      ? {
+          reviewAttemptId: `att-${obligationId}`,
+          reviewObligationId: obligationId,
+          requiredReviewAttestation: {
+            reviewedBy: REVIEWER_SUBAGENT_TYPE,
+            mandateDigest: REVIEW_MANDATE_DIGEST,
+            criteriaVersion: REVIEW_CRITERIA_VERSION,
+            toolObligationId: obligationId,
+            iteration,
+            planVersion,
+          },
+        }
+      : {}),
     next:
       `${REVIEW_REQUIRED_PREFIX}: Call the flowguard-reviewer subagent via Task tool. ` +
       `Use subagent_type "flowguard-reviewer" with a prompt that includes: ` +
@@ -52,7 +78,7 @@ export function validPrompt(iteration = 0, planVersion = 1): string {
   );
 }
 
-/** Build task result JSON with review findings including attestation. */
+/** Build task result JSON with strict reviewer-owned findings input. */
 export function taskResultWithAttestation(
   obligationId: string,
   opts: {
@@ -60,20 +86,13 @@ export function taskResultWithAttestation(
     iteration?: number;
     planVersion?: number;
     verdict?: string;
-    /** Override the reviewer-echoed attestation constants to simulate confabulation. */
-    attestationMandateDigest?: string;
-    attestationCriteriaVersion?: string;
-    attestationReviewedBy?: string;
   } = {},
 ): string {
   const {
-    childSessionId = CHILD_SESSION_ID,
+    childSessionId: _childSessionId = CHILD_SESSION_ID,
     iteration = 0,
     planVersion = 1,
     verdict = 'accept',
-    attestationMandateDigest = REVIEW_MANDATE_DIGEST,
-    attestationCriteriaVersion = REVIEW_CRITERIA_VERSION,
-    attestationReviewedBy = REVIEWER_SUBAGENT_TYPE,
   } = opts;
   return JSON.stringify({
     iteration,
@@ -85,15 +104,8 @@ export function taskResultWithAttestation(
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
-    reviewedBy: { sessionId: childSessionId },
-    reviewedAt: NOW,
     attestation: {
       toolObligationId: obligationId,
-      mandateDigest: attestationMandateDigest,
-      criteriaVersion: attestationCriteriaVersion,
-      iteration,
-      planVersion,
-      reviewedBy: attestationReviewedBy,
     },
   });
 }
@@ -105,13 +117,57 @@ export function pendingObligation(overrides: Partial<ReviewObligation> = {}): Re
     iteration: 0,
     planVersion: 1,
     now: NOW,
+    subjectDigest: 'diagnostics-test-subject',
+    reviewSubjectScope: artifactReviewSubjectScope(
+      'plan',
+      '# Diagnostics\nBody',
+      'diagnostics-test-subject',
+    ),
+    changedFiles: ['src/foo.ts'],
+    repositoryAuthority: {
+      kind: 'context',
+      context: {
+        kind: 'commit',
+        repositoryIdentity: { host: 'github.com', owner: 'diag', name: 'repo' },
+        objectSha: 'a'.repeat(40),
+      },
+    },
+    repositoryEvidenceFreeze: { kind: 'available' },
   });
   return { ...base, ...overrides };
 }
 
 /**
+ * Build the invocation attempt that production records BEFORE the reviewer
+ * subagent runs, already bound to its child session.
+ *
+ * Binding resolves a callback against this envelope, so a test that exercises a
+ * successful bind must provide it exactly as `createObligationAndAttempt` plus
+ * the Task-start child-session binding would have produced it.
+ */
+export function attemptFor(
+  obligation: ReviewObligation,
+  childSessionId: string = CHILD_SESSION_ID,
+  overrides: Partial<ReviewAttempt> = {},
+): ReviewAttempt {
+  return {
+    attemptId: `att-${obligation.obligationId}`,
+    obligationId: obligation.obligationId,
+    obligationType: obligation.obligationType,
+    subjectDigest: obligation.subjectDigest ?? 'diagnostics-test-subject',
+    ordinal: 0,
+    childSessionId,
+    status: 'created',
+    origin: { kind: 'initial' },
+    repositoryDiscovery: { kind: 'not_applicable' },
+    createdAt: NOW,
+    ...overrides,
+  };
+}
+
+/**
  * Set up a full enforcement cycle: Mode A → Task call → enforcement state ready.
- * Returns the obligation and the enforcement state.
+ * Returns the obligation, the enforcement state, and the recorded attempts.
  */
 export function setupFullCycle(
   opts: {
@@ -119,10 +175,6 @@ export function setupFullCycle(
     childSessionId?: string;
     iteration?: number;
     planVersion?: number;
-    /** Override reviewer-echoed attestation constants to simulate confabulation. */
-    attestationMandateDigest?: string;
-    attestationCriteriaVersion?: string;
-    attestationReviewedBy?: string;
   } = {},
 ) {
   const {
@@ -130,9 +182,6 @@ export function setupFullCycle(
     childSessionId = CHILD_SESSION_ID,
     iteration = 0,
     planVersion = 1,
-    attestationMandateDigest,
-    attestationCriteriaVersion,
-    attestationReviewedBy,
   } = opts;
 
   const state = createSessionState();
@@ -149,9 +198,6 @@ export function setupFullCycle(
     childSessionId,
     iteration,
     planVersion,
-    ...(attestationMandateDigest !== undefined ? { attestationMandateDigest } : {}),
-    ...(attestationCriteriaVersion !== undefined ? { attestationCriteriaVersion } : {}),
-    ...(attestationReviewedBy !== undefined ? { attestationReviewedBy } : {}),
   });
 
   // Step 2: Task call — onTaskToolAfter records subagent call
@@ -163,7 +209,8 @@ export function setupFullCycle(
     },
     taskResult,
     LATER,
+    { metadata: { sessionID: childSessionId } },
   );
 
-  return { state, obligation };
+  return { state, obligation, attempts: [attemptFor(obligation, childSessionId)] };
 }

@@ -20,6 +20,7 @@
  */
 
 import type { PolicySnapshot } from '../state/evidence.js';
+import { DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS } from './policy-types.js';
 import type {
   FlowGuardPolicy,
   AuditPolicy,
@@ -121,6 +122,7 @@ export function createPolicySnapshot(
     maxSelfReviewIterations: policy.maxSelfReviewIterations,
     maxImplReviewIterations: policy.maxImplReviewIterations,
     maxIncoherentReviewerCaptureRetries: policy.maxIncoherentReviewerCaptureRetries,
+    maxReviewerOutputRepairAttempts: policy.maxReviewerOutputRepairAttempts,
     allowSelfApproval: policy.allowSelfApproval,
     requireVerifiedActorsForApproval: policy.requireVerifiedActorsForApproval,
     audit: buildAuditSection(policy.audit),
@@ -206,6 +208,8 @@ export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPo
     maxSelfReviewIterations: snapshot.maxSelfReviewIterations,
     maxImplReviewIterations: snapshot.maxImplReviewIterations,
     maxIncoherentReviewerCaptureRetries: snapshot.maxIncoherentReviewerCaptureRetries ?? 1,
+    maxReviewerOutputRepairAttempts:
+      snapshot.maxReviewerOutputRepairAttempts ?? DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS,
     allowSelfApproval: snapshot.allowSelfApproval,
     selfReview: normalizeSelfReviewConfig(snapshot.selfReview),
     reviewOutputPolicy: reviewPolicies.reviewOutputPolicy,

@@ -3,7 +3,7 @@
  * @description P26 regulated archive lifecycle: audit emit → archive → verify.
  *
  * Scope: EVIDENCE_REVIEW + APPROVE → COMPLETE in regulated mode.
- * Fail-closed: any failure in the chain produces archiveStatus: 'failed'.
+ * Fail-closed: any failure in the chain produces regulatedArchiveStatus: 'failed'.
  * No partial success can leak — the entire chain is atomic from the caller's perspective.
  *
  * @version v1
@@ -11,12 +11,14 @@
 
 import type { SessionState } from '../../state/schema.js';
 import { appendAuditEvent, readAuditTrail } from '../../adapters/persistence-audit.js';
-import { archiveSession, verifyArchive } from '../../adapters/workspace/index.js';
+import { archiveRegulatedEvidence } from '../../adapters/workspace/archive.js';
+import { verifyRegulatedArchive } from '../../adapters/workspace/archive-verify-chain.js';
 import { createLifecycleEvent } from '../../audit/types.js';
 import { getLastChainHash } from '../../audit/integrity.js';
 import { writeStateWithArtifacts } from '../tools/helpers.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import { serializeError } from '../../logging/error-serialize.js';
+import { isTerminalPhase } from '../../machine/topology.js';
 
 /**
  * Execute the P26 regulated completion chain: audit emit → archive → verify.
@@ -30,15 +32,15 @@ import { serializeError } from '../../logging/error-serialize.js';
  * - !result.state.error
  *
  * Fail-closed semantics:
- * - Writes archiveStatus 'pending' before starting the chain.
- * - On any failure in the chain, returns state with archiveStatus 'failed'.
+ * - Writes regulatedArchiveStatus 'pending' before starting the chain.
+ * - On any failure in the chain, returns state with regulatedArchiveStatus 'failed'.
  * - Only returns 'verified' when archive passes integrity check.
  *
  * @param sessDir - Session directory path
  * @param fingerprint - Workspace fingerprint
  * @param sessionID - Session identifier
  * @param resultState - The COMPLETE state from the rail
- * @returns Final state with archiveStatus set
+ * @returns Final state with regulatedArchiveStatus set
  */
 export async function executeRegulatedCompletion(
   sessDir: string,
@@ -46,7 +48,18 @@ export async function executeRegulatedCompletion(
   sessionID: string,
   resultState: SessionState,
 ): Promise<SessionState> {
-  const pendingState = { ...resultState, archiveStatus: 'pending' as const };
+  if (!isTerminalPhase(resultState.phase) || resultState.error) {
+    return {
+      ...resultState,
+      regulatedArchiveStatus: 'failed' as const,
+      archiveStatus: 'failed' as const,
+    };
+  }
+  const pendingState = {
+    ...resultState,
+    regulatedArchiveStatus: 'pending' as const,
+    archiveStatus: 'pending' as const,
+  };
   await writeStateWithArtifacts(sessDir, pendingState);
 
   getAdapterLogger().info('services', 'Starting regulated completion chain', {
@@ -72,19 +85,24 @@ export async function executeRegulatedCompletion(
     await appendAuditEvent(sessDir, completionEvt);
 
     // 2. Archive session (synchronous, not fire-and-forget).
-    await archiveSession(fingerprint, sessionID, { redactionMode: 'none', includeRaw: true });
-    const createdState = { ...resultState, archiveStatus: 'created' as const };
+    await archiveRegulatedEvidence(fingerprint, sessionID);
+    const createdState = {
+      ...resultState,
+      regulatedArchiveStatus: 'created' as const,
+      archiveStatus: 'created' as const,
+    };
     await writeStateWithArtifacts(sessDir, createdState);
 
     // 3. Verify archive integrity.
-    const verification = await verifyArchive(fingerprint, sessionID);
+    const verification = await verifyRegulatedArchive(fingerprint, sessionID);
     finalState = {
       ...resultState,
+      regulatedArchiveStatus: verification.passed ? ('verified' as const) : ('failed' as const),
       archiveStatus: verification.passed ? ('verified' as const) : ('failed' as const),
     };
     getAdapterLogger().info('services', 'Regulated completion chain finished', {
       sessionID,
-      archiveStatus: finalState.archiveStatus,
+      archiveStatus: finalState.regulatedArchiveStatus,
       archivePassed: verification.passed,
     });
   } catch (err) {
@@ -93,7 +111,11 @@ export async function executeRegulatedCompletion(
       fingerprint,
       error: serializeError(err),
     });
-    finalState = { ...resultState, archiveStatus: 'failed' as const };
+    finalState = {
+      ...resultState,
+      regulatedArchiveStatus: 'failed' as const,
+      archiveStatus: 'failed' as const,
+    };
   }
 
   return finalState;

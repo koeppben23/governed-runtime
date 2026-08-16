@@ -14,6 +14,13 @@
 **Missing:** 0
 **Four eyes:** Satisfied
 
+## Verification
+
+No verification obligations declared.
+Approval evidence: Not recorded
+
+Diagnostic: `flowguard_status({ proofGraph: true })`
+
 ## Guidance
 
 - **create PR:** Not recommended — Session is blocked; resolve blockers before proceeding.

@@ -14,15 +14,12 @@
  */
 
 import type { Phase } from '../state/schema.js';
-import type {
-  ReviewCardDocument,
-  PresentationSection,
-  PresentationConclusion,
-  KeyValueItem,
-  PresentationAction,
-} from './model.js';
+import type { ReviewCardDocument, PresentationSection, KeyValueItem } from './model.js';
 import { renderMarkdown } from './markdown.js';
 import type { PresentationRenderOptions } from './glyph-profile.js';
+import type { CompactProofPresentation } from './proof-model.js';
+import { buildProofGraphSection } from './proof-summary.js';
+import { buildReviewDecisionConclusion } from './review-decision.js';
 
 // ─── Card Input ──────────────────────────────────────────────────────────────
 
@@ -50,6 +47,14 @@ export interface PlanReviewCardInput {
    * human reviewer does not mistake the gate for a reviewer-approved plan.
    */
   forcedConvergence?: boolean;
+  /** Compact ProofGraph summary for the review card (pre-approval declarations). */
+  proofSummary: CompactProofPresentation;
+  /** Digest of the plan revision currently at the gate. */
+  currentPlanDigest?: string;
+  /** Digest of the plan revision these findings were bound to. */
+  reviewedDigest?: string;
+  /** Obligation that produced these findings. */
+  reviewedObligationId?: string;
 }
 
 // ─── Action Descriptions ───────────────────────────────────────────────────────
@@ -80,6 +85,11 @@ export function buildPlanReviewCard(
   input: PlanReviewCardInput,
   options?: PresentationRenderOptions,
 ): string {
+  return renderMarkdown(buildPlanReviewDocument(input), options);
+}
+
+/** Build the typed plan-review document before Markdown rendering. */
+export function buildPlanReviewDocument(input: PlanReviewCardInput): ReviewCardDocument {
   const { planText, phaseLabel, productNextAction, planVersion, policyMode, taskTitle } = input;
 
   const sections: PresentationSection[] = [];
@@ -110,12 +120,48 @@ export function buildPlanReviewCard(
       level: 'warning',
       message: 'Reviewer did NOT approve this plan.',
       additionalMessages: [
-        'The independent review reached its iteration limit without convergence ' +
+        'The independent review reached its iteration limit without reviewer acceptance ' +
           '(last verdict: changes_requested). Review the outstanding findings carefully before approving.',
       ],
       details: [],
     });
   }
+
+  // ── Prior-revision provenance mismatch ─────────────────────────────
+  if (
+    input.reviewedDigest &&
+    input.currentPlanDigest &&
+    input.reviewedDigest !== input.currentPlanDigest
+  ) {
+    sections.push({
+      kind: 'notice',
+      level: 'warning',
+      message: 'These reviewer findings apply to a prior plan revision.',
+      additionalMessages: [
+        `Reviewed digest: \`${input.reviewedDigest}\``,
+        `Current digest:  \`${input.currentPlanDigest}\``,
+        'The current revision was submitted after the final independent review ' +
+          'and has not itself been independently reviewed.',
+      ],
+      details: [],
+    });
+  }
+
+  // ── Review provenance details ─────────────────────────────────────
+  if (input.reviewedDigest) {
+    const provenance: KeyValueItem[] = [];
+    provenance.push({ label: 'Reviewed plan digest', value: `\`${input.reviewedDigest}\`` });
+    if (input.reviewedObligationId) {
+      provenance.push({
+        label: 'Reviewed obligation',
+        value: `\`${input.reviewedObligationId}\``,
+      });
+    }
+    sections.push({ kind: 'keyValue', heading: 'Review Provenance', items: provenance });
+  }
+
+  // ── Proof obligations (pre-approval) ───────────────────────────────
+  sections.push(buildProofGraphSection(input.proofSummary));
 
   // ── Plan Body (verbatim) ───────────────────────────────────────────
   sections.push({
@@ -132,37 +178,8 @@ export function buildPlanReviewCard(
       ? 'decision'
       : 'terminal',
     sections,
-    conclusion: buildConclusion(productNextAction),
+    conclusion: buildReviewDecisionConclusion(productNextAction, PLAN_ACTION_DESCRIPTIONS),
   };
 
-  return renderMarkdown(document, options);
-}
-
-// ─── Conclusion Projection ─────────────────────────────────────────────────────
-
-function buildConclusion(productNextAction: {
-  text: string;
-  commands: readonly string[];
-}): PresentationConclusion {
-  const commands = new Set(productNextAction.commands);
-  const actions: PresentationAction[] = [];
-  for (const command of ['/approve', '/request-changes', '/reject']) {
-    if (commands.has(command)) {
-      actions.push({
-        invocation: command,
-        description: PLAN_ACTION_DESCRIPTIONS[command] ?? command,
-        visibility: 'available',
-      });
-    }
-  }
-
-  if (actions.length > 0) {
-    return {
-      kind: 'decision_required',
-      question: productNextAction.text,
-      actions,
-    };
-  }
-
-  return { kind: 'terminal', message: productNextAction.text };
+  return document;
 }

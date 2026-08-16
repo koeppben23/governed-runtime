@@ -8,11 +8,17 @@
 import { z } from 'zod';
 
 import type { ToolDefinition } from './helpers.js';
-import { withMutableSessionTransaction, formatError } from './helpers.js';
+import { formatError } from './error-format.js';
+import { withMutableSessionTransaction } from './helpers.js';
 
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
+import { ArchitectureClaimDeclarationInput as ArchitectureClaimDeclarationSchema } from '../../state/proofgraph-approval.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
-import { validateInitialSubmissionGate } from './architecture-shared.js';
+import {
+  validateArchitectureCallShape,
+  validateInitialSubmissionGate,
+} from './architecture-shared.js';
+import { routeArchitectureInitialSubmission } from './architecture-restart.js';
 import { toolCallFlags } from './review-validation-mode.js';
 import { handleAdrSubmission } from './architecture-submit.js';
 import { handleAdrReview } from './architecture-review.js';
@@ -42,6 +48,12 @@ export const architecture: ToolDefinition = {
         'Full ADR body in MADR Markdown format. ' +
           'Must include ## Context, ## Decision, and ## Consequences sections. ' +
           "Required for Mode A and when reviewVerdict is 'changes_requested'.",
+      ),
+    claims: z
+      .array(ArchitectureClaimDeclarationSchema)
+      .optional()
+      .describe(
+        'Pre-evidence claims made by this ADR version. Each identifies its governing ADR section and is bound into any human approval certificate.',
       ),
     reviewVerdict: z
       .enum(['accept', 'changes_requested'])
@@ -87,6 +99,19 @@ export const architecture: ToolDefinition = {
           reviewerUnavailable: args.reviewerUnavailable,
         });
         const isInitialSubmission = !hasVerdict;
+
+        // Call-shape validation runs FIRST: mixed inputs are rejected before
+        // any lifecycle routing can re-emit a review instruction.
+        const shapeBlocked = validateArchitectureCallShape(args);
+        if (shapeBlocked) return shapeBlocked;
+
+        if (isInitialSubmission) {
+          // Re-invocation routing for an existing architecture obligation:
+          // output-repair reissue, attempt re-emission, or review orchestration
+          // restart/revision after a blocked obligation. Never a new ADR.
+          const routed = await routeArchitectureInitialSubmission(args, session);
+          if (routed !== null) return routed;
+        }
 
         const gateBlocked = validateInitialSubmissionGate(args, session.state, isInitialSubmission);
         if (gateBlocked) return gateBlocked;

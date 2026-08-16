@@ -15,12 +15,42 @@ import {
   type ReviewReferenceInput,
 } from './review.js';
 import { makeProgressedState } from '../fixtures.js';
-import type { ReviewReport } from '../state/evidence.js';
+import type { ReviewReport, ReviewReportFinding } from '../state/evidence.js';
 import type { RailBlocked } from './types.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
 const NOW = '2026-01-15T10:00:00.000Z';
+
+type RenderedReviewReport = Omit<ReviewReport, 'findings'> & {
+  readonly findings: Array<{
+    readonly source: ReviewReportFinding['source'];
+    readonly severity: 'info' | 'warning' | 'error';
+    readonly category: string;
+    readonly message: string;
+  }>;
+};
+
+function renderReviewReport(report: ReviewReport): RenderedReviewReport {
+  return {
+    ...report,
+    findings: report.findings.map((finding) =>
+      finding.source === 'material_finding'
+        ? {
+            source: finding.source,
+            severity: finding.reportSeverity,
+            category: finding.finding.category,
+            message: finding.finding.message,
+          }
+        : {
+            source: finding.source,
+            severity: finding.reportSeverity,
+            category: finding.category,
+            message: finding.message,
+          },
+    ),
+  };
+}
 
 async function executeReview(
   ...args: Parameters<typeof executeReviewUnsafe>
@@ -30,10 +60,12 @@ async function executeReview(
 
 async function executeReviewReport(
   ...args: Parameters<typeof executeReviewUnsafe>
-): Promise<ReviewReport> {
+): Promise<RenderedReviewReport> {
   const result = await executeReviewUnsafe(...args);
-  if ('kind' in result && result!.kind === 'blocked') throw new Error(result.reason);
-  return result;
+  if (!result || !('reviewKind' in result)) {
+    throw new Error(result?.reason ?? 'Review did not produce a report');
+  }
+  return renderReviewReport(result);
 }
 
 // =============================================================================
@@ -55,7 +87,8 @@ describe('PR-E: content-aware /review', () => {
           capturedContent.push(content ?? 'NO_CONTENT');
           return [
             {
-              severity: 'info',
+              source: 'unknown',
+              reportSeverity: 'info',
               category: 'analysis',
               message: `Analyzed: ${content?.slice(0, 20)}`,
             },
@@ -223,6 +256,24 @@ describe('BAD: blocked paths', () => {
     if (result && 'kind' in result) {
       expect(result!.kind).toBe('blocked');
       expect(result!.code).toBe('REVIEW_BRANCH_PROVENANCE_MISSING');
+    }
+  });
+
+  it('loadExternalContent with a branch but no repository identity returns blocked', async () => {
+    // Defense in depth: the identity was previously asserted non-null, so a
+    // missing one produced a frozen subject without `baseRepository` that only
+    // surfaced later as an opaque schema error, with the subject already unusable.
+    const result = await loadExternalContent({
+      branch: 'feature/x',
+      resolvedBranchSha: 'a'.repeat(40),
+      resolvedBaseSha: 'b'.repeat(40),
+    });
+
+    expect(result).not.toBeNull();
+    expect('content' in (result ?? {})).toBe(false);
+    if (result && 'kind' in result) {
+      expect(result.kind).toBe('blocked');
+      expect(result.code).toBe('REVIEW_REPOSITORY_IDENTITY_MISSING');
     }
   });
 

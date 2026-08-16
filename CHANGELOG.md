@@ -9,6 +9,127 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Unconditional ProofGraph enforcement and a fail-closed claim contract
+  (#762).** The gate previously depended on a `proofGraphPolicy` switch that no
+  config, preset, or resolver could reach — it could never fire. A switch is also
+  wrong in principle: it would mean an author declares a claim critical, has it
+  human-approved, and the system then ignores whether it was ever proven.
+  - **Enforcement is unconditional.** `proofGraphPolicy`,
+    `PROOFGRAPH_POLICY_DISABLED`, and `ProofGraphPolicy` are removed. The blast
+    radius is bounded by eligibility instead: only at the `EVIDENCE_REVIEW`
+    approval, only for `critical` `fact` claims that carry a plan/ADR **approval
+    certificate**. A claim self-declared through `flowguard_declare_contract`
+    has provenance but no certificate and stays advisory, so an author cannot
+    impose a blocking obligation that no human approved.
+  - **Unprovable claims are rejected where they are authored.** A critical claim
+    requires executed adversarial evidence, so a critical declaration without a
+    counterexample check could never become `PROVEN`. `/plan` and
+    `/declare-contract` now share one validator
+    (`PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE`) that also rejects inactive checks,
+    unregistered structural surfaces and mutation profiles, duplicate claim
+    identities, and plan claims without a governing section. Nothing is
+    persisted and no digest is computed unless the whole set validates.
+    Diagnostics use each tool's public field names.
+  - **Revision-bound risk assessment.** `implementationRiskAssessment` persists
+    the computed task class, touched surfaces, and the implementation digest it
+    was derived from, so a superseded classification can never justify a gate
+    decision.
+  - **Early, non-binding warning.** `/plan` surfaces `proofGraphRiskWarning` when
+    declared `targetPaths` look HIGH-RISK and no critical claim is declared.
+    Explicitly heuristic: target paths are a forecast, the binding assessment
+    comes from the implementation's actual changed files.
+  - **Specific HIGH-RISK triggers require a critical fact.** The implementation
+    assessment now retains `riskTriggers` beside its existing path list. A
+    current assessment with `state_integrity`, `audit_authority`,
+    `identity_boundary`, `approval_authority`, `policy_authority`, `migration`,
+    `distribution_integrity`, or `command_contract` requires at least one
+    certificate-authorized critical `fact` claim at final evidence approval.
+    `ceremony_only` retains HIGH-RISK review ceremony without creating a claim
+    requirement. Assessments written before trigger classification are
+    superseded and cannot justify final approval.
+  - **Missing evaluations fail closed.** A certificate-authorized critical plan
+    claim missing from the persisted ProofGraph projection now blocks final
+    evidence approval (`PROOFGRAPH_EVALUATION_UNAVAILABLE`) rather than being
+    interpreted as an empty graph.
+
+- **ProofGraph product-path integration (completes #762).** The claim surface was
+  implemented but unreachable through the product: the tool schemas accepted
+  `claims` while every installed command instructed a claim-free submission, and
+  the reviewer prompt actually delivered under `host_task_*` policy carried no
+  ProofGraph context. Sessions therefore completed with an empty contract while
+  the feature looked complete.
+  - **Claims reach the tools.** `/plan` now submits
+    `flowguard_plan({ planText, claims })` and `/architecture` submits
+    `flowguard_architecture({ title, adrText, claims })`, in the installed
+    commands and the Claude Code plugin skills. A contract test fails on any
+    reintroduced claim-free call form.
+  - **Reviewers receive the graph.** One renderer now feeds every transport, so
+    the host-task Task prompt carries the same persisted ProofGraph context,
+    declaration preview, certificate binding and coverage gaps as the SDK path.
+  - **Declaration preview before approval.** Plan and ADR declarations are shown
+    to the reviewer as explicit pre-evidence intent. They are deliberately not
+    materialized as graph claims before approval, since no implementation
+    revision exists to bind them to.
+  - **Architecture claims are materialized advisorily.** Approved ADR
+    declarations become certificate-bound `derived_signal` claims. They are never
+    `fact`: an ADR binds to named review evidence that no provider can execute, so
+    gating them would block every architecture approval permanently.
+  - **Auditable approval chain.** `flowguard_status` projects
+    `proofApprovals`: certificate digests, the bound implementation revision, and
+    per-claim evidence counts and verification state.
+  - **Readable coverage.** The status summary separates `contractClaimCount` from
+    `hypothesisCount`, so `NOT_DECLARED` beside a non-zero claim count is no
+    longer contradictory.
+
+- **ProofGraph evidence providers, mutation reporting and reviewer projection
+  (completes #762).** Builds on the ProofGraph foundation:
+  - **Structural and schema providers.** The cross-artifact consistency checks
+    now produce real evidence: `command-registration` (`structural_assertion`)
+    and `config-defaults` (`schema_compare`). Each result is bound to a canonical
+    digest over the covered registry/schema **data**, so it is identical in a
+    checkout and an installed package and goes `STALE` when the surface changes.
+    Claims opt in via `structuralSurface`, which also makes the assertion
+    _required_ evidence.
+  - **Selective semantic mutation (opt-in).** Recorded, never executed: an
+    existing Stryker report is ingested for explicitly selected profiles
+    (`proofgraph-evaluator`, `proofgraph-gate`) and surfaced as `fault_injection`
+    evidence with survivor status. `Survived`/`NoCoverage` are survivors;
+    `CompileError`/`RuntimeError`/`Ignored`/`Pending` are excluded rather than
+    counted as detected; a missing or uncovered profile is `NOT_VERIFIED`, never
+    a pass. The repository-wide mutation job remains **not** a PR requirement.
+  - **Complete reviewer projection.** `flowguard_status({ proofGraph: true })`
+    now surfaces `counterexamples` (outcome + bound digest + `stale`), `mutation`
+    (per-profile verdicts incl. surviving mutant ids), and
+    `unresolvedAssumptions` (each non-`PROVEN` claim with an explicit reason)
+    instead of leaving them implied by the verification state.
+  - One critical claim now demonstrates an executed positive test, a
+    negative/fault scenario, and a structural consistency assertion together.
+
+- **FlowGuard ProofGraph foundation (part of #762).** A versioned, deterministic
+  executable evidence graph that makes each critical change claim traceable from
+  approved intent to a review outcome, surfaced advisorily and never altering
+  review acceptance. New `flowguard_declare_contract` tool (admissible in
+  `IMPL_VALIDATION`/`IMPL_REVIEW`) records claims; `flowguard_status({ proofGraph:
+true })` returns the evaluated projection. Key invariants:
+  - Governing **provenance** (an approved ticket/plan/ADR/canonical authority) is
+    a distinct type from executable **evidence** (validation attempt / impl /
+    content); a claim is a governing `fact` only when an approved authority
+    resolves, otherwise a `NOT_VERIFIED` hypothesis. Validation evidence can
+    never confer provenance.
+  - Every passing provider result is **digest-bound** and freshness-checked
+    (implementation revision, or a `surface_set` digest for structural/schema
+    assertions); a changed bound surface makes evidence `STALE`, which cannot
+    satisfy a gate.
+  - Provider results carry reproducible metadata (provider id/version, exact
+    input, source + stable id, digest binding, result digest).
+  - A critical `fact` claim cannot be `PROVEN` without a **`supported`
+    counterexample** (adversarial evidence); missing/`not_verified` adversarial
+    evidence yields `NOT_VERIFIED`.
+  - Explicit states (`PROVEN`, `UNPROVEN`, `CONTRADICTED`, `STALE`, `BLOCKED`,
+    `NOT_VERIFIED`) surface residual uncertainty; unconditional enforcement only
+    considers certificate-authorized critical `fact` claims. See
+    `docs/proofgraph.md`.
+
 - **Archive redaction wired into pipeline (#649, #666 follow-up).** The
   redaction engine (`src/redaction/export-redaction.ts`) is now integrated
   into the archive staging pipeline. Two mandatory tool parameters control
@@ -181,7 +302,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   optional.
   Available in all phases including terminal phases.
 
+- **Architecture approval certificates bind review evidence (certificate
+  provenance).** `ArchitectureApprovalCertificate` now requires a discriminated
+  `reviewBinding` (`current_review` | `review_exhausted_override`); the whole
+  binding block co-signs the `certificateId` digest, so relabeling the kind or
+  swapping the reviewed digest changes the certificate identity.
+  `reviewer_accepted` binds exact-subject evidence for the current ADR digest
+  (no cross-digest fallback); `review_exhausted` mints an explicit override
+  provenance. Gate and mint share ONE evidence resolution per decision
+  operation. New reason codes `ARCHITECTURE_REVIEW_EVIDENCE_REQUIRED` and
+  `ARCHITECTURE_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION`; the latter fires when
+  the bound `capturedVerdict` contradicts the recorded review completion.
+  Evidence without a captured verdict stays legacy-tolerant. Certificates
+  persisted before this change carry no `reviewBinding` and fail the now
+  required schema field — re-approve after the review cycle produces bound
+  evidence.
+
+- **Implementation review subject model and frozen base authority (#816).**
+  Implementation review obligations mint an `implementation` subject scope
+  whose digest equals the obligation subject digest; the frozen implementation
+  base persists at a single boundary
+  (`adapters/implementation-base-authority.ts`), and the SDK orchestration path
+  requires the exact implement obligation.
+
+- **Non-blocking CI hints.** `known-issues-note` warns when a PR changes
+  trust-boundary paths without updating KNOWN_ISSUES.md; `unused-exports-note`
+  warns on new unused exports against a committed, line-independent baseline
+  (`knip --exports`). Both jobs always exit 0 and are not part of the CI gate.
+
 ### Changed
+
+- **BREAKING (`flowguard_declare_contract`): `critical` is now required.** It
+  previously defaulted to `true`, which would silently create claims capable of
+  blocking the final approval. The MCP schema baseline is updated accordingly.
+- `proofGraphGate.enforced` is now always `true` for compatibility; the gate no
+  longer supports policy disablement.
 
 - **Config `archive.redaction` restructured.** Old `mode` and `includeRaw`
   fields replaced with constraint model: `allowedModes` (`.min(1)`, defaults
@@ -247,7 +402,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `opencode-sdk-update` workflow now creates and updates PRs via `gh pr` CLI
   instead of raw API calls; successful runs auto-close stale drift issues.
 
+- **Mutation scope restored to 82.88 % (break: 80).** Missing test files were
+  re-admitted to the stryker include list (discovery/verification suites,
+  materialize-contract, review-validation host-resolution, gate/integrity/
+  claim-contract edge tests), `Regex` joined the excluded mutators, and the
+  execution-subject/planner/evidence-resolution coverage gaps were closed with
+  targeted tests. `review-evidence-resolution.ts` is in the mutate scope at
+  100 %.
+
+- **Reason-code registry split and registered gaps.** Architecture-domain codes
+  moved to `reasons-architecture.ts`; the previously unregistered
+  `SUBAGENT_MANDATE_MISSING` now renders through the registry instead of
+  `[UNREGISTERED_REASON: …]`. Registry totals 267 codes.
+
+- **Developer-facing structural polish (#817, #818).** Byte-identical
+  `digestToId()` and `emptyClaimDeclarations()` consolidation, dead gh-cli
+  exports and a dead telemetry barrel removed, repository-identity unions
+  canonicalized, presentation `ReviewDecisionProjectionInput` rename, drifted
+  test-helper builders and the seven review-assurance envelope builders
+  consolidated into single canonical implementations.
+
 ### Fixed
+
+- **Duplicated standalone-review hypotheses (#762).** Review completion rebound
+  evidence via a recomputed `taskDigest`. Because a branch subject only resolves
+  to an immutable SHA after preparation, the digest legitimately changed, forking
+  the evidence chain and doubling every hypothesis claim in the projection
+  (3 objectives surfaced as 6 claims). Completion now binds to the outstanding
+  prepared entry by `evidenceId`.
 
 - **Documentation inventory corrected.** 15 documentation drift findings fixed
   across PRODUCT_IDENTITY.md, delivery-scope.md, platform-limitations.md,
@@ -501,6 +683,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - C5: `snapshotForRollback()` uses O_NOFOLLOW with type coherence fail-closed;
     `rollbackArtifacts()` uses `lstat`-based symlink rejection, temp+rename atomic
     restore; `writeIfAbsent()` uses `wx` exclusive-create for `force=false`.
+
+- **`REVIEWER_UNAVAILABLE_STRICT` rendered stray literal braces.** The message
+  template used double-brace placeholders, so the interpolated `{reason}` and
+  `{recovery}` displayed as `{…}` in user output; fixed to single braces.
+
+- **Reviewer-task pending-obligation guidance listed an incomplete tool set.**
+  Message, recovery steps, enforcement reason, and troubleshooting docs now name
+  all four review-requesting entry points (`flowguard_plan`,
+  `flowguard_implement`, `flowguard_architecture`, `flowguard_review`).
+
+- **Documentation drift corrected.** The reviewer verdict table now documents
+  `accept` (not `approve`); `CENTRAL_POLICY_INVALID_MODE` no longer lists
+  `team-ci` as a valid `minimumMode`; several recovery and copy strings were
+  aligned with their registry wording.
 
 ### Security
 

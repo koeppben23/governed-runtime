@@ -86,7 +86,10 @@ describe('state schemas', () => {
         sections: ['Plan'],
         createdAt: FIXED_TIME,
       };
-      expect(PlanEvidence.parse(plan)).toEqual(plan);
+      const parsed = PlanEvidence.parse(plan);
+      expect(parsed.body).toBe(plan.body);
+      expect(parsed.planVersion).toBe(1);
+      expect(parsed.lineageStatus).toBe('unavailable');
     });
 
     it('ValidationResult parses valid result', () => {
@@ -101,6 +104,7 @@ describe('state schemas', () => {
         executionMs: 1200,
         outputDigest: 'a'.repeat(64),
         timedOut: false,
+        outcome: 'supported',
       };
       expect(ValidationResult.parse(result)).toEqual(result);
     });
@@ -472,6 +476,7 @@ describe('state schemas', () => {
         title: 'Test',
         adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
         status: 'proposed' as const,
+        reviewCompletion: 'pending' as const,
         createdAt: '2026-01-01T00:00:00.000Z',
         digest: 'sha256-deadbeef',
       };
@@ -624,6 +629,7 @@ describe('state schemas', () => {
     it('ReviewReport validates overall status enum', () => {
       expect(() =>
         ReviewReport.parse({
+          reviewKind: 'lifecycle_review',
           schemaVersion: 'flowguard-review-report.v1',
           sessionId: FIXED_UUID,
           generatedAt: FIXED_TIME,

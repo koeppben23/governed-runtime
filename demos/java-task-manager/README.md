@@ -16,7 +16,9 @@ can fix a Java bug. It proves that FlowGuard's governance model applies to
 | **Implementation** | Code changes — ticket, plan, review, approval, checks, and implementation                                | Plan Evidence, Impl Diff, Review Cards, Audit Trail |
 | **Review**         | External contributions — content-aware branch diff analysis with subagent findings                       | Review Report, Obligation Binding, Audit Trail      |
 
-Each flow produces exportable, verifiable evidence archives.
+Each flow produces exportable evidence archives. The default redacted sharing
+archive is intentionally `not_verifiable`: canonical audit-chain verification
+requires an explicitly authorized raw-evidence export.
 
 ## Prerequisites
 
@@ -79,6 +81,24 @@ The `flowguard-reviewer` subagent detects the structural omission in the
 `feature/add-due-date` branch: `dueDate` is wired into the model and request
 DTO but silently dropped in the service and response DTO. The review report
 and evidence are exported.
+
+## Archive Verification
+
+`/export` creates a redacted sharing archive by default. It reports
+`archiveStatus: not_verifiable`, rather than claiming to verify an archive that
+intentionally excludes raw session state and the canonical audit trail.
+
+For a confidential auditor package, configure global
+`archive.redaction.allowRawExport=true` and run:
+
+```text
+/export redactionMode=none includeRaw=true
+```
+
+Only that raw-evidence package can report `archiveStatus: verified`.
+
+This manual-export permission does not alter FlowGuard's regulated completion
+path, which creates its mandatory local raw-evidence archive automatically.
 
 ## Directory Structure
 

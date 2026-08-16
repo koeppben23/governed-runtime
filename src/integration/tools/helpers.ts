@@ -29,6 +29,7 @@ import { AUTO_ADVANCE_OVERFLOW_CODE } from '../../rails/auto-advance-overflow.js
 
 // Adapters
 import { readState, writeStateAlreadyLocked } from '../../adapters/persistence.js';
+import { finalizeImplementationEntry } from '../../adapters/implementation-base-authority.js';
 import { acquireSessionWriteLock, withSessionWriteLock } from '../../adapters/persistence-lock.js';
 import { createRailContext } from '../../adapters/context.js';
 
@@ -45,15 +46,21 @@ import {
 import { resolvePolicyFromSnapshot } from '../../config/policy.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import { defaultReasonRegistry } from '../../config/reasons.js';
-import { buildBlockedDiagnostics, formatDiagnosticCard } from '../../diagnostics/index.js';
-import type { RuntimeDiagnostics } from '../../diagnostics/index.js';
+import { buildBlockedPresentation } from './blocked-presentation.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
 import { PHASE_LABELS, buildProductNextAction } from '../../presentation/index.js';
-import { renderMarkdown } from '../../presentation/index.js';
-import type { PresentationConclusion, PresentationDocument } from '../../presentation/index.js';
+import { renderMarkdown, lookupReasonCopy } from '../../presentation/index.js';
+import {
+  buildEvidenceApprovalCompletionDocument,
+  type PresentationConclusion,
+  type PresentationDocument,
+} from '../../presentation/index.js';
 import { buildRailConclusion } from './rail-conclusion.js';
+import { projectStatusActionFromCommand } from '../status-conclusion.js';
 import { getReviewLoopProgress } from '../review/review-loop-progress.js';
-
+import { refreshProofGraph } from '../proofgraph/refresh.js';
+import { projectCompletionProofStatus } from '../proofgraph/proof-summary-projectors.js';
+import { emitPresentationTelemetry } from './presentation-telemetry.js';
 const lockedSessionDir = new AsyncLocalStorage<string>();
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
@@ -124,26 +131,10 @@ export function formatEval(ev: EvalResult): string {
   }
 }
 
-/**
- * Build the shared blocked-response fields for a reason code: the structured
- * diagnostics object (when a builder exists) and the presentation.markdown
- * rendered through the shared renderer. Single source of truth for both
- * blocked-response producers (formatRailResult, formatBlocked).
- */
-function buildBlockedPresentation(
-  code: string,
-  message: string,
-  detail: Record<string, string>,
-): {
-  diagnostics?: RuntimeDiagnostics;
-  presentation?: { markdown: string };
-} {
-  const diagnostics = buildBlockedDiagnostics(code, detail);
-  if (!diagnostics) return {};
-  return {
-    diagnostics,
-    presentation: { markdown: formatDiagnosticCard({ code, message, diagnostics }) },
-  };
+/** Migrated reason-copy headline field, present only for authored codes. */
+function headlineFields(code: string): { headline?: string } {
+  const copy = lookupReasonCopy(code);
+  return copy?.headline ? { headline: copy.headline } : {};
 }
 
 /**
@@ -166,7 +157,9 @@ export function buildNextActionPresentation(
     sections: [],
     conclusion,
   };
-  return { markdown: renderMarkdown(document) };
+  const markdown = renderMarkdown(document);
+  emitPresentationTelemetry(document, state.phase, state.id);
+  return { markdown };
 }
 
 function presentationFormForConclusion(
@@ -178,8 +171,15 @@ function presentationFormForConclusion(
   return 'success';
 }
 
+interface RailPresentationOptions {
+  readonly evidenceApprovalCompletion?: boolean;
+}
+
 /** Format a RailResult for LLM consumption. Audit transitions in metadata channel. */
-export function formatRailResult(result: RailResult): ToolResult {
+export function formatRailResult(
+  result: RailResult,
+  options: RailPresentationOptions = {},
+): ToolResult {
   if (result.kind === 'blocked') {
     getAdapterLogger().warn('machine', 'tool_blocked', {
       code: result.code,
@@ -198,6 +198,7 @@ export function formatRailResult(result: RailResult): ToolResult {
       message: result.reason,
       recovery: result.recovery,
       quickFix: result.quickFix,
+      ...headlineFields(result.code),
       ...blockedPresentation,
       // #428: surface structured overflow context so the plugin boundary can
       // detect and log the fail-closed overflow without parsing the message.
@@ -215,6 +216,9 @@ export function formatRailResult(result: RailResult): ToolResult {
   const reviewDecision = result.state.reviewDecision;
   const { archiveStatus } = result.state;
   const reviewLoop = getReviewLoopProgress(result.state);
+  const presentation = options.evidenceApprovalCompletion
+    ? buildEvidenceApprovalCompletionPresentation(result.state)
+    : buildNextActionPresentation(result.state, result.evalResult);
   const json = JSON.stringify({
     phase: result.state.phase,
     phaseLabel: PHASE_LABELS[result.state.phase],
@@ -227,7 +231,7 @@ export function formatRailResult(result: RailResult): ToolResult {
     // machine-readable `next`/`nextAction`/`productNextAction` fields above are
     // unchanged. The rendered conclusion is the display authority; the command
     // template must not print a duplicate `Next action:` line when it is present.
-    presentation: buildNextActionPresentation(result.state, result.evalResult),
+    presentation,
     // Governance integrity: mark an aborted terminal session explicitly so it is
     // never presented as an indistinguishable clean completion. Distinct from the
     // blocked-result `error: true` convention (this is a successful tool call that
@@ -247,6 +251,16 @@ export function formatRailResult(result: RailResult): ToolResult {
     ...(reviewLoop ? { reviewLoop } : {}),
   });
   return { output: json, metadata: { transitions: result.transitions } };
+}
+
+function buildEvidenceApprovalCompletionPresentation(state: SessionState): { markdown: string } {
+  const document = buildEvidenceApprovalCompletionDocument({
+    proofSummary: projectCompletionProofStatus(state),
+    exportAction: projectStatusActionFromCommand('/export', 'recommended'),
+  });
+  const markdown = renderMarkdown(document);
+  emitPresentationTelemetry(document, state.phase, state.id);
+  return { markdown };
 }
 
 /**
@@ -269,6 +283,7 @@ export function formatBlocked(
     message: info.reason,
     recovery: info.recovery,
     quickFix: info.quickFix,
+    ...headlineFields(info.code),
     ...blockedPresentation,
     ...(extra ?? {}),
   });
@@ -297,16 +312,6 @@ export function formatAutoAdvanceOverflow(overflow: AutoAdvanceOverflow): string
     quickFix: info.quickFix,
     autoAdvanceOverflow: { phase: overflow.phase, limit: overflow.limit },
   });
-}
-
-/** Wrap any thrown error into a structured JSON string via the registry. */
-export function formatError(err: unknown): string {
-  const message = err instanceof Error ? err.message : String(err);
-  const code =
-    err instanceof Error && 'code' in err
-      ? String((err as { code: unknown }).code)
-      : 'INTERNAL_ERROR';
-  return formatBlocked(code, { message });
 }
 
 // ─── Workspace Helpers ────────────────────────────────────────────────────────
@@ -398,7 +403,7 @@ export async function requireStateForMutation(sessDir: string): Promise<SessionS
 export async function writeStateWithArtifactsAlreadyLocked(
   sessDir: string,
   nextState: SessionState,
-): Promise<void> {
+): Promise<SessionState> {
   // 1. Validate BEFORE any I/O — fail-closed
   const result = SessionState.safeParse(nextState);
   if (!result.success) {
@@ -407,29 +412,52 @@ export async function writeStateWithArtifactsAlreadyLocked(
     });
   }
 
-  // 2. Pre-compute serialized form and hash (identical to what writeState would produce)
-  const serialized = JSON.stringify(result.data, null, 2) + '\n';
+  // 2. Single transition finalizer: entering IMPLEMENTATION freezes the
+  // pre-mutation implementation base BEFORE any derived artifact (ProofGraph,
+  // evidence artifacts) is computed, so the persisted state, its hashes, and
+  // its artifacts always include the frozen authority. Fail-closed: a freeze
+  // failure throws the canonical code and NOTHING is written.
+  const finalized = await finalizeImplementationEntry(result.data);
+
+  // 3. Persist a graph for every flow. This only evaluates explicitly declared,
+  // structured claims; an absent contract therefore remains an empty projection.
+  const stateWithProofGraph = {
+    ...finalized,
+    proofGraph: await refreshProofGraph(finalized, finalized.transition?.at ?? finalized.createdAt),
+  };
+  const refreshed = SessionState.safeParse(stateWithProofGraph);
+  if (!refreshed.success) {
+    throw Object.assign(
+      new Error(`Refusing to persist invalid ProofGraph: ${refreshed.error.message}`),
+      {
+        code: 'SCHEMA_VALIDATION_FAILED',
+      },
+    );
+  }
+
+  // 3. Pre-compute serialized form and hash (identical to what writeState would produce)
+  const serialized = JSON.stringify(refreshed.data, null, 2) + '\n';
   const preComputedStateHash = hashText(serialized);
 
-  await materializeEvidenceArtifacts(sessDir, nextState, preComputedStateHash);
-  await writeStateAlreadyLocked(sessDir, nextState);
+  await materializeEvidenceArtifacts(sessDir, refreshed.data, preComputedStateHash);
+  await writeStateAlreadyLocked(sessDir, refreshed.data);
+  // Return the persisted state so callers render the REFRESHED ProofGraph rather
+  // than the pre-write projection they passed in (#762).
+  return refreshed.data;
 }
 
 export async function writeStateWithArtifacts(
   sessDir: string,
   nextState: SessionState,
-): Promise<void> {
+): Promise<SessionState> {
   if (lockedSessionDir.getStore() === sessDir) {
-    await writeStateWithArtifactsAlreadyLocked(sessDir, nextState);
-    return;
+    return writeStateWithArtifactsAlreadyLocked(sessDir, nextState);
   }
 
   // 3. Materialize artifacts and write state atomically under the session lock
-  await withSessionWriteLock(sessDir, async () => {
-    await lockedSessionDir.run(sessDir, () =>
-      writeStateWithArtifactsAlreadyLocked(sessDir, nextState),
-    );
-  });
+  return withSessionWriteLock(sessDir, async () =>
+    lockedSessionDir.run(sessDir, () => writeStateWithArtifactsAlreadyLocked(sessDir, nextState)),
+  );
 }
 
 /** Context handed to a {@link withSessionWriteTransaction} callback. */
@@ -510,7 +538,11 @@ export function createPolicyContext(policy: FlowGuardPolicy): RailContext {
  * Persist a RailResult if it's an "ok" result. Returns the formatted JSON.
  * Rails don't persist — the caller (this tool layer) does it atomically.
  */
-export async function persistAndFormat(sessDir: string, result: RailResult): Promise<ToolResult> {
+export async function persistAndFormat(
+  sessDir: string,
+  result: RailResult,
+  options: RailPresentationOptions = {},
+): Promise<ToolResult> {
   if (result.kind === 'ok') {
     if (result.transitions.length > 0) {
       getAdapterLogger().info('machine', 'transitions_applied', {
@@ -524,7 +556,7 @@ export async function persistAndFormat(sessDir: string, result: RailResult): Pro
     await writeStateWithArtifacts(sessDir, result.state);
     logPersistedLifecycle(result);
   }
-  return formatRailResult(result);
+  return formatRailResult(result, options);
 }
 
 function logPersistedLifecycle(result: Extract<RailResult, { kind: 'ok' }>): void {

@@ -19,6 +19,7 @@ import {
   REVIEW_MANDATE_DIGEST,
   hashFindings,
 } from '../review/assurance.js';
+import { computeRecordDigest } from '../../state/evidence-plan.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -55,7 +56,7 @@ const mocks = vi.hoisted(() => {
       }),
     ),
     appendNextAction: vi.fn((payload: string) => payload),
-    writeStateWithArtifacts: vi.fn(async () => undefined),
+    writeStateWithArtifacts: vi.fn(async (_sessDir: string, state: SessionState) => state),
     extractSections: vi.fn(() => []),
     changedFiles: vi.fn(async () => ['src/foo.ts']),
   };
@@ -129,7 +130,13 @@ vi.mock('../../presentation/phase-labels.js', () => ({
 }));
 
 vi.mock('../../presentation/next-action-copy.js', () => ({
-  buildProductNextAction: vi.fn(() => ''),
+  buildProductNextAction: vi.fn(() => ({ text: 'next action', commands: [] })),
+}));
+
+vi.mock('../../presentation/index.js', () => ({
+  PHASE_LABELS: { IMPL_REVIEW: 'Implementation review' },
+  buildEvidenceReviewCard: vi.fn(() => 'review card'),
+  buildProductNextAction: vi.fn(() => ({ text: 'next action', commands: [] })),
 }));
 
 vi.mock('../../presentation/plan-review-card.js', () => ({
@@ -245,6 +252,18 @@ function implStateWithEvidence(
         digest: 'digest-plan',
         sections: [],
         createdAt: now,
+        recordDigest: computeRecordDigest({
+          contentDigest: 'digest-plan',
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+        }),
+        planVersion: 1,
+        supersedesRecordDigest: null,
+        originatingReviewObligationId: null,
+        revisionReason: null,
+        lineageStatus: 'verified' as const,
       },
       history: [],
       reviewFindings: [],
@@ -282,14 +301,31 @@ function implStateWithEvidence(
       verdict: 'changes_requested',
     },
     reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      attempts: [
+        {
+          attemptId: OBLIGATION_ID.replace(/^(\w{8})/, 'd0000001'),
+          obligationId: OBLIGATION_ID,
+          obligationType: 'implement' as const,
+          subjectDigest: 'test-subject-digest',
+          childSessionId: 'ses_child',
+          ordinal: 0,
+          status: 'bound' as const,
+          origin: { kind: 'initial' } as const,
+          repositoryDiscovery: { kind: 'not_applicable' } as const,
+          createdAt: now,
+        },
+      ],
       obligations: [
         {
           obligationId: OBLIGATION_ID,
           obligationType: 'implement',
+          subjectDigest: 'test-subject-digest',
           iteration: 1,
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
+          maxReviewerOutputRepairAttempts: 1,
           createdAt: now,
           pluginHandshakeAt: now,
           status: 'fulfilled',
@@ -297,6 +333,11 @@ function implStateWithEvidence(
           blockedCode: null,
           fulfilledAt: now,
           consumedAt: null,
+          reviewSubjectScope: {
+            kind: 'repository_change',
+            paths: ['src/foo.ts'],
+            revisions: ['base', 'head'],
+          },
         },
       ],
       invocations: [
@@ -321,6 +362,7 @@ function implStateWithEvidence(
           consumedByObligationId: null,
           capturedVerdict: verdict,
           capturedRawFindings: rawFindings,
+          attemptId: OBLIGATION_ID.replace(/^(\w{8})/, 'd0000001'),
         },
       ],
     },
@@ -374,7 +416,17 @@ describe('BUG-17: implement evidence-first resolution', () => {
     // closed at the host-task resolution boundary and MUST NOT advance the
     // phase or persist any converged state.
     mocks.state = implStateWithEvidence('accept', [
-      { severity: 'minor', category: 'quality', message: 'stale comment' },
+      {
+        severity: 'minor',
+        category: 'quality',
+        message: 'stale comment',
+        relation: {
+          subjectAnchors: [
+            { kind: 'repository_location', location: { path: 'src/foo.ts', revision: 'head' } },
+          ],
+          evidenceLocations: [],
+        },
+      },
     ]);
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     mocks.resolvePolicyFromState.mockReturnValue({
@@ -405,6 +457,18 @@ describe('BUG-17: implement evidence-first resolution', () => {
           digest: 'digest-plan',
           sections: [],
           createdAt: now,
+          recordDigest: computeRecordDigest({
+            contentDigest: 'digest-plan',
+            planVersion: 1,
+            supersedesRecordDigest: null,
+            originatingReviewObligationId: null,
+            revisionReason: null,
+          }),
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+          lineageStatus: 'verified' as const,
         },
         history: [],
         reviewFindings: [],
@@ -424,8 +488,10 @@ describe('BUG-17: implement evidence-first resolution', () => {
         verdict: 'changes_requested',
       },
       reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [],
         invocations: [],
+        attempts: [],
       },
     });
     mocks.state = stateNoEvidence;
@@ -520,7 +586,24 @@ describe('BUG-17: implement evidence-first resolution', () => {
     const findings = makeStrictFindings(OBLIGATION_ID, { iteration: 1 });
     mocks.state = makeState('IMPL_REVIEW', {
       plan: {
-        current: { body: '## Plan\n1. Fix', digest: 'digest-plan', sections: [], createdAt: now },
+        current: {
+          body: '## Plan\n1. Fix',
+          digest: 'digest-plan',
+          sections: [],
+          createdAt: now,
+          recordDigest: computeRecordDigest({
+            contentDigest: 'digest-plan',
+            planVersion: 1,
+            supersedesRecordDigest: null,
+            originatingReviewObligationId: null,
+            revisionReason: null,
+          }),
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+          lineageStatus: 'verified' as const,
+        },
         history: [],
         reviewFindings: [],
       },
@@ -555,14 +638,17 @@ describe('BUG-17: implement evidence-first resolution', () => {
         verdict: 'changes_requested',
       },
       reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [
           {
             obligationId: OBLIGATION_ID,
             obligationType: 'implement',
+            subjectDigest: 'test-subject-digest',
             iteration: 1,
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
+            maxReviewerOutputRepairAttempts: 1,
             createdAt: now,
             pluginHandshakeAt: null,
             status: 'fulfilled',
@@ -570,9 +656,15 @@ describe('BUG-17: implement evidence-first resolution', () => {
             blockedCode: null,
             fulfilledAt: now,
             consumedAt: null,
+            reviewSubjectScope: {
+              kind: 'repository_change',
+              paths: ['src/foo.ts'],
+              revisions: ['base', 'head'],
+            },
           },
         ],
         invocations: [manualAttestedInvocation({ obligationType: 'implement', findings })],
+        attempts: [],
       },
     });
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);

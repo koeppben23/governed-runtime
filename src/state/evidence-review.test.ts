@@ -26,6 +26,10 @@ import {
   FourEyesStatusSchema,
   CompletenessSummarySchema,
   CompletenessReportSchema,
+  classifyRepositoryPath,
+  RepositoryLocation,
+  ReviewSubjectScope,
+  FrozenReviewSubject,
 } from './evidence-review.js';
 import { FIXED_TIME, FIXED_UUID } from './evidence-test-constants.js';
 
@@ -87,9 +91,169 @@ describe('evidence-review', () => {
         severity: 'major' as const,
         category: 'correctness' as const,
         message: 'Missing edge case handling',
-        location: 'src/auth.ts:42',
+        relation: {
+          subjectAnchors: [
+            {
+              kind: 'repository_location' as const,
+              location: { path: 'src/auth.ts', revision: 'head' as const, line: 42 },
+            },
+          ],
+          evidenceLocations: [{ path: 'src/auth.ts', revision: 'head' as const, line: 42 }],
+        },
       };
       expect(Finding.parse(finding)).toEqual(finding);
+    });
+
+    it('normalizes repository paths and rejects ambiguous path forms', () => {
+      expect(
+        RepositoryLocation.parse({ path: './src/auth.ts', revision: 'base', line: 1, endLine: 2 }),
+      ).toEqual({ path: 'src/auth.ts', revision: 'base', line: 1, endLine: 2 });
+      expect(RepositoryLocation.parse({ path: 'src/a/../b.ts', revision: 'head' })).toEqual({
+        path: 'src/b.ts',
+        revision: 'head',
+      });
+      for (const path of [
+        '../secret.ts',
+        '/etc/passwd',
+        'file:///tmp/x',
+        'C:\\repo\\x.ts',
+        'src/\0x.ts',
+      ]) {
+        expect(RepositoryLocation.safeParse({ path, revision: 'head' }).success).toBe(false);
+      }
+    });
+
+    it('classifies repository-root escapes separately from generic invalid paths', () => {
+      expect(classifyRepositoryPath('../outside.ts')).toEqual({ kind: 'escapes_repository' });
+      expect(classifyRepositoryPath('/etc/passwd')).toEqual({ kind: 'invalid' });
+      expect(classifyRepositoryPath('file:///tmp/evidence.ts')).toEqual({ kind: 'invalid' });
+      expect(classifyRepositoryPath('src/a/../b.ts')).toEqual({
+        kind: 'valid',
+        normalizedPath: 'src/b.ts',
+      });
+    });
+
+    it('allows empty evidence and preserves relation order while rejecting duplicate locations', () => {
+      const subjectAnchors = [
+        {
+          kind: 'repository_location' as const,
+          location: { path: 'src/b.ts', revision: 'head' as const },
+        },
+        {
+          kind: 'repository_location' as const,
+          location: { path: 'src/a.ts', revision: 'base' as const },
+        },
+      ];
+      const evidenceLocations = [
+        { path: 'docs/b.md', revision: 'head' as const },
+        { path: 'docs/a.md', revision: 'base' as const },
+      ];
+      expect(
+        Finding.parse({
+          severity: 'minor',
+          category: 'quality',
+          message: 'test',
+          relation: { subjectAnchors, evidenceLocations },
+        }).relation,
+      ).toEqual({ subjectAnchors, evidenceLocations });
+      expect(
+        Finding.safeParse({
+          severity: 'minor',
+          category: 'quality',
+          message: 'test',
+          relation: { subjectAnchors, evidenceLocations: [] },
+        }).success,
+      ).toBe(true);
+      expect(
+        Finding.safeParse({
+          severity: 'minor',
+          category: 'quality',
+          message: 'test',
+          relation: { subjectAnchors: [subjectAnchors[0], subjectAnchors[0]], evidenceLocations },
+        }).success,
+      ).toBe(false);
+      expect(
+        Finding.safeParse({
+          severity: 'minor',
+          category: 'quality',
+          message: 'test',
+          relation: {
+            subjectAnchors,
+            evidenceLocations: [evidenceLocations[0], evidenceLocations[0]],
+          },
+        }).success,
+      ).toBe(false);
+    });
+
+    it('parses repository-change and artifact review subject scopes', () => {
+      expect(
+        ReviewSubjectScope.parse({
+          kind: 'repository_change',
+          paths: ['./src/auth.ts'],
+          revisions: ['base', 'head'],
+        }),
+      ).toEqual({
+        kind: 'repository_change',
+        paths: ['src/auth.ts'],
+        revisions: ['base', 'head'],
+      });
+      expect(
+        ReviewSubjectScope.parse({
+          kind: 'artifact',
+          artifact: {
+            kind: 'plan',
+            digest: 'plan-digest',
+            sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Validation' }]],
+          },
+        }),
+      ).toBeDefined();
+    });
+
+    it('parses strict frozen repository and content subjects', () => {
+      const repository = {
+        kind: 'repository_change' as const,
+        source: { kind: 'branch' as const, branch: 'main' },
+        baseRepository: { host: 'github.com', owner: 'flowguard', name: 'core' },
+        baseSha: 'a'.repeat(40),
+        headSha: 'b'.repeat(40),
+        changedPaths: ['src/auth.ts'],
+        materialDigest: 'a'.repeat(64),
+        subjectDigest: 'b'.repeat(64),
+      };
+      const parsedRepository = FrozenReviewSubject.parse(repository);
+      expect(parsedRepository.kind).toBe('repository_change');
+      if (parsedRepository.kind === 'repository_change') {
+        expect(parsedRepository.changedPaths).toEqual(['src/auth.ts']);
+      }
+      const localRepository = {
+        ...repository,
+        baseRepository: { kind: 'local' as const, rootCommitDigest: 'c'.repeat(64) },
+      };
+      expect(FrozenReviewSubject.parse(localRepository)).toMatchObject({
+        kind: 'repository_change',
+        baseSha: 'a'.repeat(40),
+        headSha: 'b'.repeat(40),
+      });
+      expect(
+        FrozenReviewSubject.safeParse({ ...localRepository, baseSha: undefined }).success,
+      ).toBe(false);
+      const content = {
+        kind: 'content' as const,
+        source: { kind: 'inline' as const, mediaType: 'text' as const },
+        materialDigest: 'd'.repeat(64),
+        subjectDigest: 'c'.repeat(64),
+        lineCount: 4,
+      };
+      expect(FrozenReviewSubject.parse(content)).toEqual(content);
+      expect(
+        ReviewSubjectScope.parse({ kind: 'content', subjectDigest: 'c'.repeat(64), lineCount: 4 }),
+      ).toEqual({ kind: 'content', subjectDigest: 'c'.repeat(64), lineCount: 4 });
+      expect(
+        FrozenReviewSubject.safeParse({
+          ...content,
+          source: { kind: 'inline', mediaType: 'invalid' },
+        }).success,
+      ).toBe(false);
     });
 
     it('ReviewActorInfo parses minimal actor info', () => {
@@ -206,13 +370,14 @@ describe('evidence-review', () => {
   });
 
   describe('Review obligations (HAPPY)', () => {
-    it('ReviewObligation parses pending obligation', () => {
-      const obligation = {
+    function repositoryReviewObligation() {
+      return {
         obligationId: FIXED_UUID,
-        obligationType: 'plan' as const,
+        obligationType: 'review' as const,
+        subjectDigest: 'a'.repeat(64),
         iteration: 0,
         planVersion: 1,
-        criteriaVersion: 'v1',
+        criteriaVersion: 'p40-v1',
         mandateDigest: 'sha256-mandate',
         createdAt: FIXED_TIME,
         pluginHandshakeAt: null,
@@ -221,8 +386,237 @@ describe('evidence-review', () => {
         blockedCode: null,
         fulfilledAt: null,
         consumedAt: null,
+        maxReviewerOutputRepairAttempts: 1,
+        reviewSubjectScope: {
+          kind: 'repository_change' as const,
+          paths: ['src/auth.ts'],
+          revisions: ['base', 'head'] as const,
+        },
+        reviewSubject: {
+          kind: 'repository_change' as const,
+          source: { kind: 'branch' as const, branch: 'feature/x', requestedBase: 'main' },
+          baseRepository: { kind: 'local' as const, rootCommitDigest: 'a'.repeat(64) },
+          headRepository: { kind: 'local' as const, rootCommitDigest: 'a'.repeat(64) },
+          baseSha: 'b'.repeat(40),
+          headSha: 'a'.repeat(40),
+          changedPaths: ['src/auth.ts'],
+          materialDigest: 'a'.repeat(64),
+          subjectDigest: 'a'.repeat(64),
+        },
+      };
+    }
+
+    function attemptForObligation(
+      obligation: ReturnType<typeof repositoryReviewObligation> | Record<string, unknown>,
+      repositoryDiscovery: Record<string, unknown>,
+    ) {
+      return {
+        attemptId: '22222222-2222-4222-8222-222222222222',
+        obligationId: (obligation as Record<string, string>).obligationId,
+        obligationType: 'review' as const,
+        subjectDigest: 'a'.repeat(64),
+        ordinal: 0,
+        status: 'created' as const,
+        origin: { kind: 'initial' } as const,
+        repositoryDiscovery,
+        createdAt: FIXED_TIME,
+      };
+    }
+
+    it('ReviewObligation parses pending obligation', () => {
+      const obligation = {
+        obligationId: FIXED_UUID,
+        obligationType: 'plan' as const,
+        subjectDigest: 'a'.repeat(64),
+        iteration: 0,
+        planVersion: 1,
+        criteriaVersion: 'p40-v1',
+        mandateDigest: 'sha256-mandate',
+        createdAt: FIXED_TIME,
+        pluginHandshakeAt: null,
+        status: 'pending' as const,
+        invocationId: null,
+        blockedCode: null,
+        fulfilledAt: null,
+        consumedAt: null,
+        reviewSubjectScope: {
+          kind: 'repository_change' as const,
+          paths: ['src/auth.ts'],
+          revisions: ['base', 'head'],
+        },
+        maxReviewerOutputRepairAttempts: 1,
+        repositoryEvidenceFreeze: {
+          kind: 'unavailable' as const,
+          reason: 'repository_unavailable' as const,
+        },
       };
       expect(ReviewObligation.parse(obligation)).toEqual(obligation);
+    });
+
+    it('rejects self-consistent foreign review material under a different obligation subject', () => {
+      const obligation = {
+        ...repositoryReviewObligation(),
+        reviewMaterial: {
+          content: 'foreign material B',
+          materialDigest: 'b'.repeat(64),
+          subjectDigest: 'b'.repeat(64),
+        },
+      };
+
+      const result = ReviewObligation.safeParse(obligation);
+
+      expect(result.success).toBe(false);
+      if (result.success) throw new TypeError('expected schema rejection');
+      expect(result.error.issues.map((issue) => issue.path.join('.'))).toContain(
+        'reviewMaterial.subjectDigest',
+      );
+    });
+
+    it('requires frozen material for future criteria generations', () => {
+      const { reviewSubject: _, ...legacy } = {
+        ...repositoryReviewObligation(),
+        obligationType: 'plan' as const,
+        repositoryEvidenceFreeze: {
+          kind: 'unavailable' as const,
+          reason: 'repository_unavailable' as const,
+        },
+      };
+      expect(ReviewObligation.safeParse(legacy).success).toBe(true);
+
+      const future = ReviewObligation.safeParse({ ...legacy, criteriaVersion: 'p42-v1' });
+      expect(future.success).toBe(false);
+      if (future.success) throw new TypeError('expected schema rejection');
+      expect(future.error.issues.map((issue) => issue.path.join('.'))).toContain('reviewMaterial');
+    });
+
+    function contextAuthorityPlanObligation(overrides: Record<string, unknown> = {}) {
+      return {
+        obligationId: FIXED_UUID,
+        obligationType: 'plan' as const,
+        subjectDigest: 'a'.repeat(64),
+        iteration: 0,
+        planVersion: 1,
+        criteriaVersion: 'p40-v1',
+        mandateDigest: 'sha256-mandate',
+        createdAt: FIXED_TIME,
+        pluginHandshakeAt: null,
+        status: 'pending' as const,
+        invocationId: null,
+        blockedCode: null,
+        fulfilledAt: null,
+        consumedAt: null,
+        reviewSubjectScope: {
+          kind: 'artifact' as const,
+          artifact: {
+            kind: 'plan' as const,
+            digest: 'a'.repeat(64),
+            sectionPaths: [[{ headingDepth: 2, siblingIndex: 1, headingText: 'Approach' }]],
+          },
+        },
+        maxReviewerOutputRepairAttempts: 1,
+        repositoryAuthority: {
+          kind: 'context' as const,
+          context: {
+            kind: 'commit' as const,
+            repositoryIdentity: { kind: 'local' as const, rootCommitDigest: 'a'.repeat(64) },
+            objectSha: 'c'.repeat(40),
+          },
+        },
+        repositoryEvidenceFreeze: { kind: 'available' as const },
+        ...overrides,
+      };
+    }
+
+    it('HAPPY: available freeze record with frozen authority parses', () => {
+      const obligation = contextAuthorityPlanObligation({
+        repositoryEvidenceFreeze: { kind: 'available' },
+      });
+      expect(ReviewObligation.safeParse(obligation).success).toBe(true);
+    });
+
+    it('HAPPY: unavailable freeze record without authority parses', () => {
+      const { repositoryAuthority: _, ...withoutAuthority } = contextAuthorityPlanObligation();
+      const obligation = {
+        ...withoutAuthority,
+        repositoryEvidenceFreeze: {
+          kind: 'unavailable',
+          reason: 'repository_unavailable',
+          diagnostic: 'Workspace is not a Git repository.',
+        },
+      };
+      expect(ReviewObligation.safeParse(obligation).success).toBe(true);
+    });
+
+    it('HAPPY: review obligations without a freeze record remain legal', () => {
+      expect(ReviewObligation.safeParse(repositoryReviewObligation()).success).toBe(true);
+    });
+
+    it('BAD: plan obligation without a freeze record is schema-rejected', () => {
+      const withoutRecord = {
+        ...contextAuthorityPlanObligation(),
+        repositoryEvidenceFreeze: undefined,
+      };
+      const result = ReviewObligation.safeParse(withoutRecord);
+      expect(result.success).toBe(false);
+      if (result.success) throw new TypeError('expected schema rejection');
+      expect(result.error.issues.map((issue) => issue.path.join('.'))).toContain(
+        'repositoryEvidenceFreeze',
+      );
+    });
+
+    it('BAD: architecture obligation without a freeze record is schema-rejected', () => {
+      const obligation = {
+        ...contextAuthorityPlanObligation({ obligationType: 'architecture' as const }),
+        repositoryEvidenceFreeze: undefined,
+      };
+      const result = ReviewObligation.safeParse(obligation);
+      expect(result.success).toBe(false);
+      if (result.success) throw new TypeError('expected schema rejection');
+      expect(result.error.issues.map((issue) => issue.path.join('.'))).toContain(
+        'repositoryEvidenceFreeze',
+      );
+    });
+
+    it('BAD: review obligations must not carry the record', () => {
+      const obligation = {
+        ...repositoryReviewObligation(),
+        repositoryEvidenceFreeze: {
+          kind: 'unavailable',
+          reason: 'repository_unavailable',
+        },
+      };
+      const result = ReviewObligation.safeParse(obligation);
+      expect(result.success).toBe(false);
+      if (result.success) throw new TypeError('expected schema rejection');
+      expect(result.error.issues.map((issue) => issue.path.join('.'))).toContain(
+        'repositoryEvidenceFreeze',
+      );
+    });
+
+    it('BAD: available freeze record without authority is schema-rejected', () => {
+      const { repositoryAuthority: _, ...withoutAuthority } = contextAuthorityPlanObligation();
+      const obligation = {
+        ...withoutAuthority,
+        repositoryEvidenceFreeze: { kind: 'available' },
+      };
+      const result = ReviewObligation.safeParse(obligation);
+      expect(result.success).toBe(false);
+      if (result.success) throw new TypeError('expected schema rejection');
+      expect(result.error.issues.map((issue) => issue.path.join('.'))).toContain(
+        'repositoryEvidenceFreeze',
+      );
+    });
+
+    it('BAD: unavailable freeze record with authority is schema-rejected', () => {
+      const obligation = contextAuthorityPlanObligation({
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+      });
+      const result = ReviewObligation.safeParse(obligation);
+      expect(result.success).toBe(false);
+      if (result.success) throw new TypeError('expected schema rejection');
+      expect(result.error.issues.map((issue) => issue.path.join('.'))).toContain(
+        'repositoryEvidenceFreeze',
+      );
     });
 
     it('ReviewInvocationEvidence parses host-task invocation', () => {
@@ -250,8 +644,87 @@ describe('evidence-review', () => {
     });
 
     it('ReviewAssuranceState parses valid assurance state', () => {
-      const state = { obligations: [], invocations: [] };
+      const state = {
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        obligations: [],
+        invocations: [],
+        attempts: [],
+      };
       expect(ReviewAssuranceState.parse(state)).toEqual(state);
+    });
+
+    it('ReviewAssuranceState rejects an assurance state without attempts', () => {
+      // attempts is the invocation envelope binding depends on: an assurance
+      // state without it would look valid while being permanently unbindable.
+      expect(() => ReviewAssuranceState.parse({ obligations: [], invocations: [] })).toThrow();
+    });
+
+    it('rejects a repository review attempt without a repository Discovery snapshot', () => {
+      const obligation = repositoryReviewObligation();
+      const attempt = attemptForObligation(obligation, { kind: 'not_applicable' });
+      const result = ReviewAssuranceState.safeParse({
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        obligations: [obligation],
+        invocations: [],
+        attempts: [attempt],
+      });
+      expect(result.success).toBe(false);
+      if (result.success) throw new TypeError('expected schema rejection');
+      expect(result.error.issues.map((issue) => issue.path.join('.'))).toContain('attempts');
+    });
+
+    it('rejects a non-repository review attempt carrying a repository Discovery snapshot', () => {
+      const obligation = {
+        ...repositoryReviewObligation(),
+        reviewSubject: {
+          kind: 'content' as const,
+          source: { kind: 'inline' as const, mediaType: 'text' as const },
+          materialDigest: 'm'.repeat(64),
+          subjectDigest: 'a'.repeat(64),
+          lineCount: 1,
+        },
+        reviewSubjectScope: {
+          kind: 'content' as const,
+          subjectDigest: 'a'.repeat(64),
+          lineCount: 1,
+        },
+      };
+      const attempt = attemptForObligation(obligation, {
+        kind: 'repository',
+        snapshot: {
+          observedAt: FIXED_TIME,
+          discoveryDigest: 'd'.repeat(64),
+          workspaceFingerprint: 'fp-1',
+          health: {
+            status: 'available',
+            healthy: true,
+            failedCollectorNames: [],
+            hasBudgetExhaustion: false,
+            ageWarning: null,
+            notVerified: [],
+          },
+          drift: {
+            status: 'clean',
+            drifted: false,
+            changedCollectorNames: [],
+            notVerified: [],
+          },
+          detectedStack: null,
+          verificationCandidates: [],
+          riskSurfaces: [],
+          warnings: [],
+          notVerified: [],
+        },
+      });
+      const result = ReviewAssuranceState.safeParse({
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        obligations: [obligation],
+        invocations: [],
+        attempts: [attempt],
+      });
+      expect(result.success).toBe(false);
+      if (result.success) throw new TypeError('expected schema rejection');
+      expect(result.error.issues.map((issue) => issue.path.join('.'))).toContain('attempts');
     });
   });
 
@@ -286,6 +759,7 @@ describe('evidence-review', () => {
   describe('Review report (HAPPY)', () => {
     it('ReviewReport parses clean report', () => {
       const report = {
+        reviewKind: 'lifecycle_review' as const,
         schemaVersion: 'flowguard-review-report.v1' as const,
         sessionId: FIXED_UUID,
         generatedAt: FIXED_TIME,
@@ -312,6 +786,45 @@ describe('evidence-review', () => {
         },
       };
       expect(ReviewReport.parse(report)).toEqual(report);
+    });
+
+    it('ReviewReport parses a strict content review report', () => {
+      const report = {
+        reviewKind: 'content_review' as const,
+        schemaVersion: 'flowguard-review-report.v1' as const,
+        sessionId: FIXED_UUID,
+        generatedAt: FIXED_TIME,
+        phase: 'REVIEW_COMPLETE',
+        planDigest: null,
+        implDigest: null,
+        validationSummary: [],
+        findings: [],
+        overallStatus: 'clean' as const,
+        completeness: {
+          sessionId: FIXED_UUID,
+          phase: 'REVIEW_COMPLETE',
+          policyMode: 'team',
+          overallComplete: true,
+          slots: [],
+          fourEyes: {
+            required: false,
+            satisfied: true,
+            initiatedBy: 'test',
+            decidedBy: null,
+            detail: 'N/A',
+          },
+          summary: { total: 0, complete: 0, missing: 0, notYetRequired: 0, failed: 0 },
+        },
+        reviewSubject: {
+          kind: 'content' as const,
+          source: { kind: 'inline' as const, mediaType: 'text' as const },
+          materialDigest: 'b'.repeat(64),
+          subjectDigest: 'a'.repeat(64),
+          lineCount: 1,
+        },
+      };
+      expect(ReviewReport.parse(report)).toEqual(report);
+      expect(ReviewReport.safeParse({ ...report, unexpected: true }).success).toBe(false);
     });
   });
 
@@ -344,6 +857,7 @@ describe('evidence-review', () => {
     it('ReviewReport rejects invalid overallStatus', () => {
       expect(() =>
         ReviewReport.parse({
+          reviewKind: 'lifecycle_review',
           schemaVersion: 'flowguard-review-report.v1',
           sessionId: FIXED_UUID,
           generatedAt: FIXED_TIME,
@@ -435,6 +949,44 @@ describe('evidence-review', () => {
       const obligation = {
         obligationId: FIXED_UUID,
         obligationType: 'review' as const,
+        subjectDigest: 'a'.repeat(64),
+        iteration: 0,
+        planVersion: 1,
+        criteriaVersion: 'p40-v1',
+        mandateDigest: 'sha256-mandate',
+        createdAt: FIXED_TIME,
+        pluginHandshakeAt: null,
+        status: 'pending' as const,
+        invocationId: null,
+        blockedCode: null,
+        fulfilledAt: null,
+        consumedAt: null,
+        reviewSubjectScope: {
+          kind: 'content' as const,
+          subjectDigest: 'a'.repeat(64),
+          lineCount: 1,
+        },
+        reviewSubject: {
+          kind: 'content' as const,
+          source: { kind: 'inline' as const, mediaType: 'text' as const },
+          materialDigest: 'a'.repeat(64),
+          subjectDigest: 'a'.repeat(64),
+          lineCount: 1,
+        },
+        metadata: { inputFingerprint: 'abc', customField: 42 },
+        maxReviewerOutputRepairAttempts: 1,
+      };
+      expect(ReviewObligation.parse(obligation)).toEqual(obligation);
+    });
+
+    it('ReviewObligation rejects a missing subjectDigest', () => {
+      // The subject digest is the host-authoritative identity of what must be
+      // reviewed. Binding compares it against the attempt, so an obligation
+      // without one can never bind: it must be rejected at the schema boundary
+      // rather than persisted and fail later as an unexplained subject mismatch.
+      const withoutSubject = {
+        obligationId: FIXED_UUID,
+        obligationType: 'review' as const,
         iteration: 0,
         planVersion: 1,
         criteriaVersion: 'v1',
@@ -446,9 +998,47 @@ describe('evidence-review', () => {
         blockedCode: null,
         fulfilledAt: null,
         consumedAt: null,
-        metadata: { inputFingerprint: 'abc', customField: 42 },
       };
-      expect(ReviewObligation.parse(obligation)).toEqual(obligation);
+      const result = ReviewObligation.safeParse(withoutSubject);
+      expect(result.success).toBe(false);
+      expect(result.error?.issues.map((issue) => issue.path.join('.'))).toContain('subjectDigest');
+    });
+
+    it('requires a frozen subject and matching subjectDigest for standalone reviews', () => {
+      const base = {
+        obligationId: FIXED_UUID,
+        obligationType: 'review' as const,
+        subjectDigest: 'a'.repeat(64),
+        iteration: 0,
+        planVersion: 1,
+        criteriaVersion: 'v1',
+        mandateDigest: 'sha256-mandate',
+        createdAt: FIXED_TIME,
+        pluginHandshakeAt: null,
+        status: 'pending' as const,
+        invocationId: null,
+        blockedCode: null,
+        fulfilledAt: null,
+        consumedAt: null,
+        reviewSubjectScope: {
+          kind: 'content' as const,
+          subjectDigest: 'a'.repeat(64),
+          lineCount: 1,
+        },
+      };
+      expect(ReviewObligation.safeParse(base).success).toBe(false);
+      expect(
+        ReviewObligation.safeParse({
+          ...base,
+          reviewSubject: {
+            kind: 'content' as const,
+            source: { kind: 'inline' as const, mediaType: 'text' as const },
+            materialDigest: 'b'.repeat(64),
+            subjectDigest: 'c'.repeat(64),
+            lineCount: 1,
+          },
+        }).success,
+      ).toBe(false);
     });
   });
 
@@ -480,9 +1070,10 @@ describe('evidence-review', () => {
       const obligation = {
         obligationId: FIXED_UUID,
         obligationType: 'plan' as const,
+        subjectDigest: 'sha256-subject',
         iteration: 0,
         planVersion: 1,
-        criteriaVersion: 'v1',
+        criteriaVersion: 'p40-v1',
         mandateDigest: 'sha256-mandate',
         createdAt: FIXED_TIME,
         pluginHandshakeAt: null,
@@ -491,19 +1082,30 @@ describe('evidence-review', () => {
         blockedCode: null,
         fulfilledAt: null,
         consumedAt: null,
+        reviewSubjectScope: {
+          kind: 'repository_change' as const,
+          paths: ['src/auth.ts'],
+          revisions: ['base', 'head'],
+        },
         reviewProfile: 'core' as const,
         profileSource: 'policy_default' as const,
+        maxReviewerOutputRepairAttempts: 1,
+        repositoryEvidenceFreeze: {
+          kind: 'unavailable' as const,
+          reason: 'repository_unavailable' as const,
+        },
       };
       expect(ReviewObligation.parse(obligation)).toEqual(obligation);
     });
 
-    it('ReviewObligation remains backward compatible without profile fields', () => {
+    it('ReviewObligation accepts no optional profile fields', () => {
       const legacy = {
         obligationId: FIXED_UUID,
         obligationType: 'plan' as const,
+        subjectDigest: 'sha256-subject',
         iteration: 0,
         planVersion: 1,
-        criteriaVersion: 'v1',
+        criteriaVersion: 'p40-v1',
         mandateDigest: 'sha256-mandate',
         createdAt: FIXED_TIME,
         pluginHandshakeAt: null,
@@ -512,10 +1114,74 @@ describe('evidence-review', () => {
         blockedCode: null,
         fulfilledAt: null,
         consumedAt: null,
+        reviewSubjectScope: {
+          kind: 'repository_change' as const,
+          paths: ['src/auth.ts'],
+          revisions: ['base', 'head'],
+        },
+        maxReviewerOutputRepairAttempts: 1,
+        repositoryEvidenceFreeze: {
+          kind: 'unavailable' as const,
+          reason: 'repository_unavailable' as const,
+        },
       };
       const parsed = ReviewObligation.parse(legacy);
       expect(parsed.reviewProfile).toBeUndefined();
       expect(parsed.profileSource).toBeUndefined();
     });
+  });
+});
+
+describe('Implementation subject scope coherence (schema refinement)', () => {
+  function implementObligation(reviewSubjectScope: Record<string, unknown>) {
+    return {
+      obligationId: FIXED_UUID,
+      obligationType: 'implement' as const,
+      subjectDigest: 'a'.repeat(64),
+      iteration: 1,
+      planVersion: 1,
+      criteriaVersion: 'p40-v1',
+      mandateDigest: 'sha256-mandate',
+      createdAt: FIXED_TIME,
+      pluginHandshakeAt: null,
+      status: 'pending' as const,
+      invocationId: null,
+      blockedCode: null,
+      fulfilledAt: null,
+      consumedAt: null,
+      maxReviewerOutputRepairAttempts: 1,
+      reviewSubjectScope,
+    };
+  }
+
+  it('accepts an implementation scope whose digest equals the subject digest', () => {
+    const obligation = implementObligation({
+      kind: 'implementation',
+      implementationDigest: 'a'.repeat(64),
+    });
+    expect(ReviewObligation.safeParse(obligation).success).toBe(true);
+  });
+
+  it('rejects an implementation scope whose digest diverges from the subject digest', () => {
+    const obligation = implementObligation({
+      kind: 'implementation',
+      implementationDigest: 'b'.repeat(64),
+    });
+    const result = ReviewObligation.safeParse(obligation);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(JSON.stringify(result.error.issues)).toContain(
+        'implementation reviewSubjectScope digest must equal the obligation subject digest',
+      );
+    }
+  });
+
+  it('keeps parsing legacy implement obligations without an implementation scope (migration-safe)', () => {
+    const obligation = implementObligation({
+      kind: 'repository_change',
+      paths: ['src/auth.ts'],
+      revisions: ['base', 'head'],
+    });
+    expect(ReviewObligation.safeParse(obligation).success).toBe(true);
   });
 });

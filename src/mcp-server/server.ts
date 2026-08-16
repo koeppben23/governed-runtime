@@ -10,7 +10,7 @@
  * - Delegates to same rail executors as the OpenCode plugin
  *
  * The server exposes FlowGuard governance tools via the MCP protocol.
- * 14 of 15 Integration Tools are registered here (see docs/mcp-tool-surface.md
+ * 16 of 17 Integration Tools are registered here (see docs/mcp-tool-surface.md
  * for the one asymmetric exclusion).
  *
  * @see https://github.com/koeppben23/governed-runtime/issues/243
@@ -43,6 +43,11 @@ import { archive } from '../integration/tools/index.js';
 // 'continue' is a reserved word - imported via namespace
 import { continue as continue_cmd } from '../integration/tools/index.js';
 import { help } from '../integration/tools/index.js';
+import {
+  declare_contract,
+  record_mutation_evidence,
+  observe_repository,
+} from '../integration/tools/index.js';
 
 // --- Tool Registry ---
 
@@ -61,6 +66,9 @@ export const FLOWGUARD_TOOLS: FlowGuardToolRegistry = {
   archive,
   continue: continue_cmd,
   help,
+  declare_contract,
+  record_mutation_evidence,
+  observe_repository,
 };
 
 // --- Server Factory ---

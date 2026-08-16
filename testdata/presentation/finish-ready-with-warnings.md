@@ -10,6 +10,13 @@
 **Missing:** 0
 **Four eyes:** Satisfied
 
+## Verification
+
+No verification obligations declared.
+Approval evidence: Not recorded
+
+Diagnostic: `flowguard_status({ proofGraph: true })`
+
 ## Archive
 
 **Status:** Verified

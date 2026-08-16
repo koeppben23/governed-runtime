@@ -10,6 +10,13 @@
 **Missing:** 1
 **Four eyes:** Satisfied
 
+## Verification
+
+No verification obligations declared.
+Approval evidence: Not recorded
+
+Diagnostic: `flowguard_status({ proofGraph: true })`
+
 ## Guidance
 
 - **create PR:** Not verified — Required evidence is missing or failed; proceeding is not verified.

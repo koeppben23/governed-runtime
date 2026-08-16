@@ -9,6 +9,7 @@ import { formatBlocked } from './helpers.js';
 import type { MutableSession } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
 import type { LoopVerdict, ReviewFindings } from '../../state/evidence.js';
+import type { ArchitectureClaimDeclarationInput } from '../../state/proofgraph-approval.js';
 import { ensureReviewAssurance, createReviewObligation } from '../review/assurance.js';
 import { classifyToolCallMode } from './review-validation-mode.js';
 import {
@@ -16,12 +17,15 @@ import {
   resolveReviewOrchestrationMode,
 } from '../review/orchestration-mode.js';
 import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
+import { resolveAttemptObservationCapability } from '../review/assurance.js';
+import { buildReviewerProofContext } from '../review/proof-context.js';
 
 // ─── Shared Types ─────────────────────────────────────────────────────────
 
 export type ArchitectureArgs = {
   title?: string;
   adrText?: string;
+  claims?: ArchitectureClaimDeclarationInput[];
   reviewVerdict?: LoopVerdict;
   reviewFindings?: ReviewFindings;
   reviewerUnavailable?: boolean;
@@ -36,13 +40,9 @@ export function hasText(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-export function validateInitialSubmissionGate(
-  args: ArchitectureArgs,
-  state: SessionState,
-  isInitialSubmission: boolean,
-): string | null {
+/** Argument-shape validation only — never gates on obligation lifecycle state. */
+export function validateArchitectureCallShape(args: ArchitectureArgs): string | null {
   const hasTitle = hasText(args.title);
-  const hasAdrText = hasText(args.adrText);
 
   // title + verdict keeps its distinct code (submission metadata with a verdict).
   if (hasTitle && hasText(args.reviewVerdict)) {
@@ -59,6 +59,18 @@ export function validateInitialSubmissionGate(
     reviewerUnavailable: args.reviewerUnavailable,
   });
   if (mode.kind === 'invalid') return formatBlocked(mode.code, mode.params);
+  return null;
+}
+
+export function validateInitialSubmissionGate(
+  args: ArchitectureArgs,
+  state: SessionState,
+  isInitialSubmission: boolean,
+): string | null {
+  const shapeBlocked = validateArchitectureCallShape(args);
+  if (shapeBlocked) return shapeBlocked;
+  const hasTitle = hasText(args.title);
+  const hasAdrText = hasText(args.adrText);
 
   if (!isInitialSubmission || (!hasTitle && !hasAdrText) || state.phase !== 'ARCHITECTURE') {
     return null;
@@ -91,6 +103,8 @@ export function buildArchitectureReviewInstruction(input: {
   iteration: number;
   planVersion: number;
   subjectLabel: string;
+  /** State whose declarations/graph the reviewer prompt must reflect (#762). */
+  state: SessionState;
 }): {
   next: string;
   reviewInvocation?: ReturnType<typeof buildPendingReviewInstruction>['reviewInvocation'];
@@ -119,6 +133,13 @@ export function buildArchitectureReviewInstruction(input: {
     iteration: input.iteration,
     planVersion: input.planVersion,
     subjectLabel: input.subjectLabel,
+    proofContext: buildReviewerProofContext(input.state),
+    observationCapability: input.obligation
+      ? (resolveAttemptObservationCapability(
+          input.state.reviewAssurance,
+          input.obligation.obligationId,
+        ) ?? undefined)
+      : undefined,
   });
   return { next: instruction.next, reviewInvocation: instruction.reviewInvocation };
 }

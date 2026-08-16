@@ -16,23 +16,26 @@ import { resolveNextAction } from '../machine/next-action.js';
 import { PHASE_LABELS } from '../presentation/phase-labels.js';
 import { buildProductNextAction } from '../presentation/next-action-copy.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
-import {
-  projectStatusActionFromCommand,
-  type StatusActionProjection,
-} from './status-conclusion.js';
+import { projectStatusActionFromCommand } from './status-conclusion.js';
+import type { PresentationAction } from '../presentation/index.js';
 import type { BlockedProjection, FinishCard } from './status.js';
+import { projectProofStatusForState } from './proofgraph/proof-summary-projectors.js';
 
 // ─── /why Projection Types ─────────────────────────────────────────────────────
 
 export type WhyConclusionProjection =
   | {
       readonly kind: 'next_action';
-      readonly action: StatusActionProjection;
+      readonly action: PresentationAction;
+    }
+  | {
+      readonly kind: 'terminal';
+      readonly message: string;
     }
   | {
       readonly kind: 'decision_required';
       readonly question: string;
-      readonly actions: readonly StatusActionProjection[];
+      readonly actions: readonly PresentationAction[];
     };
 
 export interface WhyPresentationProjection {
@@ -45,6 +48,7 @@ export interface WhyPresentationProjection {
     readonly status: 'missing' | 'failed';
     readonly hint: string | null;
   }>;
+  readonly proofSummary: import('../presentation/proof-model.js').CompactProofPresentation;
   readonly conclusion: WhyConclusionProjection;
 }
 
@@ -53,7 +57,7 @@ export interface WhyPresentationProjection {
 export type FinishConclusionProjection =
   | {
       readonly kind: 'next_action';
-      readonly action: StatusActionProjection;
+      readonly action: PresentationAction;
     }
   | {
       readonly kind: 'terminal';
@@ -96,6 +100,7 @@ export function buildWhyPresentationProjection(
     phaseLabel: PHASE_LABELS[state.phase],
     blocker,
     evidenceSlots,
+    proofSummary: projectProofStatusForState(state),
     conclusion: buildWhyConclusion(evalResult, productNext),
   };
 }
@@ -125,10 +130,7 @@ function buildWhyConclusion(
     case 'pending':
     case 'transition': {
       if (!command) {
-        throw Object.assign(
-          new Error(`WhyProjection: ${evalResult.kind} without product command`),
-          { code: 'WHY_ACTION_PROJECTION_EMPTY' },
-        );
+        return { kind: 'terminal', message: productNext.text };
       }
       return {
         kind: 'next_action',

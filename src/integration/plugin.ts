@@ -32,6 +32,7 @@ import { type ActiveCommandScope, type FlowGuardPluginRuntime } from './plugin-s
 import { createOpenCodeHostAdapter } from './opencode-host-adapter.js';
 import { createWorkspace } from './plugin-workspace.js';
 import type { OrchestratorClient } from './review/orchestrator.js';
+import { initHumanProjectionTelemetrySink } from '../telemetry/human-projection/sink.js';
 
 export function isUsableWorktree(worktree: string | undefined): boolean {
   if (!worktree) return false;
@@ -69,6 +70,8 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     ws.cachedFingerprint,
     auditWorktree ? repoConfigPath(auditWorktree) : undefined,
   );
+
+  initHumanProjectionTelemetrySink(config.humanProjectionTelemetry.enabled);
 
   const adapterLog = toAdapterLogger(log);
 

@@ -1,0 +1,112 @@
+{
+  "numTotalTestSuites": 5,
+  "numPassedTestSuites": 2,
+  "numFailedTestSuites": 3,
+  "numPendingTestSuites": 0,
+  "numTotalTests": 6,
+  "numPassedTests": 4,
+  "numFailedTests": 1,
+  "numPendingTests": 1,
+  "numTodoTests": 0,
+  "snapshot": {
+    "added": 0,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0,
+    "didUpdate": false
+  },
+  "startTime": 1786087102294,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [
+            "calculator",
+            "add"
+          ],
+          "fullName": "calculator add adds two positive numbers",
+          "status": "passed",
+          "title": "adds two positive numbers",
+          "duration": 0.521458999999993,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "calculator",
+            "add"
+          ],
+          "fullName": "calculator add adds negative numbers",
+          "status": "passed",
+          "title": "adds negative numbers",
+          "duration": 0.06295800000000895,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "calculator",
+            "subtract"
+          ],
+          "fullName": "calculator subtract subtracts two numbers",
+          "status": "passed",
+          "title": "subtracts two numbers",
+          "duration": 0.06162499999999227,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "calculator",
+            "multiply"
+          ],
+          "fullName": "calculator multiply multiplies two numbers",
+          "status": "passed",
+          "title": "multiplies two numbers",
+          "duration": 0.04850000000001842,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "calculator",
+            "multiply"
+          ],
+          "fullName": "calculator multiply failing multiplication",
+          "status": "failed",
+          "title": "failing multiplication",
+          "duration": 3.248665999999986,
+          "failureMessages": [
+            "AssertionError: expected 6 to be 7 // Object.is equality\n    at /Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/vitest/src/math.test.ts:27:30\n    at file:///Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/vitest/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/vitest/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/vitest/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/vitest/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/vitest/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at runSuite (file:///Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/vitest/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/vitest/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)"
+          ],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "calculator"
+          ],
+          "fullName": "calculator skipped division test",
+          "status": "skipped",
+          "title": "skipped division test",
+          "failureMessages": [],
+          "meta": {}
+        }
+      ],
+      "startTime": 1786087102449,
+      "endTime": 1786087102452.2488,
+      "status": "failed",
+      "message": "",
+      "name": "src/math.test.ts"
+    }
+  ]
+}

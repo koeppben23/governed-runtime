@@ -20,6 +20,7 @@ import {
   REVIEW_MANDATE_DIGEST,
   hashFindings,
 } from '../review/assurance.js';
+import { computeRecordDigest } from '../../state/evidence-plan.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -56,7 +57,7 @@ const mocks = vi.hoisted(() => {
       }),
     ),
     appendNextAction: vi.fn((payload: string) => payload),
-    writeStateWithArtifacts: vi.fn(async (_sessDir: string, _state: SessionState) => undefined),
+    writeStateWithArtifacts: vi.fn(async (_sessDir: string, state: SessionState) => state),
     extractSections: vi.fn(() => []),
     readDiscovery: vi.fn(async () => null as unknown),
   };
@@ -260,6 +261,18 @@ function planStateWithEvidence(
         digest: 'digest-plan',
         sections: [],
         createdAt: now,
+        recordDigest: computeRecordDigest({
+          contentDigest: 'digest-plan',
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+        }),
+        planVersion: 1,
+        supersedesRecordDigest: null,
+        originatingReviewObligationId: null,
+        revisionReason: null,
+        lineageStatus: 'verified' as const,
       },
       history: [],
       reviewFindings: [],
@@ -273,14 +286,31 @@ function planStateWithEvidence(
       verdict: 'changes_requested',
     },
     reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      attempts: [
+        {
+          attemptId: OBLIGATION_ID.replace(/^(\w{8})/, 'd0000001'),
+          obligationId: OBLIGATION_ID,
+          obligationType: 'plan' as const,
+          subjectDigest: 'test-subject-digest',
+          childSessionId: 'ses_child',
+          ordinal: 0,
+          status: 'bound' as const,
+          origin: { kind: 'initial' } as const,
+          repositoryDiscovery: { kind: 'not_applicable' } as const,
+          createdAt: now,
+        },
+      ],
       obligations: [
         {
           obligationId: OBLIGATION_ID,
           obligationType: 'plan',
+          subjectDigest: 'test-subject-digest',
           iteration: 0,
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
+          maxReviewerOutputRepairAttempts: 1,
           createdAt: now,
           pluginHandshakeAt: now,
           status: 'fulfilled',
@@ -288,6 +318,11 @@ function planStateWithEvidence(
           blockedCode: null,
           fulfilledAt: now,
           consumedAt: null,
+          reviewSubjectScope: {
+            kind: 'repository_change',
+            paths: ['src/foo.ts'],
+            revisions: ['base', 'head'],
+          },
         },
       ],
       invocations: [
@@ -312,6 +347,7 @@ function planStateWithEvidence(
           consumedByObligationId: null,
           capturedVerdict: verdict,
           capturedRawFindings: rawFindings,
+          attemptId: OBLIGATION_ID.replace(/^(\w{8})/, 'd0000001'),
         },
       ],
     },
@@ -365,7 +401,17 @@ describe('BUG-17: plan evidence-first resolution', () => {
     // closed at evidence resolution and MUST NOT advance to PLAN_REVIEW or
     // persist any converged state.
     mocks.state = planStateWithEvidence('accept', [
-      { severity: 'minor', category: 'quality', message: 'stale comment' },
+      {
+        severity: 'minor',
+        category: 'quality',
+        message: 'stale comment',
+        relation: {
+          subjectAnchors: [
+            { kind: 'repository_location', location: { path: 'src/foo.ts', revision: 'head' } },
+          ],
+          evidenceLocations: [],
+        },
+      },
     ]);
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     mocks.resolvePolicyFromState.mockReturnValue({
@@ -436,6 +482,18 @@ describe('BUG-17: plan evidence-first resolution', () => {
           digest: 'digest-plan',
           sections: [],
           createdAt: now,
+          recordDigest: computeRecordDigest({
+            contentDigest: 'digest-plan',
+            planVersion: 1,
+            supersedesRecordDigest: null,
+            originatingReviewObligationId: null,
+            revisionReason: null,
+          }),
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+          lineageStatus: 'verified' as const,
         },
         history: [],
         reviewFindings: [],
@@ -449,8 +507,10 @@ describe('BUG-17: plan evidence-first resolution', () => {
         verdict: 'changes_requested',
       },
       reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [],
         invocations: [],
+        attempts: [],
       },
     });
     mocks.state = stateNoEvidence;
@@ -635,6 +695,18 @@ describe('BUG-17: plan evidence-first resolution', () => {
           digest: 'digest-plan',
           sections: [],
           createdAt: now,
+          recordDigest: computeRecordDigest({
+            contentDigest: 'digest-plan',
+            planVersion: 1,
+            supersedesRecordDigest: null,
+            originatingReviewObligationId: null,
+            revisionReason: null,
+          }),
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+          lineageStatus: 'verified' as const,
         },
         history: [],
         reviewFindings: [],
@@ -648,14 +720,17 @@ describe('BUG-17: plan evidence-first resolution', () => {
         verdict: 'changes_requested',
       },
       reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [
           {
             obligationId: OBLIGATION_ID,
             obligationType: 'plan',
+            subjectDigest: 'test-subject-digest',
             iteration: 0,
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
+            maxReviewerOutputRepairAttempts: 1,
             createdAt: now,
             pluginHandshakeAt: null,
             status: 'fulfilled',
@@ -663,9 +738,15 @@ describe('BUG-17: plan evidence-first resolution', () => {
             blockedCode: null,
             fulfilledAt: now,
             consumedAt: null,
+            reviewSubjectScope: {
+              kind: 'repository_change',
+              paths: ['src/foo.ts'],
+              revisions: ['base', 'head'],
+            },
           },
         ],
         invocations: [manualAttestedInvocation({ obligationType: 'plan', findings })],
+        attempts: [],
       },
     });
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
@@ -738,6 +819,17 @@ describe('BUG-17: plan evidence-first resolution', () => {
     expect(obligations.length).toBeGreaterThanOrEqual(2);
     expect(obligations.at(-1)?.obligationType).toBe('plan');
     expect(obligations.at(-1)?.metadata?.targetPaths).toBeUndefined();
+    // The plan artifact is the review SUBJECT — never the repository diff or
+    // discovery risk surfaces (regression: review_finding_out_of_scope on
+    // artifact-anchored findings because the scope was repository_change).
+    const planScope = obligations.at(-1)?.reviewSubjectScope;
+    expect(planScope?.kind).toBe('artifact');
+    if (planScope?.kind === 'artifact') {
+      expect(planScope.artifact.kind).toBe('plan');
+      expect(planScope.artifact.sectionPaths).toEqual([
+        [{ headingDepth: 2, siblingIndex: 1, headingText: 'Plan' }],
+      ]);
+    }
   });
 
   it('revision loop: unions author targetPaths with discovery risk surfaces on the next obligation', async () => {

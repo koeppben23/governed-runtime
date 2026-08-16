@@ -16,11 +16,11 @@
 import { z } from 'zod';
 
 import type { ToolDefinition } from './helpers.js';
+import { formatError } from './error-format.js';
 import {
   withMutableSession,
   withMutableSessionTransaction,
   formatBlocked,
-  formatError,
   persistAndFormat,
 } from './helpers.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
@@ -141,7 +141,10 @@ export const decision: ToolDefinition = {
             result,
           });
 
-          const persisted = await persistAndFormat(sessDir, finalResult);
+          const persisted = await persistAndFormat(sessDir, finalResult, {
+            evidenceApprovalCompletion:
+              state.phase === 'EVIDENCE_REVIEW' && args.verdict === 'approve',
+          });
 
           // Consume the user-decision intent ONLY on a fully successful decision,
           // and only in human-gated mode. Placing this after finalizeDecision (and

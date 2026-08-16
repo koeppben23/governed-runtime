@@ -40,11 +40,11 @@ export const REVIEWER_AGENT_FALLBACK = 'general';
 export const REVIEWER_SYSTEM_DIRECTIVE =
   'You are a governance reviewer subagent for FlowGuard. ' +
   'Your ONLY job is to review the provided content and return a SINGLE valid JSON object ' +
-  'conforming to the ReviewFindings schema. ' +
+  'conforming to the ReviewerFindingsInput schema. ' +
   'Do NOT include markdown fences, commentary, explanations, or any text outside the JSON object. ' +
   'The JSON must contain: iteration, planVersion, reviewMode ("subagent"), overallVerdict, ' +
-  'blockingIssues, majorRisks, missingVerification, scopeCreep, unknowns, reviewedBy, ' +
-  'reviewedAt (ISO 8601), and attestation.';
+  'blockingIssues, majorRisks, missingVerification, scopeCreep, unknowns, and attestation.toolObligationId. ' +
+  'Do not output reviewedBy, reviewedAt, mandateDigest, criteriaVersion, or attestation.reviewedBy.';
 
 // ─── Agent Resolution Cache ─────────────────────────────────────────────────
 

@@ -545,6 +545,7 @@ describe('persistRiskDecisionBlock', () => {
     claimedTaskClass: 'STANDARD',
     minimumTaskClass: 'HIGH-RISK',
     touchedSurfaces: ['src/foo.ts'],
+    riskTriggers: ['ceremony_only'],
     changedFiles: ['src/foo.ts'],
   };
 
@@ -591,6 +592,7 @@ describe('appendRiskDecisionAudit', () => {
         decisionId: 'd-2',
         minimumTaskClass: 'TRIVIAL',
         touchedSurfaces: [],
+        riskTriggers: [],
         changedFiles: [],
       };
 

@@ -123,10 +123,12 @@ describe('plugin-review-state', () => {
     return {
       obligationId: id,
       obligationType: 'plan',
+      subjectDigest: 'test-subject-digest',
       iteration: 0,
       planVersion: 1,
       criteriaVersion: '2.0.0',
       mandateDigest: 'abc123',
+      maxReviewerOutputRepairAttempts: 1,
       createdAt: '2026-01-01T00:00:00Z',
       pluginHandshakeAt: null,
       status: 'pending',
@@ -134,6 +136,11 @@ describe('plugin-review-state', () => {
       blockedCode: null,
       fulfilledAt: null,
       consumedAt: null,
+      reviewSubjectScope: {
+        kind: 'repository_change',
+        paths: ['src/foo.ts'],
+        revisions: ['base', 'head'],
+      },
       ...overrides,
     };
   }

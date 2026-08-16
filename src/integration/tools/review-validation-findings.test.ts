@@ -47,6 +47,14 @@ function parseBlocked(result: string): { code: string; error: boolean } {
   return JSON.parse(result) as { code: string; error: boolean };
 }
 
+function findingRelation() {
+  const location = { path: 'src/foo.ts', revision: 'head' as const, line: 1 };
+  return {
+    subjectAnchors: [{ kind: 'repository_location' as const, location }],
+    evidenceLocations: [],
+  };
+}
+
 function strictFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings {
   return makeFindings({
     reviewedBy: { sessionId: 'ses_child' },
@@ -66,14 +74,18 @@ function strictAssuranceFixture(
   findings: ReviewFindings = strictFindings(),
 ): NonNullable<ReviewFindingsValidationContext['assurance']> {
   return {
+    assuranceSchemaVersion: 'review-assurance.v5' as const,
+    attempts: [],
     obligations: [
       {
         obligationId: '11111111-1111-4111-8111-111111111111',
         obligationType: 'plan' as const,
+        subjectDigest: 'test-subject-digest',
         iteration: 0,
         planVersion: 1,
         criteriaVersion: REVIEW_CRITERIA_VERSION,
         mandateDigest: REVIEW_MANDATE_DIGEST,
+        maxReviewerOutputRepairAttempts: 1,
         createdAt: new Date().toISOString(),
         pluginHandshakeAt: new Date().toISOString(),
         status: 'fulfilled' as const,
@@ -81,6 +93,16 @@ function strictAssuranceFixture(
         blockedCode: null,
         fulfilledAt: new Date().toISOString(),
         consumedAt: null,
+        reviewSubjectScope: {
+          kind: 'repository_change' as const,
+          paths: ['src/foo.ts'],
+          revisions: ['base', 'head'] as const,
+        },
+        repositoryRevisionProvenance: {
+          kind: 'available' as const,
+          headSha: 'a'.repeat(40),
+          baseSha: 'b'.repeat(40),
+        },
       },
     ],
     invocations: [
@@ -148,16 +170,19 @@ describe('validateReviewFindings', () => {
       severity: 'critical' as const,
       category: 'correctness' as const,
       message: 'contract drift',
+      relation: findingRelation(),
     };
     const majorIssue = {
       severity: 'major' as const,
       category: 'risk' as const,
       message: 'silent data loss',
+      relation: findingRelation(),
     };
     const minorIssue = {
       severity: 'minor' as const,
       category: 'quality' as const,
       message: 'stale comment',
+      relation: findingRelation(),
     };
 
     it('blocks accept with a critical blocking issue', () => {
@@ -196,7 +221,7 @@ describe('validateReviewFindings', () => {
     it('allows changes_requested with blocking issues', () => {
       const result = validateReviewFindings(
         makeFindings({ overallVerdict: 'changes_requested', blockingIssues: [criticalIssue] }),
-        makeCtx(),
+        makeCtx({ assurance: strictAssuranceFixture(), obligationType: 'plan' }),
       );
       expect(result).toBeNull();
     });
@@ -217,9 +242,17 @@ describe('validateReviewFindings', () => {
           majorRisks: [majorIssue],
           missingVerification: ['no integration test for the new path'],
         }),
-        makeCtx(),
+        makeCtx({ assurance: strictAssuranceFixture(), obligationType: 'plan' }),
       );
       expect(result).toBeNull();
+    });
+
+    it('blocks material findings without a resolved review obligation scope', () => {
+      const result = validateReviewFindings(
+        makeFindings({ overallVerdict: 'changes_requested', blockingIssues: [majorIssue] }),
+        makeCtx(),
+      );
+      expect(parseBlocked(result!).code).toBe('REVIEW_SUBJECT_SCOPE_UNAVAILABLE');
     });
 
     it('reports unable_to_review via its own SSOT path, not the coherence rule', () => {
@@ -605,10 +638,12 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
     return {
       obligationId: OBLIGATION_ID,
       obligationType: 'implement' as const,
+      subjectDigest: 'test-subject-digest',
       iteration: 0,
       planVersion: 1,
       criteriaVersion: REVIEW_CRITERIA_VERSION,
       mandateDigest: REVIEW_MANDATE_DIGEST,
+      maxReviewerOutputRepairAttempts: 1,
       createdAt: new Date().toISOString(),
       pluginHandshakeAt: null,
       status: 'pending' as const,
@@ -618,6 +653,11 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
       consumedAt: null,
       requiredChallengeCount: 1,
       requiredChallengeKind: 'implementation_challenge' as const,
+      reviewSubjectScope: {
+        kind: 'repository_change' as const,
+        paths: ['src/foo.ts'],
+        revisions: ['base', 'head'] as const,
+      },
     };
   }
 
@@ -639,7 +679,12 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
   ): ReviewFindingsValidationContext {
     return makeCtx({
       obligationType: 'implement',
-      assurance: { obligations: [implObligation()], invocations: [] },
+      assurance: {
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        obligations: [implObligation()],
+        invocations: [],
+        attempts: [],
+      },
       allowedEvidenceRefs: [IMPL_REF, FRESH_ATTEMPT_REF],
       expectedObligationId: OBLIGATION_ID,
       ...overrides,

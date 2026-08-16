@@ -32,14 +32,14 @@ Start the compliance review flow for the current FlowGuard session.
 
 2. **External Reference Resolution** (PR URLs, branches, commits, URLs, manual text):
     If the user provides a reference:
-    - **PR number**: Load PR diff via \`webfetch\` or \`gh pr view <number> --json diff\`. Add ExternalReference with type \`"pr"\`, set \`inputOrigin: "pr"\`.
-    - **Branch name**: Prefer local branch diff via \`git diff <base>...<branch>\` when no remote/PR is available; otherwise PR/branch diff via \`gh\` is acceptable. Add ExternalReference with type \`"branch"\`, source \`"local"\`, set \`inputOrigin: "branch"\`. The base is auto-detected (origin/HEAD → main → master → merge-base with HEAD); if auto-detection fails or is wrong, pass an explicit \`base\` argument (e.g. \`flowguard_review({ branch: "feature/x", base: "main" })\`).
-    - **URL**: Fetch content via \`webfetch\`. Set \`inputOrigin: "external_reference"\`.
+    - **PR number**: Pass \`prNumber\` to \`flowguard_review\`. FlowGuard resolves the exact commits and materializes the canonical diff. Add ExternalReference with type \`"pr"\`, set \`inputOrigin: "pr"\`.
+    - **Branch name**: Pass \`branch\` (and \`base\` when needed) to \`flowguard_review\`. FlowGuard resolves and freezes the local or remote branch at exact commits; never run \`git diff\` or convert a branch failure into a \`text\` review. Add ExternalReference with type \`"branch"\`, source \`"local"\` when applicable, set \`inputOrigin: "branch"\`.
+    - **URL**: Pass \`url\` to \`flowguard_review\`; FlowGuard fetches and freezes the review content. Set \`inputOrigin: "external_reference"\`.
     - **Manual text**: Use the supplied text directly. Set \`inputOrigin: "manual_text"\`.
     - **Commit SHA**: Add ExternalReference with type \`"commit"\`, source \`"local"\`, set \`inputOrigin: "external_reference"\`.
     - **Both text AND reference**: Set \`inputOrigin: "mixed"\`.
     - **No reference**: Proceed without \`references\` or \`inputOrigin\`.
-    Always preserve the original URL/reference.
+    Always preserve the original URL/reference. If FlowGuard blocks source resolution, report its recovery and stop; do not pre-load or reinterpret the source.
 
 3. **Create the review obligation** (content-aware only):
     If content was provided, the FIRST \`flowguard_review\` call MUST carry ONLY the matching
@@ -58,28 +58,22 @@ Start the compliance review flow for the current FlowGuard session.
     and NO \`pluginReviewFindings\`, manually call the \`${REVIEWER_SUBAGENT_TYPE}\` subagent
     via Task tool:
     - Use \`subagent_type: "${REVIEWER_SUBAGENT_TYPE}"\`
-    - If the response includes a \`reviewerTaskPrompt\` field, pass it VERBATIM as the Task
-      tool "prompt" argument, then append the loaded content and the Discovery context below
-      it. This canonical prompt already carries the required review context (iteration/planVersion)
-      and attestation, so the FIRST Task attempt is not blocked with
-      \`SUBAGENT_PROMPT_MISSING_CONTEXT\`. Only free-compose a prompt if no \`reviewerTaskPrompt\`
-      is provided, in which case you MUST include the \`requiredReviewAttestation\` values AND the
-      literal \`iteration=<n>, planVersion=<n>\` context in the prompt.
-    - Pass the loaded content and \`requiredReviewAttestation\` values in the prompt
-    - Pass the compact Discovery context captured in step 1 (health, drift,
-      detectedStack, verificationCandidates, risk surfaces). This is REQUIRED so the
-      external diff is reviewed against repo-native stack/verification/health/drift.
-    - Instruct the subagent to: check Discovery health and drift BEFORE making any
-      repo-dependent quality claim; correlate the reviewed PR/diff files against the
-      local Discovery snapshot; mark any claim \`NOT_VERIFIED\` when the content
-      cannot be correlated to local repository Discovery (e.g. the diff references
-      files absent from the Discovery snapshot, or local Discovery is drifted relative
-      to the reviewed branch).
-    - Instruct the subagent to return a complete \`ReviewFindings\` JSON object
-    - Retain the response unchanged for SDK/manual findings modes. In host-task
-      mode, FlowGuard captures it as Task evidence; do not parse or resubmit it.
-    - Set \`attestation.toolObligationId\` to the value from \`requiredReviewAttestation\`
-      (FlowGuard provides this UUID for every content-aware /review)
+    - The response MUST include a \`reviewerTaskPrompt\` field. Call Task only with
+      \`subagent_type: "${REVIEWER_SUBAGENT_TYPE}"\`; FlowGuard injects the canonical prompt
+      at the host boundary. Do not add a Task \`prompt\` or append review instructions.
+      The injected prompt carries the frozen material, attempt-bound Discovery snapshot,
+      required review context (iteration/planVersion), and attestation.
+      Do NOT free-compose a prompt: a repository review without a canonical
+      \`reviewerTaskPrompt\` is blocked with \`REVIEWER_CONTEXT_UNAVAILABLE\` — report that
+      code with its recovery steps and stop instead of assembling a substitute prompt.
+    - Instruct the subagent to: check the supplied Discovery health and drift status BEFORE
+      making any repo-dependent quality claim; correlate the reviewed PR/diff files against
+      the supplied Discovery snapshot; mark any claim \`NOT_VERIFIED\` when the content
+      cannot be correlated to that snapshot (e.g. the diff references files absent from the
+      snapshot, or Discovery is drifted relative to the reviewed branch).
+    - The canonical prompt already requires a complete \`ReviewerFindingsInput\` object. Do not
+      restate output instructions or construct attestation fields outside that prompt.
+    - In host-task mode, FlowGuard captures Task evidence; do not parse or resubmit it.
     Strict governance is not satisfied by copied JSON or attestation fields alone.
     Those fields are diagnostic/context only until FlowGuard persists matching
     \`ReviewInvocationEvidence\` for the obligation.
@@ -89,6 +83,12 @@ Start the compliance review flow for the current FlowGuard session.
       content was unparseable), do NOT submit \`reviewFindings\`. Report the reason to the user.
       The tool will handle this as \`SUBAGENT_UNABLE_TO_REVIEW\` and exit the flow.
       Only submit \`reviewFindings\` when the subagent returns \`accept\` or \`changes_requested\`.
+
+    - **Retry after schema_invalid or extraction_invalid**: If the Task call returns either bindOutcome, do NOT re-run the Task with the same prompt. Instead:
+      1. Look at the \`schemaErrors\` field when present. \`extraction_invalid\` means no complete reviewer findings payload could be extracted.
+      2. Call \`flowguard_review\` again with the original content fields and \`reviewObligationId\` from \`requiredReviewAttestation.toolObligationId\`. This produces a fresh \`reviewerTaskPrompt\`; validation errors are embedded when available.
+       3. Invoke a new Task with only \`subagent_type: "${REVIEWER_SUBAGENT_TYPE}"\`; FlowGuard injects the new canonical prompt.
+      4. If the Task is blocked with \`REVIEWER_OUTPUT_RETRY_EXHAUSTED\`, the retry budget is exhausted — report to the operator and stop; do NOT fabricate findings, guess a verdict, or call any other authority path.
 
 5. Complete content-aware \`flowguard_review\` according to the review invocation mode:
     - If the response says host-task evidence was verified or policy requires host-visible

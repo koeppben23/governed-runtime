@@ -88,4 +88,12 @@ describe('OpenCode reviewer capability contract', () => {
     );
     expect(debugTool('task')).toContain('Tool task is disabled');
   });
+
+  it('carves out the sanctioned observation tool from the deny rules', () => {
+    // The frozen-repository-authority generation requires EXACTLY one
+    // reviewer-callable FlowGuard tool: flowguard_observe_repository. The
+    // explicit allow must override the generic flowguard_* deny entries.
+    const direct = debugTool('flowguard_observe_repository');
+    expect(direct).not.toContain('Tool flowguard_observe_repository is disabled');
+  });
 });

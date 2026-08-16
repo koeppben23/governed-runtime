@@ -11,6 +11,15 @@ const EXTERNAL_ACTION_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN ?? null;
 const GITHUB_API = process.env.GITHUB_API_URL ?? 'https://api.github.com';
 
+/**
+ * Per-request upper bound for the GitHub API existence checks. Without a
+ * bounded timeout a stalled connection (proxy, throttled egress, cold DNS)
+ * can hang the whole policy check for minutes; the vitest end-to-end test
+ * runs this script against the repository workflow files and observed
+ * 15s-timeout flakiness on CI.
+ */
+const GITHUB_VERIFY_TIMEOUT_MS = 4000;
+
 const shaExistsCache = new Map();
 
 function stripInlineComment(value) {
@@ -101,7 +110,11 @@ async function verifyShaExists(owner, repo, sha) {
 
   try {
     const url = `${GITHUB_API}/repos/${owner}/${repo}/git/commits/${sha}`;
-    const response = await fetch(url, { method: 'GET', headers });
+    const response = await fetch(url, {
+      method: 'GET',
+      headers,
+      signal: AbortSignal.timeout(GITHUB_VERIFY_TIMEOUT_MS),
+    });
     const exists = response.ok;
     shaExistsCache.set(cacheKey, exists);
     if (!exists && response.status === 404) {

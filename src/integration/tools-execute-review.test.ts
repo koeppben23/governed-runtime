@@ -139,9 +139,6 @@ const actorMock = await import('../adapters/actor.js');
 // The P34a test doesn't use gh-cli, so this is safe.
 
 vi.mock('../adapters/gh-cli', () => ({
-  hasGhCli: vi.fn().mockReturnValue(true),
-  loadPrDiff: vi.fn().mockReturnValue('diff --git a/src/file.ts b/src/file.ts\n+new line'),
-  loadBranchDiff: vi.fn().mockReturnValue('diff --git a/src/file.ts b/src/file.ts\n+branch line'),
   resolveBranchReviewSource: vi.fn().mockImplementation((branch: string) => ({
     branch,
     baseBranch: 'main',

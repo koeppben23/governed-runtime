@@ -218,10 +218,45 @@ describe('archive', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.status).toContain('archived');
+      expect(result.archiveStatus).toBe('not_verifiable');
+      expect(String(result.status)).toContain('requires raw');
+      expect(wsMock.verifyArchive).not.toHaveBeenCalled();
       expect(typeof result.archivePath).toBe('string');
       // Verify tar.gz file exists on disk
       await expect(fs.access(result.archivePath as string)).resolves.toBeUndefined();
     });
+
+    it.skipIf(!tarOk)(
+      'preserves verified regulated completion evidence when creating a sharing archive',
+      async () => {
+        await hydrateSession();
+        const { computeFingerprint, sessionDir: resolveSessionDir } =
+          await import('../adapters/workspace/index.js');
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+        const state = await readState(sessDir);
+        await writeState(sessDir, {
+          ...state!,
+          phase: 'COMPLETE',
+          archiveStatus: 'verified',
+          policySnapshot: {
+            ...state!.policySnapshot,
+            mode: 'regulated',
+            requestedMode: 'regulated',
+          },
+        });
+
+        const result = parseToolResult(await archive.execute({}, ctx));
+        const persisted = await readState(sessDir);
+        expect(result.archiveStatus).toBe('not_verifiable');
+        expect((result.productNextAction as { text: string }).text).toContain(
+          'redacted sharing archive',
+        );
+        expect(persisted?.archiveStatus).toBe('verified');
+        expect(persisted?.lastExportStatus).toBe('not_verifiable');
+        expect(persisted?.lastExportKind).toBe('redacted');
+      },
+    );
 
     it.skipIf(!tarOk)(
       'archive manifest includes derived ticket/plan artifacts with digests',
@@ -419,6 +454,7 @@ describe('archive', () => {
           title: 'Test ADR',
           adrText: '## Context\nTest\n## Decision\nTest\n## Consequences\nTest',
           status: 'accepted',
+          reviewCompletion: 'reviewer_accepted',
           createdAt: new Date().toISOString(),
           digest: 'abc123',
         },

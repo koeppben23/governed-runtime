@@ -25,9 +25,12 @@ describe('templates/commands/review (#401 Discovery context)', () => {
       expect(REVIEW_COMMAND).toContain('repo-dependent quality claim');
     });
 
-    it('passes Discovery context to the manually-spawned reviewer subagent', () => {
+    it('forbids free-composed prompts: the canonical reviewerTaskPrompt is mandatory', () => {
       expect(REVIEW_COMMAND).toContain(REVIEWER_SUBAGENT_TYPE);
-      expect(REVIEW_COMMAND).toMatch(/Pass the compact Discovery context/);
+      expect(REVIEW_COMMAND).toMatch(
+        /Do NOT free-compose a prompt[\s\S]*REVIEWER_CONTEXT_UNAVAILABLE/,
+      );
+      expect(REVIEW_COMMAND).toContain('attempt-bound Discovery');
     });
   });
 
@@ -35,7 +38,7 @@ describe('templates/commands/review (#401 Discovery context)', () => {
   describe('BAD — NOT_VERIFIED correlation rule', () => {
     it('marks Discovery-dependent claims NOT_VERIFIED when correlation fails', () => {
       expect(REVIEW_COMMAND).toContain('NOT_VERIFIED');
-      expect(REVIEW_COMMAND).toMatch(/cannot be correlated to local repository Discovery/);
+      expect(REVIEW_COMMAND).toMatch(/cannot be correlated to that snapshot/);
     });
 
     it('does not invent repository truth when Discovery is unavailable/degraded/drifted', () => {
@@ -85,9 +88,25 @@ describe('templates/commands/review (#401 Discovery context)', () => {
       expect(REVIEW_COMMAND).toMatch(/not\s+a terminal failure/);
     });
 
-    it('documents local branch diff fallback when no remote PR is available', () => {
-      expect(REVIEW_COMMAND).toContain('git diff <base>...<branch>');
-      expect(REVIEW_COMMAND).toContain('when no remote/PR is available');
+    it('keeps branch materialization inside FlowGuard', () => {
+      expect(REVIEW_COMMAND).toContain('never run `git diff`');
+      expect(REVIEW_COMMAND).not.toContain('git diff <base>...<branch>');
+    });
+
+    it('uses host injection for the supplied reviewer task prompt', () => {
+      expect(REVIEW_COMMAND).toContain('FlowGuard injects the canonical prompt');
+      expect(REVIEW_COMMAND).toContain('Do not add a Task `prompt`');
+    });
+
+    it('routes unextractable reviewer output through a fresh repair prompt', () => {
+      expect(REVIEW_COMMAND).toContain('extraction_invalid');
+      expect(REVIEW_COMMAND).toMatch(/do NOT re-run the Task with the same prompt/);
+      expect(REVIEW_COMMAND).toMatch(/fresh `reviewerTaskPrompt`/);
+    });
+
+    it('requires verdict-only completion after host-task evidence binds', () => {
+      expect(REVIEW_COMMAND).toContain('Do NOT submit, copy, or alter `reviewFindings`');
+      expect(REVIEW_COMMAND).toMatch(/reviewObligationId[\s\S]*reviewVerdict/);
     });
   });
 });

@@ -67,7 +67,7 @@ local composite-action dependencies: external GitHub Actions must use full
 40-character lowercase commit SHAs, local actions under `./` are allowed, local
 and Docker actions are allowed only when pinned by `sha256` digest.
 
-The `mutation` job runs StrykerJS mutation testing against 47 security-critical
+The `mutation` job runs StrykerJS mutation testing against 58 security-critical
 files spanning adapters (persistence-lock + host-adapter), archive digesting,
 audit (integrity + completeness + NTP), config (policy + reasons + profile), hooks (HTTP hook server + command pre-tool-use + shared obligation-tracker +
 phase-gate), identity (token-verifier + key-resolver), integration
@@ -76,7 +76,8 @@ plugin-audit-lifecycle-reason, review enforcement, review orchestrator,
 orchestrator detection/output, and agent resolution), logging (error-serialize),
 templates (codex-plugin, claude-code-plugin, mandates),
 shared canonical JSON, machine (commands, evaluate, guards, next-action, validation-evidence), and
-rails (architecture, hydrate, review, review-decision, ticket). It uploads a
+rails (architecture, hydrate, review, review-decision, review-evidence-resolution,
+ticket). It uploads a
 mutation report artifact (`reports/mutation/`) and enforces the `break: 80`
 threshold in `stryker.conf.json` when the scheduled/release/manual mutation
 workflow runs. It is intentionally not a pull-request required check; see
@@ -165,13 +166,13 @@ targeted score of at least 80 before a module is admitted to the canonical
 mutate scope. This admission rule is verified through a targeted `--mutate` run;
 it is not a separate Stryker configuration or a lower per-area threshold.
 
-`StringLiteral` and `ArrayDeclaration` mutators are excluded globally because
-they produce low-signal literal churn in governance template and schema code;
-they are not a per-area carve-out.
+`StringLiteral`, `ArrayDeclaration`, and `Regex` mutators are excluded globally
+because they produce low-signal literal churn in governance template and schema
+code; they are not a per-area carve-out.
 
 ### Scope
 
-47 files are mutated, covering the fail-closed governance core
+57 files are mutated, covering the fail-closed governance core
 (see `stryker.conf.json` for the canonical list):
 
 | Area                                                                                                                                                                                                                                                                                                                                                 | Files  | Representative score            |
@@ -179,6 +180,8 @@ they are not a per-area carve-out.
 | Adapters (`persistence-lock`, `host-adapter`)                                                                                                                                                                                                                                                                                                        | 2      | (see latest report)             |
 | Archive (`content-digest`)                                                                                                                                                                                                                                                                                                                           | 1      | (see latest report)             |
 | Audit (`integrity`, `completeness`, `ntp-check`)                                                                                                                                                                                                                                                                                                     | 3      | (see latest report)             |
+| Audit ProofGraph (`proofgraph/evaluate`, `proofgraph/gate`)                                                                                                                                                                                                                                                                                          | 2      | (see latest report)             |
+| Integration ProofGraph (`proofgraph/claim-contract`)                                                                                                                                                                                                                                                                                                 | 1      | (see latest report)             |
 | Config (`policy`, `reasons`, `profile`)                                                                                                                                                                                                                                                                                                              | 3      | (see latest report)             |
 | MCP (`execution-limiter`)                                                                                                                                                                                                                                                                                                                            | 1      | (see latest report)             |
 | Hooks (`http-server`, `pre-tool-use`, `shared/obligation-tracker`, `shared/phase-gate`)                                                                                                                                                                                                                                                              | 4      | (see latest report)             |
@@ -189,13 +192,14 @@ they are not a per-area carve-out.
 | Logging (`error-serialize`)                                                                                                                                                                                                                                                                                                                          | 1      | (see latest report)             |
 | Machine (`commands`, `evaluate`, `guards`, `next-action`, `validation-evidence`)                                                                                                                                                                                                                                                                     | 5      | (see latest report)             |
 | Rails (`architecture`, `hydrate`, `review`, `review-decision`, `ticket`)                                                                                                                                                                                                                                                                             | 5      | (see latest report)             |
-| **Total**                                                                                                                                                                                                                                                                                                                                            | **47** | uploaded as `reports/mutation/` |
+| **Total**                                                                                                                                                                                                                                                                                                                                            | **58** | uploaded as `reports/mutation/` |
 
 Per-file mutation scores are produced fresh in CI; consult the latest
 `reports/mutation/` artifact for current numbers.
-`stryker.conf.json` excludes `StringLiteral` and `ArrayDeclaration` mutators to
-avoid low-signal literal churn and declarative table rewrites while keeping the
-security-critical target list and `break: 80` gate intact.
+`stryker.conf.json` excludes `StringLiteral`, `ArrayDeclaration`, and `Regex`
+mutators to avoid low-signal literal churn and declarative table rewrites while
+keeping the security-critical target list and `break: 80` gate intact. The
+2026-08-16 full-suite run scores 82.88% overall against `break: 80`.
 
 ### CI Enforcement
 

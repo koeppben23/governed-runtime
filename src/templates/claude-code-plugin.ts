@@ -241,8 +241,9 @@ Use the existing FlowGuard MCP tools. Do not interpret FlowGuard phase or policy
 ## Phase 2 — Submit the plan
 3. Write the plan in markdown with these required sections: \`## Objective\`, \`## Approach\`, \`## Steps\` (each step names a specific file path and a concrete change; prefer vertical tracer-bullet slices over horizontal layer-by-layer builds, and favor deep modules over shallow pass-throughs), \`## Files to Modify\`, \`## Edge Cases\`, \`## Validation Criteria\`, \`## Verification Plan\` (cite the command AND its Source, e.g. \`Source: package.json:scripts.test\`, or state \`NOT_VERIFIED\` with recovery steps).
    - Resolve open questions the repository can answer by exploring the codebase instead of asking the user; cross-check stated behavior against the actual code and surface contradictions in the plan.
-4. Submit the plan only through \`mcp__flowguard__flowguard_plan({ planText })\` with the full plan markdown. When revising, include the COMPLETE plan text, never a diff.
-5. Read the response; the \`next\` field carries the review workflow.
+4. Derive structured claim declarations for the plan: each names a falsifiable statement (\`statement\`), its governing section (\`authoritySectionId\`), whether it is \`critical\`, its \`claimScope\` (\`specific_behavior\` or \`suite\`), a fresh \`claimId\` UUID, and the \`expectedCheckId\` that must pass after implementation. Critical \`specific_behavior\` claims require \`counterexampleRequirement\`: \`{ kind: "assertion", checkId: "...", assertion: { providerId: "...", localId: "..." } }\`. \`suite\` claims require \`{ kind: "aggregate_check", checkId: "..." }\`; structured assertion reports never establish aggregate coverage.
+5. Submit the plan only through \`mcp__flowguard__flowguard_plan({ planText, claims })\` with the full plan markdown and those declarations. When revising, include the COMPLETE plan text and claims, never a diff.
+6. Read the response; the \`next\` field carries the review workflow.
 
 ## Phase 3 — Review
 ${claudeReviewLoop('mcp__flowguard__flowguard_plan', 'plan')}
@@ -265,8 +266,8 @@ Use the existing FlowGuard MCP tools. Do not interpret FlowGuard phase or policy
 2. ${CLAUDE_DISCOVERY_CAPTURE}
 
 ## Phase 2 — Submit the ADR
-3. For a new ADR (READY phase): write it in MADR format with the mandatory sections \`## Context\`, \`## Decision\`, and \`## Consequences\`, then call \`mcp__flowguard__flowguard_architecture({ title, adrText })\` (the ADR id is auto-generated).
-4. For a revision (ARCHITECTURE phase, after changes_requested): revise the ADR to address the findings and submit the verdict in the review loop below — do NOT call \`mcp__flowguard__flowguard_architecture({ title, adrText })\` again; that path is for a brand-new ADR. When revising, include the COMPLETE ADR text.
+3. For a new ADR (READY phase): write it in MADR format with the mandatory sections \`## Context\`, \`## Decision\`, and \`## Consequences\`, derive structured claim declarations (\`claimId\`, \`statement\`, \`critical\`, \`authoritySectionId\`, \`requiredReviewEvidence\`), then call \`mcp__flowguard__flowguard_architecture({ title, adrText, claims })\` (the ADR id is auto-generated). Architecture claims are advisory \`derived_signal\` records and never block an approval.
+4. For a revision (ARCHITECTURE phase, after changes_requested): revise the ADR to address the findings and submit the verdict in the review loop below — do NOT call \`mcp__flowguard__flowguard_architecture({ title, adrText, claims })\` again; that path is for a brand-new ADR. When revising, include the COMPLETE ADR text.
 5. Read the response; the \`next\` field carries the review workflow.
 
 ## Phase 3 — Review

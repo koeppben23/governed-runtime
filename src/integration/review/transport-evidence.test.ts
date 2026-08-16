@@ -9,7 +9,11 @@ import {
   PLAN_RECORD,
   TICKET,
 } from '../../fixtures.js';
-import { appendReviewObligation, createReviewObligation } from './assurance.js';
+import {
+  appendReviewObligation,
+  artifactReviewSubjectScope,
+  createReviewObligation,
+} from './assurance.js';
 import { bindExternalReviewEvidence } from './transport-evidence.js';
 
 function findingsFor(
@@ -49,9 +53,12 @@ describe('external review transport evidence binding', () => {
     await writeFile(join(sessDir, 'review-evidence', 'bad.json'), '{"not":"findings"}', 'utf-8');
     const obligation = createReviewObligation({
       obligationType: 'plan',
+      repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
       iteration: 0,
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
+      subjectDigest: 'test',
+      reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
     });
     const state = makeState('PLAN', {
       ticket: TICKET,
@@ -77,9 +84,12 @@ describe('external review transport evidence binding', () => {
     await mkdir(join(sessDir, 'review-evidence'));
     const obligation = createReviewObligation({
       obligationType: 'plan',
+      repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
       iteration: 0,
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
+      subjectDigest: 'test',
+      reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
     });
     await writeFile(
       join(sessDir, 'review-evidence', 'ok.json'),
@@ -110,9 +120,12 @@ describe('external review transport evidence binding', () => {
     await mkdir(join(sessDir, 'review-evidence'));
     const obligation = createReviewObligation({
       obligationType: 'plan',
+      repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
       iteration: 0,
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
+      subjectDigest: 'test',
+      reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
     });
     await writeFile(
       join(sessDir, 'review-evidence', 'same-actor.json'),
@@ -152,9 +165,12 @@ describe('external review transport evidence binding', () => {
     await mkdir(join(sessDir, 'review-evidence'));
     const obligation = createReviewObligation({
       obligationType: 'plan',
+      repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
       iteration: 0,
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
+      subjectDigest: 'test',
+      reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
     });
     await writeFile(
       join(sessDir, 'review-evidence', 'normalized-same-actor.json'),
@@ -188,9 +204,12 @@ describe('external review transport evidence binding', () => {
     await mkdir(join(sessDir, 'review-evidence'));
     const obligation = createReviewObligation({
       obligationType: 'plan',
+      repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
       iteration: 0,
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
+      subjectDigest: 'test',
+      reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
     });
     await writeFile(
       join(sessDir, 'review-evidence', 'missing-reviewer-actor.json'),

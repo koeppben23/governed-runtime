@@ -17,6 +17,8 @@ import type { Phase } from '../state/schema.js';
 import {
   lookupStatusLabel,
   parseArchiveLabel,
+  projectReasonFromRegistry,
+  projectDetailFields,
   PresentationContractError,
   type PresentationDocument,
   type PresentationSection,
@@ -28,6 +30,7 @@ import type {
   FinishConclusionProjection,
 } from './status-why-finish.js';
 import type { FinishCard } from './status.js';
+import { buildProofGraphSection } from '../presentation/proof-summary.js';
 
 // ─── Exit Option Copy ──────────────────────────────────────────────────────────
 
@@ -69,16 +72,14 @@ export function buildFinishDocument(
 
   // 2. Blocked
   if (f.blocker.blocked && f.blocker.reasonText) {
-    sections.push({
-      kind: 'blocker',
-      heading: 'Blocked',
-      code: f.blocker.reasonCode,
-      text: f.blocker.reasonText,
-    });
+    sections.push(buildBlockerSection(f.blocker.reasonCode, f.blocker.reasonText));
   }
 
   // 3. Evidence
   sections.push(buildEvidenceSection(f));
+
+  // 3b. ProofGraph
+  sections.push(buildProofGraphSection(f.proofSummary));
 
   // 4. Archive
   if (f.readiness.archiveStatus) {
@@ -145,6 +146,17 @@ export function buildFinishDocument(
 }
 
 // ─── Internal Builders ─────────────────────────────────────────────────────────
+
+function buildBlockerSection(code: string | null, reasonText: string): PresentationSection {
+  const reasonProjection = code ? projectReasonFromRegistry(code) : null;
+  return {
+    kind: 'blocker',
+    heading: 'Blocked',
+    code,
+    text: reasonProjection?.headline ?? reasonText,
+    ...projectDetailFields(reasonProjection),
+  };
+}
 
 function buildEvidenceSection(finish: FinishCard): PresentationSection {
   const items: KeyValueItem[] = [

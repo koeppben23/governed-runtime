@@ -76,6 +76,14 @@ describe('buildProductNextAction', () => {
       expect(product.text).toContain('failed');
     });
 
+    it('SESSION_COMPLETE redacted archive is not presented as a failure', () => {
+      const action = resolveNextAction('COMPLETE', makeProgressedState('COMPLETE'));
+      const product = buildProductNextAction(action, 'COMPLETE', false, 'not_verifiable');
+      expect(product.commands).toEqual(['/status', '/export']);
+      expect(product.text).toContain('redacted sharing archive');
+      expect(product.text).not.toContain('verification failed');
+    });
+
     it('RUN_TICKET (TICKET, no ticket)', () => {
       const action = resolveNextAction('TICKET', makeState('TICKET'));
       const product = buildProductNextAction(action, 'TICKET');
@@ -127,7 +135,7 @@ describe('buildProductNextAction', () => {
       const action = { code: 'CHOOSE_FLOW', text: '', commands: [] as string[] };
       const product = buildProductNextAction(action, 'READY');
       expect(product.text).toBe(
-        'Choose your workflow: /task (development), /architecture (ADR), /review (compliance).',
+        'Choose your workflow: /task (development), /architecture (ADR), /review (compliance/content).',
       );
       expect(product.commands).toEqual(['/task', '/architecture', '/review']);
     });

@@ -81,6 +81,8 @@ export class PresentationContractError extends Error {
 
 /** Central action representation for commands and non-command actions. */
 export interface PresentationAction {
+  /** Host-neutral semantic identity of the action (added PR 6). */
+  readonly intent?: import('./action-intent.js').ActionIntent;
   /** Slash-command invocation (e.g. "/approve") or null for non-command actions. */
   readonly invocation: string | null;
   /** Human-readable description of what the action does. */
@@ -109,10 +111,42 @@ export interface ArtifactItem {
 
 // ─── Finding Groups ────────────────────────────────────────────────────────────
 
+/** A repository location already validated by the review boundary. */
+export interface FindingRepositoryLocation {
+  readonly path: string;
+  readonly revision: 'base' | 'head';
+  readonly line?: number;
+  readonly endLine?: number;
+}
+
+/** A reviewed subject, represented without state-layer validation types. */
+export type FindingSubject =
+  | { readonly kind: 'repository_location'; readonly location: FindingRepositoryLocation }
+  | {
+      readonly kind: 'artifact_section';
+      readonly artifactKind: 'plan' | 'adr';
+      readonly sectionPath: readonly { readonly headingText: string }[];
+    }
+  | {
+      readonly kind: 'content';
+      readonly subjectDigest: string;
+      readonly range?: { readonly startLine: number; readonly endLine?: number };
+    }
+  | { readonly kind: 'implementation'; readonly implementationDigest: string };
+
+/** Structured relation accepted at the presentation boundary after validation upstream. */
+export interface FindingRelationPresentation {
+  readonly subjectAnchors: readonly FindingSubject[];
+  readonly evidenceLocations: readonly FindingRepositoryLocation[];
+}
+
 export interface FindingItem {
   readonly category: string;
   readonly message: string;
-  readonly location?: string;
+  /** Reviewed locations or artifact sections. Absent for legacy findings. */
+  readonly subjects?: readonly FindingSubject[];
+  /** Repository evidence locations. Absent for legacy findings. */
+  readonly evidence?: readonly FindingRepositoryLocation[];
 }
 
 export interface FindingGroup {
@@ -162,10 +196,16 @@ export interface BlockerSection {
   readonly heading?: string;
   /** Reason code — rendered in backticks. Null/omitted when not available. */
   readonly code: string | null;
-  /** Human-readable reason text. */
+  /** Human-readable reason text. For migrated codes this is the copy headline. */
   readonly text: string;
   /** Recovery instruction, when available from the canonical source. */
   readonly recovery?: string;
+  /** Canonical registry-interpolated message for migrated codes. */
+  readonly canonicalMessage?: string;
+  /** Human-authored context for migrated codes, when available. */
+  readonly explanation?: string;
+  /** Human-readable impact copy (from the central impact authority). */
+  readonly impact?: string;
 }
 
 export interface ArtifactListSection {
@@ -179,6 +219,8 @@ export interface FindingsSection {
   readonly kind: 'findings';
   /** Rendered as `## heading` when present. */
   readonly heading?: string;
+  /** Compact cards summarize relations; reports expand every anchor and evidence location. */
+  readonly detail?: 'compact' | 'expanded';
   readonly groups: readonly FindingGroup[];
 }
 
@@ -197,6 +239,14 @@ export interface TextSection {
   readonly heading?: string;
   /** Validated markdown content — must pass {@link normalizedMarkdown}. */
   readonly content: NormalizedMarkdown;
+}
+
+/** A canonical, state-derived ProofGraph summary. */
+export interface ProofGraphSection {
+  readonly kind: 'proofGraph';
+  readonly proof: import('./proof-model.js').CompactProofPresentation;
+  readonly detail?: 'human' | 'diagnostic';
+  readonly humanSummary?: import('./claim-human-projection.js').HumanProofSummary;
 }
 
 export interface CodeSection {
@@ -346,6 +396,7 @@ export type PresentationSection =
   | FindingsSection
   | ChecklistSection
   | TextSection
+  | ProofGraphSection
   | CodeSection
   | NoticeSection
   | BulletListSection
@@ -393,7 +444,33 @@ export type PresentationConclusion =
 export type PresentationForm =
   'success' | 'blocked' | 'decision' | 'review_pending' | 'terminal' | 'diagnostic';
 
-// ─── Document Types ────────────────────────────────────────────────────────────
+// ─── Progressive Disclosure ────────────────────────────────────────────────────
+
+/**
+ * Controls the information density of a presentation surface.
+ *
+ * This is a presentation-composition concept — never domain state, never
+ * ProofGraph state, never persisted. It selects which canonical facts are
+ * visible at each output level.
+ *
+ *   summary     — immediate state + one primary action + compressed context
+ *   explanation — cause + impact + recovery + relevant unresolved claim context
+ *   diagnostic  — canonical codes, raw states, structured identifiers, full detail
+ */
+export type PresentationDetailLevel = 'summary' | 'explanation' | 'diagnostic';
+
+/**
+ * Presentation composition options passed to surface builders.
+ *
+ * `detail` controls surface-specific information density. It MUST NOT affect
+ * canonical workflow, verification, evidence, blocker, recovery, or approval
+ * semantics — it is a visibility/presentation-layer concern only.
+ */
+export interface PresentationBuildOptions {
+  readonly detail: PresentationDetailLevel;
+}
+
+// ─── Progressive Disclosure ────────────────────────────────────────────────────
 
 export interface CompactCardDocument {
   readonly kind: 'compact_card';

@@ -81,8 +81,8 @@ cd demos/java-task-manager
 
 | Action                  | What I Say                                                                                                                                                              |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/export`               | "Ich exportiere das Architecture-Evidence-Archiv. FlowGuard erzeugt ein verifizierbares Paket mit ADR, Review-Findings, Audit-Trail und Manifest."                      |
-| Show `/export` response | "`archiveStatus: verified` — das Archiv wurde direkt nach der Erstellung verifiziert."                                                                                  |
+| `/export`               | "Ich exportiere ein redigiertes Sharing-Archiv mit ADR, Review-Findings, Audit-Trail-Projektionen und Manifest."                                                        |
+| Show `/export` response | "`archiveStatus: not_verifiable` ist ehrlich: Ohne rohe State- und Audit-Dateien kann die kanonische Hash-Chain nicht geprüft werden."                                  |
 | Archive location        | "Das Archiv liegt unter `~/.config/opencode/workspaces/.../archive/`. Es uberlebt Workspace-Resets — die Archive sind außerhalb des Projektverzeichnisses gespeichert." |
 
 ### Transition to Part 2
@@ -170,9 +170,9 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ### Step 5 — Validate (all tests pass, disabled test does not block)
 
-| Action   | Phase                       | What I Say                                                                                                                                                                                                                                                                                                                      |
-| -------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/check` | VALIDATION → IMPLEMENTATION | "FlowGuard führt die Validierung durch: `./mvnw verify` (der aus den Repo-Wrappern erkannte Verifikationsbefehl — ein Superset, das die Test-Phase mit ausführt). Alle aktiven Tests sind grün — der `@Disabled`-Test läuft nicht mit. Deshalb ist die Validation erfolgreich und FlowGuard erlaubt jetzt die Implementierung." |
+| Action   | Phase                       | What I Say                                                                                                                                                                                                                                                                                             |
+| -------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/check` | VALIDATION → IMPLEMENTATION | "FlowGuard führt die beiden erkannten Prüfungen aus: `npm run build` startet `./mvnw verify`; `npm run test` führt die Controller-Testklasse gezielt aus. Im Baseline bleibt der Regressionstest noch `@Disabled`, deshalb sind beide Checks grün. Erst danach erlaubt FlowGuard die Implementierung." |
 
 ---
 
@@ -194,9 +194,22 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 > the fix is validated **in-flow**, inside the audit trail — not only in the manual
 > Step 9 afterwards.
 
-| Action   | Phase                         | What I Say                                                                                                                                                                                                                                                                                                                                |
-| -------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/check` | IMPL_VALIDATION → IMPL_REVIEW | "FlowGuard führt die Prüfungen jetzt gegen den implementierten Code aus. Der zuvor `@Disabled` Regressionstest ist aktiviert und läuft grün — der Fix ist in-flow validiert. Erst dann öffnet FlowGuard das unabhängige Review. Schlägt ein Check hier fehl, geht es zurück in die IMPLEMENTATION (der Code ist falsch, nicht der Plan)." |
+| Action   | Phase                         | What I Say                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| -------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/check` | IMPL_VALIDATION → IMPL_REVIEW | "FlowGuard führt beide Prüfungen jetzt gegen den implementierten Code aus: der vollständige Build und der gezielte Controller-Test. Der zuvor `@Disabled` Regressionstest ist aktiviert und läuft grün. Die zwei unterschiedlichen Validation Attempts sind damit getrennt an positive und adversariale Evidence gebunden. Erst dann öffnet FlowGuard das unabhängige Review. Schlägt ein Check hier fehl, geht es zurück in die IMPLEMENTATION (der Code ist falsch, nicht der Plan)." |
+
+---
+
+### Step 6c — Inspect the Automatically Materialized ProofGraph
+
+> The approved plan claims are automatically materialized when the implementation
+> checks complete. The certified happy path does not call
+> `flowguard_declare_contract`: manually declared claims are a separate advisory
+> path and are demonstrated in their own session.
+
+| Action                                   | Phase       | What I Say                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ---------------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `flowguard_status({ proofGraph: true })` | IMPL_REVIEW | "Die detaillierte `proofGraph`-Projektion zeigt die zwei Fact-Claims samt getrennten Build- und Test-References. `persistedProofGraph` zeigt `contractClaimCount: 2`, `provenCount: 2` und `coverage: PROVEN`. `proofApprovals` zeigt Plan-Certificate, Implementation-Digest sowie Evidence- und Counterexample-Ref-Counts. `proofGraphGate.gated: false` erklärt separat, warum nur die certificate-autorisierten Facts die finale Freigabe beeinflussen. `PROVEN` ersetzt weder unabhängiges Review noch das Human Gate." |
 
 ---
 
@@ -253,8 +266,8 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 | Action                   | What I Say                                                                                                                                                                             |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/export`                | "Ich exportiere das Audit-Archive. FlowGuard erzeugt ein verifizierbares Paket mit allen Artefakten."                                                                                  |
-| Show `/export` response  | "Die `/export`-Antwort zeigt: `archiveStatus: verified` und `Session archived and verified.` — FlowGuard hat das Archiv direkt nach der Erstellung verifiziert."                       |
+| `/export`                | "Ich exportiere ein redigiertes Sharing-Archiv mit allen freigegebenen Artefakten."                                                                                                    |
+| Show `/export` response  | "Die Antwort zeigt `archiveStatus: not_verifiable`: Das Archiv ist erstellt, enthält aber absichtlich keine Rohdaten für eine kanonische Chain-Verifikation."                          |
 | Show export archive path | "Das Archiv liegt in `~/.config/opencode/workspaces/.../archive/` — außerhalb des Projektverzeichnisses. Es uberlebt Workspace-Resets und ist unabhängig von der aktiven MCP-Session." |
 
 ---
@@ -386,3 +399,10 @@ If someone in the audience knows the other name, this is why both exist:
 - **Transition between Part 1 and Part 2:** Close OpenCode Desktop, reopen the same
   workspace. No snapshot restore is needed — the Architecture flow does not modify files.
   A fresh MCP transport gives a clean READY session for the Implementation flow.
+- **Verified auditor export:** A complete raw-evidence archive requires global
+  `archive.redaction.allowRawExport=true` and the explicit invocation
+  `/export redactionMode=none includeRaw=true`. It contains unredacted evidence
+  and must be handled as confidential material. The default redacted export is
+  intentionally `not_verifiable`, not a failed integrity check.
+  This permission applies to manual exports; regulated clean completion creates
+  its mandatory local raw-evidence archive automatically.

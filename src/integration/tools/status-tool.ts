@@ -14,18 +14,24 @@
 import { z } from 'zod';
 
 import type { ToolDefinition } from './helpers.js';
+import { formatError } from './error-format.js';
 import {
   resolveWorkspacePaths,
   withReadOnlySession,
   formatBlocked,
-  formatError,
   formatEval,
   appendNextAction,
   enrichWithNextAction,
 } from './helpers.js';
 
 import type { SessionState } from '../../state/schema.js';
-import type { ReviewFindings } from '../../state/evidence.js';
+import { latestReviewSummary } from './status-summary.js';
+import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval.js';
+import {
+  computeProviderCapabilities,
+  resolveRuntimeWithProfileIds,
+} from './status-provider-projection.js';
+import type { ResolvedVerificationCandidate } from '../verification-runtime-resolution.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import type { EvalResult } from '../../machine/evaluate.js';
 import type { CompletenessReport } from '../../audit/completeness.js';
@@ -53,13 +59,32 @@ import { ActorClaimError } from '../../adapters/actor.js';
 // Config
 import { evaluateCompleteness } from '../../audit/completeness.js';
 import {
+  summarizePersistedProofGraph,
+  summarizeProofGraph,
+} from '../../audit/proofgraph/summary.js';
+import {
+  evaluateStructuralSurfaces,
+  bindStructuralEvidence,
+  surfaceDigestMap,
+} from '../proofgraph/structural-provider.js';
+import {
+  loadMutationReport,
+  evaluateMutationProfiles,
+  resolveVerifiedMutationVerdicts,
+} from '../proofgraph/mutation-provider.js';
+import { bindMutationEvidence } from '../../audit/proofgraph/mutation-binder.js';
+import { checkRegistrationConsistency } from '../proofgraph/registration-consistency.js';
+import { checkConfigDefaultConsistency } from '../proofgraph/config-default-consistency.js';
+import { evaluateProofGraphGate } from '../../audit/proofgraph/gate.js';
+import { buildProofApprovalProjection } from '../proofgraph/approval-projection.js';
+import {
   buildStatusProjection,
   buildEvidenceDetailProjection,
   buildBlockedProjection,
   buildContextProjection,
   buildReadinessProjection,
-  buildFinishCard,
 } from '../status.js';
+import { buildFinishCard } from '../status-finish.js';
 import {
   buildWhyPresentationProjection,
   buildFinishPresentationProjection,
@@ -73,7 +98,7 @@ import { buildStatusDocument, buildNoSessionDocument } from '../status-presentat
 import { buildWhyDocument } from '../why-presentation.js';
 import { buildFinishDocument } from '../finish-presentation.js';
 import { renderMarkdown } from '../../presentation/index.js';
-
+import { emitDetailRequested } from './presentation-telemetry.js';
 /**
  * Build identity for the governanceMandates block — surfaces the installed
  * plugin's version + git SHA at runtime so a stale installed dist (older than
@@ -98,6 +123,7 @@ interface StatusArgs {
   context?: boolean;
   readiness?: boolean;
   finish?: boolean;
+  proofGraph?: boolean;
 }
 
 /**
@@ -129,15 +155,72 @@ function buildCheckProjectionFields(state: SessionState): Record<string, unknown
 }
 
 /**
- * Resolve a focused projection response, or null if no projection flag is set.
+ * Build the focused, read-only ProofGraph projection response (advisory).
+ * Never approves or gates; surfaces claim states, freshness, and critical gaps.
  */
-async function resolveProjection(
-  args: StatusArgs,
+async function buildProofGraphProjectionResponse(
   state: SessionState,
   policy: FlowGuardPolicy,
-  sessDir: string,
-  presentation: PresentationRenderOptions,
-): Promise<string | null> {
+  checkFields: Record<string, unknown>,
+): Promise<string> {
+  const now = new Date().toISOString();
+  const structuralSurfaces = evaluateStructuralSurfaces();
+  // Profile summaries for the reviewer projection come from the default report;
+  // claim-binding verdicts come ONLY from per-attempt digest-verified reports.
+  const mutationReport = await loadMutationReport(state.binding.worktree);
+  const mutationSummaries = evaluateMutationProfiles(mutationReport);
+  const mutationVerdicts = await resolveVerifiedMutationVerdicts(
+    state.binding.worktree,
+    state.mutationAttempts,
+  );
+  const proofGraph = summarizeProofGraph(state, now, {
+    providerResults: [
+      ...bindStructuralEvidence(state, structuralSurfaces, now),
+      ...bindMutationEvidence(state, mutationVerdicts, now),
+    ],
+    surfaceDigests: surfaceDigestMap(structuralSurfaces),
+    mutationSummaries,
+  });
+  const authorization = authorizedCriticalPlanClaimIds(state.plan);
+  const proofGraphGate = evaluateProofGraphGate({
+    projection: proofGraph.projection,
+    authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
+    certificateValid: authorization.kind === 'authorized',
+    implementationDigest: state.implementation?.digest,
+    riskAssessment: state.implementationRiskAssessment,
+    claimDiagnostics: proofGraph.claimDiagnostics,
+  });
+  const registrationConsistency = checkRegistrationConsistency();
+  const configConsistency = checkConfigDefaultConsistency();
+  return appendNextAction(
+    JSON.stringify({
+      phase: state.phase,
+      sessionId: state.id,
+      proofGraph,
+      persistedProofGraph: summarizePersistedProofGraph(state),
+      proofApprovals: buildProofApprovalProjection(state),
+      proofGraphGate,
+      registrationConsistency,
+      configConsistency,
+      ...checkFields,
+    }),
+    state,
+  );
+}
+
+/**
+ * Resolve a focused projection response, or null if no projection flag is set.
+ */
+interface ResolveProjectionInput {
+  readonly args: StatusArgs;
+  readonly state: SessionState;
+  readonly policy: FlowGuardPolicy;
+  readonly sessDir: string;
+  readonly presentation: PresentationRenderOptions;
+}
+
+async function resolveProjection(input: ResolveProjectionInput): Promise<string | null> {
+  const { args, state, policy, sessDir, presentation } = input;
   const checkFields = buildCheckProjectionFields(state);
   // /finish is the most comprehensive focused projection and is placed first so
   // its own template call is never shadowed by a stray additional flag. This
@@ -162,6 +245,7 @@ async function resolveProjection(
     const blocked = buildBlockedProjection(state, policy);
     const whyPres = buildWhyPresentationProjection(state, policy, blocked);
     const whyDoc = buildWhyDocument(whyPres);
+    emitDetailRequested(state);
     return appendNextAction(
       JSON.stringify({
         phase: state.phase,
@@ -209,29 +293,13 @@ async function resolveProjection(
       state,
     );
   }
+  if (args.proofGraph) {
+    return await buildProofGraphProjectionResponse(state, policy, checkFields);
+  }
   return null;
 }
 
 // ─── Full status builder ──────────────────────────────────────────────────────
-
-function latestReviewSummary(
-  findings: ReadonlyArray<ReviewFindings> | null | undefined,
-  opts: { includePlanVersion: boolean },
-): Record<string, unknown> | null {
-  if (!findings || findings.length === 0) return null;
-  const latest = findings[findings.length - 1];
-  if (!latest) return null;
-  return {
-    iteration: latest.iteration,
-    ...(opts.includePlanVersion ? { planVersion: latest.planVersion } : {}),
-    overallVerdict: latest.overallVerdict,
-    blockingIssueCount: latest.blockingIssues.length,
-    majorRiskCount: latest.majorRisks.length,
-    missingVerificationCount: latest.missingVerification.length,
-    reviewMode: latest.reviewMode,
-    reviewedAt: latest.reviewedAt,
-  };
-}
 
 function selfReviewConverged(state: SessionState): boolean | null {
   if (!state.selfReview) return null;
@@ -350,6 +418,7 @@ interface FullStatusInput {
   readonly discoveryHealth: DiscoveryHealthProjection | null;
   readonly discoveryDrift: DiscoveryDriftStatusProjection;
   readonly presentation: PresentationRenderOptions;
+  readonly runtimeCandidates?: readonly ResolvedVerificationCandidate[];
 }
 
 async function loadDiscoveryStatusContext(wsDir: string): Promise<DiscoveryStatusContext> {
@@ -383,6 +452,7 @@ async function loadDiscoveryStatusContext(wsDir: string): Promise<DiscoveryStatu
 function buildProfileStatus(
   state: SessionState,
   discoveryHealth: DiscoveryHealthProjection | null,
+  runtimeCandidates?: readonly ResolvedVerificationCandidate[],
 ): Record<string, unknown> {
   const base = state.activeProfile?.ruleContent ?? '';
   const phaseExtra = state.activeProfile?.phaseRuleContent?.[state.phase];
@@ -402,10 +472,9 @@ function buildProfileStatus(
     profileName: state.activeProfile?.name ?? 'None',
     profileRules,
     detectedStack: state.detectedStack ?? null,
-    // Surfaced in the FULL projection too (not just focused) so the /check and
-    // /validate prompts — which read it from an unfocused status call — find it.
     activeChecks: state.activeChecks,
     verificationCandidates: state.verificationCandidates ?? [],
+    providerCapabilities: computeProviderCapabilities(state, runtimeCandidates),
   };
 }
 
@@ -439,6 +508,8 @@ function buildEvidenceStatus(state: SessionState): Record<string, unknown> {
     selfReviewConverged: selfReviewConverged(state),
     latestReview: latestReviewSummary(state.plan?.reviewFindings ?? null, {
       includePlanVersion: true,
+      assurance: state.reviewAssurance,
+      obligationType: 'plan',
     }),
     validationResults: state.validation.map((v) => ({
       checkId: v.checkId,
@@ -460,10 +531,16 @@ function buildImplementationStatus(state: SessionState): Record<string, unknown>
     implReviewConverged: implReviewConverged(state),
     latestImplementationReview: latestReviewSummary(state.implReviewFindings ?? null, {
       includePlanVersion: false,
+      assurance: state.reviewAssurance,
+      obligationType: 'implement',
     }),
     latestArchitectureReview: latestReviewSummary(state.architecture?.reviewFindings ?? null, {
       includePlanVersion: true,
+      hostIteration: state.selfReview?.iteration,
+      assurance: state.reviewAssurance,
+      obligationType: 'architecture',
     }),
+    architectureReviewCompletion: state.architecture?.reviewCompletion ?? null,
     hasReviewDecision: state.reviewDecision !== null,
     reviewVerdict: state.reviewDecision?.verdict ?? null,
     challengeResolutions: state.challengeResolutions
@@ -520,7 +597,7 @@ function buildFullStatusResponse(input: FullStatusInput): string {
     implementationGuidance,
     archiveStatus: state.archiveStatus ?? null,
     appliedPolicy: buildAppliedPolicyStatus(state),
-    ...buildProfileStatus(state, discoveryHealth),
+    ...buildProfileStatus(state, discoveryHealth, input.runtimeCandidates),
     ...buildEvidenceStatus(state),
     ...buildImplementationStatus(state),
     evalKind: ev.kind,
@@ -577,6 +654,13 @@ export const status: ToolDefinition = {
         'Return the read-only Finish Card: overall status, readiness, evidence, ' +
           'non-normative action guidance, and exit options. Never approves or mutates.',
       ),
+    proofGraph: z
+      .boolean()
+      .optional()
+      .describe(
+        'Return the advisory ProofGraph summary: per-claim verification states, ' +
+          'freshness, and critical gaps. Read-only; never approves or gates.',
+      ),
   },
   async execute(_args, context) {
     try {
@@ -610,7 +694,16 @@ export const status: ToolDefinition = {
       const completeness = evaluateCompleteness(state);
       const args = _args as StatusArgs;
 
-      const projection = await resolveProjection(args, state, policy, sessDir, presentation);
+      // Resolve runtime readiness via toolchain probes — planner for profile IDs
+      const runtimeCandidates = await resolveRuntimeWithProfileIds(state);
+
+      const projection = await resolveProjection({
+        args,
+        state,
+        policy,
+        sessDir,
+        presentation,
+      });
       if (projection !== null) return projection;
 
       const { discovery, discoveryHealth } = await loadDiscoveryStatusContext(wsDir);
@@ -628,6 +721,7 @@ export const status: ToolDefinition = {
         discoveryHealth,
         discoveryDrift,
         presentation,
+        runtimeCandidates,
       });
     } catch (err) {
       if (err instanceof ActorClaimError) {

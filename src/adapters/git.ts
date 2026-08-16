@@ -412,6 +412,16 @@ export async function headCommit(worktree: string): Promise<string | null> {
   }
 }
 
+/** Get the current HEAD commit hash in its full immutable form. */
+export async function headCommitFull(worktree: string): Promise<string | null> {
+  try {
+    return await git(worktree, ['rev-parse', '--verify', '--end-of-options', 'HEAD^{commit}']);
+  } catch {
+    logWarn('git', 'Failed to resolve full HEAD commit', { worktree });
+    return null;
+  }
+}
+
 /**
  * Get the default branch name for the repository.
  *

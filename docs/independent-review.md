@@ -203,7 +203,7 @@ The reviewer subagent returns one of three `overallVerdict` values:
 
 | Verdict             | Outcome                                                                                                                                                                                                                                                                                                          | Loop status                   |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
-| `approve`           | Findings accepted; if no blocking issues, the review loop converges to PLAN_REVIEW / EVIDENCE_REVIEW.                                                                                                                                                                                                            | converged                     |
+| `accept`            | Findings accepted; if no blocking issues, the review loop converges to PLAN_REVIEW / EVIDENCE_REVIEW.                                                                                                                                                                                                            | converged                     |
 | `changes_requested` | Findings recorded; agent revises the artifact and resubmits. Loop continues until convergence or `maxIterations`.                                                                                                                                                                                                | continues                     |
 | `unable_to_review`  | The reviewer declares the artifact unreviewable (e.g., contradictory inputs, missing prerequisites, scope ambiguity that prevents critique). The tool returns BLOCKED with code `SUBAGENT_UNABLE_TO_REVIEW`. The pending review obligation is consumed — retrying the review with the same artifact is rejected. | BLOCKED (obligation consumed) |
 
@@ -370,7 +370,7 @@ Independent subagent review is the default FlowGuard policy configuration:
   reviewMode:           'subagent'
   overallVerdict:       'accept' | 'changes_requested' | 'unable_to_review'
   blockingIssues:       Finding[] // severity: critical|major|minor
-  majorRisks:           Finding[] // category: completeness|correctness|feasibility|risk|quality
+   majorRisks:           Finding[] // category: completeness|correctness|feasibility|risk|quality
   missingVerification:  string[]
   scopeCreep:           string[]
   unknowns:             string[]
@@ -386,6 +386,11 @@ Independent subagent review is the default FlowGuard policy configuration:
   }
 }
 ```
+
+Each `Finding` requires `severity`, `category`, `message`, and `relation`.
+`relation.subjectAnchors` is a non-empty array of structured repository or artifact
+anchors. `relation.evidenceLocations` is required but may be empty. The legacy
+free-text `location` field is not accepted.
 
 > **Attestation in subagent mode:** the `attestation` field is declared
 > optional in the Zod `ReviewFindings` schema (so self-review and legacy

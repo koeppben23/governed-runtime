@@ -4,6 +4,12 @@
     "noEmit": true,
     "rootDir": "."
   },
-  "include": ["src/**/*.ts", "vitest.config.ts", "vitest.stryker.config.ts", "vitest.setup.ts"],
-  "exclude": ["node_modules", "dist", ".opencode"]
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "vitest.config.ts",
+    "vitest.stryker.config.ts",
+    "vitest.setup.ts"
+  ],
+  "exclude": ["node_modules", "dist", ".opencode", "test/conformance/assertions/projects"]
 }

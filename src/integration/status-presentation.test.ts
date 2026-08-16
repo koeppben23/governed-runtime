@@ -17,9 +17,11 @@ import { resolve } from 'node:path';
 import { renderMarkdown } from '../presentation/markdown.js';
 import type { PresentationDocument, CompactCardDocument } from '../presentation/model.js';
 import { buildStatusDocument, buildNoSessionDocument } from './status-presentation.js';
+import type { PresentationBuildOptions } from '../presentation/index.js';
 import type { FullStatusPresentationInput } from './status-presentation.js';
 import { buildStatusProjection } from './status.js';
-import type { StatusProjection, StatusActionProjection } from './status.js';
+import type { StatusProjection } from './status.js';
+import type { PresentationAction } from '../presentation/index.js';
 import type { DiscoveryHealthUnavailableProjection } from '../discovery/discovery-health.js';
 import type { DiscoveryDriftStatusProjection } from './discovery-drift-status.js';
 import { makeState } from '../fixtures.js';
@@ -30,8 +32,11 @@ import type { FlowGuardPolicy } from '../config/policy.js';
 
 // ─── Test Helpers ──────────────────────────────────────────────────────────────
 
-function buildCompactDoc(input: FullStatusPresentationInput): CompactCardDocument {
-  const doc = buildStatusDocument(input);
+function buildCompactDoc(
+  input: FullStatusPresentationInput,
+  opts: PresentationBuildOptions = { detail: 'diagnostic' },
+): CompactCardDocument {
+  const doc = buildStatusDocument(input, opts);
   if (doc.kind !== 'compact_card') {
     throw new Error('buildStatusDocument must return a compact_card');
   }
@@ -133,6 +138,38 @@ function makeBaseProjection(overrides: Partial<StatusProjection> = {}): StatusPr
     productNextAction: { primaryCommand: '/hydrate', summary: '' },
     blocker: null,
     evidenceSummary: { present: 0, missing: 0, notYetRequired: 7, failed: 0 },
+    proofGraph: {
+      coverage: 'NOT_DECLARED',
+      claimCount: 0,
+      provenCount: 0,
+      unprovenCount: 0,
+      contractClaimCount: 0,
+      hypothesisCount: 0,
+    },
+    proofSummary: {
+      kind: 'evaluation',
+      overallStatus: 'NOT_DECLARED',
+      claimCount: 0,
+      criticalCount: 0,
+      criticalProvenCount: 0,
+      provenCount: 0,
+      contradictedCount: 0,
+      blockedCount: 0,
+      staleCount: 0,
+      unprovenCount: 0,
+      notVerifiedCount: 0,
+      coverage: 'NOT_DECLARED',
+      unmetCriticalClaims: [],
+      otherHighlightedClaims: [],
+      approval: { attestations: [] },
+      decisionContext: 'current_gate',
+    },
+    proofApprovals: {
+      certificates: [],
+      implementationDigest: null,
+      claims: [],
+      coverageGaps: [],
+    },
     reviewLoop: null,
     readiness: 'READY',
     conclusion: {
@@ -202,11 +239,10 @@ describe('golden fixtures', () => {
     const policy = makeSoloPolicy();
     const projection = buildStatusProjection(state, policy);
     const drift = makeDriftProjection();
-    const doc = buildCompactDoc({
-      status: projection,
-      discoveryHealth: null,
-      discoveryDrift: drift,
-    });
+    const doc = buildCompactDoc(
+      { status: projection, discoveryHealth: null, discoveryDrift: drift },
+      { detail: 'summary' },
+    );
     const output = renderMarkdown(doc);
     const golden = await readGolden('status-ready.md');
     expect(output).toBe(golden.trimEnd());
@@ -217,11 +253,10 @@ describe('golden fixtures', () => {
     const policy = makeTeamPolicy();
     const projection = buildStatusProjection(state, policy);
     const drift = makeDriftProjection();
-    const doc = buildCompactDoc({
-      status: projection,
-      discoveryHealth: null,
-      discoveryDrift: drift,
-    });
+    const doc = buildCompactDoc(
+      { status: projection, discoveryHealth: null, discoveryDrift: drift },
+      { detail: 'summary' },
+    );
     const output = renderMarkdown(doc);
     const golden = await readGolden('status-blocked-plan-review.md');
     expect(output).toBe(golden.trimEnd());
@@ -237,11 +272,10 @@ describe('golden fixtures', () => {
       notVerified: ['Discovery drift', 'Code-surface completeness'],
     });
     const health = makeDegradedDiscoveryHealth();
-    const doc = buildCompactDoc({
-      status: projection,
-      discoveryHealth: health,
-      discoveryDrift: drift,
-    });
+    const doc = buildCompactDoc(
+      { status: projection, discoveryHealth: health, discoveryDrift: drift },
+      { detail: 'summary' },
+    );
     const output = renderMarkdown(doc);
     const golden = await readGolden('status-degraded-discovery.md');
     expect(output).toBe(golden.trimEnd());
@@ -311,6 +345,42 @@ describe('buildStatusDocument', () => {
     expect(result).toContain('`MISSING`');
   });
 
+  it('uses the migrated headline, explanation, and canonical message for migrated blocker codes', () => {
+    const projection = makeBaseProjection({
+      blocker: {
+        reasonCode: 'DISCOVERY_DRIFT_BLOCKED',
+        reasonText: 'registry-verbatim interpolated message',
+      },
+      productNextAction: { primaryCommand: '/hydrate', summary: 'Reconcile drift.' },
+      conclusion: {
+        kind: 'next_action' as const,
+        action: {
+          invocation: '/hydrate',
+          description: 'Reconcile drift.',
+          visibility: 'recommended' as const,
+        },
+      },
+    });
+    const drift = makeDriftProjection();
+    const doc = buildCompactDoc({
+      status: projection,
+      discoveryHealth: null,
+      discoveryDrift: drift,
+    });
+    const result = renderMarkdown(doc);
+    // Headline is the primary human copy; the reason code is diagnostic identity.
+    expect(result).toContain('**Blocked:** Discovery drift blocks mutating tools');
+    expect(result).not.toContain('**Blocked:** `DISCOVERY_DRIFT_BLOCKED`');
+    expect(result).not.toContain('registry-verbatim interpolated message');
+    // The human-authored explanation and the verbatim canonical message are preserved.
+    expect(result).toContain('**Why:** The discovery surface drifted from the persisted binding');
+    expect(result).toContain('**Details:**');
+    expect(result).toContain('`DISCOVERY_DRIFT_BLOCKED`');
+    expect(result).toContain(
+      'Discovery drift verdict is {driftStatus}; policy onDrift=block stops mutating tools',
+    );
+  });
+
   it('omits blocker section when not blocked', () => {
     const projection = makeBaseProjection();
     const drift = makeDriftProjection();
@@ -347,7 +417,7 @@ describe('buildStatusDocument', () => {
   });
 
   it('maps decision_required conclusion correctly', () => {
-    const actions: StatusActionProjection[] = [
+    const actions: PresentationAction[] = [
       { invocation: '/approve', description: 'Approve', visibility: 'available' },
       { invocation: '/reject', description: 'Reject', visibility: 'available' },
     ];

@@ -1,29 +1,57 @@
 import { describe, expect, it } from 'vitest';
 
-import type { DetectedStack } from './types.js';
-import { planVerificationCandidates } from './verification-planner.js';
-
-function makeDetectedStack(items: DetectedStack['items']): DetectedStack {
-  return {
-    summary: items.map((item) => item.id).join(', '),
-    items,
-    versions: items
-      .filter((item) => item.version)
-      .map((item) => ({
-        id: item.id,
-        version: item.version!,
-        target: item.kind,
-      })),
-  };
-}
-
-function makeReadFile(files: Record<string, string | undefined>) {
-  return async (relativePath: string): Promise<string | undefined> => files[relativePath];
-}
+import {
+  extractExecutionSubjectInputsByCandidateId,
+  planVerificationCandidates,
+} from './verification-planner.js';
+import { makeDetectedStack, makeReadFile } from './verification-planner-test-helpers.js';
 
 describe('verification planner', () => {
   describe('HAPPY', () => {
-    it('uses package scripts with detected pnpm and suppresses vitest fallback', async () => {
+    it('assigns deterministic IDs and candidate-specific subject inputs', async () => {
+      const input = {
+        detectedStack: makeDetectedStack([
+          { kind: 'language' as const, id: 'typescript', evidence: 'tsconfig.json' },
+        ]),
+        allFiles: ['package.json'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({ scripts: { typecheck: 'tsc --noEmit' } }),
+        }),
+      };
+      const first = await planVerificationCandidates(input);
+      const second = await planVerificationCandidates(input);
+
+      expect(first.map((entry) => entry.candidate.candidateId)).toEqual(
+        second.map((entry) => entry.candidate.candidateId),
+      );
+      const candidate = first[0]!.candidate;
+      expect(candidate.candidateId).toMatch(/^vc_[a-f0-9]{64}$/);
+      expect(extractExecutionSubjectInputsByCandidateId(first)[candidate.candidateId!]).toEqual(
+        first[0]!.executionSubjectInputs,
+      );
+    });
+
+    it('structured Maven wrapper candidate is produced alongside package script test', async () => {
+      // Remove build script — wrapper fills the gap. Test script stays as repo-native.
+      const candidates = await planVerificationCandidates({
+        detectedStack: makeDetectedStack([{ kind: 'buildTool', id: 'maven', evidence: 'pom.xml' }]),
+        allFiles: ['package.json', 'pom.xml', 'mvnw'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({
+            scripts: {
+              test: './mvnw -Dtest=TaskControllerTest test',
+            },
+          }),
+        }),
+      });
+
+      const buildCandidate = candidates.find((c) => c.candidate.kind === 'build');
+      expect(buildCandidate?.candidate.command).toBe('./mvnw verify');
+      expect(buildCandidate?.candidate.assertionCapability).toBe('structured');
+      expect(candidates.find((c) => c.candidate.kind === 'test')).toBeTruthy();
+    });
+
+    it('repo-native test script wins over vitest fallback', async () => {
       const detectedStack = makeDetectedStack([
         { kind: 'buildTool', id: 'pnpm', evidence: 'pnpm-lock.yaml' },
         { kind: 'testFramework', id: 'vitest', evidence: 'vitest.config.ts' },
@@ -43,10 +71,61 @@ describe('verification planner', () => {
         }),
       });
 
-      expect(candidates.find((c) => c.kind === 'test')?.command).toBe('pnpm test');
-      expect(candidates.map((c) => c.command)).not.toContain('pnpm vitest run');
-      expect(candidates.find((c) => c.kind === 'test')?.source).toBe('package.json:scripts.test');
-      expect(candidates.find((c) => c.kind === 'test')?.confidence).toBe('high');
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
+      // Script enrichment: vitest is recognized and the candidate gets structured
+      expect(testCandidate?.candidate.assertionCapability).toBe('structured');
+      expect(testCandidate?.candidate.command).toBe('pnpm test');
+      expect(testCandidate?.candidate.source).toBe('package.json:scripts.test');
+      expect(candidates.find((c) => c.candidate.kind === 'test')?.candidate.confidence).toBe(
+        'high',
+      );
+    });
+
+    it('preserves a filtered repo-native pytest command without full-scope attestation', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: makeDetectedStack([
+          { kind: 'testFramework', id: 'pytest', evidence: 'pyproject.toml' },
+        ]),
+        allFiles: ['package.json', 'pyproject.toml'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({ scripts: { test: 'pytest -c config/ci.ini tests/' } }),
+        }),
+      });
+      const tests = candidates.filter((entry) => entry.candidate.kind === 'test');
+      expect(tests).toHaveLength(2);
+      expect(tests.map((entry) => entry.candidate.command)).toEqual([
+        'npm run test --',
+        'npm run test --',
+      ]);
+      expect(tests[1]!.candidate).toMatchObject({
+        assertionCapability: 'structured',
+        assertionReport: { format: 'junit_xml' },
+      });
+      if (tests[1]!.candidate.assertionCapability === 'structured') {
+        expect(tests[1]!.candidate.fullCheckScopeAttestation).toBeUndefined();
+      }
+    });
+
+    it('attests a full repo-native pytest script for its aggregate alternate route', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: makeDetectedStack([
+          { kind: 'testFramework', id: 'pytest', evidence: 'pyproject.toml' },
+        ]),
+        allFiles: ['package.json', 'pyproject.toml'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({ scripts: { test: 'python -m pytest' } }),
+        }),
+      });
+      const aggregate = candidates.find(
+        (entry) => entry.executionProfileId === 'pytest-junit-aggregate',
+      )?.candidate;
+
+      expect(aggregate).toMatchObject({
+        command: 'npm run test --',
+        source: 'package.json:scripts.test',
+        fullCheckScopeAttestation: 'full_check',
+        assertionReport: { format: 'junit_xml' },
+      });
     });
 
     it('uses vitest fallback when no test script exists', async () => {
@@ -63,11 +142,11 @@ describe('verification planner', () => {
         }),
       });
 
-      const testCandidate = candidates.find((c) => c.kind === 'test');
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
       expect(testCandidate).toBeDefined();
-      expect(testCandidate?.command).toBe('pnpm vitest run');
-      expect(testCandidate?.source).toBe('detectedStack:testFramework:vitest');
-      expect(testCandidate?.confidence).toBe('medium');
+      expect(testCandidate?.candidate.command).toBe('pnpm vitest run');
+      expect(testCandidate?.candidate.source).toBe('detectedStack:testFramework:vitest');
+      expect(testCandidate?.candidate.confidence).toBe('medium');
     });
 
     it('prefers Maven wrapper over global Maven', async () => {
@@ -81,9 +160,9 @@ describe('verification planner', () => {
         readFile: makeReadFile({}),
       });
 
-      const buildCandidate = candidates.find((c) => c.kind === 'build');
-      expect(buildCandidate?.command).toBe('./mvnw verify');
-      expect(candidates.map((c) => c.command)).not.toContain('mvn verify');
+      const buildCandidate = candidates.find((c) => c.candidate.kind === 'build');
+      expect(buildCandidate?.candidate.command).toBe('./mvnw verify');
+      expect(candidates.map((c) => c.candidate.command)).not.toContain('mvn verify');
     });
 
     it('uses Windows Maven wrapper command when only mvnw.cmd exists', async () => {
@@ -97,9 +176,9 @@ describe('verification planner', () => {
         readFile: makeReadFile({}),
       });
 
-      const buildCandidate = candidates.find((c) => c.kind === 'build');
-      expect(buildCandidate?.command).toBe('mvnw.cmd verify');
-      expect(candidates.map((c) => c.command)).not.toContain('mvn verify');
+      const buildCandidate = candidates.find((c) => c.candidate.kind === 'build');
+      expect(buildCandidate?.candidate.command).toBe('mvnw.cmd verify');
+      expect(candidates.map((c) => c.candidate.command)).not.toContain('mvn verify');
     });
 
     it('prefers Gradle wrapper over global Gradle', async () => {
@@ -113,9 +192,9 @@ describe('verification planner', () => {
         readFile: makeReadFile({}),
       });
 
-      const testCandidate = candidates.find((c) => c.kind === 'test');
-      expect(testCandidate?.command).toBe('./gradlew check');
-      expect(candidates.map((c) => c.command)).not.toContain('gradle check');
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
+      expect(testCandidate?.candidate.command).toBe('./gradlew check');
+      expect(candidates.map((c) => c.candidate.command)).not.toContain('gradle check');
     });
 
     it('uses Windows Gradle wrapper command when only gradlew.bat exists', async () => {
@@ -129,9 +208,158 @@ describe('verification planner', () => {
         readFile: makeReadFile({}),
       });
 
-      const testCandidate = candidates.find((c) => c.kind === 'test');
-      expect(testCandidate?.command).toBe('gradlew.bat check');
-      expect(candidates.map((c) => c.command)).not.toContain('gradle check');
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
+      expect(testCandidate?.candidate.command).toBe('gradlew.bat check');
+      expect(candidates.map((c) => c.candidate.command)).not.toContain('gradle check');
+    });
+
+    it('recognizes jest as structured via script enrichment', async () => {
+      const detectedStack = makeDetectedStack([
+        { kind: 'buildTool', id: 'npm', evidence: 'package.json' },
+        { kind: 'testFramework', id: 'jest', evidence: 'package.json' },
+      ]);
+
+      const candidates = await planVerificationCandidates({
+        detectedStack,
+        allFiles: ['package.json'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({
+            scripts: { test: 'jest' },
+          }),
+        }),
+      });
+
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
+      expect(testCandidate?.candidate.assertionCapability).toBe('structured');
+      expect(testCandidate?.candidate.command).toBe('npm run test --');
+      expect(testCandidate?.candidate.source).toBe('package.json:scripts.test');
+      if (testCandidate?.candidate.assertionCapability === 'structured') {
+        expect(testCandidate.candidate.assertionReport.format).toBe('jest_json');
+      }
+    });
+
+    it.each([
+      ['pytest', 'full_check'],
+      ['python -m pytest', 'full_check'],
+      ['pytest tests/test_api.py', undefined],
+      ['pytest -k update', undefined],
+    ])(
+      'attests pytest full check scope only for an exact unfiltered command: %s',
+      async (script, attestation) => {
+        const candidates = await planVerificationCandidates({
+          detectedStack: null,
+          allFiles: ['package.json'],
+          readFile: makeReadFile({
+            'package.json': JSON.stringify({ scripts: { test: script } }),
+          }),
+        });
+
+        const candidate = candidates.find((entry) => entry.candidate.kind === 'test')?.candidate;
+        expect(candidate?.assertionCapability).toBe('structured');
+        if (candidate?.assertionCapability === 'structured') {
+          expect(candidate.fullCheckScopeAttestation).toBe(attestation);
+        }
+      },
+    );
+
+    it('jest script enrichment requires only signature match, not stack detection', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: null,
+        allFiles: ['package.json'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({
+            scripts: { test: 'jest' },
+          }),
+        }),
+      });
+
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
+      expect(testCandidate?.candidate.assertionCapability).toBe('structured');
+      expect(testCandidate?.candidate.command).toBe('npm run test --');
+      expect(testCandidate?.candidate.source).toBe('package.json:scripts.test');
+      if (testCandidate?.candidate.assertionCapability === 'structured') {
+        expect(testCandidate.candidate.assertionReport.format).toBe('jest_json');
+      }
+    });
+
+    it('vitest script enrichment requires only signature match, not stack detection', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: null,
+        allFiles: ['package.json'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({
+            scripts: { test: 'vitest run' },
+          }),
+        }),
+      });
+
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
+      expect(testCandidate?.candidate.assertionCapability).toBe('structured');
+      expect(testCandidate?.candidate.command).toBe('npm run test --');
+      expect(testCandidate?.candidate.source).toBe('package.json:scripts.test');
+      if (testCandidate?.candidate.assertionCapability === 'structured') {
+        expect(testCandidate.candidate.assertionReport.format).toBe('vitest_json');
+      }
+    });
+
+    it('enriched candidate preserves executionProfileId', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: null,
+        allFiles: ['package.json'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({
+            scripts: { test: 'jest' },
+          }),
+        }),
+      });
+
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
+      expect(testCandidate?.executionProfileId).toBe('jest-fallback');
+    });
+
+    it('compound shell command is not enrichable', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: null,
+        allFiles: ['package.json'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({
+            scripts: { test: 'vitest && ./cleanup.sh' },
+          }),
+        }),
+      });
+
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
+      expect(testCandidate?.candidate.assertionCapability).toBe('unsupported');
+    });
+
+    it('existing reporter config is not enrichable', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: null,
+        allFiles: ['package.json'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({
+            scripts: { test: 'vitest --reporter=junit' },
+          }),
+        }),
+      });
+
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
+      expect(testCandidate?.candidate.assertionCapability).toBe('unsupported');
+    });
+
+    it('unrecognized script remains unsupported', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: null,
+        allFiles: ['package.json'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({
+            scripts: { test: 'node scripts/custom-test.js' },
+          }),
+        }),
+      });
+
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
+      expect(testCandidate?.candidate.assertionCapability).toBe('unsupported');
     });
   });
 
@@ -148,8 +376,10 @@ describe('verification planner', () => {
         readFile: makeReadFile({ 'package.json': '{invalid-json' }),
       });
 
-      expect(candidates.find((c) => c.kind === 'lint')?.command).toBe('pnpm eslint .');
-      expect(candidates.find((c) => c.kind === 'lint')?.source).toBe(
+      expect(candidates.find((c) => c.candidate.kind === 'lint')?.candidate.command).toBe(
+        'pnpm eslint .',
+      );
+      expect(candidates.find((c) => c.candidate.kind === 'lint')?.candidate.source).toBe(
         'detectedStack:qualityTool:eslint',
       );
     });
@@ -180,12 +410,105 @@ describe('verification planner', () => {
         readFile: makeReadFile({}),
       });
 
-      expect(candidates.map((c) => c.kind)).toEqual(['test', 'lint', 'typecheck']);
-      expect(candidates.map((c) => c.command)).toEqual([
+      expect(candidates.map((c) => c.candidate.kind)).toEqual([
+        'test',
+        'test',
+        'lint',
+        'typecheck',
+      ]);
+      expect(candidates.map((c) => c.candidate.command)).toEqual([
+        'pnpm vitest run',
         'pnpm vitest run',
         'pnpm eslint .',
         'pnpm tsc --noEmit',
       ]);
+    });
+  });
+
+  describe('provider → planner execution subject wiring', () => {
+    it('vitest script enrichment includes vitest config files', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: makeDetectedStack([
+          { kind: 'buildTool', id: 'pnpm', evidence: 'pnpm-lock.yaml' },
+          { kind: 'testFramework', id: 'vitest', evidence: 'vitest.config.ts' },
+        ]),
+        allFiles: ['package.json', 'pnpm-lock.yaml', 'vitest.config.ts'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({ scripts: { test: 'vitest run' } }),
+        }),
+      });
+
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
+      const inputs = testCandidate?.executionSubjectInputs ?? [];
+      expect(inputs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: 'implementation' }),
+          expect.objectContaining({ kind: 'file', path: 'package.json' }),
+          expect.objectContaining({ kind: 'file', path: 'vitest.config.ts' }),
+        ]),
+      );
+    });
+
+    it('vitest fallback includes vitest config files', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: makeDetectedStack([
+          { kind: 'testFramework', id: 'vitest', evidence: 'vitest.config.ts' },
+        ]),
+        allFiles: ['package.json', 'vitest.config.ts'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({ scripts: { build: 'true' } }),
+        }),
+      });
+
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
+      const inputs = testCandidate?.executionSubjectInputs ?? [];
+      expect(inputs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: 'implementation' }),
+          expect.objectContaining({ kind: 'file', path: 'vitest.config.ts' }),
+        ]),
+      );
+    });
+
+    it('pytest profile includes config files', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: makeDetectedStack([
+          { kind: 'testFramework', id: 'pytest', evidence: 'pyproject.toml' },
+        ]),
+        allFiles: ['package.json', 'pyproject.toml'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({ scripts: { build: 'true' } }),
+        }),
+      });
+
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
+      const inputs = testCandidate?.executionSubjectInputs ?? [];
+      expect(inputs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: 'implementation' }),
+          expect.objectContaining({ kind: 'file', path: 'pyproject.toml' }),
+        ]),
+      );
+    });
+
+    it('config files not in rootFiles are absent from subject inputs', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: makeDetectedStack([
+          { kind: 'testFramework', id: 'vitest', evidence: 'vitest.config.ts' },
+        ]),
+        allFiles: ['package.json'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({ scripts: { build: 'true' } }),
+        }),
+      });
+
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
+      const inputs = testCandidate?.executionSubjectInputs ?? [];
+      expect(inputs).toEqual(
+        expect.not.arrayContaining([
+          expect.objectContaining({ kind: 'file', path: 'vitest.config.ts' }),
+        ]),
+      );
     });
   });
 
@@ -204,7 +527,9 @@ describe('verification planner', () => {
         }),
       });
 
-      expect(candidates.find((c) => c.kind === 'test')?.command).toBe('pnpm jest');
+      expect(candidates.find((c) => c.candidate.kind === 'test')?.candidate.command).toBe(
+        'pnpm jest',
+      );
     });
 
     it('ignores npm placeholder test script and continues with fallback', async () => {
@@ -225,8 +550,10 @@ describe('verification planner', () => {
         }),
       });
 
-      expect(candidates.find((c) => c.kind === 'test')?.command).toBe('npx vitest run');
-      expect(candidates.map((c) => c.command)).not.toContain('npm run test');
+      expect(candidates.find((c) => c.candidate.kind === 'test')?.candidate.command).toBe(
+        'npx vitest run',
+      );
+      expect(candidates.map((c) => c.candidate.command)).not.toContain('npm run test');
     });
 
     it('ignores single-quote placeholder test script and continues with fallback', async () => {
@@ -247,8 +574,10 @@ describe('verification planner', () => {
         }),
       });
 
-      expect(candidates.find((c) => c.kind === 'test')?.command).toBe('npx jest');
-      expect(candidates.map((c) => c.command)).not.toContain('npm run test');
+      expect(candidates.find((c) => c.candidate.kind === 'test')?.candidate.command).toBe(
+        'npx jest',
+      );
+      expect(candidates.map((c) => c.candidate.command)).not.toContain('npm run test');
     });
 
     it('ignores placeholder lint and build scripts', async () => {
@@ -265,8 +594,8 @@ describe('verification planner', () => {
         }),
       });
 
-      expect(candidates.map((c) => c.kind)).not.toContain('lint');
-      expect(candidates.map((c) => c.kind)).not.toContain('build');
+      expect(candidates.map((c) => c.candidate.kind)).not.toContain('lint');
+      expect(candidates.map((c) => c.candidate.kind)).not.toContain('build');
       expect(candidates).toEqual([]);
     });
 
@@ -288,8 +617,10 @@ describe('verification planner', () => {
         }),
       });
 
-      expect(candidates.find((c) => c.kind === 'lint')?.command).toBe('pnpm lint');
-      expect(candidates.map((c) => c.command)).not.toContain('pnpm eslint .');
+      expect(candidates.find((c) => c.candidate.kind === 'lint')?.candidate.command).toBe(
+        'pnpm lint',
+      );
+      expect(candidates.map((c) => c.candidate.command)).not.toContain('pnpm eslint .');
     });
   });
 
@@ -311,7 +642,9 @@ describe('verification planner', () => {
       });
       const elapsedMs = performance.now() - started;
 
-      expect(candidates.find((c) => c.kind === 'test')?.command).toBe('pnpm test');
+      expect(candidates.find((c) => c.candidate.kind === 'test')?.candidate.command).toBe(
+        'pnpm test',
+      );
       expect(elapsedMs).toBeLessThan(200);
     });
   });

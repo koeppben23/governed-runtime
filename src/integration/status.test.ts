@@ -35,6 +35,14 @@ import { createPolicySnapshot } from '../config/policy-snapshot.js';
 import { makeState } from '../fixtures.js';
 import { isCommandAllowed, Command } from '../machine/commands.js';
 import { USER_GATES, TERMINAL } from '../machine/topology.js';
+import { computeRecordDigest } from '../state/evidence-plan.js';
+import type { PlanRecord } from '../state/evidence-plan.js';
+import type {
+  PlanApprovalCertificate,
+  PlanClaimDeclarations,
+} from '../state/proofgraph-approval.js';
+import { hashText } from '../shared/hashing.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
 
 // ─── Test Fixtures ────────────────────────────────────────────────────────────
 
@@ -145,6 +153,59 @@ describe('policyMode — from policySnapshot', () => {
     const projection = buildStatusProjection(state, policy);
 
     expect(projection.policyMode).toBe('solo');
+  });
+});
+
+describe('proofGraph — persisted coverage summary', () => {
+  const policy = getPolicyPreset('solo');
+
+  it('marks missing structured claim declarations as not declared', () => {
+    const projection = buildStatusProjection(makeMinimalState('READY'), policy);
+
+    expect(projection.proofGraph).toEqual({
+      coverage: 'NOT_DECLARED',
+      claimCount: 0,
+      provenCount: 0,
+      unprovenCount: 0,
+      contractClaimCount: 0,
+      hypothesisCount: 0,
+    });
+  });
+
+  it('separates advisory hypotheses from contract coverage so both stay readable', () => {
+    // A standalone review contributes hypotheses without declaring a contract.
+    // Reporting NOT_DECLARED next to a non-zero claimCount is only coherent when
+    // the two populations are counted separately (#762).
+    const state = makeMinimalState('REVIEW_COMPLETE');
+    const projection = buildStatusProjection(
+      {
+        ...state,
+        proofGraph: {
+          version: 'proofgraph.v1',
+          evaluatedAt: '2026-01-01T00:00:00.000Z',
+          claims: [
+            {
+              claimId: '77777777-7777-4777-8777-777777777777',
+              statement: 'The reviewed subject behaves correctly.',
+              signalClass: 'hypothesis',
+              critical: false,
+              verificationState: 'NOT_VERIFIED',
+              provenance: null,
+              evidenceRefs: [],
+              counterexampleRefs: [],
+            },
+          ],
+        },
+      },
+      policy,
+    );
+
+    expect(projection.proofGraph).toMatchObject({
+      coverage: 'NOT_DECLARED',
+      claimCount: 1,
+      contractClaimCount: 0,
+      hypothesisCount: 1,
+    });
   });
 });
 
@@ -266,6 +327,118 @@ describe('buildStatusProjection — CORNER', () => {
   });
 });
 
+// ─── buildBlockedProjection — ProofGraph gate wiring (#695) ──────────────────
+
+describe('buildBlockedProjection — ProofGraph gate', () => {
+  const team = getPolicyPreset('team');
+  const CLAIM_ID = '00000000-0000-4000-8000-000000000001';
+  const CERT_ID = '00000000-0000-4000-8000-0000000000ce';
+
+  function declarations(): PlanClaimDeclarations {
+    return {
+      flow: 'plan',
+      version: 'v2',
+      claims: [
+        {
+          claimId: CLAIM_ID,
+          statement: 'x',
+          critical: true,
+          authoritySectionId: 's1',
+          claimScope: 'specific_behavior',
+          expectedCheckId: 'test',
+        },
+      ],
+    };
+  }
+
+  function certificate(): PlanApprovalCertificate {
+    const decls = declarations();
+    return {
+      flow: 'plan',
+      authorityDigest: 'plan-digest',
+      claimDeclarationsDigest: hashText(canonicalJsonStringify(decls)),
+      decisionAttestationDigest: 'd',
+      approvedAt: '2026-01-01T00:00:00.000Z',
+      approvedBy: 'reviewer',
+      certificateId: CERT_ID,
+      planVersion: 1,
+      planRecordDigest: 'record-digest',
+      reviewObligationId: null,
+      reviewEvidenceDigest: null,
+    };
+  }
+
+  function approvedPlan(): PlanRecord {
+    return {
+      current: {
+        body: 'x',
+        digest: 'plan-digest',
+        sections: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        recordDigest: 'record-digest',
+        planVersion: 1,
+        supersedesRecordDigest: null,
+        originatingReviewObligationId: null,
+        revisionReason: null,
+        lineageStatus: 'unavailable',
+      },
+      history: [],
+      claimDeclarations: declarations(),
+      approvalCertificate: certificate(),
+    };
+  }
+
+  it('carries the migrated gate code when the Evidence gate blocks a waiting session', () => {
+    const state: SessionState = {
+      ...makeMinimalState('EVIDENCE_REVIEW'),
+      policySnapshot: createPolicySnapshot(team, '2026-01-01T00:00:00.000Z', () => 'testdigest123'),
+      plan: approvedPlan(),
+    };
+    const blocker = buildBlockedProjection(state, team);
+    // Authorized critical claim is absent from the persisted proofGraph:
+    // the gate resolves to evaluation_unavailable, projecting the existing code.
+    expect(blocker.reasonCode).toBe('PROOFGRAPH_EVALUATION_UNAVAILABLE');
+  });
+
+  it('does not invent a gate code when the Evidence gate is satisfied', () => {
+    const state: SessionState = {
+      ...makeMinimalState('EVIDENCE_REVIEW'),
+      policySnapshot: createPolicySnapshot(team, '2026-01-01T00:00:00.000Z', () => 'testdigest123'),
+      plan: approvedPlan(),
+      proofGraph: {
+        version: 'proofgraph.v1',
+        evaluatedAt: '2026-01-01T00:00:00.000Z',
+        claims: [
+          {
+            claimId: CLAIM_ID,
+            statement: 'x',
+            signalClass: 'fact',
+            critical: true,
+            provenance: {
+              kind: 'canonical_authority',
+              authorityId: 'plan',
+              digest: 'd',
+              approval: {
+                certificateId: CERT_ID,
+                claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations())),
+                decisionAttestationDigest: 'd',
+                declarationId: CLAIM_ID,
+              },
+            },
+            evidenceRefs: [],
+            counterexampleRefs: [],
+            verificationState: 'PROVEN',
+          },
+        ],
+      },
+    };
+    const blocker = buildBlockedProjection(state, team);
+    // A satisfied gate projects no proofgraph reason code; the waiting blocker
+    // falls back to the generic waiting reason (reasonCode null at this phase).
+    expect(blocker.reasonCode).toBeNull();
+  });
+});
+
 // ─── EDGE: Evidence Edge Cases ────────────────────────────────────────────────
 
 describe('buildStatusProjection — EDGE evidence', () => {
@@ -320,6 +493,18 @@ describe('buildStatusProjection — EDGE evidence', () => {
           digest: 'plan123',
           sections: [],
           createdAt: new Date().toISOString(),
+          recordDigest: computeRecordDigest({
+            contentDigest: 'plan123',
+            planVersion: 1,
+            supersedesRecordDigest: null,
+            originatingReviewObligationId: null,
+            revisionReason: null,
+          }),
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+          lineageStatus: 'verified' as const,
         },
         history: [],
       },
@@ -457,6 +642,18 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
           digest: 'plan_digest',
           sections: [],
           createdAt: new Date().toISOString(),
+          recordDigest: computeRecordDigest({
+            contentDigest: 'plan_digest',
+            planVersion: 1,
+            supersedesRecordDigest: null,
+            originatingReviewObligationId: null,
+            revisionReason: null,
+          }),
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+          lineageStatus: 'verified' as const,
         },
         history: [],
       },
@@ -481,6 +678,7 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
           executionMs: 1,
           outputDigest: 'check_1_digest',
           timedOut: false,
+          outcome: 'supported' as const,
         },
       ],
       implValidation: [
@@ -495,6 +693,7 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
           executionMs: 1,
           outputDigest: 'check_1_digest',
           timedOut: false,
+          outcome: 'supported' as const,
         },
       ],
       implementation: {
@@ -541,6 +740,18 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
           digest: 'plan_digest',
           sections: [],
           createdAt: new Date().toISOString(),
+          recordDigest: computeRecordDigest({
+            contentDigest: 'plan_digest',
+            planVersion: 1,
+            supersedesRecordDigest: null,
+            originatingReviewObligationId: null,
+            revisionReason: null,
+          }),
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+          lineageStatus: 'verified' as const,
         },
         history: [],
       },
@@ -565,6 +776,8 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
           executionMs: 1,
           outputDigest: 'check_1_digest',
           timedOut: false,
+          outcome: 'inconclusive' as const,
+          classificationReason: 'non-zero exit code',
         },
         {
           checkId: 'check_2',
@@ -577,6 +790,7 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
           executionMs: 1,
           outputDigest: 'check_2_digest',
           timedOut: false,
+          outcome: 'supported' as const,
         },
       ],
     };

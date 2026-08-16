@@ -25,7 +25,11 @@ import { runReviewOrchestration } from './plugin-orchestrator.js';
 import type { OrchestratorDeps, ToolCallEvent } from './plugin-orchestrator.js';
 import { createTestAdapter } from './test-adapter-helper.js';
 import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_IMPLEMENT } from './tool-names.js';
-import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
+import {
+  freezeReviewMaterial,
+  REVIEW_CRITERIA_VERSION,
+  REVIEW_MANDATE_DIGEST,
+} from './review/assurance.js';
 import {
   createSessionState,
   onFlowGuardToolAfter,
@@ -61,6 +65,7 @@ function reviewRequiredOutput(iteration: number, planVersion: number): string {
 }
 
 function buildState(overrides: Partial<SessionState> = {}): SessionState {
+  const reviewMaterial = freezeReviewMaterial('frozen plan review material', 'test-subject-digest');
   return makeState('PLAN', {
     ticket: TICKET,
     plan: PLAN_RECORD,
@@ -75,14 +80,17 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
       reviewOutputPolicy: 'structured_required',
     },
     reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v5' as const,
       obligations: [
         {
           obligationId: OBLIGATION_ID,
           obligationType: 'plan',
+          subjectDigest: 'test-subject-digest',
           iteration: 2,
           planVersion: 3,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
+          maxReviewerOutputRepairAttempts: 1,
           createdAt: NOW,
           pluginHandshakeAt: null,
           status: 'pending',
@@ -90,10 +98,34 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
           blockedCode: null,
           fulfilledAt: null,
           consumedAt: null,
+          reviewSubjectScope: {
+            kind: 'artifact',
+            artifact: {
+              kind: 'plan',
+              digest: 'test-subject-digest',
+              sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }]],
+            },
+          },
+          reviewMaterial,
         },
       ],
-      // NO invocations → no host evidence → buildHostTaskPolicyOutput(null) path
+      // No invocation yet, but the frozen material and bindable attempt authorize
+      // a complete canonical host-task prompt.
       invocations: [],
+      attempts: [
+        {
+          attemptId: '22222222-2222-4222-8222-222222222222',
+          obligationId: OBLIGATION_ID,
+          obligationType: 'plan',
+          subjectDigest: 'test-subject-digest',
+          reviewMaterial,
+          ordinal: 1,
+          status: 'created',
+          origin: { kind: 'initial' },
+          repositoryDiscovery: { kind: 'not_applicable' },
+          createdAt: NOW,
+        },
+      ],
     },
     ...overrides,
   });
@@ -213,10 +245,8 @@ describe('BUG-16: buildHostTaskPolicyOutput preserves iteration/planVersion', ()
     const parsed = JSON.parse(output.output);
     // Should still produce a valid next field (no crash on missing meta)
     expect(parsed.next).toContain('INDEPENDENT_REVIEW_REQUIRED');
-    // When the original `next` lacks iteration/planVersion, the host-task
-    // instruction now falls back to the obligation's own values (issue: standalone
-    // /review CONTENT_ANALYSIS has no `next`; the reviewer must still receive the
-    // cycle context). The buildState() obligation is iteration=2, planVersion=3.
+    // The original next remains unchanged; canonical cycle context is carried by
+    // the complete reviewerTaskPrompt sourced from the frozen obligation.
     expect(parsed.next).toContain('Context: iteration=2, planVersion=3');
   });
 
@@ -358,16 +388,19 @@ describe('BUG-16: buildHostTaskPolicyOutput preserves iteration/planVersion', ()
     expect(parsed.reviewerTaskPrompt).toContain(OBLIGATION_ID);
     // Anti-fabrication: the canonical prompt must not prefill a verdict.
     expect(parsed.reviewerTaskPrompt).not.toMatch(/overallVerdict"\s*:\s*"accept/i);
-    // The next prose instructs verbatim use.
+    // The next prose delegates canonical prompt transport to the host.
     expect(parsed.next).toContain('reviewerTaskPrompt');
-    expect(parsed.next).toContain('VERBATIM');
+    expect(parsed.next).toContain('FlowGuard injects the canonical bytes');
   });
 
   it('F10: the emitted reviewerTaskPrompt passes enforcement on the FIRST attempt', async () => {
     // Reproduces the demo-log regression: previously the agent free-composed a
     // prompt WITHOUT iteration=/planVersion= and was blocked with
     // SUBAGENT_PROMPT_MISSING_CONTEXT on the first attempt. The canonical
-    // reviewerTaskPrompt must clear enforcement immediately.
+    // reviewerTaskPrompt must clear the context requirement immediately.
+    //
+    // The canonical prompt already contains the frozen artifact. It must be used
+    // verbatim rather than supplemented by parent-controlled content.
     const state = buildState();
     const stateRef = { current: state };
     vi.mocked(readState).mockResolvedValue(stateRef.current);
@@ -386,13 +419,42 @@ describe('BUG-16: buildHostTaskPolicyOutput preserves iteration/planVersion', ()
 
     // Register the pending review from the (mutated) tool output, exactly as the
     // plugin hook does, then run the real enforcement gate against the canonical
-    // prompt the agent is told to paste.
+    // prompt the agent is told to paste, with the artifact appended below it.
     const enfState = createSessionState();
     onFlowGuardToolAfter(enfState, TOOL_FLOWGUARD_PLAN, {}, toolOutput.output, NOW);
     const result = enforceBeforeSubagentCall(enfState, {
       subagent_type: REVIEWER_SUBAGENT_TYPE,
       prompt: reviewerTaskPrompt,
     });
+    expect(result.allowed).toBe(true);
+  });
+
+  it('F10: the canonical prompt contains the complete frozen artifact', async () => {
+    // Host-task delivery is a complete prompt contract. The parent must not
+    // append mutable material below a separate instruction block.
+    const state = buildState();
+    const stateRef = { current: state };
+    vi.mocked(readState).mockResolvedValue(stateRef.current);
+    const deps = buildDeps(stateRef);
+    const toolOutput = { output: reviewRequiredOutput(2, 3) };
+    const event: ToolCallEvent = {
+      toolName: TOOL_FLOWGUARD_PLAN,
+      input: { args: { planText: 'Plan text' } },
+      output: toolOutput,
+      sessionId: PARENT_SESSION_ID,
+      now: NOW,
+    };
+    await runReviewOrchestration(deps, event);
+    const reviewerTaskPrompt = JSON.parse(toolOutput.output).reviewerTaskPrompt as string;
+
+    const enfState = createSessionState();
+    onFlowGuardToolAfter(enfState, TOOL_FLOWGUARD_PLAN, {}, toolOutput.output, NOW);
+    const result = enforceBeforeSubagentCall(enfState, {
+      subagent_type: REVIEWER_SUBAGENT_TYPE,
+      prompt: reviewerTaskPrompt,
+    });
+
+    expect(reviewerTaskPrompt).toContain('frozen plan review material');
     expect(result.allowed).toBe(true);
   });
 
@@ -429,7 +491,7 @@ describe('BUG-16: buildHostTaskPolicyOutput preserves iteration/planVersion', ()
     });
     expect(result.allowed).toBe(false);
     if (!result.allowed) {
-      expect(result.code).toBe('SUBAGENT_PROMPT_MISSING_CONTEXT');
+      expect(result.code).toBe('SUBAGENT_PROMPT_MISMATCH');
     }
   });
 });

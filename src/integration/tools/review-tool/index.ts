@@ -7,22 +7,18 @@
  *
  * @version v1
  */
-
 import { z } from 'zod';
-
 import type { ToolDefinition } from '../helpers.js';
+import { formatError } from '../error-format.js';
 import {
   withMutableSessionTransaction,
-  formatRailResult,
-  formatError,
   formatAutoAdvanceOverflow,
   formatBlocked,
 } from '../helpers.js';
 import {
-  startReviewFlow,
   executeReview,
-  type ReviewReferenceInput,
   type PreparedReviewContent,
+  type ReviewReferenceInput,
 } from '../../../rails/review.js';
 import {
   InputOriginSchema,
@@ -31,16 +27,16 @@ import {
   type ReviewObligation,
 } from '../../../state/evidence.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
+import { formatReviewRequiredSignal } from '../../review/enforcement/types.js';
 import type { ReviewExecutionContext, ReviewPreparation } from './types.js';
 import type { StartedReviewResult } from './types.js';
 import type { SessionState } from '../../../state/schema.js';
+import type { RailBlocked } from '../../../rails/types.js';
 import type { ReviewToolArgs } from './types.js';
 import {
-  buildReviewReferenceInput,
   ensureMissingAnalysisObligation,
-  hasReviewContentInput,
   hasImplicitContentSignal,
-  matchesReviewObligationInput,
+  validateHostTaskContinuationInput,
   resolveSubmittedReviewObligation,
   validateSubmittedReviewFindings,
   consumeValidatedReviewObligation,
@@ -53,68 +49,29 @@ import {
   persistReviewCompletion,
   buildReviewCompletionResponse,
 } from './completion.js';
-import { resolveBranchReviewSource } from '../../../adapters/gh-cli.js';
 import { prepareReviewContent } from '../../../rails/review.js';
-import { findReviewObligationById } from '../../review/assurance.js';
+import { findReviewObligationById, updateAttemptStatus } from '../../review/assurance.js';
 import { writeStateWithArtifacts } from '../helpers.js';
-
-// ─── Content Digest Binding ─────────────────────────────────────────────────
-
-async function bindReviewContentDigest(
-  context: Parameters<ToolDefinition['execute']>[1],
-  obligationId: string,
-  reviewedContentDigest: string,
-): Promise<SessionState> {
-  return withMutableSessionTransaction(context, async ({ sessDir, state }) => {
-    const assurance = state.reviewAssurance;
-    if (!assurance) throw new Error('No review assurance state for content digest binding');
-
-    const obligation = findReviewObligationById(assurance, obligationId);
-    if (!obligation) throw new Error('Obligation not found for content digest binding');
-
-    const existingMeta = obligation.metadata;
-    const updatedMetadata: Record<string, unknown> = {
-      ...(typeof existingMeta === 'object' && existingMeta !== null ? existingMeta : {}),
-      reviewedContentDigest,
-    };
-
-    const updatedObligation = { ...obligation, metadata: updatedMetadata };
-    const updatedObligations = assurance.obligations.map((o) =>
-      o.obligationId === obligationId ? updatedObligation : o,
-    );
-
-    const updatedState: SessionState = {
-      ...state,
-      reviewAssurance: {
-        ...assurance,
-        obligations: updatedObligations,
-      },
-    };
-
-    await writeStateWithArtifacts(sessDir, updatedState);
-    return updatedState;
-  });
-}
+import {
+  appendCompletedReviewEvidence,
+  appendPreparedReviewEvidence,
+  prepareStandaloneReviewEvidence,
+  resolveReviewTaskIdentity,
+} from './preparation.js';
+import {
+  ensureStartedReviewState,
+  reissueReviewAttempt,
+  populateRefInput,
+  buildHostTaskAttestation,
+} from './continuation.js';
+import {
+  resolveFrozenContinuationContent,
+  assertFrozenSubjectUnchanged,
+} from './frozen-continuation.js';
 
 // ─── Review preparation orchestrator ─────────────────────────────────────────
 
-function populateBranchRefInput(
-  refInput: ReviewReferenceInput | undefined,
-  source: {
-    branch: string;
-    baseBranch: string;
-    resolvedBranchSha: string;
-    resolvedBaseSha: string;
-  },
-): ReviewReferenceInput {
-  return {
-    ...refInput,
-    branch: source.branch,
-    baseBranch: source.baseBranch,
-    resolvedBranchSha: source.resolvedBranchSha,
-    resolvedBaseSha: source.resolvedBaseSha,
-  };
-}
+// ─── Ref input resolution ────────────────────────────────────────────────────
 
 function withCwd(
   refInput: ReviewReferenceInput | undefined,
@@ -124,58 +81,96 @@ function withCwd(
   return { ...refInput, cwd };
 }
 
+export { isHostTaskVerdictContinuation } from './continuation-authority.js';
+import {
+  resolveObligationBranchSource,
+  missingHostTaskVerdictBlock,
+  resolveHostTaskContinuationAuthority,
+} from './continuation-authority.js';
+
+/**
+ * Resolve the reviewed content for this invocation.
+ *
+ * A host-task verdict continuation reuses the persisted frozen subject and
+ * material instead of re-deriving them; any remaining derivation is checked
+ * against the frozen subject digest. Returns the blocked payload as a string.
+ */
+async function resolveReviewContentForExecution(
+  state: SessionState,
+  exec: ReviewExecutionContext,
+  refInput: ReviewReferenceInput | undefined,
+): Promise<PreparedReviewContent | null | string> {
+  const frozen = resolveFrozenContinuationContent(state, exec);
+  if (frozen.kind === 'blocked') return frozen.message;
+  if (frozen.kind === 'reuse') return frozen.content;
+
+  const derived = await prepareReviewContent(refInput, undefined);
+  if (derived && 'kind' in derived) return formatBlockedReviewReport(derived);
+  return assertFrozenSubjectUnchanged(state, exec, derived) ?? derived;
+}
+
 async function prepareReviewExecution(
   sessDir: string,
   state: SessionState,
   result: StartedReviewResult,
   exec: ReviewExecutionContext,
 ): Promise<ReviewPreparation | string> {
-  // Resolve immutable branch source only when creating an obligation. An explicit
-  // host-task continuation is bound to its existing obligation and must not re-resolve refs.
-  const isFindingsSubmission = exec.args.reviewFindings !== undefined;
-  const isHostTaskVerdictContinuation =
-    exec.policy === 'host_task_required' &&
-    exec.args.reviewVerdict !== undefined &&
-    exec.args.reviewObligationId !== undefined;
-  const resolvedSource =
-    exec.args.branch && !isFindingsSubmission && !isHostTaskVerdictContinuation
-      ? resolveBranchReviewSource(exec.args.branch, exec.args.base, exec.context.worktree)
-      : undefined;
-
-  const hostTaskVerdict = prepareHostTaskVerdictReview(state, result, exec);
-  if (hostTaskVerdict) return hostTaskVerdict;
+  const missingVerdictBlock = missingHostTaskVerdictBlock(state, exec);
+  if (missingVerdictBlock) return missingVerdictBlock;
+  const resolvedSource = resolveObligationBranchSource(state, exec);
+  let refInput = withCwd(populateRefInput(exec.args, state, resolvedSource), exec.context.worktree);
+  if (exec.args.branch && !resolvedSource) {
+    const hostVerdict = await prepareHostTaskVerdictReview(sessDir, state, result, exec);
+    if (hostVerdict) return withMaterializedHostVerdict(hostVerdict, null);
+  }
+  const materializedContent = await resolveReviewContentForExecution(state, exec, refInput);
+  if (typeof materializedContent === 'string') return materializedContent;
+  const hostVerdict = await prepareHostTaskVerdictReview(sessDir, state, result, exec);
+  if (hostVerdict) return withMaterializedHostVerdict(hostVerdict, materializedContent);
 
   const missingResult = await ensureMissingAnalysisObligation(sessDir, state, exec.args, exec.now, {
     worktree: exec.context.worktree,
     resolvedSource,
+    preparedContent: materializedContent ?? undefined,
   });
 
-  let refInput = buildReviewReferenceInput(exec.args);
-  if (resolvedSource) {
-    refInput = populateBranchRefInput(refInput, resolvedSource);
-  }
   if (resolvedSource && missingResult.obligation) {
     refInput = {
       ...refInput,
       reviewObligationId: missingResult.obligation.obligationId,
+      ...(missingResult.attemptId && { reviewAttemptId: missingResult.attemptId }),
     };
   }
-  if (exec.args.reviewFindings === undefined) {
-    return {
-      result,
-      refInput: withCwd(refInput, exec.context.worktree),
-      validatedReviewObligation: null,
-      pendingObligation: missingResult.obligation,
-      blockMessage: missingResult.message ?? undefined,
-    };
-  }
-  return finishFindingsSubmission(
-    sessDir,
-    state,
+  if (exec.args.reviewFindings === undefined)
+    return prepareMissingFindingsSubmission(result, refInput, missingResult, materializedContent);
+  return finishFindingsSubmission(sessDir, state, result, exec, { refInput, materializedContent });
+}
+
+function withMaterializedHostVerdict(
+  hostVerdict: ReviewPreparation | string,
+  materializedContent: PreparedReviewContent | null,
+): ReviewPreparation | string {
+  return typeof hostVerdict === 'string'
+    ? hostVerdict
+    : { ...hostVerdict, materializedContent, reviewSubject: materializedContent?.reviewSubject };
+}
+
+function prepareMissingFindingsSubmission(
+  result: StartedReviewResult,
+  refInput: ReviewReferenceInput | undefined,
+  missingResult: Awaited<ReturnType<typeof ensureMissingAnalysisObligation>>,
+  materializedContent: PreparedReviewContent | null,
+): ReviewPreparation {
+  return {
     result,
-    exec,
-    withCwd(refInput, exec.context.worktree),
-  );
+    refInput,
+    validatedReviewObligation: null,
+    pendingObligation: missingResult.obligation,
+    persistedAssurance: missingResult.assurance,
+    blockMessage: missingResult.message ?? undefined,
+    materializedContent,
+    reviewSubject: materializedContent?.reviewSubject,
+  };
 }
 
 async function finishFindingsSubmission(
@@ -183,7 +178,10 @@ async function finishFindingsSubmission(
   state: SessionState,
   result: StartedReviewResult,
   exec: ReviewExecutionContext,
-  refInput: ReviewReferenceInput | undefined,
+  content: {
+    refInput: ReviewReferenceInput | undefined;
+    materializedContent: PreparedReviewContent | null;
+  },
 ): Promise<ReviewPreparation | string> {
   const resolved = await resolveSubmittedReviewObligation(
     sessDir,
@@ -204,21 +202,15 @@ async function finishFindingsSubmission(
     sessDir,
   );
   if (recorded.blocked) return recorded.blocked;
-  if (refInput) refInput = { ...refInput, skipExternalContentLoad: true };
-  // Carry obligation provenance into refInput for the findings-submission path
-  const meta = resolved.obligation.metadata;
-  if (typeof meta?.resolvedBranchSha === 'string' && typeof meta?.resolvedBaseSha === 'string') {
-    refInput = {
-      ...refInput,
-      reviewObligationId: resolved.obligation.obligationId,
-      resolvedBranchSha: meta.resolvedBranchSha,
-      resolvedBaseSha: meta.resolvedBaseSha,
-    };
-  }
+  const refInput = content.refInput
+    ? { ...content.refInput, skipExternalContentLoad: true }
+    : undefined;
   return {
     result: recorded.result,
     refInput,
     validatedReviewObligation: resolved.obligation,
+    materializedContent: content.materializedContent,
+    reviewSubject: content.materializedContent?.reviewSubject,
     ...(recorded.nativeAttestationRejection
       ? { nativeAttestationRejection: recorded.nativeAttestationRejection }
       : {}),
@@ -244,57 +236,75 @@ function resolveHostTaskObligation(
   return { kind: 'missing' };
 }
 
-function validateHostTaskObligationInput(
-  obligation: ReviewObligation,
-  args: ReviewToolArgs,
-): string | null {
-  if (!matchesReviewObligationInput(obligation, args)) {
-    return formatBlocked('REVIEW_OBLIGATION_INPUT_MISMATCH', {
-      obligationId: obligation.obligationId,
-      reason: 'The supplied review input does not match the host-task review obligation.',
-    });
+type AttemptRejectionResult =
+  | { ok: true }
+  | {
+      ok: false;
+      code:
+        'REVIEW_ASSURANCE_UNAVAILABLE' | 'REVIEW_ATTEMPT_ID_MISSING' | 'REVIEW_ATTEMPT_NOT_FOUND';
+      details: Record<string, string>;
+    };
+
+async function rejectIncoherentAttempt(
+  sessDir: string,
+  state: SessionState,
+  attemptId: string,
+  now: string,
+): Promise<AttemptRejectionResult> {
+  const assurance = state.reviewAssurance;
+  if (!assurance) {
+    return { ok: false, code: 'REVIEW_ASSURANCE_UNAVAILABLE', details: {} };
   }
-  return null;
+  if (!attemptId) {
+    return { ok: false, code: 'REVIEW_ATTEMPT_ID_MISSING', details: {} };
+  }
+  const attempt = assurance.attempts?.find((item) => item.attemptId === attemptId);
+  if (!attempt) {
+    return { ok: false, code: 'REVIEW_ATTEMPT_NOT_FOUND', details: { attemptId } };
+  }
+  // Verdict-time incoherence (SUBAGENT_VERDICT_FINDINGS_INCOHERENT and all
+  // SUBAGENT_CHALLENGE_* codes) is a semantic consistency failure — persisted
+  // as `consistency_invalid`, which never authorizes an output repair.
+  const rejectedState: SessionState = {
+    ...state,
+    reviewAssurance: updateAttemptStatus(assurance, attempt.attemptId, 'rejected', now, {
+      rejectionReason: 'consistency_invalid',
+    }),
+  };
+  await writeStateWithArtifacts(sessDir, rejectedState);
+  return { ok: true };
 }
 
-function getHostTaskVerdictContinuation(
-  exec: ReviewExecutionContext,
-): { reviewObligationId: string; reviewVerdict: 'accept' | 'changes_requested' } | null {
-  if (exec.policy !== 'host_task_required') return null;
-  const { reviewObligationId, reviewVerdict } = exec.args;
-  if (reviewObligationId === undefined || reviewVerdict === undefined) return null;
-  return { reviewObligationId, reviewVerdict };
-}
-
-function prepareHostTaskVerdictReview(
+// eslint-disable-next-line complexity, max-lines-per-function -- explicit fail-closed host-task verdict resolution
+async function prepareHostTaskVerdictReview(
+  sessDir: string,
   state: SessionState,
   result: StartedReviewResult,
   exec: ReviewExecutionContext,
-): ReviewPreparation | string | null {
+): Promise<ReviewPreparation | string | null> {
   // A verdict without an ID is an allowed first call. It must create (or reissue
   // instructions for) an obligation rather than guessing a continuation identity.
-  const continuation = getHostTaskVerdictContinuation(exec);
-  if (!continuation) return null;
-  if (!hasReviewContentInput(exec.args)) return null;
+  const authority = resolveHostTaskContinuationAuthority(state, exec);
+  if (authority.kind !== 'explicit') return null;
 
-  const resolution = resolveHostTaskObligation(state, continuation.reviewObligationId);
+  const resolution = resolveHostTaskObligation(state, authority.reviewObligationId);
   if (resolution.kind === 'missing') {
     return formatBlocked('REVIEW_OBLIGATION_NOT_FOUND', {
-      obligationId: continuation.reviewObligationId,
+      obligationId: authority.reviewObligationId,
       reason: 'The host-task review obligation is missing, consumed, or blocked.',
     });
   }
 
   const obligation = resolution.obligation;
-  const inputBlock = validateHostTaskObligationInput(obligation, exec.args);
+  const inputBlock = validateHostTaskContinuationInput(obligation, exec.args);
   if (inputBlock) return inputBlock;
   const resolved = resolveHostTaskFindings(state.reviewAssurance, obligation);
 
   if (resolved.kind === 'incoherent') {
-    // F12: the host-captured record is internally self-contradictory
-    // (accept + blocking issues). Fail closed with the canonical coherence
-    // reason code — not the generic HOST_SUBAGENT_TASK_REQUIRED catch-all
-    // whose recovery message would mislead about evidence availability.
+    const rejection = await rejectIncoherentAttempt(sessDir, state, resolved.attemptId, exec.now);
+    if (!rejection.ok) {
+      return formatBlocked(rejection.code, rejection.details);
+    }
     return formatBlocked(
       resolved.code,
       Object.fromEntries(
@@ -303,7 +313,32 @@ function prepareHostTaskVerdictReview(
     );
   }
 
+  if (resolved.kind === 'attempt_lineage_unavailable') {
+    return formatBlocked('REVIEW_ATTEMPT_LINEAGE_UNAVAILABLE', {
+      invocationId: resolved.invocationId,
+      obligationId: resolved.obligationId,
+    });
+  }
+
   if (resolved.kind !== 'resolved') {
+    // Reissue an attempt so the next reviewer Task has a registered attempt
+    // identity before the host issues retry guidance. Reissue is authorized
+    // by the output-repair gate; a denied gate blocks the obligation.
+    const reissue = await reissueReviewAttempt(sessDir, state, obligation, exec.now);
+    if (reissue.kind === 'blocked') {
+      return formatBlocked(
+        reissue.code,
+        {
+          obligationId: obligation.obligationId,
+          reason: reissue.reason,
+        },
+        {
+          policy: exec.policy,
+          policyMode: exec.policy,
+          bindOutcome: resolved.kind,
+        },
+      );
+    }
     return formatBlocked(
       'HOST_SUBAGENT_TASK_REQUIRED',
       { reviewerSubagentType: REVIEWER_SUBAGENT_TYPE },
@@ -316,6 +351,10 @@ function prepareHostTaskVerdictReview(
         policyMode: exec.policy,
         bindOutcome: resolved.kind,
         reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
+        reviewObligationId: obligation.obligationId,
+        reviewAttemptId: reissue.attempt.attemptId,
+        next: formatReviewRequiredSignal(obligation.iteration, obligation.planVersion),
+        requiredReviewAttestation: buildHostTaskAttestation(obligation),
       },
     );
   }
@@ -326,14 +365,14 @@ function prepareHostTaskVerdictReview(
     });
   }
 
-  if (continuation.reviewVerdict !== resolved.findings.overallVerdict) {
+  if (authority.reviewVerdict !== resolved.findings.overallVerdict) {
     return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
-      provided: continuation.reviewVerdict,
+      provided: authority.reviewVerdict,
       expected: resolved.findings.overallVerdict,
     });
   }
 
-  const refInput = buildReviewReferenceInput(exec.args);
+  const refInput = populateRefInput(exec.args, state, undefined);
   return {
     result,
     refInput: refInput
@@ -349,12 +388,16 @@ function prepareHostTaskVerdictReview(
   };
 }
 
-// ─── Tool definition ─────────────────────────────────────────────────────────
-
 type PreparedReviewExecution = ReviewPreparation & {
   sessDir: string;
   now: string;
 };
+
+function isBlockedReviewResult(
+  result: Awaited<ReturnType<typeof executeReview>>,
+): result is RailBlocked {
+  return 'kind' in result && result.kind === 'blocked';
+}
 
 async function prepareReviewWithoutExternalCalls(
   args: ReviewToolArgs,
@@ -362,9 +405,9 @@ async function prepareReviewWithoutExternalCalls(
 ): Promise<PreparedReviewExecution | string> {
   return withMutableSessionTransaction(context, async ({ sessDir, state, ctx }) => {
     const now = new Date().toISOString();
-    const result = startReviewFlow(state, ctx);
-
-    if (result.kind === 'blocked') return String(formatRailResult(result));
+    const ensured = ensureStartedReviewState(state, ctx);
+    if (typeof ensured === 'string') return ensured;
+    const result = ensured;
 
     const prepared = await prepareReviewExecution(sessDir, state, result, {
       args,
@@ -373,6 +416,35 @@ async function prepareReviewWithoutExternalCalls(
       policy: state.policySnapshot?.reviewInvocationPolicy ?? 'host_task_required',
     });
     if (typeof prepared === 'string') return prepared;
+    // Only a durable obligation may materialize the REVIEW intermediate state.
+    if (prepared.blockMessage && !prepared.persistedAssurance) return prepared.blockMessage;
+    const obligationIdentity = prepared.pendingObligation ?? prepared.validatedReviewObligation;
+    const taskEvidence = obligationIdentity
+      ? prepareStandaloneReviewEvidence(
+          args,
+          now,
+          prepared.refInput,
+          resolveReviewTaskIdentity(state.standaloneReviewEvidence, obligationIdentity.obligationId)
+            .reviewTaskId,
+          obligationIdentity.obligationId,
+        )
+      : null;
+    const stateWithTaskEvidence: SessionState = {
+      // Persist the REVIEW transition materialized by startReviewFlow so the
+      // canonical session state reflects the active review obligation. The
+      // completion path continues an existing REVIEW rather than re-starting
+      // the user-level /review command (which would require READY).
+      ...result.state,
+      // Obligation preparation already persisted the obligation AND its attempt.
+      // Re-deriving from `state` (read before that write) dropped the attempt, so
+      // the host could never bind reviewer evidence for a standalone /review.
+      ...(prepared.persistedAssurance && { reviewAssurance: prepared.persistedAssurance }),
+      standaloneReviewEvidence: taskEvidence
+        ? appendPreparedReviewEvidence(state.standaloneReviewEvidence, taskEvidence)
+        : state.standaloneReviewEvidence,
+    };
+    // The prepared entry is durable before a reviewer can be instructed.
+    await writeStateWithArtifacts(sessDir, stateWithTaskEvidence);
     return { ...prepared, sessDir, now };
   });
 }
@@ -384,10 +456,11 @@ async function persistCompletedReview(
   now: string,
 ): Promise<string> {
   return withMutableSessionTransaction(context, async ({ sessDir, state, ctx }) => {
-    let result = startReviewFlow(state, ctx);
-    if (result.kind === 'blocked') return String(formatRailResult(result));
+    const ensured = ensureStartedReviewState(state, ctx);
+    if (typeof ensured === 'string') return ensured;
+    const startedResult = ensured;
 
-    const prepared = await prepareReviewExecution(sessDir, state, result, {
+    const prepared = await prepareReviewExecution(sessDir, state, startedResult, {
       args,
       context,
       now,
@@ -395,11 +468,11 @@ async function persistCompletedReview(
     });
     if (typeof prepared === 'string') return prepared;
 
-    if (reviewResult.kind === 'blocked') {
+    if (isBlockedReviewResult(reviewResult)) {
       return formatBlockedReviewReport(reviewResult);
     }
 
-    result = consumeValidatedReviewObligation(
+    let result = consumeValidatedReviewObligation(
       prepared.result,
       prepared.validatedReviewObligation,
       args,
@@ -409,6 +482,31 @@ async function persistCompletedReview(
         effectiveReviewFindings: prepared.effectiveReviewFindings,
       },
     );
+    const obligationIdentity = prepared.pendingObligation ?? prepared.validatedReviewObligation;
+    const taskEvidence = obligationIdentity
+      ? prepareStandaloneReviewEvidence(
+          args,
+          now,
+          prepared.refInput,
+          resolveReviewTaskIdentity(state.standaloneReviewEvidence, obligationIdentity.obligationId)
+            .reviewTaskId,
+          obligationIdentity.obligationId,
+        )
+      : null;
+    result = {
+      ...result,
+      state: {
+        ...result.state,
+        standaloneReviewEvidence: taskEvidence
+          ? appendCompletedReviewEvidence({
+              evidence: state.standaloneReviewEvidence,
+              prepared: taskEvidence,
+              completedAt: now,
+              findings: prepared.effectiveReviewFindings ?? args.reviewFindings,
+            })
+          : state.standaloneReviewEvidence,
+      },
+    };
     const completion = await persistReviewCompletion(sessDir, result, reviewResult, ctx);
     if (completion.kind === 'overflow') {
       return formatAutoAdvanceOverflow(completion.overflow);
@@ -417,7 +515,7 @@ async function persistCompletedReview(
       sessDir,
       args,
       result,
-      report: reviewResult,
+      report: completion.report,
       validatedReviewObligation: prepared.validatedReviewObligation,
       nativeAttestationRejection: prepared.nativeAttestationRejection,
       finalState: completion.finalState,
@@ -445,20 +543,9 @@ interface LoadedReviewContent {
 async function loadAndBindReviewContent(
   prepared: PreparedReviewExecution,
   args: ReviewToolArgs,
-  context: Parameters<ToolDefinition['execute']>[1],
 ): Promise<LoadedReviewContent> {
-  const result = await prepareReviewContent(prepared.refInput, undefined);
-  if (result && 'kind' in result) {
-    return {
-      reviewState: prepared.result.state,
-      loadedContent: undefined,
-      blockMessage: formatBlockedReviewReport(result),
-    };
-  }
-
-  const loadedContent: PreparedReviewContent | null = result;
-  const bindTarget = prepared.pendingObligation ?? prepared.validatedReviewObligation;
-  const reviewState = await bindDigestIfAvailable(context, bindTarget, loadedContent, prepared);
+  const loadedContent: PreparedReviewContent | null = prepared.materializedContent ?? null;
+  const reviewState = prepared.result.state;
 
   if (prepared.blockMessage) {
     return {
@@ -468,7 +555,7 @@ async function loadAndBindReviewContent(
     };
   }
 
-  if (hasImplicitContentSignal(args) && !bindTarget && !loadedContent) {
+  if (hasImplicitContentSignal(args) && !loadedContent) {
     return {
       reviewState,
       loadedContent: undefined,
@@ -483,18 +570,6 @@ async function loadAndBindReviewContent(
     loadedContent: loadedContent?.content,
     blockMessage: undefined,
   };
-}
-
-async function bindDigestIfAvailable(
-  context: Parameters<ToolDefinition['execute']>[1],
-  bindTarget: ReviewObligation | null | undefined,
-  content: PreparedReviewContent | null,
-  prepared: PreparedReviewExecution,
-): Promise<SessionState> {
-  if (!content?.reviewedContentDigest || !bindTarget?.obligationId) {
-    return prepared.result.state;
-  }
-  return bindReviewContentDigest(context, bindTarget.obligationId, content.reviewedContentDigest);
 }
 
 export const review: ToolDefinition = {
@@ -560,13 +635,26 @@ export const review: ToolDefinition = {
         'File paths touched by this review. Required for risk classification when ' +
           'challengePolicy is active and no branch/PR auto-resolution is available (e.g. text or URL review).',
       ),
+    objectives: z
+      .array(
+        z.object({
+          objectiveId: z
+            .string()
+            .min(1)
+            .regex(/^[a-z][a-z0-9_-]*$/),
+          statement: z.string().min(1),
+        }),
+      )
+      .min(1)
+      .optional()
+      .describe('Optional structured review objectives. Omit to use the canonical static profile.'),
   },
   async execute(args: ReviewToolArgs, context) {
     try {
       const prepared = await prepareReviewWithoutExternalCalls(args, context);
       if (typeof prepared === 'string') return prepared;
 
-      const content = await loadAndBindReviewContent(prepared, args, context);
+      const content = await loadAndBindReviewContent(prepared, args);
       if (content.blockMessage) return content.blockMessage;
 
       const reviewResult = await executeReview(
@@ -574,7 +662,9 @@ export const review: ToolDefinition = {
         prepared.now,
         buildReviewExecutors(args, prepared.effectiveReviewFindings),
         prepared.refInput,
-        content.loadedContent,
+        content.loadedContent === undefined
+          ? undefined
+          : (prepared.materializedContent ?? content.loadedContent),
       );
       return await persistCompletedReview(args, context, reviewResult, prepared.now);
     } catch (err) {

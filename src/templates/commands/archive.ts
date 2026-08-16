@@ -16,19 +16,18 @@ Archive the current completed FlowGuard session.
 1. Call \`flowguard_status\` to verify a session exists.
    - If no session: report "No session to archive" and stop.
 
-2. Ask the user for archive parameters, then call \`flowguard_archive\`:
-   - \`redactionMode\`: Ask the user.
-     \`none\` = raw evidence only (for auditors, requires allowRawExport=true in config).
-     \`basic\` = secrets masked as [REDACTED] (safe for sharing).
-     \`pseudonymous\` = stable correlation tokens (traceable across events).
-   - \`includeRaw\`: Ask the user.
-     \`true\` = include raw unredacted files alongside redacted copies (requires allowRawExport).
-     \`false\` = redacted files only (safe to share).
+2. Call \`flowguard_archive\` with no arguments for the default redacted sharing export
+   (\`redactionMode=basic\`, \`includeRaw=false\`). Ask the user only when they request a
+   non-default export:
+    - \`none\` with \`includeRaw=true\` = raw evidence for auditors (requires allowRawExport=true).
+    - \`pseudonymous\` = stable correlation tokens across redacted events.
    - Only terminal sessions (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE) can be archived.
    - If not terminal: report the current phase and tell the user to complete or abort first.
 
 3. Report the archive result:
-   - Archive file path and verification status
+    - Archive file path and verification status. \`not_verifiable\` means a redacted
+      sharing archive intentionally excludes raw state and audit evidence; it is
+      not an integrity failure.
    - Redaction mode used (\`none\`, \`basic\`, or \`pseudonymous\`)
    - Whether raw evidence is included (\`includeRaw\`)
    - The \`guidance\` text from the tool response verbatim
@@ -42,6 +41,6 @@ ${GOVERNANCE_RULES}
 ## Done-when
 
 - Session archive created as tar.gz.
-- Redaction parameters and guidance reported to the user.
+- Redaction parameters, guidance, and archive verification status reported to the user.
 - Response ends with \`Next action: run /hydrate to start a new session.\`
 `;

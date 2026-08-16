@@ -8,6 +8,12 @@
 
 import type { SessionState, Phase } from './state/schema.js';
 import type {
+  ReviewAssuranceState,
+  ReviewAttempt,
+  ReviewInvocationEvidence,
+  ReviewObligation,
+} from './state/evidence-review.js';
+import type {
   TicketEvidence,
   ArchitectureDecision,
   PlanEvidence,
@@ -22,6 +28,7 @@ import type {
   BindingInfo,
   PolicySnapshot,
 } from './state/evidence.js';
+import { computeRecordDigest } from './state/evidence-plan.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -50,6 +57,7 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
   maxIncoherentReviewerCaptureRetries: 1,
+  maxReviewerOutputRepairAttempts: 1,
   allowSelfApproval: true,
   minimumActorAssuranceForApproval: 'best_effort',
   requireVerifiedActorsForApproval: false,
@@ -126,8 +134,97 @@ export const ARCHITECTURE_DECISION: ArchitectureDecision = {
   adrText:
     '## Context\nWe need a database.\n\n## Decision\nUse PostgreSQL.\n\n## Consequences\nMust maintain DB infra.',
   status: 'proposed',
+  reviewCompletion: 'pending',
   createdAt: FIXED_TIME,
   digest: 'digest-of-adr',
+};
+
+/**
+ * Canonical review-assurance envelope builder: one obligation (or an explicit
+ * obligation list) plus optional invocations and attempts. The single
+ * implementation of the `review-assurance.v5` envelope used across test
+ * suites; domain-specific obligation/invocation builders stay local to their
+ * suites and feed this builder.
+ */
+export function assuranceWith(input: {
+  readonly obligation?: ReviewObligation;
+  readonly obligations?: readonly ReviewObligation[];
+  readonly invocations?: readonly ReviewInvocationEvidence[];
+  readonly attempts?: readonly ReviewAttempt[];
+}): ReviewAssuranceState {
+  const obligations = input.obligations ?? (input.obligation ? [input.obligation] : []);
+  return {
+    assuranceSchemaVersion: 'review-assurance.v5',
+    obligations: [...obligations],
+    invocations: input.invocations ? [...input.invocations] : [],
+    attempts: input.attempts ? [...input.attempts] : [],
+  };
+}
+
+/**
+ * Canonical bound architecture review evidence for approve-path tests: a
+ * consumed architecture obligation for exactly the ARCHITECTURE_DECISION
+ * digest plus its invocation with a findings hash.
+ */
+export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
+  assuranceSchemaVersion: 'review-assurance.v5',
+  obligations: [
+    {
+      obligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      obligationType: 'architecture',
+      iteration: 0,
+      planVersion: 1,
+      criteriaVersion: 'criteria-v1',
+      mandateDigest: 'mandate-digest-of-review-criteria',
+      createdAt: FIXED_TIME,
+      pluginHandshakeAt: null,
+      status: 'consumed',
+      invocationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      blockedCode: null,
+      fulfilledAt: FIXED_TIME,
+      consumedAt: FIXED_TIME,
+      subjectDigest: ARCHITECTURE_DECISION.digest,
+      reviewMaterial: {
+        content: ARCHITECTURE_DECISION.adrText,
+        materialDigest: 'material-digest-of-architecture-review',
+        subjectDigest: ARCHITECTURE_DECISION.digest,
+      },
+      reviewSubjectScope: {
+        kind: 'artifact',
+        artifact: {
+          kind: 'adr',
+          digest: ARCHITECTURE_DECISION.digest,
+          sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'ADR' }]],
+        },
+      },
+      repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+      maxReviewerOutputRepairAttempts: 0,
+    },
+  ],
+  invocations: [
+    {
+      invocationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      obligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      obligationType: 'architecture',
+      parentSessionId: 'parent-session-1',
+      childSessionId: 'child-session-1',
+      agentType: 'flowguard-reviewer',
+      invocationMode: 'host_subagent_task',
+      hostVisible: true,
+      promptHash: 'prompt-hash-of-architecture-review',
+      mandateDigest: 'mandate-digest-of-review-criteria',
+      criteriaVersion: 'criteria-v1',
+      findingsHash: 'findings-hash-of-architecture-review',
+      invokedAt: FIXED_TIME,
+      fulfilledAt: FIXED_TIME,
+      consumedByObligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      capturedVerdict: 'accept',
+      reviewOutputMode: 'structured_output',
+      structuredOutputUsed: true,
+      reviewAssuranceLevel: 'structured_high',
+    },
+  ],
+  attempts: [],
 };
 
 export const PLAN_EVIDENCE: PlanEvidence = {
@@ -135,6 +232,18 @@ export const PLAN_EVIDENCE: PlanEvidence = {
   digest: 'digest-of-plan',
   sections: ['Plan'],
   createdAt: FIXED_TIME,
+  recordDigest: computeRecordDigest({
+    contentDigest: 'digest-of-plan',
+    planVersion: 1,
+    supersedesRecordDigest: null,
+    originatingReviewObligationId: null,
+    revisionReason: null,
+  }),
+  planVersion: 1,
+  supersedesRecordDigest: null,
+  originatingReviewObligationId: null,
+  revisionReason: null,
+  lineageStatus: 'verified',
 };
 
 export const PLAN_RECORD: PlanRecord = {
@@ -172,6 +281,7 @@ export const VALIDATION_PASSED: ValidationResult[] = [
     executionMs: 1200,
     outputDigest: 'a'.repeat(64),
     timedOut: false,
+    outcome: 'supported',
   },
   {
     checkId: 'lint',
@@ -184,6 +294,7 @@ export const VALIDATION_PASSED: ValidationResult[] = [
     executionMs: 800,
     outputDigest: 'b'.repeat(64),
     timedOut: false,
+    outcome: 'supported',
   },
 ];
 
@@ -199,6 +310,7 @@ export const VALIDATION_FAILED: ValidationResult[] = [
     executionMs: 2000,
     outputDigest: 'c'.repeat(64),
     timedOut: false,
+    outcome: 'inconclusive',
   },
   {
     checkId: 'lint',
@@ -211,6 +323,7 @@ export const VALIDATION_FAILED: ValidationResult[] = [
     executionMs: 800,
     outputDigest: 'd'.repeat(64),
     timedOut: false,
+    outcome: 'supported',
   },
 ];
 
@@ -255,6 +368,21 @@ export const ERROR_INFO: ErrorInfo = {
   occurredAt: FIXED_TIME,
 };
 
+/**
+ * Synthetic frozen pre-mutation implementation base for progressed fixtures.
+ * The persistence boundary refuses IMPLEMENTATION-phase states without a
+ * frozen base authority; progressed states (VALIDATION and beyond in the
+ * ticket flow) therefore carry this deterministic commit-kind target.
+ */
+export const FROZEN_IMPLEMENTATION_BASE = {
+  kind: 'commit' as const,
+  repositoryIdentity: {
+    kind: 'local' as const,
+    rootCommitDigest: 'sha256:' + 'f'.repeat(64),
+  },
+  objectSha: 'd'.repeat(40),
+};
+
 // ─── State Factory ────────────────────────────────────────────────────────────
 
 /**
@@ -276,6 +404,7 @@ export function makeState(
     selfReview: null,
     validation: [],
     validationAttempts: [],
+    mutationAttempts: [],
     challengeResolutions: [],
     implValidation: [],
     implementation: null,
@@ -283,6 +412,7 @@ export function makeState(
     implReview: null,
     reviewDecision: null,
     reviewReportPath: null,
+    standaloneReviewEvidence: [],
     nextAdrNumber: 1,
     activeProfile: null,
     activeChecks: ['test', 'lint'],
@@ -315,6 +445,7 @@ export function makeProgressedState(phase: Phase): SessionState {
       });
     case 'VALIDATION':
       return makeState('VALIDATION', {
+        implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
         ticket: TICKET,
         plan: PLAN_RECORD,
         selfReview: SELF_REVIEW_CONVERGED,
@@ -322,6 +453,7 @@ export function makeProgressedState(phase: Phase): SessionState {
       });
     case 'IMPLEMENTATION':
       return makeState('IMPLEMENTATION', {
+        implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
         ticket: TICKET,
         plan: PLAN_RECORD,
         selfReview: SELF_REVIEW_CONVERGED,
@@ -330,6 +462,7 @@ export function makeProgressedState(phase: Phase): SessionState {
       });
     case 'IMPL_VALIDATION':
       return makeState('IMPL_VALIDATION', {
+        implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
         ticket: TICKET,
         plan: PLAN_RECORD,
         selfReview: SELF_REVIEW_CONVERGED,
@@ -341,6 +474,7 @@ export function makeProgressedState(phase: Phase): SessionState {
       });
     case 'IMPL_REVIEW':
       return makeState('IMPL_REVIEW', {
+        implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
         ticket: TICKET,
         plan: PLAN_RECORD,
         selfReview: SELF_REVIEW_CONVERGED,
@@ -351,6 +485,7 @@ export function makeProgressedState(phase: Phase): SessionState {
       });
     case 'EVIDENCE_REVIEW':
       return makeState('EVIDENCE_REVIEW', {
+        implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
         ticket: TICKET,
         plan: PLAN_RECORD,
         selfReview: SELF_REVIEW_CONVERGED,
@@ -362,6 +497,7 @@ export function makeProgressedState(phase: Phase): SessionState {
       });
     case 'COMPLETE':
       return makeState('COMPLETE', {
+        implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
         ticket: TICKET,
         plan: PLAN_RECORD,
         selfReview: SELF_REVIEW_CONVERGED,
@@ -377,12 +513,17 @@ export function makeProgressedState(phase: Phase): SessionState {
       });
     case 'ARCH_REVIEW':
       return makeState('ARCH_REVIEW', {
-        architecture: ARCHITECTURE_DECISION,
+        architecture: { ...ARCHITECTURE_DECISION, reviewCompletion: 'reviewer_accepted' },
         selfReview: SELF_REVIEW_CONVERGED,
+        reviewAssurance: ARCHITECTURE_REVIEW_ASSURANCE,
       });
     case 'ARCH_COMPLETE':
       return makeState('ARCH_COMPLETE', {
-        architecture: { ...ARCHITECTURE_DECISION, status: 'accepted' },
+        architecture: {
+          ...ARCHITECTURE_DECISION,
+          status: 'accepted',
+          reviewCompletion: 'reviewer_accepted',
+        },
         selfReview: SELF_REVIEW_CONVERGED,
         reviewDecision: REVIEW_APPROVE,
       });

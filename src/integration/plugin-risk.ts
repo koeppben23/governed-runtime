@@ -189,6 +189,7 @@ export function evidenceUnavailableRiskDecision(
     claimedTaskClass: state.claimedTaskClass,
     minimumTaskClass: 'HIGH-RISK',
     touchedSurfaces: ['risk-classification-evidence'],
+    riskTriggers: ['ceremony_only'],
     changedFiles: [],
   };
 }

@@ -146,7 +146,7 @@ export type ArchiveFinding = z.infer<typeof ArchiveFindingSchema>;
  */
 export const ArchiveManifestSchema = z.object({
   schemaVersion: z.literal(ARCHIVE_MANIFEST_SCHEMA_VERSION),
-  /** Breaking archive payload layout contract. Only the complete raw-evidence layout is valid. */
+  /** Breaking archive payload layout contract for raw-evidence and redacted-sharing packages. */
   layoutVersion: z.literal(ARCHIVE_LAYOUT_VERSION),
   createdAt: z.string().datetime(),
   // Session id as recorded by archiveSession (validateSessionId). OpenCode

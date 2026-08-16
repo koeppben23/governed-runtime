@@ -152,7 +152,9 @@ A document never contains more than one conclusion.
 
 ## 9. NULL / NOT_VERIFIED Rules
 
-- Fields that are `null` or `undefined` are **omitted** from the output.
+- Fields that are `null` or `undefined` are **omitted** from the output, except
+  the mandatory `ProofGraphSection` on a state-bound governance result. A
+  resolved session with no declared claims renders graph-level `NOT_DECLARED`.
 - Never replace missing data with `"unknown"`, `"—"`, or fabricated fallback text.
 - Never let the renderer substitute a default when a field is absent — the
   upstream projection decides omission.
@@ -182,13 +184,153 @@ interface PresentationAction {
 Reason codes (e.g. `PLAN_APPROVE_WITH_TEXT`, `MISSING_EVIDENCE`) are always
 rendered in backticks. Never use reason codes as plain inline text.
 
-## 12. Density
+### 11.1 Human Projection for Migrated Reason Codes
+
+"Migrated" reason codes carry human-authored copy in the canonical copy table
+(`src/presentation/reason-copy.ts`, the `REASON_COPY` authority). A code is
+migrated exactly when it has an entry in that table; the projection derives its
+`impact` classification and its human copy from it and never from the technical
+`BlockedCategory` taxonomy.
+
+Migrated reason codes render differently on the two default surfaces. The
+rendered presentation (`/status`, `/why`, `/finish`) makes the headline the
+primary human copy and keeps the reason code as diagnostic identity in Details:
+
+- **Headline becomes the primary human copy.** The context-free `headline` is
+  the `BlockerSection.text`, so `{placeholder}` interpolation context never
+  leaks onto the rendered surface.
+- **The reason code is diagnostic identity, not the headline.** It moves out of
+  the primary `Blocked:` line and into `**Details:**`.
+- **The registry-verbatim message is never lost.** It is carried as the
+  projection's `canonicalMessage` and rendered under `**Details:**`.
+- **The human-authored explanation renders as `**Why:**`** when present.
+
+```markdown
+⚠ **Blocked:** Discovery drift blocks mutating tools
+**Recovery:** Re-run discovery and flowguard_hydrate to reconcile drift against persisted evidence
+**Why:** The discovery surface drifted from the persisted binding and the onDrift policy blocks mutating tools. Reconcile drift before continuing.
+**Details:**
+`DISCOVERY_DRIFT_BLOCKED`
+Discovery drift verdict is drifted; policy onDrift=block stops mutating tools
+```
+
+The structured blocked tool result stays canonical and additive:
+
+```text
+message  = canonical registry message
+headline = humanized headline
+code     = canonical code
+recovery = canonical recovery
+```
+
+`message` remains the interpolated registry message; `headline` is carried as an
+additive field (migrated codes only) so plugin boundaries read the human copy
+without message parsing. Unmigrated blocked output is byte-identical.
+
+### 11.2 ProofGraph Claim Human Projection
+
+Claim verification states are projected through a single vocabulary authority
+(`src/presentation/human-verification.ts`) that maps six canonical states to
+five human labels. Only `PROVEN` renders as `Verified`; `UNPROVEN` and
+`NOT_VERIFIED` both render as `Not verified` but remain diagnostically distinct.
+
+Default surface (human mode):
+
+- `PROVEN` → `✓ Verified`
+- `UNPROVEN` → `? Not verified`
+- `NOT_VERIFIED` → `? Not verified`
+- `CONTRADICTED` → `✗ Failed`
+- `STALE` → `⚠ Needs re-check`
+- `BLOCKED` → `⚠ Blocked`
+
+Diagnostic mode (`detail: 'diagnostic'`) renders the raw canonical state,
+claim id, claim scope, required evidence kinds, counterexample requirement,
+binding diagnostic code, freshness digest, and candidate id when present.
+
+Evidence requirements are projected from two distinct canonical sources
+that MUST NOT be collapsed:
+
+- `requiredEvidence` (provider kinds) → `RequiredEvidenceProjection`
+- `counterexampleRequirement` (assertion / aggregate_check binding) →
+  `CounterexampleRequirementProjection`
+
+Claim statements are rendered verbatim. No per-reference satisfied/missing
+evidence status is inferred. `candidateId`, provider identity, and claim
+scope are rendered only when canonically present. Binding diagnostic copy
+lives in a single exhaustive authority (`src/presentation/claim-diagnostic-copy.ts`).
+
+## 12. Progressive Disclosure
+
+Presentation surfaces select information density through
+`PresentationDetailLevel` — a composition-layer concept that is never domain
+state, never persisted, and never affects canonical workflow, verification,
+evidence, blocker, recovery, or approval semantics.
+
+| Level         | Default surface   | Content                                                               |
+| ------------- | ----------------- | --------------------------------------------------------------------- |
+| `summary`     | `/status`         | Immediate state, blocker headline, primary action, compressed context |
+| `explanation` | `/why`            | Cause, impact, recovery, relevant unresolved claim context            |
+| `diagnostic`  | internal / opt-in | Canonical codes, raw states, structured identifiers, full detail      |
+
+### 12.1 `/status` progressive disclosure
+
+Default `/status` uses `detail: 'summary'`:
+
+- One status section (phase, readiness, policy).
+- Blocker headline when blocked; reason code and canonical message hidden by
+  default.
+- Evidence section compressed to a compact notice only when evidence
+  incompleteness causes `NOT_VERIFIED`.
+- ProofGraph summary counts only; no per-claim list unless diagnostic mode.
+- Available actions hidden (use `/why` for explanation).
+- One primary next action in the conclusion.
+
+At `detail: 'explanation'` and higher, the full Evidence section and
+Available actions list return.
+
+At `detail: 'diagnostic'`, reason codes, canonical messages, and full
+ProofGraph diagnostic detail are visible.
+
+### 12.2 `/why` progressive disclosure
+
+Default `/why` uses `detail: 'explanation'`:
+
+- Blocker headline, explanation, recovery, and relevant missing evidence.
+- ProofGraph with relevant unresolved critical claims.
+- Reason code as secondary detail.
+
+At `detail: 'diagnostic'`, canonical reason codes, registry messages, and
+full ProofGraph diagnostic claim detail are visible.
+
+### 12.3 Review Decision UX
+
+Review cards surface a compressed `ReviewDecisionProjection` before
+detailed findings. The projection derives readiness from canonical review
+state only — never from severity or prose matching.
+
+| Readiness   | Meaning                                                         |
+| ----------- | --------------------------------------------------------------- |
+| `ready`     | No canonical blocking review issues prevent the human decision. |
+| `not_ready` | Canonical blockers exist that prevent the decision.             |
+
+`majorRisks` do not affect readiness — they are visible as decision context
+but never create a synthetic acceptance gate. `missingVerification`,
+`scopeCreep`, and `unknowns` are projected as advisories (visible, non-blocking).
+
+Key invariant:
+
+> Review risks inform the human decision; they do not create decision
+> authority or decision prohibition.
+
+`ready ≠ approved`. The human always decides.
+
+## 13. Density
 
 `compact` is the default and currently only density. Future expansions (e.g.
 `verbose` for diagnostics) will be represented as part of the document `kind`,
 not as a renderer parameter.
 
-## 13. Code Fences
+## 14. Code Fences
 
 - Code sections use fenced Markdown blocks.
 - Fence length is deterministically chosen to exceed the longest backtick run
@@ -196,7 +338,7 @@ not as a renderer parameter.
 - Language identifiers are validated against `[A-Za-z0-9_+.#-]+`. Invalid
   identifiers are rejected with an explicit error.
 
-## 14. Bullet List (`bulletList`)
+## 15. Bullet List (`bulletList`)
 
 Generic bulleted list for non-command items (exit options, enumerations).
 Renders as:
@@ -209,7 +351,7 @@ Renders as:
 - Empty items are rejected with a contract error.
 - Distinct from `commandList` — no invocation, no description, no visibility.
 
-## 15. Guidance (`guidance`)
+## 16. Guidance (`guidance`)
 
 Non-normative action recommendations for /finish.
 
@@ -223,7 +365,7 @@ Non-normative action recommendations for /finish.
 - Must NOT be confused with advisory notices (`notice`).
 - Every item must have non-empty `action` and `reason` fields.
 
-## 16. Notice Multi-Message
+## 17. Notice Multi-Message
 
 The `NoticeSection` now supports `additionalMessages?: readonly string[]`
 for rendering multiple messages under a single heading:
@@ -239,7 +381,7 @@ for rendering multiple messages under a single heading:
 - Empty messages in `additionalMessages` are rejected.
 - Backwards-compatible: existing single-message notices are unaffected.
 
-## 17. Tables And Long Content
+## 18. Tables And Long Content
 
 Compact FlowGuard state is rendered through typed key-value, checklist,
 artifact, and findings sections; the renderer does not generate Markdown tables.
@@ -248,7 +390,7 @@ structurally normalized but never truncated, summarized, or converted by the
 renderer. Canonical upstream projections may instead reference an artifact when
 they intentionally avoid returning its full content.
 
-## 18. Archive Labels
+## 19. Archive Labels
 
 Archive lifecycle states (`pending` | `created` | `verified` | `failed`)
 are normalised via `parseArchiveLabel()`. Unknown values throw a contract

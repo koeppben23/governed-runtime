@@ -60,6 +60,30 @@ function parseDiagnosticCode(result: string): string | undefined {
   return parsed.diagnostics?.diagnosticCode;
 }
 
+function finding(message: string) {
+  return {
+    severity: 'major' as const,
+    category: 'risk' as const,
+    message,
+    relation: {
+      // Plan reviews are artifact-scoped: findings anchor to the frozen plan
+      // artifact, never to repository locations.
+      subjectAnchors: [
+        {
+          kind: 'artifact_section' as const,
+          artifactKind: 'plan' as const,
+          artifactDigest: ANTI_FORGERY_SUBJECT_DIGEST,
+          sectionPath: [{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }],
+        },
+      ],
+      evidenceLocations: [],
+    },
+  };
+}
+
+/** Subject digest shared by the plan obligation, its reviewer attempt, and the artifact scope. */
+const ANTI_FORGERY_SUBJECT_DIGEST = 'test-subject-digest';
+
 function strictFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings {
   return makeFindings({
     reviewedBy: { sessionId: 'ses_child' },
@@ -76,6 +100,8 @@ function strictFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings
 }
 
 type ReviewAssuranceFixture = {
+  assuranceSchemaVersion: 'review-assurance.v5';
+  attempts: [];
   obligations: ReviewObligation[];
   invocations: ReviewInvocationEvidence[];
 };
@@ -84,14 +110,18 @@ function strictAssuranceFixture(
   findings: ReviewFindings = strictFindings(),
 ): ReviewAssuranceFixture {
   return {
+    assuranceSchemaVersion: 'review-assurance.v5' as const,
+    attempts: [],
     obligations: [
       {
         obligationId: '11111111-1111-4111-8111-111111111111',
         obligationType: 'plan' as const,
+        subjectDigest: 'test-subject-digest',
         iteration: 0,
         planVersion: 1,
         criteriaVersion: REVIEW_CRITERIA_VERSION,
         mandateDigest: REVIEW_MANDATE_DIGEST,
+        maxReviewerOutputRepairAttempts: 1,
         createdAt: new Date().toISOString(),
         pluginHandshakeAt: new Date().toISOString(),
         status: 'fulfilled' as const,
@@ -99,6 +129,19 @@ function strictAssuranceFixture(
         blockedCode: null,
         fulfilledAt: new Date().toISOString(),
         consumedAt: null,
+        reviewSubjectScope: {
+          kind: 'artifact',
+          artifact: {
+            kind: 'plan',
+            digest: 'test-subject-digest',
+            sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }]],
+          },
+        },
+        repositoryRevisionProvenance: {
+          kind: 'available',
+          headSha: 'a'.repeat(40),
+          baseSha: 'b'.repeat(40),
+        },
       },
     ],
     invocations: [
@@ -187,6 +230,12 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
 
   it('correct-looking attestation without fulfilled obligation is rejected', () => {
     const findings = strictFindings();
+    const reviewerInput: Record<string, unknown> = {
+      ...findings,
+      attestation: { toolObligationId: findings.attestation!.toolObligationId },
+    };
+    delete reviewerInput.reviewedBy;
+    delete reviewerInput.reviewedAt;
     const assurance = strictAssuranceFixture(findings);
     assurance.obligations[0]!.status = 'pending';
     assurance.obligations[0]!.invocationId = null;
@@ -741,7 +790,7 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const submittedFindings = strictFindings({
       overallVerdict: 'accept',
       // Different majorRisks array → different hash, same verdict
-      majorRisks: [{ severity: 'major', category: 'risk', message: 'agent-reconstructed' }],
+      majorRisks: [finding('agent-reconstructed')],
     });
     const assurance = strictAssuranceFixture(storedFindings);
     assurance.obligations[0] = {
@@ -852,7 +901,7 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     // Legacy invocation evidence without capturedVerdict → falls back to hash comparison
     const storedFindings = strictFindings();
     const submittedFindings = strictFindings({
-      majorRisks: [{ severity: 'major', category: 'risk', message: 'extra' }],
+      majorRisks: [finding('extra')],
     });
     const assurance = strictAssuranceFixture(storedFindings);
     assurance.obligations[0] = {
@@ -890,7 +939,7 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     // SDK path MUST NOT use verdict-based validation — hash comparison stays
     const storedFindings = strictFindings();
     const submittedFindings = strictFindings({
-      majorRisks: [{ severity: 'major', category: 'risk', message: 'sdk tampered' }],
+      majorRisks: [finding('sdk tampered')],
     });
     const assurance = strictAssuranceFixture(storedFindings);
 
@@ -936,6 +985,12 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
   it('task-tool after evidence is available before the next FlowGuard verdict submit validates findings', () => {
     const now = new Date().toISOString();
     const findings = strictFindings();
+    const reviewerInput: Record<string, unknown> = {
+      ...findings,
+      attestation: { toolObligationId: findings.attestation!.toolObligationId },
+    };
+    delete reviewerInput.reviewedBy;
+    delete reviewerInput.reviewedAt;
     const enforcementState = createSessionState();
     const assurance = strictAssuranceFixture(findings);
     assurance.obligations[0] = {
@@ -944,6 +999,16 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
       pluginHandshakeAt: now,
       invocationId: null,
       fulfilledAt: null,
+      // Binding requires the obligation and its attempt to name the same subject.
+      subjectDigest: ANTI_FORGERY_SUBJECT_DIGEST,
+      reviewSubjectScope: {
+        kind: 'artifact',
+        artifact: {
+          kind: 'plan',
+          digest: ANTI_FORGERY_SUBJECT_DIGEST,
+          sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }]],
+        },
+      },
     };
     assurance.invocations = [];
 
@@ -951,7 +1016,21 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
       enforcementState,
       'flowguard_plan',
       {},
-      JSON.stringify({ next: `${REVIEW_REQUIRED_PREFIX}: iteration=0 planVersion=1` }),
+      JSON.stringify({
+        next: `${REVIEW_REQUIRED_PREFIX}: iteration=0 planVersion=1`,
+        // Canonical production signal shape: obligation identity + host
+        // attestation constants.
+        reviewAttemptId: `att-${assurance.obligations[0]!.obligationId}`,
+        reviewObligationId: assurance.obligations[0]!.obligationId,
+        requiredReviewAttestation: {
+          reviewedBy: 'flowguard-reviewer',
+          mandateDigest: assurance.obligations[0]!.mandateDigest,
+          criteriaVersion: assurance.obligations[0]!.criteriaVersion,
+          toolObligationId: assurance.obligations[0]!.obligationId,
+          iteration: 0,
+          planVersion: 1,
+        },
+      }),
       now,
     );
     onTaskToolAfter(
@@ -960,16 +1039,31 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
         subagent_type: 'flowguard-reviewer',
         prompt: `Review iteration=0 planVersion=1 ${'x'.repeat(240)}`,
       },
-      JSON.stringify(findings),
+      JSON.stringify(reviewerInput),
       now,
+      { metadata: { sessionID: 'ses_child' } },
     );
-    const bindResult = buildHostTaskEvidence(
-      enforcementState,
-      'ses_parent',
-      assurance.obligations,
-      assurance.invocations,
-      now,
-    );
+    const bindResult = buildHostTaskEvidence(enforcementState, 'ses_parent', now, {
+      obligations: assurance.obligations,
+      invocations: assurance.invocations,
+      // Binding is attempt-first: the host pre-registers the attempt and binds
+      attempts:
+        // the reviewer child session to it before evidence can be captured.
+        [
+          {
+            attemptId: '33333333-3333-4333-8333-333333333333',
+            obligationId: assurance.obligations[0]!.obligationId,
+            obligationType: 'plan',
+            subjectDigest: ANTI_FORGERY_SUBJECT_DIGEST,
+            ordinal: 0,
+            childSessionId: 'ses_child',
+            status: 'created',
+            origin: { kind: 'initial' } as const,
+            repositoryDiscovery: { kind: 'not_applicable' } as const,
+            createdAt: now,
+          },
+        ],
+    });
 
     expect(bindResult.evidence).not.toBeNull();
     const assuranceWithTaskEvidence = appendInvocationEvidence(

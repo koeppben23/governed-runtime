@@ -97,9 +97,41 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'scripts',
+          include: ['scripts/**/*.test.ts'],
+          globals: false,
+          restoreMocks: true,
+          testTimeout: 15_000,
+        },
+      },
+      {
+        test: {
+          name: 'evals',
+          include: ['evals/**/*.test.ts'],
+          globals: false,
+          restoreMocks: true,
+          testTimeout: 30_000,
+        },
+      },
+      {
+        test: {
           name: 'fuzz',
           setupFiles: ['./vitest.setup.ts'],
           include: ['src/**/*.fuzz.test.ts'],
+          globals: false,
+          restoreMocks: true,
+          testTimeout: 120_000,
+        },
+      },
+      {
+        test: {
+          name: 'conformance',
+          setupFiles: ['./vitest.setup.ts'],
+          include: ['test/conformance/assertions/**/*.test.ts'],
+          exclude: [
+            'test/conformance/assertions/projects/**',
+            'test/conformance/assertions/fixtures/**',
+          ],
           globals: false,
           restoreMocks: true,
           testTimeout: 120_000,

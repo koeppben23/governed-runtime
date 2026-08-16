@@ -4,6 +4,12 @@
 **Status:** Architecture complete
 **Verdict:** accept
 
+## Verification
+
+Status: NOT_DECLARED
+No verification obligations declared.
+Approval evidence: Not recorded
+
 ## ADR Details
 
 **ID:** `ADR-001`

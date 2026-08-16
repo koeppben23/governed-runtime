@@ -6,6 +6,7 @@
  */
 import type { BlockedReason } from './reasons-types.js';
 import { REVIEW_VALIDATION_REASONS } from './reasons-validation-review.js';
+import { OBSERVATION_VALIDATION_REASONS } from './reasons-validation-observation.js';
 
 export const VALIDATION_REASONS: readonly BlockedReason[] = [
   {
@@ -210,7 +211,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
       'Human-gated policies require an explicit user decision from a host command boundary ({reason}).',
     recoverySteps: [
       'Present the reviewCard verbatim to the user',
-      'Ask the user to run /review-decision approve, /request-changes, or /reject',
+      'Ask the user to run /approve, /request-changes, or /reject',
       "Do not decide on the user's behalf and do not call flowguard_decision from a model-only tool call",
     ],
   },
@@ -327,6 +328,30 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'VERIFICATION_SUBJECT_CHANGED',
+    category: 'state',
+    messageTemplate:
+      'The execution subject ({component}) changed during the {phase} phase: {detail}',
+    recoverySteps: [
+      'Re-run discovery to capture the current execution surface',
+      'Re-execute verification against the current subject',
+    ],
+  },
+
+  {
+    code: 'SUBAGENT_MANDATE_MISSING',
+    category: 'state',
+    messageTemplate:
+      'The submitted review findings carry no mandate attestation for the active review obligation {obligationId}.',
+    recoverySteps: [
+      'Re-invoke the flowguard-reviewer subagent so the captured findings carry the mandate attestation',
+      'Do not submit hand-assembled findings for a strict host-visible review',
+      'Run /continue to confirm the active obligation before retrying the verdict',
+    ],
+    quickFixCommand: '/continue',
+  },
+
+  {
     code: 'CONTENT_ANALYSIS_REQUIRED',
     category: 'input',
     messageTemplate:
@@ -361,5 +386,41 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     ],
   },
 
+  {
+    code: 'REVIEWER_TASK_NOT_DISPATCHABLE',
+    category: 'state',
+    messageTemplate:
+      'No reviewer Task can be dispatched: the review obligation has no durable bindable attempt; a bare Task call never re-arms a rejected or spent attempt.',
+    recoverySteps: [
+      'Re-run the originating FlowGuard command to authorize a fresh review attempt',
+      'Only a freshly minted bindable attempt makes the reviewer Task dispatchable',
+      'Do NOT retry the Task call directly and do NOT fabricate findings',
+    ],
+  },
+
+  {
+    code: 'REVIEW_SUBJECT_CHANGED_WHILE_PENDING',
+    category: 'input',
+    messageTemplate:
+      'The submitted artifact revision ({submittedDigest}) does not match the frozen subject ({subjectDigest}) of the pending review obligation {obligationId}. A pending review never silently reviews a different artifact revision.',
+    recoverySteps: [
+      'Submit the same artifact revision to continue the active review (reissue/repair of the pending obligation)',
+      'Wait for the pending obligation to settle (verdict or terminal block) before reviewing a changed revision',
+      'A changed revision after a blocked obligation starts a fresh review via revision semantics',
+    ],
+  },
+
+  {
+    code: 'RESTART_CYCLE_ITERATION_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'Architecture review restart refused: the blocked predecessor obligation {obligationId} carries iteration {predecessorIteration} but the flow state carries iteration {selfReviewIteration}. The review cycle binding is inconsistent.',
+    recoverySteps: [
+      'Inspect the session state and audit trail before further workflow actions',
+      'Restore a consistent review cycle from trusted evidence or abort the session',
+    ],
+  },
+
   ...REVIEW_VALIDATION_REASONS,
+  ...OBSERVATION_VALIDATION_REASONS,
 ] as const satisfies readonly BlockedReason[];

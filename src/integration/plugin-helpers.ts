@@ -9,6 +9,7 @@
 
 import { defaultReasonRegistry } from '../config/reasons.js';
 import { buildBlockedDiagnostics } from '../diagnostics/index.js';
+import { lookupReasonCopy } from '../presentation/index.js';
 import { AUTO_ADVANCE_OVERFLOW_CODE } from '../rails/auto-advance-overflow.js';
 import {
   REASON_PLUGIN_ENFORCEMENT_UNAVAILABLE,
@@ -68,12 +69,14 @@ export function parseToolResult(rawOutput: unknown): Record<string, unknown> | n
 export function strictBlockedOutput(code: string, detail: Record<string, string>): string {
   const formatted = defaultReasonRegistry.format(code, detail);
   const diagnostics = buildBlockedDiagnostics(formatted.code, detail);
+  const headline = lookupReasonCopy(formatted.code)?.headline;
   return JSON.stringify({
     error: true,
     code: formatted.code,
     message: formatted.reason,
     detail,
     recovery: formatted.recovery,
+    ...(headline ? { headline } : {}),
     ...(formatted.quickFix !== undefined ? { quickFix: formatted.quickFix } : {}),
     ...(diagnostics ? { diagnostics } : {}),
   });

@@ -33,11 +33,14 @@ import {
   LATER,
   modeASubagentResponse,
   modeANoReviewRequiredResponse,
+  modeAWithoutContentMeta,
   modeBSuccessResponse,
   modeBErrorResponse,
   taskResultWithFindings,
   taskResultWithEmbeddedFindings,
   validSubagentPrompt,
+  FIXTURE_OBLIGATION_ID,
+  hostAttestationFor,
 } from './test-helpers.js';
 import {
   TOOL_FLOWGUARD_IMPLEMENT,
@@ -1007,17 +1010,14 @@ describe('review-enforcement', () => {
     it('L3: allows when contentMeta extraction failed (defensive)', () => {
       const state = createSessionState();
 
-      // Manually set pending review with null contentMeta (simulates extraction failure)
+      // Manually set pending review with null contentMeta (simulates extraction
+      // failure). The signal still carries obligation identity + host
+      // attestation, so it is not structurally failed.
       onFlowGuardToolAfter(
         state,
         'flowguard_plan',
         { planText: '## Plan' },
-        // next field without iteration/planVersion — contentMeta will be null
-        JSON.stringify({
-          phase: 'PLAN',
-          reviewMode: 'subagent',
-          next: `${REVIEW_REQUIRED_PREFIX}: Review the plan.`,
-        }),
+        modeAWithoutContentMeta(),
         NOW,
       );
 
@@ -1469,15 +1469,16 @@ describe('review-enforcement', () => {
       expect(result.allowed).toBe(true);
     });
 
-    // ── L162: filter already-called pending reviews ──
-    it('enforceBeforeSubagentCall ignores already-called pending reviews', () => {
+    // ── L162: schema-invalid captures remain eligible for a repair retry ──
+    it('enforceBeforeSubagentCall requires the canonical repair prompt after schema-invalid findings', () => {
       const state = createSessionState();
-      // Register a pending review
+      // Register a pending review with the real production signal shape
+      // (obligation identity + host attestation constants).
       onFlowGuardToolAfter(
         state,
         'flowguard_plan',
         { planText: '## Plan' },
-        modeASubagentResponse(),
+        modeASubagentResponse({ obligationId: FIXTURE_OBLIGATION_ID }),
         NOW,
       );
       // Complete the subagent call (marks subagentCalled=true)
@@ -1487,13 +1488,13 @@ describe('review-enforcement', () => {
         taskResultWithFindings('s1'),
         LATER,
       );
-      // Now the pending review is subagentCalled=true
-      // A new subagent call should see 0 uncalled pending → allowed (no enforcement)
+      // The old payload is schema-invalid, so a retry requires the canonical
+      // repair prompt rather than an arbitrary reviewer invocation.
       const result = enforceBeforeSubagentCall(state, {
         subagent_type: REVIEWER_SUBAGENT_TYPE,
-        prompt: 'x',
+        prompt: `iteration=0, planVersion=1. ${'x'.repeat(MIN_SUBAGENT_PROMPT_LENGTH)}`,
       });
-      expect(result.allowed).toBe(true);
+      expect(result.allowed).toBe(false);
     });
 
     // ── L170: prompt length boundary (MIN_SUBAGENT_PROMPT_LENGTH) ──
@@ -1614,14 +1615,14 @@ describe('review-enforcement', () => {
       expect(pending.subagentCalled).toBe(false);
     });
 
-    // ── L302: matchPendingReview with 0 uncalled returns null ──
-    it('matchPendingReview returns null when all pending reviews already called', () => {
+    // ── L302: schema-invalid captures remain eligible for a repair retry ──
+    it('matchPendingReview returns the pending review for a schema-repair retry', () => {
       const state = createSessionState();
       onFlowGuardToolAfter(
         state,
         'flowguard_plan',
         { planText: '## Plan' },
-        modeASubagentResponse(),
+        modeASubagentResponse({ obligationId: FIXTURE_OBLIGATION_ID }),
         NOW,
       );
       // Complete the review (marks subagentCalled)
@@ -1631,12 +1632,12 @@ describe('review-enforcement', () => {
         taskResultWithFindings('s1'),
         LATER,
       );
-      // Now matchPendingReview should return null (0 uncalled)
+      // The invalid capture requires a fresh reviewer invocation.
       const result = matchPendingReview(state, {
         subagent_type: REVIEWER_SUBAGENT_TYPE,
         prompt: 'another review',
       });
-      expect(result).toBeNull();
+      expect(result).not.toBeNull();
     });
 
     // ── L314: matchPendingReview planVersion matching ──
@@ -1882,5 +1883,109 @@ describe('review-enforcement', () => {
       });
       expect(result.allowed).toBe(true);
     });
+  });
+});
+
+// ─── L3: the artifact must actually be appended ──────────────────────────────
+//
+// The length floor and the iteration/planVersion match are both satisfied by the
+// canonical reviewer prompt on its own, so before this guard a reviewer could be
+// dispatched with the instruction block and nothing to review while every
+// enforcement level reported success.
+describe('L3 artifact presence', () => {
+  const ANCHOR = 'Append the artifact under review content to review below this line:';
+
+  function canonicalPrompt(): string {
+    return (
+      `You are the flowguard-reviewer subagent performing an independent, ` +
+      `falsification-first review of the artifact under review.\n` +
+      `Review context: iteration=0, planVersion=1.\n` +
+      `Rules:\n- Do not fabricate a verdict of convenience; ground every finding in evidence.\n` +
+      `- Return a complete ReviewFindings JSON object with overallVerdict and blockingIssues.\n` +
+      ANCHOR
+    );
+  }
+
+  function modeAWithCanonicalPrompt(): string {
+    return JSON.stringify({
+      phase: 'PLAN',
+      // Obligation identity + host attestation: without them the pending is
+      // structurally failed before any reviewer dispatch and L3 never runs.
+      reviewAttemptId: `att-${FIXTURE_OBLIGATION_ID}`,
+      reviewObligationId: FIXTURE_OBLIGATION_ID,
+      requiredReviewAttestation: hostAttestationFor(FIXTURE_OBLIGATION_ID),
+      next:
+        `${REVIEW_REQUIRED_PREFIX}: Call the flowguard-reviewer subagent via Task tool. ` +
+        `iteration=0, planVersion=1.`,
+      reviewerTaskPrompt: canonicalPrompt(),
+    });
+  }
+
+  function pendingStateWithCanonicalPrompt() {
+    const state = createSessionState();
+    onFlowGuardToolAfter(
+      state,
+      'flowguard_plan',
+      { planText: '## Plan' },
+      modeAWithCanonicalPrompt(),
+      NOW,
+    );
+    return state;
+  }
+
+  it('blocks a prompt that ends at the canonical instruction block', () => {
+    const state = pendingStateWithCanonicalPrompt();
+
+    const result = enforceBeforeSubagentCall(state, {
+      subagent_type: 'flowguard-reviewer',
+      prompt: canonicalPrompt(),
+    });
+
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) expect(result.code).toBe('SUBAGENT_PROMPT_ARTIFACT_MISSING');
+  });
+
+  it('blocks when whitespace changes the frozen instruction prompt', () => {
+    const state = pendingStateWithCanonicalPrompt();
+
+    const result = enforceBeforeSubagentCall(state, {
+      subagent_type: 'flowguard-reviewer',
+      prompt: canonicalPrompt() + '\n\n   \n',
+    });
+
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) expect(result.code).toBe('SUBAGENT_PROMPT_MISMATCH');
+  });
+
+  it('blocks an artifact appended to the frozen instruction prompt', () => {
+    const state = pendingStateWithCanonicalPrompt();
+
+    const result = enforceBeforeSubagentCall(state, {
+      subagent_type: 'flowguard-reviewer',
+      prompt: canonicalPrompt() + '\n\n## Plan\n1. Fix the auth bug\n2. Add a regression test\n',
+    });
+
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) expect(result.code).toBe('SUBAGENT_PROMPT_MISMATCH');
+  });
+
+  it('does not apply when FlowGuard emitted no canonical prompt', () => {
+    // A legitimately free-composed prompt (no reviewerTaskPrompt was emitted)
+    // must keep passing on the existing context rules alone.
+    const state = createSessionState();
+    onFlowGuardToolAfter(
+      state,
+      'flowguard_plan',
+      { planText: '## Plan' },
+      modeASubagentResponse({ iteration: 0, planVersion: 1 }),
+      NOW,
+    );
+
+    const result = enforceBeforeSubagentCall(state, {
+      subagent_type: 'flowguard-reviewer',
+      prompt: validSubagentPrompt({ iteration: 0, planVersion: 1 }),
+    });
+
+    expect(result.allowed).toBe(true);
   });
 });

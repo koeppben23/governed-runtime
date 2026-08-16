@@ -9,8 +9,87 @@ import {
   DECISION_IDENTITY_VERIFIED_REVIEWER,
 } from '../fixtures.js';
 import { REGULATED_POLICY, TEAM_POLICY } from '../config/policy.js';
+import type { ProofGraphProjection } from '../state/proofgraph.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { hashText } from '../shared/hashing.js';
 
 const ctx = createTestContext();
+
+/** Human-approval binding; only a certificate-authorized claim is gate-eligible. */
+const APPROVAL = {
+  certificateId: '00000000-0000-4000-8000-0000000000ce',
+  claimDeclarationsDigest: 'a'.repeat(64),
+  decisionAttestationDigest: 'b'.repeat(64),
+  declarationId: '00000000-0000-4000-8000-0000000000de',
+} as const;
+
+function proofGraph(
+  signalClass: 'fact' | 'hypothesis' = 'fact',
+  verificationState: 'PROVEN' | 'UNPROVEN' = 'UNPROVEN',
+  certified = true,
+): ProofGraphProjection {
+  return {
+    version: 'proofgraph.v1',
+    evaluatedAt: '2026-01-01T00:00:00.000Z',
+    claims: [
+      {
+        claimId: '00000000-0000-4000-8000-000000000762',
+        statement: 'The protected behavior holds.',
+        signalClass,
+        critical: true,
+        provenance: {
+          kind: 'canonical_authority',
+          authorityId: 'plan',
+          digest: 'digest',
+          ...(certified ? { approval: APPROVAL } : {}),
+        },
+        evidenceRefs: [],
+        counterexampleRefs: [],
+        verificationState,
+      },
+    ],
+  };
+}
+
+function withCertifiedCriticalPlan(state: ReturnType<typeof makeProgressedState>) {
+  const declarations = {
+    flow: 'plan' as const,
+    claims: [
+      {
+        claimId: '00000000-0000-4000-8000-000000000763',
+        statement: 'The protected behavior holds.',
+        critical: true,
+        authoritySectionId: 'proof',
+        expectedCheckId: 'test',
+        counterexampleRequirement: {
+          checkId: 'security',
+          assertion: { providerId: 'junit', localId: 'some-id' },
+        },
+      },
+    ],
+  };
+  const plan = state.plan!;
+  return {
+    ...state,
+    plan: {
+      ...plan,
+      claimDeclarations: declarations,
+      approvalCertificate: {
+        flow: 'plan' as const,
+        authorityDigest: plan.current.digest,
+        claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
+        decisionAttestationDigest: 'decision-digest',
+        approvedAt: '2026-01-01T00:00:00.000Z',
+        approvedBy: 'reviewer-1',
+        certificateId: '00000000-0000-4000-8000-000000000764',
+        planVersion: plan.current.planVersion,
+        planRecordDigest: plan.current.recordDigest,
+        reviewObligationId: null,
+        reviewEvidenceDigest: null,
+      },
+    },
+  };
+}
 
 describe('review-decision rail', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
@@ -48,6 +127,144 @@ describe('review-decision rail', () => {
       if (result.kind === 'ok') {
         expect(result.state.phase).toBe('COMPLETE');
       }
+    });
+
+    it('blocks when a certificate-authorized critical plan claim has no ProofGraph projection', () => {
+      const state = withCertifiedCriticalPlan(makeProgressedState('EVIDENCE_REVIEW'));
+      const result = executeReviewDecision(
+        { ...state, proofGraph: undefined },
+        { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
+        ctx,
+      );
+      expect(result).toMatchObject({
+        kind: 'blocked',
+        code: 'PROOFGRAPH_EVALUATION_UNAVAILABLE',
+      });
+      if (result.kind === 'blocked')
+        expect(result.reason).toContain('00000000-0000-4000-8000-000000000763');
+    });
+
+    it('blocks EVIDENCE_REVIEW approval when critical declarations lack a certificate', () => {
+      const certified = withCertifiedCriticalPlan(makeProgressedState('EVIDENCE_REVIEW'));
+      const result = executeReviewDecision(
+        { ...certified, plan: { ...certified.plan!, approvalCertificate: undefined } },
+        { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
+        ctx,
+      );
+      expect(result).toMatchObject({ kind: 'blocked', code: 'PROOFGRAPH_CERTIFICATE_INVALID' });
+    });
+
+    it('allows a missing ProofGraph projection when no critical plan claim is authorized', () => {
+      const state = makeProgressedState('EVIDENCE_REVIEW');
+      const result = executeReviewDecision(
+        { ...state, proofGraph: undefined },
+        { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
+        ctx,
+      );
+      expect(result).toMatchObject({ kind: 'ok' });
+    });
+
+    it('blocks EVIDENCE_REVIEW approval on an unproven critical fact without any policy', () => {
+      // Enforcement is unconditional (#762): no policy configuration is involved.
+      const state = makeProgressedState('EVIDENCE_REVIEW');
+      const result = executeReviewDecision(
+        { ...state, proofGraph: proofGraph() },
+        { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
+        ctx,
+      );
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.code).toBe('PROOFGRAPH_CRITICAL_FACTS_UNPROVEN');
+        expect(result.reason).toContain('00000000-0000-4000-8000-000000000762');
+      }
+    });
+
+    it('blocks a specific implementation trigger without a critical fact claim', () => {
+      const state = makeProgressedState('EVIDENCE_REVIEW');
+      const result = executeReviewDecision(
+        {
+          ...state,
+          implementation: {
+            changedFiles: ['src/state/schema.ts'],
+            domainFiles: ['src/state/schema.ts'],
+            digest: 'implementation-digest',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+          implementationRiskAssessment: {
+            computedMinimumTaskClass: 'HIGH-RISK',
+            touchedSurfaces: ['src/state/schema.ts'],
+            riskTriggers: ['state_integrity'],
+            assessedFrom: 'implementation_changed_files',
+            assessedFileCount: 1,
+            implementationDigest: 'implementation-digest',
+          },
+        },
+        { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
+        ctx,
+      );
+      expect(result).toMatchObject({ kind: 'blocked', code: 'PROOFGRAPH_CRITICAL_FACT_REQUIRED' });
+    });
+
+    it('does not impose a critical fact requirement for ceremony_only', () => {
+      const state = makeProgressedState('EVIDENCE_REVIEW');
+      const result = executeReviewDecision(
+        {
+          ...state,
+          implementation: {
+            changedFiles: ['src/archive/verify.ts'],
+            domainFiles: ['src/archive/verify.ts'],
+            digest: 'implementation-digest',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+          implementationRiskAssessment: {
+            computedMinimumTaskClass: 'HIGH-RISK',
+            touchedSurfaces: ['src/archive/verify.ts'],
+            riskTriggers: ['ceremony_only'],
+            assessedFrom: 'implementation_changed_files',
+            assessedFileCount: 1,
+            implementationDigest: 'implementation-digest',
+          },
+        },
+        { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
+        ctx,
+      );
+      expect(result).toMatchObject({ kind: 'ok' });
+    });
+
+    it('blocks an assessment that predates trigger classification', () => {
+      const state = makeProgressedState('EVIDENCE_REVIEW');
+      const result = executeReviewDecision(
+        {
+          ...state,
+          implementation: {
+            changedFiles: ['src/state/schema.ts'],
+            domainFiles: ['src/state/schema.ts'],
+            digest: 'implementation-digest',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+          implementationRiskAssessment: {
+            computedMinimumTaskClass: 'HIGH-RISK',
+            touchedSurfaces: ['src/state/schema.ts'],
+            assessedFrom: 'implementation_changed_files',
+            assessedFileCount: 1,
+            implementationDigest: 'implementation-digest',
+          },
+        },
+        { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
+        ctx,
+      );
+      expect(result).toMatchObject({ kind: 'blocked', code: 'PROOFGRAPH_RISK_ASSESSMENT_STALE' });
+    });
+
+    it('does not apply the gate to hypothesis claims', () => {
+      const state = makeProgressedState('EVIDENCE_REVIEW');
+      const result = executeReviewDecision(
+        { ...state, proofGraph: proofGraph('hypothesis') },
+        { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
+        ctx,
+      );
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') expect(result.state.phase).toBe('COMPLETE');
     });
 
     it('changes_requested at PLAN_REVIEW → PLAN', () => {
@@ -145,6 +362,16 @@ describe('review-decision rail', () => {
         expect(result.code).toBe('INVALID_VERDICT');
         expect(result.reason).toBeDefined();
       }
+    });
+
+    it('does not apply the gate to standalone review phases', () => {
+      const result = executeReviewDecision(
+        makeState('REVIEW_COMPLETE', { proofGraph: proofGraph() }),
+        { verdict: 'approve', rationale: 'ok', decidedBy: 'r' },
+        ctx,
+      );
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') expect(result.code).toBe('COMMAND_NOT_ALLOWED');
     });
   });
 
@@ -478,6 +705,17 @@ describe('review-decision rail', () => {
         expect(result.state.architecture).not.toBeNull();
         expect(result.state.selfReview).not.toBeNull();
       }
+    });
+
+    it('does not apply the gate to PLAN_REVIEW approval', () => {
+      const state = makeProgressedState('PLAN_REVIEW');
+      const result = executeReviewDecision(
+        { ...state, proofGraph: proofGraph() },
+        { verdict: 'approve', rationale: 'LGTM', decidedBy: 'reviewer-1' },
+        ctx,
+      );
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') expect(result.state.phase).toBe('VALIDATION');
     });
 
     it('changes_requested at ARCH_REVIEW → ARCHITECTURE with cleared selfReview', () => {

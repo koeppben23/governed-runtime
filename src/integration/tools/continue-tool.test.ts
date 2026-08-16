@@ -14,6 +14,7 @@
  * @test-policy HAPPY, BAD, CORNER
  */
 
+import type { SessionState } from '../../state/schema.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ── Shared mock handle ──────────────────────────────────────────────────────
@@ -50,7 +51,7 @@ const mocks = vi.hoisted(() => ({
       },
     });
   }),
-  writeStateWithArtifacts: vi.fn(async () => undefined),
+  writeStateWithArtifacts: vi.fn(async (_sessDir: string, state: SessionState) => state),
   formatEval: vi.fn(() => 'next'),
   // commands
   isCommandAllowed: vi.fn(() => true),
@@ -99,10 +100,13 @@ vi.mock('./helpers.js', () => ({
   resolvePolicyFromState: mocks.resolvePolicyFromState,
   createPolicyContext: mocks.createPolicyContext,
   formatBlocked: mocks.formatBlocked,
-  formatError: mocks.formatError,
   appendNextAction: mocks.appendNextAction,
   writeStateWithArtifacts: mocks.writeStateWithArtifacts,
   formatEval: mocks.formatEval,
+}));
+
+vi.mock('./error-format.js', () => ({
+  formatError: mocks.formatError,
 }));
 
 vi.mock('../../machine/commands.js', () => ({
@@ -166,6 +170,27 @@ describe('flowguard_continue (runtime)', () => {
     expect(parsed.phase).toBe('IMPL_REVIEW');
     expect(parsed.next).toBe('/impl_review');
     expect(parsed.status).toBe('Implementation review is pending.');
+  });
+
+  it('IMPL_REVIEW with a blocked implement obligation surfaces the blocker instead of claiming a pending review', async () => {
+    setPhase('IMPL_REVIEW');
+    mocks.state = {
+      phase: 'IMPL_REVIEW',
+      reviewAssurance: {
+        obligations: [
+          {
+            obligationType: 'implement',
+            status: 'blocked',
+            blockedCode: 'REVIEW_REPAIR_UNAVAILABLE',
+          },
+        ],
+      },
+    };
+    const { continue_cmd } = await import('./continue-tool.js');
+    const res = await continue_cmd.execute({}, {} as never);
+    const parsed = JSON.parse(String(res));
+    expect(parsed.status).toContain('blocked (REVIEW_REPAIR_UNAVAILABLE)');
+    expect(parsed.status).not.toContain('Implementation review is pending.');
   });
 
   // ── BAD: blocking on ambiguous / unknown ──────────────────────────────────

@@ -172,8 +172,8 @@ function hostSubagentTaskRequired(detail: DiagnosticDetail): RuntimeDiagnostics 
       : {}),
     safeNextActions: [
       'Run the FlowGuard reviewer subagent via the OpenCode Task tool.',
-      'Submit the complete ReviewFindings object returned by the reviewer.',
-      'Do not submit manual or self-review findings in host_task_required mode.',
+      'In host_task_required mode, submit only the reviewVerdict matching the captured reviewer overallVerdict — FlowGuard resolves the evidence automatically.',
+      'Do NOT submit, copy, or alter reviewFindings in host_task_required mode.',
     ],
   };
 }

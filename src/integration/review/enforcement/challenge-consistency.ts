@@ -83,7 +83,7 @@ function hasValidationAttemptReference(challenge: Challenge): boolean {
   );
 }
 
-// eslint-disable-next-line complexity -- explicit fail-closed challenge checks
+// eslint-disable-next-line complexity, max-lines-per-function -- explicit fail-closed challenge checks
 function validateChallenge(
   input: ChallengeConsistencyInput,
   challenge: Challenge,
@@ -114,7 +114,7 @@ function validateChallenge(
     return {
       ok: false,
       code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
-      details: { kind: challenge.kind },
+      details: { kind: challenge.kind, reason: 'evidence_missing' },
     };
   }
   if (
@@ -135,7 +135,11 @@ function validateChallenge(
     return {
       ok: false,
       code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
-      details: { kind: challenge.kind, required: 'validation_attempt' },
+      details: {
+        kind: challenge.kind,
+        reason: 'validation_attempt_missing',
+        required: 'validation_attempt',
+      },
     };
   }
   if (

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { executePlan } from '../rails/plan.js';
 import { executeValidate } from '../rails/validate.js';
 import type { ValidateExecutors } from '../rails/validate.js';
@@ -21,6 +21,22 @@ import {
 import type { SessionState } from '../state/schema.js';
 import type { ValidationResult } from '../state/evidence-validation.js';
 import { SOLO_POLICY, TEAM_POLICY } from '../config/policy.js';
+
+vi.mock('../adapters/git.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/git.js')>();
+  return { ...original, headCommitFull: vi.fn().mockResolvedValue('a'.repeat(40)) };
+});
+
+vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/frozen-repository.js')>();
+  return {
+    ...original,
+    freezeRepositoryIdentity: vi.fn(() => ({
+      kind: 'local',
+      rootCommitDigest: 'sha256:' + 'b'.repeat(64),
+    })),
+  };
+});
 
 const ctx = createTestContext();
 
@@ -174,6 +190,7 @@ describe('validate rail', () => {
       executionMs: 100,
       outputDigest: 'a'.repeat(64),
       timedOut: false,
+      outcome: (passed ? 'supported' : 'inconclusive') as 'supported' | 'inconclusive',
     };
   }
 
@@ -374,6 +391,7 @@ describe('continue rail', () => {
       executionMs: 100,
       outputDigest: 'a'.repeat(64),
       timedOut: false,
+      outcome: 'supported' as const,
     }),
     selfReview: async () => ({ verdict: 'accept' as const }),
     implReview: async () => ({ verdict: 'accept' as const }),
@@ -414,6 +432,8 @@ describe('continue rail', () => {
           executionMs: 100,
           outputDigest: 'a'.repeat(64),
           timedOut: false,
+          outcome: (checkId !== 'test' ? 'supported' : 'inconclusive') as
+            'supported' | 'inconclusive',
         }),
       };
       const result = await executeContinue(state, ctx, failingExecutors);

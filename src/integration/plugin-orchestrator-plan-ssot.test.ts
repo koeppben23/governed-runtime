@@ -29,6 +29,7 @@ import { createTestAdapter } from './test-adapter-helper.js';
 import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import type { SessionState } from '../state/schema.js';
+import { computeRecordDigest } from '../state/evidence-plan.js';
 import type { OrchestratorClient } from './review/types.js';
 
 const PARENT_SESSION_ID = 'parent-session-ssot-1';
@@ -89,14 +90,17 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
       reviewOutputPolicy: 'structured_required',
     },
     reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v5' as const,
       obligations: [
         {
           obligationId: OBLIGATION_ID,
           obligationType: 'plan',
+          subjectDigest: 'test-subject-digest',
           iteration: 1,
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
+          maxReviewerOutputRepairAttempts: 1,
           createdAt: NOW,
           pluginHandshakeAt: null,
           status: 'pending',
@@ -104,9 +108,15 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
           blockedCode: null,
           fulfilledAt: null,
           consumedAt: null,
+          reviewSubjectScope: {
+            kind: 'repository_change',
+            paths: ['src/foo.ts'],
+            revisions: ['base', 'head'],
+          },
         },
       ],
       invocations: [],
+      attempts: [],
     },
     ...overrides,
   });
@@ -258,6 +268,18 @@ describe('BUG-09: plan text SSOT enforcement', () => {
             digest: 'digest-empty',
             sections: [] as string[],
             createdAt: NOW,
+            recordDigest: computeRecordDigest({
+              contentDigest: 'digest-empty',
+              planVersion: 1,
+              supersedesRecordDigest: null,
+              originatingReviewObligationId: null,
+              revisionReason: null,
+            }),
+            planVersion: 1,
+            supersedesRecordDigest: null,
+            originatingReviewObligationId: null,
+            revisionReason: null,
+            lineageStatus: 'verified' as const,
           },
           history: [],
         },
@@ -306,6 +328,18 @@ describe('BUG-09: plan text SSOT enforcement', () => {
             digest: 'digest-long',
             sections: ['Plan'] as string[],
             createdAt: NOW,
+            recordDigest: computeRecordDigest({
+              contentDigest: 'digest-long',
+              planVersion: 1,
+              supersedesRecordDigest: null,
+              originatingReviewObligationId: null,
+              revisionReason: null,
+            }),
+            planVersion: 1,
+            supersedesRecordDigest: null,
+            originatingReviewObligationId: null,
+            revisionReason: null,
+            lineageStatus: 'verified' as const,
           },
           history: [],
         },

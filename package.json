@@ -41,11 +41,12 @@
     "clean": "node scripts/clean-dist.js",
     "build": "npm run clean && npm run sync-version && npm run generate-docs && tsc && npm run generate-doc-inventory && npm run generate-build-info",
     "check:esm": "node scripts/check-esm-imports.js",
+    "check:agent-instructions": "node scripts/check-agent-instructions.mjs",
     "check:actions-pinned": "node scripts/check-github-actions-pinned.js",
     "check:node-toolchain": "node scripts/check-node-toolchain-consistency.mjs",
     "check:prod": "tsc --noEmit -p tsconfig.json",
     "check:tests": "tsc --noEmit -p tsconfig.test.json",
-    "check": "npm run check:prod && npm run check:tests",
+    "check": "npm run check:prod && npm run check:tests && npm run check:agent-instructions",
     "typecheck": "npm run check",
     "check:opencode-host": "node scripts/check-opencode-host-drift.mjs",
     "check:unused-dependencies": "knip --dependencies",
@@ -79,6 +80,8 @@
     "test:smoke": "vitest run --project smoke",
     "test:fuzz": "vitest run --project fuzz",
     "test:fuzz:deep": "FAST_CHECK_NUM_RUNS=10000 vitest run --project fuzz",
+    "test:assertion-conformance": "vitest run --project conformance test/conformance/assertions/assertion-golden-conformance.test.ts",
+    "test:provider-conformance": "FLOWGUARD_RUNTIME_CONFORMANCE=1 vitest run --project conformance test/conformance/assertions/assertion-runtime-conformance.test.ts",
     "test:independent-review-e2e": "node scripts/verify-independent-review-e2e.js",
     "trigger:opencode-host-update": "node scripts/check-opencode-host-drift.mjs --trigger",
     "sync-version": "node scripts/sync-version.js",
@@ -148,10 +151,12 @@
     "typedoc": "^0.28.20",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.62.1",
-    "vitest": "^4.1.4"
+    "vitest": "^4.1.4",
+    "yaml": "^2.9.0"
   },
   "overrides": {
     "brace-expansion": "5.0.9",
+    "qs": "6.15.3",
     "protobufjs": "7.6.5"
   },
   "files": [

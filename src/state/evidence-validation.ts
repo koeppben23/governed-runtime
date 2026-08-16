@@ -11,7 +11,12 @@
 
 import { z } from 'zod';
 import { CheckId } from './evidence-primitives.js';
-import { VerificationCandidateKindSchema } from './discovery-schemas.js';
+import {
+  FullCheckScopeAttestationSchema,
+  VerificationCandidateKindSchema,
+} from './discovery-schemas.js';
+import { ReportFormatId } from './discovery-schemas.js';
+import { ProviderId, AssertionIdentity } from './assertion-identity.js';
 
 export const RepairGuidanceCategory = z.enum([
   'typecheck',
@@ -86,6 +91,145 @@ export type RepairGuidance = z.infer<typeof RepairGuidance>;
  *
  * No agent self-report: all fields are runtime-produced, not agent-supplied.
  */
+
+export const ValidationOutcome = z.enum(['supported', 'inconclusive', 'blocked']);
+export type ValidationOutcome = z.infer<typeof ValidationOutcome>;
+
+// ─── Structured Assertion Evidence ───────────────────────────────────────────
+
+export { ProviderId };
+
+export const StructuredAssertionEvidence = z
+  .object({
+    /** Structured provider-scoped assertion identity. */
+    assertion: AssertionIdentity,
+    /** Provider that produced this assertion evidence. */
+    providerId: ProviderId,
+    /** Assertion-level status */
+    status: z.enum(['passed', 'failed', 'errored', 'skipped']),
+    /** Suite or package name */
+    suiteName: z.string().min(1).optional(),
+    /** Human-readable test name */
+    testName: z.string().min(1),
+    /** Workspace-relative source file */
+    sourceFile: z.string().min(1).optional(),
+    /** Duration in milliseconds */
+    durationMs: z.number().nonnegative().optional(),
+    /** Failure details (only for status='failed'; forbidden otherwise) */
+    failure: z
+      .object({
+        type: z.string().optional(),
+        message: z.string().optional(),
+        detailDigest: z.string().min(1).optional(),
+      })
+      .optional(),
+  })
+  .strict()
+  .refine(
+    (data) => data.status === 'failed' || data.status === 'errored' || data.failure === undefined,
+    {
+      message: 'failure details only allowed when status is failed or errored',
+    },
+  )
+  .refine((data) => data.providerId === data.assertion.providerId, {
+    message: 'providerId must match assertion.providerId',
+  })
+  .readonly();
+export type StructuredAssertionEvidence = z.infer<typeof StructuredAssertionEvidence>;
+
+export const AssertionExtractionSummary = z.object({
+  assertionCount: z.number().int().nonnegative(),
+  passedCount: z.number().int().nonnegative(),
+  failedCount: z.number().int().nonnegative(),
+  erroredCount: z.number().int().nonnegative(),
+  skippedCount: z.number().int().nonnegative(),
+  suiteInfrastructureError: z.boolean(),
+});
+export type AssertionExtractionSummary = z.infer<typeof AssertionExtractionSummary>;
+
+export const AssertionExtractionReasonCode = z.enum([
+  'report_missing',
+  'report_empty',
+  'report_ambiguous',
+  'report_too_large',
+  'path_rejected',
+  'parse_failed',
+  'provider_format_mismatch',
+  'binding_format_unsupported',
+  'identity_codec_missing',
+  'invalid_local_id',
+]);
+export type AssertionExtractionReasonCode = z.infer<typeof AssertionExtractionReasonCode>;
+
+export const AssertionBindingCapability = z.enum(['assertion', 'aggregate', 'check_only']);
+export type AssertionBindingCapability = z.infer<typeof AssertionBindingCapability>;
+
+const ExtractedAssertionResultSchema = z
+  .object({
+    status: z.literal('extracted'),
+    attemptId: z.string().uuid(),
+    providerId: ProviderId,
+    format: ReportFormatId,
+    bindingCapability: AssertionBindingCapability,
+    reportDigests: z.array(z.string().min(1)).min(1),
+    assertions: z.array(StructuredAssertionEvidence),
+    summary: AssertionExtractionSummary,
+  })
+  .superRefine((data, ctx) => {
+    if (data.bindingCapability === 'check_only' && data.assertions.length > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'check_only binding capability must not carry assertion-level evidence',
+        path: ['bindingCapability'],
+      });
+    }
+    if (
+      data.bindingCapability === 'aggregate' &&
+      (data.summary.suiteInfrastructureError ||
+        data.summary.passedCount +
+          data.summary.failedCount +
+          data.summary.erroredCount +
+          data.summary.skippedCount !==
+          data.summary.assertionCount)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'aggregate evidence requires a complete provider-attested report summary',
+        path: ['summary'],
+      });
+    }
+    for (let i = 0; i < data.assertions.length; i++) {
+      const a = data.assertions[i]!;
+      if (a.providerId !== data.providerId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `assertion providerId '${a.providerId}' does not match extraction providerId '${data.providerId}'`,
+          path: ['assertions', i, 'providerId'],
+        });
+      }
+    }
+  });
+
+export const AssertionExtractionResult = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('not_configured') }),
+  z.object({
+    status: z.literal('blocked'),
+    attemptId: z.string().uuid(),
+    reasonCode: AssertionExtractionReasonCode,
+    reason: z.string().min(1),
+  }),
+  z.object({
+    status: z.literal('inconclusive'),
+    attemptId: z.string().uuid(),
+    reasonCode: AssertionExtractionReasonCode,
+    reason: z.string().min(1),
+  }),
+  ExtractedAssertionResultSchema,
+]);
+export type AssertionExtractionResult = z.infer<typeof AssertionExtractionResult>;
+
+// ─── Validation Result ──────────────────────────────────────────────────────
+
 export const ValidationResult = z
   .object({
     /** Which active check this result satisfies (derived from verificationCandidate kind). */
@@ -98,6 +242,8 @@ export const ValidationResult = z
     executedAt: z.string().datetime(),
     /** The verification kind that was executed. */
     kind: VerificationCandidateKindSchema,
+    /** Exact verification candidate selected for this execution, when identified. */
+    candidateId: z.string().min(1).optional(),
     /** The exact command that was run. */
     command: z.string().min(1),
     /** Process exit code. */
@@ -108,6 +254,14 @@ export const ValidationResult = z
     outputDigest: z.string().regex(/^[a-f0-9]{64}$/),
     /** Whether the process was killed due to timeout. */
     timedOut: z.boolean(),
+    /** Classified evidence outcome (check-level, not claim-level). */
+    outcome: ValidationOutcome,
+    /** Human-readable reason for the outcome classification. */
+    classificationReason: z.string().min(1).optional(),
+    /** Structured assertion extraction result (only for assertionCapability='structured'). */
+    assertionExtraction: AssertionExtractionResult.optional(),
+    /** Candidate scope attestation frozen when this command was executed. */
+    fullCheckScopeAttestation: FullCheckScopeAttestationSchema.optional(),
     /** Derived advisory repair guidance; never validation evidence authority. */
     derivedRepairGuidance: RepairGuidance.optional(),
   })

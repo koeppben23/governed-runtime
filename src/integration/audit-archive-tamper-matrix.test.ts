@@ -27,7 +27,8 @@ import {
   status,
 } from './tools/index.js';
 import { readState } from '../adapters/persistence.js';
-import { computeFingerprint, sessionDir, verifyArchive } from '../adapters/workspace/index.js';
+import { computeFingerprint, sessionDir } from '../adapters/workspace/index.js';
+import { verifyRegulatedArchive } from '../adapters/workspace/archive-verify-chain.js';
 import { verifyChain } from '../audit/integrity.js';
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import { computeChainHash, type ChainedAuditEvent } from '../audit/types.js';
@@ -42,6 +43,19 @@ vi.mock('../adapters/git', async (importOriginal) => {
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
     changedFiles: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.changedFiles),
     listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
+    headCommitFull: vi.fn().mockResolvedValue('d'.repeat(40)),
+  };
+});
+
+vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/frozen-repository.js')>();
+  return {
+    ...original,
+    freezeRepositoryIdentity: vi.fn(() => ({
+      kind: 'local' as const,
+      rootCommitDigest: 'sha256:' + 'b'.repeat(64),
+    })),
+    freezeWorktreeCandidate: vi.fn().mockResolvedValue('c'.repeat(40)),
   };
 });
 
@@ -123,7 +137,7 @@ async function getSessionPaths(): Promise<{
     fp.fingerprint,
     'sessions',
     'archive',
-    `${ctx.sessionID}.tar.gz.sha256`,
+    `regulated-${ctx.sessionID}.tar.gz.sha256`,
   );
   return { fingerprint: fp.fingerprint, sessDir, archiveSidecar };
 }
@@ -244,7 +258,7 @@ describe('audit/archive tamper matrix', () => {
       fs.writeFile(path.join(root, 'audit', 'audit.jsonl'), `${lines.join('\n')}\n`, 'utf-8'),
     );
 
-    const verification = await verifyArchive(ids.fingerprint, ctx.sessionID);
+    const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
     expect(verification.passed).toBe(false);
     expect(verification.findings.some((f) => f.severity === 'error')).toBe(true);
   });
@@ -257,7 +271,7 @@ describe('audit/archive tamper matrix', () => {
       fs.writeFile(path.join(root, 'audit', 'audit.jsonl'), `${swapped.join('\n')}\n`, 'utf-8'),
     );
 
-    const verification = await verifyArchive(ids.fingerprint, ctx.sessionID);
+    const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
     expect(verification.passed).toBe(false);
     expect(verification.findings.some((f) => f.severity === 'error')).toBe(true);
   });
@@ -291,7 +305,7 @@ describe('audit/archive tamper matrix', () => {
       error: (service, message, extra) => logs.push({ level: 'error', service, message, extra }),
     };
     const verification = await runWithAdapterLoggerAsync(logger, () =>
-      verifyArchive(ids.fingerprint, ctx.sessionID),
+      verifyRegulatedArchive(ids.fingerprint, ctx.sessionID),
     );
     expect(verification.passed).toBe(false);
     expect(verification.findings.some((f) => f.severity === 'error')).toBe(true);
@@ -332,7 +346,7 @@ describe('audit/archive tamper matrix', () => {
     const chainResult = verifyChain(events, { strict: true });
     expect(chainResult.valid).toBe(false);
     expect(chainResult.reason).toBe('CHAIN_BREAK');
-    const verification = await verifyArchive(ids.fingerprint, ctx.sessionID);
+    const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
     expect(verification.passed).toBe(false);
     expect(verification.findings.some((f) => f.code === 'audit_chain_invalid')).toBe(true);
   });
@@ -406,7 +420,7 @@ describe('audit/archive tamper matrix', () => {
       };
 
       const verification = await runWithAdapterLoggerAsync(logger, () =>
-        verifyArchive(ids.fingerprint, ctx.sessionID),
+        verifyRegulatedArchive(ids.fingerprint, ctx.sessionID),
       );
 
       expect(verification.passed).toBe(false);
@@ -514,7 +528,7 @@ describe('audit/archive tamper matrix', () => {
     const chainResult = verifyChain(events, { strict: true });
     expect(chainResult.valid).toBe(false);
     expect(chainResult.reason).toBe('LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2');
-    const verification = await verifyArchive(ids.fingerprint, ctx.sessionID);
+    const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
     expect(verification.passed).toBe(false);
     expect(verification.findings.some((f) => f.code === 'audit_chain_legacy_format')).toBe(true);
   });
@@ -536,7 +550,7 @@ describe('audit/archive tamper matrix', () => {
     );
 
     expect(verifyChain(events, { strict: true }).valid).toBe(false);
-    const verification = await verifyArchive(ids.fingerprint, ctx.sessionID);
+    const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
     expect(verification.passed).toBe(false);
     expect(verification.findings.some((f) => f.severity === 'error')).toBe(true);
   });
@@ -560,7 +574,7 @@ describe('audit/archive tamper matrix', () => {
       ),
     );
 
-    const verification = await verifyArchive(ids.fingerprint, ctx.sessionID);
+    const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
     expect(verification.passed).toBe(false);
     expect(verification.findings.some((f) => f.severity === 'error')).toBe(true);
   });
@@ -571,7 +585,7 @@ describe('audit/archive tamper matrix', () => {
       fs.appendFile(path.join(root, 'audit', 'audit.jsonl'), '{not-json}\n', 'utf-8'),
     );
 
-    const verification = await verifyArchive(ids.fingerprint, ctx.sessionID);
+    const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
     expect(verification.passed).toBe(false);
     expect(verification.findings.some((f) => f.code === 'audit_chain_invalid')).toBe(true);
   });
@@ -588,7 +602,7 @@ describe('audit/archive tamper matrix', () => {
       await fs.writeFile(manifestPath, JSON.stringify(manifest), 'utf-8');
     });
 
-    const verification = await verifyArchive(ids.fingerprint, ctx.sessionID);
+    const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
     expect(verification.passed).toBe(false);
     expect(verification.findings.some((f) => f.severity === 'error')).toBe(true);
   });
@@ -617,7 +631,7 @@ describe('audit/archive tamper matrix', () => {
         error: (service, _m, extra) => logs.push({ level: 'error', service, extra }),
       };
       const verification = await runWithAdapterLoggerAsync(logger, () =>
-        verifyArchive(ids.fingerprint, ctx.sessionID),
+        verifyRegulatedArchive(ids.fingerprint, ctx.sessionID),
       );
 
       expect(verification.passed).toBe(false);
@@ -659,7 +673,7 @@ describe('audit/archive tamper matrix', () => {
         error: (service, _m, extra) => logs.push({ level: 'error', service, extra }),
       };
       const verification = await runWithAdapterLoggerAsync(logger, () =>
-        verifyArchive(ids.fingerprint, ctx.sessionID),
+        verifyRegulatedArchive(ids.fingerprint, ctx.sessionID),
       );
 
       expect(verification.passed).toBe(false);
@@ -687,7 +701,7 @@ describe('audit/archive tamper matrix', () => {
       fs.appendFile(path.join(root, 'archive-manifest.json'), '\n{"tampered":true}\n', 'utf-8'),
     );
 
-    const verification = await verifyArchive(ids.fingerprint, ctx.sessionID);
+    const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
     expect(verification.passed).toBe(false);
     expect(verification.findings.some((f) => f.severity === 'error')).toBe(true);
   });
@@ -696,7 +710,7 @@ describe('audit/archive tamper matrix', () => {
     const ids = await completeRegulatedSession();
     await fs.unlink(ids.archiveSidecar);
 
-    const verification = await verifyArchive(ids.fingerprint, ctx.sessionID);
+    const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
     expect(verification.passed).toBe(false);
     expect(verification.findings).toContainEqual(
       expect.objectContaining({ code: 'archive_checksum_missing', severity: 'error' }),
@@ -711,7 +725,7 @@ describe('audit/archive tamper matrix', () => {
         fs.appendFile(path.join(root, 'audit', 'audit.jsonl'), '{not-json}\n', 'utf-8'),
       );
 
-      const verification = await verifyArchive(ids.fingerprint, ctx.sessionID);
+      const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
       const state = await readState(ids.sessDir);
 
       expect(verification.passed).toBe(false);

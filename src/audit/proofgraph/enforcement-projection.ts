@@ -1,0 +1,275 @@
+/**
+ * @module audit/proofgraph/enforcement-projection
+ * @description Governance/blocking projection over already-evaluated ProofGraph claims.
+ *
+ * Consumes evaluated ProofClaims (verification states assigned by the evaluator)
+ * and projects governance-relevant enforcement decisions: which claims block,
+ * why they block, and the overall gate disposition.
+ *
+ * This module does NOT evaluate claims — the evaluator (evaluate.ts) owns
+ * ClaimVerificationState. This module owns governance interpretation.
+ *
+ * Pure function: no side effects, no state access, deterministic.
+ *
+ * @version v2
+ */
+
+import type { ProofGraphSummary } from './summary.js';
+import type { ProofClaim } from '../../state/proofgraph.js';
+import type { ClaimVerificationState } from '../../state/proofgraph-primitives.js';
+import type { AssertionBindingReasonCode } from './assertion-evidence-binding.js';
+import {
+  mapBindingReasonToRegistryCode,
+  mapEnforcementReasonToRegistryCode,
+} from './reason-code-mapping.js';
+import type { EnforcementReasonCode } from './reason-code-mapping.js';
+
+// Re-export for consumers
+export type { EnforcementReasonCode };
+
+/**
+ * ProofGraph gate decision disposition, projected by computeProofGraphEnforcement.
+ * Owned here with the decision shape; registry codes are derived exclusively
+ * from `reasonCode` via mapEnforcementReasonToRegistryCode.
+ */
+export type EnforcementDecisionKind =
+  | 'clear'
+  | 'evaluation_unavailable'
+  | 'risk_assessment_stale'
+  | 'certificate_invalid'
+  | 'critical_fact_required'
+  | 'facts_unproven';
+
+/** Reason codes emitted by the enforcement projection. */
+
+export interface ClaimEnforcementState {
+  readonly claimId: string;
+  readonly statement: string;
+  readonly critical: boolean;
+  readonly signalClass: string;
+  readonly gateEligible: boolean;
+  readonly verificationState: ClaimVerificationState;
+  readonly reasonCodes: readonly EnforcementReasonCode[];
+  /** Registry code derived from the primary blocking reason. */
+  readonly registryCode?: string;
+}
+
+export interface BlockingClaim {
+  readonly claimId: string;
+  readonly state: 'CONTRADICTED' | 'NOT_VERIFIED' | 'STALE' | 'BLOCKED' | 'UNPROVEN';
+  readonly reasonCode: EnforcementReasonCode;
+  /** Registry code derived from the binding diagnostic, or generic enforcement mapping. */
+  readonly registryCode: string;
+}
+
+export interface ProofGraphEnforcement {
+  readonly claims: readonly ClaimEnforcementState[];
+  readonly blockingClaims: readonly BlockingClaim[];
+  readonly satisfied: boolean;
+  readonly decisionKind: EnforcementDecisionKind;
+  readonly reasonCode: EnforcementReasonCode;
+  readonly reason: string;
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function isGateEligible(claim: ProofClaim): boolean {
+  if (!claim.critical || claim.signalClass !== 'fact') return false;
+  return (
+    claim.provenance?.kind === 'canonical_authority' && claim.provenance.approval !== undefined
+  );
+}
+
+function claimReasonCodes(
+  claim: ProofClaim,
+  diagnostics?: ReadonlyMap<string, AssertionBindingReasonCode>,
+): EnforcementReasonCode[] {
+  const reasons: EnforcementReasonCode[] = [];
+  if (!claim.provenance) {
+    reasons.push('provenance_missing');
+  }
+  const diag = diagnostics?.get(claim.claimId);
+  switch (claim.verificationState) {
+    case 'PROVEN':
+      reasons.push('proven');
+      break;
+    case 'CONTRADICTED':
+      reasons.push('counterexample_observed');
+      break;
+    case 'NOT_VERIFIED':
+      reasons.push(diag ?? 'evidence_missing');
+      break;
+    case 'STALE':
+      reasons.push('evidence_stale');
+      break;
+    case 'BLOCKED':
+      reasons.push('provider_execution_error');
+      break;
+    case 'UNPROVEN':
+      reasons.push('evidence_unproven');
+      break;
+  }
+  return reasons;
+}
+
+function primaryRegistryCode(
+  enforcementCodes: readonly EnforcementReasonCode[],
+  bindingDiag?: AssertionBindingReasonCode,
+): string {
+  if (bindingDiag) {
+    return mapBindingReasonToRegistryCode(bindingDiag);
+  }
+  const primary = enforcementCodes[0] ?? 'evidence_missing';
+  return mapEnforcementReasonToRegistryCode(primary);
+}
+
+function blockingStateFor(state: ClaimVerificationState): BlockingClaim['state'] | null {
+  switch (state) {
+    case 'CONTRADICTED':
+    case 'NOT_VERIFIED':
+    case 'STALE':
+    case 'BLOCKED':
+    case 'UNPROVEN':
+      return state;
+    case 'PROVEN':
+      return null;
+  }
+}
+
+function primaryReason(reasons: EnforcementReasonCode[]): EnforcementReasonCode {
+  return reasons[0] ?? 'evidence_missing';
+}
+
+// ─── Public API ──────────────────────────────────────────────────────────────
+
+export interface ComputeEnforcementInput {
+  readonly projection?: ProofGraphSummary['projection'];
+  readonly authorizedCriticalClaimIds?: readonly string[];
+  /** A current certificate is required before any final-evidence approval. */
+  readonly certificateValid?: boolean;
+  readonly implementationDigest?: string;
+  readonly riskAssessmentStale?: boolean;
+  readonly riskTriggersPresent?: boolean;
+  /** Per-claim binding diagnostic codes from counterexample evaluation. */
+  readonly claimDiagnostics?: ReadonlyMap<string, AssertionBindingReasonCode>;
+}
+
+function evaluatePreconditions(
+  input: ComputeEnforcementInput,
+  eligibleClaims: readonly ProofClaim[],
+): ProofGraphEnforcement | null {
+  if (input.certificateValid === false) {
+    return {
+      claims: [],
+      blockingClaims: [],
+      satisfied: false,
+      decisionKind: 'certificate_invalid',
+      reasonCode: 'certificate_invalid',
+      reason: 'The plan approval certificate is missing, stale, or does not bind the current plan.',
+    };
+  }
+  const eligibleIds = new Set(eligibleClaims.map((c) => c.claimId));
+  const missingIds = (input.authorizedCriticalClaimIds ?? []).filter((id) => !eligibleIds.has(id));
+  if (missingIds.length > 0) {
+    return {
+      claims: [],
+      blockingClaims: missingIds.map((id) => ({
+        claimId: id,
+        state: 'NOT_VERIFIED' as const,
+        reasonCode: 'evaluation_unavailable' as const,
+        registryCode: mapEnforcementReasonToRegistryCode('evaluation_unavailable'),
+      })),
+      satisfied: false,
+      decisionKind: 'evaluation_unavailable',
+      reasonCode: 'evaluation_unavailable',
+      reason:
+        'Certificate-authorized critical plan claim(s) have no persisted ProofGraph evaluation.',
+    };
+  }
+
+  if (input.riskAssessmentStale === true) {
+    return {
+      claims: [],
+      blockingClaims: [],
+      satisfied: false,
+      decisionKind: 'risk_assessment_stale',
+      reasonCode: 'risk_assessment_stale',
+      reason:
+        'The implementation risk assessment is missing, stale, or predates trigger classification.',
+    };
+  }
+
+  // Authority invariant: zero claims + riskTriggersPresent → critical_fact_required.
+  // Zero claims + no risk triggers → clear (satisfied). The enforcement outcome
+  // for zero claims depends solely on whether risk triggers were detected for
+  // the current implementation. This differs from the evaluation_unavailable path
+  // (authorized claims missing from projection), which always blocks.
+  if (eligibleClaims.length === 0 && input.riskTriggersPresent === true) {
+    return {
+      claims: [],
+      blockingClaims: [],
+      satisfied: false,
+      decisionKind: 'critical_fact_required',
+      reasonCode: 'critical_fact_required',
+      reason:
+        'A critical, certificate-authorized fact claim is required for the current risk triggers.',
+    };
+  }
+
+  return null;
+}
+
+export function computeProofGraphEnforcement(
+  input: ComputeEnforcementInput,
+): ProofGraphEnforcement {
+  const eligibleClaims = (input.projection?.claims ?? []).filter(isGateEligible);
+  const precondition = evaluatePreconditions(input, eligibleClaims);
+  if (precondition) return precondition;
+
+  const claims: ClaimEnforcementState[] = [];
+  const blockingClaims: BlockingClaim[] = [];
+  let satisfied = true;
+
+  for (const claim of eligibleClaims) {
+    const reasonCodes = claimReasonCodes(claim, input.claimDiagnostics);
+    const registryCode = primaryRegistryCode(
+      reasonCodes,
+      input.claimDiagnostics?.get(claim.claimId),
+    );
+    claims.push({
+      claimId: claim.claimId,
+      statement: claim.statement,
+      critical: claim.critical,
+      signalClass: claim.signalClass,
+      gateEligible: true,
+      verificationState: claim.verificationState,
+      reasonCodes,
+      registryCode,
+    });
+
+    if (claim.verificationState !== 'PROVEN') {
+      satisfied = false;
+      const bs = blockingStateFor(claim.verificationState);
+      if (bs) {
+        blockingClaims.push({
+          claimId: claim.claimId,
+          state: bs,
+          reasonCode: primaryReason(reasonCodes),
+          registryCode,
+        });
+      }
+    }
+  }
+
+  const reasonCode: EnforcementReasonCode = satisfied ? 'proven' : 'evidence_unproven';
+  return {
+    claims,
+    blockingClaims,
+    satisfied,
+    decisionKind: satisfied ? 'clear' : 'facts_unproven',
+    reasonCode,
+    reason: satisfied
+      ? 'All critical fact claims are PROVEN.'
+      : `${blockingClaims.length} critical fact claim(s) are not PROVEN.`,
+  };
+}

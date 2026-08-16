@@ -19,6 +19,7 @@ import {
   REVIEW_MANDATE_DIGEST,
   hashFindings,
 } from '../review/assurance.js';
+import { computeRecordDigest } from '../../state/evidence-plan.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -55,8 +56,8 @@ const mocks = vi.hoisted(() => {
       }),
     ),
     appendNextAction: vi.fn((payload: string) => payload),
-    writeStateWithArtifacts: vi.fn<(sessDir: string, state: SessionState) => Promise<void>>(
-      async () => undefined,
+    writeStateWithArtifacts: vi.fn<(sessDir: string, state: SessionState) => Promise<SessionState>>(
+      async (_sessDir: string, state: SessionState) => state,
     ),
     extractSections: vi.fn(() => []),
     changedFiles: vi.fn(async () => ['src/foo.ts']),
@@ -214,6 +215,18 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
           digest: 'digest-plan',
           sections: [],
           createdAt: now,
+          recordDigest: computeRecordDigest({
+            contentDigest: 'digest-plan',
+            planVersion: 1,
+            supersedesRecordDigest: null,
+            originatingReviewObligationId: null,
+            revisionReason: null,
+          }),
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+          lineageStatus: 'verified' as const,
         },
         history: [],
         reviewFindings: [],
@@ -233,14 +246,18 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
       },
       reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        attempts: [],
         obligations: [
           {
             obligationId: OBLIGATION_ID,
             obligationType: 'plan',
+            subjectDigest: 'test-subject-digest',
             iteration: 0,
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
+            maxReviewerOutputRepairAttempts: 1,
             createdAt: now,
             pluginHandshakeAt: now,
             status: 'pending',
@@ -248,6 +265,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
             blockedCode: null,
             fulfilledAt: null,
             consumedAt: null,
+            reviewSubjectScope: { kind: 'unavailable', reason: 'scope resolution unavailable' },
           },
         ],
         invocations: [], // NO evidence — reviewer failed to be invoked
@@ -258,7 +276,24 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
   function implStateNoEvidence() {
     return makeState('IMPL_REVIEW', {
       plan: {
-        current: { body: '## Plan', digest: 'digest-plan', sections: [], createdAt: now },
+        current: {
+          body: '## Plan',
+          digest: 'digest-plan',
+          sections: [],
+          createdAt: now,
+          recordDigest: computeRecordDigest({
+            contentDigest: 'digest-plan',
+            planVersion: 1,
+            supersedesRecordDigest: null,
+            originatingReviewObligationId: null,
+            revisionReason: null,
+          }),
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+          lineageStatus: 'verified' as const,
+        },
         history: [],
         reviewFindings: [],
       },
@@ -283,14 +318,17 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
       },
       reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [
           {
             obligationId: OBLIGATION_ID,
             obligationType: 'implement',
+            subjectDigest: 'test-subject-digest',
             iteration: 1,
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
+            maxReviewerOutputRepairAttempts: 1,
             createdAt: now,
             pluginHandshakeAt: now,
             status: 'pending',
@@ -298,9 +336,11 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
             blockedCode: null,
             fulfilledAt: null,
             consumedAt: null,
+            reviewSubjectScope: { kind: 'unavailable', reason: 'scope resolution unavailable' },
           },
         ],
         invocations: [],
+        attempts: [],
       },
     });
   }
@@ -381,6 +421,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
     let persistedState: unknown = null;
     mocks.writeStateWithArtifacts.mockImplementation(async (_dir: string, s: SessionState) => {
       persistedState = s;
+      return s;
     });
     mocks.autoAdvance.mockImplementation((s: unknown) => ({
       kind: 'advanced',

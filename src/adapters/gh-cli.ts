@@ -8,69 +8,158 @@
 
 import { execFileSync } from 'node:child_process';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
+import { hashText } from '../shared/hashing.js';
+import type {
+  RepositoryIdentity,
+  ReviewRepositoryIdentity,
+} from '../state/evidence-review-subject.js';
 import { GitError } from './git.js';
 
-/**
- * Check if `gh` CLI is available and authenticated.
- * Result is cached once per process — the check is synchronous with a 3s timeout.
- */
-let _ghCliAvailable: boolean | null = null;
+// ─── Immutable Pull-Request Review Source ────────────────────────────────────
 
-export function hasGhCli(): boolean {
-  if (_ghCliAvailable !== null) return _ghCliAvailable;
-  try {
-    execFileSync('gh', ['auth', 'status'], { stdio: 'ignore', timeout: 3000 });
-    _ghCliAvailable = true;
-  } catch {
-    _ghCliAvailable = false;
-    getAdapterLogger().warn('gh-cli', 'GitHub CLI not available or not authenticated');
-  }
-  return _ghCliAvailable;
+export interface ResolvedPullRequestReviewSource {
+  readonly pullRequestNumber: number;
+  readonly baseRepository: RepositoryIdentity;
+  readonly headRepository: RepositoryIdentity;
+  readonly baseSha: string;
+  readonly headSha: string;
 }
 
 /**
- * Load PR diff via `gh` CLI.
- * Requires `gh` CLI installed and authenticated.
- * Returns the raw diff string.
- * Throws if PR not found or gh fails.
+ * Resolve a pull request's immutable commit and repository identities.
+ *
+ * This deliberately reads the PR metadata once and returns only immutable
+ * identifiers. Callers must use the returned SHAs for later materialization.
  */
-export function loadPrDiff(prNumber: number): string {
-  const out = execFileSync(
-    'gh',
-    ['pr', 'view', String(prNumber), '--json', 'diff', '--jq', '.diff'],
-    {
-      encoding: 'utf-8',
-      stdio: 'pipe',
-      timeout: 15000,
-    },
-  );
-  if (!out || out.trim() === 'null') {
-    throw new GitError('GIT_NOT_FOUND', `PR #${prNumber} not found or has no diff`);
-  }
-  return out;
-}
-
-/**
- * Load branch diff via `gh` CLI (compares branch against base branch).
- * Requires `gh` CLI installed and authenticated.
- * Returns the raw diff string.
- * Throws if branch not found or gh fails.
- */
-export function loadBranchDiff(branch: string, cwd?: string): string {
-  const base = detectBaseBranch(branch, cwd);
-  const out = execFileSync('git', ['diff', `${base.ref}...${branch}`], {
-    encoding: 'utf-8',
-    stdio: 'pipe',
-    timeout: 15000,
-    cwd,
-  });
-  if (!out || out.trim() === '') {
+export function resolvePullRequestReviewSource(prNumber: number): ResolvedPullRequestReviewSource {
+  if (!Number.isSafeInteger(prNumber) || prNumber <= 0) {
     throw new GitError(
-      'GIT_COMMAND_FAILED',
-      `Branch '${branch}' has no changes relative to ${base.label}`,
+      'GIT_NOT_FOUND',
+      `Pull request number must be a positive integer: ${prNumber}`,
     );
   }
-  return out;
+
+  let output: string;
+  try {
+    output = execFileSync(
+      'gh',
+      [
+        'pr',
+        'view',
+        String(prNumber),
+        '--json',
+        'baseRefOid,headRefOid,baseRepository,headRepository',
+      ],
+      { encoding: 'utf-8', stdio: 'pipe', timeout: 15000 },
+    );
+  } catch (err) {
+    throw new GitError(
+      'GIT_NOT_FOUND',
+      `Could not resolve immutable source for PR #${prNumber}: ${String(err)}`,
+    );
+  }
+
+  let metadata: unknown;
+  try {
+    metadata = JSON.parse(output);
+  } catch (err) {
+    throw new GitError(
+      'GIT_COMMAND_FAILED',
+      `GitHub returned invalid PR metadata for #${prNumber}: ${String(err)}`,
+    );
+  }
+  if (!isPullRequestMetadata(metadata)) {
+    throw new GitError(
+      'GIT_COMMAND_FAILED',
+      `GitHub returned incomplete immutable metadata for PR #${prNumber}`,
+    );
+  }
+
+  const baseRepository = repositoryIdentity(metadata.baseRepository);
+  const headRepository = repositoryIdentity(metadata.headRepository);
+  if (
+    !baseRepository ||
+    !headRepository ||
+    !isGitSha(metadata.baseRefOid) ||
+    !isGitSha(metadata.headRefOid)
+  ) {
+    throw new GitError(
+      'GIT_COMMAND_FAILED',
+      `GitHub returned incomplete immutable metadata for PR #${prNumber}`,
+    );
+  }
+  return {
+    pullRequestNumber: prNumber,
+    baseRepository,
+    headRepository,
+    baseSha: metadata.baseRefOid,
+    headSha: metadata.headRefOid,
+  };
+}
+
+/** Load a PR diff by the previously resolved immutable commit SHAs. */
+export function loadResolvedPullRequestDiff(source: ResolvedPullRequestReviewSource): string {
+  try {
+    const out = execFileSync(
+      'gh',
+      [
+        'api',
+        '--method',
+        'GET',
+        '--header',
+        'Accept: application/vnd.github.v3.diff',
+        `repos/${source.baseRepository.owner}/${source.baseRepository.name}/compare/${source.baseSha}...${source.headSha}`,
+      ],
+      { encoding: 'utf-8', stdio: 'pipe', timeout: 15000 },
+    );
+    if (!out || out.trim() === '') {
+      throw new GitError('GIT_COMMAND_FAILED', 'Empty diff between resolved pull-request commits');
+    }
+    return out;
+  } catch (err) {
+    if (err instanceof GitError) throw err;
+    throw new GitError(
+      'GIT_COMMAND_FAILED',
+      `Could not load diff between resolved pull-request commits: ${String(err)}`,
+    );
+  }
+}
+
+function isPullRequestMetadata(value: unknown): value is {
+  readonly baseRefOid: unknown;
+  readonly headRefOid: unknown;
+  readonly baseRepository: unknown;
+  readonly headRepository: unknown;
+} {
+  return typeof value === 'object' && value !== null;
+}
+
+function repositoryIdentity(value: unknown): RepositoryIdentity | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const repository = value as {
+    readonly name?: unknown;
+    readonly owner?: { readonly login?: unknown };
+    readonly url?: unknown;
+  };
+  if (
+    typeof repository.name !== 'string' ||
+    repository.name.length === 0 ||
+    typeof repository.owner?.login !== 'string' ||
+    repository.owner.login.length === 0 ||
+    typeof repository.url !== 'string'
+  ) {
+    return undefined;
+  }
+  try {
+    const host = new URL(repository.url).hostname;
+    return host ? { host, owner: repository.owner.login, name: repository.name } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isGitSha(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-f0-9]{40,64}$/i.test(value);
 }
 
 // ─── Immutable Branch Review Source ──────────────────────────────────────────
@@ -80,6 +169,7 @@ export interface ResolvedBranchReviewSource {
   readonly baseBranch: string;
   readonly resolvedBranchSha: string;
   readonly resolvedBaseSha: string;
+  readonly repository?: ReviewRepositoryIdentity;
 }
 
 /**
@@ -156,7 +246,67 @@ export function resolveBranchReviewSource(
         'nothing to review. Provide an explicit base with base=<ref> or push the branch to a remote.',
     );
   }
-  return { branch, baseBranch: base.label, resolvedBranchSha: headSha, resolvedBaseSha: baseSha };
+  return {
+    branch,
+    baseBranch: base.label,
+    resolvedBranchSha: headSha,
+    resolvedBaseSha: baseSha,
+    repository: resolveRepositoryIdentity(baseSha, headSha, cwd),
+  };
+}
+
+/**
+ * Resolve the review repository identity at freeze time: the canonical remote
+ * identity when an origin remote exists, else the immutable local identity
+ * derived from the repository's root commits. NEVER read after the candidate
+ * freeze — this is the freeze-time authority itself.
+ */
+export function resolveRepositoryIdentity(
+  baseSha: string,
+  headSha: string,
+  cwd?: string,
+): ReviewRepositoryIdentity {
+  try {
+    const remote = execFileSync('git', ['remote', 'get-url', 'origin'], {
+      encoding: 'utf-8',
+      stdio: 'pipe',
+      timeout: 3000,
+      cwd,
+    }).trim();
+    const match = /^(?:https?:\/\/|git@)([^/:]+)[:/]([^/]+)\/([^/]+?)(?:\.git)?$/.exec(remote);
+    if (!match) return localRepositoryIdentity(baseSha, headSha, cwd);
+    const [, host, owner, name] = match;
+    if (!host || !owner || !name) return localRepositoryIdentity(baseSha, headSha, cwd);
+    return { host, owner, name };
+  } catch {
+    return localRepositoryIdentity(baseSha, headSha, cwd);
+  }
+}
+
+function localRepositoryIdentity(
+  baseSha: string,
+  headSha: string,
+  cwd?: string,
+): {
+  readonly kind: 'local';
+  readonly rootCommitDigest: string;
+} {
+  try {
+    const roots = execFileSync('git', ['rev-list', '--max-parents=0', baseSha, headSha], {
+      encoding: 'utf-8',
+      stdio: 'pipe',
+      timeout: 3000,
+      cwd,
+    })
+      .split('\n')
+      .map((root) => root.trim())
+      .filter(Boolean)
+      .sort();
+    if (roots.length > 0) return { kind: 'local', rootCommitDigest: hashText(roots.join('\n')) };
+  } catch {
+    // Branch/base SHA resolution already established a usable Git repository.
+  }
+  throw new GitError('GIT_COMMAND_FAILED', 'Could not derive immutable local repository identity');
 }
 
 /**

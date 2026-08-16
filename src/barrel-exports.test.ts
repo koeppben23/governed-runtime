@@ -104,17 +104,48 @@ describe('presentation/index.ts barrel', () => {
     'PHASE_LABELS',
     'buildProductNextAction',
     'buildPlanReviewCard',
+    'buildEvidenceReviewCard',
+    'buildEvidenceApprovalCompletionDocument',
     'buildArchitectureReviewCard',
     'buildReviewReportCard',
+    'projectFindingRelation',
+    'formatFindingLocation',
+    'formatFindingSubject',
+    'formatFindingAffected',
+    'formatFindingEvidence',
     'normalizedMarkdown',
     'validateCodeLanguage',
     'PresentationContractError',
+    'projectImpact',
+    'projectReasonFromRegistry',
+    'projectDetailFields',
     'renderMarkdown',
     'STATUS_LABELS',
     'lookupStatusLabel',
     'parseStatusLabel',
     'parseArchiveLabel',
+    'toRecoveryProjection',
     'GUIDANCE_STATUS_LABELS',
+    'REASON_COPY',
+    'isMigratedReasonCode',
+    'lookupReasonCopy',
+    'projectClaimResolutionFacts',
+    'projectClaimHumanProjection',
+    'projectHumanProofSummary',
+    'projectHumanVerificationStatus',
+    'humanVerificationLabel',
+    'humanVerificationExplanation',
+    'BINDING_DIAGNOSTIC_COPY',
+    'humanProviderKindLabel',
+    'humanCounterexampleKindLabel',
+    'humanCounterexampleRequirementText',
+    'humanRequiredEvidenceText',
+    'buildProofGraphSection',
+    'USER_IMPACT_COPY',
+    'humanImpactText',
+    'projectReviewDecision',
+    'REVIEW_DECISION_COPY',
+    'buildReviewDecisionConclusion',
   ] as const;
 
   const INTERNAL_SYMBOLS = [
@@ -149,6 +180,11 @@ describe('presentation/index.ts barrel', () => {
     it('re-exports buildReviewReportCard', async () => {
       const mod = await import('./presentation/index.js');
       expect(typeof mod.buildReviewReportCard).toBe('function');
+    });
+
+    it('re-exports buildEvidenceReviewCard', async () => {
+      const mod = await import('./presentation/index.js');
+      expect(typeof mod.buildEvidenceReviewCard).toBe('function');
     });
   });
 

@@ -307,6 +307,37 @@ export function isBlockedResult(result: Record<string, unknown>): boolean {
   return result.error === true && typeof result.code === 'string';
 }
 
+export async function freezeRepositoryReviewObligation(
+  sessDir: string,
+  obligationId: string,
+): Promise<void> {
+  const state = await readState(sessDir);
+  if (!state) throw new Error('No test session state found');
+  await writeState(sessDir, {
+    ...state,
+    reviewAssurance: {
+      ...state.reviewAssurance!,
+      obligations: state.reviewAssurance!.obligations.map((obligation) =>
+        obligation.obligationId === obligationId
+          ? {
+              ...obligation,
+              reviewSubjectScope: {
+                kind: 'repository_change',
+                paths: ['docs/test.md'],
+                revisions: ['base', 'head'],
+              },
+              repositoryRevisionProvenance: {
+                kind: 'available',
+                headSha: 'a'.repeat(40),
+                baseSha: 'b'.repeat(40),
+              },
+            }
+          : obligation,
+      ),
+    },
+  });
+}
+
 /**
  * Fulfill a strict independent-review obligation in tool execution tests.
  *
@@ -314,7 +345,7 @@ export function isBlockedResult(result: Record<string, unknown>): boolean {
  * tool tests do not run plugin hooks, so they use this helper to set the same
  * mandate-bound evidence before submitting ReviewFindings to the tool.
  */
-// eslint-disable-next-line max-lines-per-function -- shared strict-review fixture must bind evidence and invocation together
+// eslint-disable-next-line complexity, max-lines-per-function -- shared strict-review fixture must bind evidence, attempt lineage, and invocation together
 export async function fulfillStrictReviewObligation(
   sessDir: string,
   input: {
@@ -327,8 +358,12 @@ export async function fulfillStrictReviewObligation(
 ): Promise<ReviewFindings> {
   const state = await readState(sessDir);
   if (!state) throw new Error('No test session state found');
-
-  const assurance = state.reviewAssurance ?? { obligations: [], invocations: [] };
+  const assurance = state.reviewAssurance ?? {
+    assuranceSchemaVersion: 'review-assurance.v5' as const,
+    obligations: [],
+    invocations: [],
+    attempts: [],
+  };
   const obligation = findLatestObligation(
     assurance.obligations,
     input.obligationType,
@@ -411,6 +446,8 @@ export async function fulfillStrictReviewObligation(
   const invocation = buildInvocationEvidence({
     obligationId: obligation.obligationId,
     obligationType: input.obligationType,
+    mandateDigest: obligation.mandateDigest,
+    criteriaVersion: obligation.criteriaVersion,
     parentSessionId: state.binding.sessionId,
     childSessionId: findings.reviewedBy.sessionId,
     invocationMode: isHostTask ? 'host_subagent_task' : 'sdk_session_prompt',
@@ -423,12 +460,20 @@ export async function fulfillStrictReviewObligation(
     // evidence (capturedRawFindings) rather than from agent-submitted args.
     // Without this, resolveHostTaskFindings returns null → REVIEW_FINDINGS_REQUIRED.
     ...(isHostTask ? { capturedRawFindings: findings } : {}),
+    ...(isHostTask
+      ? {
+          attemptId: state.reviewAssurance?.attempts?.find(
+            (a) => a.obligationId === obligation.obligationId,
+          )?.attemptId,
+        }
+      : {}),
   });
   const obligationAcceptedByReviewer = !isHostTask;
 
   await writeState(sessDir, {
     ...state,
     reviewAssurance: {
+      ...assurance,
       obligations: assurance.obligations.map((item) =>
         item.obligationId === obligation.obligationId
           ? {

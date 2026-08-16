@@ -126,6 +126,14 @@ export const FlowGuardConfigSchema = z.object({
       otlp: { enabled: false, allowInsecure: false },
     }),
 
+  /** Human Projection UX telemetry — optional, non-authoritative, disabled by default. */
+  humanProjectionTelemetry: z
+    .object({
+      /** Enable structured UX observation events. Default: false (opt-in). */
+      enabled: z.boolean().default(false),
+    })
+    .default({ enabled: false }),
+
   /** Policy override configuration. Merged field-wise with the resolved preset. */
   policy: z
     .object({
@@ -137,6 +145,9 @@ export const FlowGuardConfigSchema = z.object({
       maxImplReviewIterations: z.number().int().min(1).max(10).optional(),
       /** Override retries after accept findings contain blocking issues (F12). */
       maxIncoherentReviewerCaptureRetries: z.number().int().min(0).max(5).optional(),
+      /** Override obligation-level reviewer output-repair attempts (new attempt
+       * after a canonically repairable non-bindable reviewer output). */
+      maxReviewerOutputRepairAttempts: z.number().int().min(0).max(5).optional(),
       /** P33/P34: Require verified actor identity for regulated approvals.
        * Superseded by minimumActorAssuranceForApproval when set. */
       requireVerifiedActorsForApproval: z.boolean().optional(),

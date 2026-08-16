@@ -29,6 +29,7 @@ import { writeStateWithArtifacts } from './tools/helpers.js';
 import type { HostId } from '../shared/hosts.js';
 
 import { plan } from './tools/plan.js';
+import { hydrate } from './tools/hydrate.js';
 import { implement, review_implementation } from './tools/implement.js';
 import { architecture } from './tools/architecture.js';
 import { review } from './tools/review-tool/index.js';
@@ -41,8 +42,29 @@ import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './review/assurance.js';
-import { makeState, TICKET } from '../fixtures.js';
+import { makeState, TICKET, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
+import { computeRecordDigest } from '../state/evidence-plan.js';
+
+vi.mock('../adapters/git', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/git.js')>();
+  return {
+    ...original,
+    headCommitFull: vi.fn().mockResolvedValue('d'.repeat(40)),
+  };
+});
+
+vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/frozen-repository.js')>();
+  return {
+    ...original,
+    freezeRepositoryIdentity: vi.fn(() => ({
+      kind: 'local' as const,
+      rootCommitDigest: 'sha256:' + 'b'.repeat(64),
+    })),
+    freezeWorktreeCandidate: vi.fn().mockResolvedValue('c'.repeat(40)),
+  };
+});
 
 // Mock the verification executor to avoid real subprocess execution
 vi.mock('../verification/executor', () => ({
@@ -121,24 +143,28 @@ async function boot(host: HostId, label: string): Promise<SE> {
   process.env.OPENCODE_CONFIG_DIR = c;
   process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
   process.env.FLOWGUARD_HOST_PLATFORM = host;
+  const tc: ToolContext = {
+    sessionID: id,
+    messageID: randomUUID(),
+    agent: 'test',
+    directory: w,
+    worktree: w,
+    abort: new AbortController().signal,
+    metadata: () => {},
+  };
+  const hydrated = await hydrate.execute({ policyMode: 'solo', profileId: 'baseline' }, tc);
+  if (typeof hydrated !== 'string' || hydrated.includes('"error":true')) {
+    throw new Error(`boot hydrate failed: ${String(hydrated).slice(0, 400)}`);
+  }
   const fp = await computeFingerprint(w),
     sd = sessionDir(fp.fingerprint, id);
-  mkdirSync(sd, { recursive: true });
   return {
     rootDir: r,
     worktree: w,
     configDir: c,
     sId: id,
     sDir: sd,
-    tc: {
-      sessionID: id,
-      messageID: randomUUID(),
-      agent: 'test',
-      directory: w,
-      worktree: w,
-      abort: new AbortController().signal,
-      metadata: () => {},
-    },
+    tc,
   };
 }
 
@@ -160,6 +186,11 @@ async function inject(
     status: 'fulfilled' as const,
     fulfilledAt: FIXED_TIME,
     pluginHandshakeAt: isOpen(host) ? FIXED_TIME : null,
+    reviewSubjectScope: {
+      kind: 'repository_change' as const,
+      paths: ['README.md'],
+      revisions: ['base', 'head'] as const,
+    },
   };
   const inv = {
     invocationId: randomUUID(),
@@ -186,10 +217,12 @@ async function inject(
   const aug: SessionState = {
     ...state,
     reviewAssurance: {
+      assuranceSchemaVersion: state.reviewAssurance!.assuranceSchemaVersion,
       obligations: state.reviewAssurance!.obligations.map((o) =>
         o.obligationId === obl.obligationId ? newObl : o,
       ),
       invocations: [...state.reviewAssurance!.invocations, inv],
+      attempts: [],
     },
     reviewDecision: {
       verdict: 'approve',
@@ -291,9 +324,27 @@ describe('FlowGuard tool-level E2E', () => {
         await writeStateWithArtifacts(
           s.sDir,
           makeState('IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             ticket: TICKET,
             plan: {
-              current: { body: '# Plan', digest: 'abc', sections: [], createdAt: FIXED_TIME },
+              current: {
+                body: '# Plan',
+                digest: 'abc',
+                sections: [],
+                createdAt: FIXED_TIME,
+                recordDigest: computeRecordDigest({
+                  contentDigest: 'abc',
+                  planVersion: 1,
+                  supersedesRecordDigest: null,
+                  originatingReviewObligationId: null,
+                  revisionReason: null,
+                }),
+                planVersion: 1,
+                supersedesRecordDigest: null,
+                originatingReviewObligationId: null,
+                revisionReason: null,
+                lineageStatus: 'verified' as const,
+              },
               history: [],
               reviewFindings: undefined,
             },
@@ -359,12 +410,14 @@ describe('FlowGuard tool-level E2E', () => {
         await writeStateWithArtifacts(
           s.sDir,
           makeState('VALIDATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             ticket: TICKET,
             plan: currentPlan,
             reviewDecision: st!.reviewDecision,
             activeChecks: ['typecheck'],
             verificationCandidates: [
               {
+                assertionCapability: 'unsupported' as const,
                 kind: 'typecheck',
                 command: 'npx tsc --noEmit',
                 source: 'test',
@@ -372,6 +425,9 @@ describe('FlowGuard tool-level E2E', () => {
                 reason: 'E2E test candidate',
               },
             ],
+            executionSubjectInputsByKind: {
+              typecheck: [{ kind: 'implementation' as const }],
+            },
           }),
         );
         const rV = await run_check.execute({ kind: 'typecheck' }, s.tc);
@@ -384,6 +440,7 @@ describe('FlowGuard tool-level E2E', () => {
         await writeStateWithArtifacts(
           s.sDir,
           makeState('IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             ticket: TICKET,
             plan: currentPlan,
             reviewDecision: st!.reviewDecision,
@@ -391,6 +448,7 @@ describe('FlowGuard tool-level E2E', () => {
             activeChecks: ['typecheck'],
             verificationCandidates: [
               {
+                assertionCapability: 'unsupported' as const,
                 kind: 'typecheck',
                 command: 'npx tsc --noEmit',
                 source: 'test',
@@ -398,6 +456,9 @@ describe('FlowGuard tool-level E2E', () => {
                 reason: 'E2E test candidate',
               },
             ],
+            executionSubjectInputsByKind: {
+              typecheck: [{ kind: 'implementation' as const }],
+            },
           }),
         );
         mkdirSync(path.join(s.worktree, 'src'), { recursive: true });
@@ -441,6 +502,7 @@ describe('FlowGuard tool-level E2E', () => {
             activeChecks: ['typecheck'],
             verificationCandidates: [
               {
+                assertionCapability: 'unsupported' as const,
                 kind: 'typecheck',
                 command: 'npx tsc --noEmit',
                 source: 'test',
@@ -448,13 +510,16 @@ describe('FlowGuard tool-level E2E', () => {
                 reason: 'E2E test candidate',
               },
             ],
+            executionSubjectInputsByKind: {
+              typecheck: [{ kind: 'implementation' as const }],
+            },
           }),
         );
         const rA = await archive.execute({}, s.tc);
         expect(typeof rA).toBe('string');
         expect(rA).not.toContain('INTERNAL_ERROR');
         st = await readState(s.sDir);
-        expect(st!.archiveStatus).toBeTruthy();
+        expect(st!.lastExportStatus).toBeTruthy();
       });
 
       it('review: content → obligation → evidence → complete', async () => {
@@ -463,7 +528,7 @@ describe('FlowGuard tool-level E2E', () => {
 
         // Step 1: content-aware call creates review obligation
         const r1 = await review.execute(
-          { inputOrigin: 'manual_text', text: 'E2E review content' },
+          { inputOrigin: 'manual_text', text: 'E2E review content', targetPaths: ['README.md'] },
           s.tc,
         );
         expect(typeof r1).toBe('string');
@@ -477,10 +542,29 @@ describe('FlowGuard tool-level E2E', () => {
         // Step 2: complete with findings — review tool records its own evidence
         let st = await readState(s.sDir);
         const obl = st!.reviewAssurance!.obligations.find((o) => o.obligationId === oblId)!;
+        await writeStateWithArtifacts(s.sDir, {
+          ...st!,
+          reviewAssurance: {
+            ...st!.reviewAssurance!,
+            obligations: st!.reviewAssurance!.obligations.map((item) =>
+              item.obligationId === oblId
+                ? {
+                    ...item,
+                    reviewSubjectScope: {
+                      kind: 'repository_change',
+                      paths: ['README.md'],
+                      revisions: ['base', 'head'],
+                    },
+                  }
+                : item,
+            ),
+          },
+        });
         const r2 = await review.execute(
           {
             inputOrigin: 'manual_text',
             text: 'E2E review content',
+            targetPaths: ['README.md'],
             reviewFindings: f(oblId, obl.iteration, obl.planVersion),
           },
           s.tc,

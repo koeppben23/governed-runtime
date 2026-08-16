@@ -74,14 +74,9 @@ FlowGuard processes data in two contexts:
 
 ### Archive Evidence Handling
 
-Archive Layout v2 is a complete raw-evidence package for authorized auditors. Its default and only supported archive configuration is:
+Archive Layout v2 defaults to a redacted sharing archive (`basic`, `includeRaw=false`). It is `not_verifiable` because canonical runtime state and audit-chain evidence are intentionally excluded.
 
-- `archive.redaction.mode = none`
-- `archive.redaction.includeRaw = true`
-
-The archive includes raw runtime state, audit trail, decision receipts, review reports, and evidence artifacts. Archive manifests mark this with `rawIncluded: true` and the `raw_audit_evidence_export` risk flag. Store and transfer archives as confidential material.
-
-Legacy archive redaction settings (`basic`, `strict`, or `includeRaw=false`) fail archive creation. Migrate them to the v2 values above; redacted sharing export is a future separate feature.
+Authorized auditors may request raw evidence only when `archive.redaction.allowRawExport=true`, using `redactionMode=none, includeRaw=true`. That archive includes raw runtime state, audit trail, decision receipts, review reports, and evidence artifacts. Its manifest marks `rawIncluded: true` and the `raw_audit_evidence_export` risk flag. Store and transfer raw archives as confidential material.
 
 External references recorded on `/ticket`, including URLs, tracker IDs, and branch names, remain raw in the archived authoritative state and reports.
 

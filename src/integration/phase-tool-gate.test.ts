@@ -31,6 +31,7 @@ function validationResult(checkId: string) {
     executionMs: 1,
     outputDigest: 'a'.repeat(64),
     timedOut: false,
+    outcome: 'supported' as const,
   };
 }
 
@@ -420,6 +421,27 @@ describe('phase-tool-gate', () => {
       }
     });
 
+    it('reports every specific trigger and uses ceremony_only only without one', () => {
+      expect(
+        assessMinimumTaskClass([
+          'src/state/schema.ts',
+          'src/templates/commands/plan.ts',
+          'scripts/release.js',
+        ]).riskTriggers,
+      ).toEqual(['command_contract', 'distribution_integrity', 'state_integrity']);
+      expect(assessMinimumTaskClass(['src/archive/verify.ts']).riskTriggers).toEqual([
+        'ceremony_only',
+      ]);
+      // src/config/ remains HIGH-RISK for ceremony, but only the named policy
+      // authorities create a claim requirement.
+      expect(assessMinimumTaskClass(['src/config/logging-config.ts']).riskTriggers).toEqual([
+        'ceremony_only',
+      ]);
+      expect(assessMinimumTaskClass(['src/config/policy-resolver.ts']).riskTriggers).toEqual([
+        'policy_authority',
+      ]);
+    });
+
     it('HAPPY — root tool/editor config (opencode.json, tsconfig, vitest config) is not a STANDARD floor', () => {
       for (const cfg of [
         'opencode.json',
@@ -522,6 +544,7 @@ describe('phase-tool-gate', () => {
             executionMs: 100,
             outputDigest: 'a'.repeat(64),
             timedOut: false,
+            outcome: 'supported' as const,
           },
           {
             checkId: 'lint',
@@ -534,6 +557,7 @@ describe('phase-tool-gate', () => {
             executionMs: 100,
             outputDigest: 'b'.repeat(64),
             timedOut: false,
+            outcome: 'supported' as const,
           },
         ],
       });

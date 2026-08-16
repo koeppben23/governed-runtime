@@ -26,6 +26,7 @@
 
 import type { SessionState } from '../state/schema.js';
 import type { TicketEvidence, PlanEvidence, LoopVerdict } from '../state/evidence.js';
+import { computeRecordDigest } from '../state/evidence-plan.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import type { RailResult, RailContext } from './types.js';
 import {
@@ -68,6 +69,58 @@ export interface PlanInput {
 
 // ─── Rail ─────────────────────────────────────────────────────────────────────
 
+/** Plan evidence for a first submission (version 1, no predecessor). */
+function initialPlanEvidence(planBody: string, ctx: RailContext): PlanEvidence {
+  const contentDigest = ctx.digest(planBody);
+  return {
+    body: planBody,
+    digest: contentDigest,
+    sections: projectMarkdownHeadings(planBody),
+    createdAt: ctx.now(),
+    recordDigest: computeRecordDigest({
+      contentDigest,
+      planVersion: 1,
+      supersedesRecordDigest: null,
+      originatingReviewObligationId: null,
+      revisionReason: null,
+    }),
+    planVersion: 1,
+    supersedesRecordDigest: null,
+    originatingReviewObligationId: null,
+    revisionReason: null,
+    lineageStatus: 'verified' as const,
+  };
+}
+
+/** Plan evidence for a self-review revision, chained to its predecessor. */
+function revisedPlanEvidence(
+  predecessor: PlanEvidence,
+  revisedBody: string,
+  ctx: RailContext,
+): PlanEvidence {
+  const contentDigest = ctx.digest(revisedBody);
+  const planVersion = (predecessor.planVersion ?? 1) + 1;
+  const revisionReason = 'Review requested changes';
+  return {
+    body: revisedBody,
+    digest: contentDigest,
+    sections: projectMarkdownHeadings(revisedBody),
+    createdAt: ctx.now(),
+    recordDigest: computeRecordDigest({
+      contentDigest,
+      planVersion,
+      supersedesRecordDigest: predecessor.recordDigest,
+      originatingReviewObligationId: null,
+      revisionReason,
+    }),
+    planVersion,
+    supersedesRecordDigest: predecessor.recordDigest,
+    originatingReviewObligationId: null,
+    revisionReason,
+    lineageStatus: 'verified' as const,
+  };
+}
+
 export async function executePlan(
   state: SessionState,
   input: PlanInput,
@@ -95,12 +148,7 @@ export async function executePlan(
   }
 
   // 4. Create initial plan evidence
-  const currentPlan: PlanEvidence = {
-    body: planBody,
-    digest: ctx.digest(planBody),
-    sections: projectMarkdownHeadings(planBody),
-    createdAt: ctx.now(),
-  };
+  const currentPlan = initialPlanEvidence(planBody, ctx);
 
   // 5. Preserve version history
   const history = state.plan ? [state.plan.current, ...state.plan.history] : [];
@@ -115,12 +163,7 @@ export async function executePlan(
       history.unshift(plan);
       return {
         verdict: review.verdict,
-        updated: {
-          body: review.revisedBody,
-          digest: ctx.digest(review.revisedBody),
-          sections: projectMarkdownHeadings(review.revisedBody),
-          createdAt: ctx.now(),
-        },
+        updated: revisedPlanEvidence(plan, review.revisedBody, ctx),
       };
     }
     return { verdict: review.verdict };

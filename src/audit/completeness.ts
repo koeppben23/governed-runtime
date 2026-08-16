@@ -310,7 +310,8 @@ const SLOT_DETAIL_FNS: Record<
       : undefined,
   selfReview: (s) =>
     s.selfReview
-      ? `iteration ${s.selfReview.iteration}/${s.selfReview.maxIterations}, verdict: ${s.selfReview.verdict}`
+      ? `iteration ${s.selfReview.iteration}/${s.selfReview.maxIterations}, verdict: ${s.selfReview.verdict}` +
+        (s.architecture ? `, completion: ${s.architecture.reviewCompletion}` : '')
       : undefined,
   planReviewDecision: (_s, phaseOrd) =>
     phaseOrd >= PHASE_ORDER['VALIDATION'] ? 'Approved (verified by topology invariant)' : undefined,

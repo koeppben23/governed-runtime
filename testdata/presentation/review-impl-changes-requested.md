@@ -2,15 +2,25 @@
 
 **Status:** Implementation review in progress
 **Overall:** issues
-**Input:** pr
+
+## Verification
+
+No verification obligations declared.
+Approval evidence: Not recorded
+
+Diagnostic: `flowguard_status({ proofGraph: true })`
 
 ## Findings
 
-### Critical (1)
-- **Correctness:** Missing null check `src/payments/validate.ts`
-
-### Major (1)
-- **Quality:** Missing test coverage `src/payments/routes.ts`
+### Issues (2)
+- **Correctness:** Missing null check
+  Affected: BASE · src/subject.ts:8 · Evidence: 1 cited
+  - BASE · src/subject.ts:8
+  - HEAD · test/evidence.test.ts:4
+- **Quality:** Missing test coverage
+  Affected: BASE · src/subject.ts:8 · Evidence: 1 cited
+  - BASE · src/subject.ts:8
+  - HEAD · test/evidence.test.ts:4
 
 ## Completeness
 
@@ -24,4 +34,4 @@
 - Add missing verification where listed.
 - Re-run `/review` after changes if needed.
 
-Review report complete.
+→ `/export` — Export the review evidence.

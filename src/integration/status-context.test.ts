@@ -145,12 +145,16 @@ describe('blocker field mapping', () => {
     }
   });
 
-  it('should have null blocker at user gate phases (solo: auto-approve)', () => {
+  it('should auto-approve only plan and evidence gates in solo mode', () => {
     for (const phase of USER_GATES) {
       const state = makeMinimalState(phase);
       const projection = buildStatusProjection(state, policy);
 
-      expect(projection.blocker).toBeNull();
+      if (phase === 'ARCH_REVIEW') {
+        expect(projection.blocker?.reasonText).toContain('architecture decision review');
+      } else {
+        expect(projection.blocker).toBeNull();
+      }
     }
   });
 

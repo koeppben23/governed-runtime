@@ -234,7 +234,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       expect(result!.findings.blockingIssues).toEqual([]);
     });
 
-    it('T14: authoritatively injects sessionId on format-free retry path', async () => {
+    it('T14: preserves reviewer output on format-free retry path', async () => {
       const findingsWithWrongSession = sharedValidFindings({
         reviewedBy: { sessionId: 'wrong-session-id' },
       });
@@ -255,13 +255,13 @@ describe('invokeReviewer — format-free retry fallback', () => {
       });
 
       assertSuccessfulResult(result);
-      // Authoritative injection overwrites subagent's guess
+      // Provenance is stamped only after reviewer input validation.
       expect((result!.findings.reviewedBy as Record<string, unknown>).sessionId).toBe(
-        'retry-session-1',
+        'wrong-session-id',
       );
     });
 
-    it('T14b: injects sessionId when reviewedBy is missing entirely', async () => {
+    it('T14b: preserves missing reviewedBy for later input validation', async () => {
       const findingsNoReviewedBy = sharedValidFindings();
       delete findingsNoReviewedBy.reviewedBy;
       const client = makeSequentialClient({
@@ -281,9 +281,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       });
 
       assertSuccessfulResult(result);
-      expect((result!.findings.reviewedBy as Record<string, unknown>).sessionId).toBe(
-        'retry-session-1',
-      );
+      expect(result!.findings).not.toHaveProperty('reviewedBy');
     });
 
     it('T14c: joins multiple text parts into single JSON', async () => {
@@ -615,7 +613,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       assertSuccessfulResult(result);
       const parsed = JSON.parse(result!.rawResponse);
       expect(parsed.overallVerdict).toBe('accept');
-      expect(parsed.reviewedBy.sessionId).toBe('retry-session-1');
+      expect(parsed.reviewedBy.sessionId).toBe('child-session-1');
     });
   });
 
@@ -843,7 +841,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       assertSuccessfulResult(result);
       expect(result!.sessionId).toBe('child-session-2');
       expect((result!.findings.reviewedBy as Record<string, unknown>).sessionId).toBe(
-        'child-session-2',
+        'child-session-1',
       );
 
       // Both calls use fallback agent with system directive

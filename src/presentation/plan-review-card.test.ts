@@ -15,13 +15,14 @@
  * NOT the legacy blockquote/`## Next recommended action` footer.
  */
 import { describe, expect, it } from 'vitest';
-import { buildPlanReviewCard } from './plan-review-card.js';
+import { buildPlanReviewCard as buildCard, type PlanReviewCardInput } from './plan-review-card.js';
+import type { CompactProofPresentation } from './proof-model.js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 async function readGolden(name: string): Promise<string> {
   const p = resolve(__dirname, '..', '..', 'testdata', 'presentation', name);
-  return readFile(p, 'utf-8');
+  return (await readFile(p, 'utf-8')).trimEnd();
 }
 
 // #709 implementation-plan visual contract: one `#` top heading, `##` sections.
@@ -87,6 +88,22 @@ const productNextActionPartial = {
   commands: ['/approve'] as readonly string[],
 };
 
+const proofSummary: CompactProofPresentation = {
+  kind: 'declaration',
+  flow: 'plan',
+  overallStatus: 'NOT_DECLARED',
+  claimCount: 0,
+  criticalCount: 0,
+  approval: { attestations: [] },
+};
+function buildPlanReviewCard(
+  input: Omit<PlanReviewCardInput, 'proofSummary'> &
+    Partial<Pick<PlanReviewCardInput, 'proofSummary'>>,
+  options?: Parameters<typeof buildCard>[1],
+) {
+  return buildCard({ proofSummary, ...input }, options);
+}
+
 describe('buildPlanReviewCard', () => {
   it('keeps Unicode canonical by default and supports an ASCII transient rendering', () => {
     const input = {
@@ -103,6 +120,46 @@ describe('buildPlanReviewCard', () => {
     expect(buildPlanReviewCard(input, { glyphProfile: 'ascii' })).toContain(
       '[WARN] Reviewer did NOT approve this plan.',
     );
+  });
+
+  it('renders reviewed provenance rows when a reviewed digest is bound', () => {
+    const card = buildPlanReviewCard({
+      planText: 'Plan.',
+      phase: 'PLAN_REVIEW',
+      phaseLabel: 'Ready for plan approval',
+      productNextAction,
+      reviewedDigest: 'reviewed-digest',
+      reviewedObligationId: '00000000-0000-4000-8000-000000000001',
+    });
+    expect(card).toContain('**Reviewed plan digest:** `reviewed-digest`');
+    expect(card).toContain('**Reviewed obligation:** `00000000-0000-4000-8000-000000000001`');
+  });
+
+  it('warns explicitly when the displayed findings apply to a prior plan revision', () => {
+    const card = buildPlanReviewCard({
+      planText: 'Plan.',
+      phase: 'PLAN_REVIEW',
+      phaseLabel: 'Ready for plan approval',
+      productNextAction,
+      forcedConvergence: true,
+      currentPlanDigest: 'current-digest',
+      reviewedDigest: 'prior-digest',
+    });
+    expect(card).toContain('⚠ These reviewer findings apply to a prior plan revision.');
+    expect(card).toContain('Reviewed digest: `prior-digest`');
+    expect(card).toContain('Current digest:  `current-digest`');
+  });
+
+  it('omits the mismatch warning when the reviewed digest matches the current digest', () => {
+    const card = buildPlanReviewCard({
+      planText: 'Plan.',
+      phase: 'PLAN_REVIEW',
+      phaseLabel: 'Ready for plan approval',
+      productNextAction,
+      currentPlanDigest: 'same-digest',
+      reviewedDigest: 'same-digest',
+    });
+    expect(card).not.toContain('These reviewer findings apply to a prior plan revision.');
   });
 
   describe('HAPPY', () => {
@@ -623,5 +680,44 @@ describe('plan review golden fixtures', () => {
       forcedConvergence: true,
     });
     expect(card).toBe(await readGolden('review-plan-changes-requested.md'));
+  });
+
+  it('injects proof obligations section when proofSummary is provided', () => {
+    const card = buildPlanReviewCard({
+      planText: fullPlanBody,
+      phase: 'PLAN_REVIEW',
+      phaseLabel: 'Ready for plan approval',
+      productNextAction: {
+        text: 'Review the plan.',
+        commands: ['/approve', '/request-changes'],
+      },
+      planVersion: 1,
+      proofSummary: {
+        kind: 'declaration',
+        flow: 'plan',
+        overallStatus: 'AWAITING_EVIDENCE',
+        claimCount: 2,
+        criticalCount: 1,
+        approval: { attestations: [] },
+      },
+    });
+    expect(card).toContain('## Verification');
+    expect(card).toContain('2 plan claim(s) declared');
+    expect(card).toContain('1 critical');
+    expect(card).toContain('AWAITING_EVIDENCE');
+  });
+
+  it('omits proof obligations section when proofSummary is absent', () => {
+    const card = buildPlanReviewCard({
+      planText: fullPlanBody,
+      phase: 'PLAN_REVIEW',
+      phaseLabel: 'Ready for plan approval',
+      productNextAction: {
+        text: 'Review the plan.',
+        commands: ['/approve', '/request-changes'],
+      },
+      planVersion: 1,
+    });
+    expect(card).not.toContain('## Proof obligations');
   });
 });

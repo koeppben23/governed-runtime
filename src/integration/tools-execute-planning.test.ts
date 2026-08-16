@@ -18,6 +18,7 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import type { ReviewFindings } from '../state/evidence.js';
 import {
   createToolContext,
   createTestWorkspace,
@@ -428,7 +429,7 @@ describe('plan', () => {
       expect(result.status).toContain('Plan submitted');
     });
 
-    it('blocks plan-only resubmission while review loop is active', async () => {
+    it('re-emits the review instruction for a plan-only resubmission while the review loop is active', async () => {
       await hydrateAndTicket();
       const firstRaw = await plan.execute(
         { planText: '## Plan', targetPaths: ['docs/test.md'] },
@@ -437,13 +438,24 @@ describe('plan', () => {
       const first = parseToolResult(firstRaw);
       expect(first.phase).toBe('PLAN');
 
-      const raw = await plan.execute(
+      // SAME revision: the pending obligation re-emits its instruction.
+      const raw = await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
+      const result = parseToolResult(raw);
+      // No new plan/obligation: the existing review obligation re-emits its
+      // instruction (awaiting_task continuation).
+      expect(result.error).not.toBe(true);
+      expect(result.phase).toBe('PLAN');
+      expect(result.reviewObligationId).toBe(first.reviewObligationId);
+      expect(result.status).toContain('pending');
+
+      // CHANGED revision while pending: fail closed — never silently ignored.
+      const changedRaw = await plan.execute(
         { planText: '## Replacement Plan', targetPaths: ['docs/test.md'] },
         ctx,
       );
-      const result = parseToolResult(raw);
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('PLAN_REVIEW_IN_PROGRESS');
+      const changed = parseToolResult(changedRaw);
+      expect(changed.error).toBe(true);
+      expect(changed.code).toBe('REVIEW_SUBJECT_CHANGED_WHILE_PENDING');
     });
 
     it('blocks verdict before any plan exists with PLAN_SUBMISSION_REQUIRED', async () => {
@@ -522,7 +534,9 @@ describe('plan', () => {
 
       expect(result.error).toBe(true);
       expect(result.code).toBe('PLAN_SUBMISSION_MIXED_INPUTS');
-      expect(result.recovery).toContain('Submit the plan with flowguard_plan({ planText }) only');
+      expect(result.recovery).toContain(
+        'Submit the plan with flowguard_plan({ planText, claims }) — no verdict inputs',
+      );
       await expectStateStillInPlan();
     });
 
@@ -545,6 +559,44 @@ describe('plan', () => {
   });
 
   describe('Plan revision invariants', () => {
+    it('persists structured claim declarations with the submitted plan', async () => {
+      await hydrateSession({ policyMode: 'team' });
+      await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+      await plan.execute(
+        {
+          planText: '## Plan',
+          claims: [
+            {
+              claimId: 'ed04dda1-96d3-569f-8acc-af53500de638',
+              statement: 'Invalid credentials are rejected.',
+              critical: false,
+              claimScope: 'specific_behavior',
+              authoritySectionId: 'authentication',
+              expectedCheckId: 'typecheck',
+            },
+          ],
+          targetPaths: ['docs/test.md'],
+        },
+        ctx,
+      );
+
+      const state = await readState(await currentSessionDir());
+      expect(state!.plan?.claimDeclarations).toEqual({
+        flow: 'plan',
+        version: 'v2',
+        claims: [
+          {
+            claimId: 'ed04dda1-96d3-569f-8acc-af53500de638',
+            statement: 'Invalid credentials are rejected.',
+            critical: false,
+            claimScope: 'specific_behavior',
+            authoritySectionId: 'authentication',
+            expectedCheckId: 'typecheck',
+          },
+        ],
+      });
+    });
+
     it('keeps plan evidence when PLAN_REVIEW changes_requested returns to PLAN', async () => {
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
@@ -626,6 +678,26 @@ describe('plan', () => {
       expect(state!.reviewDecision).toBeNull();
     });
 
+    it('TEAM: force-converged card binds reviewer findings to the prior plan revision (F1)', async () => {
+      await hydrateSession({ policyMode: 'team' });
+      await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
+
+      const result = await exhaustPlanReviews(3);
+      expect(result.phase).toBe('PLAN_REVIEW');
+
+      const state = await readState(await currentSessionDir());
+      const reviewed = state!.reviewAssurance!.obligations.find(
+        (o) => o.obligationType === 'plan' && o.iteration === 2 && o.planVersion === 3,
+      );
+      expect(reviewed).toBeDefined();
+
+      const card = String(result.reviewCard);
+      expect(card).toContain('⚠ These reviewer findings apply to a prior plan revision.');
+      expect(card).toContain(`Reviewed digest: \`${reviewed!.subjectDigest}\``);
+      expect(card).toContain(`Current digest:  \`${state!.plan!.current.digest}\``);
+      expect(reviewed!.subjectDigest).not.toBe(state!.plan!.current.digest);
+    });
+
     it('TEAM: human approve advances the force-converged plan to VALIDATION', async () => {
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
@@ -641,6 +713,12 @@ describe('plan', () => {
       expect(decisionResult.error).not.toBe(true);
       const state = await readState(await currentSessionDir());
       expect(state!.phase).toBe('VALIDATION');
+      expect(state!.plan?.approvalCertificate).toMatchObject({
+        flow: 'plan',
+        authorityDigest: state!.plan?.current.digest,
+        approvedBy: expect.any(String),
+        certificateId: expect.any(String),
+      });
     });
 
     it('TEAM: human changes_requested sends the force-converged plan back to PLAN', async () => {
@@ -1075,6 +1153,127 @@ describe('plan', () => {
       // code so a future validation reorder doesn't break this contract pin.
       expect(typeof result.code).toBe('string');
       expect(String(result.code).length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('latestPlanReviewSummary provenance (F1 wiring)', () => {
+    const NOW = '2026-01-01T00:00:00.000Z';
+
+    async function dependencies() {
+      const assuranceMod = await import('./review/assurance.js');
+      const findingsHashMod = await import('./review/findings-hash.js');
+      const planResponseMod = await import('./tools/plan-response.js');
+      return {
+        artifactReviewSubjectScope: assuranceMod.artifactReviewSubjectScope,
+        buildInvocationEvidence: assuranceMod.buildInvocationEvidence,
+        createReviewObligation: assuranceMod.createReviewObligation,
+        REVIEW_CRITERIA_VERSION: assuranceMod.REVIEW_CRITERIA_VERSION,
+        REVIEW_MANDATE_DIGEST: assuranceMod.REVIEW_MANDATE_DIGEST,
+        hashFindings: findingsHashMod.hashFindings,
+        latestPlanReviewSummary: planResponseMod.latestPlanReviewSummary,
+      };
+    }
+
+    type Dependencies = Awaited<ReturnType<typeof dependencies>>;
+
+    function producerObligation(deps: Dependencies, subjectDigest: string) {
+      return deps.createReviewObligation({
+        obligationType: 'plan',
+        iteration: 0,
+        planVersion: 1,
+        now: NOW,
+        subjectDigest,
+        reviewSubjectScope: deps.artifactReviewSubjectScope(
+          'plan',
+          '## Approach\nBody',
+          subjectDigest,
+        ),
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+      });
+    }
+
+    function findingsFor(
+      deps: Dependencies,
+      obligation: ReturnType<Dependencies['createReviewObligation']>,
+    ) {
+      return {
+        iteration: 0,
+        planVersion: 1,
+        reviewMode: 'subagent',
+        overallVerdict: 'changes_requested',
+        blockingIssues: [],
+        majorRisks: [],
+        missingVerification: [],
+        scopeCreep: [],
+        unknowns: [],
+        reviewedBy: { sessionId: 'ses-child' },
+        reviewedAt: NOW,
+        attestation: {
+          mandateDigest: deps.REVIEW_MANDATE_DIGEST,
+          criteriaVersion: deps.REVIEW_CRITERIA_VERSION,
+          toolObligationId: obligation.obligationId,
+          iteration: 0,
+          planVersion: 1,
+          reviewedBy: 'flowguard-reviewer',
+        },
+      } as ReviewFindings;
+    }
+
+    function invocationFor(
+      deps: Dependencies,
+      obligation: ReturnType<Dependencies['createReviewObligation']>,
+      findings: ReviewFindings,
+      consumedBy: string | null = null,
+    ) {
+      return {
+        ...deps.buildInvocationEvidence({
+          obligationId: obligation.obligationId,
+          obligationType: 'plan',
+          mandateDigest: deps.REVIEW_MANDATE_DIGEST,
+          criteriaVersion: deps.REVIEW_CRITERIA_VERSION,
+          parentSessionId: 'ses-parent',
+          childSessionId: 'ses-child',
+          invocationMode: 'host_subagent_task',
+          hostVisible: true,
+          promptHash: 'sha256-prompt',
+          findingsHash: deps.hashFindings(findings),
+          invokedAt: NOW,
+          source: 'host-orchestrated',
+        }),
+        consumedByObligationId: consumedBy,
+      };
+    }
+
+    it('projects the producer identity for evidence-bound findings (incl. own consumption)', async () => {
+      const deps = await dependencies();
+      const obligation = producerObligation(deps, 'plan-digest-reviewed');
+      const findings = findingsFor(deps, obligation);
+      const assuranceState = {
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        obligations: [obligation],
+        invocations: [invocationFor(deps, obligation, findings, obligation.obligationId)],
+        attempts: [],
+      };
+      const summary = deps.latestPlanReviewSummary(assuranceState, findings, 1);
+      expect(summary.reviewedDigest).toBe('plan-digest-reviewed');
+      expect(summary.reviewedObligationId).toBe(obligation.obligationId);
+      expect(summary.reviewerIteration).toBe(0);
+      expect(summary.reviewedPlanVersion).toBe(1);
+    });
+
+    it('omits the identity when the attested obligation has no evidence binding (unsafe nextObligation case)', async () => {
+      const deps = await dependencies();
+      const obligation = producerObligation(deps, 'plan-digest-unbound');
+      const findings = findingsFor(deps, obligation);
+      const assuranceState = {
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        obligations: [obligation],
+        invocations: [],
+        attempts: [],
+      };
+      const summary = deps.latestPlanReviewSummary(assuranceState, findings, 1);
+      expect(summary.reviewedDigest).toBeUndefined();
+      expect(summary.reviewedObligationId).toBeUndefined();
     });
   });
 

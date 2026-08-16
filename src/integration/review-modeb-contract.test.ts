@@ -30,6 +30,7 @@ import { architecture } from './tools/architecture.js';
 import type { ToolContext } from './tools/helpers.js';
 import type { ReviewFindings, ReviewObligation } from '../state/evidence.js';
 import {
+  artifactReviewSubjectScope,
   createReviewObligation,
   appendReviewObligation,
   appendInvocationEvidence,
@@ -45,10 +46,13 @@ import {
   SELF_REVIEW_CONVERGED,
 } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
+import { hashCanonicalReviewContent } from '../shared/review-subject.js';
 
 const ALL_HOSTS = ['opencode', 'claude-code', 'codex'] as const satisfies readonly HostId[];
 const NOW = () => new Date().toISOString();
 const DECIDED_BY = 'reviewer-1';
+const REVIEW_MATERIAL_CONTENT = '## Frozen Test Review Material\n\nMode B fixture.\n';
+const REVIEW_MATERIAL_DIGEST = hashCanonicalReviewContent(REVIEW_MATERIAL_CONTENT);
 
 function style(host: HostId) {
   return host === 'opencode' ? ('plugin_handshake' as const) : ('manual_attested' as const);
@@ -119,7 +123,12 @@ function buildAssuranceForObligation(
     pluginHandshakeAt: s === 'plugin_handshake' ? NOW() : null,
   };
   const assured = appendInvocationEvidence(
-    { obligations: [fulfilled], invocations: [] },
+    {
+      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      obligations: [fulfilled],
+      invocations: [],
+      attempts: [],
+    },
     invocation,
   );
   return { ...assured };
@@ -195,12 +204,23 @@ describe('plan / architecture Mode-B review contract', () => {
       it('plan Mode B: validates evidence and consumes obligation', async () => {
         session = await bootstrap(host, 'plan');
 
-        const obl = createReviewObligation({
-          obligationType: 'plan',
-          iteration: 0,
-          planVersion: 1,
-          now: NOW(),
-        });
+        const obl = {
+          ...createReviewObligation({
+            obligationType: 'plan',
+            repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+            iteration: 0,
+            planVersion: 1,
+            now: NOW(),
+            subjectDigest: 'test',
+            reviewSubjectScope: artifactReviewSubjectScope('plan', '# Plan\nBody', 'test'),
+            changedFiles: ['src/foo.ts'],
+          }),
+          reviewMaterial: {
+            content: REVIEW_MATERIAL_CONTENT,
+            materialDigest: REVIEW_MATERIAL_DIGEST,
+            subjectDigest: 'test',
+          },
+        };
         const f = findings(obl.obligationId);
         const fh = hashFindings(f);
         const assurance = buildAssuranceForObligation(
@@ -234,12 +254,27 @@ describe('plan / architecture Mode-B review contract', () => {
       it('architecture Mode B: validates evidence and consumes obligation', async () => {
         session = await bootstrap(host, 'arch');
 
-        const obl = createReviewObligation({
-          obligationType: 'architecture',
-          iteration: 0,
-          planVersion: 1,
-          now: NOW(),
-        });
+        const obl = {
+          ...createReviewObligation({
+            obligationType: 'architecture',
+            repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+            iteration: 0,
+            planVersion: 1,
+            now: NOW(),
+            subjectDigest: 'test',
+            reviewSubjectScope: artifactReviewSubjectScope(
+              'adr',
+              '## Context\nC\n## Decision\nD',
+              'test',
+            ),
+            changedFiles: ['src/foo.ts'],
+          }),
+          reviewMaterial: {
+            content: REVIEW_MATERIAL_CONTENT,
+            materialDigest: REVIEW_MATERIAL_DIGEST,
+            subjectDigest: 'test',
+          },
+        };
         const f = findings(obl.obligationId);
         const fh = hashFindings(f);
         const assurance = buildAssuranceForObligation(

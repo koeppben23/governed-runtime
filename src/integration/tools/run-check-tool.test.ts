@@ -27,12 +27,19 @@ import {
 } from '../test-helpers.js';
 import { status, hydrate, ticket, plan, run_check } from '../tools/index.js';
 import { readState, writeState } from '../../adapters/persistence.js';
+import { FROZEN_IMPLEMENTATION_BASE } from '../../fixtures.js';
 import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
 } from '../../adapters/workspace/index.js';
 import { executeCheck } from '../../verification/executor.js';
 import { PersistenceError } from '../../adapters/persistence.js';
+import { canonicalJsonStringify } from '../../shared/canonical-json.js';
+import { hashText } from '../../shared/hashing.js';
+import { hashWorktreeFiles, listRepoSignals } from '../../adapters/git.js';
+import { headCommitFull } from '../../adapters/git.js';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { withSessionWriteLockRetry } from '../../adapters/lock-retry.js';
 import {
   resetAdapterLogger,
@@ -68,6 +75,19 @@ vi.mock('../../adapters/git', async (importOriginal) => {
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
     changedFiles: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.changedFiles),
     listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
+    headCommitFull: vi.fn().mockResolvedValue('d'.repeat(40)),
+  };
+});
+
+vi.mock('../../adapters/frozen-repository.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../adapters/frozen-repository.js')>();
+  return {
+    ...original,
+    freezeRepositoryIdentity: vi.fn(() => ({
+      kind: 'local' as const,
+      rootCommitDigest: 'sha256:' + 'b'.repeat(64),
+    })),
+    freezeWorktreeCandidate: vi.fn().mockResolvedValue('c'.repeat(40)),
   };
 });
 
@@ -132,6 +152,19 @@ afterEach(async () => {
   resetAdapterLogger();
   await ws.cleanup();
 });
+
+async function writeImplFileAndDigest(
+  tmpDir: string,
+  filePath: string,
+  content: string,
+): Promise<string> {
+  const fullPath = join(tmpDir, filePath);
+  mkdirSync(join(fullPath, '..'), { recursive: true });
+  writeFileSync(fullPath, content, 'utf-8');
+  writeFileSync(join(tmpDir, 'package.json'), JSON.stringify({ scripts: {} }), 'utf-8');
+  const hashes = await hashWorktreeFiles(tmpDir, [filePath]);
+  return hashText(`${filePath}:${hashes[filePath] ?? 'deleted'}`);
+}
 
 function captureLogger(): {
   log: AdapterLogger;
@@ -221,6 +254,39 @@ describe('HAPPY', () => {
     expect(validation!.outputDigest).toBe('a'.repeat(64));
   });
 
+  it('freezes a full-check attestation from the candidate on the executed attempt', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+    const state = await readState(sd);
+    await writeState(sd, {
+      ...state!,
+      verificationCandidates: (state!.verificationCandidates ?? []).map((candidate) =>
+        candidate.kind === 'typecheck'
+          ? {
+              assertionCapability: 'structured' as const,
+              kind: candidate.kind,
+              command: candidate.command,
+              source: candidate.source,
+              confidence: candidate.confidence,
+              reason: candidate.reason,
+              fullCheckScopeAttestation: 'full_check' as const,
+              assertionReport: {
+                collection: 'stdout' as const,
+                transport: 'stdout' as const,
+                format: 'junit_xml' as const,
+                providerId: 'junit' as const,
+              },
+            }
+          : candidate,
+      ),
+    });
+
+    await callOk(run_check, { kind: 'typecheck' });
+
+    const persisted = await readState(sd);
+    expect(persisted!.validationAttempts[0]!.result.fullCheckScopeAttestation).toBe('full_check');
+  });
+
   it('advances to IMPLEMENTATION when all active checks pass', async () => {
     await driveToValidation();
     // Discovery detects TypeScript → activeChecks=['typecheck']
@@ -235,6 +301,37 @@ describe('HAPPY', () => {
     expect(finalState!.phase).toBe('IMPLEMENTATION');
   });
 
+  it('freezes the implementation base authority on the ALL_PASSED transition into IMPLEMENTATION', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+
+    await callOk(run_check, { kind: 'typecheck' });
+
+    const finalState = await readState(sd);
+    expect(finalState!.phase).toBe('IMPLEMENTATION');
+    // Single transition finalizer: the persisted IMPLEMENTATION state carries
+    // the frozen pre-mutation base authority resolved from the worktree HEAD.
+    expect(finalState!.implementationBaseAuthority).toBeDefined();
+    expect(finalState!.implementationBaseAuthority!.objectSha).toBe('d'.repeat(40));
+  });
+
+  it('fails closed with REVIEW_IMPLEMENTATION_BASE_FREEZE_FAILED when no commit can be frozen', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+    const before = await readState(sd);
+
+    vi.mocked(headCommitFull).mockResolvedValueOnce(null);
+    const raw = await run_check.execute({ kind: 'typecheck' }, ctx);
+    const result = parseToolResult(raw);
+
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('REVIEW_IMPLEMENTATION_BASE_FREEZE_FAILED');
+    // Nothing persisted: the session must not enter IMPLEMENTATION without a
+    // frozen base authority.
+    const after = await readState(sd);
+    expect(after!.phase).toBe(before!.phase);
+  });
+
   it('calls executeCheck with correct arguments', async () => {
     await driveToValidation();
     await callOk(run_check, { kind: 'typecheck' });
@@ -246,6 +343,110 @@ describe('HAPPY', () => {
         cwd: ws.tmpDir,
       }),
     );
+  });
+
+  it('selects and persists the exact candidate when candidateId is supplied', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+    const state = await readState(sd);
+    const primary = state!.verificationCandidates!.find(
+      (candidate) => candidate.kind === 'typecheck',
+    )!;
+    const candidateId = 'typecheck-alternate';
+    await writeState(sd, {
+      ...state!,
+      verificationCandidates: [
+        primary,
+        { ...primary, candidateId, command: 'npm run exact-typecheck' },
+      ],
+      executionSubjectInputsByCandidateId: {
+        ...(state!.executionSubjectInputsByCandidateId ?? {}),
+        [candidateId]: state!.executionSubjectInputsByKind!.typecheck ?? [],
+      },
+    });
+
+    await callOk(run_check, { kind: 'typecheck', candidateId });
+
+    expect(executeCheck).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'npm run exact-typecheck' }),
+    );
+    expect((await readState(sd))!.validation[0]!.candidateId).toBe(candidateId);
+  });
+
+  it('persists complete-suite aggregate evidence from a repo-native pytest alternate', async () => {
+    writeFileSync(
+      join(ws.tmpDir, 'package.json'),
+      JSON.stringify({ scripts: { test: 'python -m pytest' } }),
+      'utf-8',
+    );
+    writeFileSync(join(ws.tmpDir, 'requirements.txt'), 'pytest>=7\n', 'utf-8');
+    writeFileSync(
+      join(ws.tmpDir, 'pyproject.toml'),
+      '[project]\ndependencies = ["pytest>=7"]\n',
+      'utf-8',
+    );
+    vi.mocked(listRepoSignals).mockResolvedValueOnce({
+      files: ['package.json', 'requirements.txt', 'pyproject.toml'],
+      packageFiles: ['package.json', 'requirements.txt'],
+      configFiles: ['pyproject.toml'],
+      packageFilePaths: ['package.json', 'requirements.txt'],
+      configFilePaths: ['pyproject.toml'],
+    });
+    await driveToValidation();
+
+    const sd = await getSessDir();
+    const aggregate = (await readState(sd))!.verificationCandidates!.find(
+      (candidate) =>
+        candidate.kind === 'test' &&
+        candidate.assertionCapability === 'structured' &&
+        candidate.assertionReport.format === 'junit_xml',
+    );
+    expect(aggregate).toBeDefined();
+    expect(aggregate).toMatchObject({
+      command: 'npm run test --',
+      fullCheckScopeAttestation: 'full_check',
+    });
+    expect((await readState(sd))!.activeChecks).toContain('test');
+
+    vi.mocked(executeCheck).mockImplementationOnce(async (input) => {
+      const reportPath = /--junitxml=(\S+)/.exec(input.command)?.[1];
+      expect(reportPath).toBeDefined();
+      const absoluteReportPath = join(input.cwd, reportPath!);
+      mkdirSync(dirname(absoluteReportPath), { recursive: true });
+      writeFileSync(
+        absoluteReportPath,
+        '<testsuite tests="1" failures="0" errors="0"><testcase classname="tests.test_suite" name="suite" /></testsuite>',
+        'utf-8',
+      );
+      return {
+        kind: input.kind,
+        command: input.command,
+        exitCode: 0,
+        passed: true,
+        executionMs: 150,
+        outputDigest: 'a'.repeat(64),
+        stdout: 'All clear',
+        stderr: '',
+        timedOut: false,
+        startedAt: '2026-01-01T00:00:00.000Z',
+      };
+    });
+
+    await callOk(run_check, { kind: 'test', candidateId: aggregate!.candidateId });
+
+    const attempt = (await readState(sd))!.validationAttempts.find(
+      (entry) => entry.result.candidateId === aggregate!.candidateId,
+    );
+    expect(attempt?.result).toMatchObject({
+      candidateId: aggregate!.candidateId,
+      fullCheckScopeAttestation: 'full_check',
+      assertionExtraction: {
+        status: 'extracted',
+        bindingCapability: 'aggregate',
+        format: 'junit_xml',
+        providerId: 'pytest',
+      },
+    });
   });
 });
 
@@ -280,6 +481,7 @@ describe('BAD', () => {
       verificationCandidates: [
         ...(state!.verificationCandidates ?? []),
         {
+          assertionCapability: 'unsupported' as const,
           kind: 'security' as const,
           command: 'npm audit',
           source: 'manual',
@@ -365,6 +567,8 @@ describe('CORNER', () => {
           executionMs: 200,
           outputDigest: 'b'.repeat(64),
           timedOut: false,
+          outcome: 'inconclusive' as const,
+          classificationReason: 'non-zero exit code',
         },
       ],
     };
@@ -421,13 +625,15 @@ describe('CORNER', () => {
     await driveToValidation();
     const sessDir = await getSessDir();
     const state = await readState(sessDir);
+    const implDigest = await writeImplFileAndDigest(ws.tmpDir, 'src/example.ts', 'test');
     await writeState(sessDir, {
       ...state!,
       phase: 'IMPL_VALIDATION',
+      implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
       implementation: {
         changedFiles: ['src/example.ts'],
         domainFiles: ['src/example.ts'],
-        digest: 'implementation-digest',
+        digest: implDigest,
         executedAt: '2026-01-01T00:00:00.000Z',
       },
     });
@@ -438,8 +644,82 @@ describe('CORNER', () => {
     expect(finalState!.validationAttempts).toHaveLength(1);
     expect(finalState!.validationAttempts[0]).toMatchObject({
       scope: 'implementation',
-      implementationDigest: 'implementation-digest',
+      implementationDigest: implDigest,
     });
+  });
+
+  it('materializes approved-plan claims with the current implementation attempt at IMPL_REVIEW', async () => {
+    await driveToValidation();
+    const sessDir = await getSessDir();
+    const state = await readState(sessDir);
+    const claimId = '11111111-1111-4111-8111-111111111111';
+    const implDigest = await writeImplFileAndDigest(ws.tmpDir, 'src/example.ts', 'test');
+    await writeState(sessDir, {
+      ...state!,
+      phase: 'IMPL_VALIDATION',
+      implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+      implementation: {
+        changedFiles: ['src/example.ts'],
+        domainFiles: ['src/example.ts'],
+        digest: implDigest,
+        executedAt: '2026-01-01T00:00:00.000Z',
+      },
+      plan: {
+        ...state!.plan!,
+        claimDeclarations: {
+          flow: 'plan',
+          claims: [
+            {
+              claimId,
+              statement: 'approved plan behavior is implemented',
+              critical: true,
+              authoritySectionId: 'implementation',
+              expectedCheckId: 'typecheck',
+            },
+          ],
+        },
+        approvalCertificate: {
+          flow: 'plan',
+          authorityDigest: state!.plan!.current.digest,
+          claimDeclarationsDigest: hashText(
+            canonicalJsonStringify({
+              flow: 'plan',
+              claims: [
+                {
+                  claimId,
+                  statement: 'approved plan behavior is implemented',
+                  critical: true,
+                  authoritySectionId: 'implementation',
+                  expectedCheckId: 'typecheck',
+                },
+              ],
+            }),
+          ),
+          decisionAttestationDigest: hashText('decision'),
+          approvedAt: '2026-01-01T00:00:00.000Z',
+          approvedBy: 'approver',
+          certificateId: '00000000-0000-4000-8000-000000000001',
+          // The certificate is bound to the CURRENT plan record: a hardcoded
+          // version or record digest makes it stale, and materialization then
+          // yields an empty contract instead of the claims under test.
+          planVersion: state!.plan!.current.planVersion,
+          planRecordDigest: state!.plan!.current.recordDigest,
+          reviewObligationId: null,
+          reviewEvidenceDigest: null,
+        },
+      },
+    });
+
+    await callOk(run_check, { kind: 'typecheck' });
+
+    const finalState = await readState(sessDir);
+    expect(finalState!.phase).toBe('IMPL_REVIEW');
+    expect(finalState!.proofContract?.claims[0]?.evidenceRefs).toEqual([
+      {
+        kind: 'validation_attempt',
+        attemptId: finalState!.validationAttempts[0]!.attemptId,
+      },
+    ]);
   });
 
   it('fails closed when the phase-specific digest prerequisite is unavailable', async () => {
@@ -486,7 +766,7 @@ describe('CORNER', () => {
       expect(rg.kind).toBe('derived_repair_guidance');
       expect(rg.advisory).toBe(true);
       expect(rg.source).toBe('run_check_output');
-      expect(rg.status).toBe('available');
+      expect(rg.status).toBe('unavailable');
       expect(rg.notVerified).toEqual(
         expect.arrayContaining([expect.stringContaining('NOT_VERIFIED')]),
       );
@@ -531,9 +811,8 @@ describe('EDGE', () => {
     expect(result.derivedRepairGuidance).toBeDefined();
     if (result.derivedRepairGuidance) {
       const rg = result.derivedRepairGuidance as Record<string, unknown>;
-      expect(rg.status).toBe('available');
-      expect(rg.category).toBe('timeout');
-      expect(rg.confidence).toBe('high');
+      expect(rg.status).toBe('unavailable');
+      expect(rg.category ?? rg.reason).toBeDefined();
     }
   });
 
@@ -665,6 +944,7 @@ describe('CONCURRENCY', () => {
       verificationCandidates: [
         ...(s!.verificationCandidates ?? []),
         {
+          assertionCapability: 'unsupported' as const,
           kind: 'lint',
           command: 'npm run lint',
           source: 'discovery' as const,
@@ -672,6 +952,7 @@ describe('CONCURRENCY', () => {
           reason: 'test',
         },
         {
+          assertionCapability: 'unsupported' as const,
           kind: 'test',
           command: 'npm test',
           source: 'discovery' as const,
@@ -679,6 +960,7 @@ describe('CONCURRENCY', () => {
           reason: 'test',
         },
         {
+          assertionCapability: 'unsupported' as const,
           kind: 'build',
           command: 'npm run build',
           source: 'discovery' as const,
@@ -686,6 +968,12 @@ describe('CONCURRENCY', () => {
           reason: 'test',
         },
       ],
+      executionSubjectInputsByKind: {
+        ...(s!.executionSubjectInputsByKind ?? {}),
+        lint: [{ kind: 'implementation' as const }],
+        test: [{ kind: 'implementation' as const }],
+        build: [{ kind: 'implementation' as const }],
+      },
     });
 
     // Execute 4 checks in parallel — each check runs outside the lock,

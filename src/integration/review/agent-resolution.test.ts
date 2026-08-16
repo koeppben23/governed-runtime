@@ -40,9 +40,10 @@ describe('Agent Resolution Constants', () => {
     expect(REVIEWER_AGENT_FALLBACK).toBe('general');
   });
 
-  it('REVIEWER_SYSTEM_DIRECTIVE is non-empty and mentions ReviewFindings', () => {
+  it('REVIEWER_SYSTEM_DIRECTIVE is non-empty and names the strict reviewer DTO', () => {
     expect(REVIEWER_SYSTEM_DIRECTIVE.length).toBeGreaterThan(50);
-    expect(REVIEWER_SYSTEM_DIRECTIVE).toContain('ReviewFindings');
+    expect(REVIEWER_SYSTEM_DIRECTIVE).toContain('ReviewerFindingsInput');
+    expect(REVIEWER_SYSTEM_DIRECTIVE).toContain('Do not output reviewedBy');
     expect(REVIEWER_SYSTEM_DIRECTIVE).toContain('governance reviewer');
   });
 });

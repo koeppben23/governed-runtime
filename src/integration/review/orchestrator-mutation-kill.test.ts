@@ -235,8 +235,8 @@ describe('MUTATION_KILL: invokeReviewer StructuredOutputError with structured_ou
   });
 });
 
-describe('MUTATION_KILL: invokeReviewer reviewedBy injection edge cases', () => {
-  it('creates reviewedBy when it is a non-object primitive (string)', async () => {
+describe('MUTATION_KILL: invokeReviewer reviewer provenance edge cases', () => {
+  it('does not rewrite reviewedBy when it is a primitive', async () => {
     const findings = JSON.parse(validFindings()) as Record<string, unknown>;
     findings.reviewedBy = 'not-an-object';
     const client = mockClient({
@@ -247,11 +247,10 @@ describe('MUTATION_KILL: invokeReviewer reviewedBy injection edge cases', () => 
     });
     const result = await invokeReviewer(client, 'test prompt', 'parent-1');
     assertSuccessfulResult(result);
-    const reviewedBy = result!.findings!.reviewedBy as Record<string, unknown>;
-    expect(reviewedBy.sessionId).toBe('child-session-1');
+    expect(result!.findings!.reviewedBy).toBe('not-an-object');
   });
 
-  it('creates reviewedBy when it is null', async () => {
+  it('does not rewrite reviewedBy when it is null', async () => {
     const findings = JSON.parse(validFindings()) as Record<string, unknown>;
     findings.reviewedBy = null;
     const client = mockClient({
@@ -262,8 +261,7 @@ describe('MUTATION_KILL: invokeReviewer reviewedBy injection edge cases', () => 
     });
     const result = await invokeReviewer(client, 'test prompt', 'parent-1');
     assertSuccessfulResult(result);
-    const reviewedBy = result!.findings!.reviewedBy as Record<string, unknown>;
-    expect(reviewedBy.sessionId).toBe('child-session-1');
+    expect(result!.findings!.reviewedBy).toBeNull();
   });
 });
 

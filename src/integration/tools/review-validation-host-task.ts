@@ -46,8 +46,15 @@ export type HostTaskFindingsResolution =
       readonly kind: 'incoherent';
       readonly code: string;
       readonly details: Record<string, unknown>;
+      readonly invocationId: string;
+      readonly attemptId: string;
       /** Compatibility projection for the original verdict/blocker invariant. */
       readonly blockingIssueCount?: number;
+    }
+  | {
+      readonly kind: 'attempt_lineage_unavailable';
+      readonly invocationId: string;
+      readonly obligationId: string;
     }
   | { readonly kind: 'not_found' };
 
@@ -106,7 +113,19 @@ export function resolveHostTaskFindings(
   // historically degraded to not_found), which is exactly the confusing
   // failure operators hit when the reviewer ran but its findings were corrupt.
   let unparseableDetail: string | null = null;
-  let incoherent: { code: string; details: Record<string, unknown> } | null = null;
+  let incoherent: {
+    code: string;
+    details: Record<string, unknown>;
+    invocationId: string;
+    attemptId: string;
+  } | null = null;
+  // A legacy invocation without attempt lineage must not cause an immediate
+  // return — a later coherent retry must still be found. Accumulate the first
+  // missing-lineage invocation and continue scanning.
+  let unavailableLineage: {
+    invocationId: string;
+    obligationId: string;
+  } | null = null;
   // An unusable earlier capture must not deadlock a later coherent retry. The
   // earlier evidence remains persisted for audit while this loop continues to
   // consider subsequent captures for the same obligation.
@@ -133,7 +152,19 @@ export function resolveHostTaskFindings(
         blockingIssueCount: parsed.data.blockingIssues.length,
       });
       if (!consistency.ok) {
-        incoherent ??= { code: consistency.code, details: consistency.details };
+        if (!invocation.attemptId) {
+          unavailableLineage ??= {
+            invocationId: invocation.invocationId,
+            obligationId: obligation.obligationId,
+          };
+          continue;
+        }
+        incoherent ??= {
+          code: consistency.code,
+          details: consistency.details,
+          invocationId: invocation.invocationId,
+          attemptId: invocation.attemptId,
+        };
         continue;
       }
       const challengeConsistency = validateChallengeConsistency({
@@ -149,7 +180,19 @@ export function resolveHostTaskFindings(
         previouslyUsedChallengeIds,
       });
       if (!challengeConsistency.ok) {
-        incoherent ??= { code: challengeConsistency.code, details: challengeConsistency.details };
+        if (!invocation.attemptId) {
+          unavailableLineage ??= {
+            invocationId: invocation.invocationId,
+            obligationId: obligation.obligationId,
+          };
+          continue;
+        }
+        incoherent ??= {
+          code: challengeConsistency.code,
+          details: challengeConsistency.details,
+          invocationId: invocation.invocationId,
+          attemptId: invocation.attemptId,
+        };
         continue;
       }
       return {
@@ -174,18 +217,27 @@ export function resolveHostTaskFindings(
     );
   }
 
-  if (unparseableDetail !== null) {
-    return { kind: 'unparseable', detail: unparseableDetail };
+  if (unavailableLineage !== null) {
+    return {
+      kind: 'attempt_lineage_unavailable',
+      invocationId: unavailableLineage.invocationId,
+      obligationId: unavailableLineage.obligationId,
+    };
   }
   if (incoherent !== null) {
     return {
       kind: 'incoherent',
       code: incoherent.code,
       details: incoherent.details,
+      invocationId: incoherent.invocationId,
+      attemptId: incoherent.attemptId,
       ...(typeof incoherent.details.blockingIssueCount === 'number'
         ? { blockingIssueCount: incoherent.details.blockingIssueCount }
         : {}),
     };
+  }
+  if (unparseableDetail !== null) {
+    return { kind: 'unparseable', detail: unparseableDetail };
   }
   return { kind: 'not_found' };
 }

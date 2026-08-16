@@ -20,7 +20,6 @@ import {
 import { buildHostTaskEvidence } from './evidence-binding.js';
 import { extractCapturedFindings } from './enforcement/extraction.js';
 import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
-import { REVIEW_MANDATE_DIGEST, REVIEW_CRITERIA_VERSION } from './assurance.js';
 import {
   NOW,
   LATER,
@@ -29,6 +28,7 @@ import {
   modeAResponse,
   validPrompt,
   pendingObligation,
+  attemptFor,
 } from '../plugin-host-task-diagnostics-helpers.js';
 
 function findingsJson(obligationId: string): string {
@@ -42,15 +42,8 @@ function findingsJson(obligationId: string): string {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
-    reviewedBy: { sessionId: CHILD_SESSION_ID },
-    reviewedAt: NOW,
     attestation: {
       toolObligationId: obligationId,
-      mandateDigest: REVIEW_MANDATE_DIGEST,
-      criteriaVersion: REVIEW_CRITERIA_VERSION,
-      iteration: 0,
-      planVersion: 1,
-      reviewedBy: REVIEWER_SUBAGENT_TYPE,
     },
   });
 }
@@ -82,12 +75,16 @@ describe('F8: buildHostTaskEvidence downgrades assurance for recovered findings'
       LATER,
       { metadata: { sessionID: CHILD_SESSION_ID }, callID: 'call_assurance_001' },
     );
-    return { state, obligation };
+    return { state, obligation, attempts: [attemptFor(obligation, CHILD_SESSION_ID)] };
   }
 
   it('binds clean JSON at structured_high', () => {
-    const { state, obligation } = setup((id) => findingsJson(id));
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+    const { state, obligation, attempts } = setup((id) => findingsJson(id));
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
     expect(result.bindOutcome).toBe('bound');
     expect(result.evidence?.reviewAssuranceLevel).toBe('structured_high');
     // Clean structured output keeps the structured-output transport contract.
@@ -96,10 +93,14 @@ describe('F8: buildHostTaskEvidence downgrades assurance for recovered findings'
   });
 
   it('binds recovered/embedded JSON at structured_recovered (not high)', () => {
-    const { state, obligation } = setup(
+    const { state, obligation, attempts } = setup(
       (id) => `Review summary follows.\n\n\`\`\`json\n${findingsJson(id)}\n\`\`\``,
     );
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
     expect(result.bindOutcome).toBe('bound');
     expect(result.evidence?.reviewAssuranceLevel).toBe('structured_recovered');
   });
@@ -108,10 +109,14 @@ describe('F8: buildHostTaskEvidence downgrades assurance for recovered findings'
     // Review finding: structured_recovered must not coexist with
     // reviewOutputMode=structured_output / structuredOutputUsed=true. All four
     // transport fields must agree that the payload was recovered from mixed text.
-    const { state, obligation } = setup(
+    const { state, obligation, attempts } = setup(
       (id) => `Prose analysis.\n\n\`\`\`json\n${findingsJson(id)}\n\`\`\``,
     );
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
     expect(result.bindOutcome).toBe('bound');
     expect(result.evidence?.reviewAssuranceLevel).toBe('structured_recovered');
     expect(result.evidence?.reviewOutputMode).toBe('text_compat');

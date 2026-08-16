@@ -12,7 +12,7 @@ When a session reaches COMPLETE phase, you can archive it:
 
 ## Archive Contents
 
-An archive includes:
+Raw-evidence archives include:
 
 - `state/session-state.json` — Complete canonical session state
 - `audit/audit.jsonl` — Complete hash-chained audit trail
@@ -23,17 +23,27 @@ An archive includes:
 - `reports/review-report.json` — Standalone review report when present
 - `implementation/implementation-diff.<digest>.patch` — Implementation patch when present
 
+Redacted sharing archives instead contain redacted state, audit, receipt, and
+review-report projections where available. They intentionally omit the canonical
+state and audit-chain files listed above.
+
 FlowGuard fail-closes archive creation when `session-state.json` contains ticket/plan evidence but required derived artifacts under `artifacts/` are missing, malformed, or digest/hash-inconsistent with current ticket/plan evidence.
 
-Archive Layout v2 is a complete, raw evidence package for authorized auditors. It
-does not apply redaction or encryption. Store and transfer it as confidential
-material. A future redacted sharing export is a separate product surface and is
-not an audit substitute.
+Archive Layout v2 supports two distinct export purposes. The default is a
+redacted sharing archive (`basic`, `includeRaw=false`). It is intentionally
+`not_verifiable`: redaction excludes the canonical state and audit chain that
+full evidence verification requires. It remains suitable for controlled sharing,
+but is not an audit substitute.
 
-Archive Layout v2 requires `archive.redaction.mode=none` and
-`archive.redaction.includeRaw=true`. These are the defaults. Legacy redaction
-settings (`basic`, `strict`, or `includeRaw=false`) fail archive creation; migrate
-the configuration before exporting.
+For complete auditor evidence, authorize raw export with
+`archive.redaction.allowRawExport=true` and explicitly export with
+`redactionMode=none, includeRaw=true`. That package contains unredacted evidence,
+is eligible for canonical verification, and must be stored and transferred as
+confidential material.
+
+Regulated clean completion is a separate system-owned path: it always creates
+and verifies its mandatory local raw-evidence archive, regardless of the manual
+sharing-export permission. The permission governs user-requested raw exports.
 
 ## Archive Location
 
@@ -42,6 +52,9 @@ Archives are stored at:
 ```
 ~/.config/opencode/workspaces/{fingerprint}/sessions/archive/{sessionId}.tar.gz
 ```
+
+The mandatory regulated raw-evidence package is stored separately as
+`regulated-{sessionId}.tar.gz`, so a later sharing export cannot replace it.
 
 ### Configuration Scope
 
@@ -138,9 +151,9 @@ if (result.passed) {
 In regulated mode (`policySnapshot.mode === 'regulated'`), clean completion
 (`EVIDENCE_REVIEW → APPROVE → COMPLETE`) requires archive creation **and**
 verification to succeed. The decision tool emits `session_completed` to the
-audit trail **before** calling `archiveSession()`, ensuring the archive
-contains the terminal lifecycle event. The `archiveStatus` field on session
-state tracks the archive lifecycle:
+audit trail **before** calling `archiveRegulatedEvidence()`, ensuring the archive
+contains the terminal lifecycle event. The `regulatedArchiveStatus` field on
+session state tracks the immutable regulated-evidence lifecycle:
 
 | Status     | Meaning                                 |
 | ---------- | --------------------------------------- |
@@ -150,12 +163,15 @@ state tracks the archive lifecycle:
 | `failed`   | Archive creation or verification failed |
 
 **Invariant:** A regulated session with `phase === 'COMPLETE'` and
-`archiveStatus !== 'verified'` (and no `error`) is NOT a clean regulated
+`regulatedArchiveStatus !== 'verified'` (and no `error`) is NOT a clean regulated
 completion. Status/doctor tools should surface this as degraded.
 
-**Non-regulated sessions** do not set `archiveStatus`. Solo sessions may use
-the audit plugin's fire-and-forget archive path. Team sessions never archive
-on completion: `/export` is the explicit archive action.
+**Manual exports** record their own result independently in `lastExportStatus`
+(`verified`, `not_verifiable`, or `failed`) and `lastExportKind` (`raw` or
+`redacted`). They never change `regulatedArchiveStatus`. `archiveStatus` remains
+a deprecated compatibility mirror for the regulated lifecycle only. Solo sessions
+may use the audit plugin's fire-and-forget archive path. Team sessions never
+archive on completion: `/export` is the explicit archive action.
 
 **Aborted sessions** (`error.code === 'ABORTED'`) do not trigger the regulated
 archive lifecycle. Abort is an emergency escape with no archive guarantee.

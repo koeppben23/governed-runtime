@@ -11,10 +11,10 @@ import type { ReviewReport } from '../../state/evidence.js';
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
 import {
   buildStatusProjection,
-  buildFinishCard,
   buildEvidenceDetailProjection,
   type FinishOverallStatus,
 } from '../status.js';
+import { buildFinishCard } from '../status-finish.js';
 import { evaluateArchivePreflight, type CommandPreflight } from '../archive-preflight.js';
 import {
   getInstalledCommand,
@@ -54,7 +54,7 @@ export interface EvidenceCompleteness {
 }
 
 export interface ArchiveVerification {
-  readonly status: 'not_created' | 'previously_verified' | 'failed' | 'unknown';
+  readonly status: 'not_created' | 'previously_verified' | 'not_verifiable' | 'failed' | 'unknown';
   readonly currentSnapshotVerified: boolean;
   readonly summary: string;
 }
@@ -363,6 +363,14 @@ function buildArchiveVerification(state: SessionState | null): ArchiveVerificati
       currentSnapshotVerified: false,
       summary:
         'A previous audit package verification succeeded. Current snapshot freshness is not established.',
+    };
+  }
+  if (state.archiveStatus === 'not_verifiable') {
+    return {
+      status: 'not_verifiable',
+      currentSnapshotVerified: false,
+      summary:
+        'A redacted sharing archive was created. It intentionally excludes raw evidence, so canonical audit-chain verification is unavailable.',
     };
   }
   if (state.archiveStatus === 'failed') {

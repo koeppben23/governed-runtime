@@ -27,6 +27,7 @@ describe('evidence-validation', () => {
         executionMs: 1500,
         outputDigest: VALID_DIGEST,
         timedOut: false,
+        outcome: 'supported' as const,
       };
       expect(ValidationResult.parse(result)).toEqual(result);
     });
@@ -43,6 +44,7 @@ describe('evidence-validation', () => {
         executionMs: 800,
         outputDigest: VALID_DIGEST,
         timedOut: false,
+        outcome: 'inconclusive' as const,
       };
       expect(ValidationResult.parse(result)).toEqual(result);
     });
@@ -59,6 +61,7 @@ describe('evidence-validation', () => {
         executionMs: 300000,
         outputDigest: VALID_DIGEST,
         timedOut: true,
+        outcome: 'blocked' as const,
       };
       expect(ValidationResult.parse(result)).toEqual(result);
     });
@@ -85,6 +88,7 @@ describe('evidence-validation', () => {
           executionMs: 100,
           outputDigest: VALID_DIGEST,
           timedOut: false,
+          outcome: 'supported' as const,
         };
         expect(() => ValidationResult.parse(result)).not.toThrow();
       }
@@ -106,6 +110,7 @@ describe('evidence-validation', () => {
           executionMs: 1500,
           outputDigest: VALID_DIGEST,
           timedOut: false,
+          outcome: 'supported' as const,
         },
       });
       expect(result.scope).toBe('baseline');
@@ -217,6 +222,7 @@ describe('evidence-validation', () => {
             executionMs: 1500,
             outputDigest: VALID_DIGEST,
             timedOut: false,
+            outcome: 'supported' as const,
           },
         }),
       ).toThrow();

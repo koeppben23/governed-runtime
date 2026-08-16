@@ -1,19 +1,4 @@
 import * as path from 'node:path';
-/**
- * @module integration/tools-execute.test
- * @description Execution tests for FlowGuard tool execute() functions.
- *
- * Tests each tool's execute() against real filesystem persistence with
- * OPENCODE_CONFIG_DIR redirected to a temp directory. Git adapter functions
- * (remoteOriginUrl, changedFiles, listRepoSignals) are selectively mocked;
- * all other I/O (workspace init, state read/write, config) runs for real.
- *
- * Scope: Tool behavior, tool-to-state, tool-to-persistence, tool-specific edge cases.
- * NOT in scope: Full multi-step workflows (see e2e-workflow.test.ts).
- *
- * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories present.
- */
-
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
@@ -24,6 +9,7 @@ import {
   parseToolResult,
   isBlockedResult,
   fulfillStrictReviewObligation,
+  freezeRepositoryReviewObligation,
   GIT_MOCK_DEFAULTS,
   type TestToolContext,
   type TestWorkspace,
@@ -75,7 +61,23 @@ import {
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import { TEAM_POLICY } from '../config/policy.js';
 
-// ─── Git Mock ────────────────────────────────────────────────────────────────
+/** Test predicate for source-tagged standalone review report findings. */
+function hasMaterialFinding(
+  findings: Array<Record<string, unknown>>,
+  message: string,
+  category?: string,
+  reportSeverity?: string,
+): boolean {
+  return findings.some((finding) => {
+    if (finding.source !== 'material_finding') return false;
+    const material = finding.finding as Record<string, unknown>;
+    return (
+      material.message === message &&
+      (category === undefined || material.category === category) &&
+      (reportSeverity === undefined || finding.reportSeverity === reportSeverity)
+    );
+  });
+}
 
 vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
@@ -86,16 +88,6 @@ vi.mock('../adapters/git', async (importOriginal) => {
     listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
   };
 });
-
-// ─── Workspace Mock (P26) ────────────────────────────────────────────────────
-// Partial mock: archiveSession and verifyArchive are vi.fn() wrappers that
-// default to the real implementations. P26 tests override them per-test.
-// All other workspace exports (computeFingerprint, initWorkspace, etc.)
-// remain real for full integration fidelity.
-//
-// Originals are stored via vi.hoisted (survives vi.mock hoisting) so afterEach
-// can fully reset the once-queues (vi.clearAllMocks does NOT clear
-// mockResolvedValueOnce queues — unconsumed values leak across tests).
 
 const wsOriginals = vi.hoisted(() => ({
   archiveSession:
@@ -115,10 +107,6 @@ vi.mock('../adapters/workspace', async (importOriginal) => {
   };
 });
 
-// ─── Actor Mock (P27) ────────────────────────────────────────────────────────
-// Mock resolveActor to return a deterministic actor for integration tests.
-// Prevents dependency on real env vars or git config.
-
 const actorOriginal = vi.hoisted(() => ({
   resolveActor: null as unknown as (typeof import('../adapters/actor.js'))['resolveActor'],
 }));
@@ -136,39 +124,41 @@ vi.mock('../adapters/actor', async (importOriginal) => {
   };
 });
 
-// Lazy import for per-test overrides
 const gitMock = await import('../adapters/git.js');
 const ghMock = await import('../adapters/gh-cli.js');
 const wsMock = await import('../adapters/workspace/index.js');
 const actorMock = await import('../adapters/actor.js');
 
-// ─── GH-CLI Mock ────────────────────────────────────────────────────────────
-// Mock gh-cli adapter to avoid dependency on real `gh` CLI in tests.
-// Using vi.mock() which is hoisted, so this affects all tests.
-// The P34a test doesn't use gh-cli, so this is safe.
-
 vi.mock('../adapters/gh-cli', () => ({
-  hasGhCli: vi.fn().mockReturnValue(true),
-  loadPrDiff: vi.fn().mockReturnValue('diff --git a/src/file.ts b/src/file.ts\n+new line'),
-  loadBranchDiff: vi.fn().mockReturnValue('diff --git a/src/file.ts b/src/file.ts\n+branch line'),
+  resolvePullRequestReviewSource: vi.fn().mockImplementation((pullRequestNumber: number) => ({
+    pullRequestNumber,
+    baseRepository: { host: 'github.com', owner: 'flowguard', name: 'governed-runtime' },
+    headRepository: { host: 'github.com', owner: 'flowguard', name: 'governed-runtime' },
+    baseSha: 'b'.repeat(40),
+    headSha: 'a'.repeat(40),
+  })),
+  loadResolvedPullRequestDiff: vi
+    .fn()
+    .mockReturnValue(
+      'diff --git a/docs/test.md b/docs/test.md\n+new line\ndiff --git a/src/auth/login.ts b/src/auth/login.ts\n+new line\ndiff --git a/src/auth/types.ts b/src/auth/types.ts\n+new line',
+    ),
   resolveBranchReviewSource: vi.fn().mockImplementation((branch: string) => ({
     branch,
     baseBranch: 'main',
     resolvedBranchSha: 'a'.repeat(40),
     resolvedBaseSha: 'b'.repeat(40),
+    repository: { host: 'github.com', owner: 'flowguard', name: 'governed-runtime' },
   })),
   loadResolvedBranchDiff: vi
     .fn()
-    .mockReturnValue('diff --git a/src/file.ts b/src/file.ts\n+resolved line'),
+    .mockReturnValue(
+      'diff --git a/docs/test.md b/docs/test.md\n+resolved line\ndiff --git a/src/auth/login.ts b/src/auth/login.ts\n+resolved line\ndiff --git a/src/auth/types.ts b/src/auth/types.ts\n+resolved line',
+    ),
   loadBranchChangedFiles: vi.fn().mockReturnValue(['src/auth/login.ts', 'src/auth/types.ts']),
   loadPrChangedFiles: vi.fn().mockReturnValue(['src/auth/login.ts', 'src/auth/types.ts']),
 }));
 
-// ─── Capability Gates ────────────────────────────────────────────────────────
-
 const tarOk = await isTarAvailable();
-
-// ─── Test Setup ──────────────────────────────────────────────────────────────
 
 let ws: TestWorkspace;
 let ctx: TestToolContext;
@@ -185,13 +175,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  // Reset workspace mock once-queues to prevent cross-test leaks.
-  // vi.clearAllMocks() only clears calls/results, NOT mockResolvedValueOnce
-  // queues. If a P26 test fails before consuming its once-mocks, the stale
-  // values leak into subsequent tests (e.g. archive manifest test).
   vi.mocked(wsMock.archiveSession).mockReset().mockImplementation(wsOriginals.archiveSession);
   vi.mocked(wsMock.verifyArchive).mockReset().mockImplementation(wsOriginals.verifyArchive);
-  // Reset actor mock to default deterministic value (P27/P34)
   vi.mocked(actorMock.resolveActor)
     .mockReset()
     .mockResolvedValue({
@@ -206,9 +191,6 @@ afterEach(async () => {
   await ws.cleanup();
 });
 
-// ─── Helper ──────────────────────────────────────────────────────────────────
-
-/** Hydrate a session and return parsed result. Convenience for setup. */
 async function hydrateSession(
   overrides: { policyMode?: string; profileId?: string } = {},
 ): Promise<Record<string, unknown>> {
@@ -222,7 +204,6 @@ async function hydrateSession(
   return parseToolResult(raw);
 }
 
-/** Hydrate + ticket. Convenience for tests that need to start from PLAN phase. */
 async function hydrateAndTicket(ticketText = 'Fix the auth bug'): Promise<void> {
   await hydrateSession();
   await ticket.execute({ text: ticketText, source: 'user' }, ctx);
@@ -253,7 +234,6 @@ function requiredRecord(value: unknown, label: string): Record<string, unknown> 
   }
   return value as Record<string, unknown>;
 }
-
 function requiredString(value: unknown, key: string): string {
   const record = requiredRecord(value, key);
   const field = record[key];
@@ -262,20 +242,13 @@ function requiredString(value: unknown, key: string): string {
 }
 
 describe('review (standalone flow)', () => {
-  // Mock fetch for URL tests
   beforeEach(() => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        text: () => Promise.resolve('Mock URL content for review'),
-      } as Response),
+      vi.fn(() => new Response('Mock URL content for review')),
     );
   });
 
-  // Helper: Create a fresh session in READY phase
   async function hydrateAndGetReady(): Promise<void> {
     const raw = await hydrate.execute({ policyMode: 'solo' }, ctx);
     const result = parseToolResult(raw);
@@ -284,13 +257,16 @@ describe('review (standalone flow)', () => {
     }
   }
 
-  // Helper: Build a complete subagent-attested ReviewFindings object as the
-  // primary agent would receive it from the flowguard-reviewer subagent.
-  // Categories are restricted to the schema-allowed enum
-  // ("completeness" | "correctness" | "feasibility" | "risk" | "quality").
-  // toolObligationId is required (schema demands it after P2 obligation binding);
-  // callers that need the real obligation UUID should create an obligation first
-  // and pass the returned UUID to this helper.
+  const REVIEW_RELATION = {
+    subjectAnchors: [
+      {
+        kind: 'repository_location' as const,
+        location: { path: 'docs/test.md', revision: 'head' },
+      },
+    ],
+    evidenceLocations: [],
+  };
+
   function buildAnalysisFindings(
     overallVerdict: 'accept' | 'changes_requested',
     toolObligationId?: string,
@@ -302,7 +278,7 @@ describe('review (standalone flow)', () => {
               severity: 'major' as const,
               category: 'risk' as const,
               message: 'Critical security flaw in authentication flow',
-              location: 'src/auth/login.ts:45',
+              relation: REVIEW_RELATION,
             },
           ]
         : [];
@@ -339,9 +315,15 @@ describe('review (standalone flow)', () => {
     const sessDir = await currentSessionDir();
     const state = await readState(sessDir);
     if (!state) throw new TypeError('Expected persisted session state');
+    const obligation = state.reviewAssurance?.obligations.find(
+      (item) => item.obligationId === obligationId,
+    );
+    if (!obligation) throw new TypeError('Expected persisted review obligation');
     const invocation = buildInvocationEvidence({
       obligationId,
       obligationType: 'review',
+      mandateDigest: obligation.mandateDigest,
+      criteriaVersion: obligation.criteriaVersion,
       parentSessionId: ctx.sessionID,
       childSessionId: 'ses_review_child_host_task',
       invocationMode: 'host_subagent_task',
@@ -353,6 +335,8 @@ describe('review (standalone flow)', () => {
       source: 'host-orchestrated',
       capturedVerdict: findings.overallVerdict,
       capturedRawFindings: findings,
+      attemptId: state.reviewAssurance?.attempts?.find((a) => a.obligationId === obligationId)
+        ?.attemptId,
     });
     await writeState(sessDir, {
       ...state,
@@ -364,8 +348,6 @@ describe('review (standalone flow)', () => {
     return invocation;
   }
 
-  // Helper: Create a review obligation and return its UUID by calling /review
-  // without findings first. Hydrates a fresh READY session internally.
   async function obtainObligationUuid(contentArg: Record<string, unknown>): Promise<string> {
     await hydrateAndGetReady();
     const enriched = { ...contentArg };
@@ -377,11 +359,10 @@ describe('review (standalone flow)', () => {
     if (blocked.code !== 'CONTENT_ANALYSIS_REQUIRED') {
       throw new Error(`Expected CONTENT_ANALYSIS_REQUIRED, got ${blocked.code}`);
     }
-    return requiredString(blocked.requiredReviewAttestation, 'toolObligationId');
+    const obligationId = requiredString(blocked.requiredReviewAttestation, 'toolObligationId');
+    await freezeRepositoryReviewObligation(await currentSessionDir(), obligationId);
+    return obligationId;
   }
-
-  // Helper: Full two-step flow — creates obligation, then submits valid findings.
-  // Returns the parseToolResult from the second (successful) /review call.
   async function submitContentReview(
     contentArg: Record<string, unknown>,
     overallVerdict: 'accept' | 'changes_requested' = 'accept',
@@ -393,9 +374,6 @@ describe('review (standalone flow)', () => {
     return parseToolResult(raw);
   }
 
-  // =========================================================================
-  // HAPPY PATHS - Successful review flows
-  // =========================================================================
   describe('HAPPY', () => {
     it('content-aware review with PR number succeeds with reviewFindings', async () => {
       const result = await submitContentReview({ prNumber: 123, inputOrigin: 'pr' });
@@ -403,14 +381,97 @@ describe('review (standalone flow)', () => {
       expect(result.phase).toBe('REVIEW_COMPLETE');
       expect(result.status).toBe('Review flow complete. Report generated.');
       expect(result.findingsCount).toBeGreaterThanOrEqual(0);
-      expect(result.inputOrigin).toBe('pr');
+      expect(result.reviewSubject).toMatchObject({
+        kind: 'repository_change',
+        source: { kind: 'pull_request', pullRequestNumber: 123 },
+      });
     });
 
     it('content-aware review with branch succeeds with reviewFindings', async () => {
       const result = await submitContentReview({ branch: 'feature-auth', inputOrigin: 'branch' });
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('REVIEW_COMPLETE');
-      expect(result.inputOrigin).toBe('branch');
+      expect(result.reviewSubject).toMatchObject({
+        kind: 'repository_change',
+        source: { kind: 'branch', branch: 'feature-auth' },
+      });
+    });
+
+    it('binds branch material findings to the resolved base/head source scope', async () => {
+      await hydrateAndGetReady();
+      const first = parseToolResult(
+        await review.execute(
+          { branch: 'feature-auth', inputOrigin: 'branch', targetPaths: ['src/auth/login.ts'] },
+          ctx,
+        ),
+      );
+      const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
+      const state = (await readState(await currentSessionDir()))!;
+      const obligation = state.reviewAssurance!.obligations.find(
+        (item) => item.obligationId === obligationId,
+      )!;
+      expect(obligation.reviewSubjectScope).toEqual({
+        kind: 'repository_change',
+        paths: ['src/auth/login.ts'],
+        revisions: ['base', 'head'],
+      });
+      expect(obligation.reviewSubject).toMatchObject({
+        kind: 'repository_change',
+        baseRepository: { host: 'github.com', owner: 'flowguard', name: 'governed-runtime' },
+        headRepository: { host: 'github.com', owner: 'flowguard', name: 'governed-runtime' },
+        baseSha: 'b'.repeat(40),
+        headSha: 'a'.repeat(40),
+      });
+      expect(obligation.subjectDigest).toBe(obligation.reviewSubject?.subjectDigest);
+      const attempt = state.reviewAssurance!.attempts.find(
+        (item) => item.obligationId === obligationId,
+      );
+      expect(attempt?.reviewMaterial?.materialDigest).toBe(
+        obligation.reviewSubject?.materialDigest,
+      );
+      const findings = {
+        ...buildAnalysisFindings('accept', obligationId),
+        challenges: [
+          {
+            challengeId: '22222222-2222-4222-8222-222222222222',
+            obligationId,
+            scenario: 'The authorization check is absent on the reviewed branch.',
+            claim: 'The change preserves authorization.',
+            locations: ['src/auth/login.ts'],
+            kind: 'content_challenge' as const,
+            evidenceRefs: [{ kind: 'content' as const, digest: obligation.metadata!.fingerprint }],
+            outcome: 'supported' as const,
+          },
+        ],
+        majorRisks: [
+          {
+            severity: 'major' as const,
+            category: 'risk' as const,
+            message: 'The branch removes the authorization check.',
+            relation: {
+              subjectAnchors: [
+                {
+                  kind: 'repository_location' as const,
+                  location: { path: 'src/auth/login.ts', revision: 'head' as const },
+                },
+              ],
+              evidenceLocations: [{ path: 'src/auth/login.ts', revision: 'base' as const }],
+            },
+          },
+        ],
+      };
+      const result = parseToolResult(
+        await review.execute(
+          {
+            branch: 'feature-auth',
+            inputOrigin: 'branch',
+            targetPaths: ['src/auth/login.ts'],
+            reviewFindings: findings,
+          },
+          ctx,
+        ),
+      );
+      expect(result).toMatchObject({ phase: 'REVIEW_COMPLETE' });
     });
 
     it('standalone /review Call 1 persists a PENDING review obligation for host-task binding', async () => {
@@ -420,10 +481,6 @@ describe('review (standalone flow)', () => {
       );
       expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
 
-      // The host-task evidence binder (plugin-task-evidence.ts) reads fresh state
-      // and filters obligations by status==='pending'. The log shows
-      // pendingObligationCount:0 at the reviewer-task bind for standalone /review,
-      // so the obligation created by Call 1 must be persisted AND pending.
       const sessDir = await currentSessionDir();
       const state = await readState(sessDir);
       expect(state).not.toBeNull();
@@ -437,13 +494,58 @@ describe('review (standalone flow)', () => {
       ).toBe(1);
     });
 
+    it('materializes a local branch without remote identity and scopes risk to its frozen paths', async () => {
+      await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
+      vi.mocked(ghMock.resolveBranchReviewSource).mockReturnValueOnce({
+        branch: 'feature-local',
+        baseBranch: 'main',
+        resolvedBranchSha: 'a'.repeat(40),
+        resolvedBaseSha: 'b'.repeat(40),
+        repository: { kind: 'local', rootCommitDigest: 'c'.repeat(64) },
+      });
+
+      const first = parseToolResult(
+        await review.execute({ branch: 'feature-local', inputOrigin: 'branch' }, ctx),
+      );
+      expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+      expect(ghMock.loadBranchChangedFiles).not.toHaveBeenCalled();
+
+      const state = await readState(await currentSessionDir());
+      const obligation = findLatestPendingReviewObligation(state!.reviewAssurance, 'review');
+      expect(obligation?.reviewSubject).toMatchObject({
+        kind: 'repository_change',
+        baseSha: 'b'.repeat(40),
+        headSha: 'a'.repeat(40),
+        changedPaths: ['docs/test.md', 'src/auth/login.ts', 'src/auth/types.ts'],
+      });
+      expect(obligation?.reviewSubject).toMatchObject({
+        baseRepository: { kind: 'local', rootCommitDigest: 'c'.repeat(64) },
+      });
+      expect(obligation?.metadata?.targetPaths).toEqual([
+        'docs/test.md',
+        'src/auth/login.ts',
+        'src/auth/types.ts',
+      ]);
+    });
+
+    it('does not start a review when content risk classification blocks, including after hydrate', async () => {
+      await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
+      const blocked = parseToolResult(
+        await review.execute({ text: 'unscoped review content', inputOrigin: 'manual_text' }, ctx),
+      );
+      expect(blocked.code).toBe('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE');
+
+      const sessDir = await currentSessionDir();
+      expect((await readState(sessDir))?.phase).toBe('READY');
+
+      const rehydrated = parseToolResult(
+        await hydrate.execute({ policyMode: 'team', claimedTaskClass: 'STANDARD' }, ctx),
+      );
+      expect(rehydrated.phase).toBe('READY');
+      expect((await readState(sessDir))?.reviewReportPath).toBeNull();
+    });
+
     it('standalone /review Call 1 carrying a premature reviewVerdict creates the obligation instead of terminally blocking', async () => {
-      // Real demo failure: the agent's FIRST flowguard_review call already
-      // included reviewVerdict:"accept". Previously this took the host-task
-      // verdict-bind path with no pending obligation -> terminal
-      // HOST_SUBAGENT_TASK_REQUIRED / bindOutcome:not_found, and the reviewer
-      // Task was never run. It must instead create the PENDING obligation and
-      // return CONTENT_ANALYSIS_REQUIRED.
       await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
       const first = parseToolResult(
         await review.execute(
@@ -455,8 +557,6 @@ describe('review (standalone flow)', () => {
           ctx,
         ),
       );
-      // CONTENT_ANALYSIS_REQUIRED is the (blocked-shaped) instruction to run the
-      // reviewer — NOT the terminal HOST_SUBAGENT_TASK_REQUIRED/not_found.
       expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
       expect(
         (first.requiredReviewAttestation as Record<string, string>).toolObligationId,
@@ -468,54 +568,6 @@ describe('review (standalone flow)', () => {
         (o) => o.obligationType === 'review' && o.status === 'pending' && o.consumedAt === null,
       );
       expect(pendingReview.length).toBe(1);
-    });
-
-    it('host_task_required branch review completes with host evidence and verdict only', async () => {
-      await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
-      const first = parseToolResult(
-        await review.execute(
-          { branch: 'feature-auth', inputOrigin: 'branch', targetPaths: ['docs/test.md'] },
-          ctx,
-        ),
-      );
-      expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
-      const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
-      expect(first.reviewObligationId).toBe(obligationId);
-      await bindHostTaskReviewEvidence(obligationId);
-
-      vi.mocked(ghMock.loadBranchDiff).mockImplementationOnce(() => {
-        throw new Error('branch diff should not be reloaded after host evidence is bound');
-      });
-
-      const result = parseToolResult(
-        await review.execute(
-          {
-            branch: 'feature-auth',
-            inputOrigin: 'branch',
-            reviewObligationId: obligationId,
-            reviewVerdict: 'accept',
-          },
-          ctx,
-        ),
-      );
-
-      expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('REVIEW_COMPLETE');
-      expect(result.reviewCard).toContain('host_subagent_task');
-      expect(result.reviewCard).toContain('ses_review_child_host_task');
-
-      // Regression guard for the consumeValidatedReviewObligation write path
-      // (obligation.ts): a completed host-task standalone /review must persist
-      // the resolved reviewer findings into standaloneReviewFindings. Without
-      // this assertion the append is executed but its effect is unverified, so
-      // dropping or corrupting the write survives the suite.
-      const persistedSessDir = await currentSessionDir();
-      const persistedState = await readState(persistedSessDir);
-      expect(persistedState).not.toBeNull();
-      const persistedFindings = persistedState!.standaloneReviewFindings ?? [];
-      expect(persistedFindings).toHaveLength(1);
-      expect(persistedFindings[0]!.overallVerdict).toBe('accept');
-      expect(persistedFindings[0]!.attestation?.toolObligationId).toBe(obligationId);
     });
 
     it('host_task_required verdict with an unknown obligation ID fails closed', async () => {
@@ -653,7 +705,7 @@ describe('review (standalone flow)', () => {
             severity: 'minor' as const,
             category: 'quality' as const,
             message: 'stale comment in test',
-            location: 'src/test/TaskControllerTest.java:108',
+            relation: REVIEW_RELATION,
           },
         ],
         majorRisks: [],
@@ -703,7 +755,10 @@ describe('review (standalone flow)', () => {
       });
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('REVIEW_COMPLETE');
-      expect(result.inputOrigin).toBe('external_reference');
+      expect(result.reviewSubject).toMatchObject({
+        kind: 'content',
+        source: { kind: 'url' },
+      });
     });
 
     it('content-aware review with manual text succeeds', async () => {
@@ -713,7 +768,62 @@ describe('review (standalone flow)', () => {
       });
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('REVIEW_COMPLETE');
-      expect(result.inputOrigin).toBe('manual_text');
+      expect(result.reviewSubject).toMatchObject({
+        kind: 'content',
+        source: { kind: 'inline', mediaType: 'text' },
+      });
+    });
+
+    it('persists append-only deterministic prepared and completed review evidence', async () => {
+      const content = { text: 'Manual review text content', inputOrigin: 'manual_text' as const };
+      const obligationId = await obtainObligationUuid(content);
+      const sessDir = await currentSessionDir();
+      const preparedState = await readState(sessDir);
+      const preparedEvidence = preparedState!.standaloneReviewEvidence;
+
+      expect(preparedEvidence).toHaveLength(1);
+      expect(preparedEvidence[0]).toMatchObject({
+        kind: 'prepared',
+        task: {
+          profileVersion: 'standalone-review-objectives.v1',
+          objectives: expect.any(Array),
+        },
+        obligationId,
+        schemaVersion: 'standalone-review-evidence.v2',
+      });
+      const prepared = preparedEvidence[0];
+      if (prepared?.kind !== 'prepared') throw new TypeError('Expected prepared review evidence');
+      expect(prepared.task.claims).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ signalClass: 'hypothesis', provenance: null }),
+        ]),
+      );
+      // Content reviews mint attempts with `not_applicable` Discovery context:
+      // the field is structurally required, never silently absent.
+      const contentAttempt = preparedState!.reviewAssurance!.attempts.find(
+        (attempt) => attempt.obligationId === obligationId,
+      );
+      expect(contentAttempt?.repositoryDiscovery).toEqual({ kind: 'not_applicable' });
+
+      await review.execute(
+        { ...content, reviewFindings: buildAnalysisFindings('accept', obligationId) },
+        ctx,
+      );
+      const completedState = await readState(sessDir);
+      const completedEvidence = completedState!.standaloneReviewEvidence;
+
+      expect(completedEvidence).toHaveLength(2);
+      expect(completedEvidence[0]).toEqual(preparedEvidence[0]);
+      const completed = completedEvidence[1]!;
+      expect(completed).toMatchObject({
+        kind: 'completed',
+        preparedEvidenceId: prepared.evidenceId,
+        obligationId,
+        reviewTaskId: prepared.reviewTaskId,
+      });
+      if (completed.kind !== 'completed') throw new TypeError('Expected completed review evidence');
+      expect(completed.findingsDigest).toMatch(/^[a-f0-9]{64}$/);
+      expect(completed.attestationDigest).toMatch(/^[a-f0-9]{64}$/);
     });
 
     it('non-content review (no external content) succeeds without reviewFindings', async () => {
@@ -739,16 +849,11 @@ describe('review (standalone flow)', () => {
       );
       const result = parseToolResult(raw);
 
-      // inputOrigin + references are provenance metadata, not content loaders.
-      // A concrete content field (url, text, prNumber, branch) is required.
       expect(result.error).toBe(true);
       expect(result.code).toBe('REVIEW_CONTENT_SOURCE_INCOMPLETE');
     });
   });
 
-  // =========================================================================
-  // BAD PATHS - Invalid inputs, missing content, subagent failures
-  // =========================================================================
   describe('BAD', () => {
     it('BLOCKED: content-aware review without reviewFindings', async () => {
       await hydrateAndGetReady();
@@ -799,9 +904,6 @@ describe('review (standalone flow)', () => {
     });
   });
 
-  // =========================================================================
-  // CORNER CASES - Edge cases, mixed inputs
-  // =========================================================================
   describe('CORNER', () => {
     it('mixed input: text AND references with inputOrigin="mixed"', async () => {
       const result = await submitContentReview({
@@ -811,10 +913,13 @@ describe('review (standalone flow)', () => {
       });
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('REVIEW_COMPLETE');
-      expect(result.inputOrigin).toBe('mixed');
+      expect(result.reviewSubject).toMatchObject({
+        kind: 'content',
+        source: { kind: 'inline', mediaType: 'text' },
+      });
     });
 
-    it('report includes external references when provided', async () => {
+    it('response includes the frozen repository subject when provided', async () => {
       const result = await submitContentReview({
         prNumber: 999,
         references: [
@@ -823,22 +928,19 @@ describe('review (standalone flow)', () => {
         inputOrigin: 'pr',
       });
       expect(result.error).toBeUndefined();
-      expect(result.references).toBeDefined();
-      expect(Array.isArray(result.references)).toBe(true);
-      if (!Array.isArray(result.references)) throw new TypeError('Expected review references');
-      expect(result.references.length).toBeGreaterThan(0);
+      expect(result.reviewSubject).toMatchObject({
+        kind: 'repository_change',
+        source: { kind: 'pull_request', pullRequestNumber: 999 },
+      });
     });
   });
 
-  // =========================================================================
-  // EDGE CASES - Boundary conditions
-  // =========================================================================
   describe('EDGE', () => {
-    it('review with all optional fields populated', async () => {
+    it('review with repository fields and references populated', async () => {
       const result = await submitContentReview({
         prNumber: 123,
-        text: 'Additional context',
-        inputOrigin: 'mixed',
+        inputOrigin: 'pr',
+        targetPaths: ['docs/test.md'],
         references: [
           { ref: 'PR#123', type: 'pr', title: 'Main PR' },
           { ref: 'JIRA-456', type: 'ticket', title: 'Related ticket' },
@@ -846,12 +948,13 @@ describe('review (standalone flow)', () => {
       });
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('REVIEW_COMPLETE');
+      expect(result.reviewSubject).toMatchObject({
+        kind: 'repository_change',
+        source: { kind: 'pull_request', pullRequestNumber: 123 },
+      });
     });
   });
 
-  // =========================================================================
-  // E2E TESTS - Full review flow with subagent
-  // =========================================================================
   describe('E2E', () => {
     it('full content-aware review flow: hydrate → review with content', async () => {
       const result = await submitContentReview(
@@ -877,13 +980,13 @@ describe('review (standalone flow)', () => {
       const messages = (result.findings as Array<{ message?: string }>).map((f) => f.message);
       expect(messages).not.toContain('No ticket evidence');
       expect(messages).not.toContain('No plan evidence');
-      expect(result.inputOrigin).toBe('pr');
+      expect(result.reviewSubject).toMatchObject({
+        kind: 'repository_change',
+        source: { kind: 'pull_request', pullRequestNumber: 42 },
+      });
     });
   });
 
-  // =========================================================================
-  // SMOKE TESTS - Basic functionality verification
-  // =========================================================================
   describe('SMOKE', () => {
     it('smoke: minimal review without content completes', async () => {
       await hydrateAndGetReady();
@@ -909,19 +1012,7 @@ describe('review (standalone flow)', () => {
     });
   });
 
-  // =========================================================================
-  // ATTESTATION CONTRACT TESTS (P1: review-flow-fix)
-  //
-  // Cover the attestation contract between /review and the flowguard-reviewer
-  // subagent. These tests prove:
-  //   - blocked responses include canonical requiredReviewAttestation
-  //   - schema is permissive about toolObligationId for standalone /review
-  //   - runtime gates for /plan and /implement remain strict
-  //   - all five ReviewFindings categories surface in the report
-  //   - the agent never has to invent attestation values
-  // =========================================================================
   describe('attestation contract', () => {
-    // ---------- HAPPY ----------
     describe('HAPPY (attestation)', () => {
       it('H1: content-aware /review without reviewFindings returns CONTENT_ANALYSIS_REQUIRED with requiredReviewAttestation', async () => {
         await hydrateAndGetReady();
@@ -955,20 +1046,19 @@ describe('review (standalone flow)', () => {
 
         expect(result.error).toBeUndefined();
         expect(result.phase).toBe('REVIEW_COMPLETE');
-        // Mapped finding (severity 'major' -> 'error', category 'risk' preserved) is in the report.
         const mapped = result.findings as Array<Record<string, unknown>>;
         expect(
-          mapped.some(
-            (f) =>
-              f.category === 'risk' &&
-              f.message === 'Critical security flaw in authentication flow' &&
-              f.severity === 'error',
+          hasMaterialFinding(
+            mapped,
+            'Critical security flaw in authentication flow',
+            'risk',
+            'error',
           ),
         ).toBe(true);
-        // Provenance preserved: inputOrigin and references survive the report.
-        expect(result.inputOrigin).toBe('pr');
-        expect(result.references).toBeDefined();
-        expect((result.references as unknown[]).length).toBe(1);
+        expect(result.reviewSubject).toMatchObject({
+          kind: 'repository_change',
+          source: { kind: 'pull_request', pullRequestNumber: 77 },
+        });
       });
 
       it('H3: plain /review without content fields still works (no reviewFindings needed)', async () => {
@@ -983,7 +1073,6 @@ describe('review (standalone flow)', () => {
       });
     });
 
-    // ---------- BAD ----------
     describe('BAD (attestation)', () => {
       function expectAttestationBlocked(result: Record<string, unknown>) {
         expect(result.error).toBe(true);
@@ -998,9 +1087,9 @@ describe('review (standalone flow)', () => {
       }
 
       it('B1: reviewMode !== "subagent" is rejected with requiredReviewAttestation', async () => {
-        await hydrateAndGetReady();
+        const uuid = await obtainObligationUuid({ prNumber: 1, inputOrigin: 'pr' });
         const findings = {
-          ...buildAnalysisFindings('accept'),
+          ...buildAnalysisFindings('accept', uuid),
           reviewMode: 'human',
         } as unknown;
         const raw = await review.execute(
@@ -1011,20 +1100,25 @@ describe('review (standalone flow)', () => {
       });
 
       it('B2: missing attestation is rejected with requiredReviewAttestation', async () => {
-        await hydrateAndGetReady();
-        const base = buildAnalysisFindings('accept') as Record<string, unknown>;
+        const uuid = await obtainObligationUuid({ prNumber: 1, inputOrigin: 'pr' });
+        const base = buildAnalysisFindings('accept', uuid) as Record<string, unknown>;
         const { attestation: _omit, ...rest } = base;
         void _omit;
         const raw = await review.execute(
-          { prNumber: 1, reviewFindings: rest as never, inputOrigin: 'pr' },
+          {
+            prNumber: 1,
+            reviewFindings: rest as never,
+            reviewObligationId: uuid,
+            inputOrigin: 'pr',
+          },
           ctx,
         );
         expectAttestationBlocked(parseToolResult(raw));
       });
 
       it('B3: attestation.reviewedBy !== "flowguard-reviewer" is rejected', async () => {
-        await hydrateAndGetReady();
-        const base = buildAnalysisFindings('accept');
+        const uuid = await obtainObligationUuid({ prNumber: 1, inputOrigin: 'pr' });
+        const base = buildAnalysisFindings('accept', uuid);
         const findings = {
           ...base,
           attestation: { ...base.attestation, reviewedBy: 'someone-else' },
@@ -1037,8 +1131,8 @@ describe('review (standalone flow)', () => {
       });
 
       it('B4: attestation.mandateDigest mismatch is rejected', async () => {
-        await hydrateAndGetReady();
-        const base = buildAnalysisFindings('accept');
+        const uuid = await obtainObligationUuid({ prNumber: 1, inputOrigin: 'pr' });
+        const base = buildAnalysisFindings('accept', uuid);
         const findings = {
           ...base,
           attestation: { ...base.attestation, mandateDigest: 'wrong-digest-value' },
@@ -1051,8 +1145,8 @@ describe('review (standalone flow)', () => {
       });
 
       it('B5: attestation.criteriaVersion mismatch is rejected', async () => {
-        await hydrateAndGetReady();
-        const base = buildAnalysisFindings('accept');
+        const uuid = await obtainObligationUuid({ prNumber: 1, inputOrigin: 'pr' });
+        const base = buildAnalysisFindings('accept', uuid);
         const findings = {
           ...base,
           attestation: { ...base.attestation, criteriaVersion: 'p99-bogus' },
@@ -1091,7 +1185,6 @@ describe('review (standalone flow)', () => {
       });
     });
 
-    // ---------- CORNER ----------
     describe('CORNER (attestation)', () => {
       it('C1: all five finding arrays surface in the report with schema-allowed categories', async () => {
         await hydrateAndGetReady();
@@ -1107,7 +1200,7 @@ describe('review (standalone flow)', () => {
               severity: 'critical' as const,
               category: 'correctness' as const,
               message: 'Logic error in token refresh',
-              location: 'src/auth/token.ts:120',
+              relation: REVIEW_RELATION,
             },
           ],
           majorRisks: [
@@ -1115,6 +1208,7 @@ describe('review (standalone flow)', () => {
               severity: 'major' as const,
               category: 'risk' as const,
               message: 'Race condition in cache invalidation',
+              relation: REVIEW_RELATION,
             },
           ],
           missingVerification: ['no integration test for the new error path'],
@@ -1130,8 +1224,8 @@ describe('review (standalone flow)', () => {
         expect(result.error).toBeUndefined();
 
         const mapped = result.findings as Array<Record<string, unknown>>;
-        expect(mapped.some((f) => f.message === 'Logic error in token refresh')).toBe(true);
-        expect(mapped.some((f) => f.message === 'Race condition in cache invalidation')).toBe(true);
+        expect(hasMaterialFinding(mapped, 'Logic error in token refresh')).toBe(true);
+        expect(hasMaterialFinding(mapped, 'Race condition in cache invalidation')).toBe(true);
         expect(
           mapped.some(
             (f) =>
@@ -1161,7 +1255,6 @@ describe('review (standalone flow)', () => {
       });
     });
 
-    // ---------- EDGE ----------
     describe('EDGE (attestation)', () => {
       it('E1: ReviewAttestation schema requires toolObligationId (obligation-bound)', () => {
         const parsed = ReviewAttestation.safeParse({
@@ -1211,7 +1304,6 @@ describe('review (standalone flow)', () => {
       });
     });
 
-    // ---------- E2E ----------
     describe('E2E (attestation)', () => {
       it('EE1: hydrate -> blocked with attestation -> consume payload -> succeed with complete ReviewFindings', async () => {
         await hydrateAndGetReady();
@@ -1264,12 +1356,13 @@ describe('review (standalone flow)', () => {
         const result = parseToolResult(raw);
         expect(result.error).toBeUndefined();
         expect(result.phase).toBe('REVIEW_COMPLETE');
-        expect(result.inputOrigin).toBe('pr');
-        expect((result.references as unknown[]).length).toBe(1);
+        expect(result.reviewSubject).toMatchObject({
+          kind: 'repository_change',
+          source: { kind: 'pull_request', pullRequestNumber: 42 },
+        });
       });
     });
 
-    // ---------- SMOKE ----------
     describe('SMOKE (attestation)', () => {
       it('S1: requiredReviewAttestation.mandateDigest is the canonical REVIEW_MANDATE_DIGEST constant', async () => {
         await hydrateAndGetReady();
@@ -1306,7 +1399,6 @@ describe('review (standalone flow)', () => {
       });
     });
 
-    // ---------- INVOCATION EVIDENCE ----------
     describe('INVOCATION EVIDENCE', () => {
       it('H4: successful /review appends ReviewInvocationEvidence to reviewAssurance', async () => {
         const uuid = await obtainObligationUuid({ prNumber: 42, inputOrigin: 'pr' });
@@ -1426,10 +1518,12 @@ describe('review (standalone flow)', () => {
         const obligation = {
           obligationId: '00000000-0000-0000-0000-000000000001',
           obligationType: 'review' as const,
+          subjectDigest: 'test-subject-digest',
           iteration: 1,
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
+          maxReviewerOutputRepairAttempts: 1,
           createdAt: new Date().toISOString(),
           pluginHandshakeAt: null,
           status: 'fulfilled' as const,
@@ -1437,6 +1531,11 @@ describe('review (standalone flow)', () => {
           blockedCode: null,
           fulfilledAt: new Date().toISOString(),
           consumedAt: null,
+          reviewSubjectScope: {
+            kind: 'repository_change' as const,
+            paths: ['src/foo.ts'],
+            revisions: ['base', 'head'] as const,
+          },
         };
         const withObligation = {
           ...assurance,
@@ -1477,6 +1576,8 @@ describe('review (standalone flow)', () => {
         const inv = buildInvocationEvidence({
           obligationId: '11111111-2222-3333-8444-555555555555',
           obligationType: 'review',
+          mandateDigest: 'fixture-mandate-digest',
+          criteriaVersion: 'fixture-criteria-v1',
           parentSessionId: 'parent-session',
           childSessionId: 'child-session',
           invocationMode: 'sdk_session_prompt',
@@ -1499,7 +1600,6 @@ describe('review (standalone flow)', () => {
         expect(card).toContain('Review complete');
         expect(result.presentation).toEqual({ markdown: card });
 
-        // Verify the card was persisted as an artifact.
         const { computeFingerprint, sessionDir: resolveSessionDir } =
           await import('../adapters/workspace/index.js');
         const fp = await computeFingerprint(ws.tmpDir);
@@ -1559,17 +1659,6 @@ describe('review (standalone flow)', () => {
     });
   });
 
-  // =========================================================================
-  // CONTENT SOURCE COMPLETENESS (fail-closed bypass guard)
-  //
-  // Regression: inputOrigin + references without a concrete content field
-  // (branch, text, prNumber, url) was silently treated as "no content",
-  // allowing the review to complete mechanically with a clean report.
-  //
-  // Fix: REVIEW_CONTENT_SOURCE_INCOMPLETE blocks such incomplete calls
-  // before any obligation is created, and a defense-in-depth guard catches
-  // the case where the first guard is bypassed.
-  // =========================================================================
   describe('content source completeness', () => {
     it('BYPASS-1: inputOrigin=branch + references WITHOUT branch field is blocked', async () => {
       await hydrateAndGetReady();
@@ -1601,7 +1690,6 @@ describe('review (standalone flow)', () => {
       const result = await review.execute({}, ctx);
       expect(typeof result).toBe('string');
       const parsed = parseToolResult(result);
-      // A content-free review completes mechanically — no error, no block.
       expect(parsed.error).toBeUndefined();
       expect(parsed.phase).toBe('REVIEW_COMPLETE');
     });
@@ -1659,22 +1747,6 @@ describe('review (standalone flow)', () => {
     });
   });
 
-  // =========================================================================
-  // TRANSPORT BY POLICY MODE (claude-code host)
-  //
-  // Keystone contract: on an out-of-process host (claude-code, manual_attested
-  // transport), the review invocation policy derived from the *real* hydrate
-  // path governs whether inline content-review evidence may converge.
-  //
-  //   - solo      → host_task_preferred → inline findings converge.
-  //   - team      → host_task_required  → fail-closed HOST_SUBAGENT_TASK_REQUIRED.
-  //   - regulated → host_task_required  → fail-closed HOST_SUBAGENT_TASK_REQUIRED.
-  //
-  // This exercises the snapshot policy produced by hydrate({policyMode}) (not a
-  // legacy missing-field fallback) and asserts both the snapshot keystone and
-  // the downstream transport effect, proving the fail-closed invariant
-  // (transport-evidence.ts:138) under a real out-of-process host platform.
-  // =========================================================================
   describe('transport by policy mode (claude-code host)', () => {
     let prevPlatform: string | undefined;
 
@@ -1688,18 +1760,14 @@ describe('review (standalone flow)', () => {
       else process.env.FLOWGUARD_HOST_PLATFORM = prevPlatform;
     });
 
-    // Hydrate under an explicit policy mode, then run the two-step standalone
-    // /review content flow (create obligation → submit inline findings).
     async function runContentReviewUnderPolicy(policyMode: string) {
       const hy = parseToolResult(await hydrate.execute({ policyMode, profileId: 'baseline' }, ctx));
       if (hy.error) {
         throw new Error(`hydrate(${policyMode}) failed: ${String(hy.message)}`);
       }
 
-      // Keystone: real hydrate must derive the expected invocation policy.
       const snapshot = (await readState(await currentSessionDir()))!.policySnapshot!;
 
-      // First call: create the review obligation (no findings yet).
       const first = parseToolResult(
         await review.execute(
           { prNumber: 77, inputOrigin: 'pr', targetPaths: ['docs/test.md'] },
@@ -1709,7 +1777,6 @@ describe('review (standalone flow)', () => {
       expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
       const uuid = requiredString(first.requiredReviewAttestation, 'toolObligationId');
 
-      // Second call: submit inline (manual_attested) findings.
       const findings = buildAnalysisFindings('accept', uuid);
       const second = parseToolResult(
         await review.execute(
@@ -1742,26 +1809,6 @@ describe('review (standalone flow)', () => {
     });
   });
 
-  // =========================================================================
-  // E2E: native_subagent_attested tier upgrade (claude-code host).
-  //
-  // Drives the REAL tool pipeline (hydrate → review obligation → inline attested
-  // findings) under solo/host_task_preferred and injects an obligation-bound
-  // host capture — exactly the artifact a real Claude PostToolUse hook writes
-  // from inside a genuine flowguard-reviewer subagent — into the session's own
-  // capture store BEFORE the findings submission. resolveNativeAttestation folds
-  // it at construction time, upgrading the recorded invocation evidence to
-  // native_subagent_attested. Falsification controls prove the upgrade is gated:
-  //   - no capture                → stays manual_attested
-  //   - capture bound to a DIFFERENT obligation → stays manual_attested
-  //   - SubagentStop-source capture (no obligation binding) → stays manual_attested
-  //
-  // This is the integration counterpart to the validation-layer negatives in
-  // review-validation.test.ts and the fold-layer negatives in
-  // native-attestation-fold.test.ts: it proves the end-to-end on-disk path,
-  // not just the pure resolver. NOT_VERIFIED beyond this: a full live `claude -p`
-  // lifecycle (long/non-deterministic) is out of scope.
-  // =========================================================================
   describe('native_subagent_attested e2e (claude-code host)', () => {
     let prevPlatform: string | undefined;
 

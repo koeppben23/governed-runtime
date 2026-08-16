@@ -10,6 +10,88 @@ import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
 export const REVIEW_VALIDATION_REASONS = [
   {
+    code: 'REVIEW_STATE_INCOMPLETE',
+    category: 'state',
+    messageTemplate:
+      'Review state has neither a pending reviewer obligation nor a persisted report and cannot be completed.',
+    recoverySteps: [
+      'Inspect the session state and audit trail before further workflow actions',
+      'Abort the session if the missing review state cannot be recovered from trusted evidence',
+    ],
+  },
+  {
+    code: 'REVIEW_BRANCH_PROVENANCE_MISSING',
+    category: 'input',
+    messageTemplate: 'Branch review requires resolved immutable base and head commit provenance.',
+    recoverySteps: [
+      'Provide a branch and base that both resolve to commits in the current worktree',
+      'For local repositories, ensure the branch and base refs exist; no remote is required',
+    ],
+  },
+  {
+    code: 'REVIEW_REPOSITORY_IDENTITY_MISSING',
+    category: 'state',
+    messageTemplate:
+      'Branch review cannot freeze a reviewed subject without a repository identity: {reason}.',
+    recoverySteps: [
+      'Re-run the review from its original content input so the repository identity is resolved again',
+      'Ensure the worktree is a git repository; a repository without a parseable remote resolves to a local identity',
+      'Do not submit reviewVerdict or reviewFindings to recover this state',
+    ],
+  },
+  {
+    code: 'REVIEW_SUBJECT_DIGEST_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'Re-derived review subject does not match the frozen obligation subject ({reason}). The reviewed subject is immutable once frozen.',
+    recoverySteps: [
+      'Do not submit a verdict for a subject that differs from the reviewed one',
+      'Start a new review for the changed content instead of continuing this obligation',
+    ],
+  },
+  {
+    code: 'REVIEW_URL_CONTENT_ENCODING_INVALID',
+    category: 'input',
+    messageTemplate: 'URL review content could not be materialized as strict UTF-8: {reason}.',
+    recoverySteps: [
+      'Serve the reviewed URL as valid UTF-8, with charset=utf-8 when a charset is declared',
+      'Provide the content directly as review text if the source uses another encoding',
+    ],
+  },
+  {
+    code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
+    category: 'state',
+    messageTemplate:
+      'Frozen review material integrity verification failed: {reason}. The reviewer was not invoked.',
+    recoverySteps: [
+      'Do not re-run the reviewer: the persisted material no longer matches its frozen digest binding',
+      'Restore the persisted review obligation and material from a trusted source',
+      'Abort the session if the frozen material cannot be restored from trusted evidence',
+    ],
+  },
+  {
+    code: 'REVIEW_ATTEMPT_UNAVAILABLE',
+    category: 'state',
+    messageTemplate:
+      'No bindable review attempt exists for obligation {obligationId}: {reason}. The frozen review material itself was not invalidated.',
+    recoverySteps: [
+      'Re-run flowguard_review with the original content fields and reviewObligationId to reissue a bindable attempt',
+      'Pass the newly returned reviewerTaskPrompt VERBATIM to the reviewer Task; never reuse a previous prompt',
+      'Do NOT submit reviewVerdict or reviewFindings to recover this state',
+    ],
+  },
+  {
+    code: 'REVIEWER_CONTEXT_UNAVAILABLE',
+    category: 'state',
+    messageTemplate:
+      'The canonical reviewer context could not be materialized for obligation {obligationId}: {reason}. No review attempt was created.',
+    recoverySteps: [
+      'Restore the persisted Discovery basis or resolve the workspace fingerprint, then re-run the review',
+      'A degraded or unchecked Discovery snapshot does NOT block: only a structurally unbuildable reviewer context does',
+      'Do NOT free-compose a reviewer prompt without the canonical context, and do NOT fabricate findings',
+    ],
+  },
+  {
     code: 'IMPL_VALIDATION_EVIDENCE_REQUIRED',
     category: 'state',
     messageTemplate:
@@ -80,7 +162,7 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'Multiple flows are available from phase {phase}. /continue cannot choose — pick one explicitly.',
     recoverySteps: [
-      'Choose a flow: /task (development), /architecture (ADR), /review (compliance/content)',
+      'Choose your workflow: /task (development), /architecture (ADR), /review (compliance/content)',
       'Or use one of the recommended commands in the /status output',
     ],
   },
@@ -203,7 +285,7 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'Content meta extraction failed — cannot validate subagent context in strict mode. The FlowGuard tool response must include structured review obligation metadata.',
     recoverySteps: [
-      'Re-run the FlowGuard tool that produced the review obligation (flowguard_plan or flowguard_implement)',
+      'Re-run the FlowGuard tool that produced the review obligation (flowguard_plan, flowguard_implement, flowguard_architecture, or flowguard_review)',
       'Verify the response contains the reviewObligation field with iteration and planVersion',
       'If the issue persists in regulated mode, re-hydrate the session',
     ],
@@ -460,6 +542,207 @@ export const REVIEW_VALIDATION_REASONS = [
       'Run flowguard_status to inspect the current phase and evidence',
       'Report this as a topology defect: a phase chain advanced more than the allowed number of steps without settling',
       'Do not retry the command until the misconfigured transition path is fixed',
+    ],
+  },
+  // ─── Review Finding Subject-Scope Enforcement ───────────────────────────
+
+  {
+    code: 'REVIEW_SUBJECT_NOT_MATERIALIZED',
+    category: 'state',
+    messageTemplate:
+      'Standalone review cannot create obligation {obligationId} because the reviewed subject was not materialized and frozen.',
+    recoverySteps: [
+      'Provide exactly one supported review source and resolve it successfully',
+      'Do not create or continue a review obligation until immutable subject material is available',
+    ],
+  },
+
+  {
+    code: 'REVIEW_SUBJECT_SCOPE_UNAVAILABLE',
+    category: 'state',
+    messageTemplate: 'Review obligation {obligationId} has no verifiable frozen subject scope.',
+    recoverySteps: [
+      'Re-run the review after subject scope resolution succeeds',
+      'Do not bind findings until the reviewed revision or artifact subject is frozen',
+    ],
+  },
+
+  {
+    code: 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED',
+    category: 'state',
+    messageTemplate:
+      'Reviewer finding {findingIndex} lacks a valid structured subject anchor for obligation {obligationId}.',
+    recoverySteps: [
+      'Provide at least one structured subject anchor tied to the reviewed subject',
+      'Keep supporting repository evidence in evidenceLocations',
+    ],
+  },
+  {
+    code: 'REVIEW_EVIDENCE_LOCATION_ESCAPES_REPOSITORY',
+    category: 'state',
+    messageTemplate:
+      'Reviewer finding {findingIndex} has an evidence location that escapes the repository for obligation {obligationId}.',
+    recoverySteps: [
+      'Use evidenceLocations paths that remain below the repository root at the frozen base or head revision',
+      'Remove leading or resolving parent-directory segments that escape the repository',
+    ],
+  },
+  {
+    code: 'REVIEW_EVIDENCE_LOCATION_INVALID',
+    category: 'state',
+    messageTemplate:
+      'Reviewer finding {findingIndex} has an invalid repository evidence location for obligation {obligationId}.',
+    recoverySteps: [
+      'Provide evidenceLocations as repository-relative paths at the frozen base or head revision',
+      'Keep the valid subject anchor tied to the reviewed subject',
+    ],
+  },
+  {
+    code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
+    category: 'state',
+    messageTemplate:
+      'Reviewer finding {findingIndex} has no subject anchor in the frozen reviewed subject for obligation {obligationId}.',
+    recoverySteps: [
+      'Anchor the finding to the reviewed change or artifact section',
+      'Put unrelated observations in scopeCreep instead of blockingIssues or majorRisks',
+    ],
+  },
+  {
+    code: 'REVIEW_REPOSITORY_REVISION_UNAVAILABLE',
+    category: 'state',
+    messageTemplate:
+      'Reviewer finding {findingIndex} cites a repository revision unavailable for obligation {obligationId}.',
+    recoverySteps: [
+      'Use only the frozen base or head revision available to the reviewed subject',
+      'Re-run the review if the required revision provenance could not be resolved',
+    ],
+  },
+  // ─── Reviewer Output Contract Enforcement ────────────────────────────────
+
+  {
+    code: 'REVIEWER_OUTPUT_SCHEMA_INVALID',
+    category: 'state',
+    messageTemplate:
+      'Reviewer output failed schema validation for obligation {obligationId}: {reason}. The reviewer must produce output conforming to the canonical ReviewFindings contract shared by both transports.',
+    recoverySteps: [
+      'Re-invoke the flowguard-reviewer subagent with the exact same frozen subject and material',
+      'Ensure the reviewer output matches the FindingRelation grammar documented in the reviewer prompt',
+      'subjectAnchors.kind must be one of: repository_location, artifact_section, content',
+      'revision must be base or head — never a SHA, never "current" or "modified"',
+      'evidenceLocations are optional but must be valid RepositoryLocation entries when supplied',
+      'Do NOT self-review, fabricate findings, or submit a guessed verdict',
+    ],
+  },
+  {
+    code: 'REVIEWER_OUTPUT_RETRY_EXHAUSTED',
+    category: 'state',
+    messageTemplate:
+      'Reviewer output could not be bound after the canonical output-repair retry budget was exhausted for obligation {obligationId}. The reviewer output cannot be bound.',
+    recoverySteps: [
+      'Report the rejection reason to the operator',
+      'The frozen review subject and material remain unchanged',
+      'A terminal block requires operator intervention — the review cannot proceed',
+      'Do NOT rewrite the reviewer prompt, fabricate findings, or guess a verdict',
+    ],
+  },
+  {
+    code: 'REVIEWER_OUTPUT_REPAIR_STALLED',
+    category: 'state',
+    messageTemplate:
+      'A targeted output repair for obligation {obligationId} reproduced the identical schema error set — no further reviewer repair is authorized.',
+    recoverySteps: [
+      'The reviewer produced the same schema errors after a targeted repair instruction; another identical retry cannot recover',
+      'The frozen review subject and material remain unchanged',
+      'Inspect or correct the reviewer output mechanism before any further attempt',
+      'After operator intervention, start a fresh /review if a new independent attempt is desired',
+      'Do NOT rewrite the reviewer prompt, fabricate findings, or guess a verdict',
+    ],
+  },
+  {
+    code: 'REVIEW_EVIDENCE_NOT_OBSERVED',
+    category: 'state',
+    messageTemplate:
+      'Reviewer finding evidenceLocations for obligation {obligationId} have no matching authoritative repository observation: {reason}. The location is structurally valid but was not observably obtained by this reviewer attempt.',
+    recoverySteps: [
+      'A repository evidenceLocation is admissible only when the exact frozen bytes were obtained through flowguard_observe_repository during the binding reviewer attempt',
+      'This is a governance rejection (evidence_unavailable) — it is never repairable by resubmitting findings',
+      'Start a fresh review attempt and cite only locations the reviewer observes through the sanctioned observation tool',
+      'Do NOT substitute worktree reads, recalled content, or citations without a matching observation',
+    ],
+  },
+  {
+    code: 'REVIEW_REPAIR_UNAVAILABLE',
+    category: 'state',
+    messageTemplate:
+      'No output-repair reissue is authorized for obligation {obligationId}: {reason}. A new reviewer attempt cannot be minted for this rejection.',
+    recoverySteps: [
+      'Output-repair reissue requires: pending obligation, latest attempt rejected with an explicit canonically repairable output-contract reason, and remaining frozen repair budget',
+      'Governance, scope, material-integrity, semantic-consistency, and execution failures never authorize a reissue',
+      'The obligation is blocked terminally — operator intervention is required',
+      'Do NOT fabricate findings, guess a verdict, or bypass the frozen subject',
+    ],
+  },
+  {
+    code: 'REPAIR_PROMPT_REQUIRED',
+    category: 'state',
+    messageTemplate:
+      'The reviewer produced schema-invalid output. A fresh canonical repair prompt (from flowguard_review) must be obtained before re-running the reviewer Task. Do NOT re-run the Task with the same stale prompt.',
+    recoverySteps: [
+      'Call flowguard_review with the original content fields and reviewObligationId to obtain a new reviewerTaskPrompt with the validation errors',
+      'Pass the NEW reviewerTaskPrompt to the Task tool — never reuse the old one',
+      'Do NOT fabricate findings, guess a verdict, or call any other authority path',
+    ],
+  },
+  {
+    code: 'REVIEW_VERDICT_EVIDENCE_MISSING',
+    category: 'state',
+    messageTemplate:
+      'reviewVerdict submitted for obligation {obligationId} has no matching bound ReviewInvocationEvidence. A verdict cannot be accepted without captured reviewer evidence.',
+    recoverySteps: [
+      'Run the flowguard-reviewer subagent for the active obligation before submitting a verdict',
+      'Do NOT submit a verdict without the reviewer having produced independently captured findings',
+    ],
+  },
+  {
+    code: 'REVIEW_VERDICT_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'Submitted reviewVerdict ({provided}) does not match the captured reviewer overallVerdict ({expected}) for obligation {obligationId}.',
+    recoverySteps: [
+      'Submit reviewVerdict exactly matching the reviewer subagent overallVerdict',
+      'Do NOT override the reviewer verdict — it is the independent reviewer result, not user approval',
+      'If you disagree with the verdict, run another review iteration with revised input',
+    ],
+  },
+  {
+    code: 'INVALID_REVIEW_TOOL_SEQUENCE',
+    category: 'state',
+    messageTemplate:
+      'Review tool invocation sequence is invalid for obligation {obligationId}: {reason}.',
+    recoverySteps: [
+      'Follow the review invocation sequence documented in the reviewer task instructions',
+      'Do NOT submit reviewerUnavailable when the reviewer subagent successfully spawned',
+      'Do NOT submit reviewFindings in host_task_required mode — only reviewVerdict',
+    ],
+  },
+  {
+    code: 'SUBAGENT_PROMPT_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'The reviewer Task prompt differs from the host-issued prompt and could not be safely substituted.',
+    recoverySteps: [
+      'Re-run the originating FlowGuard command to issue a fresh reviewer Task request',
+      'Do not modify reviewer instructions or append material outside FlowGuard',
+    ],
+  },
+  {
+    code: 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+    category: 'state',
+    messageTemplate:
+      'The reviewer Task completed without a host-owned execution provenance record. Its output cannot bind to a review obligation.',
+    recoverySteps: [
+      'Re-run the originating FlowGuard command to issue a fresh reviewer Task request',
+      'Do not reuse the prior reviewer output or submit copied findings',
     ],
   },
 ] as const satisfies readonly BlockedReason[];

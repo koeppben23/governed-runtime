@@ -20,6 +20,19 @@ export interface PendingReviewInstructionInput {
   readonly iteration: number;
   readonly planVersion: number;
   readonly subjectLabel: string;
+  /**
+   * Persisted, advisory ProofGraph context lines (#762) from
+   * {@link buildReviewerProofContext}. Threaded from the calling tool so the
+   * copy-ready Task prompt carries the same claim context as the SDK path.
+   */
+  readonly proofContext?: readonly string[];
+  /**
+   * Opaque host-minted observation capability of the attempt the reviewer Task
+   * will bind to. Renders the Repository Observation Contract into the
+   * copy-ready prompt and the attestation. Absent → repository evidence is
+   * unavailable for this attempt.
+   */
+  readonly observationCapability?: string;
 }
 
 export interface PendingReviewInstruction {
@@ -37,6 +50,8 @@ export interface PendingReviewInstruction {
       readonly toolObligationId: string;
       readonly iteration: number;
       readonly planVersion: number;
+      /** Opaque host-minted observation capability of the bound attempt. */
+      readonly observationCapability?: string;
     };
   };
   readonly next: string;
@@ -81,6 +96,7 @@ function buildHostTaskPrompt(
     mandateDigest: obligation.mandateDigest,
     criteriaVersion: obligation.criteriaVersion,
     subjectLabel: input.subjectLabel,
+    observationCapability: input.observationCapability,
     challengeContract:
       obligation.requiredChallengeCount === undefined
         ? undefined
@@ -88,6 +104,7 @@ function buildHostTaskPrompt(
             requiredChallengeCount: obligation.requiredChallengeCount,
             requiredChallengeKind: obligation.requiredChallengeKind,
           },
+    proofContext: input.proofContext,
   });
 }
 
@@ -110,6 +127,9 @@ export function buildPendingReviewInstruction(
             toolObligationId: obligation.obligationId,
             iteration: input.iteration,
             planVersion: input.planVersion,
+            ...(input.observationCapability
+              ? { observationCapability: input.observationCapability }
+              : {}),
           },
         }
       : {}),
@@ -165,7 +185,7 @@ export function buildPendingReviewInstruction(
       `Use subagent_type "${REVIEWER_SUBAGENT_TYPE}" with a prompt that includes the ${input.subjectLabel}, ` +
       `${renderReviewContext({ iteration: input.iteration, planVersion: input.planVersion })}. ` +
       (reviewerTaskPrompt
-        ? 'A ready-to-use reviewer prompt is provided in the reviewerTaskPrompt field — pass it VERBATIM as the Task tool "prompt" argument (append the artifact content), so the required review context is present on the first attempt. '
+        ? 'A canonical reviewer prompt is available for diagnostics and audit. Call the Task tool with the reviewer subagent type only; FlowGuard injects the host-issued prompt at the Task boundary. Do not append or modify reviewer instructions. '
         : '') +
       'After the reviewer returns, submit ONLY the verdict via reviewVerdict; the plugin resolves the reviewer findings from captured evidence automatically. ' +
       'Do NOT submit, copy, or alter reviewFindings in host-task mode — hand-edited or mismatched findings are rejected (SUBAGENT_SESSION_MISMATCH / findings hash mismatch). ' +

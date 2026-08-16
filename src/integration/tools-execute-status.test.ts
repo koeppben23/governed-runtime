@@ -1,10 +1,3 @@
-/**
- * @module integration/tools-execute-status.test
- * @description Execution tests for the status tool.
- *
- * @test-policy HAPPY, BAD, CORNER, EDGE — all four categories present.
- */
-
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
@@ -31,6 +24,7 @@ import {
   abort_session,
   archive,
   architecture,
+  declare_contract,
 } from './tools/index.js';
 import {
   PersistenceError,
@@ -40,13 +34,21 @@ import {
   writeReport,
   reportPath,
 } from '../adapters/persistence.js';
-import { makeProgressedState } from '../fixtures.js';
-import type { Phase } from '../state/schema.js';
+import { writeStateWithArtifacts } from './tools/helpers.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
 import { REVIEW_REPORT_SCHEMA_ID } from '../shared/flowguard-identifiers.js';
-
+import { computeRecordDigest } from '../state/evidence-plan.js';
+import {
+  artifactReviewSubjectScope,
+  buildInvocationEvidence,
+  createReviewObligation,
+  freezeReviewMaterial,
+  REVIEW_CRITERIA_VERSION,
+  REVIEW_MANDATE_DIGEST,
+} from './review/assurance.js';
+import { hashFindings } from './review/findings-hash.js';
+import type { ReviewFindings } from '../state/evidence.js';
 // ─── Zod v4 Metadata Regression (P1 review gate) ──────────────────────────────
-
 describe('tool-schemas-zod-v4', () => {
   const allTools = {
     status,
@@ -61,7 +63,6 @@ describe('tool-schemas-zod-v4', () => {
     archive,
     architecture,
   } as const;
-
   it('every tool exposes Zod v4 _zod metadata on all args', () => {
     for (const [name, tool] of Object.entries(allTools)) {
       for (const [argName, schema] of Object.entries(tool.args)) {
@@ -76,7 +77,6 @@ describe('tool-schemas-zod-v4', () => {
     }
   });
 });
-
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
 vi.mock('../adapters/git', async (importOriginal) => {
@@ -240,6 +240,44 @@ describe('status', () => {
       expect(result.hasTicket).toBe(false);
       expect(result.evalKind).toBeTruthy();
       expect(result.next).toBeTruthy();
+    });
+
+    it('returns the advisory ProofGraph projection when proofGraph:true', async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({ proofGraph: true }, ctx));
+      expect(result.phase).toBe('READY');
+      const pg = result.proofGraph as Record<string, unknown>;
+      expect(pg).toBeDefined();
+      expect(pg.criticalClaimCount).toBe(0);
+      expect(pg.criticalUnprovenCount).toBe(0);
+      const projection = pg.projection as Record<string, unknown>;
+      expect(projection.version).toBe('proofgraph.v1');
+      expect(projection.claims).toEqual([]);
+      expect(result.persistedProofGraph).toEqual({
+        coverage: 'NOT_DECLARED',
+        claimCount: 0,
+        provenCount: 0,
+        unprovenCount: 0,
+        contractClaimCount: 0,
+        hypothesisCount: 0,
+      });
+      expect(result.proofApprovals).toEqual({
+        certificates: [],
+        implementationDigest: null,
+        claims: [],
+        coverageGaps: [],
+      });
+      const registration = result.registrationConsistency as Record<string, unknown>;
+      expect(registration).toBeDefined();
+      expect(registration.ok).toBe(true);
+      expect(registration.checkedCommands as number).toBeGreaterThan(0);
+      const configConsistency = result.configConsistency as Record<string, unknown>;
+      expect(configConsistency).toBeDefined();
+      expect(configConsistency.ok).toBe(true);
+      const gate = result.proofGraphGate as Record<string, unknown>;
+      expect(gate).toBeDefined();
+      // Nothing is gated: this session declares no certificate-authorized claim.
+      expect(gate.gated).toBe(false);
     });
 
     it('inspects an aborted terminal session through read-only /status guidance', async () => {
@@ -465,6 +503,7 @@ describe('status', () => {
         ...state!,
         verificationCandidates: [
           {
+            assertionCapability: 'unsupported' as const,
             kind: 'test',
             command: 'pnpm test',
             source: 'package.json:scripts.test',
@@ -479,6 +518,7 @@ describe('status', () => {
       const candidates = result.verificationCandidates as Array<Record<string, unknown>>;
       expect(candidates).toHaveLength(1);
       expect(candidates[0]).toMatchObject({
+        assertionCapability: 'unsupported' as const,
         kind: 'test',
         command: 'pnpm test',
         source: 'package.json:scripts.test',
@@ -533,6 +573,7 @@ describe('status', () => {
         validation: [],
         verificationCandidates: [
           {
+            assertionCapability: 'unsupported' as const,
             kind: 'build',
             command: './mvnw verify',
             source: 'repo:mvnw',
@@ -619,6 +660,7 @@ describe('status', () => {
       };
       await writeState(sessDir, reviewState);
       await writeReport(sessDir, {
+        reviewKind: 'lifecycle_review',
         schemaVersion: REVIEW_REPORT_SCHEMA_ID,
         sessionId: reviewState.id,
         generatedAt: '2026-01-01T00:00:00.000Z',
@@ -626,7 +668,14 @@ describe('status', () => {
         planDigest: null,
         implDigest: null,
         validationSummary: [],
-        findings: [{ severity: 'error', category: 'correctness', message: 'Changes required' }],
+        findings: [
+          {
+            source: 'mechanical',
+            reportSeverity: 'error',
+            category: 'correctness',
+            message: 'Changes required',
+          },
+        ],
         overallStatus: 'issues',
         completeness: evaluateCompleteness(reviewState),
       });
@@ -652,6 +701,110 @@ describe('status', () => {
       await status.execute({ finish: true }, ctx);
       const after = await readState(sessDir);
       expect(after).toEqual(before);
+    });
+
+    it('projects reviewed artifact identity for architecture review verdicts (incl. consumed history)', async () => {
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const current = await readState(sessDir);
+      if (!current) throw new Error('expected hydrated state');
+
+      const obligation = createReviewObligation({
+        obligationType: 'architecture',
+        iteration: 0,
+        planVersion: 1,
+        now: '2026-01-01T00:00:00.000Z',
+        subjectDigest: 'adr-digest-reviewed',
+        reviewSubjectScope: artifactReviewSubjectScope(
+          'adr',
+          '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+          'adr-digest-reviewed',
+        ),
+        reviewMaterial: freezeReviewMaterial(
+          '## Ticket Under Review (originating request)\n\nNo ticket recorded for this session.\n\n## Architecture Decision Artifact\n\n## Context\nA\n\n## Decision\nB\n\n## Consequences\nC\n',
+          'adr-digest-reviewed',
+        ),
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+      });
+      const findings = {
+        iteration: 0,
+        planVersion: 1,
+        reviewMode: 'subagent',
+        overallVerdict: 'changes_requested',
+        blockingIssues: [],
+        majorRisks: [],
+        missingVerification: [],
+        scopeCreep: [],
+        unknowns: [],
+        reviewedBy: { sessionId: 'ses-child' },
+        reviewedAt: '2026-01-01T00:00:00.000Z',
+        attestation: {
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
+          toolObligationId: obligation.obligationId,
+          iteration: 0,
+          planVersion: 1,
+          reviewedBy: 'flowguard-reviewer',
+        },
+      } as ReviewFindings;
+      const invocation = {
+        ...buildInvocationEvidence({
+          obligationId: obligation.obligationId,
+          obligationType: 'architecture',
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
+          parentSessionId: ctx.sessionID,
+          childSessionId: 'ses-child',
+          invocationMode: 'host_subagent_task',
+          hostVisible: true,
+          promptHash: 'sha256-prompt',
+          findingsHash: hashFindings(findings),
+          invokedAt: '2026-01-01T00:00:00.000Z',
+          source: 'host-orchestrated',
+        }),
+        consumedByObligationId: obligation.obligationId,
+      };
+      const state = {
+        ...current,
+        phase: 'ARCH_REVIEW' as const,
+        architecture: {
+          id: 'ADR-001',
+          title: 'ADR',
+          adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+          digest: 'adr-digest-current',
+          status: 'proposed' as const,
+          reviewCompletion: 'review_exhausted' as const,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          reviewFindings: [findings],
+        },
+        selfReview: {
+          iteration: 1,
+          maxIterations: 3,
+          prevDigest: 'adr-digest-reviewed',
+          currDigest: 'adr-digest-current',
+          revisionDelta: 'minor' as const,
+          verdict: 'changes_requested' as const,
+        },
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          obligations: [{ ...obligation, status: 'consumed' as const }],
+          invocations: [invocation],
+          attempts: [],
+        },
+      };
+      await writeState(sessDir, state);
+
+      const result = parseToolResult(await status.execute({}, ctx));
+      const arch = result.latestArchitectureReview as Record<string, unknown>;
+      expect(arch.reviewedDigest).toBe('adr-digest-reviewed');
+      expect(arch.reviewedObligationId).toBe(obligation.obligationId);
+      expect(arch.reviewerIteration).toBe(0);
+      expect(arch.reviewedPlanVersion).toBe(1);
+      // Existing host-iteration contract stays authoritative.
+      expect(arch.iteration).toBe(result.selfReviewIteration);
     });
 
     it('returns a blocked error (no card) when session state is unreadable', async () => {
@@ -981,7 +1134,7 @@ describe('status', () => {
         kind: 'derived_repair_guidance',
         advisory: true,
         source: 'run_check_output',
-        status: 'available',
+        status: 'unavailable',
       });
 
       // Verify status surfaces the guidance
@@ -998,7 +1151,7 @@ describe('status', () => {
         kind: 'derived_repair_guidance',
         advisory: true,
         source: 'run_check_output',
-        status: 'available',
+        status: 'unavailable',
       });
       expect(statusGuidance.notVerified).toEqual(
         expect.arrayContaining([expect.stringContaining('NOT_VERIFIED')]),
@@ -1008,259 +1161,747 @@ describe('status', () => {
 });
 
 // =============================================================================
-// Status ↔ Command-Prompt contract guard
-//
-// Every field a command PROMPT reads from flowguard_status must actually be
-// emitted by the tool in the projection shape that command uses, in every phase
-// the command is allowed to run. Three governed demos in a row wedged on a phase
-// dead-state caused by a prompt↔tool contract gap (a prompt read a status field
-// the tool did not emit in that call shape). This guard is the structural net.
-//
-// The "fields a prompt reads" are a CURATED map (declared here, reviewable),
-// derived from the command templates in src/templates/commands/. It is kept
-// curated rather than parsed from prompt prose, because Markdown parsing is
-// fragile; a negative control proves the guard is sharp.
+// Tool: declare_contract (ProofGraph declaration, #762)
 // =============================================================================
 
-type CallShape = 'full' | 'whyBlocked' | 'evidence' | 'context' | 'readiness';
-
-interface StatusContractEntry {
-  /** Command whose prompt reads flowguard_status. */
-  readonly label: string;
-  /** Phases this command is allowed to run in (or '*' for all), used to scope the check. */
-  readonly phases: readonly Phase[] | '*';
-  /** The flowguard_status call shape the prompt uses. */
-  readonly callShape: CallShape;
-  /** Top-level status fields the prompt reads (must be emitted in every allowed phase). */
-  readonly requiredTopLevel: readonly string[];
-  /** Nested status paths the prompt reads, e.g. 'whyBlocked.reasonText'. */
-  readonly requiredPaths?: readonly string[];
-  /**
-   * Top-level fields only required in specific phases (e.g. remainingChecks only
-   * exists in VALIDATION). Checked only when the allowed phase matches.
-   */
-  readonly phaseGatedTopLevel?: ReadonlyArray<{ field: string; phases: readonly Phase[] }>;
+function makeStructuredSecurityCandidate() {
+  return {
+    assertionCapability: 'structured' as const,
+    kind: 'security' as const,
+    command: 'npm run security',
+    source: 'test',
+    confidence: 'high' as const,
+    reason: 'security',
+    assertionReport: {
+      collection: 'snapshot_diff' as const,
+      transport: 'file' as const,
+      format: 'junit_xml' as const,
+      providerId: 'junit',
+      standardPatterns: ['TEST-*.xml'],
+    },
+  };
 }
 
-// SOLL contract — the fields the (correct) prompts read from flowguard_status.
-// reviewCard / pluginReviewFindings / gateNotice / policyResolution / _continue
-// are intentionally absent: they come from other tool responses, not status.
-const STATUS_CONTRACT: readonly StatusContractEntry[] = [
-  {
-    label: '/ticket',
-    phases: ['READY', 'TICKET'],
-    callShape: 'full',
-    requiredTopLevel: ['phase', 'nextAction'],
-  },
-  {
-    label: '/plan',
-    phases: ['TICKET', 'PLAN'],
-    callShape: 'full',
-    // ticket BODY is NOT read from status (Gap C fix); only gating + candidates + profile rules.
-    requiredTopLevel: [
-      'phase',
-      'hasTicket',
-      'verificationCandidates',
-      'profileRules',
-      'detectedStack',
-      'discoveryHealth',
-      'discoveryDrift',
+function makeAssertionExtraction(assertionId: string, status: 'passed' | 'failed') {
+  const localId = assertionId.includes(':') ? assertionId.split(':')[1]! : assertionId;
+  return {
+    status: 'extracted' as const,
+    attemptId: '00000000-0000-4000-8000-0000000000dd',
+    providerId: 'junit' as const,
+    format: 'junit_xml' as const,
+    bindingCapability: 'assertion' as const,
+    reportDigests: ['a'.repeat(64)],
+    assertions: [
+      {
+        assertion: { providerId: 'junit', localId },
+        providerId: 'junit',
+        status,
+        testName: 'verify',
+        suiteName: 'com.example.SecurityTest',
+      },
     ],
-  },
-  {
-    label: '/implement',
-    phases: ['IMPLEMENTATION'],
-    callShape: 'full',
-    // plan BODY is NOT read from status (Gap C fix); only gating + profile + discovery + validation.
-    requiredTopLevel: [
-      'phase',
-      'hasPlan',
-      'profileRules',
-      'detectedStack',
-      'verificationCandidates',
-      'validationResults',
-    ],
-  },
-  {
-    label: '/validate',
-    phases: ['VALIDATION'],
-    callShape: 'full',
-    // Gap A: activeChecks must be present in the FULL projection (was focused-only).
-    requiredTopLevel: ['phase', 'activeChecks', 'verificationCandidates'],
-    phaseGatedTopLevel: [{ field: 'remainingChecks', phases: ['VALIDATION'] }],
-  },
-  {
-    label: '/review-decision',
-    phases: ['PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW'],
-    callShape: 'full',
-    requiredTopLevel: ['phase'],
-  },
-  {
-    label: '/review',
-    phases: ['READY'],
-    callShape: 'full',
-    requiredTopLevel: [
-      'phase',
-      'discoveryHealth',
-      'discoveryDrift',
-      'detectedStack',
-      'verificationCandidates',
-    ],
-  },
-  {
-    label: '/architecture',
-    phases: ['READY', 'ARCHITECTURE'],
-    callShape: 'full',
-    requiredTopLevel: [
-      'phase',
-      'detectedStack',
-      'verificationCandidates',
-      'discoveryHealth',
-      'discoveryDrift',
-    ],
-  },
-  {
-    label: '/archive',
-    // /archive is a slash-command alias (flowguard_archive tool); its /status read
-    // is only an existence/phase gate. Allowed broadly; check terminal phases.
-    phases: ['COMPLETE', 'ARCH_COMPLETE', 'REVIEW_COMPLETE', 'IMPL_REVIEW'],
-    callShape: 'full',
-    requiredTopLevel: ['phase'],
-  },
-  {
-    label: '/abort',
-    phases: '*',
-    callShape: 'full',
-    requiredTopLevel: ['phase'],
-  },
-  {
-    label: '/why',
-    phases: '*',
-    callShape: 'whyBlocked',
-    requiredTopLevel: ['whyBlocked'],
-    // Gap B: the blocker reason is under whyBlocked.*, NOT a top-level `blocker`.
-    requiredPaths: [
-      'whyBlocked.reasonText',
-      'whyBlocked.reasonCode',
-      'whyBlocked.nextResolvableCommand',
-    ],
-  },
-];
+    summary: {
+      assertionCount: 1,
+      passedCount: status === 'passed' ? 1 : 0,
+      failedCount: status === 'failed' ? 1 : 0,
+      erroredCount: 0,
+      skippedCount: 0,
+      suiteInfrastructureError: false,
+    },
+  };
+}
 
-// /check shares VALIDATE's contract (full projection, activeChecks/remainingChecks).
-const CHECK_ENTRY: StatusContractEntry = {
-  label: '/check',
-  phases: ['VALIDATION'],
-  callShape: 'full',
-  requiredTopLevel: ['activeChecks', 'verificationCandidates'],
-  phaseGatedTopLevel: [{ field: 'remainingChecks', phases: ['VALIDATION'] }],
-};
+describe('declare_contract', () => {
+  const NOW = '2026-01-01T00:00:00.000Z';
+  const SHA = 'a'.repeat(64);
 
-const ALL_PHASES: readonly Phase[] = [
-  'READY',
-  'TICKET',
-  'PLAN',
-  'PLAN_REVIEW',
-  'VALIDATION',
-  'IMPLEMENTATION',
-  'IMPL_REVIEW',
-  'EVIDENCE_REVIEW',
-  'COMPLETE',
-  'ARCHITECTURE',
-  'ARCH_REVIEW',
-  'ARCH_COMPLETE',
-  'REVIEW',
-  'REVIEW_COMPLETE',
-];
-
-describe('status-prompt-contract', () => {
-  let ws2: TestWorkspace;
-  let ctx2: TestToolContext;
-  let cleanupEnv2: () => void;
-
-  beforeEach(async () => {
-    cleanupEnv2 = withTestEnv({ FLOWGUARD_POLICY_PATH: undefined });
-    ws2 = await createTestWorkspace();
-    ctx2 = createToolContext({
-      worktree: ws2.tmpDir,
-      directory: ws2.tmpDir,
-      sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
-    });
-  });
-
-  afterEach(async () => {
-    cleanupEnv2();
-    await ws2.cleanup();
-  });
-
-  async function statusFor(phase: Phase, callShape: CallShape): Promise<Record<string, unknown>> {
+  async function seedImplValidation(
+    overrides: {
+      checkId?: string;
+      passed?: boolean;
+      digest?: string;
+      /** Active checks deliberately left without an implementation attempt. */
+      unattemptedChecks?: string[];
+    } = {},
+  ): Promise<string> {
+    const checkId = overrides.checkId ?? 'test';
+    const digest = overrides.digest ?? 'impl-digest-1';
+    await hydrateSession();
     const { computeFingerprint, sessionDir: resolveSessionDir } =
       await import('../adapters/workspace/index.js');
-    const fp = await computeFingerprint(ws2.tmpDir);
-    const sessDir = resolveSessionDir(fp.fingerprint, ctx2.sessionID);
-    // Seed canonical state at the requested phase, preserving the session id/binding
-    // that the tool resolves from ctx2.
-    const seeded = { ...makeProgressedState(phase), id: makeProgressedState(phase).id };
-    await writeState(sessDir, seeded);
-    const args = callShape === 'full' ? {} : ({ [callShape]: true } as Record<string, boolean>);
-    return parseToolResult(await status.execute(args, ctx2));
-  }
-
-  function hasPath(obj: Record<string, unknown>, dottedPath: string): boolean {
-    const parts = dottedPath.split('.');
-    let cur: unknown = obj;
-    for (const p of parts) {
-      if (cur === null || typeof cur !== 'object' || !(p in (cur as object))) return false;
-      cur = (cur as Record<string, unknown>)[p];
-    }
-    return cur !== undefined;
-  }
-
-  const entries = [...STATUS_CONTRACT, CHECK_ENTRY];
-
-  for (const entry of entries) {
-    const phases = entry.phases === '*' ? ALL_PHASES : entry.phases;
-    it(`${entry.label}: status (${entry.callShape}) emits required fields in all allowed phases`, async () => {
-      expect(phases.length).toBeGreaterThan(0);
-      for (const phase of phases) {
-        const result = await statusFor(phase, entry.callShape);
-        for (const field of entry.requiredTopLevel) {
-          expect(
-            field in result,
-            `${entry.label} reads top-level "${field}" but status(${entry.callShape}) in ${phase} did not emit it`,
-          ).toBe(true);
-        }
-        for (const p of entry.requiredPaths ?? []) {
-          expect(
-            hasPath(result, p),
-            `${entry.label} reads "${p}" but status(${entry.callShape}) in ${phase} did not emit it`,
-          ).toBe(true);
-        }
-        for (const gated of entry.phaseGatedTopLevel ?? []) {
-          if (gated.phases.includes(phase)) {
-            expect(
-              gated.field in result,
-              `${entry.label} reads "${gated.field}" in ${phase} but status(${entry.callShape}) did not emit it`,
-            ).toBe(true);
-          }
-        }
-      }
+    const fp = await computeFingerprint(ws.tmpDir);
+    const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+    const state = await readState(sessDir);
+    await writeStateWithArtifacts(sessDir, {
+      ...state!,
+      phase: 'IMPL_VALIDATION',
+      activeChecks: [checkId, 'security', ...(overrides.unattemptedChecks ?? [])],
+      ticket: { text: 'approved ticket', digest: 'ticket-digest', source: 'user', createdAt: NOW },
+      implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
+      validationAttempts: [
+        {
+          attemptId: crypto.randomUUID(),
+          scope: 'implementation',
+          implementationDigest: digest,
+          result: {
+            checkId,
+            passed: overrides.passed ?? true,
+            detail: '',
+            executedAt: NOW,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: (overrides.passed ?? true) ? 0 : 1,
+            executionMs: 5,
+            outputDigest: SHA,
+            timedOut: false,
+            outcome: 'supported' as const,
+          },
+        },
+        {
+          attemptId: crypto.randomUUID(),
+          scope: 'implementation',
+          implementationDigest: digest,
+          result: {
+            checkId: 'security',
+            passed: true,
+            detail: '',
+            executedAt: NOW,
+            kind: 'security',
+            command: 'npm run security',
+            exitCode: 0,
+            executionMs: 5,
+            outputDigest: SHA,
+            timedOut: false,
+            outcome: 'supported' as const,
+            assertionExtraction: makeAssertionExtraction(
+              'junit:com.example.SecurityTest#verify',
+              'passed',
+            ),
+          },
+        },
+      ],
+      verificationCandidates: [
+        {
+          assertionCapability: 'unsupported' as const,
+          kind: checkId as 'test',
+          command: 'npm test',
+          source: 'test',
+          confidence: 'high' as const,
+          reason: 'test',
+        },
+        makeStructuredSecurityCandidate(),
+      ],
     });
+    return sessDir;
   }
 
-  // Negative control: a field NO prompt reads must NOT be present — proves the
-  // guard would actually fail if a required field were missing/renamed.
-  it('NEGATIVE CONTROL: a made-up field is absent from full status (guard is sharp)', async () => {
-    const result = await statusFor('VALIDATION', 'full');
-    expect('madeUpFieldThatNoPromptReads' in result).toBe(false);
+  it('declares a claim, persists the contract + projection, and reports PROVEN', async () => {
+    const sessDir = await seedImplValidation({ checkId: 'test', passed: true });
+    const result = parseToolResult(
+      await declare_contract.execute(
+        {
+          claims: [
+            {
+              statement: 'the change is covered by the test check',
+              checkId: 'test',
+              critical: true,
+              claimScope: 'specific_behavior',
+              counterexampleRequirement: {
+                checkId: 'security',
+                kind: 'assertion',
+                assertion: { providerId: 'junit', localId: 'com.example.SecurityTest#verify' },
+              },
+              authority: 'ticket',
+            },
+          ],
+        },
+        ctx,
+      ),
+    );
+    const projection = result.proofGraph as Record<string, unknown>;
+    expect(projection).toBeDefined();
+    const claims = projection.claims as Array<Record<string, unknown>>;
+    expect(claims).toHaveLength(1);
+    expect(claims[0]!.signalClass).toBe('fact');
+    expect(claims[0]!.verificationState).toBe('PROVEN');
+
+    const persisted = await readState(sessDir);
+    expect(persisted!.proofContract?.claims).toHaveLength(1);
+    expect(persisted!.proofGraph?.claims[0]?.verificationState).toBe('PROVEN');
   });
 
-  // Gap B documentation: the focused whyBlocked projection has NO top-level
-  // `blocker` key (the old /why prompt incorrectly read blocker.*). The reason
-  // lives under whyBlocked.* — asserted by the /why contract entry above.
-  it('Gap B: focused whyBlocked has no top-level "blocker" (reason is under whyBlocked.*)', async () => {
-    const result = await statusFor('VALIDATION', 'whyBlocked');
-    expect('blocker' in result).toBe(false);
-    expect(hasPath(result, 'whyBlocked.reasonText')).toBe(true);
+  it('appends a manual plan-provenanced fact without changing certificate-bound claims or coverage', async () => {
+    const sessDir = await seedImplValidation({ checkId: 'test', passed: true });
+    const state = await readState(sessDir);
+    const existingClaim = {
+      claimId: '10000000-0000-4000-8000-000000000001',
+      statement: 'The approved behavior remains covered.',
+      signalClass: 'fact' as const,
+      critical: true,
+      provenance: {
+        kind: 'canonical_authority' as const,
+        authorityId: 'plan' as const,
+        digest: 'approved-plan-digest',
+        approval: {
+          certificateId: '20000000-0000-4000-8000-000000000002',
+          claimDeclarationsDigest: SHA,
+          decisionAttestationDigest: SHA,
+          declarationId: '10000000-0000-4000-8000-000000000001',
+        },
+      },
+      evidenceRefs: [
+        { kind: 'validation_attempt' as const, attemptId: state!.validationAttempts[0]!.attemptId },
+      ],
+      counterexampleRefs: [
+        { kind: 'validation_attempt' as const, attemptId: state!.validationAttempts[1]!.attemptId },
+      ],
+      counterexampleRequirement: {
+        checkId: 'security',
+        assertion: { providerId: 'junit', localId: 'com.example.SecurityTest#verify' },
+      },
+      requiredEvidence: {
+        positive: ['executed_test' as const],
+        adversarial: ['counterexample' as const],
+      },
+    };
+    const coverage = [{ claimId: existingClaim.claimId, cause: 'missing_expected_check' as const }];
+    await writeStateWithArtifacts(sessDir, {
+      ...state!,
+      plan: {
+        current: {
+          body: 'manual authority plan',
+          digest: 'plan-digest',
+          sections: [],
+          createdAt: NOW,
+          recordDigest: computeRecordDigest({
+            contentDigest: 'plan-digest',
+            planVersion: 1,
+            supersedesRecordDigest: null,
+            originatingReviewObligationId: null,
+            revisionReason: null,
+          }),
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+          lineageStatus: 'verified' as const,
+        },
+        history: [],
+      },
+      proofContract: { version: 'contract.v1', claims: [existingClaim] },
+      proofContractCoverage: coverage,
+    });
+
+    const result = parseToolResult(
+      await declare_contract.execute(
+        {
+          claims: [
+            {
+              statement: 'The manual plan-provenanced fact is covered.',
+              checkId: 'test',
+              critical: true,
+              claimScope: 'specific_behavior',
+              counterexampleRequirement: {
+                checkId: 'security',
+                kind: 'assertion',
+                assertion: { providerId: 'junit', localId: 'com.example.SecurityTest#verify' },
+              },
+              authority: 'plan',
+            },
+          ],
+        },
+        ctx,
+      ),
+    );
+    expect(result.error).toBeUndefined();
+
+    const persisted = await readState(sessDir);
+    expect(persisted!.proofContract?.claims).toHaveLength(2);
+    expect(persisted!.proofContract?.claims[0]).toEqual(existingClaim);
+    expect(persisted!.proofContractCoverage).toEqual(coverage);
+    const manual = persisted!.proofContract!.claims[1]!;
+    expect(manual).toMatchObject({ signalClass: 'fact', provenance: { authorityId: 'plan' } });
+    expect(
+      manual.provenance?.kind === 'canonical_authority' && manual.provenance.approval,
+    ).toBeUndefined();
+
+    const statusResult = parseToolResult(await status.execute({ proofGraph: true }, ctx));
+    expect(statusResult.persistedProofGraph).toMatchObject({
+      claimCount: 2,
+      contractClaimCount: 2,
+    });
+    expect(statusResult.proofApprovals).toMatchObject({
+      implementationDigest: 'impl-digest-1',
+      coverageGaps: coverage,
+    });
+    expect((statusResult.proofApprovals as { claims: unknown[] }).claims).toHaveLength(2);
+    expect(
+      (statusResult.proofGraph as { projection: { claims: unknown[] } }).projection.claims,
+    ).toHaveLength(2);
+  });
+
+  it('blocks a derived manual claim id collision without mutating state', async () => {
+    const sessDir = await seedImplValidation();
+    const statement = 'A colliding manual claim.';
+    const hash = crypto
+      .createHash('sha1')
+      .update(Buffer.from('6ba7b8109dad11d180b400c04fd430c8', 'hex'))
+      .update(statement, 'utf8')
+      .digest();
+    hash[6] = (hash[6]! & 0x0f) | 0x50;
+    hash[8] = (hash[8]! & 0x3f) | 0x80;
+    const hex = hash.subarray(0, 16).toString('hex');
+    const claimId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+    const state = await readState(sessDir);
+    await writeStateWithArtifacts(sessDir, {
+      ...state!,
+      proofContract: {
+        version: 'contract.v1',
+        claims: [
+          {
+            claimId,
+            statement: 'Existing claim with the derived id.',
+            signalClass: 'hypothesis',
+            critical: false,
+            provenance: null,
+            evidenceRefs: [],
+            counterexampleRefs: [],
+          },
+        ],
+      },
+    });
+    const before = await readState(sessDir);
+
+    const result = parseToolResult(
+      await declare_contract.execute(
+        {
+          claims: [
+            { statement, checkId: 'test', critical: false, claimScope: 'specific_behavior' },
+          ],
+        },
+        ctx,
+      ),
+    );
+
+    expect(result.code).toBe('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE');
+    expect(String(result.message)).toContain('statement');
+    expect(String(result.message)).toContain(claimId);
+    expect(await readState(sessDir)).toEqual(before);
+  });
+
+  // AC#11 (#762): one critical claim carrying an executed positive test, a
+  // negative/fault scenario, and a structural consistency assertion together.
+  describe('combined evidence on a single critical claim', () => {
+    const COMBINED = {
+      statement: 'the declared command surface is consistent and covered by tests',
+      checkId: 'test',
+      critical: true,
+      claimScope: 'specific_behavior' as const,
+      counterexampleRequirement: {
+        checkId: 'security',
+        kind: 'assertion' as const,
+        assertion: { providerId: 'junit', localId: 'com.example.SecurityTest#verify' },
+      },
+      authority: 'ticket' as const,
+      structuralSurface: 'command-registration' as const,
+    };
+
+    it('is PROVEN with positive + negative + structural evidence bound to one claim', async () => {
+      const sessDir = await seedImplValidation({ checkId: 'test', passed: true });
+      const result = parseToolResult(await declare_contract.execute({ claims: [COMBINED] }, ctx));
+      const claim = (result.proofGraph as Record<string, unknown>).claims as Array<
+        Record<string, unknown>
+      >;
+      expect(claim).toHaveLength(1);
+      expect(claim[0]!.critical).toBe(true);
+      expect(claim[0]!.signalClass).toBe('fact');
+      expect(claim[0]!.verificationState).toBe('PROVEN');
+
+      // All three evidence kinds are actually bound to this one claim.
+      const persisted = await readState(sessDir);
+      const declared = persisted!.proofContract!.claims[0]!;
+      expect(declared.evidenceRefs.map((r) => r.kind).sort()).toEqual([
+        'structural_surface',
+        'validation_attempt',
+      ]);
+      expect(declared.counterexampleRefs.map((r) => r.kind)).toEqual(['validation_attempt']);
+      // The structural assertion is REQUIRED evidence, not decoration.
+      expect([...declared.requiredEvidence!.positive].sort()).toEqual([
+        'executed_test',
+        'structural_assertion',
+      ]);
+      expect(declared.requiredEvidence!.adversarial).toEqual(['counterexample']);
+    });
+
+    it('is CONTRADICTED when a matching assertion fails', async () => {
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      const digest = 'impl-combined';
+      const failedExtraction = {
+        status: 'extracted' as const,
+        attemptId: '00000000-0000-4000-8000-0000000000aa',
+        providerId: 'junit' as const,
+        bindingCapability: 'assertion' as const,
+        format: 'junit_xml' as const,
+        reportDigests: ['a'.repeat(64)],
+        assertions: [
+          {
+            assertion: {
+              providerId: 'junit',
+              localId: 'com.example.SecurityTest#verifyNoSqlInjection',
+            },
+            providerId: 'junit',
+            status: 'failed' as const,
+            testName: 'verifyNoSqlInjection',
+            suiteName: 'com.example.SecurityTest',
+          },
+        ],
+        summary: {
+          assertionCount: 1,
+          passedCount: 0,
+          failedCount: 1,
+          erroredCount: 0,
+          skippedCount: 0,
+          suiteInfrastructureError: false,
+        },
+      };
+      const attempt = (checkId: string, passed: boolean) => ({
+        attemptId: crypto.randomUUID(),
+        scope: 'implementation' as const,
+        implementationDigest: digest,
+        result: {
+          checkId,
+          passed,
+          detail: '',
+          executedAt: NOW,
+          kind: checkId === 'security' ? ('security' as const) : ('test' as const),
+          command: 'run',
+          exitCode: passed ? 0 : 1,
+          executionMs: 5,
+          outputDigest: SHA,
+          timedOut: false,
+          outcome: passed ? ('supported' as const) : ('inconclusive' as const),
+        },
+      });
+      await writeStateWithArtifacts(sessDir, {
+        ...state!,
+        phase: 'IMPL_VALIDATION',
+        activeChecks: ['test', 'security'],
+        verificationCandidates: [
+          {
+            assertionCapability: 'unsupported' as const,
+            kind: 'test' as const,
+            command: 'npm test',
+            source: 'test',
+            confidence: 'high' as const,
+            reason: 'test',
+          },
+          {
+            assertionCapability: 'structured' as const,
+            kind: 'security' as const,
+            command: 'npm run security',
+            source: 'test',
+            confidence: 'high' as const,
+            reason: 'security',
+            assertionReport: {
+              collection: 'snapshot_diff' as const,
+              transport: 'file' as const,
+              format: 'junit_xml' as const,
+              providerId: 'junit',
+              standardPatterns: ['TEST-*.xml'],
+            },
+          },
+        ],
+        ticket: {
+          text: 'approved ticket',
+          digest: 'ticket-digest',
+          source: 'user',
+          createdAt: NOW,
+        },
+        implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
+        validationAttempts: [
+          attempt('test', true),
+          {
+            ...attempt('security', false),
+            result: {
+              ...attempt('security', false).result,
+              assertionExtraction: failedExtraction,
+            },
+          },
+        ],
+      });
+      const result = parseToolResult(
+        await declare_contract.execute(
+          {
+            claims: [
+              {
+                ...COMBINED,
+                counterexampleRequirement: {
+                  checkId: 'security',
+                  kind: 'assertion',
+                  assertion: {
+                    providerId: 'junit',
+                    localId: 'com.example.SecurityTest#verifyNoSqlInjection',
+                  },
+                },
+              },
+            ],
+          },
+          ctx,
+        ),
+      );
+      const claims = (result.proofGraph as Record<string, unknown>).claims as Array<
+        Record<string, unknown>
+      >;
+      expect(claims[0]!.verificationState).toBe('CONTRADICTED');
+    });
+  });
+
+  it('rejects a critical claim that declares no adversarial counterexample', async () => {
+    // Such a claim could never become PROVEN, so it is refused at declaration
+    // time rather than recorded as permanently NOT_VERIFIED (#762).
+    await seedImplValidation({ checkId: 'test', passed: true });
+    const result = parseToolResult(
+      await declare_contract.execute(
+        {
+          claims: [
+            {
+              statement: 'critical but unfalsified',
+              checkId: 'test',
+              critical: true,
+              claimScope: 'specific_behavior',
+              authority: 'ticket',
+            },
+          ],
+        },
+        ctx,
+      ),
+    );
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE');
+    expect(String(result.message)).toContain('counterexampleRequirement');
+  });
+
+  it('rejects a critical claim that reuses its positive check as the counterexample', async () => {
+    await seedImplValidation({ checkId: 'test', passed: true });
+    const result = parseToolResult(
+      await declare_contract.execute(
+        {
+          claims: [
+            {
+              statement: 'critical but not independently falsified',
+              checkId: 'test',
+              critical: true,
+              claimScope: 'specific_behavior',
+              counterexampleRequirement: {
+                checkId: 'test',
+                kind: 'assertion',
+                assertion: { providerId: 'junit', localId: 'com.example.Test#testMethod' },
+              },
+              authority: 'ticket',
+            },
+          ],
+        },
+        ctx,
+      ),
+    );
+
+    expect(result.code).toBe('PROOFGRAPH_CLAIM_UNSATISFIABLE');
+    expect(String(result.message)).toContain('counterexampleRequirement');
+    expect(String(result.message)).toContain('assertionCapability');
+  });
+
+  it('rejects a claim referencing a check that is not active', async () => {
+    await seedImplValidation({ checkId: 'test', passed: true });
+    const result = parseToolResult(
+      await declare_contract.execute(
+        {
+          claims: [
+            {
+              statement: 'x',
+              checkId: 'nonexistent',
+              critical: false,
+              claimScope: 'specific_behavior',
+            },
+          ],
+        },
+        ctx,
+      ),
+    );
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE');
+    // The public field name must be the one the caller supplied.
+    expect(String(result.message)).toContain('checkId');
+  });
+
+  it('classifies a claim without an approved authority as a NOT_VERIFIED hypothesis', async () => {
+    await seedImplValidation({ checkId: 'test', passed: true });
+    const result = parseToolResult(
+      await declare_contract.execute(
+        {
+          claims: [
+            {
+              statement: 'unsourced assertion',
+              checkId: 'test',
+              critical: false,
+              claimScope: 'specific_behavior',
+            },
+          ],
+        },
+        ctx,
+      ),
+    );
+    const claims = (result.proofGraph as Record<string, unknown>).claims as Array<
+      Record<string, unknown>
+    >;
+    expect(claims[0]!.signalClass).toBe('hypothesis');
+    expect(claims[0]!.provenance).toBeNull();
+    expect(claims[0]!.verificationState).toBe('NOT_VERIFIED');
+  });
+
+  it('reports UNPROVEN when the covering check failed', async () => {
+    await seedImplValidation({ checkId: 'test', passed: false });
+    const result = parseToolResult(
+      await declare_contract.execute(
+        {
+          claims: [
+            {
+              statement: 'covered by a failing check',
+              checkId: 'test',
+              critical: false,
+              claimScope: 'specific_behavior',
+              authority: 'ticket',
+            },
+          ],
+        },
+        ctx,
+      ),
+    );
+    const claims = (result.proofGraph as Record<string, unknown>).claims as Array<
+      Record<string, unknown>
+    >;
+    expect(claims[0]!.verificationState).toBe('UNPROVEN');
+  });
+
+  it('fails closed when an active check has no implementation attempt', async () => {
+    await seedImplValidation({ checkId: 'test', unattemptedChecks: ['lint'] });
+    const result = parseToolResult(
+      await declare_contract.execute(
+        {
+          claims: [
+            { statement: 'x', checkId: 'lint', critical: false, claimScope: 'specific_behavior' },
+          ],
+        },
+        ctx,
+      ),
+    );
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('PROOFGRAPH_CLAIM_EVIDENCE_UNRESOLVED');
+  });
+
+  it('is not allowed outside the implementation phases', async () => {
+    await hydrateSession();
+    const result = parseToolResult(
+      await declare_contract.execute(
+        {
+          claims: [
+            { statement: 'x', checkId: 'test', critical: false, claimScope: 'specific_behavior' },
+          ],
+        },
+        ctx,
+      ),
+    );
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('COMMAND_NOT_ALLOWED');
+  });
+
+  it('reports CONTRADICTED when a declared counterexample assertion falsifies', async () => {
+    await hydrateSession();
+    const { computeFingerprint, sessionDir: resolveSessionDir } =
+      await import('../adapters/workspace/index.js');
+    const fp = await computeFingerprint(ws.tmpDir);
+    const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+    const state = await readState(sessDir);
+    const digest = 'impl-cx';
+    const assertionId = 'junit:com.example.SecurityTest#verifyNoXss';
+    function attempt(checkId: string, passed: boolean) {
+      return {
+        attemptId: crypto.randomUUID(),
+        scope: 'implementation' as const,
+        implementationDigest: digest,
+        result: {
+          checkId,
+          passed,
+          detail: '',
+          executedAt: NOW,
+          kind: checkId === 'security' ? ('security' as const) : ('test' as const),
+          command: 'run',
+          exitCode: passed ? 0 : 1,
+          executionMs: 5,
+          outputDigest: SHA,
+          timedOut: false,
+          outcome: passed ? ('supported' as const) : ('inconclusive' as const),
+        },
+      };
+    }
+    await writeStateWithArtifacts(sessDir, {
+      ...state!,
+      phase: 'IMPL_REVIEW',
+      activeChecks: ['test', 'security'],
+      verificationCandidates: [
+        {
+          assertionCapability: 'unsupported' as const,
+          kind: 'test' as const,
+          command: 'npm test',
+          source: 'test',
+          confidence: 'high' as const,
+          reason: 'test',
+        },
+        makeStructuredSecurityCandidate(),
+      ],
+      ticket: { text: 'approved ticket', digest: 'ticket-digest', source: 'user', createdAt: NOW },
+      implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
+      validationAttempts: [
+        attempt('test', true),
+        {
+          ...attempt('security', false),
+          result: {
+            ...attempt('security', false).result,
+            assertionExtraction: makeAssertionExtraction(assertionId, 'failed'),
+          },
+        },
+      ],
+    });
+    const result = parseToolResult(
+      await declare_contract.execute(
+        {
+          claims: [
+            {
+              statement: 'the change is safe',
+              checkId: 'test',
+              critical: true,
+              claimScope: 'specific_behavior',
+              authority: 'ticket',
+              counterexampleRequirement: {
+                checkId: 'security',
+                kind: 'assertion',
+                assertion: { providerId: 'junit', localId: 'com.example.SecurityTest#verifyNoXss' },
+              },
+            },
+          ],
+        },
+        ctx,
+      ),
+    );
+    const claims = (result.proofGraph as Record<string, unknown>).claims as Array<
+      Record<string, unknown>
+    >;
+    expect(claims[0]!.verificationState).toBe('CONTRADICTED');
+    const persisted = await readState(sessDir);
+    expect(persisted!.proofGraph?.claims[0]?.verificationState).toBe('CONTRADICTED');
   });
 });

@@ -522,22 +522,37 @@ function detectCycles(analyses: Map<string, FileAnalysis>): string[] {
 
   // DFS from each node. Do not use a global visited set: a node can participate
   // in multiple independent cycles and must remain explorable from other paths.
+  //
+  // Complexity guard: the naive path-enumeration DFS is exponential on dense
+  // DAGs and drove CI past the 60s test timeout (base run already spent
+  // ~59.6s). A `fullyExplored` set makes the exploration O(V+E) while
+  // preserving the exact result set: a subtree that completed without finding
+  // a cycle cannot contain one from any later entry point (cycle membership is
+  // a graph property, not a path property), and nodes explored during a run
+  // that DID find a cycle are simply re-explored by the next root.
   const sorted = [...adjacency.keys()].sort();
+  const fullyExplored = new Set<string>();
   for (const node of sorted) {
+    if (fullyExplored.has(node)) continue;
+    const rootVisited = new Set<string>();
     const dfsPath: string[] = [];
     const visiting = new Set<string>();
+    let foundCycle = false;
 
     function dfs(current: string): void {
+      if (fullyExplored.has(current)) return;
       if (visiting.has(current)) {
         // Cycle found via visiting -> extract the cycle substring
         const idx = dfsPath.indexOf(current);
         if (idx >= 0) {
+          foundCycle = true;
           cycleKey(current, dfsPath.slice(idx));
         }
         return;
       }
 
       visiting.add(current);
+      rootVisited.add(current);
       dfsPath.push(current);
 
       const targets = adjacency.get(current);
@@ -566,6 +581,11 @@ function detectCycles(analyses: Map<string, FileAnalysis>): string[] {
     }
 
     dfs(node);
+
+    // Only a cycle-free exploration may prune later roots.
+    if (!foundCycle) {
+      for (const visited of rootVisited) fullyExplored.add(visited);
+    }
   }
 
   return [...new Set(cycles)].sort();
@@ -1619,7 +1639,7 @@ describe('Layer Dependency Rules', () => {
       }
     });
 
-    it('should have no circular imports between source files', () => {
+    it('should have no circular imports between source files', { timeout: 60000 }, () => {
       const cycles = detectCycles(analyses);
       if (cycles.length > 0) {
         console.error(

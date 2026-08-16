@@ -22,6 +22,14 @@ export interface SubagentRecord {
   readonly sessionId: string | null;
   /** ISO 8601 timestamp when the Task call completed. */
   readonly completedAt: string;
+  /**
+   * Host-detected termination reason. When present, the subagent did not
+   * complete normally and its output may be incomplete. Known values:
+   * - `step_exhausted`: the subagent reached its step budget and was
+   *   forcibly terminated; any findings are incomplete and must never be
+   *   bound as complete review evidence.
+   */
+  readonly terminationReason?: 'step_exhausted';
 }
 
 /**
@@ -64,20 +72,105 @@ export interface PendingReview {
   readonly tool: PendingReviewTool;
   /** ISO 8601 timestamp when the requirement was signaled. */
   readonly requestedAt: string;
+  /** The host-authoritative attempt ID created alongside the obligation. */
+  attemptId: string | null;
+  /** The obligation ID the attempt was created for. */
+  obligationId: string | null;
   /** Whether a Task call to flowguard-reviewer has been made (Level 1). */
   subagentCalled: boolean;
   /** Record of the actual subagent call, if made (Level 2). */
   subagentRecord: SubagentRecord | null;
   /** Content metadata for prompt integrity validation (Level 3). */
   contentMeta: ContentMeta | null;
+  /**
+   * Trailing marker of the canonical reviewer prompt FlowGuard emitted, when it
+   * emitted one.
+   *
+   * The host-issued prompt contains frozen review material below this line.
+   * Recording the marker lets enforcement verify that the canonical prompt
+   * includes a reviewable artifact rather than only an instruction block.
+   */
+  canonicalPromptAnchor: string | null;
+  /** SHA-256 of the complete host-issued reviewer prompt. */
+  expectedPromptDigest: string | null;
+  /** Exact host-issued prompt bytes. Never derive execution provenance from model args. */
+  canonicalPrompt?: string | null;
   /** Actual findings from the subagent response (Level 4). */
   capturedFindings: CapturedFindings | null;
+  /** Number of times the reviewer was re-invoked for this obligation. */
+  retryCount: number;
+  /**
+   * Host-issued attestation constants (mandateDigest/criteriaVersion) captured
+   * from the review-requirement signal (requiredReviewAttestation, top-level
+   * for /review or under reviewInvocation for plan/implement/architecture).
+   *
+   * Storage-form optional for fixture compatibility only; semantics are
+   * enforced in enforcement.ts: a bindable pending (obligationId != null) MUST
+   * carry them. A bindable pending without them is a structural host-context
+   * defect (see `enforcementFailure`), never a reviewer-output failure.
+   */
+  hostAttestationConstants?: {
+    readonly mandateDigest: string;
+    readonly criteriaVersion: string;
+  } | null;
+  /**
+   * Structural host-context defect detected at the signal→pending transition
+   * (trackRequiredReview) or, as defense-in-depth, at the capture transition.
+   * NOT a reviewer-output failure — a reviewer invocation can never repair it,
+   * so such pendings are excluded from re-arm/repair and block reviewer
+   * dispatch explicitly (HOST_REVIEW_CONTEXT_UNAVAILABLE) BEFORE the first
+   * Task runs.
+   *
+   * - 'host_attestation_constants_missing': the REVIEW_REQUIRED signal named an
+   *   obligation but carried no requiredReviewAttestation constants.
+   * - 'host_review_obligation_missing': the REVIEW_REQUIRED signal carried no
+   *   obligation identity at all, although every canonical emitter creates the
+   *   obligation before emitting the signal.
+   */
+  enforcementFailure?:
+    'host_attestation_constants_missing' | 'host_review_obligation_missing' | null;
+  /**
+   * Reviewer-actionable issues from the most recent failed capture, computed
+   * against the host-normalized canonical candidate — the same
+   * `prepareReviewerFindingsForValidation` authority the bind gate uses.
+   * Used to generate the canonical retry prompt so the reviewer can fix
+   * specific errors instead of guessing. Never set for structural
+   * host-context defects.
+   */
+  lastSchemaErrors: readonly string[] | null;
+  /**
+   * Whether a fresh canonical repair prompt (from flowguard_review) is
+   * required before the next reviewer Task invocation. Set to true when
+   * the reviewer produces schema-invalid output.
+   */
+  repairPromptRequired: boolean;
+  /**
+   * SHA256 digest of the exact canonical repair prompt issued by
+   * flowguard_review. Set when handleHostTaskPolicy generates a retry
+   * prompt. enforceBeforeSubagentCall validates this digest against the
+   * task prompt to prove the prompt was issued by FlowGuard, not
+   * fabricated by the parent.
+   */
+  expectedRepairPromptDigest: string | null;
 }
 
 /** Session-level enforcement state. */
 export interface SessionEnforcementState {
   /** Pending reviews keyed by tool name. */
   readonly pendingReviews: Map<PendingReviewTool, PendingReview>;
+  /** Host-owned before/after Task transport binding, keyed by the host call ID. */
+  readonly executedTaskPrompts: Map<string, ExecutedTaskPrompt>;
+}
+
+/** Exact prompt bytes injected by the host for one Task execution. */
+export interface ExecutedTaskPrompt {
+  readonly callId: string;
+  readonly obligationId: string;
+  readonly attemptId: string;
+  readonly canonicalPrompt: string;
+  readonly canonicalPromptDigest: string;
+  readonly modelPromptDigest: string | null;
+  readonly createdAt: string;
 }
 
 /**
@@ -104,6 +197,26 @@ export type EnforcementResult =
 /** The prefix that FlowGuard tools use to signal subagent review is required. */
 export const REVIEW_REQUIRED_PREFIX = 'INDEPENDENT_REVIEW_REQUIRED';
 
+/**
+ * Canonical host signal for a reviewer Task requirement. Emitters attach the
+ * obligation and attempt IDs alongside this signal; enforcement owns tracking
+ * those IDs as the Task-binding authority.
+ */
+export function formatReviewRequiredSignal(iteration: number, planVersion: number): string {
+  return `${REVIEW_REQUIRED_PREFIX}: iteration=${iteration}, planVersion=${planVersion}`;
+}
+
+/**
+ * Opening of the trailing line of the canonical reviewer prompt, which tells the
+ * agent to append the artifact below it.
+ *
+ * Shared contract between the emitter (renderReviewerTaskPrompt) and the checker
+ * (enforceBeforeSubagentCall), which locates it to verify that something was
+ * actually appended. Held here for the same reason as REVIEW_REQUIRED_PREFIX:
+ * emitter and enforcement must never drift apart.
+ */
+export const CANONICAL_PROMPT_APPEND_MARKER = 'Append the';
+
 /** The subagent type name for the FlowGuard reviewer. */
 export { REVIEWER_SUBAGENT_TYPE } from '../../tool-names.js';
 
@@ -125,9 +238,55 @@ export type HostTaskBindOutcome =
   | 'no_child_session'
   | 'no_obligation_type'
   | 'no_findings'
+  | 'extraction_invalid'
   | 'no_matching_obligation'
   | 'field_mismatch'
-  | 'duplicate_evidence';
+  | 'duplicate_evidence'
+  | 'schema_invalid'
+  | 'client_reference_invalid'
+  | 'challenge_contract_violation'
+  | 'challenge_evidence_unknown'
+  | 'findings_incoherent'
+  | 'review_finding_out_of_scope'
+  | 'review_finding_scope_unverifiable'
+  | 'repository_evidence_unbound'
+  | 'subject_mismatch'
+  | 'stale_attempt'
+  | 'idempotent_bound'
+  | 'idempotent_rejected'
+  | 'unknown_attempt';
+
+// ─── Phase-Separated Capture Pipeline Outcomes ─────────────────────────────────
+
+/** Outcome of the capture phase (did the Task tool produce output?). */
+export type CaptureOutcome = 'captured' | 'capture_failed';
+
+/** Outcome of the extraction phase (could JSON be recovered from the output?). */
+export type ExtractionOutcome =
+  'exact_payload' | 'recovered_payload' | 'payload_not_found' | 'payload_ambiguous';
+
+/** Outcome of the validation phase (did the payload pass schema + identity checks?). */
+export type ValidationOutcome = 'valid' | 'schema_invalid' | 'client_reference_invalid';
+
+/** Assurance level for the capture quality. */
+export type CaptureAssurance = 'exact_json' | 'structured_recovered';
+
+/**
+ * Aggregated result for a single review attempt across all phases.
+ *
+ * Phases execute in order: Capture → Extraction → Validation → Binding.
+ * Each phase only populates when the previous phase succeeded.
+ */
+export interface ReviewAttemptResult {
+  readonly attemptId: string;
+  readonly captureOutcome: CaptureOutcome;
+  readonly extractionOutcome?: ExtractionOutcome;
+  readonly validationOutcome?: ValidationOutcome;
+  readonly bindOutcome?: HostTaskBindOutcome;
+  readonly captureAssurance?: CaptureAssurance;
+  readonly reasonCode?: string;
+  readonly diagnostics?: Record<string, unknown>;
+}
 
 /**
  * Structured result from buildHostTaskEvidence.
@@ -143,4 +302,6 @@ export interface HostTaskBindResult {
   bindOutcome: HostTaskBindOutcome;
   /** Structured diagnostic metadata (safe to JSON.stringify). */
   diagnostic: Record<string, unknown>;
+  /** The review attempt that was resolved/created during binding (for persistence). */
+  attempt?: import('../../../state/evidence.js').ReviewAttempt;
 }

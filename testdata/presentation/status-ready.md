@@ -4,19 +4,11 @@
 **Readiness:** In progress
 **Policy:** solo
 
-## Evidence
+## Verification
 
-**Verified:** 0
-**Missing:** 0
-**Not yet required:** 9
+No verification obligations declared.
+Approval evidence: Not recorded
 
-## Available actions
-
-- `/hydrate` — Prepare or restore a governed session.
-- `/ticket` — Record the task that the workflow will govern.
-- `/continue` — Route to the next workflow step.
-- `/review` — Start a standalone compliance review.
-- `/architecture` — Create or revise an architecture decision record.
-- `/abort` — End the current workflow without presenting it as completed.
+Diagnostic: `flowguard_status({ proofGraph: true })`
 
 → `/task` — Record the task that the workflow will govern.

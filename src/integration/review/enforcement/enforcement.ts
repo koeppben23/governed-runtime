@@ -25,7 +25,7 @@
  */
 
 import type { SessionState } from '../../../state/schema.js';
-import { ReviewFindings, type ReviewObligation } from '../../../state/evidence-review.js';
+import { type ReviewObligation } from '../../../state/evidence-review.js';
 import {
   type SessionEnforcementState,
   type PendingReview,
@@ -35,15 +35,24 @@ import {
   type EnforcementResult,
   type PendingReviewTool,
   REVIEW_REQUIRED_PREFIX,
-  MIN_SUBAGENT_PROMPT_LENGTH,
 } from './types.js';
 import {
-  extractContentMeta,
+  canonicalPromptAnchorOf,
+  canonicalPromptDigestOf,
+  canonicalPromptOf,
+} from './prompt-contract.js';
+import {
   extractCapturedFindings,
   resolveSubagentSessionId,
   promptContainsValue,
+  detectStepExhaustion,
+  signalAttestationOf,
+  readHostAttestationConstants,
 } from './extraction.js';
+import { buildPendingReview, type ReviewSignalBinding } from './pending-review.js';
 import { validateReviewFindingsConsistency } from './findings-consistency.js';
+import { isPendingCaptureUsable, extractCaptureSchemaErrors } from './prepare-findings.js';
+export { enforceBeforeSubagentCall } from './prompt-integrity.js';
 
 import { REVIEWER_SUBAGENT_TYPE, TOOL_FLOWGUARD_REVIEW } from '../../tool-names.js';
 import {
@@ -58,7 +67,7 @@ import { parseToolResult } from '../../plugin-helpers.js';
 
 /** Create a fresh enforcement state for a session. */
 export function createSessionState(): SessionEnforcementState {
-  return { pendingReviews: new Map() };
+  return { pendingReviews: new Map(), executedTaskPrompts: new Map() };
 }
 
 // ─── Hook handlers (pure functions) ──────────────────────────────────────────
@@ -83,25 +92,32 @@ function trackReviewRequired(
   reviewTool: PendingReviewTool,
   next: string,
   now: string,
+  /** Identifiers the emitting tool published so the host can bind the reviewer. */
+  binding: ReviewSignalBinding,
 ): void {
-  state.pendingReviews.set(reviewTool, {
-    tool: reviewTool,
-    requestedAt: now,
-    subagentCalled: false,
-    subagentRecord: null,
-    contentMeta: extractContentMeta(next),
-    capturedFindings: null,
-  });
+  const prior = state.pendingReviews.get(reviewTool);
+  state.pendingReviews.set(reviewTool, buildPendingReview(reviewTool, next, now, binding, prior));
 }
 
 function trackContentAnalysis(state: SessionEnforcementState, now: string): void {
   state.pendingReviews.set(TOOL_FLOWGUARD_REVIEW, {
     tool: TOOL_FLOWGUARD_REVIEW,
     requestedAt: now,
+    attemptId: null,
+    obligationId: null,
     subagentCalled: false,
     subagentRecord: null,
     contentMeta: { expectedIteration: 1, expectedPlanVersion: 1 },
+    canonicalPromptAnchor: null,
+    canonicalPrompt: null,
     capturedFindings: null,
+    retryCount: 0,
+    hostAttestationConstants: null,
+    enforcementFailure: null,
+    lastSchemaErrors: null,
+    repairPromptRequired: false,
+    expectedRepairPromptDigest: null,
+    expectedPromptDigest: null,
   });
 }
 
@@ -183,87 +199,19 @@ function trackRequiredReview(
     ? TOOL_FLOWGUARD_REVIEW
     : (context.signalOwner as PendingReviewTool);
   const next = typeof parsed.next === 'string' ? parsed.next : '';
-  if (next.startsWith(REVIEW_REQUIRED_PREFIX) && (context.isReviewContent || context.signalOwner))
-    trackReviewRequired(state, recordKey, next, now);
-}
-
-/**
- * Enforce prompt integrity before allowing a subagent call (Level 3).
- * Called in tool.execute.before for task calls with subagent_type=flowguard-reviewer.
- *
- * Validates:
- * 1. Prompt meets minimum length (catches empty/trivial prompts)
- * 2. Prompt contains expected iteration value (contextual match)
- * 3. Prompt contains expected planVersion value (contextual match, plan only)
- *
- * @param state - Session enforcement state (read-only check)
- * @param taskArgs - Task tool call arguments
- * @returns Enforcement result
- */
-function checkReviewContext(
-  pendingReviews: PendingReview[],
-  prompt: string,
-  strictEnforcement: boolean,
-): { hasMatch: boolean; missingFields: string[]; blockReason?: EnforcementResult } {
-  const missingFields: string[] = [];
-  for (const pending of pendingReviews) {
-    if (!pending.contentMeta) {
-      if (strictEnforcement) {
-        return {
-          hasMatch: false,
-          missingFields,
-          blockReason: {
-            allowed: false,
-            code: 'SUBAGENT_CONTEXT_UNVERIFIABLE',
-            reason:
-              'Content meta extraction failed — cannot validate subagent context in strict mode. The FlowGuard tool response must include structured review obligation metadata.',
-          },
-        };
-      }
-      return { hasMatch: true, missingFields };
-    }
-    const { expectedIteration, expectedPlanVersion } = pending.contentMeta;
-    const hasIteration = promptContainsValue(prompt, 'iteration', expectedIteration);
-    const hasPlanVersion =
-      expectedPlanVersion === null || promptContainsValue(prompt, 'version', expectedPlanVersion);
-    if (hasIteration && hasPlanVersion) return { hasMatch: true, missingFields };
-    if (!hasIteration) missingFields.push(`iteration=${expectedIteration}`);
-    if (!hasPlanVersion && expectedPlanVersion !== null)
-      missingFields.push(`planVersion=${expectedPlanVersion}`);
+  if (next.startsWith(REVIEW_REQUIRED_PREFIX) && (context.isReviewContent || context.signalOwner)) {
+    const attemptId = typeof parsed.reviewAttemptId === 'string' ? parsed.reviewAttemptId : null;
+    const obligationId =
+      typeof parsed.reviewObligationId === 'string' ? parsed.reviewObligationId : null;
+    trackReviewRequired(state, recordKey, next, now, {
+      attemptId,
+      obligationId,
+      canonicalPromptAnchor: canonicalPromptAnchorOf(parsed),
+      canonicalPrompt: canonicalPromptOf(parsed),
+      canonicalPromptDigest: canonicalPromptDigestOf(parsed),
+      hostAttestationConstants: readHostAttestationConstants(signalAttestationOf(parsed)),
+    });
   }
-  return { hasMatch: false, missingFields };
-}
-
-export function enforceBeforeSubagentCall(
-  state: SessionEnforcementState,
-  taskArgs: Record<string, unknown>,
-  strictEnforcement = false,
-): EnforcementResult {
-  const subagentType = typeof taskArgs.subagent_type === 'string' ? taskArgs.subagent_type : '';
-  if (subagentType !== REVIEWER_SUBAGENT_TYPE) return { allowed: true };
-
-  const prompt = typeof taskArgs.prompt === 'string' ? taskArgs.prompt : '';
-  const pendingReviews = [...state.pendingReviews.values()].filter((p) => !p.subagentCalled);
-  if (pendingReviews.length === 0) return { allowed: true };
-
-  if (prompt.length < MIN_SUBAGENT_PROMPT_LENGTH) {
-    return {
-      allowed: false,
-      code: 'SUBAGENT_PROMPT_EMPTY',
-      reason: `FlowGuard enforcement: the prompt for ${REVIEWER_SUBAGENT_TYPE} is too short (${prompt.length} chars, minimum ${MIN_SUBAGENT_PROMPT_LENGTH}). Include the plan/implementation text, ticket text, iteration, and planVersion.`,
-    };
-  }
-
-  const ctx = checkReviewContext(pendingReviews, prompt, strictEnforcement);
-  if (ctx.blockReason) return ctx.blockReason;
-  if (!ctx.hasMatch) {
-    return {
-      allowed: false,
-      code: 'SUBAGENT_PROMPT_MISSING_CONTEXT',
-      reason: `FlowGuard enforcement: the prompt for ${REVIEWER_SUBAGENT_TYPE} does not contain the expected review context. Missing: ${[...new Set(ctx.missingFields)].join(', ')}. Include the iteration and planVersion values from the FlowGuard tool response.`,
-    };
-  }
-  return { allowed: true };
 }
 
 /**
@@ -303,24 +251,69 @@ export function onTaskToolAfter(
   // Capture actual findings from the subagent response
   const capturedFindings = extractCapturedFindings(taskResult);
 
+  const terminationReason = detectStepExhaustion(taskResult)
+    ? ('step_exhausted' as const)
+    : undefined;
+
   const record: SubagentRecord = {
     sessionId,
     completedAt: now,
+    ...(terminationReason ? { terminationReason } : {}),
   };
 
   // Match exactly ONE pending review obligation (P34 1:1 contract).
   const matched = matchPendingReview(state, args);
   if (matched) {
-    matched.subagentCalled = true;
-    matched.subagentRecord = record;
-    matched.capturedFindings = capturedFindings;
+    applyCaptureToPending(matched, record, capturedFindings);
   }
 }
 
 /**
+ * Apply the completed reviewer invocation to the matched pending review.
+ *
+ * Structural host-context defect first: a bindable obligation without the
+ * host-issued attestation constants is NEVER a reviewer-output failure — a
+ * reviewer invocation cannot repair it. No capture is kept, no schema errors
+ * are computed (no raw-schema fallback), and the pending is excluded from
+ * re-arm/repair from here on.
+ */
+function applyCaptureToPending(
+  matched: PendingReview,
+  record: SubagentRecord,
+  capturedFindings: CapturedFindings | null,
+): void {
+  if (matched.obligationId != null && (matched.hostAttestationConstants ?? null) == null) {
+    matched.subagentCalled = true;
+    matched.subagentRecord = record;
+    matched.enforcementFailure = 'host_attestation_constants_missing';
+    matched.capturedFindings = null;
+    matched.lastSchemaErrors = null;
+    matched.repairPromptRequired = false;
+    matched.expectedRepairPromptDigest = null;
+    matched.expectedPromptDigest = null;
+    return;
+  }
+  // Track retries: a re-invoke after a prior (unusable) capture is a retry.
+  if (matched.subagentCalled) {
+    matched.retryCount = (matched.retryCount ?? 0) + 1;
+  }
+  matched.subagentCalled = true;
+  matched.subagentRecord = record;
+  matched.capturedFindings = capturedFindings;
+  matched.lastSchemaErrors = extractCaptureSchemaErrors(matched);
+  // Enforce repair-prompt requirement: after schema-invalid output, a
+  // fresh canonical repair prompt must be issued before the next reviewer.
+  matched.repairPromptRequired = matched.lastSchemaErrors !== null;
+  // Clear the expected digest — this repair cycle is consumed.
+  matched.expectedRepairPromptDigest = null;
+  matched.expectedPromptDigest = null;
+}
+
+/**
  * Whether a pending review already holds a usable capture — reviewer findings
- * that parse against the ReviewFindings schema and satisfy the canonical verdict
- * coherence rule applied by the verdict-time resolver.
+ * that pass the shared host-normalization authority plus the canonical schema
+ * gate (see prepare-findings.ts) and satisfy the canonical verdict coherence
+ * rule applied by the verdict-time resolver.
  *
  * A capture that is absent (null), schema-invalid (e.g. the reviewer emitted
  * non-JSON, or mistyped a required field such as `majorRisks`) is NOT good: it
@@ -333,14 +326,14 @@ export function onTaskToolAfter(
  * or internally incoherent (accept with blocking issues) is NOT usable. Returning
  * false keeps the review re-armable so a subsequent reviewer run can replace the
  * bad capture (new child session + new findings hash → no duplicate).
+ *
+ * This is a PURE query over the shared authority — it never mutates the pending
+ * review. A structural host-context defect (enforcementFailure) is reported as
+ * unusable here but is handled as an explicit, non-repairable blocker in
+ * prompt-integrity.ts, never as a reviewer-output retry.
  */
 function hasUsableCapture(pending: PendingReview): boolean {
-  const parsed = ReviewFindings.safeParse(pending.capturedFindings?.rawFindings);
-  if (!parsed.success) return false;
-  return validateReviewFindingsConsistency({
-    overallVerdict: parsed.data.overallVerdict,
-    blockingIssueCount: parsed.data.blockingIssues.length,
-  }).ok;
+  return isPendingCaptureUsable(pending);
 }
 
 /**
@@ -361,11 +354,18 @@ export function matchPendingReview(
   taskArgs: Record<string, unknown>,
 ): PendingReview | null {
   const awaitingCapture = [...state.pendingReviews.values()].filter(
-    (p) => !p.subagentCalled || !hasUsableCapture(p),
+    // A structural host-context defect (enforcementFailure) is NOT "awaiting
+    // capture": it can never be repaired by another reviewer run, so such
+    // pendings are excluded from matching, re-arm, and retry counting.
+    (p) => (p.enforcementFailure ?? null) === null && (!p.subagentCalled || !hasUsableCapture(p)),
   );
 
   if (awaitingCapture.length === 0) return null;
-  if (awaitingCapture.length === 1) return awaitingCapture[0]!;
+  if (awaitingCapture.length === 1) {
+    const candidate = awaitingCapture[0]!;
+    if (candidate.subagentCalled && (candidate.retryCount ?? 0) >= 1) return null;
+    return candidate;
+  }
 
   // Multiple awaiting capture — match by contentMeta from prompt
   const prompt = typeof taskArgs.prompt === 'string' ? taskArgs.prompt : '';
@@ -616,6 +616,17 @@ export function recordPluginReview(
     sessionId,
     completedAt: now,
   };
+  // Same structural host-context rule as onTaskToolAfter: a bindable
+  // obligation without host attestation constants is never repaired by a
+  // reviewer capture — fail closed with the explicit marker.
+  if (pending.obligationId != null && (pending.hostAttestationConstants ?? null) == null) {
+    pending.enforcementFailure = 'host_attestation_constants_missing';
+    pending.capturedFindings = null;
+    pending.lastSchemaErrors = null;
+    pending.repairPromptRequired = false;
+    pending.expectedRepairPromptDigest = null;
+    return true;
+  }
   pending.capturedFindings = capturedFindings;
   return true;
 }
@@ -662,8 +673,9 @@ export function enforceReviewerObligation(params: {
       code: 'REVIEWER_TASK_REQUIRES_PENDING_OBLIGATION',
       reason:
         'A flowguard-reviewer Task may only run when a pending review obligation exists. ' +
-        'Run flowguard_plan or flowguard_review first to create a pending review obligation, ' +
-        'then start the reviewer Task.',
+        'Run the relevant FlowGuard review tool (flowguard_plan, flowguard_implement, ' +
+        'flowguard_architecture, or flowguard_review) first to create a pending review ' +
+        'obligation, then start the reviewer Task.',
     };
   }
 

@@ -10,17 +10,29 @@
 import { hashTextShort } from '../../../shared/hashing.js';
 
 import type { SessionState } from '../../../state/schema.js';
-import type { ReviewObligation } from '../../../state/evidence.js';
+import type {
+  ReviewFindings,
+  ReviewObligation,
+  ReviewReportFinding,
+} from '../../../state/evidence.js';
 import type { ReviewExecutors } from '../../../rails/review.js';
+import { ReviewReport } from '../../../state/evidence.js';
 import { autoAdvance, createPolicyEvalFn } from '../../../rails/types.js';
 import type { AutoAdvanceOverflow } from '../../../rails/types.js';
-import { PHASE_LABELS, buildReviewReportCard } from '../../../presentation/index.js';
+import {
+  PHASE_LABELS,
+  buildProductNextAction,
+  buildReviewReportCard,
+} from '../../../presentation/index.js';
 import type { PresentationRenderOptions } from '../../../presentation/glyph-profile.js';
 import { materializeReviewCardArtifact } from '../../../adapters/workspace/index.js';
 import { readConfig } from '../../../adapters/persistence-config.js';
 import { writeReport, reportPath } from '../../../adapters/persistence.js';
 import { writeStateWithArtifacts, appendNextAction } from '../helpers.js';
 import { ensureReviewAssurance } from '../../review/assurance.js';
+import { resolveNextAction } from '../../../machine/next-action.js';
+import { projectStatusActionFromCommand } from '../../status-conclusion.js';
+import { projectCompletionProofStatus } from '../../proofgraph/proof-summary-projectors.js';
 import { NATIVE_ATTESTATION_REJECTION_FIELD } from '../../../shared/flowguard-identifiers.js';
 import type {
   NativeAttestationRejection,
@@ -40,47 +52,108 @@ const reviewSeverityMap: Record<string, 'info' | 'warning' | 'error'> = {
   warning: 'warning',
 };
 
+// ─── Challenge projection ────────────────────────────────────────────────────
+
+/**
+ * Severity of a challenge outcome, from the author's point of view.
+ *
+ * `contradicted` / `fail` mean the reviewer's falsification attempt SUCCEEDED:
+ * the claim under test did not hold. That is the most actionable result a review
+ * produces. `not_verified` means the attempt could not be carried out, which is
+ * an open risk rather than a confirmed defect. `supported` / `pass` record that
+ * the claim withstood the attempt.
+ */
+const CHALLENGE_OUTCOME_SEVERITY: Record<string, 'info' | 'warning' | 'error'> = {
+  contradicted: 'error',
+  fail: 'error',
+  not_verified: 'warning',
+  supported: 'info',
+  pass: 'info',
+};
+
+/**
+ * Project reviewer challenges into report findings.
+ *
+ * Challenges are the most substantive artifact a review produces - an
+ * evidence-bound falsification attempt with a concrete scenario and at least one
+ * location (`ReviewChallenge.locations` is `.min(1)`, so unlike a plain finding
+ * they are always located). They were dropped entirely from the report, so the
+ * author never saw them.
+ */
+function challengeFindings(
+  reviewFindings: Pick<ReviewFindings, 'challenges'>,
+): ReviewReportFinding[] {
+  const challenges = reviewFindings.challenges;
+  if (!Array.isArray(challenges)) return [];
+  return challenges.flatMap((entry) => challengeFinding(entry));
+}
+
+/** Project one challenge, or nothing when it lacks the fields a reader needs. */
+function challengeFinding(entry: unknown): ReviewReportFinding[] {
+  if (typeof entry !== 'object' || entry === null) return [];
+  const challenge = entry as Record<string, unknown>;
+  const outcome = stringField(challenge.outcome);
+  const scenario = stringField(challenge.scenario);
+  if (!outcome || !scenario) return [];
+  const claim = stringField(challenge.claim);
+  const location = challengeLocation(challenge.locations);
+  return [
+    {
+      source: 'challenge',
+      reportSeverity: CHALLENGE_OUTCOME_SEVERITY[outcome] ?? 'warning',
+      category: stringField(challenge.kind) || 'challenge',
+      message: `[${outcome}] ${scenario}${claim ? ` - claim under test: ${claim}` : ''}`,
+      ...(location ? { location } : {}),
+    },
+  ];
+}
+
+function stringField(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function challengeLocation(value: unknown): string {
+  if (!Array.isArray(value)) return '';
+  return value.filter((entry): entry is string => typeof entry === 'string').join(', ');
+}
+
 // ─── Report building ─────────────────────────────────────────────────────────
 
-export function mapReviewFindingsToReport(reviewFindings: Record<string, unknown>): Array<{
-  severity: 'info' | 'warning' | 'error';
-  category: string;
-  message: string;
-  location?: string;
-}> {
-  const allFindings: Array<Record<string, unknown>> = [
-    ...((reviewFindings.blockingIssues as Array<Record<string, unknown>>) ?? []),
-    ...((reviewFindings.majorRisks as Array<Record<string, unknown>>) ?? []),
-    ...((reviewFindings.missingVerification as string[]) ?? []).map((message) => ({
-      severity: 'warning' as const,
+export function mapReviewFindingsToReport(reviewFindings: ReviewFindings): ReviewReportFinding[] {
+  const materialFindings = [...reviewFindings.blockingIssues, ...reviewFindings.majorRisks].map(
+    (finding) => ({
+      source: 'material_finding' as const,
+      reportSeverity: reviewSeverityMap[finding.severity] ?? 'warning',
+      finding,
+    }),
+  );
+  return [
+    ...materialFindings,
+    ...reviewFindings.missingVerification.map((message) => ({
+      source: 'missing_verification' as const,
+      reportSeverity: 'warning' as const,
       category: 'missing-verification',
       message,
     })),
-    ...((reviewFindings.scopeCreep as string[]) ?? []).map((message) => ({
-      severity: 'warning' as const,
+    ...reviewFindings.scopeCreep.map((message) => ({
+      source: 'scope_creep' as const,
+      reportSeverity: 'warning' as const,
       category: 'scope-creep',
       message,
     })),
-    ...((reviewFindings.unknowns as string[]) ?? []).map((message) => ({
-      severity: 'info' as const,
+    ...reviewFindings.unknowns.map((message) => ({
+      source: 'unknown' as const,
+      reportSeverity: 'info' as const,
       category: 'unknown',
       message,
     })),
+    ...challengeFindings(reviewFindings),
   ];
-
-  return allFindings
-    .filter((f) => f.severity && f.category && f.message)
-    .map((f) => ({
-      severity: reviewSeverityMap[f.severity as string] ?? 'warning',
-      category: f.category as string,
-      message: f.message as string,
-      ...(f.location ? { location: f.location as string } : {}),
-    }));
 }
 
 export function buildReviewExecutors(
   args: ReviewToolArgs,
-  effectiveReviewFindings?: Record<string, unknown>,
+  effectiveReviewFindings?: ReviewFindings,
 ): ReviewExecutors {
   return {
     analyze: async () => {
@@ -121,6 +194,7 @@ export async function persistReviewCompletion(
   | {
       kind: 'ok';
       finalState: SessionState;
+      report: ReviewReportResult;
       allTransitions: StartedReviewResult['transitions'];
     }
 > {
@@ -132,16 +206,17 @@ export async function persistReviewCompletion(
     return { kind: 'overflow', overflow: advanced };
   }
   const { state: finalState, transitions: advanceTransitions } = advanced;
-  const finalReport = {
+  const finalReport = ReviewReport.parse({
     ...report,
     phase: finalState.phase,
     completeness: { ...report.completeness, phase: finalState.phase },
-  };
+  });
   await writeReport(sessDir, finalReport);
   await writeStateWithArtifacts(sessDir, finalState);
   return {
     kind: 'ok',
     finalState,
+    report: finalReport,
     allTransitions: [...result.transitions, ...advanceTransitions],
   };
 }
@@ -162,10 +237,12 @@ function reviewCardCompleteness(report: ReviewReportResult): {
   overallComplete: boolean;
   fourEyes: boolean;
   summary: string;
+  total: number;
 } {
   return {
     overallComplete: report.completeness.overallComplete,
     fourEyes: report.completeness.fourEyes?.satisfied ?? false,
+    total: report.completeness.summary.total,
     summary:
       `${report.completeness.summary.complete}/${report.completeness.summary.total} complete, ` +
       `${report.completeness.summary.missing} missing`,
@@ -220,6 +297,15 @@ function buildStandaloneReviewCard(
 ): string {
   const { args, result, finalState, report, validatedReviewObligation } = input;
   const boundInvocation = findBoundReviewInvocation(result, validatedReviewObligation);
+  const nextAction = resolveNextAction(finalState.phase, finalState);
+  const productNextAction = buildProductNextAction(nextAction, finalState.phase);
+  const primaryCommand = productNextAction.commands[0];
+  if (!primaryCommand) {
+    throw new Error(
+      'review completion: productNextAction has no commands; cannot build conclusion action.',
+    );
+  }
+  const conclusionAction = projectStatusActionFromCommand(primaryCommand, 'recommended');
   return buildReviewReportCard(
     {
       phase: finalState.phase,
@@ -227,9 +313,11 @@ function buildStandaloneReviewCard(
       overallStatus: report.overallStatus,
       findings: report.findings ?? [],
       completeness: reviewCardCompleteness(report),
-      inputOrigin: args.inputOrigin,
-      references: args.references as Array<{ ref: string; type: string }> | undefined,
+      reviewSubject: report.reviewKind === 'content_review' ? report.reviewSubject : undefined,
       obligationId: validatedReviewObligation?.obligationId,
+      proofSummary: projectCompletionProofStatus(finalState),
+      productNextAction,
+      conclusionAction,
       ...reviewCardInvocationFields(boundInvocation, args),
     },
     options,
@@ -302,8 +390,7 @@ function formatReviewCompletionResponse(input: {
       findingsCount: report.findings.length,
       findings: report.findings,
       validationSummary: report.validationSummary,
-      references: report.references,
-      inputOrigin: report.inputOrigin,
+      ...(report.reviewKind === 'content_review' && { reviewSubject: report.reviewSubject }),
       _audit: { transitions: allTransitions },
     }),
     finalState,

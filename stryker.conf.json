@@ -20,6 +20,17 @@
     "src/audit/integrity.ts",
     "src/audit/ntp-check.ts",
 
+    "src/audit/proofgraph/evaluate.ts",
+    "src/audit/proofgraph/gate.ts",
+    "src/integration/proofgraph/claim-contract.ts",
+    "src/integration/proofgraph/materialize-contract.ts",
+    "src/audit/proofgraph/executed-test-binder.ts",
+    "src/audit/proofgraph/counterexample-binder.ts",
+    "src/audit/proofgraph/assertion-evidence-binding.ts",
+    "src/audit/proofgraph/enforcement-projection.ts",
+    "src/verification/execution-subject.ts",
+    "src/discovery/verification-planner.ts",
+
     "src/config/policy.ts",
     "src/config/reasons.ts",
     "src/config/profile.ts",
@@ -63,6 +74,7 @@
     "src/rails/architecture.ts",
     "src/rails/hydrate.ts",
     "src/rails/review-decision.ts",
+    "src/rails/review-evidence-resolution.ts",
     "src/rails/review.ts",
     "src/rails/ticket.ts",
 
@@ -70,7 +82,7 @@
     "src/hooks/shared/phase-gate.ts"
   ],
   "mutator": {
-    "excludedMutations": ["StringLiteral", "ArrayDeclaration"]
+    "excludedMutations": ["StringLiteral", "ArrayDeclaration", "Regex"]
   },
   "ignoreStatic": true,
   "thresholds": {

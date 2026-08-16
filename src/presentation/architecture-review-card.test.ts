@@ -3,13 +3,17 @@
  * @description Unit tests for buildArchitectureReviewCard.
  */
 import { describe, it, expect } from 'vitest';
-import { buildArchitectureReviewCard } from './architecture-review-card.js';
+import {
+  buildArchitectureReviewCard as buildCard,
+  type ArchitectureReviewCardInput,
+} from './architecture-review-card.js';
+import type { CompactProofPresentation } from './proof-model.js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 async function readGolden(name: string): Promise<string> {
   const p = resolve(__dirname, '..', '..', 'testdata', 'presentation', name);
-  return readFile(p, 'utf-8');
+  return (await readFile(p, 'utf-8')).trimEnd();
 }
 
 const baseInput = {
@@ -21,11 +25,26 @@ const baseInput = {
     commands: ['/approve', '/request-changes', '/reject'] as readonly string[],
   },
   isApproved: false,
+  proofSummary: {
+    kind: 'declaration',
+    flow: 'architecture',
+    overallStatus: 'NOT_DECLARED',
+    claimCount: 0,
+    criticalCount: 0,
+    approval: { attestations: [] },
+  } satisfies CompactProofPresentation,
 };
+function buildArchitectureReviewCard(
+  input: Omit<ArchitectureReviewCardInput, 'proofSummary'> &
+    Partial<Pick<ArchitectureReviewCardInput, 'proofSummary'>>,
+  options?: Parameters<typeof buildCard>[1],
+) {
+  return buildCard({ proofSummary: baseInput.proofSummary, ...input }, options);
+}
 
 describe('buildArchitectureReviewCard', () => {
   it('keeps Unicode canonical by default and supports an ASCII transient rendering', () => {
-    const input = { ...baseInput, forcedConvergence: true };
+    const input = { ...baseInput, reviewCompletion: 'review_exhausted' as const };
     const canonical = buildArchitectureReviewCard(input);
 
     expect(buildArchitectureReviewCard(input)).toBe(canonical);
@@ -57,6 +76,44 @@ describe('buildArchitectureReviewCard', () => {
     expect(card).toContain('**Review iteration:** 2');
   });
 
+  it('renders reviewed provenance rows when a reviewed digest is bound', () => {
+    const card = buildArchitectureReviewCard({
+      ...baseInput,
+      adrId: 'ADR-001',
+      adrDigest: 'current-digest',
+      reviewedDigest: 'reviewed-digest',
+      reviewedObligationId: '00000000-0000-4000-8000-000000000001',
+    });
+    expect(card).toContain('**Reviewed ADR digest:** `reviewed-digest`');
+    expect(card).toContain('**Reviewed obligation:** `00000000-0000-4000-8000-000000000001`');
+  });
+
+  it('warns explicitly when the displayed findings apply to a prior artifact revision', () => {
+    const card = buildArchitectureReviewCard({
+      ...baseInput,
+      adrId: 'ADR-001',
+      adrDigest: 'current-digest',
+      reviewedDigest: 'prior-digest',
+      reviewCompletion: 'review_exhausted',
+    });
+    expect(card).toContain('⚠ These reviewer findings apply to a prior artifact revision.');
+    expect(card).toContain('Reviewed digest: `prior-digest`');
+    expect(card).toContain('Current digest:  `current-digest`');
+    expect(card).toContain(
+      'The current revision was submitted after the final independent review ' +
+        'and has not itself been independently reviewed.',
+    );
+  });
+
+  it('omits the mismatch warning when the reviewed digest matches the current digest', () => {
+    const card = buildArchitectureReviewCard({
+      ...baseInput,
+      adrDigest: 'same-digest',
+      reviewedDigest: 'same-digest',
+    });
+    expect(card).not.toContain('These reviewer findings apply to a prior artifact revision.');
+  });
+
   it('renders the ADR body under the Architecture Decision heading, demoting embedded headings', () => {
     const adrText = '## Context\nfoo\n\n## Decision\nbar\n\n## Consequences\nbaz\n';
     const card = buildArchitectureReviewCard({ ...baseInput, adrText });
@@ -85,9 +142,37 @@ describe('buildArchitectureReviewCard', () => {
       ...baseInput,
       overallVerdict: 'changes_requested',
       blockingIssues: [
-        { severity: 'critical', category: 'completeness', message: 'Missing alternatives' },
+        {
+          severity: 'critical',
+          category: 'completeness',
+          message: 'Missing alternatives',
+          relation: {
+            evidenceLocations: [],
+            subjectAnchors: [
+              {
+                kind: 'repository_location',
+                location: { path: 'docs/adr.md', revision: 'head' },
+              },
+            ],
+          },
+        },
       ],
-      majorRisks: [{ severity: 'major', category: 'risk', message: 'Race condition' }],
+      majorRisks: [
+        {
+          severity: 'major',
+          category: 'risk',
+          message: 'Race condition',
+          relation: {
+            evidenceLocations: [],
+            subjectAnchors: [
+              {
+                kind: 'repository_location',
+                location: { path: 'src/design.ts', revision: 'base' },
+              },
+            ],
+          },
+        },
+      ],
       missingVerification: ['No integration test for the new error path'],
       scopeCreep: ['Unrelated dependency upgrade'],
       unknowns: ['Behaviour under sustained load'],
@@ -129,22 +214,22 @@ describe('buildArchitectureReviewCard', () => {
     expect(card).not.toContain('## Reviewer Findings');
   });
 
-  it('renders a "reviewer did NOT approve" warning when forceConverged at the gate', () => {
+  it('renders a "reviewer did NOT approve" warning when review is exhausted at the gate', () => {
     const card = buildArchitectureReviewCard({
       ...baseInput,
-      forcedConvergence: true,
+      reviewCompletion: 'review_exhausted',
     });
     expect(card).toContain('Reviewer did NOT approve this ADR.');
     expect(card).toContain('iteration limit');
   });
 
-  it('suppresses the forced-convergence warning once the ADR is approved', () => {
+  it('suppresses the review exhaustion warning once the ADR is approved', () => {
     const card = buildArchitectureReviewCard({
       ...baseInput,
       phase: 'ARCH_COMPLETE',
       phaseLabel: 'Architecture complete',
       isApproved: true,
-      forcedConvergence: true,
+      reviewCompletion: 'review_exhausted',
     });
     expect(card).not.toContain('Reviewer did NOT approve');
   });
@@ -178,12 +263,62 @@ describe('architecture review golden fixtures', () => {
       iteration: 3,
       overallVerdict: 'changes_requested',
       isApproved: false,
-      forcedConvergence: true,
+      reviewCompletion: 'review_exhausted',
       productNextAction: {
         text: 'Review the ADR and decide.',
         commands: ['/approve', '/request-changes', '/reject'],
       },
     });
     expect(card).toBe(await readGolden('review-architecture-changes-requested.md'));
+  });
+
+  it('injects decision claims section when proofSummary is provided', () => {
+    const adrText = '## Context\nfoo\n\n## Decision\nbar\n\n## Consequences\nbaz\n';
+    const card = buildArchitectureReviewCard({
+      phase: 'ARCH_REVIEW',
+      phaseLabel: 'Ready for architecture review',
+      adrTitle: 'Use presentation-only command aliases',
+      adrId: 'ADR-001',
+      adrDigest: 'abc123',
+      adrText,
+      iteration: 1,
+      overallVerdict: 'accept',
+      isApproved: false,
+      productNextAction: {
+        text: 'Review the ADR.',
+        commands: ['/approve', '/request-changes'],
+      },
+      proofSummary: {
+        kind: 'declaration',
+        flow: 'architecture',
+        overallStatus: 'AWAITING_EVIDENCE',
+        claimCount: 1,
+        criticalCount: 1,
+        approval: { attestations: [] },
+      },
+    });
+    expect(card).toContain('## Verification');
+    expect(card).toContain('1 architecture claim(s) declared');
+    expect(card).toContain('AWAITING_EVIDENCE');
+  });
+
+  it('omits decision claims section when proofSummary is absent', () => {
+    const adrText = '## Context\nfoo\n\n## Decision\nbar\n\n## Consequences\nbaz\n';
+    const card = buildArchitectureReviewCard({
+      phase: 'ARCH_REVIEW',
+      phaseLabel: 'Ready for architecture review',
+      adrTitle: 'Use presentation-only command aliases',
+      adrId: 'ADR-001',
+      adrDigest: 'abc123',
+      adrText,
+      iteration: 1,
+      overallVerdict: 'accept',
+      isApproved: false,
+      productNextAction: {
+        text: 'Review the ADR.',
+        commands: ['/approve', '/request-changes'],
+      },
+    });
+    expect(card).not.toContain('## Proof obligations');
   });
 });

@@ -25,6 +25,7 @@ export {
   archive,
   architecture,
   help,
+  observe_repository,
 } from "@flowguard/core/integration";
 `;
 

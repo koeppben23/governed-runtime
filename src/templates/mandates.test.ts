@@ -30,13 +30,14 @@ describe('mandates — contract anchors', () => {
     expect(FLOWGUARD_MANDATES_BODY).toContain('MUST');
   });
 
-  it('REVIEWER_AGENT contains subagent type and role', () => {
+  it('REVIEWER_AGENT contains subagent mode and role', () => {
     expect(REVIEWER_AGENT.length).toBeGreaterThan(100);
-    expect(REVIEWER_AGENT).toContain('flowguard-reviewer');
+    expect(REVIEWER_AGENT).toContain('mode: subagent');
     expect(REVIEWER_AGENT).toContain('## Your Role');
     expect(REVIEWER_AGENT).toContain('flowguard_*: deny');
     expect(REVIEWER_AGENT).toContain('mcp__flowguard__*: deny');
     expect(REVIEWER_AGENT).toContain('task: deny');
+    expect(REVIEWER_AGENT).toContain('Do NOT output reviewedBy or reviewedAt anywhere');
   });
 
   it('CLAUDE_REVIEWER_AGENT contains platform marker', () => {

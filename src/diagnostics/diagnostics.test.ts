@@ -35,7 +35,7 @@ describe('runtime diagnostics', () => {
       'host-visible Task invocation by the FlowGuard reviewer subagent',
     );
     expect(diagnostics?.missingEvidence).toContain('host_subagent_task_invocation');
-    expect(diagnostics?.safeNextActions.join('\n')).toContain('Do not submit manual');
+    expect(diagnostics?.safeNextActions.join('\n')).toContain('Do NOT submit');
   });
 
   it('BAD: returns null for unknown codes instead of inventing authority', () => {

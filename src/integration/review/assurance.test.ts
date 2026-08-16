@@ -25,6 +25,11 @@ import {
   hasEvidenceReuse,
   findAcceptedInvocationForFindings,
   validateStrictAttestation,
+  findBindableAttempt,
+  createReviewAttempt,
+  appendObligationWithAttempt,
+  createAttemptForExistingObligation,
+  artifactReviewSubjectScope,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './assurance.js';
@@ -34,27 +39,43 @@ import type {
   ReviewInvocationEvidence,
   ReviewFindings,
 } from '../../state/evidence.js';
+import type { ReviewAttempt } from '../../state/evidence-review.js';
 import { ReviewInvocationEvidence as ReviewInvocationEvidenceSchema } from '../../state/evidence.js';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
 const NOW = '2026-04-27T00:00:00.000Z';
+const FIXTURE_MANDATE_DIGEST = 'fixture-mandate-digest';
+const FIXTURE_CRITERIA_VERSION = 'fixture-criteria-v1';
 
 function makeObligation(overrides?: Partial<ReviewObligation>): ReviewObligation {
+  const obligationType = overrides?.obligationType ?? 'plan';
   return createReviewObligation({
-    obligationType: 'plan',
+    obligationType,
     iteration: 0,
     planVersion: 1,
     now: NOW,
+    subjectDigest: 'test',
+    reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
+    ...(obligationType === 'plan' || obligationType === 'architecture'
+      ? { repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' } }
+      : {}),
     ...overrides,
   });
 }
 
 function makeInvocation(overrides?: Partial<ReviewInvocationEvidence>): ReviewInvocationEvidence {
-  const { fulfilledAt, ...rest } = overrides ?? {};
+  const {
+    fulfilledAt,
+    mandateDigest = FIXTURE_MANDATE_DIGEST,
+    criteriaVersion = FIXTURE_CRITERIA_VERSION,
+    ...rest
+  } = overrides ?? {};
   return buildInvocationEvidence({
     obligationId: '00000000-0000-4000-8000-000000000001',
     obligationType: 'plan',
+    mandateDigest,
+    criteriaVersion,
     parentSessionId: 'parent-session-1',
     childSessionId: 'child-session-1',
     promptHash: hashText('test prompt'),
@@ -103,9 +124,92 @@ describe('integration/review-assurance', () => {
     });
   });
 
+  describe('standalone review material', () => {
+    it('copies persisted normalized material to a reissued attempt', () => {
+      const materialDigest = hashText('line one\nline two\n');
+      const subjectDigest = hashText(`content:${materialDigest}`);
+      const material = {
+        content: 'line one\nline two\n',
+        materialDigest,
+        subjectDigest,
+      };
+      const obligation = createReviewObligation({
+        obligationType: 'review',
+        iteration: 1,
+        planVersion: 1,
+        now: NOW,
+        subjectDigest,
+        reviewSubject: {
+          kind: 'content',
+          source: { kind: 'inline', mediaType: 'text' },
+          materialDigest: material.materialDigest,
+          subjectDigest,
+          lineCount: 2,
+        },
+        reviewMaterial: material,
+        reviewSubjectScope: { kind: 'content', subjectDigest, lineCount: 2 },
+      });
+      const initial = appendObligationWithAttempt(emptyReviewAssurance(), obligation, NOW);
+      const retried = createAttemptForExistingObligation(
+        initial.assurance,
+        obligation,
+        'child-session-2',
+        NOW,
+        {
+          origin: { kind: 'initial' } as const,
+          repositoryDiscovery: { kind: 'not_applicable' } as const,
+        },
+      );
+
+      expect(retried.assurance.attempts.at(-1)?.reviewMaterial).toEqual(material);
+      expect(retried.assurance.attempts.at(-1)?.subjectDigest).toBe(subjectDigest);
+      expect(retried.attempt.childSessionId).toBe('child-session-2');
+    });
+
+    it('omits childSessionId so a pre-Task reissue stays bindable', () => {
+      const subjectDigest = 'd'.repeat(64);
+      const material = {
+        content: 'frozen',
+        materialDigest: 'e'.repeat(64),
+        subjectDigest,
+      };
+      const obligation = makeObligation({
+        obligationType: 'review',
+        subjectDigest,
+        reviewMaterial: material,
+        reviewSubjectScope: { kind: 'content', subjectDigest, lineCount: 2 },
+      });
+      const initial = appendObligationWithAttempt(emptyReviewAssurance(), obligation, NOW);
+
+      const reissued = createAttemptForExistingObligation(
+        initial.assurance,
+        obligation,
+        undefined,
+        NOW,
+        {
+          origin: { kind: 'initial' } as const,
+          repositoryDiscovery: { kind: 'not_applicable' } as const,
+        },
+      );
+
+      expect(reissued.attempt.childSessionId).toBeUndefined();
+      expect(reissued.attempt.status).toBe('created');
+      expect(reissued.attempt.reviewMaterial).toEqual(material);
+      // Bindable means: resolvable again by the host for a fresh reviewer Task.
+      expect(findBindableAttempt(reissued.assurance, obligation.obligationId)?.attemptId).toBe(
+        reissued.attempt.attemptId,
+      );
+    });
+  });
+
   describe('ensureReviewAssurance', () => {
     it('returns the given assurance when defined', () => {
-      const existing = { obligations: [makeObligation()], invocations: [] };
+      const existing = {
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        obligations: [makeObligation()],
+        invocations: [],
+        attempts: [],
+      };
       expect(ensureReviewAssurance(existing)).toBe(existing);
     });
 
@@ -119,9 +223,12 @@ describe('integration/review-assurance', () => {
     it('creates a pending plan obligation with correct fields', () => {
       const result = createReviewObligation({
         obligationType: 'plan',
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,
         now: NOW,
+        subjectDigest: 'test',
+        reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
       });
       expect(result.obligationType).toBe('plan');
       expect(result.status).toBe('pending');
@@ -151,12 +258,37 @@ describe('integration/review-assurance', () => {
           iteration: 0,
           planVersion: 1,
           now: NOW,
+          subjectDigest: 'test',
           changedFiles,
+          ...(obligationType === 'plan' || obligationType === 'architecture'
+            ? {
+                repositoryEvidenceFreeze: {
+                  kind: 'unavailable',
+                  reason: 'repository_unavailable',
+                },
+              }
+            : {}),
+          ...(obligationType === 'plan'
+            ? { reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test') }
+            : obligationType === 'architecture'
+              ? {
+                  reviewSubjectScope: artifactReviewSubjectScope(
+                    'adr',
+                    '## Context\nC\n## Decision\nD',
+                    'test',
+                  ),
+                }
+              : obligationType === 'implement'
+                ? {
+                    reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
+                  }
+                : {}),
           policySnapshot: {
             challengePolicy: {
               version: 'challenge-policy.v1',
               counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
             },
+            maxReviewerOutputRepairAttempts: 1,
           },
         });
         expect(result).toMatchObject({
@@ -173,16 +305,20 @@ describe('integration/review-assurance', () => {
           version: 'challenge-policy.v1' as const,
           counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 } as const,
         },
+        maxReviewerOutputRepairAttempts: 1,
       };
 
       it('uses the HIGH-RISK claim even when changedFiles look doc-only', () => {
         // The exact C1 attack: high-risk change declaring targetPaths=['docs/x.md'].
         const result = createReviewObligation({
           obligationType: 'plan',
+          repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
           iteration: 0,
           planVersion: 1,
           now: NOW,
+          subjectDigest: 'test',
           changedFiles: ['docs/x.md'],
+          reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
           claimedTaskClass: 'HIGH-RISK',
           policySnapshot,
         });
@@ -195,7 +331,9 @@ describe('integration/review-assurance', () => {
           iteration: 0,
           planVersion: 1,
           now: NOW,
+          subjectDigest: 'test',
           changedFiles: ['src/state/schema.ts'],
+          reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
           claimedTaskClass: 'TRIVIAL',
           policySnapshot,
         });
@@ -205,10 +343,13 @@ describe('integration/review-assurance', () => {
       it('takes the STANDARD claim over doc-only changedFiles', () => {
         const result = createReviewObligation({
           obligationType: 'plan',
+          repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
           iteration: 0,
           planVersion: 1,
           now: NOW,
+          subjectDigest: 'test',
           changedFiles: ['docs/x.md'],
+          reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
           claimedTaskClass: 'STANDARD',
           policySnapshot,
         });
@@ -218,10 +359,13 @@ describe('integration/review-assurance', () => {
       it('defaults to the computed minimum when no claim is present', () => {
         const result = createReviewObligation({
           obligationType: 'plan',
+          repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
           iteration: 0,
           planVersion: 1,
           now: NOW,
+          subjectDigest: 'test',
           changedFiles: ['docs/x.md'],
+          reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
           policySnapshot,
         });
         expect(result.requiredChallengeCount).toBe(0);
@@ -234,15 +378,17 @@ describe('integration/review-assurance', () => {
         iteration: 0,
         planVersion: 1,
         now: NOW,
+        subjectDigest: 'test',
         changedFiles: ['src/state/schema.ts'],
-        policySnapshot: {},
+        reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
+        policySnapshot: { maxReviewerOutputRepairAttempts: 1 },
       });
       expect(result.requiredChallengeCount).toBeUndefined();
       expect(result.requiredChallengeKind).toBeUndefined();
       expect(result.challengePolicyVersion).toBeUndefined();
     });
 
-    it('creates p40 obligations without rewriting prior attestation values', () => {
+    it('creates p41 obligations without rewriting prior attestation values', () => {
       const priorObligations: ReviewObligation[] = [
         {
           ...makeObligation(),
@@ -266,10 +412,227 @@ describe('integration/review-assurance', () => {
       );
       const fresh = makeObligation();
 
-      expect(REVIEW_CRITERIA_VERSION).toBe('p40-v1');
+      expect(REVIEW_CRITERIA_VERSION).toBe('p41-v1');
       expect(assurance.obligations).toEqual(priorObligations);
-      expect(fresh.criteriaVersion).toBe('p40-v1');
+      expect(fresh.criteriaVersion).toBe('p41-v1');
       expect(fresh.mandateDigest).toBe(REVIEW_MANDATE_DIGEST);
+    });
+  });
+
+  describe('createReviewObligation — reviewSubjectScope construction', () => {
+    it('plan without explicit artifact scope → fail-closed', () => {
+      expect(() =>
+        createReviewObligation({
+          obligationType: 'plan',
+          repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+          iteration: 0,
+          planVersion: 1,
+          now: NOW,
+          subjectDigest: 'test',
+        }),
+      ).toThrow(/FAIL_CLOSED/);
+    });
+
+    it('architecture without explicit artifact scope → fail-closed', () => {
+      expect(() =>
+        createReviewObligation({
+          obligationType: 'architecture',
+          repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+          iteration: 0,
+          planVersion: 1,
+          now: NOW,
+          subjectDigest: 'test',
+        }),
+      ).toThrow(/FAIL_CLOSED/);
+    });
+
+    it('plan with non-artifact explicit scope → fail-closed', () => {
+      expect(() =>
+        createReviewObligation({
+          obligationType: 'plan',
+          repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+          iteration: 0,
+          planVersion: 1,
+          now: NOW,
+          subjectDigest: 'test',
+          changedFiles: ['src/foo.ts'],
+          reviewSubjectScope: { kind: 'unavailable', reason: 'diff_resolution_failed' },
+        }),
+      ).toThrow(/FAIL_CLOSED/);
+    });
+
+    it('architecture with repository_change scope → fail-closed', () => {
+      expect(() =>
+        createReviewObligation({
+          obligationType: 'architecture',
+          repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+          iteration: 0,
+          planVersion: 1,
+          now: NOW,
+          subjectDigest: 'test',
+          changedFiles: ['src/foo.ts'],
+          reviewSubjectScope: {
+            kind: 'repository_change',
+            paths: ['src/foo.ts'],
+            revisions: ['head'],
+          },
+        }),
+      ).toThrow(/FAIL_CLOSED/);
+    });
+
+    it('review + undefined changedFiles → unavailable', () => {
+      const result = createReviewObligation({
+        obligationType: 'review',
+        iteration: 0,
+        planVersion: 1,
+        now: NOW,
+        subjectDigest: 'test',
+      });
+      expect(result.reviewSubjectScope).toEqual({
+        kind: 'unavailable',
+        reason: 'scope_not_resolved',
+      });
+    });
+
+    it('implement without an explicit scope fails closed (no changedFiles-derived subject)', () => {
+      expect(() =>
+        createReviewObligation({
+          obligationType: 'implement',
+          iteration: 0,
+          planVersion: 1,
+          now: NOW,
+          subjectDigest: 'test',
+        }),
+      ).toThrowError('implementation reviewSubjectScope');
+    });
+
+    it('implement + changedFiles without an explicit scope fails closed (repository_change is never derived)', () => {
+      expect(() =>
+        createReviewObligation({
+          obligationType: 'implement',
+          iteration: 0,
+          planVersion: 1,
+          now: NOW,
+          subjectDigest: 'test',
+          changedFiles: ['src/foo.ts'],
+        }),
+      ).toThrowError('implementation reviewSubjectScope');
+    });
+
+    it('implement with a non-implementation explicit scope fails closed', () => {
+      expect(() =>
+        createReviewObligation({
+          obligationType: 'implement',
+          iteration: 0,
+          planVersion: 1,
+          now: NOW,
+          subjectDigest: 'test',
+          reviewSubjectScope: { kind: 'unavailable', reason: 'diff_resolution_failed' },
+        }),
+      ).toThrowError('implementation reviewSubjectScope');
+    });
+
+    it('implement with a digest-divergent implementation scope fails closed', () => {
+      expect(() =>
+        createReviewObligation({
+          obligationType: 'implement',
+          iteration: 0,
+          planVersion: 1,
+          now: NOW,
+          subjectDigest: 'test',
+          reviewSubjectScope: { kind: 'implementation', implementationDigest: 'other' },
+        }),
+      ).toThrowError('does not match the obligation subject digest');
+    });
+
+    it('implement with a bound implementation scope mints the digest-bound subject', () => {
+      const result = createReviewObligation({
+        obligationType: 'implement',
+        iteration: 0,
+        planVersion: 1,
+        now: NOW,
+        subjectDigest: 'test',
+        changedFiles: ['src/foo.ts'],
+        reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
+      });
+      expect(result.reviewSubjectScope).toEqual({
+        kind: 'implementation',
+        implementationDigest: 'test',
+      });
+    });
+
+    it('binds an explicit artifact scope to the authoritative subject digest', () => {
+      const result = createReviewObligation({
+        obligationType: 'plan',
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+        iteration: 0,
+        planVersion: 1,
+        now: NOW,
+        subjectDigest: 'plan-digest',
+        reviewSubjectScope: {
+          kind: 'artifact',
+          artifact: {
+            kind: 'plan',
+            digest: 'untrusted-digest',
+            sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Overview' }]],
+          },
+        },
+      });
+      expect(result.reviewSubjectScope).toEqual({
+        kind: 'artifact',
+        artifact: {
+          kind: 'plan',
+          digest: 'plan-digest',
+          sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Overview' }]],
+        },
+      });
+    });
+  });
+
+  describe('artifactReviewSubjectScope', () => {
+    it('mints adr scope from canonical Markdown sections', () => {
+      const scope = artifactReviewSubjectScope(
+        'adr',
+        '# Title\n\n## Context\nBody\n\n## Decision\nD\n',
+        'd1',
+      );
+      expect(scope).toEqual({
+        kind: 'artifact',
+        artifact: {
+          kind: 'adr',
+          digest: 'd1',
+          sectionPaths: [
+            [{ headingDepth: 1, siblingIndex: 1, headingText: 'Title' }],
+            [
+              { headingDepth: 1, siblingIndex: 1, headingText: 'Title' },
+              { headingDepth: 2, siblingIndex: 1, headingText: 'Context' },
+            ],
+            [
+              { headingDepth: 1, siblingIndex: 1, headingText: 'Title' },
+              { headingDepth: 2, siblingIndex: 2, headingText: 'Decision' },
+            ],
+          ],
+        },
+      });
+    });
+
+    it('mints plan scope with kind plan', () => {
+      const scope = artifactReviewSubjectScope('plan', '## Approach\nText\n', 'p1');
+      expect(scope.kind).toBe('artifact');
+      if (scope.kind === 'artifact') {
+        expect(scope.artifact.kind).toBe('plan');
+        expect(scope.artifact.digest).toBe('p1');
+        expect(scope.artifact.sectionPaths).toEqual([
+          [{ headingDepth: 2, siblingIndex: 1, headingText: 'Approach' }],
+        ]);
+      }
+    });
+
+    it('fails closed on Markdown without headings', () => {
+      expect(() => artifactReviewSubjectScope('adr', 'plain text only', 'd1')).toThrow(
+        /FAIL_CLOSED/,
+      );
+      expect(() => artifactReviewSubjectScope('plan', '', 'd1')).toThrow(/FAIL_CLOSED/);
     });
   });
 
@@ -278,7 +641,12 @@ describe('integration/review-assurance', () => {
       const invocation = makeInvocation();
       const obligation = makeObligation();
       const result = appendReviewObligation(
-        { obligations: [], invocations: [invocation] },
+        {
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          obligations: [],
+          invocations: [invocation],
+          attempts: [],
+        },
         obligation,
       );
 
@@ -288,7 +656,12 @@ describe('integration/review-assurance', () => {
 
     it('returns ensured assurance unchanged when obligation is null', () => {
       const result = appendReviewObligation(undefined, null);
-      expect(result).toEqual({ obligations: [], invocations: [] });
+      expect(result).toEqual({
+        assuranceSchemaVersion: 'review-assurance.v5',
+        obligations: [],
+        invocations: [],
+        attempts: [],
+      });
     });
   });
 
@@ -400,7 +773,12 @@ describe('integration/review-assurance', () => {
         invocationId: '00000000-0000-4000-8000-000000000002',
       };
       const result = consumeReviewObligation(
-        { obligations: [obligation], invocations: [invocation] },
+        {
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          obligations: [obligation],
+          invocations: [invocation],
+          attempts: [],
+        },
         obligation,
         NOW,
       );
@@ -411,7 +789,12 @@ describe('integration/review-assurance', () => {
     });
 
     it('returns the same assurance when obligation is null', () => {
-      const assurance = { obligations: [makeObligation()], invocations: [] };
+      const assurance = {
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        obligations: [makeObligation()],
+        invocations: [],
+        attempts: [],
+      };
       expect(consumeReviewObligation(assurance, null, NOW)).toBe(assurance);
     });
 
@@ -435,8 +818,10 @@ describe('integration/review-assurance', () => {
         hostVisible: true,
       });
       const assurance = {
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [obligation],
         invocations: [rejectedInvocation, acceptedInvocation],
+        attempts: [],
       };
 
       const accepted = findAcceptedInvocationForFindings(assurance, obligation, findings);
@@ -471,8 +856,10 @@ describe('integration/review-assurance', () => {
         fulfilledAt: NOW,
       };
       const assurance = {
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [fulfilledObligation],
         invocations: [duplicateInvocation, boundInvocation],
+        attempts: [],
       };
 
       const accepted = findAcceptedInvocationForFindings(assurance, fulfilledObligation, findings);
@@ -504,6 +891,8 @@ describe('integration/review-assurance', () => {
       const result = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
+        mandateDigest: FIXTURE_MANDATE_DIGEST,
+        criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         promptHash: hashText('prompt'),
@@ -514,7 +903,7 @@ describe('integration/review-assurance', () => {
         hostVisible: false,
       });
       expect(result.agentType).toBe(REVIEWER_SUBAGENT_TYPE);
-      expect(result.mandateDigest).toBe(REVIEW_MANDATE_DIGEST);
+      expect(result.mandateDigest).toBe(FIXTURE_MANDATE_DIGEST);
       expect(result.consumedByObligationId).toBeNull();
       expect(result.reviewOutputMode).toBe('structured_output');
       expect(result.structuredOutputUsed).toBe(true);
@@ -543,6 +932,8 @@ describe('integration/review-assurance', () => {
       const result = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000002',
         obligationType: 'review',
+        mandateDigest: FIXTURE_MANDATE_DIGEST,
+        criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         promptHash: hashText('prompt'),
@@ -566,6 +957,8 @@ describe('integration/review-assurance', () => {
       const result = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
+        mandateDigest: FIXTURE_MANDATE_DIGEST,
+        criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         promptHash: hashText('prompt'),
@@ -583,6 +976,8 @@ describe('integration/review-assurance', () => {
       const result = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
+        mandateDigest: FIXTURE_MANDATE_DIGEST,
+        criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         promptHash: hashText('prompt'),
@@ -599,6 +994,8 @@ describe('integration/review-assurance', () => {
       const result = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
+        mandateDigest: FIXTURE_MANDATE_DIGEST,
+        criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         promptHash: hashText('prompt'),
@@ -614,6 +1011,8 @@ describe('integration/review-assurance', () => {
       const evidence = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
+        mandateDigest: FIXTURE_MANDATE_DIGEST,
+        criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         invocationMode: 'host_subagent_task',
@@ -631,6 +1030,8 @@ describe('integration/review-assurance', () => {
       const evidence = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
+        mandateDigest: FIXTURE_MANDATE_DIGEST,
+        criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         invocationMode: 'sdk_session_prompt',
@@ -666,6 +1067,8 @@ describe('integration/review-assurance', () => {
       const result = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
+        mandateDigest: FIXTURE_MANDATE_DIGEST,
+        criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         invocationMode: 'host_subagent_task',
@@ -683,6 +1086,8 @@ describe('integration/review-assurance', () => {
       const result = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
+        mandateDigest: FIXTURE_MANDATE_DIGEST,
+        criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         invocationMode: 'sdk_session_prompt',
@@ -698,6 +1103,8 @@ describe('integration/review-assurance', () => {
       const evidence = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
+        mandateDigest: FIXTURE_MANDATE_DIGEST,
+        criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         invocationMode: 'host_subagent_task',
@@ -718,6 +1125,8 @@ describe('integration/review-assurance', () => {
       const evidence = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
+        mandateDigest: FIXTURE_MANDATE_DIGEST,
+        criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         invocationMode: 'sdk_session_prompt',
@@ -739,6 +1148,8 @@ describe('integration/review-assurance', () => {
       const evidence = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
+        mandateDigest: FIXTURE_MANDATE_DIGEST,
+        criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         invocationMode: 'host_subagent_task',
@@ -905,5 +1316,68 @@ describe('integration/review-assurance', () => {
         ).toBe('SUBAGENT_MANDATE_MISSING');
       });
     });
+  });
+});
+
+describe('findBindableAttempt', () => {
+  const OBLIGATION_A = '00000000-0000-4000-8000-00000000aaaa';
+  const OBLIGATION_B = '00000000-0000-4000-8000-00000000bbbb';
+
+  function attempt(overrides: Partial<ReviewAttempt> & { ordinal: number }): ReviewAttempt {
+    return {
+      ...createReviewAttempt({
+        obligationId: OBLIGATION_A,
+        obligationType: 'plan',
+        subjectDigest: 'subject',
+        ordinal: overrides.ordinal,
+        origin: { kind: 'initial' } as const,
+        repositoryDiscovery: { kind: 'not_applicable' } as const,
+        observationCapability: null,
+        now: NOW,
+      }),
+      ...overrides,
+    };
+  }
+
+  function assuranceWith(attempts: ReviewAttempt[]) {
+    return { ...emptyReviewAssurance(), attempts };
+  }
+
+  it('returns the unbound, created attempt for the obligation', () => {
+    const target = attempt({ ordinal: 0 });
+    const result = findBindableAttempt(assuranceWith([target]), OBLIGATION_A);
+    expect(result?.attemptId).toBe(target.attemptId);
+  });
+
+  it('ignores attempts belonging to a different obligation', () => {
+    const foreign = attempt({ ordinal: 0, obligationId: OBLIGATION_B });
+    expect(findBindableAttempt(assuranceWith([foreign]), OBLIGATION_A)).toBeNull();
+  });
+
+  it('ignores an attempt that is already bound to a reviewer session', () => {
+    // A bound attempt is spent: handing it out again would let a second reviewer
+    // session attach evidence through the first one's envelope.
+    const bound = attempt({ ordinal: 0, childSessionId: 'ses_child' });
+    expect(findBindableAttempt(assuranceWith([bound]), OBLIGATION_A)).toBeNull();
+  });
+
+  it.each(['captured', 'rejected', 'bound', 'stale', 'expired'] as const)(
+    'ignores an attempt with status %s',
+    (status) => {
+      const spent = attempt({ ordinal: 0, status });
+      expect(findBindableAttempt(assuranceWith([spent]), OBLIGATION_A)).toBeNull();
+    },
+  );
+
+  it('prefers the highest ordinal when several attempts qualify', () => {
+    const older = attempt({ ordinal: 1 });
+    const newer = attempt({ ordinal: 2 });
+    const result = findBindableAttempt(assuranceWith([older, newer]), OBLIGATION_A);
+    expect(result?.attemptId).toBe(newer.attemptId);
+  });
+
+  it('returns null when no attempt exists at all', () => {
+    expect(findBindableAttempt(emptyReviewAssurance(), OBLIGATION_A)).toBeNull();
+    expect(findBindableAttempt(undefined, OBLIGATION_A)).toBeNull();
   });
 });

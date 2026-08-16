@@ -24,6 +24,8 @@ export {
   archive,
   architecture,
   help,
+  declare_contract,
+  observe_repository,
 } from './tools/index.js';
 
 export { FlowGuardAuditPlugin } from './plugin.js';

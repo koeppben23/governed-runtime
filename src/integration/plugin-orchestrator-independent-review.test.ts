@@ -25,7 +25,11 @@ import {
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_PLAN,
 } from './tool-names.js';
-import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
+import {
+  freezeReviewMaterial,
+  REVIEW_CRITERIA_VERSION,
+  REVIEW_MANDATE_DIGEST,
+} from './review/assurance.js';
 import type { SessionState } from '../state/schema.js';
 import type { OrchestratorClient } from './review/types.js';
 import type { PendingReviewTool } from './review/enforcement/types.js';
@@ -68,15 +72,8 @@ function buildFindings() {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
-    reviewedBy: { sessionId: CHILD_SESSION_ID },
-    reviewedAt: NOW,
     attestation: {
-      mandateDigest: REVIEW_MANDATE_DIGEST,
-      criteriaVersion: REVIEW_CRITERIA_VERSION,
       toolObligationId: OBLIGATION_ID,
-      iteration: 1,
-      planVersion: 1,
-      reviewedBy: 'flowguard-reviewer',
     },
   };
 }
@@ -120,10 +117,12 @@ function buildState(
   obligationType: ReviewableCase['obligationType'],
   reviewOutputPolicy: 'structured_required' | 'text_compat_allowed' = 'structured_required',
 ) {
+  const reviewMaterial = freezeReviewMaterial('frozen review material', 'test-subject-digest');
   return makeState(phase, {
     ticket: TICKET,
     plan: PLAN_RECORD,
-    implementation: phase === 'IMPLEMENTATION' ? IMPL_EVIDENCE : null,
+    implementation:
+      phase === 'IMPLEMENTATION' ? { ...IMPL_EVIDENCE, digest: 'test-subject-digest' } : null,
     architecture:
       phase === 'ARCHITECTURE'
         ? {
@@ -131,6 +130,7 @@ function buildState(
             title: 'Use strict review orchestration',
             adrText: '## Context\nNeed proof.\n## Decision\nAdd orchestration regression tests.',
             status: 'proposed',
+            reviewCompletion: 'pending',
             createdAt: NOW,
             digest: 'digest-of-adr',
           }
@@ -145,14 +145,17 @@ function buildState(
       reviewOutputPolicy,
     },
     reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v5' as const,
       obligations: [
         {
           obligationId: OBLIGATION_ID,
           obligationType,
+          subjectDigest: 'test-subject-digest',
           iteration: 1,
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
+          maxReviewerOutputRepairAttempts: 1,
           createdAt: NOW,
           pluginHandshakeAt: null,
           status: 'pending',
@@ -160,9 +163,38 @@ function buildState(
           blockedCode: null,
           fulfilledAt: null,
           consumedAt: null,
+          reviewSubjectScope:
+            obligationType === 'implement'
+              ? {
+                  kind: 'implementation',
+                  implementationDigest: 'test-subject-digest',
+                }
+              : {
+                  kind: 'artifact',
+                  artifact: {
+                    kind: obligationType === 'architecture' ? 'adr' : 'plan',
+                    digest: 'test-subject-digest',
+                    sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }]],
+                  },
+                },
+          reviewMaterial,
         },
       ],
       invocations: [],
+      attempts: [
+        {
+          attemptId: '22222222-2222-4222-8222-222222222222',
+          obligationId: OBLIGATION_ID,
+          obligationType,
+          subjectDigest: 'test-subject-digest',
+          reviewMaterial,
+          ordinal: 1,
+          status: 'created',
+          origin: { kind: 'initial' },
+          repositoryDiscovery: { kind: 'not_applicable' },
+          createdAt: NOW,
+        },
+      ],
     },
   });
 }
@@ -559,5 +591,39 @@ describe('runReviewOrchestration strict independent review with footer output', 
       reviewAssuranceLevel: 'text_compat_lower',
       extractionMethod: 'direct_json',
     });
+  });
+});
+
+it('blocks WITHOUT invoking the reviewer when no exact implement obligation resolves (no mutable-identity fallback)', async () => {
+  const base = buildState('IMPLEMENTATION', 'implement');
+  const stateWithoutObligation = {
+    ...base,
+    reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      obligations: [],
+      invocations: [],
+      attempts: [],
+    },
+  };
+  const stateRef = { current: stateWithoutObligation };
+  vi.mocked(readState).mockResolvedValue(stateRef.current);
+  const client = buildClient(buildFindings());
+  const deps = buildDeps(client, stateRef);
+  const output = { output: reviewRequiredOutput('IMPLEMENTATION') };
+
+  await runReviewOrchestration(deps, {
+    toolName: TOOL_FLOWGUARD_IMPLEMENT,
+    input: { args: {} },
+    output,
+    sessionId: PARENT_SESSION_ID,
+    now: NOW,
+  });
+
+  expect(client.session.create).not.toHaveBeenCalled();
+  expect(client.session.prompt).not.toHaveBeenCalled();
+  expect(deps.updateReviewAssurance).not.toHaveBeenCalled();
+  expect(JSON.parse(String(output.output))).toMatchObject({
+    error: true,
+    code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
   });
 });

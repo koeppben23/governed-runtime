@@ -133,7 +133,7 @@ export async function runReviewOrchestration(
     const { sessionState, sessDir, reviewCtx, parsedOutput } = v;
     const rawOutput = getToolOutput(output);
 
-    if (await handleHostTaskPolicy(deps, sessionState, sessDir, reviewCtx, output)) {
+    if (await handleHostTaskPolicy(deps, sessionState, sessDir, reviewCtx, output, sessionId)) {
       return;
     }
 
@@ -151,7 +151,7 @@ export async function runReviewOrchestration(
     };
 
     if (toolName === TOOL_FLOWGUARD_REVIEW) {
-      await runReviewContentPipeline(ctx, input);
+      await runReviewContentPipeline(ctx);
     } else {
       await runStandardReviewPipeline(ctx, toolName, input);
     }

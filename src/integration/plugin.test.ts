@@ -35,7 +35,12 @@ import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
-import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
+import {
+  freezeReviewMaterial,
+  REVIEW_CRITERIA_VERSION,
+  REVIEW_MANDATE_DIGEST,
+} from './review/assurance.js';
+import { computeRecordDigest } from '../state/evidence-plan.js';
 import { NATIVE_ATTESTATION_REJECTION_FIELD } from '../shared/flowguard-identifiers.js';
 import { fileURLToPath } from 'node:url';
 import { clearUserDecisionIntents, consumeUserDecisionIntent } from './user-decision-intent.js';
@@ -74,6 +79,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
   const fp = await computeFingerprint(worktree);
   const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
   const obligationId = '11111111-1111-4111-8111-111111111111';
+  const reviewMaterial = freezeReviewMaterial('## Plan\n1. Fix auth', 'test-subject-digest');
 
   await fs.mkdir(sessDir, { recursive: true });
   await writeState(
@@ -91,6 +97,18 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
           digest: 'plan-digest',
           sections: ['Plan'],
           createdAt: now,
+          recordDigest: computeRecordDigest({
+            contentDigest: 'plan-digest',
+            planVersion: 1,
+            supersedesRecordDigest: null,
+            originatingReviewObligationId: null,
+            revisionReason: null,
+          }),
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+          lineageStatus: 'verified' as const,
         },
         history: [],
         reviewFindings: [],
@@ -112,14 +130,18 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
         },
       },
       reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [
           {
             obligationId,
             obligationType: 'plan',
+            repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+            subjectDigest: 'test-subject-digest',
             iteration: 0,
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
+            maxReviewerOutputRepairAttempts: 1,
             createdAt: now,
             pluginHandshakeAt: null,
             status: 'pending',
@@ -127,9 +149,29 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
             blockedCode: null,
             fulfilledAt: null,
             consumedAt: null,
+            reviewSubjectScope: {
+              kind: 'repository_change',
+              paths: ['src/foo.ts'],
+              revisions: ['base', 'head'],
+            },
+            reviewMaterial,
           },
         ],
         invocations: [],
+        attempts: [
+          {
+            attemptId: '11111111-2222-4111-8111-111111111111',
+            obligationId,
+            obligationType: 'plan' as const,
+            subjectDigest: 'test-subject-digest',
+            reviewMaterial,
+            ordinal: 0,
+            status: 'created' as const,
+            origin: { kind: 'initial' } as const,
+            repositoryDiscovery: { kind: 'not_applicable' } as const,
+            createdAt: now,
+          },
+        ],
       },
     }),
   );
@@ -957,7 +999,7 @@ describe('integration/plugin', () => {
       }
     });
 
-    it('blocks with SUBAGENT_MANDATE_MISSING when attestation is missing in strict mode', async () => {
+    it('blocks malformed reviewer input when attestation is missing in strict mode', async () => {
       const ws = await createTestWorkspace();
       try {
         const sessionID = crypto.randomUUID();
@@ -972,8 +1014,6 @@ describe('integration/plugin', () => {
           missingVerification: [],
           scopeCreep: [],
           unknowns: [],
-          reviewedBy: { sessionId: 'child-session-1' },
-          reviewedAt: new Date().toISOString(),
         };
 
         const hooks = await FlowGuardAuditPlugin(
@@ -1004,11 +1044,11 @@ describe('integration/plugin', () => {
 
         const blocked = JSON.parse(String(output.output)) as Record<string, unknown>;
         expect(blocked.error).toBe(true);
-        expect(blocked.code).toBe('SUBAGENT_MANDATE_MISSING');
+        expect(blocked.code).toBe('STRICT_REVIEW_ORCHESTRATION_FAILED');
 
         const state = await readState(sessDir);
         expect(state?.reviewAssurance?.obligations[0]?.blockedCode).toBe(
-          'SUBAGENT_MANDATE_MISSING',
+          'STRICT_REVIEW_ORCHESTRATION_FAILED',
         );
       } finally {
         await ws.cleanup();
@@ -1030,15 +1070,8 @@ describe('integration/plugin', () => {
           missingVerification: [],
           scopeCreep: [],
           unknowns: [],
-          reviewedBy: { sessionId: 'child-session-1' },
-          reviewedAt: new Date().toISOString(),
           attestation: {
-            mandateDigest: REVIEW_MANDATE_DIGEST,
-            criteriaVersion: REVIEW_CRITERIA_VERSION,
             toolObligationId: obligationId,
-            iteration: 0,
-            planVersion: 1,
-            reviewedBy: 'flowguard-reviewer',
           },
         };
 
@@ -1084,6 +1117,60 @@ describe('integration/plugin', () => {
       }
     });
 
+    it('does not record evidence or fulfill when strict attestation iteration is wrong', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const { sessDir, obligationId } = await seedStrictPlanSession(ws.tmpDir, sessionID);
+        const findings = {
+          iteration: 1,
+          planVersion: 1,
+          reviewMode: 'subagent',
+          overallVerdict: 'accept',
+          blockingIssues: [],
+          majorRisks: [],
+          missingVerification: [],
+          scopeCreep: [],
+          unknowns: [],
+          attestation: { toolObligationId: obligationId },
+        };
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+            client: {
+              app: { log: async () => {} },
+              session: {
+                create: async () => ({ data: { id: 'child-session-1' } }),
+                prompt: async () => ({ data: { info: { structured_output: findings } } }),
+              },
+            },
+          }),
+        );
+        const output = {
+          title: 'plan',
+          output: strictPlanReviewRequiredOutput(obligationId),
+          metadata: {},
+        };
+
+        await hooks['tool.execute.after']!(
+          { tool: 'flowguard_plan', sessionID, callID: 'c1', args: {} },
+          output,
+        );
+
+        const blocked = JSON.parse(String(output.output)) as Record<string, unknown>;
+        expect(blocked.code).toBe('SUBAGENT_MANDATE_MISMATCH');
+        const state = await readState(sessDir);
+        const obligation = state?.reviewAssurance?.obligations[0];
+        expect(obligation?.status).toBe('blocked');
+        expect(obligation?.invocationId).toBeNull();
+        expect(obligation?.fulfilledAt).toBeNull();
+        expect(state?.reviewAssurance?.invocations).toEqual([]);
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
     it('fulfills strict obligation and mutates output when attestation is valid', async () => {
       const ws = await createTestWorkspace();
       try {
@@ -1099,15 +1186,8 @@ describe('integration/plugin', () => {
           missingVerification: [],
           scopeCreep: [],
           unknowns: [],
-          reviewedBy: { sessionId: 'child-session-1' },
-          reviewedAt: new Date().toISOString(),
           attestation: {
-            mandateDigest: REVIEW_MANDATE_DIGEST,
-            criteriaVersion: REVIEW_CRITERIA_VERSION,
             toolObligationId: obligationId,
-            iteration: 0,
-            planVersion: 1,
-            reviewedBy: 'flowguard-reviewer',
           },
         };
 
@@ -1271,7 +1351,7 @@ describe('integration/plugin', () => {
     });
 
     // ── C2 regression: before hook reads args from output, not input ──
-    it('C2 HAPPY — before hook reads task subagent_type from output.args, not input', async () => {
+    it('C2 BAD — reviewer Task without host execution provenance is blocked', async () => {
       const ws = await createTestWorkspace();
       try {
         const sessionID = crypto.randomUUID();
@@ -1294,7 +1374,9 @@ describe('integration/plugin', () => {
         // because input does NOT carry args per the documented contract.
         const input = { tool: 'task', sessionID, callID: 'c1' };
         const output = { args: { subagent_type: 'flowguard-reviewer', prompt: 'test' } };
-        await expect(beforeHook!(input, output)).resolves.toBeUndefined();
+        await expect(beforeHook!(input, output)).rejects.toThrow(
+          'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+        );
       } finally {
         await ws.cleanup();
       }
@@ -1336,7 +1418,7 @@ describe('integration/plugin', () => {
       }
     });
 
-    it('C2 CORNER — input.args is ignored even if present (only output.args matters)', async () => {
+    it('C2 CORNER — input.args cannot supply reviewer execution provenance', async () => {
       const ws = await createTestWorkspace();
       try {
         const sessionID = crypto.randomUUID();
@@ -1361,7 +1443,9 @@ describe('integration/plugin', () => {
         const output = { args: { subagent_type: 'flowguard-reviewer', prompt: 'test' } };
         // The hook should read output.args (flowguard-reviewer), not input.args (WRONG_TYPE)
         // If it reads input.args, it would miss the enforcement logic for flowguard-reviewer
-        await expect(beforeHook!(input, output)).resolves.toBeUndefined();
+        await expect(beforeHook!(input, output)).rejects.toThrow(
+          'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+        );
       } finally {
         await ws.cleanup();
       }

@@ -15,10 +15,10 @@
  */
 
 import type { ToolDefinition } from './helpers.js';
+import { formatError } from './error-format.js';
 import {
   resolveWorkspacePaths,
   formatBlocked,
-  formatError,
   appendNextAction,
   writeStateWithArtifacts,
 } from './helpers.js';
@@ -76,6 +76,14 @@ async function verifyArchiveIntegrity(
   }
 }
 
+function redactedArchiveIntegrityStatus(): { archiveStatus: 'not_verifiable'; status: string } {
+  return {
+    archiveStatus: 'not_verifiable',
+    status:
+      'Session archived as a redacted sharing package. Canonical integrity verification requires raw state and audit evidence, which this archive intentionally excludes.',
+  };
+}
+
 export const archive: ToolDefinition = {
   description:
     'Archive a completed FlowGuard session as a tar.gz file with configurable redaction. ' +
@@ -124,11 +132,14 @@ export const archive: ToolDefinition = {
         includeRaw,
       });
 
-      const { archiveStatus, status } = await verifyArchiveIntegrity(
-        fingerprint,
-        context.sessionID,
-      );
-      const archivedState = { ...state, archiveStatus };
+      const { archiveStatus, status } = includeRaw
+        ? await verifyArchiveIntegrity(fingerprint, context.sessionID)
+        : redactedArchiveIntegrityStatus();
+      const archivedState = {
+        ...state,
+        lastExportStatus: archiveStatus,
+        lastExportKind: includeRaw ? ('raw' as const) : ('redacted' as const),
+      };
       await writeStateWithArtifacts(sessDir, archivedState);
       getAdapterLogger().info('machine', 'session_archived', {
         sessionId: context.sessionID,
@@ -146,6 +157,8 @@ export const archive: ToolDefinition = {
         config.archive.redaction.allowRawExport,
       );
 
+      // Route the immediate response from the archive that was just created,
+      // not from an earlier regulated completion archive retained in state.
       return appendNextAction(
         JSON.stringify({
           phase: state.phase,
@@ -156,7 +169,7 @@ export const archive: ToolDefinition = {
           includeRaw,
           guidance,
         }),
-        archivedState,
+        { ...archivedState, archiveStatus },
       );
     } catch (err) {
       return formatError(err);

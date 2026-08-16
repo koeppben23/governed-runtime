@@ -4,6 +4,7 @@ import { makeState, makeProgressedState, FIXED_TIME, FIXED_SESSION_UUID } from '
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import type { ValidationResult } from '../state/evidence.js';
 import type { SessionState } from '../state/schema.js';
+import { computeRecordDigest } from '../state/evidence-plan.js';
 
 function validationResult(checkId: string, passed: boolean, detail: string): ValidationResult {
   return {
@@ -17,6 +18,7 @@ function validationResult(checkId: string, passed: boolean, detail: string): Val
     executionMs: 1,
     outputDigest: 'a'.repeat(64),
     timedOut: false,
+    outcome: (passed ? 'supported' : 'inconclusive') as 'supported' | 'inconclusive',
   };
 }
 
@@ -821,7 +823,24 @@ describe('audit completeness', () => {
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
         plan: {
-          current: { body: 'plan', digest: longDigest, sections: [], createdAt: FIXED_TIME },
+          current: {
+            body: 'plan',
+            digest: longDigest,
+            sections: [],
+            createdAt: FIXED_TIME,
+            recordDigest: computeRecordDigest({
+              contentDigest: longDigest,
+              planVersion: 1,
+              supersedesRecordDigest: null,
+              originatingReviewObligationId: null,
+              revisionReason: null,
+            }),
+            planVersion: 1,
+            supersedesRecordDigest: null,
+            originatingReviewObligationId: null,
+            revisionReason: null,
+            lineageStatus: 'verified' as const,
+          },
           history: [],
         },
       });

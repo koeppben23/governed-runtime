@@ -35,7 +35,7 @@ const mustPassTestTitles = [
   // Host-task verdict runtime path through the real plugin hooks (gap closer):
   'captures + binds reviewer evidence through the real Task after-hook',
   'REGRESSION: verdict with a mismatched submitted-findings session is NOT blocked',
-  'REGRESSION: confabulated reviewer attestation still binds host-authoritatively',
+  'REGRESSION: host stamps canonical attestation after reviewer input binds',
 ];
 
 const testTitleFilter = mustPassTestTitles

@@ -15,7 +15,7 @@ import {
   type ReviewExecutors,
   type ReviewReferenceInput,
 } from './review.js';
-import type { ReviewReport, ValidationResult } from '../state/evidence.js';
+import type { ReviewReport, ReviewReportFinding, ValidationResult } from '../state/evidence.js';
 import type { RailBlocked } from './types.js';
 import type { SessionState } from '../state/schema.js';
 import {
@@ -34,16 +34,48 @@ const NOW = '2026-01-15T10:00:00.000Z';
 
 const noopExecutors: ReviewExecutors = {};
 
+type RenderedReviewFinding = {
+  readonly source: ReviewReportFinding['source'];
+  readonly severity: 'info' | 'warning' | 'error';
+  readonly category: string;
+  readonly message: string;
+};
+
+type RenderedReviewReport = Omit<ReviewReport, 'findings'> & {
+  readonly findings: RenderedReviewFinding[];
+};
+
+function renderReviewReport(report: ReviewReport): RenderedReviewReport {
+  return {
+    ...report,
+    findings: report.findings.map((finding) =>
+      finding.source === 'material_finding'
+        ? {
+            source: finding.source,
+            severity: finding.reportSeverity,
+            category: finding.finding.category,
+            message: finding.finding.message,
+          }
+        : {
+            source: finding.source,
+            severity: finding.reportSeverity,
+            category: finding.category,
+            message: finding.message,
+          },
+    ),
+  };
+}
+
 function isBlockedReview(result: ReviewReport | RailBlocked): result is RailBlocked {
   return 'kind' in result && result.kind === 'blocked';
 }
 
 async function executeReview(
   ...args: Parameters<typeof executeReviewUnsafe>
-): Promise<ReviewReport> {
+): Promise<RenderedReviewReport> {
   const result = await executeReviewUnsafe(...args);
   if (isBlockedReview(result)) throw new Error(`Expected review report, received ${result.code}`);
-  return result;
+  return renderReviewReport(result);
 }
 
 function validationResult(checkId: string, passed: boolean, detail: string): ValidationResult {
@@ -58,6 +90,7 @@ function validationResult(checkId: string, passed: boolean, detail: string): Val
     executionMs: 1,
     outputDigest: 'a'.repeat(64),
     timedOut: false,
+    outcome: (passed ? 'supported' : 'inconclusive') as 'supported' | 'inconclusive',
   };
 }
 
@@ -284,8 +317,18 @@ describe('review rail', () => {
       const state = makeState('TICKET'); // Will have mechanical findings (no ticket)
       const llmExecutors: ReviewExecutors = {
         analyze: async () => [
-          { severity: 'info', category: 'style', message: 'Code looks clean' },
-          { severity: 'warning', category: 'security', message: 'Missing CSRF protection' },
+          {
+            source: 'unknown',
+            reportSeverity: 'info',
+            category: 'style',
+            message: 'Code looks clean',
+          },
+          {
+            source: 'unknown',
+            reportSeverity: 'warning',
+            category: 'security',
+            message: 'Missing CSRF protection',
+          },
         ],
       };
       const report = await executeReview(state, NOW, llmExecutors);
@@ -724,8 +767,18 @@ describe('review rail', () => {
       };
       const llmExecutors: ReviewExecutors = {
         analyze: async () => [
-          { severity: 'info', category: 'style', message: 'Code looks clean' },
-          { severity: 'info', category: 'docs', message: 'Documentation is thorough' },
+          {
+            source: 'unknown',
+            reportSeverity: 'info',
+            category: 'style',
+            message: 'Code looks clean',
+          },
+          {
+            source: 'unknown',
+            reportSeverity: 'info',
+            category: 'docs',
+            message: 'Documentation is thorough',
+          },
         ],
       };
       const report = await executeReview(cleanState, NOW, llmExecutors);

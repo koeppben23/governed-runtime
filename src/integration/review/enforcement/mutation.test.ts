@@ -267,10 +267,18 @@ describe('review-enforcement mutation kills', () => {
         state.pendingReviews.set('flowguard_plan', {
           tool: 'flowguard_plan',
           requestedAt: NOW,
+          attemptId: null,
+          obligationId: null,
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: { expectedIteration: 0, expectedPlanVersion: 1 },
+          canonicalPromptAnchor: null,
           capturedFindings: null,
+          retryCount: 0,
+          lastSchemaErrors: null,
+          repairPromptRequired: false,
+          expectedPromptDigest: null,
+          expectedRepairPromptDigest: null,
         });
 
         const shortPrompt = 'Short';
@@ -287,10 +295,18 @@ describe('review-enforcement mutation kills', () => {
         state.pendingReviews.set('flowguard_plan', {
           tool: 'flowguard_plan',
           requestedAt: NOW,
+          attemptId: null,
+          obligationId: null,
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: null, // Content meta extraction failed
+          canonicalPromptAnchor: null,
           capturedFindings: null,
+          retryCount: 0,
+          lastSchemaErrors: null,
+          repairPromptRequired: false,
+          expectedPromptDigest: null,
+          expectedRepairPromptDigest: null,
         });
 
         const result = enforceBeforeSubagentCall(
@@ -310,10 +326,18 @@ describe('review-enforcement mutation kills', () => {
         state.pendingReviews.set('flowguard_plan', {
           tool: 'flowguard_plan',
           requestedAt: NOW,
+          attemptId: null,
+          obligationId: null,
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: null,
+          canonicalPromptAnchor: null,
           capturedFindings: null,
+          retryCount: 0,
+          lastSchemaErrors: null,
+          repairPromptRequired: false,
+          expectedPromptDigest: null,
+          expectedRepairPromptDigest: null,
         });
 
         const result = enforceBeforeSubagentCall(state, {
@@ -328,10 +352,18 @@ describe('review-enforcement mutation kills', () => {
         state.pendingReviews.set('flowguard_plan', {
           tool: 'flowguard_plan',
           requestedAt: NOW,
+          attemptId: null,
+          obligationId: null,
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: { expectedIteration: 2, expectedPlanVersion: 1 },
+          canonicalPromptAnchor: null,
           capturedFindings: null,
+          retryCount: 0,
+          lastSchemaErrors: null,
+          repairPromptRequired: false,
+          expectedPromptDigest: null,
+          expectedRepairPromptDigest: null,
         });
 
         const prompt = 'A'.repeat(100) + ' version=1 ' + 'B'.repeat(150);
@@ -348,10 +380,18 @@ describe('review-enforcement mutation kills', () => {
         state.pendingReviews.set('flowguard_plan', {
           tool: 'flowguard_plan',
           requestedAt: NOW,
+          attemptId: null,
+          obligationId: null,
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: { expectedIteration: 0, expectedPlanVersion: 3 },
+          canonicalPromptAnchor: null,
           capturedFindings: null,
+          retryCount: 0,
+          lastSchemaErrors: null,
+          repairPromptRequired: false,
+          expectedPromptDigest: null,
+          expectedRepairPromptDigest: null,
         });
 
         const prompt = 'A'.repeat(100) + ' iteration=0 ' + 'B'.repeat(150);
@@ -368,10 +408,18 @@ describe('review-enforcement mutation kills', () => {
         state.pendingReviews.set('flowguard_plan', {
           tool: 'flowguard_plan',
           requestedAt: NOW,
+          attemptId: null,
+          obligationId: null,
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: { expectedIteration: 1, expectedPlanVersion: 2 },
+          canonicalPromptAnchor: null,
           capturedFindings: null,
+          retryCount: 0,
+          lastSchemaErrors: null,
+          repairPromptRequired: false,
+          expectedPromptDigest: null,
+          expectedRepairPromptDigest: null,
         });
 
         const prompt = 'A'.repeat(50) + ' iteration=1 ' + ' planVersion=2 ' + 'B'.repeat(200);
@@ -398,10 +446,18 @@ describe('review-enforcement mutation kills', () => {
         state.pendingReviews.set('flowguard_plan', {
           tool: 'flowguard_plan',
           requestedAt: NOW,
+          attemptId: null,
+          obligationId: null,
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: null,
+          canonicalPromptAnchor: null,
           capturedFindings: null,
+          retryCount: 0,
+          lastSchemaErrors: null,
+          repairPromptRequired: false,
+          expectedPromptDigest: null,
+          expectedRepairPromptDigest: null,
         });
 
         // Mode B: submit verdict with success
@@ -420,10 +476,18 @@ describe('review-enforcement mutation kills', () => {
         state.pendingReviews.set('flowguard_plan', {
           tool: 'flowguard_plan',
           requestedAt: NOW,
+          attemptId: null,
+          obligationId: null,
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: null,
+          canonicalPromptAnchor: null,
           capturedFindings: null,
+          retryCount: 0,
+          lastSchemaErrors: null,
+          repairPromptRequired: false,
+          expectedPromptDigest: null,
+          expectedRepairPromptDigest: null,
         });
 
         // Mode B: submit verdict with error
@@ -484,14 +548,17 @@ describe('review-enforcement mutation kills', () => {
       // No pending review in transient state
       const sessionState = {
         reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
           obligations: [
             {
               obligationId: '00000000-0000-4000-8000-000000000001',
               obligationType: 'plan' as const,
+              subjectDigest: 'test-subject-digest',
               iteration: 0,
               planVersion: 1,
               criteriaVersion: 'v1',
               mandateDigest: 'digest-abc',
+              maxReviewerOutputRepairAttempts: 1,
               createdAt: NOW,
               pluginHandshakeAt: null,
               status: 'pending' as const,
@@ -499,9 +566,15 @@ describe('review-enforcement mutation kills', () => {
               blockedCode: null,
               fulfilledAt: null,
               consumedAt: null,
+              reviewSubjectScope: {
+                kind: 'repository_change' as const,
+                paths: ['src/foo.ts'],
+                revisions: ['base', 'head'] as const,
+              },
             },
           ],
           invocations: [],
+          attempts: [],
         },
       };
       const result = enforceBeforeVerdict(
@@ -522,14 +595,17 @@ describe('review-enforcement mutation kills', () => {
       const state = createSessionState();
       const sessionState = {
         reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
           obligations: [
             {
               obligationId: '00000000-0000-4000-8000-000000000002',
               obligationType: 'plan' as const,
+              subjectDigest: 'test-subject-digest',
               iteration: 0,
               planVersion: 1,
               criteriaVersion: 'v1',
               mandateDigest: 'digest-abc',
+              maxReviewerOutputRepairAttempts: 1,
               createdAt: NOW,
               pluginHandshakeAt: null,
               status: 'fulfilled' as const,
@@ -537,9 +613,15 @@ describe('review-enforcement mutation kills', () => {
               blockedCode: null,
               fulfilledAt: NOW,
               consumedAt: null,
+              reviewSubjectScope: {
+                kind: 'repository_change' as const,
+                paths: ['src/foo.ts'],
+                revisions: ['base', 'head'] as const,
+              },
             },
           ],
           invocations: [],
+          attempts: [],
         },
       };
       const result = enforceBeforeVerdict(

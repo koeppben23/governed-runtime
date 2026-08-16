@@ -1,3 +1,3 @@
 **No FlowGuard session found.**
 
-→ `/start` — Start or restore a governed session.
+→ `/start` — Prepare or restore a governed session.

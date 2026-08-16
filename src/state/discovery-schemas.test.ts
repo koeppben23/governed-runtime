@@ -79,6 +79,7 @@ describe('VerificationCandidatesSchema', () => {
   it('accepts a valid candidate list', () => {
     const result = VerificationCandidatesSchema.parse([
       {
+        assertionCapability: 'unsupported' as const,
         kind: 'build',
         command: 'npm run build',
         source: '.github',
@@ -94,6 +95,7 @@ describe('VerificationCandidatesSchema', () => {
 describe('VerificationCandidateSchema', () => {
   it('strips unknown extra fields (Zod default strip mode)', () => {
     const result = VerificationCandidateSchema.parse({
+      assertionCapability: 'unsupported' as const,
       kind: 'build',
       command: 'npm run build',
       source: '.github',

@@ -14,17 +14,21 @@
  */
 
 import type { Phase } from '../state/schema.js';
+import type { ArchitectureReviewCompletion } from '../state/evidence.js';
 import type {
   ReviewCardDocument,
   PresentationSection,
-  PresentationConclusion,
-  PresentationAction,
   KeyValueItem,
   FindingGroup,
   FindingItem,
+  FindingRelationPresentation,
 } from './model.js';
+import { projectFindingRelation } from './finding-relation.js';
 import { renderMarkdown } from './markdown.js';
 import type { PresentationRenderOptions } from './glyph-profile.js';
+import type { CompactProofPresentation } from './proof-model.js';
+import { buildProofGraphSection } from './proof-summary.js';
+import { buildReviewDecisionConclusion } from './review-decision.js';
 
 // ─── Card Input ──────────────────────────────────────────────────────────────
 
@@ -41,7 +45,7 @@ export interface ArchitectureReviewCardInput {
   adrDigest?: string;
   /** Full ADR body in MADR Markdown. Rendered verbatim like the plan card renders planText. */
   adrText?: string;
-  /** Self-review iteration number. */
+  /** Independent review iteration number. */
   iteration: number;
   /** Subagent overall verdict. */
   overallVerdict?: string;
@@ -50,14 +54,14 @@ export interface ArchitectureReviewCardInput {
     severity: string;
     category: string;
     message: string;
-    location?: string;
+    relation?: FindingRelationPresentation;
   }>;
   /** Major risks from review findings. */
   majorRisks?: Array<{
     severity: string;
     category: string;
     message: string;
-    location?: string;
+    relation?: FindingRelationPresentation;
   }>;
   /** Missing verifications. */
   missingVerification?: string[];
@@ -72,12 +76,14 @@ export interface ArchitectureReviewCardInput {
   };
   /** True when the ADR has been approved (ARCH_COMPLETE). */
   isApproved: boolean;
-  /**
-   * True when the independent review loop force-converged at the iteration
-   * limit WITHOUT an approving verdict. Renders a prominent warning so the
-   * human reviewer does not mistake the gate for a reviewer-approved ADR.
-   */
-  forcedConvergence?: boolean;
+  /** Typed reviewer-cycle evidence, separate from human approval. */
+  reviewCompletion?: ArchitectureReviewCompletion;
+  /** Compact ProofGraph summary for the review card (decision claims). */
+  proofSummary: CompactProofPresentation;
+  /** Digest of the artifact revision these findings were bound to. */
+  reviewedDigest?: string;
+  /** Obligation that produced these findings. */
+  reviewedObligationId?: string;
 }
 
 // ─── Action Descriptions ───────────────────────────────────────────────────────
@@ -110,6 +116,13 @@ export function buildArchitectureReviewCard(
   input: ArchitectureReviewCardInput,
   options?: PresentationRenderOptions,
 ): string {
+  return renderMarkdown(buildArchitectureReviewDocument(input), options);
+}
+
+/** Build the typed architecture-review document before Markdown rendering. */
+export function buildArchitectureReviewDocument(
+  input: ArchitectureReviewCardInput,
+): ReviewCardDocument {
   const {
     phaseLabel,
     adrTitle,
@@ -140,26 +153,57 @@ export function buildArchitectureReviewCard(
   metadata.push({ label: 'Verdict', value: verdict });
   sections.push({ kind: 'keyValue', items: metadata });
 
-  // ── Force-convergence warning ──────────────────────────────────────
-  if (input.forcedConvergence && !isApproved) {
+  // ── Review exhaustion warning ──────────────────────────────────────
+  if (input.reviewCompletion === 'review_exhausted' && !isApproved) {
     sections.push({
       kind: 'notice',
       level: 'warning',
       message: 'Reviewer did NOT approve this ADR.',
       additionalMessages: [
-        'The independent review reached its iteration limit without convergence ' +
-          '(last verdict: changes_requested). Review the outstanding findings carefully before approving.',
+        'The independent review reached its iteration limit without reviewer acceptance. ' +
+          'Review the outstanding findings carefully before making the required human decision.',
       ],
       details: [],
     });
   }
 
+  // ── Prior-revision provenance mismatch ─────────────────────────────
+  // The displayed findings were bound to a different artifact revision than
+  // the one at this gate (e.g. the final revision was submitted after the
+  // last independent review and exhausted the iteration budget unreviewed).
+  if (input.reviewedDigest && adrDigest && input.reviewedDigest !== adrDigest) {
+    sections.push({
+      kind: 'notice',
+      level: 'warning',
+      message: 'These reviewer findings apply to a prior artifact revision.',
+      additionalMessages: [
+        `Reviewed digest: \`${input.reviewedDigest}\``,
+        `Current digest:  \`${adrDigest}\``,
+        'The current revision was submitted after the final independent review ' +
+          'and has not itself been independently reviewed.',
+      ],
+      details: [],
+    });
+  }
+
+  // ── Decision claims (advisory) ──────────────────────────────────────
+  sections.push(buildProofGraphSection(input.proofSummary));
+
   // ── ADR Details ────────────────────────────────────────────────────
-  if (adrId || adrDigest || iteration > 0) {
+  if (adrId || adrDigest || iteration > 0 || input.reviewedDigest) {
     const details: KeyValueItem[] = [];
     if (adrId) details.push({ label: 'ID', value: `\`${adrId}\`` });
     if (adrDigest) details.push({ label: 'Digest', value: `\`${adrDigest}\`` });
     if (iteration > 0) details.push({ label: 'Review iteration', value: String(iteration) });
+    if (input.reviewedDigest) {
+      details.push({ label: 'Reviewed ADR digest', value: `\`${input.reviewedDigest}\`` });
+    }
+    if (input.reviewedObligationId) {
+      details.push({
+        label: 'Reviewed obligation',
+        value: `\`${input.reviewedObligationId}\``,
+      });
+    }
     sections.push({ kind: 'keyValue', heading: 'ADR Details', items: details });
   }
 
@@ -192,10 +236,12 @@ export function buildArchitectureReviewCard(
         ? 'decision'
         : 'terminal',
     sections,
-    conclusion: buildConclusion(productNextAction, isApproved),
+    conclusion: isApproved
+      ? { kind: 'terminal', message: productNextAction.text }
+      : buildReviewDecisionConclusion(productNextAction, ADR_ACTION_DESCRIPTIONS),
   };
 
-  return renderMarkdown(document, options);
+  return document;
 }
 
 // ─── Findings Projection ────────────────────────────────────────────────────────
@@ -205,21 +251,26 @@ interface FindingInputs {
     severity: string;
     category: string;
     message: string;
-    location?: string;
+    relation?: FindingRelationPresentation;
   }>;
-  majorRisks?: Array<{ severity: string; category: string; message: string; location?: string }>;
+  majorRisks?: Array<{
+    severity: string;
+    category: string;
+    message: string;
+    relation?: FindingRelationPresentation;
+  }>;
   missingVerification?: string[];
   scopeCreep?: string[];
   unknowns?: string[];
 }
 
 function toFindingItems(
-  raw: Array<{ category: string; message: string; location?: string }>,
+  raw: Array<{ category: string; message: string; relation?: FindingRelationPresentation }>,
 ): FindingItem[] {
   return raw.map((f) => ({
     category: f.category,
     message: f.message,
-    ...(f.location ? { location: f.location } : {}),
+    ...projectFindingRelation(f.relation),
   }));
 }
 
@@ -252,7 +303,7 @@ function appendFindingsSections(sections: PresentationSection[], inputs: Finding
     });
   }
   if (groups.length > 0) {
-    sections.push({ kind: 'findings', heading: 'Reviewer Findings', groups });
+    sections.push({ kind: 'findings', heading: 'Reviewer Findings', detail: 'compact', groups });
   }
 
   // Non-severity categories that do not fit the FindingGroup.severity union
@@ -278,30 +329,4 @@ function appendFindingsSections(sections: PresentationSection[], inputs: Finding
       items: unknowns,
     });
   }
-}
-
-// ─── Conclusion Projection ─────────────────────────────────────────────────────
-
-function buildConclusion(
-  productNextAction: { text: string; commands: readonly string[] },
-  isApproved: boolean,
-): PresentationConclusion {
-  if (!isApproved) {
-    const commands = new Set(productNextAction.commands);
-    const actions: PresentationAction[] = [];
-    for (const command of ['/approve', '/request-changes', '/reject']) {
-      if (commands.has(command)) {
-        actions.push({
-          invocation: command,
-          description: ADR_ACTION_DESCRIPTIONS[command] ?? command,
-          visibility: 'available',
-        });
-      }
-    }
-    if (actions.length > 0) {
-      return { kind: 'decision_required', question: productNextAction.text, actions };
-    }
-  }
-
-  return { kind: 'terminal', message: productNextAction.text };
 }

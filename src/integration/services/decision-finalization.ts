@@ -14,6 +14,7 @@
 
 import type { RailResult } from '../../rails/types.js';
 import { writeMadrArtifact } from '../artifacts/madr-writer.js';
+import { materializeApprovedArchitectureContractResult } from '../proofgraph/materialize-architecture.js';
 import { executeRegulatedCompletion } from './regulated-completion.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 
@@ -36,12 +37,26 @@ export interface FinalizeDecisionInput {
  */
 export async function finalizeDecision(input: FinalizeDecisionInput): Promise<RailResult> {
   const { sessDir, fingerprint, sessionID, priorPhase, verdict, result } = input;
-  // ── MADR artifact for architecture completion ──
+  // ── Architecture completion: MADR artifact + ProofGraph contract ──
+  // Both are architecture-flow finalization for the same transition, so they
+  // share one phase check rather than duplicating terminal-phase intent.
   if (result.kind === 'ok' && result.state.phase === 'ARCH_COMPLETE' && result.state.architecture) {
     getAdapterLogger().info('services', 'Writing MADR artifact for architecture completion', {
       sessionID,
     });
     await writeMadrArtifact(sessDir, result.state.architecture);
+    // #762: bind approved ADR declarations into the ProofGraph contract. They are
+    // materialized as advisory derived_signal claims; see materialize-architecture.ts
+    // for why an ADR claim must never be classified as a blocking `fact`.
+    const materialized = materializeApprovedArchitectureContractResult(result.state);
+    return {
+      ...result,
+      state: {
+        ...result.state,
+        proofContract: materialized.contract,
+        proofContractCoverage: [...materialized.coverage],
+      },
+    };
   }
 
   // ── P26: Regulated clean completion requires archive + verification ──

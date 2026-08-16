@@ -30,17 +30,20 @@ import { appendReviewAuditEvent } from './review/audit-events.js';
 import { readState } from '../adapters/persistence.js';
 import { buildCompactionContext, type CompactionDeps } from './plugin-compaction.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
+import type { SessionEnforcementState } from './review/enforcement/types.js';
 import { handleHostTaskEvidence } from './plugin-task-evidence.js';
+import { authorizeTaskLifecycleRearm } from './review/reissue-authority.js';
+import { resolveReviewAttemptDiscoveryContext } from './review/discovery-attempt-context.js';
+import { hasFrozenRepositoryAuthority } from '../state/evidence.js';
+import { replayAndPersistObservations as persistObservations } from './review/observation-replay-persist.js';
+import type { ReviewAttemptDiscoveryContext } from '../state/evidence.js';
 import {
   REASON_PLUGIN_ENFORCEMENT_UNAVAILABLE,
   REVIEW_ACCEPTANCE_PATH_NATIVE,
   REASON_SESSION_LOCK_CONTENDED,
   DIAGNOSTIC_SESSION_LOCK_WAITED,
 } from '../shared/flowguard-identifiers.js';
-import {
-  resolveSubagentSessionId,
-  injectSessionIdIntoOutput,
-} from './review/enforcement/extraction.js';
+import { resolveSubagentSessionId } from './review/enforcement/extraction.js';
 import type { ToolHookAfterInput, ToolHookAfterOutput } from './types.js';
 import { FG_PREFIX, getToolTraceId, type FlowGuardPluginRuntime } from './plugin-shared.js';
 import {
@@ -56,7 +59,24 @@ import {
 import { enforceRiskClassificationAfterBash as enforceRiskAfterBash } from './plugin-risk.js';
 import { enforceDiscoveryHealthAfterBash } from './plugin-discovery-health.js';
 import { trackTaskEnforcement } from './plugin-enforcement-tracking.js';
+import { takeExecutedTaskPrompt } from './review/enforcement/execution-provenance.js';
 import { strictBlockedOutput, getToolMetadata, getToolCallID } from './plugin-helpers.js';
+import {
+  ensureReviewAssurance,
+  updateAttemptStatus,
+  createAttemptForExistingObligation,
+} from './review/assurance.js';
+import type { ReviewAssuranceState, ReviewAttempt } from '../state/evidence-review.js';
+import { readState as readPersistedState } from '../adapters/persistence.js';
+import type { SessionState } from '../state/schema.js';
+
+/**
+ * Attempt statuses that already carry reviewer evidence. Only these block a
+ * reviewer child session from binding again; a spent attempt without usable
+ * evidence must stay retryable.
+ */
+const EVIDENCE_HOLDING_ATTEMPT_STATUSES = new Set<ReviewAttempt['status']>(['bound', 'captured']);
+
 export async function toolAfter(
   runtime: FlowGuardPluginRuntime,
   input: unknown,
@@ -74,14 +94,15 @@ export async function toolAfter(
       runtime.log.info('hook', 'tool.execute.after', {
         tool: toolName,
       });
-      await handleAfterDiagnostics(runtime, {
+      const afterCtx: AfterHookContext = {
         toolName,
         sessionId,
         input,
         hookInput,
         hookOutput,
         now,
-      });
+      };
+      await handleAfterDiagnostics(runtime, afterCtx);
       await handleBashAfter(runtime, toolName, sessionId, hookOutput);
       await runOrchestrator(runtime.orchestratorDeps, {
         toolName,
@@ -90,6 +111,7 @@ export async function toolAfter(
         sessionId,
         now,
       });
+      trackReviewableEnforcement(runtime, afterCtx);
       await runFlowGuardAuditAfter({ runtime, toolName, input, output, sessionId, hookOutput });
     });
   });
@@ -131,6 +153,27 @@ function isReviewableFlowGuardTool(toolName: string): boolean {
 }
 
 function handleReviewableAfter(runtime: FlowGuardPluginRuntime, ctx: AfterHookContext): void {
+  // Diagnostics observe the tool's own output: the host-task rewrite replaces
+  // `code` wholesale, so running these afterwards would suppress real rejections.
+  logNativeEnforcementDenial(runtime, ctx.sessionId, ctx.hookOutput);
+  logHostTaskRejection(runtime, ctx.sessionId, ctx.hookOutput);
+  logIdentityRejection(runtime, ctx.sessionId, ctx.hookOutput);
+  if (ctx.toolName === TOOL_FLOWGUARD_REVIEW)
+    logNativeAttestationRejection(runtime, ctx.sessionId, ctx.hookOutput);
+  logAutoAdvanceOverflow(runtime, ctx.sessionId, ctx.hookOutput);
+}
+
+/**
+ * Track review enforcement against the output the agent actually receives.
+ *
+ * Must run AFTER orchestration: the host-task handshake is what rewrites a
+ * standalone /review response into INDEPENDENT_REVIEW_REQUIRED and attaches the
+ * reviewAttemptId. Tracking the pre-orchestration output registered a pending
+ * review with a null attempt id, so the reviewer child session could never be
+ * bound and the captured evidence was discarded.
+ */
+function trackReviewableEnforcement(runtime: FlowGuardPluginRuntime, ctx: AfterHookContext): void {
+  if (!isReviewableFlowGuardTool(ctx.toolName)) return;
   try {
     trackFlowGuardEnforcement(
       runtime.ws.getEnforcementState(ctx.sessionId),
@@ -142,12 +185,6 @@ function handleReviewableAfter(runtime: FlowGuardPluginRuntime, ctx: AfterHookCo
   } catch (err) {
     runtime.logError('enforcement tracking failed', err);
   }
-  logNativeEnforcementDenial(runtime, ctx.sessionId, ctx.hookOutput);
-  logHostTaskRejection(runtime, ctx.sessionId, ctx.hookOutput);
-  logIdentityRejection(runtime, ctx.sessionId, ctx.hookOutput);
-  if (ctx.toolName === TOOL_FLOWGUARD_REVIEW)
-    logNativeAttestationRejection(runtime, ctx.sessionId, ctx.hookOutput);
-  logAutoAdvanceOverflow(runtime, ctx.sessionId, ctx.hookOutput);
 }
 
 function logNativeEnforcementDenial(
@@ -245,35 +282,119 @@ async function handleTaskAfter(
   ctx: AfterHookContext,
 ): Promise<void> {
   const taskArgs = getToolArgs(ctx.input);
+  const enforcement = runtime.ws.getEnforcementState(ctx.sessionId);
+  const executionContext = resolveTaskExecutionContext(enforcement, ctx, taskArgs);
+  const { isReviewerTask, execution, executedTaskInput, executedTaskArgs } = executionContext;
+  if (isReviewerTask && !execution) {
+    ctx.hookOutput.output = strictBlockedOutput('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE', {
+      reason: 'No host-owned execution record exists for this reviewer Task call.',
+    });
+    runtime.log.warn('host-task', 'reviewer capture rejected without execution provenance', {
+      sessionId: ctx.sessionId,
+      callId: getToolCallID(ctx.hookInput),
+    });
+    return;
+  }
   const resolvedChildSessionId = resolveReviewerTaskSessionId(
     ctx.hookInput,
     ctx.hookOutput,
-    taskArgs,
+    executedTaskArgs,
   );
-  if (resolvedChildSessionId)
-    ctx.hookOutput.output = injectSessionIdIntoOutput(
-      ctx.hookOutput.output,
-      resolvedChildSessionId,
-    );
   try {
-    trackTaskEnforcement(
-      runtime.ws.getEnforcementState(ctx.sessionId),
-      ctx.input,
-      ctx.hookOutput,
-      ctx.now,
-    );
+    trackTaskEnforcement(enforcement, executedTaskInput, ctx.hookOutput, ctx.now);
   } catch (err) {
     runtime.logError('enforcement tracking failed', err);
   }
-  if (taskArgs.subagent_type === REVIEWER_SUBAGENT_TYPE) {
+  logStructuralContextFailures(runtime, ctx.sessionId, enforcement);
+  if (isReviewerTask) {
+    // Bind the child session to the pre-created attempt atomically
+    // BEFORE the evidence binding callback runs.
+    if (resolvedChildSessionId) {
+      const binding = await bindAttemptSession(
+        runtime,
+        ctx.sessionId,
+        resolvedChildSessionId,
+        ctx.now,
+      );
+      if (!binding.ok) {
+        runtime.log.warn('host-task', 'start binding failed, aborting evidence processing', {
+          reason: binding.reason,
+          sessionId: ctx.sessionId,
+          childSessionId: resolvedChildSessionId,
+        });
+        ctx.hookOutput.output = strictBlockedOutput(
+          'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+          {
+            reason: binding.reason,
+          },
+        );
+        return;
+      }
+      await persistObservations(
+        {
+          getSessionDir: (sid) => runtime.ws.getSessionDir(sid),
+          updateReviewAssurance: (sd, update) => runtime.ws.updateReviewAssurance(sd, update),
+          log: runtime.log,
+          logError: runtime.logError,
+        },
+        readPersistedState,
+        {
+          sessionId: ctx.sessionId,
+          attemptId: binding.attemptId,
+          childSessionId: resolvedChildSessionId,
+          now: ctx.now,
+        },
+      );
+    }
     await handleHostTaskEvidence(
       { ws: runtime.ws, log: runtime.log, logError: runtime.logError },
       ctx.sessionId,
       resolvedChildSessionId,
       ctx.now,
       ctx.hookOutput,
+      execution ?? undefined,
     );
   }
+}
+
+function logStructuralContextFailures(
+  runtime: FlowGuardPluginRuntime,
+  sessionId: string,
+  enforcement: SessionEnforcementState,
+): void {
+  for (const pending of enforcement.pendingReviews.values()) {
+    if ((pending.enforcementFailure ?? null) === null) continue;
+    runtime.log.warn('review', 'structural host review context failure at capture', {
+      sessionId,
+      enforcementFailure: pending.enforcementFailure,
+      obligationId: pending.obligationId,
+    });
+  }
+}
+
+function resolveTaskExecutionContext(
+  enforcement: SessionEnforcementState,
+  ctx: AfterHookContext,
+  taskArgs: Record<string, unknown>,
+): {
+  readonly isReviewerTask: boolean;
+  readonly execution: ReturnType<typeof takeExecutedTaskPrompt>;
+  readonly executedTaskInput: unknown;
+  readonly executedTaskArgs: Record<string, unknown>;
+} {
+  const isReviewerTask = taskArgs.subagent_type === REVIEWER_SUBAGENT_TYPE;
+  const execution = isReviewerTask
+    ? takeExecutedTaskPrompt(enforcement, getToolCallID(ctx.hookInput))
+    : null;
+  const executedTaskArgs = execution
+    ? { ...taskArgs, prompt: execution.canonicalPrompt }
+    : taskArgs;
+  return {
+    isReviewerTask,
+    execution,
+    executedTaskInput: execution ? { ...ctx.hookInput, args: executedTaskArgs } : ctx.input,
+    executedTaskArgs,
+  };
 }
 
 function resolveReviewerTaskSessionId(
@@ -387,4 +508,224 @@ export async function handleCompaction(
     const context = await buildCompactionContext(compactionDeps, sessionId);
     if (context) output.context.push(context);
   });
+}
+
+/**
+ * Bind a child session to the attempt identified by the enforcement state's
+ * pending review record. Uses pending.attemptId as the sole authority.
+ *
+ * All invariant guards are checked atomically inside the state update
+ * callback so there is no check-then-write race window.
+ */
+/**
+ * Attach a fresh attempt for a sequential reviewer re-invocation.
+ *
+ * Fails closed when the obligation can no longer legitimately receive evidence.
+ * `fulfilled` counts as settled: accepted evidence already exists, and the
+ * window between fulfilment and consumption must not stay open for a second,
+ * independent evidence record.
+ */
+function rearmAttempt(
+  assurance: ReviewAssuranceState,
+  spent: ReviewAttempt,
+  childSessionId: string,
+  now: string,
+  repositoryDiscovery: ReviewAttemptDiscoveryContext | null,
+): ReviewAssuranceState {
+  const authorization = authorizeTaskLifecycleRearm(assurance, spent);
+  if (authorization.kind === 'blocked') {
+    throw bindingFailed(authorization.reason);
+  }
+  if (!repositoryDiscovery) {
+    throw bindingFailed('rearm_discovery_unavailable');
+  }
+  return createAttemptForExistingObligation(
+    assurance,
+    authorization.obligation,
+    childSessionId,
+    now,
+    {
+      origin: authorization.origin,
+      repositoryDiscovery,
+    },
+  ).assurance;
+}
+
+/**
+ * Resolve the assurance state for a reviewer child session, by attempt status.
+ *
+ * The status decides whether the session may occupy the pre-registered slot, may
+ * re-arm a spent one, or must be refused outright. Treating every non-virgin
+ * attempt as re-armable let a `bound` attempt spawn a second attempt while the
+ * first kept its evidence, so one obligation could carry two independent
+ * evidence records.
+ */
+function assuranceForBoundSession(
+  assurance: ReviewAssuranceState,
+  attempt: ReviewAttempt,
+  childSessionId: string,
+  now: string,
+  repositoryDiscovery: ReviewAttemptDiscoveryContext | null,
+): ReviewAssuranceState {
+  switch (attempt.status) {
+    case 'created':
+      // The pre-registered slot is still open.
+      if (!attempt.childSessionId) {
+        return updateAttemptStatus(assurance, attempt.attemptId, 'created', now, {
+          childSessionId,
+        });
+      }
+      // Interrupted: correlated with an earlier child session that never produced
+      // a capture. The retry gets its own attempt and the interrupted one is
+      // staled by createAttemptForExistingObligation.
+      return rearmAttempt(assurance, attempt, childSessionId, now, repositoryDiscovery);
+    case 'rejected':
+    case 'stale':
+    case 'expired':
+      // Spent without usable evidence: an explicit retry is legitimate.
+      return rearmAttempt(assurance, attempt, childSessionId, now, repositoryDiscovery);
+    case 'bound':
+    case 'captured':
+      // Evidence already exists for this attempt. Re-arming would keep that
+      // record AND open a second one under the same obligation.
+      throw bindingFailed('attempt_already_bound');
+  }
+}
+
+type RearmDiscoveryResolution =
+  | { readonly ok: true; readonly context: ReviewAttemptDiscoveryContext | null }
+  | { readonly ok: false; readonly reason: string };
+
+/**
+ * Resolve the attempt-bound Discovery context for a potential re-arm mint.
+ * A re-arm mints a NEW attempt inside the synchronous assurance-update
+ * callback, so the host-owned snapshot must be resolved BEFORE entering it.
+ * Only re-arm paths mint; a virgin `created` attempt keeps its birth snapshot
+ * and resolves to `null`.
+ */
+async function resolveRearmDiscoveryContext(
+  state: SessionState,
+  attemptId: string,
+  obligationId: string,
+  now: string,
+): Promise<RearmDiscoveryResolution> {
+  const assurance = ensureReviewAssurance(state.reviewAssurance);
+  const attempt = assurance.attempts.find((a) => a.attemptId === attemptId);
+  const obligation = assurance.obligations.find((o) => o.obligationId === obligationId);
+  const needsRearm =
+    attempt !== undefined &&
+    (attempt.status === 'rejected' ||
+      attempt.status === 'stale' ||
+      attempt.status === 'expired' ||
+      (attempt.status === 'created' && Boolean(attempt.childSessionId)));
+  if (!needsRearm) return { ok: true, context: null };
+  const discovery = await resolveReviewAttemptDiscoveryContext({
+    state,
+    worktree: state.binding.worktree,
+    repositoryGoverned: obligation ? hasFrozenRepositoryAuthority(obligation) : false,
+    now,
+  });
+  if (discovery.kind === 'blocked') return { ok: false, reason: discovery.reason };
+  return { ok: true, context: discovery.context };
+}
+
+type PendingAttemptIdentity =
+  { readonly attemptId: string; readonly obligationId: string } | { readonly reason: string };
+
+function resolvePendingAttemptIdentity(
+  eState: SessionEnforcementState,
+  childSessionId: string,
+): PendingAttemptIdentity {
+  for (const pending of eState.pendingReviews.values()) {
+    if (pending.subagentRecord?.sessionId !== childSessionId) continue;
+    if (!pending.attemptId || !pending.obligationId) {
+      return { reason: 'pending_attempt_id_missing' };
+    }
+    return { attemptId: pending.attemptId, obligationId: pending.obligationId };
+  }
+  return { reason: 'no_matching_pending_review' };
+}
+
+async function bindAttemptSession(
+  runtime: FlowGuardPluginRuntime,
+  sessionId: string,
+  childSessionId: string,
+  now: string,
+): Promise<{ ok: true; attemptId: string; obligationId: string } | { ok: false; reason: string }> {
+  const sessDir = runtime.ws.getSessionDir(sessionId);
+  if (!sessDir) return { ok: false, reason: 'no_session_dir' };
+  const state = await readPersistedState(sessDir);
+  if (!state) return { ok: false, reason: 'no_state' };
+
+  const identity = resolvePendingAttemptIdentity(
+    runtime.ws.getEnforcementState(sessionId),
+    childSessionId,
+  );
+  if ('reason' in identity) return { ok: false, reason: identity.reason };
+  const attemptId = identity.attemptId;
+  const obligationId = identity.obligationId;
+
+  const rearmDiscovery = await resolveRearmDiscoveryContext(state, attemptId, obligationId, now);
+  if (!rearmDiscovery.ok) {
+    runtime.log.warn('host-task', 'reviewer discovery context unavailable for re-arm', {
+      reason: rearmDiscovery.reason,
+      attemptId,
+    });
+    return { ok: false, reason: 'reviewer_context_unavailable' };
+  }
+
+  try {
+    await runtime.ws.updateReviewAssurance(sessDir, (s: SessionState) => {
+      const assurance = ensureReviewAssurance(s.reviewAssurance);
+      const attempts = assurance.attempts;
+      const attempt = attempts?.find((a) => a.attemptId === attemptId);
+      if (!attempt) throw bindingFailed('pending_attempt_not_found');
+      if (attempt.obligationId !== obligationId) throw bindingFailed('attempt_obligation_mismatch');
+      if (
+        attempts?.some(
+          (a) =>
+            a.childSessionId === childSessionId && EVIDENCE_HOLDING_ATTEMPT_STATUSES.has(a.status),
+        )
+      ) {
+        // One reviewer session may hold evidence at most once, whether on this
+        // attempt or another: otherwise a single child session could satisfy two
+        // attempts. A spent attempt that never produced usable evidence
+        // (`rejected`, `stale`, `expired`) leaves the session free to retry —
+        // blocking those too would strand the obligation after any rejected bind,
+        // because a spent attempt is no longer bindable either.
+        throw bindingFailed('child_session_already_bound');
+      }
+      return {
+        ...s,
+        reviewAssurance: assuranceForBoundSession(
+          assurance,
+          attempt,
+          childSessionId,
+          now,
+          rearmDiscovery.context,
+        ),
+      };
+    });
+    return { ok: true, attemptId, obligationId };
+  } catch (err) {
+    if (err instanceof BindingFailure) {
+      runtime.log.warn('host-task', 'bind attempt aborted', {
+        reason: err.reason,
+        attemptId,
+        childSessionId,
+      });
+      return { ok: false, reason: err.reason };
+    }
+    throw err;
+  }
+}
+
+class BindingFailure extends Error {
+  constructor(public reason: string) {
+    super(`Bind attempt failed: ${reason}`);
+  }
+}
+
+function bindingFailed(reason: string): BindingFailure {
+  return new BindingFailure(reason);
 }

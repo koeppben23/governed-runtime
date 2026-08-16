@@ -107,9 +107,15 @@ describe('buildRailConclusion', () => {
         iteration: 1,
         planVersion: 1,
         now: '2026-01-01T00:00:00.000Z',
+        subjectDigest: 'test',
       });
       const state = makeState('READY', {
-        reviewAssurance: { obligations: [obligation], invocations: [] },
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          obligations: [obligation],
+          invocations: [],
+          attempts: [],
+        },
       });
       const evalResult: EvalResult = { kind: 'pending', phase: 'READY' };
       const conclusion = buildRailConclusion(state, evalResult);

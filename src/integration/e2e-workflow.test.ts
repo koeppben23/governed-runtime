@@ -40,6 +40,7 @@ import {
   abort_session,
   archive,
   architecture,
+  declare_contract,
 } from './tools/index.js';
 import { readState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
@@ -61,6 +62,19 @@ vi.mock('../adapters/git', async (importOriginal) => {
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
     changedFiles: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.changedFiles),
     listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
+    headCommitFull: vi.fn().mockResolvedValue('d'.repeat(40)),
+  };
+});
+
+vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/frozen-repository.js')>();
+  return {
+    ...original,
+    freezeRepositoryIdentity: vi.fn(() => ({
+      kind: 'local' as const,
+      rootCommitDigest: 'sha256:' + 'b'.repeat(64),
+    })),
+    freezeWorktreeCandidate: vi.fn().mockResolvedValue('c'.repeat(40)),
   };
 });
 
@@ -78,23 +92,51 @@ vi.mock('../adapters/actor', async (importOriginal) => {
   };
 });
 
-// Mock the verification executor to avoid real subprocess execution in tests
-vi.mock('../verification/executor', () => ({
-  executeCheck: vi
-    .fn()
-    .mockImplementation(async (input: { kind: string; command: string; cwd: string }) => ({
-      kind: input.kind,
-      command: input.command,
-      exitCode: 0,
-      passed: true,
-      executionMs: 100,
-      outputDigest: 'a'.repeat(64),
-      stdout: 'OK',
-      stderr: '',
-      timedOut: false,
-      startedAt: new Date().toISOString(),
-    })),
-}));
+// Mock the verification executor to avoid real subprocess execution in tests.
+// Structured snapshot_diff checks require a post-execution file diff; the mock
+// injects a JUnit XML report on-disk so assertion collection can detect it.
+vi.mock('../verification/executor', () => {
+  let reportSequence = 0;
+
+  const writeJUnitXml = async (cwd: string) => {
+    const fsPromises = await import('node:fs/promises');
+    const reportDir = `${cwd}/target/surefire-reports`;
+    await fsPromises.mkdir(reportDir, { recursive: true });
+    await fsPromises.writeFile(
+      `${reportDir}/TEST-com.example.Test.xml`,
+      '<?xml version="1.0" encoding="UTF-8"?>\n' +
+        '<testsuite name="com.example.Test" tests="1" failures="0" errors="0" skipped="0">\n' +
+        `  <testcase classname="com.example.Test" name="testMethod" time="0.00${++reportSequence}"/>\n` +
+        '</testsuite>\n',
+      'utf-8',
+    );
+  };
+
+  return {
+    executeCheck: vi
+      .fn()
+      .mockImplementation(async (input: { kind: string; command: string; cwd: string }) => {
+        // Test-fixture simulation: both repo-native Maven verification candidates
+        // in this fixture resolve to structured JUnit profiles and therefore produce
+        // a fresh JUnit report during successful execution.
+        if (input.kind === 'test' || input.kind === 'build') {
+          await writeJUnitXml(input.cwd);
+        }
+        return {
+          kind: input.kind,
+          command: input.command,
+          exitCode: 0,
+          passed: true,
+          executionMs: 100,
+          outputDigest: 'a'.repeat(64),
+          stdout: 'OK',
+          stderr: '',
+          timedOut: false,
+          startedAt: new Date().toISOString(),
+        };
+      }),
+  };
+});
 
 const gitMock = await import('../adapters/git.js');
 const actorMock = await import('../adapters/actor.js');
@@ -188,6 +230,9 @@ async function passValidation(context: TestToolContext = ctx): Promise<void> {
   const state = await readState(sessDir);
   if (!state || state.activeChecks.length === 0) return;
   for (const kind of state.activeChecks) {
+    // Stop early if the last check auto-advanced past validation phases
+    const currentPhase = await getPhase(context);
+    if (currentPhase !== 'VALIDATION' && currentPhase !== 'IMPL_VALIDATION') return;
     await callOk(run_check, { kind }, context);
   }
 }
@@ -328,12 +373,23 @@ describe('e2e-workflow', () => {
       // 6. Implement + review
       await callOk(implement, {});
       await passValidation(); // IMPL_VALIDATION -> IMPL_REVIEW
+      let implementationReviewResult: Record<string, unknown> | undefined;
       for (let i = 0; i < 5; i++) {
         const phase = await getPhase();
         if (phase === 'EVIDENCE_REVIEW') break;
-        await callOk(review_implementation, { reviewVerdict: 'accept' });
+        implementationReviewResult = await callOk(review_implementation, {
+          reviewVerdict: 'accept',
+        });
       }
       expect(await getPhase()).toBe('EVIDENCE_REVIEW');
+      const presentation = implementationReviewResult?.presentation as
+        { markdown?: unknown } | undefined;
+      expect(presentation?.markdown).toContain('## Decision required');
+      expect(presentation?.markdown).toContain('/approve');
+      expect(presentation?.markdown).toContain('/request-changes');
+      expect(presentation?.markdown).toContain('/reject');
+      expect(presentation?.markdown).toContain('## Verification');
+      expect(presentation?.markdown).toContain('No verification obligations declared');
 
       // 7. Decision: approve evidence
       await callOk(decision, { verdict: 'approve', rationale: 'Ship it' });
@@ -810,8 +866,8 @@ describe('e2e-workflow', () => {
       expect(completeness.slots).toBeDefined();
     });
 
-    it('architecture solo flow: hydrate → architecture → ARCH_COMPLETE', async () => {
-      // 1. Hydrate (solo — auto-approves at gates)
+    it('architecture solo flow: hydrate → architecture → human approval → ARCH_COMPLETE', async () => {
+      // 1. Hydrate (solo auto-approves non-architecture gates)
       await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
       expect(await getPhase()).toBe('READY');
 
@@ -825,12 +881,15 @@ describe('e2e-workflow', () => {
       });
       expect(await getPhase()).toBe('ARCHITECTURE');
 
-      // 3. Self-review: approve (solo: maxSelfReviewIterations=1, so converges immediately)
+      // 3. Reviewer acceptance opens ARCH_REVIEW even in solo mode.
       await callOk(architecture, { reviewVerdict: 'accept' });
-      // Solo auto-approves ARCH_REVIEW → ARCH_COMPLETE
+      expect(await getPhase()).toBe('ARCH_REVIEW');
+
+      // 4. A human decision is the sole path to ADR acceptance.
+      await callOk(decision, { verdict: 'approve', rationale: 'Approved ADR' });
       expect(await getPhase()).toBe('ARCH_COMPLETE');
 
-      // 4. Verify architecture evidence
+      // 5. Verify architecture evidence
       const sessDir = await getSessDir();
       const state = await readState(sessDir);
       expect(state!.architecture).not.toBeNull();
@@ -865,6 +924,11 @@ describe('e2e-workflow', () => {
       expect(typeof arch.iteration).toBe('number');
       expect(typeof arch.reviewedAt).toBe('string');
       expect(arch.blockingIssueCount).toBe(0);
+      // Regression: the status projection MUST use the host-authoritative
+      // iteration from selfReview, not the reviewer-echoed 0-based value
+      // from persisted review findings.
+      expect(result.selfReviewIteration).toBe(1);
+      expect(arch.iteration).toBe(result.selfReviewIteration);
     });
 
     it('architecture team flow with explicit decisions', async () => {
@@ -1166,5 +1230,136 @@ describe('e2e-workflow', () => {
       const elapsed = Date.now() - start;
       expect(elapsed).toBeLessThan(8000);
     });
+  });
+});
+
+// =============================================================================
+// Reproducible ProofGraph demo fixtures
+// =============================================================================
+
+describe('ProofGraph demo fixtures', () => {
+  const PLAN_TEXT = '## Plan\n1. Demonstrate certificate-bound ProofGraph claims.';
+  const PLAN_CLAIM = {
+    claimId: 'a7728939-52e4-5d3b-bac2-b4b1ac99b3ad',
+    statement: 'The governed change satisfies its approved behavior.',
+    critical: false,
+    claimScope: 'specific_behavior',
+    authoritySectionId: 'step-1',
+    expectedCheckId: 'build',
+    counterexampleRequirement: {
+      checkId: 'test',
+      kind: 'assertion',
+      assertion: { providerId: 'junit', localId: 'com.example.Test#testMethod' },
+    },
+  } as const;
+
+  async function driveToImplementationReview(
+    mutationProfile?: 'proofgraph-evaluator',
+    critical = false,
+  ) {
+    if (critical) {
+      // Structured candidates required for satisfiability of critical claims.
+      // hydrate discovers repo-native JUnit test via mvnw → ScriptSignature.
+      await fs.writeFile(`${ws.tmpDir}/mvnw`, '#!/bin/sh\necho "mvnw"', 'utf-8');
+      await fs.chmod(`${ws.tmpDir}/mvnw`, 0o755);
+      await fs.writeFile(
+        `${ws.tmpDir}/package.json`,
+        JSON.stringify({ scripts: { build: 'true', test: './mvnw test' } }),
+        'utf8',
+      );
+      await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
+      // Verify structured test candidate was produced by planner enrichment
+      const state = await readState(await getSessDir());
+      const testCand = state?.verificationCandidates?.find((c) => c.kind === 'test');
+      expect(testCand).toMatchObject({
+        assertionCapability: 'structured',
+        kind: 'test',
+        command: 'npm run test --',
+        source: 'package.json:scripts.test',
+        assertionReport: { providerId: 'junit', format: 'junit_xml' },
+      });
+      expect(state?.executionSubjectInputsByKind?.test).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: 'implementation' }),
+          expect.objectContaining({ kind: 'file', path: 'package.json' }),
+        ]),
+      );
+    } else {
+      await fs.writeFile(
+        `${ws.tmpDir}/package.json`,
+        JSON.stringify({ scripts: { build: 'true', test: 'true' } }),
+        'utf8',
+      );
+      await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
+    }
+    await callOk(ticket, { text: 'Demonstrate ProofGraph evidence.', source: 'user' });
+    await callOk(plan, {
+      planText: PLAN_TEXT,
+      claims: [{ ...PLAN_CLAIM, critical, ...(mutationProfile ? { mutationProfile } : {}) }],
+    });
+    for (let i = 0; i < 5 && (await getPhase()) !== 'PLAN_REVIEW'; i++) {
+      await callOk(plan, { reviewVerdict: 'accept' });
+    }
+    expect(await getPhase()).toBe('PLAN_REVIEW');
+    await callOk(decision, { verdict: 'approve', rationale: 'Approve demo plan.' });
+    await passValidation();
+    expect(await getPhase()).toBe('IMPLEMENTATION');
+    await callOk(implement, {});
+    expect((await readState(await getSessDir()))?.implementation).not.toBeNull();
+    await passValidation();
+    expect(await getPhase()).toBe('IMPL_REVIEW');
+  }
+
+  it('manual advisory merge appends without replacing certificate-bound plan facts', async () => {
+    await driveToImplementationReview();
+    const sessDir = await getSessDir();
+    const before = await readState(sessDir);
+    const planFact = before!.proofContract!.claims[0]!;
+    const coverage = before!.proofContractCoverage;
+
+    await callOk(declare_contract, {
+      claims: [
+        {
+          statement: 'The change has an additional documented property.',
+          checkId: 'test',
+          critical: false,
+          claimScope: 'specific_behavior',
+          authority: 'plan',
+        },
+      ],
+    });
+
+    const after = await readState(sessDir);
+    expect(after!.proofContract?.claims).toHaveLength(2);
+    expect(after!.proofContract?.claims[0]).toEqual(planFact);
+    expect(after!.proofContractCoverage).toEqual(coverage);
+    expect(after!.proofContract?.claims[1]).toMatchObject({
+      signalClass: 'fact',
+      provenance: { authorityId: 'plan' },
+    });
+    expect(after!.proofContract?.claims[1]?.provenance).not.toHaveProperty('approval');
+  });
+
+  it('rejects a plan claim with mutationProfile when no proving mutation provider exists', async () => {
+    await fs.writeFile(`${ws.tmpDir}/mvnw`, '#!/bin/sh\necho "mvnw"', 'utf-8');
+    await fs.chmod(`${ws.tmpDir}/mvnw`, 0o755);
+    await fs.writeFile(
+      `${ws.tmpDir}/package.json`,
+      JSON.stringify({ scripts: { build: 'true', test: './mvnw test' } }),
+      'utf8',
+    );
+    await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
+    await callOk(ticket, { text: 'Demonstrate ProofGraph evidence.', source: 'user' });
+    const blocked = parseToolResult(
+      await plan.execute(
+        {
+          planText: PLAN_TEXT,
+          claims: [{ ...PLAN_CLAIM, critical: true, mutationProfile: 'proofgraph-evaluator' }],
+        },
+        ctx,
+      ),
+    );
+    expect(blocked.error).toBe(true);
+    expect(blocked.code).toBe('PROOFGRAPH_CLAIM_UNSATISFIABLE');
   });
 });

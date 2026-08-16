@@ -17,9 +17,9 @@ approval, merge, or archive-finalization command.
 
 1. Call \`flowguard_status\` with exactly \`{ finish: true }\`.
 2. If no session exists: report this and recommend \`/hydrate\`. Stop.
-3. Wenn \`presentation.markdown\` im Response vorhanden ist, gib es wörtlich
-   aus — nicht umformulieren, nicht interpretieren.
-   Andernfalls gib das \`finish\` Objekt aus, ohne eigene Semantik zu erfinden.
+3. If \`presentation.markdown\` is present in the response, output it verbatim —
+   do not rephrase or interpret it.
+   Otherwise output the \`finish\` object without inventing semantics.
 
 ## Rules
 

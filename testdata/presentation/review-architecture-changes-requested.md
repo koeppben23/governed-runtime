@@ -5,7 +5,13 @@
 **Verdict:** changes_requested
 
 ⚠ Reviewer did NOT approve this ADR.
-⚠ The independent review reached its iteration limit without convergence (last verdict: changes_requested). Review the outstanding findings carefully before approving.
+⚠ The independent review reached its iteration limit without reviewer acceptance. Review the outstanding findings carefully before making the required human decision.
+
+## Verification
+
+Status: NOT_DECLARED
+No verification obligations declared.
+Approval evidence: Not recorded
 
 ## ADR Details
 

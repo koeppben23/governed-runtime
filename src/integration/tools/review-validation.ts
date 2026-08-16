@@ -38,7 +38,12 @@ import {
 } from './review-validation-acceptance.js';
 import { resolveHostTaskFindings } from './review-validation-host-task.js';
 import { validateChallengeConsistency } from '../review/enforcement/challenge-consistency.js';
-import { validateReviewFindingsConsistency } from '../review/enforcement/findings-consistency.js';
+import {
+  validateReviewFindingsConsistency,
+  validateReviewFindingsScope,
+  type FindingWithRelation,
+} from '../review/enforcement/findings-consistency.js';
+import { checkRepositoryEvidenceBinding } from './review-validation-evidence.js';
 
 // ─── Validation Context ───────────────────────────────────────────────────────
 
@@ -265,8 +270,39 @@ export function validateReviewFindings(
     );
   }
 
+  const scopeBlock = checkReviewFindingsScope(findings, obligation);
+  if (scopeBlock) return scopeBlock;
+
+  const evidenceBlock = checkRepositoryEvidenceBinding(findings, obligation, ctx);
+  if (evidenceBlock) return evidenceBlock;
+
   if (ctx.strictEnforcement) return validateStrictReviewFindings(findings, ctx);
 
+  return null;
+}
+
+function checkReviewFindingsScope(
+  findings: ReviewFindings,
+  obligation: ReviewObligation | null,
+): string | null {
+  const scopeRelations: FindingWithRelation[] = [];
+  [...(findings.blockingIssues ?? []), ...(findings.majorRisks ?? [])].forEach((item) => {
+    if (item && typeof item === 'object') scopeRelations.push(item);
+  });
+  if (scopeRelations.length === 0) return null;
+  if (!obligation) {
+    return formatBlocked('REVIEW_SUBJECT_SCOPE_UNAVAILABLE', { obligationId: 'unresolved' });
+  }
+  const scopeResult = validateReviewFindingsScope({
+    findings: scopeRelations,
+    reviewSubjectScope: obligation.reviewSubjectScope,
+    repositoryRevisionProvenance: obligation.repositoryRevisionProvenance,
+  });
+  if (!scopeResult.ok)
+    return formatBlocked(scopeResult.code, {
+      findingIndex: scopeResult.details.outOfScopeFindingIndexes.join(', '),
+      obligationId: obligation.obligationId,
+    });
   return null;
 }
 
@@ -551,6 +587,32 @@ interface HostTaskResolutionContext {
   };
 }
 
+/**
+ * Check whether reviewerUnavailable is a misuse: the reviewer WAS spawned
+ * (invocations exist) but the parent is signalling unavailability.
+ */
+function checkReviewerUnavailableMisuse(ctx: HostTaskResolutionContext): string | null {
+  if (ctx.input.reviewerUnavailable !== true) return null;
+  const existingInvs =
+    ctx.state.assurance?.invocations.filter(
+      (inv) =>
+        inv.obligationId === ctx.pendingObligation?.obligationId &&
+        inv.invocationMode === 'host_subagent_task',
+    ) ?? [];
+  if (existingInvs.length > 0) {
+    return formatBlocked('INVALID_REVIEW_TOOL_SEQUENCE', {
+      obligationId: ctx.pendingObligation?.obligationId ?? 'unknown',
+      reason:
+        'reviewerUnavailable submitted but host_subagent_task invocations already exist for this obligation. The reviewer was spawned — use reviewVerdict matching the captured reviewer overallVerdict instead.',
+    });
+  }
+  return formatBlocked('REVIEWER_UNAVAILABLE_STRICT', {
+    reason: 'reviewer unavailable; independent ReviewFindings remain required',
+    recovery:
+      'Invoke a supported reviewer transport or provide policy-gated manual_attested ReviewFindings bound to the active obligation. flowguard_decision does not replace review evidence.',
+  });
+}
+
 interface HostTaskResolutionResult {
   readonly effectiveFindings?: ReviewFindings;
   readonly evidenceInvocationId?: string;
@@ -618,14 +680,17 @@ export function resolveHostTaskEffectiveFindings(
         ),
       };
     }
-    if (ctx.input.reviewerUnavailable === true) {
+    if (resolved.kind === 'attempt_lineage_unavailable') {
       return {
-        blocked: formatBlocked('REVIEWER_UNAVAILABLE_STRICT', {
-          reason: 'reviewer unavailable; independent ReviewFindings remain required',
-          recovery:
-            'Invoke a supported reviewer transport or provide policy-gated manual_attested ReviewFindings bound to the active obligation. flowguard_decision does not replace review evidence.',
+        blocked: formatBlocked('REVIEW_ATTEMPT_LINEAGE_UNAVAILABLE', {
+          invocationId: resolved.invocationId,
+          obligationId: resolved.obligationId,
         }),
       };
+    }
+    if (ctx.input.reviewerUnavailable === true) {
+      const misuse = checkReviewerUnavailableMisuse(ctx);
+      if (misuse) return { blocked: misuse };
     }
     return {};
   }

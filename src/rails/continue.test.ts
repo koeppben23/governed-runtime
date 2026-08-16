@@ -18,9 +18,26 @@ import {
   ARCHITECTURE_DECISION,
   POLICY_SNAPSHOT,
 } from '../fixtures.js';
+import { computeRecordDigest } from '../state/evidence-plan.js';
 import type { RailContext } from './types.js';
 import type { PlanRecord } from '../state/evidence.js';
 import { TEAM_POLICY } from '../config/policy.js';
+
+vi.mock('../adapters/git.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/git.js')>();
+  return { ...original, headCommitFull: vi.fn().mockResolvedValue('a'.repeat(40)) };
+});
+
+vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/frozen-repository.js')>();
+  return {
+    ...original,
+    freezeRepositoryIdentity: vi.fn(() => ({
+      kind: 'local',
+      rootCommitDigest: 'sha256:' + 'b'.repeat(64),
+    })),
+  };
+});
 
 const ctx: RailContext = {
   now: () => FIXED_TIME,
@@ -41,6 +58,7 @@ function makeExecutors(overrides?: Partial<ContinueExecutors>): ContinueExecutor
       executionMs: 1,
       outputDigest: 'a'.repeat(64),
       timedOut: false,
+      outcome: 'supported' as const,
     })),
     selfReview: vi.fn().mockResolvedValue({ verdict: 'accept' as const }),
     implReview: vi.fn().mockResolvedValue({ verdict: 'accept' as const }),
@@ -50,7 +68,27 @@ function makeExecutors(overrides?: Partial<ContinueExecutors>): ContinueExecutor
 }
 
 function planWith(body: string): PlanRecord {
-  return { current: { body, digest: 'd', sections: [], createdAt: FIXED_TIME }, history: [] };
+  return {
+    current: {
+      body,
+      digest: 'd',
+      sections: [],
+      createdAt: FIXED_TIME,
+      recordDigest: computeRecordDigest({
+        contentDigest: 'd',
+        planVersion: 1,
+        supersedesRecordDigest: null,
+        originatingReviewObligationId: null,
+        revisionReason: null,
+      }),
+      planVersion: 1,
+      supersedesRecordDigest: null,
+      originatingReviewObligationId: null,
+      revisionReason: null,
+      lineageStatus: 'verified' as const,
+    },
+    history: [],
+  };
 }
 
 describe('continue rail', () => {

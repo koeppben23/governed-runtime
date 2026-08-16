@@ -9,10 +9,12 @@ function obligation(): ReviewObligation {
   return {
     obligationId: '11111111-1111-4111-8111-111111111111',
     obligationType: 'implement',
+    subjectDigest: 'test-subject-digest',
     iteration: 1,
     planVersion: 1,
     criteriaVersion: 'criteria-v1',
     mandateDigest: 'mandate-digest',
+    maxReviewerOutputRepairAttempts: 1,
     createdAt: FIXED_TIME,
     pluginHandshakeAt: null,
     status: 'pending',
@@ -20,6 +22,11 @@ function obligation(): ReviewObligation {
     blockedCode: null,
     fulfilledAt: null,
     consumedAt: null,
+    reviewSubjectScope: {
+      kind: 'repository_change',
+      paths: ['src/foo.ts'],
+      revisions: ['base', 'head'],
+    },
     requiredChallengeCount: 1,
     requiredChallengeKind: 'implementation_challenge',
   };

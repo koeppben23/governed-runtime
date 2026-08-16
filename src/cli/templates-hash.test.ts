@@ -20,6 +20,7 @@ import {
   PACKAGE_JSON_TEMPLATE,
 } from './templates.js';
 import {
+  TOOL_FLOWGUARD_OBSERVE_REPOSITORY,
   TOOL_FLOWGUARD_STATUS,
   TOOL_FLOWGUARD_HYDRATE,
   TOOL_FLOWGUARD_TICKET,
@@ -44,7 +45,7 @@ function sha256(value: string): string {
 describe('TEMPLATE_HASH_STABILITY', () => {
   it('TOOL_WRAPPER matches compiled output hash', () => {
     expect(sha256(TOOL_WRAPPER)).toBe(
-      '7b968561ddbf6f4106e602d70362dbc7210d0071a5f1dc6ec3243e1534bc54a3',
+      'e5a8c92750dc027482ce2e1180c1983bf0bcd4444f986f9fcc18bd5cb4c50fa8',
     );
   });
 
@@ -69,7 +70,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // role/identity sentence and enriched ## 12. Extended Guidance to name the
     // owning authorities (commands/profiles/reviewer) without duplicating them.
     expect(sha256(FLOWGUARD_MANDATES_BODY)).toBe(
-      '7c548c88db81c74930cd2c4cf86f3892ba3b8b34d3fa314cb0be6a9b6f15ab85',
+      'a51c4d18d7ec1f924cd33237b7a98fe5685c6baa25fecd61d321bb542315d68b',
     );
   });
 
@@ -89,11 +90,12 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed again for p36->p37: added a Security-as-risk vulnerability bullet
     // (content + implementation) and a root-cause bullet (plan + implementation),
     // which changes the REVIEWER_AGENT body and REVIEW_MANDATE_DIGEST.
-    // p37 -> p38: strict blockingIssues/verdict coherence. p38 -> p39: OpenCode
-    // reviewer capability isolation denies direct and MCP-prefixed FlowGuard tools.
-    // p39 -> p40: reviewer task delegation is denied as part of that boundary.
+    // p40 -> p41: material findings require structured subject and evidence relations.
+    // p41 -> p42: mandate semantics fixed (removed 'info' severity, corrected type names,
+    //   evidenceLocations may be empty). Refreshed for reviewer-owned input DTO:
+    // reviewer provenance is host-stamped after strict input validation.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      'e78b6bab98fcf033874fcc07e17d87aaff73fca47b1a28209e5dd4a1a28eedb7',
+      '5f0f74912c51e1fab914de853e705ab62fdd93c1370010c419dc274d5a3cc93a',
     );
   });
 
@@ -177,8 +179,8 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // blocker field verbatim (buildBlockedProjection) instead of unspecified
     // "blockers and warnings", changing the /finish body and COMMANDS hash.
     // Refreshed for F10: the /review, /check, and shared review-loop templates
-    // now instruct the agent to pass the FlowGuard-provided reviewerTaskPrompt
-    // VERBATIM as the Task tool prompt (canonical copy-prompt) to eliminate the
+    // now instruct the agent to invoke the reviewer Task without a prompt so
+    // FlowGuard injects the canonical bytes at the host boundary to eliminate the
     // first-attempt SUBAGENT_PROMPT_MISSING_CONTEXT block. New command bodies
     // change the COMMANDS hash.
     // Refreshed for #686: /implement template now documents the IMPL_VALIDATION
@@ -216,11 +218,39 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // (AP-B11), Test-Fitting (AP-B12), and no-workaround/cleanup rules to the
     // /implement ## Rules section. Changes the /implement body and therefore the
     // COMMANDS hash.
-    // Refreshed for host-task ordering hardening: SHARED_REVIEW_LOOP now
-    // The ARCHIVE_COMMAND template now includes redaction parameter guidance.
+    // Refreshed for default redacted sharing exports: ARCHIVE_COMMAND now calls
+    // flowguard_archive without arguments unless a non-default export is requested.
+    // Refreshed for #762 ProofGraph claim declarations: /plan now submits
+    // flowguard_plan({ planText, claims }) and /architecture submits
+    // flowguard_architecture({ title, adrText, claims }). The previous bodies
+    // instructed claim-free call forms, which made the claim surface unreachable
+    // through the installed product path. Changes both bodies and therefore the
+    // COMMANDS hash.
+    // Refreshed again for the unconditional ProofGraph gate: /plan now documents
+    // counterexampleCheckId as REQUIRED for critical claims and states that a
+    // critical claim blocks the final evidence approval while its evidence is
+    // missing, stale, or contradicted.
+    // Refreshed for structured assertion identity model: assertionId string
+    // replaced by assertion: { providerId, localId } in plan template examples.
+    // Refreshed for same-check closure: replaced "MUST differ from expectedCheckId"
+    // with bindability-oriented guidance and "structurally bindable counterexample check".
+    // Refreshed for English-only command copy: the /why and /finish verbatim-render
+    // steps were localized to English-only (no non-English phrasing) to match the
+    // single-language product surface. Changes both bodies and therefore the
+    // COMMANDS hash.
+    // Refreshed for architecture acceptance integrity: every completed ADR
+    // reviewer cycle now stops at ARCH_REVIEW and requires a human decision.
+    // Refreshed for the canonical reviewer-prompt contract: the /review command
+    // no longer permits free-composed reviewer prompts — a repository review
+    // without a canonical reviewerTaskPrompt is blocked with
+    // REVIEWER_CONTEXT_UNAVAILABLE.
+    // Refreshed for /architecture re-invocation routing: the reviewer Task
+    // instruction no longer asks the agent to supply ADR/ticket text (the host
+    // injects the canonical prompt); re-runs route to output repair or review
+    // orchestration restart.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'da19586746ba01d7771fe0608de1531fdaf1e88b62e726c2c1a0559b614fcacc',
+      '7c84d8357f173a0d0006d59d8e6425426446e2c4f8fa790a1e4cbe946c83e615',
     );
   });
 
@@ -278,6 +308,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
       TOOL_FLOWGUARD_ARCHIVE,
       TOOL_FLOWGUARD_ARCHITECTURE,
       TOOL_FLOWGUARD_HELP,
+      TOOL_FLOWGUARD_OBSERVE_REPOSITORY,
     ];
 
     // Parse the actual export identifiers from TOOL_WRAPPER's export block.

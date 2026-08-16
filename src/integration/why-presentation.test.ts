@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { SessionState } from '../state/schema.js';
+import type { BlockedProjection } from './status.js';
 import { renderMarkdown } from '../presentation/markdown.js';
 import { buildWhyDocument } from './why-presentation.js';
 import { buildBlockedProjection } from './status.js';
@@ -154,6 +155,96 @@ describe('buildWhyDocument', () => {
     const output = renderMarkdown(doc);
     expect(output).toContain('## Blocked');
     expect(output).toContain('⚠ **Blocked:**');
+  });
+
+  it('projects migrated headline, explanation, and canonical message in diagnostic mode', () => {
+    const state = planReviewBlockedState();
+    const policy = getPolicyPreset('team');
+    const blocker: BlockedProjection = {
+      blocked: true,
+      reasonCode: 'PROOFGRAPH_CRITICAL_FACT_REQUIRED',
+      reasonText: 'registry-verbatim interpolated message',
+      recoveryHint: null,
+      missingEvidence: [],
+      nextResolvableCommand: null,
+      humanActionRequired: true,
+    };
+    const doc = buildWhyDocument(buildWhyPresentationProjection(state, policy, blocker), {
+      detail: 'diagnostic',
+    });
+    const output = renderMarkdown(doc);
+    expect(output).toContain(
+      'Evidence approval requires a critical, certificate-authorized fact claim',
+    );
+    expect(output).not.toContain('registry-verbatim interpolated message');
+    expect(output).toContain('**Why:** The declared risk triggers require at least one critical');
+    expect(output).toContain('**Details:**');
+    expect(output).toContain(
+      'Evidence approval is blocked because {triggers} requires at least one critical, certificate-authorized fact claim.',
+    );
+  });
+
+  it('explanation mode shows headline, explanation, and recovery but hides canonical message and reason code', () => {
+    const state = planReviewBlockedState();
+    const policy = getPolicyPreset('team');
+    const blocker: BlockedProjection = {
+      blocked: true,
+      reasonCode: 'DISCOVERY_DRIFT_BLOCKED',
+      reasonText: 'registry-verbatim interpolated message',
+      recoveryHint: null,
+      missingEvidence: [],
+      nextResolvableCommand: null,
+      humanActionRequired: true,
+    };
+    const doc = buildWhyDocument(buildWhyPresentationProjection(state, policy, blocker), {
+      detail: 'explanation',
+    });
+    const output = renderMarkdown(doc);
+    // Headline visible
+    expect(output).toContain('Discovery drift blocks mutating tools');
+    // Explanation visible
+    expect(output).toContain('**Why:**');
+    // Recovery visible
+    expect(output).toContain('**Recovery:**');
+    // Impact visible (DISCOVERY_DRIFT_BLOCKED has workflow_blocked impact)
+    expect(output).toContain('**Impact:**');
+    // Canonical message NOT visible in explanation mode
+    expect(output).not.toContain('**Details:**');
+    // Reason code NOT visible
+    expect(output).not.toContain('`DISCOVERY_DRIFT_BLOCKED`');
+  });
+
+  it('diagnostic mode shows reason code and canonical message', () => {
+    const state = planReviewBlockedState();
+    const policy = getPolicyPreset('team');
+    const blocker: BlockedProjection = {
+      blocked: true,
+      reasonCode: 'DISCOVERY_DRIFT_BLOCKED',
+      reasonText: 'discovery drift blocked',
+      recoveryHint: null,
+      missingEvidence: [],
+      nextResolvableCommand: null,
+      humanActionRequired: true,
+    };
+    const doc = buildWhyDocument(buildWhyPresentationProjection(state, policy, blocker), {
+      detail: 'diagnostic',
+    });
+    const output = renderMarkdown(doc);
+    expect(output).toContain('**Details:**');
+    expect(output).toContain('`DISCOVERY_DRIFT_BLOCKED`');
+  });
+
+  it('explanation mode hides claim context when no proofGraph materialized', () => {
+    const state = readyState();
+    const policy = getPolicyPreset('solo');
+    const blocker = buildBlockedProjection(state, policy);
+    const doc = buildWhyDocument(buildWhyPresentationProjection(state, policy, blocker), {
+      detail: 'explanation',
+    });
+    const output = renderMarkdown(doc);
+    // NOT_DECLARED: no claims to show
+    expect(output).toContain('## Verification');
+    expect(output).toContain('No verification obligations declared');
   });
 
   it('omits blocker section when not blocked', () => {

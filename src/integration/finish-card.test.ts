@@ -23,12 +23,11 @@ import { describe, it, expect } from 'vitest';
 import type { SessionState } from '../state/schema.js';
 import type { ReviewReport } from '../state/evidence.js';
 import {
-  buildFinishCard,
-  deriveFinishOverallStatus,
   buildReadinessProjection,
   buildEvidenceDetailProjection,
   buildBlockedProjection,
 } from './status.js';
+import { buildFinishCard, deriveFinishOverallStatus } from './status-finish.js';
 import { getPolicyPreset } from '../config/policy.js';
 import { resolveNextAction } from '../machine/next-action.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
@@ -39,6 +38,7 @@ const blockedPolicy = getPolicyPreset('team');
 
 function makeReviewReport(overallStatus: ReviewReport['overallStatus']): ReviewReport {
   return {
+    reviewKind: 'lifecycle_review',
     schemaVersion: 'flowguard-review-report.v1',
     sessionId: '00000000-0000-4000-8000-000000000001',
     generatedAt: '2026-01-01T00:00:00.000Z',

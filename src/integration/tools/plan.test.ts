@@ -15,6 +15,12 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
             severity: 'critical',
             category: 'completeness',
             message: 'Missing test',
+            relation: {
+              subjectAnchors: [
+                { kind: 'repository_location', location: { path: 'src/foo.ts', revision: 'head' } },
+              ],
+              evidenceLocations: [],
+            },
           },
         ],
         majorRisks: [
@@ -22,6 +28,12 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
             severity: 'major',
             category: 'risk',
             message: 'Potential null',
+            relation: {
+              subjectAnchors: [
+                { kind: 'repository_location', location: { path: 'src/foo.ts', revision: 'head' } },
+              ],
+              evidenceLocations: [],
+            },
           },
         ],
         missingVerification: ['security_scan'],
@@ -127,6 +139,15 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
                 severity: 'critical',
                 category: 'completeness',
                 message: 'Missing tests',
+                relation: {
+                  subjectAnchors: [
+                    {
+                      kind: 'repository_location',
+                      location: { path: 'src/foo.ts', revision: 'head' },
+                    },
+                  ],
+                  evidenceLocations: [],
+                },
               },
             ],
             majorRisks: [],

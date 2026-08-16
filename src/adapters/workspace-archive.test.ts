@@ -1,13 +1,16 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { archiveSession, initWorkspace, verifyArchive } from './workspace/index.js';
+import { archiveRegulatedEvidence } from './workspace/archive.js';
+import { verifyRegulatedArchive } from './workspace/archive-verify-chain.js';
 import { writeState } from './persistence.js';
 import { appendAuditEvent } from './persistence-audit.js';
-import { makeState } from '../fixtures.js';
+import { makeState, REGULATED_POLICY_SNAPSHOT } from '../fixtures.js';
 import { withTestEnv } from '../integration/test-helpers.js';
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -77,6 +80,18 @@ async function extract(archivePath: string): Promise<string> {
   cleanups.push(async () => fs.rm(destination, { recursive: true, force: true }));
   await promisify(execFile)('tar', ['xzf', archivePath, '-C', destination]);
   return destination;
+}
+
+async function appendCompletionAuditEvent(sessDir: string, sessionId: string): Promise<void> {
+  await appendAuditEvent(sessDir, {
+    id: crypto.randomUUID(),
+    sessionId,
+    phase: 'COMPLETE',
+    event: 'lifecycle:session_completed',
+    timestamp: '2026-01-01T00:00:00.000Z',
+    actor: 'machine',
+    detail: { action: 'session_completed' },
+  });
 }
 
 describe('Archive Layout v2', () => {
@@ -216,6 +231,108 @@ describe('Archive Layout v2', () => {
         redactionMode: 'none',
         includeRaw: false,
       }),
+    ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
+  });
+
+  it('allows the regulated completion chain to create required raw evidence in a sharing-only configuration', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
+    });
+    await writeConfigForTest(configDir, 'basic', false);
+
+    const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    await writeState(
+      initialized.sessionDir,
+      makeState('COMPLETE', { policySnapshot: REGULATED_POLICY_SNAPSHOT }),
+    );
+    await appendCompletionAuditEvent(initialized.sessionDir, sessionId);
+
+    await expect(
+      archiveRegulatedEvidence(initialized.fingerprint, sessionId),
+    ).resolves.toBeDefined();
+  });
+
+  it('preserves immutable regulated evidence when a later sharing export is created', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
+    });
+    await writeConfigForTest(configDir, 'basic', false);
+
+    const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    await writeState(
+      initialized.sessionDir,
+      makeState('COMPLETE', { policySnapshot: REGULATED_POLICY_SNAPSHOT }),
+    );
+    await appendCompletionAuditEvent(initialized.sessionDir, sessionId);
+
+    const regulatedPath = await archiveRegulatedEvidence(initialized.fingerprint, sessionId);
+    const sharingPath = await archiveSession(initialized.fingerprint, sessionId, {
+      redactionMode: 'basic',
+      includeRaw: false,
+    });
+
+    expect(regulatedPath).not.toBe(sharingPath);
+    await expect(fs.access(regulatedPath)).resolves.toBeUndefined();
+    expect((await verifyRegulatedArchive(initialized.fingerprint, sessionId)).passed).toBe(true);
+  });
+
+  it('rejects the regulated evidence path for a non-regulated session', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
+    });
+    await writeConfigForTest(configDir, 'none', false);
+
+    const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    await writeState(initialized.sessionDir, makeState('COMPLETE'));
+
+    await expect(
+      archiveRegulatedEvidence(initialized.fingerprint, sessionId),
+    ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
+  });
+
+  it('rejects the regulated evidence path without a clean regulated state', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
+    });
+    await writeConfigForTest(configDir, 'basic', false);
+
+    const missingStateSession = '550e8400-e29b-41d4-a716-446655440000';
+    const missingState = await initWorkspace(path.resolve('.'), missingStateSession);
+    await expect(
+      archiveRegulatedEvidence(missingState.fingerprint, missingStateSession),
+    ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
+
+    const abortedSession = '550e8400-e29b-41d4-a716-446655440001';
+    const aborted = await initWorkspace(path.resolve('.'), abortedSession);
+    await writeState(
+      aborted.sessionDir,
+      makeState('COMPLETE', {
+        policySnapshot: REGULATED_POLICY_SNAPSHOT,
+        error: {
+          code: 'ABORTED',
+          message: 'emergency exit',
+          recoveryHint: 'start a new session',
+          occurredAt: '2026-01-01T00:00:00.000Z',
+        },
+      }),
+    );
+    await expect(
+      archiveRegulatedEvidence(aborted.fingerprint, abortedSession),
     ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
   });
 

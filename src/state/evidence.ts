@@ -51,10 +51,17 @@ export type * from './evidence-plan.js';
 export * from './evidence-architecture.js';
 export type * from './evidence-architecture.js';
 
+// ─── ProofGraph Approval ───────────────────────────────────────────────────────
+
+export * from './proofgraph-approval.js';
+export type * from './proofgraph-approval.js';
+
 // ─── Review (findings, obligations, assurance, completeness, report, decision) ─
 
 export * from './evidence-review.js';
 export type * from './evidence-review.js';
+export * from './evidence-review-input.js';
+export type * from './evidence-review-input.js';
 
 // ─── Identity ──────────────────────────────────────────────────────────────────
 
@@ -70,6 +77,11 @@ export type * from './evidence-policy.js';
 
 export * from './evidence-audit.js';
 export type * from './evidence-audit.js';
+
+// ─── Mutation ───────────────────────────────────────────────────────────────────
+
+export * from './evidence-mutation.js';
+export type * from './evidence-mutation.js';
 
 // ─── Timestamp ─────────────────────────────────────────────────────────────────
 

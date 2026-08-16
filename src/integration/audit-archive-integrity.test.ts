@@ -43,6 +43,7 @@ import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
+import { verifyRegulatedArchive } from '../adapters/workspace/archive-verify-chain.js';
 import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
 import type { ToolDefinition } from './tools/helpers.js';
 
@@ -53,6 +54,19 @@ vi.mock('../adapters/git', async (importOriginal) => {
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
     changedFiles: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.changedFiles),
     listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
+    headCommitFull: vi.fn().mockResolvedValue('d'.repeat(40)),
+  };
+});
+
+vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/frozen-repository.js')>();
+  return {
+    ...original,
+    freezeRepositoryIdentity: vi.fn(() => ({
+      kind: 'local' as const,
+      rootCommitDigest: 'sha256:' + 'b'.repeat(64),
+    })),
+    freezeWorktreeCandidate: vi.fn().mockResolvedValue('c'.repeat(40)),
   };
 });
 
@@ -97,8 +111,17 @@ vi.mock('../adapters/workspace/index.js', async (importOriginal) => {
   };
 });
 
+const regulatedArchiveMock = vi.hoisted(() => ({
+  archiveRegulatedEvidence: vi.fn(),
+  archiveFileName: (sessionId: string, regulatedEvidence = false) =>
+    `${regulatedEvidence ? 'regulated-' : ''}${sessionId}.tar.gz`,
+}));
+
+vi.mock('../adapters/workspace/archive.js', () => regulatedArchiveMock);
+
 const actorMock = await import('../adapters/actor.js');
 const workspaceMock = await import('../adapters/workspace/index.js');
+const regulatedArchive = await import('../adapters/workspace/archive.js');
 
 const tarOk = await isTarAvailable();
 
@@ -134,6 +157,13 @@ beforeEach(async () => {
         '../adapters/workspace/index.js',
       )
     ).verifyArchive,
+  );
+  vi.mocked(regulatedArchive.archiveRegulatedEvidence).mockImplementation(
+    (
+      await vi.importActual<typeof import('../adapters/workspace/archive.js')>(
+        '../adapters/workspace/archive.js',
+      )
+    ).archiveRegulatedEvidence,
   );
 });
 
@@ -193,7 +223,7 @@ async function mutateArchive(
     ids.fingerprint,
     'sessions',
     'archive',
-    `${ctx.sessionID}.tar.gz`,
+    `regulated-${ctx.sessionID}.tar.gz`,
   );
   const stagingRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-tamper-'));
   try {
@@ -299,7 +329,7 @@ describe('audit and archive integrity fail-closed behavior', () => {
       await fs.appendFile(path.join(root, 'audit', 'audit.jsonl'), '{not-json}\n', 'utf-8');
     });
 
-    const verification = await workspaceMock.verifyArchive(ids.fingerprint, ctx.sessionID);
+    const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
     expect(verification.passed).toBe(false);
     expect(
       verification.findings.some(
@@ -323,7 +353,7 @@ describe('audit and archive integrity fail-closed behavior', () => {
         );
       });
 
-      const verification = await workspaceMock.verifyArchive(ids.fingerprint, ctx.sessionID);
+      const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
       expect(verification.passed).toBe(false);
       expect(
         verification.findings.some(
@@ -336,7 +366,7 @@ describe('audit and archive integrity fail-closed behavior', () => {
   it.skipIf(!tarOk)(
     'regulated completion records failed archive status when archive write fails',
     async () => {
-      vi.mocked(workspaceMock.archiveSession).mockRejectedValueOnce(
+      vi.mocked(regulatedArchive.archiveRegulatedEvidence).mockRejectedValueOnce(
         new Error('injected archive failure'),
       );
 
@@ -368,7 +398,7 @@ describe('audit and archive integrity fail-closed behavior', () => {
         );
       });
 
-      const verification = await workspaceMock.verifyArchive(ids.fingerprint, ctx.sessionID);
+      const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
       expect(verification.passed).toBe(false);
       expect(
         verification.findings.some(

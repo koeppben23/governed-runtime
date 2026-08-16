@@ -15,6 +15,8 @@
  */
 
 import type { Phase } from '../state/schema.js';
+import type { ReviewReportFinding } from '../state/evidence.js';
+import type { FrozenReviewSubject } from '../state/evidence.js';
 import type {
   ReviewCardDocument,
   PresentationSection,
@@ -22,8 +24,11 @@ import type {
   FindingGroup,
   FindingItem,
 } from './model.js';
+import { projectFindingRelation } from './finding-relation.js';
 import { renderMarkdown } from './markdown.js';
 import type { PresentationRenderOptions } from './glyph-profile.js';
+import type { CompactProofPresentation } from './proof-model.js';
+import { buildProofGraphSection } from './proof-summary.js';
 
 // ─── Card Input ──────────────────────────────────────────────────────────────
 
@@ -35,27 +40,22 @@ export interface ReviewReportCardInput {
   /** Derived from report.completeness.overallComplete. */
   overallStatus: 'clean' | 'warnings' | 'issues';
   /** Review findings from the report. */
-  findings: Array<{
-    severity: string;
-    category: string;
-    message: string;
-    location?: string;
-  }>;
+  findings: ReviewReportFinding[];
   /** Completeness summary. */
   completeness: {
     overallComplete: boolean;
     fourEyes: boolean;
     summary: string;
+    /** Total slots evaluated. 0 means completeness was not assessed for any slots. */
+    total: number;
   };
-  /** Where the review input originated (pr, branch, url, manual_text). */
-  inputOrigin?: string;
-  /** External references provided with the review. */
-  references?: Array<{ ref: string; type: string }>;
+  /** Host-validated immutable identity of the reviewed content. */
+  reviewSubject?: FrozenReviewSubject;
   /** Obligation UUID — present when content-aware review was performed. */
   obligationId?: string;
   /** Evidence source: host-orchestrated or agent-submitted-attested. */
   invocationSource?: string;
-  /** How the reviewer was invoked: host_subagent_task, sdk_session_prompt, or manual_attested. */
+  /** How the reviewer was invoked: host_subagent_task, sdk_session_prompt, manual_attested, or native_subagent_attested. */
   invocationMode?: string;
   /** Whether this invocation produced a host-visible child session in the OpenCode GUI. */
   hostVisible?: boolean;
@@ -65,6 +65,12 @@ export interface ReviewReportCardInput {
   structuredOutputUsed?: boolean;
   reviewAssuranceLevel?: string;
   extractionMethod?: string;
+  /** Mandatory state-derived ProofGraph summary. */
+  proofSummary: CompactProofPresentation;
+  /** Canonical next action resolved from the completed state. */
+  productNextAction: { text: string; commands: readonly string[] };
+  /** Pre-computed canonical conclusion action (with intent from installed metadata). */
+  conclusionAction: import('./model.js').PresentationAction;
 }
 
 // ─── Severity / Category Projection ─────────────────────────────────────────────
@@ -114,7 +120,7 @@ function categoryLabel(category: string): string {
  *
  * Sections (all typed, spacing enforced by renderMarkdown):
  * 1. Title (H1)
- * 2. Metadata (status, overall, input, references)
+ * 2. Metadata (status, overall, reviewed subject)
  * 3. Findings grouped by severity (critical > major > issues > warnings > notes)
  * 4. Completeness (4-eyes status + summary)
  * 5. Evidence (obligationId, invocation source, reviewer — when present)
@@ -127,13 +133,17 @@ export function buildReviewReportCard(
   input: ReviewReportCardInput,
   options?: PresentationRenderOptions,
 ): string {
+  return renderMarkdown(buildReviewReportDocument(input), options);
+}
+
+/** Build the typed standalone-review document before Markdown rendering. */
+export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewCardDocument {
   const {
     phaseLabel,
     overallStatus,
     findings,
     completeness,
-    inputOrigin,
-    references,
+    reviewSubject,
     obligationId,
     invocationSource,
     invocationMode,
@@ -143,6 +153,7 @@ export function buildReviewReportCard(
     structuredOutputUsed,
     reviewAssuranceLevel,
     extractionMethod,
+    proofSummary,
   } = input;
 
   const sections: PresentationSection[] = [];
@@ -155,24 +166,11 @@ export function buildReviewReportCard(
     { label: 'Status', value: phaseLabel },
     { label: 'Overall', value: overallStatus },
   ];
-  if (inputOrigin) {
-    metadata.push({ label: 'Input', value: inputOrigin });
-  }
-  if (references && references.length > 0) {
-    const refList = references
-      .map((r) => {
-        const value =
-          (r as Record<string, unknown>).ref ??
-          (r as Record<string, unknown>).source ??
-          (r as Record<string, unknown>).title ??
-          JSON.stringify(r);
-        const type = (r as Record<string, unknown>).type;
-        return type ? `${type}: ${value}` : String(value);
-      })
-      .join(', ');
-    metadata.push({ label: 'References', value: refList });
+  if (reviewSubject) {
+    metadata.push({ label: 'Reviewed subject', value: presentReviewSubject(reviewSubject) });
   }
   sections.push({ kind: 'keyValue', items: metadata });
+  sections.push(buildProofGraphSection(proofSummary));
 
   // ── Findings ───────────────────────────────────────────────────────
   if (findings.length > 0) {
@@ -180,7 +178,8 @@ export function buildReviewReportCard(
       number,
       { label: string; severity: FindingGroup['severity']; items: FindingItem[] }
     >();
-    for (const f of findings) {
+    for (const reportFinding of findings) {
+      const f = projectReviewReportFinding(reportFinding);
       const g = severityGroup(f.severity);
       let bucket = grouped.get(g.order);
       if (!bucket) {
@@ -190,7 +189,7 @@ export function buildReviewReportCard(
       bucket.items.push({
         category: categoryLabel(f.category),
         message: f.message,
-        ...(f.location ? { location: f.location } : {}),
+        ...projectFindingRelation(f.relation),
       });
     }
     const groups: FindingGroup[] = [...grouped.entries()]
@@ -200,7 +199,7 @@ export function buildReviewReportCard(
         label: bucket.label,
         items: bucket.items,
       }));
-    sections.push({ kind: 'findings', heading: 'Findings', groups });
+    sections.push({ kind: 'findings', heading: 'Findings', detail: 'expanded', groups });
   } else {
     sections.push({
       kind: 'bulletList',
@@ -214,7 +213,15 @@ export function buildReviewReportCard(
     kind: 'keyValue',
     heading: 'Completeness',
     items: [
-      { label: 'Overall', value: completeness.overallComplete ? 'Complete' : 'Incomplete' },
+      {
+        label: 'Overall',
+        value:
+          completeness.total === 0
+            ? 'Not assessed'
+            : completeness.overallComplete
+              ? 'Complete'
+              : 'Incomplete',
+      },
       {
         label: 'Four-eyes principle',
         value: completeness.fourEyes ? 'Satisfied' : 'Not satisfied / Not recorded',
@@ -260,7 +267,10 @@ export function buildReviewReportCard(
   // ── Recommended follow-up ──────────────────────────────────────────
   const followUp: string[] = [];
   const hasCriticalOrMajor = findings.some(
-    (f) => f.severity === 'critical' || f.severity === 'major' || f.severity === 'error',
+    (finding) =>
+      finding.reportSeverity === 'error' ||
+      (finding.source === 'material_finding' &&
+        (finding.finding.severity === 'critical' || finding.finding.severity === 'major')),
   );
   if (findings.length === 0) {
     followUp.push(
@@ -277,10 +287,59 @@ export function buildReviewReportCard(
 
   const document: ReviewCardDocument = {
     kind: 'review_card',
-    form: 'terminal',
+    form: 'success',
     sections,
-    conclusion: { kind: 'terminal', message: 'Review report complete.' },
+    conclusion: {
+      kind: 'next_action',
+      action: input.conclusionAction,
+    },
   };
 
-  return renderMarkdown(document, options);
+  return document;
+}
+
+/** Project only the frozen, host-validated subject metadata into Markdown-safe text. */
+function presentReviewSubject(subject: FrozenReviewSubject): string {
+  if (subject.kind === 'repository_change') {
+    if (subject.source.kind === 'pull_request') {
+      return `Pull request #${subject.source.pullRequestNumber} (${subject.changedPaths.length} changed paths)`;
+    }
+    return `Branch ${safeMarkdownText(subject.source.branch)} (${subject.changedPaths.length} changed paths)`;
+  }
+  if (subject.source.kind === 'inline') {
+    return `Inline ${subject.source.mediaType} (${subject.lineCount} lines)`;
+  }
+  const location = subject.source.url.resolved ?? subject.source.url.requested;
+  return `URL ${safeMarkdownText(`${location.origin}${location.pathname}`)} (${subject.lineCount} lines)`;
+}
+
+function safeMarkdownText(value: string): string {
+  return value.replace(/[\\`*_{}\x5b\x5d<>()#+.!|\x2d\n\r]/g, '\\$&');
+}
+
+function projectReviewReportFinding(entry: ReviewReportFinding): {
+  readonly severity: string;
+  readonly category: string;
+  readonly message: string;
+  readonly relation?: import('./model.js').FindingRelationPresentation;
+} {
+  switch (entry.source) {
+    case 'material_finding':
+      return {
+        severity: entry.reportSeverity,
+        category: entry.finding.category,
+        message: entry.finding.message,
+        relation: entry.finding.relation,
+      };
+    case 'mechanical':
+    case 'missing_verification':
+    case 'scope_creep':
+    case 'unknown':
+    case 'challenge':
+      return {
+        severity: entry.reportSeverity,
+        category: entry.category,
+        message: entry.message,
+      };
+  }
 }

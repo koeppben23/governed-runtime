@@ -24,10 +24,9 @@
  */
 
 import type { SessionState } from '../state/schema.js';
-import type { ReviewReport } from '../state/evidence.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 import { evaluate } from '../machine/evaluate.js';
-import { resolveNextAction } from '../machine/next-action.js';
+import { resolveNextAction, type NextAction } from '../machine/next-action.js';
 import { evaluateValidationEvidence } from '../machine/validation-evidence.js';
 import {
   isCommandAllowed,
@@ -41,17 +40,22 @@ const ALL_COMMANDS = Object.values(Command) as FlowGuardCommand[];
 import { evaluateCompleteness } from '../audit/completeness.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { getReviewLoopProgress, type ReviewLoopProgress } from './review/review-loop-progress.js';
-import { isTerminalPhase } from '../machine/topology.js';
-import {
-  projectStatusConclusion,
-  type StatusActionProjection,
-  type StatusConclusionProjection,
-} from './status-conclusion.js';
+import { projectStatusConclusion, type StatusConclusionProjection } from './status-conclusion.js';
 import type { KnownPresentationStatusInput } from '../presentation/labels.js';
+import {
+  summarizePersistedProofGraph,
+  type PersistedProofGraphSummary,
+} from '../audit/proofgraph/summary.js';
+import {
+  buildProofApprovalProjection,
+  type ProofApprovalProjection,
+} from './proofgraph/approval-projection.js';
+import { projectProofStatusForState } from './proofgraph/proof-summary-projectors.js';
+import { evaluateProofGraphGateFromState } from '../audit/proofgraph/gate.js';
+import { mapEnforcementReasonToRegistryCode } from '../audit/proofgraph/reason-code-mapping.js';
 
 // Re-export for consumers
-export type { StatusActionProjection, StatusConclusionProjection };
-
+export type { StatusConclusionProjection };
 // ─── Projection Types ─────────────────────────────────────────────────────────
 
 /**
@@ -79,7 +83,6 @@ export interface StatusProjection {
   } | null;
   /** Archive lifecycle status. */
   archiveStatus: string | null;
-
   /** Commands that are currently admissible. */
   allowedCommands: string[];
   /** Next action guidance from the machine (canonical commands). */
@@ -92,7 +95,6 @@ export interface StatusProjection {
     primaryCommand: string | null;
     summary: string;
   };
-
   /**
    * Active blocker, if the current phase is waiting or pending.
    * reasonCode is null when no structured code exists in the canonical source.
@@ -101,7 +103,6 @@ export interface StatusProjection {
     reasonCode: string | null;
     reasonText: string | null;
   } | null;
-
   /** Evidence completeness summary. */
   evidenceSummary: {
     present: number;
@@ -109,6 +110,15 @@ export interface StatusProjection {
     notYetRequired: number;
     failed: number;
   };
+  proofGraph: PersistedProofGraphSummary;
+  /** Mandatory compact ProofGraph presentation for every resolved session. */
+  proofSummary: import('../presentation/proof-model.js').CompactProofPresentation;
+  /**
+   * Approval-certificate and materialization chain (#762). Present so a reviewer
+   * or auditor can verify the binding from declaration through executed evidence
+   * without reading raw session state.
+   */
+  proofApprovals: ProofApprovalProjection;
   /** Review loop progress during review phases (null when not in a review phase). */
   reviewLoop: ReviewLoopProgress | null;
   /**
@@ -292,6 +302,8 @@ export interface FinishCard {
     consumesObligations: false;
     triggersExport: false;
   };
+  /** Compact ProofGraph summary for the completion card. */
+  proofSummary: import('../presentation/proof-model.js').CompactProofPresentation;
 }
 
 // ─── Projection Builder ───────────────────────────────────────────────────────
@@ -317,7 +329,7 @@ export function buildStatusProjection(
   );
   const evalResult = evaluate(state, { requireHumanGates: policy.requireHumanGates });
 
-  const blocker = buildBlocker(evalResult);
+  const blocker = buildBlocker(evalResult, state);
   const policyMode = state.policySnapshot?.mode ?? 'unknown';
   const profileId = state.activeProfile?.id ?? 'none';
   const productNext = buildProductNextAction(
@@ -359,6 +371,9 @@ export function buildStatusProjection(
       notYetRequired: completeness.summary.notYetRequired,
       failed: completeness.summary.failed,
     },
+    proofGraph: summarizePersistedProofGraph(state),
+    proofSummary: projectProofStatusForState(state),
+    proofApprovals: buildProofApprovalProjection(state),
     reviewLoop: getReviewLoopProgress(state),
     remainingChecks:
       state.phase === 'VALIDATION' && state.activeChecks.length > 0
@@ -406,6 +421,30 @@ export function buildEvidenceDetailProjection(state: SessionState): EvidenceDeta
   };
 }
 
+function resolveBlockerReason(input: {
+  readonly validationEvidenceBlocked: boolean;
+  readonly validationEvidenceCode: string | null;
+  readonly proofGraphGateCode: string | null;
+  readonly incompleteReview: boolean;
+  readonly next: NextAction;
+}): { reasonCode: string | null; reasonText: string | null } {
+  if (input.validationEvidenceBlocked) {
+    return { reasonCode: input.validationEvidenceCode, reasonText: input.next.text };
+  }
+  if (input.proofGraphGateCode) return { reasonCode: input.proofGraphGateCode, reasonText: null };
+  return input.incompleteReview
+    ? { reasonCode: 'REVIEW_STATE_INCOMPLETE', reasonText: input.next.text }
+    : { reasonCode: null, reasonText: null };
+}
+
+function resolveHumanActionRequired(
+  evalResult: ReturnType<typeof evaluate>,
+  incompleteReview: boolean,
+): boolean | null {
+  if (evalResult.kind === 'waiting' || incompleteReview) return true;
+  return evalResult.kind === 'pending' ? null : false;
+}
+
 /** Build blocked detail projection for /status --why-blocked. */
 export function buildBlockedProjection(
   state: SessionState,
@@ -415,7 +454,8 @@ export function buildBlockedProjection(
   const next = resolveNextAction(state.phase, state);
   const completeness = evaluateCompleteness(state);
 
-  const blocked = evalResult.kind === 'waiting';
+  const incompleteReview = next.code === 'REVIEW_STATE_INCOMPLETE';
+  const blocked = evalResult.kind === 'waiting' || incompleteReview;
   const missingEvidence = completeness.slots
     .filter((slot) => slot.required && (slot.status === 'missing' || slot.status === 'failed'))
     .map((slot) => ({
@@ -430,21 +470,25 @@ export function buildBlockedProjection(
     state.phase === 'VALIDATION' ? evaluateValidationEvidence(state) : null;
   const validationEvidenceBlocked =
     validationEvidence !== null && validationEvidence.blocked && validationEvidence.code !== null;
+  // #695: surface the enforced ProofGraph gate reason at EVIDENCE_REVIEW so the
+  // why-blocked surface projects the gate's migrated human copy.
+  const proofGraphGateCode = proofGraphGateRegistryCode(state);
+  const reason = resolveBlockerReason({
+    validationEvidenceBlocked,
+    validationEvidenceCode: validationEvidence?.code ?? null,
+    proofGraphGateCode,
+    incompleteReview,
+    next,
+  });
 
   return {
     blocked,
-    reasonCode: validationEvidenceBlocked ? validationEvidence.code : null,
-    reasonText:
-      evalResult.kind === 'waiting'
-        ? evalResult.reason
-        : validationEvidenceBlocked
-          ? next.text
-          : null,
+    reasonCode: reason.reasonCode,
+    reasonText: evalResult.kind === 'waiting' ? evalResult.reason : reason.reasonText,
     recoveryHint: next.text,
     missingEvidence,
     nextResolvableCommand: next.commands[0] ?? null,
-    humanActionRequired:
-      evalResult.kind === 'waiting' ? true : evalResult.kind === 'pending' ? null : false,
+    humanActionRequired: resolveHumanActionRequired(evalResult, incompleteReview),
   };
 }
 
@@ -536,12 +580,20 @@ function deriveReadinessField(
  * The blocker surface mirrors the EvalResult semantics used for
  * human-facing guidance. This is the same truth that feeds
  * formatEval() — no new blocker logic is invented here.
+ *
+ * At EVIDENCE_REVIEW the waiting blocker carries the registered reason code
+ * of the ProofGraph gate that the review-decision rail enforces (mirrors the
+ * rail inputs via evaluateProofGraphGateFromState), so the status surface can
+ * project the migrated human copy for the gate.
  */
-function buildBlocker(evalResult: ReturnType<typeof evaluate>): StatusProjection['blocker'] {
+function buildBlocker(
+  evalResult: ReturnType<typeof evaluate>,
+  state: SessionState,
+): StatusProjection['blocker'] {
   switch (evalResult.kind) {
     case 'waiting':
       return {
-        reasonCode: null,
+        reasonCode: proofGraphGateRegistryCode(state),
         reasonText: evalResult.reason,
       };
     case 'pending':
@@ -556,192 +608,14 @@ function buildBlocker(evalResult: ReturnType<typeof evaluate>): StatusProjection
   }
 }
 
-// ─── Finish Card ──────────────────────────────────────────────────────────────
-
 /**
- * Whether any REQUIRED evidence slot is unverified (missing or failed).
- *
- * Operates on the already-composed EvidenceDetailProjection — no second
- * evaluateCompleteness() call. `not_yet_required` slots NEVER count as
- * unverified (early phases are classified via readiness.blocked, not here).
- * There is no `stale` slot status in the canonical completeness report, so no
- * stale detection is claimed.
+ * Registry reason code for the enforced ProofGraph gate at EVIDENCE_REVIEW,
+ * or null when no gate is active. Projection of the rail's gate decision only
+ * — no independent gating authority.
  */
-function hasUnverifiedEvidence(evidence: EvidenceDetailProjection): boolean {
-  return evidence.slots.some(
-    (slot) => slot.required && (slot.status === 'missing' || slot.status === 'failed'),
-  );
-}
-
-/**
- * Derive the single overall Finish status by combining existing projection
- * results. This is the ONLY new classification in the Finish Card and it is
- * strictly presentational — it re-evaluates nothing.
- *
- * Precedence (highest first):
- * 1. BLOCKED             — readiness projection reports blocked (waiting).
- * 2. NOT_VERIFIED        — a required evidence slot is missing or failed.
- * 3. IN_PROGRESS         — non-terminal phase; lifecycle not yet complete.
- * 4. CHANGES_REQUIRED    — completed standalone review report has issues.
- * 5. READY_WITH_WARNINGS — terminal, evidence ok, but warnings present.
- * 6. READY               — otherwise.
- *
- * BLOCKED intentionally wins over NOT_VERIFIED so a blocked session is not
- * mislabelled merely because evidence is also incomplete.
- */
-export function deriveFinishOverallStatus(
-  readiness: ReadinessProjection,
-  evidence: EvidenceDetailProjection,
-  reviewReport: ReviewReport | null = null,
-): FinishOverallStatus {
-  if (readiness.blocked) return 'BLOCKED';
-  if (hasUnverifiedEvidence(evidence)) return 'NOT_VERIFIED';
-  // Non-terminal phases are in progress regardless of warnings or review status.
-  if (!isTerminalPhase(readiness.phase)) return 'IN_PROGRESS';
-  if (reviewReport?.overallStatus === 'issues') return 'CHANGES_REQUIRED';
-  if (readiness.warnings.length > 0) return 'READY_WITH_WARNINGS';
-  return 'READY';
-}
-
-/** Candidate next actions the Finish Card annotates (non-exit). */
-const FINISH_CANDIDATE_ACTIONS = ['create PR', 'export evidence', 'keep branch'] as const;
-
-/** Actions that mean "proceed toward landing" (vs. "keep the branch open"). */
-const FINISH_PROCEED_ACTIONS = new Set<string>(['create PR', 'export evidence']);
-
-/** Exit options the system does not govern. Never rendered as forbidden. */
-const FINISH_EXIT_OPTIONS = ['abandon'] as const;
-
-/**
- * Per-overall-status guidance for "proceed" vs "keep branch" actions.
- *
- * This is a static presentation table, not eligibility logic. Each entry maps
- * the overall Finish status to a label + reason for proceed-actions and for the
- * keep-branch action. Labels are presentation-only and must not be consumed for
- * enforcement.
- */
-const FINISH_ACTION_TABLE: Record<
-  FinishOverallStatus,
-  { proceed: Omit<FinishActionGuidance, 'action'>; keep: Omit<FinishActionGuidance, 'action'> }
-> = {
-  READY: {
-    proceed: {
-      status: 'recommended',
-      reason: 'Session reports ready; proceeding is a suitable next step.',
-    },
-    keep: {
-      status: 'not_recommended',
-      reason: 'Session is ready; keeping the branch open is not necessary.',
-    },
-  },
-  READY_WITH_WARNINGS: {
-    proceed: {
-      status: 'recommended',
-      reason: 'Ready with warnings; review warnings before proceeding.',
-    },
-    keep: {
-      status: 'not_recommended',
-      reason: 'Ready with warnings; keeping the branch open is optional.',
-    },
-  },
-  CHANGES_REQUIRED: {
-    proceed: {
-      status: 'not_recommended',
-      reason:
-        'Review completed with findings that require changes before the artifact can proceed.',
-    },
-    keep: {
-      status: 'recommended',
-      reason:
-        'Keep the artifact available while the documented findings are addressed and reviewed again.',
-    },
-  },
-  NOT_VERIFIED: {
-    proceed: {
-      status: 'not_verified',
-      reason: 'Required evidence is missing or failed; proceeding is not verified.',
-    },
-    keep: {
-      status: 'recommended',
-      reason: 'Keep the branch to complete verification before proceeding.',
-    },
-  },
-  IN_PROGRESS: {
-    proceed: {
-      status: 'not_verified',
-      reason: 'Workflow is not yet complete; export is not applicable.',
-    },
-    keep: {
-      status: 'recommended',
-      reason: 'Keep the branch open while the workflow progresses.',
-    },
-  },
-  BLOCKED: {
-    proceed: {
-      status: 'not_recommended',
-      reason: 'Session is blocked; resolve blockers before proceeding.',
-    },
-    keep: {
-      status: 'recommended',
-      reason: 'Keep the branch to resolve blockers before proceeding.',
-    },
-  },
-};
-
-/**
- * Build non-normative action guidance from the overall status alone.
- *
- * No per-action eligibility logic exists — the label is a trivial, documented
- * lookup keyed by overallStatus. These labels are presentation-only and must
- * not be consumed for enforcement.
- */
-function buildFinishActionGuidance(overallStatus: FinishOverallStatus): FinishActionGuidance[] {
-  const entry = FINISH_ACTION_TABLE[overallStatus];
-  return FINISH_CANDIDATE_ACTIONS.map((action) => ({
-    action,
-    ...(FINISH_PROCEED_ACTIONS.has(action) ? entry.proceed : entry.keep),
-  }));
-}
-
-/**
- * Build the Finish Card by composing existing projections. Pure function:
- * requires a valid SessionState and policy. No-session / unreadable-state
- * handling stays in the calling tool via the read-only session helpers.
- *
- * This function performs NO independent evidence, phase, obligation, or gate
- * evaluation — it only composes buildReadinessProjection,
- * buildEvidenceDetailProjection, resolveNextAction, and the single
- * presentation classifier deriveFinishOverallStatus.
- */
-export function buildFinishCard(
-  state: SessionState,
-  policy: FlowGuardPolicy,
-  reviewReport: ReviewReport | null = null,
-): FinishCard {
-  const readiness = buildReadinessProjection(state, policy);
-  const evidence = buildEvidenceDetailProjection(state);
-  const blocker = buildBlockedProjection(state, policy);
-  const next = resolveNextAction(state.phase, state);
-  const overallStatus = deriveFinishOverallStatus(readiness, evidence, reviewReport);
-
-  return {
-    phase: state.phase,
-    overallStatus,
-    readiness,
-    evidence,
-    nextAction: {
-      primaryCommand: next.commands[0] ?? null,
-      summary: next.text,
-    },
-    blocker,
-    warnings: readiness.warnings,
-    actionGuidance: buildFinishActionGuidance(overallStatus),
-    exitOptions: [...FINISH_EXIT_OPTIONS],
-    guarantees: {
-      readOnly: true,
-      approves: false,
-      consumesObligations: false,
-      triggersExport: false,
-    },
-  };
+function proofGraphGateRegistryCode(state: SessionState): string | null {
+  if (state.phase !== 'EVIDENCE_REVIEW') return null;
+  const decision = evaluateProofGraphGateFromState(state);
+  if (!decision.gated) return null;
+  return mapEnforcementReasonToRegistryCode(decision.reasonCode);
 }

@@ -433,13 +433,13 @@ describe('buildReviewContentPrompt', () => {
     discoveryContext: {},
   };
 
-  it('includes content, ticket, and attestation values', () => {
+  it('includes content, ticket, and reviewer-owned attestation values', () => {
     const prompt = buildReviewContentPrompt(opts);
     expect(prompt).toContain('PR diff content');
     expect(prompt).toContain('Fix auth bug');
     expect(prompt).toContain(opts.obligationId);
-    expect(prompt).toContain(opts.mandateDigest);
-    expect(prompt).toContain(opts.criteriaVersion);
+    expect(prompt).not.toContain(opts.mandateDigest);
+    expect(prompt).not.toContain(opts.criteriaVersion);
     expect(prompt).toContain(REVIEWER_SUBAGENT_TYPE);
   });
 
@@ -465,7 +465,7 @@ describe('buildReviewContentPrompt', () => {
 
   it('includes output format instructions', () => {
     const prompt = buildReviewContentPrompt(opts);
-    expect(prompt).toContain('ReviewFindings');
+    expect(prompt).toContain('ReviewerFindingsInput');
     expect(prompt).toContain('reviewMode');
     expect(prompt).toContain('no markdown fences');
   });
@@ -929,7 +929,6 @@ describe('CORE_REVIEW_PROFILE_MARKER (Wave 1 — #730)', () => {
       criteriaVersion: common.criteriaVersion,
       iteration,
       planVersion,
-      discoveryContext: {},
     }),
   };
 

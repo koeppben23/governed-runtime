@@ -18,6 +18,7 @@ describe('buildImplementationGuidance', () => {
       plan: PLAN_RECORD,
       verificationCandidates: [
         {
+          assertionCapability: 'unsupported' as const,
           kind: 'test',
           command: 'npm test -- login',
           source: 'package.json:scripts.test',

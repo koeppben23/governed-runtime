@@ -38,6 +38,7 @@ import type { DecisionIdentity } from '../state/evidence.js';
 import type { DiscoverySummary } from '../discovery/types.js';
 import type { DetectedStack } from '../discovery/types.js';
 import type { VerificationCandidates } from '../discovery/types.js';
+import type { ExecutionSubjectInput } from '../state/discovery-schemas.js';
 import type { IdpConfig, IdentityProviderMode } from '../identity/types.js';
 import { evaluate } from '../machine/evaluate.js';
 import type { RailResult, RailBlocked, RailContext } from './types.js';
@@ -72,6 +73,8 @@ export interface HydrateSessionInput {
   readonly discoverySummary?: DiscoverySummary;
   readonly detectedStack?: DetectedStack | null;
   readonly verificationCandidates?: VerificationCandidates;
+  readonly executionSubjectInputsByKind?: Record<string, ExecutionSubjectInput[]>;
+  readonly executionSubjectInputsByCandidateId?: Record<string, ExecutionSubjectInput[]>;
   readonly claimedTaskClass?: TaskClass;
   /**
    * Files already dirty in the worktree at session start (with content hashes),
@@ -283,6 +286,7 @@ function buildNewHydrateState(
     selfReview: null,
     validation: [],
     validationAttempts: [],
+    mutationAttempts: [],
     challengeResolutions: [],
     implValidation: [],
     implementation: null,
@@ -290,6 +294,7 @@ function buildNewHydrateState(
     implReview: null,
     reviewDecision: null,
     reviewReportPath: null,
+    standaloneReviewEvidence: [],
     nextAdrNumber: 1,
     activeProfile,
     activeChecks,
@@ -301,6 +306,8 @@ function buildNewHydrateState(
     discoverySummary: s.discoverySummary ?? null,
     detectedStack: s.detectedStack ?? null,
     verificationCandidates: s.verificationCandidates ?? [],
+    executionSubjectInputsByKind: s.executionSubjectInputsByKind ?? {},
+    executionSubjectInputsByCandidateId: s.executionSubjectInputsByCandidateId ?? {},
     ...(s.baselineDirtyFiles
       ? {
           implementationBaseline: {

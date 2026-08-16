@@ -30,8 +30,15 @@ import {
 } from './test-helpers.js';
 import { plan, implement, architecture } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
+import { hashText } from '../shared/hashing.js';
+import {
+  appendObligationWithAttempt,
+  artifactReviewSubjectScope,
+  createReviewObligation,
+  freezeReviewMaterial,
+} from './review/assurance.js';
 import type { SessionState } from '../state/schema.js';
-import type { ReviewObligation } from '../state/evidence.js';
+import type { ReviewAttempt, ReviewObligation } from '../state/evidence.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -96,10 +103,12 @@ function makeBlockedObligation(
   return {
     obligationId: crypto.randomUUID(),
     obligationType,
+    subjectDigest: 'test-subject-digest-blocked',
     iteration,
     planVersion,
     criteriaVersion: 'p37-v1',
     mandateDigest: 'test-mandate-digest-blocked',
+    maxReviewerOutputRepairAttempts: 1,
     status: 'blocked',
     blockedCode: 'STRICT_REVIEW_ORCHESTRATION_FAILED',
     createdAt: new Date().toISOString(),
@@ -107,7 +116,16 @@ function makeBlockedObligation(
     invocationId: null,
     fulfilledAt: null,
     consumedAt: null,
-  } as ReviewObligation;
+    reviewSubjectScope: { kind: 'unavailable', reason: 'blocked obligation fixture' },
+    ...(obligationType === 'plan' || obligationType === 'architecture'
+      ? {
+          repositoryEvidenceFreeze: {
+            kind: 'unavailable',
+            reason: 'repository_unavailable',
+          },
+        }
+      : {}),
+  };
 }
 
 /** Create a pending (active) review obligation. */
@@ -119,10 +137,12 @@ function makePendingObligation(
   return {
     obligationId: crypto.randomUUID(),
     obligationType,
+    subjectDigest: 'test-subject-digest-pending',
     iteration,
     planVersion,
     criteriaVersion: 'p37-v1',
     mandateDigest: 'test-mandate-digest-pending',
+    maxReviewerOutputRepairAttempts: 1,
     status: 'pending',
     blockedCode: null,
     createdAt: new Date().toISOString(),
@@ -130,7 +150,20 @@ function makePendingObligation(
     invocationId: null,
     fulfilledAt: null,
     consumedAt: null,
-  } as ReviewObligation;
+    reviewSubjectScope: {
+      kind: 'repository_change',
+      paths: ['src/foo.ts'],
+      revisions: ['base', 'head'],
+    },
+    ...(obligationType === 'plan' || obligationType === 'architecture'
+      ? {
+          repositoryEvidenceFreeze: {
+            kind: 'unavailable',
+            reason: 'repository_unavailable',
+          },
+        }
+      : {}),
+  };
 }
 
 /** Hydrate a session and advance to PLAN phase with blocked obligation. */
@@ -161,8 +194,10 @@ async function setupPlanDeadState(blockedCount = 1): Promise<void> {
   const updatedState: SessionState = {
     ...state,
     reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v5' as const,
       obligations: blockedObligations,
       invocations: state.reviewAssurance?.invocations ?? [],
+      attempts: [],
     },
   };
 
@@ -212,8 +247,10 @@ async function setupImplementDeadState(blockedCount = 1): Promise<void> {
       executedAt: new Date().toISOString(),
     },
     reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v5' as const,
       obligations: blockedObligations,
       invocations: [],
+      attempts: [],
     },
   };
 
@@ -241,6 +278,7 @@ async function setupArchitectureDeadState(blockedCount = 1): Promise<void> {
       title: 'Test Decision',
       adrText: '## Context\nTest\n## Decision\nTest\n## Consequences\nTest',
       status: 'proposed',
+      reviewCompletion: 'pending',
       digest: 'adr-digest',
       createdAt: new Date().toISOString(),
     },
@@ -253,8 +291,10 @@ async function setupArchitectureDeadState(blockedCount = 1): Promise<void> {
       verdict: 'changes_requested',
     },
     reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v5' as const,
       obligations: blockedObligations,
       invocations: [],
+      attempts: [],
     },
   };
 
@@ -326,29 +366,37 @@ describe('plan — dead-state recovery (Fix 2a)', () => {
     });
   });
 
-  describe('EDGE: normal PLAN_REVIEW_IN_PROGRESS still works', () => {
-    it('blocks re-submission when obligation is pending (not blocked)', async () => {
+  describe('EDGE: pending review loop re-emits its instruction', () => {
+    it('re-emits the existing obligation for the SAME plan text and blocks a changed revision', async () => {
       const { hydrate, ticket: ticketTool } = await import('./tools/index.js');
       await hydrate.execute({ policyMode: 'solo' }, ctx);
       await ticketTool.execute({ text: 'Test task', source: 'user' }, ctx);
-      await plan.execute(
-        {
-          planText:
-            '## Objective\nTest\n## Approach\nTest\n## Steps\n1. test\n## Files to Modify\ntest.ts\n## Edge Cases\n1. none\n## Validation Criteria\n1. pass\n## Verification Plan\n1. test',
-          targetPaths: ['docs/test.md'],
-        },
+      const PLAN_TEXT =
+        '## Objective\nTest\n## Approach\nTest\n## Steps\n1. test\n## Files to Modify\ntest.ts\n## Edge Cases\n1. none\n## Validation Criteria\n1. pass\n## Verification Plan\n1. test';
+      const firstRaw = await plan.execute(
+        { planText: PLAN_TEXT, targetPaths: ['docs/test.md'] },
         ctx,
       );
+      const first = parseToolResult(firstRaw);
 
-      // State now has selfReview and a pending obligation — re-submission should be blocked
+      // State now has selfReview and a pending obligation.
       const sessDir = await currentSessionDir();
       const state = await readState(sessDir);
       const obligations = state!.reviewAssurance?.obligations ?? [];
-      // Verify at least one obligation exists and it's NOT blocked
       const lastObl = obligations[obligations.length - 1];
       expect(lastObl?.status).not.toBe('blocked');
 
-      const raw = await plan.execute(
+      // SAME revision: the pending obligation re-emits its instruction.
+      const sameRaw = await plan.execute(
+        { planText: PLAN_TEXT, targetPaths: ['docs/test.md'] },
+        ctx,
+      );
+      const same = parseToolResult(sameRaw);
+      expect(same.error).not.toBe(true);
+      expect(same.reviewObligationId).toBe(lastObl?.obligationId ?? first.reviewObligationId);
+
+      // CHANGED revision while pending: fail closed — never silently ignored.
+      const changedRaw = await plan.execute(
         {
           planText:
             '## Objective\nNew\n## Approach\nNew\n## Steps\n1. new\n## Files to Modify\nnew.ts\n## Edge Cases\n1. none\n## Validation Criteria\n1. pass\n## Verification Plan\n1. test',
@@ -356,10 +404,9 @@ describe('plan — dead-state recovery (Fix 2a)', () => {
         },
         ctx,
       );
-      const result = parseToolResult(raw);
-
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('PLAN_REVIEW_IN_PROGRESS');
+      const changed = parseToolResult(changedRaw);
+      expect(changed.error).toBe(true);
+      expect(changed.code).toBe('REVIEW_SUBJECT_CHANGED_WHILE_PENDING');
     });
   });
 });
@@ -453,11 +500,13 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
     });
   });
 
-  describe('EDGE: normal ADR_REVIEW_IN_PROGRESS still works', () => {
-    it('blocks re-submission when obligation is pending (not blocked)', async () => {
+  describe('EDGE: pending obligations without frozen material surface the integrity failure', () => {
+    it('blocks re-submission when the pending obligation predates frozen review material', async () => {
       await setupArchitectureDeadState(1);
 
-      // Change the obligation to pending instead of blocked
+      // Change the obligation to pending instead of blocked — but keep it
+      // material-less, modelling a legacy/corrupt obligation that can never
+      // dispatch a reviewer Task.
       const sessDir = await currentSessionDir();
       const state = await readState(sessDir);
       if (!state) throw new Error('No state');
@@ -465,8 +514,10 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
       const updatedState: SessionState = {
         ...state,
         reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
           obligations: [makePendingObligation('architecture', 0, 1)],
           invocations: [],
+          attempts: [],
         },
       };
       await writeState(sessDir, updatedState);
@@ -482,7 +533,391 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
       const result = parseToolResult(raw);
 
       expect(result.error).toBe(true);
-      expect(result.code).toBe('ADR_REVIEW_IN_PROGRESS');
+      expect(result.code).toBe('REVIEW_MATERIAL_INTEGRITY_FAILED');
+    });
+  });
+
+  describe('restart identity, revision, and output repair', () => {
+    const ADR_TEXT = '## Context\nTest\n## Decision\nTest\n## Consequences\nTest';
+    const CREATED_AT = '2026-01-01T00:00:00.000Z';
+
+    async function setArchitectureState(adrText: string): Promise<string> {
+      await setupArchitectureDeadState(1);
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      if (!state) throw new Error('No state');
+      const updated: SessionState = {
+        ...state,
+        architecture: {
+          ...state.architecture!,
+          adrText,
+          digest: hashText(adrText),
+          createdAt: CREATED_AT,
+        },
+        selfReview: { ...state.selfReview!, currDigest: hashText(adrText) },
+        nextAdrNumber: 2,
+      };
+      await writeState(sessDir, updated);
+      return sessDir;
+    }
+
+    it('restart with the same ADR digest preserves ADR identity and mints a fresh obligation', async () => {
+      const sessDir = await setArchitectureState(ADR_TEXT);
+      const before = await readState(sessDir);
+      const blockedObligationId = before!.reviewAssurance!.obligations.find(
+        (o) => o.status === 'blocked',
+      )!.obligationId;
+
+      const raw = await architecture.execute({ title: 'Test Decision', adrText: ADR_TEXT }, ctx);
+      const result = parseToolResult(raw);
+
+      expect(result.error).not.toBe(true);
+      expect(result.status).toContain('restarted');
+      expect(result.adrId).toBe('ADR-001');
+      expect(result.adrDigest).toBe(hashText(ADR_TEXT));
+      expect(result.reviewObligationId).toBeDefined();
+      expect(result.reviewObligationId).not.toBe(blockedObligationId);
+
+      const after = await readState(sessDir);
+      // A blocked review obligation is a new review generation — never a new ADR.
+      expect(after!.architecture!.id).toBe('ADR-001');
+      expect(after!.architecture!.digest).toBe(hashText(ADR_TEXT));
+      expect(after!.architecture!.createdAt).toBe(CREATED_AT);
+      expect(after!.nextAdrNumber).toBe(2);
+      const pending = after!.reviewAssurance!.obligations.filter((o) => o.status === 'pending');
+      expect(pending.length).toBe(1);
+      expect(pending[0]!.subjectDigest).toBe(hashText(ADR_TEXT));
+      expect(pending[0]!.reviewSubjectScope?.kind).toBe('artifact');
+    });
+
+    it('restart with a changed ADR digest revises the same ADR identity with a fresh obligation', async () => {
+      const sessDir = await setArchitectureState(ADR_TEXT);
+      const revisedText = '## Context\nRevised\n## Decision\nRevised\n## Consequences\nRevised';
+
+      const raw = await architecture.execute({ title: 'Test Decision', adrText: revisedText }, ctx);
+      const result = parseToolResult(raw);
+
+      expect(result.error).not.toBe(true);
+      expect(result.status).toContain('revised');
+      expect(result.adrId).toBe('ADR-001');
+      expect(result.adrDigest).toBe(hashText(revisedText));
+
+      const after = await readState(sessDir);
+      expect(after!.architecture!.id).toBe('ADR-001');
+      expect(after!.architecture!.digest).toBe(hashText(revisedText));
+      expect(after!.architecture!.createdAt).toBe(CREATED_AT);
+      expect(after!.nextAdrNumber).toBe(2);
+      expect(after!.selfReview!.prevDigest).toBe(hashText(ADR_TEXT));
+      // The blocked predecessor stays bound to the old digest.
+      const blocked = after!.reviewAssurance!.obligations.filter((o) => o.status === 'blocked');
+      expect(blocked.length).toBe(1);
+      const pending = after!.reviewAssurance!.obligations.filter((o) => o.status === 'pending');
+      expect(pending.length).toBe(1);
+      expect(pending[0]!.subjectDigest).toBe(hashText(revisedText));
+    });
+
+    it('output repair: a repairable rejection reissues a fresh attempt on the SAME obligation', async () => {
+      await setupArchitectureDeadState(1);
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      if (!state) throw new Error('No state');
+
+      const pending = createReviewObligation({
+        obligationType: 'architecture',
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+        iteration: 0,
+        planVersion: 1,
+        now: CREATED_AT,
+        subjectDigest: hashText(ADR_TEXT),
+        reviewMaterial: freezeReviewMaterial(ADR_TEXT, hashText(ADR_TEXT)),
+        reviewSubjectScope: artifactReviewSubjectScope('adr', ADR_TEXT, hashText(ADR_TEXT)),
+        changedFiles: [],
+        policySnapshot: state.policySnapshot,
+      });
+      const rejectedAttempt: ReviewAttempt = {
+        attemptId: crypto.randomUUID(),
+        obligationId: pending.obligationId,
+        obligationType: 'architecture',
+        subjectDigest: pending.subjectDigest,
+        reviewMaterial: pending.reviewMaterial,
+        ordinal: 1,
+        status: 'rejected',
+        origin: { kind: 'initial' },
+        rejectionReason: 'schema_invalid',
+        repositoryDiscovery: { kind: 'not_applicable' },
+        createdAt: CREATED_AT,
+      };
+      await writeState(sessDir, {
+        ...state,
+        architecture: { ...state.architecture!, adrText: ADR_TEXT, digest: hashText(ADR_TEXT) },
+        selfReview: { ...state.selfReview!, currDigest: hashText(ADR_TEXT) },
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          obligations: [pending],
+          invocations: [],
+          attempts: [rejectedAttempt],
+        },
+      });
+
+      const raw = await architecture.execute({ title: 'Test Decision', adrText: ADR_TEXT }, ctx);
+      const result = parseToolResult(raw);
+
+      expect(result.error).not.toBe(true);
+      expect(result.status).toContain('repair');
+      expect(result.reviewObligationId).toBe(pending.obligationId);
+
+      const after = await readState(sessDir);
+      const attempts = after!.reviewAssurance!.attempts.filter(
+        (a) => a.obligationId === pending.obligationId,
+      );
+      expect(attempts.length).toBe(2);
+      expect(attempts.filter((a) => a.status === 'created').length).toBe(1);
+      expect(attempts.at(-1)!.origin.kind).toBe('output_repair');
+    });
+
+    it('fails closed on reissue when the persisted artifact scope is tampered to another digest', async () => {
+      await setupArchitectureDeadState(1);
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      if (!state) throw new Error('No state');
+
+      const pending = createReviewObligation({
+        obligationType: 'architecture',
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+        iteration: 0,
+        planVersion: 1,
+        now: CREATED_AT,
+        subjectDigest: hashText(ADR_TEXT),
+        reviewMaterial: freezeReviewMaterial(ADR_TEXT, hashText(ADR_TEXT)),
+        reviewSubjectScope: artifactReviewSubjectScope('adr', ADR_TEXT, hashText(ADR_TEXT)),
+        changedFiles: [],
+        policySnapshot: state.policySnapshot,
+      });
+      // Fully self-consistent material generation with a tampered scope: the
+      // subject identity chain must be transitively closed on the reissue path.
+      const tampered: ReviewObligation = {
+        ...pending,
+        reviewSubjectScope: {
+          kind: 'artifact',
+          artifact: {
+            ...(
+              pending.reviewSubjectScope as Extract<
+                ReviewObligation['reviewSubjectScope'],
+                { kind: 'artifact' }
+              >
+            ).artifact,
+            digest: hashText('## Context\nOther\n## Decision\nOther\n## Consequences\nOther'),
+          },
+        },
+      };
+      const rejectedAttempt: ReviewAttempt = {
+        attemptId: crypto.randomUUID(),
+        obligationId: tampered.obligationId,
+        obligationType: 'architecture',
+        subjectDigest: tampered.subjectDigest,
+        reviewMaterial: tampered.reviewMaterial,
+        ordinal: 1,
+        status: 'rejected',
+        origin: { kind: 'initial' },
+        rejectionReason: 'schema_invalid',
+        repositoryDiscovery: { kind: 'not_applicable' },
+        createdAt: CREATED_AT,
+      };
+      await writeState(sessDir, {
+        ...state,
+        architecture: { ...state.architecture!, adrText: ADR_TEXT, digest: hashText(ADR_TEXT) },
+        selfReview: { ...state.selfReview!, currDigest: hashText(ADR_TEXT) },
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          obligations: [tampered],
+          invocations: [],
+          attempts: [rejectedAttempt],
+        },
+      });
+
+      const raw = await architecture.execute({ title: 'Test Decision', adrText: ADR_TEXT }, ctx);
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_MATERIAL_INTEGRITY_FAILED');
+    });
+
+    it('fails closed on reissue when the persisted scope kind is swapped to repository_change', async () => {
+      await setupArchitectureDeadState(1);
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      if (!state) throw new Error('No state');
+
+      const pending = createReviewObligation({
+        obligationType: 'architecture',
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+        iteration: 0,
+        planVersion: 1,
+        now: CREATED_AT,
+        subjectDigest: hashText(ADR_TEXT),
+        reviewMaterial: freezeReviewMaterial(ADR_TEXT, hashText(ADR_TEXT)),
+        reviewSubjectScope: artifactReviewSubjectScope('adr', ADR_TEXT, hashText(ADR_TEXT)),
+        changedFiles: [],
+        policySnapshot: state.policySnapshot,
+      });
+      // The required scope class follows the OBLIGATION TYPE, never the
+      // persisted scope kind: swapping the scope class must not route the
+      // obligation around the artifact verification.
+      const tampered: ReviewObligation = {
+        ...pending,
+        reviewSubjectScope: {
+          kind: 'repository_change',
+          paths: ['src/foo.ts'],
+          revisions: ['base', 'head'],
+        },
+      };
+      const rejectedAttempt: ReviewAttempt = {
+        attemptId: crypto.randomUUID(),
+        obligationId: tampered.obligationId,
+        obligationType: 'architecture',
+        subjectDigest: tampered.subjectDigest,
+        reviewMaterial: tampered.reviewMaterial,
+        ordinal: 1,
+        status: 'rejected',
+        origin: { kind: 'initial' },
+        rejectionReason: 'schema_invalid',
+        repositoryDiscovery: { kind: 'not_applicable' },
+        createdAt: CREATED_AT,
+      };
+      await writeState(sessDir, {
+        ...state,
+        architecture: { ...state.architecture!, adrText: ADR_TEXT, digest: hashText(ADR_TEXT) },
+        selfReview: { ...state.selfReview!, currDigest: hashText(ADR_TEXT) },
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          obligations: [tampered],
+          invocations: [],
+          attempts: [rejectedAttempt],
+        },
+      });
+
+      const raw = await architecture.execute({ title: 'Test Decision', adrText: ADR_TEXT }, ctx);
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_MATERIAL_INTEGRITY_FAILED');
+    });
+
+    it('restart continues the current review cycle: predecessor, flow state, fresh obligation, and prompt share the iteration', async () => {
+      const sessDir = await setArchitectureState(ADR_TEXT);
+      const state = await readState(sessDir);
+      if (!state) throw new Error('No state');
+
+      const blocked = state.reviewAssurance!.obligations.find((o) => o.status === 'blocked')!;
+      await writeState(sessDir, {
+        ...state,
+        selfReview: { ...state.selfReview!, iteration: 2 },
+        reviewAssurance: {
+          ...state.reviewAssurance!,
+          obligations: [{ ...blocked, iteration: 2 }],
+        },
+      });
+
+      const raw = await architecture.execute({ title: 'Test Decision', adrText: ADR_TEXT }, ctx);
+      const result = parseToolResult(raw);
+
+      expect(result.error).not.toBe(true);
+      expect(result.status).toContain('restarted');
+      expect(result.reviewObligationIteration).toBe(2);
+      expect(result.selfReviewIteration).toBe(2);
+      expect(String(result.next)).toContain('iteration=2');
+
+      const after = await readState(sessDir);
+      const pending = after!.reviewAssurance!.obligations.filter((o) => o.status === 'pending');
+      expect(pending.length).toBe(1);
+      expect(pending[0]!.iteration).toBe(2);
+    });
+
+    it('fails closed when the blocked predecessor iteration does not match the flow state cycle', async () => {
+      const sessDir = await setArchitectureState(ADR_TEXT);
+      const state = await readState(sessDir);
+      if (!state) throw new Error('No state');
+
+      // Blocked predecessor carries iteration 0 while the flow state already
+      // advanced to iteration 2 — an inconsistent review cycle.
+      await writeState(sessDir, {
+        ...state,
+        selfReview: { ...state.selfReview!, iteration: 2 },
+      });
+
+      const raw = await architecture.execute({ title: 'Test Decision', adrText: ADR_TEXT }, ctx);
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('RESTART_CYCLE_ITERATION_MISMATCH');
+    });
+
+    it('fails closed when a pending continuation receives a changed ADR digest', async () => {
+      await setupArchitectureDeadState(1);
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      if (!state) throw new Error('No state');
+
+      const pending = createReviewObligation({
+        obligationType: 'architecture',
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+        iteration: 0,
+        planVersion: 1,
+        now: CREATED_AT,
+        subjectDigest: hashText(ADR_TEXT),
+        reviewMaterial: freezeReviewMaterial(ADR_TEXT, hashText(ADR_TEXT)),
+        reviewSubjectScope: artifactReviewSubjectScope('adr', ADR_TEXT, hashText(ADR_TEXT)),
+        changedFiles: [],
+        policySnapshot: state.policySnapshot,
+      });
+      const withAttempt = appendObligationWithAttempt(undefined, pending, CREATED_AT);
+      await writeState(sessDir, {
+        ...state,
+        architecture: { ...state.architecture!, adrText: ADR_TEXT, digest: hashText(ADR_TEXT) },
+        selfReview: { ...state.selfReview!, currDigest: hashText(ADR_TEXT) },
+        reviewAssurance: withAttempt.assurance,
+      });
+
+      const changedText = '## Context\nChanged\n## Decision\nChanged\n## Consequences\nChanged';
+      const raw = await architecture.execute({ title: 'Test Decision', adrText: changedText }, ctx);
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_SUBJECT_CHANGED_WHILE_PENDING');
+    });
+
+    it('re-emits the pending review for the same ADR digest', async () => {
+      await setupArchitectureDeadState(1);
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      if (!state) throw new Error('No state');
+
+      const pending = createReviewObligation({
+        obligationType: 'architecture',
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+        iteration: 0,
+        planVersion: 1,
+        now: CREATED_AT,
+        subjectDigest: hashText(ADR_TEXT),
+        reviewMaterial: freezeReviewMaterial(ADR_TEXT, hashText(ADR_TEXT)),
+        reviewSubjectScope: artifactReviewSubjectScope('adr', ADR_TEXT, hashText(ADR_TEXT)),
+        changedFiles: [],
+        policySnapshot: state.policySnapshot,
+      });
+      const withAttempt = appendObligationWithAttempt(undefined, pending, CREATED_AT);
+      await writeState(sessDir, {
+        ...state,
+        architecture: { ...state.architecture!, adrText: ADR_TEXT, digest: hashText(ADR_TEXT) },
+        selfReview: { ...state.selfReview!, currDigest: hashText(ADR_TEXT) },
+        reviewAssurance: withAttempt.assurance,
+      });
+
+      const raw = await architecture.execute({ title: 'Test Decision', adrText: ADR_TEXT }, ctx);
+      const result = parseToolResult(raw);
+
+      expect(result.error).not.toBe(true);
+      expect(result.reviewObligationId).toBe(pending.obligationId);
+      expect(result.status).toContain('pending');
     });
   });
 });

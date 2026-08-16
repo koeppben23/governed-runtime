@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as crypto from 'node:crypto';
 import { FlowGuardAuditPlugin, isUsableWorktree } from './plugin.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
-import { makeState } from '../fixtures.js';
+import { makeState, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
 import type { PolicyMode } from '../config/policy.js';
 import * as barrel from './index.js';
 import * as fs from 'node:fs/promises';
@@ -22,6 +22,7 @@ import {
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
+import { computeRecordDigest } from '../state/evidence-plan.js';
 import { fileURLToPath } from 'node:url';
 
 const execFileAsync = promisify(execFile);
@@ -68,6 +69,18 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
           digest: 'plan-digest',
           sections: ['Plan'],
           createdAt: now,
+          recordDigest: computeRecordDigest({
+            contentDigest: 'plan-digest',
+            planVersion: 1,
+            supersedesRecordDigest: null,
+            originatingReviewObligationId: null,
+            revisionReason: null,
+          }),
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+          lineageStatus: 'verified' as const,
         },
         history: [],
         reviewFindings: [],
@@ -89,14 +102,17 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
         },
       },
       reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [
           {
             obligationId,
             obligationType: 'plan',
+            subjectDigest: 'test-subject-digest',
             iteration: 0,
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
+            maxReviewerOutputRepairAttempts: 1,
             createdAt: now,
             pluginHandshakeAt: null,
             status: 'pending',
@@ -104,9 +120,15 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
             blockedCode: null,
             fulfilledAt: null,
             consumedAt: null,
+            reviewSubjectScope: {
+              kind: 'repository_change',
+              paths: ['src/foo.ts'],
+              revisions: ['base', 'head'],
+            },
           },
         ],
         invocations: [],
+        attempts: [],
       },
     }),
   );
@@ -224,7 +246,7 @@ describe('plugin bootstrap fail-closed', () => {
   // BUG-08: Subagent type authorization (defense-in-depth)
   // ═══════════════════════════════════════════════════════════════════════════════
   describe('BUG-08: subagent type authorization', () => {
-    it('HAPPY — flowguard-reviewer subagent type passes through (existing L3)', async () => {
+    it('BAD — flowguard-reviewer without a pending obligation is blocked', async () => {
       const ws = await createTestWorkspace();
       try {
         const hooks = await FlowGuardAuditPlugin(
@@ -232,10 +254,13 @@ describe('plugin bootstrap fail-closed', () => {
         );
         const beforeHook = hooks['tool.execute.before']!;
 
-        // flowguard-reviewer with empty prompt — should pass (no pending review)
+        // Reviewer Tasks require a FlowGuard-issued pending obligation and cannot
+        // be started speculatively.
         const input = { tool: 'task', sessionID: crypto.randomUUID(), callID: 'c1' };
         const output = { args: { subagent_type: 'flowguard-reviewer', prompt: 'test prompt' } };
-        await expect(beforeHook(input, output)).resolves.toBeUndefined();
+        await expect(beforeHook(input, output)).rejects.toThrow(
+          'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+        );
       } finally {
         await ws.cleanup();
       }
@@ -406,7 +431,10 @@ describe('plugin bootstrap fail-closed', () => {
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
         await fs.mkdir(sessDir, { recursive: true });
-        await writeState(sessDir, makeState('IMPLEMENTATION'));
+        await writeState(
+          sessDir,
+          makeState('IMPLEMENTATION', { implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE }),
+        );
 
         const hooks = await FlowGuardAuditPlugin(
           createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
@@ -429,7 +457,10 @@ describe('plugin bootstrap fail-closed', () => {
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
         await fs.mkdir(sessDir, { recursive: true });
-        await writeState(sessDir, makeState('IMPLEMENTATION'));
+        await writeState(
+          sessDir,
+          makeState('IMPLEMENTATION', { implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE }),
+        );
 
         const hooks = await FlowGuardAuditPlugin(
           createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
@@ -519,7 +550,10 @@ describe('plugin bootstrap fail-closed', () => {
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
         await fs.mkdir(sessDir, { recursive: true });
-        await writeState(sessDir, makeState('IMPLEMENTATION'));
+        await writeState(
+          sessDir,
+          makeState('IMPLEMENTATION', { implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE }),
+        );
 
         const hooks = await FlowGuardAuditPlugin(
           createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
@@ -774,9 +808,12 @@ describe('plugin bootstrap fail-closed', () => {
         await writeState(
           sessDir,
           makeState('IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             claimedTaskClass: 'TRIVIAL',
             policySnapshot: {
-              ...makeState('IMPLEMENTATION').policySnapshot,
+              ...makeState('IMPLEMENTATION', {
+                implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+              }).policySnapshot,
               mode: 'regulated',
               requestedMode: 'regulated',
               enforceRiskClassification: true,
@@ -813,8 +850,11 @@ describe('plugin bootstrap fail-closed', () => {
         await writeState(
           sessDir,
           makeState('IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             policySnapshot: {
-              ...makeState('IMPLEMENTATION').policySnapshot,
+              ...makeState('IMPLEMENTATION', {
+                implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+              }).policySnapshot,
               mode: 'regulated',
               requestedMode: 'regulated',
               enforceRiskClassification: true,
@@ -846,9 +886,12 @@ describe('plugin bootstrap fail-closed', () => {
         await writeState(
           sessDir,
           makeState('IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             claimedTaskClass: 'HIGH-RISK',
             policySnapshot: {
-              ...makeState('IMPLEMENTATION').policySnapshot,
+              ...makeState('IMPLEMENTATION', {
+                implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+              }).policySnapshot,
               mode: 'regulated',
               requestedMode: 'regulated',
               enforceRiskClassification: true,
@@ -894,9 +937,12 @@ describe('plugin bootstrap fail-closed', () => {
         await writeState(
           sessDir,
           makeState('IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             claimedTaskClass: 'TRIVIAL',
             policySnapshot: {
-              ...makeState('IMPLEMENTATION').policySnapshot,
+              ...makeState('IMPLEMENTATION', {
+                implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+              }).policySnapshot,
               mode: 'regulated',
               requestedMode: 'regulated',
               enforceRiskClassification: true,
@@ -941,9 +987,12 @@ describe('plugin bootstrap fail-closed', () => {
         await writeState(
           sessDir,
           makeState('IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             claimedTaskClass: 'HIGH-RISK',
             policySnapshot: {
-              ...makeState('IMPLEMENTATION').policySnapshot,
+              ...makeState('IMPLEMENTATION', {
+                implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+              }).policySnapshot,
               mode: 'regulated',
               requestedMode: 'regulated',
               enforceRiskClassification: true,
@@ -983,6 +1032,7 @@ describe('plugin bootstrap fail-closed', () => {
         await writeState(
           sessDir,
           makeState('IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             error: {
               code: 'TSA_TIMESTAMP_ASSURANCE_FAILED',
               message: 'Strict timestamp assurance failed for lifecycle: TSA request failed',
