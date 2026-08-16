@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ArchitectureClaimDeclarations,
+  ArchitectureApprovalCertificate,
   FlowClaimDeclarations,
   PlanClaimDeclarations,
   PlanClaimDeclaration,
@@ -181,6 +182,106 @@ describe('ProofGraph approval schemas', () => {
     );
 
     expect(state.plan?.approvalCertificate?.certificateId).toBe(CERTIFICATE.certificateId);
+  });
+
+  describe('ArchitectureApprovalCertificate reviewBinding', () => {
+    const base = {
+      flow: 'architecture' as const,
+      authorityDigest: 'digest-of-adr',
+      claimDeclarationsDigest: 'claims-digest',
+      decisionAttestationDigest: 'decision-digest',
+      approvedAt: NOW,
+      approvedBy: 'user@example.test',
+      certificateId: '11111111-1111-4111-8111-111111111111',
+    };
+
+    it('parses a current_review binding whose reviewed digest equals the authority digest', () => {
+      const certificate = ArchitectureApprovalCertificate.parse({
+        ...base,
+        reviewBinding: {
+          kind: 'current_review',
+          reviewObligationId: '22222222-2222-4222-8222-222222222222',
+          reviewEvidenceDigest: 'e'.repeat(64),
+          reviewedSubjectDigest: base.authorityDigest,
+        },
+      });
+      expect(certificate.reviewBinding.kind).toBe('current_review');
+    });
+
+    it('rejects a current_review binding that reviewed a different digest', () => {
+      expect(() =>
+        ArchitectureApprovalCertificate.parse({
+          ...base,
+          reviewBinding: {
+            kind: 'current_review',
+            reviewObligationId: '22222222-2222-4222-8222-222222222222',
+            reviewEvidenceDigest: 'e'.repeat(64),
+            reviewedSubjectDigest: 'digest-of-a-different-adr',
+          },
+        }),
+      ).toThrow();
+    });
+
+    it('parses a review_exhausted_override binding with an explicit digest difference', () => {
+      const certificate = ArchitectureApprovalCertificate.parse({
+        ...base,
+        reviewBinding: {
+          kind: 'review_exhausted_override',
+          lastReviewObligationId: '22222222-2222-4222-8222-222222222222',
+          lastReviewEvidenceDigest: 'e'.repeat(64),
+          reviewedSubjectDigest: 'digest-of-prior-adr-revision',
+          approvedSubjectDigest: base.authorityDigest,
+        },
+      });
+      expect(certificate.reviewBinding.kind).toBe('review_exhausted_override');
+    });
+
+    it('parses a review_exhausted_override whose reviewed and approved digests coincide (no kind normalization)', () => {
+      const certificate = ArchitectureApprovalCertificate.parse({
+        ...base,
+        reviewBinding: {
+          kind: 'review_exhausted_override',
+          lastReviewObligationId: '22222222-2222-4222-8222-222222222222',
+          lastReviewEvidenceDigest: 'e'.repeat(64),
+          reviewedSubjectDigest: base.authorityDigest,
+          approvedSubjectDigest: base.authorityDigest,
+        },
+      });
+      expect(certificate.reviewBinding.kind).toBe('review_exhausted_override');
+    });
+
+    it('rejects a review_exhausted_override whose approved digest differs from the authority digest', () => {
+      expect(() =>
+        ArchitectureApprovalCertificate.parse({
+          ...base,
+          reviewBinding: {
+            kind: 'review_exhausted_override',
+            lastReviewObligationId: '22222222-2222-4222-8222-222222222222',
+            lastReviewEvidenceDigest: 'e'.repeat(64),
+            reviewedSubjectDigest: 'digest-of-prior-adr-revision',
+            approvedSubjectDigest: 'digest-of-yet-another-adr',
+          },
+        }),
+      ).toThrow();
+    });
+
+    it('rejects an architecture certificate without a reviewBinding', () => {
+      expect(() => ArchitectureApprovalCertificate.parse(base)).toThrow();
+    });
+
+    it('rejects a binding with an unknown kind', () => {
+      expect(() =>
+        ArchitectureApprovalCertificate.parse({
+          ...base,
+          reviewBinding: {
+            kind: 'self_review',
+            reviewObligationId: '22222222-2222-4222-8222-222222222222',
+            reviewEvidenceDigest: 'e'.repeat(64),
+            reviewedSubjectDigest: base.authorityDigest,
+          },
+        }),
+      ).toThrow();
+    });
   });
 });
 

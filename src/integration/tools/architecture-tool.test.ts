@@ -805,6 +805,12 @@ describe('integration/tools/architecture (wrapper)', () => {
           approvedAt: '2026-01-01T00:00:00.000Z',
           approvedBy: 'reviewer',
           certificateId: '00000000-0000-4000-8000-000000000001',
+          reviewBinding: {
+            kind: 'current_review',
+            reviewObligationId: '00000000-0000-4000-8000-000000000002',
+            reviewEvidenceDigest: 'review-evidence-digest',
+            reviewedSubjectDigest: 'digest-adr',
+          },
         },
       },
       selfReview: {

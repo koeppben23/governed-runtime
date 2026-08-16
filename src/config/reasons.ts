@@ -30,6 +30,7 @@
  */
 
 import { PRECONDITION_REASONS } from './reasons-precondition.js';
+import { ARCHITECTURE_REASONS } from './reasons-architecture.js';
 import { VALIDATION_REASONS } from './reasons-validation.js';
 import { INFRA_REASONS } from './reasons-infra.js';
 import { PROOFGRAPH_REASONS } from './reasons-proofgraph.js';
@@ -175,6 +176,7 @@ export class BlockedReasonRegistry {
  */
 export const defaultReasonRegistry = new BlockedReasonRegistry();
 defaultReasonRegistry.registerAll(PRECONDITION_REASONS);
+defaultReasonRegistry.registerAll(ARCHITECTURE_REASONS);
 defaultReasonRegistry.registerAll(VALIDATION_REASONS);
 defaultReasonRegistry.registerAll(INFRA_REASONS);
 defaultReasonRegistry.registerAll(PROOFGRAPH_REASONS);

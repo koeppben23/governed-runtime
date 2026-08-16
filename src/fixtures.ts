@@ -7,6 +7,7 @@
  */
 
 import type { SessionState, Phase } from './state/schema.js';
+import type { ReviewAssuranceState } from './state/evidence-review.js';
 import type {
   TicketEvidence,
   ArchitectureDecision,
@@ -131,6 +132,72 @@ export const ARCHITECTURE_DECISION: ArchitectureDecision = {
   reviewCompletion: 'pending',
   createdAt: FIXED_TIME,
   digest: 'digest-of-adr',
+};
+
+/**
+ * Canonical bound architecture review evidence for approve-path tests: a
+ * consumed architecture obligation for exactly the ARCHITECTURE_DECISION
+ * digest plus its invocation with a findings hash.
+ */
+export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
+  assuranceSchemaVersion: 'review-assurance.v5',
+  obligations: [
+    {
+      obligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      obligationType: 'architecture',
+      iteration: 0,
+      planVersion: 1,
+      criteriaVersion: 'criteria-v1',
+      mandateDigest: 'mandate-digest-of-review-criteria',
+      createdAt: FIXED_TIME,
+      pluginHandshakeAt: null,
+      status: 'consumed',
+      invocationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      blockedCode: null,
+      fulfilledAt: FIXED_TIME,
+      consumedAt: FIXED_TIME,
+      subjectDigest: ARCHITECTURE_DECISION.digest,
+      reviewMaterial: {
+        content: ARCHITECTURE_DECISION.adrText,
+        materialDigest: 'material-digest-of-architecture-review',
+        subjectDigest: ARCHITECTURE_DECISION.digest,
+      },
+      reviewSubjectScope: {
+        kind: 'artifact',
+        artifact: {
+          kind: 'adr',
+          digest: ARCHITECTURE_DECISION.digest,
+          sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'ADR' }]],
+        },
+      },
+      repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+      maxReviewerOutputRepairAttempts: 0,
+    },
+  ],
+  invocations: [
+    {
+      invocationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      obligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      obligationType: 'architecture',
+      parentSessionId: 'parent-session-1',
+      childSessionId: 'child-session-1',
+      agentType: 'flowguard-reviewer',
+      invocationMode: 'host_subagent_task',
+      hostVisible: true,
+      promptHash: 'prompt-hash-of-architecture-review',
+      mandateDigest: 'mandate-digest-of-review-criteria',
+      criteriaVersion: 'criteria-v1',
+      findingsHash: 'findings-hash-of-architecture-review',
+      invokedAt: FIXED_TIME,
+      fulfilledAt: FIXED_TIME,
+      consumedByObligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      capturedVerdict: 'accept',
+      reviewOutputMode: 'structured_output',
+      structuredOutputUsed: true,
+      reviewAssuranceLevel: 'structured_high',
+    },
+  ],
+  attempts: [],
 };
 
 export const PLAN_EVIDENCE: PlanEvidence = {
@@ -421,6 +488,7 @@ export function makeProgressedState(phase: Phase): SessionState {
       return makeState('ARCH_REVIEW', {
         architecture: { ...ARCHITECTURE_DECISION, reviewCompletion: 'reviewer_accepted' },
         selfReview: SELF_REVIEW_CONVERGED,
+        reviewAssurance: ARCHITECTURE_REVIEW_ASSURANCE,
       });
     case 'ARCH_COMPLETE':
       return makeState('ARCH_COMPLETE', {

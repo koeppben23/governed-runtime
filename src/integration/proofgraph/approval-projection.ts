@@ -20,6 +20,7 @@ import {
   hasCurrentArchitectureApprovalCertificate,
   hasCurrentPlanApprovalCertificate,
 } from '../../state/proofgraph-approval.js';
+import type { ArchitectureReviewBinding } from '../../state/proofgraph-approval.js';
 
 /** Digest binding of one human approval certificate. */
 export interface ApprovalCertificateProjection {
@@ -33,6 +34,13 @@ export interface ApprovalCertificateProjection {
   /** Number of declarations bound by this certificate. */
   readonly declaredClaimCount: number;
   readonly binding: 'current' | 'stale_or_unbound';
+  /**
+   * Architecture provenance edge (architecture certificates only): the exact
+   * review evidence the approval rests on, or the explicit exhaustion
+   * override. Plan certificates use the nullable reviewObligationId /
+   * reviewEvidenceDigest fields instead.
+   */
+  readonly reviewBinding?: ArchitectureReviewBinding;
 }
 
 /** One materialized claim and the evidence chain that backs it. */
