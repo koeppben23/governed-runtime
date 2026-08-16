@@ -306,7 +306,6 @@ export interface PlanClaimAuthority {
   readonly approvalCertificate?: PlanApprovalCertificate;
 }
 
-/** Whether the certificate binds the plan's current declaration set exactly. */
 /** Canonical empty declaration set per flow — the fallback when no claims were declared. */
 export function emptyClaimDeclarations(flow: 'plan'): PlanClaimDeclarations;
 export function emptyClaimDeclarations(flow: 'architecture'): ArchitectureClaimDeclarations;
@@ -316,6 +315,7 @@ export function emptyClaimDeclarations(
   return flow === 'plan' ? { flow: 'plan', claims: [] } : { flow: 'architecture', claims: [] };
 }
 
+/** Whether the certificate binds the plan's current declaration set exactly. */
 export function hasCurrentPlanApprovalCertificate(
   plan: PlanClaimAuthority | null | undefined,
 ): plan is PlanClaimAuthority & { readonly approvalCertificate: PlanApprovalCertificate } {
