@@ -120,7 +120,7 @@ export function buildPlanReviewDocument(input: PlanReviewCardInput): ReviewCardD
       level: 'warning',
       message: 'Reviewer did NOT approve this plan.',
       additionalMessages: [
-        'The independent review reached its iteration limit without convergence ' +
+        'The independent review reached its iteration limit without reviewer acceptance ' +
           '(last verdict: changes_requested). Review the outstanding findings carefully before approving.',
       ],
       details: [],

@@ -108,7 +108,7 @@ export function buildEvidenceReviewDocument(input: EvidenceReviewCardInput): Rev
       level: 'warning',
       message: 'Reviewer did NOT approve this implementation.',
       additionalMessages: [
-        'The independent review reached its iteration limit without convergence. ' +
+        'The independent review reached its iteration limit without reviewer acceptance. ' +
           'Review the implementation and outstanding findings carefully before approving.',
       ],
       details: [],

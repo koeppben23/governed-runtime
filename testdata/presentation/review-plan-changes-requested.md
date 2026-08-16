@@ -6,7 +6,7 @@
 **Task:** Add payment validation
 
 ⚠ Reviewer did NOT approve this plan.
-⚠ The independent review reached its iteration limit without convergence (last verdict: changes_requested). Review the outstanding findings carefully before approving.
+⚠ The independent review reached its iteration limit without reviewer acceptance (last verdict: changes_requested). Review the outstanding findings carefully before approving.
 
 ## Verification
 

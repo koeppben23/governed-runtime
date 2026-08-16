@@ -33,7 +33,7 @@ export interface ProductNextAction {
 
 const PRODUCT_GUIDANCE: Partial<Record<ActionCode, ProductNextAction>> = {
   CHOOSE_FLOW: {
-    text: 'Choose your workflow: /task (development), /architecture (ADR), /review (compliance).',
+    text: 'Choose your workflow: /task (development), /architecture (ADR), /review (compliance/content).',
     commands: ['/task', '/architecture', '/review'],
   },
   RUN_TICKET: {

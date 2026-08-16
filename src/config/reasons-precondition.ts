@@ -198,9 +198,9 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     code: 'REVIEWER_UNAVAILABLE_STRICT',
     category: 'precondition',
     messageTemplate:
-      'Reviewer subagent is unavailable and strict enforcement requires host-visible review. {{reason}}',
+      'Reviewer subagent is unavailable and strict enforcement requires host-visible review. {reason}',
     recoverySteps: [
-      '{{recovery}}',
+      '{recovery}',
       `Ensure the ${REVIEWER_SUBAGENT_TYPE} subagent is installed and reachable, then re-run the review. Independent review cannot be replaced by self-review or by disabling strict enforcement`,
     ],
   },
@@ -647,9 +647,9 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     code: 'REVIEWER_TASK_REQUIRES_PENDING_OBLIGATION',
     category: 'precondition',
     messageTemplate:
-      'A flowguard-reviewer Task may only run when a pending review obligation exists. Run flowguard_plan or flowguard_review first to create a pending review obligation, then start the reviewer Task.',
+      'A flowguard-reviewer Task may only run when a pending review obligation exists. Run the relevant FlowGuard review tool (flowguard_plan, flowguard_implement, flowguard_architecture, or flowguard_review) first to create a pending review obligation, then start the reviewer Task.',
     recoverySteps: [
-      'Run the relevant FlowGuard review tool (flowguard_plan, flowguard_review, or flowguard_review_implementation) first',
+      'Run the relevant FlowGuard review tool (flowguard_plan, flowguard_implement, flowguard_architecture, or flowguard_review) first',
       `Wait for the tool response to signal INDEPENDENT_REVIEW_REQUIRED before starting the ${REVIEWER_SUBAGENT_TYPE} Task`,
       'Do not start reviewer Tasks speculatively before a review obligation has been created',
     ],

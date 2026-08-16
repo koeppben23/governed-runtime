@@ -55,7 +55,7 @@ export interface ReviewReportCardInput {
   obligationId?: string;
   /** Evidence source: host-orchestrated or agent-submitted-attested. */
   invocationSource?: string;
-  /** How the reviewer was invoked: host_subagent_task, sdk_session_prompt, or manual_attested. */
+  /** How the reviewer was invoked: host_subagent_task, sdk_session_prompt, manual_attested, or native_subagent_attested. */
   invocationMode?: string;
   /** Whether this invocation produced a host-visible child session in the OpenCode GUI. */
   hostVisible?: boolean;

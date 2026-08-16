@@ -673,8 +673,9 @@ export function enforceReviewerObligation(params: {
       code: 'REVIEWER_TASK_REQUIRES_PENDING_OBLIGATION',
       reason:
         'A flowguard-reviewer Task may only run when a pending review obligation exists. ' +
-        'Run flowguard_plan or flowguard_review first to create a pending review obligation, ' +
-        'then start the reviewer Task.',
+        'Run the relevant FlowGuard review tool (flowguard_plan, flowguard_implement, ' +
+        'flowguard_architecture, or flowguard_review) first to create a pending review ' +
+        'obligation, then start the reviewer Task.',
     };
   }
 

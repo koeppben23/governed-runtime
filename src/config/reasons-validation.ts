@@ -211,7 +211,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
       'Human-gated policies require an explicit user decision from a host command boundary ({reason}).',
     recoverySteps: [
       'Present the reviewCard verbatim to the user',
-      'Ask the user to run /review-decision approve, /request-changes, or /reject',
+      'Ask the user to run /approve, /request-changes, or /reject',
       "Do not decide on the user's behalf and do not call flowguard_decision from a model-only tool call",
     ],
   },
@@ -336,6 +336,19 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
       'Re-run discovery to capture the current execution surface',
       'Re-execute verification against the current subject',
     ],
+  },
+
+  {
+    code: 'SUBAGENT_MANDATE_MISSING',
+    category: 'state',
+    messageTemplate:
+      'The submitted review findings carry no mandate attestation for the active review obligation {obligationId}.',
+    recoverySteps: [
+      'Re-invoke the flowguard-reviewer subagent so the captured findings carry the mandate attestation',
+      'Do not submit hand-assembled findings for a strict host-visible review',
+      'Run /continue to confirm the active obligation before retrying the verdict',
+    ],
+    quickFixCommand: '/continue',
   },
 
   {

@@ -162,7 +162,7 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'Multiple flows are available from phase {phase}. /continue cannot choose — pick one explicitly.',
     recoverySteps: [
-      'Choose a flow: /task (development), /architecture (ADR), /review (compliance/content)',
+      'Choose your workflow: /task (development), /architecture (ADR), /review (compliance/content)',
       'Or use one of the recommended commands in the /status output',
     ],
   },
@@ -285,7 +285,7 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'Content meta extraction failed — cannot validate subagent context in strict mode. The FlowGuard tool response must include structured review obligation metadata.',
     recoverySteps: [
-      'Re-run the FlowGuard tool that produced the review obligation (flowguard_plan or flowguard_implement)',
+      'Re-run the FlowGuard tool that produced the review obligation (flowguard_plan, flowguard_implement, flowguard_architecture, or flowguard_review)',
       'Verify the response contains the reviewObligation field with iteration and planVersion',
       'If the issue persists in regulated mode, re-hydrate the session',
     ],
@@ -707,7 +707,7 @@ export const REVIEW_VALIDATION_REASONS = [
     code: 'REVIEW_VERDICT_MISMATCH',
     category: 'state',
     messageTemplate:
-      'Submitted reviewVerdict ({submitted}) does not match the captured reviewer overallVerdict ({captured}) for obligation {obligationId}.',
+      'Submitted reviewVerdict ({provided}) does not match the captured reviewer overallVerdict ({expected}) for obligation {obligationId}.',
     recoverySteps: [
       'Submit reviewVerdict exactly matching the reviewer subagent overallVerdict',
       'Do NOT override the reviewer verdict — it is the independent reviewer result, not user approval',

@@ -135,7 +135,7 @@ describe('buildProductNextAction', () => {
       const action = { code: 'CHOOSE_FLOW', text: '', commands: [] as string[] };
       const product = buildProductNextAction(action, 'READY');
       expect(product.text).toBe(
-        'Choose your workflow: /task (development), /architecture (ADR), /review (compliance).',
+        'Choose your workflow: /task (development), /architecture (ADR), /review (compliance/content).',
       );
       expect(product.commands).toEqual(['/task', '/architecture', '/review']);
     });

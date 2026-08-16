@@ -45,7 +45,7 @@ export interface ArchitectureReviewCardInput {
   adrDigest?: string;
   /** Full ADR body in MADR Markdown. Rendered verbatim like the plan card renders planText. */
   adrText?: string;
-  /** Self-review iteration number. */
+  /** Independent review iteration number. */
   iteration: number;
   /** Subagent overall verdict. */
   overallVerdict?: string;
