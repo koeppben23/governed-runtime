@@ -4,6 +4,7 @@
  *              task-lifecycle re-arms.
  */
 import { describe, expect, it } from 'vitest';
+import { assuranceWith as fixtureAssuranceWith } from '../../fixtures.js';
 import { createReviewObligation } from './assurance.js';
 import { createAttemptForExistingObligation, createReviewAttempt } from './attempt-lifecycle.js';
 import { updateAttemptStatus } from './attempt-lifecycle.js';
@@ -75,17 +76,10 @@ function initialAttempt(
   });
 }
 
-function assuranceWith(
+const assuranceWith = (
   obligation: ReviewObligation,
   attempts: ReviewAttempt[],
-): ReviewAssuranceState {
-  return {
-    assuranceSchemaVersion: 'review-assurance.v5',
-    obligations: [obligation],
-    invocations: [],
-    attempts,
-  };
-}
+): ReviewAssuranceState => fixtureAssuranceWith({ obligation, attempts });
 
 function rejectedAttempt(
   obligation: ReviewObligation,

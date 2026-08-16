@@ -9,6 +9,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { assuranceWith as fixtureAssuranceWith } from '../../../fixtures.js';
 import { enforceBeforeSubagentCall } from './prompt-integrity.js';
 import { createSessionState, onFlowGuardToolAfter, onTaskToolAfter } from './enforcement.js';
 import {
@@ -26,17 +27,10 @@ import type { ReviewAssuranceState } from '../../../state/evidence.js';
 const NOW = '2026-05-10T12:00:00.000Z';
 const LATER = '2026-05-10T12:01:00.000Z';
 
-function assuranceWithAttempts(
+const assuranceWithAttempts = (
   obligation: ReturnType<typeof pendingObligation>,
   attempts: ReturnType<typeof attemptFor>[],
-): ReviewAssuranceState {
-  return {
-    assuranceSchemaVersion: 'review-assurance.v5' as const,
-    obligations: [obligation],
-    invocations: [],
-    attempts,
-  };
-}
+): ReviewAssuranceState => fixtureAssuranceWith({ obligation, attempts });
 
 function signalWithAttempt(attemptId: string, obligationId: string): string {
   const base = JSON.parse(modeAResponse(0, 1, obligationId)) as Record<string, unknown>;

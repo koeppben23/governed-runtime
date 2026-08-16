@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { assuranceWith as fixtureAssuranceWith } from '../../fixtures.js';
 import { resolveHostTaskEffectiveFindings } from './review-validation.js';
 import type { ReviewInvocationEvidence, ReviewObligation } from '../../state/evidence-review.js';
+import type { ReviewAssuranceState } from '../../state/evidence-review.js';
 import {
   makeHostTaskInvocation,
   makeReviewObligation,
@@ -27,14 +29,10 @@ const validRawFindings: Record<string, unknown> = {
   reviewedAt: now,
 };
 
-function assuranceWith(obligation: ReviewObligation, invocations: ReviewInvocationEvidence[]) {
-  return {
-    assuranceSchemaVersion: 'review-assurance.v5' as const,
-    obligations: [obligation],
-    invocations,
-    attempts: [],
-  };
-}
+const assuranceWith = (
+  obligation: ReviewObligation,
+  invocations: ReviewInvocationEvidence[],
+): ReviewAssuranceState => fixtureAssuranceWith({ obligation, invocations });
 
 function ctx(
   overrides: Partial<Parameters<typeof resolveHostTaskEffectiveFindings>[0]> = {},

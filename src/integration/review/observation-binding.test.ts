@@ -11,6 +11,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { assuranceWith as fixtureAssuranceWith } from '../../fixtures.js';
 import {
   bindRepositoryEvidenceLocations,
   type BindingFindingRelation,
@@ -172,17 +173,10 @@ function bind(
   });
 }
 
-function assuranceWith(
+const assuranceWith = (
   obligation: ReviewObligation,
   attempt: ReviewAttempt | null,
-): ReviewAssuranceState {
-  return {
-    assuranceSchemaVersion: 'review-assurance.v5',
-    obligations: [obligation],
-    invocations: [],
-    attempts: attempt ? [attempt] : [],
-  };
-}
+): ReviewAssuranceState => fixtureAssuranceWith({ obligation, attempts: attempt ? [attempt] : [] });
 
 describe('pure binder — adversarial matrix', () => {
   it('HAPPY: matching frozen head observation binds', () => {

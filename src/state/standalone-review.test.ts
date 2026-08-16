@@ -8,7 +8,7 @@ import {
   type StandaloneReviewPreparedEvidence,
 } from './standalone-review.js';
 import { deriveProofGraph } from '../audit/proofgraph/derive.js';
-import { makeState } from '../fixtures.js';
+import { assuranceWith, makeState } from '../fixtures.js';
 import { SessionState } from './schema.js';
 import { createReviewObligation } from '../integration/review/assurance.js';
 import {
@@ -38,16 +38,6 @@ function reviewObligation(): ReturnType<typeof createReviewObligation> {
       lineCount: 1,
     },
   });
-}
-
-function assuranceWith(obligationId: string): ReviewAssuranceState {
-  const obligation = { ...reviewObligation(), obligationId };
-  return {
-    assuranceSchemaVersion: 'review-assurance.v5',
-    obligations: [obligation],
-    invocations: [],
-    attempts: [],
-  };
 }
 
 function preparedEntry(
@@ -116,7 +106,9 @@ describe('standalone review deterministic task', () => {
     const projection = deriveProofGraph(
       makeState('READY', {
         standaloneReviewEvidence: [prepared],
-        reviewAssurance: assuranceWith(OBLIGATION_ID),
+        reviewAssurance: assuranceWith({
+          obligation: { ...reviewObligation(), obligationId: OBLIGATION_ID },
+        }),
       }),
       [],
       [],
@@ -230,7 +222,9 @@ describe('standalone review deterministic task', () => {
     const projection = deriveProofGraph(
       makeState('REVIEW_COMPLETE', {
         standaloneReviewEvidence,
-        reviewAssurance: assuranceWith(OBLIGATION_ID),
+        reviewAssurance: assuranceWith({
+          obligation: { ...reviewObligation(), obligationId: OBLIGATION_ID },
+        }),
       }),
       [],
       [],
@@ -413,7 +407,9 @@ describe('resolveAuthoritativeStandaloneReviewTask lifecycle validation', () => 
     ];
     const state = makeState('REVIEW_COMPLETE', {
       standaloneReviewEvidence: brokenEvidence,
-      reviewAssurance: assuranceWith(OBLIGATION_ID),
+      reviewAssurance: assuranceWith({
+        obligation: { ...reviewObligation(), obligationId: OBLIGATION_ID },
+      }),
     });
     const parsed = SessionState.safeParse(state);
     expect(parsed.success).toBe(false);

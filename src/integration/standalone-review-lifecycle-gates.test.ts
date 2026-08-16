@@ -12,7 +12,7 @@ import {
 } from './tools/review-tool/preparation.js';
 import { deriveProofGraph } from '../audit/proofgraph/derive.js';
 import { createReviewObligation } from './review/assurance.js';
-import { makeState } from '../fixtures.js';
+import { assuranceWith, makeState } from '../fixtures.js';
 import type { ReviewAssuranceState } from '../state/evidence-review.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
@@ -41,15 +41,6 @@ function obligation(id: string): ReturnType<typeof createReviewObligation> {
   };
 }
 
-function assuranceWith(obligationId: string): ReviewAssuranceState {
-  return {
-    assuranceSchemaVersion: 'review-assurance.v5',
-    obligations: [obligation(obligationId)],
-    invocations: [],
-    attempts: [],
-  };
-}
-
 function claimIds(projection: { claims: readonly { claimId: string }[] }): string[] {
   return projection.claims.map((claim) => claim.claimId).sort();
 }
@@ -69,7 +60,7 @@ describe('standalone-review lifecycle gates', () => {
     const projection = deriveProofGraph(
       makeState('REVIEW_COMPLETE', {
         standaloneReviewEvidence: evidence,
-        reviewAssurance: assuranceWith(OBLIGATION_A),
+        reviewAssurance: assuranceWith({ obligation: obligation(OBLIGATION_A) }),
       }),
       [],
       [],

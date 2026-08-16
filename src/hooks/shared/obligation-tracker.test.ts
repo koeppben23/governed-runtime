@@ -1,19 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { unresolvedBlockingObligations, assessObligationEscalation } from './obligation-tracker.js';
-import { makeState } from '../../fixtures.js';
+import { assuranceWith, makeState } from '../../fixtures.js';
 import type { ReviewObligation } from '../../state/evidence.js';
 
 const FIXED_UUID = '550e8400-e29b-41d4-a716-446655440000';
 const FIXED_DATETIME = '2026-01-01T00:00:00.000Z';
-
-function reviewAssurance(obligations: ReviewObligation[]) {
-  return {
-    assuranceSchemaVersion: 'review-assurance.v5' as const,
-    obligations,
-    invocations: [],
-    attempts: [],
-  };
-}
 
 function makeObligation(overrides: Partial<ReviewObligation> = {}): ReviewObligation {
   return {
@@ -43,7 +34,7 @@ function makeObligation(overrides: Partial<ReviewObligation> = {}): ReviewObliga
 
 describe('unresolvedBlockingObligations', () => {
   it('returns empty array when no obligations exist', () => {
-    const state = makeState('READY', { reviewAssurance: reviewAssurance([]) });
+    const state = makeState('READY', { reviewAssurance: assuranceWith({ obligations: [] }) });
     const result = unresolvedBlockingObligations(state);
     expect(result).toHaveLength(0);
   });
@@ -56,21 +47,27 @@ describe('unresolvedBlockingObligations', () => {
 
   it('filters out consumed obligations (status consumed)', () => {
     const consumed = makeObligation({ status: 'consumed', consumedAt: null });
-    const state = makeState('READY', { reviewAssurance: reviewAssurance([consumed]) });
+    const state = makeState('READY', {
+      reviewAssurance: assuranceWith({ obligations: [consumed] }),
+    });
     const result = unresolvedBlockingObligations(state);
     expect(result).toHaveLength(0);
   });
 
   it('filters out obligations with consumedAt set', () => {
     const consumed = makeObligation({ status: 'pending', consumedAt: FIXED_DATETIME });
-    const state = makeState('READY', { reviewAssurance: reviewAssurance([consumed]) });
+    const state = makeState('READY', {
+      reviewAssurance: assuranceWith({ obligations: [consumed] }),
+    });
     const result = unresolvedBlockingObligations(state);
     expect(result).toHaveLength(0);
   });
 
   it('returns pending obligations (not consumed, no consumedAt)', () => {
     const pending = makeObligation({ status: 'pending', consumedAt: null });
-    const state = makeState('READY', { reviewAssurance: reviewAssurance([pending]) });
+    const state = makeState('READY', {
+      reviewAssurance: assuranceWith({ obligations: [pending] }),
+    });
     const result = unresolvedBlockingObligations(state);
     expect(result).toHaveLength(1);
     const [obligation] = result;
@@ -95,7 +92,7 @@ describe('unresolvedBlockingObligations', () => {
       obligationId: 'c'.repeat(36).replace(/c/, '3'),
     });
     const state = makeState('READY', {
-      reviewAssurance: reviewAssurance([pending, fulfilled, consumed]),
+      reviewAssurance: assuranceWith({ obligations: [pending, fulfilled, consumed] }),
     });
     const result = unresolvedBlockingObligations(state);
     expect(result).toHaveLength(2);
@@ -105,7 +102,7 @@ describe('unresolvedBlockingObligations', () => {
 
 describe('assessObligationEscalation', () => {
   it('returns none when no pending obligations', () => {
-    const state = makeState('READY', { reviewAssurance: reviewAssurance([]) });
+    const state = makeState('READY', { reviewAssurance: assuranceWith({ obligations: [] }) });
     const result = assessObligationEscalation(state, true, '2026-01-01T00:05:00.000Z');
     expect(result.level).toBe('none');
     expect(result.pendingCount).toBe(0);
@@ -116,7 +113,9 @@ describe('assessObligationEscalation', () => {
       status: 'pending',
       createdAt: '2026-01-01T00:00:00.000Z',
     });
-    const state = makeState('READY', { reviewAssurance: reviewAssurance([pending]) });
+    const state = makeState('READY', {
+      reviewAssurance: assuranceWith({ obligations: [pending] }),
+    });
     const result = assessObligationEscalation(state, false, '2026-01-01T00:05:00.000Z');
     expect(result.level).toBe('none');
   });
@@ -126,7 +125,9 @@ describe('assessObligationEscalation', () => {
       status: 'pending',
       createdAt: '2026-01-01T00:00:00.000Z',
     });
-    const state = makeState('READY', { reviewAssurance: reviewAssurance([pending]) });
+    const state = makeState('READY', {
+      reviewAssurance: assuranceWith({ obligations: [pending] }),
+    });
     const result = assessObligationEscalation(state, true, '2026-01-01T00:00:30.000Z');
     expect(result.level).toBe('info');
     expect(result.pendingCount).toBe(1);
@@ -137,7 +138,9 @@ describe('assessObligationEscalation', () => {
       status: 'pending',
       createdAt: '2026-01-01T00:00:00.000Z',
     });
-    const state = makeState('READY', { reviewAssurance: reviewAssurance([pending]) });
+    const state = makeState('READY', {
+      reviewAssurance: assuranceWith({ obligations: [pending] }),
+    });
     const result = assessObligationEscalation(state, true, '2026-01-01T00:01:00.000Z');
     expect(result.level).toBe('warn');
   });
@@ -147,7 +150,9 @@ describe('assessObligationEscalation', () => {
       status: 'pending',
       createdAt: '2026-01-01T00:00:00.000Z',
     });
-    const state = makeState('READY', { reviewAssurance: reviewAssurance([pending]) });
+    const state = makeState('READY', {
+      reviewAssurance: assuranceWith({ obligations: [pending] }),
+    });
     const result = assessObligationEscalation(state, true, '2026-01-01T00:03:00.000Z');
     expect(result.level).toBe('critical');
   });
@@ -157,7 +162,9 @@ describe('assessObligationEscalation', () => {
       status: 'pending',
       createdAt: '2026-01-01T00:00:00.000Z',
     });
-    const state = makeState('READY', { reviewAssurance: reviewAssurance([pending]) });
+    const state = makeState('READY', {
+      reviewAssurance: assuranceWith({ obligations: [pending] }),
+    });
     const result = assessObligationEscalation(state, true, '2026-01-01T00:03:00.000Z');
     expect(result.level).toBe('critical');
   });
@@ -174,7 +181,7 @@ describe('assessObligationEscalation', () => {
       obligationId: 'b'.repeat(36).replace(/b/, '2'),
     });
     const state = makeState('READY', {
-      reviewAssurance: reviewAssurance([old, recent]),
+      reviewAssurance: assuranceWith({ obligations: [old, recent] }),
     });
     const result = assessObligationEscalation(state, true, '2026-01-01T00:03:00.000Z');
     expect(result.level).toBe('critical');
