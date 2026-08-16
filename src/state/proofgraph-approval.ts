@@ -307,6 +307,17 @@ export interface PlanClaimAuthority {
 }
 
 /** Whether the certificate binds the plan's current declaration set exactly. */
+/** Canonical empty declaration set per flow — the fallback when no claims were declared. */
+export function emptyClaimDeclarations(flow: 'plan'): PlanClaimDeclarations;
+export function emptyClaimDeclarations(flow: 'architecture'): ArchitectureClaimDeclarations;
+export function emptyClaimDeclarations(
+  flow: 'plan' | 'architecture',
+): PlanClaimDeclarations | ArchitectureClaimDeclarations {
+  return flow === 'plan'
+    ? { flow: 'plan', claims: [] }
+    : { flow: 'architecture', claims: [] };
+}
+
 export function hasCurrentPlanApprovalCertificate(
   plan: PlanClaimAuthority | null | undefined,
 ): plan is PlanClaimAuthority & { readonly approvalCertificate: PlanApprovalCertificate } {
@@ -317,7 +328,7 @@ export function hasCurrentPlanApprovalCertificate(
   // Record-Digest-Bindung: Gleicher Plantext + gleiche Version, aber anderer
   // recordDigest (z.B. andere Lineage-Metadaten) invalidiert das Zertifikat.
   if (plan.approvalCertificate.planRecordDigest !== plan.current.recordDigest) return false;
-  const declarations = plan.claimDeclarations ?? { flow: 'plan' as const, claims: [] };
+  const declarations = plan.claimDeclarations ?? emptyClaimDeclarations('plan');
   return (
     plan.approvalCertificate.claimDeclarationsDigest ===
     hashText(canonicalJsonStringify(declarations))
@@ -339,10 +350,7 @@ export function hasCurrentArchitectureApprovalCertificate(
 } {
   if (!architecture?.approvalCertificate) return false;
   if (architecture.approvalCertificate.authorityDigest !== architecture.digest) return false;
-  const declarations = architecture.claimDeclarations ?? {
-    flow: 'architecture' as const,
-    claims: [],
-  };
+  const declarations = architecture.claimDeclarations ?? emptyClaimDeclarations('architecture');
   return (
     architecture.approvalCertificate.claimDeclarationsDigest ===
     hashText(canonicalJsonStringify(declarations))
