@@ -302,6 +302,34 @@ true })` returns the evaluated projection. Key invariants:
   optional.
   Available in all phases including terminal phases.
 
+- **Architecture approval certificates bind review evidence (certificate
+  provenance).** `ArchitectureApprovalCertificate` now requires a discriminated
+  `reviewBinding` (`current_review` | `review_exhausted_override`); the whole
+  binding block co-signs the `certificateId` digest, so relabeling the kind or
+  swapping the reviewed digest changes the certificate identity.
+  `reviewer_accepted` binds exact-subject evidence for the current ADR digest
+  (no cross-digest fallback); `review_exhausted` mints an explicit override
+  provenance. Gate and mint share ONE evidence resolution per decision
+  operation. New reason codes `ARCHITECTURE_REVIEW_EVIDENCE_REQUIRED` and
+  `ARCHITECTURE_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION`; the latter fires when
+  the bound `capturedVerdict` contradicts the recorded review completion.
+  Evidence without a captured verdict stays legacy-tolerant. Certificates
+  persisted before this change carry no `reviewBinding` and fail the now
+  required schema field — re-approve after the review cycle produces bound
+  evidence.
+
+- **Implementation review subject model and frozen base authority (#816).**
+  Implementation review obligations mint an `implementation` subject scope
+  whose digest equals the obligation subject digest; the frozen implementation
+  base persists at a single boundary
+  (`adapters/implementation-base-authority.ts`), and the SDK orchestration path
+  requires the exact implement obligation.
+
+- **Non-blocking CI hints.** `known-issues-note` warns when a PR changes
+  trust-boundary paths without updating KNOWN_ISSUES.md; `unused-exports-note`
+  warns on new unused exports against a committed, line-independent baseline
+  (`knip --exports`). Both jobs always exit 0 and are not part of the CI gate.
+
 ### Changed
 
 - **BREAKING (`flowguard_declare_contract`): `critical` is now required.** It
@@ -373,6 +401,26 @@ true })` returns the evaluated projection. Key invariants:
 - **SDK updater uses gh CLI for PR management (#656).** Scheduled
   `opencode-sdk-update` workflow now creates and updates PRs via `gh pr` CLI
   instead of raw API calls; successful runs auto-close stale drift issues.
+
+- **Mutation scope restored to 82.88 % (break: 80).** Missing test files were
+  re-admitted to the stryker include list (discovery/verification suites,
+  materialize-contract, review-validation host-resolution, gate/integrity/
+  claim-contract edge tests), `Regex` joined the excluded mutators, and the
+  execution-subject/planner/evidence-resolution coverage gaps were closed with
+  targeted tests. `review-evidence-resolution.ts` is in the mutate scope at
+  100 %.
+
+- **Reason-code registry split and registered gaps.** Architecture-domain codes
+  moved to `reasons-architecture.ts`; the previously unregistered
+  `SUBAGENT_MANDATE_MISSING` now renders through the registry instead of
+  `[UNREGISTERED_REASON: …]`. Registry totals 267 codes.
+
+- **Developer-facing structural polish (#817, #818).** Byte-identical
+  `digestToId()` and `emptyClaimDeclarations()` consolidation, dead gh-cli
+  exports and a dead telemetry barrel removed, repository-identity unions
+  canonicalized, presentation `ReviewDecisionProjectionInput` rename, drifted
+  test-helper builders and the seven review-assurance envelope builders
+  consolidated into single canonical implementations.
 
 ### Fixed
 
@@ -635,6 +683,20 @@ true })` returns the evaluated projection. Key invariants:
   - C5: `snapshotForRollback()` uses O_NOFOLLOW with type coherence fail-closed;
     `rollbackArtifacts()` uses `lstat`-based symlink rejection, temp+rename atomic
     restore; `writeIfAbsent()` uses `wx` exclusive-create for `force=false`.
+
+- **`REVIEWER_UNAVAILABLE_STRICT` rendered stray literal braces.** The message
+  template used double-brace placeholders, so the interpolated `{reason}` and
+  `{recovery}` displayed as `{…}` in user output; fixed to single braces.
+
+- **Reviewer-task pending-obligation guidance listed an incomplete tool set.**
+  Message, recovery steps, enforcement reason, and troubleshooting docs now name
+  all four review-requesting entry points (`flowguard_plan`,
+  `flowguard_implement`, `flowguard_architecture`, `flowguard_review`).
+
+- **Documentation drift corrected.** The reviewer verdict table now documents
+  `accept` (not `approve`); `CENTRAL_POLICY_INVALID_MODE` no longer lists
+  `team-ci` as a valid `minimumMode`; several recovery and copy strings were
+  aligned with their registry wording.
 
 ### Security
 
