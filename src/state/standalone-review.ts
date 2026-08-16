@@ -5,7 +5,7 @@
 
 import { z } from 'zod';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
-import { hashText } from '../shared/hashing.js';
+import { digestToId, hashText } from '../shared/hashing.js';
 import type { ReviewFindings } from './evidence.js';
 import { DeclaredClaim, type DeclaredClaim as DeclaredClaimType } from './proofgraph.js';
 
@@ -136,8 +136,7 @@ function normalizedStatement(statement: string): string {
 }
 
 function deterministicUuid(input: string): string {
-  const hex = hashText(input);
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+  return digestToId(hashText(input), 5);
 }
 
 export function createStandaloneReviewTask(input: {

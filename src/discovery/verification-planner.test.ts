@@ -1,28 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import type { DetectedStack } from './types.js';
 import {
   extractExecutionSubjectInputsByCandidateId,
   planVerificationCandidates,
 } from './verification-planner.js';
-
-function makeDetectedStack(items: DetectedStack['items']): DetectedStack {
-  return {
-    summary: items.map((item) => item.id).join(', '),
-    items,
-    versions: items
-      .filter((item) => item.version)
-      .map((item) => ({
-        id: item.id,
-        version: item.version!,
-        target: item.kind,
-      })),
-  };
-}
-
-function makeReadFile(files: Record<string, string | undefined>) {
-  return async (relativePath: string): Promise<string | undefined> => files[relativePath];
-}
+import { makeDetectedStack, makeReadFile } from './verification-planner-test-helpers.js';
 
 describe('verification planner', () => {
   describe('HAPPY', () => {

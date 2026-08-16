@@ -148,7 +148,7 @@ export function frozenObjectType(worktree: string, objectSha: string): string {
  * True when the object exists in the local object database. Missing objects
  * are the sanctioned trigger for remote acquisition of remote identities.
  */
-export function frozenObjectExists(worktree: string, objectSha: string): boolean {
+function frozenObjectExists(worktree: string, objectSha: string): boolean {
   try {
     execFileSync('git', ['cat-file', '-e', objectSha], {
       cwd: worktree,

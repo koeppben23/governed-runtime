@@ -11,6 +11,10 @@ import {
   REVIEW_MANDATE_DIGEST,
 } from '../review/assurance.js';
 import type { ReviewInvocationEvidence, ReviewObligation } from '../../state/evidence-review.js';
+import {
+  makeHostTaskInvocation as makeSharedHostTaskInvocation,
+  makeReviewObligation,
+} from './review-validation-test-helpers.js';
 
 // ═════════════════════════════════════════════════════════════════════════════
 // resolveHostTaskFindings — BUG-15 Stufe 2
@@ -52,59 +56,12 @@ describe('resolveHostTaskFindings', () => {
     ...overrides,
   });
 
-  function makeObligation(overrides: Partial<ReviewObligation> = {}): ReviewObligation {
-    return {
-      obligationId: OBLIGATION_ID,
-      obligationType: 'plan' as const,
-      subjectDigest: 'test-subject-digest',
-      iteration: 0,
-      planVersion: 1,
-      criteriaVersion: REVIEW_CRITERIA_VERSION,
-      mandateDigest: REVIEW_MANDATE_DIGEST,
-      maxReviewerOutputRepairAttempts: 1,
-      createdAt: now,
-      pluginHandshakeAt: now,
-      status: 'fulfilled' as const,
-      invocationId: INVOCATION_ID,
-      blockedCode: null,
-      fulfilledAt: now,
-      consumedAt: null,
-      reviewSubjectScope: {
-        kind: 'repository_change',
-        paths: ['src/foo.ts'],
-        revisions: ['base', 'head'],
-      },
-      ...overrides,
-    };
-  }
+  const makeObligation = makeReviewObligation;
 
   function makeHostTaskInvocation(
     overrides: Partial<ReviewInvocationEvidence> = {},
   ): ReviewInvocationEvidence {
-    return {
-      invocationId: INVOCATION_ID,
-      obligationId: OBLIGATION_ID,
-      obligationType: 'plan' as const,
-      parentSessionId: 'ses_parent',
-      childSessionId: 'ses_child',
-      agentType: 'flowguard-reviewer' as const,
-      invocationMode: 'host_subagent_task' as const,
-      hostVisible: true,
-      promptHash: 'abc',
-      mandateDigest: REVIEW_MANDATE_DIGEST,
-      criteriaVersion: REVIEW_CRITERIA_VERSION,
-      findingsHash: hashFindings(validRawFindings),
-      invokedAt: now,
-      fulfilledAt: now,
-      consumedByObligationId: null,
-      capturedVerdict: 'accept',
-      capturedRawFindings: validRawFindings,
-      reviewOutputMode: 'structured_output',
-      structuredOutputUsed: true,
-      reviewAssuranceLevel: 'structured_high',
-      attemptId: ATTEMPT_ID,
-      ...overrides,
-    };
+    return makeSharedHostTaskInvocation(validRawFindings, { attemptId: ATTEMPT_ID, ...overrides });
   }
 
   // ── Happy Path ──────────────────────────────────────────────────────────

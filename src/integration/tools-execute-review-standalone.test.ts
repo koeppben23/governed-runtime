@@ -60,7 +60,24 @@ import {
 } from '../fixtures.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import { TEAM_POLICY } from '../config/policy.js';
-import { hasMaterialFinding } from './review/report-test-helpers.js';
+
+/** Test predicate for source-tagged standalone review report findings. */
+function hasMaterialFinding(
+  findings: Array<Record<string, unknown>>,
+  message: string,
+  category?: string,
+  reportSeverity?: string,
+): boolean {
+  return findings.some((finding) => {
+    if (finding.source !== 'material_finding') return false;
+    const material = finding.finding as Record<string, unknown>;
+    return (
+      material.message === message &&
+      (category === undefined || material.category === category) &&
+      (reportSeverity === undefined || finding.reportSeverity === reportSeverity)
+    );
+  });
+}
 
 vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
@@ -113,12 +130,6 @@ const wsMock = await import('../adapters/workspace/index.js');
 const actorMock = await import('../adapters/actor.js');
 
 vi.mock('../adapters/gh-cli', () => ({
-  hasGhCli: vi.fn().mockReturnValue(true),
-  loadPrDiff: vi
-    .fn()
-    .mockReturnValue(
-      'diff --git a/docs/test.md b/docs/test.md\n+new line\ndiff --git a/src/auth/login.ts b/src/auth/login.ts\n+new line\ndiff --git a/src/auth/types.ts b/src/auth/types.ts\n+new line',
-    ),
   resolvePullRequestReviewSource: vi.fn().mockImplementation((pullRequestNumber: number) => ({
     pullRequestNumber,
     baseRepository: { host: 'github.com', owner: 'flowguard', name: 'governed-runtime' },
@@ -130,11 +141,6 @@ vi.mock('../adapters/gh-cli', () => ({
     .fn()
     .mockReturnValue(
       'diff --git a/docs/test.md b/docs/test.md\n+new line\ndiff --git a/src/auth/login.ts b/src/auth/login.ts\n+new line\ndiff --git a/src/auth/types.ts b/src/auth/types.ts\n+new line',
-    ),
-  loadBranchDiff: vi
-    .fn()
-    .mockReturnValue(
-      'diff --git a/docs/test.md b/docs/test.md\n+branch line\ndiff --git a/src/auth/login.ts b/src/auth/login.ts\n+branch line\ndiff --git a/src/auth/types.ts b/src/auth/types.ts\n+branch line',
     ),
   resolveBranchReviewSource: vi.fn().mockImplementation((branch: string) => ({
     branch,

@@ -27,7 +27,7 @@ import type { CompactProofPresentation } from './proof-model.js';
 import { buildProofGraphSection } from './proof-summary.js';
 import { buildReviewDecisionConclusion } from './review-decision.js';
 import { projectReviewDecision } from './review-decision.js';
-import type { ReviewDecisionInput } from './review-decision.js';
+import type { ReviewDecisionProjectionInput } from './review-decision.js';
 
 // ─── Card Input ──────────────────────────────────────────────────────────────
 
@@ -143,7 +143,7 @@ export function buildEvidenceReviewDocument(input: EvidenceReviewCardInput): Rev
 // ─── Decision Section Builder ────────────────────────────────────────────────
 
 function buildDecisionSection(input: EvidenceReviewCardInput): PresentationSection {
-  const reviewInput: ReviewDecisionInput = {
+  const reviewInput: ReviewDecisionProjectionInput = {
     blockingIssues: input.blockingIssues,
     majorRisks: input.majorRisks,
     missingVerification: input.missingVerification,

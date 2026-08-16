@@ -56,8 +56,6 @@ const BRANCH_DIFF = vi.hoisted(
 );
 
 vi.mock('../adapters/gh-cli', () => ({
-  hasGhCli: vi.fn().mockReturnValue(true),
-  loadBranchDiff: vi.fn().mockReturnValue(BRANCH_DIFF),
   loadResolvedBranchDiff: vi.fn().mockReturnValue(BRANCH_DIFF),
   resolveBranchReviewSource: vi.fn().mockImplementation((branch: string) => ({
     branch,

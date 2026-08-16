@@ -7,6 +7,21 @@ export function hashText(text: string): string {
 }
 
 /**
+ * Derive a deterministic UUID-shaped identifier from a digest string.
+ * Non-hex characters (e.g. an injected `sha256:` prefix) are stripped before
+ * slicing; short inputs are zero-padded. `version` selects the UUID version
+ * nibble so different identifier families stay distinguishable.
+ */
+export function digestToId(digest: string, version: 4 | 5): string {
+  const hex = digest
+    .toLowerCase()
+    .replaceAll(/[^a-f0-9]/g, '')
+    .padEnd(32, '0')
+    .slice(0, 32);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${version}${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20)}`;
+}
+
+/**
  * Hash a UTF-8 string and return the first `length` hex characters.
  *
  * Byte-identical to `hashText(text).slice(0, length)` — the canonical form for

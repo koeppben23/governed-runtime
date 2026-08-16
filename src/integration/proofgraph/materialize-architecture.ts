@@ -19,6 +19,7 @@
 
 import type { ProofContract, ProofContractCoverage } from '../../state/proofgraph-contract.js';
 import type { SessionState } from '../../state/schema.js';
+import { emptyClaimDeclarations } from '../../state/proofgraph-approval.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { hashText } from '../../shared/hashing.js';
 
@@ -49,10 +50,7 @@ function validateApprovedArchitectureCertificate(state: SessionState): Certifica
   if (certificate.authorityDigest !== architecture.digest) {
     return { kind: 'invalid', cause: 'invalid_certificate' };
   }
-  const declarations = architecture.claimDeclarations ?? {
-    flow: 'architecture' as const,
-    claims: [],
-  };
+  const declarations = architecture.claimDeclarations ?? emptyClaimDeclarations('architecture');
   return certificate.claimDeclarationsDigest === hashText(canonicalJsonStringify(declarations))
     ? { kind: 'valid', certificate }
     : { kind: 'invalid', cause: 'invalid_certificate' };

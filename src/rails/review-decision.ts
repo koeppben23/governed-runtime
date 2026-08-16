@@ -42,7 +42,10 @@ import type {
   ArchitectureReviewBinding,
   PlanApprovalCertificate,
 } from '../state/proofgraph-approval.js';
-import { authorizedCriticalPlanClaimIds } from '../state/proofgraph-approval.js';
+import {
+  authorizedCriticalPlanClaimIds,
+  emptyClaimDeclarations,
+} from '../state/proofgraph-approval.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import { evaluate, evaluateWithEvent } from '../machine/evaluate.js';
 import type { RailResult, RailBlocked, RailContext, TransitionRecord } from './types.js';
@@ -50,6 +53,7 @@ import { applyTransition } from './types.js';
 import { blocked } from '../config/reasons.js';
 import { compareActorIdentity, isAssuranceAtLeast } from '../identity/actor-info.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { digestToId } from '../shared/hashing.js';
 import { evaluateProofGraphGate } from '../audit/proofgraph/gate.js';
 import { mapEnforcementReasonToRegistryCode } from '../audit/proofgraph/reason-code-mapping.js';
 import {
@@ -357,7 +361,7 @@ function createPlanApprovalCertificate(
   reviewObligationId?: string | null,
   reviewEvidenceDigest?: string | null,
 ): PlanApprovalCertificate {
-  const claimDeclarations = plan.claimDeclarations ?? { flow: 'plan' as const, claims: [] };
+  const claimDeclarations = plan.claimDeclarations ?? emptyClaimDeclarations('plan');
   const claimDeclarationsDigest = ctx.digest(canonicalJsonStringify(claimDeclarations));
   const decisionAttestationDigest = ctx.digest(canonicalJsonStringify(decision));
   const planVersion = plan.current.planVersion;
@@ -378,12 +382,7 @@ function createPlanApprovalCertificate(
       approvedBy: decision.decidedBy,
     }),
   );
-  const certificateIdHex = certificateIdDigest
-    .toLowerCase()
-    .replaceAll(/[^a-f0-9]/g, '')
-    .padEnd(32, '0')
-    .slice(0, 32);
-  const certificateId = `${certificateIdHex.slice(0, 8)}-${certificateIdHex.slice(8, 12)}-4${certificateIdHex.slice(13, 16)}-8${certificateIdHex.slice(17, 20)}-${certificateIdHex.slice(20)}`;
+  const certificateId = digestToId(certificateIdDigest, 4);
   return {
     flow: 'plan',
     authorityDigest: plan.current.digest,
@@ -405,10 +404,8 @@ function createArchitectureApprovalCertificate(
   ctx: RailContext,
   reviewBinding: ArchitectureReviewBinding,
 ): ArchitectureApprovalCertificate {
-  const claimDeclarations = architecture.claimDeclarations ?? {
-    flow: 'architecture' as const,
-    claims: [],
-  };
+  const claimDeclarations =
+    architecture.claimDeclarations ?? emptyClaimDeclarations('architecture');
   const claimDeclarationsDigest = ctx.digest(canonicalJsonStringify(claimDeclarations));
   const decisionAttestationDigest = ctx.digest(canonicalJsonStringify(decision));
   const certificateIdDigest = ctx.digest(
@@ -423,12 +420,7 @@ function createArchitectureApprovalCertificate(
       approvedBy: decision.decidedBy,
     }),
   );
-  const certificateIdHex = certificateIdDigest
-    .toLowerCase()
-    .replaceAll(/[^a-f0-9]/g, '')
-    .padEnd(32, '0')
-    .slice(0, 32);
-  const certificateId = `${certificateIdHex.slice(0, 8)}-${certificateIdHex.slice(8, 12)}-4${certificateIdHex.slice(13, 16)}-8${certificateIdHex.slice(17, 20)}-${certificateIdHex.slice(20)}`;
+  const certificateId = digestToId(certificateIdDigest, 4);
   return {
     flow: 'architecture',
     authorityDigest: architecture.digest,

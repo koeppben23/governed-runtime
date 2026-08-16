@@ -28,7 +28,6 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 vi.mock('../adapters/gh-cli', () => ({
-  loadPrDiff: vi.fn().mockReturnValue('diff --git a/docs/test.md b/docs/test.md\n+pr line'),
   resolvePullRequestReviewSource: vi.fn().mockImplementation((pullRequestNumber: number) => ({
     pullRequestNumber,
     baseRepository: { host: 'github.com', owner: 'flowguard', name: 'governed-runtime' },
@@ -39,7 +38,6 @@ vi.mock('../adapters/gh-cli', () => ({
   loadResolvedPullRequestDiff: vi
     .fn()
     .mockReturnValue('diff --git a/docs/test.md b/docs/test.md\n+pr line'),
-  loadBranchDiff: vi.fn().mockReturnValue('diff --git a/docs/test.md b/docs/test.md\n+branch line'),
   resolveBranchReviewSource: vi.fn().mockImplementation((branch: string) => ({
     branch,
     baseBranch: 'main',

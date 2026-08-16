@@ -2,13 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { resolveHostTaskEffectiveFindings } from './review-validation.js';
 import type { ReviewInvocationEvidence, ReviewObligation } from '../../state/evidence-review.js';
 import {
-  hashFindings,
-  REVIEW_CRITERIA_VERSION,
-  REVIEW_MANDATE_DIGEST,
-} from '../review/assurance.js';
+  makeHostTaskInvocation,
+  makeReviewObligation,
+  RV_INVOCATION_ID,
+  RV_OBLIGATION_ID,
+} from './review-validation-test-helpers.js';
+import { hashFindings } from '../review/assurance.js';
 
-const OBLIGATION_ID = '11111111-1111-4111-8111-111111111111';
-const INVOCATION_ID = '22222222-2222-4222-8222-222222222222';
+const OBLIGATION_ID = RV_OBLIGATION_ID;
+const INVOCATION_ID = RV_INVOCATION_ID;
 const now = new Date().toISOString();
 
 const validRawFindings: Record<string, unknown> = {
@@ -25,60 +27,6 @@ const validRawFindings: Record<string, unknown> = {
   reviewedAt: now,
 };
 
-function makeObligation(overrides: Partial<ReviewObligation> = {}): ReviewObligation {
-  return {
-    obligationId: OBLIGATION_ID,
-    obligationType: 'plan' as const,
-    subjectDigest: 'test-subject-digest',
-    iteration: 0,
-    planVersion: 1,
-    criteriaVersion: REVIEW_CRITERIA_VERSION,
-    mandateDigest: REVIEW_MANDATE_DIGEST,
-    maxReviewerOutputRepairAttempts: 1,
-    createdAt: now,
-    pluginHandshakeAt: now,
-    status: 'fulfilled' as const,
-    invocationId: INVOCATION_ID,
-    blockedCode: null,
-    fulfilledAt: now,
-    consumedAt: null,
-    reviewSubjectScope: {
-      kind: 'repository_change',
-      paths: ['src/foo.ts'],
-      revisions: ['base', 'head'],
-    },
-    ...overrides,
-  };
-}
-
-function makeInvocation(
-  overrides: Partial<ReviewInvocationEvidence> = {},
-): ReviewInvocationEvidence {
-  return {
-    invocationId: INVOCATION_ID,
-    obligationId: OBLIGATION_ID,
-    obligationType: 'plan' as const,
-    parentSessionId: 'ses_parent',
-    childSessionId: 'ses_child',
-    agentType: 'flowguard-reviewer' as const,
-    invocationMode: 'host_subagent_task' as const,
-    hostVisible: true,
-    promptHash: 'abc',
-    mandateDigest: REVIEW_MANDATE_DIGEST,
-    criteriaVersion: REVIEW_CRITERIA_VERSION,
-    findingsHash: 'hash',
-    invokedAt: now,
-    fulfilledAt: now,
-    consumedByObligationId: null,
-    capturedVerdict: 'accept',
-    capturedRawFindings: validRawFindings,
-    reviewOutputMode: 'structured_output',
-    structuredOutputUsed: true,
-    reviewAssuranceLevel: 'structured_high',
-    ...overrides,
-  };
-}
-
 function assuranceWith(obligation: ReviewObligation, invocations: ReviewInvocationEvidence[]) {
   return {
     assuranceSchemaVersion: 'review-assurance.v5' as const,
@@ -91,7 +39,7 @@ function assuranceWith(obligation: ReviewObligation, invocations: ReviewInvocati
 function ctx(
   overrides: Partial<Parameters<typeof resolveHostTaskEffectiveFindings>[0]> = {},
 ): Parameters<typeof resolveHostTaskEffectiveFindings>[0] {
-  const obligation = makeObligation();
+  const obligation = makeReviewObligation();
   return {
     pendingObligation: obligation,
     expected: { obligationType: 'plan' as const, iteration: 0, planVersion: 1 },
@@ -103,7 +51,7 @@ function ctx(
     },
     input: {},
     state: {
-      assurance: assuranceWith(obligation, [makeInvocation()]),
+      assurance: assuranceWith(obligation, [makeHostTaskInvocation(validRawFindings)]),
       sessionId: 'ses_parent',
       unresolvedImplementationChallengeIds: [],
       unaddressedPriorFailIds: [],
@@ -135,13 +83,13 @@ describe('resolveHostTaskEffectiveFindings', () => {
   });
 
   it('maps rejected host-task findings through the acceptance rejection formatter', () => {
-    const obligation = makeObligation({ status: 'consumed' });
+    const obligation = makeReviewObligation({ status: 'consumed' });
     const result = resolveHostTaskEffectiveFindings(
       ctx({
         pendingObligation: obligation,
         state: {
           sessionId: 'ses_parent',
-          assurance: assuranceWith(obligation, [makeInvocation()]),
+          assurance: assuranceWith(obligation, [makeHostTaskInvocation(validRawFindings)]),
         },
       }),
     );
@@ -151,13 +99,15 @@ describe('resolveHostTaskEffectiveFindings', () => {
   });
 
   it('maps unparseable captured findings to HOST_TASK_FINDINGS_UNPARSEABLE', () => {
-    const obligation = makeObligation();
+    const obligation = makeReviewObligation();
     const result = resolveHostTaskEffectiveFindings(
       ctx({
         state: {
           sessionId: 'ses_parent',
           assurance: assuranceWith(obligation, [
-            makeInvocation({ capturedRawFindings: { overallVerdict: 'accept' } }),
+            makeHostTaskInvocation(validRawFindings, {
+              capturedRawFindings: { overallVerdict: 'accept' },
+            }),
           ]),
         },
       }),
@@ -167,7 +117,7 @@ describe('resolveHostTaskEffectiveFindings', () => {
   });
 
   it('maps incoherent captured findings to their structured block code', () => {
-    const obligation = makeObligation();
+    const obligation = makeReviewObligation();
     const incoherent = {
       ...validRawFindings,
       blockingIssues: [
@@ -182,9 +132,7 @@ describe('resolveHostTaskEffectiveFindings', () => {
       ctx({
         state: {
           sessionId: 'ses_parent',
-          assurance: assuranceWith(obligation, [
-            makeInvocation({ capturedRawFindings: incoherent }),
-          ]),
+          assurance: assuranceWith(obligation, [makeHostTaskInvocation(incoherent)]),
         },
       }),
     );
@@ -193,7 +141,7 @@ describe('resolveHostTaskEffectiveFindings', () => {
   });
 
   it('maps attempt lineage failures to REVIEW_ATTEMPT_LINEAGE_UNAVAILABLE', () => {
-    const obligation = makeObligation();
+    const obligation = makeReviewObligation();
     const incoherent = {
       ...validRawFindings,
       blockingIssues: [
@@ -213,10 +161,7 @@ describe('resolveHostTaskEffectiveFindings', () => {
         },
       ],
     };
-    const invocation = makeInvocation({
-      capturedRawFindings: incoherent,
-      findingsHash: hashFindings(incoherent),
-    });
+    const invocation = makeHostTaskInvocation(incoherent);
     delete (invocation as Record<string, unknown>).attemptId;
     const result = resolveHostTaskEffectiveFindings(
       ctx({
@@ -232,7 +177,7 @@ describe('resolveHostTaskEffectiveFindings', () => {
   });
 
   it('flags reviewerUnavailable as misuse when the reviewer was already spawned', () => {
-    const obligation = makeObligation();
+    const obligation = makeReviewObligation();
     const result = resolveHostTaskEffectiveFindings(
       ctx({
         input: { reviewerUnavailable: true },
@@ -241,7 +186,7 @@ describe('resolveHostTaskEffectiveFindings', () => {
           // Invocation exists (reviewer spawned) but carries no captured
           // findings, so resolution falls through to the misuse check.
           assurance: assuranceWith(obligation, [
-            makeInvocation({ capturedRawFindings: undefined }),
+            makeHostTaskInvocation(validRawFindings, { capturedRawFindings: undefined }),
           ]),
         },
       }),
@@ -254,7 +199,7 @@ describe('resolveHostTaskEffectiveFindings', () => {
   });
 
   it('blocks strict when reviewerUnavailable arrives without any reviewer invocation', () => {
-    const obligation = makeObligation();
+    const obligation = makeReviewObligation();
     const result = resolveHostTaskEffectiveFindings(
       ctx({
         input: { reviewerUnavailable: true },
