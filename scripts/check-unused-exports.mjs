@@ -21,8 +21,9 @@ import { pathToFileURL } from 'node:url';
 const DEFAULT_BASELINE = 'scripts/unused-exports-baseline.json';
 
 /**
- * Diff current unused-export entries against the baseline.
- * Entries are `symbol@file:line`.
+ * Diff current unused-export identities against the baseline.
+ * Identity is `symbol@file` — line numbers are deliberately excluded so plain
+ * code shifts do not masquerade as new findings; the line is display-only.
  */
 export function diffUnusedExports(current, baseline) {
   const currentSet = new Set(current);
@@ -33,7 +34,7 @@ export function diffUnusedExports(current, baseline) {
   };
 }
 
-/** Collect the current unused-export entries via `knip --reporter json`. */
+/** Collect the current unused-export identities via `knip --reporter json`. */
 function collectCurrentExports() {
   let raw;
   try {
@@ -48,15 +49,17 @@ function collectCurrentExports() {
   if (!raw || !raw.trim()) return null;
   try {
     const data = JSON.parse(raw);
-    const entries = [];
+    const identities = new Set();
+    const lineOf = new Map();
     for (const issue of data.issues ?? []) {
       const file = issue.file;
       for (const entry of issue.exports ?? []) {
-        entries.push(`${entry.name}@${file}:${entry.line}`);
+        const id = `${entry.name}@${file}`;
+        identities.add(id);
+        lineOf.set(id, entry.line);
       }
     }
-    entries.sort();
-    return entries;
+    return { entries: [...identities].sort(), lineOf };
   } catch {
     return null;
   }
@@ -78,8 +81,11 @@ function main() {
   }
 
   if (update) {
-    writeFileSync(baselinePath, `${JSON.stringify({ version: 1, entries: current }, null, 1)}\n`);
-    console.log(`Baseline updated: ${current.length} unused exports at ${baselinePath}`);
+    writeFileSync(
+      baselinePath,
+      `${JSON.stringify({ version: 2, entries: current.entries }, null, 1)}\n`,
+    );
+    console.log(`Baseline updated: ${current.entries.length} unused exports at ${baselinePath}`);
     process.exit(0);
   }
 
@@ -94,11 +100,11 @@ function main() {
     process.exit(0);
   }
 
-  const { added, removed } = diffUnusedExports(current, baseline);
+  const { added, removed } = diffUnusedExports(current.entries, baseline);
   if (added.length > 0) {
     const preview = added
       .slice(0, 10)
-      .map((entry) => `  - ${entry}`)
+      .map((entry) => `  - ${entry}:${current.lineOf.get(entry) ?? '?'}`)
       .join('\n');
     console.log(
       `::warning::This PR introduces ${added.length} new unused export(s) ` +
