@@ -5,21 +5,21 @@
 
 import { describe, expect, it } from 'vitest';
 import { resolveProviderCapabilities } from './provider-capability-resolution.js';
-import type { DetectedStack, VerificationCandidate } from '../state/discovery-schemas.js';
+import type { VerificationCandidate } from '../state/discovery-schemas.js';
 import type { ProviderId, ReportFormatId } from '../state/assertion-identity.js';
+import { makeDetectedStack } from '../discovery/verification-planner-test-helpers.js';
+import type { DetectedStack } from '../discovery/types.js';
 
-function makeDetectedStack(
+function makeLooseStack(
   items: Array<{ kind: string; id: string; evidence?: string }>,
 ): DetectedStack {
-  return {
-    summary: '',
-    items: items.map((i) => ({
-      kind: i.kind as DetectedStack['items'][number]['kind'],
+  return makeDetectedStack(
+    items.map((i) => ({
+      kind: i.kind,
       id: i.id,
-      evidence: i.evidence,
-    })),
-    versions: [],
-  };
+      ...(i.evidence ? { evidence: i.evidence } : {}),
+    })) as DetectedStack['items'],
+  );
 }
 
 function makeStructuredCandidate(
@@ -63,7 +63,7 @@ describe('resolveProviderCapabilities', () => {
   });
 
   it('detects vitest from testFramework:vitest', () => {
-    const stack = makeDetectedStack([
+    const stack = makeLooseStack([
       { kind: 'testFramework', id: 'vitest', evidence: 'vitest.config.ts' },
     ]);
     const result = resolveProviderCapabilities(stack, undefined);
@@ -73,7 +73,7 @@ describe('resolveProviderCapabilities', () => {
   });
 
   it('deduplicates multiple detection IDs to one provider entry', () => {
-    const stack = makeDetectedStack([
+    const stack = makeLooseStack([
       { kind: 'testFramework', id: 'go_test' },
       { kind: 'language', id: 'go' },
     ]);

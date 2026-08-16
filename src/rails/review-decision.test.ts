@@ -10,6 +10,11 @@ import {
 import { TEAM_POLICY } from '../config/policy.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 import type { ReviewAssuranceState } from '../state/evidence-review.js';
+import {
+  assuranceChain,
+  ARCH_INVOCATION_ID,
+  ARCH_OBLIGATION_ID,
+} from './review-decision-test-helpers.js';
 import { hashText } from '../shared/hashing.js';
 
 const baseCtx = {
@@ -17,9 +22,6 @@ const baseCtx = {
   digest: (text: string) => `sha256:${text.length}`,
   policy: TEAM_POLICY,
 };
-
-const ARCH_OBLIGATION_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-const ARCH_INVOCATION_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 /**
  * Bound architecture review evidence in the canonical assurance chain: one
@@ -36,68 +38,18 @@ function architectureAssurance(input: {
   capturedVerdict?: string;
   obligationInvocationId?: boolean;
 }): ReviewAssuranceState {
-  const createdAt = '2026-01-01T00:00:00.000Z';
-  const findingsHash = input.findingsHash ?? 'f'.repeat(64);
-  return {
-    assuranceSchemaVersion: 'review-assurance.v5',
-    obligations: [
-      {
-        obligationId: ARCH_OBLIGATION_ID,
-        obligationType: 'architecture',
-        iteration: input.iteration ?? 0,
-        planVersion: 1,
-        criteriaVersion: 'criteria-v1',
-        mandateDigest: 'm'.repeat(64),
-        createdAt,
-        pluginHandshakeAt: null,
-        status: input.status,
-        invocationId: input.obligationInvocationId === false ? null : ARCH_INVOCATION_ID,
-        blockedCode: null,
-        fulfilledAt: createdAt,
-        consumedAt: input.status === 'consumed' ? createdAt : null,
-        subjectDigest: input.subjectDigest,
-        reviewMaterial: {
-          content: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
-          materialDigest: 'material-digest-of-architecture-review',
-          subjectDigest: input.subjectDigest,
-        },
-        reviewSubjectScope: {
-          kind: 'artifact',
-          artifact: {
-            kind: 'adr',
-            digest: input.subjectDigest,
-            sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'ADR' }]],
-          },
-        },
-        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
-        maxReviewerOutputRepairAttempts: 0,
-      },
-    ],
-    invocations: [
-      {
-        invocationId: ARCH_INVOCATION_ID,
-        obligationId: ARCH_OBLIGATION_ID,
-        obligationType: 'architecture',
-        parentSessionId: 'parent-session-1',
-        childSessionId: 'child-session-1',
-        agentType: 'flowguard-reviewer',
-        invocationMode: 'host_subagent_task',
-        hostVisible: true,
-        promptHash: 'prompt-hash',
-        mandateDigest: 'm'.repeat(64),
-        criteriaVersion: 'criteria-v1',
-        findingsHash,
-        invokedAt: createdAt,
-        fulfilledAt: createdAt,
-        consumedByObligationId: input.status === 'consumed' ? ARCH_OBLIGATION_ID : null,
-        ...(input.capturedVerdict ? { capturedVerdict: input.capturedVerdict } : {}),
-        reviewOutputMode: 'structured_output',
-        structuredOutputUsed: true,
-        reviewAssuranceLevel: 'structured_high',
-      },
-    ],
-    attempts: [],
-  };
+  return assuranceChain([
+    {
+      obligationId: ARCH_OBLIGATION_ID,
+      subjectDigest: input.subjectDigest,
+      status: input.status,
+      iteration: input.iteration,
+      findingsHash: input.findingsHash,
+      capturedVerdict: input.capturedVerdict,
+      invocationId: input.obligationInvocationId === false ? null : ARCH_INVOCATION_ID,
+      consumedByObligationId: input.status === 'consumed' ? ARCH_OBLIGATION_ID : null,
+    },
+  ]);
 }
 
 function withPolicy(overrides: Partial<FlowGuardPolicy>): FlowGuardPolicy {
@@ -120,68 +72,20 @@ interface PlanAssuranceInput {
 
 /** Minimal single-obligation assurance for plan-certificate binding tests. */
 function planAssurance(input: PlanAssuranceInput): ReviewAssuranceState {
-  const createdAt = input.createdAt ?? '2026-01-01T00:00:00.000Z';
   const obligationId = input.obligationId ?? PLAN_OBLIGATION_ID;
-  const findingsHash = input.findingsHash ?? 'a'.repeat(64);
-  return {
-    assuranceSchemaVersion: 'review-assurance.v5',
-    obligations: [
-      {
-        obligationId,
-        obligationType: input.obligationType ?? 'plan',
-        iteration: input.iteration ?? 0,
-        planVersion: 1,
-        criteriaVersion: 'criteria-v1',
-        mandateDigest: 'm'.repeat(64),
-        createdAt,
-        pluginHandshakeAt: null,
-        status: input.status,
-        invocationId: input.invocationId === undefined ? PLAN_INVOCATION_ID : input.invocationId,
-        blockedCode: null,
-        fulfilledAt: createdAt,
-        consumedAt: input.status === 'consumed' ? createdAt : null,
-        subjectDigest: input.subjectDigest,
-        reviewMaterial: {
-          content: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
-          materialDigest: 'material-digest-of-plan-review',
-          subjectDigest: input.subjectDigest,
-        },
-        reviewSubjectScope: {
-          kind: 'artifact',
-          artifact: {
-            kind: 'adr',
-            digest: input.subjectDigest,
-            sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'ADR' }]],
-          },
-        },
-        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
-        maxReviewerOutputRepairAttempts: 0,
-      },
-    ],
-    invocations: [
-      {
-        invocationId: input.invocationId === undefined ? PLAN_INVOCATION_ID : input.invocationId,
-        obligationId,
-        obligationType: input.obligationType ?? 'plan',
-        parentSessionId: 'parent-session-1',
-        childSessionId: 'child-session-1',
-        agentType: 'flowguard-reviewer',
-        invocationMode: 'host_subagent_task',
-        hostVisible: true,
-        promptHash: 'prompt-hash',
-        mandateDigest: 'm'.repeat(64),
-        criteriaVersion: 'criteria-v1',
-        findingsHash,
-        invokedAt: createdAt,
-        fulfilledAt: createdAt,
-        consumedByObligationId: input.status === 'consumed' ? obligationId : null,
-        reviewOutputMode: 'structured_output',
-        structuredOutputUsed: true,
-        reviewAssuranceLevel: 'structured_high',
-      },
-    ],
-    attempts: [],
-  };
+  return assuranceChain([
+    {
+      obligationId,
+      obligationType: input.obligationType ?? 'plan',
+      subjectDigest: input.subjectDigest,
+      status: input.status,
+      iteration: input.iteration,
+      createdAt: input.createdAt,
+      invocationId: input.invocationId ?? PLAN_INVOCATION_ID,
+      findingsHash: input.findingsHash ?? 'a'.repeat(64),
+      consumedByObligationId: input.status === 'consumed' ? obligationId : null,
+    },
+  ]);
 }
 
 function identityWithoutAssurance(): typeof reviewerIdentity {
