@@ -148,37 +148,47 @@ describe('SEED_REASONS completeness (F1 guard)', () => {
 
 // P10c: reason code split validation
 describe('P10c — reason code split', () => {
-  it('all 236 codes from split arrays are registered exactly once (no duplicates)', async () => {
+  it('all 266 codes from split arrays are registered exactly once (no duplicates)', async () => {
     const { PRECONDITION_REASONS } = await import('./reasons-precondition.js');
+    const { ARCHITECTURE_REASONS } = await import('./reasons-architecture.js');
     const { VALIDATION_REASONS } = await import('./reasons-validation.js');
     const { INFRA_REASONS } = await import('./reasons-infra.js');
     const { PROOFGRAPH_REASONS } = await import('./reasons-proofgraph.js');
 
     const allSplitCodes = [
       ...PRECONDITION_REASONS.map((r: { code: string }) => r.code),
+      ...ARCHITECTURE_REASONS.map((r: { code: string }) => r.code),
       ...VALIDATION_REASONS.map((r: { code: string }) => r.code),
       ...INFRA_REASONS.map((r: { code: string }) => r.code),
       ...PROOFGRAPH_REASONS.map((r: { code: string }) => r.code),
     ];
 
-    expect(allSplitCodes).toHaveLength(264);
-    // No duplicates across the 4 arrays
-    expect(new Set(allSplitCodes).size).toBe(264);
+    expect(allSplitCodes).toHaveLength(266);
+    // No duplicates across the 5 arrays
+    expect(new Set(allSplitCodes).size).toBe(266);
     // All split codes are registered in the default registry
     for (const code of allSplitCodes) {
       expect(defaultReasonRegistry.get(code)).toBeDefined();
     }
   });
 
-  it('PRECONDITION_REASONS has exactly 87 entries', async () => {
+  it('PRECONDITION_REASONS has exactly 79 entries', async () => {
     const { PRECONDITION_REASONS } = await import('./reasons-precondition.js');
-    expect(PRECONDITION_REASONS.length).toBe(87);
+    expect(PRECONDITION_REASONS.length).toBe(79);
     for (const r of PRECONDITION_REASONS) {
       expect(r.category).toBe('precondition');
     }
   });
 
-  it('VALIDATION_REASONS has exactly 110 entries', async () => {
+  it('ARCHITECTURE_REASONS has exactly 10 entries', async () => {
+    const { ARCHITECTURE_REASONS } = await import('./reasons-architecture.js');
+    expect(ARCHITECTURE_REASONS.length).toBe(10);
+    for (const r of ARCHITECTURE_REASONS) {
+      expect(r.category).toBe('precondition');
+    }
+  });
+
+  it('VALIDATION_REASONS has exactly 113 entries', async () => {
     const { VALIDATION_REASONS } = await import('./reasons-validation.js');
     expect(VALIDATION_REASONS.length).toBe(113);
     const allowed = new Set(['input', 'state', 'config', 'admissibility']);

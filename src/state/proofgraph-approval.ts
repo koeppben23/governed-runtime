@@ -176,9 +176,80 @@ export const PlanApprovalCertificate = z
   .readonly();
 export type PlanApprovalCertificate = z.infer<typeof PlanApprovalCertificate>;
 
-/** A common certificate constrained for architecture approval persistence. */
+/**
+ * Provenance edge of an architecture approval certificate.
+ *
+ * The binding kind is decided exclusively by the gate path that minted the
+ * certificate — it is NEVER normalized afterwards from digest equality:
+ *
+ * - `current_review`: the human approval is proven to rest on independent
+ *   review evidence whose obligation subjectDigest equals the certified ADR
+ *   digest exactly (reviewer_accepted path).
+ * - `review_exhausted_override`: the review budget ended without reviewer
+ *   acceptance; the human overrode it. The certificate records which subject
+ *   the last real bound evidence actually reviewed (`reviewedSubjectDigest`)
+ *   separately from the approved subject (`approvedSubjectDigest`) so the
+ *   difference stays explicit, machine-readable provenance. A reviewed digest
+ *   equal to the approved digest is still an override — it was not accepted.
+ */
+export const ArchitectureReviewBinding = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('current_review'),
+      reviewObligationId: z.string().uuid(),
+      reviewEvidenceDigest: z.string().min(1),
+      reviewedSubjectDigest: z.string().min(1),
+    })
+    .strict()
+    .readonly(),
+  z
+    .object({
+      kind: z.literal('review_exhausted_override'),
+      lastReviewObligationId: z.string().uuid(),
+      lastReviewEvidenceDigest: z.string().min(1),
+      reviewedSubjectDigest: z.string().min(1),
+      approvedSubjectDigest: z.string().min(1),
+    })
+    .strict()
+    .readonly(),
+]);
+export type ArchitectureReviewBinding = z.infer<typeof ArchitectureReviewBinding>;
+
+/**
+ * A common certificate constrained for architecture approval persistence.
+ *
+ * `reviewBinding` is REQUIRED: a certificate without a resolvable review
+ * evidence edge cannot be minted (see /review-decision rail), and a persisted
+ * certificate without it fails schema parsing — there is deliberately no
+ * defaulting path for authority-bearing fields.
+ */
 export const ArchitectureApprovalCertificate = z
-  .object({ flow: z.literal('architecture'), ...approvalCertificateShape })
+  .object({
+    flow: z.literal('architecture'),
+    ...approvalCertificateShape,
+    reviewBinding: ArchitectureReviewBinding,
+  })
+  .superRefine((certificate, ctx) => {
+    if (certificate.reviewBinding.kind === 'current_review') {
+      if (certificate.reviewBinding.reviewedSubjectDigest !== certificate.authorityDigest) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['reviewBinding', 'reviewedSubjectDigest'],
+          message:
+            'A current_review binding must review exactly the certified ADR digest (reviewedSubjectDigest === authorityDigest).',
+        });
+      }
+      return;
+    }
+    if (certificate.reviewBinding.approvedSubjectDigest !== certificate.authorityDigest) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['reviewBinding', 'approvedSubjectDigest'],
+        message:
+          'A review_exhausted_override binding must approve exactly the certified ADR digest (approvedSubjectDigest === authorityDigest).',
+      });
+    }
+  })
   .readonly();
 export type ArchitectureApprovalCertificate = z.infer<typeof ArchitectureApprovalCertificate>;
 

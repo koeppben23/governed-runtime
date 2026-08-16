@@ -370,7 +370,7 @@ async function mintRestartObligationWithAttempt(
   }
   const discovery = await resolveAttemptDiscoveryOrBlock({
     state: session.state,
-    worktree: session.wsDir,
+    worktree: session.worktree,
     repositoryGoverned: hasFrozenRepositoryAuthority(obligation),
     now: cycle.now,
     obligationId: obligation.obligationId,

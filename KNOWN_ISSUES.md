@@ -18,7 +18,9 @@ re-triage confirmed two additional pre-existing fixes (G3, C7), one merged fix
 re-triage confirmed the NTP corrections AC4/AC5 (merged via #728), the
 flow-aware completeness fix AC7 (merged via #678), and two new assurance
 findings: MUT2 (coverage exclusion of production plugin helpers) and MUT3
-(release tags do not run mutation testing).
+(release tags do not run mutation testing). A 2026-08-16 triage added the
+architecture certificate provenance section for PR #816 (CEF1/CEF2 tracked,
+CE1–CE3 open).
 
 ## Status Legend
 
@@ -251,6 +253,21 @@ scope at 80.02% overall: `agent-resolution.ts` 100, `orchestrator-output.ts` 100
 `canonical-json.ts` 90.91, `review-validation-mode.ts` 95, and
 `orchestrator-detection.ts` 90.38.
 
+### 2026-08-16 re-scope (PR #816 era)
+
+The ProofGraph closure added mutated files (`discovery/verification-planner.ts`,
+`integration/proofgraph/materialize-contract.ts`,
+`verification/execution-subject.ts`) whose existing unit tests were missing from
+the `vitest.stryker.config.ts` include list, dropping the full-suite score to
+~70.6%. Restored by adding the discovery/verification test globs and the missing
+tool/proofgraph test files to the include list and by adding targeted tests
+(execution-subject attestation branches, content-scope anchors, aggregate
+counterexample contracts, strict timestamp verification, plan-certificate
+binding, host-task effective-findings resolution, gate binding-diagnostic
+passthrough). `Regex` mutators were added to `excludedMutations` alongside
+`StringLiteral`/`ArrayDeclaration` (low-signal placeholder-pattern variants).
+The full-suite mutation run now scores 82.88% against `break: 80`.
+
 ## Logging Redaction
 
 The structured-logging series (#578–#584) shipped a path/URL scrubber that was
@@ -284,11 +301,11 @@ tracked separately. (Merged via #585.)
 
 ### Trust Model
 
-| ID     | Severity | Title                                                              | Status     |
-| ------ | -------- | ------------------------------------------------------------------ | ---------- |
-| **T1** | **P1**   | **Mutation evidence is externally self-reported**                  | **Closed** |
-| **T2** | **P1**   | **Execution subject surface attestation incomplete**               | **Closed** |
-| **T3** | **P1**   | **mutationProfile creates structurally unsatisfiable contract**    | **Closed** |
+| ID     | Severity | Title                                                           | Status     |
+| ------ | -------- | --------------------------------------------------------------- | ---------- |
+| **T1** | **P1**   | **Mutation evidence is externally self-reported**               | **Closed** |
+| **T2** | **P1**   | **Execution subject surface attestation incomplete**            | **Closed** |
+| **T3** | **P1**   | **mutationProfile creates structurally unsatisfiable contract** | **Closed** |
 
 **T1 — Mutation evidence is externally self-reported (Closed).**
 `record_mutation_evidence` accepts caller-supplied `command`, `startedAt`,
@@ -327,6 +344,30 @@ positive proof. The declaration boundary now checks
 is registered. Externally self-reported mutation evidence remains visible
 and auditable.
 
+## 2026-08-16 — Architecture Certificate Provenance (PR #816)
+
+`ArchitectureApprovalCertificate` now requires a discriminated `reviewBinding`
+(`current_review` | `review_exhausted_override`); the whole binding block
+co-signs the `certificateId` digest, so relabeling the kind or swapping the
+reviewed digest changes the certificate identity. Gate and mint share ONE
+evidence resolution per decision operation. The review-decision rail enforces
+exact-subject binding for `reviewer_accepted` (no cross-digest fallback) and
+explicit override provenance for `review_exhausted`, plus a verdict-coherence
+guard (`ARCHITECTURE_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION`) so bound evidence
+that contradicts the recorded review completion blocks approval.
+
+CEF1/CEF2 close the two review findings on the certificate trust chain; they
+do NOT resolve CE1–CE3, which are properties of the evidence-resolution
+mechanism the fixes build on, not side effects of the fixes themselves.
+
+| ID   | Severity   | Status       | Tracking | Summary                                                                                                                                                                                                                                                                                                                              |
+| ---- | ---------- | ------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| CEF1 | HIGH       | Tracked      | #816     | Certificate binding provenance: required `reviewBinding`, exact-subject evidence, no cross-digest fallback, binding co-signs `certificateId`, gate/mint single resolution.                                                                                                                                                           |
+| CEF2 | MEDIUM     | Tracked      | #816     | Verdict coherence at the certificate authority boundary: rejecting evidence cannot co-sign `current_review`; `accept` evidence contradicts `review_exhausted` and blocks via `ARCHITECTURE_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION`.                                                                                                  |
+| CE1  | MEDIUM     | Open         | #816     | `current_review` tolerates evidence WITHOUT `capturedVerdict` (SDK attestations without `overallVerdict`, legacy captures); only a contradicting verdict blocks. Hardening: require `capturedVerdict` on new-generation evidence once legacy states are out of scope.                                                                |
+| CE2  | LOW-MEDIUM | Open         | #816     | Non-canonical linkage fallback: without `obligation.invocationId` and without a `consumedByObligationId`-marked invocation, the resolver binds the NEWEST findingsHash-bearing invocation of the same `obligationId` — weaker than canonical linkage. Production plugin hooks set `invocationId`; direct host-task captures may not. |
+| CE3  | LOW        | Not Verified | —        | No normal production transition path is proven to produce `reviewCompletion` ↔ `capturedVerdict` contradictions; the coherence guard is source-level defense-in-depth, pinned by negative-path tests.                                                                                                                                |
+
 ## Maintenance Rules
 
 - Keep this file aligned with #487 and child issues.
@@ -334,3 +375,4 @@ and auditable.
 - Preserve finding IDs in child issue titles or descriptions.
 - Do not add exploit procedures or sensitive operational detail to this file.
 - If a static finding is disproven, update the status and link the evidence.
+- Trust-boundary changes under `src/rails/`, `src/integration/review/`, `src/adapters/`, or `src/audit/proofgraph/` get a dated section here; findings stay `Tracked`/`Open` until the carrying PR merges.

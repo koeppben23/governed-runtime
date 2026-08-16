@@ -377,3 +377,180 @@ describe('review/enforcement/findings-consistency', () => {
     });
   });
 });
+
+describe('implementation subject scope (orthogonality: subject binding ≠ repository evidence availability)', () => {
+  const IMPLEMENTATION_SCOPE = {
+    kind: 'implementation' as const,
+    implementationDigest: 'impl-digest',
+  };
+  const implementationRelation = {
+    subjectAnchors: [{ kind: 'implementation' as const, implementationDigest: 'impl-digest' }],
+    evidenceLocations: [] as { path: string; revision: 'base' | 'head'; line?: number }[],
+  };
+
+  it('binds an implementation anchor to the exact implementation digest', () => {
+    expect(
+      validateReviewFindingsScope({
+        findings: [{ relation: implementationRelation }],
+        reviewSubjectScope: IMPLEMENTATION_SCOPE,
+        repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  it('rejects an implementation anchor with a different digest', () => {
+    const result = validateReviewFindingsScope({
+      findings: [
+        {
+          relation: {
+            ...implementationRelation,
+            subjectAnchors: [
+              { kind: 'implementation' as const, implementationDigest: 'other-digest' },
+            ],
+          },
+        },
+      ],
+      reviewSubjectScope: IMPLEMENTATION_SCOPE,
+      repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
+      details: { outOfScopeFindingIndexes: [0] },
+    });
+  });
+
+  it('does NOT bind artifact or repository anchors against an implementation scope', () => {
+    for (const anchors of [
+      [
+        {
+          kind: 'artifact_section' as const,
+          artifactKind: 'plan' as const,
+          artifactDigest: 'impl-digest',
+          sectionPath: [{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }],
+        },
+      ],
+      [
+        {
+          kind: 'repository_location' as const,
+          location: { path: 'src/foo.ts', revision: 'head' as const },
+        },
+      ],
+    ]) {
+      const result = validateReviewFindingsScope({
+        findings: [{ relation: { subjectAnchors: anchors, evidenceLocations: [] } }],
+        reviewSubjectScope: IMPLEMENTATION_SCOPE,
+        repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
+      });
+    }
+  });
+
+  // Orthogonality (acceptance criterion 1): the new implementation anchor must
+  // NOT be captured by the frozen-revision provenance gate — only repository
+  // locations and evidenceLocations are.
+  it('PASS: implementation anchor + unavailable provenance + evidenceLocations=[]', () => {
+    const result = validateReviewFindingsScope({
+      findings: [{ relation: implementationRelation }],
+      reviewSubjectScope: IMPLEMENTATION_SCOPE,
+      repositoryRevisionProvenance: {
+        kind: 'unavailable',
+        reason: 'frozen_repository_authority_missing',
+      },
+    });
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('REJECT: implementation anchor + unavailable provenance + evidenceLocations citing head', () => {
+    const result = validateReviewFindingsScope({
+      findings: [
+        {
+          relation: {
+            ...implementationRelation,
+            evidenceLocations: [{ path: 'src/foo.ts', revision: 'head', line: 47 }],
+          },
+        },
+      ],
+      reviewSubjectScope: IMPLEMENTATION_SCOPE,
+      repositoryRevisionProvenance: {
+        kind: 'unavailable',
+        reason: 'frozen_repository_authority_missing',
+      },
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'REVIEW_REPOSITORY_REVISION_UNAVAILABLE',
+    });
+  });
+});
+
+describe('content subject scope', () => {
+  const CONTENT_SCOPE = {
+    kind: 'content' as const,
+    subjectDigest: 'content-subject-digest',
+    lineCount: 100,
+  };
+  const contentRelation = (anchorOverrides: Record<string, unknown> = {}) => ({
+    subjectAnchors: [
+      {
+        kind: 'content' as const,
+        subjectDigest: 'content-subject-digest',
+        ...anchorOverrides,
+      },
+    ],
+    evidenceLocations: [],
+  });
+
+  it('accepts a content anchor matching the frozen content digest without a range', () => {
+    expect(
+      validateReviewFindingsScope({
+        findings: [{ relation: contentRelation() }],
+        reviewSubjectScope: CONTENT_SCOPE,
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  it('accepts a content anchor whose range stays within the line count', () => {
+    expect(
+      validateReviewFindingsScope({
+        findings: [{ relation: contentRelation({ range: { startLine: 10, endLine: 100 } }) }],
+        reviewSubjectScope: CONTENT_SCOPE,
+      }),
+    ).toEqual({ ok: true });
+    expect(
+      validateReviewFindingsScope({
+        findings: [{ relation: contentRelation({ range: { startLine: 100 } }) }],
+        reviewSubjectScope: CONTENT_SCOPE,
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  it('rejects a content anchor whose range exceeds the frozen line count', () => {
+    const result = validateReviewFindingsScope({
+      findings: [{ relation: contentRelation({ range: { startLine: 10, endLine: 101 } }) }],
+      reviewSubjectScope: CONTENT_SCOPE,
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
+    });
+  });
+
+  it('rejects a content anchor bound to a different subject digest', () => {
+    const result = validateReviewFindingsScope({
+      findings: [
+        {
+          relation: contentRelation({ subjectDigest: 'other-content-digest' }),
+        },
+      ],
+      reviewSubjectScope: CONTENT_SCOPE,
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
+    });
+  });
+});

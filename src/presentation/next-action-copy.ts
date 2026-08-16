@@ -31,7 +31,7 @@ export interface ProductNextAction {
   readonly presentationForm?: 'review_pending';
 }
 
-const PRODUCT_GUIDANCE = {
+const PRODUCT_GUIDANCE: Partial<Record<ActionCode, ProductNextAction>> = {
   CHOOSE_FLOW: {
     text: 'Choose your workflow: /task (development), /architecture (ADR), /review (compliance).',
     commands: ['/task', '/architecture', '/review'],
@@ -90,7 +90,7 @@ const PRODUCT_GUIDANCE = {
     text: 'Review state is incomplete: no pending reviewer obligation or persisted report is available. Inspect the session with /status or abort it; /continue cannot complete this state.',
     commands: [],
   },
-} satisfies Partial<Record<ActionCode, ProductNextAction>>;
+};
 
 /**
  * Resolve product-friendly next action text and commands for a phase.

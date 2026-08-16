@@ -85,6 +85,7 @@ beforeAll(async () => {
     subjectDigest: 'impl-digest',
     reviewMaterial: freezeReviewMaterial('frozen implementation material\n', 'impl-digest'),
     changedFiles: ['src/foo.ts'],
+    reviewSubjectScope: { kind: 'implementation', implementationDigest: 'impl-digest' },
     repositoryAuthority: {
       kind: 'candidate_pair',
       base: {

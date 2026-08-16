@@ -131,7 +131,8 @@ export type FindingSubject =
       readonly kind: 'content';
       readonly subjectDigest: string;
       readonly range?: { readonly startLine: number; readonly endLine?: number };
-    };
+    }
+  | { readonly kind: 'implementation'; readonly implementationDigest: string };
 
 /** Structured relation accepted at the presentation boundary after validation upstream. */
 export interface FindingRelationPresentation {

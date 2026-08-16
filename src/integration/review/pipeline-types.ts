@@ -98,8 +98,8 @@ export interface PipelineContext {
 export type AttestationResult =
   { valid: true } | { valid: false; code: string; detail: Record<string, string> };
 
-/** Result of evidence recording (reuse detection + fulfillment). */
-export type EvidenceRecordResult = 'fulfilled' | 'reused';
+/** Result of evidence recording (reuse detection + fulfillment + missing obligation). */
+export type EvidenceRecordResult = 'fulfilled' | 'reused' | 'missing';
 
 // ─── Re-exports for external consumers ───────────────────────────────────────
 

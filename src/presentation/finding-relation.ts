@@ -17,21 +17,32 @@ export function projectFindingRelation(relation: FindingRelationPresentation | u
   | Record<never, never> {
   if (relation === undefined) return {};
   return {
-    subjects: relation.subjectAnchors.map((subject) =>
-      subject.kind === 'repository_location'
-        ? { kind: 'repository_location', location: projectLocation(subject.location) }
-        : subject.kind === 'artifact_section'
-          ? {
-              kind: 'artifact_section',
-              artifactKind: subject.artifactKind,
-              sectionPath: subject.sectionPath.map(({ headingText }) => ({ headingText })),
-            }
-          : {
-              kind: 'content',
-              subjectDigest: subject.subjectDigest,
-              ...(subject.range === undefined ? {} : { range: subject.range }),
-            },
-    ),
+    subjects: relation.subjectAnchors.map((subject) => {
+      if (subject.kind === 'repository_location') {
+        return {
+          kind: 'repository_location' as const,
+          location: projectLocation(subject.location),
+        };
+      }
+      if (subject.kind === 'artifact_section') {
+        return {
+          kind: 'artifact_section' as const,
+          artifactKind: subject.artifactKind,
+          sectionPath: subject.sectionPath.map(({ headingText }) => ({ headingText })),
+        };
+      }
+      if (subject.kind === 'implementation') {
+        return {
+          kind: 'implementation' as const,
+          implementationDigest: subject.implementationDigest,
+        };
+      }
+      return {
+        kind: 'content' as const,
+        subjectDigest: subject.subjectDigest,
+        ...(subject.range === undefined ? {} : { range: subject.range }),
+      };
+    }),
     evidence: relation.evidenceLocations.map(projectLocation),
   };
 }
@@ -61,6 +72,9 @@ export function formatFindingSubject(subject: FindingSubject): string {
       ? `:${range.startLine}${range.endLine === undefined ? '' : `-${range.endLine}`}`
       : '';
     return `Content ${subject.subjectDigest.slice(0, 12)}${lines}`;
+  }
+  if (subject.kind === 'implementation') {
+    return `Implementation ${subject.implementationDigest.slice(0, 12)}`;
   }
   const artifact = subject.artifactKind === 'plan' ? 'Plan' : 'ADR';
   return `${artifact} · ${subject.sectionPath.map((section) => section.headingText).join(' › ')}`;

@@ -72,6 +72,7 @@ describe('review profile freeze (Wave 1 — #730)', () => {
         planVersion: 2,
         now: NOW,
         subjectDigest: 'test',
+        reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
         reviewProfile: 'full',
         profileSource: 'runtime_required_full',
       });

@@ -128,6 +128,60 @@ export function validatePipelineAttestation(
  * into a clean return value. Both pipelines use this to avoid the
  * fragile let-mutate-in-callback anti-pattern.
  */
+
+/**
+ * Build SDK-session invocation evidence for a fulfilled review obligation.
+ * Extracted from recordEvidenceOrBlockReuse to keep the function within the
+ * size/complexity budget.
+ */
+function buildSdkSessionInvocation(
+  params: {
+    obligationId: string;
+    obligationType: ReviewObligationType;
+    sessionId: string;
+    childSessionId: string;
+    promptHash: string;
+    findingsHash: string;
+    reviewerResult: Pick<
+      ReviewerSuccessResult,
+      | 'reviewOutputMode'
+      | 'structuredOutputUsed'
+      | 'reviewAssuranceLevel'
+      | 'extractionMethod'
+      | 'modelCapabilityError'
+      | 'findings'
+    >;
+  },
+  obligation: { mandateDigest: string; criteriaVersion: string },
+  now: string,
+): ReturnType<typeof buildInvocationEvidence> {
+  return buildInvocationEvidence({
+    obligationId: params.obligationId,
+    obligationType: params.obligationType,
+    mandateDigest: obligation.mandateDigest,
+    criteriaVersion: obligation.criteriaVersion,
+    parentSessionId: params.sessionId,
+    childSessionId: params.childSessionId,
+    invocationMode: INVOCATION_MODE_SDK_SESSION,
+    hostVisible: false,
+    promptHash: params.promptHash,
+    findingsHash: params.findingsHash,
+    invokedAt: now,
+    fulfilledAt: now,
+    source: EVIDENCE_SOURCE_HOST,
+    reviewOutputMode: params.reviewerResult.reviewOutputMode,
+    structuredOutputUsed: params.reviewerResult.structuredOutputUsed,
+    reviewAssuranceLevel: params.reviewerResult.reviewAssuranceLevel,
+    extractionMethod: params.reviewerResult.extractionMethod,
+    modelCapabilityError: params.reviewerResult.modelCapabilityError,
+    capturedVerdict:
+      params.reviewerResult.findings &&
+      typeof params.reviewerResult.findings.overallVerdict === 'string'
+        ? params.reviewerResult.findings.overallVerdict
+        : undefined,
+  });
+}
+
 export async function recordEvidenceOrBlockReuse(
   deps: OrchestratorDeps,
   sessDir: string,
@@ -152,12 +206,19 @@ export async function recordEvidenceOrBlockReuse(
   },
 ): Promise<EvidenceRecordResult> {
   let reused = false;
+  let missing = false;
   await deps.updateReviewAssurance(sessDir, (s, now2) => {
     const assurance = ensureReviewAssurance(s.reviewAssurance);
     const obligation = assurance.obligations.find(
       (item) => item.obligationId === params.obligationId,
     );
-    if (!obligation) return s;
+    if (!obligation) {
+      // Defense-in-depth: evidence must never report fulfillment for an
+      // obligation that does not exist. The pipeline entry gate normally
+      // blocks earlier; this keeps the helper fail-closed on its own.
+      missing = true;
+      return s;
+    }
     if (hasEvidenceReuse(assurance.invocations, params.childSessionId, params.findingsHash)) {
       reused = true;
       return updateObligation(s, params.obligationId, (item) => ({
@@ -167,31 +228,7 @@ export async function recordEvidenceOrBlockReuse(
       }));
     }
 
-    const invocation = buildInvocationEvidence({
-      obligationId: params.obligationId,
-      obligationType: params.obligationType,
-      mandateDigest: obligation.mandateDigest,
-      criteriaVersion: obligation.criteriaVersion,
-      parentSessionId: params.sessionId,
-      childSessionId: params.childSessionId,
-      invocationMode: INVOCATION_MODE_SDK_SESSION,
-      hostVisible: false,
-      promptHash: params.promptHash,
-      findingsHash: params.findingsHash,
-      invokedAt: now2,
-      fulfilledAt: now2,
-      source: EVIDENCE_SOURCE_HOST,
-      reviewOutputMode: params.reviewerResult.reviewOutputMode,
-      structuredOutputUsed: params.reviewerResult.structuredOutputUsed,
-      reviewAssuranceLevel: params.reviewerResult.reviewAssuranceLevel,
-      extractionMethod: params.reviewerResult.extractionMethod,
-      modelCapabilityError: params.reviewerResult.modelCapabilityError,
-      capturedVerdict:
-        params.reviewerResult.findings &&
-        typeof params.reviewerResult.findings.overallVerdict === 'string'
-          ? params.reviewerResult.findings.overallVerdict
-          : undefined,
-    });
+    const invocation = buildSdkSessionInvocation(params, obligation, now2);
     const withInvocation = {
       ...s,
       reviewAssurance: appendInvocationEvidence(
@@ -206,7 +243,7 @@ export async function recordEvidenceOrBlockReuse(
       fulfilledAt: now2,
     }));
   });
-  return reused ? 'reused' : 'fulfilled';
+  return missing ? 'missing' : reused ? 'reused' : 'fulfilled';
 }
 
 // ─── Invocation Helpers ──────────────────────────────────────────────────────
@@ -393,6 +430,53 @@ interface BuildToolPromptParams {
   discoveryContext: DiscoveryReviewContext;
 }
 
+/**
+ * Canonical implementation subject digest for the host-enforced anchor
+ * contract: the digest the ACTIVE review obligation is bound to — never the
+ * mutable current implementation. The obligation is the exact frozen subject
+ * authority; a divergence between the two is an integrity failure (the binder
+ * would reject every prompt-conform anchor, producing an unsatisfiable
+ * reviewer contract).
+ */
+function resolveImplementationSubjectDigest(state: SessionState, obligationId: string): string {
+  const obligation = state.reviewAssurance?.obligations.find(
+    (o) => o.obligationId === obligationId,
+  );
+  if (!obligation || obligation.obligationType !== 'implement') {
+    throw Object.assign(
+      new Error(
+        'The review orchestration context does not resolve an exact implement ' +
+          'review obligation; refusing to run a reviewer without the frozen ' +
+          'subject authority it must be bound to.',
+      ),
+      { code: 'REVIEW_MATERIAL_INTEGRITY_FAILED' },
+    );
+  }
+  const scope = obligation.reviewSubjectScope;
+  if (scope?.kind !== 'implementation' || scope.implementationDigest !== obligation.subjectDigest) {
+    throw Object.assign(
+      new Error(
+        'The bound implementation review subject is incoherent: the obligation scope ' +
+          'does not carry the implementation digest it is bound to.',
+      ),
+      { code: 'REVIEW_MATERIAL_INTEGRITY_FAILED' },
+    );
+  }
+  if (
+    state.implementation?.digest !== undefined &&
+    state.implementation.digest !== obligation.subjectDigest
+  ) {
+    throw Object.assign(
+      new Error(
+        'The current implementation digest diverges from the bound implementation ' +
+          'review subject digest.',
+      ),
+      { code: 'REVIEW_MATERIAL_INTEGRITY_FAILED' },
+    );
+  }
+  return obligation.subjectDigest;
+}
+
 export function buildToolPrompt(params: BuildToolPromptParams): string | null {
   const { toolName, texts, reviewCtx, parsedOutput, sessionState, rules, deps, discoveryContext } =
     params;
@@ -428,6 +512,12 @@ export function buildToolPrompt(params: BuildToolPromptParams): string | null {
       challengeResolutions: stateChallengeResolutions(sessionState),
       verificationEvidence: stateVerificationEvidence(sessionState),
       proofGraph: sessionState.proofGraph,
+      // Canonical subject identity: the implementation digest the obligation
+      // is bound to — same digest as subjectDigest and the review material.
+      implementationDigest: resolveImplementationSubjectDigest(
+        sessionState,
+        reviewCtx.obligationId,
+      ),
       observationCapability:
         resolveAttemptObservationCapability(sessionState.reviewAssurance, reviewCtx.obligationId) ??
         undefined,

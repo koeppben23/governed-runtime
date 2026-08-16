@@ -32,6 +32,7 @@ import {
   type TestToolContext,
   type TestWorkspace,
 } from './test-helpers.js';
+import { FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
 import { status, hydrate } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
 
@@ -255,7 +256,13 @@ describe('stack-evidence E2E', () => {
 
       // Phases that MUST include the rule
       for (const phase of ['PLAN', 'IMPLEMENTATION', 'IMPL_REVIEW', 'REVIEW'] as const) {
-        await writeState(sessDir, { ...state!, phase });
+        await writeState(sessDir, {
+          ...state!,
+          phase,
+          ...(phase === 'IMPLEMENTATION'
+            ? { implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE }
+            : {}),
+        });
         const result = await callStatus();
         expect(result.profileRules).toContain(VERSION_EVIDENCE_RULE);
       }

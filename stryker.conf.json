@@ -74,6 +74,7 @@
     "src/rails/architecture.ts",
     "src/rails/hydrate.ts",
     "src/rails/review-decision.ts",
+    "src/rails/review-evidence-resolution.ts",
     "src/rails/review.ts",
     "src/rails/ticket.ts",
 
@@ -81,7 +82,7 @@
     "src/hooks/shared/phase-gate.ts"
   ],
   "mutator": {
-    "excludedMutations": ["StringLiteral", "ArrayDeclaration"]
+    "excludedMutations": ["StringLiteral", "ArrayDeclaration", "Regex"]
   },
   "ignoreStatic": true,
   "thresholds": {

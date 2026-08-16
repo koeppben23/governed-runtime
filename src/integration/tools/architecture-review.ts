@@ -602,7 +602,7 @@ async function persistAndFormatNonConvergedReview(
   // the re-review dispatch before any state mutation.
   const discovery = await resolveAttemptDiscoveryOrBlock({
     state: advanced.state,
-    worktree: session.wsDir,
+    worktree: session.worktree,
     repositoryGoverned: nextObligation ? hasFrozenRepositoryAuthority(nextObligation) : false,
     now: session.ctx.now(),
     ...(nextObligation ? { obligationId: nextObligation.obligationId } : {}),

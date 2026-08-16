@@ -37,6 +37,7 @@ import { buildFrozenReviewMaterialContent } from '../review/reviewer-context.js'
 interface ArchObligationContext {
   readonly state: SessionState;
   readonly wsDir: string;
+  readonly worktree: string;
   readonly subagentEnabled: boolean;
   readonly targetPaths: string[] | undefined;
   readonly archPlanVersion: number;
@@ -72,7 +73,7 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
   const repositoryGoverned = minted ? hasFrozenRepositoryAuthority(minted) : false;
   const discovery = await resolveAttemptDiscoveryOrBlock({
     state: ctx.state,
-    worktree: ctx.wsDir,
+    worktree: ctx.worktree,
     repositoryGoverned,
     now: ctx.now,
     ...(minted ? { obligationId: minted.obligationId } : {}),
@@ -184,6 +185,7 @@ export async function handleAdrSubmission(
   const classification = await classifyAndCreateArchObligation({
     state: result.state,
     wsDir: session.wsDir,
+    worktree: session.worktree,
     subagentEnabled,
     targetPaths: args.targetPaths,
     archPlanVersion,

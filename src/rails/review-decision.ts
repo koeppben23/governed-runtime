@@ -39,6 +39,7 @@ import type {
 } from '../state/evidence.js';
 import type {
   ArchitectureApprovalCertificate,
+  ArchitectureReviewBinding,
   PlanApprovalCertificate,
 } from '../state/proofgraph-approval.js';
 import { authorizedCriticalPlanClaimIds } from '../state/proofgraph-approval.js';
@@ -51,6 +52,10 @@ import { compareActorIdentity, isAssuranceAtLeast } from '../identity/actor-info
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { evaluateProofGraphGate } from '../audit/proofgraph/gate.js';
 import { mapEnforcementReasonToRegistryCode } from '../audit/proofgraph/reason-code-mapping.js';
+import {
+  resolveArchitectureReviewEvidence,
+  type ArchitectureReviewEvidenceResolution,
+} from './review-evidence-resolution.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -313,6 +318,34 @@ function enforceArchitectureReviewCompletion(
 }
 
 /**
+ * Architecture approval requires bindable independent-review evidence:
+ * `reviewer_accepted` demands exact-subject evidence for the current ADR
+ * digest; `review_exhausted` demands the latest real bound evidence so the
+ * override provenance stays explicit. Receives the already-resolved binding so
+ * gate and certificate minting share ONE resolution — no second resolver run,
+ * no drift inside one decision operation.
+ */
+function enforceArchitectureReviewEvidence(
+  state: SessionState,
+  resolution: ArchitectureReviewEvidenceResolution | null,
+): RailBlocked | null {
+  // Called only from the approve path; keeping the phase guard alone avoids
+  // dead operands.
+  if (state.phase !== 'ARCH_REVIEW') return null;
+  if (resolution?.kind === 'bound') return null;
+  const reviewCompletion = state.architecture?.reviewCompletion ?? 'missing';
+  if (resolution?.kind === 'exhaustion_contradiction') {
+    return blocked('ARCHITECTURE_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION', {
+      reviewCompletion,
+      capturedVerdict: resolution.capturedVerdict,
+    });
+  }
+  return blocked('ARCHITECTURE_REVIEW_EVIDENCE_REQUIRED', {
+    reviewCompletion,
+  });
+}
+
+/**
  * Bind the human approval to the exact immutable plan version and its claims.
  * The certificate digest deliberately excludes itself and uses the injected
  * digest authority so rail callers retain control of cryptographic hashing.
@@ -370,6 +403,7 @@ function createArchitectureApprovalCertificate(
   architecture: NonNullable<SessionState['architecture']>,
   decision: ReviewDecision,
   ctx: RailContext,
+  reviewBinding: ArchitectureReviewBinding,
 ): ArchitectureApprovalCertificate {
   const claimDeclarations = architecture.claimDeclarations ?? {
     flow: 'architecture' as const,
@@ -382,6 +416,9 @@ function createArchitectureApprovalCertificate(
       authorityDigest: architecture.digest,
       claimDeclarationsDigest,
       decisionAttestationDigest,
+      // The binding block co-signs the certificate identity: relabeling the
+      // binding kind or swapping the reviewed digest changes the certificateId.
+      reviewBinding,
       approvedAt: decision.decidedAt,
       approvedBy: decision.decidedBy,
     }),
@@ -400,6 +437,7 @@ function createArchitectureApprovalCertificate(
     approvedAt: decision.decidedAt,
     approvedBy: decision.decidedBy,
     certificateId,
+    reviewBinding,
   };
 }
 
@@ -432,6 +470,7 @@ function approvalCertificatePatch(
   input: ReviewDecisionInput,
   decision: ReviewDecision,
   ctx: RailContext,
+  architectureReviewBinding: ArchitectureReviewBinding | null,
 ): Partial<Pick<SessionState, 'plan' | 'architecture'>> {
   if (
     state.phase === 'PLAN_REVIEW' &&
@@ -455,7 +494,8 @@ function approvalCertificatePatch(
     state.phase === 'ARCH_REVIEW' &&
     input.verdict === 'approve' &&
     state.architecture &&
-    !state.architecture.approvalCertificate
+    !state.architecture.approvalCertificate &&
+    architectureReviewBinding
   ) {
     return {
       architecture: {
@@ -464,11 +504,40 @@ function approvalCertificatePatch(
           state.architecture,
           decision,
           ctx,
+          architectureReviewBinding,
         ),
       },
     };
   }
   return {};
+}
+
+/**
+ * Approval preconditions: four-eyes, decision identity, architecture review
+ * completion, architecture evidence coherence, and the ProofGraph gate.
+ * Resolves the architecture evidence ONCE per decision operation; the same
+ * resolved binding is returned to the caller and used later by the certificate
+ * patch, so gate and mint can never disagree within this operation.
+ */
+function enforceApprovalPreconditions(
+  state: SessionState,
+  input: ReviewDecisionInput,
+  ctx: RailContext,
+): { block: RailBlocked | null; evidence: ArchitectureReviewEvidenceResolution | null } {
+  if (input.verdict !== 'approve') return { block: null, evidence: null };
+  const identityBlock = enforceApprovalIdentity(state, input, ctx);
+  if (identityBlock) return { block: identityBlock, evidence: null };
+  const architectureReviewBlock = enforceArchitectureReviewCompletion(state, input);
+  if (architectureReviewBlock) return { block: architectureReviewBlock, evidence: null };
+  // The phase guard lives in the gate and the patch; resolving is a pure read
+  // and stays side-effect free for non-ARCH phases.
+  const evidence = state.architecture
+    ? resolveArchitectureReviewEvidence(state, state.architecture)
+    : null;
+  const architectureEvidenceBlock = enforceArchitectureReviewEvidence(state, evidence);
+  if (architectureEvidenceBlock) return { block: architectureEvidenceBlock, evidence };
+  const proofGraphBlock = enforceProofGraphEvidenceApproval(state, input);
+  return { block: proofGraphBlock, evidence };
 }
 
 // ─── Rail ─────────────────────────────────────────────────────────────────────
@@ -492,15 +561,10 @@ export function executeReviewDecision(
     return blocked('INVALID_VERDICT', { verdict: String(input.verdict) });
   }
 
-  // 3. Four-eyes and decision identity enforcement (approval only).
-  if (input.verdict === 'approve') {
-    const identityBlock = enforceApprovalIdentity(state, input, ctx);
-    if (identityBlock) return identityBlock;
-    const architectureReviewBlock = enforceArchitectureReviewCompletion(state, input);
-    if (architectureReviewBlock) return architectureReviewBlock;
-    const proofGraphBlock = enforceProofGraphEvidenceApproval(state, input);
-    if (proofGraphBlock) return proofGraphBlock;
-  }
+  // 3. Approval preconditions (four-eyes, identity, architecture evidence, ProofGraph).
+  const { block: preconditionBlock, evidence: architectureEvidenceResolution } =
+    enforceApprovalPreconditions(state, input, ctx);
+  if (preconditionBlock) return preconditionBlock;
 
   // 4. Resolve target phase via topology
   const target = evaluateWithEvent(state.phase, event);
@@ -523,7 +587,17 @@ export function executeReviewDecision(
 
   // A certificate is created only for the first human approval at its flow's gate;
   // an existing immutable certificate is never rewritten.
-  const certificatePatch = approvalCertificatePatch(state, input, decision, ctx);
+  const architectureReviewBinding =
+    architectureEvidenceResolution?.kind === 'bound'
+      ? architectureEvidenceResolution.binding
+      : null;
+  const certificatePatch = approvalCertificatePatch(
+    state,
+    input,
+    decision,
+    ctx,
+    architectureReviewBinding,
+  );
 
   // 6. Apply state clearing pattern based on gate + verdict
   const clearedState = applyStateClearingPattern(

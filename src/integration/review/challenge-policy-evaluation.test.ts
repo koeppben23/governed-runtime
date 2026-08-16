@@ -171,6 +171,7 @@ async function resolveCapturedFixture(
       now: '2026-07-26T00:00:00.000Z',
       subjectDigest: 'test',
       changedFiles: ['src/example.ts'],
+      reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
       policySnapshot: frozen
         ? { challengePolicy: CHALLENGE_POLICY_V1, maxReviewerOutputRepairAttempts: 1 }
         : { maxReviewerOutputRepairAttempts: 1 },
@@ -226,6 +227,7 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
       now: '2026-07-26T00:00:00.000Z',
       subjectDigest: 'test',
       changedFiles: ['src/example.ts'],
+      reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
       policySnapshot: frozen
         ? { challengePolicy: CHALLENGE_POLICY_V1, maxReviewerOutputRepairAttempts: 1 }
         : { maxReviewerOutputRepairAttempts: 1 },
@@ -334,6 +336,7 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
       now: '2026-07-26T00:01:00.000Z',
       subjectDigest: 'test',
       changedFiles: ['src/example.ts'],
+      reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
       policySnapshot: frozen
         ? { challengePolicy: CHALLENGE_POLICY_V1, maxReviewerOutputRepairAttempts: 1 }
         : { maxReviewerOutputRepairAttempts: 1 },

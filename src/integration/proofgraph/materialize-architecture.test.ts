@@ -46,6 +46,12 @@ function approvedState(overrides: Partial<SessionState> = {}): SessionState {
         approvedAt: '2026-01-01T00:00:00.000Z',
         approvedBy: 'approver',
         certificateId: CERTIFICATE_ID,
+        reviewBinding: {
+          kind: 'current_review',
+          reviewObligationId: '77777777-7777-4777-8777-777777777777',
+          reviewEvidenceDigest: 'e'.repeat(64),
+          reviewedSubjectDigest: ARCHITECTURE_DECISION.digest,
+        },
       },
     },
     ...overrides,

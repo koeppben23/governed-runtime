@@ -16,6 +16,7 @@ import {
   materializeApprovedPlanContract,
   materializeApprovedPlanContractResult,
 } from './materialize-contract.js';
+import type { PlanClaimDeclarations } from '../../state/proofgraph-approval.js';
 
 const PLAN_DIGEST = 'approved-plan';
 const IMPL_DIGEST = 'current-implementation';
@@ -467,5 +468,337 @@ describe('materializeApprovedPlanContract', () => {
       checkId: 'security',
       assertion: { providerId: 'junit', localId: 'some-id' },
     });
+  });
+});
+
+describe('materializeApprovedPlanContractResult — mutation coverage', () => {
+  const AGG_ID = '33333333-3333-4333-8333-333333333333';
+  const V2_CLAIM_ID = '44444444-4444-4444-8444-444444444444';
+
+  const EXTRACTED_AGGREGATE = {
+    status: 'extracted' as const,
+    attemptId: AGG_ID,
+    providerId: 'junit' as const,
+    format: 'junit_xml' as const,
+    bindingCapability: 'aggregate' as const,
+    reportDigests: ['report-digest'],
+    assertions: [],
+    summary: {
+      assertionCount: 0,
+      passedCount: 0,
+      failedCount: 0,
+      erroredCount: 0,
+      skippedCount: 0,
+      suiteInfrastructureError: false,
+    },
+  };
+
+  function aggregateAttempt(candidateId?: string) {
+    return {
+      attemptId: AGG_ID,
+      scope: 'implementation' as const,
+      implementationDigest: IMPL_DIGEST,
+      result: {
+        checkId: 'security',
+        passed: true,
+        detail: 'aggregate',
+        executedAt: NOW,
+        kind: 'security' as const,
+        command: 'npm run security',
+        exitCode: 0,
+        executionMs: 1,
+        outputDigest: 'c'.repeat(64),
+        timedOut: false,
+        outcome: 'supported' as const,
+        fullCheckScopeAttestation: 'full_check' as const,
+        assertionExtraction: EXTRACTED_AGGREGATE,
+        ...(candidateId ? { candidateId } : {}),
+      },
+    };
+  }
+
+  function v2Declarations(claims: unknown[]) {
+    return { flow: 'plan' as const, version: 'v2' as const, claims };
+  }
+
+  function withV2Declarations(state: ReturnType<typeof stateWithClaims>, claims: unknown[]) {
+    // Test fixtures build v2 declaration bodies inline; the runtime contract
+    // is `'version' in declarations` + `claimScope` presence, not a schema parse.
+    const declarations = v2Declarations(claims) as PlanClaimDeclarations;
+    return {
+      ...state,
+      plan: {
+        ...state.plan!,
+        claimDeclarations: declarations,
+        approvalCertificate: {
+          ...state.plan!.approvalCertificate!,
+          claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
+        },
+      },
+    };
+  }
+
+  it('versioned declarations materialize with claimScope and eligible eligibility', async () => {
+    const state = withV2Declarations(stateWithClaims(), [
+      {
+        claimId: V2_CLAIM_ID,
+        statement: 'v2 claim',
+        critical: true,
+        authoritySectionId: 'implementation',
+        claimScope: 'specific_behavior',
+        expectedCheckId: 'test',
+      },
+    ]);
+    const result = await materializeApprovedPlanContractResult(state, process.cwd());
+    expect(result.coverage).toEqual([]);
+    const claim = result.contract.claims[0]!;
+    expect(claim.claimScope).toBe('specific_behavior');
+    expect(claim.proofEligibility).toBe('eligible');
+    expect(claim.requiredEvidence).toEqual({
+      positive: ['executed_test'],
+      adversarial: ['counterexample'],
+    });
+  });
+
+  it('requires schema_compare for config-defaults surfaces and structural_assertion otherwise', async () => {
+    const state = stateWithClaims();
+    const declarations = {
+      flow: 'plan' as const,
+      claims: [
+        {
+          claimId: '55555555-5555-4555-8555-555555555555',
+          statement: 'config defaults claim',
+          critical: false,
+          authoritySectionId: 'implementation',
+          expectedCheckId: 'test',
+          structuralSurface: 'config-defaults',
+        },
+        {
+          claimId: '66666666-6666-4666-8666-666666666666',
+          statement: 'command registration claim',
+          critical: false,
+          authoritySectionId: 'implementation',
+          expectedCheckId: 'test',
+          structuralSurface: 'command-registration',
+        },
+      ],
+    };
+    const plan = {
+      ...state.plan!,
+      claimDeclarations: declarations,
+      approvalCertificate: {
+        ...state.plan!.approvalCertificate!,
+        claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
+      },
+    };
+    const result = await materializeApprovedPlanContractResult({ ...state, plan }, process.cwd());
+    const claims = result.contract.claims as readonly {
+      requiredEvidence: { positive: string[]; adversarial: string[] };
+    }[];
+    expect(claims[0]!.requiredEvidence.positive).toEqual(['executed_test', 'schema_compare']);
+    expect(claims[1]!.requiredEvidence.positive).toEqual(['executed_test', 'structural_assertion']);
+    expect(claims[0]!.requiredEvidence.adversarial).toEqual([]);
+  });
+
+  it('records unverified_mutation_profile and requires fault_injection without a verified attempt', async () => {
+    const state = stateWithClaims();
+    const result = await materializeApprovedPlanContractResult(
+      { ...state, mutationAttempts: [] },
+      process.cwd(),
+    );
+    expect(result.coverage).toContainEqual({
+      claimId: CLAIM_ID,
+      cause: 'unverified_mutation_profile',
+    });
+    expect(result.contract.claims[0]!.requiredEvidence!.positive).toContain('fault_injection');
+  });
+
+  it('binds aggregate counterexample attempts matching checkId, candidateId, and aggregate extraction', async () => {
+    const state = withV2Declarations(stateWithClaims(), [
+      {
+        claimId: V2_CLAIM_ID,
+        statement: 'aggregate claim',
+        critical: false,
+        authoritySectionId: 'implementation',
+        claimScope: 'suite',
+        expectedCheckId: 'test',
+        counterexampleRequirement: {
+          kind: 'aggregate_check',
+          checkId: 'security',
+          candidateId: 'vc-sec',
+        },
+      },
+    ]);
+    const result = await materializeApprovedPlanContractResult(
+      { ...state, validationAttempts: [aggregateAttempt('vc-sec')] },
+      process.cwd(),
+    );
+    expect(result.coverage).toEqual([{ claimId: V2_CLAIM_ID, cause: 'missing_expected_check' }]);
+    const claim = result.contract.claims[0]!;
+    expect(claim.counterexampleRefs).toHaveLength(1);
+  });
+
+  it('records an aggregate gap when the attempt candidateId does not match', async () => {
+    const state = withV2Declarations(stateWithClaims(), [
+      {
+        claimId: V2_CLAIM_ID,
+        statement: 'aggregate claim',
+        critical: false,
+        authoritySectionId: 'implementation',
+        claimScope: 'suite',
+        expectedCheckId: 'test',
+        counterexampleRequirement: {
+          kind: 'aggregate_check',
+          checkId: 'security',
+          candidateId: 'vc-sec',
+        },
+      },
+    ]);
+    const result = await materializeApprovedPlanContractResult(
+      { ...state, validationAttempts: [aggregateAttempt('vc-other')] },
+      process.cwd(),
+    );
+    expect(result.coverage).toContainEqual({
+      claimId: V2_CLAIM_ID,
+      cause: 'aggregate_counterexample_unsupported',
+    });
+    expect(result.contract.claims[0]!.counterexampleRefs).toHaveLength(0);
+  });
+
+  it('accepts an aggregate attempt when the requirement does not pin a candidateId', async () => {
+    const state = withV2Declarations(stateWithClaims(), [
+      {
+        claimId: V2_CLAIM_ID,
+        statement: 'aggregate claim',
+        critical: false,
+        authoritySectionId: 'implementation',
+        claimScope: 'suite',
+        expectedCheckId: 'test',
+        counterexampleRequirement: { kind: 'aggregate_check', checkId: 'security' },
+      },
+    ]);
+    const result = await materializeApprovedPlanContractResult(
+      { ...state, validationAttempts: [aggregateAttempt('vc-anything')] },
+      process.cwd(),
+    );
+    expect(result.contract.claims[0]!.counterexampleRefs).toHaveLength(1);
+  });
+
+  it('records an aggregate gap when the attempt lacks full_check or aggregate binding', async () => {
+    const state = withV2Declarations(stateWithClaims(), [
+      {
+        claimId: V2_CLAIM_ID,
+        statement: 'aggregate claim',
+        critical: false,
+        authoritySectionId: 'implementation',
+        claimScope: 'suite',
+        expectedCheckId: 'test',
+        counterexampleRequirement: { kind: 'aggregate_check', checkId: 'security' },
+      },
+    ]);
+    const withoutFullCheck = {
+      ...aggregateAttempt(),
+      result: {
+        ...aggregateAttempt().result,
+        fullCheckScopeAttestation: undefined,
+      },
+    };
+    const result = await materializeApprovedPlanContractResult(
+      { ...state, validationAttempts: [withoutFullCheck] },
+      process.cwd(),
+    );
+    expect(result.coverage).toContainEqual({
+      claimId: V2_CLAIM_ID,
+      cause: 'aggregate_counterexample_unsupported',
+    });
+  });
+
+  it('records invalid_counterexample_contract for a non-structured candidate', async () => {
+    const state = stateWithClaims();
+    const result = await materializeApprovedPlanContractResult(
+      {
+        ...state,
+        verificationCandidates: [
+          {
+            assertionCapability: 'unsupported' as const,
+            kind: 'security' as const,
+            command: './mvnw security',
+            source: 'repo:mvnw',
+            confidence: 'high' as const,
+            reason: 'not structured',
+          },
+        ],
+      },
+      process.cwd(),
+    );
+    expect(result.coverage).toContainEqual({
+      claimId: CLAIM_ID,
+      cause: 'invalid_counterexample_contract',
+    });
+    expect(result.contract.claims[0]!.counterexampleRefs).toHaveLength(0);
+  });
+
+  it('excludes attempts with a foreign scope or implementation digest from evidenceRefs', async () => {
+    const state = stateWithClaims();
+    const result = await materializeApprovedPlanContractResult(
+      {
+        ...state,
+        validationAttempts: [
+          ...state.validationAttempts,
+          {
+            attemptId: '77777777-7777-4777-8777-777777777777',
+            scope: 'baseline' as const,
+            planDigest: 'baseline-plan-digest',
+            result: {
+              checkId: 'test',
+              passed: true,
+              detail: 'foreign scope',
+              executedAt: NOW,
+              kind: 'test' as const,
+              command: 'npm test',
+              exitCode: 0,
+              executionMs: 1,
+              outputDigest: 'd'.repeat(64),
+              timedOut: false,
+              outcome: 'supported' as const,
+            },
+          },
+          {
+            attemptId: '88888888-8888-4888-8888-888888888888',
+            scope: 'implementation' as const,
+            implementationDigest: 'other-implementation',
+            result: {
+              checkId: 'test',
+              passed: true,
+              detail: 'foreign digest',
+              executedAt: NOW,
+              kind: 'test' as const,
+              command: 'npm test',
+              exitCode: 0,
+              executionMs: 1,
+              outputDigest: 'e'.repeat(64),
+              timedOut: false,
+              outcome: 'supported' as const,
+            },
+          },
+        ],
+      },
+      process.cwd(),
+    );
+    const claim = result.contract.claims[0]!;
+    expect(claim.evidenceRefs).toEqual([
+      { kind: 'validation_attempt', attemptId: ATTEMPT_ID },
+      { kind: 'structural_surface', surfaceId: 'command-registration' },
+    ]);
+  });
+
+  it('fails closed with invalid_certificate coverage outside IMPL_REVIEW', async () => {
+    const state = stateWithClaims();
+    const result = await materializeApprovedPlanContractResult(
+      { ...state, phase: 'IMPLEMENTATION' as const },
+      process.cwd(),
+    );
+    expect(result.coverage).toEqual([{ cause: 'invalid_certificate' }]);
+    expect(result.contract.claims).toHaveLength(0);
   });
 });

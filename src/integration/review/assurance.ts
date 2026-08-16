@@ -39,7 +39,12 @@ import { REVIEWER_AGENT } from '../../templates/mandates.js';
 export const REVIEW_CRITERIA_VERSION = 'p41-v1';
 // Mandate digest - computed from actual REVIEWER_AGENT template at module load
 export const REVIEW_MANDATE_DIGEST = hashText(REVIEWER_AGENT);
-import { resolveSubjectScope, resolveChallengeRequirements } from './subject-scope.js';
+import {
+  resolveSubjectScope,
+  resolveChallengeRequirements,
+  requireArtifactSubjectScope,
+  requireImplementationSubjectScope,
+} from './subject-scope.js';
 
 function resolveSubjectDigest(input: {
   subjectDigest: string;
@@ -120,27 +125,6 @@ export function resolveAttemptObservationCapability(
   return latest.observationCapability ?? null;
 }
 
-/**
- * Pre-implementation artifact reviews (plan, ADR) MUST mint an explicit
- * artifact subject scope. changedFiles, targetPaths, and discovery risk
- * surfaces are challenge classification and repository evidence context —
- * they must never become the primary subject authority of an artifact review.
- */
-function requireArtifactSubjectScope(
-  obligationType: ReviewObligationType,
-  reviewSubjectScope: ReviewSubjectScope | undefined,
-): void {
-  if (
-    (obligationType === 'plan' || obligationType === 'architecture') &&
-    reviewSubjectScope?.kind !== 'artifact'
-  ) {
-    throw new Error(
-      'FAIL_CLOSED: plan/architecture review obligations require an explicit artifact ' +
-        'reviewSubjectScope.',
-    );
-  }
-}
-
 function assertSubjectDigest(subjectDigest: string): void {
   if (!subjectDigest || subjectDigest.length === 0) {
     throw new Error(
@@ -188,11 +172,12 @@ export function createReviewObligation(input: {
   /** Runtime paths classified by the canonical phase-tool gate. */
   changedFiles?: readonly string[];
   /**
-   * Explicit structured subject scope. Absent → derived from changedFiles only
-   * for implementation and standalone review obligations. Plan and architecture
-   * obligations MUST pass an artifact scope: their subject is the frozen
-   * plan/ADR artifact, never the repository diff (fail-closed, see
-   * `artifactReviewSubjectScope`).
+   * Explicit structured subject scope. Plan and architecture obligations MUST
+   * pass an artifact scope (their subject is the frozen plan/ADR artifact,
+   * never the repository diff — fail-closed, see `artifactReviewSubjectScope`);
+   * implementation obligations MUST pass an implementation scope whose digest
+   * equals the subject digest. Standalone review obligations may derive their
+   * scope from the frozen review subject or changedFiles.
    */
   reviewSubjectScope?: ReviewSubjectScope;
   /** Frozen repository authority for repository-governed obligations. Provenance is derived CANONICALLY from this authority (or the frozen review subject) — never a mutable runtime snapshot. */
@@ -220,6 +205,9 @@ export function createReviewObligation(input: {
     input.reviewSubjectScope,
     input.changedFiles,
   );
+  // Enforced AFTER scope resolution so a missing/derived scope (the legacy
+  // changedFiles-derived repository_change default) fails closed too.
+  requireImplementationSubjectScope(input.obligationType, subjectDigest, reviewSubjectScope);
   return {
     obligationId: randomUUID(),
     obligationType: input.obligationType,

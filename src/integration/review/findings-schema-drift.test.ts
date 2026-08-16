@@ -174,7 +174,7 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ ReviewerFindingsInput drift guard', ()
     // guess an unsupported variant.
     const anchorKinds = collectSubjectAnchorKinds();
     expect(anchorKinds.sort()).toEqual(
-      ['artifact_section', 'content', 'repository_location'].sort(),
+      ['artifact_section', 'content', 'implementation', 'repository_location'].sort(),
     );
   });
 

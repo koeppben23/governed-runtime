@@ -1131,3 +1131,57 @@ describe('evidence-review', () => {
     });
   });
 });
+
+describe('Implementation subject scope coherence (schema refinement)', () => {
+  function implementObligation(reviewSubjectScope: Record<string, unknown>) {
+    return {
+      obligationId: FIXED_UUID,
+      obligationType: 'implement' as const,
+      subjectDigest: 'a'.repeat(64),
+      iteration: 1,
+      planVersion: 1,
+      criteriaVersion: 'p40-v1',
+      mandateDigest: 'sha256-mandate',
+      createdAt: FIXED_TIME,
+      pluginHandshakeAt: null,
+      status: 'pending' as const,
+      invocationId: null,
+      blockedCode: null,
+      fulfilledAt: null,
+      consumedAt: null,
+      maxReviewerOutputRepairAttempts: 1,
+      reviewSubjectScope,
+    };
+  }
+
+  it('accepts an implementation scope whose digest equals the subject digest', () => {
+    const obligation = implementObligation({
+      kind: 'implementation',
+      implementationDigest: 'a'.repeat(64),
+    });
+    expect(ReviewObligation.safeParse(obligation).success).toBe(true);
+  });
+
+  it('rejects an implementation scope whose digest diverges from the subject digest', () => {
+    const obligation = implementObligation({
+      kind: 'implementation',
+      implementationDigest: 'b'.repeat(64),
+    });
+    const result = ReviewObligation.safeParse(obligation);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(JSON.stringify(result.error.issues)).toContain(
+        'implementation reviewSubjectScope digest must equal the obligation subject digest',
+      );
+    }
+  });
+
+  it('keeps parsing legacy implement obligations without an implementation scope (migration-safe)', () => {
+    const obligation = implementObligation({
+      kind: 'repository_change',
+      paths: ['src/auth.ts'],
+      revisions: ['base', 'head'],
+    });
+    expect(ReviewObligation.safeParse(obligation).success).toBe(true);
+  });
+});

@@ -32,6 +32,19 @@ jobs:
         env:
           FORCE_COLOR: 0
 
+  known-issues-note:
+    name: known-issues-note
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    timeout-minutes: 2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Hint when trust-boundary changes miss KNOWN_ISSUES.md
+        run: node scripts/check-known-issues-note.mjs "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}"
+
   test:
     name: ci-gate
     runs-on: ubuntu-latest

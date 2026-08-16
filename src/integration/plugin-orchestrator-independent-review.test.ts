@@ -121,7 +121,8 @@ function buildState(
   return makeState(phase, {
     ticket: TICKET,
     plan: PLAN_RECORD,
-    implementation: phase === 'IMPLEMENTATION' ? IMPL_EVIDENCE : null,
+    implementation:
+      phase === 'IMPLEMENTATION' ? { ...IMPL_EVIDENCE, digest: 'test-subject-digest' } : null,
     architecture:
       phase === 'ARCHITECTURE'
         ? {
@@ -165,9 +166,8 @@ function buildState(
           reviewSubjectScope:
             obligationType === 'implement'
               ? {
-                  kind: 'repository_change',
-                  paths: ['src/foo.ts'],
-                  revisions: ['base', 'head'],
+                  kind: 'implementation',
+                  implementationDigest: 'test-subject-digest',
                 }
               : {
                   kind: 'artifact',
@@ -591,5 +591,39 @@ describe('runReviewOrchestration strict independent review with footer output', 
       reviewAssuranceLevel: 'text_compat_lower',
       extractionMethod: 'direct_json',
     });
+  });
+});
+
+it('blocks WITHOUT invoking the reviewer when no exact implement obligation resolves (no mutable-identity fallback)', async () => {
+  const base = buildState('IMPLEMENTATION', 'implement');
+  const stateWithoutObligation = {
+    ...base,
+    reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      obligations: [],
+      invocations: [],
+      attempts: [],
+    },
+  };
+  const stateRef = { current: stateWithoutObligation };
+  vi.mocked(readState).mockResolvedValue(stateRef.current);
+  const client = buildClient(buildFindings());
+  const deps = buildDeps(client, stateRef);
+  const output = { output: reviewRequiredOutput('IMPLEMENTATION') };
+
+  await runReviewOrchestration(deps, {
+    toolName: TOOL_FLOWGUARD_IMPLEMENT,
+    input: { args: {} },
+    output,
+    sessionId: PARENT_SESSION_ID,
+    now: NOW,
+  });
+
+  expect(client.session.create).not.toHaveBeenCalled();
+  expect(client.session.prompt).not.toHaveBeenCalled();
+  expect(deps.updateReviewAssurance).not.toHaveBeenCalled();
+  expect(JSON.parse(String(output.output))).toMatchObject({
+    error: true,
+    code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
   });
 });

@@ -27,6 +27,7 @@ import {
 } from '../test-helpers.js';
 import { status, hydrate, ticket, plan, run_check } from '../tools/index.js';
 import { readState, writeState } from '../../adapters/persistence.js';
+import { FROZEN_IMPLEMENTATION_BASE } from '../../fixtures.js';
 import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
@@ -36,6 +37,7 @@ import { PersistenceError } from '../../adapters/persistence.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { hashText } from '../../shared/hashing.js';
 import { hashWorktreeFiles, listRepoSignals } from '../../adapters/git.js';
+import { headCommitFull } from '../../adapters/git.js';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { withSessionWriteLockRetry } from '../../adapters/lock-retry.js';
@@ -73,6 +75,19 @@ vi.mock('../../adapters/git', async (importOriginal) => {
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
     changedFiles: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.changedFiles),
     listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
+    headCommitFull: vi.fn().mockResolvedValue('d'.repeat(40)),
+  };
+});
+
+vi.mock('../../adapters/frozen-repository.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../adapters/frozen-repository.js')>();
+  return {
+    ...original,
+    freezeRepositoryIdentity: vi.fn(() => ({
+      kind: 'local' as const,
+      rootCommitDigest: 'sha256:' + 'b'.repeat(64),
+    })),
+    freezeWorktreeCandidate: vi.fn().mockResolvedValue('c'.repeat(40)),
   };
 });
 
@@ -284,6 +299,37 @@ describe('HAPPY', () => {
 
     const finalState = await readState(sd);
     expect(finalState!.phase).toBe('IMPLEMENTATION');
+  });
+
+  it('freezes the implementation base authority on the ALL_PASSED transition into IMPLEMENTATION', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+
+    await callOk(run_check, { kind: 'typecheck' });
+
+    const finalState = await readState(sd);
+    expect(finalState!.phase).toBe('IMPLEMENTATION');
+    // Single transition finalizer: the persisted IMPLEMENTATION state carries
+    // the frozen pre-mutation base authority resolved from the worktree HEAD.
+    expect(finalState!.implementationBaseAuthority).toBeDefined();
+    expect(finalState!.implementationBaseAuthority!.objectSha).toBe('d'.repeat(40));
+  });
+
+  it('fails closed with REVIEW_IMPLEMENTATION_BASE_FREEZE_FAILED when no commit can be frozen', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+    const before = await readState(sd);
+
+    vi.mocked(headCommitFull).mockResolvedValueOnce(null);
+    const raw = await run_check.execute({ kind: 'typecheck' }, ctx);
+    const result = parseToolResult(raw);
+
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('REVIEW_IMPLEMENTATION_BASE_FREEZE_FAILED');
+    // Nothing persisted: the session must not enter IMPLEMENTATION without a
+    // frozen base authority.
+    const after = await readState(sd);
+    expect(after!.phase).toBe(before!.phase);
   });
 
   it('calls executeCheck with correct arguments', async () => {
@@ -583,6 +629,7 @@ describe('CORNER', () => {
     await writeState(sessDir, {
       ...state!,
       phase: 'IMPL_VALIDATION',
+      implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
       implementation: {
         changedFiles: ['src/example.ts'],
         domainFiles: ['src/example.ts'],
@@ -610,6 +657,7 @@ describe('CORNER', () => {
     await writeState(sessDir, {
       ...state!,
       phase: 'IMPL_VALIDATION',
+      implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
       implementation: {
         changedFiles: ['src/example.ts'],
         domainFiles: ['src/example.ts'],

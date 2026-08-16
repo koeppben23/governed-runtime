@@ -29,6 +29,7 @@ import { writeStateWithArtifacts } from './tools/helpers.js';
 import type { HostId } from '../shared/hosts.js';
 
 import { plan } from './tools/plan.js';
+import { hydrate } from './tools/hydrate.js';
 import { implement, review_implementation } from './tools/implement.js';
 import { architecture } from './tools/architecture.js';
 import { review } from './tools/review-tool/index.js';
@@ -41,9 +42,29 @@ import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './review/assurance.js';
-import { makeState, TICKET } from '../fixtures.js';
+import { makeState, TICKET, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 import { computeRecordDigest } from '../state/evidence-plan.js';
+
+vi.mock('../adapters/git', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/git.js')>();
+  return {
+    ...original,
+    headCommitFull: vi.fn().mockResolvedValue('d'.repeat(40)),
+  };
+});
+
+vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/frozen-repository.js')>();
+  return {
+    ...original,
+    freezeRepositoryIdentity: vi.fn(() => ({
+      kind: 'local' as const,
+      rootCommitDigest: 'sha256:' + 'b'.repeat(64),
+    })),
+    freezeWorktreeCandidate: vi.fn().mockResolvedValue('c'.repeat(40)),
+  };
+});
 
 // Mock the verification executor to avoid real subprocess execution
 vi.mock('../verification/executor', () => ({
@@ -122,24 +143,28 @@ async function boot(host: HostId, label: string): Promise<SE> {
   process.env.OPENCODE_CONFIG_DIR = c;
   process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
   process.env.FLOWGUARD_HOST_PLATFORM = host;
+  const tc: ToolContext = {
+    sessionID: id,
+    messageID: randomUUID(),
+    agent: 'test',
+    directory: w,
+    worktree: w,
+    abort: new AbortController().signal,
+    metadata: () => {},
+  };
+  const hydrated = await hydrate.execute({ policyMode: 'solo', profileId: 'baseline' }, tc);
+  if (typeof hydrated !== 'string' || hydrated.includes('"error":true')) {
+    throw new Error(`boot hydrate failed: ${String(hydrated).slice(0, 400)}`);
+  }
   const fp = await computeFingerprint(w),
     sd = sessionDir(fp.fingerprint, id);
-  mkdirSync(sd, { recursive: true });
   return {
     rootDir: r,
     worktree: w,
     configDir: c,
     sId: id,
     sDir: sd,
-    tc: {
-      sessionID: id,
-      messageID: randomUUID(),
-      agent: 'test',
-      directory: w,
-      worktree: w,
-      abort: new AbortController().signal,
-      metadata: () => {},
-    },
+    tc,
   };
 }
 
@@ -299,6 +324,7 @@ describe('FlowGuard tool-level E2E', () => {
         await writeStateWithArtifacts(
           s.sDir,
           makeState('IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             ticket: TICKET,
             plan: {
               current: {
@@ -384,6 +410,7 @@ describe('FlowGuard tool-level E2E', () => {
         await writeStateWithArtifacts(
           s.sDir,
           makeState('VALIDATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             ticket: TICKET,
             plan: currentPlan,
             reviewDecision: st!.reviewDecision,
@@ -413,6 +440,7 @@ describe('FlowGuard tool-level E2E', () => {
         await writeStateWithArtifacts(
           s.sDir,
           makeState('IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             ticket: TICKET,
             plan: currentPlan,
             reviewDecision: st!.reviewDecision,

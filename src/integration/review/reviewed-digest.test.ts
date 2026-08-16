@@ -159,6 +159,7 @@ describe('resolveReviewedArtifactIdentity', () => {
       now: NOW,
       subjectDigest: 'impl-digest',
       changedFiles: ['src/foo.ts'],
+      reviewSubjectScope: { kind: 'implementation', implementationDigest: 'impl-digest' },
     });
     const findings = subagentFindings(implement);
     const state = assurance([implement], []);

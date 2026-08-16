@@ -164,6 +164,75 @@ describe('resolveNextAction', () => {
       expectAction(action, ACTION_CODES.RUN_CONTINUE, ['/continue']);
     });
 
+    it('IMPL_REVIEW with a blocked implement obligation → /implement re-record', () => {
+      const obligation = createReviewObligation({
+        obligationType: 'implement',
+        iteration: 1,
+        planVersion: 1,
+        subjectDigest: 'impl-digest',
+        reviewSubjectScope: {
+          kind: 'implementation',
+          implementationDigest: 'impl-digest',
+        },
+        changedFiles: ['src/a.ts'],
+        policySnapshot: null,
+        now: '2026-01-01T00:00:00.000Z',
+      });
+      const blocked = {
+        ...obligation,
+        status: 'blocked' as const,
+        blockedCode: 'REVIEW_REPAIR_UNAVAILABLE',
+      };
+      const state = makeState('IMPL_REVIEW', {
+        implementation: IMPL_EVIDENCE,
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v5',
+          obligations: [blocked],
+          invocations: [],
+          attempts: [],
+        },
+      });
+      const action = resolveNextAction('IMPL_REVIEW', state);
+      expectAction(action, ACTION_CODES.IMPLEMENTATION_REVIEW_BLOCKED, ['/implement']);
+      expect(action.text).toContain('REVIEW_REPAIR_UNAVAILABLE');
+      expect(action.text).not.toContain('flowguard-reviewer');
+    });
+
+    it('IMPL_REVIEW with three blocked implement obligations → terminal /abort guidance', () => {
+      const obligations = [1, 2, 3].map((iteration) => {
+        const obligation = createReviewObligation({
+          obligationType: 'implement',
+          iteration,
+          planVersion: 1,
+          subjectDigest: `impl-digest-${iteration}`,
+          reviewSubjectScope: {
+            kind: 'implementation',
+            implementationDigest: `impl-digest-${iteration}`,
+          },
+          changedFiles: ['src/a.ts'],
+          policySnapshot: null,
+          now: '2026-01-01T00:00:00.000Z',
+        });
+        return {
+          ...obligation,
+          status: 'blocked' as const,
+          blockedCode: 'REVIEW_REPAIR_UNAVAILABLE',
+        };
+      });
+      const state = makeState('IMPL_REVIEW', {
+        implementation: IMPL_EVIDENCE,
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v5',
+          obligations,
+          invocations: [],
+          attempts: [],
+        },
+      });
+      const action = resolveNextAction('IMPL_REVIEW', state);
+      expectAction(action, ACTION_CODES.IMPLEMENTATION_REVIEW_BLOCKED, ['/abort']);
+      expect(action.text).toContain('permanently');
+    });
+
     it('EVIDENCE_REVIEW → RUN_REVIEW_DECISION', () => {
       const state = makeProgressedState('EVIDENCE_REVIEW');
       const action = resolveNextAction('EVIDENCE_REVIEW', state);

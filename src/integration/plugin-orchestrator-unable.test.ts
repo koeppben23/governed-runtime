@@ -185,6 +185,40 @@ function buildSessionState() {
       source: 'user' as const,
       inputOrigin: 'manual_text' as const,
     },
+    reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      obligations: [
+        {
+          obligationId: OBLIGATION_ID,
+          obligationType: 'plan' as const,
+          iteration: 0,
+          planVersion: 1,
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          maxReviewerOutputRepairAttempts: 1,
+          createdAt: '2026-04-24T12:00:00.000Z',
+          pluginHandshakeAt: null,
+          status: 'pending' as const,
+          invocationId: null,
+          blockedCode: null,
+          fulfilledAt: null,
+          consumedAt: null,
+          subjectDigest: 'plan-digest-1',
+          reviewProfile: 'core' as const,
+          profileSource: 'policy_default' as const,
+          reviewSubjectScope: {
+            kind: 'artifact' as const,
+            artifact: {
+              kind: 'plan' as const,
+              digest: 'plan-digest-1',
+              sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }]],
+            },
+          },
+        },
+      ],
+      invocations: [],
+      attempts: [],
+    },
   });
 }
 

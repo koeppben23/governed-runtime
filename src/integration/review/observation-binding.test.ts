@@ -69,7 +69,9 @@ function candidateObligation(
       ? {
           reviewSubjectScope: artifactReviewSubjectScope('plan', '# Plan\nBody', 'impl-digest'),
         }
-      : {}),
+      : {
+          reviewSubjectScope: { kind: 'implementation', implementationDigest: 'impl-digest' },
+        }),
     changedFiles: ['src/foo.ts'],
     repositoryAuthority: {
       kind: 'candidate_pair',
@@ -450,11 +452,11 @@ describe('direct/submitted validator path', () => {
           category: 'correctness' as const,
           message: 'flawed',
           relation: {
+            // Implementation reviews are digest-scoped: the subject anchor
+            // targets the implementation subject; repository evidenceLocations
+            // bind against the attempt's authoritative observations.
             subjectAnchors: [
-              {
-                kind: 'repository_location' as const,
-                location: { path: 'src/foo.ts', revision: 'head' as const, line: 1 },
-              },
+              { kind: 'implementation' as const, implementationDigest: 'impl-digest' },
             ],
             evidenceLocations:
               locations as ReviewFindings['blockingIssues'][number]['relation']['evidenceLocations'],
