@@ -42,7 +42,10 @@ import type {
   ArchitectureReviewBinding,
   PlanApprovalCertificate,
 } from '../state/proofgraph-approval.js';
-import { authorizedCriticalPlanClaimIds, emptyClaimDeclarations } from '../state/proofgraph-approval.js';
+import {
+  authorizedCriticalPlanClaimIds,
+  emptyClaimDeclarations,
+} from '../state/proofgraph-approval.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import { evaluate, evaluateWithEvent } from '../machine/evaluate.js';
 import type { RailResult, RailBlocked, RailContext, TransitionRecord } from './types.js';
@@ -401,7 +404,8 @@ function createArchitectureApprovalCertificate(
   ctx: RailContext,
   reviewBinding: ArchitectureReviewBinding,
 ): ArchitectureApprovalCertificate {
-  const claimDeclarations = architecture.claimDeclarations ?? emptyClaimDeclarations('architecture');
+  const claimDeclarations =
+    architecture.claimDeclarations ?? emptyClaimDeclarations('architecture');
   const claimDeclarationsDigest = ctx.digest(canonicalJsonStringify(claimDeclarations));
   const decisionAttestationDigest = ctx.digest(canonicalJsonStringify(decision));
   const certificateIdDigest = ctx.digest(

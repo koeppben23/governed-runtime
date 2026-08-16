@@ -123,7 +123,7 @@ export const REVIEW_DECISION_COPY: Readonly<Record<ReviewDecisionReadiness, Read
 
 // ─── Projector ─────────────────────────────────────────────────────────────────
 
-export interface ReviewDecisionInput {
+export interface ReviewDecisionProjectionInput {
   readonly blockingIssues?: ReadonlyArray<{
     readonly message: string;
     readonly severity?: string;
@@ -169,7 +169,7 @@ function toDecisionIssues(
   });
 }
 
-function toAdvisories(input: ReviewDecisionInput): DecisionAdvisory[] {
+function toAdvisories(input: ReviewDecisionProjectionInput): DecisionAdvisory[] {
   const out: DecisionAdvisory[] = [];
   for (const text of input.missingVerification ?? []) {
     out.push({ kind: 'missing_verification', text });
@@ -191,7 +191,9 @@ function buildSummary(readiness: ReviewDecisionReadiness, blockers: number): str
   return copy.explanation;
 }
 
-export function projectReviewDecision(input: ReviewDecisionInput): ReviewDecisionProjection {
+export function projectReviewDecision(
+  input: ReviewDecisionProjectionInput,
+): ReviewDecisionProjection {
   const blockers = toDecisionIssues('review_finding', input.blockingIssues);
   const risks = toDecisionIssues('review_finding', input.majorRisks);
   const advisories = toAdvisories(input);

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { projectReviewDecision, REVIEW_DECISION_COPY } from './review-decision.js';
-import type { ReviewDecisionInput } from './review-decision.js';
+import type { ReviewDecisionProjectionInput } from './review-decision.js';
 
 describe('projectReviewDecision', () => {
   it('includes a compact affected-subject summary without changing readiness', () => {
@@ -38,7 +38,7 @@ describe('projectReviewDecision', () => {
   });
 
   it('blockingIssues produce not_ready readiness', () => {
-    const input: ReviewDecisionInput = {
+    const input: ReviewDecisionProjectionInput = {
       blockingIssues: [{ message: 'Missing null check' }],
     };
     const result = projectReviewDecision(input);
@@ -50,7 +50,7 @@ describe('projectReviewDecision', () => {
   });
 
   it('majorRisks do NOT affect readiness', () => {
-    const input: ReviewDecisionInput = {
+    const input: ReviewDecisionProjectionInput = {
       majorRisks: [{ message: 'Retry behavior untested' }],
     };
     const result = projectReviewDecision(input);
@@ -60,7 +60,7 @@ describe('projectReviewDecision', () => {
   });
 
   it('blockingIssues override majorRisks for readiness', () => {
-    const input: ReviewDecisionInput = {
+    const input: ReviewDecisionProjectionInput = {
       blockingIssues: [{ message: 'Missing null check' }],
       majorRisks: [{ message: 'Retry behavior untested' }],
     };
@@ -71,7 +71,7 @@ describe('projectReviewDecision', () => {
   });
 
   it('multiple blockingIssues produce plural summary', () => {
-    const input: ReviewDecisionInput = {
+    const input: ReviewDecisionProjectionInput = {
       blockingIssues: [{ message: 'Issue A' }, { message: 'Issue B' }],
     };
     const result = projectReviewDecision(input);
@@ -79,7 +79,7 @@ describe('projectReviewDecision', () => {
   });
 
   it('maps advisories from missingVerification, scopeCreep, unknowns', () => {
-    const input: ReviewDecisionInput = {
+    const input: ReviewDecisionProjectionInput = {
       missingVerification: ['Check: test'],
       scopeCreep: ['New feature outside scope'],
       unknowns: ['Deployment impact unknown'],
@@ -92,7 +92,7 @@ describe('projectReviewDecision', () => {
   });
 
   it('advisories do NOT affect readiness', () => {
-    const input: ReviewDecisionInput = {
+    const input: ReviewDecisionProjectionInput = {
       missingVerification: ['Check: test'],
       scopeCreep: ['New feature'],
       unknowns: ['Impact unknown'],
@@ -103,7 +103,7 @@ describe('projectReviewDecision', () => {
   });
 
   it('preserves findingId when present', () => {
-    const input: ReviewDecisionInput = {
+    const input: ReviewDecisionProjectionInput = {
       blockingIssues: [{ message: 'Issue', findingId: 'abc-123' }],
     };
     const result = projectReviewDecision(input);
@@ -111,7 +111,7 @@ describe('projectReviewDecision', () => {
   });
 
   it('omits findingId when absent', () => {
-    const input: ReviewDecisionInput = {
+    const input: ReviewDecisionProjectionInput = {
       blockingIssues: [{ message: 'Issue' }],
     };
     const result = projectReviewDecision(input);
@@ -119,7 +119,7 @@ describe('projectReviewDecision', () => {
   });
 
   it('handles all zero-length arrays', () => {
-    const input: ReviewDecisionInput = {
+    const input: ReviewDecisionProjectionInput = {
       blockingIssues: [],
       majorRisks: [],
       missingVerification: [],

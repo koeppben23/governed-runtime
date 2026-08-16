@@ -47,11 +47,8 @@ vi.mock('../../../adapters/git', async (importOriginal) => {
 });
 
 vi.mock('../../../adapters/gh-cli', () => ({
-  hasGhCli: vi.fn().mockReturnValue(true),
-  loadPrDiff: vi.fn().mockReturnValue(''),
   loadResolvedPullRequestDiff: vi.fn().mockReturnValue(''),
   resolvePullRequestReviewSource: vi.fn(),
-  loadBranchDiff: vi.fn().mockReturnValue('diff --git a/docs/a.md b/docs/a.md\n+line\n'),
   loadResolvedBranchDiff: vi.fn().mockReturnValue('diff --git a/docs/a.md b/docs/a.md\n+line\n'),
   resolveBranchReviewSource: vi.fn().mockImplementation((branch: string) => ({
     branch,

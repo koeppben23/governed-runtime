@@ -313,9 +313,7 @@ export function emptyClaimDeclarations(flow: 'architecture'): ArchitectureClaimD
 export function emptyClaimDeclarations(
   flow: 'plan' | 'architecture',
 ): PlanClaimDeclarations | ArchitectureClaimDeclarations {
-  return flow === 'plan'
-    ? { flow: 'plan', claims: [] }
-    : { flow: 'architecture', claims: [] };
+  return flow === 'plan' ? { flow: 'plan', claims: [] } : { flow: 'architecture', claims: [] };
 }
 
 export function hasCurrentPlanApprovalCertificate(

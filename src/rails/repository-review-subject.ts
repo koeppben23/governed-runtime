@@ -1,6 +1,7 @@
 /** Repository-change review subject materialization from canonical adapter changes. */
 
 import type { FrozenReviewSubject } from '../state/evidence.js';
+import type { ReviewRepositoryIdentity } from '../state/evidence-review-subject.js';
 import { blocked } from '../config/reasons.js';
 import type { RailBlocked } from './types.js';
 import {
@@ -19,12 +20,8 @@ export interface ResolvedRepositorySubjectInput {
   readonly source:
     | { readonly kind: 'pull_request'; readonly pullRequestNumber: number }
     | { readonly kind: 'branch'; readonly branch: string; readonly requestedBase?: string };
-  readonly baseRepository:
-    | { readonly host: string; readonly owner: string; readonly name: string }
-    | { readonly kind: 'local'; readonly rootCommitDigest: string };
-  readonly headRepository?:
-    | { readonly host: string; readonly owner: string; readonly name: string }
-    | { readonly kind: 'local'; readonly rootCommitDigest: string };
+  readonly baseRepository: ReviewRepositoryIdentity;
+  readonly headRepository?: ReviewRepositoryIdentity;
   readonly baseSha: string;
   readonly headSha: string;
 }

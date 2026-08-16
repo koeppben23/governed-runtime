@@ -17,6 +17,7 @@
  */
 
 import type { SessionState } from '../state/schema.js';
+import type { ReviewRepositoryIdentity } from '../state/evidence-review-subject.js';
 import {
   ReviewReport,
   type ExternalReference,
@@ -108,9 +109,7 @@ export interface ReviewReferenceInput {
   /** Worktree directory for git operations (branch reviews only). */
   readonly cwd?: string;
   /** Repository identity resolved with the immutable branch source. */
-  readonly repository?:
-    | { readonly host: string; readonly owner: string; readonly name: string }
-    | { readonly kind: 'local'; readonly rootCommitDigest: string };
+  readonly repository?: ReviewRepositoryIdentity;
   /** Repository paths requested for a scoped branch or pull-request review. */
   readonly targetPaths?: readonly string[];
 }

@@ -64,8 +64,6 @@ const BRANCH_DIFF = vi.hoisted(
 );
 
 vi.mock('../adapters/gh-cli', () => ({
-  hasGhCli: vi.fn().mockReturnValue(true),
-  loadBranchDiff: vi.fn().mockReturnValue(BRANCH_DIFF),
   loadResolvedBranchDiff: vi.fn().mockReturnValue(BRANCH_DIFF),
   resolveBranchReviewSource: vi.fn().mockImplementation((branch: string) => ({
     branch,
@@ -224,8 +222,8 @@ describe('host-task review chain (end to end)', () => {
 
     // The verdict continuation must reuse the persisted frozen subject, so no
     // diff is reloaded. This guards `loadResolvedBranchDiff` — the function
-    // the branch loader actually calls; the previous guard named
-    // `loadBranchDiff`, which this path never invokes, so it asserted nothing.
+    // the branch loader actually calls; the previous guard asserted on a diff
+    // loader this path never invokes, so it asserted nothing.
     const diffLoadsBeforeVerdict = vi.mocked(ghMock.loadResolvedBranchDiff).mock.calls.length;
 
     const result = parseToolResult(

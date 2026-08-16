@@ -9,54 +9,18 @@
 import { execFileSync } from 'node:child_process';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import { hashText } from '../shared/hashing.js';
+import type {
+  RepositoryIdentity,
+  ReviewRepositoryIdentity,
+} from '../state/evidence-review-subject.js';
 import { GitError } from './git.js';
-
-/**
- * Check if `gh` CLI is available and authenticated.
- * Result is cached once per process — the check is synchronous with a 3s timeout.
- */
-let _ghCliAvailable: boolean | null = null;
-
-export function hasGhCli(): boolean {
-  if (_ghCliAvailable !== null) return _ghCliAvailable;
-  try {
-    execFileSync('gh', ['auth', 'status'], { stdio: 'ignore', timeout: 3000 });
-    _ghCliAvailable = true;
-  } catch {
-    _ghCliAvailable = false;
-    getAdapterLogger().warn('gh-cli', 'GitHub CLI not available or not authenticated');
-  }
-  return _ghCliAvailable;
-}
-
-/**
- * Load PR diff via `gh` CLI.
- * Requires `gh` CLI installed and authenticated.
- * Returns the raw diff string.
- * Throws if PR not found or gh fails.
- */
-export function loadPrDiff(prNumber: number): string {
-  const out = execFileSync(
-    'gh',
-    ['pr', 'view', String(prNumber), '--json', 'diff', '--jq', '.diff'],
-    {
-      encoding: 'utf-8',
-      stdio: 'pipe',
-      timeout: 15000,
-    },
-  );
-  if (!out || out.trim() === 'null') {
-    throw new GitError('GIT_NOT_FOUND', `PR #${prNumber} not found or has no diff`);
-  }
-  return out;
-}
 
 // ─── Immutable Pull-Request Review Source ────────────────────────────────────
 
 export interface ResolvedPullRequestReviewSource {
   readonly pullRequestNumber: number;
-  readonly baseRepository: { readonly host: string; readonly owner: string; readonly name: string };
-  readonly headRepository: { readonly host: string; readonly owner: string; readonly name: string };
+  readonly baseRepository: RepositoryIdentity;
+  readonly headRepository: RepositoryIdentity;
   readonly baseSha: string;
   readonly headSha: string;
 }
@@ -170,9 +134,7 @@ function isPullRequestMetadata(value: unknown): value is {
   return typeof value === 'object' && value !== null;
 }
 
-function repositoryIdentity(
-  value: unknown,
-): { readonly host: string; readonly owner: string; readonly name: string } | undefined {
+function repositoryIdentity(value: unknown): RepositoryIdentity | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
   const repository = value as {
     readonly name?: unknown;
@@ -200,29 +162,6 @@ function isGitSha(value: unknown): value is string {
   return typeof value === 'string' && /^[a-f0-9]{40,64}$/i.test(value);
 }
 
-/**
- * Load branch diff via `gh` CLI (compares branch against base branch).
- * Requires `gh` CLI installed and authenticated.
- * Returns the raw diff string.
- * Throws if branch not found or gh fails.
- */
-export function loadBranchDiff(branch: string, cwd?: string): string {
-  const base = detectBaseBranch(branch, cwd);
-  const out = execFileSync('git', ['diff', `${base.ref}...${branch}`], {
-    encoding: 'utf-8',
-    stdio: 'pipe',
-    timeout: 15000,
-    cwd,
-  });
-  if (!out || out.trim() === '') {
-    throw new GitError(
-      'GIT_COMMAND_FAILED',
-      `Branch '${branch}' has no changes relative to ${base.label}`,
-    );
-  }
-  return out;
-}
-
 // ─── Immutable Branch Review Source ──────────────────────────────────────────
 
 export interface ResolvedBranchReviewSource {
@@ -230,9 +169,7 @@ export interface ResolvedBranchReviewSource {
   readonly baseBranch: string;
   readonly resolvedBranchSha: string;
   readonly resolvedBaseSha: string;
-  readonly repository?:
-    | { readonly host: string; readonly owner: string; readonly name: string }
-    | { readonly kind: 'local'; readonly rootCommitDigest: string };
+  readonly repository?: ReviewRepositoryIdentity;
 }
 
 /**
@@ -328,9 +265,7 @@ export function resolveRepositoryIdentity(
   baseSha: string,
   headSha: string,
   cwd?: string,
-):
-  | { readonly host: string; readonly owner: string; readonly name: string }
-  | { readonly kind: 'local'; readonly rootCommitDigest: string } {
+): ReviewRepositoryIdentity {
   try {
     const remote = execFileSync('git', ['remote', 'get-url', 'origin'], {
       encoding: 'utf-8',
@@ -348,7 +283,7 @@ export function resolveRepositoryIdentity(
   }
 }
 
-export function localRepositoryIdentity(
+function localRepositoryIdentity(
   baseSha: string,
   headSha: string,
   cwd?: string,

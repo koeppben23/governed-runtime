@@ -29,7 +29,7 @@ export {
 export type {
   ReviewDecisionReadiness,
   ReviewDecisionProjection,
-  ReviewDecisionInput,
+  ReviewDecisionProjectionInput,
   DecisionIssue,
   DecisionIssueSource,
   DecisionAdvisory,
