@@ -19,8 +19,8 @@ re-triage confirmed the NTP corrections AC4/AC5 (merged via #728), the
 flow-aware completeness fix AC7 (merged via #678), and two new assurance
 findings: MUT2 (coverage exclusion of production plugin helpers) and MUT3
 (release tags do not run mutation testing). A 2026-08-16 triage added the
-architecture certificate provenance section for PR #816 (CEF1/CEF2 tracked,
-CE1–CE3 open).
+architecture certificate provenance section for PR #816 (CEF1/CEF2 fixed via
+the squash merge, CE1–CE3 open).
 
 ## Status Legend
 
@@ -356,14 +356,15 @@ explicit override provenance for `review_exhausted`, plus a verdict-coherence
 guard (`ARCHITECTURE_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION`) so bound evidence
 that contradicts the recorded review completion blocks approval.
 
-CEF1/CEF2 close the two review findings on the certificate trust chain; they
-do NOT resolve CE1–CE3, which are properties of the evidence-resolution
-mechanism the fixes build on, not side effects of the fixes themselves.
+CEF1/CEF2 close the two review findings on the certificate trust chain (merged
+via #816, squash-merge commit `e29c50ca`); they do NOT resolve CE1–CE3, which
+are properties of the evidence-resolution mechanism the fixes build on, not
+side effects of the fixes themselves.
 
 | ID   | Severity   | Status       | Tracking | Summary                                                                                                                                                                                                                                                                                                                              |
 | ---- | ---------- | ------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| CEF1 | HIGH       | Tracked      | #816     | Certificate binding provenance: required `reviewBinding`, exact-subject evidence, no cross-digest fallback, binding co-signs `certificateId`, gate/mint single resolution.                                                                                                                                                           |
-| CEF2 | MEDIUM     | Tracked      | #816     | Verdict coherence at the certificate authority boundary: rejecting evidence cannot co-sign `current_review`; `accept` evidence contradicts `review_exhausted` and blocks via `ARCHITECTURE_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION`.                                                                                                  |
+| CEF1 | HIGH       | Fixed        | #816     | Certificate binding provenance: required `reviewBinding`, exact-subject evidence, no cross-digest fallback, binding co-signs `certificateId`, gate/mint single resolution.                                                                                                                                                           |
+| CEF2 | MEDIUM     | Fixed        | #816     | Verdict coherence at the certificate authority boundary: rejecting evidence cannot co-sign `current_review`; `accept` evidence contradicts `review_exhausted` and blocks via `ARCHITECTURE_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION`.                                                                                                  |
 | CE1  | MEDIUM     | Open         | #816     | `current_review` tolerates evidence WITHOUT `capturedVerdict` (SDK attestations without `overallVerdict`, legacy captures); only a contradicting verdict blocks. Hardening: require `capturedVerdict` on new-generation evidence once legacy states are out of scope.                                                                |
 | CE2  | LOW-MEDIUM | Open         | #816     | Non-canonical linkage fallback: without `obligation.invocationId` and without a `consumedByObligationId`-marked invocation, the resolver binds the NEWEST findingsHash-bearing invocation of the same `obligationId` — weaker than canonical linkage. Production plugin hooks set `invocationId`; direct host-task captures may not. |
 | CE3  | LOW        | Not Verified | —        | No normal production transition path is proven to produce `reviewCompletion` ↔ `capturedVerdict` contradictions; the coherence guard is source-level defense-in-depth, pinned by negative-path tests.                                                                                                                                |
