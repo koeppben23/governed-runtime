@@ -7,7 +7,12 @@
  */
 
 import type { SessionState, Phase } from './state/schema.js';
-import type { ReviewAssuranceState } from './state/evidence-review.js';
+import type {
+  ReviewAssuranceState,
+  ReviewAttempt,
+  ReviewInvocationEvidence,
+  ReviewObligation,
+} from './state/evidence-review.js';
 import type {
   TicketEvidence,
   ArchitectureDecision,
@@ -133,6 +138,28 @@ export const ARCHITECTURE_DECISION: ArchitectureDecision = {
   createdAt: FIXED_TIME,
   digest: 'digest-of-adr',
 };
+
+/**
+ * Canonical review-assurance envelope builder: one obligation (or an explicit
+ * obligation list) plus optional invocations and attempts. The single
+ * implementation of the `review-assurance.v5` envelope used across test
+ * suites; domain-specific obligation/invocation builders stay local to their
+ * suites and feed this builder.
+ */
+export function assuranceWith(input: {
+  readonly obligation?: ReviewObligation;
+  readonly obligations?: readonly ReviewObligation[];
+  readonly invocations?: readonly ReviewInvocationEvidence[];
+  readonly attempts?: readonly ReviewAttempt[];
+}): ReviewAssuranceState {
+  const obligations = input.obligations ?? (input.obligation ? [input.obligation] : []);
+  return {
+    assuranceSchemaVersion: 'review-assurance.v5',
+    obligations: [...obligations],
+    invocations: input.invocations ? [...input.invocations] : [],
+    attempts: input.attempts ? [...input.attempts] : [],
+  };
+}
 
 /**
  * Canonical bound architecture review evidence for approve-path tests: a
