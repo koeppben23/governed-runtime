@@ -50,6 +50,20 @@ const KIND_ORDER: Record<VerificationCandidateKind, number> = {
 const BUILD_TOOL_PM_ORDER: readonly PackageManager[] = ['pnpm', 'yarn', 'bun', 'npm'];
 
 /**
+ * Order planned candidates by verification kind, then by command. Extracted so
+ * the comparator is directly testable (array sorts of small candidate sets are
+ * insertion-based in V8 and mask comparator regressions).
+ */
+export function comparePlannedCandidates(
+  a: PlannedVerificationCandidate,
+  b: PlannedVerificationCandidate,
+): number {
+  const orderDiff = KIND_ORDER[a.candidate.kind] - KIND_ORDER[b.candidate.kind];
+  if (orderDiff !== 0) return orderDiff;
+  return a.candidate.command.localeCompare(b.candidate.command);
+}
+
+/**
  * Plan advisory verification candidates using repo-first precedence:
  * 1) package.json scripts (highest priority — never overwritten by fallbacks)
  * 2) wrapper commands via execution profiles (mvnw/gradlew)
@@ -79,11 +93,7 @@ export async function planVerificationCandidates(
 
   addNonAssertionFallbacks(byKind, detectedStackIds, packageManager);
 
-  const ordered = [...byKind.values()].sort((a, b) => {
-    const orderDiff = KIND_ORDER[a.candidate.kind] - KIND_ORDER[b.candidate.kind];
-    if (orderDiff !== 0) return orderDiff;
-    return a.candidate.command.localeCompare(b.candidate.command);
-  });
+  const ordered = [...byKind.values()].sort(comparePlannedCandidates);
   return ordered.map((planned) => ({
     ...planned,
     candidate: {

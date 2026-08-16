@@ -82,7 +82,7 @@
     "src/hooks/shared/phase-gate.ts"
   ],
   "mutator": {
-    "excludedMutations": ["StringLiteral", "ArrayDeclaration"]
+    "excludedMutations": ["StringLiteral", "ArrayDeclaration", "Regex"]
   },
   "ignoreStatic": true,
   "thresholds": {

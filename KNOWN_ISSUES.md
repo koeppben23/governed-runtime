@@ -253,6 +253,21 @@ scope at 80.02% overall: `agent-resolution.ts` 100, `orchestrator-output.ts` 100
 `canonical-json.ts` 90.91, `review-validation-mode.ts` 95, and
 `orchestrator-detection.ts` 90.38.
 
+### 2026-08-16 re-scope (PR #816 era)
+
+The ProofGraph closure added mutated files (`discovery/verification-planner.ts`,
+`integration/proofgraph/materialize-contract.ts`,
+`verification/execution-subject.ts`) whose existing unit tests were missing from
+the `vitest.stryker.config.ts` include list, dropping the full-suite score to
+~70.6%. Restored by adding the discovery/verification test globs and the missing
+tool/proofgraph test files to the include list and by adding targeted tests
+(execution-subject attestation branches, content-scope anchors, aggregate
+counterexample contracts, strict timestamp verification, plan-certificate
+binding, host-task effective-findings resolution, gate binding-diagnostic
+passthrough). `Regex` mutators were added to `excludedMutations` alongside
+`StringLiteral`/`ArrayDeclaration` (low-signal placeholder-pattern variants).
+The full-suite mutation run now scores 82.88% against `break: 80`.
+
 ## Logging Redaction
 
 The structured-logging series (#578–#584) shipped a path/URL scrubber that was

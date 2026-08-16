@@ -486,3 +486,71 @@ describe('implementation subject scope (orthogonality: subject binding ≠ repos
     });
   });
 });
+
+describe('content subject scope', () => {
+  const CONTENT_SCOPE = {
+    kind: 'content' as const,
+    subjectDigest: 'content-subject-digest',
+    lineCount: 100,
+  };
+  const contentRelation = (anchorOverrides: Record<string, unknown> = {}) => ({
+    subjectAnchors: [
+      {
+        kind: 'content' as const,
+        subjectDigest: 'content-subject-digest',
+        ...anchorOverrides,
+      },
+    ],
+    evidenceLocations: [],
+  });
+
+  it('accepts a content anchor matching the frozen content digest without a range', () => {
+    expect(
+      validateReviewFindingsScope({
+        findings: [{ relation: contentRelation() }],
+        reviewSubjectScope: CONTENT_SCOPE,
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  it('accepts a content anchor whose range stays within the line count', () => {
+    expect(
+      validateReviewFindingsScope({
+        findings: [{ relation: contentRelation({ range: { startLine: 10, endLine: 100 } }) }],
+        reviewSubjectScope: CONTENT_SCOPE,
+      }),
+    ).toEqual({ ok: true });
+    expect(
+      validateReviewFindingsScope({
+        findings: [{ relation: contentRelation({ range: { startLine: 100 } }) }],
+        reviewSubjectScope: CONTENT_SCOPE,
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  it('rejects a content anchor whose range exceeds the frozen line count', () => {
+    const result = validateReviewFindingsScope({
+      findings: [{ relation: contentRelation({ range: { startLine: 10, endLine: 101 } }) }],
+      reviewSubjectScope: CONTENT_SCOPE,
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
+    });
+  });
+
+  it('rejects a content anchor bound to a different subject digest', () => {
+    const result = validateReviewFindingsScope({
+      findings: [
+        {
+          relation: contentRelation({ subjectDigest: 'other-content-digest' }),
+        },
+      ],
+      reviewSubjectScope: CONTENT_SCOPE,
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
+    });
+  });
+});

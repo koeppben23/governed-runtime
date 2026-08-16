@@ -647,3 +647,140 @@ describe('buildHeuristicRiskWarning', () => {
     ).toBeNull();
   });
 });
+
+describe('validateProofClaimContract — counterexample satisfiability edges', () => {
+  const structuredSecurity = {
+    assertionCapability: 'structured' as const,
+    kind: 'security' as const,
+    command: './mvnw test',
+    source: 'repo:mvnw',
+    confidence: 'high' as const,
+    reason: 'security check',
+    assertionReport: {
+      collection: 'snapshot_diff' as const,
+      transport: 'file' as const,
+      format: 'junit_xml' as const,
+      providerId: 'junit' as const,
+      standardPatterns: ['target/surefire-reports/TEST-*.xml'],
+    },
+  };
+
+  const assertionRequirement = {
+    checkId: 'security',
+    kind: 'assertion' as const,
+    assertion: { providerId: 'junit' as const, localId: 'com.example.Test#testMethod' },
+  };
+
+  function evaluate(candidates: unknown[], requirement: unknown) {
+    return validateProofClaimContract({
+      ...BASE,
+      source: 'plan' as const,
+      verificationCandidates: candidates as never,
+      claims: [planClaim({ counterexampleRequirement: requirement as never })],
+    });
+  }
+
+  it('rejects a structured candidate without an assertion report', () => {
+    const { assertionReport: _report, ...noReport } = structuredSecurity;
+    const result = evaluate([noReport], assertionRequirement);
+    expect(result).toMatchObject({ kind: 'invalid', failureKind: 'unsatisfiable' });
+    if (result.kind === 'invalid') expect(result.detail).toContain('no assertionReport');
+  });
+
+  it('rejects a candidate whose report provider does not match the assertion provider', () => {
+    const result = evaluate(
+      [
+        {
+          ...structuredSecurity,
+          assertionReport: {
+            ...structuredSecurity.assertionReport,
+            providerId: 'pytest',
+          },
+        },
+      ],
+      assertionRequirement,
+    );
+    expect(result).toMatchObject({ kind: 'invalid', failureKind: 'unsatisfiable' });
+    if (result.kind === 'invalid') expect(result.detail).toContain('claim requires');
+  });
+
+  it('rejects a candidate report format that is not assertion-binding-capable', () => {
+    const result = evaluate(
+      [
+        {
+          ...structuredSecurity,
+          assertionReport: {
+            ...structuredSecurity.assertionReport,
+            format: 'cobertura_xml',
+          },
+        },
+      ],
+      assertionRequirement,
+    );
+    expect(result).toMatchObject({ kind: 'invalid', failureKind: 'unsatisfiable' });
+    if (result.kind === 'invalid') expect(result.detail).toContain('not assertion-binding-capable');
+  });
+
+  it('rejects an assertion localId that is not a valid provider identity', () => {
+    const result = evaluate([structuredSecurity], {
+      ...assertionRequirement,
+      assertion: { providerId: 'junit', localId: 'no-separator' },
+    });
+    expect(result).toMatchObject({ kind: 'invalid', failureKind: 'unsatisfiable' });
+    if (result.kind === 'invalid')
+      expect(result.detail).toContain('not a valid assertion identity');
+  });
+
+  it('accepts an aggregate requirement whose candidateId and kind both match', () => {
+    const result = validateProofClaimContract({
+      ...BASE,
+      source: 'plan',
+      verificationCandidates: [
+        BASE.verificationCandidates[0]!,
+        {
+          ...structuredSecurity,
+          candidateId: 'security-suite',
+          fullCheckScopeAttestation: 'full_check' as const,
+          assertionReport: {
+            collection: 'snapshot_diff' as const,
+            transport: 'file' as const,
+            providerId: 'pytest' as never,
+            format: 'junit_xml' as never,
+            standardPatterns: ['reports.xml'],
+          },
+        },
+      ],
+      claims: [
+        planClaim({
+          claimScope: 'suite',
+          positiveCheckId: 'security',
+          counterexampleRequirement: {
+            kind: 'aggregate_check',
+            checkId: 'security',
+            candidateId: 'security-suite',
+          },
+        }),
+      ],
+    });
+    expect(result).toEqual({ kind: 'ok' });
+  });
+
+  it('rejects a suite claim without any active positive-check candidate', () => {
+    const result = validateProofClaimContract({
+      ...BASE,
+      source: 'plan',
+      verificationCandidates: [BASE.verificationCandidates[0]!],
+      claims: [
+        planClaim({
+          critical: false,
+          claimScope: 'suite',
+          positiveCheckId: 'security',
+          counterexampleRequirement: undefined,
+        }),
+      ],
+    });
+    expect(result).toMatchObject({ kind: 'invalid', failureKind: 'unsatisfiable' });
+    if (result.kind === 'invalid')
+      expect(result.detail).toContain('requires an active verification candidate');
+  });
+});
