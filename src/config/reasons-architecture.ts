@@ -111,4 +111,17 @@ export const ARCHITECTURE_REASONS: readonly BlockedReason[] = [
     ],
     quickFixCommand: '/review-decision changes_requested',
   },
+
+  {
+    code: 'ARCHITECTURE_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION',
+    category: 'precondition',
+    messageTemplate:
+      'Architecture approval is blocked: the bound review evidence contradicts the recorded review completion. reviewCompletion: {reviewCompletion}, captured reviewer verdict: {capturedVerdict}.',
+    recoverySteps: [
+      'Reopen the review cycle with /review-decision changes_requested',
+      'Complete an independent review whose verdict matches the recorded review completion',
+      'Then re-run /review-decision approve so the certificate can bind coherent evidence',
+    ],
+    quickFixCommand: '/review-decision changes_requested',
+  },
 ];

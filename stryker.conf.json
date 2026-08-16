@@ -74,6 +74,7 @@
     "src/rails/architecture.ts",
     "src/rails/hydrate.ts",
     "src/rails/review-decision.ts",
+    "src/rails/review-evidence-resolution.ts",
     "src/rails/review.ts",
     "src/rails/ticket.ts",
 

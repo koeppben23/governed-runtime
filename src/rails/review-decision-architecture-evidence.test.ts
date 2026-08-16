@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { executeReviewDecision } from './review-decision.js';
 import {
-  executeReviewDecision,
-  resolveArchitectureReviewBinding,
+  resolveArchitectureReviewEvidence,
   resolveBoundReviewEvidenceForSubject,
   resolveLatestBoundReviewEvidence,
-} from './review-decision.js';
+} from './review-evidence-resolution.js';
 import { makeState, ARCHITECTURE_DECISION, FIXED_TIME } from '../fixtures.js';
 import { TEAM_POLICY } from '../config/policy.js';
 import type { ReviewAssuranceState } from '../state/evidence-review.js';
@@ -537,7 +537,7 @@ describe('architecture review evidence resolution', () => {
     });
   });
 
-  describe('resolveArchitectureReviewBinding', () => {
+  describe('resolveArchitectureReviewEvidence', () => {
     it('mints current_review for reviewer_accepted with exact-subject evidence', () => {
       const state = resolverState([
         {
@@ -548,17 +548,61 @@ describe('architecture review evidence resolution', () => {
           findingsHash: '3'.repeat(64),
         },
       ]);
-      const binding = resolveArchitectureReviewBinding(state, {
+      const resolution = resolveArchitectureReviewEvidence(state, {
         ...ARCHITECTURE_DECISION,
         digest: ADR_DIGEST,
         reviewCompletion: 'reviewer_accepted',
       });
-      expect(binding).toEqual({
-        kind: 'current_review',
-        reviewObligationId: 'ob-1',
-        reviewEvidenceDigest: '3'.repeat(64),
-        reviewedSubjectDigest: ADR_DIGEST,
+      expect(resolution.kind).toBe('bound');
+      if (resolution.kind === 'bound') {
+        expect(resolution.binding).toEqual({
+          kind: 'current_review',
+          reviewObligationId: 'ob-1',
+          reviewEvidenceDigest: '3'.repeat(64),
+          reviewedSubjectDigest: ADR_DIGEST,
+        });
+      }
+    });
+
+    it('mints current_review when the exact evidence captured an accept verdict', () => {
+      const state = resolverState([
+        {
+          obligationId: 'ob-1',
+          subjectDigest: ADR_DIGEST,
+          status: 'consumed',
+          invocationId: 'inv-1',
+          findingsHash: '3'.repeat(64),
+          capturedVerdict: 'accept',
+        },
+      ]);
+      const resolution = resolveArchitectureReviewEvidence(state, {
+        ...ARCHITECTURE_DECISION,
+        digest: ADR_DIGEST,
+        reviewCompletion: 'reviewer_accepted',
       });
+      expect(resolution.kind).toBe('bound');
+      if (resolution.kind === 'bound') {
+        expect(resolution.binding.kind).toBe('current_review');
+      }
+    });
+
+    it('refuses current_review when the exact evidence captured a rejecting verdict', () => {
+      const state = resolverState([
+        {
+          obligationId: 'ob-1',
+          subjectDigest: ADR_DIGEST,
+          status: 'consumed',
+          invocationId: 'inv-1',
+          findingsHash: '3'.repeat(64),
+          capturedVerdict: 'changes_requested',
+        },
+      ]);
+      const resolution = resolveArchitectureReviewEvidence(state, {
+        ...ARCHITECTURE_DECISION,
+        digest: ADR_DIGEST,
+        reviewCompletion: 'reviewer_accepted',
+      });
+      expect(resolution).toEqual({ kind: 'unavailable' });
     });
 
     it('mints review_exhausted_override from the latest real evidence', () => {
@@ -571,21 +615,65 @@ describe('architecture review evidence resolution', () => {
           findingsHash: '4'.repeat(64),
         },
       ]);
-      const binding = resolveArchitectureReviewBinding(state, {
+      const resolution = resolveArchitectureReviewEvidence(state, {
         ...ARCHITECTURE_DECISION,
         digest: ADR_DIGEST,
         reviewCompletion: 'review_exhausted',
       });
-      expect(binding).toEqual({
-        kind: 'review_exhausted_override',
-        lastReviewObligationId: 'ob-1',
-        lastReviewEvidenceDigest: '4'.repeat(64),
-        reviewedSubjectDigest: OTHER_DIGEST,
-        approvedSubjectDigest: ADR_DIGEST,
-      });
+      expect(resolution.kind).toBe('bound');
+      if (resolution.kind === 'bound') {
+        expect(resolution.binding).toEqual({
+          kind: 'review_exhausted_override',
+          lastReviewObligationId: 'ob-1',
+          lastReviewEvidenceDigest: '4'.repeat(64),
+          reviewedSubjectDigest: OTHER_DIGEST,
+          approvedSubjectDigest: ADR_DIGEST,
+        });
+      }
     });
 
-    it('returns null for any other review completion (kind comes from the gate path only)', () => {
+    it('mints review_exhausted_override when the latest evidence did not accept', () => {
+      const state = resolverState([
+        {
+          obligationId: 'ob-1',
+          subjectDigest: OTHER_DIGEST,
+          status: 'consumed',
+          invocationId: 'inv-1',
+          findingsHash: '4'.repeat(64),
+          capturedVerdict: 'changes_requested',
+        },
+      ]);
+      const resolution = resolveArchitectureReviewEvidence(state, {
+        ...ARCHITECTURE_DECISION,
+        digest: ADR_DIGEST,
+        reviewCompletion: 'review_exhausted',
+      });
+      expect(resolution.kind).toBe('bound');
+      if (resolution.kind === 'bound') {
+        expect(resolution.binding.kind).toBe('review_exhausted_override');
+      }
+    });
+
+    it('flags an exhaustion contradiction when the latest evidence captured accept', () => {
+      const state = resolverState([
+        {
+          obligationId: 'ob-1',
+          subjectDigest: OTHER_DIGEST,
+          status: 'consumed',
+          invocationId: 'inv-1',
+          findingsHash: '4'.repeat(64),
+          capturedVerdict: 'accept',
+        },
+      ]);
+      const resolution = resolveArchitectureReviewEvidence(state, {
+        ...ARCHITECTURE_DECISION,
+        digest: ADR_DIGEST,
+        reviewCompletion: 'review_exhausted',
+      });
+      expect(resolution).toEqual({ kind: 'exhaustion_contradiction', capturedVerdict: 'accept' });
+    });
+
+    it('resolves unavailable for any other review completion (kind comes from the gate path only)', () => {
       const state = resolverState([
         {
           obligationId: 'ob-1',
@@ -595,12 +683,12 @@ describe('architecture review evidence resolution', () => {
           findingsHash: '5'.repeat(64),
         },
       ]);
-      const binding = resolveArchitectureReviewBinding(state, {
+      const resolution = resolveArchitectureReviewEvidence(state, {
         ...ARCHITECTURE_DECISION,
         digest: ADR_DIGEST,
         reviewCompletion: 'pending',
       });
-      expect(binding).toBeNull();
+      expect(resolution).toEqual({ kind: 'unavailable' });
     });
   });
 
@@ -636,6 +724,88 @@ describe('architecture review evidence resolution', () => {
       expect(result.kind).toBe('blocked');
       if (result.kind === 'blocked') {
         expect(result.code).toBe('ARCHITECTURE_REVIEW_COMPLETION_REQUIRED');
+      }
+    });
+
+    it('blocks reviewer_accepted when the exact evidence captured a rejecting verdict', () => {
+      const state = makeState('ARCH_REVIEW', {
+        architecture: { ...ARCHITECTURE_DECISION, reviewCompletion: 'reviewer_accepted' },
+        selfReview: CONVERGED_SELF_REVIEW,
+        reviewAssurance: assuranceChain([
+          {
+            obligationId: 'ob-reject',
+            subjectDigest: ARCHITECTURE_DECISION.digest,
+            status: 'consumed',
+            invocationId: 'inv-reject',
+            findingsHash: 'a'.repeat(64),
+            capturedVerdict: 'changes_requested',
+          },
+        ]),
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.code).toBe('ARCHITECTURE_REVIEW_EVIDENCE_REQUIRED');
+      }
+    });
+
+    it('blocks review_exhausted when the latest evidence captured an accept verdict (coherence)', () => {
+      const state = makeState('ARCH_REVIEW', {
+        architecture: { ...ARCHITECTURE_DECISION, reviewCompletion: 'review_exhausted' },
+        selfReview: CONVERGED_SELF_REVIEW,
+        reviewAssurance: assuranceChain([
+          {
+            obligationId: 'ob-accept',
+            subjectDigest: ARCHITECTURE_DECISION.digest,
+            status: 'consumed',
+            invocationId: 'inv-accept',
+            findingsHash: 'b'.repeat(64),
+            capturedVerdict: 'accept',
+          },
+        ]),
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.code).toBe('ARCHITECTURE_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION');
+        expect(result.reason).toContain('reviewCompletion: review_exhausted');
+        expect(result.reason).toContain('captured reviewer verdict: accept.');
+      }
+    });
+
+    it('allows review_exhausted when the latest evidence did not accept (consistent override)', () => {
+      const state = makeState('ARCH_REVIEW', {
+        architecture: { ...ARCHITECTURE_DECISION, reviewCompletion: 'review_exhausted' },
+        selfReview: CONVERGED_SELF_REVIEW,
+        reviewAssurance: assuranceChain([
+          {
+            obligationId: 'ob-cr',
+            subjectDigest: ARCHITECTURE_DECISION.digest,
+            status: 'consumed',
+            invocationId: 'inv-cr',
+            findingsHash: 'c'.repeat(64),
+            capturedVerdict: 'changes_requested',
+          },
+        ]),
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.architecture?.approvalCertificate?.reviewBinding?.kind).toBe(
+          'review_exhausted_override',
+        );
       }
     });
   });

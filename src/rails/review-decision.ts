@@ -37,7 +37,6 @@ import type {
   ValidationResult,
   DecisionIdentity,
 } from '../state/evidence.js';
-import type { ReviewObligation } from '../state/evidence-review.js';
 import type {
   ArchitectureApprovalCertificate,
   ArchitectureReviewBinding,
@@ -53,6 +52,10 @@ import { compareActorIdentity, isAssuranceAtLeast } from '../identity/actor-info
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { evaluateProofGraphGate } from '../audit/proofgraph/gate.js';
 import { mapEnforcementReasonToRegistryCode } from '../audit/proofgraph/reason-code-mapping.js';
+import {
+  resolveArchitectureReviewEvidence,
+  type ArchitectureReviewEvidenceResolution,
+} from './review-evidence-resolution.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -324,14 +327,21 @@ function enforceArchitectureReviewCompletion(
  */
 function enforceArchitectureReviewEvidence(
   state: SessionState,
-  resolvedBinding: ArchitectureReviewBinding | null,
+  resolution: ArchitectureReviewEvidenceResolution | null,
 ): RailBlocked | null {
   // Called only from the approve path; keeping the phase guard alone avoids
   // dead operands.
   if (state.phase !== 'ARCH_REVIEW') return null;
-  if (resolvedBinding) return null;
+  if (resolution?.kind === 'bound') return null;
+  const reviewCompletion = state.architecture?.reviewCompletion ?? 'missing';
+  if (resolution?.kind === 'exhaustion_contradiction') {
+    return blocked('ARCHITECTURE_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION', {
+      reviewCompletion,
+      capturedVerdict: resolution.capturedVerdict,
+    });
+  }
   return blocked('ARCHITECTURE_REVIEW_EVIDENCE_REQUIRED', {
-    reviewCompletion: state.architecture?.reviewCompletion ?? 'missing',
+    reviewCompletion,
   });
 }
 
@@ -455,146 +465,6 @@ function resolveAcceptedPlanReviewEvidence(
   return [acceptedObligation?.obligationId ?? null, acceptedEvidence?.findingsHash ?? null];
 }
 
-// ─── Architecture Review Evidence Resolution ─────────────────────────────────
-
-/**
- * Evidence resolved from the canonical review-assurance chain (obligations +
- * invocations), never from `latestReview` correlation. `reviewerVerdict` is the
- * host-captured verdict (`invocation.capturedVerdict`) when present; its
- * absence means legacy evidence without a captured verdict.
- */
-export interface ResolvedBoundReviewEvidence {
-  readonly obligationId: string;
-  readonly invocationId: string;
-  readonly findingsHash: string;
-  readonly subjectDigest: string;
-  readonly reviewerVerdict?: string;
-}
-
-function latestBoundFirst(a: ReviewObligation, b: ReviewObligation): number {
-  return b.iteration - a.iteration || b.createdAt.localeCompare(a.createdAt);
-}
-
-function evidenceForObligation(
-  state: SessionState,
-  obligation: ReviewObligation,
-): ResolvedBoundReviewEvidence | null {
-  const assurance = state.reviewAssurance;
-  if (!assurance) return null;
-  // Canonical linkage is `obligation.invocationId`; direct host-task captures
-  // may leave it unset on the obligation while the invocation carries the
-  // obligationId (plugin hooks set it in production, direct tool flows do
-  // not). Resolve either way — never from `latestReview` correlation.
-  const candidates = assurance.invocations
-    .filter((i) => i.findingsHash.length > 0)
-    .filter((i) =>
-      obligation.invocationId
-        ? i.invocationId === obligation.invocationId
-        : i.obligationId === obligation.obligationId,
-    )
-    .sort((a, b) => b.invokedAt.localeCompare(a.invokedAt));
-  // Prefer the invocation the obligation was consumed with; fall back to the
-  // newest bound invocation (retries leave several bound invocations behind).
-  const consumed = candidates.find((i) => i.consumedByObligationId === obligation.obligationId);
-  const invocation = consumed ?? candidates[0];
-  if (!invocation) return null;
-  return {
-    obligationId: obligation.obligationId,
-    invocationId: invocation.invocationId,
-    findingsHash: invocation.findingsHash,
-    subjectDigest: obligation.subjectDigest,
-    ...(invocation.capturedVerdict ? { reviewerVerdict: invocation.capturedVerdict } : {}),
-  };
-}
-
-/**
- * Resolve bound review evidence for EXACTLY one subject digest. There is no
- * cross-digest fallback: evidence reviewed a different revision must never be
- * attributed to the requested subject.
- */
-export function resolveBoundReviewEvidenceForSubject(
-  state: SessionState,
-  obligationType: 'architecture',
-  subjectDigest: string,
-): ResolvedBoundReviewEvidence | null {
-  const assurance = state.reviewAssurance;
-  if (!assurance) return null;
-  const candidates = assurance.obligations
-    .filter(
-      (o) =>
-        o.obligationType === obligationType &&
-        (o.status === 'fulfilled' || o.status === 'consumed') &&
-        o.subjectDigest === subjectDigest,
-    )
-    .sort(latestBoundFirst);
-  for (const obligation of candidates) {
-    const evidence = evidenceForObligation(state, obligation);
-    if (evidence) return evidence;
-  }
-  return null;
-}
-
-/**
- * Resolve the latest bound review evidence of a type, regardless of subject.
- * Intended ONLY for the `review_exhausted_override` path, where the result's
- * `subjectDigest` documents what was actually reviewed — never the approved
- * subject.
- */
-export function resolveLatestBoundReviewEvidence(
-  state: SessionState,
-  obligationType: 'architecture',
-): ResolvedBoundReviewEvidence | null {
-  const assurance = state.reviewAssurance;
-  if (!assurance) return null;
-  const candidates = assurance.obligations
-    .filter(
-      (o) =>
-        o.obligationType === obligationType &&
-        (o.status === 'fulfilled' || o.status === 'consumed'),
-    )
-    .sort(latestBoundFirst);
-  for (const obligation of candidates) {
-    const evidence = evidenceForObligation(state, obligation);
-    if (evidence) return evidence;
-  }
-  return null;
-}
-
-/**
- * Determine the architecture certificate binding from the gate path ONLY.
- * `reviewer_accepted` requires exact-subject evidence (`current_review`);
- * `review_exhausted` mints an explicit override binding — even when the last
- * reviewed digest happens to equal the approved one. The binding kind is never
- * normalized afterwards from digest equality.
- */
-export function resolveArchitectureReviewBinding(
-  state: SessionState,
-  architecture: NonNullable<SessionState['architecture']>,
-): ArchitectureReviewBinding | null {
-  if (architecture.reviewCompletion === 'reviewer_accepted') {
-    const exact = resolveBoundReviewEvidenceForSubject(state, 'architecture', architecture.digest);
-    if (!exact) return null;
-    return {
-      kind: 'current_review',
-      reviewObligationId: exact.obligationId,
-      reviewEvidenceDigest: exact.findingsHash,
-      reviewedSubjectDigest: exact.subjectDigest,
-    };
-  }
-  if (architecture.reviewCompletion === 'review_exhausted') {
-    const latest = resolveLatestBoundReviewEvidence(state, 'architecture');
-    if (!latest) return null;
-    return {
-      kind: 'review_exhausted_override',
-      lastReviewObligationId: latest.obligationId,
-      lastReviewEvidenceDigest: latest.findingsHash,
-      reviewedSubjectDigest: latest.subjectDigest,
-      approvedSubjectDigest: architecture.digest,
-    };
-  }
-  return null;
-}
-
 function approvalCertificatePatch(
   state: SessionState,
   input: ReviewDecisionInput,
@@ -642,6 +512,34 @@ function approvalCertificatePatch(
   return {};
 }
 
+/**
+ * Approval preconditions: four-eyes, decision identity, architecture review
+ * completion, architecture evidence coherence, and the ProofGraph gate.
+ * Resolves the architecture evidence ONCE per decision operation; the same
+ * resolved binding is returned to the caller and used later by the certificate
+ * patch, so gate and mint can never disagree within this operation.
+ */
+function enforceApprovalPreconditions(
+  state: SessionState,
+  input: ReviewDecisionInput,
+  ctx: RailContext,
+): { block: RailBlocked | null; evidence: ArchitectureReviewEvidenceResolution | null } {
+  if (input.verdict !== 'approve') return { block: null, evidence: null };
+  const identityBlock = enforceApprovalIdentity(state, input, ctx);
+  if (identityBlock) return { block: identityBlock, evidence: null };
+  const architectureReviewBlock = enforceArchitectureReviewCompletion(state, input);
+  if (architectureReviewBlock) return { block: architectureReviewBlock, evidence: null };
+  // The phase guard lives in the gate and the patch; resolving is a pure read
+  // and stays side-effect free for non-ARCH phases.
+  const evidence = state.architecture
+    ? resolveArchitectureReviewEvidence(state, state.architecture)
+    : null;
+  const architectureEvidenceBlock = enforceArchitectureReviewEvidence(state, evidence);
+  if (architectureEvidenceBlock) return { block: architectureEvidenceBlock, evidence };
+  const proofGraphBlock = enforceProofGraphEvidenceApproval(state, input);
+  return { block: proofGraphBlock, evidence };
+}
+
 // ─── Rail ─────────────────────────────────────────────────────────────────────
 
 export function executeReviewDecision(
@@ -663,29 +561,10 @@ export function executeReviewDecision(
     return blocked('INVALID_VERDICT', { verdict: String(input.verdict) });
   }
 
-  // 3. Four-eyes and decision identity enforcement (approval only).
-  let architectureReviewBinding: ArchitectureReviewBinding | null = null;
-  if (input.verdict === 'approve') {
-    const identityBlock = enforceApprovalIdentity(state, input, ctx);
-    if (identityBlock) return identityBlock;
-    const architectureReviewBlock = enforceArchitectureReviewCompletion(state, input);
-    if (architectureReviewBlock) return architectureReviewBlock;
-    // Resolve ONCE per decision operation; the same resolved binding is used
-    // by the evidence gate below and the certificate patch further down, so
-    // gate and mint can never disagree within this operation. The phase guard
-    // lives in the gate and the patch; resolving is a pure read and stays
-    // side-effect free for non-ARCH phases.
-    if (state.architecture) {
-      architectureReviewBinding = resolveArchitectureReviewBinding(state, state.architecture);
-    }
-    const architectureEvidenceBlock = enforceArchitectureReviewEvidence(
-      state,
-      architectureReviewBinding,
-    );
-    if (architectureEvidenceBlock) return architectureEvidenceBlock;
-    const proofGraphBlock = enforceProofGraphEvidenceApproval(state, input);
-    if (proofGraphBlock) return proofGraphBlock;
-  }
+  // 3. Approval preconditions (four-eyes, identity, architecture evidence, ProofGraph).
+  const { block: preconditionBlock, evidence: architectureEvidenceResolution } =
+    enforceApprovalPreconditions(state, input, ctx);
+  if (preconditionBlock) return preconditionBlock;
 
   // 4. Resolve target phase via topology
   const target = evaluateWithEvent(state.phase, event);
@@ -708,6 +587,10 @@ export function executeReviewDecision(
 
   // A certificate is created only for the first human approval at its flow's gate;
   // an existing immutable certificate is never rewritten.
+  const architectureReviewBinding =
+    architectureEvidenceResolution?.kind === 'bound'
+      ? architectureEvidenceResolution.binding
+      : null;
   const certificatePatch = approvalCertificatePatch(
     state,
     input,

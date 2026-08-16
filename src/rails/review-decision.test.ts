@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  executeReviewDecision,
-  resolveArchitectureReviewBinding,
-  resolveBoundReviewEvidenceForSubject,
-  resolveLatestBoundReviewEvidence,
-} from './review-decision.js';
+import { executeReviewDecision } from './review-decision.js';
 import {
   makeState,
   ARCHITECTURE_DECISION,
