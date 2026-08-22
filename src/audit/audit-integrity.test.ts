@@ -167,6 +167,38 @@ describe('audit integrity', () => {
       expect(result.tokenVerificationRequired).toEqual([0]);
     });
 
+    it('AC2: a downgraded status on stronger TSA evidence is a chain failure (TSA_EVIDENCE_DOWNGRADED)', () => {
+      const original = buildNestedDecisionEvent(GENESIS_HASH);
+      const originalDigest = computeCanonicalEventDigest({ ...original });
+      const { chainHash: _originalChainHash, ...originalBody } = original;
+      const downgradedBody: Omit<ChainedAuditEvent, 'chainHash'> = {
+        ...originalBody,
+        canonicalEventDigest: originalDigest,
+        timestampEvidence: {
+          status: 'local',
+          source: 'local_clock',
+          resolvedAt: TS1,
+          tsa: {
+            tokenDerBase64: '',
+            receivedAt: TS1,
+            verificationStatus: 'unchecked',
+            messageImprint: originalDigest,
+            digestAlgorithm: 'sha256',
+          },
+        },
+      };
+      const downgraded = {
+        ...downgradedBody,
+        chainHash: computeChainHash(GENESIS_HASH, downgradedBody),
+      };
+
+      const result = verifyChain([downgraded], { strict: true, strictTimestamps: true });
+
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('TSA_EVIDENCE_DOWNGRADED');
+      expect(result.tsaEvidenceDowngraded).toEqual([0]);
+    });
+
     // ── Constant-time comparison tests for safeHashEqual ────────
 
     it('verifyEvent fails on equal-length prevHash mismatch', () => {

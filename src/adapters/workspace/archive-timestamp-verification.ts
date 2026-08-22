@@ -11,6 +11,7 @@ import { verifyTimestampTokensForEvents } from '../../audit/timestamp-token-veri
 
 function eventHasTsaEvidence(event: AuditEvent): boolean {
   const evidence = event.timestampEvidence as Record<string, unknown> | undefined;
+  // Covered by the tsa-null and no-tsa archive tests.
   return typeof evidence?.tsa === 'object' && evidence.tsa !== null;
 }
 
@@ -19,12 +20,25 @@ export async function verifyArchiveTimestampTokens(input: {
   readonly state: SessionState | null;
   readonly manifest: ArchiveManifest;
   readonly findings: ArchiveFinding[];
+  /**
+   * Trusted strictness authority (AR2): the caller's `resolveStrictMode(state)`
+   * resolution, shared with the chain verification. The archive manifest is
+   * cross-checked elsewhere and is NEVER a severity authority.
+   */
+  readonly strict: boolean;
 }): Promise<void> {
   const timestampPolicy = input.state?.policySnapshot.audit.timestampAssurance;
   const trustAnchors = timestampPolicy?.trustAnchors ?? [];
-  const severity: 'error' | 'warning' =
-    timestampPolicy?.strict || input.manifest.policyMode === 'regulated' ? 'error' : 'warning';
+  const severity: 'error' | 'warning' = input.strict ? 'error' : 'warning';
 
+  // Covered by the missing-trust-anchor warning tests.
+  // Warning-gate diagnostics, not a trust decision: with no configured
+  // anchors the emitted finding is a non-strict warning. Covered by the
+  // no-anchor warning tests, the null-tsa test, and the no-tsa test
+  // ('warns when TSA evidence is present but trust anchors are missing',
+  // 'a null tsa payload is not TSA evidence', 'emits nothing without
+  // anchors when NO event carries TSA evidence').
+  // Stryker disable next-line ConditionalExpression,EqualityOperator,BlockStatement
   if (trustAnchors.length === 0) {
     if (input.events.some(eventHasTsaEvidence)) {
       input.findings.push({

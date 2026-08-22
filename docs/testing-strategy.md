@@ -67,7 +67,7 @@ local composite-action dependencies: external GitHub Actions must use full
 40-character lowercase commit SHAs, local actions under `./` are allowed, local
 and Docker actions are allowed only when pinned by `sha256` digest.
 
-The `mutation` job runs StrykerJS mutation testing against 59 security-critical
+The `mutation` job runs StrykerJS mutation testing against 63 security-critical
 files spanning adapters (persistence-lock + host-adapter), archive digesting,
 audit (integrity + completeness + NTP), config (policy + reasons + profile), hooks (HTTP hook server + command pre-tool-use + shared obligation-tracker +
 phase-gate), identity (token-verifier + key-resolver), integration
@@ -172,7 +172,7 @@ code; they are not a per-area carve-out.
 
 ### Scope
 
-59 files are mutated, covering the fail-closed governance core
+63 files are mutated, covering the fail-closed governance core
 (see `stryker.conf.json` for the canonical list):
 
 | Area                                                                                                                                                                                                                                                                                                                                                 | Files  | Representative score            |
@@ -192,7 +192,7 @@ code; they are not a per-area carve-out.
 | Logging (`error-serialize`)                                                                                                                                                                                                                                                                                                                          | 1      | (see latest report)             |
 | Machine (`commands`, `evaluate`, `guards`, `next-action`, `validation-evidence`)                                                                                                                                                                                                                                                                     | 5      | (see latest report)             |
 | Rails (`architecture`, `hydrate`, `review`, `review-decision`, `ticket`)                                                                                                                                                                                                                                                                             | 5      | (see latest report)             |
-| **Total**                                                                                                                                                                                                                                                                                                                                            | **59** | uploaded as `reports/mutation/` |
+| **Total**                                                                                                                                                                                                                                                                                                                                            | **63** | uploaded as `reports/mutation/` |
 
 Per-file mutation scores are produced fresh in CI; consult the latest
 `reports/mutation/` artifact for current numbers.

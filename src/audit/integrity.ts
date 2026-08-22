@@ -95,6 +95,9 @@ export interface ChainVerifyOptions {
  * - `TOKEN_VERIFICATION_REQUIRED`: event has tokenDerBase64 and is TSA-stamped but token has not
  *   been cryptographically verified. Strict timestamp verification cannot trust mutable
  *   timestampEvidence.tsa.messageImprint. Deferred to async token verification.
+ * - `TSA_EVIDENCE_DOWNGRADED`: stronger TSA evidence payload is present but the recorded
+ *   status was downgraded (local/ntp_checked/tsa_failed) — a degraded status must never
+ *   silently weaken timestamp assurance.
  */
 export type ChainVerificationReason =
   | 'CHAIN_BREAK'
@@ -104,7 +107,8 @@ export type ChainVerificationReason =
   | 'TIMESTAMP_NON_MONOTONIC'
   | 'TIMESTAMP_EVIDENCE_MISSING'
   | 'TSA_MESSAGE_IMPRINT_MISMATCH'
-  | 'TOKEN_VERIFICATION_REQUIRED';
+  | 'TOKEN_VERIFICATION_REQUIRED'
+  | 'TSA_EVIDENCE_DOWNGRADED';
 
 // ─── Verification Result ──────────────────────────────────────────────────────
 
@@ -170,6 +174,8 @@ export interface ChainVerification {
   readonly tsaImprintMismatches: readonly number[];
   /** Indices of TSA-stamped events with tokenDerBase64 that require token verification. */
   readonly tokenVerificationRequired: readonly number[];
+  /** Indices of events whose stronger TSA evidence was downgraded in status (AC2). */
+  readonly tsaEvidenceDowngraded: readonly number[];
 }
 
 // ─── Verification Functions ──────────────────────────────────────────────────
@@ -317,6 +323,7 @@ export function verifyChain(
     missingTimestampEvidence: timestampChecks.missingTimestampEvidence,
     tsaImprintMismatches: timestampChecks.tsaImprintMismatches,
     tokenVerificationRequired: timestampChecks.tokenVerificationRequired,
+    tsaEvidenceDowngraded: timestampChecks.tsaEvidenceDowngraded,
   };
 }
 
@@ -332,6 +339,7 @@ interface TimestampChecks {
   readonly missingTimestampEvidence: readonly number[];
   readonly tsaImprintMismatches: readonly number[];
   readonly tokenVerificationRequired: readonly number[];
+  readonly tsaEvidenceDowngraded: readonly number[];
 }
 
 function trackVerificationFailure(
@@ -360,6 +368,7 @@ function verifyTimestampChecks(
       missingTimestampEvidence: [],
       tsaImprintMismatches: [],
       tokenVerificationRequired: [],
+      tsaEvidenceDowngraded: [],
     };
   }
 
@@ -372,11 +381,14 @@ function verifyTimestampChecks(
 
   const tsaImprintMismatches: number[] = [];
   const tokenVerificationRequired: number[] = [];
+  const tsaEvidenceDowngraded: number[] = [];
 
   for (let i = 0; i < chainedEvents.length; i++) {
     const check = verifyTsaMessageImprint(chainedEvents[i]!);
     if (check.valid) continue;
-    if (check.needsTokenVerification) {
+    if (check.downgraded) {
+      tsaEvidenceDowngraded.push(i);
+    } else if (check.needsTokenVerification) {
       tokenVerificationRequired.push(i);
     } else {
       tsaImprintMismatches.push(i);
@@ -392,6 +404,7 @@ function verifyTimestampChecks(
     missingTimestampEvidence,
     tsaImprintMismatches,
     tokenVerificationRequired,
+    tsaEvidenceDowngraded,
   };
 }
 
@@ -427,6 +440,9 @@ function resolveTimestampReason(timestampChecks: TimestampChecks): ChainVerifica
   }
   if (timestampChecks.tokenVerificationRequired.length > 0) {
     return 'TOKEN_VERIFICATION_REQUIRED';
+  }
+  if (timestampChecks.tsaEvidenceDowngraded.length > 0) {
+    return 'TSA_EVIDENCE_DOWNGRADED';
   }
   if (timestampChecks.tsaImprintMismatches.length > 0) {
     return 'TSA_MESSAGE_IMPRINT_MISMATCH';

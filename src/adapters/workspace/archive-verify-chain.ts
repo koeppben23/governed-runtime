@@ -25,7 +25,9 @@ import {
   type ArchiveManifest,
   type ArchiveVerification,
   type ArchiveFinding,
+  type ArchiveFindingCode,
 } from '../../archive/types.js';
+import type { ChainVerificationReason } from '../../audit/integrity.js';
 import { computeArchiveContentDigest } from '../../archive/content-digest.js';
 import {
   findBindingArtifacts,
@@ -322,6 +324,21 @@ function verifyAuditCompleteness(
 
 // ─── Timestamp Findings ───────────────────────────────────────────────────────
 
+/**
+ * Map a chain timestamp reason to the archive finding code (AC2): downgraded
+ * evidence gets its own diagnostic code — a degraded status is never silently
+ * folded into the generic unanchored bucket.
+ */
+export function timestampFindingCode(reason: ChainVerificationReason | null): ArchiveFindingCode {
+  if (reason === 'TSA_MESSAGE_IMPRINT_MISMATCH' || reason === 'TOKEN_VERIFICATION_REQUIRED') {
+    return 'tsa_verification_failed';
+  }
+  if (reason === 'TSA_EVIDENCE_DOWNGRADED') {
+    return 'tsa_evidence_downgraded';
+  }
+  return 'timestamp_unanchored';
+}
+
 function addTimestampMismatchFindings(
   chainResult: ReturnType<typeof verifyChain>,
   fatal: boolean,
@@ -332,11 +349,7 @@ function addTimestampMismatchFindings(
     !isCurrentChainIntegrityFailure(chainResult.reason) &&
     !isAuditFormatFailure(chainResult.reason)
   ) {
-    const code =
-      chainResult.reason === 'TSA_MESSAGE_IMPRINT_MISMATCH' ||
-      chainResult.reason === 'TOKEN_VERIFICATION_REQUIRED'
-        ? 'tsa_verification_failed'
-        : 'timestamp_unanchored';
+    const code = timestampFindingCode(chainResult.reason);
     findings.push({
       code,
       severity: fatal ? 'error' : 'warning',
@@ -412,7 +425,7 @@ async function verifyTimestampChain(
   addTimestampFindings(chainResult, timestampFailuresAreFatal, findings);
 
   const { verifyArchiveTimestampTokens } = await import('./archive-timestamp-verification.js');
-  await verifyArchiveTimestampTokens({ events, state, manifest, findings });
+  await verifyArchiveTimestampTokens({ events, state, manifest, findings, strict });
 }
 
 async function verifyAuditChainIntegrity(

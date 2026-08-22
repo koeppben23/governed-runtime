@@ -41,6 +41,17 @@ import type { ClaimVerificationState, Freshness } from '../../state/proofgraph-p
 /** No explicit evidence requirement: any fresh pass proves, no adversarial needed. */
 const EMPTY_REQUIRED: RequiredEvidence = { positive: [], adversarial: [] };
 
+/**
+ * Parse an executedAt timestamp into a numeric epoch (AC11). Unparseable
+ * values are NEVER sortable and rank as the OLDEST possible instant, so an
+ * undatable attempt can never win a freshness tie against a dated one —
+ * deterministic and fail-closed, no lexical fallback.
+ */
+function epochOfExecutedAt(executedAt: string): number {
+  const parsed = Date.parse(executedAt);
+  return Number.isFinite(parsed) ? parsed : -Infinity;
+}
+
 /** Immutable inputs for a single deterministic evaluation. */
 export interface ProofGraphEvaluationInput {
   /** Declared claims (provenance + references, no verification state). */
@@ -331,7 +342,9 @@ function selectCurrentCounterexamples(
       resolved.push(group[0]!);
       continue;
     }
-    const sorted = [...group].sort((a, b) => b.executedAt.localeCompare(a.executedAt));
+    const sorted = [...group].sort(
+      (a, b) => epochOfExecutedAt(b.executedAt) - epochOfExecutedAt(a.executedAt),
+    );
     const resolution = resolveAttemptHistory(sorted);
     if (resolution.status === 'current' && resolution.value) {
       resolved.push(resolution.value);

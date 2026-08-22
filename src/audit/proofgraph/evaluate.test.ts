@@ -702,6 +702,36 @@ describe('evaluateProofGraph', () => {
       expect(out.claims[0]!.verificationState).toBe('NOT_VERIFIED');
     });
 
+    it('AC11: an unparseable executedAt never wins a freshness tie (ranked oldest)', () => {
+      const undatable = {
+        ...counterexample(id, 'blocked', CURR, {}),
+        executedAt: 'not-a-date',
+      } as unknown as ProofCounterexampleType;
+      const out = evaluate({
+        claims: [claim(id)],
+        providerResults: [result(id, 'pass')],
+        counterexamples: [undatable, counterexample(id, 'supported', CURR, { executedAt: T0 })],
+      });
+      // The dated `supported` counterexample outranks the undatable `blocked`
+      // one — an undatable entry can never win the freshness ordering.
+      expect(out.claims[0]!.verificationState).toBe('PROVEN');
+    });
+
+    it('AC11: mixed-offset executedAt values order by parsed UTC instant', () => {
+      const earlier = {
+        ...counterexample(id, 'supported', CURR, {}),
+        executedAt: '2026-01-01T01:00:00.000+02:00',
+      } as unknown as ProofCounterexampleType;
+      const out = evaluate({
+        claims: [claim(id)],
+        counterexamples: [
+          earlier,
+          counterexample(id, 'contradicted', CURR, { executedAt: '2026-01-01T00:01:00.000Z' }),
+        ],
+      });
+      expect(out.claims[0]!.verificationState).toBe('CONTRADICTED');
+    });
+
     it('different checkIds → no supersession (both retained independently)', () => {
       const out = evaluate({
         claims: [claim(id)],
