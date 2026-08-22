@@ -16,7 +16,6 @@
 
 import * as asn1js from 'asn1js';
 import {
-  AlgorithmIdentifier,
   Certificate,
   ContentInfo,
   IssuerAndSerialNumber,
@@ -29,6 +28,7 @@ import type { TimestampVerifier } from './tsa-provider.js';
 import type { TsDigestAlgorithm } from './canonical-digest.js';
 import { constantTimeBytesEqual } from './constant-time.js';
 import { TsaError } from './errors.js';
+import { verifySigningCertificateBinding } from './rfc-3161-ess-binding.js';
 
 const OID_SIGNED_DATA = '1.2.840.113549.1.7.2';
 const OID_TST_INFO = '1.2.840.113549.1.9.16.1.4';
@@ -531,73 +531,6 @@ function checkTsaSignerContract(
 }
 
 // ─── CMS signature verification ──────────────────────────────────────────────
-
-const OID_SIGNING_CERTIFICATE = '1.2.840.113549.1.9.16.2.12';
-const OID_SIGNING_CERTIFICATE_V2 = '1.2.840.113549.1.9.16.2.47';
-
-function signingCertificateHash(
-  attr: AttrLike,
-): { hash: Uint8Array; algorithm: TsDigestAlgorithm | 'sha1' } | null {
-  if (attr.values.length !== 1) return null;
-  const outer = attr.values[0];
-  if (!(outer instanceof asn1js.Sequence)) return null;
-  const certs = outer.valueBlock.value[0];
-  if (!(certs instanceof asn1js.Sequence) || certs.valueBlock.value.length === 0) return null;
-  const first = certs.valueBlock.value[0];
-  if (!(first instanceof asn1js.Sequence)) return null;
-  const hash = first.valueBlock.value[0];
-  if (!(hash instanceof asn1js.OctetString)) return null;
-  return { hash: new Uint8Array(hash.valueBlock.valueHexView), algorithm: 'sha1' };
-}
-
-function signingCertificateV2Hash(
-  attr: AttrLike,
-): { hash: Uint8Array; algorithm: TsDigestAlgorithm } | null {
-  if (attr.values.length !== 1) return null;
-  const outer = attr.values[0];
-  if (!(outer instanceof asn1js.Sequence)) return null;
-  const certs = outer.valueBlock.value[0];
-  if (!(certs instanceof asn1js.Sequence) || certs.valueBlock.value.length === 0) return null;
-  const first = certs.valueBlock.value[0];
-  if (!(first instanceof asn1js.Sequence)) return null;
-  const [algorithmOrHash, maybeHash] = first.valueBlock.value;
-  if (algorithmOrHash instanceof asn1js.OctetString) {
-    return { hash: new Uint8Array(algorithmOrHash.valueBlock.valueHexView), algorithm: 'sha256' };
-  }
-  if (!(algorithmOrHash instanceof asn1js.Sequence) || !(maybeHash instanceof asn1js.OctetString)) {
-    return null;
-  }
-  try {
-    const algorithm = new AlgorithmIdentifier({ schema: algorithmOrHash });
-    const kind = digestKindFromOid(algorithm.algorithmId);
-    return kind
-      ? { hash: new Uint8Array(maybeHash.valueBlock.valueHexView), algorithm: kind }
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-async function verifySigningCertificateBinding(
-  attrs: ReadonlyArray<AttrLike>,
-  signer: Certificate,
-): Promise<boolean> {
-  const v1 = attrs.filter((attr) => attr.type === OID_SIGNING_CERTIFICATE);
-  const v2 = attrs.filter((attr) => attr.type === OID_SIGNING_CERTIFICATE_V2);
-  if (v1.length + v2.length === 0 || v1.length > 1 || v2.length > 1) return false;
-  const bindings = [...v1.map(signingCertificateHash), ...v2.map(signingCertificateV2Hash)];
-  if (bindings.some((binding) => !binding)) return false;
-  const crypto = getCrypto(true);
-  const certificateDer = signer.toSchema().toBER(false);
-  return Promise.all(
-    bindings.map(async (binding) => {
-      const hashName =
-        binding!.algorithm === 'sha1' ? 'SHA-1' : webcryptoHashName(binding!.algorithm);
-      const actual = await crypto.digest({ name: hashName }, certificateDer);
-      return constantTimeBytesEqual(new Uint8Array(actual), binding!.hash);
-    }),
-  ).then((matches) => matches.every(Boolean));
-}
 
 async function verifyCmsSignature(
   parsed: ParsedToken,

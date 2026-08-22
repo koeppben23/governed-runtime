@@ -729,6 +729,22 @@ describe('PkijsTimestampVerifier', () => {
     },
   );
 
+  it.each(['correct', 'contradictory', 'trailing'] as const)(
+    'RFC 5816: rejects an ESSCertIDv2 %s issuerSerial structure',
+    async (certificateBindingIssuerSerial) => {
+      const fixture = await makeRfc3161Fixture({
+        certificateBindingIssuerSerial,
+      });
+      const result = await new PkijsTimestampVerifier().verifyToken({
+        tokenDerBase64: fixture.tokenDerBase64,
+        expectedDigests: expectedDigestsFor(DIGEST),
+        trustAnchors: [fixture.trustAnchorPem],
+      });
+
+      expect(result).toEqual({ status: 'invalid', reason: 'signing_certificate_invalid' });
+    },
+  );
+
   it('TSA3: unknown critical extension returns unhandled_critical_extension', async () => {
     const fixture = await makeRfc3161Fixture({ unknownCriticalExtension: true });
     const result = await new PkijsTimestampVerifier().verifyToken({

@@ -9,6 +9,8 @@ import {
   ContentInfo,
   EncapsulatedContentInfo,
   Extension,
+  GeneralName,
+  GeneralNames,
   IssuerAndSerialNumber,
   MessageImprint,
   PKIStatus,
@@ -50,6 +52,7 @@ export interface Rfc3161FixtureAuthority {
     readonly digestOid?: string;
     readonly cmsDigestOid?: string;
     readonly certificateBinding?: 'v1' | 'v2' | 'both' | 'none';
+    readonly certificateBindingIssuerSerial?: 'correct' | 'contradictory' | 'trailing';
     readonly genTime?: Date;
   }): Promise<{ tokenDerBase64: string }>;
 }
@@ -189,6 +192,7 @@ export async function makeRfc3161Fixture(
     readonly duplicateEku?: boolean;
     readonly cmsDigestOid?: string;
     readonly certificateBinding?: 'v1' | 'v2' | 'both' | 'none';
+    readonly certificateBindingIssuerSerial?: 'correct' | 'contradictory' | 'trailing';
   } = {},
 ): Promise<Rfc3161Fixture> {
   const signer = await makeCertificate({
@@ -242,6 +246,7 @@ async function issueToken(
     readonly digestOid?: string;
     readonly cmsDigestOid?: string;
     readonly certificateBinding?: 'v1' | 'v2' | 'both' | 'none';
+    readonly certificateBindingIssuerSerial?: 'correct' | 'contradictory' | 'trailing';
     readonly genTime?: Date;
     readonly multiPartEContent?: boolean;
   } = {},
@@ -294,6 +299,7 @@ async function issueToken(
           tstBer,
           cmsDigestOid,
           input.certificateBinding ?? 'v2',
+          input.certificateBindingIssuerSerial,
         ),
       }),
     ],
@@ -333,11 +339,28 @@ function asn1Oid(value: string): asn1js.ObjectIdentifier {
   return new asn1js.ObjectIdentifier({ value });
 }
 
+function issuerSerialFor(
+  cert: Certificate,
+  variant: 'correct' | 'contradictory' | 'trailing' | undefined,
+): asn1js.BaseBlock<asn1js.ValueBlock> | undefined {
+  if (!variant) return undefined;
+  if (variant === 'trailing') return new asn1js.Null();
+  return new asn1js.Sequence({
+    value: [
+      new GeneralNames({
+        names: [new GeneralName({ type: 4, value: cert.issuer })],
+      }).toSchema(),
+      variant === 'contradictory' ? new asn1js.Integer({ value: 999999 }) : cert.serialNumber,
+    ],
+  });
+}
+
 async function signedAttributesFor(
   cert: Certificate,
   tstInfoDer: ArrayBuffer,
   cmsDigestOid: string,
   certificateBinding: 'v1' | 'v2' | 'both' | 'none' = 'v2',
+  certificateBindingIssuerSerial?: 'correct' | 'contradictory' | 'trailing',
 ): Promise<SignedAndUnsignedAttributes> {
   const engine = getCrypto(true);
   const messageDigest = await engine.digest(
@@ -353,6 +376,7 @@ async function signedAttributesFor(
   ];
   if (certificateBinding === 'v1' || certificateBinding === 'both') {
     const certHash = await engine.digest({ name: 'SHA-1' }, cert.toSchema().toBER(false));
+    const issuerSerial = issuerSerialFor(cert, certificateBindingIssuerSerial);
     attributes.push(
       new Attribute({
         type: OID_SIGNING_CERTIFICATE,
@@ -361,7 +385,12 @@ async function signedAttributesFor(
             value: [
               new asn1js.Sequence({
                 value: [
-                  new asn1js.Sequence({ value: [new asn1js.OctetString({ valueHex: certHash })] }),
+                  new asn1js.Sequence({
+                    value: [
+                      new asn1js.OctetString({ valueHex: certHash }),
+                      ...(issuerSerial ? [issuerSerial] : []),
+                    ],
+                  }),
                 ],
               }),
             ],
@@ -372,6 +401,7 @@ async function signedAttributesFor(
   }
   if (certificateBinding === 'v2' || certificateBinding === 'both') {
     const certHash = await engine.digest({ name: 'SHA-256' }, cert.toSchema().toBER(false));
+    const issuerSerial = issuerSerialFor(cert, certificateBindingIssuerSerial);
     attributes.push(
       new Attribute({
         type: OID_SIGNING_CERTIFICATE_V2,
@@ -381,7 +411,10 @@ async function signedAttributesFor(
               new asn1js.Sequence({
                 value: [
                   new asn1js.Sequence({
-                    value: [new asn1js.OctetString({ valueHex: certHash })],
+                    value: [
+                      new asn1js.OctetString({ valueHex: certHash }),
+                      ...(issuerSerial ? [issuerSerial] : []),
+                    ],
                   }),
                 ],
               }),
