@@ -1669,6 +1669,32 @@ describe('review-decision rail', () => {
       expect(state.plan?.approvalCertificate).toBeUndefined();
     });
 
+    it.each(['unable_to_review', 'unknown_verdict'])(
+      'blocks an exhausted plan when evidence captured %s',
+      (capturedVerdict) => {
+        const state = makeState('PLAN_REVIEW', {
+          plan: { ...PLAN_RECORD, reviewCompletion: 'review_exhausted' },
+          selfReview: CONVERGED_SELF_REVIEW,
+          reviewAssurance: planAssurance({
+            subjectDigest: PLAN_RECORD.current.digest,
+            status: 'consumed',
+            capturedVerdict,
+            findingsHash: 'e'.repeat(64),
+          }),
+        });
+        const result = executeReviewDecision(
+          state,
+          { verdict: 'approve', rationale: 'override', decidedBy: 'reviewer-1' },
+          baseCtx,
+        );
+        expect(result).toMatchObject({
+          kind: 'blocked',
+          code: 'PLAN_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION',
+        });
+        expect(state.plan?.approvalCertificate).toBeUndefined();
+      },
+    );
+
     it('blocks an exhausted plan when the evidence carries no captured verdict (CE1)', () => {
       const state = makeState('PLAN_REVIEW', {
         plan: { ...PLAN_RECORD, reviewCompletion: 'review_exhausted' },

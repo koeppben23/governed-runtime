@@ -132,7 +132,7 @@ describe('PkijsTimestampVerifier', () => {
     });
 
     it('pssHashKind rejects every out-of-profile parameter dimension', () => {
-      // hash not allowlisted / not matching the imprint kind
+      // hash not allowlisted / not matching the CMS digest kind
       expect(pssHashKind(pssParams({ hashOid: '1.3.14.3.2.26' }), 'sha256')).toBeNull();
       expect(
         pssHashKind(
@@ -268,7 +268,7 @@ describe('PkijsTimestampVerifier', () => {
     expect(result).toEqual({ status: 'invalid', reason: 'malformed_token' });
   });
 
-  it('signature hash diverging from the message-imprint hash returns unsafe_signature_algorithm (TSA2)', async () => {
+  it('signature hash diverging from the CMS digest returns unsafe_signature_algorithm (TSA2)', async () => {
     const fixture = await makeRfc3161TamperedFixture('tampered_signature_algorithm_sha384');
     const result = await new PkijsTimestampVerifier().verifyToken({
       tokenDerBase64: fixture.tokenDerBase64,
@@ -619,19 +619,15 @@ describe('PkijsTimestampVerifier', () => {
     }
   });
 
-  it('signer digest diverging from the message-imprint hash returns unsafe_digest_algorithm (TSA2)', async () => {
-    const fixture = await makeRfc3161TamperedFixture('signer_digest_divergence');
+  it('accepts a SHA-256 imprint with a SHA-384 CMS signature (RFC 8933)', async () => {
+    const fixture = await makeRfc3161Fixture({ cmsDigestOid: OID_SHA384 });
     const result = await new PkijsTimestampVerifier().verifyToken({
       tokenDerBase64: fixture.tokenDerBase64,
       expectedDigests: expectedDigestsFor(DIGEST),
       trustAnchors: [fixture.trustAnchorPem],
     });
 
-    expect(result.status).toBe('invalid');
-    if (result.status === 'invalid') {
-      expect(result.reason).toBe('unsafe_digest_algorithm');
-      expect(result.detail).toContain('diverges');
-    }
+    expect(result).toMatchObject({ status: 'valid', digestAlgorithm: 'sha256' });
   });
 
   it('unlisted signature algorithm returns unsafe_signature_algorithm (TSA2)', async () => {
@@ -692,6 +688,46 @@ describe('PkijsTimestampVerifier', () => {
       detail: expect.stringContaining('1.3.6.1.5.5.7.3.2'),
     });
   });
+
+  it('TSA1: duplicate extendedKeyUsage extensions are rejected', async () => {
+    const fixture = await makeRfc3161Fixture({ duplicateEku: true });
+    const result = await new PkijsTimestampVerifier().verifyToken({
+      tokenDerBase64: fixture.tokenDerBase64,
+      expectedDigests: expectedDigestsFor(DIGEST),
+      trustAnchors: [fixture.trustAnchorPem],
+    });
+
+    expect(result).toEqual({
+      status: 'invalid',
+      reason: 'duplicate_tsa_eku',
+      detail: expect.any(String),
+    });
+  });
+
+  it('RFC 5816: missing signed certificate binding returns signing_certificate_invalid', async () => {
+    const fixture = await makeRfc3161TamperedFixture('missing_signing_certificate');
+    const result = await new PkijsTimestampVerifier().verifyToken({
+      tokenDerBase64: fixture.tokenDerBase64,
+      expectedDigests: expectedDigestsFor(DIGEST),
+      trustAnchors: [fixture.trustAnchorPem],
+    });
+
+    expect(result).toEqual({ status: 'invalid', reason: 'signing_certificate_invalid' });
+  });
+
+  it.each(['v1', 'v2', 'both'] as const)(
+    'RFC 5816: accepts a valid %s signing certificate binding',
+    async (certificateBinding) => {
+      const fixture = await makeRfc3161Fixture({ certificateBinding });
+      const result = await new PkijsTimestampVerifier().verifyToken({
+        tokenDerBase64: fixture.tokenDerBase64,
+        expectedDigests: expectedDigestsFor(DIGEST),
+        trustAnchors: [fixture.trustAnchorPem],
+      });
+
+      expect(result).toMatchObject({ status: 'valid' });
+    },
+  );
 
   it('TSA3: unknown critical extension returns unhandled_critical_extension', async () => {
     const fixture = await makeRfc3161Fixture({ unknownCriticalExtension: true });
@@ -825,7 +861,7 @@ describe('PkijsTimestampVerifier', () => {
     }
   });
 
-  it('TSA2: RSASSA-PSS hash diverging from the message imprint is rejected', async () => {
+  it('TSA2: RSASSA-PSS hash diverging from the CMS digest is rejected', async () => {
     const fixture = await makeRfc3161TamperedFixture('tampered_pss_hash_sha384', {
       keyScheme: 'pss',
     });

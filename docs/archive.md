@@ -223,10 +223,11 @@ verifier recomputes both from the archived `audit.jsonl` and reports
 > [security-hardening.md](./security-hardening.md).
 >
 > **Timestamp verification trust (enforced):** when TSA evidence is present,
-> archive verification enforces the RFC 3161 signer contract (critical,
-> exclusive id-kp-timeStamping EKU; SHA-256/384/512 algorithm allowlists;
-> validated RSASSA-PSS parameters; unknown critical extensions reject;
-> constant-time imprints), rejects downgraded timestamp statuses as
+> archive verification enforces the RFC 3161 signer contract (exactly one,
+> critical exclusive id-kp-timeStamping EKU; signed ESSCertID/ESSCertIDv2
+> signer binding; independent SHA-256/384/512 algorithm allowlists; validated
+> RSASSA-PSS parameters; unknown critical extensions reject; constant-time
+> imprints), rejects downgraded timestamp statuses as
 > `tsa_evidence_downgraded`, and derives timestamp-finding severity
 > exclusively from the trusted policy state (`resolveStrictMode`) — the
 > manifest policy mode is cross-checked, never a severity authority.

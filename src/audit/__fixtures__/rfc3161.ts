@@ -48,6 +48,8 @@ export interface Rfc3161FixtureAuthority {
   issue(input?: {
     readonly digest?: Uint8Array;
     readonly digestOid?: string;
+    readonly cmsDigestOid?: string;
+    readonly certificateBinding?: 'v1' | 'v2' | 'both' | 'none';
     readonly genTime?: Date;
   }): Promise<{ tokenDerBase64: string }>;
 }
@@ -120,6 +122,7 @@ async function makeCertificate(input: {
   readonly keyHash?: 'SHA-256' | 'SHA-384' | 'SHA-512';
   readonly emptySubject?: boolean;
   readonly pssSaltLength?: number;
+  readonly duplicateEku?: boolean;
 }): Promise<{ cert: Certificate; privateKey: CryptoKey; pem: string }> {
   const crypto = getCrypto(true);
   const cert = new Certificate();
@@ -144,6 +147,7 @@ async function makeCertificate(input: {
   const extensions = baseCertificateExtensions();
   const eku = ekuExtension(input.eku ?? 'timestamping');
   if (eku) extensions.push(eku);
+  if (input.duplicateEku) extensions.push(ekuExtension('other')!);
   if (input.unknownCriticalExtension) extensions.push(unknownCriticalExtension());
   cert.extensions = extensions;
 
@@ -182,6 +186,9 @@ export async function makeRfc3161Fixture(
     readonly multiPartEContent?: boolean;
     readonly pssSaltLength?: number;
     readonly emptySubject?: boolean;
+    readonly duplicateEku?: boolean;
+    readonly cmsDigestOid?: string;
+    readonly certificateBinding?: 'v1' | 'v2' | 'both' | 'none';
   } = {},
 ): Promise<Rfc3161Fixture> {
   const signer = await makeCertificate({
@@ -193,7 +200,8 @@ export async function makeRfc3161Fixture(
     keyScheme: input.keyScheme,
     emptySubject: input.emptySubject,
     pssSaltLength: input.pssSaltLength,
-    keyHash: webcryptoHashNameForOid(input.digestOid ?? '2.16.840.1.101.3.4.2.1') as
+    duplicateEku: input.duplicateEku,
+    keyHash: webcryptoHashNameForOid(input.cmsDigestOid ?? '2.16.840.1.101.3.4.2.1') as
       'SHA-256' | 'SHA-384' | 'SHA-512',
   });
   const untrusted = await makeCertificate({
@@ -232,12 +240,15 @@ async function issueToken(
   input: {
     readonly digest?: Uint8Array;
     readonly digestOid?: string;
+    readonly cmsDigestOid?: string;
+    readonly certificateBinding?: 'v1' | 'v2' | 'both' | 'none';
     readonly genTime?: Date;
     readonly multiPartEContent?: boolean;
   } = {},
 ): Promise<{ tokenDerBase64: string }> {
   const genTime = input.genTime ?? new Date('2026-01-01T00:00:00.000Z');
   const digestOid = input.digestOid ?? '2.16.840.1.101.3.4.2.1';
+  const cmsDigestOid = input.cmsDigestOid ?? '2.16.840.1.101.3.4.2.1';
   const tstInfo = new TSTInfo({
     version: 1,
     policy: RFC3161_TEST_POLICY_OID,
@@ -278,12 +289,17 @@ async function issueToken(
           issuer: signer.cert.issuer,
           serialNumber: signer.cert.serialNumber,
         }),
+        signedAttrs: await signedAttributesFor(
+          signer.cert,
+          tstBer,
+          cmsDigestOid,
+          input.certificateBinding ?? 'v2',
+        ),
       }),
     ],
     certificates: [signer.cert],
   });
-  // The signer digest follows the message-imprint algorithm (RFC 3161 §2.4.2).
-  await signedData.sign(signer.privateKey, 0, webcryptoHashNameForOid(digestOid));
+  await signedData.sign(signer.privateKey, 0, webcryptoHashNameForOid(cmsDigestOid));
   const cmsContent = new ContentInfo({
     contentType: ContentInfo.SIGNED_DATA,
     content: signedData.toSchema(true),
@@ -310,9 +326,72 @@ const OID_TST_INFO = '1.2.840.113549.1.9.16.1.4';
 const OID_CONTENT_TYPE = '1.2.840.113549.1.9.3';
 const OID_MESSAGE_DIGEST = '1.2.840.113549.1.9.4';
 const OID_SHA256 = '2.16.840.1.101.3.4.2.1';
+const OID_SIGNING_CERTIFICATE_V2 = '1.2.840.113549.1.9.16.2.47';
+const OID_SIGNING_CERTIFICATE = '1.2.840.113549.1.9.16.2.12';
 
 function asn1Oid(value: string): asn1js.ObjectIdentifier {
   return new asn1js.ObjectIdentifier({ value });
+}
+
+async function signedAttributesFor(
+  cert: Certificate,
+  tstInfoDer: ArrayBuffer,
+  cmsDigestOid: string,
+  certificateBinding: 'v1' | 'v2' | 'both' | 'none' = 'v2',
+): Promise<SignedAndUnsignedAttributes> {
+  const engine = getCrypto(true);
+  const messageDigest = await engine.digest(
+    { name: webcryptoHashNameForOid(cmsDigestOid) },
+    new Uint8Array(tstInfoDer),
+  );
+  const attributes = [
+    new Attribute({ type: OID_CONTENT_TYPE, values: [asn1Oid(OID_TST_INFO)] }),
+    new Attribute({
+      type: OID_MESSAGE_DIGEST,
+      values: [new asn1js.OctetString({ valueHex: messageDigest })],
+    }),
+  ];
+  if (certificateBinding === 'v1' || certificateBinding === 'both') {
+    const certHash = await engine.digest({ name: 'SHA-1' }, cert.toSchema().toBER(false));
+    attributes.push(
+      new Attribute({
+        type: OID_SIGNING_CERTIFICATE,
+        values: [
+          new asn1js.Sequence({
+            value: [
+              new asn1js.Sequence({
+                value: [
+                  new asn1js.Sequence({ value: [new asn1js.OctetString({ valueHex: certHash })] }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+  }
+  if (certificateBinding === 'v2' || certificateBinding === 'both') {
+    const certHash = await engine.digest({ name: 'SHA-256' }, cert.toSchema().toBER(false));
+    attributes.push(
+      new Attribute({
+        type: OID_SIGNING_CERTIFICATE_V2,
+        values: [
+          new asn1js.Sequence({
+            value: [
+              new asn1js.Sequence({
+                value: [
+                  new asn1js.Sequence({
+                    value: [new asn1js.OctetString({ valueHex: certHash })],
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+  }
+  return new SignedAndUnsignedAttributes({ type: 0, attributes });
 }
 
 export type TamperedTokenKind =
@@ -335,7 +414,8 @@ export type TamperedTokenKind =
   | 'tampered_pss_salt_40'
   | 'tampered_pss_mask_gen'
   | 'tampered_pss_mgf_hash'
-  | 'tampered_pss_hash_sha384';
+  | 'tampered_pss_hash_sha384'
+  | 'missing_signing_certificate';
 
 async function buildTstInfoDer(
   input: { digestOid?: string; genTime?: Date } = {},
@@ -371,7 +451,7 @@ export async function makeRfc3161TamperedFixture(
   const tstInfoDer = await buildTstInfoDer(
     kind === 'signer_digest_divergence' ? { digestOid: '2.16.840.1.101.3.4.2.2' } : {},
   );
-  const signedAttrsAttr = await buildTamperedSignedAttributes(kind, tstInfoDer);
+  const signedAttrsAttr = await buildTamperedSignedAttributes(kind, tstInfoDer, signer.cert);
   const signedData = buildTamperedSignedData(kind, signer.cert, tstInfoDer, signedAttrsAttr);
 
   if (signedAttrsAttr) await signedData.sign(signer.privateKey, 0, 'SHA-256');
@@ -397,23 +477,29 @@ export async function makeRfc3161TamperedFixture(
 async function buildTamperedSignedAttributes(
   kind: TamperedTokenKind,
   tstInfoDer: ArrayBuffer,
+  cert: Certificate,
 ): Promise<SignedAndUnsignedAttributes | undefined> {
   if (kind === 'no_signer_info') return undefined;
-  const engine = getCrypto(true);
-  const digest = await engine.digest({ name: 'SHA-256' }, new Uint8Array(tstInfoDer));
-  const contentType =
-    kind === 'wrong_content_type_in_signed_attrs' ? '1.2.840.113549.1.7.2' : OID_TST_INFO;
-  const messageDigest = kind === 'digest_mismatch_in_signed_attrs' ? wrongDigestBuffer() : digest;
-  return new SignedAndUnsignedAttributes({
-    type: 0,
-    attributes: [
-      new Attribute({ type: OID_CONTENT_TYPE, values: [asn1Oid(contentType)] }),
-      new Attribute({
-        type: OID_MESSAGE_DIGEST,
-        values: [new asn1js.OctetString({ valueHex: messageDigest })],
-      }),
-    ],
-  });
+  const attrs = await signedAttributesFor(
+    cert,
+    tstInfoDer,
+    OID_SHA256,
+    kind === 'missing_signing_certificate' ? 'none' : 'v2',
+  );
+  const attributes = attrs.attributes;
+  if (kind === 'wrong_content_type_in_signed_attrs') {
+    attributes[0] = new Attribute({
+      type: OID_CONTENT_TYPE,
+      values: [asn1Oid('1.2.840.113549.1.7.2')],
+    });
+  }
+  if (kind === 'digest_mismatch_in_signed_attrs') {
+    attributes[1] = new Attribute({
+      type: OID_MESSAGE_DIGEST,
+      values: [new asn1js.OctetString({ valueHex: wrongDigestBuffer() })],
+    });
+  }
+  return attrs;
 }
 
 function wrongDigestBuffer(): ArrayBuffer {
@@ -495,7 +581,7 @@ function tamperSignatureAlgorithmToSha384(signedData: SignedData): void {
   const si = signedData.signerInfos[0];
   if (!si) return;
   // sha384WithRSAEncryption — listed, but its hash no longer matches the
-  // SHA-256 message imprint (TSA2 signature-hash coherence).
+  // SHA-256 CMS digest (TSA2 signature-hash coherence).
   si.signatureAlgorithm = new AlgorithmIdentifier({ algorithmId: '1.2.840.113549.1.1.12' });
 }
 
@@ -576,7 +662,7 @@ function tamperPssMgfHash(signedData: SignedData): void {
 
 function tamperPssHashSha384(signedData: SignedData): void {
   tamperPssProfile(signedData, (pss) => {
-    // PSS hash diverging from the SHA-256 message imprint.
+    // PSS hash diverging from the SHA-256 CMS digest.
     pss.hashAlgorithm = new AlgorithmIdentifier({ algorithmId: '2.16.840.1.101.3.4.2.2' });
     pss.maskGenAlgorithm = new AlgorithmIdentifier({
       algorithmId: OID_MGF1,

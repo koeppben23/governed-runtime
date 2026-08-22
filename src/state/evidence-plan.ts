@@ -142,7 +142,7 @@ export type SelfReviewLoop = z.infer<typeof SelfReviewLoop>;
  *
  * - `reviewer_accepted`: the reviewer accepted the current plan text
  *   (revisionDelta 'none' + verdict 'accept') — even at the iteration limit.
- * - `review_exhausted`: the review budget ended without acceptance.
+ * - `review_exhausted`: the review budget ended with `changes_requested`.
  * - `pending`: the loop has not converged.
  *
  * Canonical authority for the plan completion derivation; both the tool path
@@ -155,6 +155,8 @@ export function resolvePlanReviewCompletion(
   revisionDelta: RevisionDelta,
   verdict: LoopVerdict,
 ): ReviewCompletion {
+  // A reviewer tool failure is never an exhaustion override candidate.
+  if (verdict === 'unable_to_review') return 'pending';
   const reviewerAccepted = revisionDelta === 'none' && verdict === 'accept';
   if (reviewerAccepted) return 'reviewer_accepted';
   if (iteration >= maxIterations) return 'review_exhausted';

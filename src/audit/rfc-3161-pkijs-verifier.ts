@@ -7,23 +7,16 @@
  * validation is not performed. Verifying the signer certificate equals (DER
  * equality) one of the configured trust anchors serves as the binding check.
  *
- * TSA signer contract (TSA1–TSA4 hardening — the ONLY trust profile):
- *
- * - The pinned signer certificate MUST carry an extendedKeyUsage extension
- *   (2.5.29.37) marked critical, containing id-kp-timeStamping
- *   (1.3.6.1.5.5.7.3.8) and NO other key purposes (exclusive timestamping).
- * - Unknown CRITICAL extensions are rejected; unknown non-critical
- *   extensions are tolerated per RFC 5280.
- * - Message-imprint and signature algorithms are allowlisted to SHA-256,
- *   SHA-384, and SHA-512; the SignerInfo digestAlgorithm MUST equal the
- *   messageImprint hash algorithm (RFC 3161 §2.4.2). RSASSA-PSS signatures are
- *   accepted only against the explicit profile: MGF1 with a matching hash,
- *   trailerField 1, and saltLength within 8..digest byte length.
- * - Imprint comparisons are constant-time.
+ * TSA signer contract: exactly one critical, exclusive timestamping EKU;
+ * unknown critical extensions reject. Message-imprint and CMS hash domains are
+ * independently allowlisted to SHA-256/384/512. CMS signatures must be
+ * internally coherent; PSS uses MGF1, matching hash, trailerField 1, and a
+ * salt length within 8..digest bytes. Imprints compare in constant time.
  */
 
 import * as asn1js from 'asn1js';
 import {
+  AlgorithmIdentifier,
   Certificate,
   ContentInfo,
   IssuerAndSerialNumber,
@@ -75,10 +68,12 @@ type VerificationReason =
   | 'signed_attrs_invalid'
   | 'missing_signer_info'
   | 'missing_tsa_eku'
+  | 'duplicate_tsa_eku'
   | 'non_exclusive_tsa_eku'
   | 'unhandled_critical_extension'
   | 'unsafe_digest_algorithm'
-  | 'unsafe_signature_algorithm';
+  | 'unsafe_signature_algorithm'
+  | 'signing_certificate_invalid';
 
 type InvalidResult = { status: 'invalid'; reason: VerificationReason; detail?: string };
 
@@ -276,8 +271,6 @@ function extractAttributeValue(
 // ─── TSA2: digest/signature algorithm decisions ──────────────────────────────
 
 export function digestKindFromOid(oid: string): TsDigestAlgorithm | null {
-  // Covered by the sha256/sha384/sha512 positive token tests and the md5
-  // negative; branch mutations there still land in the same rejection class.
   if (oid === OID_SHA256) return 'sha256';
   if (oid === OID_SHA384) return 'sha384';
   if (oid === OID_SHA512) return 'sha512';
@@ -360,18 +353,17 @@ const PSS_DIGEST_BYTES: Record<TsDigestAlgorithm, number> = {
  */
 export function pssHashKind(
   params: unknown,
-  imprintKind: TsDigestAlgorithm,
+  cmsDigestKind: TsDigestAlgorithm,
 ): TsDigestAlgorithm | null {
   const pss = parsePssParams(params);
   if (!pss) return null;
   const hash = digestKindFromOid(pss.hashAlgorithm.algorithmId);
-  // Covered by the PSS positive test and the tampered-PSS negatives.
   const mgfMatches =
     pss.maskGenAlgorithm.algorithmId === OID_MGF1 &&
     oidFromParams(pss.maskGenAlgorithm.algorithmParams) === pss.hashAlgorithm.algorithmId;
-  const digestBytes = PSS_DIGEST_BYTES[imprintKind];
+  const digestBytes = PSS_DIGEST_BYTES[cmsDigestKind];
   const profileOk =
-    hash === imprintKind &&
+    hash === cmsDigestKind &&
     mgfMatches &&
     pss.trailerField === 1 &&
     pss.saltLength >= PSS_MIN_SALT_LENGTH &&
@@ -385,7 +377,7 @@ interface AlgorithmDecision {
 
 /**
  * The SINGLE signature-algorithm decision (TSA2): the signature's hash must be
- * allowlisted AND match the message-imprint algorithm. PKCS#1-v1.5 and ECDSA
+ * allowlisted AND match the CMS SignerInfo digest algorithm. PKCS#1-v1.5 and ECDSA
  * encode the hash in the algorithm OID; RSASSA-PSS must carry validated
  * parameters.
  */
@@ -396,34 +388,28 @@ export function decideSignatureAlgorithm(
       readonly algorithmParams?: unknown;
     };
   },
-  imprintKind: TsDigestAlgorithm,
+  cmsDigestKind: TsDigestAlgorithm,
 ): { decision: AlgorithmDecision } | { rejection: InvalidResult } {
   const oid = signerInfo.signatureAlgorithm.algorithmId;
   const encodedKind = signatureDigestKindFromOid(oid);
   if (encodedKind) {
-    // Covered by the sha384-signature tamper negative test.
-    if (encodedKind !== imprintKind) {
+    if (encodedKind !== cmsDigestKind) {
       return {
         rejection: invalid(
           'unsafe_signature_algorithm',
-          `signature hash ${encodedKind} does not match message-imprint hash ${imprintKind}`,
+          `signature hash ${encodedKind} does not match CMS digest hash ${cmsDigestKind}`,
         ),
       };
     }
     return { decision: { hashName: webcryptoHashName(encodedKind) } };
   }
-  // Outcome-equivalent: unlisted algorithms reject via the same fallback
-  // branch; listed PKCS#1/ECDSA return earlier, so the PSS branch is only
-  // reachable for PSS.
-  // Stryker disable next-line ConditionalExpression
   if (oid === OID_RSA_PSS) {
-    const kind = pssHashKind(signerInfo.signatureAlgorithm.algorithmParams, imprintKind);
-    // Covered by the PSS negatives (unparseable, salt, trailer).
-    if (kind !== imprintKind) {
+    const kind = pssHashKind(signerInfo.signatureAlgorithm.algorithmParams, cmsDigestKind);
+    if (kind !== cmsDigestKind) {
       return {
         rejection: invalid(
           'unsafe_signature_algorithm',
-          `RSASSA-PSS parameters outside the TSA profile (MGF1, matching hash, trailerField 1, salt 8..digest length) for message-imprint hash ${imprintKind}`,
+          `RSASSA-PSS parameters outside the TSA profile (MGF1, matching hash, trailerField 1, salt 8..digest length) for CMS digest hash ${cmsDigestKind}`,
         ),
       };
     }
@@ -435,28 +421,20 @@ export function decideSignatureAlgorithm(
 }
 
 /**
- * The SINGLE digest decision (TSA2): the message-imprint algorithm must be
- * allowlisted, and the SignerInfo digestAlgorithm MUST equal it (RFC 3161
- * §2.4.2) — a divergence means the signed digest cannot bind the imprint.
+ * Independently allowlist a digest algorithm. RFC 8933 §3.5 requires CMS
+ * content and signature hashing to be coherent, but expressly does not require
+ * that CMS digest to match the RFC 3161 message-imprint digest.
  */
-function decideDigestAlgorithm(
-  imprintAlgorithmId: string,
-  signerDigestAlgorithmId: string,
+function decideDigestKind(
+  algorithmId: string,
+  domain: 'message-imprint' | 'CMS',
 ): { kind: TsDigestAlgorithm } | { rejection: InvalidResult } {
-  const kind = digestKindFromOid(imprintAlgorithmId);
+  const kind = digestKindFromOid(algorithmId);
   if (!kind) {
     return {
       rejection: invalid(
         'unsafe_digest_algorithm',
-        `unlisted message-imprint hash ${imprintAlgorithmId}`,
-      ),
-    };
-  }
-  if (signerDigestAlgorithmId !== imprintAlgorithmId) {
-    return {
-      rejection: invalid(
-        'unsafe_digest_algorithm',
-        `signer digest ${signerDigestAlgorithmId} diverges from message-imprint hash ${imprintAlgorithmId}`,
+        `unlisted ${domain} digest hash ${algorithmId}`,
       ),
     };
   }
@@ -492,12 +470,21 @@ function checkTsaSignerContract(
   signer: Certificate,
 ): { decision: true } | { rejection: InvalidResult } {
   const extensions = signer.extensions ?? [];
-  const eku = extensions.find((extension) => extension.extnID === OID_EKU);
+  const ekus = extensions.filter((extension) => extension.extnID === OID_EKU);
+  const eku = ekus[0];
   if (!eku) {
     return {
       rejection: invalid(
         'missing_tsa_eku',
         'signer certificate carries no extendedKeyUsage extension',
+      ),
+    };
+  }
+  if (ekus.length !== 1) {
+    return {
+      rejection: invalid(
+        'duplicate_tsa_eku',
+        'signer certificate must carry exactly one extendedKeyUsage extension (RFC 3161 §2.3)',
       ),
     };
   }
@@ -522,7 +509,6 @@ function checkTsaSignerContract(
     };
   }
   const extra = purposes.filter((purpose) => purpose !== OID_KP_TIMESTAMPING);
-  // Covered by the exclusive-profile negative test (eku 'extra').
   if (extra.length > 0) {
     return {
       rejection: invalid(
@@ -546,6 +532,73 @@ function checkTsaSignerContract(
 
 // ─── CMS signature verification ──────────────────────────────────────────────
 
+const OID_SIGNING_CERTIFICATE = '1.2.840.113549.1.9.16.2.12';
+const OID_SIGNING_CERTIFICATE_V2 = '1.2.840.113549.1.9.16.2.47';
+
+function signingCertificateHash(
+  attr: AttrLike,
+): { hash: Uint8Array; algorithm: TsDigestAlgorithm | 'sha1' } | null {
+  if (attr.values.length !== 1) return null;
+  const outer = attr.values[0];
+  if (!(outer instanceof asn1js.Sequence)) return null;
+  const certs = outer.valueBlock.value[0];
+  if (!(certs instanceof asn1js.Sequence) || certs.valueBlock.value.length === 0) return null;
+  const first = certs.valueBlock.value[0];
+  if (!(first instanceof asn1js.Sequence)) return null;
+  const hash = first.valueBlock.value[0];
+  if (!(hash instanceof asn1js.OctetString)) return null;
+  return { hash: new Uint8Array(hash.valueBlock.valueHexView), algorithm: 'sha1' };
+}
+
+function signingCertificateV2Hash(
+  attr: AttrLike,
+): { hash: Uint8Array; algorithm: TsDigestAlgorithm } | null {
+  if (attr.values.length !== 1) return null;
+  const outer = attr.values[0];
+  if (!(outer instanceof asn1js.Sequence)) return null;
+  const certs = outer.valueBlock.value[0];
+  if (!(certs instanceof asn1js.Sequence) || certs.valueBlock.value.length === 0) return null;
+  const first = certs.valueBlock.value[0];
+  if (!(first instanceof asn1js.Sequence)) return null;
+  const [algorithmOrHash, maybeHash] = first.valueBlock.value;
+  if (algorithmOrHash instanceof asn1js.OctetString) {
+    return { hash: new Uint8Array(algorithmOrHash.valueBlock.valueHexView), algorithm: 'sha256' };
+  }
+  if (!(algorithmOrHash instanceof asn1js.Sequence) || !(maybeHash instanceof asn1js.OctetString)) {
+    return null;
+  }
+  try {
+    const algorithm = new AlgorithmIdentifier({ schema: algorithmOrHash });
+    const kind = digestKindFromOid(algorithm.algorithmId);
+    return kind
+      ? { hash: new Uint8Array(maybeHash.valueBlock.valueHexView), algorithm: kind }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function verifySigningCertificateBinding(
+  attrs: ReadonlyArray<AttrLike>,
+  signer: Certificate,
+): Promise<boolean> {
+  const v1 = attrs.filter((attr) => attr.type === OID_SIGNING_CERTIFICATE);
+  const v2 = attrs.filter((attr) => attr.type === OID_SIGNING_CERTIFICATE_V2);
+  if (v1.length + v2.length === 0 || v1.length > 1 || v2.length > 1) return false;
+  const bindings = [...v1.map(signingCertificateHash), ...v2.map(signingCertificateV2Hash)];
+  if (bindings.some((binding) => !binding)) return false;
+  const crypto = getCrypto(true);
+  const certificateDer = signer.toSchema().toBER(false);
+  return Promise.all(
+    bindings.map(async (binding) => {
+      const hashName =
+        binding!.algorithm === 'sha1' ? 'SHA-1' : webcryptoHashName(binding!.algorithm);
+      const actual = await crypto.digest({ name: hashName }, certificateDer);
+      return constantTimeBytesEqual(new Uint8Array(actual), binding!.hash);
+    }),
+  ).then((matches) => matches.every(Boolean));
+}
+
 async function verifyCmsSignature(
   parsed: ParsedToken,
   signer: Certificate,
@@ -568,6 +621,9 @@ async function verifyCmsSignature(
 
     const computedMd = await crypto.digest({ name: hashName }, new Uint8Array(parsed.tstInfoDer));
     if (!sameBytes(computedMd, mdValue)) return { valid: false, reason: 'signed_attrs_invalid' };
+    if (!(await verifySigningCertificateBinding(signerInfo.signedAttrs.attributes, signer))) {
+      return { valid: false, reason: 'signing_certificate_invalid' };
+    }
 
     const signedAttrsDer = signerInfo.signedAttrs.toSchema().toBER();
     const view = new Uint8Array(signedAttrsDer);
@@ -582,14 +638,7 @@ async function verifyCmsSignature(
     return sigOk ? { valid: true } : { valid: false, reason: 'untrusted_cert' };
   }
 
-  const sigOk = await crypto.verifyWithPublicKey(
-    parsed.tstInfoDer,
-    signerInfo.signature,
-    signer.subjectPublicKeyInfo,
-    signerInfo.signatureAlgorithm,
-    hashName,
-  );
-  return sigOk ? { valid: true } : { valid: false, reason: 'untrusted_cert' };
+  return { valid: false, reason: 'signing_certificate_invalid' };
 }
 
 export class PkijsTimestampVerifier implements TimestampVerifier {
@@ -614,19 +663,19 @@ export class PkijsTimestampVerifier implements TimestampVerifier {
     // Stryker disable next-line ConditionalExpression
     if (trustAnchors.length === 0) return invalid('untrusted_cert');
 
+    if (parsed.signedData.signerInfos.length !== 1) return invalid('missing_signer_info');
     const signer = signerCertificate(parsed.signedData);
     if (!signer) return invalid('missing_signer_info');
 
     const signerInfo = parsed.signedData.signerInfos[0]!;
     const imprint = parsed.tstInfo.messageImprint;
 
-    const digestDecision = decideDigestAlgorithm(
-      imprint.hashAlgorithm.algorithmId,
-      signerInfo.digestAlgorithm.algorithmId,
-    );
-    if ('rejection' in digestDecision) return digestDecision.rejection;
+    const imprintDecision = decideDigestKind(imprint.hashAlgorithm.algorithmId, 'message-imprint');
+    if ('rejection' in imprintDecision) return imprintDecision.rejection;
+    const cmsDigestDecision = decideDigestKind(signerInfo.digestAlgorithm.algorithmId, 'CMS');
+    if ('rejection' in cmsDigestDecision) return cmsDigestDecision.rejection;
 
-    const expected = input.expectedDigests[digestDecision.kind];
+    const expected = input.expectedDigests[imprintDecision.kind];
     if (
       !constantTimeBytesEqual(
         new Uint8Array(imprint.hashedMessage.valueBlock.valueHexView),
@@ -636,7 +685,10 @@ export class PkijsTimestampVerifier implements TimestampVerifier {
       return invalid('digest_mismatch');
     }
 
-    return completeTokenVerification(parsed, signer, trustAnchors, signerInfo, digestDecision.kind);
+    return completeTokenVerification(parsed, signer, trustAnchors, signerInfo, {
+      imprint: imprintDecision.kind,
+      cms: cmsDigestDecision.kind,
+    });
   }
 }
 
@@ -655,13 +707,12 @@ async function completeTokenVerification(
       readonly algorithmParams?: unknown;
     };
   },
-  imprintKind: TsDigestAlgorithm,
+  kinds: { readonly imprint: TsDigestAlgorithm; readonly cms: TsDigestAlgorithm },
 ): ReturnType<TimestampVerifier['verifyToken']> {
-  const signatureDecision = decideSignatureAlgorithm(signerInfo, imprintKind);
+  const signatureDecision = decideSignatureAlgorithm(signerInfo, kinds.cms);
   if ('rejection' in signatureDecision) return signatureDecision.rejection;
 
   const contract = checkTsaSignerContract(signer);
-  // Covered by every EKU/critical-extension negative test.
   if ('rejection' in contract) return contract.rejection;
 
   try {
@@ -686,6 +737,6 @@ async function completeTokenVerification(
     serialNumber: serialHex(parsed.tstInfo.serialNumber),
     signerSubject: subjectText(signer),
     messageImprintHex: imprintHex(parsed.tstInfo),
-    digestAlgorithm: imprintKind,
+    digestAlgorithm: kinds.imprint,
   };
 }

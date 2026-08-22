@@ -4,7 +4,12 @@
  * Extracted from evidence-split.test.ts.
  */
 import { describe, it, expect } from 'vitest';
-import { PlanEvidence, PlanRecord, SelfReviewLoop } from './evidence-plan.js';
+import {
+  PlanEvidence,
+  PlanRecord,
+  resolvePlanReviewCompletion,
+  SelfReviewLoop,
+} from './evidence-plan.js';
 import { FIXED_TIME } from './evidence-test-constants.js';
 
 describe('evidence-plan', () => {
@@ -146,6 +151,10 @@ describe('evidence-plan', () => {
   });
 
   describe('EDGE', () => {
+    it('does not classify unable_to_review at the iteration limit as review_exhausted', () => {
+      expect(resolvePlanReviewCompletion(3, 3, 'none', 'unable_to_review')).toBe('pending');
+    });
+
     it('SelfReviewLoop prevDigest can be null on first iteration', () => {
       const loop = {
         iteration: 0,
