@@ -85,6 +85,29 @@ describe('verifyTimestampMonotonicity', () => {
     expect(result.valid).toBe(true);
   });
 
+  it('AC11: orders mixed-offset ISO timestamps by parsed UTC instant, not lexically', () => {
+    const events = [
+      // 01:00+02:00 == 23:00Z the day before — lexically AFTER the next entry,
+      // but temporally BEFORE it. Lexical comparison would flag this trail as
+      // non-monotonic; parsed instants order it correctly.
+      makeAuditEvent({ timestamp: '2026-01-01T01:00:00.000+02:00' }),
+      makeAuditEvent({ timestamp: '2026-01-01T00:01:00.000Z' }),
+    ];
+    const result = verifyTimestampMonotonicity(events);
+    expect(result.valid).toBe(true);
+  });
+
+  it('AC11: an unparseable timestamp is never sortable — trail invalid', () => {
+    const events = [
+      makeAuditEvent({ timestamp: '2026-01-01T00:00:00.000Z' }),
+      makeAuditEvent({ timestamp: 'not-a-date' }),
+    ];
+    const result = verifyTimestampMonotonicity(events);
+    expect(result.valid).toBe(false);
+    expect(result.firstBreak).toBe(1);
+    expect(result.message).toContain('not a parseable UTC instant');
+  });
+
   it('passes for empty array', () => {
     const result = verifyTimestampMonotonicity([]);
     expect(result.valid).toBe(true);
@@ -112,7 +135,27 @@ describe('verifyTsaMessageImprint', () => {
     expect(result.valid).toBe(true);
   });
 
-  it('passes when tsa_failed status', () => {
+  it('AC2: fails when tsa_failed status downgrades a present TSA payload', () => {
+    const event = {
+      ...makeAuditEvent(),
+      canonicalEventDigest: 'abcd1234',
+      timestampEvidence: {
+        status: 'tsa_failed',
+        source: 'local_clock',
+        resolvedAt: '2026-01-01T00:00:00.000Z',
+        tsa: {
+          messageImprint: 'a'.repeat(64),
+          digestAlgorithm: 'sha256',
+        },
+      },
+    } as unknown as AuditEvent;
+    const result = verifyTsaMessageImprint(event);
+    expect(result.valid).toBe(false);
+    expect(result.downgraded).toBe(true);
+    expect(result.reason).toContain('downgraded');
+  });
+
+  it('AC2: a token payload with tsa_failed status still requires token verification (no silent pass)', () => {
     const event = {
       ...makeAuditEvent(),
       canonicalEventDigest: 'abcd1234',
@@ -128,7 +171,29 @@ describe('verifyTsaMessageImprint', () => {
       },
     } as unknown as AuditEvent;
     const result = verifyTsaMessageImprint(event);
-    expect(result.valid).toBe(true);
+    expect(result.valid).toBe(false);
+    expect(result.needsTokenVerification).toBe(true);
+  });
+
+  it('AC2: fails when a tsa payload carries a local/ntp_checked status (downgrade)', () => {
+    for (const status of ['local', 'ntp_checked']) {
+      const event = {
+        ...makeAuditEvent(),
+        canonicalEventDigest: 'abcd1234',
+        timestampEvidence: {
+          status,
+          source: 'local_clock',
+          resolvedAt: '2026-01-01T00:00:00.000Z',
+          tsa: {
+            messageImprint: 'a'.repeat(64),
+            digestAlgorithm: 'sha256',
+          },
+        },
+      } as unknown as AuditEvent;
+      const result = verifyTsaMessageImprint(event);
+      expect(result.valid).toBe(false);
+      expect(result.downgraded).toBe(true);
+    }
   });
 
   it('passes when TSA messageImprint matches the recomputed canonical event digest', () => {

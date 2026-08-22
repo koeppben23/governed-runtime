@@ -47,8 +47,11 @@ describe('MockTimestampVerifier', () => {
     const verifier = new MockTimestampVerifier();
     const result = await verifier.verifyToken({
       tokenDerBase64: MOCK_TSA_FIXTURE_TOKEN,
-      expectedDigest: new Uint8Array(32),
-      digestAlgorithm: 'sha256',
+      expectedDigests: {
+        sha256: new Uint8Array(32),
+        sha384: new Uint8Array(0),
+        sha512: new Uint8Array(0),
+      },
       trustAnchors: [],
     });
     expect(result.status).toBe('valid');
@@ -62,8 +65,11 @@ describe('MockTimestampVerifier', () => {
     const verifier = new MockTimestampVerifier();
     const result = await verifier.verifyToken({
       tokenDerBase64: 'different_token',
-      expectedDigest: new Uint8Array(32),
-      digestAlgorithm: 'sha256',
+      expectedDigests: {
+        sha256: new Uint8Array(32),
+        sha384: new Uint8Array(0),
+        sha512: new Uint8Array(0),
+      },
       trustAnchors: [],
     });
     expect(result.status).toBe('invalid');
@@ -74,8 +80,11 @@ describe('MockTimestampVerifier', () => {
     const verifier = new MockTimestampVerifier({ defaultStatus: 'invalid', failOnMismatch: false });
     const result = await verifier.verifyToken({
       tokenDerBase64: 'any_token',
-      expectedDigest: new Uint8Array(32),
-      digestAlgorithm: 'sha256',
+      expectedDigests: {
+        sha256: new Uint8Array(32),
+        sha384: new Uint8Array(0),
+        sha512: new Uint8Array(0),
+      },
       trustAnchors: [],
     });
     expect(result.status).toBe('invalid');
@@ -85,8 +94,11 @@ describe('MockTimestampVerifier', () => {
     const verifier = new MockTimestampVerifier({ failOnMismatch: false, defaultStatus: 'valid' });
     const result = await verifier.verifyToken({
       tokenDerBase64: 'any_token',
-      expectedDigest: new Uint8Array(32),
-      digestAlgorithm: 'sha256',
+      expectedDigests: {
+        sha256: new Uint8Array(32),
+        sha384: new Uint8Array(0),
+        sha512: new Uint8Array(0),
+      },
       trustAnchors: [],
     });
     expect(result.status).toBe('valid');

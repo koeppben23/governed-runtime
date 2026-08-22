@@ -19,11 +19,16 @@ export async function verifyArchiveTimestampTokens(input: {
   readonly state: SessionState | null;
   readonly manifest: ArchiveManifest;
   readonly findings: ArchiveFinding[];
+  /**
+   * Trusted strictness authority (AR2): the caller's `resolveStrictMode(state)`
+   * resolution, shared with the chain verification. The archive manifest is
+   * cross-checked elsewhere and is NEVER a severity authority.
+   */
+  readonly strict: boolean;
 }): Promise<void> {
   const timestampPolicy = input.state?.policySnapshot.audit.timestampAssurance;
   const trustAnchors = timestampPolicy?.trustAnchors ?? [];
-  const severity: 'error' | 'warning' =
-    timestampPolicy?.strict || input.manifest.policyMode === 'regulated' ? 'error' : 'warning';
+  const severity: 'error' | 'warning' = input.strict ? 'error' : 'warning';
 
   if (trustAnchors.length === 0) {
     if (input.events.some(eventHasTsaEvidence)) {

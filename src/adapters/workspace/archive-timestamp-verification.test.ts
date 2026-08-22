@@ -26,36 +26,40 @@ function manifest(policyMode: ManifestPolicyMode): ArchiveManifest {
   };
 }
 
+function stampedEvent(): AuditEvent {
+  return {
+    id: 'evt-1',
+    sessionId: SESSION_ID,
+    phase: 'COMPLETE',
+    event: 'lifecycle:session_completed',
+    timestamp: '2026-01-01T00:00:00.000Z',
+    actor: 'machine',
+    detail: {},
+    timestampEvidence: {
+      status: 'tsa_stamped',
+      source: 'tsa',
+      resolvedAt: '2026-01-01T00:00:00.000Z',
+      tsa: {
+        tokenDerBase64: Buffer.from('timestamp token').toString('base64'),
+        receivedAt: '2026-01-01T00:00:00.000Z',
+        messageImprint: 'a'.repeat(64),
+        digestAlgorithm: 'sha256',
+        verificationStatus: 'unchecked',
+      },
+    },
+  } as unknown as AuditEvent;
+}
+
 describe('verifyArchiveTimestampTokens', () => {
   it('warns when TSA evidence is present but trust anchors are missing in non-strict mode', async () => {
-    const event = {
-      id: 'evt-1',
-      sessionId: SESSION_ID,
-      phase: 'COMPLETE',
-      event: 'lifecycle:session_completed',
-      timestamp: '2026-01-01T00:00:00.000Z',
-      actor: 'machine',
-      detail: {},
-      timestampEvidence: {
-        status: 'tsa_stamped',
-        source: 'tsa',
-        resolvedAt: '2026-01-01T00:00:00.000Z',
-        tsa: {
-          tokenDerBase64: Buffer.from('timestamp token').toString('base64'),
-          receivedAt: '2026-01-01T00:00:00.000Z',
-          messageImprint: 'a'.repeat(64),
-          digestAlgorithm: 'sha256',
-          verificationStatus: 'unchecked',
-        },
-      },
-    } as unknown as AuditEvent;
     const findings: ArchiveFinding[] = [];
 
     await verifyArchiveTimestampTokens({
-      events: [event],
+      events: [stampedEvent()],
       state: makeState('COMPLETE'),
       manifest: manifest('solo'),
       findings,
+      strict: false,
     });
 
     expect(findings).toEqual([
@@ -88,35 +92,14 @@ describe('verifyArchiveTimestampTokens', () => {
         },
       },
     });
-    const event = {
-      id: 'evt-1',
-      sessionId: SESSION_ID,
-      phase: 'COMPLETE',
-      event: 'lifecycle:session_completed',
-      timestamp: '2026-01-01T00:00:00.000Z',
-      actor: 'machine',
-      detail: {},
-      canonicalEventDigest: 'a'.repeat(64),
-      timestampEvidence: {
-        status: 'tsa_stamped',
-        source: 'tsa',
-        resolvedAt: '2026-01-01T00:00:00.000Z',
-        tsa: {
-          tokenDerBase64: Buffer.from('not a timestamp token').toString('base64'),
-          receivedAt: '2026-01-01T00:00:00.000Z',
-          messageImprint: 'a'.repeat(64),
-          digestAlgorithm: 'sha256',
-          verificationStatus: 'unchecked',
-        },
-      },
-    } as unknown as AuditEvent;
     const findings: ArchiveFinding[] = [];
 
     await verifyArchiveTimestampTokens({
-      events: [event],
+      events: [stampedEvent()],
       state,
       manifest: manifest('regulated'),
       findings,
+      strict: true,
     });
 
     expect(findings).toEqual([
@@ -124,6 +107,64 @@ describe('verifyArchiveTimestampTokens', () => {
         code: 'tsa_verification_failed',
         severity: 'error',
         file: 'audit.jsonl',
+      }),
+    ]);
+  });
+
+  it('AR2: a regulated MANIFEST alone never drives error severity (trusted policy state only)', async () => {
+    // Non-strict trusted policy: TSA evidence present, no trust anchors.
+    const findings: ArchiveFinding[] = [];
+
+    await verifyArchiveTimestampTokens({
+      events: [stampedEvent()],
+      state: makeState('COMPLETE'),
+      manifest: manifest('regulated'),
+      findings,
+      strict: false,
+    });
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        code: 'tsa_verification_failed',
+        severity: 'warning',
+      }),
+    ]);
+  });
+
+  it('AR2: strict trusted policy drives error severity even with a non-regulated manifest', async () => {
+    const state = makeState('COMPLETE', {
+      policySnapshot: {
+        ...makeState('COMPLETE').policySnapshot,
+        audit: {
+          ...makeState('COMPLETE').policySnapshot.audit,
+          timestampAssurance: {
+            enabled: true,
+            mode: 'tsa_critical',
+            strict: true,
+            criticalEvents: ['decision', 'lifecycle'],
+            tsaUrl: 'https://tsa.example.test',
+            trustAnchors: ['not a pem certificate'],
+            ntpServers: ['pool.ntp.org'],
+            ntpDriftThresholdMs: 30000,
+            tsaTimeoutMs: 10000,
+          },
+        },
+      },
+    });
+    const findings: ArchiveFinding[] = [];
+
+    await verifyArchiveTimestampTokens({
+      events: [stampedEvent()],
+      state,
+      manifest: manifest('solo'),
+      findings,
+      strict: true,
+    });
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        code: 'tsa_verification_failed',
+        severity: 'error',
       }),
     ]);
   });

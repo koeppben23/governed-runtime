@@ -44,7 +44,19 @@ export interface TimestampMonotonicityResult {
 }
 
 /**
- * Verify that audit event timestamps are monotonically non-decreasing.
+ * Parse an audit timestamp into a numeric UTC instant (AC11). Unparseable
+ * values are NEVER sortable — no lexical fallback, no best effort.
+ */
+function epochOf(value: string): number | null {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * Verify that audit event timestamps are monotonically non-decreasing,
+ * comparing PARSED UTC instants — never lexical strings (offset formats such
+ * as `+02:00` vs `Z` must not yield ordering artifacts). An unparseable
+ * timestamp makes the trail invalid, not ignorable.
  *
  * @param events - Audit events in chronological order.
  */
@@ -52,7 +64,23 @@ export function verifyTimestampMonotonicity(
   events: readonly AuditEvent[],
 ): TimestampMonotonicityResult {
   for (let i = 1; i < events.length; i++) {
-    if (events[i]!.timestamp < events[i - 1]!.timestamp) {
+    const current = epochOf(events[i]!.timestamp);
+    if (current === null) {
+      return {
+        valid: false,
+        firstBreak: i,
+        message: `Timestamp at index ${i} is not a parseable UTC instant: "${events[i]!.timestamp}"`,
+      };
+    }
+    const previous = epochOf(events[i - 1]!.timestamp);
+    if (previous === null) {
+      return {
+        valid: false,
+        firstBreak: i - 1,
+        message: `Timestamp at index ${i - 1} is not a parseable UTC instant: "${events[i - 1]!.timestamp}"`,
+      };
+    }
+    if (current < previous) {
       return {
         valid: false,
         firstBreak: i,
@@ -68,6 +96,11 @@ export interface TimestampEvidenceCheck {
   readonly reason: string | null;
   /** When true, the event has tokenDerBase64 and must be cryptographically verified before the imprint can be trusted. */
   readonly needsTokenVerification: boolean;
+  /**
+   * When true, stronger TSA evidence payload exists but the recorded status was
+   * downgraded (AC2): a degraded status must never silently weaken assurance.
+   */
+  readonly downgraded: boolean;
 }
 
 /**
@@ -83,6 +116,8 @@ export interface TimestampEvidenceCheck {
  *   cryptographic token verification is required.
  * - When tokenDerBase64 is absent (mock/internal TSA): messageImprint is the
  *   trusted internal imprint and is compared against the recomputed canonical digest.
+ * - AC2: a `tsa` payload whose status is `local`, `ntp_checked`, or `tsa_failed`
+ *   while stronger evidence is present is a DOWNGRADE — invalid, never valid.
  *
  * @param event - Audit event with optional timestampEvidence.
  */
@@ -93,18 +128,14 @@ export function verifyTsaMessageImprint(event: AuditEvent): TimestampEvidenceChe
     string | undefined;
 
   if (!evidence) {
-    return { valid: true, reason: null, needsTokenVerification: false };
+    return { valid: true, reason: null, needsTokenVerification: false, downgraded: false };
   }
 
   const tsa = evidence.tsa as Record<string, unknown> | undefined;
   const status = evidence.status as string | undefined;
 
-  if (!tsa || status === 'local' || status === 'ntp_checked') {
-    return { valid: true, reason: null, needsTokenVerification: false };
-  }
-
-  if (status === 'tsa_failed') {
-    return { valid: true, reason: null, needsTokenVerification: false };
+  if (!tsa) {
+    return { valid: true, reason: null, needsTokenVerification: false, downgraded: false };
   }
 
   const imprint = tsa.messageImprint as string | undefined;
@@ -115,6 +146,16 @@ export function verifyTsaMessageImprint(event: AuditEvent): TimestampEvidenceChe
       valid: false,
       reason: 'TSA token verification required — cannot trust mutable cached messageImprint',
       needsTokenVerification: true,
+      downgraded: false,
+    };
+  }
+
+  if (status === 'local' || status === 'ntp_checked' || status === 'tsa_failed') {
+    return {
+      valid: false,
+      reason: `TSA evidence present but status downgraded to ${status} — a degraded status must never weaken timestamp assurance`,
+      needsTokenVerification: false,
+      downgraded: true,
     };
   }
 
@@ -123,6 +164,7 @@ export function verifyTsaMessageImprint(event: AuditEvent): TimestampEvidenceChe
       valid: false,
       reason: 'TSA evidence missing messageImprint',
       needsTokenVerification: false,
+      downgraded: false,
     };
   }
 
@@ -133,6 +175,7 @@ export function verifyTsaMessageImprint(event: AuditEvent): TimestampEvidenceChe
       valid: false,
       reason: 'stored canonicalEventDigest does not match recomputed canonical event digest',
       needsTokenVerification: false,
+      downgraded: false,
     };
   }
 
@@ -141,10 +184,11 @@ export function verifyTsaMessageImprint(event: AuditEvent): TimestampEvidenceChe
       valid: false,
       reason: 'TSA messageImprint does not match recomputed canonical event digest',
       needsTokenVerification: false,
+      downgraded: false,
     };
   }
 
-  return { valid: true, reason: null, needsTokenVerification: false };
+  return { valid: true, reason: null, needsTokenVerification: false, downgraded: false };
 }
 
 export interface EvidencePresenceCheck {

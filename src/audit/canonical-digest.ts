@@ -28,6 +28,7 @@
  * @version v1
  */
 
+import { createHash } from 'node:crypto';
 import { hashText } from '../shared/hashing.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 
@@ -43,6 +44,16 @@ const EXCLUDED_FIELDS = new Set([
   'prevHash',
 ]);
 
+/** Canonical event content shared by every digest algorithm. */
+function canonicalEventContent(event: Record<string, unknown>): string {
+  const stripped: Record<string, unknown> = {};
+  for (const key of Object.keys(event).sort()) {
+    if (EXCLUDED_FIELDS.has(key)) continue;
+    stripped[key] = event[key];
+  }
+  return canonicalJsonStringify(stripped);
+}
+
 /**
  * Compute the canonical event digest for TSA anchoring.
  *
@@ -53,11 +64,26 @@ const EXCLUDED_FIELDS = new Set([
  * @returns SHA-256 hex digest.
  */
 export function computeCanonicalEventDigest(event: Record<string, unknown>): string {
-  const stripped: Record<string, unknown> = {};
-  for (const key of Object.keys(event).sort()) {
-    if (EXCLUDED_FIELDS.has(key)) continue;
-    stripped[key] = event[key];
-  }
-  const canonical = canonicalJsonStringify(stripped);
-  return hashText(canonical);
+  return hashText(canonicalEventContent(event));
+}
+
+/** Digest algorithms admissible for RFC 3161 message imprints (TSA2). */
+export type TsDigestAlgorithm = 'sha256' | 'sha384' | 'sha512';
+
+/**
+ * The full admissible digest family of the canonical event content, for
+ * verification of RFC 3161 tokens whose message imprint may use any of the
+ * allowlisted algorithms. The verifier selects the matching digest AFTER
+ * reading the token's declared imprint algorithm — a token never gets to
+ * choose which expected digest it is compared against.
+ */
+export function computeCanonicalEventDigests(
+  event: Record<string, unknown>,
+): Record<TsDigestAlgorithm, Uint8Array> {
+  const content = canonicalEventContent(event);
+  return {
+    sha256: createHash('sha256').update(content, 'utf-8').digest(),
+    sha384: createHash('sha384').update(content, 'utf-8').digest(),
+    sha512: createHash('sha512').update(content, 'utf-8').digest(),
+  };
 }

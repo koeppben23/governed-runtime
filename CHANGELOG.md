@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **RFC 3161 TSA trust enforcement and timestamp evidence hardening (TSA1–TSA4,
+  AR2, AC2, AC9, AC11 — closes #643).** External timestamps can only increase
+  archive assurance when every part of the chain is independently validated:
+  - **TSA signer contract (TSA1/TSA3):** the pinned signer certificate MUST
+    carry a critical extendedKeyUsage with id-kp-timeStamping and no other key
+    purposes (`missing_tsa_eku` / `non_exclusive_tsa_eku`); unknown critical
+    extensions reject (`unhandled_critical_extension`), unknown non-critical
+    ones are tolerated per RFC 5280.
+  - **Algorithm allowlists (TSA2):** message-imprint and signature hashes are
+    allowlisted to SHA-256/384/512; the SignerInfo `digestAlgorithm` MUST equal
+    the message-imprint algorithm (RFC 3161 §2.4.2); RSASSA-PSS is accepted
+    only with validated parameters (MGF1 + matching hash). Divergences fail
+    closed with `unsafe_digest_algorithm` / `unsafe_signature_algorithm` plus
+    structured diagnostics. The verifier interface now receives the full
+    admissible digest family (`expectedDigests`), computed canonically in
+    `computeCanonicalEventDigests`; stamp-time verification only ever accepts
+    the SHA-256 imprint the request used.
+  - **Constant-time imprints (TSA4):** all imprint comparisons use
+    `constantTimeBytesEqual` (`src/audit/constant-time.ts`).
+  - **No downgrade trust (AC2):** stronger TSA evidence whose recorded status
+    was degraded (`local`/`ntp_checked`/`tsa_failed`) is a chain failure —
+    `TSA_EVIDENCE_DOWNGRADED`, surfaced as the dedicated
+    `tsa_evidence_downgraded` archive finding.
+  - **Missing-cache findings (AC9):** a TSA-stamped event whose cached imprint
+    is missing or malformed is an explicit verification finding, never a
+    silent pass.
+  - **Parsed time ordering (AC11):** audit timestamp monotonicity and
+    ProofGraph counterexample freshness compare parsed UTC instants;
+    unparseable values are never sortable (audit: trail invalid; ProofGraph:
+    ranked oldest, deterministic).
+  - **Trusted severity authority (AR2):** archive timestamp-finding severity
+    derives exclusively from the trusted `resolveStrictMode(state)` resolution;
+    the manifest policy mode is cross-checked but never a severity authority.
+
 - **Certificate evidence trust hardening (CE1–CE5).** Approval certificates
   now rest exclusively on canonical, verdict-coherent review evidence — for
   both the architecture and the plan authority:

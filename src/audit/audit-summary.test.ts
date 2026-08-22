@@ -126,6 +126,7 @@ describe('audit summary', () => {
         missingTimestampEvidence: [],
         tsaImprintMismatches: [],
         tokenVerificationRequired: [],
+        tsaEvidenceDowngraded: [],
       };
       const summary = generateComplianceSummary(trail, SESSION_ID, brokenChain, TS3);
       const chainCheck = summary.checks.find((c) => c.name === 'chain_integrity');
@@ -250,6 +251,7 @@ describe('audit summary', () => {
         missingTimestampEvidence: [],
         tsaImprintMismatches: [],
         tokenVerificationRequired: [],
+        tsaEvidenceDowngraded: [],
       };
       const summary = generateComplianceSummary(trail, SESSION_ID, strictFailure, TS3);
       const chainCheck = summary.checks.find((c) => c.name === 'chain_integrity');
@@ -274,6 +276,7 @@ describe('audit summary', () => {
         missingTimestampEvidence: [],
         tsaImprintMismatches: [],
         tokenVerificationRequired: [],
+        tsaEvidenceDowngraded: [],
       };
       const summary = generateComplianceSummary(trail, SESSION_ID, strictValid, TS3);
       const chainCheck = summary.checks.find((c) => c.name === 'chain_integrity');

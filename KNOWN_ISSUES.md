@@ -80,20 +80,20 @@ disproven, update the status and link the evidence."
 
 ## Priority Work Packages
 
-| Package | Priority | Status          | Findings                                       | Summary                                                                                                                                                             |
-| ------- | -------- | --------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A       | P1       | Partially Fixed | G1, G2, G24, G25, G26                          | Four-eyes and identity normalization/reporting. G1/G2/G24/G25 fixed; G26 remains open.                                                                              |
-| B       | P1       | Partially Fixed | AC1, AC2, AC3, AC4, AC5, TSA1, TSA2            | Hash-chain, canonical digest, TSA, and NTP hardening. AC1, AC3, AC4, and AC5 fixed; AC2 and TSA1–TSA2 remain open.                                                  |
-| C       | P1       | Partially Fixed | AR1, AR2, AUD2                                 | Archive integrity and audit write-lock recovery. AR1 and AUD2 fixed (#670); AR2 remains open.                                                                       |
-| D       | P1       | Fixed           | R1, R2, R3, R4, R5, AC3                        | Secret-leak, redaction, logging, telemetry boundaries. R3, R5 fixed (#585); R1, R2, R4, AC3 fixed (redaction fail-closed).                                          |
-| E       | P1       | Partially Fixed | H1, H2, H4, C1, C2, C3, C4, C5, M1, M2, M3, I4 | Hook, CLI, MCP, installer, and integration fail-closed hardening. H1, H2, H4, M1, M3 and C2–C5 fixed (#645, #646, #667); I4 partially fixed; C1 and M2 remain open. |
-| F       | P2       | Partially Fixed | G3, G7, G9, G15, AC6, AC7, G12, G13            | State-machine correctness and audit completeness. G3 and G9 are fixed pre-existing; G7 is fixed by #421 and AC7 by #678; G15, AC6, and G12–G13 remain open.         |
+| Package | Priority | Status          | Findings                                       | Summary                                                                                                                                                                         |
+| ------- | -------- | --------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A       | P1       | Partially Fixed | G1, G2, G24, G25, G26                          | Four-eyes and identity normalization/reporting. G1/G2/G24/G25 fixed; G26 remains open.                                                                                          |
+| B       | P1       | Fixed           | AC1, AC2, AC3, AC4, AC5, TSA1, TSA2            | Hash-chain, canonical digest, TSA, and NTP hardening. AC2 and TSA1–TSA2 fixed by the archive/TSA trust anchor hardening (TSA_EVIDENCE_DOWNGRADED + RFC 3161 verifier contract). |
+| C       | P1       | Fixed           | AR1, AR2, AUD2                                 | Archive integrity and audit write-lock recovery. AR1 and AUD2 fixed (#670); AR2 fixed by trusted-policy severity derivation.                                                    |
+| D       | P1       | Fixed           | R1, R2, R3, R4, R5, AC3                        | Secret-leak, redaction, logging, telemetry boundaries. R3, R5 fixed (#585); R1, R2, R4, AC3 fixed (redaction fail-closed).                                                      |
+| E       | P1       | Partially Fixed | H1, H2, H4, C1, C2, C3, C4, C5, M1, M2, M3, I4 | Hook, CLI, MCP, installer, and integration fail-closed hardening. H1, H2, H4, M1, M3 and C2–C5 fixed (#645, #646, #667); I4 partially fixed; C1 and M2 remain open.             |
+| F       | P2       | Partially Fixed | G3, G7, G9, G15, AC6, AC7, G12, G13            | State-machine correctness and audit completeness. G3 and G9 are fixed pre-existing; G7 is fixed by #421 and AC7 by #678; G15, AC6, and G12–G13 remain open.                     |
 
 ## High-Priority Findings
 
 | ID   | Severity | Status                     | Summary                                                                                                                                                                   |
 | ---- | -------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC2  | HIGH     | Open                       | Timestamp verification must not trust downgraded status when stronger evidence is present.                                                                                |
+| AC2  | HIGH     | Fixed                      | Timestamp verification must not trust downgraded status when stronger evidence is present — TSA_EVIDENCE_DOWNGRADED chain reason + tsa_evidence_downgraded finding.       |
 | AC3  | HIGH     | Fixed                      | Audit argument summarization can expose scalar secrets and needs redaction hardening.                                                                                     |
 | AC4  | HIGH     | Fixed                      | NTP offset/delay calculation is RFC-aligned and captures T1 immediately before send (#728).                                                                               |
 | AC5  | HIGH     | Fixed                      | NTP responses validate protocol fields, peer-bound origin timestamp, and non-null transmit timestamp (#728).                                                              |
@@ -122,9 +122,9 @@ disproven, update the status and link the evidence."
 | AC6  | MEDIUM   | Open            | Review-flow completeness can report complete mid-flow. `TESTED_BUG_BEHAVIOR`.                                                                                 |
 | AC7  | MEDIUM   | Fixed           | Completeness summary totals are computed from flow-specific ticket, architecture, or review slots (#678).                                                     |
 | AC8  | MEDIUM   | Partially Fixed | Four-eyes reporting now uses structured identity; history handling remains open.                                                                              |
-| AC9  | MEDIUM   | Open            | Timestamp imprint comparison and missing-cache behavior need tightening.                                                                                      |
+| AC9  | MEDIUM   | Fixed           | Missing/malformed cached imprints are explicit findings; cached-vs-token imprint comparison is byte-wise constant-time.                                       |
 | AC10 | MEDIUM   | Not Verified    | Timestamp token verification should distinguish legacy format from tampering.                                                                                 |
-| AC11 | MEDIUM   | Open            | Timestamp comparisons should parse time values instead of relying on lexical order.                                                                           |
+| AC11 | MEDIUM   | Fixed           | Timestamp comparisons parse UTC instants (audit monotonicity + ProofGraph counterexample freshness); unparseable values are never sortable.                   |
 | G4   | MEDIUM   | Open            | `team-ci` degradation snapshot mode can remain inconsistent. `TESTED_BUG_BEHAVIOR`.                                                                           |
 | G6   | MEDIUM   | Open            | Command policy and terminal handling diverge for HYDRATE/ABORT. `TESTED_BUG_BEHAVIOR`.                                                                        |
 | G12  | MEDIUM   | Open            | ADR rejection is not represented in architecture state.                                                                                                       |
@@ -143,12 +143,12 @@ disproven, update the status and link the evidence."
 | C8   | MEDIUM   | Open            | Claude Code plugin install hint should respect force/overwrite semantics.                                                                                     |
 | C11  | MEDIUM   | Open            | Serve port allocation has a TOCTOU gap.                                                                                                                       |
 | T1   | MEDIUM   | Open            | Mandate section extraction should tolerate heading drift or fail with clearer contract. `TESTED_BUG_BEHAVIOR`.                                                |
-| AR2  | MEDIUM   | Open            | Archive timestamp severity should derive from trusted policy state.                                                                                           |
+| AR2  | MEDIUM   | Fixed           | Archive timestamp severity derives from the trusted `resolveStrictMode(state)` resolution; the manifest is never a severity authority.                        |
 | AR3  | MEDIUM   | Open            | Archive strict-mode escalation diagnostics need consistency.                                                                                                  |
 | AR4  | MEDIUM   | Open            | Unexpected-file checks should surface inconclusive directory reads.                                                                                           |
 | AR5  | MEDIUM   | Not Verified    | Archive binding event ordering should avoid phantom evidence.                                                                                                 |
-| TSA1 | MEDIUM   | Open            | RFC3161 verifier should enforce timestamping EKU.                                                                                                             |
-| TSA2 | MEDIUM   | Not Verified    | TSA signature hash algorithm handling needs review.                                                                                                           |
+| TSA1 | MEDIUM   | Fixed           | RFC3161 verifier enforces the TSA signer contract: critical, exclusive id-kp-timeStamping EKU.                                                                |
+| TSA2 | MEDIUM   | Fixed           | Digest/signature allowlists (SHA-256/384/512), SignerInfo digestAlgorithm == messageImprint hash, validated RSASSA-PSS parameters.                            |
 | S1   | MEDIUM   | Open            | State schema versioning needs forward-migration strategy.                                                                                                     |
 | S2   | MEDIUM   | Open            | Policy snapshot parse transforms can rewrite historical state.                                                                                                |
 | MUT2 | MEDIUM   | Open            | Coverage excludes the production `src/integration/plugin-helpers.ts` by wildcard; its enforcement paths do not count toward the 80% gate or mutation scope.   |
@@ -195,8 +195,8 @@ disproven, update the status and link the evidence."
 | AR6  | LOW        | Open         | Archive finding severity sorting should not rely on lexicographic order.                                                                                                                           |
 | AR7  | LOW        | Open         | Archive manifest classification metadata should be considered for digest binding.                                                                                                                  |
 | AR8  | LOW        | Not Verified | Decision receipt raw-include defaults need verification.                                                                                                                                           |
-| TSA3 | LOW        | Open         | RFC5280 critical-extension handling should be reviewed.                                                                                                                                            |
-| TSA4 | LOW        | Open         | TSA imprint comparison can use constant-time comparison.                                                                                                                                           |
+| TSA3 | LOW        | Fixed        | Unknown critical extensions reject; non-critical unknown extensions tolerated per RFC 5280.                                                                                                        |
+| TSA4 | LOW        | Fixed        | Imprint comparisons are constant-time (`src/audit/constant-time.ts`).                                                                                                                              |
 | AUD1 | LOW        | Open         | Audit skipped-line count should be surfaced by archive readers.                                                                                                                                    |
 | AUD3 | LOW        | Open         | Audit append rename can reuse Windows retry behavior.                                                                                                                                              |
 | AUD4 | LOW        | Open         | Sparse-array canonical JSON behavior should be documented/tested.                                                                                                                                  |
@@ -362,13 +362,13 @@ certificate evidence trust hardening (2026-08-17 section): canonical-only
 linkage, explicit verdict requirement, and negative-path coherence proofs at
 the tool and authority layers.
 
-| ID   | Severity   | Status       | Tracking | Summary                                                                                                                                                                                                                                                                                                                              |
-| ---- | ---------- | ------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| CEF1 | HIGH       | Fixed        | #816     | Certificate binding provenance: required `reviewBinding`, exact-subject evidence, no cross-digest fallback, binding co-signs `certificateId`, gate/mint single resolution.                                                                                                                                                           |
-| CEF2 | MEDIUM     | Fixed        | #816     | Verdict coherence at the certificate authority boundary: rejecting evidence cannot co-sign `current_review`; `accept` evidence contradicts `review_exhausted` and blocks via `ARCHITECTURE_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION`.                                                                                                  |
-| CE1  | MEDIUM     | Fixed        | #816   | `current_review` tolerates evidence WITHOUT `capturedVerdict` (SDK attestations without `overallVerdict`, legacy captures); only a contradicting verdict blocks. Hardening: require `capturedVerdict` on new-generation evidence once legacy states are out of scope.                                                                |
-| CE2  | LOW-MEDIUM | Fixed        | #816   | Non-canonical linkage fallback: without `obligation.invocationId` and without a `consumedByObligationId`-marked invocation, the resolver binds the NEWEST findingsHash-bearing invocation of the same `obligationId` — weaker than canonical linkage. Production plugin hooks set `invocationId`; direct host-task captures may not. |
-| CE3  | LOW        | Fixed        | #816   | No normal production transition path is proven to produce `reviewCompletion` ↔ `capturedVerdict` contradictions; the coherence guard is source-level defense-in-depth, pinned by negative-path tests.                                                                                                                                |
+| ID   | Severity   | Status | Tracking | Summary                                                                                                                                                                                                                                                                                                                              |
+| ---- | ---------- | ------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| CEF1 | HIGH       | Fixed  | #816     | Certificate binding provenance: required `reviewBinding`, exact-subject evidence, no cross-digest fallback, binding co-signs `certificateId`, gate/mint single resolution.                                                                                                                                                           |
+| CEF2 | MEDIUM     | Fixed  | #816     | Verdict coherence at the certificate authority boundary: rejecting evidence cannot co-sign `current_review`; `accept` evidence contradicts `review_exhausted` and blocks via `ARCHITECTURE_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION`.                                                                                                  |
+| CE1  | MEDIUM     | Fixed  | #816     | `current_review` tolerates evidence WITHOUT `capturedVerdict` (SDK attestations without `overallVerdict`, legacy captures); only a contradicting verdict blocks. Hardening: require `capturedVerdict` on new-generation evidence once legacy states are out of scope.                                                                |
+| CE2  | LOW-MEDIUM | Fixed  | #816     | Non-canonical linkage fallback: without `obligation.invocationId` and without a `consumedByObligationId`-marked invocation, the resolver binds the NEWEST findingsHash-bearing invocation of the same `obligationId` — weaker than canonical linkage. Production plugin hooks set `invocationId`; direct host-task captures may not. |
+| CE3  | LOW        | Fixed  | #816     | No normal production transition path is proven to produce `reviewCompletion` ↔ `capturedVerdict` contradictions; the coherence guard is source-level defense-in-depth, pinned by negative-path tests.                                                                                                                                |
 
 ## 2026-08-17 — Certificate Evidence Trust Hardening (CE1–CE5)
 
@@ -387,20 +387,49 @@ approvedSubjectDigest`). The force-convergence human gate therefore blocks with
 reviewed — recovery is `/review-decision changes_requested` plus a fresh
 review round.
 
-| ID  | Severity | Status | Summary |
-| --- | -------- | ------ | ------- |
-| CE1 | MEDIUM | Fixed | `current_review` (architecture and plan) requires an explicit `capturedVerdict === 'accept'`; absent verdicts fail closed with a `verdict_missing` resolution. Legacy `approve` vocabulary is normalized at hydration only — never manufactured at the authority boundary. |
-| CE2 | LOW-MEDIUM | Fixed | Canonical linkage is a COHERENT relation, not identifier equality: `obligation.invocationId === invocation.invocationId` AND the invocation must back-reference the same `obligationId` AND `obligationType`. Identity is uniqueness-enforced at the schema boundary (`refineAssuranceIdentityUniqueness`: unique obligation/invocation/attempt ids), so one invocation can never canonically support several subjects. Obligations without linkage resolve nothing; the newest-findingsHash obligationId fallback is removed and incoherent back-references are schema-rejected (`refineAssuranceInvocationLinkageCoherence`). |
-| CE3 | LOW | Fixed | Verdict-coherence contradictions are pinned by negative-path tests at both layers: the review tool blocks verdict/findings mismatches, and the certificate authority blocks captured-verdict-vs-completion contradictions (`ARCHITECTURE_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION`, `PLAN_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION`). |
-| CE4 | MEDIUM | Fixed | Plan certificate binding is exact-subject only; the `subjectMatched ?? latest` cross-subject fallback is removed. |
-| CE5 | MEDIUM | Fixed | Plan approval requires a coherent `reviewCompletion` plus a bound `reviewBinding`; exhaustion overrides require a non-accept verdict AND `reviewedSubjectDigest === approvedSubjectDigest`. |
+| ID  | Severity   | Status | Summary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| --- | ---------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CE1 | MEDIUM     | Fixed  | `current_review` (architecture and plan) requires an explicit `capturedVerdict === 'accept'`; absent verdicts fail closed with a `verdict_missing` resolution. Legacy `approve` vocabulary is normalized at hydration only — never manufactured at the authority boundary.                                                                                                                                                                                                                                                                                                                                                      |
+| CE2 | LOW-MEDIUM | Fixed  | Canonical linkage is a COHERENT relation, not identifier equality: `obligation.invocationId === invocation.invocationId` AND the invocation must back-reference the same `obligationId` AND `obligationType`. Identity is uniqueness-enforced at the schema boundary (`refineAssuranceIdentityUniqueness`: unique obligation/invocation/attempt ids), so one invocation can never canonically support several subjects. Obligations without linkage resolve nothing; the newest-findingsHash obligationId fallback is removed and incoherent back-references are schema-rejected (`refineAssuranceInvocationLinkageCoherence`). |
+| CE3 | LOW        | Fixed  | Verdict-coherence contradictions are pinned by negative-path tests at both layers: the review tool blocks verdict/findings mismatches, and the certificate authority blocks captured-verdict-vs-completion contradictions (`ARCHITECTURE_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION`, `PLAN_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION`).                                                                                                                                                                                                                                                                                               |
+| CE4 | MEDIUM     | Fixed  | Plan certificate binding is exact-subject only; the `subjectMatched ?? latest` cross-subject fallback is removed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| CE5 | MEDIUM     | Fixed  | Plan approval requires a coherent `reviewCompletion` plus a bound `reviewBinding`; exhaustion overrides require a non-accept verdict AND `reviewedSubjectDigest === approvedSubjectDigest`.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
 Residual findings introduced or confirmed by this hardening:
 
-| ID  | Severity | Status | Summary |
-| --- | -------- | ------ | ------- |
-| CE6 | LOW | Open | Legacy plan certificates minted before the binding contract hydrate but fail `hasCurrentPlanApprovalCertificate` — their critical claims are no longer gate-authoritative (fail-closed). Re-approval after a fresh review round mints a bound certificate. |
-| CE7 | LOW | Open | Legacy sessions persisted at `PLAN_REVIEW` without `reviewCompletion` hydrate as `pending` and cannot approve until the review loop converges again (no forward migration; see S1). |
+| ID  | Severity | Status | Summary                                                                                                                                                                                                                                                    |
+| --- | -------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CE6 | LOW      | Open   | Legacy plan certificates minted before the binding contract hydrate but fail `hasCurrentPlanApprovalCertificate` — their critical claims are no longer gate-authoritative (fail-closed). Re-approval after a fresh review round mints a bound certificate. |
+| CE7 | LOW      | Open   | Legacy sessions persisted at `PLAN_REVIEW` without `reviewCompletion` hydrate as `pending` and cannot approve until the review loop converges again (no forward migration; see S1).                                                                        |
+
+## 2026-08-22 — Archive / TSA Trust Anchor Hardening (TSA1–TSA4, AR2, AC2, AC9, AC11)
+
+RFC 3161 verification now enforces an explicit TSA signer contract: critical,
+exclusive id-kp-timeStamping EKU; SHA-256/384/512 digest/signature allowlists
+with `SignerInfo.digestAlgorithm === messageImprint.hashAlgorithm` coherence
+and validated RSASSA-PSS parameters; unknown critical extensions reject; all
+imprint comparisons constant-time (`src/audit/constant-time.ts`). Downgraded
+timestamp evidence statuses are a chain failure (`TSA_EVIDENCE_DOWNGRADED`,
+`tsa_evidence_downgraded` finding); timestamp ordering parses UTC instants in
+the audit monotonicity check and the ProofGraph counterexample freshness sort.
+Archive timestamp severity derives exclusively from the trusted
+`resolveStrictMode(state)` resolution. Closes #643.
+
+Mutation admission attempt (docs/testing-strategy.md admission rule: ≥ 80
+targeted score required):
+
+| Module                                                     | Targeted score | Admitted             |
+| ---------------------------------------------------------- | -------------- | -------------------- |
+| `src/audit/timestamp-token-verification.ts`                | 86.67          | Yes                  |
+| `src/audit/rfc-3161-pkijs-verifier.ts`                     | 78.61          | No (below threshold) |
+| `src/audit/timestamp-verification.ts`                      | 70.09          | No (below threshold) |
+| `src/adapters/workspace/archive-timestamp-verification.ts` | 57.14          | No (below threshold) |
+
+The three non-admitted modules carry full behavioral test coverage (36
+verifier tests incl. EKU/exclusivity/critical-extension/algorithm negatives,
+downgrade matrices, monotonicity parse cases); their targeted scores remain
+below the admission threshold — follow-up: additional mutant-kill tests or a
+stryker attribution investigation.
 
 ## Maintenance Rules
 

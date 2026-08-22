@@ -103,6 +103,7 @@ export const ArchiveFindingCodeSchema = z.enum([
   'state_invalid',
   'timestamp_unanchored',
   'tsa_verification_failed',
+  'tsa_evidence_downgraded',
   'artifact_binding_missing',
   'artifact_binding_mismatch',
 ]);
