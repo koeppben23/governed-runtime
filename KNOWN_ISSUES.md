@@ -357,17 +357,50 @@ guard (`ARCHITECTURE_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION`) so bound evidence
 that contradicts the recorded review completion blocks approval.
 
 CEF1/CEF2 close the two review findings on the certificate trust chain (merged
-via #816, squash-merge commit `e29c50ca`); they do NOT resolve CE1–CE3, which
-are properties of the evidence-resolution mechanism the fixes build on, not
-side effects of the fixes themselves.
+via #816, squash-merge commit `e29c50ca`); CE1–CE3 are resolved by the
+certificate evidence trust hardening (2026-08-17 section): canonical-only
+linkage, explicit verdict requirement, and negative-path coherence proofs at
+the tool and authority layers.
 
 | ID   | Severity   | Status       | Tracking | Summary                                                                                                                                                                                                                                                                                                                              |
 | ---- | ---------- | ------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | CEF1 | HIGH       | Fixed        | #816     | Certificate binding provenance: required `reviewBinding`, exact-subject evidence, no cross-digest fallback, binding co-signs `certificateId`, gate/mint single resolution.                                                                                                                                                           |
 | CEF2 | MEDIUM     | Fixed        | #816     | Verdict coherence at the certificate authority boundary: rejecting evidence cannot co-sign `current_review`; `accept` evidence contradicts `review_exhausted` and blocks via `ARCHITECTURE_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION`.                                                                                                  |
-| CE1  | MEDIUM     | Open         | #816     | `current_review` tolerates evidence WITHOUT `capturedVerdict` (SDK attestations without `overallVerdict`, legacy captures); only a contradicting verdict blocks. Hardening: require `capturedVerdict` on new-generation evidence once legacy states are out of scope.                                                                |
-| CE2  | LOW-MEDIUM | Open         | #816     | Non-canonical linkage fallback: without `obligation.invocationId` and without a `consumedByObligationId`-marked invocation, the resolver binds the NEWEST findingsHash-bearing invocation of the same `obligationId` — weaker than canonical linkage. Production plugin hooks set `invocationId`; direct host-task captures may not. |
-| CE3  | LOW        | Not Verified | —        | No normal production transition path is proven to produce `reviewCompletion` ↔ `capturedVerdict` contradictions; the coherence guard is source-level defense-in-depth, pinned by negative-path tests.                                                                                                                                |
+| CE1  | MEDIUM     | Fixed        | #816   | `current_review` tolerates evidence WITHOUT `capturedVerdict` (SDK attestations without `overallVerdict`, legacy captures); only a contradicting verdict blocks. Hardening: require `capturedVerdict` on new-generation evidence once legacy states are out of scope.                                                                |
+| CE2  | LOW-MEDIUM | Fixed        | #816   | Non-canonical linkage fallback: without `obligation.invocationId` and without a `consumedByObligationId`-marked invocation, the resolver binds the NEWEST findingsHash-bearing invocation of the same `obligationId` — weaker than canonical linkage. Production plugin hooks set `invocationId`; direct host-task captures may not. |
+| CE3  | LOW        | Fixed        | #816   | No normal production transition path is proven to produce `reviewCompletion` ↔ `capturedVerdict` contradictions; the coherence guard is source-level defense-in-depth, pinned by negative-path tests.                                                                                                                                |
+
+## 2026-08-17 — Certificate Evidence Trust Hardening (CE1–CE5)
+
+Certificate evidence resolution is now canonical-only and verdict-strict for
+BOTH approval certificate authorities. `obligation.invocationId` is the single
+resolver key; `obligationId` on invocation evidence is diagnostic only. Plan
+approval certificates carry a discriminated `reviewBinding`
+(`current_review` | `review_exhausted_override`), co-signing the certificate
+identity, and the plan state records a `reviewCompletion` derived at review
+time by the canonical `resolvePlanReviewCompletion` authority.
+
+The plan exhaustion override is STRICTER than architecture: it may only release
+the exact subject the last review covered (`reviewedSubjectDigest ===
+approvedSubjectDigest`). The force-convergence human gate therefore blocks with
+`PLAN_REVIEW_OVERRIDE_SUBJECT_MISMATCH` when the final revision was never
+reviewed — recovery is `/review-decision changes_requested` plus a fresh
+review round.
+
+| ID  | Severity | Status | Summary |
+| --- | -------- | ------ | ------- |
+| CE1 | MEDIUM | Fixed | `current_review` (architecture and plan) requires an explicit `capturedVerdict === 'accept'`; absent verdicts fail closed with a `verdict_missing` resolution. Legacy `approve` vocabulary is normalized at hydration only — never manufactured at the authority boundary. |
+| CE2 | LOW-MEDIUM | Fixed | Canonical linkage only: obligations without `invocationId` resolve nothing; the newest-findingsHash obligationId fallback is removed. All production writers (plugin task evidence, transport evidence, SDK-session orchestrator) set the linkage. |
+| CE3 | LOW | Fixed | Verdict-coherence contradictions are pinned by negative-path tests at both layers: the review tool blocks verdict/findings mismatches, and the certificate authority blocks captured-verdict-vs-completion contradictions (`ARCHITECTURE_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION`, `PLAN_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION`). |
+| CE4 | MEDIUM | Fixed | Plan certificate binding is exact-subject only; the `subjectMatched ?? latest` cross-subject fallback is removed. |
+| CE5 | MEDIUM | Fixed | Plan approval requires a coherent `reviewCompletion` plus a bound `reviewBinding`; exhaustion overrides require a non-accept verdict AND `reviewedSubjectDigest === approvedSubjectDigest`. |
+
+Residual findings introduced or confirmed by this hardening:
+
+| ID  | Severity | Status | Summary |
+| --- | -------- | ------ | ------- |
+| CE6 | LOW | Open | Legacy plan certificates minted before the binding contract hydrate but fail `hasCurrentPlanApprovalCertificate` — their critical claims are no longer gate-authoritative (fail-closed). Re-approval after a fresh review round mints a bound certificate. |
+| CE7 | LOW | Open | Legacy sessions persisted at `PLAN_REVIEW` without `reviewCompletion` hydrate as `pending` and cannot approve until the review loop converges again (no forward migration; see S1). |
 
 ## Maintenance Rules
 

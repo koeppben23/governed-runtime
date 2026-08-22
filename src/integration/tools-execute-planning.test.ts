@@ -698,11 +698,14 @@ describe('plan', () => {
       expect(reviewed!.subjectDigest).not.toBe(state!.plan!.current.digest);
     });
 
-    it('TEAM: human approve advances the force-converged plan to VALIDATION', async () => {
+    it('TEAM: human approve of the force-converged plan blocks on subject divergence (CE5)', async () => {
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
       await exhaustPlanReviews(3);
 
+      // The last independent review covered the PRIOR plan revision; the final
+      // revision was never reviewed. An exhaustion override may only release
+      // the exact subject the last review covered — approve must fail closed.
       recordUserDecision('approve');
       const decisionResult = parseToolResult(
         await decision.execute(
@@ -710,15 +713,11 @@ describe('plan', () => {
           ctx,
         ),
       );
-      expect(decisionResult.error).not.toBe(true);
+      expect(decisionResult.error).toBe(true);
+      expect(decisionResult.code).toBe('PLAN_REVIEW_OVERRIDE_SUBJECT_MISMATCH');
       const state = await readState(await currentSessionDir());
-      expect(state!.phase).toBe('VALIDATION');
-      expect(state!.plan?.approvalCertificate).toMatchObject({
-        flow: 'plan',
-        authorityDigest: state!.plan?.current.digest,
-        approvedBy: expect.any(String),
-        certificateId: expect.any(String),
-      });
+      expect(state!.phase).toBe('PLAN_REVIEW');
+      expect(state!.plan?.approvalCertificate).toBeUndefined();
     });
 
     it('TEAM: human changes_requested sends the force-converged plan back to PLAN', async () => {

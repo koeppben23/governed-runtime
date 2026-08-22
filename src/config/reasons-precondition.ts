@@ -298,6 +298,45 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'PLAN_REVIEW_EVIDENCE_REQUIRED',
+    category: 'precondition',
+    messageTemplate:
+      'Plan approval requires bindable review evidence: canonical obligation linkage, an explicit captured reviewer verdict, and coherence with the recorded review completion. Review completion: {reviewCompletion}, evidence status: {reviewEvidence}, captured reviewer verdict: {capturedVerdict}.',
+    recoverySteps: [
+      'Reopen the plan review cycle with /review-decision changes_requested',
+      'Complete an independent review of the current plan version so evidence is captured with an explicit verdict',
+      'Then re-run /review-decision approve so the certificate can bind the evidence',
+    ],
+    quickFixCommand: '/review-decision changes_requested',
+  },
+
+  {
+    code: 'PLAN_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION',
+    category: 'precondition',
+    messageTemplate:
+      'Plan approval is blocked: the bound review evidence contradicts the recorded review completion. Review completion: {reviewCompletion}, captured reviewer verdict: {capturedVerdict}.',
+    recoverySteps: [
+      'Request plan changes with /review-decision changes_requested',
+      'Complete an independent review whose verdict matches the recorded review completion',
+      'Then re-run /review-decision approve so the certificate can bind coherent evidence',
+    ],
+    quickFixCommand: '/review-decision changes_requested',
+  },
+
+  {
+    code: 'PLAN_REVIEW_OVERRIDE_SUBJECT_MISMATCH',
+    category: 'precondition',
+    messageTemplate:
+      'Plan approval is blocked: the review budget exhausted, but the last bound review evidence covered a different plan subject than the one being approved. Reviewed subject digest: {reviewedSubjectDigest}, approved subject digest: {approvedSubjectDigest}. An exhaustion override may only release the exact plan the last review covered.',
+    recoverySteps: [
+      'Request plan changes with /review-decision changes_requested',
+      'Run a fresh independent review of the current plan revision',
+      'Then re-run /review-decision approve',
+    ],
+    quickFixCommand: '/review-decision changes_requested',
+  },
+
+  {
     code: 'NO_PLAN',
     category: 'precondition',
     messageTemplate: 'No plan exists to review.',

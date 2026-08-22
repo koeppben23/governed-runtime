@@ -32,8 +32,14 @@ const CERTIFICATE = {
   certificateId: '00000000-0000-4000-8000-000000000001',
   planVersion: 1,
   planRecordDigest: 'record-digest',
-  reviewObligationId: null,
-  reviewEvidenceDigest: null,
+  reviewBinding: {
+    kind: 'current_review' as const,
+    reviewObligationId: '00000000-0000-4000-8000-00000000000a',
+    reviewEvidenceDigest: 'review-evidence-digest',
+    reviewedSubjectDigest: 'plan-digest',
+  },
+  reviewObligationId: '00000000-0000-4000-8000-00000000000a',
+  reviewEvidenceDigest: 'review-evidence-digest',
 };
 const PLAN_CLAIM = {
   claimId: '00000000-0000-4000-8000-000000000002',
@@ -407,8 +413,14 @@ describe('certificate integrity', () => {
       approvedAt: NOW,
       approvedBy: 'test',
       certificateId: '00000000-0000-4000-8000-000000000003',
-      reviewObligationId: null,
-      reviewEvidenceDigest: null,
+      reviewBinding: {
+        kind: 'current_review',
+        reviewObligationId: '00000000-0000-4000-8000-00000000000b',
+        reviewEvidenceDigest: 'ev-digest',
+        reviewedSubjectDigest: 'plan-digest',
+      },
+      reviewObligationId: '00000000-0000-4000-8000-00000000000b',
+      reviewEvidenceDigest: 'ev-digest',
     });
   }
 

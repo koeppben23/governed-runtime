@@ -103,7 +103,7 @@ export const ARCHITECTURE_REASONS: readonly BlockedReason[] = [
     code: 'ARCHITECTURE_REVIEW_EVIDENCE_REQUIRED',
     category: 'precondition',
     messageTemplate:
-      'Architecture approval requires bound independent-review evidence. reviewer_accepted demands evidence for exactly the current ADR digest; review_exhausted demands the latest real bound review evidence. Current review completion: {reviewCompletion}.',
+      'Architecture approval requires bound independent-review evidence with an explicit captured reviewer verdict. reviewer_accepted demands evidence for exactly the current ADR digest; review_exhausted demands the latest real bound review evidence. Current review completion: {reviewCompletion}. Captured reviewer verdict: {capturedVerdict}.',
     recoverySteps: [
       'Reopen the review cycle with /review-decision changes_requested',
       'Complete an independent review of the current ADR revision (or let the review budget exhaust)',

@@ -227,6 +227,68 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
   attempts: [],
 };
 
+/**
+ * Canonical bound plan review evidence for approve-path tests: a consumed plan
+ * obligation for exactly the current plan digest plus its invocation with an
+ * explicit `accept` captured verdict and canonical invocation linkage.
+ */
+export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
+  obligation: {
+    obligationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    obligationType: 'plan',
+    iteration: 0,
+    planVersion: 1,
+    criteriaVersion: 'criteria-v1',
+    mandateDigest: 'mandate-digest-of-plan-review-criteria',
+    createdAt: FIXED_TIME,
+    pluginHandshakeAt: null,
+    status: 'consumed',
+    invocationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+    blockedCode: null,
+    fulfilledAt: FIXED_TIME,
+    consumedAt: FIXED_TIME,
+    subjectDigest: 'digest-of-plan',
+    reviewMaterial: {
+      content: '## Plan\n1. Fix auth\n2. Add tests',
+      materialDigest: 'material-digest-of-plan-review',
+      subjectDigest: 'digest-of-plan',
+    },
+    reviewSubjectScope: {
+      kind: 'artifact',
+      artifact: {
+        kind: 'plan',
+        digest: 'digest-of-plan',
+        sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }]],
+      },
+    },
+    repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+    maxReviewerOutputRepairAttempts: 0,
+  },
+  invocations: [
+    {
+      invocationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      obligationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      obligationType: 'plan',
+      parentSessionId: 'parent-session-1',
+      childSessionId: 'child-session-1',
+      agentType: 'flowguard-reviewer',
+      invocationMode: 'host_subagent_task',
+      hostVisible: true,
+      promptHash: 'prompt-hash-of-plan-review',
+      mandateDigest: 'mandate-digest-of-plan-review-criteria',
+      criteriaVersion: 'criteria-v1',
+      findingsHash: 'findings-hash-of-plan-review',
+      invokedAt: FIXED_TIME,
+      fulfilledAt: FIXED_TIME,
+      consumedByObligationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      capturedVerdict: 'accept',
+      reviewOutputMode: 'structured_output',
+      structuredOutputUsed: true,
+      reviewAssuranceLevel: 'structured_high',
+    },
+  ],
+});
+
 export const PLAN_EVIDENCE: PlanEvidence = {
   body: '## Plan\n1. Fix auth\n2. Add tests',
   digest: 'digest-of-plan',
@@ -249,6 +311,7 @@ export const PLAN_EVIDENCE: PlanEvidence = {
 export const PLAN_RECORD: PlanRecord = {
   current: PLAN_EVIDENCE,
   history: [],
+  reviewCompletion: 'pending',
 };
 
 export const SELF_REVIEW_CONVERGED: SelfReviewLoop = {
@@ -440,8 +503,9 @@ export function makeProgressedState(phase: Phase): SessionState {
     case 'PLAN_REVIEW':
       return makeState('PLAN_REVIEW', {
         ticket: TICKET,
-        plan: PLAN_RECORD,
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         selfReview: SELF_REVIEW_CONVERGED,
+        reviewAssurance: PLAN_REVIEW_ASSURANCE,
       });
     case 'VALIDATION':
       return makeState('VALIDATION', {

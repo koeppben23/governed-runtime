@@ -456,6 +456,12 @@ export async function fulfillStrictReviewObligation(
     findingsHash: hashFindings(findings),
     invokedAt: new Date().toISOString(),
     fulfilledAt: new Date().toISOString(),
+    // Production evidence carries the reviewer's explicit verdict
+    // (transport-evidence sets capturedVerdict from findings.overallVerdict;
+    // host-task captures set it from captured findings). The helper mirrors
+    // that contract so direct tool-flow tests exercise the same strict
+    // verdict-presence rules as production.
+    capturedVerdict: findings.overallVerdict,
     // BUG-17 Batch 10: host_task_required mode resolves findings from invocation
     // evidence (capturedRawFindings) rather than from agent-submitted args.
     // Without this, resolveHostTaskFindings returns null → REVIEW_FINDINGS_REQUIRED.
@@ -480,12 +486,12 @@ export async function fulfillStrictReviewObligation(
               ...item,
               pluginHandshakeAt: new Date().toISOString(),
               status: obligationAcceptedByReviewer ? ('fulfilled' as const) : item.status,
-              invocationId: obligationAcceptedByReviewer
-                ? invocation.invocationId
-                : item.invocationId,
-              fulfilledAt: obligationAcceptedByReviewer
-                ? new Date().toISOString()
-                : item.fulfilledAt,
+              // Canonical linkage mirrors production: the plugin fulfills the
+              // obligation with the invocation id (fulfillObligation) before
+              // the tool consumes it. Without this, consumed obligations stay
+              // linkage-less and the strict resolver fails closed.
+              invocationId: invocation.invocationId,
+              fulfilledAt: new Date().toISOString(),
             }
           : item,
       ),

@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Certificate evidence trust hardening (CE1–CE5).** Approval certificates
+  now rest exclusively on canonical, verdict-coherent review evidence — for
+  both the architecture and the plan authority:
+  - **Canonical linkage only (CE2):** `obligation.invocationId` is the single
+    resolver key. The `obligationId`-scoped newest-first fallback is removed;
+    `obligationId` on invocation evidence is diagnostic/provenance information.
+  - **Explicit verdict requirement (CE1):** `current_review` bindings demand a
+    captured verdict of `accept`. Evidence without a verdict resolves as
+    `verdict_missing` and blocks with `ARCHITECTURE_REVIEW_EVIDENCE_REQUIRED` /
+    `PLAN_REVIEW_EVIDENCE_REQUIRED`. The legacy `approve` vocabulary is
+    normalized at hydration only — never manufactured at the authority
+    boundary.
+  - **Plan certificates carry a discriminated `reviewBinding`** and the plan
+    state records a `reviewCompletion` (`pending` | `reviewer_accepted` |
+    `review_exhausted`) derived at review time by the canonical
+    `resolvePlanReviewCompletion`. Gate and mint share ONE resolution; the
+    binding co-signs the `certificateId`.
+  - **Strict plan exhaustion override:** a `review_exhausted_override` requires
+    a non-accept verdict AND `reviewedSubjectDigest === approvedSubjectDigest`
+    — an unreviewed plan revision is never releasable by an override
+    (`PLAN_REVIEW_OVERRIDE_SUBJECT_MISMATCH`). Verdict/completion
+    contradictions block with `PLAN_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION`.
+  - **Fail-closed legacy handling:** legacy plan certificates without a
+    `reviewBinding` remain readable but are no longer gate-authoritative for
+    critical claims; legacy `PLAN_REVIEW` sessions without a recorded
+    completion cannot approve until a review loop converges again (see
+    KNOWN_ISSUES CE6/CE7).
+
 - **Unconditional ProofGraph enforcement and a fail-closed claim contract
   (#762).** The gate previously depended on a `proofGraphPolicy` switch that no
   config, preset, or resolver could reach — it could never fire. A switch is also

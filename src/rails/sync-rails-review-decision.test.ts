@@ -84,8 +84,14 @@ function withCertifiedCriticalPlan(state: ReturnType<typeof makeProgressedState>
         certificateId: '00000000-0000-4000-8000-000000000764',
         planVersion: plan.current.planVersion,
         planRecordDigest: plan.current.recordDigest,
-        reviewObligationId: null,
-        reviewEvidenceDigest: null,
+        reviewBinding: {
+          kind: 'current_review' as const,
+          reviewObligationId: '00000000-0000-4000-8000-000000000765',
+          reviewEvidenceDigest: 'review-evidence-digest',
+          reviewedSubjectDigest: plan.current.digest,
+        },
+        reviewObligationId: '00000000-0000-4000-8000-000000000765',
+        reviewEvidenceDigest: 'review-evidence-digest',
       },
     },
   };
@@ -707,7 +713,7 @@ describe('review-decision rail', () => {
       }
     });
 
-    it('does not apply the gate to PLAN_REVIEW approval', () => {
+    it('the ProofGraph gate does not apply to PLAN_REVIEW approval', () => {
       const state = makeProgressedState('PLAN_REVIEW');
       const result = executeReviewDecision(
         { ...state, proofGraph: proofGraph() },
