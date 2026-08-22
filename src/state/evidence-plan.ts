@@ -6,7 +6,7 @@
  */
 
 import { z } from 'zod';
-import { LoopVerdict, RevisionDelta } from './evidence-primitives.js';
+import { LoopVerdict, RevisionDelta, ReviewCompletion } from './evidence-primitives.js';
 import { ReviewFindings } from './evidence-review.js';
 import { PlanApprovalCertificate, PlanClaimDeclarations } from './proofgraph-approval.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
@@ -109,6 +109,14 @@ export const PlanRecord = z
     claimDeclarations: PlanClaimDeclarations.optional(),
     /** User approval certificate bound to the current plan authority. */
     approvalCertificate: PlanApprovalCertificate.optional(),
+    /**
+     * Completion of the independent plan review cycle for the current subject
+     * (CE5). Lifecycle evidence, never part of the plan's content identity.
+     * Optional for legacy hydration: absent means `pending` at the authority
+     * boundary — a converged-but-unmarked legacy plan cannot be approved, the
+     * review loop must converge again. All controlled writers set it.
+     */
+    reviewCompletion: ReviewCompletion.optional(),
   })
   .readonly();
 export type PlanRecord = z.infer<typeof PlanRecord>;
@@ -127,3 +135,28 @@ export const SelfReviewLoop = z.object({
   verdict: LoopVerdict,
 });
 export type SelfReviewLoop = z.infer<typeof SelfReviewLoop>;
+
+/**
+ * Completion of the plan review cycle for the current subject, derived at
+ * review time from the loop state (CE5, architecture parity):
+ *
+ * - `reviewer_accepted`: the reviewer accepted the current plan text
+ *   (revisionDelta 'none' + verdict 'accept') — even at the iteration limit.
+ * - `review_exhausted`: the review budget ended without acceptance.
+ * - `pending`: the loop has not converged.
+ *
+ * Canonical authority for the plan completion derivation; both the tool path
+ * (`src/integration/tools/plan.ts`) and the self-review rails
+ * (`src/rails/plan.ts`, `src/rails/continue.ts`) derive it here.
+ */
+export function resolvePlanReviewCompletion(
+  iteration: number,
+  maxIterations: number,
+  revisionDelta: RevisionDelta,
+  verdict: LoopVerdict,
+): ReviewCompletion {
+  const reviewerAccepted = revisionDelta === 'none' && verdict === 'accept';
+  if (reviewerAccepted) return 'reviewer_accepted';
+  if (iteration >= maxIterations) return 'review_exhausted';
+  return 'pending';
+}

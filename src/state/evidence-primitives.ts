@@ -92,17 +92,22 @@ export const AdrStatus = z.enum(['proposed', 'accepted', 'deprecated']);
 export type AdrStatus = z.infer<typeof AdrStatus>;
 
 /**
- * Completion of the independent ADR review cycle.
+ * Completion of an independent review cycle (architecture and plan flows).
  *
- * This is lifecycle evidence for the current ADR text, not part of the ADR
- * content identity and never a substitute for a human ReviewVerdict.
+ * This is lifecycle evidence for the current reviewed subject, not part of the
+ * subject's content identity and never a substitute for a human ReviewVerdict.
+ *
+ * - `pending`: the review loop has not converged.
+ * - `reviewer_accepted`: the independent reviewer accepted the subject.
+ * - `review_exhausted`: the review budget ended without reviewer acceptance;
+ *   only an explicit human override can release the subject.
  */
-export const ArchitectureReviewCompletion = z.enum([
-  'pending',
-  'reviewer_accepted',
-  'review_exhausted',
-]);
-export type ArchitectureReviewCompletion = z.infer<typeof ArchitectureReviewCompletion>;
+export const ReviewCompletion = z.enum(['pending', 'reviewer_accepted', 'review_exhausted']);
+export type ReviewCompletion = z.infer<typeof ReviewCompletion>;
+
+/** Flow-neutral completion shared by the architecture and plan review loops. */
+export const ArchitectureReviewCompletion = ReviewCompletion;
+export type ArchitectureReviewCompletion = ReviewCompletion;
 
 /** Where the content of a ticket or review originated. */
 export const InputOriginSchema = z.enum([

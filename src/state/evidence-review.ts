@@ -64,6 +64,8 @@ import {
 import {
   refineAssuranceDiscoveryCoherence,
   refineCurrentGenerationMaterial,
+  refineAssuranceIdentityUniqueness,
+  refineAssuranceInvocationLinkageCoherence,
   refineAssuranceProvenanceCoherence,
   refineAuthorityStructure,
   refineRepositoryEvidenceFreezeCoherence,
@@ -566,26 +568,21 @@ export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;
  * `attempts` is REQUIRED, not optional. Binding resolves a callback against a
  * pre-recorded invocation attempt, so an assurance state without an attempts
  * array would make every obligation permanently unbindable while looking valid.
- * Requiring the array makes that state unrepresentable and fails fast at the
- * schema boundary instead of silently at binding time.
  *
- * `assuranceSchemaVersion` is a REQUIRED hard version literal:
- * v2 introduced authority-bearing attempt origins and frozen output-repair
- * budgets; v3 bound host-owned repository Discovery snapshots to attempts;
- * v4 introduced frozen repository authority, observation capabilities, and
- * attempt-owned observations; v5 makes observations representation-typed
- * (`resolvedObjectKind` required; `utf8_text` requires `lineCount`, `binary`
- * forbids it). States persisted under older forms MUST fail parsing — there
- * is deliberately no defaulting path for authority-bearing fields. The
- * sanctioned transitions are the shape-only read migrations in the
- * persistence adapter (v3→v4 literal; v4→v5 literal + evidence-incapability
- * of pre-v5 observations), which add NO authority that was not present.
+ * `assuranceSchemaVersion` is a REQUIRED hard version literal: v2 introduced
+ * authority-bearing attempt origins and frozen output-repair budgets; v3 bound
+ * host-owned repository Discovery snapshots to attempts; v4 introduced frozen
+ * repository authority, observation capabilities, and attempt-owned
+ * observations; v5 makes observations representation-typed. States persisted
+ * under older forms MUST fail parsing — there is deliberately no defaulting
+ * path for authority-bearing fields. The sanctioned transitions are the
+ * shape-only read migrations in the persistence adapter (v3→v4, v4→v5), which
+ * add NO authority that was not present.
  *
- * Cross-record invariant: an attempt's `repositoryDiscovery` variant must
- * structurally match its owning obligation's frozen repository authority. A
- * repository-governed obligation with a `not_applicable` attempt — or a
- * non-repository-governed obligation with a `repository` snapshot attempt — is
- * an invalid state, not a prompt-rendering concern.
+ * Cross-record invariants: an attempt's `repositoryDiscovery` variant must
+ * structurally match its owning obligation's frozen repository authority, and
+ * an obligation's canonical linkage must be a COHERENT relation — the linked
+ * invocation must back-reference the same obligation id AND type (CE2).
  */
 export const ReviewAssuranceState = z
   .object({
@@ -594,8 +591,10 @@ export const ReviewAssuranceState = z
     invocations: z.array(ReviewInvocationEvidence),
     attempts: z.array(ReviewAttempt),
   })
+  .superRefine(refineAssuranceIdentityUniqueness)
   .superRefine(refineAssuranceDiscoveryCoherence)
   .superRefine(refineAssuranceProvenanceCoherence)
+  .superRefine(refineAssuranceInvocationLinkageCoherence)
   .readonly();
 export type ReviewAssuranceState = z.infer<typeof ReviewAssuranceState>;
 

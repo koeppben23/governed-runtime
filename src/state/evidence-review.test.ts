@@ -653,10 +653,157 @@ describe('evidence-review', () => {
       expect(ReviewAssuranceState.parse(state)).toEqual(state);
     });
 
+    it('CE2: rejects canonical linkage whose invocation back-references a different obligation', () => {
+      const obligation = contextAuthorityPlanObligation({
+        status: 'consumed',
+        invocationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        fulfilledAt: FIXED_TIME,
+        consumedAt: FIXED_TIME,
+      });
+      const invocation = {
+        invocationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        obligationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        obligationType: 'plan' as const,
+        parentSessionId: 'ses_parent',
+        childSessionId: 'ses_child',
+        agentType: 'flowguard-reviewer' as const,
+        invocationMode: 'host_subagent_task' as const,
+        hostVisible: true,
+        promptHash: 'sha256-prompt',
+        mandateDigest: 'sha256-mandate',
+        criteriaVersion: 'p40-v1',
+        findingsHash: 'sha256-findings',
+        invokedAt: FIXED_TIME,
+        fulfilledAt: FIXED_TIME,
+        consumedByObligationId: null,
+      };
+      const result = ReviewAssuranceState.safeParse({
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        obligations: [obligation],
+        invocations: [invocation],
+        attempts: [],
+      });
+      expect(result.success).toBe(false);
+      if (result.success) throw new TypeError('expected schema rejection');
+      expect(result.error.issues.map((issue) => issue.path.join('.'))).toContain('invocations');
+    });
+
+    it('CE2: rejects canonical linkage whose invocation back-references a different obligation type', () => {
+      const obligation = contextAuthorityPlanObligation({
+        status: 'consumed',
+        invocationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        fulfilledAt: FIXED_TIME,
+        consumedAt: FIXED_TIME,
+      });
+      const invocation = {
+        invocationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        obligationId: FIXED_UUID,
+        obligationType: 'architecture' as const,
+        parentSessionId: 'ses_parent',
+        childSessionId: 'ses_child',
+        agentType: 'flowguard-reviewer' as const,
+        invocationMode: 'host_subagent_task' as const,
+        hostVisible: true,
+        promptHash: 'sha256-prompt',
+        mandateDigest: 'sha256-mandate',
+        criteriaVersion: 'p40-v1',
+        findingsHash: 'sha256-findings',
+        invokedAt: FIXED_TIME,
+        fulfilledAt: FIXED_TIME,
+        consumedByObligationId: null,
+      };
+      const result = ReviewAssuranceState.safeParse({
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        obligations: [obligation],
+        invocations: [invocation],
+        attempts: [],
+      });
+      expect(result.success).toBe(false);
+      if (result.success) throw new TypeError('expected schema rejection');
+      expect(result.error.issues.map((issue) => issue.path.join('.'))).toContain('invocations');
+    });
+
     it('ReviewAssuranceState rejects an assurance state without attempts', () => {
       // attempts is the invocation envelope binding depends on: an assurance
       // state without it would look valid while being permanently unbindable.
       expect(() => ReviewAssuranceState.parse({ obligations: [], invocations: [] })).toThrow();
+    });
+
+    it('CE2: rejects duplicate obligationIds with different subject digests (identity uniqueness)', () => {
+      const obligationA = contextAuthorityPlanObligation({
+        status: 'consumed',
+        invocationId: null,
+        fulfilledAt: FIXED_TIME,
+        consumedAt: FIXED_TIME,
+      });
+      const obligationB = { ...obligationA, subjectDigest: 'b'.repeat(64) };
+      const result = ReviewAssuranceState.safeParse({
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        obligations: [obligationA, obligationB],
+        invocations: [],
+        attempts: [],
+      });
+      expect(result.success).toBe(false);
+      if (result.success) throw new TypeError('expected schema rejection');
+      expect(result.error.issues.map((issue) => issue.path.join('.'))).toContain('obligations');
+    });
+
+    it('CE2: rejects duplicate invocationIds with contradictory verdicts (identity uniqueness)', () => {
+      const invocation = {
+        invocationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        obligationId: FIXED_UUID,
+        obligationType: 'plan' as const,
+        parentSessionId: 'ses_parent',
+        childSessionId: 'ses_child',
+        agentType: 'flowguard-reviewer' as const,
+        invocationMode: 'host_subagent_task' as const,
+        hostVisible: true,
+        promptHash: 'sha256-prompt',
+        mandateDigest: 'sha256-mandate',
+        criteriaVersion: 'p40-v1',
+        findingsHash: 'sha256-findings-a',
+        invokedAt: FIXED_TIME,
+        fulfilledAt: FIXED_TIME,
+        consumedByObligationId: null,
+        capturedVerdict: 'accept',
+      };
+      const contradictory = {
+        ...invocation,
+        findingsHash: 'sha256-findings-b',
+        capturedVerdict: 'changes_requested',
+      };
+      const result = ReviewAssuranceState.safeParse({
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        obligations: [],
+        invocations: [invocation, contradictory],
+        attempts: [],
+      });
+      expect(result.success).toBe(false);
+      if (result.success) throw new TypeError('expected schema rejection');
+      expect(result.error.issues.map((issue) => issue.path.join('.'))).toContain('invocations');
+    });
+
+    it('CE2: rejects duplicate attemptIds (identity uniqueness)', () => {
+      const attempt = {
+        attemptId: '22222222-2222-4222-8222-222222222222',
+        obligationId: FIXED_UUID,
+        obligationType: 'plan' as const,
+        subjectDigest: 'a'.repeat(64),
+        ordinal: 0,
+        status: 'created' as const,
+        origin: { kind: 'initial' } as const,
+        repositoryDiscovery: { kind: 'not_applicable' } as const,
+        createdAt: FIXED_TIME,
+      };
+      const result = ReviewAssuranceState.safeParse({
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        obligations: [],
+        invocations: [],
+        attempts: [attempt, { ...attempt, ordinal: 1 }],
+      });
+      expect(result.success).toBe(false);
+      if (result.success) throw new TypeError('expected schema rejection');
+      expect(result.error.issues.map((issue) => issue.path.join('.'))).toContain('attempts');
     });
 
     it('rejects a repository review attempt without a repository Discovery snapshot', () => {

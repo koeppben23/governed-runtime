@@ -68,6 +68,7 @@ interface PlanAssuranceInput {
   findingsHash?: string;
   iteration?: number;
   createdAt?: string;
+  capturedVerdict?: string;
 }
 
 /** Minimal single-obligation assurance for plan-certificate binding tests. */
@@ -83,6 +84,7 @@ function planAssurance(input: PlanAssuranceInput): ReviewAssuranceState {
       createdAt: input.createdAt,
       invocationId: input.invocationId ?? PLAN_INVOCATION_ID,
       findingsHash: input.findingsHash ?? 'a'.repeat(64),
+      capturedVerdict: input.capturedVerdict,
       consumedByObligationId: input.status === 'consumed' ? obligationId : null,
     },
   ]);
@@ -144,7 +146,13 @@ describe('review-decision rail', () => {
         current: PLAN_RECORD.current,
         history: PLAN_RECORD.history,
         claimDeclarations: { flow: 'plan', claims: [PLAN_CLAIM] },
+        reviewCompletion: 'reviewer_accepted',
       },
+      reviewAssurance: planAssurance({
+        subjectDigest: PLAN_RECORD.current.digest,
+        status: 'consumed',
+        capturedVerdict: 'accept',
+      }),
     });
 
     const result = executeReviewDecision(
@@ -250,7 +258,7 @@ describe('review-decision rail', () => {
   it('changes_requested at EVIDENCE_REVIEW clears implementation and implReview', () => {
     const state = makeState('EVIDENCE_REVIEW', {
       ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
-      plan: PLAN_RECORD,
+      plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
       implementation: IMPL_EVIDENCE,
       implReview: {
         iteration: 1,
@@ -287,6 +295,7 @@ describe('review-decision rail', () => {
       reviewAssurance: architectureAssurance({
         subjectDigest: ARCHITECTURE_DECISION.digest,
         status: 'consumed',
+        capturedVerdict: 'accept',
       }),
       selfReview: {
         iteration: 1,
@@ -570,6 +579,12 @@ describe('review-decision rail', () => {
   it('regulated approve allows valid comparable different identities', () => {
     const state = makeState('PLAN_REVIEW', {
       initiatedByIdentity: initiatorIdentity,
+      plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
+      reviewAssurance: planAssurance({
+        subjectDigest: PLAN_RECORD.current.digest,
+        status: 'consumed',
+        capturedVerdict: 'accept',
+      }),
     });
     const result = executeReviewDecision(
       state,
@@ -662,7 +677,7 @@ describe('review-decision rail', () => {
     };
     const state = makeState('EVIDENCE_REVIEW', {
       ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
-      plan: PLAN_RECORD,
+      plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
       implementation: IMPL_EVIDENCE,
       reducedCeremony: reducedCeremonyDecision,
       implReview: {
@@ -702,7 +717,7 @@ describe('review-decision rail', () => {
     };
     const state = makeState('EVIDENCE_REVIEW', {
       ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
-      plan: PLAN_RECORD,
+      plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
       implementation: IMPL_EVIDENCE,
       reducedCeremony: reducedCeremonyDecision,
       implReview: {
@@ -740,7 +755,7 @@ describe('review-decision rail', () => {
     };
     const state = makeState('EVIDENCE_REVIEW', {
       ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
-      plan: PLAN_RECORD,
+      plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
       implementation: IMPL_EVIDENCE,
       reducedCeremony: reducedCeremonyDecision,
     });
@@ -778,6 +793,12 @@ describe('review-decision rail', () => {
     // Kill: actorAssurance !== 'idp_verified' → true (blocks idp_verified)
     const state = makeState('PLAN_REVIEW', {
       initiatedByIdentity: initiatorIdentity,
+      plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
+      reviewAssurance: planAssurance({
+        subjectDigest: PLAN_RECORD.current.digest,
+        status: 'consumed',
+        capturedVerdict: 'accept',
+      }),
     });
     const result = executeReviewDecision(
       state,
@@ -802,6 +823,7 @@ describe('review-decision rail', () => {
         reviewAssurance: architectureAssurance({
           subjectDigest: ARCHITECTURE_DECISION.digest,
           status: 'consumed',
+          capturedVerdict: 'accept',
         }),
         selfReview: CONVERGED_SELF_REVIEW,
       });
@@ -861,6 +883,8 @@ describe('review-decision rail', () => {
           reviewAssurance: architectureAssurance({
             subjectDigest: ARCHITECTURE_DECISION.digest,
             status: 'consumed',
+            capturedVerdict:
+              reviewCompletion === 'reviewer_accepted' ? 'accept' : 'changes_requested',
           }),
           selfReview: CONVERGED_SELF_REVIEW,
         });
@@ -893,12 +917,13 @@ describe('review-decision rail', () => {
       },
     );
 
-    it('resolves evidence when the obligation invocationId is unset (direct host-task shape)', () => {
+    it('blocks approval when the obligation invocationId is unset (no non-canonical rescue path)', () => {
       const state = makeState('ARCH_REVIEW', {
         architecture: { ...ARCHITECTURE_DECISION, reviewCompletion: 'reviewer_accepted' },
         reviewAssurance: architectureAssurance({
           subjectDigest: ARCHITECTURE_DECISION.digest,
           status: 'consumed',
+          capturedVerdict: 'accept',
           obligationInvocationId: false,
         }),
         selfReview: CONVERGED_SELF_REVIEW,
@@ -908,15 +933,11 @@ describe('review-decision rail', () => {
         { verdict: 'approve', rationale: 'LGTM', decidedBy: 'reviewer' },
         baseCtx,
       );
-      expect(result.kind).toBe('ok');
-      if (result.kind === 'ok') {
-        expect(result.state.architecture?.approvalCertificate?.reviewBinding).toEqual({
-          kind: 'current_review',
-          reviewObligationId: ARCH_OBLIGATION_ID,
-          reviewEvidenceDigest: 'f'.repeat(64),
-          reviewedSubjectDigest: ARCHITECTURE_DECISION.digest,
-        });
-      }
+      expect(result).toMatchObject({
+        kind: 'blocked',
+        code: 'ARCHITECTURE_REVIEW_EVIDENCE_REQUIRED',
+      });
+      expect(state.architecture?.approvalCertificate).toBeUndefined();
     });
 
     it('blocks approval at ARCH_REVIEW without bindable architecture review evidence', () => {
@@ -995,6 +1016,7 @@ describe('review-decision rail', () => {
         reviewAssurance: architectureAssurance({
           subjectDigest: ARCHITECTURE_DECISION.digest,
           status: 'consumed',
+          capturedVerdict: 'accept',
         }),
         selfReview: CONVERGED_SELF_REVIEW,
       });
@@ -1003,6 +1025,7 @@ describe('review-decision rail', () => {
         reviewAssurance: architectureAssurance({
           subjectDigest: ARCHITECTURE_DECISION.digest,
           status: 'consumed',
+          capturedVerdict: 'changes_requested',
         }),
         selfReview: CONVERGED_SELF_REVIEW,
       });
@@ -1070,7 +1093,7 @@ describe('review-decision rail', () => {
       // Use regulated policy with allowSelfApproval=false
       // changes_requested by same person as initiator should NOT be blocked
       const state = makeState('PLAN_REVIEW', {
-        plan: PLAN_RECORD,
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         selfReview: CONVERGED_SELF_REVIEW,
         initiatedBy: 'same-person',
         initiatedByIdentity: { ...initiatorIdentity, actorId: 'same-person' },
@@ -1092,7 +1115,7 @@ describe('review-decision rail', () => {
     it('P34: minimumActorAssuranceForApproval=claim_validated blocks best_effort actor', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
-        plan: PLAN_RECORD,
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         initiatedBy: 'initiator',
         initiatedByIdentity: initiatorIdentity,
       });
@@ -1121,7 +1144,7 @@ describe('review-decision rail', () => {
     it('P34: minimumActorAssuranceForApproval=idp_verified blocks claim_validated actor', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
-        plan: PLAN_RECORD,
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         initiatedBy: 'initiator',
         initiatedByIdentity: initiatorIdentity,
       });
@@ -1149,7 +1172,7 @@ describe('review-decision rail', () => {
     it('P34: minimumActorAssuranceForApproval=claim_validated allows claim_validated actor (>= threshold)', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
-        plan: PLAN_RECORD,
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         initiatedBy: 'initiator',
         initiatedByIdentity: initiatorIdentity,
       });
@@ -1174,7 +1197,7 @@ describe('review-decision rail', () => {
     it('P34: minimumActorAssuranceForApproval=idp_verified allows idp_verified actor', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
-        plan: PLAN_RECORD,
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         initiatedBy: 'initiator',
         initiatedByIdentity: initiatorIdentity,
       });
@@ -1199,7 +1222,7 @@ describe('review-decision rail', () => {
     it('P34: minimumActorAssuranceForApproval absent → no assurance check (else-if gate)', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
-        plan: PLAN_RECORD,
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         initiatedBy: 'initiator',
         initiatedByIdentity: initiatorIdentity,
       });
@@ -1223,8 +1246,13 @@ describe('review-decision rail', () => {
 
     it('approve at PLAN_REVIEW does NOT modify architecture (phase guard)', () => {
       const state = makeState('PLAN_REVIEW', {
-        plan: PLAN_RECORD,
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         selfReview: CONVERGED_SELF_REVIEW,
+        reviewAssurance: planAssurance({
+          subjectDigest: PLAN_RECORD.current.digest,
+          status: 'consumed',
+          capturedVerdict: 'accept',
+        }),
       });
       const result = executeReviewDecision(
         state,
@@ -1242,7 +1270,7 @@ describe('review-decision rail', () => {
 
     it('changes_requested at PLAN_REVIEW clears selfReview (survivor kill)', () => {
       const state = makeState('PLAN_REVIEW', {
-        plan: PLAN_RECORD,
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         selfReview: CONVERGED_SELF_REVIEW,
       });
       const result = executeReviewDecision(
@@ -1303,7 +1331,7 @@ describe('review-decision rail', () => {
     it('reject at PLAN_REVIEW clears all downstream evidence (survivor kill)', () => {
       const state = makeState('PLAN_REVIEW', {
         ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
-        plan: PLAN_RECORD,
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         selfReview: CONVERGED_SELF_REVIEW,
       });
       const result = executeReviewDecision(
@@ -1397,8 +1425,13 @@ describe('review-decision rail', () => {
       const state = makeState('PLAN_REVIEW', {
         initiatedByIdentity: initiatorIdentity,
         architecture: ARCHITECTURE_DECISION,
-        plan: PLAN_RECORD,
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         selfReview: CONVERGED_SELF_REVIEW,
+        reviewAssurance: planAssurance({
+          subjectDigest: PLAN_RECORD.current.digest,
+          status: 'consumed',
+          capturedVerdict: 'accept',
+        }),
       });
       const result = executeReviewDecision(
         state,
@@ -1420,11 +1453,12 @@ describe('review-decision rail', () => {
 
     it('binds the plan certificate to the exact-subject plan obligation evidence', () => {
       const state = makeState('PLAN_REVIEW', {
-        plan: PLAN_RECORD,
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         selfReview: CONVERGED_SELF_REVIEW,
         reviewAssurance: planAssurance({
           subjectDigest: PLAN_RECORD.current.digest,
           status: 'fulfilled',
+          capturedVerdict: 'accept',
         }),
       });
       const result = executeReviewDecision(
@@ -1455,9 +1489,10 @@ describe('review-decision rail', () => {
         iteration: 0,
         createdAt: '2026-01-01T00:00:00.000Z',
         findingsHash: 'c'.repeat(64),
+        capturedVerdict: 'accept',
       });
       const state = makeState('PLAN_REVIEW', {
-        plan: PLAN_RECORD,
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         selfReview: CONVERGED_SELF_REVIEW,
         reviewAssurance: {
           ...newerWrong,
@@ -1477,14 +1512,15 @@ describe('review-decision rail', () => {
       }
     });
 
-    it('excludes non-plan obligations from the plan certificate binding', () => {
+    it('excludes non-plan obligations from the plan certificate binding (blocks approval)', () => {
       const state = makeState('PLAN_REVIEW', {
-        plan: PLAN_RECORD,
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         selfReview: CONVERGED_SELF_REVIEW,
         reviewAssurance: planAssurance({
           subjectDigest: PLAN_RECORD.current.digest,
           status: 'consumed',
           obligationType: 'architecture',
+          capturedVerdict: 'accept',
         }),
       });
       const result = executeReviewDecision(
@@ -1492,19 +1528,21 @@ describe('review-decision rail', () => {
         { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
         baseCtx,
       );
-      expect(result.kind).toBe('ok');
-      if (result.kind === 'ok') {
-        expect(result.state.plan?.approvalCertificate?.reviewObligationId).toBeNull();
-      }
+      expect(result).toMatchObject({
+        kind: 'blocked',
+        code: 'PLAN_REVIEW_EVIDENCE_REQUIRED',
+      });
+      expect(state.plan?.approvalCertificate).toBeUndefined();
     });
 
-    it('excludes pending obligations from the plan certificate binding', () => {
+    it('excludes pending obligations from the plan certificate binding (blocks approval)', () => {
       const state = makeState('PLAN_REVIEW', {
-        plan: PLAN_RECORD,
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         selfReview: CONVERGED_SELF_REVIEW,
         reviewAssurance: planAssurance({
           subjectDigest: PLAN_RECORD.current.digest,
           status: 'pending',
+          capturedVerdict: 'accept',
         }),
       });
       const result = executeReviewDecision(
@@ -1512,36 +1550,35 @@ describe('review-decision rail', () => {
         { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
         baseCtx,
       );
-      expect(result.kind).toBe('ok');
-      if (result.kind === 'ok') {
-        expect(result.state.plan?.approvalCertificate?.reviewObligationId).toBeNull();
-      }
+      expect(result).toMatchObject({
+        kind: 'blocked',
+        code: 'PLAN_REVIEW_EVIDENCE_REQUIRED',
+      });
+      expect(state.plan?.approvalCertificate).toBeUndefined();
     });
 
-    it('drops the evidence digest when the linked plan invocation is absent', () => {
-      const unrelated = planAssurance({
+    it('blocks plan approval when the obligation invocation id links to no invocation (no rescue path)', () => {
+      const base = planAssurance({
         subjectDigest: PLAN_RECORD.current.digest,
         status: 'fulfilled',
-        obligationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
         findingsHash: 'd'.repeat(64),
+        capturedVerdict: 'accept',
       });
       const state = makeState('PLAN_REVIEW', {
-        plan: PLAN_RECORD,
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         selfReview: CONVERGED_SELF_REVIEW,
         reviewAssurance: {
-          ...unrelated,
-          obligations: [
-            ...unrelated.obligations,
-            {
-              ...unrelated.obligations[0]!,
-              obligationId: PLAN_OBLIGATION_ID,
-              invocationId: 'missing-invocation-id',
-            },
-          ],
+          ...base,
+          // The exact-subject obligation links to an invocation id that does
+          // not exist; the invocation below carries the right obligationId —
+          // the removed non-canonical fallback would have bound it.
+          obligations: [{ ...base.obligations[0]!, invocationId: 'missing-invocation-id' }],
           invocations: [
             {
-              ...unrelated.invocations[0]!,
-              obligationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+              ...base.invocations[0]!,
+              obligationId: PLAN_OBLIGATION_ID,
+              findingsHash: 'd'.repeat(64),
+              capturedVerdict: 'accept',
             },
           ],
         },
@@ -1551,11 +1588,238 @@ describe('review-decision rail', () => {
         { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
         baseCtx,
       );
+      expect(result).toMatchObject({
+        kind: 'blocked',
+        code: 'PLAN_REVIEW_EVIDENCE_REQUIRED',
+      });
+      expect(state.plan?.approvalCertificate).toBeUndefined();
+    });
+
+    it('mints a review_exhausted_override binding when the last review covered the current subject', () => {
+      const state = makeState('PLAN_REVIEW', {
+        plan: { ...PLAN_RECORD, reviewCompletion: 'review_exhausted' },
+        selfReview: CONVERGED_SELF_REVIEW,
+        reviewAssurance: planAssurance({
+          subjectDigest: PLAN_RECORD.current.digest,
+          status: 'consumed',
+          capturedVerdict: 'changes_requested',
+          findingsHash: 'e'.repeat(64),
+        }),
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'override', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        expect(result.state.plan?.approvalCertificate?.reviewObligationId).toBe(PLAN_OBLIGATION_ID);
-        expect(result.state.plan?.approvalCertificate?.reviewEvidenceDigest).toBeNull();
+        expect(result.state.plan?.approvalCertificate?.reviewBinding).toEqual({
+          kind: 'review_exhausted_override',
+          lastReviewObligationId: PLAN_OBLIGATION_ID,
+          lastReviewEvidenceDigest: 'e'.repeat(64),
+          reviewedSubjectDigest: PLAN_RECORD.current.digest,
+          approvedSubjectDigest: PLAN_RECORD.current.digest,
+        });
       }
+    });
+
+    it('blocks an exhausted plan override when the last review covered a different subject (CE5 strict)', () => {
+      const state = makeState('PLAN_REVIEW', {
+        plan: { ...PLAN_RECORD, reviewCompletion: 'review_exhausted' },
+        selfReview: CONVERGED_SELF_REVIEW,
+        reviewAssurance: planAssurance({
+          subjectDigest: 'digest-of-a-prior-plan-revision',
+          status: 'consumed',
+          capturedVerdict: 'changes_requested',
+          findingsHash: 'e'.repeat(64),
+        }),
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'override', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+      expect(result).toMatchObject({
+        kind: 'blocked',
+        code: 'PLAN_REVIEW_OVERRIDE_SUBJECT_MISMATCH',
+      });
+      expect(state.plan?.approvalCertificate).toBeUndefined();
+    });
+
+    it('blocks an exhausted plan when the latest evidence captured accept (coherence)', () => {
+      const state = makeState('PLAN_REVIEW', {
+        plan: { ...PLAN_RECORD, reviewCompletion: 'review_exhausted' },
+        selfReview: CONVERGED_SELF_REVIEW,
+        reviewAssurance: planAssurance({
+          subjectDigest: PLAN_RECORD.current.digest,
+          status: 'consumed',
+          capturedVerdict: 'accept',
+          findingsHash: 'e'.repeat(64),
+        }),
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'override', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+      expect(result).toMatchObject({
+        kind: 'blocked',
+        code: 'PLAN_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION',
+      });
+      expect(state.plan?.approvalCertificate).toBeUndefined();
+    });
+
+    it('blocks an exhausted plan when the evidence carries no captured verdict (CE1)', () => {
+      const state = makeState('PLAN_REVIEW', {
+        plan: { ...PLAN_RECORD, reviewCompletion: 'review_exhausted' },
+        selfReview: CONVERGED_SELF_REVIEW,
+        reviewAssurance: planAssurance({
+          subjectDigest: PLAN_RECORD.current.digest,
+          status: 'consumed',
+          findingsHash: 'e'.repeat(64),
+        }),
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'override', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+      expect(result).toMatchObject({
+        kind: 'blocked',
+        code: 'PLAN_REVIEW_EVIDENCE_REQUIRED',
+      });
+      expect(state.plan?.approvalCertificate).toBeUndefined();
+    });
+
+    it('blocks a reviewer_accepted plan when the evidence captured a non-accept verdict (coherence)', () => {
+      const state = makeState('PLAN_REVIEW', {
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
+        selfReview: CONVERGED_SELF_REVIEW,
+        reviewAssurance: planAssurance({
+          subjectDigest: PLAN_RECORD.current.digest,
+          status: 'consumed',
+          capturedVerdict: 'changes_requested',
+          findingsHash: 'e'.repeat(64),
+        }),
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+      expect(result).toMatchObject({
+        kind: 'blocked',
+        code: 'PLAN_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION',
+      });
+      expect(state.plan?.approvalCertificate).toBeUndefined();
+    });
+
+    it('skips the plan evidence gate outside PLAN_REVIEW (phase guard)', () => {
+      const state = makeState('EVIDENCE_REVIEW', {
+        ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
+        plan: { ...PLAN_RECORD, reviewCompletion: 'pending' },
+        selfReview: CONVERGED_SELF_REVIEW,
+        implementation: IMPL_EVIDENCE,
+        implReview: {
+          iteration: 1,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: IMPL_EVIDENCE.digest,
+          revisionDelta: 'none',
+          verdict: 'accept',
+          executedAt: FIXED_TIME,
+        },
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+      // The plan gate is phase-guarded off; a pending plan completion cannot
+      // block an EVIDENCE_REVIEW approval.
+      expect(result.kind).toBe('ok');
+    });
+
+    it('blocks an exhausted plan when the latest plan obligation is still pending (no completed evidence)', () => {
+      const state = makeState('PLAN_REVIEW', {
+        plan: { ...PLAN_RECORD, reviewCompletion: 'review_exhausted' },
+        selfReview: CONVERGED_SELF_REVIEW,
+        reviewAssurance: planAssurance({
+          subjectDigest: PLAN_RECORD.current.digest,
+          status: 'pending',
+          capturedVerdict: 'changes_requested',
+          findingsHash: 'e'.repeat(64),
+        }),
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'override', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+      // A pending obligation is not completed review evidence — the override
+      // path must not bind it, no matter how coherent its linkage looks.
+      expect(result).toMatchObject({
+        kind: 'blocked',
+        code: 'PLAN_REVIEW_EVIDENCE_REQUIRED',
+      });
+      expect(state.plan?.approvalCertificate).toBeUndefined();
+    });
+
+    it('blocks plan approval when the canonical invocation back-references a different obligation (adversarial)', () => {
+      const base = planAssurance({
+        subjectDigest: PLAN_RECORD.current.digest,
+        status: 'consumed',
+        capturedVerdict: 'accept',
+        findingsHash: 'e'.repeat(64),
+      });
+      const state = makeState('PLAN_REVIEW', {
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
+        selfReview: CONVERGED_SELF_REVIEW,
+        reviewAssurance: {
+          ...base,
+          // Correct invocationId, incoherent obligation back-reference.
+          invocations: [
+            { ...base.invocations[0]!, obligationId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee' },
+          ],
+        },
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+      expect(result).toMatchObject({
+        kind: 'blocked',
+        code: 'PLAN_REVIEW_EVIDENCE_REQUIRED',
+      });
+      expect(state.plan?.approvalCertificate).toBeUndefined();
+    });
+
+    it('blocks plan approval when the canonical invocation back-references a different obligation type (adversarial)', () => {
+      const base = planAssurance({
+        subjectDigest: PLAN_RECORD.current.digest,
+        status: 'consumed',
+        capturedVerdict: 'accept',
+        findingsHash: 'e'.repeat(64),
+      });
+      const state = makeState('PLAN_REVIEW', {
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
+        selfReview: CONVERGED_SELF_REVIEW,
+        reviewAssurance: {
+          ...base,
+          invocations: [{ ...base.invocations[0]!, obligationType: 'architecture' as const }],
+        },
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+      expect(result).toMatchObject({
+        kind: 'blocked',
+        code: 'PLAN_REVIEW_EVIDENCE_REQUIRED',
+      });
+      expect(state.plan?.approvalCertificate).toBeUndefined();
     });
   });
 });

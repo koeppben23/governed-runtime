@@ -363,8 +363,14 @@ describe('buildBlockedProjection — ProofGraph gate', () => {
       certificateId: CERT_ID,
       planVersion: 1,
       planRecordDigest: 'record-digest',
-      reviewObligationId: null,
-      reviewEvidenceDigest: null,
+      reviewBinding: {
+        kind: 'current_review',
+        reviewObligationId: '00000000-0000-4000-8000-0000000000cd',
+        reviewEvidenceDigest: 'e'.repeat(64),
+        reviewedSubjectDigest: 'plan-digest',
+      },
+      reviewObligationId: '00000000-0000-4000-8000-0000000000cd',
+      reviewEvidenceDigest: 'e'.repeat(64),
     };
   }
 

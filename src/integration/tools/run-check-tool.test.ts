@@ -704,8 +704,14 @@ describe('CORNER', () => {
           // yields an empty contract instead of the claims under test.
           planVersion: state!.plan!.current.planVersion,
           planRecordDigest: state!.plan!.current.recordDigest,
-          reviewObligationId: null,
-          reviewEvidenceDigest: null,
+          reviewBinding: {
+            kind: 'current_review',
+            reviewObligationId: '00000000-0000-4000-8000-0000000000ab',
+            reviewEvidenceDigest: 'e'.repeat(64),
+            reviewedSubjectDigest: state!.plan!.current.digest,
+          },
+          reviewObligationId: '00000000-0000-4000-8000-0000000000ab',
+          reviewEvidenceDigest: 'e'.repeat(64),
         },
       },
     });

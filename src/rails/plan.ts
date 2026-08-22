@@ -26,7 +26,7 @@
 
 import type { SessionState } from '../state/schema.js';
 import type { TicketEvidence, PlanEvidence, LoopVerdict } from '../state/evidence.js';
-import { computeRecordDigest } from '../state/evidence-plan.js';
+import { computeRecordDigest, resolvePlanReviewCompletion } from '../state/evidence-plan.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import type { RailResult, RailContext } from './types.js';
 import {
@@ -184,7 +184,16 @@ export async function executePlan(
   // 7. Build final state
   const nextState: SessionState = {
     ...state,
-    plan: { current: loop.artifact, history },
+    plan: {
+      current: loop.artifact,
+      history,
+      reviewCompletion: resolvePlanReviewCompletion(
+        loop.iteration,
+        loop.maxIterations,
+        loop.revisionDelta,
+        loop.verdict,
+      ),
+    },
     selfReview: buildSelfReviewState(loop),
     error: null,
   };

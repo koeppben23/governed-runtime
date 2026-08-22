@@ -28,6 +28,7 @@ export function assuranceChain(entries: AssuranceEntry[]): ReviewAssuranceState 
   const obligations: ReviewAssuranceState['obligations'] = entries.map((e) => {
     const createdAt = e.createdAt ?? '2026-01-01T00:00:00.000Z';
     const subjectDigest = e.subjectDigest;
+    const defaultInvocationId = `${e.obligationId}-inv`;
     return {
       obligationId: e.obligationId,
       obligationType: e.obligationType ?? 'architecture',
@@ -38,7 +39,9 @@ export function assuranceChain(entries: AssuranceEntry[]): ReviewAssuranceState 
       createdAt,
       pluginHandshakeAt: null,
       status: e.status,
-      invocationId: e.invocationId === undefined ? ARCH_INVOCATION_ID : e.invocationId,
+      // Default linkage is derived per obligation so multi-entry chains stay
+      // identity-unique (the assurance schema rejects duplicate invocation ids).
+      invocationId: e.invocationId === undefined ? defaultInvocationId : e.invocationId,
       blockedCode: null,
       fulfilledAt: createdAt,
       consumedAt: e.status === 'consumed' ? createdAt : null,

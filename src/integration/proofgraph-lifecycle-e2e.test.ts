@@ -43,8 +43,16 @@ import { evaluateProofGraphGate } from '../audit/proofgraph/gate.js';
 import { buildProofApprovalProjection } from './proofgraph/approval-projection.js';
 import { buildReviewerProofContext } from './review/proof-context.js';
 import { isRiskAssessmentCurrent } from '../audit/proofgraph/gate.js';
-import { makeState, TICKET, IMPL_EVIDENCE, FIXED_TIME } from '../fixtures.js';
+import {
+  makeState,
+  TICKET,
+  IMPL_EVIDENCE,
+  FIXED_TIME,
+  PLAN_REVIEW_ASSURANCE,
+  assuranceWith,
+} from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
+import type { ReviewAssuranceState } from '../state/evidence-review.js';
 import type {
   PlanClaimDeclaration,
   PlanClaimDeclarationInput,
@@ -54,6 +62,35 @@ type V2PlanClaimDeclaration = Extract<
   PlanClaimDeclaration,
   { claimScope: 'suite' | 'specific_behavior' }
 >;
+
+/** Canonical plan review assurance re-targeted to an arbitrary plan subject. */
+function planReviewEvidenceFor(subjectDigest: string): ReviewAssuranceState {
+  const obligation = PLAN_REVIEW_ASSURANCE.obligations[0];
+  const invocation = PLAN_REVIEW_ASSURANCE.invocations[0];
+  if (!obligation || !invocation) {
+    throw new Error('PLAN_REVIEW_ASSURANCE must carry one obligation and one invocation');
+  }
+  return assuranceWith({
+    obligation: {
+      ...obligation,
+      subjectDigest,
+      reviewMaterial: {
+        content: obligation.reviewMaterial?.content ?? '## Plan\n1. Fix auth\n2. Add tests',
+        materialDigest:
+          obligation.reviewMaterial?.materialDigest ?? 'material-digest-of-plan-review',
+        subjectDigest,
+      },
+      reviewSubjectScope:
+        obligation.reviewSubjectScope.kind === 'artifact'
+          ? {
+              kind: 'artifact' as const,
+              artifact: { ...obligation.reviewSubjectScope.artifact, digest: subjectDigest },
+            }
+          : obligation.reviewSubjectScope,
+    },
+    invocations: [invocation],
+  });
+}
 
 vi.mock('../verification/executor', () => ({
   executeCheck: vi.fn().mockResolvedValue({
@@ -543,7 +580,15 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     const submitted = await readState(env.sDir);
 
     const approved = executeReviewDecision(
-      { ...submitted!, phase: 'PLAN_REVIEW' },
+      {
+        ...submitted!,
+        phase: 'PLAN_REVIEW',
+        plan: {
+          ...submitted!.plan!,
+          reviewCompletion: 'reviewer_accepted',
+        },
+        reviewAssurance: planReviewEvidenceFor(submitted!.plan!.current.digest),
+      },
       { verdict: 'approve', rationale: 'ok', decidedBy: 'approver' },
       realDigestContext(),
     );
@@ -759,7 +804,9 @@ describe('ProofGraph materialization and gate (runtime)', () => {
         history: [],
         reviewFindings: undefined,
         claimDeclarations: { flow: 'plan', version: 'v2', claims: [claim] },
+        reviewCompletion: 'reviewer_accepted',
       },
+      reviewAssurance: planReviewEvidenceFor('plan-digest'),
     });
     const approved = executeReviewDecision(
       base,
@@ -944,6 +991,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
         history: [],
         reviewFindings: undefined,
         claimDeclarations: { flow: 'plan', version: 'v2', claims: [CRITICAL_CLAIM] },
+        reviewCompletion: 'reviewer_accepted',
       },
       reviewAssurance: {
         assuranceSchemaVersion: 'review-assurance.v5' as const,
@@ -985,6 +1033,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             invokedAt: FIXED_TIME,
             fulfilledAt: FIXED_TIME,
             consumedByObligationId: null,
+            capturedVerdict: 'accept',
             reviewOutputMode: 'structured_output' as const,
             structuredOutputUsed: true,
             reviewAssuranceLevel: 'structured_high' as const,

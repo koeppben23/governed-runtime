@@ -211,7 +211,7 @@ describe('architecture review evidence resolution', () => {
       expect(forOb2?.findingsHash).toBe('9'.repeat(64));
     });
 
-    it('resolves via obligationId linkage when the obligation invocationId is null', () => {
+    it('resolves nothing when the obligation invocationId is null (canonical-only linkage)', () => {
       const state = resolverState([
         {
           obligationId: 'ob-host-task',
@@ -221,12 +221,12 @@ describe('architecture review evidence resolution', () => {
           findingsHash: 'a'.repeat(64),
         },
       ]);
-      const resolved = resolveBoundReviewEvidenceForSubject(state, 'architecture', ADR_DIGEST);
-      expect(resolved?.obligationId).toBe('ob-host-task');
-      expect(resolved?.findingsHash).toBe('a'.repeat(64));
+      // CE2: obligationId on invocation evidence is diagnostic/provenance only —
+      // it is never a resolver key or rescue path.
+      expect(resolveBoundReviewEvidenceForSubject(state, 'architecture', ADR_DIGEST)).toBeNull();
     });
 
-    it('restricts obligationId linkage to the obligation at hand (no foreign invocation bleed)', () => {
+    it('resolves nothing on obligationId linkage alone, even when a foreign invocation shares the obligation (adversarial)', () => {
       const own = assuranceChain([
         {
           obligationId: 'ob-own',
@@ -255,12 +255,10 @@ describe('architecture review evidence resolution', () => {
           invocations: [...own.invocations, ...foreign.invocations],
         },
       });
-      const resolved = resolveBoundReviewEvidenceForSubject(state, 'architecture', ADR_DIGEST);
-      expect(resolved?.obligationId).toBe('ob-own');
-      expect(resolved?.findingsHash).toBe('a'.repeat(64));
+      expect(resolveBoundReviewEvidenceForSubject(state, 'architecture', ADR_DIGEST)).toBeNull();
     });
 
-    it('prefers the consumed invocation when several link to one obligation (invocationId unset)', () => {
+    it('resolves nothing for multiple obligationId-linked invocations when the obligation invocationId is unset', () => {
       const assurance = assuranceChain([
         {
           obligationId: 'ob-multi',
@@ -289,13 +287,12 @@ describe('architecture review evidence resolution', () => {
           invocations: [...assurance.invocations, ...newer.invocations],
         },
       });
-      // The obligation was consumed with the OLDER invocation; the newer
-      // un-consumed one must not override that linkage.
-      const resolved = resolveBoundReviewEvidenceForSubject(state, 'architecture', ADR_DIGEST);
-      expect(resolved?.findingsHash).toBe('d'.repeat(64));
+      // No consumed-preference or newest-first rescue: canonical linkage is the
+      // only admissible path.
+      expect(resolveBoundReviewEvidenceForSubject(state, 'architecture', ADR_DIGEST)).toBeNull();
     });
 
-    it('falls back to the newest invocation when none is consumed-linked', () => {
+    it('resolves nothing without consumed linkage when the obligation invocationId is unset', () => {
       const assurance = assuranceChain([
         {
           obligationId: 'ob-multi',
@@ -323,8 +320,7 @@ describe('architecture review evidence resolution', () => {
           invocations: [...assurance.invocations, ...newer.invocations],
         },
       });
-      const resolved = resolveBoundReviewEvidenceForSubject(state, 'architecture', ADR_DIGEST);
-      expect(resolved?.findingsHash).toBe('b'.repeat(64));
+      expect(resolveBoundReviewEvidenceForSubject(state, 'architecture', ADR_DIGEST)).toBeNull();
     });
 
     it('excludes invocations without a findingsHash', () => {
@@ -358,6 +354,50 @@ describe('architecture review evidence resolution', () => {
     it('returns null without any assurance', () => {
       const state = makeState('ARCH_REVIEW', {
         architecture: { ...ARCHITECTURE_DECISION, digest: ADR_DIGEST },
+      });
+      expect(resolveBoundReviewEvidenceForSubject(state, 'architecture', ADR_DIGEST)).toBeNull();
+    });
+
+    it('resolves nothing when the invocation back-references a different obligation (cross-record coherence)', () => {
+      const assurance = assuranceChain([
+        {
+          obligationId: 'ob-a',
+          subjectDigest: ADR_DIGEST,
+          status: 'consumed',
+          invocationId: 'inv-x',
+          findingsHash: '1'.repeat(64),
+          capturedVerdict: 'accept',
+        },
+      ]);
+      const state = makeState('ARCH_REVIEW', {
+        architecture: { ...ARCHITECTURE_DECISION, digest: ADR_DIGEST },
+        reviewAssurance: {
+          ...assurance,
+          // Correct invocationId, but the invocation's obligationId back-
+          // reference points elsewhere — the relation is incoherent.
+          invocations: [{ ...assurance.invocations[0]!, obligationId: 'ob-foreign' }],
+        },
+      });
+      expect(resolveBoundReviewEvidenceForSubject(state, 'architecture', ADR_DIGEST)).toBeNull();
+    });
+
+    it('resolves nothing when the invocation back-references a different obligation type (cross-record coherence)', () => {
+      const assurance = assuranceChain([
+        {
+          obligationId: 'ob-a',
+          subjectDigest: ADR_DIGEST,
+          status: 'consumed',
+          invocationId: 'inv-x',
+          findingsHash: '1'.repeat(64),
+          capturedVerdict: 'accept',
+        },
+      ]);
+      const state = makeState('ARCH_REVIEW', {
+        architecture: { ...ARCHITECTURE_DECISION, digest: ADR_DIGEST },
+        reviewAssurance: {
+          ...assurance,
+          invocations: [{ ...assurance.invocations[0]!, obligationType: 'plan' as const }],
+        },
       });
       expect(resolveBoundReviewEvidenceForSubject(state, 'architecture', ADR_DIGEST)).toBeNull();
     });
@@ -456,7 +496,7 @@ describe('architecture review evidence resolution', () => {
   });
 
   describe('resolveArchitectureReviewEvidence', () => {
-    it('mints current_review for reviewer_accepted with exact-subject evidence', () => {
+    it('mints current_review for reviewer_accepted with exact-subject accept-verdict evidence', () => {
       const state = resolverState([
         {
           obligationId: 'ob-1',
@@ -464,6 +504,7 @@ describe('architecture review evidence resolution', () => {
           status: 'consumed',
           invocationId: 'inv-1',
           findingsHash: '3'.repeat(64),
+          capturedVerdict: 'accept',
         },
       ]);
       const resolution = resolveArchitectureReviewEvidence(state, {
@@ -480,6 +521,24 @@ describe('architecture review evidence resolution', () => {
           reviewedSubjectDigest: ADR_DIGEST,
         });
       }
+    });
+
+    it('refuses current_review when the exact evidence carries no captured verdict (CE1)', () => {
+      const state = resolverState([
+        {
+          obligationId: 'ob-1',
+          subjectDigest: ADR_DIGEST,
+          status: 'consumed',
+          invocationId: 'inv-1',
+          findingsHash: '3'.repeat(64),
+        },
+      ]);
+      const resolution = resolveArchitectureReviewEvidence(state, {
+        ...ARCHITECTURE_DECISION,
+        digest: ADR_DIGEST,
+        reviewCompletion: 'reviewer_accepted',
+      });
+      expect(resolution).toEqual({ kind: 'verdict_missing' });
     });
 
     it('mints current_review when the exact evidence captured an accept verdict', () => {
@@ -504,7 +563,7 @@ describe('architecture review evidence resolution', () => {
       }
     });
 
-    it('refuses current_review when the exact evidence captured a rejecting verdict', () => {
+    it('surfaces a completion contradiction when the exact evidence captured a rejecting verdict', () => {
       const state = resolverState([
         {
           obligationId: 'ob-1',
@@ -520,10 +579,14 @@ describe('architecture review evidence resolution', () => {
         digest: ADR_DIGEST,
         reviewCompletion: 'reviewer_accepted',
       });
-      expect(resolution).toEqual({ kind: 'unavailable' });
+      expect(resolution).toEqual({
+        kind: 'completion_contradiction',
+        capturedVerdict: 'changes_requested',
+        reviewCompletion: 'reviewer_accepted',
+      });
     });
 
-    it('mints review_exhausted_override from the latest real evidence', () => {
+    it('mints review_exhausted_override from the latest real evidence with a non-accept verdict', () => {
       const state = resolverState([
         {
           obligationId: 'ob-1',
@@ -531,6 +594,7 @@ describe('architecture review evidence resolution', () => {
           status: 'consumed',
           invocationId: 'inv-1',
           findingsHash: '4'.repeat(64),
+          capturedVerdict: 'changes_requested',
         },
       ]);
       const resolution = resolveArchitectureReviewEvidence(state, {
@@ -548,6 +612,24 @@ describe('architecture review evidence resolution', () => {
           approvedSubjectDigest: ADR_DIGEST,
         });
       }
+    });
+
+    it('refuses review_exhausted_override when the latest evidence carries no captured verdict (CE1)', () => {
+      const state = resolverState([
+        {
+          obligationId: 'ob-1',
+          subjectDigest: OTHER_DIGEST,
+          status: 'consumed',
+          invocationId: 'inv-1',
+          findingsHash: '4'.repeat(64),
+        },
+      ]);
+      const resolution = resolveArchitectureReviewEvidence(state, {
+        ...ARCHITECTURE_DECISION,
+        digest: ADR_DIGEST,
+        reviewCompletion: 'review_exhausted',
+      });
+      expect(resolution).toEqual({ kind: 'verdict_missing' });
     });
 
     it('mints review_exhausted_override when the latest evidence did not accept', () => {
@@ -572,7 +654,7 @@ describe('architecture review evidence resolution', () => {
       }
     });
 
-    it('flags an exhaustion contradiction when the latest evidence captured accept', () => {
+    it('flags a completion contradiction when the latest evidence captured accept', () => {
       const state = resolverState([
         {
           obligationId: 'ob-1',
@@ -588,7 +670,11 @@ describe('architecture review evidence resolution', () => {
         digest: ADR_DIGEST,
         reviewCompletion: 'review_exhausted',
       });
-      expect(resolution).toEqual({ kind: 'exhaustion_contradiction', capturedVerdict: 'accept' });
+      expect(resolution).toEqual({
+        kind: 'completion_contradiction',
+        capturedVerdict: 'accept',
+        reviewCompletion: 'review_exhausted',
+      });
     });
 
     it('resolves unavailable for any other review completion (kind comes from the gate path only)', () => {
@@ -627,6 +713,33 @@ describe('architecture review evidence resolution', () => {
         // Pins the rendered completion detail (blocked() renders vars into
         // the reason message; an emptied detail literal must not survive).
         expect(result.reason).toContain('Current review completion: reviewer_accepted.');
+        expect(result.reason).toContain('Captured reviewer verdict: unavailable.');
+      }
+    });
+
+    it('blocks reviewer_accepted when the exact evidence carries no captured verdict (CE1)', () => {
+      const state = makeState('ARCH_REVIEW', {
+        architecture: { ...ARCHITECTURE_DECISION, reviewCompletion: 'reviewer_accepted' },
+        selfReview: CONVERGED_SELF_REVIEW,
+        reviewAssurance: assuranceChain([
+          {
+            obligationId: 'ob-no-verdict',
+            subjectDigest: ARCHITECTURE_DECISION.digest,
+            status: 'consumed',
+            invocationId: 'inv-no-verdict',
+            findingsHash: 'a'.repeat(64),
+          },
+        ]),
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.code).toBe('ARCHITECTURE_REVIEW_EVIDENCE_REQUIRED');
+        expect(result.reason).toContain('Captured reviewer verdict: missing.');
       }
     });
 
@@ -645,7 +758,7 @@ describe('architecture review evidence resolution', () => {
       }
     });
 
-    it('blocks reviewer_accepted when the exact evidence captured a rejecting verdict', () => {
+    it('blocks reviewer_accepted when the exact evidence captured a rejecting verdict (coherence)', () => {
       const state = makeState('ARCH_REVIEW', {
         architecture: { ...ARCHITECTURE_DECISION, reviewCompletion: 'reviewer_accepted' },
         selfReview: CONVERGED_SELF_REVIEW,
@@ -667,7 +780,8 @@ describe('architecture review evidence resolution', () => {
       );
       expect(result.kind).toBe('blocked');
       if (result.kind === 'blocked') {
-        expect(result.code).toBe('ARCHITECTURE_REVIEW_EVIDENCE_REQUIRED');
+        expect(result.code).toBe('ARCHITECTURE_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION');
+        expect(result.reason).toContain('captured reviewer verdict: changes_requested.');
       }
     });
 

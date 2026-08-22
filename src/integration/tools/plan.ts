@@ -63,7 +63,7 @@ import type {
   RevisionDelta,
   ReviewFindings,
 } from '../../state/evidence.js';
-import { computeRecordDigest } from '../../state/evidence-plan.js';
+import { computeRecordDigest, resolvePlanReviewCompletion } from '../../state/evidence-plan.js';
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 import { PlanClaimDeclarationInput as PlanClaimDeclarationSchema } from '../../state/proofgraph-approval.js';
 import { normalizePlanClaims } from '../../state/proofgraph-approval.js';
@@ -331,6 +331,7 @@ function buildPlanSubmissionState(
             claims: normalizePlanClaims(scope.args.claims)!,
           }
         : scope.state.plan?.claimDeclarations,
+      reviewCompletion: 'pending',
     },
     // #428: a new plan invalidates any prior validation evidence. Without this
     // reset, a stale failed-check result (passed:false) survives the re-plan and
@@ -469,6 +470,7 @@ function buildReviewedPlanState(
   const newReviewFindings = effectiveFindings
     ? [...(existingReviewFindings ?? []), effectiveFindings]
     : existingReviewFindings;
+  const nextIteration = scope.state.selfReview!.iteration + 1;
 
   return {
     ...scope.state,
@@ -479,9 +481,15 @@ function buildReviewedPlanState(
       claimDeclarations: scope.args.claims
         ? { flow: 'plan', version: 'v2' as const, claims: normalizePlanClaims(scope.args.claims)! }
         : scope.state.plan?.claimDeclarations,
+      reviewCompletion: resolvePlanReviewCompletion(
+        nextIteration,
+        scope.maxSelfReviewIterations,
+        revision.revisionDelta,
+        revision.verdict,
+      ),
     },
     selfReview: {
-      iteration: scope.state.selfReview!.iteration + 1,
+      iteration: nextIteration,
       maxIterations: scope.maxSelfReviewIterations,
       prevDigest: revision.prevDigest,
       currDigest: revision.currentPlan.digest,

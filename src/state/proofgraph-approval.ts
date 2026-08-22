@@ -159,6 +159,44 @@ const approvalCertificateShape = {
   certificateId: z.string().uuid(),
 } as const;
 
+/**
+ * Provenance edge of a plan approval certificate.
+ *
+ * The binding kind is decided exclusively by the gate path that minted the
+ * certificate — it is NEVER normalized afterwards from digest equality:
+ *
+ * - `current_review`: the human approval is proven to rest on independent
+ *   review evidence whose obligation subjectDigest equals the certified plan
+ *   digest exactly AND whose captured reviewer verdict is `accept`.
+ * - `review_exhausted_override`: the review budget ended without reviewer
+ *   acceptance; the human overrode it. Stricter than the architecture
+ *   counterpart: the last bound evidence must have reviewed EXACTLY the
+ *   approved subject (`reviewedSubjectDigest === approvedSubjectDigest`) —
+ *   an unreviewed revision can never be released by an override.
+ */
+export const PlanReviewBinding = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('current_review'),
+      reviewObligationId: z.string().uuid(),
+      reviewEvidenceDigest: z.string().min(1),
+      reviewedSubjectDigest: z.string().min(1),
+    })
+    .strict()
+    .readonly(),
+  z
+    .object({
+      kind: z.literal('review_exhausted_override'),
+      lastReviewObligationId: z.string().uuid(),
+      lastReviewEvidenceDigest: z.string().min(1),
+      reviewedSubjectDigest: z.string().min(1),
+      approvedSubjectDigest: z.string().min(1),
+    })
+    .strict()
+    .readonly(),
+]);
+export type PlanReviewBinding = z.infer<typeof PlanReviewBinding>;
+
 /** A common certificate constrained for plan approval persistence. */
 export const PlanApprovalCertificate = z
   .object({
@@ -168,10 +206,49 @@ export const PlanApprovalCertificate = z
     planVersion: z.number().int().positive(),
     /** Record-digest of the plan this certificate binds (content + lineage). */
     planRecordDigest: z.string().min(1),
-    /** The review obligation whose evidence was accepted for this approval. */
+    /**
+     * Canonical review-evidence provenance edge. Optional ONLY for legacy
+     * hydration: certificates minted before the binding contract carry neither
+     * field. Such certificates fail `hasCurrentPlanApprovalCertificate` and
+     * can never authorize critical claims — the authority boundary fails
+     * closed, old serialized values stay readable.
+     */
+    reviewBinding: PlanReviewBinding.optional(),
+    /** Legacy mirror of the binding (presentation/compat; the binding is the authority). */
     reviewObligationId: z.string().uuid().nullable(),
-    /** Digest of the review invocation evidence that satisfied the obligation. */
+    /** Legacy mirror of the binding (presentation/compat; the binding is the authority). */
     reviewEvidenceDigest: z.string().min(1).nullable(),
+  })
+  .superRefine((certificate, ctx) => {
+    if (!certificate.reviewBinding) return;
+    const binding = certificate.reviewBinding;
+    if (binding.kind === 'current_review') {
+      if (binding.reviewedSubjectDigest !== certificate.authorityDigest) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['reviewBinding', 'reviewedSubjectDigest'],
+          message:
+            'A plan current_review binding must review exactly the certified plan digest (reviewedSubjectDigest === authorityDigest).',
+        });
+      }
+      return;
+    }
+    if (binding.approvedSubjectDigest !== certificate.authorityDigest) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['reviewBinding', 'approvedSubjectDigest'],
+        message:
+          'A plan review_exhausted_override binding must approve exactly the certified plan digest (approvedSubjectDigest === authorityDigest).',
+      });
+    }
+    if (binding.reviewedSubjectDigest !== binding.approvedSubjectDigest) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['reviewBinding', 'reviewedSubjectDigest'],
+        message:
+          'A plan review_exhausted_override binding may only release the exact subject the last review covered (reviewedSubjectDigest === approvedSubjectDigest).',
+      });
+    }
   })
   .readonly();
 export type PlanApprovalCertificate = z.infer<typeof PlanApprovalCertificate>;
@@ -326,6 +403,19 @@ export function hasCurrentPlanApprovalCertificate(
   // Record-Digest-Bindung: Gleicher Plantext + gleiche Version, aber anderer
   // recordDigest (z.B. andere Lineage-Metadaten) invalidiert das Zertifikat.
   if (plan.approvalCertificate.planRecordDigest !== plan.current.recordDigest) return false;
+  // CE5: The review-evidence binding is part of the certificate's authority.
+  // Legacy certificates without a binding (or whose binding no longer matches
+  // the current subject) never authorize critical claims — fail closed.
+  const binding = plan.approvalCertificate.reviewBinding;
+  if (!binding) return false;
+  if (binding.kind === 'current_review') {
+    if (binding.reviewedSubjectDigest !== plan.current.digest) return false;
+  } else if (
+    binding.approvedSubjectDigest !== plan.current.digest ||
+    binding.reviewedSubjectDigest !== binding.approvedSubjectDigest
+  ) {
+    return false;
+  }
   const declarations = plan.claimDeclarations ?? emptyClaimDeclarations('plan');
   return (
     plan.approvalCertificate.claimDeclarationsDigest ===

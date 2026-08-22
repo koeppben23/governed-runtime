@@ -673,7 +673,7 @@ describe('host-task evidence → plan certificate lineage', () => {
       // Write plan content and advance to PLAN_REVIEW for certificate creation.
       const now = new Date().toISOString();
       const planRecord = computeRecordDigest({
-        contentDigest: 'plan-cert-digest',
+        contentDigest: SUBJECT_DIGEST,
         planVersion: 1,
         supersedesRecordDigest: null,
         originatingReviewObligationId: null,
@@ -685,7 +685,7 @@ describe('host-task evidence → plan certificate lineage', () => {
         plan: {
           current: {
             body: '## Plan\n1. Fix the thing.',
-            digest: 'plan-cert-digest',
+            digest: SUBJECT_DIGEST,
             sections: [],
             createdAt: now,
             recordDigest: planRecord,
@@ -697,6 +697,7 @@ describe('host-task evidence → plan certificate lineage', () => {
           },
           history: [],
           reviewFindings: undefined,
+          reviewCompletion: 'reviewer_accepted',
           claimDeclarations: {
             flow: 'plan' as const,
             claims: [
