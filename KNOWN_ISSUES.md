@@ -147,8 +147,8 @@ disproven, update the status and link the evidence."
 | AR3  | MEDIUM   | Open            | Archive strict-mode escalation diagnostics need consistency.                                                                                                  |
 | AR4  | MEDIUM   | Open            | Unexpected-file checks should surface inconclusive directory reads.                                                                                           |
 | AR5  | MEDIUM   | Not Verified    | Archive binding event ordering should avoid phantom evidence.                                                                                                 |
-| TSA1 | MEDIUM   | Fixed           | RFC3161 verifier enforces the TSA signer contract: critical, exclusive id-kp-timeStamping EKU.                                                                |
-| TSA2 | MEDIUM   | Fixed           | Digest/signature allowlists (SHA-256/384/512), SignerInfo digestAlgorithm == messageImprint hash, validated RSASSA-PSS parameters.                            |
+| TSA1 | MEDIUM   | Fixed           | RFC3161 verifier enforces exactly one critical, exclusive id-kp-timeStamping EKU.                                                                              |
+| TSA2 | MEDIUM   | Fixed           | Independently allowlisted message-imprint and CMS hashes (SHA-256/384/512), CMS-internal coherence, validated RSASSA-PSS parameters.                          |
 | S1   | MEDIUM   | Open            | State schema versioning needs forward-migration strategy.                                                                                                     |
 | S2   | MEDIUM   | Open            | Policy snapshot parse transforms can rewrite historical state.                                                                                                |
 | MUT2 | MEDIUM   | Open            | Coverage excludes the production `src/integration/plugin-helpers.ts` by wildcard; its enforcement paths do not count toward the 80% gate or mutation scope.   |

@@ -14,19 +14,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   archive assurance when every part of the chain is independently validated:
   - **TSA signer contract (TSA1/TSA3):** the pinned signer certificate MUST
     carry a critical extendedKeyUsage with id-kp-timeStamping and no other key
-    purposes (`missing_tsa_eku` / `non_exclusive_tsa_eku`); unknown critical
+     purposes and exactly one EKU extension (`missing_tsa_eku` /
+     `duplicate_tsa_eku` / `non_exclusive_tsa_eku`); unknown critical
     extensions reject (`unhandled_critical_extension`), unknown non-critical
     ones are tolerated per RFC 5280.
-  - **Algorithm allowlists (TSA2):** message-imprint and signature hashes are
-    allowlisted to SHA-256/384/512; the SignerInfo `digestAlgorithm` MUST equal
-    the message-imprint algorithm (RFC 3161 §2.4.2); RSASSA-PSS is accepted
+   - **Algorithm allowlists (TSA2):** message-imprint and CMS signature hashes
+     are independently allowlisted to SHA-256/384/512. CMS digest and signature
+     algorithm remain internally coherent (RFC 8933 §3.5), but need not equal
+     the message-imprint algorithm. RSASSA-PSS is accepted
     only against the explicit profile (MGF1 with a matching hash,
     trailerField 1, saltLength within 8..digest byte length). Divergences fail
-    closed with `unsafe_digest_algorithm` / `unsafe_signature_algorithm` plus
+     closed with `unsafe_digest_algorithm` / `unsafe_signature_algorithm` plus
     structured diagnostics. The verifier interface now receives the full
     admissible digest family (`expectedDigests`), computed canonically in
     `computeCanonicalEventDigests`; stamp-time verification only ever accepts
-    the SHA-256 imprint the request used.
+     the SHA-256 imprint the request used.
+   - **Signer certificate binding:** each token requires a signed
+     `SigningCertificate`/`ESSCertID` or `SigningCertificateV2`/`ESSCertIDv2`
+     binding that matches the embedded, pinned signer certificate.
   - **Constant-time imprints (TSA4):** all imprint comparisons use
     `constantTimeBytesEqual` (`src/audit/constant-time.ts`).
   - **No downgrade trust (AC2):** stronger TSA evidence — a token, an imprint,

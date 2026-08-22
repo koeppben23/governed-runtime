@@ -10,7 +10,8 @@
  *
  * - `reviewer_accepted`: exact-subject, canonically linked evidence with
  *   `capturedVerdict === 'accept'` mints a `current_review` binding.
- * - `review_exhausted`: the latest bound evidence must carry a non-accept
+ * - `review_exhausted`: the latest bound evidence must carry
+ *   `changes_requested`
  *   verdict AND must have reviewed exactly the subject being approved
  *   (`reviewedSubjectDigest === approvedSubjectDigest`) — an unreviewed
  *   revision is never releasable by an override.
@@ -78,7 +79,7 @@ function enforceExhaustedPlanVerdict(
   capturedVerdict: string,
   resolution: ResolvedPlanReviewEvidence,
 ): RailBlocked | null {
-  if (capturedVerdict === 'accept') {
+  if (capturedVerdict !== 'changes_requested') {
     return blocked('PLAN_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION', {
       reviewCompletion: 'review_exhausted',
       capturedVerdict,
