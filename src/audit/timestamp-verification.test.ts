@@ -132,7 +132,12 @@ describe('verifyTsaMessageImprint', () => {
   it('passes when no timestampEvidence is present', () => {
     const event = makeAuditEvent();
     const result = verifyTsaMessageImprint(event);
-    expect(result.valid).toBe(true);
+    expect(result).toEqual({
+      valid: true,
+      reason: null,
+      needsTokenVerification: false,
+      downgraded: false,
+    });
   });
 
   it('passes when timestampEvidence has no TSA data', () => {
@@ -146,7 +151,12 @@ describe('verifyTsaMessageImprint', () => {
       },
     } as unknown as AuditEvent;
     const result = verifyTsaMessageImprint(event);
-    expect(result.valid).toBe(true);
+    expect(result).toEqual({
+      valid: true,
+      reason: null,
+      needsTokenVerification: false,
+      downgraded: false,
+    });
   });
 
   it('AC2: fails when tsa_failed status downgrades a present TSA payload', () => {
@@ -248,7 +258,12 @@ describe('verifyTsaMessageImprint', () => {
   it('passes when TSA messageImprint matches the recomputed canonical event digest', () => {
     const event = makeTsaStampedEvent();
     const result = verifyTsaMessageImprint(event);
-    expect(result.valid).toBe(true);
+    expect(result).toEqual({
+      valid: true,
+      reason: null,
+      needsTokenVerification: false,
+      downgraded: false,
+    });
   });
 
   it('fails when TSA messageImprint does not match recomputed canonical event digest', () => {
@@ -312,7 +327,28 @@ describe('verifyTsaMessageImprint', () => {
 
     expect(result.valid).toBe(false);
     expect(result.needsTokenVerification).toBe(true);
+    expect(result.downgraded).toBe(false);
     expect(result.reason).toContain('token verification required');
+  });
+
+  it('a tsa payload whose fields are non-string values is treated as having no imprint', () => {
+    const event = {
+      ...makeAuditEvent(),
+      timestampEvidence: {
+        status: 'tsa_stamped',
+        source: 'tsa',
+        resolvedAt: '2026-01-01T00:00:00.000Z',
+        tsa: {
+          tokenDerBase64: 0,
+          messageImprint: 42,
+        },
+      },
+    } as unknown as AuditEvent;
+    const result = verifyTsaMessageImprint(event);
+    expect(result.valid).toBe(false);
+    expect(result.downgraded).toBe(false);
+    expect(result.needsTokenVerification).toBe(false);
+    expect(result.reason).toContain('messageImprint');
   });
 
   it('fails-closed for coordinated edit with tokenDerBase64 — cannot trust mutable messageImprint', () => {
@@ -383,6 +419,14 @@ describe('verifyTimestampEvidencePresence', () => {
     const result = verifyTimestampEvidencePresence(events, ['decision', 'lifecycle']);
     expect(result.valid).toBe(false);
     expect(result.missingCriticalEvents).toEqual([0]);
+  });
+
+  it('classifies every event-kind prefix through extractEventKind', () => {
+    const kinds = ['decision', 'lifecycle', 'transition', 'tool_call', 'error'];
+    const events = kinds.map((kind) => makeAuditEvent({ event: `${kind}:EVT-001` }));
+    const result = verifyTimestampEvidencePresence(events, kinds);
+    // All kinds are critical here, so every un-stamped event is missing.
+    expect(result.missingCriticalEvents).toEqual([0, 1, 2, 3, 4]);
   });
 
   it('detects local-status evidence as missing', () => {

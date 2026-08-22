@@ -186,4 +186,47 @@ describe('verifyArchiveTimestampTokens', () => {
 
     expect(findings).toEqual([]);
   });
+
+  it('warns only when SOME event carries TSA evidence (binding is some, not every)', async () => {
+    const plain = makeState('COMPLETE');
+    const stamped = stampedEvent();
+    const withoutTsa = {
+      ...stamped,
+      timestampEvidence: undefined,
+    } as unknown as AuditEvent;
+    const findings: ArchiveFinding[] = [];
+
+    await verifyArchiveTimestampTokens({
+      events: [withoutTsa, stamped],
+      state: plain,
+      manifest: manifest('solo'),
+      findings,
+      strict: false,
+    });
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        code: 'tsa_verification_failed',
+        severity: 'warning',
+      }),
+    ]);
+  });
+
+  it('emits nothing without anchors when NO event carries TSA evidence', async () => {
+    const event = {
+      ...stampedEvent(),
+      timestampEvidence: undefined,
+    } as unknown as AuditEvent;
+    const findings: ArchiveFinding[] = [];
+
+    await verifyArchiveTimestampTokens({
+      events: [event],
+      state: makeState('COMPLETE'),
+      manifest: manifest('solo'),
+      findings,
+      strict: false,
+    });
+
+    expect(findings).toEqual([]);
+  });
 });

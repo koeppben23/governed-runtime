@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { PkijsTimestampVerifier } from './rfc-3161-pkijs-verifier.js';
+import {
+  PkijsTimestampVerifier,
+  decideSignatureAlgorithm,
+  digestKindFromOid,
+  oidFromParams,
+  pssHashKind,
+  signatureDigestKindFromOid,
+  webcryptoHashName,
+} from './rfc-3161-pkijs-verifier.js';
+import { RSASSAPSSParams } from 'pkijs';
+import { AlgorithmIdentifier } from 'pkijs';
+import * as asn1js from 'asn1js';
 import { verifyTimestampTokensForEvents } from './timestamp-token-verification.js';
 import { computeCanonicalEventDigest } from './canonical-digest.js';
 import { canonicalDigestToUint8Array } from './timestamp-verification.js';
@@ -30,6 +41,154 @@ function expectedDigestsFor(sha256: Uint8Array): {
 }
 
 describe('PkijsTimestampVerifier', () => {
+  describe('authority mapping functions (direct unit pins)', () => {
+    it('digestKindFromOid maps all allowlisted digests and rejects unknown OIDs', () => {
+      expect(digestKindFromOid('2.16.840.1.101.3.4.2.1')).toBe('sha256');
+      expect(digestKindFromOid('2.16.840.1.101.3.4.2.2')).toBe('sha384');
+      expect(digestKindFromOid('2.16.840.1.101.3.4.2.3')).toBe('sha512');
+      expect(digestKindFromOid('1.3.14.3.2.26')).toBeNull();
+    });
+
+    it('oidFromParams extracts the algorithm OID from a parsed slot', () => {
+      expect(oidFromParams({ algorithmId: '1.2.840.113549.1.1.8' })).toBe('1.2.840.113549.1.1.8');
+      expect(oidFromParams({})).toBeNull();
+      expect(oidFromParams({ algorithmId: 42 })).toBeNull();
+    });
+
+    it('webcryptoHashName maps every digest kind', () => {
+      expect(webcryptoHashName('sha256')).toBe('SHA-256');
+      expect(webcryptoHashName('sha384')).toBe('SHA-384');
+      expect(webcryptoHashName('sha512')).toBe('SHA-512');
+    });
+
+    it('signatureDigestKindFromOid maps all six listed algorithms and rejects unknowns', () => {
+      expect(signatureDigestKindFromOid('1.2.840.113549.1.1.11')).toBe('sha256');
+      expect(signatureDigestKindFromOid('1.2.840.10045.4.3.2')).toBe('sha256');
+      expect(signatureDigestKindFromOid('1.2.840.113549.1.1.12')).toBe('sha384');
+      expect(signatureDigestKindFromOid('1.2.840.10045.4.3.3')).toBe('sha384');
+      expect(signatureDigestKindFromOid('1.2.840.113549.1.1.13')).toBe('sha512');
+      expect(signatureDigestKindFromOid('1.2.840.10045.4.3.4')).toBe('sha512');
+      expect(signatureDigestKindFromOid('1.2.840.113549.1.1.4')).toBeNull();
+    });
+
+    function pssParams(overrides: {
+      hashOid?: string;
+      mgfOid?: string;
+      mgfHashOid?: string;
+      saltLength?: number;
+      trailerField?: number;
+    }): RSASSAPSSParams {
+      return new RSASSAPSSParams({
+        hashAlgorithm: new AlgorithmIdentifier({
+          algorithmId: overrides.hashOid ?? '2.16.840.1.101.3.4.2.1',
+        }),
+        maskGenAlgorithm: new AlgorithmIdentifier({
+          algorithmId: overrides.mgfOid ?? '1.2.840.113549.1.1.8',
+          algorithmParams: new AlgorithmIdentifier({
+            algorithmId: overrides.mgfHashOid ?? '2.16.840.1.101.3.4.2.1',
+          }).toSchema(),
+        }),
+        saltLength: overrides.saltLength ?? 32,
+        trailerField: overrides.trailerField ?? 1,
+      });
+    }
+
+    it('pssHashKind accepts the full in-profile parameter space', () => {
+      expect(pssHashKind(pssParams({}), 'sha256')).toBe('sha256');
+      expect(
+        pssHashKind(
+          pssParams({ hashOid: '2.16.840.1.101.3.4.2.2', mgfHashOid: '2.16.840.1.101.3.4.2.2' }),
+          'sha384',
+        ),
+      ).toBe('sha384');
+      expect(pssHashKind(pssParams({ saltLength: 8 }), 'sha256')).toBe('sha256');
+    });
+
+    it('pssHashKind applies the per-kind salt ceiling (digest byte length)', () => {
+      // 40 bytes of salt fit the SHA-384 (48) and SHA-512 (64) ceilings but
+      // exceed the SHA-256 ceiling (32).
+      expect(
+        pssHashKind(
+          pssParams({
+            hashOid: '2.16.840.1.101.3.4.2.2',
+            mgfHashOid: '2.16.840.1.101.3.4.2.2',
+            saltLength: 40,
+          }),
+          'sha384',
+        ),
+      ).toBe('sha384');
+      expect(
+        pssHashKind(
+          pssParams({
+            hashOid: '2.16.840.1.101.3.4.2.3',
+            mgfHashOid: '2.16.840.1.101.3.4.2.3',
+            saltLength: 40,
+          }),
+          'sha512',
+        ),
+      ).toBe('sha512');
+      expect(pssHashKind(pssParams({ saltLength: 40 }), 'sha256')).toBeNull();
+      expect(pssHashKind(pssParams({ saltLength: 33 }), 'sha256')).toBeNull();
+    });
+
+    it('pssHashKind rejects every out-of-profile parameter dimension', () => {
+      // hash not allowlisted / not matching the imprint kind
+      expect(pssHashKind(pssParams({ hashOid: '1.3.14.3.2.26' }), 'sha256')).toBeNull();
+      expect(
+        pssHashKind(
+          pssParams({ hashOid: '2.16.840.1.101.3.4.2.2', mgfHashOid: '2.16.840.1.101.3.4.2.2' }),
+          'sha256',
+        ),
+      ).toBeNull();
+      // non-MGF1 mask
+      expect(pssHashKind(pssParams({ mgfOid: '1.2.840.113549.1.9.16.3.8' }), 'sha256')).toBeNull();
+      // MGF hash diverging from the signature hash
+      expect(pssHashKind(pssParams({ mgfHashOid: '2.16.840.1.101.3.4.2.2' }), 'sha256')).toBeNull();
+      // trailerField != 1
+      expect(pssHashKind(pssParams({ trailerField: 2 }), 'sha256')).toBeNull();
+      // salt below the floor and above the digest length
+      expect(pssHashKind(pssParams({ saltLength: 0 }), 'sha256')).toBeNull();
+      expect(pssHashKind(pssParams({ saltLength: 40 }), 'sha256')).toBeNull();
+      // unparseable parameters
+      expect(pssHashKind(new asn1js.Sequence(), 'sha256')).toBeNull();
+    });
+
+    it('decideSignatureAlgorithm rejects unlisted and incoherent PSS parameters', () => {
+      const unlisted = decideSignatureAlgorithm(
+        { signatureAlgorithm: { algorithmId: '1.2.840.113549.1.1.4' } },
+        'sha256',
+      );
+      expect('rejection' in unlisted && unlisted.rejection.reason).toBe(
+        'unsafe_signature_algorithm',
+      );
+
+      const badParams = decideSignatureAlgorithm(
+        {
+          signatureAlgorithm: {
+            algorithmId: '1.2.840.113549.1.1.10',
+            algorithmParams: new asn1js.Sequence(),
+          },
+        },
+        'sha256',
+      );
+      expect('rejection' in badParams && badParams.rejection.reason).toBe(
+        'unsafe_signature_algorithm',
+      );
+
+      const mismatchedHash = decideSignatureAlgorithm(
+        {
+          signatureAlgorithm: {
+            algorithmId: '1.2.840.113549.1.1.12',
+          },
+        },
+        'sha256',
+      );
+      expect('rejection' in mismatchedHash && mismatchedHash.rejection.reason).toBe(
+        'unsafe_signature_algorithm',
+      );
+    });
+  });
+
   it('valid RFC-3161 token verifies against trust anchor', async () => {
     const fixture = await makeRfc3161Fixture();
     const result = await new PkijsTimestampVerifier().verifyToken({
@@ -122,6 +281,43 @@ describe('PkijsTimestampVerifier', () => {
       expect(result.reason).toBe('unsafe_signature_algorithm');
       expect(result.detail).toContain('does not match');
     }
+  });
+
+  it('an empty signer subject renders signerSubject undefined', async () => {
+    const fixture = await makeRfc3161Fixture({ emptySubject: true });
+    const result = await new PkijsTimestampVerifier().verifyToken({
+      tokenDerBase64: fixture.tokenDerBase64,
+      expectedDigests: expectedDigestsFor(DIGEST),
+      trustAnchors: [fixture.trustAnchorPem],
+    });
+
+    expect(result).toMatchObject({ status: 'valid', signerSubject: undefined });
+  });
+
+  it('a valid token with NO trust anchors returns untrusted_cert', async () => {
+    const fixture = await makeRfc3161Fixture();
+    const result = await new PkijsTimestampVerifier().verifyToken({
+      tokenDerBase64: fixture.tokenDerBase64,
+      expectedDigests: expectedDigestsFor(DIGEST),
+      trustAnchors: [],
+    });
+
+    expect(result).toEqual({ status: 'invalid', reason: 'untrusted_cert' });
+  });
+
+  it('TSA1: an EKU missing id-kp-timeStamping returns missing_tsa_eku', async () => {
+    const fixture = await makeRfc3161Fixture({ eku: 'other' });
+    const result = await new PkijsTimestampVerifier().verifyToken({
+      tokenDerBase64: fixture.tokenDerBase64,
+      expectedDigests: expectedDigestsFor(DIGEST),
+      trustAnchors: [fixture.trustAnchorPem],
+    });
+
+    expect(result).toEqual({
+      status: 'invalid',
+      reason: 'missing_tsa_eku',
+      detail: expect.stringContaining('id-kp-timeStamping'),
+    });
   });
 
   it('messageImprint equals canonical event digest', async () => {
@@ -551,6 +747,97 @@ describe('PkijsTimestampVerifier', () => {
     if (result.status === 'invalid') {
       expect(result.reason).toBe('unsafe_signature_algorithm');
       expect(result.detail).toContain('PSS');
+    }
+  });
+
+  it('TSA2: RSASSA-PSS with the minimum saltLength verifies (boundary)', async () => {
+    const fixture = await makeRfc3161Fixture({ keyScheme: 'pss', pssSaltLength: 8 });
+    const result = await new PkijsTimestampVerifier().verifyToken({
+      tokenDerBase64: fixture.tokenDerBase64,
+      expectedDigests: expectedDigestsFor(DIGEST),
+      trustAnchors: [fixture.trustAnchorPem],
+    });
+
+    expect(result).toMatchObject({ status: 'valid' });
+  });
+
+  it('TSA2: RSASSA-PSS with zero salt returns unsafe_signature_algorithm', async () => {
+    const fixture = await makeRfc3161TamperedFixture('tampered_pss_salt_zero', {
+      keyScheme: 'pss',
+    });
+    const result = await new PkijsTimestampVerifier().verifyToken({
+      tokenDerBase64: fixture.tokenDerBase64,
+      expectedDigests: expectedDigestsFor(DIGEST),
+      trustAnchors: [fixture.trustAnchorPem],
+    });
+
+    expect(result.status).toBe('invalid');
+    if (result.status === 'invalid') {
+      expect(result.reason).toBe('unsafe_signature_algorithm');
+    }
+  });
+
+  it('TSA2: RSASSA-PSS salt beyond the digest length returns unsafe_signature_algorithm', async () => {
+    const fixture = await makeRfc3161TamperedFixture('tampered_pss_salt_40', {
+      keyScheme: 'pss',
+    });
+    const result = await new PkijsTimestampVerifier().verifyToken({
+      tokenDerBase64: fixture.tokenDerBase64,
+      expectedDigests: expectedDigestsFor(DIGEST),
+      trustAnchors: [fixture.trustAnchorPem],
+    });
+
+    expect(result.status).toBe('invalid');
+    if (result.status === 'invalid') {
+      expect(result.reason).toBe('unsafe_signature_algorithm');
+    }
+  });
+
+  it('TSA2: RSASSA-PSS with a non-MGF1 mask returns unsafe_signature_algorithm', async () => {
+    const fixture = await makeRfc3161TamperedFixture('tampered_pss_mask_gen', {
+      keyScheme: 'pss',
+    });
+    const result = await new PkijsTimestampVerifier().verifyToken({
+      tokenDerBase64: fixture.tokenDerBase64,
+      expectedDigests: expectedDigestsFor(DIGEST),
+      trustAnchors: [fixture.trustAnchorPem],
+    });
+
+    expect(result.status).toBe('invalid');
+    if (result.status === 'invalid') {
+      expect(result.reason).toBe('unsafe_signature_algorithm');
+    }
+  });
+
+  it('TSA2: RSASSA-PSS with an MGF hash diverging from the signature hash is rejected', async () => {
+    const fixture = await makeRfc3161TamperedFixture('tampered_pss_mgf_hash', {
+      keyScheme: 'pss',
+    });
+    const result = await new PkijsTimestampVerifier().verifyToken({
+      tokenDerBase64: fixture.tokenDerBase64,
+      expectedDigests: expectedDigestsFor(DIGEST),
+      trustAnchors: [fixture.trustAnchorPem],
+    });
+
+    expect(result.status).toBe('invalid');
+    if (result.status === 'invalid') {
+      expect(result.reason).toBe('unsafe_signature_algorithm');
+    }
+  });
+
+  it('TSA2: RSASSA-PSS hash diverging from the message imprint is rejected', async () => {
+    const fixture = await makeRfc3161TamperedFixture('tampered_pss_hash_sha384', {
+      keyScheme: 'pss',
+    });
+    const result = await new PkijsTimestampVerifier().verifyToken({
+      tokenDerBase64: fixture.tokenDerBase64,
+      expectedDigests: expectedDigestsFor(DIGEST),
+      trustAnchors: [fixture.trustAnchorPem],
+    });
+
+    expect(result.status).toBe('invalid');
+    if (result.status === 'invalid') {
+      expect(result.reason).toBe('unsafe_signature_algorithm');
     }
   });
 

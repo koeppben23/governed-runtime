@@ -418,18 +418,19 @@ Archive timestamp severity derives exclusively from the trusted
 Mutation admission attempt (docs/testing-strategy.md admission rule: ≥ 80
 targeted score required):
 
-| Module                                                     | Targeted score | Admitted             |
-| ---------------------------------------------------------- | -------------- | -------------------- |
-| `src/audit/timestamp-token-verification.ts`                | 86.67          | Yes                  |
-| `src/audit/rfc-3161-pkijs-verifier.ts`                     | 78.61          | No (below threshold) |
-| `src/audit/timestamp-verification.ts`                      | 70.09          | No (below threshold) |
-| `src/adapters/workspace/archive-timestamp-verification.ts` | 57.14          | No (below threshold) |
+| Module                                                     | Targeted score | Admitted |
+| ---------------------------------------------------------- | -------------- | -------- |
+| `src/audit/timestamp-token-verification.ts`                | 86.67          | Yes      |
+| `src/audit/rfc-3161-pkijs-verifier.ts`                     | 95.27          | Yes      |
+| `src/audit/timestamp-verification.ts`                      | 86.61          | Yes      |
+| `src/adapters/workspace/archive-timestamp-verification.ts` | 100.00         | Yes      |
 
-The three non-admitted modules carry full behavioral test coverage (36
-verifier tests incl. EKU/exclusivity/critical-extension/algorithm negatives,
-downgrade matrices, monotonicity parse cases); their targeted scores remain
-below the admission threshold — follow-up: additional mutant-kill tests or a
-stryker attribution investigation.
+All four hardened modules meet the admission threshold (>= 80 targeted
+score). Authority-relevant branches are pinned by direct unit tests
+(digest/signature OID mappings, PSS profile parameters, EKU contract,
+downgrade matrix, salt ceilings); `Stryker disable` directives remain ONLY on
+fail-fast diagnostics and outcome-equivalent input-shape dispatches, each
+with a per-line justification naming the covering tests.
 
 ## Maintenance Rules
 

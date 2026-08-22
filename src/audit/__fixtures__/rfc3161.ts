@@ -61,8 +61,9 @@ function derToPem(label: string, der: ArrayBuffer): string {
 const OID_EKU = '2.5.29.37';
 const OID_KP_TIMESTAMPING = '1.3.6.1.5.5.7.3.8';
 const OID_KP_CLIENT_AUTH = '1.3.6.1.5.5.7.3.2';
+const OID_MGF1 = '1.2.840.113549.1.1.8';
 
-export type FixtureEkuVariant = 'timestamping' | 'none' | 'extra' | 'non_critical';
+export type FixtureEkuVariant = 'timestamping' | 'none' | 'extra' | 'non_critical' | 'other';
 
 /** Standard CA-shape extensions shared by every fixture signer. */
 function baseCertificateExtensions(): Extension[] {
@@ -84,7 +85,11 @@ function baseCertificateExtensions(): Extension[] {
 function ekuExtension(variant: FixtureEkuVariant): Extension | null {
   if (variant === 'none') return null;
   const purposes =
-    variant === 'extra' ? [OID_KP_TIMESTAMPING, OID_KP_CLIENT_AUTH] : [OID_KP_TIMESTAMPING];
+    variant === 'extra'
+      ? [OID_KP_TIMESTAMPING, OID_KP_CLIENT_AUTH]
+      : variant === 'other'
+        ? [OID_KP_CLIENT_AUTH]
+        : [OID_KP_TIMESTAMPING];
   return new Extension({
     extnID: OID_EKU,
     critical: variant !== 'non_critical',
@@ -113,6 +118,8 @@ async function makeCertificate(input: {
   readonly unknownCriticalExtension?: boolean;
   readonly keyScheme?: 'pkcs1' | 'pss';
   readonly keyHash?: 'SHA-256' | 'SHA-384' | 'SHA-512';
+  readonly emptySubject?: boolean;
+  readonly pssSaltLength?: number;
 }): Promise<{ cert: Certificate; privateKey: CryptoKey; pem: string }> {
   const crypto = getCrypto(true);
   const cert = new Certificate();
@@ -124,12 +131,14 @@ async function makeCertificate(input: {
       value: new asn1js.BmpString({ value: input.commonName }),
     }),
   );
-  cert.subject.typesAndValues.push(
-    new AttributeTypeAndValue({
-      type: '2.5.4.3',
-      value: new asn1js.BmpString({ value: input.commonName }),
-    }),
-  );
+  if (!input.emptySubject) {
+    cert.subject.typesAndValues.push(
+      new AttributeTypeAndValue({
+        type: '2.5.4.3',
+        value: new asn1js.BmpString({ value: input.commonName }),
+      }),
+    );
+  }
   cert.notBefore.value = input.notBefore;
   cert.notAfter.value = input.notAfter;
   const extensions = baseCertificateExtensions();
@@ -147,7 +156,7 @@ async function makeCertificate(input: {
   const keyAlgorithm = algorithm.algorithm as RsaHashedKeyGenParams;
   keyAlgorithm.hash = { name: keyHash };
   if (keyScheme === 'pss') {
-    (keyAlgorithm as unknown as RsaPssParams).saltLength = 32;
+    (keyAlgorithm as unknown as RsaPssParams).saltLength = input.pssSaltLength ?? 32;
   }
   const keys = await crypto.generateKey(keyAlgorithm, true, algorithm.usages);
   await cert.subjectPublicKeyInfo.importKey(keys.publicKey);
@@ -171,6 +180,8 @@ export async function makeRfc3161Fixture(
     readonly unknownCriticalExtension?: boolean;
     readonly keyScheme?: 'pkcs1' | 'pss';
     readonly multiPartEContent?: boolean;
+    readonly pssSaltLength?: number;
+    readonly emptySubject?: boolean;
   } = {},
 ): Promise<Rfc3161Fixture> {
   const signer = await makeCertificate({
@@ -180,6 +191,8 @@ export async function makeRfc3161Fixture(
     eku: input.eku,
     unknownCriticalExtension: input.unknownCriticalExtension,
     keyScheme: input.keyScheme,
+    emptySubject: input.emptySubject,
+    pssSaltLength: input.pssSaltLength,
     keyHash: webcryptoHashNameForOid(input.digestOid ?? '2.16.840.1.101.3.4.2.1') as
       'SHA-256' | 'SHA-384' | 'SHA-512',
   });
@@ -317,7 +330,12 @@ export type TamperedTokenKind =
   | 'tampered_signature_algorithm_sha384'
   | 'tampered_pss_params'
   | 'tampered_pss_salt_length'
-  | 'tampered_pss_trailer_field';
+  | 'tampered_pss_trailer_field'
+  | 'tampered_pss_salt_zero'
+  | 'tampered_pss_salt_40'
+  | 'tampered_pss_mask_gen'
+  | 'tampered_pss_mgf_hash'
+  | 'tampered_pss_hash_sha384';
 
 async function buildTstInfoDer(
   input: { digestOid?: string; genTime?: Date } = {},
@@ -429,19 +447,32 @@ function buildSignerInfo(cert: Certificate, signedAttrs: SignedAndUnsignedAttrib
   });
 }
 
+/** Tamper actions without async dependencies, dispatched by kind. */
+const TAMPER_ACTIONS: Partial<
+  Record<TamperedTokenKind, (signedData: SignedData, signerCert: Certificate) => void>
+> = {
+  tampered_signature: (signedData) => tamperSignature(signedData),
+  wrong_signer_sid: (signedData, signerCert) => tamperSignerSid(signedData, signerCert),
+  tampered_signature_algorithm: (signedData) => tamperSignatureAlgorithm(signedData),
+  tampered_signature_algorithm_sha384: (signedData) => tamperSignatureAlgorithmToSha384(signedData),
+  tampered_pss_params: (signedData) => tamperPssParams(signedData),
+  tampered_pss_salt_length: (signedData) => tamperPssSaltLength(signedData),
+  tampered_pss_trailer_field: (signedData) => tamperPssTrailerField(signedData),
+  tampered_pss_salt_zero: (signedData) => tamperPssSaltZero(signedData),
+  tampered_pss_salt_40: (signedData) => tamperPssSalt40(signedData),
+  tampered_pss_mask_gen: (signedData) => tamperPssMaskGen(signedData),
+  tampered_pss_mgf_hash: (signedData) => tamperPssMgfHash(signedData),
+  tampered_pss_hash_sha384: (signedData) => tamperPssHashSha384(signedData),
+};
+
 async function applyTamperedTokenKind(
   kind: TamperedTokenKind,
   signedData: SignedData,
   signerCert: Certificate,
 ): Promise<void> {
-  if (kind === 'tampered_signature') tamperSignature(signedData);
+  const action = TAMPER_ACTIONS[kind];
+  if (action) action(signedData, signerCert);
   if (kind === 'tampered_tst_info') await tamperTstInfo(signedData);
-  if (kind === 'wrong_signer_sid') tamperSignerSid(signedData, signerCert);
-  if (kind === 'tampered_signature_algorithm') tamperSignatureAlgorithm(signedData);
-  if (kind === 'tampered_signature_algorithm_sha384') tamperSignatureAlgorithmToSha384(signedData);
-  if (kind === 'tampered_pss_params') tamperPssParams(signedData);
-  if (kind === 'tampered_pss_salt_length') tamperPssSaltLength(signedData);
-  if (kind === 'tampered_pss_trailer_field') tamperPssTrailerField(signedData);
 }
 
 function tamperSignature(signedData: SignedData): void {
@@ -505,6 +536,54 @@ function tamperPssSaltLength(signedData: SignedData): void {
 function tamperPssTrailerField(signedData: SignedData): void {
   tamperPssProfile(signedData, (pss) => {
     pss.trailerField = 2;
+  });
+}
+
+function tamperPssSaltZero(signedData: SignedData): void {
+  tamperPssProfile(signedData, (pss) => {
+    pss.saltLength = 0;
+  });
+}
+
+function tamperPssSalt40(signedData: SignedData): void {
+  // 40 > 32 (SHA-256 digest length) — outside the salt profile.
+  tamperPssProfile(signedData, (pss) => {
+    pss.saltLength = 40;
+  });
+}
+
+function tamperPssMaskGen(signedData: SignedData): void {
+  tamperPssProfile(signedData, (pss) => {
+    // Replace MGF1 with an unrelated algorithm — outside the PSS profile.
+    pss.maskGenAlgorithm = new AlgorithmIdentifier({
+      algorithmId: '1.2.840.113549.1.9.16.3.8',
+    });
+  });
+}
+
+function tamperPssMgfHash(signedData: SignedData): void {
+  tamperPssProfile(signedData, (pss) => {
+    // MGF1 with a hash diverging from the signature hash. The nested params
+    // slot takes a raw schema block (pkijs serializes it verbatim).
+    pss.maskGenAlgorithm = new AlgorithmIdentifier({
+      algorithmId: OID_MGF1,
+      algorithmParams: new AlgorithmIdentifier({
+        algorithmId: '2.16.840.1.101.3.4.2.2',
+      }).toSchema(),
+    });
+  });
+}
+
+function tamperPssHashSha384(signedData: SignedData): void {
+  tamperPssProfile(signedData, (pss) => {
+    // PSS hash diverging from the SHA-256 message imprint.
+    pss.hashAlgorithm = new AlgorithmIdentifier({ algorithmId: '2.16.840.1.101.3.4.2.2' });
+    pss.maskGenAlgorithm = new AlgorithmIdentifier({
+      algorithmId: OID_MGF1,
+      algorithmParams: new AlgorithmIdentifier({
+        algorithmId: '2.16.840.1.101.3.4.2.2',
+      }).toSchema(),
+    });
   });
 }
 

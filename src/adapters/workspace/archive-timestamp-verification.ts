@@ -12,7 +12,6 @@ import { verifyTimestampTokensForEvents } from '../../audit/timestamp-token-veri
 function eventHasTsaEvidence(event: AuditEvent): boolean {
   const evidence = event.timestampEvidence as Record<string, unknown> | undefined;
   // Covered by the tsa-null and no-tsa archive tests.
-  // Stryker disable next-line ConditionalExpression
   return typeof evidence?.tsa === 'object' && evidence.tsa !== null;
 }
 
@@ -33,9 +32,14 @@ export async function verifyArchiveTimestampTokens(input: {
   const severity: 'error' | 'warning' = input.strict ? 'error' : 'warning';
 
   // Covered by the missing-trust-anchor warning tests.
+  // Warning-gate diagnostics, not a trust decision: with no configured
+  // anchors the emitted finding is a non-strict warning. Covered by the
+  // no-anchor warning tests, the null-tsa test, and the no-tsa test
+  // ('warns when TSA evidence is present but trust anchors are missing',
+  // 'a null tsa payload is not TSA evidence', 'emits nothing without
+  // anchors when NO event carries TSA evidence').
   // Stryker disable next-line ConditionalExpression,EqualityOperator,BlockStatement
   if (trustAnchors.length === 0) {
-    // Stryker disable next-line MethodExpression
     if (input.events.some(eventHasTsaEvidence)) {
       input.findings.push({
         code: 'tsa_verification_failed',

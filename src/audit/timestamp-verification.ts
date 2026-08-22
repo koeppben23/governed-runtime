@@ -22,19 +22,16 @@ import { TsaError } from './errors.js';
  */
 export function canonicalDigestToUint8Array(hex: string): Uint8Array {
   // Covered by the direct unit tests (odd length, invalid hex, round-trip).
-  // Stryker disable next-line ConditionalExpression
   if (hex.length % 2 !== 0) {
     throw new TsaError(
       'TSA_HEX_ODD_LENGTH',
       `canonicalDigestToUint8Array: odd hex length ${hex.length}`,
     );
   }
-  // Stryker disable next-line ConditionalExpression
   if (!/^[0-9a-fA-F]+$/.test(hex)) {
     throw new TsaError('TSA_HEX_INVALID', `canonicalDigestToUint8Array: invalid hex input`);
   }
   const bytes = new Uint8Array(hex.length / 2);
-  // Stryker disable next-line EqualityOperator
   for (let i = 0; i < hex.length; i += 2) {
     bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
   }
@@ -110,7 +107,6 @@ export interface TimestampEvidenceCheck {
 /** AC2: the status values that must never weaken present TSA evidence. */
 function isDegradedStatus(status: string | undefined): boolean {
   // Covered exhaustively by the AC2 matrix test (all three statuses).
-  // Stryker disable next-line BooleanLiteral
   return status === 'local' || status === 'ntp_checked' || status === 'tsa_failed';
 }
 
@@ -141,7 +137,6 @@ export function verifyTsaMessageImprint(event: AuditEvent): TimestampEvidenceChe
     string | undefined;
 
   if (!evidence) {
-    // Stryker disable next-line BooleanLiteral
     return { valid: true, reason: null, needsTokenVerification: false, downgraded: false };
   }
 
@@ -149,7 +144,6 @@ export function verifyTsaMessageImprint(event: AuditEvent): TimestampEvidenceChe
   const status = evidence.status as string | undefined;
 
   if (!tsa) {
-    // Stryker disable next-line BooleanLiteral
     return { valid: true, reason: null, needsTokenVerification: false, downgraded: false };
   }
 
@@ -157,42 +151,32 @@ export function verifyTsaMessageImprint(event: AuditEvent): TimestampEvidenceChe
   const tokenDerBase64 = tsa.tokenDerBase64 as string | undefined;
 
   // Covered by the AC2 matrix test (token / imprint / token+imprint).
-  // Stryker disable next-line ConditionalExpression
   const hasStrongerEvidence = typeof tokenDerBase64 === 'string' || typeof imprint === 'string';
-  // Stryker disable next-line ConditionalExpression
   if (hasStrongerEvidence && isDegradedStatus(status)) {
     return {
       valid: false,
       reason: `TSA evidence present but status downgraded to ${status} — a degraded status must never weaken timestamp assurance`,
-      // Stryker disable next-line BooleanLiteral
       needsTokenVerification: false,
-      // Stryker disable next-line BooleanLiteral
       downgraded: true,
     };
   }
 
   // Covered by the token-required and matrix tests.
-  // Stryker disable next-line ConditionalExpression
   if (tokenDerBase64) {
     return {
       valid: false,
       reason: 'TSA token verification required — cannot trust mutable cached messageImprint',
-      // Stryker disable next-line BooleanLiteral
       needsTokenVerification: true,
-      // Stryker disable next-line BooleanLiteral
       downgraded: false,
     };
   }
 
   // Covered by the missing-imprint tests.
-  // Stryker disable next-line ConditionalExpression
   if (!imprint) {
     return {
       valid: false,
       reason: 'TSA evidence missing messageImprint',
-      // Stryker disable next-line BooleanLiteral
       needsTokenVerification: false,
-      // Stryker disable next-line BooleanLiteral
       downgraded: false,
     };
   }
@@ -200,7 +184,6 @@ export function verifyTsaMessageImprint(event: AuditEvent): TimestampEvidenceChe
   const recomputedDigest = computeCanonicalEventDigest(event);
 
   // Covered by the stored-digest cross-check tests.
-  // Stryker disable next-line ConditionalExpression
   if (storedCanonicalDigest && storedCanonicalDigest !== recomputedDigest) {
     return {
       valid: false,
@@ -211,7 +194,6 @@ export function verifyTsaMessageImprint(event: AuditEvent): TimestampEvidenceChe
   }
 
   // Covered by the imprint-mismatch tests.
-  // Stryker disable next-line ConditionalExpression
   if (imprint !== recomputedDigest) {
     return {
       valid: false,
@@ -221,7 +203,6 @@ export function verifyTsaMessageImprint(event: AuditEvent): TimestampEvidenceChe
     };
   }
 
-  // Stryker disable next-line BooleanLiteral
   return { valid: true, reason: null, needsTokenVerification: false, downgraded: false };
 }
 
@@ -252,11 +233,8 @@ export function verifyTimestampEvidencePresence(
 
     if (criticalKinds.includes(eventKind)) {
       // Covered by the presence tests (critical/decision/lifecycle).
-      // Stryker disable next-line ConditionalExpression
       const isMissing =
-        // Stryker disable next-line ConditionalExpression
         !evidence || evidence.status === 'local' || evidence.status === 'tsa_failed';
-      // Stryker disable next-line ConditionalExpression
       if (isMissing) {
         missingCriticalEvents.push(i);
       }
@@ -271,15 +249,10 @@ export function verifyTimestampEvidencePresence(
 
 function extractEventKind(eventString: string): string {
   // Covered by the presence tests across decision/lifecycle/other kinds.
-  // Stryker disable next-line ConditionalExpression
   if (eventString.startsWith('decision:')) return 'decision';
-  // Stryker disable next-line ConditionalExpression,MethodExpression
   if (eventString.startsWith('lifecycle:')) return 'lifecycle';
-  // Stryker disable next-line ConditionalExpression,MethodExpression
   if (eventString.startsWith('transition:')) return 'transition';
-  // Stryker disable next-line ConditionalExpression
   if (eventString.startsWith('tool_call:')) return 'tool_call';
-  // Stryker disable next-line ConditionalExpression
   if (eventString.startsWith('error:')) return 'error';
   return eventString;
 }
