@@ -13,8 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now rest exclusively on canonical, verdict-coherent review evidence — for
   both the architecture and the plan authority:
   - **Canonical linkage only (CE2):** `obligation.invocationId` is the single
-    resolver key. The `obligationId`-scoped newest-first fallback is removed;
+    resolver key, and the linkage must be a COHERENT relation — the invocation
+    must back-reference the same `obligationId` AND `obligationType`; incoherent
+    back-references are rejected at the schema boundary and resolve nothing at
+    the authority. The `obligationId`-scoped newest-first fallback is removed;
     `obligationId` on invocation evidence is diagnostic/provenance information.
+    A single `resolveEvidenceForObligation` is the SSOT for what counts as
+    canonical evidence possession (architecture and plan paths alike).
   - **Explicit verdict requirement (CE1):** `current_review` bindings demand a
     captured verdict of `accept`. Evidence without a verdict resolves as
     `verdict_missing` and blocks with `ARCHITECTURE_REVIEW_EVIDENCE_REQUIRED` /

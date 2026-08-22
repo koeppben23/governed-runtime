@@ -37,6 +37,7 @@ export interface ObligationRefinementShape {
   readonly obligationId: string;
   readonly subjectDigest: string;
   readonly criteriaVersion: string;
+  readonly invocationId: string | null;
   readonly reviewMaterial?: {
     readonly subjectDigest: string;
   } | null;
@@ -93,6 +94,11 @@ export interface AttemptRefinementShape {
 /** Minimal structural assurance shape for the cross-record refinements. */
 export interface AssuranceRefinementShape {
   readonly obligations: readonly ObligationRefinementShape[];
+  readonly invocations: readonly {
+    readonly invocationId: string;
+    readonly obligationId: string;
+    readonly obligationType: string;
+  }[];
   readonly attempts: readonly AttemptRefinementShape[];
 }
 
@@ -255,6 +261,39 @@ export function refineAssuranceDiscoveryCoherence(
         code: z.ZodIssueCode.custom,
         path: ['attempts'],
         message: `attempt ${attempt.attemptId} must carry not_applicable Discovery for a non-repository-governed obligation`,
+      });
+      return;
+    }
+  }
+}
+
+/**
+ * Canonical linkage coherence (CE2): when an obligation's canonical linkage
+ * points at an invocation, the invocation must back-reference the SAME
+ * obligation on both sides of the relation (`obligationId` AND
+ * `obligationType`). Identifier equality alone is not a relation — an
+ * invocation whose back-references disagree with the linked obligation is an
+ * invalid state, not legacy data.
+ */
+export function refineAssuranceInvocationLinkageCoherence(
+  assurance: AssuranceRefinementShape,
+  context: z.RefinementCtx,
+): void {
+  const invocationsByInvocationId = new Map(
+    assurance.invocations.map((invocation) => [invocation.invocationId, invocation]),
+  );
+  for (const obligation of assurance.obligations) {
+    if (!obligation.invocationId) continue;
+    const linked = invocationsByInvocationId.get(obligation.invocationId);
+    if (!linked) continue;
+    if (
+      linked.obligationId !== obligation.obligationId ||
+      linked.obligationType !== obligation.obligationType
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['invocations'],
+        message: `invocation ${linked.invocationId} is the canonical linkage of obligation ${obligation.obligationId} but back-references obligation ${linked.obligationId} (type ${linked.obligationType})`,
       });
       return;
     }

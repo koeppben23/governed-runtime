@@ -1739,5 +1739,87 @@ describe('review-decision rail', () => {
       // block an EVIDENCE_REVIEW approval.
       expect(result.kind).toBe('ok');
     });
+
+    it('blocks an exhausted plan when the latest plan obligation is still pending (no completed evidence)', () => {
+      const state = makeState('PLAN_REVIEW', {
+        plan: { ...PLAN_RECORD, reviewCompletion: 'review_exhausted' },
+        selfReview: CONVERGED_SELF_REVIEW,
+        reviewAssurance: planAssurance({
+          subjectDigest: PLAN_RECORD.current.digest,
+          status: 'pending',
+          capturedVerdict: 'changes_requested',
+          findingsHash: 'e'.repeat(64),
+        }),
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'override', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+      // A pending obligation is not completed review evidence — the override
+      // path must not bind it, no matter how coherent its linkage looks.
+      expect(result).toMatchObject({
+        kind: 'blocked',
+        code: 'PLAN_REVIEW_EVIDENCE_REQUIRED',
+      });
+      expect(state.plan?.approvalCertificate).toBeUndefined();
+    });
+
+    it('blocks plan approval when the canonical invocation back-references a different obligation (adversarial)', () => {
+      const base = planAssurance({
+        subjectDigest: PLAN_RECORD.current.digest,
+        status: 'consumed',
+        capturedVerdict: 'accept',
+        findingsHash: 'e'.repeat(64),
+      });
+      const state = makeState('PLAN_REVIEW', {
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
+        selfReview: CONVERGED_SELF_REVIEW,
+        reviewAssurance: {
+          ...base,
+          // Correct invocationId, incoherent obligation back-reference.
+          invocations: [
+            { ...base.invocations[0]!, obligationId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee' },
+          ],
+        },
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+      expect(result).toMatchObject({
+        kind: 'blocked',
+        code: 'PLAN_REVIEW_EVIDENCE_REQUIRED',
+      });
+      expect(state.plan?.approvalCertificate).toBeUndefined();
+    });
+
+    it('blocks plan approval when the canonical invocation back-references a different obligation type (adversarial)', () => {
+      const base = planAssurance({
+        subjectDigest: PLAN_RECORD.current.digest,
+        status: 'consumed',
+        capturedVerdict: 'accept',
+        findingsHash: 'e'.repeat(64),
+      });
+      const state = makeState('PLAN_REVIEW', {
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
+        selfReview: CONVERGED_SELF_REVIEW,
+        reviewAssurance: {
+          ...base,
+          invocations: [{ ...base.invocations[0]!, obligationType: 'architecture' as const }],
+        },
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+      expect(result).toMatchObject({
+        kind: 'blocked',
+        code: 'PLAN_REVIEW_EVIDENCE_REQUIRED',
+      });
+      expect(state.plan?.approvalCertificate).toBeUndefined();
+    });
   });
 });

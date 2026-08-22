@@ -4,11 +4,20 @@
  * rail: binds approval certificates to the review-assurance chain (obligations
  * + invocations), never to `latestReview` correlation.
  *
- * Linkage contract (CE2 hardening): `obligation.invocationId` is the ONLY
- * canonical resolver key. The `obligationId` field on invocation evidence is
- * retained as diagnostic/provenance information only — it is never used as a
- * resolver key or rescue path. Evidence without canonical linkage resolves to
- * nothing, and the certificate authority must fail closed.
+ * Linkage contract (CE2 hardening): canonical linkage is a COHERENT relation
+ * between both records, not identifier equality alone:
+ *
+ * ```text
+ * obligation.invocationId === invocation.invocationId
+ * AND obligation.obligationId === invocation.obligationId
+ * AND obligation.obligationType === invocation.obligationType
+ * ```
+ *
+ * An invocation whose back-references do not match the obligation can never be
+ * attributed to it — `obligationId`/`obligationType` on invocation evidence
+ * are part of the relation check, never a standalone resolver key or rescue
+ * path. Evidence without canonical linkage resolves to nothing, and the
+ * certificate authority must fail closed.
  */
 
 import type { SessionState } from '../state/schema.js';
@@ -30,23 +39,37 @@ export interface ResolvedBoundReviewEvidence {
   readonly reviewerVerdict?: string;
 }
 
+/**
+ * Plan resolution result: same shape as the architecture result — the single
+ * canonical evidence type for both certificate authorities.
+ */
+export type ResolvedPlanReviewEvidence = ResolvedBoundReviewEvidence;
+
 function latestBoundFirst(a: ReviewObligation, b: ReviewObligation): number {
   return b.iteration - a.iteration || b.createdAt.localeCompare(a.createdAt);
 }
 
-function evidenceForObligation(
+/**
+ * The SINGLE canonical definition of when an obligation possesses its
+ * invocation evidence (CE2): the relation must be coherent on both sides —
+ * the obligation's invocation id must match the invocation, and the
+ * invocation's obligation back-references must match the obligation. A
+ * missing obligation linkage, a missing findingsHash, or any incoherent
+ * back-reference resolves to nothing.
+ */
+export function resolveEvidenceForObligation(
   state: SessionState,
   obligation: ReviewObligation,
 ): ResolvedBoundReviewEvidence | null {
   const assurance = state.reviewAssurance;
   if (!assurance) return null;
-  // Canonical linkage ONLY: `obligation.invocationId` is the single resolver
-  // key. Obligations fulfilled by a writer that never recorded the invocation
-  // id (pre-canonical states) resolve to nothing — no obligationId-scoped,
-  // newest-first rescue fallback exists anymore.
   if (!obligation.invocationId) return null;
   const invocation = assurance.invocations.find(
-    (i) => i.invocationId === obligation.invocationId && i.findingsHash.length > 0,
+    (i) =>
+      i.invocationId === obligation.invocationId &&
+      i.obligationId === obligation.obligationId &&
+      i.obligationType === obligation.obligationType &&
+      i.findingsHash.length > 0,
   );
   if (!invocation) return null;
   return {
@@ -79,7 +102,7 @@ export function resolveBoundReviewEvidenceForSubject(
     )
     .sort(latestBoundFirst);
   for (const obligation of candidates) {
-    const evidence = evidenceForObligation(state, obligation);
+    const evidence = resolveEvidenceForObligation(state, obligation);
     if (evidence) return evidence;
   }
   return null;
@@ -105,7 +128,7 @@ export function resolveLatestBoundReviewEvidence(
     )
     .sort(latestBoundFirst);
   for (const obligation of candidates) {
-    const evidence = evidenceForObligation(state, obligation);
+    const evidence = resolveEvidenceForObligation(state, obligation);
     if (evidence) return evidence;
   }
   return null;
@@ -190,20 +213,12 @@ export function resolveArchitectureReviewEvidence(
 }
 
 /**
- * Plan review evidence resolved under the same canonical-only, exact-subject
+ * Plan review evidence resolved under the same canonical, exact-subject
  * contract as the architecture path (CE4 hardening): ONLY obligations whose
  * `subjectDigest` equals the plan subject being approved bind; the
  * `subjectMatched ?? latest` cross-subject fallback is gone. The caller's gate
  * enforces verdict presence and coherence; the resolver is a pure read.
  */
-export interface ResolvedPlanReviewEvidence {
-  readonly obligationId: string;
-  readonly invocationId: string;
-  readonly findingsHash: string;
-  readonly subjectDigest: string;
-  readonly reviewerVerdict?: string;
-}
-
 export function resolvePlanReviewEvidence(
   state: SessionState,
   planSubjectDigest: string,
@@ -219,18 +234,8 @@ export function resolvePlanReviewEvidence(
     )
     .sort(latestBoundFirst);
   for (const obligation of candidates) {
-    if (!obligation.invocationId) continue;
-    const invocation = assurance.invocations.find(
-      (i) => i.invocationId === obligation.invocationId && i.findingsHash.length > 0,
-    );
-    if (!invocation) continue;
-    return {
-      obligationId: obligation.obligationId,
-      invocationId: invocation.invocationId,
-      findingsHash: invocation.findingsHash,
-      subjectDigest: obligation.subjectDigest,
-      ...(invocation.capturedVerdict ? { reviewerVerdict: invocation.capturedVerdict } : {}),
-    };
+    const evidence = resolveEvidenceForObligation(state, obligation);
+    if (evidence) return evidence;
   }
   return null;
 }
@@ -253,18 +258,8 @@ export function resolveLatestPlanReviewEvidence(
     )
     .sort(latestBoundFirst);
   for (const obligation of candidates) {
-    if (!obligation.invocationId) continue;
-    const invocation = assurance.invocations.find(
-      (i) => i.invocationId === obligation.invocationId && i.findingsHash.length > 0,
-    );
-    if (!invocation) continue;
-    return {
-      obligationId: obligation.obligationId,
-      invocationId: invocation.invocationId,
-      findingsHash: invocation.findingsHash,
-      subjectDigest: obligation.subjectDigest,
-      ...(invocation.capturedVerdict ? { reviewerVerdict: invocation.capturedVerdict } : {}),
-    };
+    const evidence = resolveEvidenceForObligation(state, obligation);
+    if (evidence) return evidence;
   }
   return null;
 }

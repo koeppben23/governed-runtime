@@ -357,6 +357,50 @@ describe('architecture review evidence resolution', () => {
       });
       expect(resolveBoundReviewEvidenceForSubject(state, 'architecture', ADR_DIGEST)).toBeNull();
     });
+
+    it('resolves nothing when the invocation back-references a different obligation (cross-record coherence)', () => {
+      const assurance = assuranceChain([
+        {
+          obligationId: 'ob-a',
+          subjectDigest: ADR_DIGEST,
+          status: 'consumed',
+          invocationId: 'inv-x',
+          findingsHash: '1'.repeat(64),
+          capturedVerdict: 'accept',
+        },
+      ]);
+      const state = makeState('ARCH_REVIEW', {
+        architecture: { ...ARCHITECTURE_DECISION, digest: ADR_DIGEST },
+        reviewAssurance: {
+          ...assurance,
+          // Correct invocationId, but the invocation's obligationId back-
+          // reference points elsewhere — the relation is incoherent.
+          invocations: [{ ...assurance.invocations[0]!, obligationId: 'ob-foreign' }],
+        },
+      });
+      expect(resolveBoundReviewEvidenceForSubject(state, 'architecture', ADR_DIGEST)).toBeNull();
+    });
+
+    it('resolves nothing when the invocation back-references a different obligation type (cross-record coherence)', () => {
+      const assurance = assuranceChain([
+        {
+          obligationId: 'ob-a',
+          subjectDigest: ADR_DIGEST,
+          status: 'consumed',
+          invocationId: 'inv-x',
+          findingsHash: '1'.repeat(64),
+          capturedVerdict: 'accept',
+        },
+      ]);
+      const state = makeState('ARCH_REVIEW', {
+        architecture: { ...ARCHITECTURE_DECISION, digest: ADR_DIGEST },
+        reviewAssurance: {
+          ...assurance,
+          invocations: [{ ...assurance.invocations[0]!, obligationType: 'plan' as const }],
+        },
+      });
+      expect(resolveBoundReviewEvidenceForSubject(state, 'architecture', ADR_DIGEST)).toBeNull();
+    });
   });
 
   describe('resolveLatestBoundReviewEvidence', () => {
