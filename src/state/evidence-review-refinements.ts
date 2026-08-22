@@ -301,6 +301,56 @@ export function refineAssuranceInvocationLinkageCoherence(
 }
 
 /**
+ * Canonical identity uniqueness (CE2 hardening): identifiers are only
+ * canonical when they are unique. Duplicate `obligationId`s let one invocation
+ * appear to canonically support several review subjects; duplicate
+ * `invocationId`s let a `.find()` pick an arbitrary row as the authority;
+ * duplicate `attemptId`s corrupt attempt binding. All three are invalid
+ * states, not legacy data.
+ */
+export function refineAssuranceIdentityUniqueness(
+  assurance: AssuranceRefinementShape,
+  context: z.RefinementCtx,
+): void {
+  const obligationIds = new Set<string>();
+  for (const obligation of assurance.obligations) {
+    if (obligationIds.has(obligation.obligationId)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['obligations'],
+        message: `duplicate obligationId ${obligation.obligationId} — an obligation identity must be unique across the assurance state`,
+      });
+      return;
+    }
+    obligationIds.add(obligation.obligationId);
+  }
+  const invocationIds = new Set<string>();
+  for (const invocation of assurance.invocations) {
+    if (invocationIds.has(invocation.invocationId)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['invocations'],
+        message: `duplicate invocationId ${invocation.invocationId} — an invocation identity must be unique across the assurance state`,
+      });
+      return;
+    }
+    invocationIds.add(invocation.invocationId);
+  }
+  const attemptIds = new Set<string>();
+  for (const attempt of assurance.attempts) {
+    if (attemptIds.has(attempt.attemptId)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['attempts'],
+        message: `duplicate attemptId ${attempt.attemptId} — an attempt identity must be unique across the assurance state`,
+      });
+      return;
+    }
+    attemptIds.add(attempt.attemptId);
+  }
+}
+
+/**
  * A persisted provenance projection must equal the canonical derivation from
  * frozen authority. Divergent projections are authority drift, not legacy data.
  */

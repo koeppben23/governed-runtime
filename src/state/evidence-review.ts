@@ -64,6 +64,7 @@ import {
 import {
   refineAssuranceDiscoveryCoherence,
   refineCurrentGenerationMaterial,
+  refineAssuranceIdentityUniqueness,
   refineAssuranceInvocationLinkageCoherence,
   refineAssuranceProvenanceCoherence,
   refineAuthorityStructure,
@@ -590,6 +591,7 @@ export const ReviewAssuranceState = z
     invocations: z.array(ReviewInvocationEvidence),
     attempts: z.array(ReviewAttempt),
   })
+  .superRefine(refineAssuranceIdentityUniqueness)
   .superRefine(refineAssuranceDiscoveryCoherence)
   .superRefine(refineAssuranceProvenanceCoherence)
   .superRefine(refineAssuranceInvocationLinkageCoherence)

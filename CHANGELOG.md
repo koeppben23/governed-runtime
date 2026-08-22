@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `obligationId` on invocation evidence is diagnostic/provenance information.
     A single `resolveEvidenceForObligation` is the SSOT for what counts as
     canonical evidence possession (architecture and plan paths alike).
+  - **Identity uniqueness in review assurance (CE2):** `obligationId`,
+    `invocationId`, and `attemptId` are uniqueness-enforced at the schema
+    boundary (`refineAssuranceIdentityUniqueness`) — one invocation can never
+    canonically support several review subjects, and `.find()` can never pick
+    an arbitrary row as the authority.
   - **Explicit verdict requirement (CE1):** `current_review` bindings demand a
     captured verdict of `accept`. Evidence without a verdict resolves as
     `verdict_missing` and blocks with `ARCHITECTURE_REVIEW_EVIDENCE_REQUIRED` /
