@@ -19,7 +19,10 @@
     "src/audit/completeness.ts",
     "src/audit/integrity.ts",
     "src/audit/ntp-check.ts",
+    "src/audit/rfc-3161-pkijs-verifier.ts",
+    "src/audit/timestamp-verification.ts",
     "src/audit/timestamp-token-verification.ts",
+    "src/adapters/workspace/archive-timestamp-verification.ts",
 
     "src/audit/proofgraph/evaluate.ts",
     "src/audit/proofgraph/gate.ts",

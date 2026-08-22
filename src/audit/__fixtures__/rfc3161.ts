@@ -13,6 +13,7 @@ import {
   MessageImprint,
   PKIStatus,
   PKIStatusInfo,
+  RSASSAPSSParams,
   SignedAndUnsignedAttributes,
   SignedData,
   SignerInfo,
@@ -63,6 +64,47 @@ const OID_KP_CLIENT_AUTH = '1.3.6.1.5.5.7.3.2';
 
 export type FixtureEkuVariant = 'timestamping' | 'none' | 'extra' | 'non_critical';
 
+/** Standard CA-shape extensions shared by every fixture signer. */
+function baseCertificateExtensions(): Extension[] {
+  return [
+    new Extension({
+      extnID: '2.5.29.19',
+      critical: false,
+      extnValue: new BasicConstraints({ cA: true }).toSchema().toBER(false),
+    }),
+    new Extension({
+      extnID: '2.5.29.15',
+      critical: false,
+      extnValue: new asn1js.BitString({ valueHex: new Uint8Array([0x86]).buffer }).toBER(false),
+    }),
+  ];
+}
+
+/** The TSA signer's EKU extension per the fixture variant. */
+function ekuExtension(variant: FixtureEkuVariant): Extension | null {
+  if (variant === 'none') return null;
+  const purposes =
+    variant === 'extra' ? [OID_KP_TIMESTAMPING, OID_KP_CLIENT_AUTH] : [OID_KP_TIMESTAMPING];
+  return new Extension({
+    extnID: OID_EKU,
+    critical: variant !== 'non_critical',
+    extnValue: new asn1js.Sequence({
+      value: purposes.map((oid) => new asn1js.ObjectIdentifier({ value: oid })),
+    }).toBER(false),
+  });
+}
+
+/** An unknown CRITICAL extension used to pin the TSA3 rejection path. */
+function unknownCriticalExtension(): Extension {
+  return new Extension({
+    extnID: '1.3.6.1.4.1.99999.1',
+    critical: true,
+    extnValue: new asn1js.OctetString({ valueHex: new Uint8Array([0x05, 0x00]).buffer }).toBER(
+      false,
+    ),
+  });
+}
+
 async function makeCertificate(input: {
   readonly commonName: string;
   readonly notBefore: Date;
@@ -90,43 +132,10 @@ async function makeCertificate(input: {
   );
   cert.notBefore.value = input.notBefore;
   cert.notAfter.value = input.notAfter;
-  const extensions: Extension[] = [
-    new Extension({
-      extnID: '2.5.29.19',
-      critical: false,
-      extnValue: new BasicConstraints({ cA: true }).toSchema().toBER(false),
-    }),
-    new Extension({
-      extnID: '2.5.29.15',
-      critical: false,
-      extnValue: new asn1js.BitString({ valueHex: new Uint8Array([0x86]).buffer }).toBER(false),
-    }),
-  ];
-  const ekuVariant = input.eku ?? 'timestamping';
-  if (ekuVariant !== 'none') {
-    const purposes =
-      ekuVariant === 'extra' ? [OID_KP_TIMESTAMPING, OID_KP_CLIENT_AUTH] : [OID_KP_TIMESTAMPING];
-    extensions.push(
-      new Extension({
-        extnID: OID_EKU,
-        critical: ekuVariant !== 'non_critical',
-        extnValue: new asn1js.Sequence({
-          value: purposes.map((oid) => new asn1js.ObjectIdentifier({ value: oid })),
-        }).toBER(false),
-      }),
-    );
-  }
-  if (input.unknownCriticalExtension) {
-    extensions.push(
-      new Extension({
-        extnID: '1.3.6.1.4.1.99999.1',
-        critical: true,
-        extnValue: new asn1js.OctetString({ valueHex: new Uint8Array([0x05, 0x00]).buffer }).toBER(
-          false,
-        ),
-      }),
-    );
-  }
+  const extensions = baseCertificateExtensions();
+  const eku = ekuExtension(input.eku ?? 'timestamping');
+  if (eku) extensions.push(eku);
+  if (input.unknownCriticalExtension) extensions.push(unknownCriticalExtension());
   cert.extensions = extensions;
 
   const keyScheme = input.keyScheme ?? 'pkcs1';
@@ -161,6 +170,7 @@ export async function makeRfc3161Fixture(
     readonly eku?: FixtureEkuVariant;
     readonly unknownCriticalExtension?: boolean;
     readonly keyScheme?: 'pkcs1' | 'pss';
+    readonly multiPartEContent?: boolean;
   } = {},
 ): Promise<Rfc3161Fixture> {
   const signer = await makeCertificate({
@@ -210,6 +220,7 @@ async function issueToken(
     readonly digest?: Uint8Array;
     readonly digestOid?: string;
     readonly genTime?: Date;
+    readonly multiPartEContent?: boolean;
   } = {},
 ): Promise<{ tokenDerBase64: string }> {
   const genTime = input.genTime ?? new Date('2026-01-01T00:00:00.000Z');
@@ -231,11 +242,21 @@ async function issueToken(
     accuracy: new Accuracy({ seconds: 1 }),
   });
   const tstBer = tstInfo.toSchema().toBER(false);
+  // A constructed (multi-part) eContent octet string exercises the parser's
+  // part-concatenation path.
+  const eContent = input.multiPartEContent
+    ? new asn1js.OctetString({
+        value: [
+          new asn1js.OctetString({ valueHex: tstBer.slice(0, 64) }),
+          new asn1js.OctetString({ valueHex: tstBer.slice(64) }),
+        ],
+      })
+    : new asn1js.OctetString({ valueHex: tstBer });
   const signedData = new SignedData({
     version: 3,
     encapContentInfo: new EncapsulatedContentInfo({
       eContentType: '1.2.840.113549.1.9.16.1.4',
-      eContent: new asn1js.OctetString({ valueHex: tstBer }),
+      eContent,
     }),
     signerInfos: [
       new SignerInfo({
@@ -294,17 +315,9 @@ export type TamperedTokenKind =
   | 'signer_digest_divergence'
   | 'tampered_signature_algorithm'
   | 'tampered_signature_algorithm_sha384'
-  | 'tampered_pss_params';
-
-async function makeCertificateQuick(
-  commonName: string,
-): Promise<{ cert: Certificate; privateKey: CryptoKey; pem: string }> {
-  return makeCertificate({
-    commonName,
-    notBefore: new Date('2025-01-01T00:00:00.000Z'),
-    notAfter: new Date('2027-01-01T00:00:00.000Z'),
-  });
-}
+  | 'tampered_pss_params'
+  | 'tampered_pss_salt_length'
+  | 'tampered_pss_trailer_field';
 
 async function buildTstInfoDer(
   input: { digestOid?: string; genTime?: Date } = {},
@@ -329,8 +342,14 @@ async function buildTstInfoDer(
 
 export async function makeRfc3161TamperedFixture(
   kind: TamperedTokenKind,
+  options: { readonly keyScheme?: 'pkcs1' | 'pss' } = {},
 ): Promise<{ tokenDerBase64: string; trustAnchorPem: string }> {
-  const signer = await makeCertificateQuick('FlowGuard Test TSA');
+  const signer = await makeCertificate({
+    commonName: 'FlowGuard Test TSA',
+    notBefore: new Date('2025-01-01T00:00:00.000Z'),
+    notAfter: new Date('2027-01-01T00:00:00.000Z'),
+    keyScheme: options.keyScheme,
+  });
   const tstInfoDer = await buildTstInfoDer(
     kind === 'signer_digest_divergence' ? { digestOid: '2.16.840.1.101.3.4.2.2' } : {},
   );
@@ -421,6 +440,8 @@ async function applyTamperedTokenKind(
   if (kind === 'tampered_signature_algorithm') tamperSignatureAlgorithm(signedData);
   if (kind === 'tampered_signature_algorithm_sha384') tamperSignatureAlgorithmToSha384(signedData);
   if (kind === 'tampered_pss_params') tamperPssParams(signedData);
+  if (kind === 'tampered_pss_salt_length') tamperPssSaltLength(signedData);
+  if (kind === 'tampered_pss_trailer_field') tamperPssTrailerField(signedData);
 }
 
 function tamperSignature(signedData: SignedData): void {
@@ -454,6 +475,36 @@ function tamperPssParams(signedData: SignedData): void {
   si.signatureAlgorithm = new AlgorithmIdentifier({
     algorithmId: '1.2.840.113549.1.1.10',
     algorithmParams: new asn1js.Sequence({ value: [asn1Oid('1.2.840.113549.1.1.8')] }),
+  });
+}
+
+function tamperPssProfile(signedData: SignedData, mutate: (pss: RSASSAPSSParams) => void): void {
+  const si = signedData.signerInfos[0];
+  if (!si) return;
+  const params = si.signatureAlgorithm.algorithmParams;
+  if (!(params instanceof asn1js.BaseBlock)) return;
+  const pss = new RSASSAPSSParams({ schema: params });
+  mutate(pss);
+  // Re-serialize and re-parse: the raw DER round-trip keeps the modified
+  // parameters serializable inside the AlgorithmIdentifier slot.
+  const der = pss.toSchema().toBER(false);
+  const reparsed = asn1js.fromBER(new Uint8Array(der).buffer);
+  si.signatureAlgorithm = new AlgorithmIdentifier({
+    algorithmId: '1.2.840.113549.1.1.10',
+    algorithmParams: reparsed.result,
+  });
+}
+
+function tamperPssSaltLength(signedData: SignedData): void {
+  // 64 bytes of salt exceeds the SHA-256 digest length (32) — outside profile.
+  tamperPssProfile(signedData, (pss) => {
+    pss.saltLength = 64;
+  });
+}
+
+function tamperPssTrailerField(signedData: SignedData): void {
+  tamperPssProfile(signedData, (pss) => {
+    pss.trailerField = 2;
   });
 }
 

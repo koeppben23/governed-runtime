@@ -20,7 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Algorithm allowlists (TSA2):** message-imprint and signature hashes are
     allowlisted to SHA-256/384/512; the SignerInfo `digestAlgorithm` MUST equal
     the message-imprint algorithm (RFC 3161 §2.4.2); RSASSA-PSS is accepted
-    only with validated parameters (MGF1 + matching hash). Divergences fail
+    only against the explicit profile (MGF1 with a matching hash,
+    trailerField 1, saltLength within 8..digest byte length). Divergences fail
     closed with `unsafe_digest_algorithm` / `unsafe_signature_algorithm` plus
     structured diagnostics. The verifier interface now receives the full
     admissible digest family (`expectedDigests`), computed canonically in
@@ -28,8 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     the SHA-256 imprint the request used.
   - **Constant-time imprints (TSA4):** all imprint comparisons use
     `constantTimeBytesEqual` (`src/audit/constant-time.ts`).
-  - **No downgrade trust (AC2):** stronger TSA evidence whose recorded status
-    was degraded (`local`/`ntp_checked`/`tsa_failed`) is a chain failure —
+  - **No downgrade trust (AC2):** stronger TSA evidence — a token, an imprint,
+    or both — whose recorded status was degraded (`local`/`ntp_checked`/
+    `tsa_failed`) is a chain failure **before** any token-verification branch:
     `TSA_EVIDENCE_DOWNGRADED`, surfaced as the dedicated
     `tsa_evidence_downgraded` archive finding.
   - **Missing-cache findings (AC9):** a TSA-stamped event whose cached imprint

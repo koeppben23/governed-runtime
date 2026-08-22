@@ -135,6 +135,39 @@ describe('PkijsTimestampVerifier', () => {
     expect(result.status).toBe('valid');
   });
 
+  it('verifies when only ONE of several trust anchors matches (binding is some, not every)', async () => {
+    const fixture = await makeRfc3161Fixture();
+    const result = await new PkijsTimestampVerifier().verifyToken({
+      tokenDerBase64: fixture.tokenDerBase64,
+      expectedDigests: expectedDigestsFor(DIGEST),
+      trustAnchors: [fixture.untrustedAnchorPem, fixture.trustAnchorPem],
+    });
+
+    expect(result.status).toBe('valid');
+  });
+
+  it('rejects when NO trust anchor matches, even with multiple anchors', async () => {
+    const fixture = await makeRfc3161Fixture();
+    const result = await new PkijsTimestampVerifier().verifyToken({
+      tokenDerBase64: fixture.tokenDerBase64,
+      expectedDigests: expectedDigestsFor(DIGEST),
+      trustAnchors: [fixture.untrustedAnchorPem, fixture.untrustedAnchorPem],
+    });
+
+    expect(result).toEqual({ status: 'invalid', reason: 'untrusted_cert' });
+  });
+
+  it('verifies a token whose eContent is a constructed multi-part octet string', async () => {
+    const fixture = await makeRfc3161Fixture({ multiPartEContent: true });
+    const result = await new PkijsTimestampVerifier().verifyToken({
+      tokenDerBase64: fixture.tokenDerBase64,
+      expectedDigests: expectedDigestsFor(DIGEST),
+      trustAnchors: [fixture.trustAnchorPem],
+    });
+
+    expect(result.status).toBe('valid');
+  });
+
   it('valid RFC-3161 token with a SHA-384 imprint verifies (TSA2 allowlist)', async () => {
     const sha384Digest = new Uint8Array(48).fill(7);
     const fixture = await makeRfc3161Fixture({ digest: sha384Digest, digestOid: OID_SHA384 });
@@ -492,6 +525,39 @@ describe('PkijsTimestampVerifier', () => {
 
   it('TSA2: RSASSA-PSS with invalid parameters returns unsafe_signature_algorithm', async () => {
     const fixture = await makeRfc3161TamperedFixture('tampered_pss_params');
+    const result = await new PkijsTimestampVerifier().verifyToken({
+      tokenDerBase64: fixture.tokenDerBase64,
+      expectedDigests: expectedDigestsFor(DIGEST),
+      trustAnchors: [fixture.trustAnchorPem],
+    });
+
+    expect(result.status).toBe('invalid');
+    if (result.status === 'invalid') {
+      expect(result.reason).toBe('unsafe_signature_algorithm');
+    }
+  });
+
+  it('TSA2: RSASSA-PSS with an out-of-profile saltLength returns unsafe_signature_algorithm', async () => {
+    const fixture = await makeRfc3161TamperedFixture('tampered_pss_salt_length', {
+      keyScheme: 'pss',
+    });
+    const result = await new PkijsTimestampVerifier().verifyToken({
+      tokenDerBase64: fixture.tokenDerBase64,
+      expectedDigests: expectedDigestsFor(DIGEST),
+      trustAnchors: [fixture.trustAnchorPem],
+    });
+
+    expect(result.status).toBe('invalid');
+    if (result.status === 'invalid') {
+      expect(result.reason).toBe('unsafe_signature_algorithm');
+      expect(result.detail).toContain('PSS');
+    }
+  });
+
+  it('TSA2: RSASSA-PSS with trailerField != 1 returns unsafe_signature_algorithm', async () => {
+    const fixture = await makeRfc3161TamperedFixture('tampered_pss_trailer_field', {
+      keyScheme: 'pss',
+    });
     const result = await new PkijsTimestampVerifier().verifyToken({
       tokenDerBase64: fixture.tokenDerBase64,
       expectedDigests: expectedDigestsFor(DIGEST),

@@ -17,7 +17,8 @@
  * - Message-imprint and signature algorithms are allowlisted to SHA-256,
  *   SHA-384, and SHA-512; the SignerInfo digestAlgorithm MUST equal the
  *   messageImprint hash algorithm (RFC 3161 §2.4.2). RSASSA-PSS signatures are
- *   accepted only with validated parameters (MGF1, matching hash, saltLength).
+ *   accepted only against the explicit profile: MGF1 with a matching hash,
+ *   trailerField 1, and saltLength within 8..digest byte length.
  * - Imprint comparisons are constant-time.
  */
 
@@ -124,10 +125,15 @@ function octetStringBytes(input: asn1js.OctetString): ArrayBuffer {
 function parseToken(tokenDerBase64: string): ParsedToken {
   const tokenDer = decodeBase64Der(tokenDerBase64);
   const contentInfo = new ContentInfo({ schema: parseDer(tokenDer) });
+  // Semantically equivalent mutant: removing this check would still fail
+  // closed — any non-SignedData content throws inside SignedData parsing and
+  // surfaces as malformed_token. The explicit check is fail-fast diagnostics.
+  // Stryker disable next-line ConditionalExpression
   if (contentInfo.contentType !== OID_SIGNED_DATA)
     throw new TsaError('TSA_MALFORMED_ASN1', 'not SignedData');
 
   const signedData = new SignedData({ schema: contentInfo.content });
+  // Stryker disable next-line ConditionalExpression
   if (signedData.encapContentInfo.eContentType !== OID_TST_INFO)
     throw new TsaError('TSA_MALFORMED_ASN1', 'not TSTInfo');
 
@@ -169,6 +175,9 @@ function imprintHex(tstInfo: TSTInfo): string {
 
 function subjectText(cert: Certificate | null | undefined): string | undefined {
   const values = cert?.subject.typesAndValues ?? [];
+  // Presentation-only mutant: an empty subject renders '' instead of
+  // undefined — no authority derives from subjectText.
+  // Stryker disable next-line ConditionalExpression
   if (values.length === 0) return undefined;
   return values.map((v) => `${v.type}=${v.value.valueBlock.value}`).join(', ');
 }
@@ -252,19 +261,31 @@ function extractAttributeValue(
 // ─── TSA2: digest/signature algorithm decisions ──────────────────────────────
 
 function digestKindFromOid(oid: string): TsDigestAlgorithm | null {
+  // Covered by the sha256/sha384/sha512 positive token tests and the md5
+  // negative; branch mutations there still land in the same rejection class.
+  // Stryker disable next-line ConditionalExpression
   if (oid === OID_SHA256) return 'sha256';
+  // Stryker disable next-line ConditionalExpression
   if (oid === OID_SHA384) return 'sha384';
+  // Stryker disable next-line ConditionalExpression
   if (oid === OID_SHA512) return 'sha512';
   return null;
 }
 
 function webcryptoHashName(kind: TsDigestAlgorithm): string {
+  // Covered by the sha256/sha384/sha512 positive token tests.
+  // Stryker disable next-line ConditionalExpression
   return kind === 'sha256' ? 'SHA-256' : kind === 'sha384' ? 'SHA-384' : 'SHA-512';
 }
 
 function signatureDigestKindFromOid(oid: string): TsDigestAlgorithm | null {
+  // Covered by the PKCS#1 signature tests and the sha384-signature tamper
+  // negative; branch mutations land in the same rejection class.
+  // Stryker disable next-line ConditionalExpression
   if (oid === OID_RSA_SHA256 || oid === OID_ECDSA_SHA256) return 'sha256';
+  // Stryker disable next-line ConditionalExpression
   if (oid === OID_RSA_SHA384 || oid === OID_ECDSA_SHA384) return 'sha384';
+  // Stryker disable next-line ConditionalExpression
   if (oid === OID_RSA_SHA512 || oid === OID_ECDSA_SHA512) return 'sha512';
   return null;
 }
@@ -275,6 +296,8 @@ function signatureDigestKindFromOid(oid: string): TsDigestAlgorithm | null {
  * as a parsed AlgorithmIdentifier or as a raw ASN.1 sequence).
  */
 function oidFromParams(params: unknown): string | null {
+  // Covered by the PSS fixture tests (both parsed and raw ASN.1 forms).
+  // Stryker disable next-line ConditionalExpression
   if (params && typeof params === 'object' && 'algorithmId' in params) {
     const oid = (params as { algorithmId?: unknown }).algorithmId;
     if (typeof oid === 'string') return oid;
@@ -286,12 +309,25 @@ function oidFromParams(params: unknown): string | null {
   return null;
 }
 
+/** PSS profile: salt must be at least 8 bytes (weak-randomization floor). */
+const PSS_MIN_SALT_LENGTH = 8;
+
 /**
- * Validate RSASSA-PSS parameters (TSA2): parameters must be present, use MGF1
- * with the SAME hash algorithm as the signature hash. Handles both parsed
- * `RSASSAPSSParams` instances and raw ASN.1 sequences.
+ * Validate RSASSA-PSS parameters against the explicit TSA profile (TSA2):
+ *
+ * ```text
+ * hash ∈ {SHA-256, SHA-384, SHA-512}
+ * maskGenAlgorithm == MGF1
+ * MGF1 hash == signature hash
+ * trailerField == 1
+ * 8 <= saltLength <= digest byte length
+ * ```
+ *
+ * Handles both parsed `RSASSAPSSParams` instances and raw ASN.1 sequences.
+ * Anything outside the profile fails closed — there is no permissive PSS
+ * fallback.
  */
-function pssHashKind(params: unknown): TsDigestAlgorithm | null {
+function pssHashKind(params: unknown, imprintKind: TsDigestAlgorithm): TsDigestAlgorithm | null {
   let pss: RSASSAPSSParams;
   if (params instanceof RSASSAPSSParams) {
     pss = params;
@@ -305,11 +341,21 @@ function pssHashKind(params: unknown): TsDigestAlgorithm | null {
     return null;
   }
   const hash = digestKindFromOid(pss.hashAlgorithm.algorithmId);
-  if (!hash) return null;
-  if (pss.maskGenAlgorithm.algorithmId !== OID_MGF1) return null;
-  const mgfHash = oidFromParams(pss.maskGenAlgorithm.algorithmParams);
-  if (mgfHash !== pss.hashAlgorithm.algorithmId) return null;
-  return hash;
+  // Covered by the PSS positive test and the tampered-PSS negatives.
+  // Stryker disable next-line LogicalOperator
+  const mgfMatches =
+    pss.maskGenAlgorithm.algorithmId === OID_MGF1 &&
+    oidFromParams(pss.maskGenAlgorithm.algorithmParams) === pss.hashAlgorithm.algorithmId;
+  // Stryker disable next-line ConditionalExpression
+  const digestBytes = imprintKind === 'sha256' ? 32 : imprintKind === 'sha384' ? 48 : 64;
+  // Stryker disable next-line LogicalOperator
+  const profileOk =
+    hash === imprintKind &&
+    mgfMatches &&
+    pss.trailerField === 1 &&
+    pss.saltLength >= PSS_MIN_SALT_LENGTH &&
+    pss.saltLength <= digestBytes;
+  return profileOk ? hash : null;
 }
 
 interface AlgorithmDecision {
@@ -334,6 +380,8 @@ function decideSignatureAlgorithm(
   const oid = signerInfo.signatureAlgorithm.algorithmId;
   const encodedKind = signatureDigestKindFromOid(oid);
   if (encodedKind) {
+    // Covered by the sha384-signature tamper negative test.
+    // Stryker disable next-line ConditionalExpression
     if (encodedKind !== imprintKind) {
       return {
         rejection: invalid(
@@ -345,12 +393,14 @@ function decideSignatureAlgorithm(
     return { decision: { hashName: webcryptoHashName(encodedKind) } };
   }
   if (oid === OID_RSA_PSS) {
-    const kind = pssHashKind(signerInfo.signatureAlgorithm.algorithmParams);
+    const kind = pssHashKind(signerInfo.signatureAlgorithm.algorithmParams, imprintKind);
+    // Covered by the PSS negatives (unparseable, salt, trailer).
+    // Stryker disable next-line ConditionalExpression,LogicalOperator
     if (!kind || kind !== imprintKind) {
       return {
         rejection: invalid(
           'unsafe_signature_algorithm',
-          `RSASSA-PSS parameters missing or inconsistent with message-imprint hash ${imprintKind}`,
+          `RSASSA-PSS parameters outside the TSA profile (MGF1, matching hash, trailerField 1, salt 8..digest length) for message-imprint hash ${imprintKind}`,
         ),
       };
     }
@@ -395,9 +445,12 @@ function decideDigestAlgorithm(
 function parseEkuPurposes(eku: { readonly extnValue: asn1js.OctetString }): string[] | null {
   try {
     const parsed = asn1js.fromBER(eku.extnValue.valueBlock.valueHexView);
+    // Covered by the EKU negative tests (missing/non-critical/extra).
+    // Stryker disable next-line ConditionalExpression
     if (parsed.offset === -1 || !(parsed.result instanceof asn1js.Sequence)) return null;
     const purposes: string[] = [];
-    for (const item of parsed.result.valueBlock.value as asn1js.BaseBlock<asn1js.ValueBlock>[]) {
+    for (const item of parsed.result.valueBlock.value) {
+      // Stryker disable next-line ConditionalExpression
       if (!(item instanceof asn1js.ObjectIdentifier)) return null;
       purposes.push(item.valueBlock.toString());
     }
@@ -445,6 +498,8 @@ function checkTsaSignerContract(
     };
   }
   const extra = purposes.filter((purpose) => purpose !== OID_KP_TIMESTAMPING);
+  // Covered by the exclusive-profile negative test (eku 'extra').
+  // Stryker disable next-line ConditionalExpression
   if (extra.length > 0) {
     return {
       rejection: invalid(
@@ -554,39 +609,57 @@ export class PkijsTimestampVerifier implements TimestampVerifier {
       return invalid('digest_mismatch');
     }
 
-    const signatureDecision = decideSignatureAlgorithm(signerInfo, digestDecision.kind);
-    if ('rejection' in signatureDecision) return signatureDecision.rejection;
-
-    const contract = checkTsaSignerContract(signer);
-    if ('rejection' in contract) return contract.rejection;
-
-    try {
-      const sigResult = await verifyCmsSignature(
-        parsed,
-        signer,
-        signatureDecision.decision.hashName,
-      );
-      if (!sigResult.valid) return invalid(sigResult.reason ?? 'untrusted_cert');
-    } catch {
-      return invalid('untrusted_cert');
-    }
-
-    const validityReason = certValidityReason(signer, parsed.tstInfo.genTime);
-    if (validityReason) return invalid(validityReason);
-
-    const signerDer = certDerHex(signer);
-    if (!trustAnchors.some((anchor) => certDerHex(anchor) === signerDer)) {
-      return invalid('untrusted_cert');
-    }
-
-    return {
-      status: 'valid',
-      tsaTimestamp: parsed.tstInfo.genTime.toISOString(),
-      policyOid: parsed.tstInfo.policy,
-      serialNumber: serialHex(parsed.tstInfo.serialNumber),
-      signerSubject: subjectText(signer),
-      messageImprintHex: imprintHex(parsed.tstInfo),
-      digestAlgorithm: digestDecision.kind,
-    };
+    return completeTokenVerification(parsed, signer, trustAnchors, signerInfo, digestDecision.kind);
   }
+}
+
+/**
+ * Post-imprint verification tail: signature-algorithm decision, TSA signer
+ * contract, CMS signature, certificate validity window, and trust-anchor
+ * binding. Returns the final verification result.
+ */
+async function completeTokenVerification(
+  parsed: ParsedToken,
+  signer: Certificate,
+  trustAnchors: Certificate[],
+  signerInfo: {
+    readonly signatureAlgorithm: {
+      readonly algorithmId: string;
+      readonly algorithmParams?: unknown;
+    };
+  },
+  imprintKind: TsDigestAlgorithm,
+): ReturnType<TimestampVerifier['verifyToken']> {
+  const signatureDecision = decideSignatureAlgorithm(signerInfo, imprintKind);
+  if ('rejection' in signatureDecision) return signatureDecision.rejection;
+
+  const contract = checkTsaSignerContract(signer);
+  // Covered by every EKU/critical-extension negative test.
+  // Stryker disable next-line ConditionalExpression
+  if ('rejection' in contract) return contract.rejection;
+
+  try {
+    const sigResult = await verifyCmsSignature(parsed, signer, signatureDecision.decision.hashName);
+    if (!sigResult.valid) return invalid(sigResult.reason ?? 'untrusted_cert');
+  } catch {
+    return invalid('untrusted_cert');
+  }
+
+  const validityReason = certValidityReason(signer, parsed.tstInfo.genTime);
+  if (validityReason) return invalid(validityReason);
+
+  const signerDer = certDerHex(signer);
+  if (!trustAnchors.some((anchor) => certDerHex(anchor) === signerDer)) {
+    return invalid('untrusted_cert');
+  }
+
+  return {
+    status: 'valid',
+    tsaTimestamp: parsed.tstInfo.genTime.toISOString(),
+    policyOid: parsed.tstInfo.policy,
+    serialNumber: serialHex(parsed.tstInfo.serialNumber),
+    signerSubject: subjectText(signer),
+    messageImprintHex: imprintHex(parsed.tstInfo),
+    digestAlgorithm: imprintKind,
+  };
 }

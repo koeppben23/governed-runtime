@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  canonicalDigestToUint8Array,
   verifyTimestampMonotonicity,
   verifyTsaMessageImprint,
   verifyTimestampEvidencePresence,
@@ -115,6 +116,19 @@ describe('verifyTimestampMonotonicity', () => {
 });
 
 describe('verifyTsaMessageImprint', () => {
+  it('canonicalDigestToUint8Array rejects odd-length hex', () => {
+    expect(() => canonicalDigestToUint8Array('abc')).toThrow('odd hex length');
+  });
+
+  it('canonicalDigestToUint8Array rejects invalid hex', () => {
+    expect(() => canonicalDigestToUint8Array('zzzz')).toThrow('invalid hex');
+  });
+
+  it('canonicalDigestToUint8Array round-trips hex bytes', () => {
+    const bytes = canonicalDigestToUint8Array('000102ff');
+    expect(Array.from(bytes)).toEqual([0, 1, 2, 255]);
+  });
+
   it('passes when no timestampEvidence is present', () => {
     const event = makeAuditEvent();
     const result = verifyTsaMessageImprint(event);
@@ -155,7 +169,7 @@ describe('verifyTsaMessageImprint', () => {
     expect(result.reason).toContain('downgraded');
   });
 
-  it('AC2: a token payload with tsa_failed status still requires token verification (no silent pass)', () => {
+  it('AC2: a token payload with tsa_failed status is a downgrade (never a silent pass, never a downgrade bypass)', () => {
     const event = {
       ...makeAuditEvent(),
       canonicalEventDigest: 'abcd1234',
@@ -172,7 +186,8 @@ describe('verifyTsaMessageImprint', () => {
     } as unknown as AuditEvent;
     const result = verifyTsaMessageImprint(event);
     expect(result.valid).toBe(false);
-    expect(result.needsTokenVerification).toBe(true);
+    expect(result.downgraded).toBe(true);
+    expect(result.needsTokenVerification).toBe(false);
   });
 
   it('AC2: fails when a tsa payload carries a local/ntp_checked status (downgrade)', () => {
@@ -193,6 +208,40 @@ describe('verifyTsaMessageImprint', () => {
       const result = verifyTsaMessageImprint(event);
       expect(result.valid).toBe(false);
       expect(result.downgraded).toBe(true);
+    }
+  });
+
+  it('AC2 matrix: every degraded status × {token, imprint, token+imprint} payload is a downgrade', () => {
+    const payloads: Record<string, Record<string, unknown>> = {
+      token: { tokenDerBase64: 'x', receivedAt: '2026-01-01T00:00:01.000Z' },
+      imprint: { messageImprint: 'a'.repeat(64), digestAlgorithm: 'sha256' },
+      'token+imprint': {
+        tokenDerBase64: 'x',
+        receivedAt: '2026-01-01T00:00:01.000Z',
+        messageImprint: 'a'.repeat(64),
+        digestAlgorithm: 'sha256',
+      },
+    };
+    for (const status of ['local', 'ntp_checked', 'tsa_failed']) {
+      for (const [payloadName, tsaPayload] of Object.entries(payloads)) {
+        const event = {
+          ...makeAuditEvent(),
+          canonicalEventDigest: 'abcd1234',
+          timestampEvidence: {
+            status,
+            source: 'local_clock',
+            resolvedAt: '2026-01-01T00:00:00.000Z',
+            tsa: tsaPayload,
+          },
+        } as unknown as AuditEvent;
+        const result = verifyTsaMessageImprint(event);
+        expect(
+          result.downgraded,
+          `status=${status}, payload=${payloadName} must be a downgrade`,
+        ).toBe(true);
+        expect(result.valid).toBe(false);
+        expect(result.needsTokenVerification).toBe(false);
+      }
     }
   });
 

@@ -168,4 +168,22 @@ describe('verifyArchiveTimestampTokens', () => {
       }),
     ]);
   });
+
+  it('a null tsa payload is not TSA evidence (no finding without anchors)', async () => {
+    const event = {
+      ...stampedEvent(),
+      timestampEvidence: { ...stampedEvent().timestampEvidence, tsa: null },
+    } as unknown as AuditEvent;
+    const findings: ArchiveFinding[] = [];
+
+    await verifyArchiveTimestampTokens({
+      events: [event],
+      state: makeState('COMPLETE'),
+      manifest: manifest('solo'),
+      findings,
+      strict: false,
+    });
+
+    expect(findings).toEqual([]);
+  });
 });
