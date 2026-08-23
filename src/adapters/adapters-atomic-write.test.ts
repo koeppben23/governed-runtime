@@ -334,7 +334,7 @@ describe('persistence', () => {
       expect(tmpFiles).toHaveLength(0);
     });
 
-    it('ARCHIVE: checksum sidecar is preserved when its atomic replacement fails', async () => {
+    it('ARCHIVE: final artifacts are removed when atomic checksum publication fails', async () => {
       const worktree = tmpDir;
       const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'gov-archive-config-'));
       const cleanupEnv = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
@@ -358,9 +358,8 @@ describe('persistence', () => {
 
         const archiveDir = path.join(configDir, 'workspaces', fingerprint, 'sessions', 'archive');
         const checksumPath = path.join(archiveDir, `${sessionId}.tar.gz.sha256`);
-        const originalChecksum = 'a'.repeat(64) + `  ${sessionId}.tar.gz\n`;
         await fs.mkdir(archiveDir, { recursive: true });
-        await fs.writeFile(checksumPath, originalChecksum, 'utf-8');
+        await fs.writeFile(checksumPath, 'a'.repeat(64) + `  ${sessionId}.tar.gz\n`, 'utf-8');
 
         vi.mocked(fs.rename).mockRejectedValue(new Error('EXDEV — simulated failure'));
         await expect(
@@ -370,8 +369,7 @@ describe('persistence', () => {
         });
         restoreRename();
 
-        expect(existsSync(checksumPath)).toBe(true);
-        expect(await fs.readFile(checksumPath, 'utf-8')).toBe(originalChecksum);
+        expect(existsSync(checksumPath)).toBe(false);
 
         // No orphan .tmp files remain beside the checksum sidecar.
         const entries = await fs.readdir(archiveDir);

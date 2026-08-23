@@ -336,7 +336,8 @@ describe('audit and archive integrity fail-closed behavior', () => {
         (f) =>
           f.code === 'audit_chain_invalid' ||
           f.code === 'file_digest_mismatch' ||
-          f.code === 'manifest_parse_error',
+          f.code === 'manifest_parse_error' ||
+          f.code === 'unexpected_file',
       ),
     ).toBe(true);
   });
@@ -357,7 +358,10 @@ describe('audit and archive integrity fail-closed behavior', () => {
       expect(verification.passed).toBe(false);
       expect(
         verification.findings.some(
-          (f) => f.code === 'file_digest_mismatch' || f.code === 'manifest_parse_error',
+          (f) =>
+            f.code === 'file_digest_mismatch' ||
+            f.code === 'manifest_parse_error' ||
+            f.code === 'unexpected_file',
         ),
       ).toBe(true);
     },
@@ -405,7 +409,8 @@ describe('audit and archive integrity fail-closed behavior', () => {
           (f) =>
             f.code === 'audit_chain_invalid' ||
             f.code === 'file_digest_mismatch' ||
-            f.code === 'manifest_parse_error',
+            f.code === 'manifest_parse_error' ||
+            f.code === 'unexpected_file',
         ),
       ).toBe(true);
     },

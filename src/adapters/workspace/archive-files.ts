@@ -46,3 +46,13 @@ export async function fileExists(filePath: string): Promise<boolean> {
     return false;
   }
 }
+
+/** Copy archive bytes from an opened source handle into a verifier-private snapshot. */
+export async function snapshotArchive(sourcePath: string, snapshotPath: string): Promise<void> {
+  const source = await fs.open(sourcePath, 'r');
+  try {
+    await fs.writeFile(snapshotPath, await source.readFile(), { flag: 'wx', mode: 0o600 });
+  } finally {
+    await source.close();
+  }
+}

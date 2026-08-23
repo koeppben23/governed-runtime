@@ -19,7 +19,7 @@ import { workspacesHome, sessionDir } from './init.js';
 import { withSpan, addFingerprint, addSessionId } from '../../telemetry/index.js';
 import { createArchiveStaging } from './archive-staging.js';
 import { listSessionFiles } from './archive-files.js';
-import { archiveArtifactPath } from './archive-layout.js';
+import { ARCHIVE_MANIFEST_FILE, archiveArtifactPath } from './archive-layout.js';
 import type { RedactionMode } from '../../redaction/export-redaction.js';
 import {
   type ArtifactBindingEntry,
@@ -27,6 +27,8 @@ import {
   ARTIFACT_BINDING_SCHEMA_VERSION,
 } from './archive-artifact-binding.js';
 import { findBindingArtifacts } from './archive-verify-helpers.js';
+import { inspectArchiveTar } from './archive-tar.js';
+import { publishArchiveArtifacts, removeArchiveArtifacts } from './archive-publish.js';
 
 export interface ArchiveSessionOptions {
   readonly redactionMode: RedactionMode;
@@ -198,9 +200,20 @@ async function archiveSessionImpl(
     redactionMode: opts.redactionMode,
     includeRaw: opts.includeRaw,
   });
+  const temporaryArchivePath = `${archivePath}.${crypto.randomUUID()}.tmp`;
+  const checksumPath = `${archivePath}.sha256`;
+  const temporaryChecksumPath = `${checksumPath}.${crypto.randomUUID()}.tmp`;
+  const archiveArtifacts = {
+    archivePath,
+    checksumPath,
+    temporaryArchivePath,
+    temporaryChecksumPath,
+  };
   try {
-    await createArchiveBundle(staging.stagingRoot, validSessionId, archivePath);
-    await writeArchiveChecksum(archivePath, `${archivePath}.sha256`, state);
+    await createAndPublishArchive(staging, validSessionId, archiveArtifacts);
+  } catch (error) {
+    await removeArchiveArtifacts(archiveArtifacts);
+    throw error;
   } finally {
     await fs.rm(staging.stagingRoot, { recursive: true, force: true });
   }
@@ -211,17 +224,57 @@ async function archiveSessionImpl(
   return archivePath;
 }
 
+async function createAndPublishArchive(
+  staging: Awaited<ReturnType<typeof createArchiveStaging>>,
+  sessionId: string,
+  artifacts: {
+    readonly archivePath: string;
+    readonly checksumPath: string;
+    readonly temporaryArchivePath: string;
+    readonly temporaryChecksumPath: string;
+  },
+): Promise<void> {
+  await removeArchiveArtifacts(artifacts);
+  await createArchiveBundle(
+    staging.stagingRoot,
+    sessionId,
+    staging.manifest.includedFiles,
+    artifacts.temporaryArchivePath,
+  );
+  await writeArchiveChecksum(
+    artifacts.temporaryArchivePath,
+    artifacts.temporaryChecksumPath,
+    path.basename(artifacts.archivePath),
+  );
+  await publishArchiveArtifacts(artifacts);
+}
+
 async function createArchiveBundle(
   stagingRoot: string,
   sessionId: string,
+  includedFiles: readonly string[],
   archivePath: string,
 ): Promise<void> {
+  const members = await resolveArchiveMembers(stagingRoot, sessionId, includedFiles);
   try {
-    await promisify(execFile)('tar', ['czf', archivePath, '-C', stagingRoot, sessionId], {
-      timeout: 30_000,
-      windowsHide: true,
-    });
+    await promisify(execFile)(
+      'tar',
+      ['--format=ustar', '-czf', archivePath, '-C', stagingRoot, ...members],
+      {
+        timeout: 30_000,
+        windowsHide: true,
+        env: { ...process.env, COPYFILE_DISABLE: '1' },
+      },
+    );
+    const inspection = await inspectArchiveTar(archivePath, sessionId, members);
+    if (inspection.kind === 'blocked') {
+      throw new WorkspaceError(
+        'ARCHIVE_FAILED',
+        `archive bundle verification failed: ${inspection.reason}`,
+      );
+    }
   } catch (error) {
+    if (error instanceof WorkspaceError) throw error;
     throw new WorkspaceError(
       'ARCHIVE_FAILED',
       `tar command failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -229,23 +282,76 @@ async function createArchiveBundle(
   }
 }
 
+async function resolveArchiveMembers(
+  stagingRoot: string,
+  sessionId: string,
+  includedFiles: readonly string[],
+): Promise<string[]> {
+  const relativeMembers = [...includedFiles, ARCHIVE_MANIFEST_FILE];
+  if (new Set(relativeMembers).size !== relativeMembers.length) {
+    throw new WorkspaceError('ARCHIVE_FAILED', 'Archive manifest contains duplicate member paths.');
+  }
+
+  const archiveRoot = path.resolve(stagingRoot, sessionId);
+  const members: string[] = [];
+  for (const relativePath of relativeMembers) {
+    if (!isSafeArchiveMemberPath(relativePath)) {
+      throw new WorkspaceError(
+        'ARCHIVE_FAILED',
+        `Archive manifest has unsafe member path: ${relativePath}`,
+      );
+    }
+    const member = path.posix.join(sessionId, relativePath);
+    const fullPath = path.resolve(stagingRoot, member);
+    if (!fullPath.startsWith(`${archiveRoot}${path.sep}`)) {
+      throw new WorkspaceError(
+        'ARCHIVE_FAILED',
+        `Archive member escapes staging root: ${relativePath}`,
+      );
+    }
+    let stat: import('node:fs').Stats;
+    try {
+      stat = await fs.lstat(fullPath);
+    } catch {
+      throw new WorkspaceError('ARCHIVE_FAILED', `Archive member is missing: ${relativePath}`);
+    }
+    if (!stat.isFile()) {
+      throw new WorkspaceError(
+        'ARCHIVE_FAILED',
+        `Archive member is not a regular file: ${relativePath}`,
+      );
+    }
+    members.push(member);
+  }
+  return members;
+}
+
+function isSafeArchiveMemberPath(relativePath: string): boolean {
+  return (
+    relativePath.length > 0 &&
+    !path.posix.isAbsolute(relativePath) &&
+    !relativePath
+      .split('/')
+      .some((segment) => segment.length === 0 || segment === '.' || segment === '..') &&
+    !relativePath.includes('\\')
+  );
+}
+
 async function writeArchiveChecksum(
   archivePath: string,
   checksumPath: string,
-  state: import('../../state/schema.js').SessionState | null,
+  archiveFileName: string,
 ): Promise<void> {
   try {
     await atomicWrite(
       checksumPath,
-      `${hashBuffer(await fs.readFile(archivePath))}  ${path.basename(archivePath)}\n`,
+      `${hashBuffer(await fs.readFile(archivePath))}  ${archiveFileName}\n`,
     );
   } catch (error) {
-    if (state?.policySnapshot?.mode === 'regulated') {
-      throw new WorkspaceError(
-        'ARCHIVE_FAILED',
-        `Checksum sidecar write failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
+    throw new WorkspaceError(
+      'ARCHIVE_FAILED',
+      `Checksum sidecar write failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 

@@ -22,7 +22,11 @@
     "src/audit/rfc-3161-pkijs-verifier.ts",
     "src/audit/timestamp-verification.ts",
     "src/audit/timestamp-token-verification.ts",
+    "src/adapters/workspace/archive.ts",
+    "src/adapters/workspace/archive-publish.ts",
+    "src/adapters/workspace/archive-tar.ts",
     "src/adapters/workspace/archive-timestamp-verification.ts",
+    "src/adapters/workspace/archive-verify-manifest.ts",
 
     "src/audit/proofgraph/evaluate.ts",
     "src/audit/proofgraph/gate.ts",
