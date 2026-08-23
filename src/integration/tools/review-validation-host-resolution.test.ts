@@ -250,4 +250,32 @@ describe('resolveHostTaskEffectiveFindings', () => {
     expect(result.blocked).toBeUndefined();
     expect(result.evidenceInvocationId).toBe(INVOCATION_ID);
   });
+
+  it.each([
+    ['hash tamper', { findingsHash: 'tampered' }, 'REVIEW_FINDINGS_HASH_MISMATCH'],
+    ['verdict mismatch', { capturedVerdict: 'reject' }, 'REVIEW_FINDINGS_HASH_MISMATCH'],
+    ['criteria mismatch', { criteriaVersion: 'wrong' }, 'SUBAGENT_EVIDENCE_MISSING'],
+    ['mandate mismatch', { mandateDigest: 'wrong' }, 'SUBAGENT_EVIDENCE_MISSING'],
+    ['parent session mismatch', { parentSessionId: 'ses_other' }, 'SUBAGENT_EVIDENCE_MISSING'],
+  ] as const)('fails closed on %s', (_case, invocationOverrides, expectedCode) => {
+    const obligation = makeReviewObligation();
+    const result = resolveHostTaskEffectiveFindings(
+      ctx({
+        state: {
+          sessionId: 'ses_parent',
+          assurance: assuranceWith(
+            obligation,
+            [
+              makeHostTaskInvocation(validRawFindings, {
+                attemptId: ATTEMPT_ID,
+                ...invocationOverrides,
+              }),
+            ],
+            [boundAttempt(obligation)],
+          ),
+        },
+      }),
+    );
+    expect(codeOf(result.blocked)).toBe(expectedCode);
+  });
 });

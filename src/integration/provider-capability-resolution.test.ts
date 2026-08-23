@@ -9,6 +9,7 @@ import type { VerificationCandidate } from '../state/discovery-schemas.js';
 import type { ProviderId, ReportFormatId } from '../state/assertion-identity.js';
 import { makeDetectedStack } from '../discovery/verification-planner-test-helpers.js';
 import type { DetectedStack } from '../discovery/types.js';
+import type { ResolvedVerificationCandidate } from './verification-runtime-resolution.js';
 
 function makeLooseStack(
   items: Array<{ kind: string; id: string; evidence?: string }>,
@@ -171,5 +172,25 @@ describe('resolveProviderCapabilities', () => {
     const vitest = result.find((r) => r.providerId === 'vitest')!;
     expect(vitest.candidate.status).toBe('available');
     expect(vitest.candidate.format).toBe('vitest_json');
+  });
+
+  it('projects runtime for the selected binding-capable candidate regardless of input order', () => {
+    const unavailable = makeStructuredCandidate('vitest', 'junit_xml');
+    const selected = makeStructuredCandidate('vitest', 'vitest_json');
+    const runtimeCandidates: ResolvedVerificationCandidate[] = [
+      { candidate: unavailable, runtime: { status: 'tool_missing', requirements: [] } },
+      { candidate: selected, runtime: { status: 'ready', requirements: [] } },
+    ];
+
+    const cases: Array<
+      readonly [readonly VerificationCandidate[], readonly ResolvedVerificationCandidate[]]
+    > = [
+      [[unavailable, selected], runtimeCandidates],
+      [[selected, unavailable], [...runtimeCandidates].reverse()],
+    ];
+    for (const [candidates, runtime] of cases) {
+      const result = resolveProviderCapabilities(undefined, candidates, runtime);
+      expect(result.find((r) => r.providerId === 'vitest')!.runtime.status).toBe('ready');
+    }
   });
 });

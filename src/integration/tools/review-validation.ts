@@ -33,6 +33,7 @@ import {
 } from '../../shared/flowguard-identifiers.js';
 import {
   getReviewFindingsAcceptanceRejection,
+  hasValidHostTaskInvocationContract,
   formatAcceptanceRejection,
   formatHostTaskAcceptanceRejection,
 } from './review-validation-acceptance.js';
@@ -525,13 +526,11 @@ function validateHostTaskInvocationContract(
 ): string | null {
   const { obligation, invocation } = binding;
   if (ctx.reviewInvocationPolicy !== 'host_task_required') return null;
-  const valid =
-    invocation.invocationMode === 'host_subagent_task' &&
-    invocation.hostVisible === true &&
-    invocation.agentType === REVIEWER_SUBAGENT_TYPE &&
-    invocation.parentSessionId === ctx.reviewParentSessionId &&
-    invocation.criteriaVersion === obligation.criteriaVersion &&
-    invocation.mandateDigest === obligation.mandateDigest;
+  const valid = hasValidHostTaskInvocationContract({
+    obligation,
+    invocation,
+    parentSessionId: ctx.reviewParentSessionId,
+  });
   return valid
     ? null
     : formatBlocked('SUBAGENT_EVIDENCE_MISSING', {
@@ -648,6 +647,7 @@ export function resolveHostTaskEffectiveFindings(
       ctx.state.allowedChallengeEvidenceRefs,
       ctx.state.unaddressedPriorFailIds,
       ctx.state.previouslyUsedChallengeIds,
+      ctx.state.sessionId,
     );
     if (resolved.kind === 'resolved') {
       return {
@@ -687,6 +687,9 @@ export function resolveHostTaskEffectiveFindings(
           obligationId: resolved.obligationId,
         }),
       };
+    }
+    if (resolved.kind === 'invalid') {
+      return { blocked: formatBlocked(resolved.code, { obligationId: resolved.obligationId }) };
     }
     if (ctx.input.reviewerUnavailable === true) {
       const misuse = checkReviewerUnavailableMisuse(ctx);

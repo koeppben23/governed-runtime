@@ -8,7 +8,10 @@
 
 import type { ReviewObligation, ReviewInvocationEvidence } from '../../state/evidence.js';
 import { formatBlocked } from './helpers.js';
-import { HOST_TASK_FINDINGS_REJECTION_FIELD } from '../../shared/flowguard-identifiers.js';
+import {
+  HOST_TASK_FINDINGS_REJECTION_FIELD,
+  REVIEWER_SUBAGENT_TYPE,
+} from '../../shared/flowguard-identifiers.js';
 
 // ─── Acceptance / Rejection Types ─────────────────────────────────────────────
 
@@ -67,6 +70,24 @@ export function getReviewFindingsAcceptanceRejection(input: {
   }
 
   return null;
+}
+
+/** Canonical host-task provenance contract for captured reviewer evidence. */
+export function hasValidHostTaskInvocationContract(input: {
+  readonly obligation: ReviewObligation;
+  readonly invocation: ReviewInvocationEvidence;
+  /** Omit only where no active parent session is available to the caller. */
+  readonly parentSessionId?: string;
+}): boolean {
+  const { obligation, invocation, parentSessionId } = input;
+  return (
+    invocation.invocationMode === 'host_subagent_task' &&
+    invocation.hostVisible === true &&
+    invocation.agentType === REVIEWER_SUBAGENT_TYPE &&
+    (parentSessionId === undefined || invocation.parentSessionId === parentSessionId) &&
+    invocation.criteriaVersion === obligation.criteriaVersion &&
+    invocation.mandateDigest === obligation.mandateDigest
+  );
 }
 
 function acceptanceRejectionFormatVars(
