@@ -31,6 +31,9 @@ export async function inspectArchiveTar(
   }
 
   const actualMembers = names.split(/\r?\n/).filter(Boolean);
+  if (new Set(actualMembers).size !== actualMembers.length) {
+    return { kind: 'blocked', reason: 'archive contains duplicate members' };
+  }
   if (expectedMembers) {
     if (
       actualMembers.length !== expectedMembers.length ||

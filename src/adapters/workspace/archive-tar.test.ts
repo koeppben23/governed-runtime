@@ -96,6 +96,10 @@ describe('inspectArchiveTar', () => {
     await expect(inspectArchiveTar(duplicateArchive, sessionId, [payload])).resolves.toMatchObject({
       kind: 'blocked',
     });
+    await expect(inspectArchiveTar(duplicateArchive, sessionId)).resolves.toMatchObject({
+      kind: 'blocked',
+      reason: expect.stringContaining('duplicate'),
+    });
     await expect(
       inspectArchiveTar(wrongRootArchive, sessionId, [`${sessionId}/missing.txt`]),
     ).resolves.toMatchObject({
