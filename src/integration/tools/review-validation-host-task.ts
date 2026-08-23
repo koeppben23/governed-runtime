@@ -264,6 +264,7 @@ function hasExactBoundAttempt(
   if (!invocation.attemptId) return false;
   const attempt = attempts.find((item) => item.attemptId === invocation.attemptId);
   return (
+    invocation.obligationType === obligation.obligationType &&
     attempt?.status === 'bound' &&
     attempt.obligationId === obligation.obligationId &&
     attempt.obligationType === obligation.obligationType &&

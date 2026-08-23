@@ -917,6 +917,24 @@ describe('resolveHostTaskFindings', () => {
     });
   });
 
+  it('returns attempt_lineage_unavailable when invocation obligationType mismatches', () => {
+    const invocation = makeHostTaskInvocation({ obligationType: 'implement' });
+    const result = resolveHostTaskFindings(
+      {
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        obligations: [makeObligation()],
+        invocations: [invocation],
+        attempts: [makeBoundAttempt()],
+      },
+      makeObligation(),
+    );
+
+    expect(result).toMatchObject({
+      kind: 'attempt_lineage_unavailable',
+      invocationId: INVOCATION_ID,
+    });
+  });
+
   it('RECOVERY: resolves a later coherent capture after a legacy incoherent capture without attemptId', () => {
     const legacyIncoherent = {
       ...validRawFindings,

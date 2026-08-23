@@ -33,26 +33,27 @@ export async function resolveRuntimeProviderCapabilities(
   runner: ProbeRunner,
   cwd: string,
 ) {
+  const candidates = state.verificationCandidates ?? [];
+  const runtimeCandidates = await Promise.all(
+    candidates.map(async (candidate) => {
+      const resolution = resolveExecutionSubjectInputs(state, candidate);
+      if (resolution.kind === 'unavailable') {
+        return { candidate, runtime: { status: 'unavailable' as const, requirements: [] } };
+      }
+      return (
+        await resolveRuntimeReadiness(
+          [{ candidate, executionSubjectInputs: resolution.inputs }],
+          runner,
+          cwd,
+        )
+      )[0]!;
+    }),
+  );
   return resolveProviderCapabilities(
     state.detectedStack ?? undefined,
     state.verificationCandidates,
-    await resolveRuntimeReadiness(
-      state.verificationCandidates?.map((c) => ({
-        candidate: c,
-        executionSubjectInputs: resolvedInputs(state, c),
-      })) ?? [],
-      runner,
-      cwd,
-    ),
+    runtimeCandidates,
   );
-}
-
-function resolvedInputs(
-  state: SessionState,
-  candidate: NonNullable<SessionState['verificationCandidates']>[number],
-) {
-  const resolution = resolveExecutionSubjectInputs(state, candidate);
-  return resolution.kind === 'resolved' ? resolution.inputs : [];
 }
 
 /** Replan via the planner to get profile IDs, then probe runtime readiness. */

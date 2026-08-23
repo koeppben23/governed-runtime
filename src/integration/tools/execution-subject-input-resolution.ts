@@ -19,7 +19,7 @@ export function resolveExecutionSubjectInputs(
 ): ExecutionSubjectResolution {
   if (candidate.candidateId) {
     const inputs = state.executionSubjectInputsByCandidateId?.[candidate.candidateId];
-    return inputs
+    return inputs && inputs.length > 0
       ? { kind: 'resolved', inputs }
       : {
           kind: 'unavailable',

@@ -6,8 +6,10 @@
 
 import { describe, expect, it } from 'vitest';
 import { resolveRuntimeReadiness, wrapForResolution } from '../verification-runtime-resolution.js';
+import { resolveRuntimeProviderCapabilities } from './status-provider-projection.js';
 import type { ProbeRunner, ProbeRequest, ProbeResult } from '../../verification/toolchain-probe.js';
 import type { VerificationCandidate } from '../../state/discovery-schemas.js';
+import type { SessionState } from '../../state/schema.js';
 import type {
   ResolvedVerificationCandidate,
   RuntimeStatus,
@@ -29,6 +31,35 @@ class FakeProbeRunner implements ProbeRunner {
 }
 
 describe('runtime readiness via status projection', () => {
+  it('reports unavailable when a candidateId has no execution subject binding', async () => {
+    const candidate: VerificationCandidate = {
+      candidateId: 'unbound-vitest',
+      assertionCapability: 'structured',
+      kind: 'test',
+      command: 'npx vitest run',
+      source: 'detectedStack:testFramework:vitest',
+      confidence: 'medium',
+      reason: 'vitest detected',
+      assertionReport: {
+        collection: 'run_specific',
+        transport: 'file',
+        format: 'vitest_json',
+        providerId: 'vitest',
+        outputArgumentTemplate: '--out={attemptId}',
+        resultPatternTemplate: '.flowguard/{attemptId}.json',
+      },
+    };
+    const capabilities = await resolveRuntimeProviderCapabilities(
+      { verificationCandidates: [candidate] } as SessionState,
+      new FakeProbeRunner({ 'node_modules/.bin/vitest --version': { status: 'available' } }),
+      '/tmp',
+    );
+
+    const vitest = capabilities.find((capability) => capability.providerId === 'vitest');
+    expect(vitest?.runtime?.status).toBe('unavailable');
+    expect(vitest?.runtime?.status).not.toBe('ready');
+  });
+
   it('reports ready when vitest candidate probes succeed', async () => {
     const runner = new FakeProbeRunner({
       'node_modules/.bin/vitest --version': {
