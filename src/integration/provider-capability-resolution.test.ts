@@ -175,11 +175,15 @@ describe('resolveProviderCapabilities', () => {
   });
 
   it('projects runtime for the selected binding-capable candidate regardless of input order', () => {
-    const unavailable = makeStructuredCandidate('vitest', 'junit_xml');
-    const selected = makeStructuredCandidate('vitest', 'vitest_json');
+    const unavailable = makeStructuredCandidate('vitest', 'junit_xml', {
+      candidateId: 'vc_unavailable',
+    });
+    const selected = makeStructuredCandidate('vitest', 'vitest_json', {
+      candidateId: 'vc_selected',
+    });
     const runtimeCandidates: ResolvedVerificationCandidate[] = [
       { candidate: unavailable, runtime: { status: 'tool_missing', requirements: [] } },
-      { candidate: selected, runtime: { status: 'ready', requirements: [] } },
+      { candidate: { ...selected }, runtime: { status: 'ready', requirements: [] } },
     ];
 
     const cases: Array<

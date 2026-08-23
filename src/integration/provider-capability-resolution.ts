@@ -172,9 +172,14 @@ function buildRuntimeMap(
     if (rc.candidate.assertionCapability !== 'structured') continue;
     const providerId = rc.candidate.assertionReport.providerId;
     if (!providerId) continue;
-    if (candidateMap.get(providerId)?.candidate === rc.candidate) {
+    const selected = candidateMap.get(providerId)?.candidate;
+    if (selected && candidateIdentity(selected) === candidateIdentity(rc.candidate)) {
       map.set(providerId, rc.runtime.status);
     }
   }
   return map;
+}
+
+function candidateIdentity(candidate: VerificationCandidate): string {
+  return candidate.candidateId ?? `${candidate.kind}:${candidate.command}:${candidate.source}`;
 }
