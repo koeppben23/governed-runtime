@@ -109,6 +109,27 @@ describe('Archive Layout v2', () => {
     await expect(fs.access(path.join(root, 'state/session-state.json'))).resolves.toBeUndefined();
   });
 
+  it('packs only manifest-declared regular files', async () => {
+    const { archivePath, sessionId } = await createArchive();
+    const { stdout: manifestRaw } = await promisify(execFile)('tar', [
+      'xOf',
+      archivePath,
+      `${sessionId}/archive-manifest.json`,
+    ]);
+    const manifest = JSON.parse(manifestRaw) as { includedFiles: string[] };
+    const expectedMembers = [
+      ...manifest.includedFiles.map((file) => `${sessionId}/${file}`),
+      `${sessionId}/archive-manifest.json`,
+    ];
+    const { stdout: names } = await promisify(execFile)('tar', ['tzf', archivePath]);
+    const { stdout: details } = await promisify(execFile)('tar', ['tvzf', archivePath]);
+
+    expect(names.split(/\r?\n/).filter(Boolean)).toEqual(expectedMembers);
+    const detailLines = details.split(/\r?\n/).filter(Boolean);
+    expect(detailLines).toHaveLength(expectedMembers.length);
+    expect(detailLines.every((detail) => detail.startsWith('-'))).toBe(true);
+  });
+
   it('projects canonical decision events into decision receipts', async () => {
     const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
     const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });

@@ -47,8 +47,8 @@ function buildArchiveGuidance(
   }
 
   return allowRawExport
-    ? `Redacted archive (${redactionMode}, ${rawDesc}). Safe to share. For a raw-evidence package for auditors, run: /archive redactionMode=none includeRaw=true`
-    : `Redacted archive (${redactionMode}, ${rawDesc}). Safe to share. Raw export is not enabled in config (allowRawExport=false).`;
+    ? `Redacted archive (${redactionMode}, ${rawDesc}). Review the archive policy before sharing. For a raw-evidence package for auditors, run: /archive redactionMode=none includeRaw=true`
+    : `Redacted archive (${redactionMode}, ${rawDesc}). Review the archive policy before sharing. Raw export is not enabled in config (allowRawExport=false).`;
 }
 
 async function verifyArchiveIntegrity(
@@ -88,7 +88,7 @@ export const archive: ToolDefinition = {
   description:
     'Archive a completed FlowGuard session as a tar.gz file with configurable redaction. ' +
     'redactionMode: none (raw evidence for auditors), basic (secrets masked), pseudonymous (stable correlation tokens). ' +
-    'includeRaw: true to include raw files alongside redacted copies, false for share-safe archive.',
+    'includeRaw: true to include raw files alongside redacted copies, false for a redacted sharing archive.',
   args: {
     redactionMode: z
       .enum(['none', 'basic', 'pseudonymous'])
@@ -104,7 +104,7 @@ export const archive: ToolDefinition = {
       .describe(
         'Include raw unredacted files alongside redacted copies. ' +
           'Requires allowRawExport=true in flowguard.json. ' +
-          'Set false to produce a share-safe archive.',
+          'Set false to produce a redacted sharing archive.',
       ),
   },
   async execute(args, context) {

@@ -19,7 +19,7 @@ import { workspacesHome, sessionDir } from './init.js';
 import { withSpan, addFingerprint, addSessionId } from '../../telemetry/index.js';
 import { createArchiveStaging } from './archive-staging.js';
 import { listSessionFiles } from './archive-files.js';
-import { archiveArtifactPath } from './archive-layout.js';
+import { ARCHIVE_MANIFEST_FILE, archiveArtifactPath } from './archive-layout.js';
 import type { RedactionMode } from '../../redaction/export-redaction.js';
 import {
   type ArtifactBindingEntry,
@@ -199,7 +199,12 @@ async function archiveSessionImpl(
     includeRaw: opts.includeRaw,
   });
   try {
-    await createArchiveBundle(staging.stagingRoot, validSessionId, archivePath);
+    await createArchiveBundle(
+      staging.stagingRoot,
+      validSessionId,
+      staging.manifest.includedFiles,
+      archivePath,
+    );
     await writeArchiveChecksum(archivePath, `${archivePath}.sha256`, state);
   } finally {
     await fs.rm(staging.stagingRoot, { recursive: true, force: true });
@@ -214,19 +219,107 @@ async function archiveSessionImpl(
 async function createArchiveBundle(
   stagingRoot: string,
   sessionId: string,
+  includedFiles: readonly string[],
   archivePath: string,
 ): Promise<void> {
+  const members = await resolveArchiveMembers(stagingRoot, sessionId, includedFiles);
   try {
-    await promisify(execFile)('tar', ['czf', archivePath, '-C', stagingRoot, sessionId], {
-      timeout: 30_000,
-      windowsHide: true,
-    });
+    await promisify(execFile)(
+      'tar',
+      ['--format=ustar', '-czf', archivePath, '-C', stagingRoot, ...members],
+      {
+        timeout: 30_000,
+        windowsHide: true,
+        env: { ...process.env, COPYFILE_DISABLE: '1' },
+      },
+    );
+    await verifyArchiveBundleMembers(archivePath, members);
   } catch (error) {
     throw new WorkspaceError(
       'ARCHIVE_FAILED',
       `tar command failed: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+}
+
+async function resolveArchiveMembers(
+  stagingRoot: string,
+  sessionId: string,
+  includedFiles: readonly string[],
+): Promise<string[]> {
+  const relativeMembers = [...includedFiles, ARCHIVE_MANIFEST_FILE];
+  if (new Set(relativeMembers).size !== relativeMembers.length) {
+    throw new WorkspaceError('ARCHIVE_FAILED', 'Archive manifest contains duplicate member paths.');
+  }
+
+  const archiveRoot = path.resolve(stagingRoot, sessionId);
+  const members: string[] = [];
+  for (const relativePath of relativeMembers) {
+    if (!isSafeArchiveMemberPath(relativePath)) {
+      throw new WorkspaceError(
+        'ARCHIVE_FAILED',
+        `Archive manifest has unsafe member path: ${relativePath}`,
+      );
+    }
+    const member = path.posix.join(sessionId, relativePath);
+    const fullPath = path.resolve(stagingRoot, member);
+    if (!fullPath.startsWith(`${archiveRoot}${path.sep}`)) {
+      throw new WorkspaceError(
+        'ARCHIVE_FAILED',
+        `Archive member escapes staging root: ${relativePath}`,
+      );
+    }
+    let stat: import('node:fs').Stats;
+    try {
+      stat = await fs.lstat(fullPath);
+    } catch {
+      throw new WorkspaceError('ARCHIVE_FAILED', `Archive member is missing: ${relativePath}`);
+    }
+    if (!stat.isFile()) {
+      throw new WorkspaceError(
+        'ARCHIVE_FAILED',
+        `Archive member is not a regular file: ${relativePath}`,
+      );
+    }
+    members.push(member);
+  }
+  return members;
+}
+
+async function verifyArchiveBundleMembers(
+  archivePath: string,
+  expectedMembers: readonly string[],
+): Promise<void> {
+  const tar = promisify(execFile);
+  const [{ stdout: names }, { stdout: details }] = await Promise.all([
+    tar('tar', ['-tzf', archivePath], { timeout: 30_000, windowsHide: true }),
+    tar('tar', ['-tvzf', archivePath], { timeout: 30_000, windowsHide: true }),
+  ]);
+  const actualMembers = names.split(/\r?\n/).filter(Boolean);
+  if (
+    actualMembers.length !== expectedMembers.length ||
+    actualMembers.some((member, index) => member !== expectedMembers[index])
+  ) {
+    throw new WorkspaceError('ARCHIVE_FAILED', 'Archive contains undeclared or missing members.');
+  }
+  const memberDetails = details.split(/\r?\n/).filter(Boolean);
+  if (
+    memberDetails.length !== expectedMembers.length ||
+    memberDetails.some((detail) => !detail.startsWith('-'))
+  ) {
+    throw new WorkspaceError('ARCHIVE_FAILED', 'Archive contains a non-regular member.');
+  }
+}
+
+function isSafeArchiveMemberPath(relativePath: string): boolean {
+  return (
+    relativePath.length > 0 &&
+    !path.posix.isAbsolute(relativePath) &&
+    !relativePath
+      .split('/')
+      .some((segment) => segment.length === 0 || segment === '.' || segment === '..') &&
+    !relativePath.includes('\\')
+  );
 }
 
 async function writeArchiveChecksum(
