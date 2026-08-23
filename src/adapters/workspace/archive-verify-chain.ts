@@ -29,6 +29,7 @@ import {
 import { computeArchiveContentDigest } from '../../archive/content-digest.js';
 import {
   findBindingArtifacts,
+  findPublicationBinding,
   isArtifactBindingEntry,
   hasTimestampEvidence,
   isCurrentChainIntegrityFailure,
@@ -38,7 +39,7 @@ import {
 } from './archive-verify-helpers.js';
 import { isPolicyMode } from '../../state/policy-mode.js';
 import { validateFingerprint, validateSessionId } from './types.js';
-import { workspacesHome } from './init.js';
+import { sessionDir, workspacesHome } from './init.js';
 import { withSpan, addFingerprint, addSessionId } from '../../telemetry/index.js';
 import {
   loadArchiveManifest,
@@ -46,7 +47,10 @@ import {
   checkUnexpectedFiles,
 } from './archive-verify-manifest.js';
 import { fileExists, snapshotArchive } from './archive-files.js';
-import { type ArtifactBindingEntry } from './archive-artifact-binding.js';
+import {
+  archivePublicationBinding,
+  type ArtifactBindingEntry,
+} from './archive-artifact-binding.js';
 import { archiveFileName } from './archive.js';
 import { inspectArchiveTar } from './archive-tar.js';
 
@@ -577,12 +581,79 @@ async function verifyArchiveChecksum(
   }
 }
 
+async function verifyExternalPublicationBinding(
+  location: { fingerprint: string; validSessionId: string },
+  manifest: ArchiveManifest,
+  archive: {
+    readonly snapshotPath: string;
+    readonly archivePath: string;
+    readonly checksumSidecarPath: string;
+  },
+  findings: ArchiveFinding[],
+): Promise<void> {
+  let externalAudit: Awaited<ReturnType<typeof readAuditTrail>>;
+  try {
+    externalAudit = await readAuditTrail(sessionDir(location.fingerprint, location.validSessionId));
+  } catch (error) {
+    findings.push({
+      code: 'archive_publication_binding_invalid',
+      severity: 'error',
+      message: `External publication binding audit trail could not be read: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    });
+    return;
+  }
+  const chain = verifyChain(externalAudit.events, { strict: true });
+  if (externalAudit.skipped > 0 || !chain.valid) {
+    findings.push({
+      code: 'archive_publication_binding_invalid',
+      severity: 'error',
+      message:
+        'External publication binding audit trail is incomplete or fails strict chain verification',
+      file: 'audit.jsonl',
+    });
+    return;
+  }
+  try {
+    const [snapshot, sidecar] = await Promise.all([
+      fs.readFile(archive.snapshotPath),
+      fs.readFile(archive.checksumSidecarPath),
+    ]);
+    const expected = archivePublicationBinding(
+      snapshot,
+      sidecar,
+      path.basename(archive.archivePath),
+      manifest.contentDigest,
+    );
+    if (findPublicationBinding(externalAudit.events, expected)) return;
+  } catch (error) {
+    findings.push({
+      code: 'archive_publication_binding_invalid',
+      severity: 'error',
+      message: `Published archive binding could not be evaluated: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    });
+    return;
+  }
+  findings.push({
+    code: 'archive_publication_unbound',
+    severity: 'error',
+    message: 'Published archive and checksum have no exact external audit publication binding',
+  });
+}
+
 async function verifyArchiveIntegrity(
   location: { sessDir: string; fingerprint: string; validSessionId: string },
   manifest: ArchiveManifest,
   findings: ArchiveFinding[],
   state: import('../../state/schema.js').SessionState | null,
-  archive: { readonly snapshotPath: string; readonly checksumSidecarPath: string },
+  archive: {
+    readonly snapshotPath: string;
+    readonly archivePath: string;
+    readonly checksumSidecarPath: string;
+  },
 ): Promise<void> {
   const { sessDir } = location;
   // Strict authority and completeness checks run BEFORE the content digest so a
@@ -603,6 +674,7 @@ async function verifyArchiveIntegrity(
   addContentDigestFindings(manifest, findings);
 
   await verifyArchiveChecksum(archive.snapshotPath, archive.checksumSidecarPath, strict, findings);
+  await verifyExternalPublicationBinding(location, manifest, archive, findings);
 }
 
 // Extraction, manifest validation, and cleanup must stay in one transaction.
@@ -714,7 +786,11 @@ async function verifyArchiveImpl(
       manifest,
       findings,
       state,
-      { snapshotPath: archiveSnapshotPath, checksumSidecarPath: `${archiveTarPath}.sha256` },
+      {
+        snapshotPath: archiveSnapshotPath,
+        archivePath: archiveTarPath,
+        checksumSidecarPath: `${archiveTarPath}.sha256`,
+      },
     );
 
     const result = buildVerificationResult(findings, manifest);

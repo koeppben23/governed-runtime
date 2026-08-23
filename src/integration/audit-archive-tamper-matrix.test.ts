@@ -389,7 +389,9 @@ describe('audit/archive tamper matrix', () => {
     'regulated nested content tamper with re-sealed chain -> TSA verification failure',
     async () => {
       const ids = await completeRegulatedSession();
-      const lines = await readAuditLines(ids.sessDir);
+      const lines = (await readAuditLines(ids.sessDir)).filter(
+        (line) => JSON.parse(line).event !== 'archive:publication_bound',
+      );
       const events = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
       const last = events[events.length - 1]! as unknown as ChainedAuditEvent;
       const originalDigest = computeCanonicalEventDigest(Object.fromEntries(Object.entries(last)));
@@ -691,14 +693,20 @@ describe('audit/archive tamper matrix', () => {
     'audit trail tail truncation -> verify fail with explicit code (#420)',
     async () => {
       const ids = await completeRegulatedSession();
-      const lines = await readAuditLines(ids.sessDir);
-      expect(lines.length).toBeGreaterThan(1);
+      let lines: string[] = [];
+      let truncated: string[] = [];
       // Drop the final event(s): a prefix of a valid hash-chain is still chain-valid,
       // so only a signed head+count anchor can expose the missing tail.
-      const truncated = lines.slice(0, lines.length - 1);
-      await mutateArchive(ids, (root) =>
-        fs.writeFile(path.join(root, 'audit', 'audit.jsonl'), `${truncated.join('\n')}\n`, 'utf-8'),
-      );
+      await mutateArchive(ids, async (root) => {
+        lines = await readAuditLines(path.join(root, 'audit'));
+        expect(lines.length).toBeGreaterThan(1);
+        truncated = lines.slice(0, lines.length - 1);
+        await fs.writeFile(
+          path.join(root, 'audit', 'audit.jsonl'),
+          `${truncated.join('\n')}\n`,
+          'utf-8',
+        );
+      });
 
       const logs: Array<{ level: string; service: string; extra?: Record<string, unknown> }> = [];
       const logger: AdapterLogger = {

@@ -430,7 +430,7 @@ describe('Archive Layout v2', () => {
     await fs.writeFile(path.join(initialized.sessionDir, 'artifacts', 'proof.json'), '{}', 'utf8');
 
     const options = { redactionMode: 'none' as const, includeRaw: true };
-    await archiveSession(initialized.fingerprint, sessionId, options);
+    const archivePath = await archiveSession(initialized.fingerprint, sessionId, options);
     await archiveSession(initialized.fingerprint, sessionId, options);
     let bindings = (await readAuditTrail(initialized.sessionDir)).events.filter(
       (event) => event.event === 'archive:artifacts_bound',
@@ -454,6 +454,25 @@ describe('Archive Layout v2', () => {
     );
     expect(bindings).toHaveLength(2);
     expect(bindings[1]?.detail).toMatchObject({ artifactCount: 2 });
+    const publications = (await readAuditTrail(initialized.sessionDir)).events.filter(
+      (event) => event.event === 'archive:publication_bound',
+    );
+    expect(publications).toHaveLength(2);
+    expect(publications[1]?.detail).toMatchObject({
+      schemaVersion: 'flowguard-archive-publication-binding.v1',
+      archiveFile: path.basename(archivePath),
+    });
+  });
+
+  it('fails closed when a published archive has no external publication binding', async () => {
+    const { fingerprint, sessionId, sessionDir } = await createArchive();
+    await fs.writeFile(path.join(sessionDir, 'audit.jsonl'), '', 'utf8');
+
+    const verification = await verifyArchive(fingerprint, sessionId);
+    expect(verification.passed).toBe(false);
+    expect(
+      verification.findings.some((finding) => finding.code === 'archive_publication_unbound'),
+    ).toBe(true);
   });
 
   it('verifies the tarball independently of later live-session mutations', async () => {

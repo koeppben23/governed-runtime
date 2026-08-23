@@ -18,7 +18,10 @@ import type { SessionState } from '../../state/schema.js';
 import {
   ARTIFACT_BINDING_EVENT,
   ARTIFACT_BINDING_SCHEMA_VERSION,
+  ARCHIVE_PUBLICATION_BINDING_EVENT,
+  ARCHIVE_PUBLICATION_BINDING_SCHEMA_VERSION,
   type ArtifactBindingEntry,
+  type ArchivePublicationBinding,
 } from './archive-artifact-binding.js';
 import type { ChainVerificationReason } from '../../audit/integrity.js';
 import type { ArchiveFindingCode } from '../../archive/types.js';
@@ -60,6 +63,48 @@ export function isArtifactBindingEntry(value: unknown): value is ArtifactBinding
     /^[a-f0-9]{64}$/.test(entry.sha256) &&
     (entry.artifactType === null || typeof entry.artifactType === 'string')
   );
+}
+
+export function findPublicationBinding(
+  events: readonly Record<string, unknown>[],
+  expected: ArchivePublicationBinding,
+): boolean {
+  return events.some((event) => {
+    if (event.event !== ARCHIVE_PUBLICATION_BINDING_EVENT) return false;
+    const detail = event.detail as Record<string, unknown> | undefined;
+    return (
+      detail?.schemaVersion === ARCHIVE_PUBLICATION_BINDING_SCHEMA_VERSION &&
+      detail.publicationId === expected.publicationId &&
+      detail.archiveFile === expected.archiveFile &&
+      detail.archiveDigest === expected.archiveDigest &&
+      detail.sidecarDigest === expected.sidecarDigest &&
+      detail.manifestContentDigest === expected.manifestContentDigest
+    );
+  });
+}
+
+export function lastPublicationBinding(
+  events: readonly Record<string, unknown>[],
+): ArchivePublicationBinding | undefined {
+  const event = events.at(-1);
+  if (event?.event !== ARCHIVE_PUBLICATION_BINDING_EVENT) return undefined;
+  const detail = event.detail as Record<string, unknown> | undefined;
+  if (
+    detail?.schemaVersion !== ARCHIVE_PUBLICATION_BINDING_SCHEMA_VERSION ||
+    typeof detail.publicationId !== 'string' ||
+    typeof detail.archiveFile !== 'string' ||
+    typeof detail.archiveDigest !== 'string' ||
+    typeof detail.sidecarDigest !== 'string' ||
+    typeof detail.manifestContentDigest !== 'string'
+  )
+    return undefined;
+  return {
+    publicationId: detail.publicationId,
+    archiveFile: detail.archiveFile,
+    archiveDigest: detail.archiveDigest,
+    sidecarDigest: detail.sidecarDigest,
+    manifestContentDigest: detail.manifestContentDigest,
+  };
 }
 
 // ─── Audit Chain Predicates ────────────────────────────────────────────────────

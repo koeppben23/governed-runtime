@@ -86,6 +86,8 @@ export type ManifestPolicyMode = z.infer<typeof ManifestPolicyModeSchema>;
  * - policy_state_unresolved: trusted policy state cannot determine verification strictness
  * - audit_records_skipped: audit records could not be parsed during verification
  * - archive_inventory_inconclusive: archive payload inventory could not be read completely
+ * - archive_publication_unbound: published archive has no exact external audit binding
+ * - archive_publication_binding_invalid: external binding audit trail is unreadable or invalid
  */
 export const ArchiveFindingCodeSchema = z.enum([
   'missing_manifest',
@@ -107,6 +109,8 @@ export const ArchiveFindingCodeSchema = z.enum([
   'policy_state_unresolved',
   'audit_records_skipped',
   'archive_inventory_inconclusive',
+  'archive_publication_unbound',
+  'archive_publication_binding_invalid',
   'timestamp_unanchored',
   'tsa_verification_failed',
   'tsa_evidence_downgraded',
