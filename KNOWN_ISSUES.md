@@ -48,6 +48,11 @@ redaction-composition assurance gap R14.
 | AC1  | HIGH        | Fixed  | #416       | Audit chain hashing uses recursive canonical JSON serializer; nested content bound to chainHash.                   |
 | H4   | HIGH        | Fixed  | #129       | Hook audit-write failures surfaced via `recordAssuranceWithAudit()` instead of silent downgrade.                   |
 | AR1  | HIGH        | Fixed  | #420       | Archive manifest v2 folds `auditChainHead`, `auditEventCount`, and metadata into `contentDigest`.                  |
+| AR3  | MEDIUM      | Fixed  | #837       | Archive verification now emits an explicit fail-closed finding when trusted policy state is unresolved.             |
+| AR4  | MEDIUM      | Fixed  | #837       | Archive payload inventory failures now surface as `archive_inventory_inconclusive`.                                 |
+| AUD1 | LOW         | Fixed  | #837       | Archive readers surface skipped audit records in every policy mode.                                                 |
+| AUD3 | LOW         | Fixed  | #837       | Audit append reuses the Windows `EPERM`/`EBUSY` rename retry authority.                                             |
+| AUD4 | LOW         | Fixed  | #837       | Sparse-array canonical JSON behavior is documented and pinned by tests.                                            |
 | G10  | LOW         | Fixed  | #428       | Auto-advance overflow now fail-closed (`AutoAdvanceResult` discriminated union).                                   |
 | G5   | LOW         | Fixed  | #418       | Policy mode is a closed enum; near-miss strings can no longer silently disable enforcement.                        |
 | C14  | MEDIUM      | Fixed  | #497       | Repo-local tarball install flow must generate checksum evidence required by default-on verification.               |
@@ -86,7 +91,7 @@ disproven, update the status and link the evidence."
 | ------- | -------- | --------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A       | P1       | Partially Fixed | G1, G2, G24, G25, G26                          | Four-eyes and identity normalization/reporting. G1/G2/G24/G25 fixed; G26 remains open.                                                                                          |
 | B       | P1       | Fixed           | AC1, AC2, AC3, AC4, AC5, TSA1, TSA2, TSA3, TSA4 | Hash-chain, canonical digest, TSA, and NTP hardening. #832/#833 fix TSA1–TSA4 with a strict RFC 3161 verifier contract, including ESS signer-certificate binding.                 |
-| C       | P1       | Fixed           | AR1, AR2, AUD2                                 | Archive integrity and audit write-lock recovery. AR1 and AUD2 fixed (#670); AR2 fixed by trusted-policy severity derivation.                                                    |
+| C       | P1       | Partially Fixed | AR1, AR2, AR3, AR4, AR5, AUD1, AUD2, AUD3, AUD4 | Archive integrity and audit write-lock recovery. AR1 and AUD2 fixed (#670); AR2 fixed by trusted-policy severity derivation; AR3/AR4/AUD1/AUD3/AUD4 fixed (#837); AR5 is tracked in #836. |
 | D       | P1       | Fixed           | R1, R2, R3, R4, R5, AC3                        | Secret-leak, redaction, logging, telemetry boundaries. R3, R5 fixed (#585); R1, R2, R4, AC3 fixed (redaction fail-closed).                                                      |
 | E       | P1       | Partially Fixed | H1, H2, H4, C1, C2, C3, C4, C5, M1, M2, M3, I4 | Hook, CLI, MCP, installer, and integration fail-closed hardening. H1, H2, H4, M1, M3 and C2–C5 fixed (#645, #646, #667); I4 partially fixed; C1 and M2 remain open.             |
 | F       | P2       | Partially Fixed | G3, G7, G9, G15, AC6, AC7, G12, G13            | State-machine correctness and audit completeness. G3 and G9 are fixed pre-existing; G7 is fixed by #421 and AC7 by #678; G15, AC6, and G12–G13 remain open.                     |
@@ -146,9 +151,7 @@ disproven, update the status and link the evidence."
 | C11  | MEDIUM   | Open            | Serve port allocation has a TOCTOU gap.                                                                                                                       |
 | T1   | MEDIUM   | Open            | Mandate section extraction should tolerate heading drift or fail with clearer contract. `TESTED_BUG_BEHAVIOR`.                                                |
 | AR2  | MEDIUM   | Fixed           | Archive timestamp severity derives from the trusted `resolveStrictMode(state)` resolution; the manifest is never a severity authority.                        |
-| AR3  | MEDIUM   | Open            | Archive strict-mode escalation diagnostics need consistency.                                                                                                  |
-| AR4  | MEDIUM   | Open            | Unexpected-file checks should surface inconclusive directory reads.                                                                                           |
-| AR5  | MEDIUM   | Not Verified    | Archive binding event ordering should avoid phantom evidence.                                                                                                 |
+| AR5  | MEDIUM   | Tracked         | Archive binding event ordering needs the post-publication digest-bound event and verifier contract tracked in #836.                                           |
 | R14  | MEDIUM   | Open            | Archive/export redaction lacks end-to-end composition tests from tool defaults through staging and final archive bytes; regressions could bypass tested redaction helpers. |
 | TSA1 | MEDIUM   | Fixed           | RFC3161 verifier enforces exactly one critical, exclusive id-kp-timeStamping EKU (#643, #832).                                                               |
 | TSA2 | MEDIUM   | Fixed           | Independently allowlisted message-imprint and CMS hashes (SHA-256/384/512), CMS-internal coherence, validated RSASSA-PSS parameters (#643, #832).            |
@@ -200,9 +203,6 @@ disproven, update the status and link the evidence."
 | AR8  | LOW        | Not Verified | Decision receipt raw-include defaults need verification.                                                                                                                                           |
 | TSA3 | LOW        | Fixed        | Unknown critical extensions reject; non-critical unknown extensions are tolerated per RFC 5280 (#643, #832).                                                                                       |
 | TSA4 | LOW        | Fixed        | Imprint comparisons are constant-time (`src/audit/constant-time.ts`, #643, #832).                                                                                                                  |
-| AUD1 | LOW        | Open         | Audit skipped-line count should be surfaced by archive readers.                                                                                                                                    |
-| AUD3 | LOW        | Open         | Audit append rename can reuse Windows retry behavior.                                                                                                                                              |
-| AUD4 | LOW        | Open         | Sparse-array canonical JSON behavior should be documented/tested.                                                                                                                                  |
 | P2   | LOW        | Open         | Session lock EPERM liveness behavior should be reviewed.                                                                                                                                           |
 | P3   | LOW        | Open         | Lockfile cleanup behavior after process exit should be documented/hardened.                                                                                                                        |
 | S3   | LOW        | Open         | Policy snapshot hash is not detached; documented design.                                                                                                                                           |
