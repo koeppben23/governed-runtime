@@ -133,7 +133,7 @@ async function buildStaging(
     for (const [source, target] of Object.entries(RAW_SOURCE_PATHS)) {
       const srcPath = path.join(input.sessDir, source);
       if (await fileExists(srcPath)) {
-        await copyIfPresent(srcPath, archivePath(archiveRoot, target));
+        await copyRawSource(srcPath, archivePath(archiveRoot, target), source, input.events);
         rawFilesProduced.push(target);
       }
     }
@@ -163,6 +163,21 @@ async function buildStaging(
     'utf-8',
   );
   return { stagingRoot, archiveRoot, manifest };
+}
+
+async function copyRawSource(
+  sourcePath: string,
+  targetPath: string,
+  source: string,
+  events: readonly Record<string, unknown>[],
+): Promise<void> {
+  if (source !== 'audit.jsonl') return copyIfPresent(sourcePath, targetPath);
+  await fs.mkdir(path.dirname(targetPath), { recursive: true });
+  await fs.writeFile(
+    targetPath,
+    events.map((event) => JSON.stringify(event)).join('\n') + '\n',
+    'utf-8',
+  );
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
