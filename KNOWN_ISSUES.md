@@ -20,7 +20,9 @@ flow-aware completeness fix AC7 (merged via #678), and two new assurance
 findings: MUT2 (coverage exclusion of production plugin helpers) and MUT3
 (release tags do not run mutation testing). A 2026-08-16 triage added the
 architecture certificate provenance section for PR #816 (CEF1/CEF2 fixed via
-the squash merge, CE1–CE3 open).
+the squash merge, CE1–CE3 open). A 2026-08-22 re-triage recorded the completed
+RFC 3161 TSA hardening from #832/#833 (TSA1–TSA4) and the separate archive
+redaction-composition assurance gap R14.
 
 ## Status Legend
 
@@ -83,7 +85,7 @@ disproven, update the status and link the evidence."
 | Package | Priority | Status          | Findings                                       | Summary                                                                                                                                                                         |
 | ------- | -------- | --------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A       | P1       | Partially Fixed | G1, G2, G24, G25, G26                          | Four-eyes and identity normalization/reporting. G1/G2/G24/G25 fixed; G26 remains open.                                                                                          |
-| B       | P1       | Fixed           | AC1, AC2, AC3, AC4, AC5, TSA1, TSA2            | Hash-chain, canonical digest, TSA, and NTP hardening. AC2 and TSA1–TSA2 fixed by the archive/TSA trust anchor hardening (TSA_EVIDENCE_DOWNGRADED + RFC 3161 verifier contract). |
+| B       | P1       | Fixed           | AC1, AC2, AC3, AC4, AC5, TSA1, TSA2, TSA3, TSA4 | Hash-chain, canonical digest, TSA, and NTP hardening. #832/#833 fix TSA1–TSA4 with a strict RFC 3161 verifier contract, including ESS signer-certificate binding.                 |
 | C       | P1       | Fixed           | AR1, AR2, AUD2                                 | Archive integrity and audit write-lock recovery. AR1 and AUD2 fixed (#670); AR2 fixed by trusted-policy severity derivation.                                                    |
 | D       | P1       | Fixed           | R1, R2, R3, R4, R5, AC3                        | Secret-leak, redaction, logging, telemetry boundaries. R3, R5 fixed (#585); R1, R2, R4, AC3 fixed (redaction fail-closed).                                                      |
 | E       | P1       | Partially Fixed | H1, H2, H4, C1, C2, C3, C4, C5, M1, M2, M3, I4 | Hook, CLI, MCP, installer, and integration fail-closed hardening. H1, H2, H4, M1, M3 and C2–C5 fixed (#645, #646, #667); I4 partially fixed; C1 and M2 remain open.             |
@@ -109,8 +111,8 @@ disproven, update the status and link the evidence."
 | C4   | HIGH     | Fixed                      | Codex marketplace install and uninstall use locked atomic read-modify-write in #667.                                                                                      |
 | C5   | HIGH     | Fixed                      | Snapshot and rollback paths reject symlinks and use TOCTOU-hardened operations in #667.                                                                                   |
 | I4   | HIGH     | Partially Fixed            | Strict state-read failures block enforcement; missing session-directory mapping still needs fail-closed handling.                                                         |
-| R1   | HIGH     | Fixed (code + integration) | Export redaction uses default-deny deep walk. Wired into archive pipeline.                                                                                                |
-| R2   | HIGH     | Fixed (code + integration) | Archive pipeline produces redacted files alongside raw, controlled by mandatory tool parameters.                                                                          |
+| R1   | HIGH     | Fixed                      | Export redaction uses a default-deny deep walk. Final archive composition needs the separate R14 regression contract.                                                     |
+| R2   | HIGH     | Fixed                      | Archive pipeline produces redacted files alongside raw, controlled by mandatory tool parameters. Final archive-byte coverage remains R14.                                 |
 | R4   | HIGH     | Fixed                      | Telemetry error/status export needs scrubbing.                                                                                                                            |
 | AUD2 | HIGH     | Fixed                      | Audit write lock safely recovers dead-process stale locks while failing closed for unsafe lock states (#670).                                                             |
 | LK1  | LOW      | Mitigated                  | Stale-lock recovery re-verifies content before unlink to avoid deleting a foreign fresh lock; a residual sub-`unlink` OS race remains without an atomic primitive (#673). |
@@ -147,8 +149,9 @@ disproven, update the status and link the evidence."
 | AR3  | MEDIUM   | Open            | Archive strict-mode escalation diagnostics need consistency.                                                                                                  |
 | AR4  | MEDIUM   | Open            | Unexpected-file checks should surface inconclusive directory reads.                                                                                           |
 | AR5  | MEDIUM   | Not Verified    | Archive binding event ordering should avoid phantom evidence.                                                                                                 |
-| TSA1 | MEDIUM   | Fixed           | RFC3161 verifier enforces exactly one critical, exclusive id-kp-timeStamping EKU.                                                                              |
-| TSA2 | MEDIUM   | Fixed           | Independently allowlisted message-imprint and CMS hashes (SHA-256/384/512), CMS-internal coherence, validated RSASSA-PSS parameters.                          |
+| R14  | MEDIUM   | Open            | Archive/export redaction lacks end-to-end composition tests from tool defaults through staging and final archive bytes; regressions could bypass tested redaction helpers. |
+| TSA1 | MEDIUM   | Fixed           | RFC3161 verifier enforces exactly one critical, exclusive id-kp-timeStamping EKU (#643, #832).                                                               |
+| TSA2 | MEDIUM   | Fixed           | Independently allowlisted message-imprint and CMS hashes (SHA-256/384/512), CMS-internal coherence, validated RSASSA-PSS parameters (#643, #832).            |
 | S1   | MEDIUM   | Open            | State schema versioning needs forward-migration strategy.                                                                                                     |
 | S2   | MEDIUM   | Open            | Policy snapshot parse transforms can rewrite historical state.                                                                                                |
 | MUT2 | MEDIUM   | Open            | Coverage excludes the production `src/integration/plugin-helpers.ts` by wildcard; its enforcement paths do not count toward the 80% gate or mutation scope.   |
@@ -195,8 +198,8 @@ disproven, update the status and link the evidence."
 | AR6  | LOW        | Open         | Archive finding severity sorting should not rely on lexicographic order.                                                                                                                           |
 | AR7  | LOW        | Open         | Archive manifest classification metadata should be considered for digest binding.                                                                                                                  |
 | AR8  | LOW        | Not Verified | Decision receipt raw-include defaults need verification.                                                                                                                                           |
-| TSA3 | LOW        | Fixed        | Unknown critical extensions reject; non-critical unknown extensions tolerated per RFC 5280.                                                                                                        |
-| TSA4 | LOW        | Fixed        | Imprint comparisons are constant-time (`src/audit/constant-time.ts`).                                                                                                                              |
+| TSA3 | LOW        | Fixed        | Unknown critical extensions reject; non-critical unknown extensions are tolerated per RFC 5280 (#643, #832).                                                                                       |
+| TSA4 | LOW        | Fixed        | Imprint comparisons are constant-time (`src/audit/constant-time.ts`, #643, #832).                                                                                                                  |
 | AUD1 | LOW        | Open         | Audit skipped-line count should be surfaced by archive readers.                                                                                                                                    |
 | AUD3 | LOW        | Open         | Audit append rename can reuse Windows retry behavior.                                                                                                                                              |
 | AUD4 | LOW        | Open         | Sparse-array canonical JSON behavior should be documented/tested.                                                                                                                                  |
