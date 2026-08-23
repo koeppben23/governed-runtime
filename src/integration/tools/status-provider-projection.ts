@@ -15,6 +15,7 @@ import { ProcessProbeRunner } from '../../verification/toolchain-probe.js';
 import type { ProbeRunner } from '../../verification/toolchain-probe.js';
 import type { ResolvedVerificationCandidate } from '../verification-runtime-resolution.js';
 import { join } from 'node:path';
+import { resolveExecutionSubjectInputs } from './execution-subject-input-resolution.js';
 
 export function computeProviderCapabilities(
   state: SessionState,
@@ -38,17 +39,20 @@ export async function resolveRuntimeProviderCapabilities(
     await resolveRuntimeReadiness(
       state.verificationCandidates?.map((c) => ({
         candidate: c,
-        executionSubjectInputs:
-          (c.candidateId
-            ? state.executionSubjectInputsByCandidateId?.[c.candidateId]
-            : undefined) ??
-          state.executionSubjectInputsByKind?.[c.kind] ??
-          [],
+        executionSubjectInputs: resolvedInputs(state, c),
       })) ?? [],
       runner,
       cwd,
     ),
   );
+}
+
+function resolvedInputs(
+  state: SessionState,
+  candidate: NonNullable<SessionState['verificationCandidates']>[number],
+) {
+  const resolution = resolveExecutionSubjectInputs(state, candidate);
+  return resolution.kind === 'resolved' ? resolution.inputs : [];
 }
 
 /** Replan via the planner to get profile IDs, then probe runtime readiness. */

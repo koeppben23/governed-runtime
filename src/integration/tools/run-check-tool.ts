@@ -91,6 +91,7 @@ import {
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { hashText } from '../../shared/hashing.js';
 import { validateRunCheckRequest } from './run-check-request.js';
+import { resolveExecutionSubjectInputs } from './execution-subject-input-resolution.js';
 const RUN_CHECK_RETRY_DELAYS_MS = [100, 200, 400] as const;
 const RUN_CHECK_RETRIES = RUN_CHECK_RETRY_DELAYS_MS.length;
 
@@ -179,15 +180,15 @@ async function validateAndAttest(
   const subject = freezeValidationSubject(state);
 
   const worktree = getWorktree(context);
-  const subjectInputs = executionSubjectInputs(state, guard.candidate);
-
-  if (subjectInputs.length === 0) {
+  const subjectResolution = resolveExecutionSubjectInputs(state, guard.candidate);
+  if (subjectResolution.kind === 'unavailable') {
     return formatBlocked('VERIFICATION_SUBJECT_CHANGED', {
       component: 'execution_surface',
       phase: 'pre_execution',
-      detail: `no execution subject inputs for kind '${kind}' — attestation metadata missing`,
+      detail: subjectResolution.detail,
     });
   }
+  const subjectInputs = subjectResolution.inputs;
 
   const result = await attestExecutionSubject(
     subjectInputs,
@@ -481,16 +482,6 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
       },
     },
   );
-}
-
-function executionSubjectInputs(
-  state: SessionState,
-  candidate: VerificationCandidate,
-): readonly ExecutionSubjectInput[] {
-  const byCandidate = candidate.candidateId
-    ? state.executionSubjectInputsByCandidateId?.[candidate.candidateId]
-    : undefined;
-  return byCandidate ?? state.executionSubjectInputsByKind?.[candidate.kind] ?? [];
 }
 
 // ─── Result Construction ──────────────────────────────────────────────────────

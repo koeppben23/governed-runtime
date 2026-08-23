@@ -14,6 +14,15 @@ import { hashText } from '../shared/hashing.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import type { DiscoveryResult } from './types.js';
 
+const COLLECTOR_OUTPUTS = {
+  'repo-metadata': 'repoMetadata',
+  'stack-detection': 'stack',
+  topology: 'topology',
+  'surface-detection': 'surfaces',
+  'code-surface-analysis': 'codeSurfaces',
+  'domain-signals': 'domainSignals',
+} as const;
+
 /**
  * Compute SHA-256 digest of a DiscoveryResult.
  *
@@ -54,6 +63,53 @@ function stripVolatileFields(result: DiscoveryResult): Record<string, unknown> {
     ...rest,
     ...(strippedDiagnostics ? { diagnostics: strippedDiagnostics } : {}),
   };
+}
+
+/**
+ * Compute stable digests for every semantic producer in DiscoveryResult.
+ * Together these projections cover every field in the stable global digest,
+ * so a semantic global drift always has a named diagnostic contributor.
+ */
+export function computeStableDiscoveryContributorDigests(
+  result: DiscoveryResult,
+): ReadonlyMap<string, string> {
+  const digests = new Map<string, string>();
+  const diagnosticsByName = new Map(
+    result.diagnostics?.map(({ durationMs: _durationMs, ...diagnostic }) => [
+      diagnostic.name,
+      diagnostic,
+    ]),
+  );
+  const collectorNames = new Set([
+    ...Object.keys(result.collectors),
+    ...diagnosticsByName.keys(),
+    ...Object.keys(COLLECTOR_OUTPUTS),
+  ]);
+
+  for (const name of [...collectorNames].sort()) {
+    const outputKey = COLLECTOR_OUTPUTS[name as keyof typeof COLLECTOR_OUTPUTS];
+    digests.set(
+      name,
+      hashText(
+        canonicalJsonStringify({
+          status: result.collectors[name] ?? null,
+          diagnostic: diagnosticsByName.get(name) ?? null,
+          output: outputKey ? result[outputKey] : null,
+        }),
+      ),
+    );
+  }
+  digests.set('validation-hints', hashText(canonicalJsonStringify(result.validationHints)));
+  digests.set(
+    'discovery-metadata',
+    hashText(
+      canonicalJsonStringify({
+        schemaVersion: result.schemaVersion,
+        diagnosticOrder: result.diagnostics?.map((diagnostic) => diagnostic.name) ?? [],
+      }),
+    ),
+  );
+  return digests;
 }
 
 /**

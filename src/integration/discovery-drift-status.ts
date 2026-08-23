@@ -26,7 +26,7 @@ export interface DiscoveryDriftStatusProjection {
   readonly drifted: boolean | null;
   readonly currentDigest: string | null;
   readonly persistedDigest: string | null;
-  readonly changedCollectorNames: string[];
+  readonly changedContributorNames: string[];
   readonly diagnostics: string[];
   readonly notVerified: string[];
   readonly warnings: DiscoveryDriftStatusWarning[];
@@ -101,7 +101,7 @@ function fromDriftResult(result: DriftResult): DiscoveryDriftStatusProjection {
     drifted: result.drifted,
     currentDigest: result.currentDigest,
     persistedDigest: result.persistedDigest,
-    changedCollectorNames: result.changedCollectors ?? [],
+    changedContributorNames: result.changedContributors ?? [],
     diagnostics: compactDiagnostics(result),
   };
 }
@@ -128,7 +128,7 @@ function baseProjection(status: DiscoveryDriftProjectionStatus): DiscoveryDriftS
     drifted: null,
     currentDigest: null,
     persistedDigest: null,
-    changedCollectorNames: [],
+    changedContributorNames: [],
     diagnostics: [],
     notVerified: [...BASE_NOT_VERIFIED],
     warnings: [],

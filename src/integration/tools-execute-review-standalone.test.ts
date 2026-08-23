@@ -319,6 +319,10 @@ describe('review (standalone flow)', () => {
       (item) => item.obligationId === obligationId,
     );
     if (!obligation) throw new TypeError('Expected persisted review obligation');
+    const boundAttempt = state.reviewAssurance?.attempts?.find(
+      (attempt) => attempt.obligationId === obligationId,
+    );
+    if (!boundAttempt) throw new TypeError('Expected persisted review attempt');
     const invocation = buildInvocationEvidence({
       obligationId,
       obligationType: 'review',
@@ -335,13 +339,19 @@ describe('review (standalone flow)', () => {
       source: 'host-orchestrated',
       capturedVerdict: findings.overallVerdict,
       capturedRawFindings: findings,
-      attemptId: state.reviewAssurance?.attempts?.find((a) => a.obligationId === obligationId)
-        ?.attemptId,
+      attemptId: boundAttempt.attemptId,
     });
     await writeState(sessDir, {
       ...state,
       reviewAssurance: appendInvocationEvidence(
-        ensureReviewAssurance(state.reviewAssurance),
+        {
+          ...ensureReviewAssurance(state.reviewAssurance),
+          attempts: state.reviewAssurance!.attempts.map((attempt) =>
+            attempt.attemptId === boundAttempt.attemptId
+              ? { ...attempt, childSessionId: invocation.childSessionId, status: 'bound' as const }
+              : attempt,
+          ),
+        },
         invocation,
       ),
     });

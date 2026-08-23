@@ -404,7 +404,7 @@ describe('activateImplementationReviewObligation — implementation subject mode
           drift: {
             status: 'not_assessed',
             drifted: false,
-            changedCollectorNames: [],
+            changedContributorNames: [],
             notVerified: [],
           },
           detectedStack: null,

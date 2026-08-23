@@ -853,7 +853,7 @@ describe('evidence-review', () => {
           drift: {
             status: 'clean',
             drifted: false,
-            changedCollectorNames: [],
+            changedContributorNames: [],
             notVerified: [],
           },
           detectedStack: null,

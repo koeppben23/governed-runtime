@@ -609,14 +609,30 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
       // bound evidence must resolve cleanly through resolveHostTaskFindings.
       const { state, obligation, attempts } = setupFullCycle();
 
+      const invocationAttempts = attempts.map((attempt) => ({
+        ...attempt,
+        attemptId: '33333333-3333-4333-8333-333333333334',
+      }));
+      const boundAttempts = invocationAttempts.map((attempt) => ({
+        ...attempt,
+        status: 'bound' as const,
+      }));
       const bind = buildHostTaskEvidence(state, SESSION_ID, LATER, {
         obligations: [obligation],
         invocations: [],
-        attempts: attempts,
+        attempts: invocationAttempts,
       });
       expect(bind.bindOutcome).toBe('bound');
 
-      const assurance = appendInvocationEvidence(ensureReviewAssurance(undefined), bind.evidence!);
+      const assurance = appendInvocationEvidence(
+        ensureReviewAssurance({
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          obligations: [obligation],
+          invocations: [],
+          attempts: boundAttempts,
+        }),
+        bind.evidence!,
+      );
       const resolved = resolveHostTaskFindings(assurance, obligation);
 
       expect(resolved.kind).toBe('resolved');
@@ -1206,7 +1222,7 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
     // must present a second attempt bound to its new child session.
     const attemptCorrupt = attemptFor(obligation, CHILD_CORRUPT);
     const attemptValid = attemptFor(obligation, CHILD_VALID, {
-      attemptId: `${obligation.obligationId}-rerun`,
+      attemptId: '33333333-3333-4333-8333-333333333335',
       ordinal: 1,
     });
     const bindCorrupt = buildHostTaskEvidence(state, SESSION_ID, LATER, {
@@ -1225,7 +1241,7 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
         assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [obligation],
         invocations,
-        attempts: [],
+        attempts: [attemptCorrupt, attemptValid],
       },
       obligation,
     );
@@ -1262,7 +1278,7 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
         assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [obligation],
         invocations,
-        attempts: [],
+        attempts: [attemptCorrupt, { ...attemptValid, status: 'bound' as const }],
       },
       obligation,
     );

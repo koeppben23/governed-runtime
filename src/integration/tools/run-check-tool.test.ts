@@ -373,6 +373,35 @@ describe('HAPPY', () => {
     expect((await readState(sd))!.validation[0]!.candidateId).toBe(candidateId);
   });
 
+  it('fails closed when a candidateId has no exact execution subject binding', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+    const state = await readState(sd);
+    const primary = state!.verificationCandidates!.find(
+      (candidate) => candidate.kind === 'typecheck',
+    )!;
+    const candidateId = 'typecheck-unbound';
+    await writeState(sd, {
+      ...state!,
+      verificationCandidates: [
+        primary,
+        { ...primary, candidateId, command: 'npm run unbound-typecheck' },
+      ],
+      executionSubjectInputsByCandidateId: {
+        ...(state!.executionSubjectInputsByCandidateId ?? {}),
+      },
+    });
+    vi.mocked(executeCheck).mockClear();
+
+    const raw = await run_check.execute({ kind: 'typecheck', candidateId }, ctx);
+    const result = parseToolResult(raw);
+
+    expect(result).toMatchObject({ error: true, code: 'VERIFICATION_SUBJECT_CHANGED' });
+    expect(String(result.message)).toContain('candidate-specific execution subject inputs');
+    expect(executeCheck).not.toHaveBeenCalled();
+    expect((await readState(sd))!.validation).toEqual(state!.validation);
+  });
+
   it('persists complete-suite aggregate evidence from a repo-native pytest alternate', async () => {
     writeFileSync(
       join(ws.tmpDir, 'package.json'),

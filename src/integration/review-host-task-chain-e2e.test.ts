@@ -196,14 +196,39 @@ async function bindHostTaskReviewEvidence(
     attemptId: state.reviewAssurance?.attempts?.find((a) => a.obligationId === obligationId)
       ?.attemptId,
   });
+  const assurance = ensureReviewAssurance(state.reviewAssurance);
+  const existingAttempt = assurance.attempts.find(
+    (attempt) => attempt.obligationId === obligationId,
+  );
+  const boundAttempt = {
+    ...(existingAttempt ?? {}),
+    attemptId: existingAttempt?.attemptId ?? crypto.randomUUID(),
+    obligationId,
+    obligationType: obligation.obligationType,
+    subjectDigest: obligation.subjectDigest,
+    ordinal: existingAttempt?.ordinal ?? assurance.attempts.length,
+    childSessionId: invocation.childSessionId,
+    status: 'bound' as const,
+    origin: existingAttempt?.origin ?? ({ kind: 'initial' } as const),
+    repositoryDiscovery:
+      existingAttempt?.repositoryDiscovery ?? ({ kind: 'not_applicable' } as const),
+    createdAt: existingAttempt?.createdAt ?? new Date().toISOString(),
+  };
+  const boundInvocation = { ...invocation, attemptId: boundAttempt.attemptId };
   await writeState(sessDir, {
     ...state,
     reviewAssurance: appendInvocationEvidence(
-      ensureReviewAssurance(state.reviewAssurance),
-      invocation,
+      {
+        ...assurance,
+        attempts: [
+          ...assurance.attempts.filter((attempt) => attempt.attemptId !== boundAttempt.attemptId),
+          boundAttempt,
+        ],
+      },
+      boundInvocation,
     ),
   });
-  return invocation;
+  return boundInvocation;
 }
 
 describe('host-task review chain (end to end)', () => {

@@ -15,6 +15,7 @@ import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js'
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import type {
   ReviewAssuranceState,
+  ReviewAttempt,
   ReviewObligation,
   ReviewInvocationEvidence,
 } from '../../state/evidence.js';
@@ -135,6 +136,14 @@ export function resolveHostTaskFindings(
       return { kind: 'rejected', rejection: withHostTaskPath(invocationRejection) };
     }
 
+    if (!hasExactBoundAttempt(assurance.attempts, obligation, invocation)) {
+      unavailableLineage ??= {
+        invocationId: invocation.invocationId,
+        obligationId: obligation.obligationId,
+      };
+      continue;
+    }
+
     // Parse through ReviewFindings schema for type safety and validation.
     // safeParse: if the raw findings are malformed (missing required fields,
     // invalid types), surface it as `unparseable` so the caller falls back to
@@ -240,4 +249,25 @@ export function resolveHostTaskFindings(
     return { kind: 'unparseable', detail: unparseableDetail };
   }
   return { kind: 'not_found' };
+}
+
+/**
+ * The evidence consumer must independently verify the binding minted by the
+ * host-task ingestion boundary. Never recover an invocation by searching for a
+ * merely compatible attempt: invocation.attemptId is the authority key.
+ */
+function hasExactBoundAttempt(
+  attempts: readonly ReviewAttempt[],
+  obligation: ReviewObligation,
+  invocation: ReviewInvocationEvidence,
+): boolean {
+  if (!invocation.attemptId) return false;
+  const attempt = attempts.find((item) => item.attemptId === invocation.attemptId);
+  return (
+    attempt?.status === 'bound' &&
+    attempt.obligationId === obligation.obligationId &&
+    attempt.obligationType === obligation.obligationType &&
+    attempt.subjectDigest === obligation.subjectDigest &&
+    attempt.childSessionId === invocation.childSessionId
+  );
 }

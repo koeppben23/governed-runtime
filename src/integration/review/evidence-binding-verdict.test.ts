@@ -436,10 +436,18 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
   it('E2E: resolveHostTaskFindings reads findings from evidence (no agent findings needed)', () => {
     // Full cycle: Mode A → reviewer → buildHostTaskEvidence → capturedRawFindings
     const { state, obligation, attempts } = setupFullCycle();
+    const invocationAttempts = attempts.map((attempt) => ({
+      ...attempt,
+      attemptId: '33333333-3333-4333-8333-333333333331',
+    }));
+    const boundAttempts = invocationAttempts.map((attempt) => ({
+      ...attempt,
+      status: 'bound' as const,
+    }));
     const bindResult = buildHostTaskEvidence(state, SESSION_ID, LATER, {
       obligations: [obligation],
       invocations: [],
-      attempts: attempts,
+      attempts: invocationAttempts,
     });
 
     expect(bindResult.evidence).not.toBeNull();
@@ -458,7 +466,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
           },
         ],
         invocations: [],
-        attempts: [],
+        attempts: boundAttempts,
       }),
       bindResult.evidence!,
     );
@@ -494,10 +502,18 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
       { metadata: { sessionID: CHILD_SESSION_ID } },
     );
 
+    const invocationAttempts = attempts.map((attempt) => ({
+      ...attempt,
+      attemptId: '33333333-3333-4333-8333-333333333332',
+    }));
+    const boundAttempts = invocationAttempts.map((attempt) => ({
+      ...attempt,
+      status: 'bound' as const,
+    }));
     const bindResult = buildHostTaskEvidence(freshState, SESSION_ID, LATER, {
       obligations: [obligation],
       invocations: [],
-      attempts: attempts,
+      attempts: invocationAttempts,
     });
     expect(bindResult.evidence).not.toBeNull();
     expect(bindResult.evidence!.capturedRawFindings!.overallVerdict).toBe('changes_requested');
@@ -515,7 +531,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
           },
         ],
         invocations: [],
-        attempts: [],
+        attempts: boundAttempts,
       }),
       bindResult.evidence!,
     );
@@ -585,10 +601,18 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
 
   it('SMOKE: evidence-resolve is deterministic (same result on repeated calls)', () => {
     const { state, obligation, attempts } = setupFullCycle();
+    const invocationAttempts = attempts.map((attempt) => ({
+      ...attempt,
+      attemptId: '33333333-3333-4333-8333-333333333333',
+    }));
+    const boundAttempts = invocationAttempts.map((attempt) => ({
+      ...attempt,
+      status: 'bound' as const,
+    }));
     const bindResult = buildHostTaskEvidence(state, SESSION_ID, LATER, {
       obligations: [obligation],
       invocations: [],
-      attempts: attempts,
+      attempts: invocationAttempts,
     });
 
     const assurance = appendInvocationEvidence(
@@ -604,7 +628,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
           },
         ],
         invocations: [],
-        attempts: [],
+        attempts: boundAttempts,
       }),
       bindResult.evidence!,
     );

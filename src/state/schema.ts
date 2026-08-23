@@ -539,7 +539,9 @@ export const SessionState = z
 
     /**
      * Candidate-specific execution-subject inputs. Takes precedence over the
-     * kind map when a candidateId is available; the kind map supports legacy state.
+     * kind map when a candidateId is available. A candidate with an identity
+     * must fail closed when its exact entry is absent; the kind map is only for
+     * legacy candidates without a candidateId.
      */
     executionSubjectInputsByCandidateId: z
       .record(z.string(), z.array(ExecutionSubjectInputSchema))

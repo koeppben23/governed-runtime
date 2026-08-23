@@ -192,7 +192,23 @@ describe('architecture — BUG-15 evidence-resolve', () => {
   describe('BUG-15 Stufe 2: evidence-resolve in architecture tool', () => {
     const OBLIGATION_ID = '11111111-1111-4111-8111-111111111111';
     const INVOCATION_ID = '22222222-2222-4222-8222-222222222222';
+    const ATTEMPT_ID = '33333333-3333-4333-8333-333333333333';
     const now = '2026-01-01T00:00:00.000Z';
+
+    function boundAttempt(subjectDigest: string) {
+      return {
+        attemptId: ATTEMPT_ID,
+        obligationId: OBLIGATION_ID,
+        obligationType: 'architecture' as const,
+        subjectDigest,
+        ordinal: 0,
+        childSessionId: 'ses_child',
+        status: 'bound' as const,
+        origin: { kind: 'initial' as const },
+        repositoryDiscovery: { kind: 'not_applicable' as const },
+        createdAt: now,
+      };
+    }
 
     const validRawFindings: Record<string, unknown> = {
       iteration: 0,
@@ -230,7 +246,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
         },
         reviewAssurance: {
           assuranceSchemaVersion: 'review-assurance.v5' as const,
-          attempts: [],
+          attempts: [boundAttempt('test-subject-digest')],
           obligations: [
             {
               obligationId: OBLIGATION_ID,
@@ -258,6 +274,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           invocations: [
             {
               invocationId: INVOCATION_ID,
+              attemptId: ATTEMPT_ID,
               obligationId: OBLIGATION_ID,
               obligationType: 'architecture',
               parentSessionId: 'ses_parent',
@@ -320,7 +337,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
         },
         reviewAssurance: {
           assuranceSchemaVersion: 'review-assurance.v5' as const,
-          attempts: [],
+          attempts: [boundAttempt('test-subject-digest')],
           obligations: [
             {
               obligationId: OBLIGATION_ID,
@@ -348,6 +365,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           invocations: [
             {
               invocationId: INVOCATION_ID,
+              attemptId: ATTEMPT_ID,
               obligationId: OBLIGATION_ID,
               obligationType: 'architecture',
               parentSessionId: 'ses_parent',
@@ -439,7 +457,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
         },
         reviewAssurance: {
           assuranceSchemaVersion: 'review-assurance.v5' as const,
-          attempts: [],
+          attempts: [boundAttempt('test-subject-digest')],
           obligations: [
             {
               obligationId: OBLIGATION_ID,
@@ -481,6 +499,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
               mandateDigest: REVIEW_MANDATE_DIGEST,
               criteriaVersion: REVIEW_CRITERIA_VERSION,
               findingsHash: hashFindings(capturedFindings),
+              attemptId: ATTEMPT_ID,
               invokedAt: now,
               fulfilledAt: now,
               consumedByObligationId: null,
