@@ -201,13 +201,32 @@ async function readAuditLines(sessDir: string): Promise<string[]> {
 async function mutateArchive(
   ids: { archiveSidecar: string },
   mutate: (root: string) => Promise<void>,
+  additionalMembers: readonly string[] = [],
 ): Promise<void> {
   const archivePath = ids.archiveSidecar.slice(0, -'.sha256'.length);
   const stagingRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-tamper-'));
   try {
     await promisify(execFile)('tar', ['xzf', archivePath, '-C', stagingRoot]);
-    await mutate(path.join(stagingRoot, ctx.sessionID));
-    await promisify(execFile)('tar', ['czf', archivePath, '-C', stagingRoot, ctx.sessionID]);
+    const root = path.join(stagingRoot, ctx.sessionID);
+    const manifest = JSON.parse(
+      await fs.readFile(path.join(root, 'archive-manifest.json'), 'utf-8'),
+    ) as {
+      includedFiles: string[];
+    };
+    await mutate(root);
+    const members = [
+      ...manifest.includedFiles.map((file) => path.posix.join(ctx.sessionID, file)),
+      path.posix.join(ctx.sessionID, 'archive-manifest.json'),
+      ...additionalMembers.map((file) => path.posix.join(ctx.sessionID, file)),
+    ];
+    await promisify(execFile)('tar', [
+      '--format=ustar',
+      '-czf',
+      archivePath,
+      '-C',
+      stagingRoot,
+      ...members,
+    ]);
     const digest = crypto
       .createHash('sha256')
       .update(await fs.readFile(archivePath))
@@ -261,6 +280,21 @@ describe('audit/archive tamper matrix', () => {
     const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
     expect(verification.passed).toBe(false);
     expect(verification.findings.some((f) => f.severity === 'error')).toBe(true);
+  });
+
+  it.skipIf(!tarOk)('undeclared archive payload -> integrity failure', async () => {
+    const ids = await completeRegulatedSession();
+    await mutateArchive(
+      ids,
+      (root) => fs.writeFile(path.join(root, 'undeclared.txt'), 'payload', 'utf8'),
+      ['undeclared.txt'],
+    );
+
+    const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
+    expect(verification.passed).toBe(false);
+    expect(verification.findings).toContainEqual(
+      expect.objectContaining({ code: 'unexpected_file', severity: 'error' }),
+    );
   });
 
   it.skipIf(!tarOk)('audit line reordered -> integrity failure', async () => {

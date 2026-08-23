@@ -49,6 +49,7 @@ import {
 import { fileExists } from './archive-files.js';
 import { type ArtifactBindingEntry } from './archive-artifact-binding.js';
 import { archiveFileName } from './archive.js';
+import { inspectArchiveTar } from './archive-tar.js';
 
 // Timestamp token verification is lazy-imported to avoid requiring optional
 // 'asn1js'/'pkijs' packages at module load time. Only needed during archive verification.
@@ -624,6 +625,17 @@ async function verifyArchiveImpl(
   const findings: ArchiveFinding[] = [];
   const extractionRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'flowguard-archive-verify-'));
   const sessDir = path.join(extractionRoot, validSessionId);
+
+  const inspection = await inspectArchiveTar(archiveTarPath, validSessionId);
+  if (inspection.kind === 'blocked') {
+    findings.push({
+      code: 'unexpected_file',
+      severity: 'error',
+      message: `Archive member policy violation: ${inspection.reason}`,
+    });
+    await fs.rm(extractionRoot, { recursive: true, force: true });
+    return buildVerificationResult(findings, null);
+  }
 
   try {
     await promisify(execFile)('tar', ['xzf', archiveTarPath, '-C', extractionRoot], {

@@ -18,7 +18,7 @@ import {
   type ArchiveManifest,
   type ArchiveFinding,
 } from '../../archive/types.js';
-import { fileExists, listSessionFiles } from './archive-files.js';
+import { fileExists } from './archive-files.js';
 
 export async function loadArchiveManifest(
   sessDir: string,
@@ -102,21 +102,42 @@ export async function checkUnexpectedFiles(
   findings: ArchiveFinding[],
 ): Promise<void> {
   const manifestFileSet = new Set(manifest.includedFiles);
-  const excludedSet = new Set(manifest.excludedFiles ?? []);
   try {
-    const actualFiles = await listSessionFiles(sessDir);
-    for (const file of actualFiles) {
-      if (excludedSet.has(file)) continue;
-      if (!manifestFileSet.has(file)) {
+    await walkArchiveFiles(sessDir, '', (file, regular) => {
+      if (!regular || !manifestFileSet.has(file)) {
         findings.push({
           code: 'unexpected_file',
-          severity: 'warning',
-          message: `File not listed in manifest: ${file}`,
+          severity: 'error',
+          message: regular
+            ? `File not listed in manifest: ${file}`
+            : `Archive contains non-regular filesystem entry: ${file}`,
           file,
         });
       }
+    });
+  } catch (error) {
+    findings.push({
+      code: 'unexpected_file',
+      severity: 'error',
+      message: `Archive payload inventory could not be read: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    });
+  }
+}
+
+async function walkArchiveFiles(
+  dir: string,
+  prefix: string,
+  visit: (file: string, regular: boolean) => void,
+): Promise<void> {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const relPath = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      await walkArchiveFiles(path.join(dir, entry.name), relPath, visit);
+    } else if (entry.name !== 'archive-manifest.json') {
+      visit(relPath, entry.isFile());
     }
-  } catch {
-    // Can't list files — skip unexpected file check
   }
 }

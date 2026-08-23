@@ -9,7 +9,7 @@ import { archiveSession, initWorkspace, verifyArchive } from './workspace/index.
 import { archiveRegulatedEvidence } from './workspace/archive.js';
 import { verifyRegulatedArchive } from './workspace/archive-verify-chain.js';
 import { writeState } from './persistence.js';
-import { appendAuditEvent } from './persistence-audit.js';
+import { appendAuditEvent, readAuditTrail } from './persistence-audit.js';
 import { makeState, REGULATED_POLICY_SNAPSHOT } from '../fixtures.js';
 import { withTestEnv } from '../integration/test-helpers.js';
 
@@ -255,6 +255,33 @@ describe('Archive Layout v2', () => {
     ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
   });
 
+  it('rejects sharing exports outside the configured redaction and raw-export policy', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
+    });
+    await writeConfigForTest(configDir, 'basic', false);
+
+    const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    await writeState(initialized.sessionDir, makeState('COMPLETE'));
+
+    await expect(
+      archiveSession(initialized.fingerprint, sessionId, {
+        redactionMode: 'pseudonymous',
+        includeRaw: false,
+      }),
+    ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
+    await expect(
+      archiveSession(initialized.fingerprint, sessionId, {
+        redactionMode: 'basic',
+        includeRaw: true,
+      }),
+    ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
+  });
+
   it('allows the regulated completion chain to create required raw evidence in a sharing-only configuration', async () => {
     const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
     const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
@@ -355,6 +382,78 @@ describe('Archive Layout v2', () => {
     await expect(
       archiveRegulatedEvidence(aborted.fingerprint, abortedSession),
     ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
+  });
+
+  it('requires the canonical regulated completion event', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
+    });
+    await writeConfigForTest(configDir, 'basic', false);
+
+    const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    await writeState(
+      initialized.sessionDir,
+      makeState('COMPLETE', { policySnapshot: REGULATED_POLICY_SNAPSHOT }),
+    );
+    await appendAuditEvent(initialized.sessionDir, {
+      id: crypto.randomUUID(),
+      sessionId,
+      phase: 'COMPLETE',
+      event: 'lifecycle:session_completed',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      actor: 'machine',
+      detail: { action: 'other_action' },
+    });
+
+    await expect(
+      archiveRegulatedEvidence(initialized.fingerprint, sessionId),
+    ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
+  });
+
+  it('binds evidence artifacts once and rebinds when their inventory changes', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
+    });
+    await writeConfigForTest(configDir, 'none', true);
+
+    const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    await writeState(initialized.sessionDir, makeState('COMPLETE'));
+    await fs.mkdir(path.join(initialized.sessionDir, 'artifacts'), { recursive: true });
+    await fs.writeFile(path.join(initialized.sessionDir, 'artifacts', 'proof.json'), '{}', 'utf8');
+
+    const options = { redactionMode: 'none' as const, includeRaw: true };
+    await archiveSession(initialized.fingerprint, sessionId, options);
+    await archiveSession(initialized.fingerprint, sessionId, options);
+    let bindings = (await readAuditTrail(initialized.sessionDir)).events.filter(
+      (event) => event.event === 'archive:artifacts_bound',
+    );
+    expect(bindings).toHaveLength(1);
+    expect(bindings[0]?.detail).toMatchObject({
+      artifactCount: 1,
+      artifacts: [
+        expect.objectContaining({ path: 'artifacts/other/proof.json', artifactType: 'proof' }),
+      ],
+    });
+
+    await fs.writeFile(
+      path.join(initialized.sessionDir, 'artifacts', 'report.txt'),
+      'report',
+      'utf8',
+    );
+    await archiveSession(initialized.fingerprint, sessionId, options);
+    bindings = (await readAuditTrail(initialized.sessionDir)).events.filter(
+      (event) => event.event === 'archive:artifacts_bound',
+    );
+    expect(bindings).toHaveLength(2);
+    expect(bindings[1]?.detail).toMatchObject({ artifactCount: 2 });
   });
 
   it('verifies the tarball independently of later live-session mutations', async () => {
