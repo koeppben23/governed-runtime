@@ -1,15 +1,4 @@
-/**
- * @module workspace/archive-verify-chain
- * @description Audit-chain, timestamp, content-digest, and archive-checksum
- *              verification.
- *
- * Owns verifyArchive — the single public entry point for archive verification.
- * Delegates file-inventory checks to archive-verify-manifest.ts. Owns
- * buildVerificationResult as the single aggregation point for all findings
- * (manifest + chain + content).
- *
- * @version v1
- */
+/** Audit-chain, timestamp, content-digest, and archive-checksum verification. */
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
@@ -29,7 +18,6 @@ import {
 import { computeArchiveContentDigest } from '../../archive/content-digest.js';
 import {
   findBindingArtifacts,
-  findPublicationBinding,
   isArtifactBindingEntry,
   hasTimestampEvidence,
   isCurrentChainIntegrityFailure,
@@ -39,7 +27,7 @@ import {
 } from './archive-verify-helpers.js';
 import { isPolicyMode } from '../../state/policy-mode.js';
 import { validateFingerprint, validateSessionId } from './types.js';
-import { sessionDir, workspacesHome } from './init.js';
+import { workspacesHome } from './init.js';
 import { withSpan, addFingerprint, addSessionId } from '../../telemetry/index.js';
 import {
   loadArchiveManifest,
@@ -47,12 +35,10 @@ import {
   checkUnexpectedFiles,
 } from './archive-verify-manifest.js';
 import { fileExists, snapshotArchive } from './archive-files.js';
-import {
-  archivePublicationBinding,
-  type ArtifactBindingEntry,
-} from './archive-artifact-binding.js';
+import { type ArtifactBindingEntry } from './archive-artifact-binding.js';
 import { archiveFileName } from './archive.js';
 import { inspectArchiveTar } from './archive-tar.js';
+import { verifyExternalPublicationBinding } from './archive-verify-publication.js';
 
 // Timestamp token verification is lazy-imported to avoid requiring optional
 // 'asn1js'/'pkijs' packages at module load time. Only needed during archive verification.
@@ -579,69 +565,6 @@ async function verifyArchiveChecksum(
       }`,
     );
   }
-}
-
-async function verifyExternalPublicationBinding(
-  location: { fingerprint: string; validSessionId: string },
-  manifest: ArchiveManifest,
-  archive: {
-    readonly snapshotPath: string;
-    readonly archivePath: string;
-    readonly checksumSidecarPath: string;
-  },
-  findings: ArchiveFinding[],
-): Promise<void> {
-  let externalAudit: Awaited<ReturnType<typeof readAuditTrail>>;
-  try {
-    externalAudit = await readAuditTrail(sessionDir(location.fingerprint, location.validSessionId));
-  } catch (error) {
-    findings.push({
-      code: 'archive_publication_binding_invalid',
-      severity: 'error',
-      message: `External publication binding audit trail could not be read: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    });
-    return;
-  }
-  const chain = verifyChain(externalAudit.events, { strict: true });
-  if (externalAudit.skipped > 0 || !chain.valid) {
-    findings.push({
-      code: 'archive_publication_binding_invalid',
-      severity: 'error',
-      message:
-        'External publication binding audit trail is incomplete or fails strict chain verification',
-      file: 'audit.jsonl',
-    });
-    return;
-  }
-  try {
-    const [snapshot, sidecar] = await Promise.all([
-      fs.readFile(archive.snapshotPath),
-      fs.readFile(archive.checksumSidecarPath),
-    ]);
-    const expected = archivePublicationBinding(
-      snapshot,
-      sidecar,
-      path.basename(archive.archivePath),
-      manifest.contentDigest,
-    );
-    if (findPublicationBinding(externalAudit.events, expected)) return;
-  } catch (error) {
-    findings.push({
-      code: 'archive_publication_binding_invalid',
-      severity: 'error',
-      message: `Published archive binding could not be evaluated: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    });
-    return;
-  }
-  findings.push({
-    code: 'archive_publication_unbound',
-    severity: 'error',
-    message: 'Published archive and checksum have no exact external audit publication binding',
-  });
 }
 
 async function verifyArchiveIntegrity(

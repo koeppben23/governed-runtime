@@ -19,7 +19,7 @@ Verified by `npm run check:doc-drift`.
 | Review Loops                  | 3     | `src/integration/review/review-loop-progress.ts`    |
 | Enforcement Layers            | 4     | `src/integration/review/enforcement/enforcement.ts` |
 | Audit Event Kinds             | 5     | `src/audit/types.ts`                                |
-| Archive Finding Codes         | 24    | `src/archive/types.ts`                              |
+| Archive Finding Codes         | 26    | `src/archive/types.ts`                              |
 | Archive Verify Checks (JSDoc) | 9     | `src/adapters/workspace/archive-verify-chain.ts`    |
 | CLI Bins                      | 7     | `package.json` `bin`                                |
 | Mutation Files                | 67    | `stryker.conf.json` `mutate`                        |
