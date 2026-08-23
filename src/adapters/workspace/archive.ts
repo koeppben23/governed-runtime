@@ -25,8 +25,16 @@ import {
   type ArtifactBindingEntry,
   ARTIFACT_BINDING_EVENT,
   ARTIFACT_BINDING_SCHEMA_VERSION,
+  ARCHIVE_PUBLICATION_BINDING_EVENT,
+  ARCHIVE_PUBLICATION_BINDING_SCHEMA_VERSION,
+  archivePublicationBinding,
+  type ArchivePublicationBinding,
 } from './archive-artifact-binding.js';
-import { findBindingArtifacts } from './archive-verify-helpers.js';
+import {
+  findBindingArtifacts,
+  findPublicationBinding,
+  lastPublicationBinding,
+} from './archive-verify-helpers.js';
 import { inspectArchiveTar } from './archive-tar.js';
 import { publishArchiveArtifacts, removeArchiveArtifacts } from './archive-publish.js';
 
@@ -190,38 +198,84 @@ async function archiveSessionImpl(
     );
   }
 
-  const staging = await createArchiveStaging({
+  await stagePublishAndBind({
     archiveDir,
-    sessionId: validSessionId,
+    archivePath,
     fingerprint,
+    sessionId: validSessionId,
     sessDir,
     state,
     events,
     redactionMode: opts.redactionMode,
     includeRaw: opts.includeRaw,
   });
-  const temporaryArchivePath = `${archivePath}.${crypto.randomUUID()}.tmp`;
-  const checksumPath = `${archivePath}.sha256`;
-  const temporaryChecksumPath = `${checksumPath}.${crypto.randomUUID()}.tmp`;
-  const archiveArtifacts = {
-    archivePath,
-    checksumPath,
-    temporaryArchivePath,
-    temporaryChecksumPath,
-  };
-  try {
-    await createAndPublishArchive(staging, validSessionId, archiveArtifacts);
-  } catch (error) {
-    await removeArchiveArtifacts(archiveArtifacts);
-    throw error;
-  } finally {
-    await fs.rm(staging.stagingRoot, { recursive: true, force: true });
-  }
   getAdapterLogger().info('archive', 'archive_created', {
     sessionId: validSessionId,
     layoutVersion: 2,
   });
   return archivePath;
+}
+
+async function stagePublishAndBind(input: {
+  readonly archiveDir: string;
+  readonly archivePath: string;
+  readonly fingerprint: string;
+  readonly sessionId: string;
+  readonly sessDir: string;
+  readonly state: import('../../state/schema.js').SessionState | null;
+  readonly events: Awaited<ReturnType<typeof readAuditTrail>>['events'];
+  readonly redactionMode: RedactionMode;
+  readonly includeRaw: boolean;
+}): Promise<void> {
+  // Publication bindings are external authorities and must never alter the
+  // self-contained v2 audit snapshot they attest.
+  const archiveEvents = input.events.filter(
+    (event) => event.event !== ARCHIVE_PUBLICATION_BINDING_EVENT,
+  );
+  const staging = await createArchiveStaging({
+    archiveDir: input.archiveDir,
+    sessionId: input.sessionId,
+    fingerprint: input.fingerprint,
+    sessDir: input.sessDir,
+    state: input.state,
+    events: archiveEvents,
+    redactionMode: input.redactionMode,
+    includeRaw: input.includeRaw,
+  });
+  const temporaryArchivePath = `${input.archivePath}.${crypto.randomUUID()}.tmp`;
+  const checksumPath = `${input.archivePath}.sha256`;
+  const temporaryChecksumPath = `${checksumPath}.${crypto.randomUUID()}.tmp`;
+  const archiveArtifacts = {
+    archivePath: input.archivePath,
+    checksumPath,
+    temporaryArchivePath,
+    temporaryChecksumPath,
+  };
+  const existingPublication = lastPublicationBinding(input.events);
+  try {
+    let publication: ArchivePublicationBinding;
+    try {
+      publication = await createAndPublishArchive(
+        staging,
+        input.sessionId,
+        archiveArtifacts,
+        staging.manifest.contentDigest,
+        existingPublication,
+      );
+    } catch (error) {
+      await removeArchiveArtifacts(archiveArtifacts);
+      throw error;
+    }
+    if (existingPublication?.publicationId === publication.publicationId) return;
+    await appendPublicationBindingAuditEvent(
+      input.sessDir,
+      input.sessionId,
+      input.state,
+      publication,
+    );
+  } finally {
+    await fs.rm(staging.stagingRoot, { recursive: true, force: true });
+  }
 }
 
 async function createAndPublishArchive(
@@ -233,8 +287,9 @@ async function createAndPublishArchive(
     readonly temporaryArchivePath: string;
     readonly temporaryChecksumPath: string;
   },
-): Promise<void> {
-  await removeArchiveArtifacts(artifacts);
+  manifestContentDigest: string,
+  existingPublication: ArchivePublicationBinding | undefined,
+): Promise<ArchivePublicationBinding> {
   await createArchiveBundle(
     staging.stagingRoot,
     sessionId,
@@ -246,7 +301,56 @@ async function createAndPublishArchive(
     artifacts.temporaryChecksumPath,
     path.basename(artifacts.archivePath),
   );
+  const publication = await publicationBindingFor(
+    artifacts.temporaryArchivePath,
+    artifacts.temporaryChecksumPath,
+    path.basename(artifacts.archivePath),
+    manifestContentDigest,
+  );
+  if (
+    existingPublication?.publicationId === publication.publicationId &&
+    (await publishedArtifactsMatch(artifacts, existingPublication))
+  ) {
+    await fs.rm(artifacts.temporaryArchivePath, { force: true });
+    await fs.rm(artifacts.temporaryChecksumPath, { force: true });
+    return publication;
+  }
+  await Promise.all([
+    fs.rm(artifacts.archivePath, { force: true }),
+    fs.rm(artifacts.checksumPath, { force: true }),
+  ]);
   await publishArchiveArtifacts(artifacts);
+  return publication;
+}
+
+async function publicationBindingFor(
+  archivePath: string,
+  checksumPath: string,
+  archiveFile: string,
+  manifestContentDigest: string,
+): Promise<ArchivePublicationBinding> {
+  const [archive, sidecar] = await Promise.all([
+    fs.readFile(archivePath),
+    fs.readFile(checksumPath),
+  ]);
+  return archivePublicationBinding(archive, sidecar, archiveFile, manifestContentDigest);
+}
+
+async function publishedArtifactsMatch(
+  paths: { readonly archivePath: string; readonly checksumPath: string },
+  expected: ArchivePublicationBinding,
+): Promise<boolean> {
+  try {
+    const actual = await publicationBindingFor(
+      paths.archivePath,
+      paths.checksumPath,
+      expected.archiveFile,
+      expected.manifestContentDigest,
+    );
+    return actual.publicationId === expected.publicationId;
+  } catch {
+    return false;
+  }
 }
 
 async function createArchiveBundle(
@@ -377,6 +481,29 @@ async function appendArtifactBindingAuditEvent(
       schemaVersion: ARTIFACT_BINDING_SCHEMA_VERSION,
       artifactCount: artifacts.length,
       artifacts,
+    },
+  });
+}
+
+async function appendPublicationBindingAuditEvent(
+  sessDir: string,
+  sessionId: string,
+  state: import('../../state/schema.js').SessionState | null,
+  publication: ArchivePublicationBinding,
+): Promise<void> {
+  const { events } = await readAuditTrail(sessDir);
+  if (findPublicationBinding(events, publication)) return;
+  await appendAuditEvent(sessDir, {
+    id: crypto.randomUUID(),
+    sessionId,
+    phase: state?.phase ?? 'unknown',
+    event: ARCHIVE_PUBLICATION_BINDING_EVENT,
+    timestamp: new Date().toISOString(),
+    actor: 'system',
+    detail: {
+      kind: 'archive_publication_binding',
+      schemaVersion: ARCHIVE_PUBLICATION_BINDING_SCHEMA_VERSION,
+      ...publication,
     },
   });
 }

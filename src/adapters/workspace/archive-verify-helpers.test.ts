@@ -9,6 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   findBindingArtifacts,
+  findPublicationBinding,
   isArtifactBindingEntry,
   hasTimestampEvidence,
   isCurrentChainIntegrityFailure,
@@ -18,6 +19,7 @@ import {
   STRICT_WHEN_MODE_UNRESOLVED,
 } from './archive-verify-helpers.js';
 import type { SessionState } from '../../state/schema.js';
+import type { ArchivePublicationBinding } from './archive-artifact-binding.js';
 
 // ─── Minimal Fixtures ─────────────────────────────────────────────────────────
 
@@ -41,6 +43,16 @@ function bindingEntry(overrides: Record<string, unknown> = {}): Record<string, u
     sha256: 'a'.repeat(64),
     artifactType: 'evidence',
     ...overrides,
+  };
+}
+
+function publicationBinding(): ArchivePublicationBinding {
+  return {
+    publicationId: 'a'.repeat(64),
+    archiveFile: 'session.tar.gz',
+    archiveDigest: 'b'.repeat(64),
+    sidecarDigest: 'c'.repeat(64),
+    manifestContentDigest: 'd'.repeat(64),
   };
 }
 
@@ -92,6 +104,41 @@ describe('findBindingArtifacts', () => {
       bindingEvent([{ path: 'artifacts/last.json' }]),
     ];
     expect(findBindingArtifacts(events)).toEqual([{ path: 'artifacts/last.json' }]);
+  });
+});
+
+describe('findPublicationBinding', () => {
+  it('accepts only an exact digest tuple from the publication event contract', () => {
+    const expected = publicationBinding();
+    const event = {
+      event: 'archive:publication_bound',
+      detail: { schemaVersion: 'flowguard-archive-publication-binding.v1', ...expected },
+    };
+    expect(findPublicationBinding([event], expected)).toBe(true);
+    expect(findPublicationBinding([event], { ...expected, archiveDigest: 'e'.repeat(64) })).toBe(
+      false,
+    );
+  });
+
+  it('rejects a publication event with an unknown schema version', () => {
+    const expected = publicationBinding();
+    expect(
+      findPublicationBinding(
+        [{ event: 'archive:publication_bound', detail: { schemaVersion: 'v0', ...expected } }],
+        expected,
+      ),
+    ).toBe(false);
+  });
+
+  it('rejects a historical tuple when a newer binding names the same archive', () => {
+    const historical = publicationBinding();
+    const current = { ...historical, publicationId: 'e'.repeat(64), archiveDigest: 'f'.repeat(64) };
+    const event = (detail: ArchivePublicationBinding) => ({
+      event: 'archive:publication_bound',
+      detail: { schemaVersion: 'flowguard-archive-publication-binding.v1', ...detail },
+    });
+    expect(findPublicationBinding([event(historical), event(current)], historical)).toBe(false);
+    expect(findPublicationBinding([event(historical), event(current)], current)).toBe(true);
   });
 });
 

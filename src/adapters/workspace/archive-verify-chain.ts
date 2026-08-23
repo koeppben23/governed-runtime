@@ -1,15 +1,4 @@
-/**
- * @module workspace/archive-verify-chain
- * @description Audit-chain, timestamp, content-digest, and archive-checksum
- *              verification.
- *
- * Owns verifyArchive — the single public entry point for archive verification.
- * Delegates file-inventory checks to archive-verify-manifest.ts. Owns
- * buildVerificationResult as the single aggregation point for all findings
- * (manifest + chain + content).
- *
- * @version v1
- */
+/** Audit-chain, timestamp, content-digest, and archive-checksum verification. */
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
@@ -49,6 +38,7 @@ import { fileExists, snapshotArchive } from './archive-files.js';
 import { type ArtifactBindingEntry } from './archive-artifact-binding.js';
 import { archiveFileName } from './archive.js';
 import { inspectArchiveTar } from './archive-tar.js';
+import { verifyExternalPublicationBinding } from './archive-verify-publication.js';
 
 // Timestamp token verification is lazy-imported to avoid requiring optional
 // 'asn1js'/'pkijs' packages at module load time. Only needed during archive verification.
@@ -582,7 +572,11 @@ async function verifyArchiveIntegrity(
   manifest: ArchiveManifest,
   findings: ArchiveFinding[],
   state: import('../../state/schema.js').SessionState | null,
-  archive: { readonly snapshotPath: string; readonly checksumSidecarPath: string },
+  archive: {
+    readonly snapshotPath: string;
+    readonly archivePath: string;
+    readonly checksumSidecarPath: string;
+  },
 ): Promise<void> {
   const { sessDir } = location;
   // Strict authority and completeness checks run BEFORE the content digest so a
@@ -603,6 +597,7 @@ async function verifyArchiveIntegrity(
   addContentDigestFindings(manifest, findings);
 
   await verifyArchiveChecksum(archive.snapshotPath, archive.checksumSidecarPath, strict, findings);
+  await verifyExternalPublicationBinding(location, manifest, archive, findings);
 }
 
 // Extraction, manifest validation, and cleanup must stay in one transaction.
@@ -714,7 +709,11 @@ async function verifyArchiveImpl(
       manifest,
       findings,
       state,
-      { snapshotPath: archiveSnapshotPath, checksumSidecarPath: `${archiveTarPath}.sha256` },
+      {
+        snapshotPath: archiveSnapshotPath,
+        archivePath: archiveTarPath,
+        checksumSidecarPath: `${archiveTarPath}.sha256`,
+      },
     );
 
     const result = buildVerificationResult(findings, manifest);

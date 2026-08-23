@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
@@ -10,6 +10,7 @@ import { archiveRegulatedEvidence } from './workspace/archive.js';
 import { verifyRegulatedArchive } from './workspace/archive-verify-chain.js';
 import { writeState } from './persistence.js';
 import { appendAuditEvent, readAuditTrail } from './persistence-audit.js';
+import * as persistenceAudit from './persistence-audit.js';
 import { makeState, REGULATED_POLICY_SNAPSHOT } from '../fixtures.js';
 import { withTestEnv } from '../integration/test-helpers.js';
 
@@ -414,7 +415,7 @@ describe('Archive Layout v2', () => {
     ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
   });
 
-  it('binds evidence artifacts once and rebinds when their inventory changes', async () => {
+  it('binds evidence artifacts once and publishes every changed archive candidate', async () => {
     const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
     const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
     cleanups.push(async () => {
@@ -430,7 +431,7 @@ describe('Archive Layout v2', () => {
     await fs.writeFile(path.join(initialized.sessionDir, 'artifacts', 'proof.json'), '{}', 'utf8');
 
     const options = { redactionMode: 'none' as const, includeRaw: true };
-    await archiveSession(initialized.fingerprint, sessionId, options);
+    const archivePath = await archiveSession(initialized.fingerprint, sessionId, options);
     await archiveSession(initialized.fingerprint, sessionId, options);
     let bindings = (await readAuditTrail(initialized.sessionDir)).events.filter(
       (event) => event.event === 'archive:artifacts_bound',
@@ -454,6 +455,70 @@ describe('Archive Layout v2', () => {
     );
     expect(bindings).toHaveLength(2);
     expect(bindings[1]?.detail).toMatchObject({ artifactCount: 2 });
+    const publications = (await readAuditTrail(initialized.sessionDir)).events.filter(
+      (event) => event.event === 'archive:publication_bound',
+    );
+    expect(publications).toHaveLength(3);
+    expect(publications[2]?.detail).toMatchObject({
+      schemaVersion: 'flowguard-archive-publication-binding.v1',
+      archiveFile: path.basename(archivePath),
+    });
+  });
+
+  it('fails closed when a published archive has no external publication binding', async () => {
+    const { fingerprint, sessionId, sessionDir } = await createArchive();
+    await fs.writeFile(path.join(sessionDir, 'audit.jsonl'), '', 'utf8');
+
+    const verification = await verifyArchive(fingerprint, sessionId);
+    expect(verification.passed).toBe(false);
+    expect(
+      verification.findings.some((finding) => finding.code === 'archive_publication_unbound'),
+    ).toBe(true);
+  });
+
+  it('retains a published-but-unbound archive after binding append failure and recovers on retry', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
+    });
+    await writeConfigForTest(configDir, 'none', true, path.resolve('.'));
+    const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    await writeState(initialized.sessionDir, makeState('COMPLETE'));
+    const archivePath = path.join(
+      configDir,
+      'workspaces',
+      initialized.fingerprint,
+      'sessions',
+      'archive',
+      `${sessionId}.tar.gz`,
+    );
+    const append = vi
+      .spyOn(persistenceAudit, 'appendAuditEvent')
+      .mockRejectedValueOnce(new Error('injected publication binding failure'));
+
+    try {
+      await expect(
+        archiveSession(initialized.fingerprint, sessionId, {
+          redactionMode: 'none',
+          includeRaw: true,
+        }),
+      ).rejects.toThrow('injected publication binding failure');
+    } finally {
+      append.mockRestore();
+    }
+
+    await expect(fs.access(archivePath)).resolves.toBeUndefined();
+    await expect(fs.access(`${archivePath}.sha256`)).resolves.toBeUndefined();
+    expect((await verifyArchive(initialized.fingerprint, sessionId)).passed).toBe(false);
+
+    await archiveSession(initialized.fingerprint, sessionId, {
+      redactionMode: 'none',
+      includeRaw: true,
+    });
+    expect((await verifyArchive(initialized.fingerprint, sessionId)).passed).toBe(true);
   });
 
   it('verifies the tarball independently of later live-session mutations', async () => {
