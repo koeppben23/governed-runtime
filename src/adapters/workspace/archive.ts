@@ -252,13 +252,6 @@ async function stagePublishAndBind(input: {
     temporaryChecksumPath,
   };
   const existingPublication = lastPublicationBinding(input.events);
-  if (
-    existingPublication &&
-    (await publishedArtifactsMatch(archiveArtifacts, existingPublication))
-  ) {
-    await fs.rm(staging.stagingRoot, { recursive: true, force: true });
-    return;
-  }
   try {
     let publication: ArchivePublicationBinding;
     try {
@@ -267,11 +260,13 @@ async function stagePublishAndBind(input: {
         input.sessionId,
         archiveArtifacts,
         staging.manifest.contentDigest,
+        existingPublication,
       );
     } catch (error) {
       await removeArchiveArtifacts(archiveArtifacts);
       throw error;
     }
+    if (existingPublication?.publicationId === publication.publicationId) return;
     await appendPublicationBindingAuditEvent(
       input.sessDir,
       input.sessionId,
@@ -293,6 +288,7 @@ async function createAndPublishArchive(
     readonly temporaryChecksumPath: string;
   },
   manifestContentDigest: string,
+  existingPublication: ArchivePublicationBinding | undefined,
 ): Promise<ArchivePublicationBinding> {
   await createArchiveBundle(
     staging.stagingRoot,
@@ -311,7 +307,10 @@ async function createAndPublishArchive(
     path.basename(artifacts.archivePath),
     manifestContentDigest,
   );
-  if (await publishedArtifactsMatch(artifacts, publication)) {
+  if (
+    existingPublication?.publicationId === publication.publicationId &&
+    (await publishedArtifactsMatch(artifacts, existingPublication))
+  ) {
     await fs.rm(artifacts.temporaryArchivePath, { force: true });
     await fs.rm(artifacts.temporaryChecksumPath, { force: true });
     return publication;

@@ -415,7 +415,7 @@ describe('Archive Layout v2', () => {
     ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
   });
 
-  it('binds evidence artifacts once and rebinds when their inventory changes', async () => {
+  it('binds evidence artifacts once and publishes every changed archive candidate', async () => {
     const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
     const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
     cleanups.push(async () => {
@@ -458,8 +458,8 @@ describe('Archive Layout v2', () => {
     const publications = (await readAuditTrail(initialized.sessionDir)).events.filter(
       (event) => event.event === 'archive:publication_bound',
     );
-    expect(publications).toHaveLength(2);
-    expect(publications[1]?.detail).toMatchObject({
+    expect(publications).toHaveLength(3);
+    expect(publications[2]?.detail).toMatchObject({
       schemaVersion: 'flowguard-archive-publication-binding.v1',
       archiveFile: path.basename(archivePath),
     });

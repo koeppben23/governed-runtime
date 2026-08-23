@@ -69,18 +69,21 @@ export function findPublicationBinding(
   events: readonly Record<string, unknown>[],
   expected: ArchivePublicationBinding,
 ): boolean {
-  return events.some((event) => {
-    if (event.event !== ARCHIVE_PUBLICATION_BINDING_EVENT) return false;
+  const binding = [...events].reverse().find((event) => {
     const detail = event.detail as Record<string, unknown> | undefined;
     return (
+      event.event === ARCHIVE_PUBLICATION_BINDING_EVENT &&
       detail?.schemaVersion === ARCHIVE_PUBLICATION_BINDING_SCHEMA_VERSION &&
-      detail.publicationId === expected.publicationId &&
-      detail.archiveFile === expected.archiveFile &&
-      detail.archiveDigest === expected.archiveDigest &&
-      detail.sidecarDigest === expected.sidecarDigest &&
-      detail.manifestContentDigest === expected.manifestContentDigest
+      detail.archiveFile === expected.archiveFile
     );
   });
+  const detail = binding?.detail as Record<string, unknown> | undefined;
+  return (
+    detail?.publicationId === expected.publicationId &&
+    detail.archiveDigest === expected.archiveDigest &&
+    detail.sidecarDigest === expected.sidecarDigest &&
+    detail.manifestContentDigest === expected.manifestContentDigest
+  );
 }
 
 export function lastPublicationBinding(

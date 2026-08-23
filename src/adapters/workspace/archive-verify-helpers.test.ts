@@ -129,6 +129,17 @@ describe('findPublicationBinding', () => {
       ),
     ).toBe(false);
   });
+
+  it('rejects a historical tuple when a newer binding names the same archive', () => {
+    const historical = publicationBinding();
+    const current = { ...historical, publicationId: 'e'.repeat(64), archiveDigest: 'f'.repeat(64) };
+    const event = (detail: ArchivePublicationBinding) => ({
+      event: 'archive:publication_bound',
+      detail: { schemaVersion: 'flowguard-archive-publication-binding.v1', ...detail },
+    });
+    expect(findPublicationBinding([event(historical), event(current)], historical)).toBe(false);
+    expect(findPublicationBinding([event(historical), event(current)], current)).toBe(true);
+  });
 });
 
 // ─── isArtifactBindingEntry ───────────────────────────────────────────────────
