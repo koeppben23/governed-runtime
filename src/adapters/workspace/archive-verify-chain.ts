@@ -46,7 +46,7 @@ import {
   verifyManifestFiles,
   checkUnexpectedFiles,
 } from './archive-verify-manifest.js';
-import { fileExists } from './archive-files.js';
+import { fileExists, snapshotArchive } from './archive-files.js';
 import { type ArtifactBindingEntry } from './archive-artifact-binding.js';
 import { archiveFileName } from './archive.js';
 import { inspectArchiveTar } from './archive-tar.js';
@@ -593,7 +593,7 @@ async function verifyArchiveIntegrity(
   manifest: ArchiveManifest,
   findings: ArchiveFinding[],
   state: import('../../state/schema.js').SessionState | null,
-  archiveTarPath: string,
+  archive: { readonly snapshotPath: string; readonly checksumSidecarPath: string },
 ): Promise<void> {
   const { sessDir } = location;
   // Strict authority and completeness checks run BEFORE the content digest so a
@@ -603,12 +603,11 @@ async function verifyArchiveIntegrity(
   await verifyAuditChainIntegrity(sessDir, manifest, findings, state, strict);
   addContentDigestFindings(manifest, findings);
 
-  const checksumSidecarPath = `${archiveTarPath}.sha256`;
-  await verifyArchiveChecksum(archiveTarPath, checksumSidecarPath, strict, findings);
+  await verifyArchiveChecksum(archive.snapshotPath, archive.checksumSidecarPath, strict, findings);
 }
 
 // Extraction, manifest validation, and cleanup must stay in one transaction.
-// eslint-disable-next-line max-lines-per-function
+// eslint-disable-next-line max-lines-per-function, complexity -- each branch maps a distinct archive integrity finding.
 async function verifyArchiveImpl(
   fingerprint: string,
   sessionId: string,
@@ -625,8 +624,20 @@ async function verifyArchiveImpl(
   const findings: ArchiveFinding[] = [];
   const extractionRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'flowguard-archive-verify-'));
   const sessDir = path.join(extractionRoot, validSessionId);
+  const archiveSnapshotPath = path.join(extractionRoot, 'archive.tar.gz');
+  try {
+    await snapshotArchive(archiveTarPath, archiveSnapshotPath);
+  } catch (error) {
+    findings.push({
+      code: 'missing_manifest',
+      severity: 'error',
+      message: `Archive snapshot failed: ${error instanceof Error ? error.message : String(error)}`,
+    });
+    await fs.rm(extractionRoot, { recursive: true, force: true });
+    return buildVerificationResult(findings, null);
+  }
 
-  const inspection = await inspectArchiveTar(archiveTarPath, validSessionId);
+  const inspection = await inspectArchiveTar(archiveSnapshotPath, validSessionId);
   if (inspection.kind === 'blocked') {
     findings.push({
       code: 'unexpected_file',
@@ -638,7 +649,7 @@ async function verifyArchiveImpl(
   }
 
   try {
-    await promisify(execFile)('tar', ['xzf', archiveTarPath, '-C', extractionRoot], {
+    await promisify(execFile)('tar', ['xzf', archiveSnapshotPath, '-C', extractionRoot], {
       timeout: 30_000,
       windowsHide: true,
     });
@@ -704,7 +715,7 @@ async function verifyArchiveImpl(
       manifest,
       findings,
       state,
-      archiveTarPath,
+      { snapshotPath: archiveSnapshotPath, checksumSidecarPath: `${archiveTarPath}.sha256` },
     );
 
     const result = buildVerificationResult(findings, manifest);
