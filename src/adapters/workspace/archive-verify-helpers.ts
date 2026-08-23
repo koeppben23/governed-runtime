@@ -21,6 +21,7 @@ import {
   type ArtifactBindingEntry,
 } from './archive-artifact-binding.js';
 import type { ChainVerificationReason } from '../../audit/integrity.js';
+import type { ArchiveFindingCode } from '../../archive/types.js';
 
 /**
  * Fail-closed default: when the governed policy mode cannot be resolved from
@@ -28,6 +29,11 @@ import type { ChainVerificationReason } from '../../audit/integrity.js';
  * mode is never escalated.
  */
 export const STRICT_WHEN_MODE_UNRESOLVED = true;
+
+export interface ArchiveStrictness {
+  readonly strict: boolean;
+  readonly policyStateResolved: boolean;
+}
 
 // ─── Artifact Binding ─────────────────────────────────────────────────────────
 
@@ -74,12 +80,24 @@ export function isAuditFormatFailure(reason: ChainVerificationReason | null): bo
   );
 }
 
+export function timestampFindingCode(reason: ChainVerificationReason | null): ArchiveFindingCode {
+  if (reason === 'TSA_MESSAGE_IMPRINT_MISMATCH' || reason === 'TOKEN_VERIFICATION_REQUIRED') {
+    return 'tsa_verification_failed';
+  }
+  if (reason === 'TSA_EVIDENCE_DOWNGRADED') return 'tsa_evidence_downgraded';
+  return 'timestamp_unanchored';
+}
+
 // ─── Policy Mode ──────────────────────────────────────────────────────────────
 
-export function resolveStrictMode(state: SessionState | null): boolean {
+export function resolveArchiveStrictness(state: SessionState | null): ArchiveStrictness {
   const mode = state?.policySnapshot?.mode;
   if (!isPolicyMode(mode)) {
-    return STRICT_WHEN_MODE_UNRESOLVED;
+    return { strict: STRICT_WHEN_MODE_UNRESOLVED, policyStateResolved: false };
   }
-  return mode === 'regulated';
+  return { strict: mode === 'regulated', policyStateResolved: true };
+}
+
+export function resolveStrictMode(state: SessionState | null): boolean {
+  return resolveArchiveStrictness(state).strict;
 }

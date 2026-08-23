@@ -75,4 +75,15 @@ describe('archive manifest payload verification', () => {
       ]),
     );
   });
+
+  it('fails closed with an inconclusive inventory finding when the payload cannot be read', async () => {
+    const root = await createSession({ 'not-a-directory': 'content' });
+    const findings: ArchiveFinding[] = [];
+
+    await checkUnexpectedFiles(path.join(root, 'not-a-directory'), manifest({}), findings);
+
+    expect(findings).toEqual([
+      expect.objectContaining({ code: 'archive_inventory_inconclusive', severity: 'error' }),
+    ]);
+  });
 });

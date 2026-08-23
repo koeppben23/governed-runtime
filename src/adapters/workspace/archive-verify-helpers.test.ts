@@ -13,6 +13,7 @@ import {
   hasTimestampEvidence,
   isCurrentChainIntegrityFailure,
   isAuditFormatFailure,
+  resolveArchiveStrictness,
   resolveStrictMode,
   STRICT_WHEN_MODE_UNRESOLVED,
 } from './archive-verify-helpers.js';
@@ -212,5 +213,26 @@ describe('resolveStrictMode', () => {
 
   it('returns STRICT_WHEN_MODE_UNRESOLVED for invalid mode', () => {
     expect(resolveStrictMode(sessionState('unknown'))).toBe(true);
+  });
+});
+
+describe('resolveArchiveStrictness', () => {
+  it('records whether strictness was resolved from trusted policy state', () => {
+    expect(resolveArchiveStrictness(sessionState('regulated'))).toEqual({
+      strict: true,
+      policyStateResolved: true,
+    });
+    expect(resolveArchiveStrictness(sessionState('team'))).toEqual({
+      strict: false,
+      policyStateResolved: true,
+    });
+  });
+
+  it('fails closed and reports unresolved strictness for missing or invalid state', () => {
+    expect(resolveArchiveStrictness(null)).toEqual({ strict: true, policyStateResolved: false });
+    expect(resolveArchiveStrictness(sessionState('unknown'))).toEqual({
+      strict: true,
+      policyStateResolved: false,
+    });
   });
 });

@@ -110,7 +110,7 @@ export function repoConfigPath(worktree: string): string {
  * Rename with retry for Windows EPERM/EBUSY transient failures.
  * Antivirus and file indexers can briefly lock files on NTFS.
  */
-async function renameWithRetry(src: string, dest: string, attempts = 3): Promise<void> {
+export async function renameWithRetry(src: string, dest: string, attempts = 3): Promise<void> {
   for (let i = 0; i < attempts; i++) {
     try {
       await fs.rename(src, dest);
