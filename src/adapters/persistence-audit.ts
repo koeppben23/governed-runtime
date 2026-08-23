@@ -13,7 +13,13 @@ import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { AuditEvent } from '../state/evidence.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
-import { auditPath, ensureDir, PersistenceError, isEnoent } from './persistence.js';
+import {
+  auditPath,
+  ensureDir,
+  PersistenceError,
+  isEnoent,
+  renameWithRetry,
+} from './persistence.js';
 import { getLastChainHash } from '../audit/integrity.js';
 import {
   computeChainHash,
@@ -116,7 +122,7 @@ async function appendAuditLineAtomically(
       } finally {
         await handle.close();
       }
-      await fs.rename(tempPath, filePath);
+      await renameWithRetry(tempPath, filePath);
       return chainedResult.data;
     } catch (err) {
       try {

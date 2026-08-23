@@ -438,6 +438,26 @@ describe('persistence', () => {
       }
     });
 
+    it('retries transient Windows rename failures without losing the audit trail', async () => {
+      await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() }));
+      const rename = vi.mocked(fs.rename);
+      rename.mockClear();
+      rename
+        .mockRejectedValueOnce(Object.assign(new Error('file locked'), { code: 'EPERM' }))
+        .mockRejectedValueOnce(Object.assign(new Error('file busy'), { code: 'EBUSY' }));
+
+      try {
+        await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() }));
+        expect(rename).toHaveBeenCalledTimes(3);
+        const { events, skipped } = await readAuditTrail(tmpDir);
+        expect(skipped).toBe(0);
+        expect(events).toHaveLength(2);
+        expect(verifyChain(events, { strict: true }).valid).toBe(true);
+      } finally {
+        restoreRename();
+      }
+    });
+
     // ── HAPPY ───────────────────────────────────────────────
 
     it('computes chainHash and prevHash under the append lock', async () => {

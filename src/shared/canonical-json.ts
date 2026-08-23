@@ -14,9 +14,9 @@
  * `architecture/__tests__/audit-canonicalization-ssot.test.ts`.
  *
  * Note on `undefined`: object properties whose value is `undefined` are dropped
- * before serialization (JSON.stringify drops them anyway); `undefined` array
- * elements become `null` (standard JSON.stringify behaviour). Both rules are
- * applied consistently here.
+ * before serialization (JSON.stringify drops them anyway); `undefined` and
+ * sparse array elements become `null` (standard JSON.stringify behaviour).
+ * Both rules are applied consistently here.
  *
  * @version v1
  */
