@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { timestampFindingCode } from './archive-verify-chain.js';
+import { timestampFindingCode } from './archive-verify-helpers.js';
 import { snapshotArchive } from './archive-files.js';
 
 const cleanups: Array<() => Promise<void>> = [];

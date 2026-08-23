@@ -117,7 +117,7 @@ export async function checkUnexpectedFiles(
     });
   } catch (error) {
     findings.push({
-      code: 'unexpected_file',
+      code: 'archive_inventory_inconclusive',
       severity: 'error',
       message: `Archive payload inventory could not be read: ${
         error instanceof Error ? error.message : String(error)

@@ -25,9 +25,7 @@ import {
   type ArchiveManifest,
   type ArchiveVerification,
   type ArchiveFinding,
-  type ArchiveFindingCode,
 } from '../../archive/types.js';
-import type { ChainVerificationReason } from '../../audit/integrity.js';
 import { computeArchiveContentDigest } from '../../archive/content-digest.js';
 import {
   findBindingArtifacts,
@@ -35,7 +33,8 @@ import {
   hasTimestampEvidence,
   isCurrentChainIntegrityFailure,
   isAuditFormatFailure,
-  resolveStrictMode,
+  resolveArchiveStrictness,
+  timestampFindingCode,
 } from './archive-verify-helpers.js';
 import { isPolicyMode } from '../../state/policy-mode.js';
 import { validateFingerprint, validateSessionId } from './types.js';
@@ -330,16 +329,6 @@ function verifyAuditCompleteness(
  * evidence gets its own diagnostic code — a degraded status is never silently
  * folded into the generic unanchored bucket.
  */
-export function timestampFindingCode(reason: ChainVerificationReason | null): ArchiveFindingCode {
-  if (reason === 'TSA_MESSAGE_IMPRINT_MISMATCH' || reason === 'TOKEN_VERIFICATION_REQUIRED') {
-    return 'tsa_verification_failed';
-  }
-  if (reason === 'TSA_EVIDENCE_DOWNGRADED') {
-    return 'tsa_evidence_downgraded';
-  }
-  return 'timestamp_unanchored';
-}
-
 function addTimestampMismatchFindings(
   chainResult: ReturnType<typeof verifyChain>,
   fatal: boolean,
@@ -440,11 +429,11 @@ async function verifyAuditChainIntegrity(
     const { events, skipped } = await readAuditTrail(path.join(archiveRoot, 'audit'));
     verifyAuditCompleteness(manifest, events, findings);
 
-    if (strict && skipped > 0) {
+    if (skipped > 0) {
       findings.push({
-        code: 'audit_chain_invalid',
-        severity: 'error',
-        message: `Audit trail contains ${skipped} unparseable line(s) in regulated mode`,
+        code: 'audit_records_skipped',
+        severity: strict ? 'error' : 'warning',
+        message: `Audit trail contains ${skipped} unparseable line(s)`,
         file: 'audit.jsonl',
       });
     }
@@ -598,7 +587,17 @@ async function verifyArchiveIntegrity(
   const { sessDir } = location;
   // Strict authority and completeness checks run BEFORE the content digest so a
   // mode/anchor tamper surfaces explicitly rather than only as a digest mismatch.
-  const strict = resolveStrictMode(state);
+  const strictness = resolveArchiveStrictness(state);
+  const { strict } = strictness;
+  if (!strictness.policyStateResolved) {
+    findings.push({
+      code: 'policy_state_unresolved',
+      severity: 'error',
+      message:
+        'Trusted policy state is unavailable; archive verification is running in fail-closed strict mode',
+      file: 'state/session-state.json',
+    });
+  }
   verifyManifestPolicyMode(manifest, state, findings);
   await verifyAuditChainIntegrity(sessDir, manifest, findings, state, strict);
   addContentDigestFindings(manifest, findings);

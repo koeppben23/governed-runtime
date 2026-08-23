@@ -621,7 +621,7 @@ describe('audit/archive tamper matrix', () => {
 
     const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
     expect(verification.passed).toBe(false);
-    expect(verification.findings.some((f) => f.code === 'audit_chain_invalid')).toBe(true);
+    expect(verification.findings.some((f) => f.code === 'audit_records_skipped')).toBe(true);
   });
 
   it.skipIf(!tarOk)('archive manifest digest tamper -> verify fail', async () => {
