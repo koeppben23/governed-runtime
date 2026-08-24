@@ -404,7 +404,11 @@ function addNonAssertionFallbacks(
     });
   }
 
-  if ((ids.has('buildTool:gradle') || ids.has('buildTool:gradle-kotlin')) && !byKind.has('test')) {
+  if (
+    (ids.has('buildTool:gradle') || ids.has('buildTool:gradle-kotlin')) &&
+    !blockedKinds.has('test') &&
+    !byKind.has('test')
+  ) {
     byKind.set('test', {
       candidate: {
         assertionCapability: 'unsupported' as const,

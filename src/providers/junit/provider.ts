@@ -74,10 +74,10 @@ async function mavenExecutionSubjectInputs(
   };
 }
 
-function gradleExecutionSubjectInputs(
+async function gradleExecutionSubjectInputs(
   ctx: PlannerContext,
   hint?: ExecutionSubjectResolutionHint,
-): ExecutionSubjectResolution {
+): Promise<ExecutionSubjectResolution> {
   const wrapper =
     hint?.matchedExecutable === 'gradlew.bat'
       ? 'gradlew.bat'
@@ -93,6 +93,13 @@ function gradleExecutionSubjectInputs(
     'settings.gradle.kts',
     'gradle.properties',
   ];
+  for (const settingsPath of ['settings.gradle', 'settings.gradle.kts']) {
+    if (!ctx.rootFiles.has(settingsPath)) continue;
+    const settings = await ctx.readFile(settingsPath);
+    if (settings === undefined || GRADLE_MULTI_PROJECT_RE.test(settings)) {
+      return { kind: 'blocked', reason: 'Gradle multi-project graph is unsupported' };
+    }
+  }
   return {
     kind: 'resolved',
     inputs: [
@@ -123,6 +130,7 @@ const MAVEN_FILE_SELECTORS = new Set([
   '--toolchains',
 ]);
 const MAVEN_SHORT_FILE_SELECTORS = ['-gs', '-f', '-s', '-t'] as const;
+const GRADLE_MULTI_PROJECT_RE = /\b(?:include|includeFlat|includeBuild|project)\s*(?:\(|['"])/;
 
 async function mavenConfigSelectedFiles(ctx: PlannerContext): Promise<MavenConfigSelection> {
   const config = await ctx.readFile('.mvn/maven.config');
@@ -202,10 +210,11 @@ function mavenPomReferences(content: string): MavenPomReference[] {
   }
   for (const parent of content.matchAll(/<parent(?:\s[^>]*)?>([\s\S]*?)<\/parent>/gi)) {
     const relativePath = parent[1]?.match(/<relativePath(?:\s[^>]*)?>([\s\S]*?)<\/relativePath>/i);
+    const emptyRelativePath = /<relativePath(?:\s[^>]*)?\s*\/>/i.test(parent[1] ?? '');
     if (relativePath) {
       const value = xmlText(relativePath[1] ?? '');
       if (value.length > 0) references.push({ kind: 'parent', value });
-    } else {
+    } else if (!emptyRelativePath) {
       references.push({ kind: 'parent', value: '../pom.xml' });
     }
   }

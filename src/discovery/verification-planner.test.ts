@@ -334,6 +334,18 @@ describe('verification planner', () => {
       expect(candidates.find((entry) => entry.candidate.kind === 'build')).toBeUndefined();
     });
 
+    it('does not plan Gradle execution for a multi-project settings graph', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: makeDetectedStack([
+          { kind: 'buildTool', id: 'gradle', evidence: 'build.gradle' },
+        ]),
+        allFiles: ['build.gradle', 'settings.gradle', 'gradlew', 'app/build.gradle'],
+        readFile: makeReadFile({ 'settings.gradle': "include ':app'" }),
+      });
+
+      expect(candidates.find((entry) => entry.candidate.kind === 'test')).toBeUndefined();
+    });
+
     it('binds Gradle execution to existing root configuration and the selected wrapper', async () => {
       const candidates = await planVerificationCandidates({
         detectedStack: makeDetectedStack([
