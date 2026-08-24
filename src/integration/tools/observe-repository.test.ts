@@ -124,7 +124,7 @@ beforeAll(async () => {
         drift: {
           status: 'clean',
           drifted: false,
-          changedCollectorNames: [],
+          changedContributorNames: [],
           notVerified: [],
         },
         detectedStack: null,

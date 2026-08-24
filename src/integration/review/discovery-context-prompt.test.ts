@@ -53,7 +53,7 @@ const BASE_CONTEXT: DiscoveryReviewContext = {
     drifted: false,
     currentDigest: 'sha256-current',
     persistedDigest: 'sha256-persisted',
-    changedCollectorNames: [],
+    changedContributorNames: [],
     diagnostics: [],
     notVerified: ['NOT_VERIFIED: Drift is advisory.'],
     warnings: [],
@@ -146,14 +146,14 @@ describe('buildDiscoveryContextSection', () => {
         ...BASE_CONTEXT.drift!,
         status: 'drifted',
         drifted: true,
-        changedCollectorNames: ['stack-detection'],
+        changedContributorNames: ['stack-detection'],
         warnings: [{ code: 'discovery_drifted', message: 'Repository changed since hydrate.' }],
       },
     });
 
     expect(section).toContain('failedCollectors: code-surface-analysis');
     expect(section).toContain('status: drifted');
-    expect(section).toContain('changedCollectors: stack-detection');
+    expect(section).toContain('changedContributors: stack-detection');
     expect(section).toContain('Discovery is degraded');
   });
 

@@ -67,7 +67,7 @@ function projectDrift(
   return {
     status,
     drifted: drift?.drifted ?? false,
-    changedCollectorNames: drift ? [...drift.changedCollectorNames] : [],
+    changedContributorNames: drift ? [...drift.changedContributorNames] : [],
     notVerified: drift ? [...drift.notVerified] : [],
   };
 }

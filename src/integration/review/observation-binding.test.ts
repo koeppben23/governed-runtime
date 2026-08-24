@@ -136,7 +136,7 @@ function snapshot() {
       ageWarning: null,
       notVerified: [],
     },
-    drift: { status: 'clean', drifted: false, changedCollectorNames: [], notVerified: [] },
+    drift: { status: 'clean', drifted: false, changedContributorNames: [], notVerified: [] },
     detectedStack: null,
     verificationCandidates: [],
     riskSurfaces: [],

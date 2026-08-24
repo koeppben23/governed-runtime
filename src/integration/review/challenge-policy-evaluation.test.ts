@@ -9,7 +9,7 @@ import * as fs from 'node:fs/promises';
 import { afterEach, describe, expect, it } from 'vitest';
 import { CHALLENGE_POLICY_V1 } from '../../config/policy-types.js';
 import { makeState } from '../../fixtures.js';
-import type { ReviewFindings } from '../../state/evidence.js';
+import type { ReviewAttempt, ReviewFindings, ReviewObligation } from '../../state/evidence.js';
 import { readState, writeState } from '../../adapters/persistence.js';
 import { computeFingerprint, sessionDir } from '../../adapters/workspace/index.js';
 import { hashCanonicalReviewContent } from '../../shared/review-subject.js';
@@ -46,6 +46,25 @@ type Metrics = {
 
 const REVIEW_MATERIAL_CONTENT = '## Frozen Test Review Material\n\nChallenge policy fixture.\n';
 const REVIEW_MATERIAL_DIGEST = hashCanonicalReviewContent(REVIEW_MATERIAL_CONTENT);
+
+function boundAttempt(
+  obligation: ReviewObligation,
+  childSessionId: string,
+  attemptId: string,
+): ReviewAttempt {
+  return {
+    attemptId,
+    obligationId: obligation.obligationId,
+    obligationType: obligation.obligationType,
+    subjectDigest: obligation.subjectDigest,
+    ordinal: 0,
+    childSessionId,
+    status: 'bound',
+    origin: { kind: 'initial' },
+    repositoryDiscovery: { kind: 'not_applicable' },
+    createdAt: '2026-07-26T00:00:00.000Z',
+  };
+}
 
 function withReviewMaterial<T extends { readonly subjectDigest: string }>(
   obligation: T,
@@ -184,6 +203,11 @@ async function resolveCapturedFixture(
     capture: fixture.capture,
   });
   const reviewerLatencyMs = performance.now() - reviewerStartedAt;
+  const attempt = boundAttempt(
+    obligation,
+    findings.reviewedBy.sessionId,
+    '11111111-1111-4111-8111-111111111112',
+  );
   const invocation = buildInvocationEvidence({
     obligationId: obligation.obligationId,
     obligationType: 'implement',
@@ -197,13 +221,14 @@ async function resolveCapturedFixture(
     findingsHash: hashFindings(findings),
     invokedAt: '2026-07-26T00:00:00.000Z',
     capturedRawFindings: findings,
+    attemptId: attempt.attemptId,
   });
   const result = resolveHostTaskFindings(
     {
       assuranceSchemaVersion: 'review-assurance.v5' as const,
       obligations: [obligation],
       invocations: [invocation],
-      attempts: [],
+      attempts: [attempt],
     },
     obligation,
   );
@@ -266,14 +291,20 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
     findingsHash: hashFindings(firstFindings),
     invokedAt: '2026-07-26T00:00:00.000Z',
     capturedRawFindings: firstFindings,
+    attemptId: '33333333-3333-4333-8333-333333333334',
   });
+  const firstAttempt = boundAttempt(
+    firstObligation,
+    firstFindings.reviewedBy.sessionId,
+    firstInvocation.attemptId!,
+  );
   expect(
     resolveHostTaskFindings(
       {
         assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [firstObligation],
         invocations: [firstInvocation],
-        attempts: [],
+        attempts: [firstAttempt],
       },
       firstObligation,
     ).kind,
@@ -293,7 +324,7 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
         assuranceSchemaVersion: 'review-assurance.v5' as const,
         obligations: [firstObligation],
         invocations: [firstInvocation],
-        attempts: [],
+        attempts: [firstAttempt],
       },
       validationAttempts: [
         {
@@ -359,13 +390,19 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
     findingsHash: hashFindings(secondFindings),
     invokedAt: '2026-07-26T00:01:00.000Z',
     capturedRawFindings: secondFindings,
+    attemptId: '33333333-3333-4333-8333-333333333335',
   });
+  const secondAttempt = boundAttempt(
+    secondObligation,
+    secondFindings.reviewedBy.sessionId,
+    secondInvocation.attemptId!,
+  );
   const reReview = resolveHostTaskFindings(
     {
       assuranceSchemaVersion: 'review-assurance.v5' as const,
       obligations: [secondObligation],
       invocations: [secondInvocation],
-      attempts: [],
+      attempts: [secondAttempt],
     },
     secondObligation,
     state ? computeTargetedResolutionChallengeIds(state) : undefined,

@@ -27,7 +27,7 @@ export interface DiscoveryContextLimits {
   readonly tests: number;
   readonly warnings: number;
   readonly notVerified: number;
-  readonly changedCollectors: number;
+  readonly changedContributors: number;
 }
 
 export interface DiscoveryReviewContext {
@@ -62,7 +62,7 @@ const DEFAULT_LIMITS: DiscoveryContextLimits = {
   tests: 5,
   warnings: 6,
   notVerified: 8,
-  changedCollectors: 6,
+  changedContributors: 6,
 };
 
 export function buildDiscoveryContextSection(context?: DiscoveryReviewContext): string {
@@ -135,9 +135,9 @@ function appendDrift(
     return;
   }
   lines.push(`- status: ${drift.status}`, `- drifted: ${String(drift.drifted)}`);
-  if (drift.changedCollectorNames.length > 0) {
+  if (drift.changedContributorNames.length > 0) {
     lines.push(
-      `- changedCollectors: ${drift.changedCollectorNames.slice(0, limits.changedCollectors).join(', ')}`,
+      `- changedContributors: ${drift.changedContributorNames.slice(0, limits.changedContributors).join(', ')}`,
     );
   }
   appendWarnings(lines, drift.warnings, limits.warnings);
@@ -333,8 +333,8 @@ function appendSnapshotHealth(lines: string[], snapshot: RepositoryDiscoverySnap
 
 function appendSnapshotDrift(lines: string[], snapshot: RepositoryDiscoverySnapshot): void {
   lines.push('### Drift', `- status: ${snapshot.drift.status}`);
-  if (snapshot.drift.changedCollectorNames.length > 0) {
-    lines.push(`- changedCollectors: ${snapshot.drift.changedCollectorNames.join(', ')}`);
+  if (snapshot.drift.changedContributorNames.length > 0) {
+    lines.push(`- changedContributors: ${snapshot.drift.changedContributorNames.join(', ')}`);
   }
   for (const item of snapshot.drift.notVerified) {
     lines.push(`- ${ensureNotVerified(item)}`);

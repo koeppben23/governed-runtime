@@ -11,7 +11,10 @@
  * - Failure is explicit (throws), never silently passes.
  */
 
-import { computeStableDriftDigest } from './discovery-digest.js';
+import {
+  computeStableDiscoveryContributorDigests,
+  computeStableDriftDigest,
+} from './discovery-digest.js';
 import { runDiscovery } from './orchestrator.js';
 import { readDiscovery } from '../adapters/persistence-discovery.js';
 import { listRepoSignals } from '../adapters/git.js';
@@ -27,8 +30,8 @@ export interface DriftResult {
   readonly currentDigest: string;
   /** SHA-256 digest from the persisted discovery.json. Null if no persisted discovery. */
   readonly persistedDigest: string | null;
-  /** Collectors whose status changed (if drifted). */
-  readonly changedCollectors?: string[];
+  /** Semantic Discovery contributors whose canonical content changed (if drifted). */
+  readonly changedContributors?: string[];
   /** Per-collector diagnostics from the fresh discovery run. */
   readonly diagnostics?: CollectorDiagnostic[];
 }
@@ -74,28 +77,23 @@ export async function checkDiscoveryDrift(
   const currentDigest = computeStableDriftDigest(freshResult);
   const drifted = persistedDigest !== null && currentDigest !== persistedDigest;
 
-  // Identify which collectors changed status
-  let changedCollectors: string[] | undefined;
+  // Compare the same canonicalized semantic content as the global digest,
+  // partitioned into named producers for actionable diagnostics.
+  let changedContributors: string[] | undefined;
   if (drifted && persisted) {
-    changedCollectors = [];
-    for (const [name, status] of Object.entries(freshResult.collectors)) {
-      if (persisted.collectors[name] !== status) {
-        changedCollectors.push(name);
-      }
-    }
-    // Also check for new collectors not in persisted
-    for (const name of Object.keys(persisted.collectors)) {
-      if (!(name in freshResult.collectors)) {
-        changedCollectors.push(name);
-      }
-    }
+    const persistedContributors = computeStableDiscoveryContributorDigests(persisted);
+    const freshContributors = computeStableDiscoveryContributorDigests(freshResult);
+    const names = new Set([...persistedContributors.keys(), ...freshContributors.keys()]);
+    changedContributors = [...names]
+      .filter((name) => persistedContributors.get(name) !== freshContributors.get(name))
+      .sort();
   }
 
   return {
     drifted,
     currentDigest,
     persistedDigest,
-    ...(changedCollectors && changedCollectors.length > 0 ? { changedCollectors } : {}),
+    ...(changedContributors && changedContributors.length > 0 ? { changedContributors } : {}),
     ...(freshResult.diagnostics ? { diagnostics: freshResult.diagnostics } : {}),
   };
 }

@@ -49,13 +49,13 @@ describe('buildDiscoveryDriftStatus', () => {
         drifted: true,
         currentDigest: 'new-digest',
         persistedDigest: 'old-digest',
-        changedCollectors: ['stack-detection'],
+        changedContributors: ['stack-detection'],
       }),
     });
 
     expect(projection.status).toBe('drifted');
     expect(projection.drifted).toBe(true);
-    expect(projection.changedCollectorNames).toEqual(['stack-detection']);
+    expect(projection.changedContributorNames).toEqual(['stack-detection']);
   });
 
   it('projects missing persisted discovery explicitly', async () => {

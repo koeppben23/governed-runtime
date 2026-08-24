@@ -196,7 +196,7 @@ function makeDriftProjection(
     drifted: false,
     currentDigest: null,
     persistedDigest: null,
-    changedCollectorNames: [],
+    changedContributorNames: [],
     diagnostics: [],
     notVerified: [],
     warnings: [],

@@ -42,10 +42,17 @@ export const RepositoryDiscoverySnapshot = z
       .object({
         status: z.enum(['clean', 'drifted', 'not_assessed', 'unavailable']),
         drifted: z.boolean(),
-        changedCollectorNames: z.array(z.string()),
+        changedContributorNames: z.array(z.string()).optional(),
+        // Older persisted attempt snapshots used the collector-only name.
+        // Preserve their advisory context while projecting the broader model.
+        changedCollectorNames: z.array(z.string()).optional(),
         notVerified: z.array(z.string()),
       })
-      .strict(),
+      .strict()
+      .transform(({ changedCollectorNames, changedContributorNames, ...drift }) => ({
+        ...drift,
+        changedContributorNames: changedContributorNames ?? changedCollectorNames ?? [],
+      })),
     detectedStack: DetectedStackSchema.nullable(),
     verificationCandidates: z.array(
       z

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { assuranceWith as fixtureAssuranceWith } from '../../fixtures.js';
 import { resolveHostTaskEffectiveFindings } from './review-validation.js';
 import type { ReviewInvocationEvidence, ReviewObligation } from '../../state/evidence-review.js';
-import type { ReviewAssuranceState } from '../../state/evidence-review.js';
+import type { ReviewAssuranceState, ReviewAttempt } from '../../state/evidence-review.js';
 import {
   makeHostTaskInvocation,
   makeReviewObligation,
@@ -13,6 +13,7 @@ import { hashFindings } from '../review/assurance.js';
 
 const OBLIGATION_ID = RV_OBLIGATION_ID;
 const INVOCATION_ID = RV_INVOCATION_ID;
+const ATTEMPT_ID = '33333333-3333-4333-8333-333333333333';
 const now = new Date().toISOString();
 
 const validRawFindings: Record<string, unknown> = {
@@ -32,7 +33,23 @@ const validRawFindings: Record<string, unknown> = {
 const assuranceWith = (
   obligation: ReviewObligation,
   invocations: ReviewInvocationEvidence[],
-): ReviewAssuranceState => fixtureAssuranceWith({ obligation, invocations });
+  attempts: ReviewAttempt[] = [],
+): ReviewAssuranceState => fixtureAssuranceWith({ obligation, invocations, attempts });
+
+function boundAttempt(obligation: ReviewObligation): ReviewAttempt {
+  return {
+    attemptId: ATTEMPT_ID,
+    obligationId: obligation.obligationId,
+    obligationType: obligation.obligationType,
+    subjectDigest: obligation.subjectDigest,
+    ordinal: 0,
+    childSessionId: 'ses_child',
+    status: 'bound',
+    origin: { kind: 'initial' },
+    repositoryDiscovery: { kind: 'not_applicable' },
+    createdAt: now,
+  };
+}
 
 function ctx(
   overrides: Partial<Parameters<typeof resolveHostTaskEffectiveFindings>[0]> = {},
@@ -49,7 +66,11 @@ function ctx(
     },
     input: {},
     state: {
-      assurance: assuranceWith(obligation, [makeHostTaskInvocation(validRawFindings)]),
+      assurance: assuranceWith(
+        obligation,
+        [makeHostTaskInvocation(validRawFindings, { attemptId: ATTEMPT_ID })],
+        [boundAttempt(obligation)],
+      ),
       sessionId: 'ses_parent',
       unresolvedImplementationChallengeIds: [],
       unaddressedPriorFailIds: [],
@@ -87,7 +108,11 @@ describe('resolveHostTaskEffectiveFindings', () => {
         pendingObligation: obligation,
         state: {
           sessionId: 'ses_parent',
-          assurance: assuranceWith(obligation, [makeHostTaskInvocation(validRawFindings)]),
+          assurance: assuranceWith(
+            obligation,
+            [makeHostTaskInvocation(validRawFindings, { attemptId: ATTEMPT_ID })],
+            [boundAttempt(obligation)],
+          ),
         },
       }),
     );
@@ -102,11 +127,16 @@ describe('resolveHostTaskEffectiveFindings', () => {
       ctx({
         state: {
           sessionId: 'ses_parent',
-          assurance: assuranceWith(obligation, [
-            makeHostTaskInvocation(validRawFindings, {
-              capturedRawFindings: { overallVerdict: 'accept' },
-            }),
-          ]),
+          assurance: assuranceWith(
+            obligation,
+            [
+              makeHostTaskInvocation(validRawFindings, {
+                capturedRawFindings: { overallVerdict: 'accept' },
+                attemptId: ATTEMPT_ID,
+              }),
+            ],
+            [boundAttempt(obligation)],
+          ),
         },
       }),
     );
@@ -219,5 +249,33 @@ describe('resolveHostTaskEffectiveFindings', () => {
     );
     expect(result.blocked).toBeUndefined();
     expect(result.evidenceInvocationId).toBe(INVOCATION_ID);
+  });
+
+  it.each([
+    ['hash tamper', { findingsHash: 'tampered' }, 'REVIEW_FINDINGS_HASH_MISMATCH'],
+    ['verdict mismatch', { capturedVerdict: 'reject' }, 'REVIEW_FINDINGS_HASH_MISMATCH'],
+    ['criteria mismatch', { criteriaVersion: 'wrong' }, 'SUBAGENT_EVIDENCE_MISSING'],
+    ['mandate mismatch', { mandateDigest: 'wrong' }, 'SUBAGENT_EVIDENCE_MISSING'],
+    ['parent session mismatch', { parentSessionId: 'ses_other' }, 'SUBAGENT_EVIDENCE_MISSING'],
+  ] as const)('fails closed on %s', (_case, invocationOverrides, expectedCode) => {
+    const obligation = makeReviewObligation();
+    const result = resolveHostTaskEffectiveFindings(
+      ctx({
+        state: {
+          sessionId: 'ses_parent',
+          assurance: assuranceWith(
+            obligation,
+            [
+              makeHostTaskInvocation(validRawFindings, {
+                attemptId: ATTEMPT_ID,
+                ...invocationOverrides,
+              }),
+            ],
+            [boundAttempt(obligation)],
+          ),
+        },
+      }),
+    );
+    expect(codeOf(result.blocked)).toBe(expectedCode);
   });
 });

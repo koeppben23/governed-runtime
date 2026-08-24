@@ -28,7 +28,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { readState, writeState } from '../adapters/persistence.js';
 import { resetAdapterLogger } from '../logging/adapter-logger.js';
-import type { ReviewFindings, ReviewObligationType } from '../state/evidence.js';
+import type { ReviewAttempt, ReviewFindings, ReviewObligationType } from '../state/evidence.js';
 import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
@@ -443,6 +443,9 @@ export async function fulfillStrictReviewObligation(
   };
 
   const isHostTask = state.policySnapshot?.reviewInvocationPolicy === 'host_task_required';
+  const hostAttempt = isHostTask
+    ? bindHostTaskAttempt(assurance.attempts, obligation, findings.reviewedBy.sessionId)
+    : null;
   const invocation = buildInvocationEvidence({
     obligationId: obligation.obligationId,
     obligationType: input.obligationType,
@@ -466,13 +469,7 @@ export async function fulfillStrictReviewObligation(
     // evidence (capturedRawFindings) rather than from agent-submitted args.
     // Without this, resolveHostTaskFindings returns null → REVIEW_FINDINGS_REQUIRED.
     ...(isHostTask ? { capturedRawFindings: findings } : {}),
-    ...(isHostTask
-      ? {
-          attemptId: state.reviewAssurance?.attempts?.find(
-            (a) => a.obligationId === obligation.obligationId,
-          )?.attemptId,
-        }
-      : {}),
+    ...(hostAttempt ? { attemptId: hostAttempt.attemptId } : {}),
   });
   const obligationAcceptedByReviewer = !isHostTask;
 
@@ -496,10 +493,52 @@ export async function fulfillStrictReviewObligation(
           : item,
       ),
       invocations: [...assurance.invocations, invocation],
+      ...(hostAttempt
+        ? {
+            attempts: [
+              ...assurance.attempts.filter(
+                (attempt) => attempt.attemptId !== hostAttempt.attemptId,
+              ),
+              hostAttempt,
+            ],
+          }
+        : {}),
     },
   });
 
   return findings;
+}
+
+function bindHostTaskAttempt(
+  attempts: readonly ReviewAttempt[],
+  obligation: {
+    readonly obligationId: string;
+    readonly obligationType: ReviewObligationType;
+    readonly subjectDigest: string;
+  },
+  childSessionId: string,
+): ReviewAttempt {
+  const existing = attempts.find((attempt) => attempt.obligationId === obligation.obligationId);
+  const attempt = existing ?? {
+    attemptId: crypto.randomUUID(),
+    obligationId: obligation.obligationId,
+    obligationType: obligation.obligationType,
+    subjectDigest: obligation.subjectDigest,
+    ordinal: attempts.length,
+    childSessionId,
+    status: 'bound' as const,
+    origin: { kind: 'initial' as const },
+    repositoryDiscovery: { kind: 'not_applicable' as const },
+    createdAt: new Date().toISOString(),
+  };
+  return {
+    ...attempt,
+    obligationId: obligation.obligationId,
+    obligationType: obligation.obligationType,
+    subjectDigest: obligation.subjectDigest,
+    childSessionId,
+    status: 'bound',
+  };
 }
 
 /**

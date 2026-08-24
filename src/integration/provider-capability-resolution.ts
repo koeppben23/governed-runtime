@@ -126,7 +126,7 @@ export function resolveProviderCapabilities(
 ): ResolvedProviderCapability[] {
   const detectionMap = buildDetectionMap(detectedStack);
   const candidateMap = buildCandidateMap(verificationCandidates);
-  const runtimeByProvider = buildRuntimeMap(runtimeCandidates);
+  const runtimeByProvider = buildRuntimeMap(runtimeCandidates, candidateMap);
   const results: ResolvedProviderCapability[] = [];
 
   for (const ext of ASSERTION_PROVIDER_EXTENSIONS) {
@@ -165,15 +165,21 @@ export function resolveProviderCapabilities(
 
 function buildRuntimeMap(
   runtimeCandidates: readonly ResolvedVerificationCandidate[] | undefined,
+  candidateMap: ReadonlyMap<ProviderId, CandidateInfo>,
 ): Map<ProviderId, RuntimeStatus> {
   const map = new Map<ProviderId, RuntimeStatus>();
   for (const rc of runtimeCandidates ?? []) {
     if (rc.candidate.assertionCapability !== 'structured') continue;
     const providerId = rc.candidate.assertionReport.providerId;
     if (!providerId) continue;
-    if (!map.has(providerId)) {
+    const selected = candidateMap.get(providerId)?.candidate;
+    if (selected && candidateIdentity(selected) === candidateIdentity(rc.candidate)) {
       map.set(providerId, rc.runtime.status);
     }
   }
   return map;
+}
+
+function candidateIdentity(candidate: VerificationCandidate): string {
+  return candidate.candidateId ?? `${candidate.kind}:${candidate.command}:${candidate.source}`;
 }

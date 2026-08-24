@@ -15,6 +15,7 @@ import { ProcessProbeRunner } from '../../verification/toolchain-probe.js';
 import type { ProbeRunner } from '../../verification/toolchain-probe.js';
 import type { ResolvedVerificationCandidate } from '../verification-runtime-resolution.js';
 import { join } from 'node:path';
+import { resolveExecutionSubjectInputs } from './execution-subject-input-resolution.js';
 
 export function computeProviderCapabilities(
   state: SessionState,
@@ -32,22 +33,26 @@ export async function resolveRuntimeProviderCapabilities(
   runner: ProbeRunner,
   cwd: string,
 ) {
+  const candidates = state.verificationCandidates ?? [];
+  const runtimeCandidates = await Promise.all(
+    candidates.map(async (candidate) => {
+      const resolution = resolveExecutionSubjectInputs(state, candidate);
+      if (resolution.kind === 'unavailable') {
+        return { candidate, runtime: { status: 'unavailable' as const, requirements: [] } };
+      }
+      return (
+        await resolveRuntimeReadiness(
+          [{ candidate, executionSubjectInputs: resolution.inputs }],
+          runner,
+          cwd,
+        )
+      )[0]!;
+    }),
+  );
   return resolveProviderCapabilities(
     state.detectedStack ?? undefined,
     state.verificationCandidates,
-    await resolveRuntimeReadiness(
-      state.verificationCandidates?.map((c) => ({
-        candidate: c,
-        executionSubjectInputs:
-          (c.candidateId
-            ? state.executionSubjectInputsByCandidateId?.[c.candidateId]
-            : undefined) ??
-          state.executionSubjectInputsByKind?.[c.kind] ??
-          [],
-      })) ?? [],
-      runner,
-      cwd,
-    ),
+    runtimeCandidates,
   );
 }
 

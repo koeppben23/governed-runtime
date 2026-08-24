@@ -15,16 +15,19 @@ import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js'
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import type {
   ReviewAssuranceState,
+  ReviewAttempt,
   ReviewObligation,
   ReviewInvocationEvidence,
 } from '../../state/evidence.js';
 import {
   getReviewFindingsAcceptanceRejection,
+  hasValidHostTaskInvocationContract,
   withHostTaskPath,
   type HostTaskFindingsAcceptanceRejection,
 } from './review-validation-acceptance.js';
 import { validateChallengeConsistency } from '../review/enforcement/challenge-consistency.js';
 import { validateReviewFindingsConsistency } from '../review/enforcement/findings-consistency.js';
+import { hashFindings } from '../review/findings-hash.js';
 
 /**
  * Result of resolving review findings from host-task invocation evidence.
@@ -50,6 +53,11 @@ export type HostTaskFindingsResolution =
       readonly attemptId: string;
       /** Compatibility projection for the original verdict/blocker invariant. */
       readonly blockingIssueCount?: number;
+    }
+  | {
+      readonly kind: 'invalid';
+      readonly code: 'REVIEW_FINDINGS_HASH_MISMATCH' | 'SUBAGENT_EVIDENCE_MISSING';
+      readonly obligationId: string;
     }
   | {
       readonly kind: 'attempt_lineage_unavailable';
@@ -85,11 +93,13 @@ export function resolveHostTaskFindings(
     allowedChallengeEvidenceRefs,
     unaddressedPriorFailIds,
     previouslyUsedChallengeIds,
+    parentSessionId,
   ]: readonly [
     (readonly string[] | undefined)?,
     (readonly unknown[] | undefined)?,
     (readonly string[] | undefined)?,
     (readonly string[] | undefined)?,
+    (string | undefined)?,
   ]
 ): HostTaskFindingsResolution {
   if (!obligation || !assurance) return { kind: 'not_found' };
@@ -130,17 +140,48 @@ export function resolveHostTaskFindings(
   // earlier evidence remains persisted for audit while this loop continues to
   // consider subsequent captures for the same obligation.
   for (const invocation of matchingInvocations) {
+    const capturedRawFindings = invocation.capturedRawFindings;
+    if (!capturedRawFindings) continue;
     const invocationRejection = getReviewFindingsAcceptanceRejection({ obligation, invocation });
     if (invocationRejection) {
       return { kind: 'rejected', rejection: withHostTaskPath(invocationRejection) };
+    }
+
+    if (!hasValidHostTaskInvocationContract({ obligation, invocation, parentSessionId })) {
+      continue;
+    }
+
+    if (!hasExactBoundAttempt(assurance.attempts, obligation, invocation)) {
+      unavailableLineage ??= {
+        invocationId: invocation.invocationId,
+        obligationId: obligation.obligationId,
+      };
+      continue;
     }
 
     // Parse through ReviewFindings schema for type safety and validation.
     // safeParse: if the raw findings are malformed (missing required fields,
     // invalid types), surface it as `unparseable` so the caller falls back to
     // a distinct BLOCKED code (not silent not_found).
-    const parsed = ReviewFindingsSchema.safeParse(invocation.capturedRawFindings);
+    const parsed = ReviewFindingsSchema.safeParse(capturedRawFindings);
     if (parsed.success) {
+      if (hashFindings(capturedRawFindings) !== invocation.findingsHash) {
+        return {
+          kind: 'invalid',
+          code: 'REVIEW_FINDINGS_HASH_MISMATCH',
+          obligationId: obligation.obligationId,
+        };
+      }
+      if (
+        invocation.capturedVerdict !== undefined &&
+        invocation.capturedVerdict !== parsed.data.overallVerdict
+      ) {
+        return {
+          kind: 'invalid',
+          code: 'REVIEW_FINDINGS_HASH_MISMATCH',
+          obligationId: obligation.obligationId,
+        };
+      }
       // F12: coherence of the host-captured record. An `accept` verdict that
       // still carries blocking issues is self-contradictory and must fail closed
       // before the findings are treated as valid evidence — this is the host-task
@@ -239,5 +280,34 @@ export function resolveHostTaskFindings(
   if (unparseableDetail !== null) {
     return { kind: 'unparseable', detail: unparseableDetail };
   }
+  if (matchingInvocations.length > 0) {
+    return {
+      kind: 'invalid',
+      code: 'SUBAGENT_EVIDENCE_MISSING',
+      obligationId: obligation.obligationId,
+    };
+  }
   return { kind: 'not_found' };
+}
+
+/**
+ * The evidence consumer must independently verify the binding minted by the
+ * host-task ingestion boundary. Never recover an invocation by searching for a
+ * merely compatible attempt: invocation.attemptId is the authority key.
+ */
+function hasExactBoundAttempt(
+  attempts: readonly ReviewAttempt[],
+  obligation: ReviewObligation,
+  invocation: ReviewInvocationEvidence,
+): boolean {
+  if (!invocation.attemptId) return false;
+  const attempt = attempts.find((item) => item.attemptId === invocation.attemptId);
+  return (
+    invocation.obligationType === obligation.obligationType &&
+    attempt?.status === 'bound' &&
+    attempt.obligationId === obligation.obligationId &&
+    attempt.obligationType === obligation.obligationType &&
+    attempt.subjectDigest === obligation.subjectDigest &&
+    attempt.childSessionId === invocation.childSessionId
+  );
 }

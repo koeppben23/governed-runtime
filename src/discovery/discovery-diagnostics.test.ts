@@ -545,9 +545,11 @@ describe('discovery/diagnostics (#372)', () => {
       );
       expect(drift.drifted).toBe(true);
       expect(drift.currentDigest).not.toBe(drift.persistedDigest);
+      expect(drift.changedContributors).toEqual(expect.any(Array));
+      expect(drift.changedContributors!.length).toBeGreaterThan(0);
     });
 
-    it('drifted: true with changedCollectors when collector status changes', async () => {
+    it('drifted: true attributes a collector when its status changes', async () => {
       const persisted = await runDiscovery(EMPTY_INPUT);
       // Mutate a collector status to 'failed'
       const tampered = {
@@ -574,7 +576,7 @@ describe('discovery/diagnostics (#372)', () => {
         'abcdef0123456789abcdef01',
       );
       expect(drift.drifted).toBe(true);
-      expect(drift.changedCollectors).toContain('stack-detection');
+      expect(drift.changedContributors).toContain('stack-detection');
     });
   });
 });

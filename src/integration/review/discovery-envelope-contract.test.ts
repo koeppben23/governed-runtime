@@ -29,7 +29,7 @@ function snapshot(): RepositoryDiscoverySnapshot {
     drift: {
       status: 'clean',
       drifted: false,
-      changedCollectorNames: [],
+      changedContributorNames: [],
       notVerified: [],
     },
     detectedStack: {
