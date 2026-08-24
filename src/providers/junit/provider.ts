@@ -108,6 +108,7 @@ const MAVEN_FILE_SELECTORS = new Set([
   '-t',
   '--toolchains',
 ]);
+const MAVEN_SHORT_FILE_SELECTORS = ['-gs', '-f', '-s', '-t'] as const;
 
 async function mavenConfigSelectedFiles(ctx: PlannerContext): Promise<ExecutionSubjectResolution> {
   const config = await ctx.readFile('.mvn/maven.config');
@@ -118,9 +119,17 @@ async function mavenConfigSelectedFiles(ctx: PlannerContext): Promise<ExecutionS
   const inputs: ExecutionSubjectInput[] = [];
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index]!;
-    const [option, inlineValue] = token.split('=', 2);
-    if (!option || !MAVEN_FILE_SELECTORS.has(option)) continue;
-    const value = inlineValue ?? tokens[++index];
+    const [parsedOption = '', inlineValue] = token.split('=', 2);
+    const shortOption = MAVEN_SHORT_FILE_SELECTORS.find(
+      (candidate) =>
+        parsedOption !== candidate &&
+        parsedOption.startsWith(candidate) &&
+        parsedOption.length > candidate.length,
+    );
+    const option = MAVEN_FILE_SELECTORS.has(parsedOption) ? parsedOption : shortOption;
+    if (!option) continue;
+    const value =
+      inlineValue ?? (shortOption ? parsedOption.slice(shortOption.length) : tokens[++index]);
     if (!value)
       return { kind: 'blocked', reason: `Maven config selector '${option}' has no value` };
     const path = value.replace(/^(?:"|')|(?:"|')$/g, '').replace(/^\.\//, '');

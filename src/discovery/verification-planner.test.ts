@@ -246,25 +246,42 @@ describe('verification planner', () => {
       ]);
     });
 
-    it('binds a repo-local alternate POM selected by Maven config', async () => {
+    it.each([
+      { config: '-f alternate/pom.xml', selectedPath: 'alternate/pom.xml' },
+      { config: '-f=alternate/pom.xml', selectedPath: 'alternate/pom.xml' },
+      { config: '-falternate/pom.xml', selectedPath: 'alternate/pom.xml' },
+      { config: '-ssettings.xml', selectedPath: 'settings.xml' },
+      { config: '-gsconfig/global-settings.xml', selectedPath: 'config/global-settings.xml' },
+      { config: '-tconfig/toolchains.xml', selectedPath: 'config/toolchains.xml' },
+    ])('binds a repo-local Maven config selector: $config', async ({ config, selectedPath }) => {
       const candidates = await planVerificationCandidates({
         detectedStack: makeDetectedStack([{ kind: 'buildTool', id: 'maven', evidence: 'pom.xml' }]),
-        allFiles: ['pom.xml', 'mvnw', '.mvn/maven.config', 'alternate/pom.xml'],
-        readFile: makeReadFile({ '.mvn/maven.config': '-f alternate/pom.xml' }),
+        allFiles: ['pom.xml', 'mvnw', '.mvn/maven.config', selectedPath],
+        readFile: makeReadFile({ '.mvn/maven.config': config }),
       });
 
       const build = candidates.find((entry) => entry.candidate.kind === 'build');
       expect(build?.executionSubjectInputs).toContainEqual({
         kind: 'file',
-        path: 'alternate/pom.xml',
+        path: selectedPath,
       });
     });
 
     it('does not plan Maven execution when config selects a non-local file', async () => {
       const candidates = await planVerificationCandidates({
         detectedStack: makeDetectedStack([{ kind: 'buildTool', id: 'maven', evidence: 'pom.xml' }]),
+        allFiles: ['pom.xml', 'mvnw', '.mvn/maven.config'],
+        readFile: makeReadFile({ '.mvn/maven.config': '-f../outside/pom.xml' }),
+      });
+
+      expect(candidates.find((entry) => entry.candidate.kind === 'build')).toBeUndefined();
+    });
+
+    it('does not use the global Maven fallback when config is present', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: makeDetectedStack([{ kind: 'buildTool', id: 'maven', evidence: 'pom.xml' }]),
         allFiles: ['pom.xml', '.mvn/maven.config'],
-        readFile: makeReadFile({ '.mvn/maven.config': '-f ../outside/pom.xml' }),
+        readFile: makeReadFile({ '.mvn/maven.config': '-DskipTests' }),
       });
 
       expect(candidates.find((entry) => entry.candidate.kind === 'build')).toBeUndefined();
