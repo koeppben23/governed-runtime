@@ -171,6 +171,7 @@ export type {
   ScriptSignature,
   RuntimeRequirement,
   ExecutionProfile,
+  ExecutionSubjectResolution,
   PlannerContext,
   ProviderManifest,
   DetectionId,

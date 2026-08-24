@@ -19,6 +19,8 @@ import type { ExecutionSubjectInput } from '../state/discovery-schemas.js';
 export interface PlannerContext {
   /** Full repository-relative file list for provider-owned, allowlisted subject surfaces. */
   readonly allFiles?: readonly string[];
+  /** Read a repository-relative file while resolving provider-owned subject surfaces. */
+  readonly readFile: (relativePath: string) => Promise<string | undefined>;
   readonly rootFiles: ReadonlySet<string>;
   readonly packageManager: string;
   readonly detectedStackIds: ReadonlySet<string>;
@@ -28,6 +30,10 @@ export interface PlannerContext {
 export interface ExecutionSubjectResolutionHint {
   readonly matchedExecutable?: string;
 }
+
+export type ExecutionSubjectResolution =
+  | { readonly kind: 'resolved'; readonly inputs: readonly ExecutionSubjectInput[] }
+  | { readonly kind: 'blocked'; readonly reason: string };
 
 // ─── Manifest ────────────────────────────────────────────────────────────────
 
@@ -96,16 +102,19 @@ export interface ExecutionProfile {
   /**
    * Provider-owned verification-semantic surfaces that become part of the
    * execution subject. The planner includes these as `{ kind: 'file' }`
-   * inputs alongside the implementation surface. Only files discoverable
-   * through the current PlannerContext are included — the profile must filter
-   * against ctx.rootFiles where semantics depend on file existence.
+   * inputs alongside the implementation surface. Profiles must return
+   * `blocked` when their runtime semantics select a surface that cannot be
+   * safely resolved within the repository.
    *
    * Absent → no additional subject inputs beyond implementation.
    */
   resolveExecutionSubjectInputs?(
     ctx: PlannerContext,
     hint?: ExecutionSubjectResolutionHint,
-  ): readonly ExecutionSubjectInput[];
+  ):
+    | readonly ExecutionSubjectInput[]
+    | ExecutionSubjectResolution
+    | Promise<readonly ExecutionSubjectInput[] | ExecutionSubjectResolution>;
 
   /** Profile-specific runtime requirements override provider defaults. */
   readonly runtimeRequirements?: readonly RuntimeRequirement[];

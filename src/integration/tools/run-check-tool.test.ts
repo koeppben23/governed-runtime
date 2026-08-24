@@ -568,6 +568,63 @@ describe('HAPPY', () => {
     });
   });
 
+  it('fails closed when an alternate Maven POM changes during a package-script check', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+    const state = await readState(sd);
+    const primary = state!.verificationCandidates!.find(
+      (candidate) => candidate.kind === 'typecheck',
+    )!;
+    const candidateId = 'maven-alternate-pom-script';
+    const alternatePom = join(ws.tmpDir, 'alternate', 'pom.xml');
+    mkdirSync(dirname(alternatePom), { recursive: true });
+    writeFileSync(alternatePom, '<project><artifactId>initial</artifactId></project>\n', 'utf-8');
+    await writeState(sd, {
+      ...state!,
+      verificationCandidates: [
+        {
+          ...primary,
+          candidateId,
+          command: 'npm run test --',
+          source: 'package.json:scripts.test',
+        },
+      ],
+      executionSubjectInputsByCandidateId: {
+        ...(state!.executionSubjectInputsByCandidateId ?? {}),
+        [candidateId]: [{ kind: 'file', path: 'alternate/pom.xml' }],
+      },
+    });
+    vi.mocked(executeCheck).mockImplementationOnce(async (input) => {
+      writeFileSync(alternatePom, '<project><artifactId>changed</artifactId></project>\n', 'utf-8');
+      return {
+        kind: input.kind,
+        command: input.command,
+        exitCode: 0,
+        passed: true,
+        executionMs: 150,
+        outputDigest: 'a'.repeat(64),
+        stdout: 'All clear',
+        stderr: '',
+        timedOut: false,
+        startedAt: '2026-01-01T00:00:00.000Z',
+      };
+    });
+
+    const result = parseToolResult(
+      await run_check.execute({ kind: 'typecheck', candidateId }, ctx),
+    );
+
+    expect(result).toMatchObject({ phase: 'PLAN' });
+    const persisted = await readState(sd);
+    expect(persisted!.validation[0]).toMatchObject({
+      passed: false,
+      outcome: 'blocked',
+      classificationReason: expect.stringContaining(
+        'VERIFICATION_SUBJECT_CHANGED: alternate/pom.xml changed',
+      ),
+    });
+  });
+
   it('persists complete-suite aggregate evidence from a repo-native pytest alternate', async () => {
     writeFileSync(
       join(ws.tmpDir, 'package.json'),

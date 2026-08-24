@@ -246,6 +246,30 @@ describe('verification planner', () => {
       ]);
     });
 
+    it('binds a repo-local alternate POM selected by Maven config', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: makeDetectedStack([{ kind: 'buildTool', id: 'maven', evidence: 'pom.xml' }]),
+        allFiles: ['pom.xml', 'mvnw', '.mvn/maven.config', 'alternate/pom.xml'],
+        readFile: makeReadFile({ '.mvn/maven.config': '-f alternate/pom.xml' }),
+      });
+
+      const build = candidates.find((entry) => entry.candidate.kind === 'build');
+      expect(build?.executionSubjectInputs).toContainEqual({
+        kind: 'file',
+        path: 'alternate/pom.xml',
+      });
+    });
+
+    it('does not plan Maven execution when config selects a non-local file', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: makeDetectedStack([{ kind: 'buildTool', id: 'maven', evidence: 'pom.xml' }]),
+        allFiles: ['pom.xml', '.mvn/maven.config'],
+        readFile: makeReadFile({ '.mvn/maven.config': '-f ../outside/pom.xml' }),
+      });
+
+      expect(candidates.find((entry) => entry.candidate.kind === 'build')).toBeUndefined();
+    });
+
     it('binds Gradle execution to existing root configuration and the selected wrapper', async () => {
       const candidates = await planVerificationCandidates({
         detectedStack: makeDetectedStack([

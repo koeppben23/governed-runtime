@@ -13,12 +13,14 @@ import { buildJUnitLocalId } from '../../verification/assertion-parsers/junit-xm
 import { junitXmlParser } from '../../verification/assertion-parsers/parsers.js';
 import type {
   AssertionProviderExtension,
+  ExecutionSubjectResolution,
   ExecutionSubjectResolutionHint,
   PlannerContext,
 } from '../contract.js';
 import type { ParsedAssertion } from '../../verification/assertion-parsers/types.js';
 import type { ProviderId } from '../../state/assertion-identity.js';
 import type { ReportFormatId } from '../../state/assertion-identity.js';
+import type { ExecutionSubjectInput } from '../../state/discovery-schemas.js';
 
 const JUNIT_LOCAL_ID_RE = /^[^#]+#[^#]+$/;
 const MAVEN_WRAPPER_BOOTSTRAP_FILES = [
@@ -32,7 +34,10 @@ const GRADLE_WRAPPER_BOOTSTRAP_FILES = [
   'gradle/wrapper/gradle-wrapper.jar',
 ];
 
-function mavenExecutionSubjectInputs(ctx: PlannerContext, hint?: ExecutionSubjectResolutionHint) {
+async function mavenExecutionSubjectInputs(
+  ctx: PlannerContext,
+  hint?: ExecutionSubjectResolutionHint,
+): Promise<ExecutionSubjectResolution> {
   const wrapper =
     hint?.matchedExecutable === 'mvnw.cmd'
       ? 'mvnw.cmd'
@@ -41,15 +46,24 @@ function mavenExecutionSubjectInputs(ctx: PlannerContext, hint?: ExecutionSubjec
         : ctx.rootFiles.has('mvnw')
           ? 'mvnw'
           : 'mvnw.cmd';
-  return [
-    ...(ctx.rootFiles.has('pom.xml') ? [{ kind: 'file' as const, path: 'pom.xml' }] : []),
-    ...existingFiles(ctx, MAVEN_RUNTIME_CONFIG_FILES),
-    ...existingFiles(ctx, MAVEN_WRAPPER_BOOTSTRAP_FILES),
-    { kind: 'file' as const, path: wrapper },
-  ];
+  const selectedFiles = await mavenConfigSelectedFiles(ctx);
+  if (selectedFiles.kind === 'blocked') return selectedFiles;
+  return {
+    kind: 'resolved',
+    inputs: [
+      ...(ctx.rootFiles.has('pom.xml') ? [{ kind: 'file' as const, path: 'pom.xml' }] : []),
+      ...existingFiles(ctx, MAVEN_RUNTIME_CONFIG_FILES),
+      ...selectedFiles.inputs,
+      ...existingFiles(ctx, MAVEN_WRAPPER_BOOTSTRAP_FILES),
+      { kind: 'file' as const, path: wrapper },
+    ],
+  };
 }
 
-function gradleExecutionSubjectInputs(ctx: PlannerContext, hint?: ExecutionSubjectResolutionHint) {
+function gradleExecutionSubjectInputs(
+  ctx: PlannerContext,
+  hint?: ExecutionSubjectResolutionHint,
+): ExecutionSubjectResolution {
   const wrapper =
     hint?.matchedExecutable === 'gradlew.bat'
       ? 'gradlew.bat'
@@ -65,13 +79,16 @@ function gradleExecutionSubjectInputs(ctx: PlannerContext, hint?: ExecutionSubje
     'settings.gradle.kts',
     'gradle.properties',
   ];
-  return [
-    ...configurationFiles
-      .filter((path) => ctx.rootFiles.has(path))
-      .map((path) => ({ kind: 'file' as const, path })),
-    ...existingFiles(ctx, GRADLE_WRAPPER_BOOTSTRAP_FILES),
-    { kind: 'file' as const, path: wrapper },
-  ];
+  return {
+    kind: 'resolved',
+    inputs: [
+      ...configurationFiles
+        .filter((path) => ctx.rootFiles.has(path))
+        .map((path) => ({ kind: 'file' as const, path })),
+      ...existingFiles(ctx, GRADLE_WRAPPER_BOOTSTRAP_FILES),
+      { kind: 'file' as const, path: wrapper },
+    ],
+  };
 }
 
 function existingFiles(ctx: PlannerContext, paths: readonly string[]) {
@@ -79,6 +96,40 @@ function existingFiles(ctx: PlannerContext, paths: readonly string[]) {
   return paths
     .filter((path) => allFiles.has(path))
     .map((path) => ({ kind: 'file' as const, path }));
+}
+
+const MAVEN_FILE_SELECTORS = new Set([
+  '-f',
+  '--file',
+  '-s',
+  '--settings',
+  '-gs',
+  '--global-settings',
+  '-t',
+  '--toolchains',
+]);
+
+async function mavenConfigSelectedFiles(ctx: PlannerContext): Promise<ExecutionSubjectResolution> {
+  const config = await ctx.readFile('.mvn/maven.config');
+  if (!config) return { kind: 'resolved', inputs: [] };
+
+  const allFiles = new Set(ctx.allFiles ?? []);
+  const tokens = config.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? [];
+  const inputs: ExecutionSubjectInput[] = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index]!;
+    const [option, inlineValue] = token.split('=', 2);
+    if (!option || !MAVEN_FILE_SELECTORS.has(option)) continue;
+    const value = inlineValue ?? tokens[++index];
+    if (!value)
+      return { kind: 'blocked', reason: `Maven config selector '${option}' has no value` };
+    const path = value.replace(/^(?:"|')|(?:"|')$/g, '').replace(/^\.\//, '');
+    if (path.startsWith('/') || path.split('/').includes('..') || !allFiles.has(path)) {
+      return { kind: 'blocked', reason: `Maven config selector '${option}' is not repo-local` };
+    }
+    inputs.push({ kind: 'file', path });
+  }
+  return { kind: 'resolved', inputs };
 }
 
 function junitCodec() {
