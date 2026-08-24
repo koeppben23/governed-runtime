@@ -568,17 +568,17 @@ describe('HAPPY', () => {
     });
   });
 
-  it('fails closed when an alternate Maven POM changes during a package-script check', async () => {
+  it('fails closed when a transitive Maven module POM changes during a package-script check', async () => {
     await driveToValidation();
     const sd = await getSessDir();
     const state = await readState(sd);
     const primary = state!.verificationCandidates!.find(
       (candidate) => candidate.kind === 'typecheck',
     )!;
-    const candidateId = 'maven-alternate-pom-script';
-    const alternatePom = join(ws.tmpDir, 'alternate', 'pom.xml');
-    mkdirSync(dirname(alternatePom), { recursive: true });
-    writeFileSync(alternatePom, '<project><artifactId>initial</artifactId></project>\n', 'utf-8');
+    const candidateId = 'maven-module-pom-script';
+    const modulePom = join(ws.tmpDir, 'app', 'pom.xml');
+    mkdirSync(dirname(modulePom), { recursive: true });
+    writeFileSync(modulePom, '<project><artifactId>initial</artifactId></project>\n', 'utf-8');
     await writeState(sd, {
       ...state!,
       verificationCandidates: [
@@ -591,11 +591,11 @@ describe('HAPPY', () => {
       ],
       executionSubjectInputsByCandidateId: {
         ...(state!.executionSubjectInputsByCandidateId ?? {}),
-        [candidateId]: [{ kind: 'file', path: 'alternate/pom.xml' }],
+        [candidateId]: [{ kind: 'file', path: 'app/pom.xml' }],
       },
     });
     vi.mocked(executeCheck).mockImplementationOnce(async (input) => {
-      writeFileSync(alternatePom, '<project><artifactId>changed</artifactId></project>\n', 'utf-8');
+      writeFileSync(modulePom, '<project><artifactId>changed</artifactId></project>\n', 'utf-8');
       return {
         kind: input.kind,
         command: input.command,
@@ -620,7 +620,7 @@ describe('HAPPY', () => {
       passed: false,
       outcome: 'blocked',
       classificationReason: expect.stringContaining(
-        'VERIFICATION_SUBJECT_CHANGED: alternate/pom.xml changed',
+        'VERIFICATION_SUBJECT_CHANGED: app/pom.xml changed',
       ),
     });
   });

@@ -287,6 +287,53 @@ describe('verification planner', () => {
       expect(candidates.find((entry) => entry.candidate.kind === 'build')).toBeUndefined();
     });
 
+    it('binds transitive Maven module and parent POMs', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: makeDetectedStack([{ kind: 'buildTool', id: 'maven', evidence: 'pom.xml' }]),
+        allFiles: ['pom.xml', 'mvnw', 'app/pom.xml', 'parent/pom.xml'],
+        readFile: makeReadFile({
+          'pom.xml': '<project><modules><module>app</module></modules></project>',
+          'app/pom.xml':
+            '<project><parent><relativePath>../parent/pom.xml</relativePath></parent></project>',
+          'parent/pom.xml': '<project />',
+        }),
+      });
+
+      const build = candidates.find((entry) => entry.candidate.kind === 'build');
+      expect(build?.executionSubjectInputs).toContainEqual({ kind: 'file', path: 'app/pom.xml' });
+      expect(build?.executionSubjectInputs).toContainEqual({
+        kind: 'file',
+        path: 'parent/pom.xml',
+      });
+    });
+
+    it('resolves cyclic Maven parent references once', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: makeDetectedStack([{ kind: 'buildTool', id: 'maven', evidence: 'pom.xml' }]),
+        allFiles: ['pom.xml', 'mvnw', 'app/pom.xml'],
+        readFile: makeReadFile({
+          'pom.xml': '<project><modules><module>app</module></modules></project>',
+          'app/pom.xml':
+            '<project><parent><relativePath>../pom.xml</relativePath></parent></project>',
+        }),
+      });
+
+      const build = candidates.find((entry) => entry.candidate.kind === 'build');
+      expect(build?.executionSubjectInputs).toContainEqual({ kind: 'file', path: 'app/pom.xml' });
+    });
+
+    it('does not plan Maven execution when a module POM cannot be resolved', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: makeDetectedStack([{ kind: 'buildTool', id: 'maven', evidence: 'pom.xml' }]),
+        allFiles: ['pom.xml', 'mvnw'],
+        readFile: makeReadFile({
+          'pom.xml': '<project><modules><module>missing</module></modules></project>',
+        }),
+      });
+
+      expect(candidates.find((entry) => entry.candidate.kind === 'build')).toBeUndefined();
+    });
+
     it('binds Gradle execution to existing root configuration and the selected wrapper', async () => {
       const candidates = await planVerificationCandidates({
         detectedStack: makeDetectedStack([

@@ -11,6 +11,7 @@
 
 import { buildJUnitLocalId } from '../../verification/assertion-parsers/junit-xml.js';
 import { junitXmlParser } from '../../verification/assertion-parsers/parsers.js';
+import { classifyRepositoryPath } from '../../state/repository-path.js';
 import type {
   AssertionProviderExtension,
   ExecutionSubjectResolution,
@@ -34,6 +35,14 @@ const GRADLE_WRAPPER_BOOTSTRAP_FILES = [
   'gradle/wrapper/gradle-wrapper.jar',
 ];
 
+type MavenConfigSelection =
+  | {
+      readonly kind: 'resolved';
+      readonly inputs: readonly ExecutionSubjectInput[];
+      readonly pomPaths: readonly string[];
+    }
+  | { readonly kind: 'blocked'; readonly reason: string };
+
 async function mavenExecutionSubjectInputs(
   ctx: PlannerContext,
   hint?: ExecutionSubjectResolutionHint,
@@ -48,10 +57,15 @@ async function mavenExecutionSubjectInputs(
           : 'mvnw.cmd';
   const selectedFiles = await mavenConfigSelectedFiles(ctx);
   if (selectedFiles.kind === 'blocked') return selectedFiles;
+  const pomGraph = await mavenPomGraphInputs(ctx, [
+    ...(ctx.rootFiles.has('pom.xml') ? ['pom.xml'] : []),
+    ...selectedFiles.pomPaths,
+  ]);
+  if (pomGraph.kind === 'blocked') return pomGraph;
   return {
     kind: 'resolved',
     inputs: [
-      ...(ctx.rootFiles.has('pom.xml') ? [{ kind: 'file' as const, path: 'pom.xml' }] : []),
+      ...pomGraph.inputs,
       ...existingFiles(ctx, MAVEN_RUNTIME_CONFIG_FILES),
       ...selectedFiles.inputs,
       ...existingFiles(ctx, MAVEN_WRAPPER_BOOTSTRAP_FILES),
@@ -110,13 +124,14 @@ const MAVEN_FILE_SELECTORS = new Set([
 ]);
 const MAVEN_SHORT_FILE_SELECTORS = ['-gs', '-f', '-s', '-t'] as const;
 
-async function mavenConfigSelectedFiles(ctx: PlannerContext): Promise<ExecutionSubjectResolution> {
+async function mavenConfigSelectedFiles(ctx: PlannerContext): Promise<MavenConfigSelection> {
   const config = await ctx.readFile('.mvn/maven.config');
-  if (!config) return { kind: 'resolved', inputs: [] };
+  if (!config) return { kind: 'resolved', inputs: [], pomPaths: [] };
 
   const allFiles = new Set(ctx.allFiles ?? []);
   const tokens = config.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? [];
   const inputs: ExecutionSubjectInput[] = [];
+  const pomPaths: string[] = [];
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index]!;
     const [parsedOption = '', inlineValue] = token.split('=', 2);
@@ -137,8 +152,95 @@ async function mavenConfigSelectedFiles(ctx: PlannerContext): Promise<ExecutionS
       return { kind: 'blocked', reason: `Maven config selector '${option}' is not repo-local` };
     }
     inputs.push({ kind: 'file', path });
+    if (option === '-f' || option === '--file') pomPaths.push(path);
   }
+  return { kind: 'resolved', inputs, pomPaths };
+}
+
+async function mavenPomGraphInputs(
+  ctx: PlannerContext,
+  startingPoms: readonly string[],
+): Promise<ExecutionSubjectResolution> {
+  const allFiles = new Set(ctx.allFiles ?? []);
+  const pending = [...new Set(startingPoms)];
+  const visited = new Set<string>();
+  const inputs: ExecutionSubjectInput[] = [];
+
+  while (pending.length > 0) {
+    const pomPath = pending.pop()!;
+    if (visited.has(pomPath)) continue;
+    if (!allFiles.has(pomPath)) {
+      return { kind: 'blocked', reason: `Maven POM '${pomPath}' is not repo-local` };
+    }
+    const content = await ctx.readFile(pomPath);
+    if (content === undefined) {
+      return { kind: 'blocked', reason: `Maven POM '${pomPath}' cannot be read` };
+    }
+
+    visited.add(pomPath);
+    inputs.push({ kind: 'file', path: pomPath });
+    const references = mavenPomReferences(content);
+    for (const reference of references) {
+      const resolved = resolveMavenPomReference(pomPath, reference, allFiles);
+      if (resolved.kind === 'blocked') return resolved;
+      pending.push(resolved.path);
+    }
+  }
+
   return { kind: 'resolved', inputs };
+}
+
+interface MavenPomReference {
+  readonly kind: 'module' | 'parent';
+  readonly value: string;
+}
+
+function mavenPomReferences(content: string): MavenPomReference[] {
+  const references: MavenPomReference[] = [];
+  for (const match of content.matchAll(/<module(?:\s[^>]*)?>([\s\S]*?)<\/module>/gi)) {
+    references.push({ kind: 'module', value: xmlText(match[1] ?? '') });
+  }
+  for (const parent of content.matchAll(/<parent(?:\s[^>]*)?>([\s\S]*?)<\/parent>/gi)) {
+    const relativePath = parent[1]?.match(/<relativePath(?:\s[^>]*)?>([\s\S]*?)<\/relativePath>/i);
+    if (relativePath) {
+      const value = xmlText(relativePath[1] ?? '');
+      if (value.length > 0) references.push({ kind: 'parent', value });
+    } else {
+      references.push({ kind: 'parent', value: '../pom.xml' });
+    }
+  }
+  return references;
+}
+
+function xmlText(value: string): string {
+  return value.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim();
+}
+
+type MavenPomReferenceResolution =
+  | { readonly kind: 'resolved'; readonly path: string }
+  | { readonly kind: 'blocked'; readonly reason: string };
+
+function resolveMavenPomReference(
+  currentPom: string,
+  reference: MavenPomReference,
+  allFiles: ReadonlySet<string>,
+): MavenPomReferenceResolution {
+  const currentDirectory = currentPom.includes('/')
+    ? currentPom.slice(0, currentPom.lastIndexOf('/'))
+    : '';
+  const rawPath = currentDirectory ? `${currentDirectory}/${reference.value}` : reference.value;
+  const classified = classifyRepositoryPath(rawPath);
+  if (classified.kind !== 'valid') {
+    return { kind: 'blocked', reason: `Maven ${reference.kind} path is not repo-local` };
+  }
+  const path =
+    reference.kind === 'module' && !allFiles.has(classified.normalizedPath)
+      ? `${classified.normalizedPath}/pom.xml`
+      : classified.normalizedPath;
+  if (!allFiles.has(path)) {
+    return { kind: 'blocked', reason: `Maven ${reference.kind} POM '${path}' is not repo-local` };
+  }
+  return { kind: 'resolved', path };
 }
 
 function junitCodec() {
