@@ -284,7 +284,9 @@ function addScriptCandidates(
           executionSubjectInputs: [
             { kind: 'implementation' as const },
             { kind: 'file' as const, path: 'package.json' },
-            ...(profile.resolveExecutionSubjectInputs?.(_ctx) ?? []),
+            ...(profile.resolveExecutionSubjectInputs?.(_ctx, {
+              matchedExecutable: analysis.provider.matchedExecutable,
+            }) ?? []),
           ],
         });
         continue;

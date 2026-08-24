@@ -30,6 +30,8 @@ export interface ScriptAnalysis {
         readonly candidateKind: VerificationCandidateKind;
         readonly confidence: 'high' | 'medium';
         readonly evidence: string;
+        /** Exact executable token matched by the provider signature, when applicable. */
+        readonly matchedExecutable?: string;
       }
     | {
         readonly status: 'unidentified';
@@ -113,6 +115,7 @@ export function analyzeVerificationScript(
       candidateKind: match.candidateKind,
       confidence,
       evidence: match.evidence,
+      ...(match.matchedExecutable ? { matchedExecutable: match.matchedExecutable } : {}),
     },
   };
 }
@@ -159,6 +162,7 @@ interface SignatureMatch {
   executionProfileId: string;
   candidateKind: VerificationCandidateKind;
   evidence: string;
+  matchedExecutable?: string;
   viaModuleInvocation: boolean;
 }
 
@@ -184,6 +188,7 @@ function matchSignatures(
             executionProfileId: sig.executionProfileId,
             candidateKind: sig.candidateKind,
             evidence: `script:${mi.executable} -m ${mi.module}`,
+            matchedExecutable: mi.executable,
             viaModuleInvocation: true,
           };
         }
@@ -193,6 +198,7 @@ function matchSignatures(
             executionProfileId: sig.executionProfileId,
             candidateKind: sig.candidateKind,
             evidence: `script:${mi.module}`,
+            matchedExecutable: mi.module,
             viaModuleInvocation: false,
           };
         }
@@ -216,6 +222,7 @@ function matchSignatures(
           executionProfileId: sig.executionProfileId,
           candidateKind: sig.candidateKind,
           evidence: `script:${sig.executable} ${prefix.join(' ')}`,
+          matchedExecutable: sig.executable,
           viaModuleInvocation: false,
         };
       }
@@ -225,6 +232,7 @@ function matchSignatures(
         executionProfileId: sig.executionProfileId,
         candidateKind: sig.candidateKind,
         evidence: `script:${sig.executable}`,
+        matchedExecutable: sig.executable,
         viaModuleInvocation: false,
       };
     }

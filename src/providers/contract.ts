@@ -22,6 +22,11 @@ export interface PlannerContext {
   readonly detectedStackIds: ReadonlySet<string>;
 }
 
+/** Script identity confirmed by a provider signature during repo-native enrichment. */
+export interface ExecutionSubjectResolutionHint {
+  readonly matchedExecutable?: string;
+}
+
 // ─── Manifest ────────────────────────────────────────────────────────────────
 
 export interface ProviderManifest {
@@ -95,7 +100,10 @@ export interface ExecutionProfile {
    *
    * Absent → no additional subject inputs beyond implementation.
    */
-  resolveExecutionSubjectInputs?(ctx: PlannerContext): readonly ExecutionSubjectInput[];
+  resolveExecutionSubjectInputs?(
+    ctx: PlannerContext,
+    hint?: ExecutionSubjectResolutionHint,
+  ): readonly ExecutionSubjectInput[];
 
   /** Profile-specific runtime requirements override provider defaults. */
   readonly runtimeRequirements?: readonly RuntimeRequirement[];

@@ -18,16 +18,36 @@ import type { ReportFormatId } from '../../state/assertion-identity.js';
 
 const JUNIT_LOCAL_ID_RE = /^[^#]+#[^#]+$/;
 
-function mavenExecutionSubjectInputs(ctx: { rootFiles: ReadonlySet<string> }) {
-  const wrapper = ctx.rootFiles.has('mvnw') ? 'mvnw' : 'mvnw.cmd';
+function mavenExecutionSubjectInputs(
+  ctx: { rootFiles: ReadonlySet<string> },
+  hint?: { matchedExecutable?: string },
+) {
+  const wrapper =
+    hint?.matchedExecutable === 'mvnw.cmd'
+      ? 'mvnw.cmd'
+      : hint?.matchedExecutable === 'mvnw' || hint?.matchedExecutable === './mvnw'
+        ? 'mvnw'
+        : ctx.rootFiles.has('mvnw')
+          ? 'mvnw'
+          : 'mvnw.cmd';
   return [
     ...(ctx.rootFiles.has('pom.xml') ? [{ kind: 'file' as const, path: 'pom.xml' }] : []),
     { kind: 'file' as const, path: wrapper },
   ];
 }
 
-function gradleExecutionSubjectInputs(ctx: { rootFiles: ReadonlySet<string> }) {
-  const wrapper = ctx.rootFiles.has('gradlew') ? 'gradlew' : 'gradlew.bat';
+function gradleExecutionSubjectInputs(
+  ctx: { rootFiles: ReadonlySet<string> },
+  hint?: { matchedExecutable?: string },
+) {
+  const wrapper =
+    hint?.matchedExecutable === 'gradlew.bat'
+      ? 'gradlew.bat'
+      : hint?.matchedExecutable === 'gradlew' || hint?.matchedExecutable === './gradlew'
+        ? 'gradlew'
+        : ctx.rootFiles.has('gradlew')
+          ? 'gradlew'
+          : 'gradlew.bat';
   const configurationFiles = [
     'build.gradle',
     'build.gradle.kts',

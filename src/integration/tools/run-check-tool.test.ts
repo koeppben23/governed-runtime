@@ -432,6 +432,64 @@ describe('HAPPY', () => {
     expect(executeCheck).not.toHaveBeenCalled();
   });
 
+  it('fails closed when the selected wrapper changes during a package-script check', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+    const state = await readState(sd);
+    const primary = state!.verificationCandidates!.find(
+      (candidate) => candidate.kind === 'typecheck',
+    )!;
+    const candidateId = 'maven-windows-script';
+    writeFileSync(join(ws.tmpDir, 'mvnw.cmd'), '@echo off\r\necho initial\r\n', 'utf-8');
+    await writeState(sd, {
+      ...state!,
+      verificationCandidates: [
+        {
+          ...primary,
+          candidateId,
+          command: 'npm run test --',
+          source: 'package.json:scripts.test',
+        },
+      ],
+      executionSubjectInputsByCandidateId: {
+        ...(state!.executionSubjectInputsByCandidateId ?? {}),
+        [candidateId]: [{ kind: 'file', path: 'mvnw.cmd' }],
+      },
+    });
+    vi.mocked(executeCheck).mockImplementationOnce(async (input) => {
+      writeFileSync(join(ws.tmpDir, 'mvnw.cmd'), '@echo off\r\necho changed\r\n', 'utf-8');
+      return {
+        kind: input.kind,
+        command: input.command,
+        exitCode: 0,
+        passed: true,
+        executionMs: 150,
+        outputDigest: 'a'.repeat(64),
+        stdout: 'All clear',
+        stderr: '',
+        timedOut: false,
+        startedAt: '2026-01-01T00:00:00.000Z',
+      };
+    });
+
+    const result = parseToolResult(
+      await run_check.execute({ kind: 'typecheck', candidateId }, ctx),
+    );
+
+    expect(result).toMatchObject({ phase: 'PLAN' });
+    expect(executeCheck).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'npm run test --' }),
+    );
+    const persisted = await readState(sd);
+    expect(persisted!.validation[0]).toMatchObject({
+      passed: false,
+      outcome: 'blocked',
+      classificationReason: expect.stringContaining(
+        'VERIFICATION_SUBJECT_CHANGED: mvnw.cmd changed',
+      ),
+    });
+  });
+
   it('persists complete-suite aggregate evidence from a repo-native pytest alternate', async () => {
     writeFileSync(
       join(ws.tmpDir, 'package.json'),

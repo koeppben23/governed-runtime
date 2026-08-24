@@ -247,6 +247,36 @@ describe('verification planner', () => {
       ]);
     });
 
+    it('binds an enriched Maven package script to its explicit Windows wrapper', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: makeDetectedStack([{ kind: 'buildTool', id: 'maven', evidence: 'pom.xml' }]),
+        allFiles: ['package.json', 'pom.xml', 'mvnw', 'mvnw.cmd'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({ scripts: { test: 'mvnw.cmd test' } }),
+        }),
+      });
+
+      const test = candidates.find((entry) => entry.candidate.kind === 'test');
+      expect(test?.executionSubjectInputs).toContainEqual({ kind: 'file', path: 'mvnw.cmd' });
+      expect(test?.executionSubjectInputs).not.toContainEqual({ kind: 'file', path: 'mvnw' });
+    });
+
+    it('binds an enriched Gradle package script to its explicit Windows wrapper', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: makeDetectedStack([
+          { kind: 'buildTool', id: 'gradle', evidence: 'build.gradle' },
+        ]),
+        allFiles: ['package.json', 'build.gradle', 'gradlew', 'gradlew.bat'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({ scripts: { test: 'gradlew.bat test' } }),
+        }),
+      });
+
+      const test = candidates.find((entry) => entry.candidate.kind === 'test');
+      expect(test?.executionSubjectInputs).toContainEqual({ kind: 'file', path: 'gradlew.bat' });
+      expect(test?.executionSubjectInputs).not.toContainEqual({ kind: 'file', path: 'gradlew' });
+    });
+
     it('recognizes jest as structured via script enrichment', async () => {
       const detectedStack = makeDetectedStack([
         { kind: 'buildTool', id: 'npm', evidence: 'package.json' },
