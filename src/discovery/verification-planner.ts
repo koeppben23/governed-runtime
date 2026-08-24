@@ -81,6 +81,7 @@ export async function planVerificationCandidates(
   );
 
   const ctx: PlannerContext = {
+    allFiles: input.allFiles,
     rootFiles,
     packageManager,
     detectedStackIds,

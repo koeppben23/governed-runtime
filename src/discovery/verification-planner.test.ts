@@ -172,7 +172,12 @@ describe('verification planner', () => {
 
       const candidates = await planVerificationCandidates({
         detectedStack,
-        allFiles: ['pom.xml', 'mvnw.cmd'],
+        allFiles: [
+          'pom.xml',
+          'mvnw.cmd',
+          '.mvn/wrapper/maven-wrapper.properties',
+          '.mvn/wrapper/maven-wrapper.jar',
+        ],
         readFile: makeReadFile({}),
       });
 
@@ -216,7 +221,12 @@ describe('verification planner', () => {
     it('binds Maven execution to pom.xml and the selected wrapper', async () => {
       const candidates = await planVerificationCandidates({
         detectedStack: makeDetectedStack([{ kind: 'buildTool', id: 'maven', evidence: 'pom.xml' }]),
-        allFiles: ['pom.xml', 'mvnw.cmd'],
+        allFiles: [
+          'pom.xml',
+          'mvnw.cmd',
+          '.mvn/wrapper/maven-wrapper.properties',
+          '.mvn/wrapper/maven-wrapper.jar',
+        ],
         readFile: makeReadFile({}),
       });
 
@@ -224,6 +234,8 @@ describe('verification planner', () => {
       expect(build?.executionSubjectInputs).toEqual([
         { kind: 'implementation' },
         { kind: 'file', path: 'pom.xml' },
+        { kind: 'file', path: '.mvn/wrapper/maven-wrapper.properties' },
+        { kind: 'file', path: '.mvn/wrapper/maven-wrapper.jar' },
         { kind: 'file', path: 'mvnw.cmd' },
       ]);
     });
@@ -233,7 +245,14 @@ describe('verification planner', () => {
         detectedStack: makeDetectedStack([
           { kind: 'buildTool', id: 'gradle', evidence: 'build.gradle' },
         ]),
-        allFiles: ['build.gradle.kts', 'settings.gradle.kts', 'gradle.properties', 'gradlew'],
+        allFiles: [
+          'build.gradle.kts',
+          'settings.gradle.kts',
+          'gradle.properties',
+          'gradlew',
+          'gradle/wrapper/gradle-wrapper.properties',
+          'gradle/wrapper/gradle-wrapper.jar',
+        ],
         readFile: makeReadFile({}),
       });
 
@@ -243,6 +262,8 @@ describe('verification planner', () => {
         { kind: 'file', path: 'build.gradle.kts' },
         { kind: 'file', path: 'settings.gradle.kts' },
         { kind: 'file', path: 'gradle.properties' },
+        { kind: 'file', path: 'gradle/wrapper/gradle-wrapper.properties' },
+        { kind: 'file', path: 'gradle/wrapper/gradle-wrapper.jar' },
         { kind: 'file', path: 'gradlew' },
       ]);
     });
@@ -250,7 +271,13 @@ describe('verification planner', () => {
     it('binds an enriched Maven package script to its explicit Windows wrapper', async () => {
       const candidates = await planVerificationCandidates({
         detectedStack: makeDetectedStack([{ kind: 'buildTool', id: 'maven', evidence: 'pom.xml' }]),
-        allFiles: ['package.json', 'pom.xml', 'mvnw', 'mvnw.cmd'],
+        allFiles: [
+          'package.json',
+          'pom.xml',
+          'mvnw',
+          'mvnw.cmd',
+          '.mvn/wrapper/maven-wrapper.properties',
+        ],
         readFile: makeReadFile({
           'package.json': JSON.stringify({ scripts: { test: 'mvnw.cmd test' } }),
         }),
@@ -258,6 +285,10 @@ describe('verification planner', () => {
 
       const test = candidates.find((entry) => entry.candidate.kind === 'test');
       expect(test?.executionSubjectInputs).toContainEqual({ kind: 'file', path: 'mvnw.cmd' });
+      expect(test?.executionSubjectInputs).toContainEqual({
+        kind: 'file',
+        path: '.mvn/wrapper/maven-wrapper.properties',
+      });
       expect(test?.executionSubjectInputs).not.toContainEqual({ kind: 'file', path: 'mvnw' });
     });
 
@@ -266,7 +297,13 @@ describe('verification planner', () => {
         detectedStack: makeDetectedStack([
           { kind: 'buildTool', id: 'gradle', evidence: 'build.gradle' },
         ]),
-        allFiles: ['package.json', 'build.gradle', 'gradlew', 'gradlew.bat'],
+        allFiles: [
+          'package.json',
+          'build.gradle',
+          'gradlew',
+          'gradlew.bat',
+          'gradle/wrapper/gradle-wrapper.properties',
+        ],
         readFile: makeReadFile({
           'package.json': JSON.stringify({ scripts: { test: 'gradlew.bat test' } }),
         }),
@@ -274,6 +311,10 @@ describe('verification planner', () => {
 
       const test = candidates.find((entry) => entry.candidate.kind === 'test');
       expect(test?.executionSubjectInputs).toContainEqual({ kind: 'file', path: 'gradlew.bat' });
+      expect(test?.executionSubjectInputs).toContainEqual({
+        kind: 'file',
+        path: 'gradle/wrapper/gradle-wrapper.properties',
+      });
       expect(test?.executionSubjectInputs).not.toContainEqual({ kind: 'file', path: 'gradlew' });
     });
 

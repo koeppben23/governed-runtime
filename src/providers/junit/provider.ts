@@ -11,17 +11,27 @@
 
 import { buildJUnitLocalId } from '../../verification/assertion-parsers/junit-xml.js';
 import { junitXmlParser } from '../../verification/assertion-parsers/parsers.js';
-import type { AssertionProviderExtension } from '../contract.js';
+import type {
+  AssertionProviderExtension,
+  ExecutionSubjectResolutionHint,
+  PlannerContext,
+} from '../contract.js';
 import type { ParsedAssertion } from '../../verification/assertion-parsers/types.js';
 import type { ProviderId } from '../../state/assertion-identity.js';
 import type { ReportFormatId } from '../../state/assertion-identity.js';
 
 const JUNIT_LOCAL_ID_RE = /^[^#]+#[^#]+$/;
+const MAVEN_WRAPPER_BOOTSTRAP_FILES = [
+  '.mvn/wrapper/maven-wrapper.properties',
+  '.mvn/wrapper/maven-wrapper.jar',
+  '.mvn/wrapper/MavenWrapperDownloader.java',
+];
+const GRADLE_WRAPPER_BOOTSTRAP_FILES = [
+  'gradle/wrapper/gradle-wrapper.properties',
+  'gradle/wrapper/gradle-wrapper.jar',
+];
 
-function mavenExecutionSubjectInputs(
-  ctx: { rootFiles: ReadonlySet<string> },
-  hint?: { matchedExecutable?: string },
-) {
+function mavenExecutionSubjectInputs(ctx: PlannerContext, hint?: ExecutionSubjectResolutionHint) {
   const wrapper =
     hint?.matchedExecutable === 'mvnw.cmd'
       ? 'mvnw.cmd'
@@ -32,14 +42,12 @@ function mavenExecutionSubjectInputs(
           : 'mvnw.cmd';
   return [
     ...(ctx.rootFiles.has('pom.xml') ? [{ kind: 'file' as const, path: 'pom.xml' }] : []),
+    ...existingBootstrapFiles(ctx, MAVEN_WRAPPER_BOOTSTRAP_FILES),
     { kind: 'file' as const, path: wrapper },
   ];
 }
 
-function gradleExecutionSubjectInputs(
-  ctx: { rootFiles: ReadonlySet<string> },
-  hint?: { matchedExecutable?: string },
-) {
+function gradleExecutionSubjectInputs(ctx: PlannerContext, hint?: ExecutionSubjectResolutionHint) {
   const wrapper =
     hint?.matchedExecutable === 'gradlew.bat'
       ? 'gradlew.bat'
@@ -59,8 +67,16 @@ function gradleExecutionSubjectInputs(
     ...configurationFiles
       .filter((path) => ctx.rootFiles.has(path))
       .map((path) => ({ kind: 'file' as const, path })),
+    ...existingBootstrapFiles(ctx, GRADLE_WRAPPER_BOOTSTRAP_FILES),
     { kind: 'file' as const, path: wrapper },
   ];
+}
+
+function existingBootstrapFiles(ctx: PlannerContext, paths: readonly string[]) {
+  const allFiles = new Set(ctx.allFiles ?? []);
+  return paths
+    .filter((path) => allFiles.has(path))
+    .map((path) => ({ kind: 'file' as const, path }));
 }
 
 function junitCodec() {

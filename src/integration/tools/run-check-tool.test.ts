@@ -432,15 +432,21 @@ describe('HAPPY', () => {
     expect(executeCheck).not.toHaveBeenCalled();
   });
 
-  it('fails closed when the selected wrapper changes during a package-script check', async () => {
+  it('fails closed when a Gradle wrapper bootstrap input changes during a package-script check', async () => {
     await driveToValidation();
     const sd = await getSessDir();
     const state = await readState(sd);
     const primary = state!.verificationCandidates!.find(
       (candidate) => candidate.kind === 'typecheck',
     )!;
-    const candidateId = 'maven-windows-script';
-    writeFileSync(join(ws.tmpDir, 'mvnw.cmd'), '@echo off\r\necho initial\r\n', 'utf-8');
+    const candidateId = 'gradle-wrapper-script';
+    const wrapperProperties = join(ws.tmpDir, 'gradle', 'wrapper', 'gradle-wrapper.properties');
+    mkdirSync(dirname(wrapperProperties), { recursive: true });
+    writeFileSync(
+      wrapperProperties,
+      'distributionUrl=https://services.gradle.org/initial.zip\n',
+      'utf-8',
+    );
     await writeState(sd, {
       ...state!,
       verificationCandidates: [
@@ -453,11 +459,15 @@ describe('HAPPY', () => {
       ],
       executionSubjectInputsByCandidateId: {
         ...(state!.executionSubjectInputsByCandidateId ?? {}),
-        [candidateId]: [{ kind: 'file', path: 'mvnw.cmd' }],
+        [candidateId]: [{ kind: 'file', path: 'gradle/wrapper/gradle-wrapper.properties' }],
       },
     });
     vi.mocked(executeCheck).mockImplementationOnce(async (input) => {
-      writeFileSync(join(ws.tmpDir, 'mvnw.cmd'), '@echo off\r\necho changed\r\n', 'utf-8');
+      writeFileSync(
+        wrapperProperties,
+        'distributionUrl=https://services.gradle.org/changed.zip\n',
+        'utf-8',
+      );
       return {
         kind: input.kind,
         command: input.command,
@@ -485,7 +495,7 @@ describe('HAPPY', () => {
       passed: false,
       outcome: 'blocked',
       classificationReason: expect.stringContaining(
-        'VERIFICATION_SUBJECT_CHANGED: mvnw.cmd changed',
+        'VERIFICATION_SUBJECT_CHANGED: gradle/wrapper/gradle-wrapper.properties changed',
       ),
     });
   });

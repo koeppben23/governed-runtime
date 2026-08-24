@@ -17,6 +17,8 @@ import type { ExecutionSubjectInput } from '../state/discovery-schemas.js';
 // ─── Planner Context ─────────────────────────────────────────────────────────
 
 export interface PlannerContext {
+  /** Full repository-relative file list for provider-owned, allowlisted subject surfaces. */
+  readonly allFiles?: readonly string[];
   readonly rootFiles: ReadonlySet<string>;
   readonly packageManager: string;
   readonly detectedStackIds: ReadonlySet<string>;
