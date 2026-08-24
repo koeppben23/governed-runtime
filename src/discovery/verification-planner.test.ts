@@ -213,6 +213,40 @@ describe('verification planner', () => {
       expect(candidates.map((c) => c.candidate.command)).not.toContain('gradle check');
     });
 
+    it('binds Maven execution to pom.xml and the selected wrapper', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: makeDetectedStack([{ kind: 'buildTool', id: 'maven', evidence: 'pom.xml' }]),
+        allFiles: ['pom.xml', 'mvnw.cmd'],
+        readFile: makeReadFile({}),
+      });
+
+      const build = candidates.find((entry) => entry.candidate.kind === 'build');
+      expect(build?.executionSubjectInputs).toEqual([
+        { kind: 'implementation' },
+        { kind: 'file', path: 'pom.xml' },
+        { kind: 'file', path: 'mvnw.cmd' },
+      ]);
+    });
+
+    it('binds Gradle execution to existing root configuration and the selected wrapper', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: makeDetectedStack([
+          { kind: 'buildTool', id: 'gradle', evidence: 'build.gradle' },
+        ]),
+        allFiles: ['build.gradle.kts', 'settings.gradle.kts', 'gradle.properties', 'gradlew'],
+        readFile: makeReadFile({}),
+      });
+
+      const build = candidates.find((entry) => entry.candidate.kind === 'build');
+      expect(build?.executionSubjectInputs).toEqual([
+        { kind: 'implementation' },
+        { kind: 'file', path: 'build.gradle.kts' },
+        { kind: 'file', path: 'settings.gradle.kts' },
+        { kind: 'file', path: 'gradle.properties' },
+        { kind: 'file', path: 'gradlew' },
+      ]);
+    });
+
     it('recognizes jest as structured via script enrichment', async () => {
       const detectedStack = makeDetectedStack([
         { kind: 'buildTool', id: 'npm', evidence: 'package.json' },

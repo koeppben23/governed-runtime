@@ -32,6 +32,8 @@ export interface DriftResult {
   readonly persistedDigest: string | null;
   /** Semantic Discovery contributors whose canonical content changed (if drifted). */
   readonly changedContributors?: string[];
+  /** Whether a global drift digest can be attributed to named semantic contributors. */
+  readonly attributionStatus?: 'complete' | 'unavailable';
   /** Per-collector diagnostics from the fresh discovery run. */
   readonly diagnostics?: CollectorDiagnostic[];
 }
@@ -80,6 +82,7 @@ export async function checkDiscoveryDrift(
   // Compare the same canonicalized semantic content as the global digest,
   // partitioned into named producers for actionable diagnostics.
   let changedContributors: string[] | undefined;
+  let attributionStatus: DriftResult['attributionStatus'];
   if (drifted && persisted) {
     const persistedContributors = computeStableDiscoveryContributorDigests(persisted);
     const freshContributors = computeStableDiscoveryContributorDigests(freshResult);
@@ -87,6 +90,7 @@ export async function checkDiscoveryDrift(
     changedContributors = [...names]
       .filter((name) => persistedContributors.get(name) !== freshContributors.get(name))
       .sort();
+    attributionStatus = changedContributors.length > 0 ? 'complete' : 'unavailable';
   }
 
   return {
@@ -94,6 +98,7 @@ export async function checkDiscoveryDrift(
     currentDigest,
     persistedDigest,
     ...(changedContributors && changedContributors.length > 0 ? { changedContributors } : {}),
+    ...(attributionStatus ? { attributionStatus } : {}),
     ...(freshResult.diagnostics ? { diagnostics: freshResult.diagnostics } : {}),
   };
 }

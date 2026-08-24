@@ -18,6 +18,31 @@ import type { ReportFormatId } from '../../state/assertion-identity.js';
 
 const JUNIT_LOCAL_ID_RE = /^[^#]+#[^#]+$/;
 
+function mavenExecutionSubjectInputs(ctx: { rootFiles: ReadonlySet<string> }) {
+  const wrapper = ctx.rootFiles.has('mvnw') ? 'mvnw' : 'mvnw.cmd';
+  return [
+    ...(ctx.rootFiles.has('pom.xml') ? [{ kind: 'file' as const, path: 'pom.xml' }] : []),
+    { kind: 'file' as const, path: wrapper },
+  ];
+}
+
+function gradleExecutionSubjectInputs(ctx: { rootFiles: ReadonlySet<string> }) {
+  const wrapper = ctx.rootFiles.has('gradlew') ? 'gradlew' : 'gradlew.bat';
+  const configurationFiles = [
+    'build.gradle',
+    'build.gradle.kts',
+    'settings.gradle',
+    'settings.gradle.kts',
+    'gradle.properties',
+  ];
+  return [
+    ...configurationFiles
+      .filter((path) => ctx.rootFiles.has(path))
+      .map((path) => ({ kind: 'file' as const, path })),
+    { kind: 'file' as const, path: wrapper },
+  ];
+}
+
 function junitCodec() {
   return {
     providerId: 'junit' as ProviderId,
@@ -78,6 +103,7 @@ function mavenProfile() {
         },
       };
     },
+    resolveExecutionSubjectInputs: mavenExecutionSubjectInputs,
     resolveRuntimeRequirements(candidate: { source: string }) {
       const isWin = candidate.source === 'repo:mvnw.cmd';
       return [
@@ -142,6 +168,7 @@ function gradleProfile() {
         },
       };
     },
+    resolveExecutionSubjectInputs: gradleExecutionSubjectInputs,
     resolveRuntimeRequirements(candidate: { source: string }) {
       const isWin = candidate.source === 'repo:gradlew.bat';
       return [
@@ -196,6 +223,7 @@ function mavenTestProfile() {
         },
       };
     },
+    resolveExecutionSubjectInputs: mavenExecutionSubjectInputs,
   };
 }
 
@@ -235,6 +263,7 @@ function mavenVerifyProfile() {
         },
       };
     },
+    resolveExecutionSubjectInputs: mavenExecutionSubjectInputs,
   };
 }
 
@@ -274,6 +303,7 @@ function gradleTestProfile() {
         },
       };
     },
+    resolveExecutionSubjectInputs: gradleExecutionSubjectInputs,
   };
 }
 
@@ -313,6 +343,7 @@ function gradleCheckProfile() {
         },
       };
     },
+    resolveExecutionSubjectInputs: gradleExecutionSubjectInputs,
   };
 }
 
