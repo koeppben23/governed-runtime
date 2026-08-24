@@ -224,6 +224,9 @@ describe('verification planner', () => {
         allFiles: [
           'pom.xml',
           'mvnw.cmd',
+          '.mvn/maven.config',
+          '.mvn/jvm.config',
+          '.mvn/extensions.xml',
           '.mvn/wrapper/maven-wrapper.properties',
           '.mvn/wrapper/maven-wrapper.jar',
         ],
@@ -234,6 +237,9 @@ describe('verification planner', () => {
       expect(build?.executionSubjectInputs).toEqual([
         { kind: 'implementation' },
         { kind: 'file', path: 'pom.xml' },
+        { kind: 'file', path: '.mvn/maven.config' },
+        { kind: 'file', path: '.mvn/jvm.config' },
+        { kind: 'file', path: '.mvn/extensions.xml' },
         { kind: 'file', path: '.mvn/wrapper/maven-wrapper.properties' },
         { kind: 'file', path: '.mvn/wrapper/maven-wrapper.jar' },
         { kind: 'file', path: 'mvnw.cmd' },

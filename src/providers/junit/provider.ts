@@ -26,6 +26,7 @@ const MAVEN_WRAPPER_BOOTSTRAP_FILES = [
   '.mvn/wrapper/maven-wrapper.jar',
   '.mvn/wrapper/MavenWrapperDownloader.java',
 ];
+const MAVEN_RUNTIME_CONFIG_FILES = ['.mvn/maven.config', '.mvn/jvm.config', '.mvn/extensions.xml'];
 const GRADLE_WRAPPER_BOOTSTRAP_FILES = [
   'gradle/wrapper/gradle-wrapper.properties',
   'gradle/wrapper/gradle-wrapper.jar',
@@ -42,7 +43,8 @@ function mavenExecutionSubjectInputs(ctx: PlannerContext, hint?: ExecutionSubjec
           : 'mvnw.cmd';
   return [
     ...(ctx.rootFiles.has('pom.xml') ? [{ kind: 'file' as const, path: 'pom.xml' }] : []),
-    ...existingBootstrapFiles(ctx, MAVEN_WRAPPER_BOOTSTRAP_FILES),
+    ...existingFiles(ctx, MAVEN_RUNTIME_CONFIG_FILES),
+    ...existingFiles(ctx, MAVEN_WRAPPER_BOOTSTRAP_FILES),
     { kind: 'file' as const, path: wrapper },
   ];
 }
@@ -67,12 +69,12 @@ function gradleExecutionSubjectInputs(ctx: PlannerContext, hint?: ExecutionSubje
     ...configurationFiles
       .filter((path) => ctx.rootFiles.has(path))
       .map((path) => ({ kind: 'file' as const, path })),
-    ...existingBootstrapFiles(ctx, GRADLE_WRAPPER_BOOTSTRAP_FILES),
+    ...existingFiles(ctx, GRADLE_WRAPPER_BOOTSTRAP_FILES),
     { kind: 'file' as const, path: wrapper },
   ];
 }
 
-function existingBootstrapFiles(ctx: PlannerContext, paths: readonly string[]) {
+function existingFiles(ctx: PlannerContext, paths: readonly string[]) {
   const allFiles = new Set(ctx.allFiles ?? []);
   return paths
     .filter((path) => allFiles.has(path))
