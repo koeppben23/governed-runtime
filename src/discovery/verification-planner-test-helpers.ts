@@ -20,5 +20,11 @@ export function makeDetectedStack(items: DetectedStack['items']): DetectedStack 
 }
 
 export function makeReadFile(files: Record<string, string | undefined>) {
-  return async (relativePath: string): Promise<string | undefined> => files[relativePath];
+  return async (relativePath: string): Promise<string | undefined> =>
+    files[relativePath] ??
+    (relativePath === 'pom.xml' || relativePath.endsWith('/pom.xml')
+      ? '<project />'
+      : relativePath === 'settings.gradle' || relativePath === 'settings.gradle.kts'
+        ? ''
+        : undefined);
 }

@@ -103,6 +103,21 @@ function fromDriftResult(result: DriftResult): DiscoveryDriftStatusProjection {
     persistedDigest: result.persistedDigest,
     changedContributorNames: result.changedContributors ?? [],
     diagnostics: compactDiagnostics(result),
+    ...(result.attributionStatus === 'unavailable'
+      ? {
+          warnings: [
+            {
+              code: 'discovery_drift_attribution_incomplete',
+              message:
+                'Discovery drift was detected but could not be attributed to a named semantic contributor.',
+            },
+          ],
+          notVerified: [
+            ...BASE_NOT_VERIFIED,
+            'NOT_VERIFIED: Discovery drift attribution is incomplete; inspect the persisted and current discovery artifacts.',
+          ],
+        }
+      : {}),
   };
 }
 

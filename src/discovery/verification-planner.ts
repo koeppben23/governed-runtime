@@ -20,6 +20,7 @@ import {
   PROFILE_BY_ID,
   SCRIPT_SIGNATURES_BY_PROVIDER,
   type PlannerContext,
+  type ExecutionSubjectResolution,
   type ScriptSignature,
 } from '../providers/registry.js';
 import { buildScriptInvocation, type PackageManager } from './package-script-command.js';
@@ -74,6 +75,7 @@ export async function planVerificationCandidates(
   input: VerificationPlannerInput,
 ): Promise<PlannedVerificationCandidate[]> {
   const byKind = new Map<string, PlannedVerificationCandidate>();
+  const blockedKinds = new Set<VerificationCandidateKind>();
   const rootFiles = new Set(input.allFiles.filter((f) => !f.includes('/') && !f.includes('\\')));
   const packageManager = detectPackageManager(input.detectedStack, rootFiles);
   const detectedStackIds = new Set(
@@ -81,17 +83,19 @@ export async function planVerificationCandidates(
   );
 
   const ctx: PlannerContext = {
+    allFiles: input.allFiles,
+    readFile: input.readFile,
     rootFiles,
     packageManager,
     detectedStackIds,
   };
 
   const scripts = await readPackageScripts(input.readFile);
-  addScriptCandidates(byKind, scripts, packageManager, ctx);
+  await addScriptCandidates(byKind, blockedKinds, scripts, packageManager, ctx);
 
-  applyProfiles(byKind, ctx, ASSERTION_PROFILES);
+  await applyProfiles(byKind, blockedKinds, ctx, ASSERTION_PROFILES);
 
-  addNonAssertionFallbacks(byKind, detectedStackIds, packageManager);
+  addNonAssertionFallbacks(byKind, blockedKinds, ctx, detectedStackIds, packageManager);
 
   const ordered = [...byKind.values()].sort(comparePlannedCandidates);
   return ordered.map((planned) => ({
@@ -142,8 +146,9 @@ export function extractExecutionSubjectInputsByCandidateId(
   return map;
 }
 
-function applyProfiles(
+async function applyProfiles(
   byKind: Map<string, PlannedVerificationCandidate>,
+  blockedKinds: Set<VerificationCandidateKind>,
   ctx: PlannerContext,
   profiles: ReadonlyArray<{
     readonly profileId?: string;
@@ -151,10 +156,16 @@ function applyProfiles(
     readonly alternate?: boolean;
     createCandidate(ctx: PlannerContext): VerificationCandidate | null;
     attestFullCheckScope?(command: string): boolean;
-    resolveExecutionSubjectInputs?(ctx: PlannerContext): readonly ExecutionSubjectInput[];
+    resolveExecutionSubjectInputs?(
+      ctx: PlannerContext,
+    ):
+      | readonly ExecutionSubjectInput[]
+      | ExecutionSubjectResolution
+      | Promise<readonly ExecutionSubjectInput[] | ExecutionSubjectResolution>;
   }>,
-): void {
+): Promise<void> {
   for (const profile of profiles) {
+    if (blockedKinds.has(profile.kind)) continue;
     if (byKind.has(profile.kind) && !profile.alternate) continue;
 
     const raw = profile.createCandidate(ctx);
@@ -172,8 +183,16 @@ function applyProfiles(
           : raw.command;
       const candidate = attestFullCheckScope(profile, routed, scopeSemanticCommand);
       const subjectInputs: ExecutionSubjectInput[] = [{ kind: 'implementation' as const }];
-      const profileFiles = profile.resolveExecutionSubjectInputs?.(ctx) ?? [];
-      for (const f of profileFiles) subjectInputs.push(f);
+      const resolution = normalizeSubjectResolution(
+        profile.resolveExecutionSubjectInputs
+          ? await profile.resolveExecutionSubjectInputs(ctx)
+          : [],
+      );
+      if (resolution.kind === 'blocked') {
+        blockedKinds.add(profile.kind);
+        continue;
+      }
+      for (const f of resolution.inputs) subjectInputs.push(f);
       byKind.set(profile.alternate ? profile.profileId! : raw.kind, {
         candidate,
         executionProfileId: profile.profileId,
@@ -226,12 +245,13 @@ async function readPackageScripts(readFile: ReadFileFn): Promise<Record<string, 
   return result;
 }
 
-function addScriptCandidates(
+async function addScriptCandidates(
   byKind: Map<string, PlannedVerificationCandidate>,
+  blockedKinds: Set<VerificationCandidateKind>,
   scripts: Record<string, string>,
   packageManager: PackageManager,
   _ctx: PlannerContext,
-): void {
+): Promise<void> {
   const mappings: Array<{ kind: VerificationCandidateKind; script: string }> = [
     { kind: 'test', script: 'test' },
     { kind: 'lint', script: 'lint' },
@@ -265,6 +285,17 @@ function addScriptCandidates(
       if (analysis.provider.candidateKind !== mapping.kind) continue;
       const profile = PROFILE_BY_ID.get(profileId);
       if (profile) {
+        const resolution = normalizeSubjectResolution(
+          profile.resolveExecutionSubjectInputs
+            ? await profile.resolveExecutionSubjectInputs(_ctx, {
+                matchedExecutable: analysis.provider.matchedExecutable,
+              })
+            : [],
+        );
+        if (resolution.kind === 'blocked') {
+          blockedKinds.add(mapping.kind);
+          continue;
+        }
         byKind.set(mapping.kind, {
           candidate: attestFullCheckScope(
             profile,
@@ -284,7 +315,7 @@ function addScriptCandidates(
           executionSubjectInputs: [
             { kind: 'implementation' as const },
             { kind: 'file' as const, path: 'package.json' },
-            ...(profile.resolveExecutionSubjectInputs?.(_ctx) ?? []),
+            ...resolution.inputs,
           ],
         });
         continue;
@@ -317,6 +348,12 @@ function addScriptCandidates(
   }
 }
 
+function normalizeSubjectResolution(
+  result: readonly ExecutionSubjectInput[] | ExecutionSubjectResolution,
+): ExecutionSubjectResolution {
+  return 'kind' in result ? result : { kind: 'resolved', inputs: result };
+}
+
 function attestFullCheckScope(
   profile: { attestFullCheckScope?(command: string): boolean },
   candidate: VerificationCandidate,
@@ -343,10 +380,17 @@ function buildSignatureMap(): ReadonlyMap<ProviderId, readonly ScriptSignature[]
 
 function addNonAssertionFallbacks(
   byKind: Map<string, PlannedVerificationCandidate>,
+  blockedKinds: ReadonlySet<VerificationCandidateKind>,
+  ctx: PlannerContext,
   ids: ReadonlySet<string>,
   packageManager: PackageManager,
 ): void {
-  if (ids.has('buildTool:maven') && !byKind.has('build')) {
+  if (
+    ids.has('buildTool:maven') &&
+    !ctx.allFiles?.includes('.mvn/maven.config') &&
+    !blockedKinds.has('build') &&
+    !byKind.has('build')
+  ) {
     byKind.set('build', {
       candidate: {
         assertionCapability: 'unsupported' as const,
@@ -360,7 +404,11 @@ function addNonAssertionFallbacks(
     });
   }
 
-  if ((ids.has('buildTool:gradle') || ids.has('buildTool:gradle-kotlin')) && !byKind.has('test')) {
+  if (
+    (ids.has('buildTool:gradle') || ids.has('buildTool:gradle-kotlin')) &&
+    !blockedKinds.has('test') &&
+    !byKind.has('test')
+  ) {
     byKind.set('test', {
       candidate: {
         assertionCapability: 'unsupported' as const,

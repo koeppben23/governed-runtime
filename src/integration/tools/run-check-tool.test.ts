@@ -432,6 +432,199 @@ describe('HAPPY', () => {
     expect(executeCheck).not.toHaveBeenCalled();
   });
 
+  it('fails closed when a Gradle wrapper bootstrap input changes during a package-script check', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+    const state = await readState(sd);
+    const primary = state!.verificationCandidates!.find(
+      (candidate) => candidate.kind === 'typecheck',
+    )!;
+    const candidateId = 'gradle-wrapper-script';
+    const wrapperProperties = join(ws.tmpDir, 'gradle', 'wrapper', 'gradle-wrapper.properties');
+    mkdirSync(dirname(wrapperProperties), { recursive: true });
+    writeFileSync(
+      wrapperProperties,
+      'distributionUrl=https://services.gradle.org/initial.zip\n',
+      'utf-8',
+    );
+    await writeState(sd, {
+      ...state!,
+      verificationCandidates: [
+        {
+          ...primary,
+          candidateId,
+          command: 'npm run test --',
+          source: 'package.json:scripts.test',
+        },
+      ],
+      executionSubjectInputsByCandidateId: {
+        ...(state!.executionSubjectInputsByCandidateId ?? {}),
+        [candidateId]: [{ kind: 'file', path: 'gradle/wrapper/gradle-wrapper.properties' }],
+      },
+    });
+    vi.mocked(executeCheck).mockImplementationOnce(async (input) => {
+      writeFileSync(
+        wrapperProperties,
+        'distributionUrl=https://services.gradle.org/changed.zip\n',
+        'utf-8',
+      );
+      return {
+        kind: input.kind,
+        command: input.command,
+        exitCode: 0,
+        passed: true,
+        executionMs: 150,
+        outputDigest: 'a'.repeat(64),
+        stdout: 'All clear',
+        stderr: '',
+        timedOut: false,
+        startedAt: '2026-01-01T00:00:00.000Z',
+      };
+    });
+
+    const result = parseToolResult(
+      await run_check.execute({ kind: 'typecheck', candidateId }, ctx),
+    );
+
+    expect(result).toMatchObject({ phase: 'PLAN' });
+    expect(executeCheck).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'npm run test --' }),
+    );
+    const persisted = await readState(sd);
+    expect(persisted!.validation[0]).toMatchObject({
+      passed: false,
+      outcome: 'blocked',
+      classificationReason: expect.stringContaining(
+        'VERIFICATION_SUBJECT_CHANGED: gradle/wrapper/gradle-wrapper.properties changed',
+      ),
+    });
+  });
+
+  it('fails closed when Maven runtime configuration changes during a package-script check', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+    const state = await readState(sd);
+    const primary = state!.verificationCandidates!.find(
+      (candidate) => candidate.kind === 'typecheck',
+    )!;
+    const candidateId = 'maven-runtime-config-script';
+    const extensionsXml = join(ws.tmpDir, '.mvn', 'extensions.xml');
+    mkdirSync(dirname(extensionsXml), { recursive: true });
+    writeFileSync(
+      extensionsXml,
+      '<extensions><extension><artifactId>initial</artifactId></extension></extensions>\n',
+      'utf-8',
+    );
+    await writeState(sd, {
+      ...state!,
+      verificationCandidates: [
+        {
+          ...primary,
+          candidateId,
+          command: 'npm run test --',
+          source: 'package.json:scripts.test',
+        },
+      ],
+      executionSubjectInputsByCandidateId: {
+        ...(state!.executionSubjectInputsByCandidateId ?? {}),
+        [candidateId]: [{ kind: 'file', path: '.mvn/extensions.xml' }],
+      },
+    });
+    vi.mocked(executeCheck).mockImplementationOnce(async (input) => {
+      writeFileSync(
+        extensionsXml,
+        '<extensions><extension><artifactId>changed</artifactId></extension></extensions>\n',
+        'utf-8',
+      );
+      return {
+        kind: input.kind,
+        command: input.command,
+        exitCode: 0,
+        passed: true,
+        executionMs: 150,
+        outputDigest: 'a'.repeat(64),
+        stdout: 'All clear',
+        stderr: '',
+        timedOut: false,
+        startedAt: '2026-01-01T00:00:00.000Z',
+      };
+    });
+
+    const result = parseToolResult(
+      await run_check.execute({ kind: 'typecheck', candidateId }, ctx),
+    );
+
+    expect(result).toMatchObject({ phase: 'PLAN' });
+    expect(executeCheck).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'npm run test --' }),
+    );
+    const persisted = await readState(sd);
+    expect(persisted!.validation[0]).toMatchObject({
+      passed: false,
+      outcome: 'blocked',
+      classificationReason: expect.stringContaining(
+        'VERIFICATION_SUBJECT_CHANGED: .mvn/extensions.xml changed',
+      ),
+    });
+  });
+
+  it('fails closed when a transitive Maven module POM changes during a package-script check', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+    const state = await readState(sd);
+    const primary = state!.verificationCandidates!.find(
+      (candidate) => candidate.kind === 'typecheck',
+    )!;
+    const candidateId = 'maven-module-pom-script';
+    const modulePom = join(ws.tmpDir, 'app', 'pom.xml');
+    mkdirSync(dirname(modulePom), { recursive: true });
+    writeFileSync(modulePom, '<project><artifactId>initial</artifactId></project>\n', 'utf-8');
+    await writeState(sd, {
+      ...state!,
+      verificationCandidates: [
+        {
+          ...primary,
+          candidateId,
+          command: 'npm run test --',
+          source: 'package.json:scripts.test',
+        },
+      ],
+      executionSubjectInputsByCandidateId: {
+        ...(state!.executionSubjectInputsByCandidateId ?? {}),
+        [candidateId]: [{ kind: 'file', path: 'app/pom.xml' }],
+      },
+    });
+    vi.mocked(executeCheck).mockImplementationOnce(async (input) => {
+      writeFileSync(modulePom, '<project><artifactId>changed</artifactId></project>\n', 'utf-8');
+      return {
+        kind: input.kind,
+        command: input.command,
+        exitCode: 0,
+        passed: true,
+        executionMs: 150,
+        outputDigest: 'a'.repeat(64),
+        stdout: 'All clear',
+        stderr: '',
+        timedOut: false,
+        startedAt: '2026-01-01T00:00:00.000Z',
+      };
+    });
+
+    const result = parseToolResult(
+      await run_check.execute({ kind: 'typecheck', candidateId }, ctx),
+    );
+
+    expect(result).toMatchObject({ phase: 'PLAN' });
+    const persisted = await readState(sd);
+    expect(persisted!.validation[0]).toMatchObject({
+      passed: false,
+      outcome: 'blocked',
+      classificationReason: expect.stringContaining(
+        'VERIFICATION_SUBJECT_CHANGED: app/pom.xml changed',
+      ),
+    });
+  });
+
   it('persists complete-suite aggregate evidence from a repo-native pytest alternate', async () => {
     writeFileSync(
       join(ws.tmpDir, 'package.json'),
