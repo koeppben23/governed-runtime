@@ -96,8 +96,8 @@ async function gradleExecutionSubjectInputs(
   for (const settingsPath of ['settings.gradle', 'settings.gradle.kts']) {
     if (!ctx.rootFiles.has(settingsPath)) continue;
     const settings = await ctx.readFile(settingsPath);
-    if (settings === undefined || GRADLE_MULTI_PROJECT_RE.test(settings)) {
-      return { kind: 'blocked', reason: 'Gradle multi-project graph is unsupported' };
+    if (settings === undefined || !isSupportedSingleProjectSettings(settings)) {
+      return { kind: 'blocked', reason: 'Gradle settings graph is unsupported' };
     }
   }
   return {
@@ -130,7 +130,13 @@ const MAVEN_FILE_SELECTORS = new Set([
   '--toolchains',
 ]);
 const MAVEN_SHORT_FILE_SELECTORS = ['-gs', '-f', '-s', '-t'] as const;
-const GRADLE_MULTI_PROJECT_RE = /\b(?:include|includeFlat|includeBuild|project)\s*(?:\(|['"])/;
+const GRADLE_SINGLE_PROJECT_SETTINGS_RE =
+  /^\s*(?:rootProject\.name\s*=\s*(?:'[^']*'|"[^"]*")\s*;?\s*)?$/;
+
+function isSupportedSingleProjectSettings(settings: string): boolean {
+  const withoutComments = settings.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  return GRADLE_SINGLE_PROJECT_SETTINGS_RE.test(withoutComments);
+}
 
 async function mavenConfigSelectedFiles(ctx: PlannerContext): Promise<MavenConfigSelection> {
   const config = await ctx.readFile('.mvn/maven.config');

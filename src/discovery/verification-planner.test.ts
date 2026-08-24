@@ -334,16 +334,28 @@ describe('verification planner', () => {
       expect(candidates.find((entry) => entry.candidate.kind === 'build')).toBeUndefined();
     });
 
-    it('does not plan Gradle execution for a multi-project settings graph', async () => {
+    it('does not plan Gradle execution for an unsupported settings script', async () => {
       const candidates = await planVerificationCandidates({
         detectedStack: makeDetectedStack([
           { kind: 'buildTool', id: 'gradle', evidence: 'build.gradle' },
         ]),
         allFiles: ['build.gradle', 'settings.gradle', 'gradlew', 'app/build.gradle'],
-        readFile: makeReadFile({ 'settings.gradle': "include ':app'" }),
+        readFile: makeReadFile({ 'settings.gradle': "apply from: 'extra.settings.gradle'" }),
       });
 
       expect(candidates.find((entry) => entry.candidate.kind === 'test')).toBeUndefined();
+    });
+
+    it('plans Gradle execution for allowlisted single-project settings', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: makeDetectedStack([
+          { kind: 'buildTool', id: 'gradle', evidence: 'build.gradle' },
+        ]),
+        allFiles: ['build.gradle', 'settings.gradle', 'gradlew'],
+        readFile: makeReadFile({ 'settings.gradle': 'rootProject.name = "single-project"' }),
+      });
+
+      expect(candidates.find((entry) => entry.candidate.kind === 'test')).toBeDefined();
     });
 
     it('binds Gradle execution to existing root configuration and the selected wrapper', async () => {
