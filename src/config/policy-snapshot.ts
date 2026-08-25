@@ -20,6 +20,9 @@
  */
 
 import type { PolicySnapshot } from '../state/evidence.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { POLICY_DIGEST_PATTERN, POLICY_DIGEST_VERSION } from '../shared/policy-digest.js';
+import { PolicyConfigurationError } from './policy-errors.js';
 import { DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS } from './policy-types.js';
 import type {
   FlowGuardPolicy,
@@ -66,6 +69,15 @@ function buildAuditSection(audit: AuditPolicy): PolicySnapshot['audit'] {
   };
 }
 
+function validatePolicyDigest(hash: string): string {
+  if (POLICY_DIGEST_PATTERN.test(hash)) return hash;
+  throw new PolicyConfigurationError(
+    'INVALID_POLICY_DIGEST',
+    'Policy digest must be a 64-character lowercase SHA-256 hex string.',
+    { received: hash, pattern: POLICY_DIGEST_PATTERN.source },
+  );
+}
+
 function buildResolutionFields(
   resolution: Parameters<typeof createPolicySnapshot>[3],
   policy: FlowGuardPolicy,
@@ -106,14 +118,16 @@ export function createPolicySnapshot(
     policyPathHint?: string;
   },
 ): PolicySnapshot {
-  const canonical = JSON.stringify(policy, Object.keys(policy).sort());
+  const canonical = canonicalJsonStringify(policy);
+  const hash = validatePolicyDigest(digestFn(canonical));
   const fallbackGate = policy.requireHumanGates
     ? ('human_gated' as const)
     : ('auto_approve' as const);
 
   return {
     mode: policy.mode,
-    hash: digestFn(canonical),
+    hash,
+    hashVersion: POLICY_DIGEST_VERSION,
     resolvedAt,
     ...(buildResolutionFields(resolution, policy, fallbackGate) as Record<string, unknown>),
     requestedMode: resolution?.requestedMode ?? policy.mode,

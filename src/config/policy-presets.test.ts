@@ -17,6 +17,7 @@ import {
   validateExistingPolicyAgainstCentral,
 } from '../config/policy.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
+import { hashText } from '../shared/hashing.js';
 
 // ─── Shared Constants ─────────────────────────────────────────────────────────
 
@@ -122,7 +123,7 @@ describe('config/policy', () => {
       });
 
       // And preserved through snapshot freezing.
-      const snap = createPolicySnapshot(result.policy, '2026-01-01T00:00:00.000Z', digestFn);
+      const snap = createPolicySnapshot(result.policy, '2026-01-01T00:00:00.000Z', hashText);
       expect(snap.validationEvidence).toEqual({
         enforcement: 'required',
         allowNoCommands: true,
@@ -223,7 +224,7 @@ describe('config/policy', () => {
     });
 
     it('createPolicySnapshot produces deterministic hash', () => {
-      const digest = (s: string) => `hash-of-${s.length}`;
+      const digest = hashText;
       const snap1 = createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', digest);
       const snap2 = createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', digest);
       expect(snap1.hash).toBe(snap2.hash);
@@ -485,7 +486,7 @@ describe('config/policy', () => {
 
   describe('CORNER', () => {
     it('snapshot preserves all FlowGuard-critical fields', () => {
-      const digest = (s: string) => `hash-${s.length}`;
+      const digest = hashText;
       const snap = createPolicySnapshot(REGULATED_POLICY, '2026-01-01T00:00:00.000Z', digest);
       expect(snap.mode).toBe('regulated');
       expect(snap.requireHumanGates).toBe(true);
@@ -498,7 +499,7 @@ describe('config/policy', () => {
     });
 
     it('resolvePolicyFromSnapshot restores typed jwks identityProvider from snapshot only', () => {
-      const digest = (s: string) => `hash-${s.length}`;
+      const digest = hashText;
       const snap = {
         ...createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', digest),
         identityProvider: {
@@ -518,14 +519,14 @@ describe('config/policy', () => {
     });
 
     it('different policies produce different hashes', () => {
-      const digest = (s: string) => `hash-${s}`;
+      const digest = hashText;
       const solo = createPolicySnapshot(SOLO_POLICY, '2026-01-01T00:00:00.000Z', digest);
       const team = createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', digest);
       expect(solo.hash).not.toBe(team.hash);
     });
 
     it('resolvePolicyFromSnapshot reconstructs actorClassification from snapshot only', () => {
-      const digest = (s: string) => `hash-${s.length}`;
+      const digest = hashText;
       const snap = createPolicySnapshot(REGULATED_POLICY, '2026-01-01T00:00:00.000Z', digest);
       const reconstructed = resolvePolicyFromSnapshot(snap);
       expect(reconstructed.actorClassification).toEqual(REGULATED_POLICY.actorClassification);
@@ -533,7 +534,7 @@ describe('config/policy', () => {
     });
 
     it('resolvePolicyFromSnapshot uses snapshot fields exclusively — no preset leak', () => {
-      const digest = (s: string) => `hash-${s.length}`;
+      const digest = hashText;
       // Create a snapshot with modified actorClassification
       const snap = {
         ...createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', digest),
@@ -545,7 +546,7 @@ describe('config/policy', () => {
     });
 
     it('snapshot includes requestedMode and effectiveGateBehavior', () => {
-      const digest = (s: string) => `hash-${s.length}`;
+      const digest = hashText;
       const snap = createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', digest, {
         requestedMode: 'team-ci',
         effectiveGateBehavior: 'human_gated',

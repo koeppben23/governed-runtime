@@ -14,6 +14,7 @@ import {
   validateResolvedReviewUrlTarget,
   parseIPv4,
 } from './review.js';
+import { MAX_REVIEW_URL_RESPONSE_BYTES } from './review-url.js';
 import { makeState, makeProgressedState } from '../fixtures.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
@@ -325,6 +326,25 @@ describe('Issue #310: resolved URL targets are validated before fetch', () => {
         expect(result.reason).toContain('private/reserved IPv4');
       }
       expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('blocks a response whose declared body length exceeds the limit', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('small body', {
+        headers: { 'content-length': String(MAX_REVIEW_URL_RESPONSE_BYTES + 1) },
+      }),
+    );
+    try {
+      const result = await executeReview(
+        makeProgressedState('COMPLETE'),
+        NOW,
+        { dnsLookup: async () => [{ address: '93.184.216.34', family: 4 }] },
+        { inputOrigin: 'external_reference', url: 'https://example.com/spec.md' },
+      );
+      expect(result).toMatchObject({ kind: 'blocked', code: 'COMMAND_BLOCKED' });
     } finally {
       fetchSpy.mockRestore();
     }

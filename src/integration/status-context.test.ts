@@ -35,6 +35,7 @@ import { createPolicySnapshot } from '../config/policy-snapshot.js';
 import { makeState } from '../fixtures.js';
 import { isCommandAllowed, Command } from '../machine/commands.js';
 import { USER_GATES, TERMINAL } from '../machine/topology.js';
+import { hashText } from '../shared/hashing.js';
 
 // ─── Test Fixtures ────────────────────────────────────────────────────────────
 
@@ -78,7 +79,7 @@ function makeMinimalState(phase: SessionState['phase'] = 'READY'): SessionState 
     policySnapshot: createPolicySnapshot(
       getPolicyPreset('solo'),
       '2026-01-01T00:00:00.000Z',
-      () => 'testdigest123',
+      hashText,
     ),
     detectedStack: null,
     activeProfile: null,

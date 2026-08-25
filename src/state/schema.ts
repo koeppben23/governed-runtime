@@ -460,7 +460,7 @@ export const SessionState = z
     /**
      * Immutable policy snapshot — frozen at session creation.
      * Records which FlowGuard rules governed this session.
-     * The hash provides non-repudiation for auditors.
+     * Its digest supports integrity comparison against a trusted reference.
      */
     policySnapshot: PolicySnapshotSchema,
 

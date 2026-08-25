@@ -81,13 +81,12 @@ new patch/prerelease tag from the corrected `main` commit.
 
 ### Artifact Creation
 
-1. Build: TypeScript compiled to JavaScript (`npm run build`)
-2. Package: `npm pack` creates the `flowguard-core-{version}.tgz` artifact
-3. Hash: `sha256sum` produces `checksums.sha256`
-4. SBOM: CycloneDX 1.6 SBOM (`sbom.cdx.json`) generated via `@cyclonedx/cyclonedx-npm`
-5. Provenance: SLSA-style build provenance attestation produced via `actions/attest-build-provenance`
-6. License: `LICENSE` published alongside the tarball
-7. Publish: Tarball + companion artifacts uploaded to GitHub Releases via `gh release create --verify-tag`
+1. Build once: TypeScript is compiled and `npm pack` creates one `flowguard-core-{version}.tgz` artifact.
+2. Bind: the verify job records that artifact's SHA-256 in `checksums.sha256` and uploads both as one workflow artifact.
+3. Verify: runtime and cross-platform smoke jobs download that exact artifact and verify its checksum before use.
+4. Gate: mutation testing must complete before publication can run.
+5. Publish: the protected `release` environment downloads and re-verifies the same artifact before generating its SBOM, provenance attestation, and GitHub Release.
+6. Authority: write, OIDC, and attestation permissions exist only in the final publish job; all preceding jobs have read-only repository access.
 
 ### Artifact Contents
 

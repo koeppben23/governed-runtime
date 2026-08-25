@@ -86,7 +86,7 @@ function makeMinimalState(phase: SessionState['phase'] = 'READY'): SessionState 
     policySnapshot: createPolicySnapshot(
       getPolicyPreset('solo'),
       '2026-01-01T00:00:00.000Z',
-      () => 'testdigest123',
+      hashText,
     ),
     detectedStack: null,
     activeProfile: null,
@@ -397,7 +397,7 @@ describe('buildBlockedProjection — ProofGraph gate', () => {
   it('carries the migrated gate code when the Evidence gate blocks a waiting session', () => {
     const state: SessionState = {
       ...makeMinimalState('EVIDENCE_REVIEW'),
-      policySnapshot: createPolicySnapshot(team, '2026-01-01T00:00:00.000Z', () => 'testdigest123'),
+      policySnapshot: createPolicySnapshot(team, '2026-01-01T00:00:00.000Z', hashText),
       plan: approvedPlan(),
     };
     const blocker = buildBlockedProjection(state, team);
@@ -409,7 +409,7 @@ describe('buildBlockedProjection — ProofGraph gate', () => {
   it('does not invent a gate code when the Evidence gate is satisfied', () => {
     const state: SessionState = {
       ...makeMinimalState('EVIDENCE_REVIEW'),
-      policySnapshot: createPolicySnapshot(team, '2026-01-01T00:00:00.000Z', () => 'testdigest123'),
+      policySnapshot: createPolicySnapshot(team, '2026-01-01T00:00:00.000Z', hashText),
       plan: approvedPlan(),
       proofGraph: {
         version: 'proofgraph.v1',

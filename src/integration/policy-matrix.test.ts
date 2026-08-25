@@ -380,7 +380,8 @@ describe('policy mode matrix', () => {
       await import('../config/policy-snapshot-normalize.js');
     const result = normalizePolicySnapshotWithMeta({
       mode: 'solo',
-      hash: 'test-hash',
+      hash: 'a'.repeat(64),
+      hashVersion: 'policy-digest.v2',
       resolvedAt: '2026-01-01T00:00:00.000Z',
       requestedMode: 'solo',
       effectiveGateBehavior: 'auto_approve',
@@ -400,7 +401,8 @@ describe('policy mode matrix', () => {
       await import('../config/policy-snapshot-normalize.js');
     const result = normalizePolicySnapshotWithMeta({
       mode: 'team-ci',
-      hash: 'test-hash',
+      hash: 'a'.repeat(64),
+      hashVersion: 'policy-digest.v2',
       resolvedAt: '2026-01-01T00:00:00.000Z',
       requestedMode: 'team-ci',
       effectiveGateBehavior: 'human_gated',

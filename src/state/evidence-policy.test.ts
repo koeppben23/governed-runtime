@@ -6,13 +6,31 @@
 import { describe, it, expect } from 'vitest';
 import { PolicySnapshotSchema } from './evidence-policy.js';
 import { FIXED_TIME } from './evidence-test-constants.js';
+import { POLICY_DIGEST_VERSION } from './evidence-identifiers.js';
+
+const VALID_POLICY_DIGEST = 'a'.repeat(64);
+const MINIMAL_POLICY_SNAPSHOT = {
+  mode: 'team',
+  hash: VALID_POLICY_DIGEST,
+  hashVersion: POLICY_DIGEST_VERSION,
+  resolvedAt: FIXED_TIME,
+  requestedMode: 'team',
+  effectiveGateBehavior: 'human_gated' as const,
+  requireHumanGates: true,
+  maxSelfReviewIterations: 3,
+  maxImplReviewIterations: 3,
+  allowSelfApproval: true,
+  audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
+  actorClassification: { flowguard_decision: 'human' },
+};
 
 describe('evidence-policy', () => {
   describe('HAPPY', () => {
     it('PolicySnapshotSchema parses minimal valid snapshot', () => {
       const snapshot = {
         mode: 'team',
-        hash: 'sha256-policy',
+        hash: VALID_POLICY_DIGEST,
+        hashVersion: POLICY_DIGEST_VERSION,
         resolvedAt: FIXED_TIME,
         requestedMode: 'team',
         effectiveGateBehavior: 'human_gated' as const,
@@ -25,16 +43,36 @@ describe('evidence-policy', () => {
       };
       const parsed = PolicySnapshotSchema.parse(snapshot);
       expect(parsed.mode).toBe('team');
-      expect(parsed.hash).toBe('sha256-policy');
+      expect(parsed.hash).toBe(VALID_POLICY_DIGEST);
+      expect(parsed.hashVersion).toBe(POLICY_DIGEST_VERSION);
       expect(parsed.minimumActorAssuranceForApproval).toBe('best_effort');
       expect(parsed.requireVerifiedActorsForApproval).toBe(false);
       expect(parsed.identityProviderMode).toBe('optional');
     });
 
+    it('rejects a missing policy digest version', () => {
+      const snapshot = {
+        mode: 'team',
+        hash: VALID_POLICY_DIGEST,
+        resolvedAt: FIXED_TIME,
+        requestedMode: 'team',
+        effectiveGateBehavior: 'human_gated',
+        requireHumanGates: true,
+        maxSelfReviewIterations: 3,
+        maxImplReviewIterations: 3,
+        allowSelfApproval: true,
+        audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
+        actorClassification: { flowguard_decision: 'human' },
+      };
+
+      expect(() => PolicySnapshotSchema.parse(snapshot)).toThrow();
+    });
+
     it('PolicySnapshotSchema accepts regulated snapshot', () => {
       const snapshot = {
         mode: 'regulated',
-        hash: 'sha256-reg',
+        hash: VALID_POLICY_DIGEST,
+        hashVersion: POLICY_DIGEST_VERSION,
         resolvedAt: FIXED_TIME,
         requestedMode: 'regulated',
         effectiveGateBehavior: 'human_gated' as const,
@@ -55,10 +93,44 @@ describe('evidence-policy', () => {
   });
 
   describe('BAD', () => {
+    it.each(['', 'abc', 'UNKNOWN_LEGACY', 'A'.repeat(64)])(
+      'rejects invalid v2 policy digest %p',
+      (hash) => {
+        expect(PolicySnapshotSchema.safeParse({ ...MINIMAL_POLICY_SNAPSHOT, hash }).success).toBe(
+          false,
+        );
+      },
+    );
+
+    it('rejects a missing v2 policy digest', () => {
+      const { hash: _hash, ...snapshot } = MINIMAL_POLICY_SNAPSHOT;
+      expect(PolicySnapshotSchema.safeParse(snapshot).success).toBe(false);
+    });
+
+    it('rejects unknown policy digest versions', () => {
+      expect(() =>
+        PolicySnapshotSchema.parse({
+          mode: 'team',
+          hash: VALID_POLICY_DIGEST,
+          hashVersion: 'policy-digest.v3',
+          resolvedAt: FIXED_TIME,
+          requestedMode: 'team',
+          effectiveGateBehavior: 'human_gated',
+          requireHumanGates: true,
+          maxSelfReviewIterations: 3,
+          maxImplReviewIterations: 3,
+          allowSelfApproval: true,
+          audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
+          actorClassification: { flowguard_decision: 'human' },
+        }),
+      ).toThrow();
+    });
+
     it('PolicySnapshotSchema rejects missing actorClassification', () => {
       const snapshot = {
         mode: 'team',
-        hash: 'abc',
+        hash: VALID_POLICY_DIGEST,
+        hashVersion: POLICY_DIGEST_VERSION,
         resolvedAt: FIXED_TIME,
         requestedMode: 'team',
         effectiveGateBehavior: 'human_gated',
@@ -74,7 +146,8 @@ describe('evidence-policy', () => {
     it('PolicySnapshotSchema rejects missing requestedMode', () => {
       const snapshot = {
         mode: 'team',
-        hash: 'abc',
+        hash: VALID_POLICY_DIGEST,
+        hashVersion: POLICY_DIGEST_VERSION,
         resolvedAt: FIXED_TIME,
         effectiveGateBehavior: 'human_gated',
         requireHumanGates: true,
@@ -92,7 +165,8 @@ describe('evidence-policy', () => {
     it('PolicySnapshotSchema defaults minimumActorAssuranceForApproval', () => {
       const snapshot = {
         mode: 'team',
-        hash: 'abc',
+        hash: VALID_POLICY_DIGEST,
+        hashVersion: POLICY_DIGEST_VERSION,
         resolvedAt: FIXED_TIME,
         requestedMode: 'team',
         effectiveGateBehavior: 'human_gated' as const,
@@ -111,7 +185,8 @@ describe('evidence-policy', () => {
     it('applies a fail-closed off default for legacy non-regulated snapshots (#399)', () => {
       const snapshot = {
         mode: 'team',
-        hash: 'abc',
+        hash: VALID_POLICY_DIGEST,
+        hashVersion: POLICY_DIGEST_VERSION,
         resolvedAt: FIXED_TIME,
         requestedMode: 'team',
         effectiveGateBehavior: 'human_gated' as const,
@@ -133,7 +208,8 @@ describe('evidence-policy', () => {
     it('applies a required default for legacy regulated snapshots (#399)', () => {
       const snapshot = {
         mode: 'regulated',
-        hash: 'abc',
+        hash: VALID_POLICY_DIGEST,
+        hashVersion: POLICY_DIGEST_VERSION,
         resolvedAt: FIXED_TIME,
         requestedMode: 'regulated',
         effectiveGateBehavior: 'human_gated' as const,
@@ -155,7 +231,8 @@ describe('evidence-policy', () => {
     it('preserves an explicit discoveryHealth block when present (#399)', () => {
       const snapshot = {
         mode: 'team',
-        hash: 'abc',
+        hash: VALID_POLICY_DIGEST,
+        hashVersion: POLICY_DIGEST_VERSION,
         resolvedAt: FIXED_TIME,
         requestedMode: 'team',
         effectiveGateBehavior: 'human_gated' as const,
@@ -181,7 +258,8 @@ describe('evidence-policy', () => {
 
   describe('validationEvidence backward compatibility (#400)', () => {
     const legacyBase = {
-      hash: 'abc',
+      hash: VALID_POLICY_DIGEST,
+      hashVersion: POLICY_DIGEST_VERSION,
       resolvedAt: FIXED_TIME,
       effectiveGateBehavior: 'human_gated' as const,
       requireHumanGates: true,
@@ -239,7 +317,8 @@ describe('evidence-policy', () => {
   // instead of silently selecting the permissive enforcement default.
   describe('FAIL-CLOSED mode enum (#418)', () => {
     const validBase = {
-      hash: 'sha256-policy',
+      hash: VALID_POLICY_DIGEST,
+      hashVersion: POLICY_DIGEST_VERSION,
       resolvedAt: FIXED_TIME,
       effectiveGateBehavior: 'human_gated' as const,
       requireHumanGates: true,

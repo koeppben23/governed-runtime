@@ -27,6 +27,7 @@ const INTEGRITY_MUTATION_TARGETS = [
   'src/audit/integrity.ts',
   // policy and reasons
   'src/config/policy.ts',
+  'src/config/policy-snapshot.ts',
   'src/config/reasons.ts',
   // identity
   'src/identity/token-verifier.ts',

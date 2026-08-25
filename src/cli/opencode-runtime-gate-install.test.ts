@@ -83,22 +83,19 @@ describe('install instruction-source gate', () => {
     });
   });
 
-  describe('BAD — known-unsupported runtime: write but refuse', () => {
-    it('writes artifacts but surfaces the reason error and a warning', async () => {
+  describe('BAD — known-unsupported runtime: fail before writes', () => {
+    it('surfaces the reason error and writes no artifacts', async () => {
       compatMock.status = 'known-unsupported';
       const tarball = await createMockTarball();
       const result = await install(repoArgs({ coreTarball: tarball }));
 
-      // write: mandates artifact was written as part of the install
-      expect(
-        result.ops.some((o) => o.path.endsWith('flowguard-mandates.md') && o.action === 'written'),
-      ).toBe(true);
+      expect(result.ops).toEqual([]);
 
       // refuse: blocking error carrying the reason + a warning
       expect(result.errors.some((e) => e.includes('does not resolve instruction sources'))).toBe(
         true,
       );
-      expect(result.warnings.some((w) => w.includes('mandates are NOT active'))).toBe(true);
+      expect(result.warnings.some((w) => w.includes('installation was blocked'))).toBe(true);
     });
   });
 });

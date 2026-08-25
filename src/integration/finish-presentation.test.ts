@@ -17,7 +17,7 @@ import { hashText } from '../shared/hashing.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 
 function sp(mode: 'solo' | 'team') {
-  return createPolicySnapshot(getPolicyPreset(mode), '2026-01-01T00:00:00.000Z', () => 'd');
+  return createPolicySnapshot(getPolicyPreset(mode), '2026-01-01T00:00:00.000Z', hashText);
 }
 
 function completeState(extras: Record<string, unknown> = {}): SessionState {
@@ -70,7 +70,7 @@ describe('golden fixtures for /finish', () => {
         selfReview: { subagentEnabled: false, fallbackToSelf: true, strictEnforcement: false },
       } as any,
       '2026-01-01T00:00:00.000Z',
-      () => 'd',
+      hashText,
     );
     const state = completeState({ policySnapshot: warnSnapshot });
     const policy = getPolicyPreset('solo');
@@ -188,7 +188,7 @@ describe('buildFinishDocument', () => {
       policySnapshot: createPolicySnapshot(
         getPolicyPreset('team'),
         '2026-01-01T00:00:00.000Z',
-        () => 'd',
+        hashText,
       ),
       plan: {
         current: {
@@ -244,7 +244,7 @@ describe('buildFinishDocument', () => {
         selfReview: { subagentEnabled: false, fallbackToSelf: true, strictEnforcement: false },
       } as any,
       '2026-01-01T00:00:00.000Z',
-      () => 'd',
+      hashText,
     );
     const state = completeState({ policySnapshot: warnSnapshot });
     const card = buildFinishCard(state, getPolicyPreset('solo'));

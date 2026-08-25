@@ -130,10 +130,10 @@ describe('policy snapshot regression', () => {
     expect(snapshotPolicy.identityProviderMode).toBe('required');
   });
 
-  it('legacy snapshot normalization is explicit and safe', () => {
-    const legacy = {
+  it('rejects unversioned policy snapshots', () => {
+    const snapshot = {
       mode: 'regulated',
-      hash: 'legacy-hash',
+      hash: 'a'.repeat(64),
       resolvedAt: '2026-01-01T00:00:00.000Z',
       requestedMode: 'regulated',
       effectiveGateBehavior: 'human_gated',
@@ -145,11 +145,9 @@ describe('policy snapshot regression', () => {
       actorClassification: { flowguard_decision: 'human' },
     };
 
-    const normalized = normalizePolicySnapshotWithMeta(legacy);
-    expect(normalized.normalized).toBe(true);
-    expect(normalized.reason).toBe('incomplete_snapshot_normalized');
-    expect(normalized.snapshot.minimumActorAssuranceForApproval).toBe('claim_validated');
-    expect(normalized.snapshot.identityProviderMode).toBe('optional');
+    expect(() => normalizePolicySnapshotWithMeta(snapshot)).toThrow(
+      'Invalid policy digest version "undefined"',
+    );
   });
 
   it('hydrate persists full effective policy fields in snapshot', async () => {

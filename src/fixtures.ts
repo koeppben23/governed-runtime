@@ -29,6 +29,7 @@ import type {
   PolicySnapshot,
 } from './state/evidence.js';
 import { computeRecordDigest } from './state/evidence-plan.js';
+import { POLICY_DIGEST_VERSION } from './shared/policy-digest.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -49,7 +50,8 @@ export const BINDING: BindingInfo = {
 
 export const POLICY_SNAPSHOT: PolicySnapshot = {
   mode: 'team',
-  hash: 'policy-hash-team',
+  hash: 'a'.repeat(64),
+  hashVersion: POLICY_DIGEST_VERSION,
   resolvedAt: FIXED_TIME,
   requestedMode: 'team',
   effectiveGateBehavior: 'human_gated',

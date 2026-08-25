@@ -6,6 +6,7 @@
  */
 
 import { z } from 'zod';
+import { POLICY_DIGEST_PATTERN, POLICY_DIGEST_VERSION } from './evidence-identifiers.js';
 import { IdpConfigSchema } from './policy-idp-config.js';
 import { PolicyModeSchema, CentralMinimumModeSchema, type PolicyMode } from './policy-mode.js';
 
@@ -27,8 +28,10 @@ function defaultsToEnforcement(mode: PolicyMode): boolean {
  * Stores all FlowGuard-critical fields so auditors can verify which rules
  * governed a session — even after policy presets are updated.
  *
- * The hash is SHA-256 of the canonical JSON of the full GovernancePolicy.
- * Non-repudiation: hash matches → policy is authentic and unmodified.
+ * The hash is SHA-256 of recursively canonicalized policy content, identified
+ * by `hashVersion: policy-digest.v2`. It supports integrity comparison against
+ * a trusted reference; it does not independently prove authenticity or
+ * non-repudiation.
  *
  * Lives in state layer (not config) because it is part of SessionState —
  * the innermost layer must not depend on outer layers.
@@ -42,8 +45,10 @@ export const PolicySnapshotSchema = z
      * Use requestedMode to see what was originally requested.
      */
     mode: PolicyModeSchema,
-    /** SHA-256 hash of the canonical JSON of the full GovernancePolicy. */
-    hash: z.string(),
+    /** Lowercase SHA-256 hash of policy content; see hashVersion for its serialization contract. */
+    hash: z.string().regex(POLICY_DIGEST_PATTERN),
+    /** Required serialization contract for the policy digest. */
+    hashVersion: z.literal(POLICY_DIGEST_VERSION),
     /** When the policy was resolved and frozen. */
     resolvedAt: z.string().datetime(),
     /** Original requested policy mode at hydrate time. */

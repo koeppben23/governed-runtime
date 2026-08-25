@@ -16,6 +16,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -43,7 +44,7 @@ import {
   archive,
 } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
-import { readAuditTrail } from '../adapters/persistence-audit.js';
+import { appendAuditEvent, readAuditTrail } from '../adapters/persistence-audit.js';
 import * as persistence from '../adapters/persistence.js';
 import {
   makeState,
@@ -225,6 +226,74 @@ describe('archive', () => {
       // Verify tar.gz file exists on disk
       await expect(fs.access(result.archivePath as string)).resolves.toBeUndefined();
     });
+
+    it.skipIf(!tarOk)(
+      'redacts secrets from real session and audit evidence in final sharing archive bytes',
+      async () => {
+        const secret = 'R14_SHARING_SECRET_4d20fd89637c';
+        await hydrateSession();
+        await ticket.execute({ text: `Investigate token=${secret}`, source: 'user' }, ctx);
+        const { computeFingerprint, sessionDir: resolveSessionDir } =
+          await import('../adapters/workspace/index.js');
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+        await appendAuditEvent(sessDir, {
+          id: crypto.randomUUID(),
+          sessionId: ctx.sessionID,
+          phase: 'TICKET',
+          event: 'test:sharing_secret',
+          timestamp: new Date().toISOString(),
+          actor: 'system',
+          detail: { secret },
+        });
+        const state = await readState(sessDir);
+        await writeState(sessDir, { ...state!, phase: 'COMPLETE' });
+
+        const [rawState, rawAudit] = await Promise.all([
+          fs.readFile(path.join(sessDir, 'session-state.json')),
+          fs.readFile(path.join(sessDir, 'audit.jsonl')),
+        ]);
+        expect(rawState.includes(secret)).toBe(true);
+        expect(rawAudit.includes(secret)).toBe(true);
+
+        const rawResult = parseToolResult(
+          await archive.execute({ redactionMode: 'none', includeRaw: true }, ctx),
+        );
+        expect(rawResult.archiveStatus).toBe('verified');
+        const { stdout: rawStateInArchive } = await promisify(execFile)('tar', [
+          'xOf',
+          rawResult.archivePath as string,
+          `${ctx.sessionID}/state/session-state.json`,
+        ]);
+        expect(rawStateInArchive).toContain(secret);
+
+        const sharingResult = parseToolResult(await archive.execute({}, ctx));
+        expect(sharingResult.archiveStatus).toBe('not_verifiable');
+        const archivePath = sharingResult.archivePath as string;
+        expect((await fs.readFile(archivePath)).includes(secret)).toBe(false);
+
+        const { stdout: membersRaw } = await promisify(execFile)('tar', ['tzf', archivePath]);
+        const members = membersRaw
+          .split('\n')
+          .map((member) => member.trim())
+          .filter((member) => member.length > 0);
+        expect(members.length).toBeGreaterThan(0);
+        for (const member of members) {
+          const { stdout } = await promisify(execFile)('tar', ['xOf', archivePath, member]);
+          expect(stdout).not.toContain(secret);
+        }
+
+        const extractionRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'sharing-archive-r14-'));
+        try {
+          await promisify(execFile)('tar', ['xzf', archivePath, '-C', extractionRoot]);
+          await expect(
+            fs.access(path.join(extractionRoot, ctx.sessionID, 'state', 'session-state.json')),
+          ).rejects.toThrow();
+        } finally {
+          await fs.rm(extractionRoot, { recursive: true, force: true });
+        }
+      },
+    );
 
     it.skipIf(!tarOk)(
       'preserves verified regulated completion evidence when creating a sharing archive',

@@ -1,4 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
+import { POLICY_DIGEST_VERSION } from '../../state/evidence-identifiers.js';
+
+const POLICY_DIGEST = 'a'.repeat(64);
 
 describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
   describe('Schema', () => {
@@ -224,7 +227,8 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
 
       const snapshotWithSelfReview = PolicySnapshotSchema.parse({
         mode: 'team',
-        hash: 'test-hash',
+        hash: POLICY_DIGEST,
+        hashVersion: POLICY_DIGEST_VERSION,
         resolvedAt: new Date().toISOString(),
         requestedMode: 'team',
         effectiveGateBehavior: 'human_gated',
@@ -262,7 +266,8 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
 
       const snapshotWithoutSelfReview = PolicySnapshotSchema.parse({
         mode: 'solo',
-        hash: 'test-hash',
+        hash: POLICY_DIGEST,
+        hashVersion: POLICY_DIGEST_VERSION,
         resolvedAt: new Date().toISOString(),
         requestedMode: 'solo',
         effectiveGateBehavior: 'auto_approve',
@@ -293,7 +298,8 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
 
       const snapshotWithSelfReview = PolicySnapshotSchema.parse({
         mode: 'team',
-        hash: 'test-hash',
+        hash: POLICY_DIGEST,
+        hashVersion: POLICY_DIGEST_VERSION,
         resolvedAt: new Date().toISOString(),
         requestedMode: 'team',
         effectiveGateBehavior: 'human_gated',
@@ -327,7 +333,8 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
 
       const snapshotWithoutSelfReview = PolicySnapshotSchema.parse({
         mode: 'solo',
-        hash: 'test-hash',
+        hash: POLICY_DIGEST,
+        hashVersion: POLICY_DIGEST_VERSION,
         resolvedAt: new Date().toISOString(),
         requestedMode: 'solo',
         effectiveGateBehavior: 'auto_approve',

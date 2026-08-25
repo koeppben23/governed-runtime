@@ -247,9 +247,16 @@ async function enforceMutatingToolCheck(
   sessionId: string,
   args: Record<string, unknown>,
 ): Promise<void> {
+  // Empty and unknown tool identities take the default-deny host phase gate.
   if (!isMutatingHostTool(toolName)) return;
   const sessDir = runtime.ws.getSessionDir(sessionId);
-  if (!sessDir) return;
+  if (!sessDir) {
+    throw buildEnforcementError(
+      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+      'Cannot verify host tool phase gate because no authoritative FlowGuard session mapping exists. Run /hydrate before mutating the workspace.',
+      { sessionId, tool: toolName, sessionMapping: 'unresolved' },
+    );
+  }
   const state = await readRequiredHostToolState(sessDir, sessionId, toolName);
   if (state.error) {
     throw buildEnforcementError(state.error.code, state.error.message, {

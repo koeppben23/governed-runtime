@@ -106,7 +106,6 @@ beforeEach(async () => {
     policySnapshot: {
       ...POLICY_SNAPSHOT,
       mode: 'team',
-      hash: 'test-policy-hash',
       resolvedAt: new Date().toISOString(),
       requestedMode: 'team',
       effectiveGateBehavior: 'human_gated',
@@ -302,7 +301,6 @@ describe('plugin-integration', () => {
         policySnapshot: {
           ...POLICY_SNAPSHOT,
           mode: 'team',
-          hash: 'test-policy-hash',
           resolvedAt: new Date().toISOString(),
           requestedMode: 'team',
           effectiveGateBehavior: 'human_gated',
@@ -592,7 +590,6 @@ describe('plugin-integration', () => {
         policySnapshot: {
           ...POLICY_SNAPSHOT,
           mode: 'solo',
-          hash: 'solo-hash',
           resolvedAt: new Date().toISOString(),
           requestedMode: 'solo',
           effectiveGateBehavior: 'auto_approve',
@@ -658,7 +655,6 @@ describe('plugin-integration', () => {
         policySnapshot: {
           ...POLICY_SNAPSHOT,
           mode: 'team',
-          hash: 'custom-hash',
           resolvedAt: new Date().toISOString(),
           requestedMode: 'team',
           effectiveGateBehavior: 'human_gated',
@@ -812,7 +808,6 @@ describe('plugin-integration', () => {
         policySnapshot: {
           ...POLICY_SNAPSHOT,
           mode: 'team',
-          hash: 'test-policy-hash',
           resolvedAt: new Date().toISOString(),
           requestedMode: 'team',
           effectiveGateBehavior: 'human_gated',

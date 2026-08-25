@@ -182,7 +182,7 @@ describe('SDK Contract: Smoke — hook invocation with SDK payloads', () => {
     };
   }
 
-  it('SMOKE: before-hook accepts SDK-shaped input without crashing', async () => {
+  it('SMOKE: before-hook fail-closes unknown SDK-shaped tools without session evidence', async () => {
     const hooks = await FlowGuardAuditPlugin(createMockPluginInput());
     const beforeHook = hooks['tool.execute.before'];
     expect(beforeHook).toBeDefined();
@@ -191,8 +191,18 @@ describe('SDK Contract: Smoke — hook invocation with SDK payloads', () => {
     const input = { tool: 'unknown_tool', sessionID: 'sess-smoke', callID: 'call-smoke' };
     const output = { args: {} };
 
-    // Should not throw — unknown tools are passed through
-    await expect(beforeHook!(input, output)).resolves.not.toThrow();
+    await expect(beforeHook!(input, output)).rejects.toThrow('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+  });
+
+  it('SMOKE: before-hook fail-closes an empty SDK tool identity', async () => {
+    const hooks = await FlowGuardAuditPlugin(createMockPluginInput());
+    const beforeHook = hooks['tool.execute.before'];
+    expect(beforeHook).toBeDefined();
+
+    const input = { tool: '', sessionID: 'sess-smoke', callID: 'call-smoke' };
+    const output = { args: {} };
+
+    await expect(beforeHook!(input, output)).rejects.toThrow('PLUGIN_ENFORCEMENT_UNAVAILABLE');
   });
 
   it('SMOKE: after-hook accepts SDK-shaped output without crashing', async () => {

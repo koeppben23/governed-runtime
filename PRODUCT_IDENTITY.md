@@ -213,7 +213,7 @@ The FlowGuard runtime maintains **canonical state** — a single JSON document, 
 - Current phase and next allowed action
 - Active profile and its rule content
 - Evidence chain (ticket, plan with version history, validation results, implementation, review decisions)
-- Policy snapshot (which rules governed this session, with SHA-256 hash for non-repudiation)
+- Policy snapshot (which rules governed this session, with a canonical SHA-256 digest for integrity comparison against a trusted reference)
 - Gate status and blockers (if any)
 
 In controlled environments, "the system should probably continue" is not acceptable. The platform says either:
@@ -406,7 +406,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Evidence Types:** Zod-validated schemas across `src/state/evidence-*.ts` plus discovery schemas under `src/discovery/` and `src/state/discovery-schemas.ts`
 - **Framework Mappings:** 5 (BSI C5, MaRisk, BAIT, DORA, GoBD)
 - **Test Coverage:** Unit project enforces 80% (branches/lines/functions/statements); integration project enforces 70% (see `vitest.config.ts`)
-- **Mutation Testing:** StrykerJS (v9.6.1) on 47 security-critical files spanning adapters, audit, config, hooks, identity, integration (incl. review enforcement and orchestrator), machine, and rails; CI enforces an 80% break threshold (see `stryker.conf.json`)
+- **Mutation Testing:** StrykerJS (v9.6.1) on 68 security-critical files spanning adapters, audit, config, hooks, identity, integration (incl. review enforcement and orchestrator), machine, and rails; CI enforces an 80% break threshold (see `stryker.conf.json`)
 - **API Reference:** TypeDoc-generated at [koeppben23.github.io/governed-runtime](https://koeppben23.github.io/governed-runtime/) (GitHub Pages)
 - **Self-Hosted:** Runs locally — offline-capable / local-first by default; network-dependent features (remote JWKS, `/review url=...`, TSA timestamping) are opt-in and documented
 

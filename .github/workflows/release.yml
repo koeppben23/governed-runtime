@@ -10,9 +10,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
-  id-token: write
-  attestations: write
+  contents: read
 
 jobs:
   verify:
@@ -22,6 +20,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Require tag target to equal protected main
+        shell: bash
+        run: |
+          git fetch --no-tags origin main
+          TAG_TARGET="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"
+          MAIN_TARGET="$(git rev-parse origin/main)"
+          if [ "$TAG_TARGET" != "$MAIN_TARGET" ]; then
+            echo "::error::Release tag must target the exact current origin/main commit"
+            exit 1
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # actions/setup-node v7.0.0
@@ -77,11 +88,26 @@ jobs:
           PKG_FILE=$(npm pack --pack-destination release --silent)
           echo "path=release/$PKG_FILE" >> "$GITHUB_OUTPUT"
 
+      - name: Record release artifact digest
+        run: |
+          cd release
+          sha256sum "$(basename "${{ steps.pack.outputs.path }}")" > checksums.sha256
+
+      - name: Generate release metadata
+        run: |
+          cp LICENSE release/LICENSE
+          npm exec --package @cyclonedx/cyclonedx-npm@4.1.1 -- cyclonedx-npm \
+            --spec-version 1.6 \
+            --output-format JSON \
+            --output-reproducible \
+            --output-file release/sbom.cdx.json \
+            --validate
+
       - name: Upload release tarball
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact v7.0.1
         with:
-          name: flowguard-release-tarball
-          path: ${{ steps.pack.outputs.path }}
+          name: flowguard-release-artifact
+          path: release/
           retention-days: 1
 
   verify-runtime:
@@ -102,7 +128,7 @@ jobs:
       - name: Download release tarball
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact v8.0.1
         with:
-          name: flowguard-release-tarball
+          name: flowguard-release-artifact
 
       - name: Verify ESM imports
         run: |
@@ -144,90 +170,60 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
-        run: npm run build
-        env:
-          FORCE_COLOR: 0
+      - name: Download release artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact v8.0.1
+        with:
+          name: flowguard-release-artifact
+          path: release
 
-      - name: Pack release tarball
-        id: pack
+      - name: Verify release artifact digest
         shell: bash
-        run: |
-          mkdir -p release
-          PKG_FILE=$(npm pack --pack-destination release --silent)
-          echo "path=release/$PKG_FILE" >> "$GITHUB_OUTPUT"
+        run: cd release && sha256sum --check checksums.sha256
 
       - name: Verify release tarball
-        run: npm run test:install-verify
+        shell: bash
+        run: FLOWGUARD_TARBALL="$(printf '%s\n' release/flowguard-core-*.tgz)" npm run test:install-verify
         env:
           FORCE_COLOR: 0
-          FLOWGUARD_TARBALL: ${{ steps.pack.outputs.path }}
 
-  release:
-    name: release
-    needs: [verify, release-smoke, verify-runtime]
+  mutation:
+    name: mutation
+    needs: verify
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
-
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # actions/setup-node v7.0.0
         with:
           node-version-file: .node-version
           cache: npm
           cache-dependency-path: package-lock.json
-
       - name: Install dependencies
         run: npm ci
+      - name: Run mutation tests
+        run: npm run mutation
 
-      - name: Build
-        run: npm run build
+  release:
+    name: release
+    needs: [verify, release-smoke, verify-runtime, mutation]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download verified release artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact v8.0.1
+        with:
+          name: flowguard-release-artifact
+          path: release
 
-      - name: Verify ESM import correctness
-        run: npm run check:esm
-
-      - name: Copy LICENSE to dist
-        run: cp LICENSE dist/
-
-      - name: Create npm package
-        run: |
-          mkdir -p release
-          npm pack --pack-destination release/
-
-      - name: Validate asset naming
-        run: |
-          PKG_VERSION="$(node -p 'require("./package.json").version')"
-          EXPECTED_FILENAME="flowguard-core-${PKG_VERSION}.tgz"
-          CREATED_FILENAME=$(find release -maxdepth 1 -name "*.tgz" -type f -printf "%f\n" 2>/dev/null | head -1)
-          echo "Expected: $EXPECTED_FILENAME"
-          echo "Created: $CREATED_FILENAME"
-          if [ "$CREATED_FILENAME" != "$EXPECTED_FILENAME" ]; then
-            echo "::error::Asset filename mismatch. Expected '$EXPECTED_FILENAME' but got '$CREATED_FILENAME'"
-            exit 1
-          fi
-          echo "Asset naming validated successfully."
-
-      - name: Verify release tarball
-        run: |
-          FLOWGUARD_TARBALL="$(ls release/*.tgz)" npm run test:install-verify
-        env:
-          FORCE_COLOR: 0
-
-      - name: Generate checksums
-        working-directory: release
-        run: |
-          sha256sum ./*.tgz > checksums.sha256
-
-      - name: Generate SBOM (CycloneDX)
-        run: |
-          npm exec --package @cyclonedx/cyclonedx-npm@4.1.1 -- cyclonedx-npm \
-            --spec-version 1.6 \
-            --output-format JSON \
-            --output-reproducible \
-            --output-file release/sbom.cdx.json \
-            --validate
+      - name: Verify release artifact digest
+        run: cd release && sha256sum --check checksums.sha256
 
       - name: Attest package provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # actions/attest-build-provenance v4.2.2
@@ -242,7 +238,7 @@ jobs:
             release/*.tgz \
             release/checksums.sha256 \
             release/sbom.cdx.json \
-            LICENSE \
+            release/LICENSE \
             --title "FlowGuard v${GITHUB_REF_NAME#v}" \
             --generate-notes \
             --verify-tag

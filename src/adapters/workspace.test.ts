@@ -302,8 +302,9 @@ describe('validateSessionId', () => {
     expect(validateSessionId('session123')).toBe('session123');
   });
 
-  it('trims whitespace', () => {
-    expect(validateSessionId('  abc  ')).toBe('abc');
+  it('rejects leading or trailing whitespace', () => {
+    expect(() => validateSessionId(' abc')).toThrow(WorkspaceError);
+    expect(() => validateSessionId('abc ')).toThrow(WorkspaceError);
   });
 
   // ─── BAD ────────────────────────────────────────────────────
@@ -340,6 +341,26 @@ describe('validateSessionId', () => {
 
   it('rejects single dot', () => {
     expect(() => validateSessionId('.')).toThrow(WorkspaceError);
+  });
+
+  it.each([
+    'CON',
+    'con.txt',
+    'LPT1.log',
+    'NUL',
+    'session.',
+    'session ',
+    'session. ',
+    'session<id',
+    'session>id',
+    'session"id',
+    'session|id',
+    'session?id',
+    'session*id',
+    'session\u0001id',
+    'session\u001Fid',
+  ])('rejects Windows-unsafe session ID %s', (sessionId) => {
+    expect(() => validateSessionId(sessionId)).toThrow(WorkspaceError);
   });
 
   // ─── CORNER ─────────────────────────────────────────────────
