@@ -72,7 +72,12 @@ function inferTransition(
   return [next.transition];
 }
 
-function stateDigest(state: SessionState): string {
+/**
+ * Canonical state-authority digest: the whole state except the outbox
+ * itself. Single SSOT used at outbox commit time AND at reconciliation to
+ * verify `operation.postStateDigest` against the actually persisted state.
+ */
+export function computeStateDigest(state: SessionState): string {
   const { pendingAuditOperations: _operations, ...authority } = state;
   return hashText(canonicalJsonStringify(authority));
 }
@@ -83,8 +88,8 @@ function addAuditOperations(
   transitions: ReadonlyArray<{ from: string; to: string; event: string; at: string }>,
 ): SessionState {
   if (transitions.length === 0 || !next.policySnapshot.audit.emitTransitions) return next;
-  const preStateDigest = previous ? stateDigest(previous) : hashText('absent');
-  const postStateDigest = stateDigest(next);
+  const preStateDigest = previous ? computeStateDigest(previous) : hashText('absent');
+  const postStateDigest = computeStateDigest(next);
   const mutationDigest = hashText(canonicalJsonStringify(transitions));
   const operations: PendingAuditOperation[] = transitions.map((transition, chainIndex) => {
     const operationId = crypto.randomUUID();

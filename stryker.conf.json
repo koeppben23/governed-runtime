@@ -12,12 +12,14 @@
   "mutate": [
     "src/adapters/persistence-lock.ts",
     "src/adapters/host-adapter.ts",
+    "src/adapters/persistence.ts",
     "src/mcp-server/execution-limiter.ts",
 
     "src/archive/content-digest.ts",
 
     "src/audit/completeness.ts",
     "src/audit/integrity.ts",
+    "src/audit/types.ts",
     "src/audit/ntp-check.ts",
     "src/audit/rfc-3161-pkijs-verifier.ts",
     "src/audit/timestamp-verification.ts",
@@ -60,9 +62,11 @@
     "src/integration/tools/review-validation-host-task.ts",
     "src/integration/plugin-audit-lifecycle-reason.ts",
     "src/integration/plugin-audit.ts",
+    "src/integration/plugin-audit-reconcile.ts",
     "src/integration/plugin-beforehooks.ts",
     "src/integration/plugin-afterhooks.ts",
     "src/integration/plugin-helpers.ts",
+    "src/integration/tools/audit-outbox.ts",
     "src/templates/codex-plugin.ts",
     "src/templates/claude-code-plugin.ts",
     "src/templates/mandates.ts",

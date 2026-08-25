@@ -32,11 +32,18 @@ import { resolveTimestampEvidence } from '../audit/timestamp-resolution.js';
 import type { TimestampAssurancePolicy } from '../config/policy-types.js';
 import type { TimestampAuthorityProvider, TimestampVerifier } from '../audit/tsa-provider.js';
 import { resolveAuditContext, type AuditContext } from './plugin-audit-context.js';
+import { computeStateDigest } from './tools/audit-outbox.js';
 
 /** Closure dependencies injected from plugin.ts. */
 export interface AuditDeps {
   resolveFingerprint(): Promise<string | null>;
   getSessionDir(sessionId: string): string | null;
+  /**
+   * Canonical worktree + sessionId → sessionDir resolution, independent of the
+   * cached fingerprint mapping. Lets the bootstrap gate verify persisted
+   * session state even when the cached audit mapping is unavailable.
+   */
+  resolveCanonicalSessionDir?(sessionId: string): Promise<string | null>;
   resolveSessionPolicy(sessDir: string): Promise<{
     policy: {
       audit: {
@@ -165,6 +172,16 @@ export async function emitTransitionAudits(input: {
     count: operations.length,
   });
   for (const operation of operations) {
+    // The operation's committed post-state authority must equal the state that
+    // is actually persisted right now. This is the state↔audit binding: any
+    // side-effect write that landed before reconciliation invalidates the
+    // operation and must fail closed instead of being reconciled.
+    if (computeStateDigest(state) !== operation.postStateDigest) {
+      throw new PersistenceError(
+        'SCHEMA_VALIDATION_FAILED',
+        `Audit operation ${operation.operationId} postStateDigest does not match the persisted state`,
+      );
+    }
     const body = buildOperationTransitionBody(state, operation, ctx.prevHash);
     const expectedDigest = computeCanonicalEventDigest(body);
     if (expectedDigest !== operation.auditEventDigest) {
@@ -202,7 +219,8 @@ async function assertNoLegacyTransitionGap(
   sessDir: string,
   state: SessionState | null,
 ): Promise<void> {
-  if (!state?.transition || state.pendingAuditOperations.length > 0) return;
+  // Only invoked when the state has no pending audit operations at all.
+  if (!state?.transition) return;
   const trail = await readAuditTrail(sessDir);
   if (trail.skipped > 0) {
     throw new PersistenceError(
@@ -240,15 +258,11 @@ async function findOperationAudit(
       candidate.detail.operationId === operation.operationId,
   );
   if (!event) return false;
+  // The loop already verified digest(operation body) === operation.auditEventDigest;
+  // here only the persisted event must equal that same expected digest.
   const expectedDigest = computeCanonicalEventDigest(
     buildOperationTransitionBody(state, operation, event.prevHash ?? 'genesis'),
   );
-  if (expectedDigest !== operation.auditEventDigest) {
-    throw new PersistenceError(
-      'SCHEMA_VALIDATION_FAILED',
-      `Audit operation ${operation.operationId} does not match its committed event digest`,
-    );
-  }
   if (computeCanonicalEventDigest(event) !== expectedDigest) {
     throw new PersistenceError(
       'SCHEMA_VALIDATION_FAILED',
@@ -272,6 +286,8 @@ async function acknowledgeAuditOperation(
       );
     }
     const operation = state.pendingAuditOperations.find((item) => item.operationId === operationId);
+    // The reconcile loop only acknowledges operations it just read from this
+    // state; an already-reconciled operation needs no further update.
     if (!operation || operation.status === 'reconciled') return;
     const rank = { state_committed: 0, audit_committed: 1, reconciled: 2 } as const;
     const nextStatus = rank[status] > rank[operation.status] ? status : operation.status;
@@ -387,7 +403,9 @@ export async function reconcilePendingAuditOperations(
 }
 
 async function hasPersistedSessionState(deps: AuditDeps, sessionId: string): Promise<boolean> {
-  const sessDir = deps.getSessionDir(sessionId);
+  const mapped = deps.getSessionDir(sessionId);
+  const canonical = (await deps.resolveCanonicalSessionDir?.(sessionId)) ?? null;
+  const sessDir = mapped ?? canonical;
   if (!sessDir) return false;
   return (await readState(sessDir)) !== null;
 }
