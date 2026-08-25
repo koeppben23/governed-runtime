@@ -343,12 +343,25 @@ describe('validateSessionId', () => {
     expect(() => validateSessionId('.')).toThrow(WorkspaceError);
   });
 
-  it.each(['CON', 'con.txt', 'LPT1.log', 'NUL', 'session.', 'session ', 'session. '])(
-    'rejects Windows-unsafe session ID %s',
-    (sessionId) => {
-      expect(() => validateSessionId(sessionId)).toThrow(WorkspaceError);
-    },
-  );
+  it.each([
+    'CON',
+    'con.txt',
+    'LPT1.log',
+    'NUL',
+    'session.',
+    'session ',
+    'session. ',
+    'session<id',
+    'session>id',
+    'session"id',
+    'session|id',
+    'session?id',
+    'session*id',
+    'session\u0001id',
+    'session\u001Fid',
+  ])('rejects Windows-unsafe session ID %s', (sessionId) => {
+    expect(() => validateSessionId(sessionId)).toThrow(WorkspaceError);
+  });
 
   // ─── CORNER ─────────────────────────────────────────────────
   it('accepts dots within a longer string', () => {

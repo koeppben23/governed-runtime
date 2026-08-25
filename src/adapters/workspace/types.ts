@@ -13,8 +13,9 @@ export const FINGERPRINT_LENGTH = 24;
 /** Regex for validating fingerprint format. */
 export const FINGERPRINT_RE = /^[0-9a-f]{24}$/;
 
-/** Unsafe characters for path segments. */
-export const UNSAFE_PATH_CHARS_RE = /[/\\:\0]/;
+/** Characters forbidden in Windows filename segments, including control bytes. */
+// eslint-disable-next-line no-control-regex -- Session IDs become filesystem segments on Windows.
+export const UNSAFE_PATH_CHARS_RE = /[<>:"/\\|?*\u0000-\u001F]/;
 
 /** Windows device names are reserved for every extension and casing. */
 const WINDOWS_RESERVED_SESSION_ID_RE = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
