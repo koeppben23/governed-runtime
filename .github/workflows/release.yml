@@ -20,6 +20,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Require tag target to equal protected main
+        shell: bash
+        run: |
+          git fetch --no-tags origin main
+          TAG_TARGET="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"
+          MAIN_TARGET="$(git rev-parse origin/main)"
+          if [ "$TAG_TARGET" != "$MAIN_TARGET" ]; then
+            echo "::error::Release tag must target the exact current origin/main commit"
+            exit 1
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # actions/setup-node v7.0.0
