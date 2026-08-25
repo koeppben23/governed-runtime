@@ -40,10 +40,12 @@ export interface AuditDeps {
   getSessionDir(sessionId: string): string | null;
   /**
    * Canonical worktree + sessionId → sessionDir resolution, independent of the
-   * cached fingerprint mapping. Lets the bootstrap gate verify persisted
-   * session state even when the cached audit mapping is unavailable.
+   * cached fingerprint mapping. Discriminated outcome: `unavailable` must be
+   * distinguished from a positively resolved-but-absent session directory.
    */
-  resolveCanonicalSessionDir?(sessionId: string): Promise<string | null>;
+  resolveCanonicalSessionDir?(
+    sessionId: string,
+  ): Promise<{ status: 'resolved'; sessDir: string } | { status: 'unavailable' }>;
   resolveSessionPolicy(sessDir: string): Promise<{
     policy: {
       audit: {
@@ -366,8 +368,10 @@ export async function reconcilePendingAuditOperations(
     if (!resolved) {
       // Only a genuine bootstrap may tolerate a missing audit session
       // authority: the very first flowguard_hydrate creates the session and
-      // its outbox. Every other FlowGuard mutation fails closed.
-      if (toolName === 'flowguard_hydrate' && !(await hasPersistedSessionState(deps, sessionId))) {
+      // its outbox — and only when the absence of a session is positively
+      // proven. An unavailable resolution authority fails closed.
+      const existence = await resolveBootstrapStateExistence(deps, sessionId);
+      if (toolName === 'flowguard_hydrate' && existence === 'absent') {
         return undefined;
       }
       return {
@@ -402,10 +406,22 @@ export async function reconcilePendingAuditOperations(
   }
 }
 
-async function hasPersistedSessionState(deps: AuditDeps, sessionId: string): Promise<boolean> {
+type BootstrapStateExistence = 'exists' | 'absent' | 'unavailable';
+
+/**
+ * Three-state bootstrap authority: only a POSITIVELY PROVEN absent session
+ * may open the first-hydrate path. An unavailable resolution authority must
+ * fail closed — unavailable is never treated as absent.
+ */
+async function resolveBootstrapStateExistence(
+  deps: AuditDeps,
+  sessionId: string,
+): Promise<BootstrapStateExistence> {
   const mapped = deps.getSessionDir(sessionId);
-  const canonical = (await deps.resolveCanonicalSessionDir?.(sessionId)) ?? null;
-  const sessDir = mapped ?? canonical;
-  if (!sessDir) return false;
-  return (await readState(sessDir)) !== null;
+  if (mapped) {
+    return (await readState(mapped)) !== null ? 'exists' : 'absent';
+  }
+  const canonical = await deps.resolveCanonicalSessionDir?.(sessionId);
+  if (!canonical || canonical.status === 'unavailable') return 'unavailable';
+  return (await readState(canonical.sessDir)) !== null ? 'exists' : 'absent';
 }

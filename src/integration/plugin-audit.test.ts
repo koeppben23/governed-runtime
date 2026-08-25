@@ -1695,18 +1695,42 @@ describe('runAudit', () => {
       }
     });
 
-    it('tolerates a missing audit session authority only for a first hydrate', async () => {
+    it('tolerates a missing audit session authority only for a proven first hydrate', async () => {
+      const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-audit-bootstrap-'));
+      try {
+        const deps = makeDeps({
+          getSessionDir: vi.fn().mockReturnValue(null),
+          resolveCanonicalSessionDir: vi.fn().mockResolvedValue({
+            status: 'resolved',
+            sessDir,
+          }),
+          resolveSessionPolicy: vi.fn().mockRejectedValue(new Error('unreachable')),
+        });
+
+        await expect(
+          reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_hydrate'),
+        ).resolves.toBeUndefined();
+
+        const blocked = await reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_plan');
+        expect(blocked).toMatchObject({
+          auditOk: false,
+          block: true,
+          code: 'AUDIT_SESSION_AUTHORITY_UNAVAILABLE',
+        });
+      } finally {
+        await fs.rm(sessDir, { recursive: true, force: true });
+      }
+    });
+
+    it('blocks flowguard_hydrate when the canonical resolution authority is unavailable', async () => {
       const deps = makeDeps({
         getSessionDir: vi.fn().mockReturnValue(null),
+        resolveCanonicalSessionDir: vi.fn().mockResolvedValue({ status: 'unavailable' }),
         resolveSessionPolicy: vi.fn().mockRejectedValue(new Error('unreachable')),
       });
 
-      await expect(
-        reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_hydrate'),
-      ).resolves.toBeUndefined();
-
-      const blocked = await reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_plan');
-      expect(blocked).toMatchObject({
+      const result = await reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_hydrate');
+      expect(result).toMatchObject({
         auditOk: false,
         block: true,
         code: 'AUDIT_SESSION_AUTHORITY_UNAVAILABLE',
@@ -1719,7 +1743,10 @@ describe('runAudit', () => {
         await writeState(sessDir, makeState('TICKET', { id: SESSION_ID }));
         const deps = makeDeps({
           getSessionDir: vi.fn().mockReturnValue(null),
-          resolveCanonicalSessionDir: vi.fn().mockResolvedValue(sessDir),
+          resolveCanonicalSessionDir: vi.fn().mockResolvedValue({
+            status: 'resolved',
+            sessDir,
+          }),
           resolveSessionPolicy: vi.fn().mockRejectedValue(new Error('unreachable')),
         });
 
@@ -1739,7 +1766,10 @@ describe('runAudit', () => {
       try {
         const deps = makeDeps({
           getSessionDir: vi.fn().mockReturnValue(null),
-          resolveCanonicalSessionDir: vi.fn().mockResolvedValue(sessDir),
+          resolveCanonicalSessionDir: vi.fn().mockResolvedValue({
+            status: 'resolved',
+            sessDir,
+          }),
           resolveSessionPolicy: vi.fn().mockRejectedValue(new Error('unreachable')),
         });
 

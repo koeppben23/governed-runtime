@@ -265,11 +265,13 @@ describe('plugin bootstrap fail-closed', () => {
         const beforeHook = hooks['tool.execute.before']!;
 
         // Reviewer Tasks require a FlowGuard-issued pending obligation and cannot
-        // be started speculatively.
+        // be started speculatively. Without a hydrated session the audit session
+        // authority is unavailable and the dispatch fails closed before any
+        // execution record can be registered.
         const input = { tool: 'task', sessionID: crypto.randomUUID(), callID: 'c1' };
         const output = { args: { subagent_type: 'flowguard-reviewer', prompt: 'test prompt' } };
         await expect(beforeHook(input, output)).rejects.toThrow(
-          'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+          'AUDIT_SESSION_AUTHORITY_UNAVAILABLE',
         );
       } finally {
         await ws.cleanup();

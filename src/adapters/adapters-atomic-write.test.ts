@@ -550,4 +550,42 @@ describe('durableAtomicWrite — directory fsync durability', () => {
       openSpy.mockRestore();
     }
   });
+
+  it('CORNER: degrades silently for an unsupported directory open (EISDIR)', async () => {
+    const openSpy = vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
+      if (args[1] === 'r') {
+        throw Object.assign(new Error('EISDIR'), { code: 'EISDIR' });
+      }
+      return actual.open(...args);
+    });
+    try {
+      const filePath = path.join(tmpDir, 'session-state.json');
+      await durableAtomicWrite(filePath, '{"ok":true}\n');
+      expect(await fs.readFile(filePath, 'utf-8')).toBe('{"ok":true}\n');
+    } finally {
+      openSpy.mockRestore();
+    }
+  });
+
+  it('CORNER: degrades silently for an unsupported directory fsync (EINVAL)', async () => {
+    const openSpy = vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
+      const handle = await actual.open(...args);
+      if (args[1] === 'r') {
+        return {
+          ...handle,
+          sync: async () => {
+            throw Object.assign(new Error('EINVAL'), { code: 'EINVAL' });
+          },
+        };
+      }
+      return handle;
+    });
+    try {
+      const filePath = path.join(tmpDir, 'session-state.json');
+      await durableAtomicWrite(filePath, '{"ok":true}\n');
+      expect(await fs.readFile(filePath, 'utf-8')).toBe('{"ok":true}\n');
+    } finally {
+      openSpy.mockRestore();
+    }
+  });
 });

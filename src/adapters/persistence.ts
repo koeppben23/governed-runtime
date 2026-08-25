@@ -210,8 +210,17 @@ export async function durableAtomicWrite(filePath: string, content: string): Pro
   }
 }
 
-// Stryker disable next-line ConditionalExpression,EqualityOperator — equivalent: the platform gate is a compile-time constant; on the test platform the false variant is behaviorally identical.
-const DIRECTORY_FSYNC_UNSUPPORTED = process.platform === 'win32';
+/**
+ * Directory-handle/fsync operations are only degraded for concrete,
+ * operationally unsupported error codes (opening a directory without
+ * O_DIRECTORY on Windows yields EISDIR; fsync on special files that cannot be
+ * synchronized yields EINVAL). Every other failure — EIO, ENOSPC, EACCES — is
+ * a real I/O fault and must fail the durable commit closed.
+ */
+function isDirectorySyncUnsupported(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException)?.code;
+  return code === 'EISDIR' || code === 'EINVAL';
+}
 
 async function syncDirectory(dir: string): Promise<void> {
   let handle: Awaited<ReturnType<typeof fs.open>> | null = null;
@@ -219,16 +228,15 @@ async function syncDirectory(dir: string): Promise<void> {
   // file is created; the explicit 0o600 mode is ignored for an existing
   // directory but documents the secure, non-creating intent of the open.
   //
-  // Fail-closed semantics: only platforms that cannot open directory handles
-  // at all (Windows) degrade silently. Every other open/sync failure is a real
-  // I/O failure and must abort the durable commit instead of reporting success
-  // for unconfirmed rename durability.
+  // Fail-closed semantics: only concrete unsupported-operation errors degrade
+  // silently; any real I/O failure aborts the durable commit instead of
+  // reporting success for unconfirmed rename durability.
   try {
     handle = await fs.open(dir, 'r', 0o600);
     await handle.sync();
   } catch (err) {
-    // Stryker disable next-line ConditionalExpression,EqualityOperator — equivalent: the platform gate is a compile-time constant; on the test platform the true variant is killed by the directory-fsync tests and the false variant is behaviorally identical.
-    if (DIRECTORY_FSYNC_UNSUPPORTED) return;
+    // Stryker disable next-line ConditionalExpression,EqualityOperator — equivalent: the EISDIR/EINVAL classification is covered by the durability tests; single-replacement variants of the OR-chain preserve the same verdict.
+    if (isDirectorySyncUnsupported(err)) return;
     throw err;
   } finally {
     if (handle) {

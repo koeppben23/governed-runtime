@@ -21,6 +21,7 @@ import {
   renameWithRetry,
 } from './persistence.js';
 import { getLastChainHash } from '../audit/integrity.js';
+import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import {
   computeChainHash,
   CURRENT_AUDIT_FORMAT_VERSION,
@@ -89,6 +90,22 @@ async function appendAuditLineAtomically(
         'READ_FAILED',
         `Refusing to append: existing audit trail contains ${existingTrail.skipped} unparseable line(s). ` +
           'The corrupt portion must be repaired before new events can be appended.',
+      );
+    }
+
+    // Exactly-once under the audit write lock: an event id is a commit
+    // identity. A crash between append and acknowledgement may re-deliver the
+    // SAME event — return the persisted record instead of appending a
+    // duplicate. The same id with different content is a chain violation and
+    // fails closed.
+    const sameId = existingTrail.events.find((candidate) => candidate.id === event.id);
+    if (sameId) {
+      if (computeCanonicalEventDigest(sameId) === computeCanonicalEventDigest(event)) {
+        return sameId;
+      }
+      throw new PersistenceError(
+        'SCHEMA_VALIDATION_FAILED',
+        `Refusing to append audit event with duplicate id ${event.id} and different content`,
       );
     }
 

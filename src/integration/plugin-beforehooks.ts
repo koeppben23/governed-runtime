@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { readState } from '../adapters/persistence.js';
 import { buildEnforcementError } from './plugin-helpers.js';
 import { isMutatingHostTool, isHostToolAllowedInPhase } from './phase-tool-gate.js';
-import { isWorkflowTool } from './tool-classification.js';
+import { isMutatingFlowGuardTool } from './tool-classification.js';
 import {
   enforceBeforeVerdict,
   enforceBeforeSubagentCall,
@@ -115,23 +115,8 @@ async function enforceBeforeRules(
 ): Promise<void> {
   await enforceCommandScope(runtime, toolName, sessionId);
 
-  // Reviewer Tasks may persist attempt-binding and observation state in the
-  // after-hook. Their pure authorization runs first (preserving precise
-  // diagnostics), but the durable audit outbox must be reconciled before the
-  // hook returns — i.e., before any reviewer side effect can occur.
-  // Stryker disable next-line ConditionalExpression,LogicalOperator,EqualityOperator — equivalent: task/type discrimination is asserted end-to-end by attempt-lifecycle-e2e; the single-replacement variants remain behaviorally identical under the remaining guards.
-  const isReviewerSpawn =
-    // Stryker disable next-line EqualityOperator,ConditionalExpression — equivalent: non-string inputs route to the '' pass-through; string inputs are discriminated by the trailing equality.
-    toolName === 'task' &&
-    typeof args.subagent_type === 'string' &&
-    args.subagent_type === REVIEWER_SUBAGENT_TYPE;
-
   if (toolName === 'task') {
     await enforceTaskBefore(runtime, toolName, sessionId, callId, args);
-    if (isReviewerSpawn) {
-      // Stryker disable next-line BlockStatement — the reconcile-before-reviewer-return ordering is asserted by the attempt-lifecycle e2e suite; this block is a pass-through to the shared gate.
-      await reconcileBeforeMutation(runtime, sessionId, toolName);
-    }
     return;
   }
 
@@ -148,27 +133,43 @@ async function enforceBeforeRules(
   await enforceVerdictCheck(runtime, toolName, sessionId, args);
 
   // Unresolved durable audit operations block every governed mutation —
-  // mutating workflow tools (flowguard_*) AND host mutating tools
-  // (write/edit/apply_patch/bash). Read-only tools stay available.
-  if (isWorkflowTool(toolName) || mutatingHost) {
+  // mutating FlowGuard tools (workflow AND persistent operational tools) AND
+  // host mutating tools (write/edit/apply_patch/bash). Read-only tools stay
+  // available.
+  if (isMutatingFlowGuardTool(toolName) || mutatingHost) {
     await reconcileBeforeMutation(runtime, sessionId, toolName);
   }
 
   if (mutatingHost && hostResolution) {
-    await enforceRiskBefore(
-      runtime.riskDeps,
-      hostResolution.sessDir,
-      hostResolution.state,
-      toolName,
-      args,
-    );
+    // Re-read the state AFTER reconciliation: the reconcile pass may have
+    // advanced outbox statuses. Persisting a pre-reconciliation snapshot
+    // (e.g. through a risk-gate block) would roll the monotonic operation
+    // state backwards and corrupt the state↔audit digest binding.
+    const freshState = await readFreshStateAfterReconcile(runtime, sessionId, hostResolution);
+    await enforceRiskBefore(runtime.riskDeps, hostResolution.sessDir, freshState, toolName, args);
     await enforceDiscoveryHealthBefore(
       runtime.discoveryHealthDeps,
       hostResolution.sessDir,
-      hostResolution.state,
+      freshState,
       toolName,
     );
   }
+}
+
+async function readFreshStateAfterReconcile(
+  runtime: FlowGuardPluginRuntime,
+  sessionId: string,
+  hostResolution: { sessDir: string; state: SessionState },
+): Promise<SessionState> {
+  const fresh = await readState(hostResolution.sessDir);
+  if (!fresh) {
+    throw buildEnforcementError(
+      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+      'FlowGuard session state disappeared during audit reconciliation. Run FlowGuard doctor or re-hydrate the session.',
+      { sessionId, stateReadable: 'false' },
+    );
+  }
+  return fresh;
 }
 
 async function reconcileBeforeMutation(
@@ -244,6 +245,11 @@ async function enforceTaskBefore(
       'subagent',
     );
     await enforceReviewerObligationCheck(runtime, sessionState, strictEnforcement);
+
+    // Pure authorization ends here. The durable audit outbox is reconciled
+    // BEFORE the execution record is registered: a failed reconciliation must
+    // not leave a phantom in-flight reviewer execution that blocks retries.
+    await reconcileBeforeMutation(runtime, sessionId, toolName);
 
     const execution = registerExecutedTaskPrompt(
       eState,

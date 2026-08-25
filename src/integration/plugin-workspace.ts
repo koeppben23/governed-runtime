@@ -49,10 +49,13 @@ export interface PluginWorkspace {
   getSessionDir(sessionId: string): string | null;
   /**
    * Canonical worktree + sessionId → sessionDir resolution, independent of the
-   * cached fingerprint state. Used by the audit bootstrap gate to check for
-   * persisted session state even when the plugin's cached mapping is down.
+   * cached fingerprint state. Returns a discriminated outcome so callers can
+   * distinguish a positively resolved directory from an unavailable
+   * resolution authority — unavailable must never be treated as absent.
    */
-  resolveCanonicalSessionDir(sessionId: string): Promise<string | null>;
+  resolveCanonicalSessionDir(
+    sessionId: string,
+  ): Promise<{ status: 'resolved'; sessDir: string } | { status: 'unavailable' }>;
   getChainState(sessionId: string): MutableChainState;
   invalidateChainState(sessionId: string): void;
   initChain(sessDir: string | null, sessionId: string): Promise<string>;
@@ -128,13 +131,15 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
     }
   }
 
-  async resolveCanonicalSessionDir(sessionId: string): Promise<string | null> {
-    if (!this._deps.auditWorktree) return null;
+  async resolveCanonicalSessionDir(
+    sessionId: string,
+  ): Promise<{ status: 'resolved'; sessDir: string } | { status: 'unavailable' }> {
+    if (!this._deps.auditWorktree) return { status: 'unavailable' };
     try {
       const result = await computeFingerprint(this._deps.auditWorktree);
-      return resolveSessionDir(result.fingerprint, sessionId);
+      return { status: 'resolved', sessDir: resolveSessionDir(result.fingerprint, sessionId) };
     } catch {
-      return null;
+      return { status: 'unavailable' };
     }
   }
 

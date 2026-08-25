@@ -441,8 +441,12 @@ describe('toolBefore — reviewer task authorization', () => {
     const ws = await createTestWorkspace();
     try {
       const sessDir = path.join(ws.tmpDir, 'sess-plan');
-      await seedSession(sessDir, makeState('PLAN'));
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const state = makeState('PLAN');
+      await seedSession(sessDir, state);
+      const runtime = makeRuntime({
+        ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) },
+        auditDeps: makeAuditDeps(sessDir, state),
+      });
       await expect(
         toolBefore(
           runtime,
@@ -479,16 +483,17 @@ describe('toolBefore — reviewer task authorization', () => {
     try {
       const sessDir = path.join(ws.tmpDir, 'sess-strict');
       const base = makeState('PLAN');
-      await seedSession(
-        sessDir,
-        makeState('PLAN', {
-          policySnapshot: {
-            ...base.policySnapshot,
-            selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
-          },
-        }),
-      );
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const state = makeState('PLAN', {
+        policySnapshot: {
+          ...base.policySnapshot,
+          selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
+        },
+      });
+      await seedSession(sessDir, state);
+      const runtime = makeRuntime({
+        ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) },
+        auditDeps: makeAuditDeps(sessDir, state),
+      });
       await expect(
         toolBefore(
           runtime,
@@ -539,10 +544,45 @@ describe('toolBefore — workflow reconciliation gate', () => {
     }
   });
 
-  it('allows operational tools like flowguard_archive without reconciliation', async () => {
+  it('blocks persistent operational tools when no audit session authority exists', async () => {
     const runtime = makeRuntime();
     await expect(
       toolBefore(runtime, { tool: 'flowguard_archive', sessionID: SESSION_ID }, { args: {} }),
+    ).rejects.toThrow('AUDIT_SESSION_AUTHORITY_UNAVAILABLE');
+    await expect(
+      toolBefore(
+        runtime,
+        { tool: 'flowguard_record_mutation_evidence', sessionID: SESSION_ID },
+        { args: {} },
+      ),
+    ).rejects.toThrow('AUDIT_SESSION_AUTHORITY_UNAVAILABLE');
+  });
+
+  it('allows persistent operational tools with a healthy audit session', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessDir = path.join(ws.tmpDir, 'sess-archive');
+      const state = makeState('COMPLETE');
+      await seedSession(sessDir, state);
+      const runtime = makeRuntime({
+        ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) },
+        auditDeps: makeAuditDeps(sessDir, state),
+      });
+      await expect(
+        toolBefore(runtime, { tool: 'flowguard_archive', sessionID: SESSION_ID }, { args: {} }),
+      ).resolves.toBeUndefined();
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('keeps read-only operational tools available without a session', async () => {
+    const runtime = makeRuntime();
+    await expect(
+      toolBefore(runtime, { tool: 'flowguard_status', sessionID: SESSION_ID }, { args: {} }),
+    ).resolves.toBeUndefined();
+    await expect(
+      toolBefore(runtime, { tool: 'flowguard_help', sessionID: SESSION_ID }, { args: {} }),
     ).resolves.toBeUndefined();
   });
 });
