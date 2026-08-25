@@ -67,10 +67,10 @@ local composite-action dependencies: external GitHub Actions must use full
 40-character lowercase commit SHAs, local actions under `./` are allowed, local
 and Docker actions are allowed only when pinned by `sha256` digest.
 
-The `mutation` job runs StrykerJS mutation testing against 67 security-critical
+The `mutation` job runs StrykerJS mutation testing against 68 security-critical
 files spanning adapters (persistence-lock + host-adapter), archive creation,
 publication, inventory validation, and digesting,
-audit (integrity + completeness + NTP), config (policy + reasons + profile), hooks (HTTP hook server + command pre-tool-use + shared obligation-tracker +
+audit (integrity + completeness + NTP), config (policy + policy snapshot + reasons + profile), hooks (HTTP hook server + command pre-tool-use + shared obligation-tracker +
 phase-gate), identity (token-verifier + key-resolver), integration
 (command-aliases, tool-classification, discovery-risk-paths, pre-implementation challenge, architecture submit, review-validation-mode,
 plugin-audit-lifecycle-reason, review enforcement, review orchestrator,
@@ -173,7 +173,7 @@ code; they are not a per-area carve-out.
 
 ### Scope
 
-67 files are mutated, covering the fail-closed governance core
+68 files are mutated, covering the fail-closed governance core
 (see `stryker.conf.json` for the canonical list):
 
 | Area                                                                                                                                                                                                                                                                                                                                                 | Files  | Representative score            |
@@ -183,7 +183,7 @@ code; they are not a per-area carve-out.
 | Audit (`integrity`, `completeness`, `ntp-check`)                                                                                                                                                                                                                                                                                                     | 3      | (see latest report)             |
 | Audit ProofGraph (`proofgraph/evaluate`, `proofgraph/gate`)                                                                                                                                                                                                                                                                                          | 2      | (see latest report)             |
 | Integration ProofGraph (`proofgraph/claim-contract`)                                                                                                                                                                                                                                                                                                 | 1      | (see latest report)             |
-| Config (`policy`, `reasons`, `profile`)                                                                                                                                                                                                                                                                                                              | 3      | (see latest report)             |
+| Config (`policy`, `policy-snapshot`, `reasons`, `profile`)                                                                                                                                                                                                                                                                                           | 4      | (see latest report)             |
 | MCP (`execution-limiter`)                                                                                                                                                                                                                                                                                                                            | 1      | (see latest report)             |
 | Hooks (`http-server`, `pre-tool-use`, `shared/obligation-tracker`, `shared/phase-gate`)                                                                                                                                                                                                                                                              | 4      | (see latest report)             |
 | Identity (`token-verifier`, `key-resolver`)                                                                                                                                                                                                                                                                                                          | 2      | (see latest report)             |
@@ -193,7 +193,7 @@ code; they are not a per-area carve-out.
 | Logging (`error-serialize`)                                                                                                                                                                                                                                                                                                                          | 1      | (see latest report)             |
 | Machine (`commands`, `evaluate`, `guards`, `next-action`, `validation-evidence`)                                                                                                                                                                                                                                                                     | 5      | (see latest report)             |
 | Rails (`architecture`, `hydrate`, `review`, `review-decision`, `ticket`)                                                                                                                                                                                                                                                                             | 5      | (see latest report)             |
-| **Total**                                                                                                                                                                                                                                                                                                                                            | **67** | uploaded as `reports/mutation/` |
+| **Total**                                                                                                                                                                                                                                                                                                                                            | **68** | uploaded as `reports/mutation/` |
 
 Per-file mutation scores are produced fresh in CI; consult the latest
 `reports/mutation/` artifact for current numbers.

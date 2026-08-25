@@ -31,6 +31,7 @@ import {
   normalizeValidationEvidenceField,
 } from './policy-snapshot-normalize.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { POLICY_DIGEST_VERSION } from '../shared/policy-digest.js';
 
 export const sha256 = (text: string) => createHash('sha256').update(text, 'utf-8').digest('hex');
 export const NOW = '2026-04-27T10:00:00.000Z';
@@ -70,6 +71,7 @@ describe('createPolicySnapshot', () => {
     const snapshot = createPolicySnapshot(SOLO_POLICY, NOW, sha256);
     expect(snapshot.mode).toBe('solo');
     expect(snapshot.hash).toBe(sha256(canonicalJsonStringify(SOLO_POLICY)));
+    expect(snapshot.hashVersion).toBe(POLICY_DIGEST_VERSION);
     expect(snapshot.resolvedAt).toBe(NOW);
     expect(snapshot.requireHumanGates).toBe(SOLO_POLICY.requireHumanGates);
     expect(snapshot.maxSelfReviewIterations).toBe(SOLO_POLICY.maxSelfReviewIterations);
@@ -114,6 +116,46 @@ describe('createPolicySnapshot', () => {
     expect(snapshot.audit.timestampAssurance.enabled).toBe(
       SOLO_POLICY.audit.timestampAssurance.enabled,
     );
+  });
+
+  it('preserves configured optional timestamp-assurance fields', () => {
+    const policy = {
+      ...SOLO_POLICY,
+      audit: {
+        ...SOLO_POLICY.audit,
+        timestampAssurance: {
+          ...SOLO_POLICY.audit.timestampAssurance,
+          tsaUrl: 'https://tsa.example.test',
+          trustAnchors: ['anchor-a'],
+          ntpServers: ['ntp.example.test'],
+        },
+      },
+    };
+
+    expect(createPolicySnapshot(policy, NOW, sha256).audit.timestampAssurance).toMatchObject({
+      tsaUrl: 'https://tsa.example.test',
+      trustAnchors: ['anchor-a'],
+      ntpServers: ['ntp.example.test'],
+    });
+  });
+
+  it('preserves an explicit resolution instead of policy defaults', () => {
+    const snapshot = createPolicySnapshot(SOLO_POLICY, NOW, sha256, {
+      requestedMode: 'team',
+      effectiveGateBehavior: 'human_gated',
+    });
+
+    expect(snapshot.requestedMode).toBe('team');
+    expect(snapshot.effectiveGateBehavior).toBe('human_gated');
+  });
+
+  it('preserves the configured self-review policy', () => {
+    const policy = {
+      ...SOLO_POLICY,
+      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
+    };
+
+    expect(createPolicySnapshot(policy, NOW, sha256).selfReview).toEqual(policy.selfReview);
   });
 
   it('binds nested governance fields into the policy digest', () => {
@@ -243,6 +285,39 @@ describe('resolvePolicyFromSnapshot', () => {
   });
 
   describe('LEGACY — missing fields', () => {
+    it('applies every fail-closed legacy fallback', () => {
+      const snapshot = createPolicySnapshot(REGULATED_POLICY, NOW, sha256);
+      const legacy = {
+        ...snapshot,
+        maxIncoherentReviewerCaptureRetries: undefined,
+        maxReviewerOutputRepairAttempts: undefined,
+        minimumActorAssuranceForApproval: undefined,
+        requireVerifiedActorsForApproval: undefined,
+        audit: { ...snapshot.audit, timestampAssurance: undefined },
+        enforceRiskClassification: undefined,
+        allowRiskDowngradeOverride: undefined,
+        allowReducedCeremony: undefined,
+      } as unknown as PolicySnapshot;
+
+      const reconstructed = resolvePolicyFromSnapshot(legacy);
+      expect(reconstructed.maxIncoherentReviewerCaptureRetries).toBe(1);
+      expect(reconstructed.maxReviewerOutputRepairAttempts).toBe(1);
+      expect(reconstructed.minimumActorAssuranceForApproval).toBe('claim_validated');
+      expect(reconstructed.requireVerifiedActorsForApproval).toBe(false);
+      expect(reconstructed.audit.timestampAssurance).toEqual({
+        enabled: false,
+        mode: 'local_only',
+        strict: false,
+        criticalEvents: ['decision', 'lifecycle'],
+        ntpServers: ['pool.ntp.org'],
+        ntpDriftThresholdMs: 30000,
+        tsaTimeoutMs: 10000,
+      });
+      expect(reconstructed.enforceRiskClassification).toBe(true);
+      expect(reconstructed.allowRiskDowngradeOverride).toBe(false);
+      expect(reconstructed.allowReducedCeremony).toBe(false);
+    });
+
     it('reconstructs policy with safe defaults for legacy fields', () => {
       const snapshot = createPolicySnapshot(SOLO_POLICY, NOW, sha256);
       const reconstructed = resolvePolicyFromSnapshot({

@@ -104,6 +104,7 @@ disproven, update the status and link the evidence."
 | AC3  | HIGH     | Fixed                      | Audit argument summarization can expose scalar secrets and needs redaction hardening.                                                                                     |
 | AC4  | HIGH     | Fixed                      | NTP offset/delay calculation is RFC-aligned and captures T1 immediately before send (#728).                                                                               |
 | AC5  | HIGH     | Fixed                      | NTP responses validate protocol fields, peer-bound origin timestamp, and non-null transmit timestamp (#728).                                                              |
+| PD1  | HIGH     | Tracked                    | Policy snapshot digests now declare `policy-digest.v2`; legacy snapshots remain explicitly unversioned. Admission passed at 90.63%; status becomes Fixed after merge.  |
 | H1   | HIGH     | Fixed                      | HTTP governance routes require bearer authentication; non-loopback binds need explicit opt-in and token auth.                                                             |
 | H2   | HIGH     | Fixed                      | HTTP and command hooks both block mutating tools while review obligations remain unresolved.                                                                              |
 | H3   | HIGH     | Open                       | Session ID validation needs Windows/reserved-name hardening.                                                                                                              |
@@ -443,11 +444,14 @@ The binding covers the archive bytes, checksum sidecar, manifest digest, and
 archive filename. Verification rejects published-but-unbound artifacts and an
 invalid external binding chain; retries reuse only the exact same publication.
 
-PD1 remains tracked until this branch merges. The previous policy-snapshot
+PD1 remains tracked until this branch merges. Its mutation admission passed at
+90.63%. The previous policy-snapshot
 digest used `JSON.stringify(policy, Object.keys(policy).sort())`, whose array
 replacer allows only top-level property names at every nesting depth. Nested
 governance fields could therefore differ without changing the digest. The fix
-uses the repository's recursive canonical JSON authority. A SHA-256 digest
+uses the repository's recursive canonical JSON authority and records
+`hashVersion: policy-digest.v2`; an absent version is exclusively legacy shallow
+serialization. A SHA-256 digest
 supports integrity comparison only against a trusted reference; it does not
 independently establish authenticity or non-repudiation.
 

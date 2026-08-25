@@ -6,6 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import { PolicySnapshotSchema } from './evidence-policy.js';
 import { FIXED_TIME } from './evidence-test-constants.js';
+import { POLICY_DIGEST_VERSION } from '../shared/policy-digest.js';
 
 describe('evidence-policy', () => {
   describe('HAPPY', () => {
@@ -26,9 +27,29 @@ describe('evidence-policy', () => {
       const parsed = PolicySnapshotSchema.parse(snapshot);
       expect(parsed.mode).toBe('team');
       expect(parsed.hash).toBe('sha256-policy');
+      expect(parsed.hashVersion).toBeUndefined();
       expect(parsed.minimumActorAssuranceForApproval).toBe('best_effort');
       expect(parsed.requireVerifiedActorsForApproval).toBe(false);
       expect(parsed.identityProviderMode).toBe('optional');
+    });
+
+    it('distinguishes a v2 policy digest from legacy snapshots', () => {
+      const parsed = PolicySnapshotSchema.parse({
+        mode: 'team',
+        hash: 'sha256-policy',
+        hashVersion: POLICY_DIGEST_VERSION,
+        resolvedAt: FIXED_TIME,
+        requestedMode: 'team',
+        effectiveGateBehavior: 'human_gated',
+        requireHumanGates: true,
+        maxSelfReviewIterations: 3,
+        maxImplReviewIterations: 3,
+        allowSelfApproval: true,
+        audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
+        actorClassification: { flowguard_decision: 'human' },
+      });
+
+      expect(parsed.hashVersion).toBe(POLICY_DIGEST_VERSION);
     });
 
     it('PolicySnapshotSchema accepts regulated snapshot', () => {
@@ -55,6 +76,25 @@ describe('evidence-policy', () => {
   });
 
   describe('BAD', () => {
+    it('rejects unknown policy digest versions', () => {
+      expect(() =>
+        PolicySnapshotSchema.parse({
+          mode: 'team',
+          hash: 'abc',
+          hashVersion: 'policy-digest.v3',
+          resolvedAt: FIXED_TIME,
+          requestedMode: 'team',
+          effectiveGateBehavior: 'human_gated',
+          requireHumanGates: true,
+          maxSelfReviewIterations: 3,
+          maxImplReviewIterations: 3,
+          allowSelfApproval: true,
+          audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
+          actorClassification: { flowguard_decision: 'human' },
+        }),
+      ).toThrow();
+    });
+
     it('PolicySnapshotSchema rejects missing actorClassification', () => {
       const snapshot = {
         mode: 'team',

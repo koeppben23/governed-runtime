@@ -406,7 +406,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Evidence Types:** Zod-validated schemas across `src/state/evidence-*.ts` plus discovery schemas under `src/discovery/` and `src/state/discovery-schemas.ts`
 - **Framework Mappings:** 5 (BSI C5, MaRisk, BAIT, DORA, GoBD)
 - **Test Coverage:** Unit project enforces 80% (branches/lines/functions/statements); integration project enforces 70% (see `vitest.config.ts`)
-- **Mutation Testing:** StrykerJS (v9.6.1) on 47 security-critical files spanning adapters, audit, config, hooks, identity, integration (incl. review enforcement and orchestrator), machine, and rails; CI enforces an 80% break threshold (see `stryker.conf.json`)
+- **Mutation Testing:** StrykerJS (v9.6.1) on 68 security-critical files spanning adapters, audit, config, hooks, identity, integration (incl. review enforcement and orchestrator), machine, and rails; CI enforces an 80% break threshold (see `stryker.conf.json`)
 - **API Reference:** TypeDoc-generated at [koeppben23.github.io/governed-runtime](https://koeppben23.github.io/governed-runtime/) (GitHub Pages)
 - **Self-Hosted:** Runs locally — offline-capable / local-first by default; network-dependent features (remote JWKS, `/review url=...`, TSA timestamping) are opt-in and documented
 

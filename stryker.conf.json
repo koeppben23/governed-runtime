@@ -40,6 +40,7 @@
     "src/discovery/verification-planner.ts",
 
     "src/config/policy.ts",
+    "src/config/policy-snapshot.ts",
     "src/config/reasons.ts",
     "src/config/profile.ts",
 

@@ -11,6 +11,7 @@
 
 import type { PolicySnapshot } from '../state/evidence.js';
 import { POLICY_MODES, isPolicyMode } from '../state/policy-mode.js';
+import { POLICY_DIGEST_VERSION } from '../shared/policy-digest.js';
 import type { IdpConfig, IdentityProviderMode } from '../identity/types.js';
 import type {
   PolicyMode,
@@ -215,6 +216,19 @@ function normalizeHash(s: Record<string, unknown>): NormalizedField<string> {
   const raw = s.hash;
   if (typeof raw === 'string' && raw.length > 0) return { value: raw, normalized: false };
   return { value: 'UNKNOWN_LEGACY', normalized: true };
+}
+
+function normalizeHashVersion(
+  s: Record<string, unknown>,
+): typeof POLICY_DIGEST_VERSION | undefined {
+  const raw = s.hashVersion;
+  if (raw === undefined) return undefined;
+  if (raw === POLICY_DIGEST_VERSION) return raw;
+  throw new PolicyConfigurationError(
+    'INVALID_POLICY_DIGEST_VERSION',
+    `Invalid policy digest version "${String(raw)}".`,
+    { received: raw, allowed: [POLICY_DIGEST_VERSION] },
+  );
 }
 
 function normalizePolicyFields(
@@ -530,6 +544,7 @@ export function normalizePolicySnapshotWithMeta(
   const defaults = modeConsistentDefaults(mode);
 
   const { value: hash, normalized: hashNorm } = normalizeHash(s);
+  const hashVersion = normalizeHashVersion(s);
   const core = normalizeCoreFields(s, defaults);
   const policy = normalizePolicyFields(s, defaults);
   const { value: minimumActorAssuranceForApproval, normalized: assuranceNorm } =
@@ -559,6 +574,7 @@ export function normalizePolicySnapshotWithMeta(
     snapshot: {
       mode,
       hash,
+      ...(hashVersion ? { hashVersion } : {}),
       resolvedAt: proven.resolvedAt,
       requestedMode: proven.requestedMode,
       source: proven.source,

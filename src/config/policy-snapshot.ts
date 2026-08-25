@@ -21,6 +21,7 @@
 
 import type { PolicySnapshot } from '../state/evidence.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { POLICY_DIGEST_VERSION } from '../shared/policy-digest.js';
 import { DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS } from './policy-types.js';
 import type {
   FlowGuardPolicy,
@@ -115,6 +116,7 @@ export function createPolicySnapshot(
   return {
     mode: policy.mode,
     hash: digestFn(canonical),
+    hashVersion: POLICY_DIGEST_VERSION,
     resolvedAt,
     ...(buildResolutionFields(resolution, policy, fallbackGate) as Record<string, unknown>),
     requestedMode: resolution?.requestedMode ?? policy.mode,

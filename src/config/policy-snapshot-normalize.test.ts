@@ -13,6 +13,7 @@ import {
   normalizePolicySnapshot,
   normalizePolicySnapshotWithMeta,
 } from './policy-snapshot-normalize.js';
+import { POLICY_DIGEST_VERSION } from '../shared/policy-digest.js';
 import type { PolicySnapshot } from '../state/evidence.js';
 import { PolicyConfigurationError } from './policy-errors.js';
 import { CHALLENGE_POLICY_V1 } from './policy-types.js';
@@ -236,6 +237,27 @@ describe('normalizePolicySnapshotWithMeta', () => {
     // normalized may be true if selfReview or discoveryHealth fields differ
     // from mode-consistent defaults; both behaviors are valid.
     expect(typeof normalized).toBe('boolean');
+  });
+
+  it('preserves missing hashVersion as the legacy digest contract', () => {
+    const legacy = freezePolicySnapshot(soloResolution(), NOW, sha256);
+    delete (legacy as Record<string, unknown>).hashVersion;
+
+    expect(normalizePolicySnapshotWithMeta(legacy).snapshot.hashVersion).toBeUndefined();
+  });
+
+  it('preserves the v2 recursive policy digest contract', () => {
+    const snapshot = freezePolicySnapshot(soloResolution(), NOW, sha256);
+
+    expect(normalizePolicySnapshotWithMeta(snapshot).snapshot.hashVersion).toBe(
+      POLICY_DIGEST_VERSION,
+    );
+  });
+
+  it('rejects an unknown policy digest version instead of treating it as legacy', () => {
+    expect(() => normalizePolicySnapshotWithMeta({ hashVersion: 'policy-digest.v3' })).toThrow(
+      PolicyConfigurationError,
+    );
   });
 
   it('returns normalized=true for empty snapshot', () => {
