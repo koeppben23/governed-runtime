@@ -4,6 +4,7 @@ import type { ArchitectureInput } from './architecture.js';
 import { createTestContext } from '../testing.js';
 import { makeState, FIXED_TIME } from '../fixtures.js';
 import { SOLO_POLICY, TEAM_POLICY } from '../config/policy.js';
+import { hashText } from '../shared/hashing.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
 const ctx = createTestContext();
@@ -40,7 +41,7 @@ describe('executeArchitecture', () => {
         expect(result.state.architecture!.title).toBe('Use PostgreSQL for primary storage');
         expect(result.state.architecture!.status).toBe('proposed');
         expect(result.state.architecture!.adrText).toBe(VALID_ADR_TEXT);
-        expect(result.state.architecture!.digest).toBe(`digest-of-${VALID_ADR_TEXT}`);
+        expect(result.state.architecture!.digest).toBe(hashText(VALID_ADR_TEXT));
       }
     });
 
