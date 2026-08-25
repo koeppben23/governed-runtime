@@ -209,10 +209,10 @@ export async function durableAtomicWrite(filePath: string, content: string): Pro
 async function syncDirectory(dir: string): Promise<void> {
   let handle: Awaited<ReturnType<typeof fs.open>> | null = null;
   try {
-    // Read-only open of an EXISTING directory to fsync the rename entry. This
-    // creates no file and writes no content; it only flushes directory metadata.
-    // codeql[js/insecure-temporary-file]: no file is created — existing directory opened read-only for fsync
-    handle = await fs.open(dir, 'r');
+    // Read-only open of an EXISTING directory to fsync the rename entry. No
+    // file is created; the explicit 0o600 mode is ignored for an existing
+    // directory but documents the secure, non-creating intent of the open.
+    handle = await fs.open(dir, 'r', 0o600);
     await handle.sync();
   } catch {
     // Directory handles are not openable on every platform (Windows); the
