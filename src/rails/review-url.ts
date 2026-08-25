@@ -20,6 +20,9 @@ import {
   isIPv6Address,
 } from '../adapters/ip-validation.js';
 
+/** Maximum decoded response body accepted as external review material. */
+export const MAX_REVIEW_URL_RESPONSE_BYTES = 1_048_576;
+
 // ─── URL Validation (BUG-13: SSRF Mitigation) ───────────────────────
 
 /**
@@ -202,12 +205,60 @@ export async function fetchUrlContent(
     });
   }
   try {
-    return { content: new TextDecoder('utf-8', { fatal: true }).decode(await resp.arrayBuffer()) };
-  } catch {
+    const contentLength = resp.headers.get('content-length');
+    if (contentLength !== null && Number(contentLength) > MAX_REVIEW_URL_RESPONSE_BYTES) {
+      return blocked('COMMAND_BLOCKED', {
+        command: '/review',
+        reason: `Response exceeds the ${MAX_REVIEW_URL_RESPONSE_BYTES}-byte review material limit`,
+      });
+    }
+    return {
+      content: new TextDecoder('utf-8', { fatal: true }).decode(
+        await readResponseBodyWithinLimit(resp, MAX_REVIEW_URL_RESPONSE_BYTES),
+      ),
+    };
+  } catch (err) {
+    if (err instanceof RangeError) {
+      return blocked('COMMAND_BLOCKED', {
+        command: '/review',
+        reason: `Response exceeds the ${MAX_REVIEW_URL_RESPONSE_BYTES}-byte review material limit`,
+      });
+    }
     return blocked('REVIEW_URL_CONTENT_ENCODING_INVALID', {
       reason: 'response bytes are not valid UTF-8',
     });
   }
+}
+
+async function readResponseBodyWithinLimit(
+  response: Response,
+  maxBytes: number,
+): Promise<Uint8Array> {
+  if (response.body === null) return new Uint8Array();
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      total += next.value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel('response body exceeds review material limit');
+        throw new RangeError('response body exceeds review material limit');
+      }
+      chunks.push(next.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
 }
 
 /** A declared charset is accepted only when it is unambiguously UTF-8. */
