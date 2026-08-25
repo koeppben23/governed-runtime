@@ -130,6 +130,10 @@ jobs:
         with:
           name: flowguard-release-artifact
 
+      - name: Verify release artifact digest
+        shell: bash
+        run: sha256sum --check checksums.sha256
+
       - name: Verify ESM imports
         run: |
           mkdir /tmp/runtime-test && cd /tmp/runtime-test

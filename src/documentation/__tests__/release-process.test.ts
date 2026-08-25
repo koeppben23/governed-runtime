@@ -69,6 +69,29 @@ describe('documentation/release-process', () => {
     });
   });
 
+  describe('EDGE — release artifacts stay checksum-bound', () => {
+    it('verifies the runtime test artifact before installing it', () => {
+      const workflow = readRepoFile('.github/workflows/release.yml');
+      const runtimeJob = workflow.slice(
+        workflow.indexOf('  verify-runtime:'),
+        workflow.indexOf('  release-smoke:'),
+      );
+
+      expect(runtimeJob).toContain('sha256sum --check checksums.sha256');
+      expect(runtimeJob.indexOf('sha256sum --check checksums.sha256')).toBeLessThan(
+        runtimeJob.indexOf('npm install "$GITHUB_WORKSPACE/flowguard-core-"*.tgz'),
+      );
+    });
+
+    it('documents prerelease state incompatibility without a migration claim', () => {
+      const upgrade = readRepoFile('docs/upgrade-rollback.md');
+
+      expect(upgrade).toContain('No forward-compatibility guarantee.');
+      expect(upgrade).toContain('policy-digest.v2');
+      expect(upgrade).toContain('Do not edit persisted state to bridge that');
+    });
+  });
+
   describe('EDGE — contributing guidance matches the protected-main model', () => {
     it('documents release branches and the pre-tag assertion', () => {
       const contributing = readRepoFile('CONTRIBUTING.md');
