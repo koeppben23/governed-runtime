@@ -98,30 +98,30 @@ disproven, update the status and link the evidence."
 
 ## High-Priority Findings
 
-| ID   | Severity | Status    | Summary                                                                                                                                                                   |
-| ---- | -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC2  | HIGH     | Fixed     | Timestamp verification must not trust downgraded status when stronger evidence is present — TSA_EVIDENCE_DOWNGRADED chain reason + tsa_evidence_downgraded finding.       |
-| AC3  | HIGH     | Fixed     | Audit argument summarization can expose scalar secrets and needs redaction hardening.                                                                                     |
-| AC4  | HIGH     | Fixed     | NTP offset/delay calculation is RFC-aligned and captures T1 immediately before send (#728).                                                                               |
-| AC5  | HIGH     | Fixed     | NTP responses validate protocol fields, peer-bound origin timestamp, and non-null transmit timestamp (#728).                                                              |
-| PD1  | HIGH     | Tracked   | Policy snapshot digests require `policy-digest.v2`; unversioned and unknown versions fail closed. Admission passed at 90.63%; status becomes Fixed after merge.           |
-| H1   | HIGH     | Fixed     | HTTP governance routes require bearer authentication; non-loopback binds need explicit opt-in and token auth.                                                             |
-| H2   | HIGH     | Fixed     | HTTP and command hooks both block mutating tools while review obligations remain unresolved.                                                                              |
-| H3   | HIGH     | Tracked   | This branch rejects Windows reserved device names, their extension variants, and trailing-dot session IDs; status becomes Fixed after merge.                              |
-| M1   | HIGH     | Fixed     | MCP tool execution uses server-scoped response deadlines and admission limits (#645).                                                                                     |
-| M2   | HIGH     | Open      | MCP session/project directory environment inputs need validation.                                                                                                         |
-| M3   | HIGH     | Fixed     | MCP errors use trusted boundary codes and do not reflect arbitrary executor messages (#645).                                                                              |
-| C1   | HIGH     | Open      | Non-OpenCode config install skip/error handling needs explicit surfacing.                                                                                                 |
-| C2   | HIGH     | Fixed     | Exclusive install lock, preflight, and existing-install protection implemented by #667.                                                                                   |
-| C3   | HIGH     | Fixed     | Install mutations use top-level rollback plus crash-recoverable dependency transactions in #667.                                                                          |
-| C4   | HIGH     | Fixed     | Codex marketplace install and uninstall use locked atomic read-modify-write in #667.                                                                                      |
-| C5   | HIGH     | Fixed     | Snapshot and rollback paths reject symlinks and use TOCTOU-hardened operations in #667.                                                                                   |
-| I4   | HIGH     | Tracked   | This branch blocks mutating host tools when the authoritative session-directory mapping is missing; status becomes Fixed after merge.                                     |
-| R1   | HIGH     | Fixed     | Export redaction uses a default-deny deep walk. Final archive composition needs the separate R14 regression contract.                                                     |
-| R2   | HIGH     | Fixed     | Archive pipeline produces redacted files alongside raw, controlled by mandatory tool parameters. Final archive-byte coverage remains R14.                                 |
-| R4   | HIGH     | Fixed     | Telemetry error/status export needs scrubbing.                                                                                                                            |
-| AUD2 | HIGH     | Fixed     | Audit write lock safely recovers dead-process stale locks while failing closed for unsafe lock states (#670).                                                             |
-| LK1  | LOW      | Mitigated | Stale-lock recovery re-verifies content before unlink to avoid deleting a foreign fresh lock; a residual sub-`unlink` OS race remains without an atomic primitive (#673). |
+| ID   | Severity | Status    | Summary                                                                                                                                                                           |
+| ---- | -------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC2  | HIGH     | Fixed     | Timestamp verification must not trust downgraded status when stronger evidence is present — TSA_EVIDENCE_DOWNGRADED chain reason + tsa_evidence_downgraded finding.               |
+| AC3  | HIGH     | Fixed     | Audit argument summarization can expose scalar secrets and needs redaction hardening.                                                                                             |
+| AC4  | HIGH     | Fixed     | NTP offset/delay calculation is RFC-aligned and captures T1 immediately before send (#728).                                                                                       |
+| AC5  | HIGH     | Fixed     | NTP responses validate protocol fields, peer-bound origin timestamp, and non-null transmit timestamp (#728).                                                                      |
+| PD1  | HIGH     | Tracked   | Policy snapshot digests require `policy-digest.v2`; unversioned and unknown versions fail closed. Admission passed at 90.63%; status becomes Fixed after merge.                   |
+| H1   | HIGH     | Fixed     | HTTP governance routes require bearer authentication; non-loopback binds need explicit opt-in and token auth.                                                                     |
+| H2   | HIGH     | Fixed     | HTTP and command hooks both block mutating tools while review obligations remain unresolved.                                                                                      |
+| H3   | HIGH     | Tracked   | This branch rejects Windows reserved device names, their extension variants, and session IDs with leading/trailing whitespace or trailing dots; status becomes Fixed after merge. |
+| M1   | HIGH     | Fixed     | MCP tool execution uses server-scoped response deadlines and admission limits (#645).                                                                                             |
+| M2   | HIGH     | Open      | MCP session/project directory environment inputs need validation.                                                                                                                 |
+| M3   | HIGH     | Fixed     | MCP errors use trusted boundary codes and do not reflect arbitrary executor messages (#645).                                                                                      |
+| C1   | HIGH     | Open      | Non-OpenCode config install skip/error handling needs explicit surfacing.                                                                                                         |
+| C2   | HIGH     | Fixed     | Exclusive install lock, preflight, and existing-install protection implemented by #667.                                                                                           |
+| C3   | HIGH     | Fixed     | Install mutations use top-level rollback plus crash-recoverable dependency transactions in #667.                                                                                  |
+| C4   | HIGH     | Fixed     | Codex marketplace install and uninstall use locked atomic read-modify-write in #667.                                                                                              |
+| C5   | HIGH     | Fixed     | Snapshot and rollback paths reject symlinks and use TOCTOU-hardened operations in #667.                                                                                           |
+| I4   | HIGH     | Tracked   | This branch blocks mutating host tools when the authoritative session-directory mapping is missing; status becomes Fixed after merge.                                             |
+| R1   | HIGH     | Fixed     | Export redaction uses a default-deny deep walk. Final archive composition needs the separate R14 regression contract.                                                             |
+| R2   | HIGH     | Fixed     | Archive pipeline produces redacted files alongside raw, controlled by mandatory tool parameters. Final archive-byte coverage remains R14.                                         |
+| R4   | HIGH     | Fixed     | Telemetry error/status export needs scrubbing.                                                                                                                                    |
+| AUD2 | HIGH     | Fixed     | Audit write lock safely recovers dead-process stale locks while failing closed for unsafe lock states (#670).                                                                     |
+| LK1  | LOW      | Mitigated | Stale-lock recovery re-verifies content before unlink to avoid deleting a foreign fresh lock; a residual sub-`unlink` OS race remains without an atomic primitive (#673).         |
 
 ## Medium-Priority Findings
 
