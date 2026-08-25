@@ -15,8 +15,11 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { readState, writeState } from '../adapters/persistence.js';
+import { appendAuditEvent } from '../adapters/persistence-audit.js';
 import { makeState } from '../fixtures.js';
-import { runAudit, type AuditDeps } from './plugin-audit.js';
+import { reconcilePendingAuditOperations, runAudit, type AuditDeps } from './plugin-audit.js';
+import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
+import { buildTransitionBody, finalizeWithTimestampEvidence } from '../audit/types.js';
 import { MockTimestampAuthorityProvider } from '../audit/tsa-provider.js';
 import type { TimestampAuthorityProvider } from '../audit/tsa-provider.js';
 import { PkijsTimestampVerifier } from '../audit/rfc-3161-pkijs-verifier.js';
@@ -202,7 +205,7 @@ describe('runAudit', () => {
 
     // ─── H4: transitions + prevHash threading ───────────────────────
 
-    it('emits transition events with correct prevHash threading', async () => {
+    it('does not derive persisted transition audits from tool output', async () => {
       resetChainSeq();
       const deps = makeDeps();
       const output = {
@@ -224,25 +227,15 @@ describe('runAudit', () => {
 
       const calls = (deps.appendAndTrack as ReturnType<typeof vi.fn>).mock.calls;
 
-      // First call: tool_call with initial prevHash
-      const firstEvt = calls[0]![0] as Record<string, unknown>;
-      const firstDetail = firstEvt.detail as Record<string, unknown>;
-      expect(firstDetail.kind).toBe('tool_call');
-      expect(firstEvt.prevHash).toBe('prev-hash-001');
-
-      // Second call: transition with prevHash = chainHash of first event
-      // Note: prevHash threading uses the real computed chainHash from
-      // finalizeWithTimestampEvidence, not the mock-mutated value.
-      const secondEvt = calls[1]![0] as Record<string, unknown>;
-      const secondDetail = secondEvt.detail as Record<string, unknown>;
-      expect(secondDetail.kind).toBe('transition');
-      expect(typeof secondEvt.prevHash).toBe('string');
-      expect((secondEvt.prevHash as string).length).toBe(64);
+      expect(calls).toHaveLength(1);
+      expect(
+        ((calls[0]![0] as Record<string, unknown>).detail as Record<string, unknown>).kind,
+      ).toBe('tool_call');
     });
 
     // ─── H4b: metadata.transitions channel (contract gate) ───────────
 
-    it('reads transitions from metadata.transitions (FG-267 contract gate)', async () => {
+    it('ignores transition-shaped metadata from tool output', async () => {
       resetChainSeq();
       const deps = makeDeps();
       const output = {
@@ -262,15 +255,10 @@ describe('runAudit', () => {
 
       await runAudit(deps, 'flowguard_plan', {}, output, SESSION_ID);
 
-      expect(deps.appendAndTrack).toHaveBeenCalledWith(
-        expect.objectContaining({ detail: expect.objectContaining({ kind: 'transition' }) }),
-        expect.any(String),
-        true,
-        SESSION_ID,
-      );
+      expect(deps.appendAndTrack).toHaveBeenCalledTimes(1);
     });
 
-    it('falls back to _audit.transitions when metadata is absent', async () => {
+    it('ignores legacy _audit.transitions from tool output', async () => {
       resetChainSeq();
       const deps = makeDeps();
       const output = {
@@ -288,15 +276,10 @@ describe('runAudit', () => {
 
       await runAudit(deps, 'flowguard_plan', {}, output, SESSION_ID);
 
-      expect(deps.appendAndTrack).toHaveBeenCalledWith(
-        expect.objectContaining({ detail: expect.objectContaining({ kind: 'transition' }) }),
-        expect.any(String),
-        true,
-        SESSION_ID,
-      );
+      expect(deps.appendAndTrack).toHaveBeenCalledTimes(1);
     });
 
-    it('metadata.transitions wins when both channels are present', async () => {
+    it('does not prefer either output transition channel', async () => {
       resetChainSeq();
       const deps = makeDeps();
       const output = {
@@ -313,15 +296,7 @@ describe('runAudit', () => {
 
       await runAudit(deps, 'flowguard_plan', {}, output, SESSION_ID);
 
-      const transitionCalls = (deps.appendAndTrack as ReturnType<typeof vi.fn>).mock.calls.filter(
-        (c: unknown[]) => {
-          const evtDetail = (c[0] as Record<string, unknown>).detail as Record<string, unknown>;
-          return evtDetail?.kind === 'transition';
-        },
-      );
-      const evtDetail = transitionCalls[0]![0] as Record<string, unknown>;
-      const transitionDetail = evtDetail.detail as Record<string, unknown>;
-      expect(transitionDetail.event).toBe('PLAN_READY');
+      expect(deps.appendAndTrack).toHaveBeenCalledTimes(1);
     });
 
     // ─── H5: hydrate lifecycle + reason string ──────────────────────
@@ -619,7 +594,24 @@ describe('runAudit', () => {
     // ─── B4: missing decidedBy → error event ──────────────────────
 
     it('emits error event when decidedBy is missing in flowguard_decision', async () => {
-      const deps = makeDeps();
+      const deps = makeDeps({
+        resolveSessionPolicy: vi.fn().mockResolvedValue({
+          policy: {
+            audit: { emitToolCalls: true, emitTransitions: true, enableChainHash: true },
+            actorClassification: {},
+            mode: 'solo',
+            requireHumanGates: false,
+          },
+          state: makeState('PLAN_REVIEW', {
+            transition: {
+              event: 'APPROVE',
+              from: 'PLAN_REVIEW',
+              to: 'PLAN',
+              at: FIXED_DECISION_AT,
+            },
+          }),
+        }),
+      });
       const output = {
         phase: 'PLAN_REVIEW',
         error: false,
@@ -676,7 +668,14 @@ describe('runAudit', () => {
             mode: 'solo',
             requireHumanGates: false,
           },
-          state: makeState('PLAN_REVIEW'),
+          state: makeState('PLAN_REVIEW', {
+            transition: {
+              event: 'APPROVE',
+              from: 'PLAN_REVIEW',
+              to: 'PLAN',
+              at: FIXED_DECISION_AT,
+            },
+          }),
         }),
       });
       const output = {
@@ -714,6 +713,58 @@ describe('runAudit', () => {
       >;
       expect(detail.verdict).toBe('approve');
       expect(detail.decisionSequence).toBe(1);
+    });
+
+    it('reconciles an append committed before its acknowledgement without duplicating it', async () => {
+      const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-audit-outbox-'));
+      try {
+        const initial = makeState('TICKET', { id: SESSION_ID });
+        await writeState(sessDir, initial);
+        await writeStateWithArtifactsAndAuditOperations(
+          sessDir,
+          makeState('PLAN', {
+            id: SESSION_ID,
+            transition: { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', at: FIXED_DECISION_AT },
+          }),
+          [{ from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', at: FIXED_DECISION_AT }],
+        );
+        const pending = await readState(sessDir);
+        const operation = pending!.pendingAuditOperations[0]!;
+        const body = buildTransitionBody(
+          SESSION_ID,
+          operation.transition.to,
+          {
+            operationId: operation.operationId,
+            from: operation.transition.from,
+            to: operation.transition.to,
+            event: operation.transition.event,
+            autoAdvanced: operation.transition.autoAdvanced,
+            chainIndex: operation.transition.chainIndex,
+          },
+          operation.transition.at,
+          'genesis',
+        );
+        await appendAuditEvent(sessDir, finalizeWithTimestampEvidence(body, 'genesis'));
+
+        const deps = makeDeps({
+          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionPolicy: vi.fn().mockResolvedValue({
+            policy: {
+              audit: { emitToolCalls: false, emitTransitions: true, enableChainHash: true },
+              actorClassification: {},
+              mode: 'regulated',
+              requireHumanGates: true,
+            },
+            state: pending,
+          }),
+        });
+
+        await expect(reconcilePendingAuditOperations(deps, SESSION_ID)).resolves.toBeUndefined();
+        expect(deps.appendAndTrack).not.toHaveBeenCalled();
+        expect((await readState(sessDir))!.pendingAuditOperations[0]!.status).toBe('reconciled');
+      } finally {
+        await fs.rm(sessDir, { recursive: true, force: true });
+      }
     });
   });
 });

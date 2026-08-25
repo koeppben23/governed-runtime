@@ -485,6 +485,7 @@ export function makeState(
     initiatedBy: 'initiator-1',
     initiatedByIdentity: DECISION_IDENTITY_INITIATOR,
     transition: null,
+    pendingAuditOperations: [],
     error: null,
     createdAt: FIXED_TIME,
     ...overrides,

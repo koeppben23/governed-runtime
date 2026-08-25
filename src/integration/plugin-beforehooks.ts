@@ -22,6 +22,7 @@ import type { SessionState } from '../state/schema.js';
 import { enforceRiskClassificationBefore as enforceRiskBefore } from './plugin-risk.js';
 import { enforceDiscoveryHealthBefore } from './plugin-discovery-health.js';
 import { registerExecutedTaskPrompt } from './review/enforcement/execution-provenance.js';
+import { reconcilePendingAuditOperations } from './plugin-audit.js';
 
 export async function commandBefore(
   runtime: FlowGuardPluginRuntime,
@@ -112,6 +113,12 @@ async function enforceBeforeRules(
   }
   await enforceMutatingToolCheck(runtime, toolName, sessionId, args);
   await enforceVerdictCheck(runtime, toolName, sessionId, args);
+  if (toolName.startsWith('flowguard_')) {
+    const audit = await reconcilePendingAuditOperations(runtime.auditDeps, sessionId);
+    if (audit?.block) {
+      throw buildEnforcementError(audit.code ?? 'AUDIT_PERSISTENCE_FAILED', audit.reason ?? '');
+    }
+  }
 }
 
 function updateCommandScope(

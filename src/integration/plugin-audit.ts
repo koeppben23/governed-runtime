@@ -9,10 +9,23 @@
  * @version v2 (extracted resolveAuditContext, emitDecisionReceipt, maybeCompleteAndArchive)
  */
 
-import { readState, writeState } from '../adapters/persistence.js';
+import {
+  readState,
+  writeState,
+  writeStateAlreadyLocked,
+  PersistenceError,
+} from '../adapters/persistence.js';
+import { withSessionWriteLock } from '../adapters/persistence-lock.js';
+import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { archiveSession } from '../adapters/workspace/index.js';
 import { serializeError } from '../logging/error-serialize.js';
-import type { SessionState, Phase, Event } from '../state/schema.js';
+import type {
+  SessionState,
+  Phase,
+  Event,
+  Transition,
+  PendingAuditOperation,
+} from '../state/schema.js';
 import {
   buildToolCallBody,
   buildTransitionBody,
@@ -29,6 +42,7 @@ import type { TimestampAssurancePolicy } from '../config/policy-types.js';
 import type { TimestampAuthorityProvider, TimestampVerifier } from '../audit/tsa-provider.js';
 import { resolveAuditContext, type AuditContext } from './plugin-audit-context.js';
 import { buildLifecycleDetail } from './plugin-audit-lifecycle-reason.js';
+import { ensureLegacyAuditOperation } from './tools/audit-outbox.js';
 
 /** Closure dependencies injected from plugin.ts. */
 export interface AuditDeps {
@@ -88,10 +102,10 @@ interface DecisionReceiptParams {
 async function emitDecisionReceipt(params: DecisionReceiptParams): Promise<string> {
   const { deps, ctx, toolName, input, sessionId, policyMode, state } = params;
   const prevHash = ctx.prevHash;
-  if (toolName !== 'flowguard_decision' || !ctx.success || ctx.transitions.length === 0)
-    return prevHash;
+  const transition = state?.transition;
+  if (toolName !== 'flowguard_decision' || !ctx.success || !transition) return prevHash;
 
-  const firstTransition = ctx.transitions[0]!;
+  const firstTransition = transition;
   const inferredVerdict = inferDecisionVerdict(firstTransition.event);
   if (inferredVerdict === null) return prevHash;
 
@@ -164,7 +178,7 @@ function resolveDecisionRationale(
 
 async function emitDecisionReceiptActorMissing(
   params: DecisionReceiptParams,
-  firstTransition: AuditContext['transitions'][number],
+  firstTransition: Transition,
   prevHash: string,
 ): Promise<string> {
   const { deps, ctx, toolName, sessionId, recordTimestampFailure } = params;
@@ -193,7 +207,7 @@ async function emitDecisionReceiptEvent(
   params: DecisionReceiptParams,
   input: {
     prevHash: string;
-    firstTransition: AuditContext['transitions'][number];
+    firstTransition: Transition;
     decisionId: string;
     sequence: number;
     verdict: 'approve' | 'changes_requested' | 'reject';
@@ -265,8 +279,7 @@ async function maybeCompleteAndArchive(
 ): Promise<string> {
   const { toolName, sessionId, state, recordTimestampFailure } = opts;
   let prevHash = ctx.prevHash;
-  if (!ctx.transitions.some((t) => t.to === 'COMPLETE') || LIFECYCLE_TOOLS[toolName])
-    return prevHash;
+  if (state?.transition?.to !== 'COMPLETE' || LIFECYCLE_TOOLS[toolName]) return prevHash;
 
   const freshState = deps.cachedFingerprint ? await readState(ctx.sessDir) : null;
   const toolLayerHandled = !!freshState?.archiveStatus;
@@ -397,7 +410,9 @@ async function emitToolCallAudit(input: {
       argsSummary: summarizeArgs((input.input as Record<string, unknown>) ?? {}),
       success: ctx.success,
       errorMessage: ctx.errorMessage,
-      transitionCount: ctx.transitions.length,
+      transitionCount:
+        state?.pendingAuditOperations.filter((operation) => operation.status !== 'reconciled')
+          .length ?? 0,
     },
     timestamp: ctx.now,
     actor: ctx.actor,
@@ -423,17 +438,51 @@ async function emitTransitionAudits(input: {
   timestampTracker: StrictTimestampTracker;
 }): Promise<void> {
   const { deps, ctx, sessionId, timestampTracker } = input;
-  if (!ctx.emitTransitions || ctx.transitions.length === 0) return;
-  deps.log.debug('audit', 'emitting transition events', { count: ctx.transitions.length });
-  for (let i = 0; i < ctx.transitions.length; i++) {
-    const t = ctx.transitions[i]!;
+  if (!ctx.emitTransitions) return;
+  const state = await ensureLegacyAuditOperation(ctx.sessDir);
+  const operations =
+    state?.pendingAuditOperations.filter((operation) => operation.status !== 'reconciled') ?? [];
+  if (operations.length === 0) return;
+  if (!state) {
+    throw new PersistenceError(
+      'READ_FAILED',
+      'Cannot reconcile audit operations without session state',
+    );
+  }
+  deps.log.debug('audit', 'reconciling durable transition audit operations', {
+    count: operations.length,
+  });
+  for (const operation of operations) {
+    const t = operation.transition;
+    const existing = await findOperationAudit(
+      ctx.sessDir,
+      operation.operationId,
+      operation.auditEventDigest,
+    );
+    if (existing) {
+      await acknowledgeAuditOperation(ctx.sessDir, operation.operationId, 'reconciled');
+      continue;
+    }
     const body = buildTransitionBody(
-      sessionId,
+      state.id,
       t.to,
-      { from: t.from, to: t.to, event: t.event, autoAdvanced: i > 0, chainIndex: i },
+      {
+        operationId: operation.operationId,
+        from: t.from,
+        to: t.to,
+        event: t.event,
+        autoAdvanced: t.autoAdvanced,
+        chainIndex: t.chainIndex,
+      },
       t.at,
       ctx.prevHash,
     );
+    if (computeCanonicalEventDigest(body) !== operation.auditEventDigest) {
+      throw new PersistenceError(
+        'SCHEMA_VALIDATION_FAILED',
+        `Audit operation ${operation.operationId} has an invalid event digest`,
+      );
+    }
     await emitAuditBodyWithEvidence({
       deps,
       ctx,
@@ -443,6 +492,83 @@ async function emitTransitionAudits(input: {
       localTimestamp: t.at,
       timestampTracker,
     });
+    await acknowledgeAuditOperation(ctx.sessDir, operation.operationId, 'audit_committed');
+    await acknowledgeAuditOperation(ctx.sessDir, operation.operationId, 'reconciled');
+  }
+}
+
+async function findOperationAudit(
+  sessDir: string,
+  operationId: string,
+  auditEventDigest: string,
+): Promise<boolean> {
+  const trail = await readAuditTrail(sessDir);
+  if (trail.skipped > 0) {
+    throw new PersistenceError(
+      'READ_FAILED',
+      `Cannot reconcile audit operation ${operationId}: audit trail contains malformed records`,
+    );
+  }
+  const event = trail.events.find(
+    (candidate) => candidate.id === operationId && candidate.detail.operationId === operationId,
+  );
+  if (!event) return false;
+  if (computeCanonicalEventDigest(event) !== auditEventDigest) {
+    throw new PersistenceError(
+      'SCHEMA_VALIDATION_FAILED',
+      `Audit operation ${operationId} does not match its committed audit event`,
+    );
+  }
+  return true;
+}
+
+async function acknowledgeAuditOperation(
+  sessDir: string,
+  operationId: string,
+  status: PendingAuditOperation['status'],
+): Promise<void> {
+  await withSessionWriteLock(sessDir, async () => {
+    const state = await readState(sessDir);
+    if (!state) {
+      throw new PersistenceError(
+        'READ_FAILED',
+        `Cannot acknowledge audit operation ${operationId}: session state is unavailable`,
+      );
+    }
+    const operation = state.pendingAuditOperations.find((item) => item.operationId === operationId);
+    if (!operation || operation.status === 'reconciled') return;
+    const rank = { state_committed: 0, audit_committed: 1, reconciled: 2 } as const;
+    const nextStatus = rank[status] > rank[operation.status] ? status : operation.status;
+    await writeStateAlreadyLocked(sessDir, {
+      ...state,
+      pendingAuditOperations: state.pendingAuditOperations.map((item) =>
+        item.operationId === operationId ? { ...item, status: nextStatus } : item,
+      ),
+    });
+  });
+}
+
+/** Reconcile state-owned transition audit operations before a new mutation. */
+export async function reconcilePendingAuditOperations(
+  deps: AuditDeps,
+  sessionId: string,
+): Promise<{ auditOk: boolean; block?: boolean; code?: string; reason?: string } | undefined> {
+  try {
+    const resolved = await resolveAuditContext(deps, 'flowguard_reconcile', {}, sessionId);
+    // A first hydrate has no state-owned outbox yet. Missing session mapping is
+    // therefore not an unresolved audit operation and must not block bootstrap.
+    if (!resolved) return undefined;
+    const tracker = createStrictTimestampTracker(resolved.ctx.timestampAssurance);
+    await emitTransitionAudits({ deps, ctx: resolved.ctx, sessionId, timestampTracker: tracker });
+    return await finalizeStrictTimestampFailure(resolved.ctx, tracker.failure);
+  } catch (err) {
+    deps.logError('Failed to reconcile durable audit operations', err);
+    return {
+      auditOk: false,
+      block: true,
+      code: 'AUDIT_PERSISTENCE_FAILED',
+      reason: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 
@@ -551,7 +677,7 @@ export async function runAudit(
   let effectiveMode: string = deps.mode;
   try {
     const resolved = await resolveAuditContext(deps, toolName, output, sessionId);
-    if (!resolved) return;
+    if (!resolved) return undefined;
     policyResolved = resolved.policyResolved;
     effectiveMode = resolved.effectiveMode;
     const { ctx, policy, state } = resolved;

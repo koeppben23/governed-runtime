@@ -286,6 +286,27 @@ export const Transition = z.object({
 });
 export type Transition = z.infer<typeof Transition>;
 
+/**
+ * Durable hand-off from an atomic state mutation to the append-only audit
+ * authority. The operation ID becomes the transition audit-event ID, so a
+ * restart can acknowledge an already-appended event without duplicating it.
+ */
+export const PendingAuditOperation = z
+  .object({
+    operationId: z.string().uuid(),
+    preStateDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    mutationDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    postStateDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    auditEventDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    transition: Transition.extend({
+      chainIndex: z.number().int().nonnegative(),
+      autoAdvanced: z.boolean(),
+    }),
+    status: z.enum(['state_committed', 'audit_committed', 'reconciled']),
+  })
+  .readonly();
+export type PendingAuditOperation = z.infer<typeof PendingAuditOperation>;
+
 // ─── Session State ────────────────────────────────────────────────────────────
 
 /**
@@ -587,6 +608,12 @@ export const SessionState = z
 
     /** Last transition (from → to via event). Null before first transition. */
     transition: Transition.nullable(),
+
+    /**
+     * State-owned audit outbox. Operations remain after reconciliation as
+     * durable correlation evidence; their status is monotonic.
+     */
+    pendingAuditOperations: z.array(PendingAuditOperation).default([]),
 
     /** Error state. Non-null triggers ERROR event in guard evaluation. */
     error: ErrorInfo.nullable(),

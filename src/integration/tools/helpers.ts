@@ -30,6 +30,7 @@ import { AUTO_ADVANCE_OVERFLOW_CODE } from '../../rails/auto-advance-overflow.js
 // Adapters
 import { readState, writeStateAlreadyLocked } from '../../adapters/persistence.js';
 import { finalizeImplementationEntry } from '../../adapters/implementation-base-authority.js';
+import { prepareStateWithAuditOperations } from './audit-outbox.js';
 import { acquireSessionWriteLock, withSessionWriteLock } from '../../adapters/persistence-lock.js';
 import { createRailContext } from '../../adapters/context.js';
 
@@ -450,14 +451,32 @@ export async function writeStateWithArtifacts(
   sessDir: string,
   nextState: SessionState,
 ): Promise<SessionState> {
+  return writeStateWithArtifactsAndAuditOperations(sessDir, nextState);
+}
+
+export async function writeStateWithArtifactsAndAuditOperations(
+  sessDir: string,
+  nextState: SessionState,
+  transitions?: ReadonlyArray<{ from: string; to: string; event: string; at: string }>,
+): Promise<SessionState> {
+  const persist = async (): Promise<SessionState> => {
+    const previous = await readState(sessDir);
+    // Finalize first so the post-state digest identifies the same proof graph
+    // and implementation authority that will be persisted.
+    const stateWithOperations = await prepareStateWithAuditOperations(
+      previous,
+      nextState,
+      transitions,
+    );
+    return writeStateWithArtifactsAlreadyLocked(sessDir, stateWithOperations);
+  };
+
   if (lockedSessionDir.getStore() === sessDir) {
-    return writeStateWithArtifactsAlreadyLocked(sessDir, nextState);
+    return persist();
   }
 
-  // 3. Materialize artifacts and write state atomically under the session lock
-  return withSessionWriteLock(sessDir, async () =>
-    lockedSessionDir.run(sessDir, () => writeStateWithArtifactsAlreadyLocked(sessDir, nextState)),
-  );
+  // Materialize artifacts and write state atomically under the session lock.
+  return withSessionWriteLock(sessDir, async () => lockedSessionDir.run(sessDir, persist));
 }
 
 /** Context handed to a {@link withSessionWriteTransaction} callback. */
@@ -553,7 +572,7 @@ export async function persistAndFormat(
         ...getLogTraceFields(),
       });
     }
-    await writeStateWithArtifacts(sessDir, result.state);
+    await writeStateWithArtifactsAndAuditOperations(sessDir, result.state, result.transitions);
     logPersistedLifecycle(result);
   }
   return formatRailResult(result, options);

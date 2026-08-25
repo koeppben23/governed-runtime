@@ -30,8 +30,9 @@ import {
 } from './test-helpers.js';
 import { PERF_ENABLED } from '../test-policy.js';
 import { FlowGuardAuditPlugin } from './plugin.js';
-import { writeState } from '../adapters/persistence.js';
+import { readState, writeState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
+import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
 import {
   initWorkspace,
   computeFingerprint,
@@ -40,7 +41,7 @@ import {
 } from '../adapters/workspace/index.js';
 import { verifyChain } from '../audit/integrity.js';
 import { makeState, makeProgressedState, POLICY_SNAPSHOT } from '../fixtures.js';
-import type { Phase } from '../state/schema.js';
+import { Transition, type Phase } from '../state/schema.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -196,6 +197,25 @@ async function getEvents() {
   return await readAuditTrail(sessDir);
 }
 
+async function persistTransition(
+  transition: { from: string; to: string; event: string; at: string },
+  state = makeState(transition.to as Phase),
+) {
+  const current = await readState(sessDir);
+  const persistedTransition = Transition.parse(transition);
+  await writeStateWithArtifactsAndAuditOperations(
+    sessDir,
+    {
+      ...state,
+      id: current!.id,
+      binding: current!.binding,
+      policySnapshot: current!.policySnapshot,
+      transition: persistedTransition,
+    },
+    [transition],
+  );
+}
+
 // =============================================================================
 // Tests
 // =============================================================================
@@ -240,14 +260,13 @@ describe('plugin-integration', () => {
         },
       ];
 
+      await persistTransition(transitions[0]!);
+
       await handler(
         { tool: 'flowguard_plan', sessionID: sessionId },
         {
           title: 'plan',
-          output: makeToolOutput({
-            phase: 'PLAN',
-            _audit: { transitions },
-          }),
+          output: makeToolOutput({ phase: 'PLAN' }),
           metadata: {},
         },
       );
@@ -319,19 +338,18 @@ describe('plugin-integration', () => {
         {
           from: 'EVIDENCE_REVIEW',
           to: 'COMPLETE',
-          event: 'EVIDENCE_APPROVED',
+          event: 'APPROVE',
           at: new Date().toISOString(),
         },
       ];
+
+      await persistTransition(transitions[0]!, makeProgressedState('COMPLETE'));
 
       await handler(
         { tool: 'flowguard_decision', sessionID: sessionId },
         {
           title: 'decision',
-          output: makeToolOutput({
-            phase: 'COMPLETE',
-            _audit: { transitions },
-          }),
+          output: makeToolOutput({ phase: 'COMPLETE' }),
           metadata: {},
         },
       );
@@ -377,6 +395,8 @@ describe('plugin-integration', () => {
         },
       ];
 
+      await persistTransition(transitions[0]!, makeProgressedState('VALIDATION'));
+
       await handler(
         {
           tool: 'flowguard_decision',
@@ -393,7 +413,6 @@ describe('plugin-integration', () => {
               decidedBy: 'reviewer-42',
               decidedAt: transitions[0]!.at,
             },
-            _audit: { transitions },
           }),
           metadata: {},
         },
@@ -521,6 +540,8 @@ describe('plugin-integration', () => {
         },
       ];
 
+      await persistTransition(transitions[0]!);
+
       await handler(
         {
           tool: 'flowguard_decision',
@@ -536,7 +557,6 @@ describe('plugin-integration', () => {
               rationale: 'Missing actor test',
               decidedAt: transitions[0]!.at,
             },
-            _audit: { transitions },
           }),
           metadata: {},
         },
@@ -695,11 +715,13 @@ describe('plugin-integration', () => {
         },
       ];
 
+      await persistTransition(transitions[0]!);
+
       await customHandler(
         { tool: 'flowguard_plan', sessionID: sessionId },
         {
           title: 'plan',
-          output: makeToolOutput({ phase: 'PLAN', _audit: { transitions } }),
+          output: makeToolOutput({ phase: 'PLAN' }),
           metadata: {},
         },
       );
@@ -722,6 +744,8 @@ describe('plugin-integration', () => {
         },
       ];
 
+      await persistTransition(transitions[0]!, makeProgressedState('VALIDATION'));
+
       await Promise.all([
         handler(
           { tool: 'flowguard_decision', sessionID: sessionId, args: { rationale: 'r1' } },
@@ -735,7 +759,6 @@ describe('plugin-integration', () => {
                 decidedBy: 'reviewer-1',
                 decidedAt: transitions[0]!.at,
               },
-              _audit: { transitions },
             }),
             metadata: {},
           },
@@ -752,7 +775,6 @@ describe('plugin-integration', () => {
                 decidedBy: 'reviewer-2',
                 decidedAt: transitions[0]!.at,
               },
-              _audit: { transitions },
             }),
             metadata: {},
           },
