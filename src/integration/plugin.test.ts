@@ -1525,8 +1525,7 @@ describe('integration/plugin', () => {
       }
     });
 
-    // BAD: hooks handle malformed input without crashing.
-    it('BAD — before hook ignores an invalid empty tool identity', async () => {
+    it('BAD — before hook fail-closes an invalid empty tool identity', async () => {
       const ws = await createTestWorkspace();
       try {
         const hooks = await FlowGuardAuditPlugin(
@@ -1534,10 +1533,9 @@ describe('integration/plugin', () => {
         );
         const beforeHook = hooks['tool.execute.before']!;
 
-        // An empty tool identity is ignored by the hook's tool classification.
         await expect(
           beforeHook({ tool: '', sessionID: '', callID: '' }, { args: {} }),
-        ).resolves.toBeUndefined();
+        ).rejects.toThrow('PLUGIN_ENFORCEMENT_UNAVAILABLE');
       } finally {
         await ws.cleanup();
       }
