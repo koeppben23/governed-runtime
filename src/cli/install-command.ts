@@ -216,10 +216,8 @@ export async function install(args: CliArgs): Promise<CliResult> {
 /**
  * Instruction-source gate for install.
  *
- * Runs AFTER artifacts are written (write-but-refuse posture): a positively
- * known-unsupported runtime does not roll back the install but pushes a
- * blocking error + warning carrying the OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED
- * reason, so the install result is not clean.
+ * Runs during prepare, before any artifact write. A positively known-unsupported
+ * runtime produces a blocking error so an unsafe partial install is impossible.
  *
  * For every other case the install is honest rather than triumphant: mandates
  * are CONFIGURED, but activation is not verified by install. A present
@@ -242,7 +240,7 @@ async function enforceInstructionSourceCompat(ctx: InstallContext): Promise<void
       version: evidence.version ?? 'unknown',
     });
     ctx.warnings.push(
-      'FlowGuard artifacts were written but the detected OpenCode runtime is known not to resolve instruction sources — mandates are NOT active.',
+      'The detected OpenCode runtime is known not to resolve instruction sources — installation was blocked before artifacts were written.',
     );
     ctx.errors.push(formatted.reason);
     ctx.errorDetails.push({ message: formatted.reason });
@@ -268,6 +266,18 @@ async function doInstall(args: CliArgs): Promise<CliResult> {
   try {
     const configTargetDir = resolveConfigTargetDir(ctx);
     await recoverOrAbort(configTargetDir);
+
+    await enforceInstructionSourceCompat(ctx);
+    if (ctx.errors.length > 0) {
+      return {
+        target: ctx.target,
+        ops: ctx.ops,
+        errors: ctx.errors,
+        errorDetails: ctx.errorDetails,
+        warnings: ctx.warnings,
+        notices: ctx.notices,
+      };
+    }
 
     const cfgPath = join(configTargetDir, 'flowguard.json');
     if (existsSync(cfgPath) && !args.force) {
@@ -302,13 +312,6 @@ async function doInstall(args: CliArgs): Promise<CliResult> {
     snapshot = await buildRollbackSnapshot(ctx, tarball.name);
     await writeArtifacts(ctx, tarball, snapshot);
     await writeConfigFiles(ctx, snapshot);
-
-    // Instruction-source status (write-but-refuse posture).
-    // Artifacts are already written; if the runtime is positively known to be
-    // unsupported we surface a blocking error + warning so the install does not
-    // report a clean result. Otherwise install stays honest: configured, with a
-    // notice that activation is not verified (unknown/Desktop are not claimed active).
-    await enforceInstructionSourceCompat(ctx);
 
     // Create transaction before any dependency mutations
     tx = await createDependencyTransaction(snapshot, snapshot.vendorTarballPath);
