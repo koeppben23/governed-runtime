@@ -93,7 +93,7 @@ disproven, update the status and link the evidence."
 | B       | P1       | Fixed           | AC1, AC2, AC3, AC4, AC5, TSA1, TSA2, TSA3, TSA4 | Hash-chain, canonical digest, TSA, and NTP hardening. #832/#833 fix TSA1–TSA4 with a strict RFC 3161 verifier contract, including ESS signer-certificate binding.                         |
 | C       | P1       | Partially Fixed | AR1, AR2, AR3, AR4, AR5, AUD1, AUD2, AUD3, AUD4 | Archive integrity and audit write-lock recovery. AR1 and AUD2 fixed (#670); AR2 fixed by trusted-policy severity derivation; AR3/AR4/AUD1/AUD3/AUD4 fixed (#837); AR5 is tracked in #836. |
 | D       | P1       | Fixed           | R1, R2, R3, R4, R5, AC3                         | Secret-leak, redaction, logging, telemetry boundaries. R3, R5 fixed (#585); R1, R2, R4, AC3 fixed (redaction fail-closed).                                                                |
-| E       | P1       | Partially Fixed | H1, H2, H4, C1, C2, C3, C4, C5, M1, M2, M3, I4  | Hook, CLI, MCP, installer, and integration fail-closed hardening. H1, H2, H4, M1, M3 and C2–C5 fixed (#645, #646, #667); I4 is tracked pending merge; C1 and M2 remain open.              |
+| E       | P1       | Partially Fixed | H1, H2, H4, C1, C2, C3, C4, C5, M1, M2, M3, I4  | Hook, CLI, MCP, installer, and integration fail-closed hardening. H1, H2, H4, M1, M3 and C2–C5 fixed (#645, #646, #667); I4 is partially fixed; C1 and M2 remain open.                    |
 | F       | P2       | Partially Fixed | G3, G7, G9, G15, AC6, AC7, G12, G13             | State-machine correctness and audit completeness. G3 and G9 are fixed pre-existing; G7 is fixed by #421 and AC7 by #678; G15, AC6, and G12–G13 remain open.                               |
 
 ## High-Priority Findings
@@ -104,10 +104,10 @@ disproven, update the status and link the evidence."
 | AC3  | HIGH     | Fixed     | Audit argument summarization can expose scalar secrets and needs redaction hardening.                                                                                             |
 | AC4  | HIGH     | Fixed     | NTP offset/delay calculation is RFC-aligned and captures T1 immediately before send (#728).                                                                                       |
 | AC5  | HIGH     | Fixed     | NTP responses validate protocol fields, peer-bound origin timestamp, and non-null transmit timestamp (#728).                                                                      |
-| PD1  | HIGH     | Tracked   | Policy snapshot digests require `policy-digest.v2`; unversioned and unknown versions fail closed. Admission passed at 90.63%; status becomes Fixed after merge.                   |
+| PD1  | HIGH     | Fixed     | Policy snapshot digests require `policy-digest.v2`; unversioned and unknown versions fail closed. #844 merged with 90.63% targeted mutation admission.                           |
 | H1   | HIGH     | Fixed     | HTTP governance routes require bearer authentication; non-loopback binds need explicit opt-in and token auth.                                                                     |
 | H2   | HIGH     | Fixed     | HTTP and command hooks both block mutating tools while review obligations remain unresolved.                                                                                      |
-| H3   | HIGH     | Tracked   | This branch rejects Windows reserved device names, their extension variants, and session IDs with leading/trailing whitespace or trailing dots; status becomes Fixed after merge. |
+| H3   | HIGH     | Fixed     | #844 rejects Windows reserved device names, their extension variants, and session IDs with leading/trailing whitespace or trailing dots.                                         |
 | M1   | HIGH     | Fixed     | MCP tool execution uses server-scoped response deadlines and admission limits (#645).                                                                                             |
 | M2   | HIGH     | Open      | MCP session/project directory environment inputs need validation.                                                                                                                 |
 | M3   | HIGH     | Fixed     | MCP errors use trusted boundary codes and do not reflect arbitrary executor messages (#645).                                                                                      |
@@ -116,9 +116,9 @@ disproven, update the status and link the evidence."
 | C3   | HIGH     | Fixed     | Install mutations use top-level rollback plus crash-recoverable dependency transactions in #667.                                                                                  |
 | C4   | HIGH     | Fixed     | Codex marketplace install and uninstall use locked atomic read-modify-write in #667.                                                                                              |
 | C5   | HIGH     | Fixed     | Snapshot and rollback paths reject symlinks and use TOCTOU-hardened operations in #667.                                                                                           |
-| I4   | HIGH     | Tracked   | This branch blocks mutating host tools when the authoritative session-directory mapping is missing; status becomes Fixed after merge.                                             |
-| R1   | HIGH     | Fixed     | Export redaction uses a default-deny deep walk. Final archive composition needs the separate R14 regression contract.                                                             |
-| R2   | HIGH     | Fixed     | Archive pipeline produces redacted files alongside raw, controlled by mandatory tool parameters. Final archive-byte coverage remains R14.                                         |
+| I4   | HIGH     | Partially Fixed | #844 blocks mutating host tools when the authoritative session-directory mapping is missing. Audit-context resolution remains a separate open authority concern.               |
+| R1   | HIGH     | Fixed     | Export redaction uses a default-deny deep walk; #844 adds final sharing-archive byte coverage (R14).                                                                              |
+| R2   | HIGH     | Fixed     | Archive pipeline produces redacted files alongside raw, controlled by mandatory tool parameters; #844 verifies final sharing-archive composition (R14).                           |
 | R4   | HIGH     | Fixed     | Telemetry error/status export needs scrubbing.                                                                                                                                    |
 | AUD2 | HIGH     | Fixed     | Audit write lock safely recovers dead-process stale locks while failing closed for unsafe lock states (#670).                                                                     |
 | LK1  | LOW      | Mitigated | Stale-lock recovery re-verifies content before unlink to avoid deleting a foreign fresh lock; a residual sub-`unlink` OS race remains without an atomic primitive (#673).         |
@@ -153,13 +153,14 @@ disproven, update the status and link the evidence."
 | T1   | MEDIUM   | Open            | Mandate section extraction should tolerate heading drift or fail with clearer contract. `TESTED_BUG_BEHAVIOR`.                                              |
 | AR2  | MEDIUM   | Fixed           | Archive timestamp severity derives from the trusted `resolveStrictMode(state)` resolution; the manifest is never a severity authority.                      |
 | AR5  | MEDIUM   | Fixed           | Post-publication digest-bound event and verifier contract are implemented by #838, closing #836.                                                            |
-| R14  | MEDIUM   | Tracked         | This branch adds a default-sharing-export contract from real session/audit secret evidence through final archive members; status becomes Fixed after merge. |
+| R14  | MEDIUM   | Fixed           | #844 adds a default-sharing-export contract from real session/audit secret evidence through final archive members.                                                               |
 | TSA1 | MEDIUM   | Fixed           | RFC3161 verifier enforces exactly one critical, exclusive id-kp-timeStamping EKU (#643, #832).                                                              |
 | TSA2 | MEDIUM   | Fixed           | Independently allowlisted message-imprint and CMS hashes (SHA-256/384/512), CMS-internal coherence, validated RSASSA-PSS parameters (#643, #832).           |
 | S1   | MEDIUM   | Open            | State schema versioning needs forward-migration strategy.                                                                                                   |
 | S2   | MEDIUM   | Open            | Policy snapshot parse transforms can rewrite historical state.                                                                                              |
+| UP1  | MEDIUM-HIGH | Tracked      | Prerelease persisted-state compatibility was overstated: unversioned policy digests from `v1.2.0-tp.2` and earlier are intentionally incompatible with `policy-digest.v2`; upgrade recovery documentation is in this PR. |
 | MUT2 | MEDIUM   | Open            | Coverage excludes the production `src/integration/plugin-helpers.ts` by wildcard; its enforcement paths do not count toward the 80% gate or mutation scope. |
-| MUT3 | MEDIUM   | Tracked         | This branch makes mutation a required dependency of the tag-release publish job; status becomes Fixed after merge and workflow execution evidence.          |
+| MUT3 | MEDIUM   | Tracked         | The release workflow makes mutation a required dependency of the tag-release publish job; status requires v-tag workflow execution evidence.                |
 
 ## Low-Priority And Hardening Findings
 
@@ -224,7 +225,7 @@ disproven, update the status and link the evidence."
 | Silent success after caught failures | Open   | Error handling should surface audit/install/workspace failures explicitly.                                 |
 | Environment-variable trust boundary  | Open   | Runtime and installer environment inputs need validation/sandboxing review.                                |
 | Fail-open behavior                   | Open   | Hooks, MCP, plugin initialization, and audit persistence need fail-closed review.                          |
-| Assurance gate drift                 | Open   | MUT2/MUT3 leave production enforcement code outside coverage and formal releases outside mutation testing. |
+| Assurance gate drift                 | Open   | MUT2 leaves production enforcement code outside coverage; release publication is source-gated on mutation, pending workflow execution evidence for MUT3. |
 
 ## Test-Pinned Bug Behaviors
 
@@ -444,8 +445,7 @@ The binding covers the archive bytes, checksum sidecar, manifest digest, and
 archive filename. Verification rejects published-but-unbound artifacts and an
 invalid external binding chain; retries reuse only the exact same publication.
 
-PD1 remains tracked until this branch merges. Its mutation admission passed at
-90.63%. The previous policy-snapshot
+PD1 is fixed by merged #844. Its mutation admission passed at 90.63%. The previous policy-snapshot
 digest used `JSON.stringify(policy, Object.keys(policy).sort())`, whose array
 replacer allows only top-level property names at every nesting depth. Nested
 governance fields could therefore differ without changing the digest. The fix
@@ -455,14 +455,20 @@ closed. A SHA-256 digest
 supports integrity comparison only against a trusted reference; it does not
 independently establish authenticity or non-repudiation.
 
-R14 remains tracked pending this branch's merge. Archive tests cover member
-inventory, redaction modes, raw/sharing configuration, and integrity semantics,
-but need a clear end-to-end contract that injects a secret into real session and
-audit evidence, opens the final sharing archive, and proves the secret is absent
-from every released member byte. This branch adds that contract for the default
-`basic` sharing export while preserving the distinct raw-audit-package contract:
-raw packages remain confidential and canonically verifiable; redacted sharing
-exports remain intentionally `not_verifiable`.
+R14 is fixed by merged #844. Archive tests cover member inventory, redaction
+modes, raw/sharing configuration, and integrity semantics. The default `basic`
+sharing-export contract injects a secret into real session and audit evidence,
+opens the final sharing archive, and proves the secret is absent from every
+released member byte. The distinct raw-audit-package contract remains:
+raw packages are confidential and canonically verifiable; redacted sharing
+exports are intentionally `not_verifiable`.
+
+H3 is fixed by merged #844. I4 is partially fixed: mutating host tools now
+block without an authoritative session-directory mapping, while audit-context
+resolution remains separately open. C1 remains open because its broader
+non-OpenCode installer finding is not fully covered by #844. MUT3 remains
+tracked until a v-tag workflow run supplies the execution evidence required by
+this inventory's status contract.
 
 ## Maintenance Rules
 
