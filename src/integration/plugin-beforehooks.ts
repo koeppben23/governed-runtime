@@ -247,7 +247,9 @@ async function enforceMutatingToolCheck(
   sessionId: string,
   args: Record<string, unknown>,
 ): Promise<void> {
-  if (!isMutatingHostTool(toolName)) return;
+  // An absent tool identity is malformed host input and cannot be governed.
+  // Unknown non-empty tools fail closed through the host phase gate.
+  if (!toolName || !isMutatingHostTool(toolName)) return;
   const sessDir = runtime.ws.getSessionDir(sessionId);
   if (!sessDir) {
     throw buildEnforcementError(
