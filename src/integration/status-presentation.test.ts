@@ -29,6 +29,7 @@ import type { SessionState } from '../state/schema.js';
 import { getPolicyPreset } from '../config/policy.js';
 import { createPolicySnapshot } from '../config/policy-snapshot.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
+import { hashText } from '../shared/hashing.js';
 
 // ─── Test Helpers ──────────────────────────────────────────────────────────────
 
@@ -52,7 +53,7 @@ function makeTeamPolicy(): FlowGuardPolicy {
 }
 
 function makePolicySnapshot(mode: 'solo' | 'team') {
-  return createPolicySnapshot(getPolicyPreset(mode), '2026-01-01T00:00:00.000Z', () => 'digest123');
+  return createPolicySnapshot(getPolicyPreset(mode), '2026-01-01T00:00:00.000Z', hashText);
 }
 
 function makeReadyState(): SessionState {

@@ -1,2 +1,2 @@
-/** Canonical version for policy snapshot digests using recursive canonical JSON. */
-export const POLICY_DIGEST_VERSION = 'policy-digest.v2' as const;
+/** @module shared/policy-digest @description Outward re-export of state-owned policy digest identifiers. */
+export { POLICY_DIGEST_PATTERN, POLICY_DIGEST_VERSION } from '../state/evidence-identifiers.js';

@@ -28,7 +28,9 @@ import { Phase, Event, Transition, SessionState } from '../state/schema.js';
 import { makeState, FIXED_TIME, FIXED_UUID, FIXED_SESSION_UUID } from '../fixtures.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import { readState } from '../adapters/persistence.js';
-import { POLICY_DIGEST_VERSION } from '../shared/policy-digest.js';
+import { POLICY_DIGEST_VERSION } from './evidence-identifiers.js';
+
+const VALID_POLICY_DIGEST = 'a'.repeat(64);
 
 describe('state schemas', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
@@ -328,7 +330,7 @@ describe('state schemas', () => {
     it('PolicySnapshotSchema rejects snapshot missing actorClassification', () => {
       const snapshot = {
         mode: 'team',
-        hash: 'abc',
+        hash: VALID_POLICY_DIGEST,
         hashVersion: POLICY_DIGEST_VERSION,
         resolvedAt: FIXED_TIME,
         requestedMode: 'team',
@@ -345,7 +347,7 @@ describe('state schemas', () => {
     it('PolicySnapshotSchema rejects snapshot missing requestedMode', () => {
       const snapshot = {
         mode: 'team',
-        hash: 'abc',
+        hash: VALID_POLICY_DIGEST,
         hashVersion: POLICY_DIGEST_VERSION,
         resolvedAt: FIXED_TIME,
         effectiveGateBehavior: 'human_gated',
@@ -362,7 +364,7 @@ describe('state schemas', () => {
     it('PolicySnapshotSchema rejects snapshot missing effectiveGateBehavior', () => {
       const snapshot = {
         mode: 'team',
-        hash: 'abc',
+        hash: VALID_POLICY_DIGEST,
         resolvedAt: FIXED_TIME,
         requestedMode: 'team',
         requireHumanGates: true,
@@ -509,7 +511,7 @@ describe('state schemas', () => {
     it('PolicySnapshotSchema validates nested audit object', () => {
       const snapshot = {
         mode: 'team',
-        hash: 'abc',
+        hash: VALID_POLICY_DIGEST,
         hashVersion: POLICY_DIGEST_VERSION,
         resolvedAt: FIXED_TIME,
         requestedMode: 'team',
@@ -534,7 +536,7 @@ describe('state schemas', () => {
     it('PolicySnapshotSchema accepts typed jwks identityProvider', () => {
       const snapshot = {
         mode: 'team',
-        hash: 'abc',
+        hash: VALID_POLICY_DIGEST,
         hashVersion: POLICY_DIGEST_VERSION,
         resolvedAt: FIXED_TIME,
         requestedMode: 'team',
@@ -569,7 +571,7 @@ describe('state schemas', () => {
     it('PolicySnapshotSchema rejects mixed jwks+signingKeys identityProvider', () => {
       const snapshot = {
         mode: 'team',
-        hash: 'abc',
+        hash: VALID_POLICY_DIGEST,
         resolvedAt: FIXED_TIME,
         requestedMode: 'team',
         effectiveGateBehavior: 'human_gated',
@@ -603,7 +605,7 @@ describe('state schemas', () => {
     it('PolicySnapshotSchema accepts P29 applied-policy provenance fields', () => {
       const snapshot = {
         mode: 'regulated',
-        hash: 'abc',
+        hash: VALID_POLICY_DIGEST,
         hashVersion: POLICY_DIGEST_VERSION,
         resolvedAt: FIXED_TIME,
         requestedMode: 'team',

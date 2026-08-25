@@ -12,6 +12,7 @@
  *
  * 1. LEAF MODULES: Inner layers must NOT import from outer layers
  *    - state/ must not import from machine/, rails/, adapters/, integration/, config/, audit/, archive/, logging/, cli/, diagnostics/, shared/
+ *      except foundational shared canonicalization and hashing utilities
  *    - state/ owns evidence-level discriminators in state/evidence-identifiers.ts
  *      (FINGERPRINT_PATTERN, REVIEW_REPORT_SCHEMA_ID, REVIEWER_SUBAGENT_TYPE);
  *      shared/flowguard-identifiers.ts re-exports them for backward compatibility
@@ -218,6 +219,7 @@ const FF_MODULES = new Set([
   'diagnostics',
   'hooks',
   'mcp-server',
+  'shared',
 ]);
 
 function isFFModuleImport(module: string): boolean {
@@ -618,11 +620,20 @@ describe('Layer Dependency Rules', () => {
       'discovery',
       'telemetry',
       'diagnostics',
+      'shared',
     ]);
     // state/evidence-policy.ts imports IdpConfigSchema from ./policy-idp-config.js
     // — state now owns the IdP config schemas it persists. No explicit identity/
     // exception needed.
     const allowedForState = new Set<string>();
+    const allowedStateSharedImports = new Set([
+      '../shared/canonical-json.js',
+      '../shared/hashing.js',
+    ]);
+    const forbiddenStateSharedAuthorityImports = new Set([
+      '../shared/flowguard-identifiers.js',
+      '../shared/policy-digest.js',
+    ]);
 
     beforeAll(() => {
       for (const [, analysis] of analyses) {
@@ -631,7 +642,11 @@ describe('Layer Dependency Rules', () => {
 
         const ffImports = analysis.imports.filter((i) => i.isFFModule && i.targetModule);
         for (const imp of ffImports) {
-          if (imp.targetModule && forbiddenFromState.has(imp.targetModule)) {
+          if (
+            imp.targetModule &&
+            forbiddenFromState.has(imp.targetModule) &&
+            !allowedStateSharedImports.has(imp.module)
+          ) {
             stateViolations.push({
               file: analysis.relativePath,
               rule: 'state-leaf',
@@ -648,6 +663,16 @@ describe('Layer Dependency Rules', () => {
               file: analysis.relativePath,
               rule: 'state-leaf',
               message: `state/ imports from unexpected module: ${imp.targetModule}`,
+              imports: [imp.module],
+            });
+          }
+        }
+        for (const imp of analysis.imports) {
+          if (forbiddenStateSharedAuthorityImports.has(imp.module)) {
+            stateViolations.push({
+              file: analysis.relativePath,
+              rule: 'state-evidence-discriminator-authority',
+              message: 'state/ imports an evidence discriminator from shared/',
               imports: [imp.module],
             });
           }

@@ -11,7 +11,7 @@
 
 import type { PolicySnapshot } from '../state/evidence.js';
 import { POLICY_MODES, isPolicyMode } from '../state/policy-mode.js';
-import { POLICY_DIGEST_VERSION } from '../shared/policy-digest.js';
+import { POLICY_DIGEST_PATTERN, POLICY_DIGEST_VERSION } from '../shared/policy-digest.js';
 import type { IdpConfig, IdentityProviderMode } from '../identity/types.js';
 import type {
   PolicyMode,
@@ -212,10 +212,14 @@ function normalizeMode(s: Record<string, unknown>): NormalizedField<PolicyMode> 
   );
 }
 
-function normalizeHash(s: Record<string, unknown>): NormalizedField<string> {
+function normalizeHash(s: Record<string, unknown>): string {
   const raw = s.hash;
-  if (typeof raw === 'string' && raw.length > 0) return { value: raw, normalized: false };
-  return { value: 'UNKNOWN_LEGACY', normalized: true };
+  if (typeof raw === 'string' && POLICY_DIGEST_PATTERN.test(raw)) return raw;
+  throw new PolicyConfigurationError(
+    'INVALID_POLICY_DIGEST',
+    'Policy digest must be a 64-character lowercase SHA-256 hex string.',
+    { received: raw, pattern: POLICY_DIGEST_PATTERN.source },
+  );
 }
 
 function normalizeHashVersion(s: Record<string, unknown>): typeof POLICY_DIGEST_VERSION {
@@ -540,7 +544,7 @@ export function normalizePolicySnapshotWithMeta(
   const { value: mode, normalized: modeNorm } = normalizeMode(s);
   const defaults = modeConsistentDefaults(mode);
 
-  const { value: hash, normalized: hashNorm } = normalizeHash(s);
+  const hash = normalizeHash(s);
   const hashVersion = normalizeHashVersion(s);
   const core = normalizeCoreFields(s, defaults);
   const policy = normalizePolicyFields(s, defaults);
@@ -554,7 +558,6 @@ export function normalizePolicySnapshotWithMeta(
 
   const anyNormalized = [
     modeNorm,
-    hashNorm,
     core.normalized,
     policy.normalized,
     assuranceNorm,

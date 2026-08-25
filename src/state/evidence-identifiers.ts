@@ -20,3 +20,9 @@ export const REVIEW_REPORT_SCHEMA_ID = 'flowguard-review-report.v1' as const;
 
 /** Subagent type identifier for the FlowGuard reviewer subagent. */
 export const REVIEWER_SUBAGENT_TYPE = 'flowguard-reviewer';
+
+/** Serialization contract for canonical policy snapshot digests. */
+export const POLICY_DIGEST_VERSION = 'policy-digest.v2' as const;
+
+/** Canonical lowercase SHA-256 digest shape for policy snapshots. */
+export const POLICY_DIGEST_PATTERN = /^[0-9a-f]{64}$/;

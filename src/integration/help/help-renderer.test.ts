@@ -13,6 +13,7 @@ import { getPolicyPreset } from '../../config/policy.js';
 import { createPolicySnapshot } from '../../config/policy-snapshot.js';
 import { buildHelpResult } from './help-projection.js';
 import type { SessionState } from '../../state/schema.js';
+import { hashText } from '../../shared/hashing.js';
 
 const emptyArtifact = {
   status: 'not_verified' as const,
@@ -81,7 +82,7 @@ function noSessionResult(overrides?: Partial<HelpResult>): HelpResult {
 }
 
 function sp(mode: 'solo' | 'team') {
-  return createPolicySnapshot(getPolicyPreset(mode), '2026-01-01T00:00:00.000Z', () => 'd');
+  return createPolicySnapshot(getPolicyPreset(mode), '2026-01-01T00:00:00.000Z', hashText);
 }
 
 function makePlanReviewState(): SessionState {

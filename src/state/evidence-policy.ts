@@ -6,7 +6,7 @@
  */
 
 import { z } from 'zod';
-import { POLICY_DIGEST_VERSION } from '../shared/policy-digest.js';
+import { POLICY_DIGEST_PATTERN, POLICY_DIGEST_VERSION } from './evidence-identifiers.js';
 import { IdpConfigSchema } from './policy-idp-config.js';
 import { PolicyModeSchema, CentralMinimumModeSchema, type PolicyMode } from './policy-mode.js';
 
@@ -45,8 +45,8 @@ export const PolicySnapshotSchema = z
      * Use requestedMode to see what was originally requested.
      */
     mode: PolicyModeSchema,
-    /** SHA-256 hash of policy content; see hashVersion for its serialization contract. */
-    hash: z.string(),
+    /** Lowercase SHA-256 hash of policy content; see hashVersion for its serialization contract. */
+    hash: z.string().regex(POLICY_DIGEST_PATTERN),
     /** Required serialization contract for the policy digest. */
     hashVersion: z.literal(POLICY_DIGEST_VERSION),
     /** When the policy was resolved and frozen. */

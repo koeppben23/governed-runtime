@@ -20,10 +20,12 @@ import { CHALLENGE_POLICY_V1 } from './policy-types.js';
 import { sha256, soloResolution, NOW } from './policy-snapshot.test.js';
 import { freezePolicySnapshot } from './policy-snapshot.js';
 
+const VALID_POLICY_DIGEST = 'a'.repeat(64);
+
 function withDigestVersion(snapshot: Record<string, unknown> | null | undefined) {
   return snapshot === null || snapshot === undefined
     ? snapshot
-    : { hashVersion: POLICY_DIGEST_VERSION, ...snapshot };
+    : { hash: VALID_POLICY_DIGEST, hashVersion: POLICY_DIGEST_VERSION, ...snapshot };
 }
 
 function normalizePolicySnapshot(snapshot: Record<string, unknown> | null | undefined) {
@@ -267,9 +269,12 @@ describe('normalizePolicySnapshotWithMeta', () => {
   });
 
   it('rejects an unknown policy digest version instead of treating it as legacy', () => {
-    expect(() => normalizePolicySnapshotWithMeta({ hashVersion: 'policy-digest.v3' })).toThrow(
-      PolicyConfigurationError,
-    );
+    expect(() =>
+      normalizePolicySnapshotWithMeta({
+        hash: VALID_POLICY_DIGEST,
+        hashVersion: 'policy-digest.v3',
+      }),
+    ).toThrow(PolicyConfigurationError);
   });
 
   it('returns normalized=true for empty snapshot', () => {

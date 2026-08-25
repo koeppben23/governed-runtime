@@ -22,6 +22,7 @@ import { computeFingerprint, sessionDir } from '../../adapters/workspace/index.j
 import { readState, writeState } from '../../adapters/persistence.js';
 import { writeRepoConfig } from '../../adapters/persistence-config.js';
 import { createPolicySnapshot } from '../../config/policy-snapshot.js';
+import { hashText } from '../../shared/hashing.js';
 import { DEFAULT_CONFIG } from '../../config/flowguard-config.js';
 
 function makeReviewReport(
@@ -453,7 +454,7 @@ describe('resume end-to-end via help.execute', () => {
       policySnapshot: createPolicySnapshot(
         getPolicyPreset('team'),
         '2026-01-01T00:00:00.000Z',
-        () => 'digest',
+        hashText,
       ),
       activeChecks: [],
       verificationCandidates: [],

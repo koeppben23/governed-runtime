@@ -14,10 +14,11 @@ import {
   makeState,
 } from '../fixtures.js';
 import { getPolicyPreset } from '../config/policy.js';
+import { hashText } from '../shared/hashing.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const digestFn = (text: string): string => `sha256:${text.slice(0, 8)}`;
+const digestFn = hashText;
 
 const baseCtx: RailContext = {
   now: () => FIXED_TIME,

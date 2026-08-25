@@ -133,7 +133,7 @@ describe('policy snapshot regression', () => {
   it('rejects unversioned policy snapshots', () => {
     const snapshot = {
       mode: 'regulated',
-      hash: 'legacy-hash',
+      hash: 'a'.repeat(64),
       resolvedAt: '2026-01-01T00:00:00.000Z',
       requestedMode: 'regulated',
       effectiveGateBehavior: 'human_gated',

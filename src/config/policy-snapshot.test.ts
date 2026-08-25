@@ -32,6 +32,7 @@ import {
 } from './policy-snapshot-normalize.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { POLICY_DIGEST_VERSION } from '../shared/policy-digest.js';
+import { PolicyConfigurationError } from './policy-errors.js';
 
 export const sha256 = (text: string) => createHash('sha256').update(text, 'utf-8').digest('hex');
 export const NOW = '2026-04-27T10:00:00.000Z';
@@ -88,6 +89,15 @@ describe('createPolicySnapshot', () => {
     expect(snapshot.reviewInvocationPolicy).toBe(SOLO_POLICY.reviewInvocationPolicy);
     expect(snapshot.effectiveGateBehavior).toBe('auto_approve');
   });
+
+  it.each(['', 'abc', 'UNKNOWN_LEGACY', 'A'.repeat(64)])(
+    'rejects an invalid v2 policy digest %p',
+    (invalidDigest) => {
+      expect(() => createPolicySnapshot(SOLO_POLICY, NOW, () => invalidDigest)).toThrow(
+        PolicyConfigurationError,
+      );
+    },
+  );
 
   it('includes resolution metadata in the snapshot', () => {
     const snapshot = createPolicySnapshot(SOLO_POLICY, NOW, sha256, {
