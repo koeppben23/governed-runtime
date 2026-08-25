@@ -30,6 +30,7 @@ import {
   normalizeDiscoveryHealthField,
   normalizeValidationEvidenceField,
 } from './policy-snapshot-normalize.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
 
 export const sha256 = (text: string) => createHash('sha256').update(text, 'utf-8').digest('hex');
 export const NOW = '2026-04-27T10:00:00.000Z';
@@ -68,9 +69,7 @@ describe('createPolicySnapshot', () => {
   it('creates a PolicySnapshot from SoloPolicy', () => {
     const snapshot = createPolicySnapshot(SOLO_POLICY, NOW, sha256);
     expect(snapshot.mode).toBe('solo');
-    expect(snapshot.hash).toBe(
-      sha256(JSON.stringify(SOLO_POLICY, Object.keys(SOLO_POLICY).sort())),
-    );
+    expect(snapshot.hash).toBe(sha256(canonicalJsonStringify(SOLO_POLICY)));
     expect(snapshot.resolvedAt).toBe(NOW);
     expect(snapshot.requireHumanGates).toBe(SOLO_POLICY.requireHumanGates);
     expect(snapshot.maxSelfReviewIterations).toBe(SOLO_POLICY.maxSelfReviewIterations);
@@ -114,6 +113,61 @@ describe('createPolicySnapshot', () => {
     expect(snapshot.audit.enableChainHash).toBe(SOLO_POLICY.audit.enableChainHash);
     expect(snapshot.audit.timestampAssurance.enabled).toBe(
       SOLO_POLICY.audit.timestampAssurance.enabled,
+    );
+  });
+
+  it('binds nested governance fields into the policy digest', () => {
+    const baseline = createPolicySnapshot(SOLO_POLICY, NOW, sha256).hash;
+    const variants = [
+      {
+        ...SOLO_POLICY,
+        audit: { ...SOLO_POLICY.audit, enableChainHash: !SOLO_POLICY.audit.enableChainHash },
+      },
+      {
+        ...SOLO_POLICY,
+        audit: { ...SOLO_POLICY.audit, emitToolCalls: !SOLO_POLICY.audit.emitToolCalls },
+      },
+      {
+        ...SOLO_POLICY,
+        selfReview: {
+          ...SOLO_POLICY.selfReview,
+          strictEnforcement: !SOLO_POLICY.selfReview.strictEnforcement,
+        },
+      },
+      {
+        ...SOLO_POLICY,
+        challengePolicy: undefined,
+      },
+      {
+        ...SOLO_POLICY,
+        validationEvidence: {
+          ...SOLO_POLICY.validationEvidence,
+          allowNoCommands: !SOLO_POLICY.validationEvidence.allowNoCommands,
+        },
+      },
+    ];
+
+    for (const policy of variants) {
+      expect(createPolicySnapshot(policy, NOW, sha256).hash).not.toBe(baseline);
+    }
+  });
+
+  it('distinguishes policies that differ only in nested audit and review fields', () => {
+    const policyA = {
+      ...SOLO_POLICY,
+      mode: 'team' as const,
+      audit: { ...SOLO_POLICY.audit, enableChainHash: true, emitToolCalls: true },
+      selfReview: { ...SOLO_POLICY.selfReview, strictEnforcement: false },
+    };
+    const policyB = {
+      ...SOLO_POLICY,
+      mode: 'team' as const,
+      audit: { ...SOLO_POLICY.audit, enableChainHash: false, emitToolCalls: false },
+      selfReview: { ...SOLO_POLICY.selfReview, strictEnforcement: true },
+    };
+
+    expect(createPolicySnapshot(policyA, NOW, sha256).hash).not.toBe(
+      createPolicySnapshot(policyB, NOW, sha256).hash,
     );
   });
 });

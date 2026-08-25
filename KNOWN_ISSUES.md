@@ -151,8 +151,8 @@ disproven, update the status and link the evidence."
 | C11  | MEDIUM   | Open            | Serve port allocation has a TOCTOU gap.                                                                                                                       |
 | T1   | MEDIUM   | Open            | Mandate section extraction should tolerate heading drift or fail with clearer contract. `TESTED_BUG_BEHAVIOR`.                                                |
 | AR2  | MEDIUM   | Fixed           | Archive timestamp severity derives from the trusted `resolveStrictMode(state)` resolution; the manifest is never a severity authority.                        |
-| AR5  | MEDIUM   | Tracked         | Archive binding event ordering needs the post-publication digest-bound event and verifier contract tracked in #836.                                           |
-| R14  | MEDIUM   | Open            | Archive/export redaction lacks end-to-end composition tests from tool defaults through staging and final archive bytes; regressions could bypass tested redaction helpers. |
+| AR5  | MEDIUM   | Fixed           | Post-publication digest-bound event and verifier contract are implemented by #838, closing #836.                                                             |
+| R14  | MEDIUM   | Tracked         | This branch adds a default-sharing-export contract from real session/audit secret evidence through final archive members; status becomes Fixed after merge. |
 | TSA1 | MEDIUM   | Fixed           | RFC3161 verifier enforces exactly one critical, exclusive id-kp-timeStamping EKU (#643, #832).                                                               |
 | TSA2 | MEDIUM   | Fixed           | Independently allowlisted message-imprint and CMS hashes (SHA-256/384/512), CMS-internal coherence, validated RSASSA-PSS parameters (#643, #832).            |
 | S1   | MEDIUM   | Open            | State schema versioning needs forward-migration strategy.                                                                                                     |
@@ -434,6 +434,31 @@ score). Authority-relevant branches are pinned by direct unit tests
 downgrade matrix, salt ceilings); `Stryker disable` directives remain ONLY on
 fail-fast diagnostics and outcome-equivalent input-shape dispatches, each
 with a per-line justification naming the covering tests.
+
+## 2026-08-25 — Archive Publication, Policy Digest, And Sharing Redaction
+
+Archive publication binding is complete: #838 closes #836 by appending an
+external `archive:publication_bound` event only after final archive publication.
+The binding covers the archive bytes, checksum sidecar, manifest digest, and
+archive filename. Verification rejects published-but-unbound artifacts and an
+invalid external binding chain; retries reuse only the exact same publication.
+
+PD1 remains tracked until this branch merges. The previous policy-snapshot
+digest used `JSON.stringify(policy, Object.keys(policy).sort())`, whose array
+replacer allows only top-level property names at every nesting depth. Nested
+governance fields could therefore differ without changing the digest. The fix
+uses the repository's recursive canonical JSON authority. A SHA-256 digest
+supports integrity comparison only against a trusted reference; it does not
+independently establish authenticity or non-repudiation.
+
+R14 remains tracked pending this branch's merge. Archive tests cover member
+inventory, redaction modes, raw/sharing configuration, and integrity semantics,
+but need a clear end-to-end contract that injects a secret into real session and
+audit evidence, opens the final sharing archive, and proves the secret is absent
+from every released member byte. This branch adds that contract for the default
+`basic` sharing export while preserving the distinct raw-audit-package contract:
+raw packages remain confidential and canonically verifiable; redacted sharing
+exports remain intentionally `not_verifiable`.
 
 ## Maintenance Rules
 

@@ -20,6 +20,7 @@
  */
 
 import type { PolicySnapshot } from '../state/evidence.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS } from './policy-types.js';
 import type {
   FlowGuardPolicy,
@@ -106,7 +107,7 @@ export function createPolicySnapshot(
     policyPathHint?: string;
   },
 ): PolicySnapshot {
-  const canonical = JSON.stringify(policy, Object.keys(policy).sort());
+  const canonical = canonicalJsonStringify(policy);
   const fallbackGate = policy.requireHumanGates
     ? ('human_gated' as const)
     : ('auto_approve' as const);

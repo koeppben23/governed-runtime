@@ -28,7 +28,8 @@ function defaultsToEnforcement(mode: PolicyMode): boolean {
  * governed a session — even after policy presets are updated.
  *
  * The hash is SHA-256 of the canonical JSON of the full GovernancePolicy.
- * Non-repudiation: hash matches → policy is authentic and unmodified.
+ * It supports integrity comparison against a trusted reference; it does not
+ * independently prove authenticity or non-repudiation.
  *
  * Lives in state layer (not config) because it is part of SessionState —
  * the innermost layer must not depend on outer layers.

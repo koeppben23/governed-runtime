@@ -190,8 +190,8 @@ The COM domain covers compliance documentation, evidence retention, and audit su
 **Audit Support:**
 
 - Complete session history: ticket, plan versions, validation results, implementation evidence, review decisions
-- Hash-chained audit trail provides non-repudiation (each event cryptographically linked to predecessor)
-- Policy snapshot proves which rules governed each session
+- Hash-chained audit trail is tamper-evident (each event cryptographically links to its predecessor); non-repudiation requires an external trust anchor.
+- Policy snapshot records which rules governed each session; its digest supports integrity comparison against a trusted reference.
 - Read-only compliance report generation (`/review`) available at any phase without mutating state
 
 #### Organization Must Provide
@@ -239,7 +239,7 @@ FlowGuard provides release artifact integrity verification and minimal supply ch
 
 FlowGuard uses cryptographic operations for integrity verification, not for data encryption or key management.
 
-- **FlowGuard provides:** SHA-256 hash-chained audit trail (tamper-evident), SHA-256 digests on archive files and manifests, SHA-256 checksums on release artifacts, SHA-256 policy snapshot hashing for non-repudiation.
+- **FlowGuard provides:** SHA-256 hash-chained audit trail (tamper-evident), SHA-256 digests on archive files and manifests, SHA-256 checksums on release artifacts, and canonical SHA-256 policy snapshot digests for integrity comparison against trusted references.
 - **Organization must provide:** Encryption policies, key management infrastructure, certificate management, cryptographic algorithm selection policies.
 
 ### PI — Portability and Interoperability

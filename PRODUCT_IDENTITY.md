@@ -213,7 +213,7 @@ The FlowGuard runtime maintains **canonical state** — a single JSON document, 
 - Current phase and next allowed action
 - Active profile and its rule content
 - Evidence chain (ticket, plan with version history, validation results, implementation, review decisions)
-- Policy snapshot (which rules governed this session, with SHA-256 hash for non-repudiation)
+- Policy snapshot (which rules governed this session, with a canonical SHA-256 digest for integrity comparison against a trusted reference)
 - Gate status and blockers (if any)
 
 In controlled environments, "the system should probably continue" is not acceptable. The platform says either:
