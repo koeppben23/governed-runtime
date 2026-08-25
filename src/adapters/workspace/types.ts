@@ -129,20 +129,25 @@ export function validateSessionId(sessionId: string): string {
   if (!trimmed) {
     throw new WorkspaceError('INVALID_SESSION_ID', 'Session ID is empty');
   }
+  if (trimmed !== sessionId) {
+    throw new WorkspaceError('INVALID_SESSION_ID', 'Session ID has leading or trailing whitespace');
+  }
+  if (trimmed === '.' || trimmed === '..') {
+    throw new WorkspaceError('INVALID_SESSION_ID', 'Session ID is a path traversal component');
+  }
+  if (sessionId.endsWith('.')) {
+    throw new WorkspaceError(
+      'INVALID_SESSION_ID',
+      `Session ID is not portable to Windows filesystems: "${sessionId}"`,
+    );
+  }
   if (UNSAFE_PATH_CHARS_RE.test(trimmed)) {
     throw new WorkspaceError(
       'INVALID_SESSION_ID',
       `Session ID contains unsafe characters: "${trimmed}"`,
     );
   }
-  if (trimmed === '.' || trimmed === '..') {
-    throw new WorkspaceError('INVALID_SESSION_ID', 'Session ID is a path traversal component');
-  }
-  if (
-    trimmed.endsWith('.') ||
-    trimmed.endsWith(' ') ||
-    WINDOWS_RESERVED_SESSION_ID_RE.test(trimmed)
-  ) {
+  if (WINDOWS_RESERVED_SESSION_ID_RE.test(trimmed)) {
     throw new WorkspaceError(
       'INVALID_SESSION_ID',
       `Session ID is not portable to Windows filesystems: "${trimmed}"`,
