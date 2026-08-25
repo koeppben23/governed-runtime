@@ -28,10 +28,10 @@ function defaultsToEnforcement(mode: PolicyMode): boolean {
  * Stores all FlowGuard-critical fields so auditors can verify which rules
  * governed a session — even after policy presets are updated.
  *
- * The hash is SHA-256 of the policy content. `hashVersion: policy-digest.v2`
- * identifies recursive canonical JSON; a missing version is legacy shallow
- * JSON serialization. It supports integrity comparison against a trusted
- * reference; it does not independently prove authenticity or non-repudiation.
+ * The hash is SHA-256 of recursively canonicalized policy content, identified
+ * by `hashVersion: policy-digest.v2`. It supports integrity comparison against
+ * a trusted reference; it does not independently prove authenticity or
+ * non-repudiation.
  *
  * Lives in state layer (not config) because it is part of SessionState —
  * the innermost layer must not depend on outer layers.
@@ -47,8 +47,8 @@ export const PolicySnapshotSchema = z
     mode: PolicyModeSchema,
     /** SHA-256 hash of policy content; see hashVersion for its serialization contract. */
     hash: z.string(),
-    /** Missing only for legacy shallow-serialization digests. */
-    hashVersion: z.literal(POLICY_DIGEST_VERSION).optional(),
+    /** Required serialization contract for the policy digest. */
+    hashVersion: z.literal(POLICY_DIGEST_VERSION),
     /** When the policy was resolved and frozen. */
     resolvedAt: z.string().datetime(),
     /** Original requested policy mode at hydrate time. */

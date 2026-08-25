@@ -218,15 +218,12 @@ function normalizeHash(s: Record<string, unknown>): NormalizedField<string> {
   return { value: 'UNKNOWN_LEGACY', normalized: true };
 }
 
-function normalizeHashVersion(
-  s: Record<string, unknown>,
-): typeof POLICY_DIGEST_VERSION | undefined {
+function normalizeHashVersion(s: Record<string, unknown>): typeof POLICY_DIGEST_VERSION {
   const raw = s.hashVersion;
-  if (raw === undefined) return undefined;
   if (raw === POLICY_DIGEST_VERSION) return raw;
   throw new PolicyConfigurationError(
     'INVALID_POLICY_DIGEST_VERSION',
-    `Invalid policy digest version "${String(raw)}".`,
+    `Invalid policy digest version "${String(raw)}". Expected "${POLICY_DIGEST_VERSION}".`,
     { received: raw, allowed: [POLICY_DIGEST_VERSION] },
   );
 }
@@ -574,7 +571,7 @@ export function normalizePolicySnapshotWithMeta(
     snapshot: {
       mode,
       hash,
-      ...(hashVersion ? { hashVersion } : {}),
+      hashVersion,
       resolvedAt: proven.resolvedAt,
       requestedMode: proven.requestedMode,
       source: proven.source,

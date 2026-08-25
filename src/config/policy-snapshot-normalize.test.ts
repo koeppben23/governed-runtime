@@ -10,8 +10,8 @@
 import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
 import {
-  normalizePolicySnapshot,
-  normalizePolicySnapshotWithMeta,
+  normalizePolicySnapshot as normalizePolicySnapshotRaw,
+  normalizePolicySnapshotWithMeta as normalizePolicySnapshotWithMetaRaw,
 } from './policy-snapshot-normalize.js';
 import { POLICY_DIGEST_VERSION } from '../shared/policy-digest.js';
 import type { PolicySnapshot } from '../state/evidence.js';
@@ -19,6 +19,20 @@ import { PolicyConfigurationError } from './policy-errors.js';
 import { CHALLENGE_POLICY_V1 } from './policy-types.js';
 import { sha256, soloResolution, NOW } from './policy-snapshot.test.js';
 import { freezePolicySnapshot } from './policy-snapshot.js';
+
+function withDigestVersion(snapshot: Record<string, unknown> | null | undefined) {
+  return snapshot === null || snapshot === undefined
+    ? snapshot
+    : { hashVersion: POLICY_DIGEST_VERSION, ...snapshot };
+}
+
+function normalizePolicySnapshot(snapshot: Record<string, unknown> | null | undefined) {
+  return normalizePolicySnapshotRaw(withDigestVersion(snapshot));
+}
+
+function normalizePolicySnapshotWithMeta(snapshot: Record<string, unknown> | null | undefined) {
+  return normalizePolicySnapshotWithMetaRaw(withDigestVersion(snapshot));
+}
 
 // ─── normalizePolicySnapshot ─────────────────────────────────────────────────
 
@@ -187,9 +201,8 @@ describe('normalizePolicySnapshot', () => {
   });
 
   describe('EDGE', () => {
-    it('handles null input gracefully', () => {
-      const result = normalizePolicySnapshot(null);
-      expect(result.mode).toBe('team');
+    it('rejects null input without a policy digest version', () => {
+      expect(() => normalizePolicySnapshot(null)).toThrow(PolicyConfigurationError);
     });
 
     it('leaves an absent challengePolicy disabled in solo mode (legacy-tolerant)', () => {
@@ -219,9 +232,8 @@ describe('normalizePolicySnapshot', () => {
       expect(result.challengePolicy).toEqual(CHALLENGE_POLICY_V1);
     });
 
-    it('handles undefined input gracefully', () => {
-      const result = normalizePolicySnapshot(undefined);
-      expect(result.mode).toBe('team');
+    it('rejects undefined input without a policy digest version', () => {
+      expect(() => normalizePolicySnapshot(undefined)).toThrow(PolicyConfigurationError);
     });
   });
 });
@@ -239,11 +251,11 @@ describe('normalizePolicySnapshotWithMeta', () => {
     expect(typeof normalized).toBe('boolean');
   });
 
-  it('preserves missing hashVersion as the legacy digest contract', () => {
-    const legacy = freezePolicySnapshot(soloResolution(), NOW, sha256);
-    delete (legacy as Record<string, unknown>).hashVersion;
+  it('rejects a missing policy digest version', () => {
+    const snapshot = freezePolicySnapshot(soloResolution(), NOW, sha256);
+    delete (snapshot as Record<string, unknown>).hashVersion;
 
-    expect(normalizePolicySnapshotWithMeta(legacy).snapshot.hashVersion).toBeUndefined();
+    expect(() => normalizePolicySnapshotWithMetaRaw(snapshot)).toThrow(PolicyConfigurationError);
   });
 
   it('preserves the v2 recursive policy digest contract', () => {

@@ -28,6 +28,7 @@ import { Phase, Event, Transition, SessionState } from '../state/schema.js';
 import { makeState, FIXED_TIME, FIXED_UUID, FIXED_SESSION_UUID } from '../fixtures.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import { readState } from '../adapters/persistence.js';
+import { POLICY_DIGEST_VERSION } from '../shared/policy-digest.js';
 
 describe('state schemas', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
@@ -328,6 +329,7 @@ describe('state schemas', () => {
       const snapshot = {
         mode: 'team',
         hash: 'abc',
+        hashVersion: POLICY_DIGEST_VERSION,
         resolvedAt: FIXED_TIME,
         requestedMode: 'team',
         effectiveGateBehavior: 'human_gated',
@@ -344,6 +346,7 @@ describe('state schemas', () => {
       const snapshot = {
         mode: 'team',
         hash: 'abc',
+        hashVersion: POLICY_DIGEST_VERSION,
         resolvedAt: FIXED_TIME,
         effectiveGateBehavior: 'human_gated',
         requireHumanGates: true,
@@ -507,6 +510,7 @@ describe('state schemas', () => {
       const snapshot = {
         mode: 'team',
         hash: 'abc',
+        hashVersion: POLICY_DIGEST_VERSION,
         resolvedAt: FIXED_TIME,
         requestedMode: 'team',
         effectiveGateBehavior: 'human_gated',
@@ -531,6 +535,7 @@ describe('state schemas', () => {
       const snapshot = {
         mode: 'team',
         hash: 'abc',
+        hashVersion: POLICY_DIGEST_VERSION,
         resolvedAt: FIXED_TIME,
         requestedMode: 'team',
         effectiveGateBehavior: 'human_gated',
@@ -599,6 +604,7 @@ describe('state schemas', () => {
       const snapshot = {
         mode: 'regulated',
         hash: 'abc',
+        hashVersion: POLICY_DIGEST_VERSION,
         resolvedAt: FIXED_TIME,
         requestedMode: 'team',
         source: 'central',
