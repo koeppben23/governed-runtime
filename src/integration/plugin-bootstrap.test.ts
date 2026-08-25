@@ -17,6 +17,7 @@ import { promisify } from 'node:util';
 import { createTestWorkspace, withTestEnv } from './test-helpers.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
+import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
 import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
@@ -444,6 +445,90 @@ describe('plugin bootstrap fail-closed', () => {
         const input = { tool: 'bash', sessionID, callID: 'c1' };
         const output = { args: { command: 'npm install' } };
         // Should not throw — IMPLEMENTATION phase allows mutating tools
+        await expect(beforeHook(input, output)).resolves.toBeUndefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('BAD — mutating host tools block while a durable audit operation is unresolved', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+        await fs.mkdir(sessDir, { recursive: true });
+        await writeState(sessDir, makeState('VALIDATION'));
+        const transition = {
+          from: 'VALIDATION',
+          to: 'IMPLEMENTATION',
+          event: 'ALL_PASSED',
+          at: '2026-05-15T12:00:00.000Z',
+        } as const;
+        await writeStateWithArtifactsAndAuditOperations(
+          sessDir,
+          makeState('IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+            transition,
+          }),
+          [transition],
+        );
+
+        // Audit reconciliation must fail closed: the trail is unreadable.
+        await fs.writeFile(path.join(sessDir, 'audit.jsonl'), '{ malformed json\n', 'utf8');
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        for (const tool of ['write', 'edit', 'bash', 'apply_patch']) {
+          await expect(
+            beforeHook(
+              { tool, sessionID, callID: crypto.randomUUID() },
+              { args: { command: 'echo blocked' } },
+            ),
+          ).rejects.toThrow('AUDIT_PERSISTENCE_FAILED');
+        }
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('HAPPY — mutating host tools pass again after reconciliation succeeds', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+        await fs.mkdir(sessDir, { recursive: true });
+        await writeState(sessDir, makeState('VALIDATION'));
+        const transition = {
+          from: 'VALIDATION',
+          to: 'IMPLEMENTATION',
+          event: 'ALL_PASSED',
+          at: '2026-05-15T12:00:00.000Z',
+        } as const;
+        await writeStateWithArtifactsAndAuditOperations(
+          sessDir,
+          makeState('IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+            transition,
+          }),
+          [transition],
+        );
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        const input = { tool: 'bash', sessionID, callID: 'c1' };
+        const output = { args: { command: 'npm install' } };
+        await expect(beforeHook(input, output)).resolves.toBeUndefined();
+
+        const persisted = await readState(sessDir);
+        expect(persisted!.pendingAuditOperations[0]!.status).toBe('reconciled');
         await expect(beforeHook(input, output)).resolves.toBeUndefined();
       } finally {
         await ws.cleanup();

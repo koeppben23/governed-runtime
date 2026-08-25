@@ -63,6 +63,10 @@ export interface TransitionDetail {
   kind: 'transition';
   /** Durable state↔audit operation identity when emitted from the outbox. */
   operationId?: string;
+  /** State-authority digests committed by the durable audit outbox. */
+  preStateDigest?: string;
+  mutationDigest?: string;
+  postStateDigest?: string;
   from: Phase;
   to: Phase;
   event: Event;

@@ -6,29 +6,18 @@
  * Wrapped in try/catch — solo/team audit failures warn only;
  * regulated audit failures return a blocking result.
  *
- * @version v2 (extracted resolveAuditContext, emitDecisionReceipt, maybeCompleteAndArchive)
+ * Transition audit reconciliation and the AuditDeps contract live in
+ * plugin-audit-reconcile.ts; this module runs the after-hook event emission.
+ *
+ * @version v3 (outbox reconciliation extracted to plugin-audit-reconcile)
  */
 
-import {
-  readState,
-  writeState,
-  writeStateAlreadyLocked,
-  PersistenceError,
-} from '../adapters/persistence.js';
-import { withSessionWriteLock } from '../adapters/persistence-lock.js';
-import { readAuditTrail } from '../adapters/persistence-audit.js';
+import { readState } from '../adapters/persistence.js';
 import { archiveSession } from '../adapters/workspace/index.js';
 import { serializeError } from '../logging/error-serialize.js';
-import type {
-  SessionState,
-  Phase,
-  Event,
-  Transition,
-  PendingAuditOperation,
-} from '../state/schema.js';
+import type { SessionState, Phase, Event, Transition } from '../state/schema.js';
 import {
   buildToolCallBody,
-  buildTransitionBody,
   buildErrorBody,
   buildLifecycleBody,
   buildDecisionBody,
@@ -38,50 +27,19 @@ import {
 } from '../audit/types.js';
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import { resolveTimestampEvidence } from '../audit/timestamp-resolution.js';
-import type { TimestampAssurancePolicy } from '../config/policy-types.js';
-import type { TimestampAuthorityProvider, TimestampVerifier } from '../audit/tsa-provider.js';
 import { resolveAuditContext, type AuditContext } from './plugin-audit-context.js';
 import { buildLifecycleDetail } from './plugin-audit-lifecycle-reason.js';
-import { ensureLegacyAuditOperation } from './tools/audit-outbox.js';
+import {
+  createStrictTimestampTracker,
+  emitAuditBodyWithEvidence,
+  emitTransitionAudits,
+  finalizeStrictTimestampFailure,
+  type AuditDeps,
+  type StrictTimestampTracker,
+} from './plugin-audit-reconcile.js';
 
-/** Closure dependencies injected from plugin.ts. */
-export interface AuditDeps {
-  resolveFingerprint(): Promise<string | null>;
-  getSessionDir(sessionId: string): string | null;
-  resolveSessionPolicy(sessDir: string): Promise<{
-    policy: {
-      audit: {
-        emitToolCalls: boolean;
-        emitTransitions: boolean;
-        enableChainHash: boolean;
-        timestampAssurance?: TimestampAssurancePolicy;
-      };
-      actorClassification: Record<string, string>;
-      mode: string;
-      requireHumanGates: boolean;
-    };
-    state: SessionState | null;
-  }>;
-  initChain(sessDir: string | null, sessionId: string): Promise<string>;
-  invalidateChainState(sessionId: string): void;
-  appendAndTrack(
-    event: { chainHash?: string },
-    sessDir: string,
-    enableChainHash: boolean,
-    sessionId: string,
-  ): Promise<void>;
-  nextDecisionSequence(sessDir: string, sessionId: string): Promise<number>;
-  log: {
-    debug(service: string, message: string, extra?: Record<string, unknown>): void;
-    info(service: string, message: string, extra?: Record<string, unknown>): void;
-    warn(service: string, message: string, extra?: Record<string, unknown>): void;
-  };
-  logError(message: string, err: unknown): void;
-  cachedFingerprint: string | null;
-  mode: string;
-  tsaProvider?: TimestampAuthorityProvider;
-  timestampVerifier?: TimestampVerifier;
-}
+export { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
+export type { AuditDeps } from './plugin-audit-reconcile.js';
 
 const LIFECYCLE_TOOLS: Record<string, string> = {
   flowguard_hydrate: 'session_created',
@@ -346,51 +304,6 @@ function scheduleSoloArchive(
   );
 }
 
-interface StrictTimestampTracker {
-  readonly record: (eventKind: string, error: string | undefined) => void;
-  readonly failure: () => { eventKind: string; reason: string } | undefined;
-}
-
-function createStrictTimestampTracker(policy: TimestampAssurancePolicy): StrictTimestampTracker {
-  let failure: { eventKind: string; reason: string } | undefined;
-  return {
-    record(eventKind, error) {
-      if (!failure && policy.strict && error && policy.criticalEvents.includes(eventKind)) {
-        failure = { eventKind, reason: error };
-      }
-    },
-    failure: () => failure,
-  };
-}
-
-async function emitAuditBodyWithEvidence(input: {
-  deps: AuditDeps;
-  ctx: AuditContext;
-  sessionId: string;
-  body: EventBody;
-  eventKind: string;
-  localTimestamp: string;
-  timestampTracker: StrictTimestampTracker;
-}): Promise<void> {
-  const { deps, ctx, sessionId, body, eventKind, localTimestamp, timestampTracker } = input;
-  const digest = computeCanonicalEventDigest(body);
-  const resolution = ctx.timestampAssurance.enabled
-    ? await resolveTimestampEvidence({
-        policy: ctx.timestampAssurance,
-        canonicalEventDigest: digest,
-        eventKind,
-        localTimestamp,
-        ntpResult: ctx.ntpResult,
-        tsaProvider: deps.tsaProvider,
-        tsaVerifier: deps.timestampVerifier,
-      })
-    : undefined;
-  timestampTracker.record(eventKind, resolution?.error);
-  const evt = finalizeWithTimestampEvidence(body, ctx.prevHash, resolution?.evidence, digest);
-  ctx.prevHash = evt.chainHash!;
-  await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
-}
-
 async function emitToolCallAudit(input: {
   deps: AuditDeps;
   ctx: AuditContext;
@@ -429,147 +342,6 @@ async function emitToolCallAudit(input: {
     timestampTracker,
   });
   deps.log.debug('audit', 'emitted tool_call event', { tool: toolName, phase: ctx.phase });
-}
-
-async function emitTransitionAudits(input: {
-  deps: AuditDeps;
-  ctx: AuditContext;
-  sessionId: string;
-  timestampTracker: StrictTimestampTracker;
-}): Promise<void> {
-  const { deps, ctx, sessionId, timestampTracker } = input;
-  if (!ctx.emitTransitions) return;
-  const state = await ensureLegacyAuditOperation(ctx.sessDir);
-  const operations =
-    state?.pendingAuditOperations.filter((operation) => operation.status !== 'reconciled') ?? [];
-  if (operations.length === 0) return;
-  if (!state) {
-    throw new PersistenceError(
-      'READ_FAILED',
-      'Cannot reconcile audit operations without session state',
-    );
-  }
-  deps.log.debug('audit', 'reconciling durable transition audit operations', {
-    count: operations.length,
-  });
-  for (const operation of operations) {
-    const t = operation.transition;
-    const existing = await findOperationAudit(
-      ctx.sessDir,
-      operation.operationId,
-      operation.auditEventDigest,
-    );
-    if (existing) {
-      await acknowledgeAuditOperation(ctx.sessDir, operation.operationId, 'reconciled');
-      continue;
-    }
-    const body = buildTransitionBody(
-      state.id,
-      t.to,
-      {
-        operationId: operation.operationId,
-        from: t.from,
-        to: t.to,
-        event: t.event,
-        autoAdvanced: t.autoAdvanced,
-        chainIndex: t.chainIndex,
-      },
-      t.at,
-      ctx.prevHash,
-    );
-    if (computeCanonicalEventDigest(body) !== operation.auditEventDigest) {
-      throw new PersistenceError(
-        'SCHEMA_VALIDATION_FAILED',
-        `Audit operation ${operation.operationId} has an invalid event digest`,
-      );
-    }
-    await emitAuditBodyWithEvidence({
-      deps,
-      ctx,
-      sessionId,
-      body,
-      eventKind: 'transition',
-      localTimestamp: t.at,
-      timestampTracker,
-    });
-    await acknowledgeAuditOperation(ctx.sessDir, operation.operationId, 'audit_committed');
-    await acknowledgeAuditOperation(ctx.sessDir, operation.operationId, 'reconciled');
-  }
-}
-
-async function findOperationAudit(
-  sessDir: string,
-  operationId: string,
-  auditEventDigest: string,
-): Promise<boolean> {
-  const trail = await readAuditTrail(sessDir);
-  if (trail.skipped > 0) {
-    throw new PersistenceError(
-      'READ_FAILED',
-      `Cannot reconcile audit operation ${operationId}: audit trail contains malformed records`,
-    );
-  }
-  const event = trail.events.find(
-    (candidate) => candidate.id === operationId && candidate.detail.operationId === operationId,
-  );
-  if (!event) return false;
-  if (computeCanonicalEventDigest(event) !== auditEventDigest) {
-    throw new PersistenceError(
-      'SCHEMA_VALIDATION_FAILED',
-      `Audit operation ${operationId} does not match its committed audit event`,
-    );
-  }
-  return true;
-}
-
-async function acknowledgeAuditOperation(
-  sessDir: string,
-  operationId: string,
-  status: PendingAuditOperation['status'],
-): Promise<void> {
-  await withSessionWriteLock(sessDir, async () => {
-    const state = await readState(sessDir);
-    if (!state) {
-      throw new PersistenceError(
-        'READ_FAILED',
-        `Cannot acknowledge audit operation ${operationId}: session state is unavailable`,
-      );
-    }
-    const operation = state.pendingAuditOperations.find((item) => item.operationId === operationId);
-    if (!operation || operation.status === 'reconciled') return;
-    const rank = { state_committed: 0, audit_committed: 1, reconciled: 2 } as const;
-    const nextStatus = rank[status] > rank[operation.status] ? status : operation.status;
-    await writeStateAlreadyLocked(sessDir, {
-      ...state,
-      pendingAuditOperations: state.pendingAuditOperations.map((item) =>
-        item.operationId === operationId ? { ...item, status: nextStatus } : item,
-      ),
-    });
-  });
-}
-
-/** Reconcile state-owned transition audit operations before a new mutation. */
-export async function reconcilePendingAuditOperations(
-  deps: AuditDeps,
-  sessionId: string,
-): Promise<{ auditOk: boolean; block?: boolean; code?: string; reason?: string } | undefined> {
-  try {
-    const resolved = await resolveAuditContext(deps, 'flowguard_reconcile', {}, sessionId);
-    // A first hydrate has no state-owned outbox yet. Missing session mapping is
-    // therefore not an unresolved audit operation and must not block bootstrap.
-    if (!resolved) return undefined;
-    const tracker = createStrictTimestampTracker(resolved.ctx.timestampAssurance);
-    await emitTransitionAudits({ deps, ctx: resolved.ctx, sessionId, timestampTracker: tracker });
-    return await finalizeStrictTimestampFailure(resolved.ctx, tracker.failure);
-  } catch (err) {
-    deps.logError('Failed to reconcile durable audit operations', err);
-    return {
-      auditOk: false,
-      block: true,
-      code: 'AUDIT_PERSISTENCE_FAILED',
-      reason: err instanceof Error ? err.message : String(err),
-    };
-  }
 }
 
 async function emitLifecycleAudit(input: {
@@ -634,33 +406,6 @@ async function emitToolErrorAudit(input: {
     localTimestamp: ctx.now,
     timestampTracker,
   });
-}
-
-async function finalizeStrictTimestampFailure(
-  ctx: AuditContext,
-  getFailure: StrictTimestampTracker['failure'],
-): Promise<{ auditOk: boolean; block?: boolean; code?: string; reason?: string } | undefined> {
-  const failure = getFailure();
-  if (!failure) return undefined;
-  const currentState = await readState(ctx.sessDir);
-  if (currentState) {
-    await writeState(ctx.sessDir, {
-      ...currentState,
-      error: {
-        code: 'TSA_TIMESTAMP_ASSURANCE_FAILED',
-        message: `Strict timestamp assurance failed for ${failure.eventKind}: ${failure.reason}`,
-        recoveryHint:
-          'Fix TSA connectivity, trust anchors, or timestamp token validity; or disable audit.timestampAssurance.strict to recover to Slice 1 behavior.',
-        occurredAt: ctx.now,
-      },
-    });
-  }
-  return {
-    auditOk: false,
-    block: true,
-    code: 'TSA_TIMESTAMP_ASSURANCE_FAILED',
-    reason: failure.reason,
-  };
 }
 
 /**

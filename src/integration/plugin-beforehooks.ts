@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { readState } from '../adapters/persistence.js';
 import { buildEnforcementError } from './plugin-helpers.js';
 import { isMutatingHostTool, isHostToolAllowedInPhase } from './phase-tool-gate.js';
+import { isWorkflowTool } from './tool-classification.js';
 import {
   enforceBeforeVerdict,
   enforceBeforeSubagentCall,
@@ -22,7 +23,7 @@ import type { SessionState } from '../state/schema.js';
 import { enforceRiskClassificationBefore as enforceRiskBefore } from './plugin-risk.js';
 import { enforceDiscoveryHealthBefore } from './plugin-discovery-health.js';
 import { registerExecutedTaskPrompt } from './review/enforcement/execution-provenance.js';
-import { reconcilePendingAuditOperations } from './plugin-audit.js';
+import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
 
 export async function commandBefore(
   runtime: FlowGuardPluginRuntime,
@@ -113,8 +114,11 @@ async function enforceBeforeRules(
   }
   await enforceMutatingToolCheck(runtime, toolName, sessionId, args);
   await enforceVerdictCheck(runtime, toolName, sessionId, args);
-  if (toolName.startsWith('flowguard_')) {
-    const audit = await reconcilePendingAuditOperations(runtime.auditDeps, sessionId);
+  // Unresolved durable audit operations block every governed mutation —
+  // mutating workflow tools (flowguard_*) AND host mutating tools
+  // (write/edit/apply_patch/bash). Read-only tools stay available.
+  if (isWorkflowTool(toolName) || isMutatingHostTool(toolName)) {
+    const audit = await reconcilePendingAuditOperations(runtime.auditDeps, sessionId, toolName);
     if (audit?.block) {
       throw buildEnforcementError(audit.code ?? 'AUDIT_PERSISTENCE_FAILED', audit.reason ?? '');
     }

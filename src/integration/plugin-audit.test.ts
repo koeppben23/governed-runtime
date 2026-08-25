@@ -16,7 +16,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { readState, writeState } from '../adapters/persistence.js';
 import { appendAuditEvent } from '../adapters/persistence-audit.js';
-import { makeState } from '../fixtures.js';
+import { makeState, REVIEW_APPROVE } from '../fixtures.js';
+import { SessionState } from '../state/schema.js';
 import { reconcilePendingAuditOperations, runAudit, type AuditDeps } from './plugin-audit.js';
 import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
 import { buildTransitionBody, finalizeWithTimestampEvidence } from '../audit/types.js';
@@ -735,6 +736,9 @@ describe('runAudit', () => {
           operation.transition.to,
           {
             operationId: operation.operationId,
+            preStateDigest: operation.preStateDigest,
+            mutationDigest: operation.mutationDigest,
+            postStateDigest: operation.postStateDigest,
             from: operation.transition.from,
             to: operation.transition.to,
             event: operation.transition.event,
@@ -759,9 +763,202 @@ describe('runAudit', () => {
           }),
         });
 
-        await expect(reconcilePendingAuditOperations(deps, SESSION_ID)).resolves.toBeUndefined();
+        await expect(
+          reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_plan'),
+        ).resolves.toBeUndefined();
         expect(deps.appendAndTrack).not.toHaveBeenCalled();
         expect((await readState(sessDir))!.pendingAuditOperations[0]!.status).toBe('reconciled');
+      } finally {
+        await fs.rm(sessDir, { recursive: true, force: true });
+      }
+    });
+
+    it('emits transition events that bind the state-authority digests', async () => {
+      const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-audit-outbox-'));
+      try {
+        const initial = makeState('TICKET', { id: SESSION_ID });
+        await writeState(sessDir, initial);
+        await writeStateWithArtifactsAndAuditOperations(
+          sessDir,
+          makeState('PLAN', {
+            id: SESSION_ID,
+            transition: { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', at: FIXED_DECISION_AT },
+          }),
+          [{ from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', at: FIXED_DECISION_AT }],
+        );
+        const pending = await readState(sessDir);
+        const operation = pending!.pendingAuditOperations[0]!;
+
+        const deps = makeDeps({
+          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionPolicy: vi.fn().mockResolvedValue({
+            policy: {
+              audit: { emitToolCalls: false, emitTransitions: true, enableChainHash: true },
+              actorClassification: {},
+              mode: 'regulated',
+              requireHumanGates: true,
+            },
+            state: pending,
+          }),
+          appendAndTrack: vi.fn(async () => {}),
+        });
+
+        await expect(
+          reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_plan'),
+        ).resolves.toBeUndefined();
+        const emitted = (deps.appendAndTrack as ReturnType<typeof vi.fn>).mock
+          .calls[0]![0] as Record<string, unknown>;
+        const detail = emitted.detail as Record<string, unknown>;
+        expect(detail.operationId).toBe(operation.operationId);
+        expect(detail.preStateDigest).toBe(operation.preStateDigest);
+        expect(detail.mutationDigest).toBe(operation.mutationDigest);
+        expect(detail.postStateDigest).toBe(operation.postStateDigest);
+        expect((await readState(sessDir))!.pendingAuditOperations[0]!.status).toBe('reconciled');
+      } finally {
+        await fs.rm(sessDir, { recursive: true, force: true });
+      }
+    });
+
+    it('refuses to reconcile an operation whose state digests were tampered after append', async () => {
+      const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-audit-outbox-'));
+      try {
+        const initial = makeState('TICKET', { id: SESSION_ID });
+        await writeState(sessDir, initial);
+        await writeStateWithArtifactsAndAuditOperations(
+          sessDir,
+          makeState('PLAN', {
+            id: SESSION_ID,
+            transition: { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', at: FIXED_DECISION_AT },
+          }),
+          [{ from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', at: FIXED_DECISION_AT }],
+        );
+        const pending = await readState(sessDir);
+        const operation = pending!.pendingAuditOperations[0]!;
+        const body = buildTransitionBody(
+          SESSION_ID,
+          operation.transition.to,
+          {
+            operationId: operation.operationId,
+            preStateDigest: operation.preStateDigest,
+            mutationDigest: operation.mutationDigest,
+            postStateDigest: operation.postStateDigest,
+            from: operation.transition.from,
+            to: operation.transition.to,
+            event: operation.transition.event,
+            autoAdvanced: operation.transition.autoAdvanced,
+            chainIndex: operation.transition.chainIndex,
+          },
+          operation.transition.at,
+          'genesis',
+        );
+        await appendAuditEvent(sessDir, finalizeWithTimestampEvidence(body, 'genesis'));
+
+        // Crash before acknowledgement, then tamper the persisted operation:
+        // operationId and auditEventDigest stay untouched, only postStateDigest
+        // changes. Reconciliation must fail closed, not mark the operation
+        // reconciled.
+        const tampered: SessionState = {
+          ...pending!,
+          pendingAuditOperations: [
+            {
+              ...operation,
+              postStateDigest: 'b'.repeat(64),
+            },
+          ],
+        };
+        await writeState(sessDir, tampered);
+
+        const deps = makeDeps({
+          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionPolicy: vi.fn().mockResolvedValue({
+            policy: {
+              audit: { emitToolCalls: false, emitTransitions: true, enableChainHash: true },
+              actorClassification: {},
+              mode: 'regulated',
+              requireHumanGates: true,
+            },
+            state: tampered,
+          }),
+        });
+
+        const result = await reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_plan');
+        expect(result?.block).toBe(true);
+        expect(result?.code).toBe('AUDIT_PERSISTENCE_FAILED');
+        expect((await readState(sessDir))!.pendingAuditOperations[0]!.status).toBe(
+          'state_committed',
+        );
+      } finally {
+        await fs.rm(sessDir, { recursive: true, force: true });
+      }
+    });
+
+    it('blocks with AUDIT_TRANSITION_EVIDENCE_GAP for a legacy state without audit evidence', async () => {
+      const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-audit-gap-'));
+      try {
+        const legacy = makeState('PLAN', {
+          id: SESSION_ID,
+          transition: { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', at: FIXED_DECISION_AT },
+          pendingAuditOperations: [],
+        });
+        await writeState(sessDir, legacy);
+        const deps = makeDeps({
+          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionPolicy: vi.fn().mockResolvedValue({
+            policy: {
+              audit: { emitToolCalls: false, emitTransitions: true, enableChainHash: true },
+              actorClassification: {},
+              mode: 'solo',
+              requireHumanGates: false,
+            },
+            state: legacy,
+          }),
+        });
+
+        const result = await reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_plan');
+        expect(result).toMatchObject({ block: true, code: 'AUDIT_TRANSITION_EVIDENCE_GAP' });
+      } finally {
+        await fs.rm(sessDir, { recursive: true, force: true });
+      }
+    });
+
+    it('tolerates a missing audit session authority only for a first hydrate', async () => {
+      const deps = makeDeps({
+        getSessionDir: vi.fn().mockReturnValue(null),
+        resolveSessionPolicy: vi.fn().mockRejectedValue(new Error('unreachable')),
+      });
+
+      await expect(
+        reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_hydrate'),
+      ).resolves.toBeUndefined();
+
+      const blocked = await reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_plan');
+      expect(blocked).toMatchObject({
+        auditOk: false,
+        block: true,
+        code: 'AUDIT_SESSION_AUTHORITY_UNAVAILABLE',
+      });
+    });
+
+    it('rejects states with duplicate pendingAuditOperations operationIds', async () => {
+      const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-audit-unique-'));
+      try {
+        const initial = makeState('TICKET', { id: SESSION_ID });
+        await writeState(sessDir, initial);
+        await writeStateWithArtifactsAndAuditOperations(
+          sessDir,
+          makeState('PLAN', {
+            id: SESSION_ID,
+            transition: { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', at: FIXED_DECISION_AT },
+          }),
+          [{ from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', at: FIXED_DECISION_AT }],
+        );
+        const pending = await readState(sessDir);
+        const operation = pending!.pendingAuditOperations[0]!;
+        const duplicated = {
+          ...pending!,
+          pendingAuditOperations: [operation, operation],
+        };
+        expect(SessionState.safeParse(duplicated).success).toBe(false);
       } finally {
         await fs.rm(sessDir, { recursive: true, force: true });
       }

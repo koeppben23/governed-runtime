@@ -10,15 +10,18 @@ import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { buildTransitionBody } from '../../audit/types.js';
 import { computeCanonicalEventDigest } from '../../audit/canonical-digest.js';
 import { finalizeImplementationEntry } from '../../adapters/implementation-base-authority.js';
-import {
-  readState,
-  writeStateAlreadyLocked,
-  PersistenceError,
-} from '../../adapters/persistence.js';
-import { withSessionWriteLock } from '../../adapters/persistence-lock.js';
-import { readAuditTrail } from '../../adapters/persistence-audit.js';
+import { PersistenceError } from '../../adapters/persistence.js';
 import { refreshProofGraph } from '../proofgraph/refresh.js';
 
+/**
+ * Prepare the next state together with its durable audit operations.
+ *
+ * The state and its outbox commit are persisted atomically by the caller
+ * (see writeStateWithArtifactsAndAuditOperations). Each operation binds the
+ * pre-state, mutation, and post-state digests into the transition audit
+ * event, so a reconciled event cryptographically attests the exact state
+ * authority it documents.
+ */
 export async function prepareStateWithAuditOperations(
   previous: SessionState | null,
   nextState: SessionState,
@@ -27,45 +30,6 @@ export async function prepareStateWithAuditOperations(
   const prepared = await prepareState(nextState);
   const exactTransitions = transitions ?? inferTransition(previous, prepared);
   return addAuditOperations(previous, prepared, exactTransitions);
-}
-
-/**
- * Migrate a state persisted before the audit outbox existed. This deliberately
- * uses only the persisted transition authority, never tool output.
- */
-export function prepareLegacyTransitionAuditOperation(state: SessionState): SessionState {
-  if (!state.transition || state.pendingAuditOperations.length > 0) return state;
-  return addAuditOperations(state, state, [state.transition]);
-}
-
-/** Prepare the legacy operation under the session lock before audit emission. */
-export async function ensureLegacyAuditOperation(sessDir: string): Promise<SessionState | null> {
-  return withSessionWriteLock(sessDir, async () => {
-    const state = await readState(sessDir);
-    if (!state || !state.transition || state.pendingAuditOperations.length > 0) return state;
-
-    const trail = await readAuditTrail(sessDir);
-    if (trail.skipped > 0) {
-      throw new PersistenceError(
-        'READ_FAILED',
-        'Cannot migrate legacy transition audit state: audit trail contains malformed records',
-      );
-    }
-    const transition = state.transition;
-    const alreadyAudited = trail.events.some(
-      (event) =>
-        event.detail.kind === 'transition' &&
-        event.detail.from === transition.from &&
-        event.detail.to === transition.to &&
-        event.detail.event === transition.event &&
-        event.timestamp === transition.at,
-    );
-    if (alreadyAudited) return state;
-
-    const migrated = prepareLegacyTransitionAuditOperation(state);
-    await writeStateAlreadyLocked(sessDir, migrated);
-    return migrated;
-  });
 }
 
 async function prepareState(nextState: SessionState): Promise<SessionState> {
@@ -137,6 +101,9 @@ function addAuditOperations(
       normalizedTransition.to,
       {
         operationId,
+        preStateDigest,
+        mutationDigest,
+        postStateDigest,
         from: normalizedTransition.from,
         to: normalizedTransition.to,
         event: normalizedTransition.event,

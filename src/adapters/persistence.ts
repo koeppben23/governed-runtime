@@ -166,7 +166,13 @@ export async function atomicWrite(filePath: string, content: string): Promise<vo
 }
 
 /**
- * Write a file atomically and durably: temp file -> fsync -> rename.
+ * Write a file atomically and durably: temp file -> fsync -> rename ->
+ * fsync parent directory.
+ *
+ * The directory fsync persists the rename itself, so a power or kernel
+ * crash after the write returns cannot resurrect the previous file content
+ * under the new name. Best-effort on platforms that cannot open directories
+ * (Windows).
  *
  * Exported for adapter-internal write paths that require crash durability in
  * addition to atomic replacement. Does not acquire locks; callers that compose
@@ -186,6 +192,7 @@ export async function durableAtomicWrite(filePath: string, content: string): Pro
       await handle.close();
     }
     await renameWithRetry(tempPath, filePath);
+    await syncDirectory(dir);
   } catch (err) {
     try {
       await fs.unlink(tempPath);
@@ -196,6 +203,23 @@ export async function durableAtomicWrite(filePath: string, content: string): Pro
       'WRITE_FAILED',
       `Durable atomic write failed for ${filePath}: ${err instanceof Error ? err.message : String(err)}`,
     );
+  }
+}
+
+async function syncDirectory(dir: string): Promise<void> {
+  let handle: Awaited<ReturnType<typeof fs.open>> | null = null;
+  try {
+    handle = await fs.open(dir, 'r');
+    await handle.sync();
+  } catch {
+    // Directory handles are not openable on every platform (Windows); the
+    // file fsync + atomic rename still hold there.
+  } finally {
+    if (handle) {
+      await handle.close().catch(() => {
+        /* best-effort close after sync */
+      });
+    }
   }
 }
 
@@ -433,7 +457,9 @@ export async function readState(sessionDir: string): Promise<SessionState | null
  * Invariants:
  * 1. Zod-validates BEFORE writing (fail-closed -- invalid state never hits disk)
  * 2. Creates session directory if missing
- * 3. Uses atomic write (temp -> rename)
+ * 3. Uses durable atomic write (temp -> fsync -> rename -> directory fsync):
+ *    the state commit and its audit-outbox hand-off survive a crash before
+ *    audit reconciliation
  * 4. Pretty-prints JSON (2-space indent) for human readability
  *
  * @param sessionDir - Absolute path to the session directory.
@@ -461,7 +487,7 @@ export async function writeStateAlreadyLocked(
 
   await ensureDir(sessionDir);
   const json = JSON.stringify(result.data, null, 2) + '\n';
-  await atomicWrite(statePath(sessionDir), json);
+  await durableAtomicWrite(statePath(sessionDir), json);
 }
 
 /**

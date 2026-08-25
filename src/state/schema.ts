@@ -637,6 +637,22 @@ export const SessionState = z
     lastExportKind: z.enum(['redacted', 'raw']).nullable().optional(),
   })
   .superRefine((state, context) => {
+    // Outbox identity invariant: pendingAuditOperations operationIds are the
+    // transition audit-event identity authority. Duplicates would let
+    // acknowledgement update multiple records through one identity, so the
+    // STATE itself is invalid when duplicates exist.
+    const seenOperationIds = new Set<string>();
+    for (const operation of state.pendingAuditOperations) {
+      if (seenOperationIds.has(operation.operationId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['pendingAuditOperations'],
+          message: `duplicate pendingAuditOperations operationId: ${operation.operationId}`,
+        });
+        return;
+      }
+      seenOperationIds.add(operation.operationId);
+    }
     // Standalone-review lifecycle invariant: a structurally broken evidence
     // chain (dangling supersession, cycles, completions on superseded entries,
     // multiple authoritative incarnations) makes the STATE invalid — it must
