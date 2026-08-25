@@ -411,6 +411,15 @@ true })` returns the evaluated projection. Key invariants:
 
 ### Changed
 
+- **BREAKING: prerelease session-state compatibility is explicitly bounded (UP1).**
+  A stable `schemaVersion` does not guarantee forward compatibility when a
+  release requires a stronger persisted evidence contract. In particular,
+  sessions with the unversioned policy digest emitted by `v1.2.0-tp.2` and
+  earlier are intentionally rejected by releases requiring `policy-digest.v2`.
+  Do not edit state to bridge this boundary: use the previous artifact to
+  archive or complete active sessions before upgrading, then start a new
+  session.
+
 - **BREAKING (`flowguard_declare_contract`): `critical` is now required.** It
   previously defaulted to `true`, which would silently create claims capable of
   blocking the final approval. The MCP schema baseline is updated accordingly.

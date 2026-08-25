@@ -85,7 +85,7 @@ new patch/prerelease tag from the corrected `main` commit.
 2. Bind: the verify job records that artifact's SHA-256 in `checksums.sha256` and uploads both as one workflow artifact.
 3. Verify: runtime and cross-platform smoke jobs download that exact artifact and verify its checksum before use.
 4. Gate: mutation testing must complete before publication can run.
-5. Publish: the protected `release` environment downloads and re-verifies the same artifact before generating its SBOM, provenance attestation, and GitHub Release.
+5. Publish: the protected `release` environment downloads and re-verifies the same artifact before its tarball provenance attestation and GitHub Release.
 6. Authority: write, OIDC, and attestation permissions exist only in the final publish job; all preceding jobs have read-only repository access.
 
 ### Artifact Contents
@@ -99,12 +99,12 @@ new patch/prerelease tag from the corrected `main` commit.
 
 ### Integrity Verification
 
-| Check                         | Mechanism                                                        |
-| ----------------------------- | ---------------------------------------------------------------- |
-| **Artifact integrity**        | SHA-256 checksum in `checksums.sha256`                           |
-| **Supply chain transparency** | CycloneDX 1.6 SBOM (`sbom.cdx.json`)                             |
-| **Build provenance**          | SLSA-style attestation (verifiable with `gh attestation verify`) |
-| **Content integrity**         | SHA-256 content digest in `flowguard-mandates.md`                |
+| Check                         | Mechanism                                                                        |
+| ----------------------------- | -------------------------------------------------------------------------------- |
+| **Artifact integrity**        | SHA-256 checksum in `checksums.sha256`                                           |
+| **Supply chain transparency** | CycloneDX 1.6 SBOM (`sbom.cdx.json`) released beside the tarball                 |
+| **Build provenance**          | SLSA-style attestation for the tarball (verifiable with `gh attestation verify`) |
+| **Content integrity**         | SHA-256 content digest in `flowguard-mandates.md`                                |
 
 ---
 

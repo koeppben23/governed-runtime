@@ -67,12 +67,12 @@ upgrade before managed artifacts are written.
 
 ### What Is Preserved
 
-| Component         | Preserved | Notes                                |
-| ----------------- | --------- | ------------------------------------ |
-| **Session state** | Yes       | File-based, readable after reinstall |
-| **Audit trails**  | Yes       | File-based                           |
-| **Archives**      | Yes       | File-based                           |
-| **Configuration** | Yes       | `flowguard.json` unchanged           |
+| Component         | Preserved | Notes                                         |
+| ----------------- | --------- | --------------------------------------------- |
+| **Session state** | Yes       | File-based; compatibility is release-specific |
+| **Audit trails**  | Yes       | File-based                                    |
+| **Archives**      | Yes       | File-based                                    |
+| **Configuration** | Yes       | `flowguard.json` unchanged                    |
 
 **Customer Responsibility:**
 
@@ -86,28 +86,32 @@ upgrade before managed artifacts are written.
 
 ### State Schema Compatibility
 
-FlowGuard is **pre-1.0**. The persisted session-state schema is locked at
-`schemaVersion: 'v1'` and there is **no migration infrastructure** in this
-release. See [`docs/architecture/schema-migration.md`](./architecture/schema-migration.md)
+FlowGuard is a prerelease product. The persisted session-state schema is locked
+at `schemaVersion: 'v1'`, but that literal alone does **not** guarantee
+compatibility: new required evidence contracts may make an older state
+unreadable. There is no general session-state migration infrastructure. See
+[`docs/architecture/schema-migration.md`](./architecture/schema-migration.md)
 for the design proposal.
 
-| From Version | To Version | Compatibility                                                                               |
-| ------------ | ---------- | ------------------------------------------------------------------------------------------- |
-| pre-1.0 dev  | pre-1.0    | Sessions from earlier development releases are **not supported** — `/archive` and re-create |
-| 1.0+         | 1.x        | Same `schemaVersion: 'v1'` — sessions readable; full forward-compatibility guaranteed       |
-| 1.x          | 2.0        | Major version bump may bump `schemaVersion`. Check release notes; archive before upgrading  |
+| From Version                                         | To Version                             | Compatibility                                                                                                                                              |
+| ---------------------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Any prerelease                                       | Later prerelease                       | No forward-compatibility guarantee. Archive or complete active sessions before upgrading.                                                                  |
+| `v1.2.0-tp.2` and earlier unversioned policy digests | A release requiring `policy-digest.v2` | Incompatible by design. The old digest did not bind nested policy fields; archive or complete the session with the old artifact, then start a new session. |
 
-**FlowGuard validates state on read.** If a future version introduces an
-incompatible `schemaVersion`, FlowGuard will reject the state at hydrate time
-with an explicit BLOCKED `SCHEMA_VALIDATION_FAILED` and require the operator to
-archive the old session and start fresh.
+**FlowGuard validates state on read.** A release that requires an incompatible
+schema or evidence contract rejects the state at hydrate time with an explicit
+BLOCKED `SCHEMA_VALIDATION_FAILED`. Do not edit persisted state to bridge that
+boundary. Use the previously installed artifact to archive or complete the
+session, then start a fresh session after upgrading.
 
 **Customer Responsibility:**
 
-- Archive sessions before upgrading (always recoverable from archives)
+- Complete or archive every active session with the currently installed artifact
+  before upgrading
 - Test upgrade in non-production
-- Treat any `schemaVersion` change as a breaking change until migration
-  infrastructure ships (tracked in `docs/architecture/schema-migration.md`)
+- Treat every changed schema or required evidence contract as breaking until
+  migration infrastructure ships (tracked in
+  `docs/architecture/schema-migration.md`)
 
 ### Reviewer Mandate Compatibility
 
@@ -243,8 +247,9 @@ Sessions in progress are stored as files in `.opencode/`. Upgrading FlowGuard re
 
 **Customer Responsibility:**
 
-- Complete or archive sessions before major upgrades
-- Verify session state is readable after upgrade
+- Complete or archive sessions before every prerelease upgrade
+- Verify archives after upgrade; do not expect an active pre-upgrade session to
+  remain readable
 
 ---
 
@@ -269,4 +274,4 @@ Sessions in progress are stored as files in `.opencode/`. Upgrading FlowGuard re
 ---
 
 FlowGuard Version: 1.2.0-tp.2
-_Last Updated: 2026-04-15_
+_Last Updated: 2026-08-25_
