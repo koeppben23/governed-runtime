@@ -342,6 +342,13 @@ describe('validateSessionId', () => {
     expect(() => validateSessionId('.')).toThrow(WorkspaceError);
   });
 
+  it.each(['CON', 'con.txt', 'LPT1.log', 'NUL', 'session.'])(
+    'rejects Windows-unsafe session ID %s',
+    (sessionId) => {
+      expect(() => validateSessionId(sessionId)).toThrow(WorkspaceError);
+    },
+  );
+
   // ─── CORNER ─────────────────────────────────────────────────
   it('accepts dots within a longer string', () => {
     expect(validateSessionId('v1.2.3')).toBe('v1.2.3');

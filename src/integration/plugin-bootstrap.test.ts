@@ -571,9 +571,7 @@ describe('plugin bootstrap fail-closed', () => {
       }
     });
 
-    it('HAPPY — bash allowed in non-git worktree (pre-session, sessDir=null)', async () => {
-      // Non-git worktree → isUsableWorktree returns false → fingerprint
-      // never resolved → getSessionDir returns null → tool allowed.
+    it('BAD — bash blocked without an authoritative session mapping', async () => {
       const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-no-git-gate-'));
       try {
         const hooks = await FlowGuardAuditPlugin(
@@ -583,7 +581,7 @@ describe('plugin bootstrap fail-closed', () => {
 
         const input = { tool: 'bash', sessionID: crypto.randomUUID(), callID: 'c1' };
         const output = { args: { command: 'echo hello' } };
-        await expect(beforeHook(input, output)).resolves.toBeUndefined();
+        await expect(beforeHook(input, output)).rejects.toThrow('PLUGIN_ENFORCEMENT_UNAVAILABLE');
       } finally {
         await fs.rm(tmp, { recursive: true, force: true });
       }
