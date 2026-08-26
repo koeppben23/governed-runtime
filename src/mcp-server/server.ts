@@ -21,7 +21,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { registerAllTools, type FlowGuardToolRegistry } from './tool-adapter.js';
-import { McpSessionBinder } from './session-resolver.js';
+import { McpSessionBinder, type McpSessionContext } from './session-resolver.js';
 import { installStdoutGuard } from './stdout-guard.js';
 import { PACKAGE_VERSION } from '../shared/package-version.js';
 import { mcpLogger } from './mcp-logger.js';
@@ -99,11 +99,11 @@ export function createMcpServer(): McpServer {
   );
   const limiter = new McpExecutionLimiter(readMcpExecutionLimits());
   const sessionBinder = new McpSessionBinder(sessionId);
-  let cachedRoots: Awaited<ReturnType<typeof server.server.listRoots>>['roots'] | undefined;
+  let cachedContext: McpSessionContext | undefined;
 
   // MCP clients notify root changes, which invalidates the authority cache.
   server.server.setNotificationHandler(rootsListChangedNotification, () => {
-    cachedRoots = undefined;
+    cachedContext = undefined;
   });
 
   // Register FlowGuard tools
@@ -111,8 +111,11 @@ export function createMcpServer(): McpServer {
     server,
     FLOWGUARD_TOOLS,
     async () => {
-      cachedRoots ??= (await server.server.listRoots()).roots;
-      return sessionBinder.resolve(cachedRoots);
+      if (!cachedContext) {
+        const { roots } = await server.server.listRoots();
+        cachedContext = await sessionBinder.resolve(roots);
+      }
+      return cachedContext;
     },
     limiter,
   );
