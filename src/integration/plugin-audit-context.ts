@@ -51,6 +51,7 @@ export interface AuditContext {
   prevHash: string;
   phase: string;
   success: boolean;
+  errorCode?: string;
   errorMessage: string | undefined;
   parsed: ReturnType<typeof parseToolResult>;
   timestampAssurance: TimestampAssurancePolicy;
@@ -104,6 +105,7 @@ export async function resolveAuditContext(
       prevHash,
       phase: state.phase,
       success: parsedOutput.success,
+      errorCode: parsedOutput.errorCode,
       errorMessage: parsedOutput.errorMessage,
       parsed: parsedOutput.parsed,
       timestampAssurance: resolvedTsa,
@@ -133,11 +135,17 @@ export interface AuditContextResolution {
 
 function parseAuditOutput(
   output: unknown,
-): Pick<AuditContext, 'success' | 'errorMessage' | 'parsed'> {
+): Pick<AuditContext, 'success' | 'errorCode' | 'errorMessage' | 'parsed'> {
   const parsed = parseToolResult(extractToolOutputValue(output));
   return {
     success: parsed?.error !== true,
-    errorMessage: typeof parsed?.errorMessage === 'string' ? parsed.errorMessage : undefined,
+    errorCode: typeof parsed?.code === 'string' ? parsed.code : undefined,
+    errorMessage:
+      typeof parsed?.message === 'string'
+        ? parsed.message
+        : typeof parsed?.errorMessage === 'string'
+          ? parsed.errorMessage
+          : undefined,
     parsed,
   };
 }

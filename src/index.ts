@@ -169,6 +169,8 @@ export {
   type ActorInfo,
   type AuditEventKind,
   type TransitionDetail,
+  type StateWriteDetail,
+  type EnforcementDeniedDetail,
   type ToolCallDetail,
   type ErrorDetail,
   type LifecycleDetail,

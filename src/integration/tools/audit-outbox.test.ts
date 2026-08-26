@@ -13,10 +13,10 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { makeState } from '../../fixtures.js';
-import { SessionState } from '../../state/schema.js';
+import { SessionState, type PendingAuditOperation } from '../../state/schema.js';
 import { computeStateDigest, prepareStateWithAuditOperations } from './audit-outbox.js';
 import { computeCanonicalEventDigest } from '../../audit/canonical-digest.js';
-import { buildTransitionBody } from '../../audit/types.js';
+import { buildStateWriteBody, buildTransitionBody } from '../../audit/types.js';
 import { hashText } from '../../shared/hashing.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 
@@ -30,6 +30,13 @@ const TICKET_TO_PLAN = {
   at: FIXED_AT,
 } as const;
 
+function requireTransition(
+  operation: PendingAuditOperation,
+): Extract<PendingAuditOperation, { kind: 'transition' }> {
+  if (operation.kind !== 'transition') throw new Error('expected transition operation');
+  return operation;
+}
+
 describe('computeStateDigest', () => {
   it('GOOD: excludes pendingAuditOperations from the digest', () => {
     const state = makeState('PLAN', { id: SESSION_ID });
@@ -37,6 +44,7 @@ describe('computeStateDigest', () => {
       id: SESSION_ID,
       pendingAuditOperations: [
         {
+          kind: 'transition',
           operationId: 'bbbbbbbb-0000-4000-8000-000000000001',
           preStateDigest: 'a'.repeat(64),
           mutationDigest: 'b'.repeat(64),
@@ -72,7 +80,7 @@ describe('prepareStateWithAuditOperations', () => {
     const prepared = await prepareStateWithAuditOperations(previous, next, undefined);
 
     expect(prepared.pendingAuditOperations).toHaveLength(1);
-    const op = prepared.pendingAuditOperations[0]!;
+    const op = requireTransition(prepared.pendingAuditOperations[0]!);
     expect(op.status).toBe('state_committed');
     expect(op.transition).toMatchObject({
       from: 'TICKET',
@@ -92,7 +100,7 @@ describe('prepareStateWithAuditOperations', () => {
     const next = makeState('PLAN', { id: SESSION_ID, transition: TICKET_TO_PLAN });
 
     const prepared = await prepareStateWithAuditOperations(previous, next, undefined);
-    const op = prepared.pendingAuditOperations[0]!;
+    const op = requireTransition(prepared.pendingAuditOperations[0]!);
     const body = buildTransitionBody(
       prepared.id,
       op.transition.to,
@@ -114,12 +122,13 @@ describe('prepareStateWithAuditOperations', () => {
     expect(computeCanonicalEventDigest(body)).toBe(op.auditEventDigest);
   });
 
-  it('CORNER: commits no operations when the transition is unchanged', async () => {
+  it('CORNER: records a same-phase authority write when the transition is unchanged', async () => {
     const previous = makeState('PLAN', { id: SESSION_ID, transition: TICKET_TO_PLAN });
     const next = makeState('PLAN', { id: SESSION_ID, transition: TICKET_TO_PLAN });
 
     const prepared = await prepareStateWithAuditOperations(previous, next, undefined);
-    expect(prepared.pendingAuditOperations).toHaveLength(0);
+    expect(prepared.pendingAuditOperations).toHaveLength(1);
+    expect(prepared.pendingAuditOperations[0]!.kind).toBe('state_write');
   });
 
   it.each([
@@ -154,12 +163,30 @@ describe('prepareStateWithAuditOperations', () => {
     expect(prepared.pendingAuditOperations).toHaveLength(0);
   });
 
-  it('CORNER: commits no operations for a transition-less state', async () => {
+  it('CORNER: records a transition-less authority write', async () => {
     const previous = makeState('TICKET', { id: SESSION_ID });
     const next = makeState('PLAN', { id: SESSION_ID });
 
     const prepared = await prepareStateWithAuditOperations(previous, next, undefined);
-    expect(prepared.pendingAuditOperations).toHaveLength(0);
+    expect(prepared.pendingAuditOperations).toHaveLength(1);
+    const operation = prepared.pendingAuditOperations[0]!;
+    expect(operation.kind).toBe('state_write');
+    if (operation.kind !== 'state_write') throw new Error('expected state_write operation');
+    const body = buildStateWriteBody(
+      prepared.id,
+      operation.stateWrite.phase,
+      {
+        operationId: operation.operationId,
+        preStateDigest: operation.preStateDigest,
+        mutationDigest: operation.mutationDigest,
+        postStateDigest: operation.postStateDigest,
+      },
+      operation.stateWrite.at,
+      'genesis',
+    );
+    expect(operation.preStateDigest).toBe(computeStateDigest(previous));
+    expect(operation.postStateDigest).toBe(computeStateDigest(prepared));
+    expect(computeCanonicalEventDigest(body)).toBe(operation.auditEventDigest);
   });
 
   it('CORNER: a chain of transitions carries chainIndex and autoAdvanced markers', async () => {
@@ -180,11 +207,11 @@ describe('prepareStateWithAuditOperations', () => {
 
     const prepared = await prepareStateWithAuditOperations(previous, next, transitions);
     expect(prepared.pendingAuditOperations).toHaveLength(2);
-    expect(prepared.pendingAuditOperations[0]!.transition).toMatchObject({
+    expect(requireTransition(prepared.pendingAuditOperations[0]!).transition).toMatchObject({
       chainIndex: 0,
       autoAdvanced: false,
     });
-    expect(prepared.pendingAuditOperations[1]!.transition).toMatchObject({
+    expect(requireTransition(prepared.pendingAuditOperations[1]!).transition).toMatchObject({
       chainIndex: 1,
       autoAdvanced: true,
     });

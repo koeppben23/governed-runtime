@@ -291,19 +291,35 @@ export type Transition = z.infer<typeof Transition>;
  * authority. The operation ID becomes the transition audit-event ID, so a
  * restart can acknowledge an already-appended event without duplicating it.
  */
+const PendingAuditOperationBase = z.object({
+  operationId: z.string().uuid(),
+  preStateDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  mutationDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  postStateDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  auditEventDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  status: z.enum(['state_committed', 'audit_committed', 'reconciled']),
+});
+
+/** A phase transition commits its state↔audit binding through this operation. */
+const PendingTransitionAuditOperation = PendingAuditOperationBase.extend({
+  kind: z.literal('transition'),
+  transition: Transition.extend({
+    chainIndex: z.number().int().nonnegative(),
+    autoAdvanced: z.boolean(),
+  }),
+});
+
+/** A non-transition authority write commits one durable state↔audit binding. */
+const PendingStateWriteAuditOperation = PendingAuditOperationBase.extend({
+  kind: z.literal('state_write'),
+  stateWrite: z.object({
+    phase: Phase,
+    at: z.string().datetime(),
+  }),
+});
+
 export const PendingAuditOperation = z
-  .object({
-    operationId: z.string().uuid(),
-    preStateDigest: z.string().regex(/^[a-f0-9]{64}$/),
-    mutationDigest: z.string().regex(/^[a-f0-9]{64}$/),
-    postStateDigest: z.string().regex(/^[a-f0-9]{64}$/),
-    auditEventDigest: z.string().regex(/^[a-f0-9]{64}$/),
-    transition: Transition.extend({
-      chainIndex: z.number().int().nonnegative(),
-      autoAdvanced: z.boolean(),
-    }),
-    status: z.enum(['state_committed', 'audit_committed', 'reconciled']),
-  })
+  .union([PendingTransitionAuditOperation, PendingStateWriteAuditOperation])
   .readonly();
 export type PendingAuditOperation = z.infer<typeof PendingAuditOperation>;
 

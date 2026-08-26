@@ -462,35 +462,31 @@ export async function writeStateWithArtifactsAndAuditOperations(
   nextState: SessionState,
   transitions?: ReadonlyArray<{ from: string; to: string; event: string; at: string }>,
 ): Promise<SessionState> {
-  const persist = async (): Promise<SessionState> => {
-    const previous = await readState(sessDir);
-    // Finalize first so the post-state digest identifies the same proof graph
-    // and implementation authority that will be persisted.
-    const stateWithOperations = await prepareStateWithAuditOperations(
-      previous,
-      nextState,
-      transitions,
-    );
-    return writeStateWithArtifactsAlreadyLocked(sessDir, stateWithOperations);
-  };
+  const persist = (): Promise<SessionState> =>
+    writeStateWithArtifactsAndAuditOperationsAlreadyLocked(sessDir, nextState, transitions);
 
   if (lockedSessionDir.getStore() === sessDir) {
     return persist();
   }
 
-  // Materialize artifacts and write state atomically under the session lock.
   return withSessionWriteLock(sessDir, async () => lockedSessionDir.run(sessDir, persist));
 }
 
-/** Context handed to a {@link withSessionWriteTransaction} callback. */
+export async function writeStateWithArtifactsAndAuditOperationsAlreadyLocked(
+  sessDir: string,
+  nextState: SessionState,
+  transitions?: ReadonlyArray<{ from: string; to: string; event: string; at: string }>,
+): Promise<SessionState> {
+  const previous = await readState(sessDir);
+  const stateWithOperations = await prepareStateWithAuditOperations(
+    previous,
+    nextState,
+    transitions,
+  );
+  return writeStateWithArtifactsAlreadyLocked(sessDir, stateWithOperations);
+}
+
 export interface SessionWriteTransaction {
-  /**
-   * Whether the session write lock contended with a live holder before it
-   * could be acquired. `false` when acquired immediately (uncontended).
-   *
-   * Deterministic — derived from the lock acquisition path, not a timing
-   * heuristic — so callers can faithfully report contention without noise.
-   */
   readonly waited: boolean;
 }
 

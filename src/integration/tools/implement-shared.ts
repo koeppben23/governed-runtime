@@ -9,7 +9,7 @@ import type { ToolContext } from './helpers.js';
 import {
   formatBlocked,
   writeStateWithArtifacts,
-  writeStateWithArtifactsAlreadyLocked,
+  writeStateWithArtifactsAndAuditOperationsAlreadyLocked,
 } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
 import type { RailContext } from '../../rails/types.js';
@@ -236,7 +236,10 @@ export async function activateReviewObligationAndPersist(input: {
   if (!activated.blocked) return { activated };
   if (input.persistPreAdvance) {
     if (input.locked) {
-      await writeStateWithArtifactsAlreadyLocked(input.sessDir, input.preAdvanceState);
+      await writeStateWithArtifactsAndAuditOperationsAlreadyLocked(
+        input.sessDir,
+        input.preAdvanceState,
+      );
     } else {
       await writeStateWithArtifacts(input.sessDir, input.preAdvanceState);
     }

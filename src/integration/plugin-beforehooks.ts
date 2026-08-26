@@ -14,6 +14,7 @@ import type { CommandHookBeforeInput, ToolHookBeforeInput, ToolHookBeforeOutput 
 import { recordUserDecisionIntentFromCommand } from './user-decision-intent.js';
 import {
   getToolTraceId,
+  FG_PREFIX,
   type ActiveCommandScope,
   type FlowGuardPluginRuntime,
 } from './plugin-shared.js';
@@ -26,6 +27,7 @@ import { enforceDiscoveryHealthBefore } from './plugin-discovery-health.js';
 import { registerExecutedTaskPrompt } from './review/enforcement/execution-provenance.js';
 import { resolveAttemptByCapability } from './review/observation-resolution.js';
 import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
+import { auditEnforcementDenied } from './plugin-audit.js';
 
 export async function commandBefore(
   runtime: FlowGuardPluginRuntime,
@@ -79,9 +81,41 @@ export async function toolBefore(
       runtime.log.info('hook', 'tool.execute.before', {
         tool: toolName,
       });
-      await enforceBeforeRules(runtime, toolName, sessionId, hookInput?.callID ?? '', args);
+      try {
+        await enforceBeforeRules(runtime, toolName, sessionId, hookInput?.callID ?? '', args);
+      } catch (err) {
+        if (!toolName.startsWith(FG_PREFIX)) {
+          const reasonCode = enforcementReasonCode(err);
+          if (reasonCode) {
+            await auditEnforcementDenied({
+              deps: runtime.auditDeps,
+              sessionId,
+              tool: toolName,
+              reasonCode,
+              hostCallId: hookInput?.callID ?? '',
+              traceId,
+            });
+          }
+        }
+        throw err;
+      }
     });
   });
+}
+
+function enforcementReasonCode(err: unknown): string | undefined {
+  if (!(err instanceof Error) || err.name !== 'FlowGuardEnforcementError') return undefined;
+  const { message } = err;
+  const prefix = '[FlowGuard] ';
+  if (!message.startsWith(prefix)) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(message.slice(prefix.length));
+    return typeof (parsed as { code?: unknown }).code === 'string'
+      ? (parsed as { code: string }).code
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 async function resolveEnforcement(

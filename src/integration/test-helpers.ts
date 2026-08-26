@@ -26,7 +26,7 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { readState, writeState } from '../adapters/persistence.js';
+import { readState } from '../adapters/persistence.js';
 import { resetAdapterLogger } from '../logging/adapter-logger.js';
 import type { ReviewAttempt, ReviewFindings, ReviewObligationType } from '../state/evidence.js';
 import {
@@ -38,6 +38,7 @@ import {
   hashText,
 } from './review/assurance.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+import { writeStateWithAuditOperations } from './tools/audit-outbox.js';
 
 // ─── Safety Guards ───────────────────────────────────────────────────────────
 
@@ -313,7 +314,7 @@ export async function freezeRepositoryReviewObligation(
 ): Promise<void> {
   const state = await readState(sessDir);
   if (!state) throw new Error('No test session state found');
-  await writeState(sessDir, {
+  await writeStateWithAuditOperations(sessDir, {
     ...state,
     reviewAssurance: {
       ...state.reviewAssurance!,
@@ -473,7 +474,7 @@ export async function fulfillStrictReviewObligation(
   });
   const obligationAcceptedByReviewer = !isHostTask;
 
-  await writeState(sessDir, {
+  await writeStateWithAuditOperations(sessDir, {
     ...state,
     reviewAssurance: {
       ...assurance,

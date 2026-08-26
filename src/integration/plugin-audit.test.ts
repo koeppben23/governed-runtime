@@ -17,8 +17,13 @@ import * as path from 'node:path';
 import { readState, writeState } from '../adapters/persistence.js';
 import { appendAuditEvent } from '../adapters/persistence-audit.js';
 import { makeState, REVIEW_APPROVE } from '../fixtures.js';
-import { SessionState } from '../state/schema.js';
-import { reconcilePendingAuditOperations, runAudit, type AuditDeps } from './plugin-audit.js';
+import { SessionState, type PendingAuditOperation } from '../state/schema.js';
+import {
+  auditEnforcementDenied,
+  reconcilePendingAuditOperations,
+  runAudit,
+  type AuditDeps,
+} from './plugin-audit.js';
 import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
 import {
   buildTransitionBody,
@@ -86,6 +91,13 @@ function makeDeps(overrides: Partial<AuditDeps> = {}): AuditDeps {
 const SESSION_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
 const FIXED_DECISION_AT = '2026-05-15T12:00:00.000Z';
 
+function requireTransition(
+  operation: PendingAuditOperation,
+): Extract<PendingAuditOperation, { kind: 'transition' }> {
+  if (operation.kind !== 'transition') throw new Error('expected transition operation');
+  return operation;
+}
+
 // ─── H1: Noop ohne Session-Dir ────────────────────────────────────────────
 
 describe('runAudit', () => {
@@ -148,6 +160,62 @@ describe('runAudit', () => {
       expect(detail.kind).toBe('tool_call');
       expect(detail.tool).toBe('flowguard_plan');
       expect(call.phase).toBe('PLAN');
+    });
+
+    it('records structured blocked codes and messages', async () => {
+      resetChainSeq();
+      const deps = makeDeps();
+
+      await runAudit(
+        deps,
+        'flowguard_plan',
+        {},
+        { error: true, code: 'COMMAND_NOT_ALLOWED', message: 'Plan submission is not allowed.' },
+        SESSION_ID,
+      );
+
+      const toolCall = (deps.appendAndTrack as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+        detail: Record<string, unknown>;
+      };
+      expect(toolCall.detail).toMatchObject({
+        kind: 'tool_call',
+        success: false,
+        errorCode: 'COMMAND_NOT_ALLOWED',
+        errorMessage: 'Plan submission is not allowed.',
+      });
+      const error = (deps.appendAndTrack as ReturnType<typeof vi.fn>).mock.calls[1]![0] as {
+        detail: Record<string, unknown>;
+      };
+      expect(error.detail).toMatchObject({
+        kind: 'error',
+        code: 'COMMAND_NOT_ALLOWED',
+      });
+    });
+
+    it('writes a correlated enforcement denial without weakening the deny path', async () => {
+      resetChainSeq();
+      const deps = makeDeps();
+
+      await auditEnforcementDenied({
+        deps,
+        sessionId: SESSION_ID,
+        tool: 'bash',
+        reasonCode: 'HOST_TOOL_PHASE_DENIED',
+        hostCallId: 'call-123',
+        traceId: 'call-123',
+      });
+
+      const event = (deps.appendAndTrack as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+        event: string;
+        detail: Record<string, unknown>;
+      };
+      expect(event.event).toBe('enforcement:denied');
+      expect(event.detail).toMatchObject({
+        kind: 'enforcement_denied',
+        tool: 'bash',
+        reasonCode: 'HOST_TOOL_PHASE_DENIED',
+        hostCallId: 'call-123',
+      });
     });
 
     it('emits chained audit events even when policy enableChainHash is false', async () => {
@@ -1090,6 +1158,7 @@ describe('runAudit', () => {
     it('counts only unreconciled outbox operations in tool_call transitionCount', async () => {
       resetChainSeq();
       const unreconciledA = {
+        kind: 'transition',
         operationId: 'cccccccc-0000-4000-8000-000000000001',
         preStateDigest: 'a'.repeat(64),
         mutationDigest: 'b'.repeat(64),
@@ -1251,7 +1320,7 @@ describe('runAudit', () => {
           [{ from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', at: FIXED_DECISION_AT }],
         );
         const pending = await readState(sessDir);
-        const operation = pending!.pendingAuditOperations[0]!;
+        const operation = requireTransition(pending!.pendingAuditOperations[0]!);
         const body = buildTransitionBody(
           SESSION_ID,
           operation.transition.to,
@@ -1308,7 +1377,7 @@ describe('runAudit', () => {
           [{ from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', at: FIXED_DECISION_AT }],
         );
         const pending = await readState(sessDir);
-        const operation = pending!.pendingAuditOperations[0]!;
+        const operation = requireTransition(pending!.pendingAuditOperations[0]!);
 
         const deps = makeDeps({
           getSessionDir: vi.fn().mockReturnValue(sessDir),
@@ -1340,6 +1409,51 @@ describe('runAudit', () => {
       }
     });
 
+    it('reconciles a same-phase authority write with durable state digests', async () => {
+      const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-state-write-outbox-'));
+      try {
+        const initial = makeState('PLAN', { id: SESSION_ID });
+        await writeState(sessDir, initial);
+        await writeStateWithArtifactsAndAuditOperations(sessDir, {
+          ...initial,
+          activeChecks: ['typecheck'],
+        });
+        const pending = await readState(sessDir);
+        const operation = pending!.pendingAuditOperations[0]!;
+        expect(operation.kind).toBe('state_write');
+
+        const deps = makeDeps({
+          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionPolicy: vi.fn().mockResolvedValue({
+            policy: {
+              audit: { emitToolCalls: false, emitTransitions: true, enableChainHash: true },
+              actorClassification: {},
+              mode: 'regulated',
+              requireHumanGates: true,
+            },
+            state: pending,
+          }),
+          appendAndTrack: vi.fn(async () => {}),
+        });
+
+        await expect(
+          reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_status'),
+        ).resolves.toBeUndefined();
+        const event = (deps.appendAndTrack as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+          detail: Record<string, unknown>;
+        };
+        expect(event.detail).toMatchObject({
+          kind: 'state_write',
+          operationId: operation.operationId,
+          preStateDigest: operation.preStateDigest,
+          postStateDigest: operation.postStateDigest,
+        });
+        expect((await readState(sessDir))!.pendingAuditOperations[0]!.status).toBe('reconciled');
+      } finally {
+        await fs.rm(sessDir, { recursive: true, force: true });
+      }
+    });
+
     it('refuses to reconcile an operation whose state digests were tampered after append', async () => {
       const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-audit-outbox-'));
       try {
@@ -1354,7 +1468,7 @@ describe('runAudit', () => {
           [{ from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', at: FIXED_DECISION_AT }],
         );
         const pending = await readState(sessDir);
-        const operation = pending!.pendingAuditOperations[0]!;
+        const operation = requireTransition(pending!.pendingAuditOperations[0]!);
         const body = buildTransitionBody(
           SESSION_ID,
           operation.transition.to,
@@ -1605,7 +1719,7 @@ describe('runAudit', () => {
           [{ from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', at: FIXED_DECISION_AT }],
         );
         const pending = await readState(sessDir);
-        const operation = pending!.pendingAuditOperations[0]!;
+        const operation = requireTransition(pending!.pendingAuditOperations[0]!);
         const tampered: SessionState = {
           ...pending!,
           pendingAuditOperations: [{ ...operation, auditEventDigest: 'e'.repeat(64) }],
@@ -1651,7 +1765,7 @@ describe('runAudit', () => {
           [{ from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', at: FIXED_DECISION_AT }],
         );
         const pending = await readState(sessDir);
-        const operation = pending!.pendingAuditOperations[0]!;
+        const operation = requireTransition(pending!.pendingAuditOperations[0]!);
         // Same id + operationId, different transition content.
         const divergent = buildTransitionBody(
           SESSION_ID,

@@ -34,7 +34,7 @@ import {
   formatAutoAdvanceOverflow,
   appendNextAction,
   getWorktree,
-  writeStateWithArtifactsAlreadyLocked,
+  writeStateWithArtifactsAndAuditOperationsAlreadyLocked,
   requireStateForMutation,
   resolvePolicyFromState,
   createPolicyContext,
@@ -436,7 +436,11 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
       });
       if ('response' in activation) return activation.response;
       const { activated } = activation;
-      const persisted = await writeStateWithArtifactsAlreadyLocked(sessDir, activated.state);
+      const persisted = await writeStateWithArtifactsAndAuditOperationsAlreadyLocked(
+        sessDir,
+        activated.state,
+        advanced.transitions,
+      );
       logger.info('tool', 'check_persisted', {
         sessionId,
         checkId: kind,

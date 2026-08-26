@@ -4,7 +4,7 @@
  *
  * The base AuditEvent schema (evidence.ts) stores generic `event` and `detail` fields.
  * This module adds semantic structure:
- * - Closed set of event kinds (transition, tool_call, error, lifecycle)
+ * - Closed set of event kinds (transition, state_write, tool_call, error, lifecycle)
  * - Typed detail payloads per kind
  * - Factory functions that produce valid AuditEvent objects
  *
@@ -44,6 +44,8 @@ export type { ActorInfo, ActorVerificationMeta };
  */
 export const AUDIT_EVENT_KINDS = [
   'transition',
+  'state_write',
+  'enforcement_denied',
   'tool_call',
   'error',
   'lifecycle',
@@ -76,6 +78,26 @@ export interface TransitionDetail {
   chainIndex: number;
 }
 
+/** Detail payload for a durable same-phase authority write. */
+export interface StateWriteDetail {
+  kind: 'state_write';
+  operationId: string;
+  preStateDigest: string;
+  mutationDigest: string;
+  postStateDigest: string;
+}
+
+/** Detail payload for a synchronously denied host-tool invocation. */
+export interface EnforcementDeniedDetail {
+  kind: 'enforcement_denied';
+  tool: string;
+  reasonCode: string;
+  hostCallId: string;
+  traceId: string;
+  policyMode: string;
+  enforcementLevel: 'synchronous' | 'hook_gated' | 'advisory';
+}
+
 /** Detail payload for tool call events. */
 export interface ToolCallDetail {
   kind: 'tool_call';
@@ -86,6 +108,8 @@ export interface ToolCallDetail {
   success: boolean;
   /** Error message if failed. */
   errorMessage?: string;
+  /** Stable FlowGuard reason code if the tool returned a structured block. */
+  errorCode?: string;
   /** Number of transitions triggered by this tool call. */
   transitionCount: number;
 }
@@ -128,7 +152,13 @@ export interface DecisionDetail {
 
 /** Union of all typed detail payloads. */
 export type TypedDetail =
-  TransitionDetail | ToolCallDetail | ErrorDetail | LifecycleDetail | DecisionDetail;
+  | TransitionDetail
+  | StateWriteDetail
+  | EnforcementDeniedDetail
+  | ToolCallDetail
+  | ErrorDetail
+  | LifecycleDetail
+  | DecisionDetail;
 
 // ─── Actor Identity ──────────────────────────────────────────────────────────
 // P2b: ActorInfo and ActorVerificationMeta are canonically defined in
@@ -293,6 +323,49 @@ export function buildTransitionBody(
     actor: 'machine',
     auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
     detail: toDetailRecord({ ...detail, kind: 'transition' }),
+    prevHash,
+  };
+}
+
+/** Build a state-write event body from a durable outbox operation. */
+export function buildStateWriteBody(
+  sessionId: string,
+  phase: Phase,
+  detail: Omit<StateWriteDetail, 'kind'>,
+  timestamp: string,
+  prevHash: string,
+): EventBody {
+  return {
+    id: detail.operationId,
+    sessionId,
+    phase,
+    event: 'state_write',
+    timestamp,
+    actor: 'machine',
+    auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
+    detail: toDetailRecord({ ...detail, kind: 'state_write' }),
+    prevHash,
+  };
+}
+
+/** Build a denied-enforcement event body from the synchronous host hook. */
+export function buildEnforcementDeniedBody(
+  sessionId: string,
+  phase: Phase,
+  detail: Omit<EnforcementDeniedDetail, 'kind'>,
+  timestamp: string,
+  prevHash: string,
+): EventBody {
+  return {
+    id: crypto.randomUUID(),
+    sessionId,
+    phase,
+    event: 'enforcement:denied',
+    timestamp,
+    actor: 'machine',
+    auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
+    enforcementLevel: detail.enforcementLevel,
+    detail: toDetailRecord({ ...detail, kind: 'enforcement_denied' }),
     prevHash,
   };
 }
