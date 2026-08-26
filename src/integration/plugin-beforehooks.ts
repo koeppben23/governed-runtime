@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { readState } from '../adapters/persistence.js';
+import { workspacesHome } from '../adapters/workspace/index.js';
 import { buildEnforcementError } from './plugin-helpers.js';
 import { isMutatingHostTool, isHostToolAllowedInPhase } from './phase-tool-gate.js';
 import { isMutatingFlowGuardTool } from './tool-classification.js';
@@ -23,6 +24,7 @@ import type { SessionState } from '../state/schema.js';
 import { enforceRiskClassificationBefore as enforceRiskBefore } from './plugin-risk.js';
 import { enforceDiscoveryHealthBefore } from './plugin-discovery-health.js';
 import { registerExecutedTaskPrompt } from './review/enforcement/execution-provenance.js';
+import { resolveAttemptByCapability } from './review/observation-resolution.js';
 import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
 
 export async function commandBefore(
@@ -132,6 +134,15 @@ async function enforceBeforeRules(
 
   await enforceVerdictCheck(runtime, toolName, sessionId, args);
 
+  // flowguard_observe_repository runs inside the reviewer CHILD session, which
+  // intentionally has no session-state.json. Its capability resolves to the
+  // owning PARENT session — the authority whose outbox must be reconciled
+  // before the observation may persist a transport capture.
+  if (toolName === 'flowguard_observe_repository') {
+    await reconcileObservationParent(runtime, args);
+    return;
+  }
+
   // Unresolved durable audit operations block every governed mutation —
   // mutating FlowGuard tools (workflow AND persistent operational tools) AND
   // host mutating tools (write/edit/apply_patch/bash). Read-only tools stay
@@ -181,6 +192,35 @@ async function reconcileBeforeMutation(
   if (audit?.block) {
     throw buildEnforcementError(audit.code ?? 'AUDIT_PERSISTENCE_FAILED', audit.reason ?? '');
   }
+}
+
+/**
+ * Reviewer child sessions own no state; the observation capability resolves to
+ * the owning parent session. The PARENT's outbox — never the child's — must be
+ * reconciled before the observation executes its first side effect.
+ */
+async function reconcileObservationParent(
+  runtime: FlowGuardPluginRuntime,
+  args: Record<string, unknown>,
+): Promise<void> {
+  const capability = typeof args.capability === 'string' ? args.capability : '';
+  if (!capability) return;
+  const fingerprint = runtime.auditDeps.cachedFingerprint ?? runtime.ws.cachedFingerprint;
+  if (!fingerprint) {
+    throw buildEnforcementError(
+      'AUDIT_SESSION_AUTHORITY_UNAVAILABLE',
+      'Cannot resolve the observation capability authority: workspace fingerprint unavailable.',
+    );
+  }
+  const resolution = await resolveAttemptByCapability({
+    workspaceHome: workspacesHome(),
+    fingerprint,
+    capability,
+  });
+  // An unknown capability cannot persist anything: the tool itself fails
+  // closed with REVIEW_OBSERVATION_CAPABILITY_UNKNOWN before any side effect.
+  if (!resolution) return;
+  await reconcileBeforeMutation(runtime, resolution.sessionId, 'flowguard_observe_repository');
 }
 
 function updateCommandScope(

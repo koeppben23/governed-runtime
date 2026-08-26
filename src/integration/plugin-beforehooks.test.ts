@@ -20,9 +20,15 @@ import type { PluginWorkspace } from './plugin-workspace.js';
 import { createSessionState } from './review/enforcement/enforcement.js';
 import { makeState, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
 import { writeState, readState } from '../adapters/persistence.js';
+import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
+import {
+  computeFingerprint,
+  sessionDir as resolveSessionDir,
+} from '../adapters/workspace/index.js';
 import { createTestWorkspace } from './test-helpers.js';
 import type { SessionState } from '../state/schema.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
+import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 
 function makeRuntime(
   overrides: Omit<Partial<FlowGuardPluginRuntime>, 'ws'> & { ws?: Partial<PluginWorkspace> } = {},
@@ -584,6 +590,186 @@ describe('toolBefore — workflow reconciliation gate', () => {
     await expect(
       toolBefore(runtime, { tool: 'flowguard_help', sessionID: SESSION_ID }, { args: {} }),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('toolBefore — observation capability parent binding', () => {
+  const OBLIGATION_ID = '33333333-1111-4111-8111-111111111111';
+  const ATTEMPT_ID = '33333333-2222-4111-8111-111111111111';
+  const CAPABILITY = `fgc_${'a'.repeat(64)}`;
+
+  async function seedParentWithCapability(
+    ws: Awaited<ReturnType<typeof createTestWorkspace>>,
+  ): Promise<{ parentId: string; sessDir: string; fingerprint: string; state: SessionState }> {
+    const fingerprint = (await computeFingerprint(ws.tmpDir)).fingerprint;
+    const parentId = crypto.randomUUID();
+    const sessDir = resolveSessionDir(fingerprint, parentId);
+    const now = new Date().toISOString();
+    const state = makeState('PLAN', {
+      reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        obligations: [
+          {
+            obligationId: OBLIGATION_ID,
+            obligationType: 'plan',
+            subjectDigest: 'obs-subject-digest',
+            iteration: 0,
+            planVersion: 1,
+            criteriaVersion: REVIEW_CRITERIA_VERSION,
+            mandateDigest: REVIEW_MANDATE_DIGEST,
+            maxReviewerOutputRepairAttempts: 1,
+            createdAt: now,
+            pluginHandshakeAt: null,
+            status: 'pending',
+            invocationId: null,
+            blockedCode: null,
+            fulfilledAt: null,
+            consumedAt: null,
+            reviewMaterial: {
+              content: '## Plan\n',
+              materialDigest: 'material-digest',
+              subjectDigest: 'obs-subject-digest',
+            },
+            repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+            reviewSubjectScope: {
+              kind: 'artifact',
+              artifact: {
+                kind: 'plan',
+                digest: 'obs-subject-digest',
+                sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }]],
+              },
+            },
+          },
+        ],
+        invocations: [],
+        attempts: [
+          {
+            attemptId: ATTEMPT_ID,
+            obligationId: OBLIGATION_ID,
+            obligationType: 'plan',
+            subjectDigest: 'obs-subject-digest',
+            reviewMaterial: {
+              content: '## Plan\n',
+              materialDigest: 'material-digest',
+              subjectDigest: 'obs-subject-digest',
+            },
+            ordinal: 0,
+            status: 'created',
+            origin: { kind: 'initial' } as const,
+            repositoryDiscovery: { kind: 'not_applicable' } as const,
+            observationCapability: CAPABILITY,
+            createdAt: now,
+          },
+        ],
+      },
+    });
+    await writeState(sessDir, state);
+    return { parentId, sessDir, fingerprint, state };
+  }
+
+  it('BAD — child without state blocks when the owning parent has an unresolved outbox', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const { sessDir, fingerprint, state } = await seedParentWithCapability(ws);
+      const transition = {
+        from: 'TICKET',
+        to: 'PLAN',
+        event: 'PLAN_READY',
+        at: '2026-05-15T12:00:00.000Z',
+      } as const;
+      const persisted = await writeStateWithArtifactsAndAuditOperations(
+        sessDir,
+        { ...state, transition },
+        [transition],
+      );
+      await fs.writeFile(path.join(sessDir, 'audit.jsonl'), '{ malformed json\n', 'utf8');
+      const runtime = makeRuntime({
+        ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) },
+        auditDeps: {
+          ...makeAuditDeps(sessDir, persisted),
+          cachedFingerprint: fingerprint,
+        },
+      });
+      const childId = crypto.randomUUID();
+      await expect(
+        toolBefore(
+          runtime,
+          { tool: 'flowguard_observe_repository', sessionID: childId },
+          { args: { capability: CAPABILITY, revision: 'base', path: 'src/foo.ts' } },
+        ),
+      ).rejects.toThrow('AUDIT_PERSISTENCE_FAILED');
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('HAPPY — child without state passes when the owning parent outbox is clean', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const { parentId, sessDir, fingerprint, state } = await seedParentWithCapability(ws);
+      const runtime = makeRuntime({
+        ws: {
+          getSessionDir: vi.fn((sid: string) => (sid === parentId ? sessDir : null)),
+        },
+        auditDeps: {
+          ...makeAuditDeps(sessDir, state),
+          cachedFingerprint: fingerprint,
+        },
+      });
+      await expect(
+        toolBefore(
+          runtime,
+          { tool: 'flowguard_observe_repository', sessionID: crypto.randomUUID() },
+          { args: { capability: CAPABILITY, revision: 'head', path: 'src/foo.ts' } },
+        ),
+      ).resolves.toBeUndefined();
+      expect(runtime.auditDeps.getSessionDir).toHaveBeenCalledWith(parentId);
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('CORNER — a missing capability arg defers to the tool-level validation', async () => {
+    const runtime = makeRuntime();
+    await expect(
+      toolBefore(
+        runtime,
+        { tool: 'flowguard_observe_repository', sessionID: crypto.randomUUID() },
+        { args: {} },
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it('CORNER — an unknown capability defers to the tool-level block', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const fingerprint = (await computeFingerprint(ws.tmpDir)).fingerprint;
+      const runtime = makeRuntime({
+        auditDeps: { ...makeAuditDeps(null, null), cachedFingerprint: fingerprint },
+      });
+      await expect(
+        toolBefore(
+          runtime,
+          { tool: 'flowguard_observe_repository', sessionID: crypto.randomUUID() },
+          { args: { capability: 'unknown-cap', revision: 'base', path: 'src/foo.ts' } },
+        ),
+      ).resolves.toBeUndefined();
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('BAD — fails closed when no fingerprint authority exists', async () => {
+    const runtime = makeRuntime({
+      auditDeps: { ...makeAuditDeps(null, null), cachedFingerprint: null },
+    });
+    await expect(
+      toolBefore(
+        runtime,
+        { tool: 'flowguard_observe_repository', sessionID: crypto.randomUUID() },
+        { args: { capability: 'cap-x', revision: 'base', path: 'src/foo.ts' } },
+      ),
+    ).rejects.toThrow('AUDIT_SESSION_AUTHORITY_UNAVAILABLE');
   });
 });
 

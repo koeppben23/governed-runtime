@@ -21,7 +21,10 @@ import type { SessionState } from '../../state/schema.js';
 import type { ReviewAttempt, ReviewObligation } from '../../state/evidence.js';
 
 export interface CapabilityResolution {
+  /** Owning parent session directory. */
   readonly sessDir: string;
+  /** Owning parent session identity — the authority that must reconcile its outbox before the observation may persist a capture. */
+  readonly sessionId: string;
   readonly attempt: ReviewAttempt;
   readonly obligation: ReviewObligation;
 }
@@ -66,7 +69,7 @@ export async function resolveAttemptByCapability(input: {
       (o) => o.obligationId === attempt.obligationId,
     );
     if (!obligation) return null;
-    return { sessDir, attempt, obligation };
+    return { sessDir, sessionId: entry, attempt, obligation };
   }
   return null;
 }
