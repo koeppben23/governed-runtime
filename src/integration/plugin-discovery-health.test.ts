@@ -31,6 +31,7 @@ const {
 
 vi.mock('../adapters/persistence.js', () => ({
   writeState: mockWriteState,
+  writeStateAlreadyLocked: mockWriteState,
   readState: mockReadState,
 }));
 

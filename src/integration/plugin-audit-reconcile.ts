@@ -13,17 +13,13 @@
  * @version v1
  */
 
-import {
-  readState,
-  writeState,
-  writeStateAlreadyLocked,
-  PersistenceError,
-} from '../adapters/persistence.js';
+import { readState, writeStateAlreadyLocked, PersistenceError } from '../adapters/persistence.js';
 import { withSessionWriteLock } from '../adapters/persistence-lock.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import type { SessionState, Transition, PendingAuditOperation } from '../state/schema.js';
 import {
   buildTransitionBody,
+  buildStateWriteBody,
   finalizeWithTimestampEvidence,
   type EventBody,
 } from '../audit/types.js';
@@ -32,7 +28,7 @@ import { resolveTimestampEvidence } from '../audit/timestamp-resolution.js';
 import type { TimestampAssurancePolicy } from '../config/policy-types.js';
 import type { TimestampAuthorityProvider, TimestampVerifier } from '../audit/tsa-provider.js';
 import { resolveAuditContext, type AuditContext } from './plugin-audit-context.js';
-import { computeStateDigest } from './tools/audit-outbox.js';
+import { computeStateDigest, writeStateWithAuditOperations } from './tools/audit-outbox.js';
 
 /** Closure dependencies injected from plugin.ts. */
 export interface AuditDeps {
@@ -120,15 +116,29 @@ class AuditTransitionEvidenceGapError extends Error {
 }
 
 /**
- * Rebuild the transition audit event the durable outbox committed for an
+ * Rebuild the audit event the durable outbox committed for an
  * operation. The canonical event digest excludes prevHash, so the rebuild is
  * chain-position independent and must match `operation.auditEventDigest`.
  */
-function buildOperationTransitionBody(
+function buildOperationAuditBody(
   state: SessionState,
   operation: PendingAuditOperation,
   prevHash: string,
 ): EventBody {
+  if (operation.kind === 'state_write') {
+    return buildStateWriteBody(
+      state.id,
+      operation.stateWrite.phase,
+      {
+        operationId: operation.operationId,
+        preStateDigest: operation.preStateDigest,
+        mutationDigest: operation.mutationDigest,
+        postStateDigest: operation.postStateDigest,
+      },
+      operation.stateWrite.at,
+      prevHash,
+    );
+  }
   const t = operation.transition;
   return buildTransitionBody(
     state.id,
@@ -170,21 +180,18 @@ export async function emitTransitionAudits(input: {
       'Cannot reconcile audit operations without session state',
     );
   }
-  deps.log.debug('audit', 'reconciling durable transition audit operations', {
+  deps.log.debug('audit', 'reconciling durable audit operations', {
     count: operations.length,
   });
+  const latestOperation = operations.at(-1)!;
+  if (computeStateDigest(state) !== latestOperation.postStateDigest) {
+    throw new PersistenceError(
+      'SCHEMA_VALIDATION_FAILED',
+      `Persisted state does not match audit operation ${latestOperation.operationId} post-state digest`,
+    );
+  }
   for (const operation of operations) {
-    // The operation's committed post-state authority must equal the state that
-    // is actually persisted right now. This is the state↔audit binding: any
-    // side-effect write that landed before reconciliation invalidates the
-    // operation and must fail closed instead of being reconciled.
-    if (computeStateDigest(state) !== operation.postStateDigest) {
-      throw new PersistenceError(
-        'SCHEMA_VALIDATION_FAILED',
-        `Audit operation ${operation.operationId} postStateDigest does not match the persisted state`,
-      );
-    }
-    const body = buildOperationTransitionBody(state, operation, ctx.prevHash);
+    const body = buildOperationAuditBody(state, operation, ctx.prevHash);
     const expectedDigest = computeCanonicalEventDigest(body);
     if (expectedDigest !== operation.auditEventDigest) {
       throw new PersistenceError(
@@ -202,8 +209,9 @@ export async function emitTransitionAudits(input: {
       ctx,
       sessionId,
       body,
-      eventKind: 'transition',
-      localTimestamp: operation.transition.at,
+      eventKind: operation.kind,
+      localTimestamp:
+        operation.kind === 'transition' ? operation.transition.at : operation.stateWrite.at,
       timestampTracker,
     });
     await acknowledgeAuditOperation(ctx.sessDir, operation.operationId, 'audit_committed');
@@ -263,7 +271,7 @@ async function findOperationAudit(
   // The loop already verified digest(operation body) === operation.auditEventDigest;
   // here only the persisted event must equal that same expected digest.
   const expectedDigest = computeCanonicalEventDigest(
-    buildOperationTransitionBody(state, operation, event.prevHash ?? 'genesis'),
+    buildOperationAuditBody(state, operation, event.prevHash ?? 'genesis'),
   );
   if (computeCanonicalEventDigest(event) !== expectedDigest) {
     throw new PersistenceError(
@@ -338,7 +346,7 @@ export async function finalizeStrictTimestampFailure(
   if (!failure) return undefined;
   const currentState = await readState(ctx.sessDir);
   if (currentState) {
-    await writeState(ctx.sessDir, {
+    await writeStateWithAuditOperations(ctx.sessDir, {
       ...currentState,
       error: {
         code: 'TSA_TIMESTAMP_ASSURANCE_FAILED',

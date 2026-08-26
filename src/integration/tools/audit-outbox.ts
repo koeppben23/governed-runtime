@@ -7,20 +7,26 @@ import {
 } from '../../state/schema.js';
 import { hashText } from '../../shared/hashing.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
-import { buildTransitionBody } from '../../audit/types.js';
+import { buildStateWriteBody, buildTransitionBody } from '../../audit/types.js';
 import { computeCanonicalEventDigest } from '../../audit/canonical-digest.js';
 import { finalizeImplementationEntry } from '../../adapters/implementation-base-authority.js';
-import { PersistenceError } from '../../adapters/persistence.js';
+import {
+  PersistenceError,
+  readState,
+  writeStateAlreadyLocked,
+} from '../../adapters/persistence.js';
+import { withSessionWriteLock } from '../../adapters/persistence-lock.js';
 import { refreshProofGraph } from '../proofgraph/refresh.js';
 
 /**
- * Prepare the next state together with its durable audit operations.
+ * Prepare the next state together with its durable authority-write operations.
  *
  * The state and its outbox commit are persisted atomically by the caller
  * (see writeStateWithArtifactsAndAuditOperations). Each operation binds the
- * pre-state, mutation, and post-state digests into the transition audit
- * event, so a reconciled event cryptographically attests the exact state
- * authority it documents.
+ * pre-state, mutation, and post-state digests into the audit event, so a
+ * reconciled event cryptographically attests the exact state authority it
+ * documents. Transition writes retain their transition-specific event; every
+ * other authority-changing write receives one state_write operation.
  */
 export async function prepareStateWithAuditOperations(
   previous: SessionState | null,
@@ -28,8 +34,44 @@ export async function prepareStateWithAuditOperations(
   transitions: ReadonlyArray<{ from: string; to: string; event: string; at: string }> | undefined,
 ): Promise<SessionState> {
   const prepared = await prepareState(nextState);
+  return prepareAuditOperations(previous, prepared, transitions);
+}
+
+/** Add durable audit operations without changing evidence artifacts or state. */
+export function prepareAuditOperations(
+  previous: SessionState | null,
+  nextState: SessionState,
+  transitions: ReadonlyArray<{ from: string; to: string; event: string; at: string }> | undefined,
+): SessionState {
+  const result = SessionState.safeParse(nextState);
+  if (!result.success) {
+    throw new PersistenceError(
+      'SCHEMA_VALIDATION_FAILED',
+      `Refusing to persist invalid state: ${result.error.message}`,
+    );
+  }
+  const prepared = result.data;
   const exactTransitions = transitions ?? inferTransition(previous, prepared);
   return addAuditOperations(previous, prepared, exactTransitions);
+}
+
+export async function writeStateWithAuditOperationsAlreadyLocked(
+  sessDir: string,
+  nextState: SessionState,
+): Promise<SessionState> {
+  const previous = await readState(sessDir);
+  const stateWithOperations = prepareAuditOperations(previous, nextState, undefined);
+  await writeStateAlreadyLocked(sessDir, stateWithOperations);
+  return stateWithOperations;
+}
+
+export async function writeStateWithAuditOperations(
+  sessDir: string,
+  nextState: SessionState,
+): Promise<SessionState> {
+  return withSessionWriteLock(sessDir, () =>
+    writeStateWithAuditOperationsAlreadyLocked(sessDir, nextState),
+  );
 }
 
 async function prepareState(nextState: SessionState): Promise<SessionState> {
@@ -78,8 +120,12 @@ function inferTransition(
  * verify `operation.postStateDigest` against the actually persisted state.
  */
 export function computeStateDigest(state: SessionState): string {
+  return hashText(canonicalJsonStringify(authorityState(state)));
+}
+
+function authorityState(state: SessionState): Omit<SessionState, 'pendingAuditOperations'> {
   const { pendingAuditOperations: _operations, ...authority } = state;
-  return hashText(canonicalJsonStringify(authority));
+  return authority;
 }
 
 function addAuditOperations(
@@ -87,13 +133,23 @@ function addAuditOperations(
   next: SessionState,
   transitions: ReadonlyArray<{ from: string; to: string; event: string; at: string }>,
 ): SessionState {
-  if (transitions.length === 0 || !next.policySnapshot.audit.emitTransitions) return next;
+  if (!next.policySnapshot.audit.emitTransitions) return next;
   const preStateDigest = previous ? computeStateDigest(previous) : hashText('absent');
   const postStateDigest = computeStateDigest(next);
+  if (preStateDigest === postStateDigest) return next;
+  // Session bootstrap has no prior authority to bind; hydrate owns its
+  // lifecycle/transition evidence when it creates a governed session.
+  if (previous === null && transitions.length === 0) return next;
+  if (transitions.length === 0) {
+    return addStateWriteOperation(previous, next, preStateDigest, postStateDigest);
+  }
   const mutationDigest = hashText(canonicalJsonStringify(transitions));
   const operations: PendingAuditOperation[] = transitions.map((transition, chainIndex) => {
     const operationId = crypto.randomUUID();
-    const normalizedTransition: PendingAuditOperation['transition'] = {
+    const normalizedTransition: Extract<
+      PendingAuditOperation,
+      { kind: 'transition' }
+    >['transition'] = {
       from: transition.from as Phase,
       to: transition.to as Phase,
       event: transition.event as Event,
@@ -119,6 +175,7 @@ function addAuditOperations(
       'genesis',
     );
     return {
+      kind: 'transition',
       operationId,
       preStateDigest,
       mutationDigest,
@@ -129,4 +186,39 @@ function addAuditOperations(
     };
   });
   return { ...next, pendingAuditOperations: [...next.pendingAuditOperations, ...operations] };
+}
+
+function addStateWriteOperation(
+  previous: SessionState | null,
+  next: SessionState,
+  preStateDigest: string,
+  postStateDigest: string,
+): SessionState {
+  const operationId = crypto.randomUUID();
+  const mutationDigest = hashText(
+    canonicalJsonStringify({
+      kind: 'state_write',
+      before: previous ? authorityState(previous) : null,
+      after: authorityState(next),
+    }),
+  );
+  const at = new Date().toISOString();
+  const body = buildStateWriteBody(
+    next.id,
+    next.phase,
+    { operationId, preStateDigest, mutationDigest, postStateDigest },
+    at,
+    'genesis',
+  );
+  const operation: PendingAuditOperation = {
+    kind: 'state_write',
+    operationId,
+    preStateDigest,
+    mutationDigest,
+    postStateDigest,
+    auditEventDigest: computeCanonicalEventDigest(body),
+    stateWrite: { phase: next.phase, at },
+    status: 'state_committed',
+  };
+  return { ...next, pendingAuditOperations: [...next.pendingAuditOperations, operation] };
 }

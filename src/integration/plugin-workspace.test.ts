@@ -36,6 +36,7 @@ vi.mock('../adapters/persistence.js', async (importOriginal) => {
 import { PluginWorkspaceImpl, type WorkspaceDeps } from './plugin-workspace.js';
 import type { MutableChainState } from './plugin-workspace.js';
 import { recordAssuranceWithAudit, type AssuranceAuditDeps } from './review/shared-helpers.js';
+import { makeState } from '../fixtures.js';
 
 function fakeDeps(overrides?: Partial<WorkspaceDeps>): WorkspaceDeps {
   return { auditWorktree: undefined, ...overrides };
@@ -269,11 +270,7 @@ describe('recordAssuranceWithAudit', () => {
 
   it('CALL-SITE: blockReviewOutcome produces AUDIT_PERSISTENCE_FAILED when audit write fails', async () => {
     // Setup mocks: state reads work, lock runs callback, audit throws
-    const mockState = {
-      reviewAssurance: { obligations: [] },
-      phase: 'PLAN',
-      policySnapshot: { mode: 'regulated', effectiveGateBehavior: 'human_gated' },
-    };
+    const mockState = makeState('PLAN');
     mockReadState.mockResolvedValue(mockState);
     mockWithSessionWriteLock.mockImplementation(async (_dir: string, fn: () => Promise<void>) =>
       fn(),

@@ -11,7 +11,7 @@
  * @version v1
  */
 
-import { readState, writeStateAlreadyLocked } from '../adapters/persistence.js';
+import { readState } from '../adapters/persistence.js';
 import { withSessionWriteLock } from '../adapters/persistence-lock.js';
 import { appendAuditEvent, readAuditTrail } from '../adapters/persistence-audit.js';
 import {
@@ -31,6 +31,7 @@ import { createSessionState as createEnforcementState } from './review/enforceme
 import type { SessionEnforcementState } from './review/enforcement/types.js';
 import type { ReviewSessionContext } from './review/pipeline-types.js';
 import { recordAssuranceWithAudit } from './review/shared-helpers.js';
+import { writeStateWithAuditOperationsAlreadyLocked } from './tools/audit-outbox.js';
 
 /** Mutable per-session chain state. */
 export type MutableChainState = {
@@ -195,7 +196,7 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
       if (!current) return;
       const now = new Date().toISOString();
       const next = update(current, now);
-      await writeStateAlreadyLocked(sessDir, next);
+      await writeStateWithAuditOperationsAlreadyLocked(sessDir, next);
     });
   }
 

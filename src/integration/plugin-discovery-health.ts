@@ -15,7 +15,7 @@
 import { existsSync } from 'node:fs';
 
 import type { SessionState, DiscoveryHealthGate } from '../state/schema.js';
-import { writeState, readState } from '../adapters/persistence.js';
+import { readState } from '../adapters/persistence.js';
 import { strictBlockedOutput, buildEnforcementError } from './plugin-helpers.js';
 import {
   loadDiscoveryHealthContext,
@@ -24,6 +24,7 @@ import {
 } from '../discovery/discovery-health.js';
 import { isDiscoveryHealthAllowed, type DiscoveryHealthDecision } from './discovery-health-gate.js';
 import { auditDiscoveryHealthGateTransition } from './discovery-health-audit.js';
+import { writeStateWithAuditOperations } from './tools/audit-outbox.js';
 
 export interface DiscoveryHealthEnforcementDeps {
   getSessionDir(sessionId: string): string | null;
@@ -64,7 +65,7 @@ async function persistDiscoveryHealthBlock(
     lastDriftAssessment: decision.driftStatus ?? state.discoveryHealthGate?.lastDriftAssessment,
   };
   const nextState: SessionState = { ...state, discoveryHealthGate: blockedGate };
-  await writeState(sessDir, nextState);
+  await writeStateWithAuditOperations(sessDir, nextState);
   // Persist-then-audit, via the single gate-transition audit authority.
   await auditDiscoveryHealthGateTransition(sessDir, state, state.discoveryHealthGate, blockedGate);
 }

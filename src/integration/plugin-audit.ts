@@ -21,6 +21,7 @@ import {
   buildErrorBody,
   buildLifecycleBody,
   buildDecisionBody,
+  buildEnforcementDeniedBody,
   finalizeWithTimestampEvidence,
   summarizeArgs,
   type EventBody,
@@ -45,6 +46,52 @@ const LIFECYCLE_TOOLS: Record<string, string> = {
   flowguard_hydrate: 'session_created',
   flowguard_abort_session: 'session_aborted',
 };
+
+/**
+ * Persist a synchronous host-tool denial before rethrowing it to OpenCode.
+ * Audit failures are diagnostic-only here: the original denial must never be
+ * weakened into an allow because recording its evidence failed.
+ */
+export async function auditEnforcementDenied(input: {
+  deps: AuditDeps;
+  sessionId: string;
+  tool: string;
+  reasonCode: string;
+  hostCallId: string;
+  traceId: string;
+}): Promise<void> {
+  try {
+    const resolved = await resolveAuditContext(input.deps, input.tool, {}, input.sessionId);
+    if (!resolved) return;
+    const { ctx, policy } = resolved;
+    const tracker = createStrictTimestampTracker(ctx.timestampAssurance);
+    const body = buildEnforcementDeniedBody(
+      input.sessionId,
+      ctx.phase as Phase,
+      {
+        tool: input.tool,
+        reasonCode: input.reasonCode,
+        hostCallId: input.hostCallId,
+        traceId: input.traceId,
+        policyMode: policy.mode,
+        enforcementLevel: 'synchronous',
+      },
+      ctx.now,
+      ctx.prevHash,
+    );
+    await emitAuditBodyWithEvidence({
+      deps: input.deps,
+      ctx,
+      sessionId: input.sessionId,
+      body,
+      eventKind: 'enforcement_denied',
+      localTimestamp: ctx.now,
+      timestampTracker: tracker,
+    });
+  } catch (err) {
+    input.deps.logError('Failed to audit denied host tool', err);
+  }
+}
 
 interface DecisionReceiptParams {
   deps: AuditDeps;
@@ -334,6 +381,7 @@ async function emitToolCallAudit(input: {
       tool: toolName,
       argsSummary: summarizeArgs((input.input as Record<string, unknown>) ?? {}),
       success: ctx.success,
+      errorCode: ctx.errorCode,
       errorMessage: ctx.errorMessage,
       transitionCount:
         state?.pendingAuditOperations.filter((operation) => operation.status !== 'reconciled')
@@ -404,7 +452,7 @@ async function emitToolErrorAudit(input: {
   const body = buildErrorBody(
     sessionId,
     {
-      code: 'TOOL_ERROR',
+      code: ctx.errorCode ?? 'TOOL_ERROR',
       message: ctx.errorMessage,
       recoveryHint: 'Check tool output for details',
       errorPhase: ctx.phase as Phase,
