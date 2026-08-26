@@ -10,7 +10,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { REVIEWER_AGENT } from '../templates/mandates.js';
 
-const EXEC_TIMEOUT_MS = 20_000;
+// Cold OpenCode startup on shared CI runners can exceed the interactive budget.
+const EXEC_TIMEOUT_MS = 45_000;
 
 let tmpRoot: string;
 
