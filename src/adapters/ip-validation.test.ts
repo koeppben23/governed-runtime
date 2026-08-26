@@ -261,6 +261,18 @@ describe('isPrivateIPv6', () => {
     expect(isPrivateIPv6('ff02::1')).toBe(true);
   });
 
+  it('detects private IPv4-compatible and IPv4-mapped forms', () => {
+    expect(isPrivateIPv6('::127.0.0.1')).toBe(true);
+    expect(isPrivateIPv6('0:0:0:0:0:0:7f00:1')).toBe(true);
+    expect(isPrivateIPv6('::ffff:127.0.0.1')).toBe(true);
+    expect(isPrivateIPv6('0:0:0:0:0:ffff:7f00:1')).toBe(true);
+  });
+
+  it('allows public embedded IPv4 addresses', () => {
+    expect(isPrivateIPv6('::8.8.8.8')).toBe(false);
+    expect(isPrivateIPv6('::ffff:8.8.8.8')).toBe(false);
+  });
+
   it('allows global unicast', () => {
     expect(isPrivateIPv6('2001:db8::1')).toBe(false);
     expect(isPrivateIPv6('2a00:1450::1')).toBe(false);

@@ -90,6 +90,7 @@ export interface ToolContext {
   agent: string;
   directory: string;
   worktree: string;
+  workspaceFingerprint?: string;
   abort: AbortSignal | undefined;
   metadata(input: { title?: string; metadata?: Record<string, unknown> }): void;
 }
@@ -335,6 +336,7 @@ export async function resolveWorkspacePaths(context: {
   sessionID: string;
   worktree: string;
   directory: string;
+  workspaceFingerprint?: string;
 }): Promise<{
   worktree: string;
   fingerprint: string;
@@ -342,10 +344,11 @@ export async function resolveWorkspacePaths(context: {
   wsDir: string;
 }> {
   const worktree = getWorktree(context);
-  const fpResult = await computeFingerprint(worktree);
-  const sessDir = resolveSessionDir(fpResult.fingerprint, context.sessionID);
-  const wsDir = resolveWorkspaceDir(fpResult.fingerprint);
-  return { worktree, fingerprint: fpResult.fingerprint, sessDir, wsDir };
+  const fingerprint =
+    context.workspaceFingerprint ?? (await computeFingerprint(worktree)).fingerprint;
+  const sessDir = resolveSessionDir(fingerprint, context.sessionID);
+  const wsDir = resolveWorkspaceDir(fingerprint);
+  return { worktree, fingerprint, sessDir, wsDir };
 }
 
 // ─── State Helpers ────────────────────────────────────────────────────────────

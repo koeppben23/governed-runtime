@@ -17,16 +17,28 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { McpSessionResolutionError, resolveSessionContext } from './session-resolver.js';
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { McpSessionBinder, McpSessionResolutionError } from './session-resolver.js';
 import { convertArgsToInputSchema } from './schema-converter.js';
 import { installStdoutGuard } from './stdout-guard.js';
 import { registerAllTools, isGovernanceDenialCode } from './tool-adapter.js';
 import { McpExecutionLimiter, readMcpExecutionLimits } from './execution-limiter.js';
 import { reportMcpFatalError } from './fatal-error.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { ToolContext, ToolDefinition } from '../integration/tools/helpers.js';
+import {
+  resolveWorkspacePaths,
+  type ToolContext,
+  type ToolDefinition,
+} from '../integration/tools/helpers.js';
 import { getAdapterLogger, getLogTraceFields } from '../logging/adapter-logger.js';
 import { z } from 'zod';
+
+const execFileAsync = promisify(execFile);
 
 // --- Schema Converter Tests ---
 
@@ -103,73 +115,199 @@ describe('Session Resolver', () => {
     delete process.env['FLOWGUARD_PROJECT_DIR'];
   });
 
-  it('HAPPY: uses FLOWGUARD_SESSION_DIR when set', () => {
-    process.env['FLOWGUARD_SESSION_DIR'] = '/custom/path';
-    const ctx = resolveSessionContext();
-    expect(ctx.directory).toContain('custom');
-  });
+  async function repository(name: string): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), `${name}-`));
+    await execFileAsync('git', ['init'], { cwd: root });
+    return root;
+  }
 
-  it('HAPPY: uses first root when provided', () => {
-    const ctx = resolveSessionContext(['/project/root', '/other']);
-    expect(ctx.directory).toContain('project');
-  });
+  function root(path: string): { uri: string } {
+    return { uri: pathToFileURL(path).href };
+  }
 
-  // #422 negative-first: no env source and no roots MUST fail closed —
-  // the prior cwd fallback was a silent guess that hid missing inputs.
-  it('BAD: throws SESSION_UNRESOLVABLE when no env and no roots', () => {
-    expect(() => resolveSessionContext()).toThrow();
+  it('HAPPY: binds a real MCP root to its canonical Git worktree', async () => {
+    const repo = await repository('flowguard-mcp-root');
     try {
-      resolveSessionContext();
-      expect.unreachable('resolver must fail closed');
-    } catch (err) {
-      expect((err as { code?: string }).code).toBe('SESSION_UNRESOLVABLE');
+      const ctx = await new McpSessionBinder('mcp-stable-session').resolve([root(repo)]);
+      expect(ctx).toMatchObject({
+        sessionId: 'mcp-stable-session',
+        worktree: await realpath(repo),
+      });
+    } finally {
+      await rm(repo, { recursive: true, force: true });
     }
   });
 
-  // #422 negative-first: an empty roots array is "no roots" — still fail closed.
-  it('CORNER: empty roots array throws SESSION_UNRESOLVABLE', () => {
-    expect(() => resolveSessionContext([])).toThrow();
+  it('HAPPY: permits repeated equivalent root sets after binding', async () => {
+    const first = await repository('flowguard-mcp-first');
+    const second = await repository('flowguard-mcp-second');
+    process.env['FLOWGUARD_PROJECT_DIR'] = second;
     try {
-      resolveSessionContext([]);
-      expect.unreachable('resolver must fail closed');
-    } catch (err) {
-      expect((err as { code?: string }).code).toBe('SESSION_UNRESOLVABLE');
+      const binder = new McpSessionBinder('mcp-stable-session');
+      await binder.resolve([root(first), root(second), root(first)]);
+      const ctx = await binder.resolve([root(second), root(first)]);
+      expect(ctx.worktree).toBe(await realpath(second));
+    } finally {
+      await Promise.all([
+        rm(first, { recursive: true, force: true }),
+        rm(second, { recursive: true, force: true }),
+      ]);
     }
   });
 
-  // #422: wire the previously-dead FLOWGUARD_PROJECT_DIR contract as a real
-  // resolution source (host-advertised project dir, e.g. CLAUDE_PROJECT_DIR).
-  it('HAPPY: uses FLOWGUARD_PROJECT_DIR when set and no roots', () => {
-    process.env['FLOWGUARD_PROJECT_DIR'] = '/proj/dir';
-    const ctx = resolveSessionContext();
-    expect(ctx.directory).toContain('proj');
+  it('binds workspace paths to the initial fingerprint when the Git remote changes', async () => {
+    const repo = await repository('flowguard-mcp-fingerprint');
+    try {
+      await execFileAsync('git', ['remote', 'add', 'origin', 'https://example.com/org/first.git'], {
+        cwd: repo,
+      });
+      const binder = new McpSessionBinder('mcp-fingerprint-session');
+      const first = await binder.resolve([root(repo)]);
+      await execFileAsync(
+        'git',
+        ['remote', 'set-url', 'origin', 'https://example.com/org/second.git'],
+        {
+          cwd: repo,
+        },
+      );
+      const second = await binder.resolve([root(repo)]);
+
+      expect(second.workspaceFingerprint).toBe(first.workspaceFingerprint);
+      await expect(
+        resolveWorkspacePaths({ ...second, sessionID: second.sessionId }),
+      ).resolves.toMatchObject({
+        fingerprint: first.workspaceFingerprint,
+      });
+    } finally {
+      await rm(repo, { recursive: true, force: true });
+    }
   });
 
-  it('CORNER: FLOWGUARD_PROJECT_DIR wins over roots[0]', () => {
-    process.env['FLOWGUARD_PROJECT_DIR'] = '/proj/dir';
-    const ctx = resolveSessionContext(['/roots/path']);
-    expect(ctx.directory).toContain('proj');
-    expect(ctx.directory).not.toContain('roots');
+  it('BAD: rejects no roots, filesystem paths, and non-existent roots', async () => {
+    const binder = new McpSessionBinder();
+    await expect(binder.resolve([])).rejects.toMatchObject({ code: 'SESSION_UNRESOLVABLE' });
+    await expect(binder.resolve([{ uri: 'https://example.com' }])).rejects.toMatchObject({
+      code: 'SESSION_UNRESOLVABLE',
+    });
+    await expect(
+      binder.resolve([{ uri: 'file:///definitely-not-a-flowguard-root' }]),
+    ).rejects.toMatchObject({
+      code: 'SESSION_UNRESOLVABLE',
+    });
   });
 
-  it('HAPPY: FLOWGUARD_SESSION_DIR takes priority over roots', () => {
-    process.env['FLOWGUARD_SESSION_DIR'] = '/env/path';
-    const ctx = resolveSessionContext(['/roots/path']);
-    expect(ctx.directory).toContain('env');
+  it('BAD: reports invalid schemes and file roots distinctly', async () => {
+    const file = await mkdtemp(join(tmpdir(), 'flowguard-mcp-file-'));
+    const rootFile = join(file, 'root-file');
+    await writeFile(rootFile, 'not a directory');
+    try {
+      await expect(
+        new McpSessionBinder().resolve([{ uri: 'https://example.com' }]),
+      ).rejects.toThrow('MCP root must use file: URI scheme');
+      await expect(new McpSessionBinder().resolve([root(rootFile)])).rejects.toThrow(
+        'MCP root is not a directory',
+      );
+    } finally {
+      await rm(file, { recursive: true, force: true });
+    }
   });
 
-  it('CORNER: FLOWGUARD_SESSION_DIR wins over FLOWGUARD_PROJECT_DIR', () => {
-    process.env['FLOWGUARD_SESSION_DIR'] = '/session/path';
-    process.env['FLOWGUARD_PROJECT_DIR'] = '/proj/dir';
-    const ctx = resolveSessionContext();
-    expect(ctx.directory).toContain('session');
-    expect(ctx.directory).not.toContain('proj');
+  it('BAD: rejects a repository subdirectory root instead of widening it to the Git worktree', async () => {
+    const repo = await repository('flowguard-mcp-root');
+    const subdirectory = join(repo, 'allowed', 'subdir');
+    await mkdir(subdirectory, { recursive: true });
+    try {
+      await expect(new McpSessionBinder().resolve([root(subdirectory)])).rejects.toMatchObject({
+        code: 'SESSION_UNRESOLVABLE',
+      });
+    } finally {
+      await rm(repo, { recursive: true, force: true });
+    }
   });
 
-  it('HAPPY: preserves provided stable MCP session id', () => {
-    const ctx = resolveSessionContext(['/project/root'], 'mcp-stable-session');
+  it('BAD: rejects ambiguous multi-root authority without a matching project hint', async () => {
+    const first = await repository('flowguard-mcp-first');
+    const second = await repository('flowguard-mcp-second');
+    try {
+      await expect(
+        new McpSessionBinder().resolve([root(first), root(second)]),
+      ).rejects.toMatchObject({
+        code: 'SESSION_UNRESOLVABLE',
+      });
+    } finally {
+      await Promise.all([
+        rm(first, { recursive: true, force: true }),
+        rm(second, { recursive: true, force: true }),
+      ]);
+    }
+  });
 
-    expect(ctx.sessionId).toBe('mcp-stable-session');
+  it('HAPPY: project hint disambiguates only an authorized worktree', async () => {
+    const first = await repository('flowguard-mcp-first');
+    const second = await repository('flowguard-mcp-second');
+    process.env['FLOWGUARD_PROJECT_DIR'] = second;
+    try {
+      const ctx = await new McpSessionBinder().resolve([root(first), root(second)]);
+      expect(ctx.worktree).toBe(await realpath(second));
+    } finally {
+      await Promise.all([
+        rm(first, { recursive: true, force: true }),
+        rm(second, { recursive: true, force: true }),
+      ]);
+    }
+  });
+
+  it('BAD: project hint must equal, not merely belong to, an authorized root', async () => {
+    const first = await repository('flowguard-mcp-first');
+    const second = await repository('flowguard-mcp-second');
+    const nestedHint = join(second, 'nested');
+    await mkdir(nestedHint);
+    process.env['FLOWGUARD_PROJECT_DIR'] = nestedHint;
+    try {
+      await expect(
+        new McpSessionBinder().resolve([root(first), root(second)]),
+      ).rejects.toMatchObject({ code: 'SESSION_UNRESOLVABLE' });
+    } finally {
+      await Promise.all([
+        rm(first, { recursive: true, force: true }),
+        rm(second, { recursive: true, force: true }),
+      ]);
+    }
+  });
+
+  it('BAD: rejects root changes and symlink escapes after transport binding', async () => {
+    const first = await repository('flowguard-mcp-first');
+    const second = await repository('flowguard-mcp-second');
+    const link = join(first, 'linked-root');
+    await symlink(second, link);
+    try {
+      const binder = new McpSessionBinder();
+      await binder.resolve([root(first)]);
+      await expect(binder.resolve([root(link)])).rejects.toMatchObject({
+        code: 'SESSION_UNRESOLVABLE',
+      });
+    } finally {
+      await Promise.all([
+        rm(first, { recursive: true, force: true }),
+        rm(second, { recursive: true, force: true }),
+      ]);
+    }
+  });
+
+  it('BAD: session hint cannot select a repository', async () => {
+    const repo = await repository('flowguard-mcp-root');
+    const foreign = await mkdtemp(join(tmpdir(), 'flowguard-mcp-session-'));
+    process.env['FLOWGUARD_SESSION_DIR'] = foreign;
+    try {
+      await expect(new McpSessionBinder().resolve([root(repo)])).rejects.toMatchObject({
+        code: 'SESSION_UNRESOLVABLE',
+      });
+    } finally {
+      await Promise.all([
+        rm(repo, { recursive: true, force: true }),
+        rm(foreign, { recursive: true, force: true }),
+      ]);
+    }
   });
 });
 
@@ -243,6 +381,35 @@ describe('Tool Adapter Session Identity', () => {
       'mcp-stable-session',
     ]);
     expect(contexts[0]?.messageID).not.toBe(contexts[1]?.messageID);
+  });
+
+  it('maps structured tool output to a successful MCP text response', async () => {
+    let handler:
+      ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown) | null = null;
+    const fakeServer = {
+      registerTool: (_name: string, _config: unknown, registered: typeof handler) => {
+        handler = registered;
+      },
+    } as unknown as McpServer;
+    const tool: ToolDefinition = {
+      description: 'test tool',
+      args: {},
+      async execute() {
+        return { output: 'structured result', metadata: { ignoredByMcp: true } };
+      },
+    };
+
+    registerAllTools(fakeServer, { test: tool }, () => ({
+      sessionId: 'mcp-session',
+      directory: '/tmp/project',
+      worktree: '/tmp/project',
+    }));
+
+    const result = (await handler!({}, {})) as { isError: boolean; content: { text: string }[] };
+    expect(result).toEqual({
+      isError: false,
+      content: [{ type: 'text', text: 'structured result' }],
+    });
   });
 
   it('HAPPY: MCP tool execution provides adapter logger and log context', async () => {
@@ -341,7 +508,7 @@ describe('Tool Adapter Session Identity', () => {
 
     try {
       registerAllTools(fakeServer, { test: tool }, () => {
-        throw new McpSessionResolutionError();
+        throw new McpSessionResolutionError('test resolution failure');
       });
 
       const result = (await handler!({}, {})) as { isError: boolean; content: { text: string }[] };
@@ -492,6 +659,35 @@ describe('Tool Adapter Session Identity', () => {
     expect(calls).toBe(1);
     release();
     await first;
+  });
+
+  it('releases the concurrency slot after a successful execution', async () => {
+    let handler:
+      ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown) | null = null;
+    let calls = 0;
+    const fakeServer = {
+      registerTool: (_name: string, _config: unknown, registered: typeof handler) => {
+        handler = registered;
+      },
+    } as unknown as McpServer;
+    const tool: ToolDefinition = {
+      description: 'test tool',
+      args: {},
+      async execute() {
+        calls += 1;
+        return 'ok';
+      },
+    };
+    registerAllTools(
+      fakeServer,
+      { test: tool },
+      () => ({ sessionId: 'mcp-session', directory: '/tmp/project', worktree: '/tmp/project' }),
+      new McpExecutionLimiter({ timeoutMs: 1_000, maxConcurrent: 1, maxPerSecond: 10 }),
+    );
+
+    await handler!({}, {});
+    await handler!({}, {});
+    expect(calls).toBe(2);
   });
 
   it('returns a timeout while keeping a live executor in its concurrency slot', async () => {

@@ -17,6 +17,10 @@ vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
       mcpServerCalls.values.push({ serverInfo, options });
     }
     connect = vi.fn().mockResolvedValue(undefined);
+    server = {
+      listRoots: vi.fn(),
+      setNotificationHandler: vi.fn(),
+    };
   },
 }));
 

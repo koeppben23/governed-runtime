@@ -263,7 +263,7 @@ async function runExecutionWithDeadline(
 export function registerAllTools(
   server: McpServer,
   tools: FlowGuardToolRegistry,
-  resolveContext: () => McpSessionContext,
+  resolveContext: () => McpSessionContext | Promise<McpSessionContext>,
   limiter = new McpExecutionLimiter({ timeoutMs: 30_000, maxConcurrent: 10, maxPerSecond: 50 }),
 ): void {
   for (const [name, toolDef] of Object.entries(tools)) {
@@ -287,7 +287,7 @@ export function registerAllTools(
             // Resolve session context inside the denial-mapping path. A
             // fail-closed resolution (SESSION_UNRESOLVABLE) must surface as a
             // governance denial, never escape the handler uncaught.
-            const sessionCtx = resolveContext();
+            const sessionCtx = await resolveContext();
             sessionId = sessionCtx.sessionId;
 
             return await runWithLogContextAsync({ traceId, sessionId }, async () => {
@@ -299,6 +299,7 @@ export function registerAllTools(
                   agent: 'mcp-client',
                   directory: sessionCtx.directory,
                   worktree: sessionCtx.worktree,
+                  workspaceFingerprint: sessionCtx.workspaceFingerprint,
                   abort: extra.signal,
                   metadata: () => {
                     /* MCP: metadata is embedded in text output */

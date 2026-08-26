@@ -1,102 +1,199 @@
 /**
  * @module mcp-server/session-resolver
- * @description Resolves the FlowGuard session context (working directory, worktree,
- * fingerprint, session directory) for MCP tool calls.
- *
- * Resolution order (fail-closed — throws if none resolves):
- * 1. FLOWGUARD_SESSION_DIR env var (explicit session override)
- * 2. FLOWGUARD_PROJECT_DIR env var (host-advertised project dir, e.g. Claude
- *    Code's CLAUDE_PROJECT_DIR)
- * 3. MCP roots (host-advertised working directories via roots/list)
- * 4. No source → throw SESSION_UNRESOLVABLE
- *
- * There is deliberately NO process.cwd() fallback: a guessed working directory
- * is not a host-advertised input and would silently bind the session to the
- * wrong project. When no explicit source is present, resolution MUST fail
- * closed so the boundary can surface a governance denial (non-interactive
- * runtime rule).
- *
- * This module is the single authority for MCP project-/session-dir resolution.
- * It delegates to existing adapters/persistence infrastructure for fingerprint
- * computation and session directory resolution.
- *
- * @see https://github.com/koeppben23/governed-runtime/issues/243
- * @see https://github.com/koeppben23/governed-runtime/issues/422
+ * @description Binds each MCP transport to roots supplied by the MCP client.
  */
 
+import { realpath, stat } from 'node:fs/promises';
 import * as path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
+import { sessionDir } from '../adapters/workspace/init.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { hashTextShort } from '../shared/hashing.js';
 
-/** Env var: explicit session directory override (testing, CI, session-bound calls). */
+const execFileAsync = promisify(execFile);
 const ENV_SESSION_DIR = 'FLOWGUARD_SESSION_DIR';
-/** Env var: host-advertised project directory (e.g. Claude Code's CLAUDE_PROJECT_DIR). */
 const ENV_PROJECT_DIR = 'FLOWGUARD_PROJECT_DIR';
-/** Governance denial code emitted when no session source can be resolved. */
 export const SESSION_UNRESOLVABLE_CODE = 'SESSION_UNRESOLVABLE';
 
-/** Trusted fail-closed error produced only by this resolver boundary. */
 export class McpSessionResolutionError extends Error {
   readonly code = SESSION_UNRESOLVABLE_CODE;
 
-  constructor() {
-    super(
-      `[${SESSION_UNRESOLVABLE_CODE}] No session source: set ${ENV_SESSION_DIR} or ${ENV_PROJECT_DIR}, or advertise MCP roots.`,
-    );
+  constructor(reason: string) {
+    super(`[${SESSION_UNRESOLVABLE_CODE}] ${reason}`);
     this.name = 'McpSessionResolutionError';
   }
 }
 
-/**
- * Resolved session context for an MCP tool call.
- * Contains all paths needed by ToolContext.
- */
+export interface McpRoot {
+  readonly uri: string;
+}
+
 export interface McpSessionContext {
-  /** Stable FlowGuard session identifier for this MCP server/transport session. */
   readonly sessionId: string;
-  /** The project working directory (worktree root). */
   readonly directory: string;
-  /** The worktree path (same as directory for most setups). */
   readonly worktree: string;
+  readonly workspaceFingerprint?: string;
 }
 
-/** Build a session context that binds both directory and worktree to one dir. */
-function contextFor(sessionId: string, dir: string): McpSessionContext {
-  const resolved = path.resolve(dir);
-  return { sessionId, directory: resolved, worktree: resolved };
+interface BoundSession {
+  readonly canonicalRootSetDigest: string;
+  readonly canonicalWorktree: string;
+  readonly workspaceFingerprint: string;
+}
+
+interface ResolvedRoots {
+  readonly digest: string;
+  readonly roots: readonly string[];
 }
 
 /**
- * Resolve session context from available sources.
- *
- * @param roots - MCP roots advertised by the host (from roots/list capability)
- * @param sessionId - Stable session identifier for this MCP transport session
- * @returns Resolved session context
- * @throws Error (with `code === 'SESSION_UNRESOLVABLE'`) when no env source and
- *   no roots are available — resolution fails closed rather than guessing cwd.
+ * Per-transport authority binder. Roots remain authoritative on every call;
+ * environment values can only disambiguate a root-backed worktree or identify
+ * a session below an already bound workspace.
  */
-export function resolveSessionContext(
-  roots?: readonly string[],
-  sessionId = `mcp-${randomUUID()}`,
-): McpSessionContext {
-  // Priority 1: Explicit session-dir override.
-  const sessionDir = process.env[ENV_SESSION_DIR];
-  if (sessionDir && sessionDir.length > 0) {
-    return contextFor(sessionId, sessionDir);
+export class McpSessionBinder {
+  private bound: BoundSession | undefined;
+
+  constructor(private readonly sessionId = `mcp-${randomUUID()}`) {}
+
+  async resolve(roots: readonly McpRoot[]): Promise<McpSessionContext> {
+    const resolved = await resolveRoots(roots);
+    const worktree = await selectWorktree(resolved.roots);
+    if (!this.bound) {
+      // The fingerprint selects the session namespace; it is not root authority.
+      // Root and worktree revalidation remains mandatory on every invocation.
+      const fingerprint = (await computeFingerprint(worktree)).fingerprint;
+      await validateSessionHint(fingerprint);
+      this.bound = {
+        canonicalRootSetDigest: resolved.digest,
+        canonicalWorktree: worktree,
+        workspaceFingerprint: fingerprint,
+      };
+    } else if (
+      this.bound.canonicalRootSetDigest !== resolved.digest ||
+      this.bound.canonicalWorktree !== worktree
+    ) {
+      throw new McpSessionResolutionError('MCP roots or bound workspace changed during transport');
+    }
+
+    return {
+      sessionId: this.sessionId,
+      directory: worktree,
+      worktree,
+      workspaceFingerprint: this.bound.workspaceFingerprint,
+    };
+  }
+}
+
+async function resolveRoots(roots: readonly McpRoot[]): Promise<ResolvedRoots> {
+  if (roots.length === 0) throw new McpSessionResolutionError('MCP client advertised no roots');
+
+  const canonicalRoots = new Set<string>();
+  for (const root of roots) {
+    const rootPath = fileRootPath(root.uri);
+    const canonicalRoot = await canonicalDirectory(rootPath, 'MCP root');
+    const worktree = await gitWorktree(canonicalRoot);
+    if (canonicalRoot !== worktree) {
+      throw new McpSessionResolutionError(
+        `MCP root must be the Git worktree root, not a repository subdirectory: ${canonicalRoot}`,
+      );
+    }
+    canonicalRoots.add(canonicalRoot);
   }
 
-  // Priority 2: Host-advertised project dir (wires the FLOWGUARD_PROJECT_DIR
-  // contract emitted by the Claude Code MCP template). Host-advertised, not a
-  // cwd guess.
-  const projectDir = process.env[ENV_PROJECT_DIR];
-  if (projectDir && projectDir.length > 0) {
-    return contextFor(sessionId, projectDir);
-  }
+  const sortedRoots = [...canonicalRoots].sort();
+  return {
+    roots: sortedRoots,
+    digest: hashTextShort(canonicalJsonStringify(sortedRoots), 64),
+  };
+}
 
-  // Priority 3: MCP roots (first root is the primary working directory).
-  if (roots && roots.length > 0) {
-    return contextFor(sessionId, roots[0]!);
+function fileRootPath(uri: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(uri);
+  } catch {
+    throw new McpSessionResolutionError(`MCP root is not a valid URI: ${uri}`);
   }
+  if (parsed.protocol !== 'file:') {
+    throw new McpSessionResolutionError(`MCP root must use file: URI scheme: ${uri}`);
+  }
+  try {
+    return fileURLToPath(parsed);
+  } catch {
+    throw new McpSessionResolutionError(`MCP root cannot be converted to a local path: ${uri}`);
+  }
+}
 
-  // Priority 4: Fail closed — no host-advertised working directory available.
-  throw new McpSessionResolutionError();
+async function canonicalDirectory(candidate: string, label: string): Promise<string> {
+  try {
+    const canonical = await realpath(candidate);
+    if (!(await stat(canonical)).isDirectory()) {
+      throw new McpSessionResolutionError(`${label} is not a directory: ${candidate}`);
+    }
+    return canonical;
+  } catch (err) {
+    if (err instanceof McpSessionResolutionError) throw err;
+    throw new McpSessionResolutionError(
+      `${label} does not exist or cannot be resolved: ${candidate}`,
+    );
+  }
+}
+
+async function gitWorktree(directory: string): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync('git', ['rev-parse', '--show-toplevel'], {
+      cwd: directory,
+    });
+    return canonicalDirectory(stdout.trim(), 'Git worktree');
+  } catch {
+    throw new McpSessionResolutionError(
+      `MCP root is not inside a resolvable Git worktree: ${directory}`,
+    );
+  }
+}
+
+async function selectWorktree(roots: readonly string[]): Promise<string> {
+  if (roots.length === 1) return roots[0]!;
+
+  const hint = process.env[ENV_PROJECT_DIR];
+  if (!hint) {
+    throw new McpSessionResolutionError(
+      'MCP roots authorize multiple worktrees without a project hint',
+    );
+  }
+  const hintedPath = await canonicalDirectory(hint, ENV_PROJECT_DIR);
+  if (!roots.includes(hintedPath)) {
+    throw new McpSessionResolutionError(
+      `${ENV_PROJECT_DIR} does not select an MCP-authorized root`,
+    );
+  }
+  return hintedPath;
+}
+
+async function validateSessionHint(fingerprint: string): Promise<void> {
+  const hint = process.env[ENV_SESSION_DIR];
+  if (!hint) return;
+  const canonicalHint = await canonicalDirectory(hint, ENV_SESSION_DIR);
+  const canonicalSessionsDir = await canonicalDirectory(
+    path.join(sessionDir(fingerprint, 'mcp-placeholder'), '..'),
+    'Bound workspace session directory',
+  );
+  if (!isContainedBy(canonicalSessionsDir, canonicalHint)) {
+    throw new McpSessionResolutionError(
+      `${ENV_SESSION_DIR} is outside the bound workspace session directory`,
+    );
+  }
+}
+
+function isContainedBy(parent: string, candidate: string): boolean {
+  const relative = path.relative(parent, candidate);
+  return (
+    relative === '' ||
+    (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))
+  );
 }

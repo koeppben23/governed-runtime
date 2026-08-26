@@ -19,8 +19,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
 import { registerAllTools, type FlowGuardToolRegistry } from './tool-adapter.js';
-import { resolveSessionContext } from './session-resolver.js';
+import { McpSessionBinder, type McpSessionContext } from './session-resolver.js';
 import { installStdoutGuard } from './stdout-guard.js';
 import { PACKAGE_VERSION } from '../shared/package-version.js';
 import { mcpLogger } from './mcp-logger.js';
@@ -71,6 +72,10 @@ export const FLOWGUARD_TOOLS: FlowGuardToolRegistry = {
   observe_repository,
 };
 
+const rootsListChangedNotification = z.object({
+  method: z.literal('notifications/roots/list_changed'),
+});
+
 // --- Server Factory ---
 
 /**
@@ -93,18 +98,24 @@ export function createMcpServer(): McpServer {
     },
   );
   const limiter = new McpExecutionLimiter(readMcpExecutionLimits());
+  const sessionBinder = new McpSessionBinder(sessionId);
+  let cachedContext: McpSessionContext | undefined;
+
+  // MCP clients notify root changes, which invalidates the authority cache.
+  server.server.setNotificationHandler(rootsListChangedNotification, () => {
+    cachedContext = undefined;
+  });
 
   // Register FlowGuard tools
   registerAllTools(
     server,
     FLOWGUARD_TOOLS,
-    () => {
-      // Resolve session context fresh for each tool call from host-advertised
-      // sources (FLOWGUARD_SESSION_DIR / FLOWGUARD_PROJECT_DIR env, or MCP roots).
-      // MCP roots/list is not wired here yet, so roots are passed as undefined and
-      // the env sources carry resolution. When no source is present the resolver
-      // fails closed (SESSION_UNRESOLVABLE) — never a cwd guess.
-      return resolveSessionContext(undefined, sessionId);
+    async () => {
+      if (!cachedContext) {
+        const { roots } = await server.server.listRoots();
+        cachedContext = await sessionBinder.resolve(roots);
+      }
+      return cachedContext;
     },
     limiter,
   );

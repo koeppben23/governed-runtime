@@ -244,16 +244,16 @@ FlowGuard is filesystem-first and offline-capable by default. Network-dependent 
 
 #### `/review url=...`
 
-| Field                                     | Contract                                                                                                                                                                        |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Signed / integrity-covered                | Fetched content is review input only after HTTPS URL and DNS target validation. Review completion still requires validated ReviewFindings.                                      |
-| Mutable / diagnostic                      | Remote content, DNS results, HTTP response body, and reviewer summaries are mutable external input.                                                                             |
-| Writer / authority                        | URL validation/fetch boundary lives in review input handling and network adapter code; review acceptance remains under review validation/assurance authorities.                 |
-| Attacker model                            | SSRF attempt, private/reserved target, DNS failure, DNS rebinding, malicious remote content, or redirect abuse.                                                                 |
-| Fail-closed expectation                   | Non-HTTPS, localhost/private/reserved DNS targets, empty/malformed DNS answers, mixed public/private answers, and redirects must be blocked before fetch.                       |
-| Required audit events                     | Standalone review tool call and resulting review report/evidence events where produced.                                                                                         |
-| Required operational logs                 | `warn`/`error` for URL rejection/fetch failure with fields such as `reasonCode`, `host`, and sanitized `url`; do not log fetched secrets. Operational logs are diagnostic only. |
-| Known gaps / residual risk / NOT_VERIFIED | DNS preflight does not cryptographically bind the validated address to the later HTTPS connection. Complete SSRF containment requires external egress controls.                 |
+| Field                                     | Contract                                                                                                                                                                                  |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Signed / integrity-covered                | Fetched content is review input only after HTTPS URL and DNS target validation. Review completion still requires validated ReviewFindings.                                                |
+| Mutable / diagnostic                      | Remote content, DNS results, HTTP response body, and reviewer summaries are mutable external input.                                                                                       |
+| Writer / authority                        | URL validation/fetch boundary lives in review input handling and network adapter code; review acceptance remains under review validation/assurance authorities.                           |
+| Attacker model                            | SSRF attempt, private/reserved target, DNS failure, DNS rebinding, malicious remote content, or redirect abuse.                                                                           |
+| Fail-closed expectation                   | Non-HTTPS, localhost/private/reserved DNS targets, empty/malformed DNS answers, mixed public/private answers, and redirects must be blocked before fetch.                                 |
+| Required audit events                     | Standalone review tool call and resulting review report/evidence events where produced.                                                                                                   |
+| Required operational logs                 | `warn`/`error` for URL rejection/fetch failure with fields such as `reasonCode`, `host`, and sanitized `url`; do not log fetched secrets. Operational logs are diagnostic only.           |
+| Known gaps / residual risk / NOT_VERIFIED | The HTTPS connection is pinned to one validated A/AAAA answer while retaining the original hostname for SNI and certificate validation. External egress controls remain defense in depth. |
 
 #### Remote JWKS
 

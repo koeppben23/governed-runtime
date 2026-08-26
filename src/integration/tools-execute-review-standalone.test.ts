@@ -2,6 +2,9 @@ import * as path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
+import { EventEmitter } from 'node:events';
+import { Readable } from 'node:stream';
+import { request } from 'node:https';
 import {
   createToolContext,
   createTestWorkspace,
@@ -15,6 +18,7 @@ import {
   type TestWorkspace,
   withTestEnv,
 } from './test-helpers.js';
+vi.mock('node:https', () => ({ request: vi.fn() }));
 import {
   REVIEW_MANDATE_DIGEST,
   REVIEW_CRITERIA_VERSION,
@@ -78,7 +82,6 @@ function hasMaterialFinding(
     );
   });
 }
-
 vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
   return {
@@ -88,14 +91,12 @@ vi.mock('../adapters/git', async (importOriginal) => {
     listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
   };
 });
-
 const wsOriginals = vi.hoisted(() => ({
   archiveSession:
     null as unknown as (typeof import('../adapters/workspace/index.js'))['archiveSession'],
   verifyArchive:
     null as unknown as (typeof import('../adapters/workspace/index.js'))['verifyArchive'],
 }));
-
 vi.mock('../adapters/workspace', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/workspace/index.js')>();
   wsOriginals.archiveSession = original.archiveSession;
@@ -106,7 +107,6 @@ vi.mock('../adapters/workspace', async (importOriginal) => {
     verifyArchive: vi.fn(original.verifyArchive),
   };
 });
-
 const actorOriginal = vi.hoisted(() => ({
   resolveActor: null as unknown as (typeof import('../adapters/actor.js'))['resolveActor'],
 }));
@@ -243,10 +243,22 @@ function requiredString(value: unknown, key: string): string {
 
 describe('review (standalone flow)', () => {
   beforeEach(() => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => new Response('Mock URL content for review')),
-    );
+    vi.mocked(request).mockImplementation(() => {
+      const fakeRequest = new EventEmitter() as EventEmitter & {
+        setTimeout: () => void;
+        end: () => void;
+      };
+      fakeRequest.setTimeout = () => undefined;
+      fakeRequest.end = () => {
+        const response = Object.assign(Readable.from(['Mock URL content for review']), {
+          statusCode: 200,
+          statusMessage: 'OK',
+          headers: {},
+        });
+        queueMicrotask(() => fakeRequest.emit('response', response));
+      };
+      return fakeRequest as never;
+    });
   });
 
   async function hydrateAndGetReady(): Promise<void> {
