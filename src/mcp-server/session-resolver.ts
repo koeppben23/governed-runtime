@@ -41,7 +41,6 @@ export interface McpSessionContext {
 interface BoundSession {
   readonly canonicalRootSetDigest: string;
   readonly canonicalWorktree: string;
-  readonly workspaceFingerprint: string;
 }
 
 interface ResolvedRoots {
@@ -62,19 +61,18 @@ export class McpSessionBinder {
   async resolve(roots: readonly McpRoot[]): Promise<McpSessionContext> {
     const resolved = await resolveRoots(roots);
     const worktree = await selectWorktree(resolved.roots);
-    const fingerprint = (await computeFingerprint(worktree)).fingerprint;
-
-    await validateSessionHint(fingerprint);
     if (!this.bound) {
+      // The fingerprint selects the session namespace; it is not root authority.
+      // Root and worktree revalidation remains mandatory on every invocation.
+      const fingerprint = (await computeFingerprint(worktree)).fingerprint;
+      await validateSessionHint(fingerprint);
       this.bound = {
         canonicalRootSetDigest: resolved.digest,
         canonicalWorktree: worktree,
-        workspaceFingerprint: fingerprint,
       };
     } else if (
       this.bound.canonicalRootSetDigest !== resolved.digest ||
-      this.bound.canonicalWorktree !== worktree ||
-      this.bound.workspaceFingerprint !== fingerprint
+      this.bound.canonicalWorktree !== worktree
     ) {
       throw new McpSessionResolutionError('MCP roots or bound workspace changed during transport');
     }
