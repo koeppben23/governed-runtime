@@ -9,6 +9,9 @@
  * @version v1
  */
 
+import { request } from 'node:https';
+import { createBrotliDecompress, createGunzip, createInflate } from 'node:zlib';
+import type { IncomingMessage } from 'node:http';
 import { blocked } from '../config/reasons.js';
 import type { RailBlocked } from './types.js';
 import { lookupReviewHostname, type ReviewDnsLookup } from '../adapters/dns-resolution.js';
@@ -22,6 +25,22 @@ import {
 
 /** Maximum decoded response body accepted as external review material. */
 export const MAX_REVIEW_URL_RESPONSE_BYTES = 1_048_576;
+
+export interface ResolvedReviewTarget {
+  readonly hostname: string;
+  readonly port: number;
+  readonly address: string;
+  readonly family: 4 | 6;
+}
+
+export type ReviewHttpsTransport = (
+  url: string,
+  target: ResolvedReviewTarget,
+) => Promise<IncomingMessage>;
+
+class ReviewContentEncodingError extends Error {
+  readonly code = 'REVIEW_URL_CONTENT_ENCODING_INVALID';
+}
 
 // ─── URL Validation (BUG-13: SSRF Mitigation) ───────────────────────
 
@@ -100,36 +119,68 @@ export async function validateResolvedReviewUrlTarget(
   url: string,
   dnsLookup: ReviewDnsLookup = lookupReviewHostname,
 ): Promise<{ valid: true } | { valid: false; reason: string }> {
+  const target = await resolveReviewTarget(url, dnsLookup);
+  return 'reason' in target ? { valid: false, reason: target.reason } : { valid: true };
+}
+
+/** Resolve and validate the one concrete network peer used by the HTTPS request. */
+// The explicit branches preserve distinct fail-closed diagnostics for each boundary.
+// eslint-disable-next-line complexity
+export async function resolveReviewTarget(
+  url: string,
+  dnsLookup: ReviewDnsLookup = lookupReviewHostname,
+): Promise<ResolvedReviewTarget | { reason: string }> {
   const syntax = validateReviewUrl(url);
-  if (!syntax.valid) return syntax;
+  if (!syntax.valid) return { reason: syntax.reason };
 
   const parsed = new URL(url);
   const hostname = parsed.hostname.toLowerCase();
   const bareHostname =
     hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
 
-  if (isLiteralAddressAllowed(bareHostname)) return { valid: true };
+  const literal = parseIPv4(bareHostname);
+  if (literal !== null) {
+    return {
+      hostname: bareHostname,
+      port: parsed.port ? Number(parsed.port) : 443,
+      address: bareHostname,
+      family: 4,
+    };
+  }
+  if (bareHostname.includes(':') && isLiteralAddressAllowed(bareHostname)) {
+    return {
+      hostname: bareHostname,
+      port: parsed.port ? Number(parsed.port) : 443,
+      address: bareHostname,
+      family: 6,
+    };
+  }
 
   let addresses: readonly { readonly address: string; readonly family: 4 | 6 }[];
   try {
     addresses = await dnsLookup(bareHostname);
   } catch (err) {
     return {
-      valid: false,
       reason: `DNS lookup failed for "${hostname}": ${err instanceof Error ? err.message : String(err)}`,
     };
   }
 
   if (addresses.length === 0) {
-    return { valid: false, reason: `DNS lookup for "${hostname}" returned no addresses` };
+    return { reason: `DNS lookup for "${hostname}" returned no addresses` };
   }
 
   for (const resolved of addresses) {
     const validation = validateResolvedAddress(hostname, resolved.address, resolved.family);
-    if (!validation.valid) return validation;
+    if (!validation.valid) return { reason: validation.reason };
   }
 
-  return { valid: true };
+  const target = addresses[0]!;
+  return {
+    hostname: bareHostname,
+    port: parsed.port ? Number(parsed.port) : 443,
+    address: target.address,
+    family: target.family,
+  };
 }
 
 function isLiteralAddressAllowed(hostname: string): boolean {
@@ -176,45 +227,46 @@ function validateResolvedAddress(
   return { valid: true };
 }
 
-/** Fetch content from URL using native fetch. Validates URL before fetching.
- *  Rejects private/reserved targets (SSRF mitigation).
- *  Disables redirect following to prevent SSRF via redirect.
- *  Returns a blocked result on validation failure or HTTP errors. */
+/** Fetch content through the validated target, with no connection-time DNS lookup. */
+// The response boundary deliberately distinguishes transport, status, charset, and byte-limit failures.
+// eslint-disable-next-line complexity
 export async function fetchUrlContent(
   url: string,
   dnsLookup?: ReviewDnsLookup,
+  transport: ReviewHttpsTransport = requestPinnedTarget,
 ): Promise<{ content: string } | RailBlocked> {
-  const validation = await validateResolvedReviewUrlTarget(url, dnsLookup);
-  if (!validation.valid) {
+  const target = await resolveReviewTarget(url, dnsLookup);
+  if ('reason' in target) {
     return blocked('COMMAND_BLOCKED', {
       command: '/review',
-      reason: `URL validation blocked: ${validation.reason}`,
+      reason: `URL validation blocked: ${target.reason}`,
     });
   }
-  const resp = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(15000) });
-  if (!resp.ok) {
+  let response: IncomingMessage;
+  try {
+    response = await transport(url, target);
+  } catch (err) {
     return blocked('COMMAND_BLOCKED', {
       command: '/review',
-      reason: `Failed to fetch ${url}: HTTP ${resp.status} ${resp.statusText}`,
+      reason: `Failed to fetch ${url}: ${err instanceof Error ? err.message : String(err)}`,
     });
   }
-  const contentType = resp.headers.get('content-type');
+  if (!response.statusCode || response.statusCode < 200 || response.statusCode >= 300) {
+    return blocked('COMMAND_BLOCKED', {
+      command: '/review',
+      reason: `Failed to fetch ${url}: HTTP ${response.statusCode ?? 0} ${response.statusMessage ?? ''}`,
+    });
+  }
+  const contentType = headerValue(response, 'content-type');
   if (!isUtf8ContentType(contentType)) {
     return blocked('REVIEW_URL_CONTENT_ENCODING_INVALID', {
       reason: `declared charset is not strict UTF-8 (${contentType ?? 'no charset declared'})`,
     });
   }
   try {
-    const contentLength = resp.headers.get('content-length');
-    if (contentLength !== null && Number(contentLength) > MAX_REVIEW_URL_RESPONSE_BYTES) {
-      return blocked('COMMAND_BLOCKED', {
-        command: '/review',
-        reason: `Response exceeds the ${MAX_REVIEW_URL_RESPONSE_BYTES}-byte review material limit`,
-      });
-    }
     return {
       content: new TextDecoder('utf-8', { fatal: true }).decode(
-        await readResponseBodyWithinLimit(resp, MAX_REVIEW_URL_RESPONSE_BYTES),
+        await readDecodedResponseBodyWithinLimit(response, MAX_REVIEW_URL_RESPONSE_BYTES),
       ),
     };
   } catch (err) {
@@ -224,33 +276,56 @@ export async function fetchUrlContent(
         reason: `Response exceeds the ${MAX_REVIEW_URL_RESPONSE_BYTES}-byte review material limit`,
       });
     }
+    if (err instanceof ReviewContentEncodingError) {
+      return blocked('REVIEW_URL_CONTENT_ENCODING_INVALID', { reason: err.message });
+    }
     return blocked('REVIEW_URL_CONTENT_ENCODING_INVALID', {
       reason: 'response bytes are not valid UTF-8',
     });
   }
 }
 
-async function readResponseBodyWithinLimit(
-  response: Response,
+function requestPinnedTarget(url: string, target: ResolvedReviewTarget): Promise<IncomingMessage> {
+  return new Promise((resolve, reject) => {
+    const req = request(url, {
+      agent: false,
+      servername: target.hostname,
+      headers: { 'accept-encoding': 'gzip, deflate, br' },
+      lookup: (_hostname, _options, callback) => callback(null, target.address, target.family),
+    });
+    req.setTimeout(15_000, () => req.destroy(new Error('HTTPS request timed out')));
+    req.once('error', reject);
+    req.once('socket', (socket) => {
+      socket.once('secureConnect', () => {
+        if (!sameIpAddress(socket.remoteAddress ?? '', target.address)) {
+          req.destroy(new Error('HTTPS peer address differs from the validated target'));
+        }
+      });
+    });
+    req.once('response', resolve);
+    req.end();
+  });
+}
+
+async function readDecodedResponseBodyWithinLimit(
+  response: IncomingMessage,
   maxBytes: number,
 ): Promise<Uint8Array> {
-  if (response.body === null) return new Uint8Array();
-  const reader = response.body.getReader();
+  const decoded = decodedStream(response, headerValue(response, 'content-encoding'));
   const chunks: Uint8Array[] = [];
   let total = 0;
   try {
-    while (true) {
-      const next = await reader.read();
-      if (next.done) break;
-      total += next.value.byteLength;
+    for await (const chunk of decoded) {
+      const bytes = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk);
+      total += bytes.byteLength;
       if (total > maxBytes) {
-        await reader.cancel('response body exceeds review material limit');
+        decoded.destroy(new RangeError('response body exceeds review material limit'));
         throw new RangeError('response body exceeds review material limit');
       }
-      chunks.push(next.value);
+      chunks.push(bytes);
     }
   } finally {
-    reader.releaseLock();
+    decoded.destroy();
   }
   const body = new Uint8Array(total);
   let offset = 0;
@@ -259,6 +334,41 @@ async function readResponseBodyWithinLimit(
     offset += chunk.byteLength;
   }
   return body;
+}
+
+function decodedStream(
+  response: IncomingMessage,
+  contentEncoding: string | null,
+): IncomingMessage | ReturnType<typeof createGunzip> {
+  const encoding = contentEncoding?.trim().toLowerCase() ?? 'identity';
+  if (encoding === 'identity' || encoding === '') return response;
+  const decoder =
+    encoding === 'gzip'
+      ? createGunzip()
+      : encoding === 'deflate'
+        ? createInflate()
+        : encoding === 'br'
+          ? createBrotliDecompress()
+          : undefined;
+  if (!decoder) throw new ReviewContentEncodingError(`unsupported Content-Encoding: ${encoding}`);
+  response.pipe(decoder);
+  return decoder;
+}
+
+function headerValue(response: IncomingMessage, name: string): string | null {
+  const value = response.headers[name];
+  return Array.isArray(value) ? value.join(', ') : (value ?? null);
+}
+
+function sameIpAddress(left: string, right: string): boolean {
+  return normalizeIpAddress(left) === normalizeIpAddress(right);
+}
+
+function normalizeIpAddress(address: string): string {
+  const lowered = address.toLowerCase();
+  return lowered.startsWith('::ffff:') && parseIPv4(lowered.slice(7)) !== null
+    ? lowered.slice(7)
+    : lowered;
 }
 
 /** A declared charset is accepted only when it is unambiguously UTF-8. */

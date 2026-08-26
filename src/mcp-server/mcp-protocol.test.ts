@@ -20,6 +20,7 @@ import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { spawn, type ChildProcess } from 'node:child_process';
 import * as path from 'node:path';
 import { existsSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../');
 const SERVER_ENTRY = path.join(PROJECT_ROOT, 'dist', 'mcp-server', 'index.js');
@@ -38,6 +39,12 @@ interface JsonRpcResponse {
   id: number;
   result?: unknown;
   error?: { code: number; message: string; data?: unknown };
+}
+
+interface JsonRpcServerRequest {
+  jsonrpc: '2.0';
+  id: number;
+  method: string;
 }
 
 let nextId = 1;
@@ -63,8 +70,8 @@ class McpTestClient {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: {
         ...process.env,
-        // Point to a non-existent session dir to test graceful error handling
-        FLOWGUARD_SESSION_DIR: path.join(PROJECT_ROOT, '.test-mcp-session'),
+        FLOWGUARD_SESSION_DIR: '',
+        FLOWGUARD_PROJECT_DIR: '',
       },
     });
 
@@ -90,7 +97,17 @@ class McpTestClient {
       const trimmed = line.trim();
       if (!trimmed) continue;
       try {
-        const msg = JSON.parse(trimmed) as JsonRpcResponse;
+        const msg = JSON.parse(trimmed) as JsonRpcResponse | JsonRpcServerRequest;
+        if ('method' in msg && msg.method === 'roots/list') {
+          this.proc!.stdin!.write(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: msg.id,
+              result: { roots: [{ uri: pathToFileURL(PROJECT_ROOT).href }] },
+            }) + '\n',
+          );
+          continue;
+        }
         if (msg.id !== undefined) {
           const resolver = this.resolvers.get(msg.id);
           if (resolver) {
@@ -164,7 +181,7 @@ describe('MCP Protocol Compliance', () => {
     const resp = await client.send(
       makeRequest('initialize', {
         protocolVersion: '2024-11-05',
-        capabilities: {},
+        capabilities: { roots: {} },
         clientInfo: { name: 'test-client', version: '1.0.0' },
       }),
     );

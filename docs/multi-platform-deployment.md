@@ -415,15 +415,13 @@ cat .codex/mcp.json
 | `FLOWGUARD_MCP_MAX_CONCURRENT`  | `10`          | Maximum active MCP tool executions shared by all tools in one MCP server process                             |
 | `FLOWGUARD_MCP_MAX_PER_SECOND`  | `50` starts/s | Maximum tool starts in a rolling one-second window, shared by all tools in one MCP server process            |
 
-> **MCP session resolution is fail-closed.** The MCP server resolves the
-> project directory from `FLOWGUARD_SESSION_DIR`, then `FLOWGUARD_PROJECT_DIR`,
-> then host-advertised MCP roots — in that order. There is **no `cwd`
-> fallback**: if none of these is present, tool calls are denied with
-> `SESSION_UNRESOLVABLE`. The Claude Code MCP template sets
-> `FLOWGUARD_PROJECT_DIR=${CLAUDE_PROJECT_DIR}` automatically. Hosts that
-> advertise neither an env source nor MCP roots (currently the Codex MCP
-> template) must set `FLOWGUARD_SESSION_DIR` or `FLOWGUARD_PROJECT_DIR` for
-> MCP tool calls to resolve.
+> **MCP session resolution is fail-closed.** MCP `roots/list` is the sole
+> repository authority. Every `file:` root and its Git worktree is resolved by
+> real path; multiple worktrees require `FLOWGUARD_PROJECT_DIR` to select one
+> already authorized worktree. `FLOWGUARD_SESSION_DIR` cannot select a
+> repository and is accepted only below the bound workspace's session directory.
+> There is no `cwd` fallback. Missing, changed, ambiguous, foreign, or symlink-
+> escaped roots return `SESSION_UNRESOLVABLE`.
 
 > **MCP execution limits are fail-closed.** All limit values must be positive,
 > safe integers; invalid or timer-unsupported values prevent server startup.

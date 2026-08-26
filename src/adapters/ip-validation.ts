@@ -55,15 +55,53 @@ export function isPrivateIPv4(ip: number): boolean {
  */
 export function isPrivateIPv6(ip: string): boolean {
   const normalized = ip.toLowerCase();
-  const mappedIpv4 = parseIPv4MappedIPv6(normalized);
-  if (mappedIpv4 !== null) return isPrivateIPv4(mappedIpv4);
+  const embeddedIpv4 = parseIPv4MappedIPv6(normalized) ?? parseIPv4CompatibleIpv6(normalized);
+  if (embeddedIpv4 !== null) return isPrivateIPv4(embeddedIpv4);
   if (normalized === '::' || normalized === '::1') return true;
   if (normalized.startsWith('fc') || normalized.startsWith('fd')) return true;
   if (/^fe[89ab]/.test(normalized)) return true;
   return normalized.startsWith('ff');
 }
 
+function parseIPv4CompatibleIpv6(ip: string): number | null {
+  if (ip.startsWith('::')) {
+    const dotted = parseIPv4(ip.slice(2));
+    if (dotted !== null) return dotted;
+  }
+  const expanded = expandIpv6Hextets(ip);
+  if (!expanded || expanded.slice(0, 6).some((hextet) => hextet !== 0)) return null;
+  return (((expanded[6]! << 16) >>> 0) | expanded[7]!) >>> 0;
+}
+
 function parseIPv4MappedIPv6(ip: string): number | null {
+  const dotted = parseLegacyMappedIpv4(ip);
+  if (dotted !== null) return dotted;
+  const expanded = expandIpv6Hextets(ip);
+  if (!expanded || expanded.slice(0, 5).some((hextet) => hextet !== 0) || expanded[5] !== 0xffff) {
+    return null;
+  }
+  return (((expanded[6]! << 16) >>> 0) | expanded[7]!) >>> 0;
+}
+
+function expandIpv6Hextets(ip: string): number[] | null {
+  if (ip.includes('.')) return null;
+  const halves = ip.split('::');
+  if (halves.length > 2) return null;
+  const left = halves[0] ? halves[0].split(':') : [];
+  const right = halves[1] ? halves[1].split(':') : [];
+  const segments = [...left, ...right];
+  if (segments.some((segment) => parseHextet(segment) === null)) return null;
+  if (halves.length === 1 && segments.length !== 8) return null;
+  if (halves.length === 2 && segments.length >= 8) return null;
+  const zeros = halves.length === 2 ? Array.from({ length: 8 - segments.length }, () => 0) : [];
+  return [
+    ...left.map((segment) => parseHextet(segment)!),
+    ...zeros,
+    ...right.map((segment) => parseHextet(segment)!),
+  ];
+}
+
+function parseLegacyMappedIpv4(ip: string): number | null {
   const prefix = '::ffff:';
   if (!ip.startsWith(prefix)) return null;
   const suffix = ip.slice(prefix.length);

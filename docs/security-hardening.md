@@ -154,16 +154,14 @@ must each be disabled (or explicitly pinned) for true offline operation:
 - `policy.audit.timestampAssurance.mode = 'ntp_check'` with `ntpServers` —
   NTP drift checks against the configured servers.
 
-For `/review url=...`, FlowGuard validates the URL scheme and resolved DNS
-targets before calling native `fetch` via the DNS-preflight SSRF mitigation
-implemented in `src/adapters/dns-resolution.ts` and `src/adapters/ip-validation.ts`.
-DNS failures, empty answers, malformed addresses, private/reserved A or AAAA
-records, and mixed public/private DNS answers are blocked fail-closed, and
-redirects are disabled. This is a DNS-preflight SSRF mitigation, not a complete
-network sandbox: DNS rebinding or time-of-check/time-of-use changes between
-validation and the HTTPS connection remain residual risks. Use firewall,
-proxy, or sandbox egress controls for deployments that require complete
-outbound network containment.
+For `/review url=...`, FlowGuard validates every resolved DNS target and pins
+the HTTPS connection to one validated IP. The original hostname remains the
+HTTP host, TLS SNI value, and certificate-validation subject; connection-time
+DNS lookup is not permitted. DNS failures, empty answers, malformed addresses,
+private/reserved A or AAAA records, mixed public/private answers, peer-address
+mismatches, and redirects are blocked fail-closed. Response limits apply after
+streaming `identity`, `gzip`, `deflate`, or `br` decoding. Firewall, proxy, or
+sandbox egress controls remain defense in depth for outbound network policy.
 
 **Verification:**
 

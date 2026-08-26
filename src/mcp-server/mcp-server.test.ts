@@ -17,7 +17,13 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { McpSessionResolutionError, resolveSessionContext } from './session-resolver.js';
+import { mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { McpSessionBinder, McpSessionResolutionError } from './session-resolver.js';
 import { convertArgsToInputSchema } from './schema-converter.js';
 import { installStdoutGuard } from './stdout-guard.js';
 import { registerAllTools, isGovernanceDenialCode } from './tool-adapter.js';
@@ -27,6 +33,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ToolContext, ToolDefinition } from '../integration/tools/helpers.js';
 import { getAdapterLogger, getLogTraceFields } from '../logging/adapter-logger.js';
 import { z } from 'zod';
+
+const execFileAsync = promisify(execFile);
 
 // --- Schema Converter Tests ---
 
@@ -103,73 +111,107 @@ describe('Session Resolver', () => {
     delete process.env['FLOWGUARD_PROJECT_DIR'];
   });
 
-  it('HAPPY: uses FLOWGUARD_SESSION_DIR when set', () => {
-    process.env['FLOWGUARD_SESSION_DIR'] = '/custom/path';
-    const ctx = resolveSessionContext();
-    expect(ctx.directory).toContain('custom');
-  });
+  async function repository(name: string): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), `${name}-`));
+    await execFileAsync('git', ['init'], { cwd: root });
+    return root;
+  }
 
-  it('HAPPY: uses first root when provided', () => {
-    const ctx = resolveSessionContext(['/project/root', '/other']);
-    expect(ctx.directory).toContain('project');
-  });
+  function root(path: string): { uri: string } {
+    return { uri: pathToFileURL(path).href };
+  }
 
-  // #422 negative-first: no env source and no roots MUST fail closed —
-  // the prior cwd fallback was a silent guess that hid missing inputs.
-  it('BAD: throws SESSION_UNRESOLVABLE when no env and no roots', () => {
-    expect(() => resolveSessionContext()).toThrow();
+  it('HAPPY: binds a real MCP root to its canonical Git worktree', async () => {
+    const repo = await repository('flowguard-mcp-root');
     try {
-      resolveSessionContext();
-      expect.unreachable('resolver must fail closed');
-    } catch (err) {
-      expect((err as { code?: string }).code).toBe('SESSION_UNRESOLVABLE');
+      const ctx = await new McpSessionBinder('mcp-stable-session').resolve([root(repo)]);
+      expect(ctx).toMatchObject({
+        sessionId: 'mcp-stable-session',
+        worktree: await realpath(repo),
+      });
+    } finally {
+      await rm(repo, { recursive: true, force: true });
     }
   });
 
-  // #422 negative-first: an empty roots array is "no roots" — still fail closed.
-  it('CORNER: empty roots array throws SESSION_UNRESOLVABLE', () => {
-    expect(() => resolveSessionContext([])).toThrow();
+  it('BAD: rejects no roots, filesystem paths, and non-existent roots', async () => {
+    const binder = new McpSessionBinder();
+    await expect(binder.resolve([])).rejects.toMatchObject({ code: 'SESSION_UNRESOLVABLE' });
+    await expect(binder.resolve([{ uri: 'https://example.com' }])).rejects.toMatchObject({
+      code: 'SESSION_UNRESOLVABLE',
+    });
+    await expect(
+      binder.resolve([{ uri: 'file:///definitely-not-a-flowguard-root' }]),
+    ).rejects.toMatchObject({
+      code: 'SESSION_UNRESOLVABLE',
+    });
+  });
+
+  it('BAD: rejects ambiguous multi-root authority without a matching project hint', async () => {
+    const first = await repository('flowguard-mcp-first');
+    const second = await repository('flowguard-mcp-second');
     try {
-      resolveSessionContext([]);
-      expect.unreachable('resolver must fail closed');
-    } catch (err) {
-      expect((err as { code?: string }).code).toBe('SESSION_UNRESOLVABLE');
+      await expect(
+        new McpSessionBinder().resolve([root(first), root(second)]),
+      ).rejects.toMatchObject({
+        code: 'SESSION_UNRESOLVABLE',
+      });
+    } finally {
+      await Promise.all([
+        rm(first, { recursive: true, force: true }),
+        rm(second, { recursive: true, force: true }),
+      ]);
     }
   });
 
-  // #422: wire the previously-dead FLOWGUARD_PROJECT_DIR contract as a real
-  // resolution source (host-advertised project dir, e.g. CLAUDE_PROJECT_DIR).
-  it('HAPPY: uses FLOWGUARD_PROJECT_DIR when set and no roots', () => {
-    process.env['FLOWGUARD_PROJECT_DIR'] = '/proj/dir';
-    const ctx = resolveSessionContext();
-    expect(ctx.directory).toContain('proj');
+  it('HAPPY: project hint disambiguates only an authorized worktree', async () => {
+    const first = await repository('flowguard-mcp-first');
+    const second = await repository('flowguard-mcp-second');
+    process.env['FLOWGUARD_PROJECT_DIR'] = second;
+    try {
+      const ctx = await new McpSessionBinder().resolve([root(first), root(second)]);
+      expect(ctx.worktree).toBe(await realpath(second));
+    } finally {
+      await Promise.all([
+        rm(first, { recursive: true, force: true }),
+        rm(second, { recursive: true, force: true }),
+      ]);
+    }
   });
 
-  it('CORNER: FLOWGUARD_PROJECT_DIR wins over roots[0]', () => {
-    process.env['FLOWGUARD_PROJECT_DIR'] = '/proj/dir';
-    const ctx = resolveSessionContext(['/roots/path']);
-    expect(ctx.directory).toContain('proj');
-    expect(ctx.directory).not.toContain('roots');
+  it('BAD: rejects root changes and symlink escapes after transport binding', async () => {
+    const first = await repository('flowguard-mcp-first');
+    const second = await repository('flowguard-mcp-second');
+    const link = join(first, 'linked-root');
+    await symlink(second, link);
+    try {
+      const binder = new McpSessionBinder();
+      await binder.resolve([root(first)]);
+      await expect(binder.resolve([root(link)])).rejects.toMatchObject({
+        code: 'SESSION_UNRESOLVABLE',
+      });
+    } finally {
+      await Promise.all([
+        rm(first, { recursive: true, force: true }),
+        rm(second, { recursive: true, force: true }),
+      ]);
+    }
   });
 
-  it('HAPPY: FLOWGUARD_SESSION_DIR takes priority over roots', () => {
-    process.env['FLOWGUARD_SESSION_DIR'] = '/env/path';
-    const ctx = resolveSessionContext(['/roots/path']);
-    expect(ctx.directory).toContain('env');
-  });
-
-  it('CORNER: FLOWGUARD_SESSION_DIR wins over FLOWGUARD_PROJECT_DIR', () => {
-    process.env['FLOWGUARD_SESSION_DIR'] = '/session/path';
-    process.env['FLOWGUARD_PROJECT_DIR'] = '/proj/dir';
-    const ctx = resolveSessionContext();
-    expect(ctx.directory).toContain('session');
-    expect(ctx.directory).not.toContain('proj');
-  });
-
-  it('HAPPY: preserves provided stable MCP session id', () => {
-    const ctx = resolveSessionContext(['/project/root'], 'mcp-stable-session');
-
-    expect(ctx.sessionId).toBe('mcp-stable-session');
+  it('BAD: session hint cannot select a repository', async () => {
+    const repo = await repository('flowguard-mcp-root');
+    const foreign = await mkdtemp(join(tmpdir(), 'flowguard-mcp-session-'));
+    process.env['FLOWGUARD_SESSION_DIR'] = foreign;
+    try {
+      await expect(new McpSessionBinder().resolve([root(repo)])).rejects.toMatchObject({
+        code: 'SESSION_UNRESOLVABLE',
+      });
+    } finally {
+      await Promise.all([
+        rm(repo, { recursive: true, force: true }),
+        rm(foreign, { recursive: true, force: true }),
+      ]);
+    }
   });
 });
 
@@ -341,7 +383,7 @@ describe('Tool Adapter Session Identity', () => {
 
     try {
       registerAllTools(fakeServer, { test: tool }, () => {
-        throw new McpSessionResolutionError();
+        throw new McpSessionResolutionError('test resolution failure');
       });
 
       const result = (await handler!({}, {})) as { isError: boolean; content: { text: string }[] };

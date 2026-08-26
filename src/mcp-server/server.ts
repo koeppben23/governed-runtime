@@ -20,7 +20,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { randomUUID } from 'node:crypto';
 import { registerAllTools, type FlowGuardToolRegistry } from './tool-adapter.js';
-import { resolveSessionContext } from './session-resolver.js';
+import { McpSessionBinder } from './session-resolver.js';
 import { installStdoutGuard } from './stdout-guard.js';
 import { PACKAGE_VERSION } from '../shared/package-version.js';
 import { mcpLogger } from './mcp-logger.js';
@@ -93,18 +93,17 @@ export function createMcpServer(): McpServer {
     },
   );
   const limiter = new McpExecutionLimiter(readMcpExecutionLimits());
+  const sessionBinder = new McpSessionBinder(sessionId);
 
   // Register FlowGuard tools
   registerAllTools(
     server,
     FLOWGUARD_TOOLS,
-    () => {
-      // Resolve session context fresh for each tool call from host-advertised
-      // sources (FLOWGUARD_SESSION_DIR / FLOWGUARD_PROJECT_DIR env, or MCP roots).
-      // MCP roots/list is not wired here yet, so roots are passed as undefined and
-      // the env sources carry resolution. When no source is present the resolver
-      // fails closed (SESSION_UNRESOLVABLE) — never a cwd guess.
-      return resolveSessionContext(undefined, sessionId);
+    async () => {
+      // The client supplies roots on every invocation. Binding checks each fresh
+      // response so a root-list change cannot retarget an existing transport.
+      const response = await server.server.listRoots();
+      return sessionBinder.resolve(response.roots);
     },
     limiter,
   );
