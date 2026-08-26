@@ -16,7 +16,7 @@
 import { readState, writeStateAlreadyLocked, PersistenceError } from '../adapters/persistence.js';
 import { withSessionWriteLock } from '../adapters/persistence-lock.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
-import type { SessionState, PendingAuditOperation } from '../state/schema.js';
+import type { SessionState, Transition, PendingAuditOperation } from '../state/schema.js';
 import {
   buildTransitionBody,
   buildStateWriteBody,
@@ -96,6 +96,18 @@ export function createStrictTimestampTracker(
   };
 }
 
+class AuditTransitionEvidenceGapError extends Error {
+  readonly code = 'AUDIT_TRANSITION_EVIDENCE_GAP';
+
+  constructor(transition: Transition) {
+    super(
+      `Persisted transition ${transition.from}\u2192${transition.to} (${transition.event}) ` +
+        'has no durable audit evidence. The session must not be advanced further.',
+    );
+    this.name = 'AuditTransitionEvidenceGapError';
+  }
+}
+
 /**
  * Rebuild the audit event the durable outbox committed for an
  * operation. The canonical event digest excludes prevHash, so the rebuild is
@@ -151,7 +163,10 @@ export async function emitTransitionAudits(input: {
   const state = await readState(ctx.sessDir);
   const operations =
     state?.pendingAuditOperations.filter((operation) => operation.status !== 'reconciled') ?? [];
-  if (operations.length === 0) return;
+  if (operations.length === 0) {
+    await assertNoLegacyTransitionGap(ctx.sessDir, state);
+    return;
+  }
   if (!state) {
     throw new PersistenceError(
       'READ_FAILED',
@@ -195,6 +210,30 @@ export async function emitTransitionAudits(input: {
     await acknowledgeAuditOperation(ctx.sessDir, operation.operationId, 'audit_committed');
     await acknowledgeAuditOperation(ctx.sessDir, operation.operationId, 'reconciled');
   }
+}
+
+async function assertNoLegacyTransitionGap(
+  sessDir: string,
+  state: SessionState | null,
+): Promise<void> {
+  if (!state?.transition) return;
+  const trail = await readAuditTrail(sessDir);
+  if (trail.skipped > 0) {
+    throw new PersistenceError(
+      'READ_FAILED',
+      'Cannot verify transition audit evidence: audit trail contains malformed records',
+    );
+  }
+  const transition = state.transition;
+  const evidenceExists = trail.events.some(
+    (event) =>
+      event.detail.kind === 'transition' &&
+      event.detail.from === transition.from &&
+      event.detail.to === transition.to &&
+      event.detail.event === transition.event &&
+      event.timestamp === transition.at,
+  );
+  if (!evidenceExists) throw new AuditTransitionEvidenceGapError(transition);
 }
 
 async function findOperationAudit(
@@ -344,6 +383,9 @@ export async function reconcilePendingAuditOperations(
     return await finalizeStrictTimestampFailure(resolved.ctx, tracker.failure);
   } catch (err) {
     deps.logError('Failed to reconcile durable audit operations', err);
+    if (err instanceof AuditTransitionEvidenceGapError) {
+      return { auditOk: false, block: true, code: err.code, reason: err.message };
+    }
     return {
       auditOk: false,
       block: true,

@@ -1527,7 +1527,7 @@ describe('runAudit', () => {
       }
     });
 
-    it.skip('legacy state reconciliation was removed before the first release', async () => {
+    it('blocks with AUDIT_TRANSITION_EVIDENCE_GAP for a legacy state without audit evidence', async () => {
       const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-audit-gap-'));
       try {
         const legacy = makeState('PLAN', {
@@ -1556,7 +1556,7 @@ describe('runAudit', () => {
       }
     });
 
-    it.skip('legacy state reconciliation was removed before the first release', async () => {
+    it('accepts a legacy state whose transition has contemporaneous audit evidence', async () => {
       const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-audit-gap-'));
       try {
         const transition = {
@@ -1609,7 +1609,7 @@ describe('runAudit', () => {
       }
     });
 
-    it.skip('legacy state reconciliation was removed before the first release', async () => {
+    it('blocks a legacy gap when a decoy transition event matches only partially', async () => {
       const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-audit-gap-'));
       try {
         const transition = {
@@ -1675,7 +1675,7 @@ describe('runAudit', () => {
       }
     });
 
-    it.skip('legacy state reconciliation was removed before the first release', async () => {
+    it('blocks a legacy gap when the audit trail is unreadable', async () => {
       const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-audit-gap-'));
       try {
         const legacy = makeState('PLAN', {
