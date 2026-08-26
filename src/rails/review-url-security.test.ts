@@ -18,7 +18,11 @@ import {
   validateResolvedReviewUrlTarget,
   parseIPv4,
 } from './review.js';
-import { fetchUrlContent, MAX_REVIEW_URL_RESPONSE_BYTES } from './review-url.js';
+import {
+  fetchUrlContent,
+  MAX_REVIEW_URL_RESPONSE_BYTES,
+  resolveReviewTarget,
+} from './review-url.js';
 import { makeState, makeProgressedState } from '../fixtures.js';
 
 vi.mock('node:https', () => ({ request: vi.fn() }));
@@ -234,6 +238,20 @@ describe('Issue #310: resolved URL targets are validated before fetch', () => {
     expect(result.valid).toBe(true);
   });
 
+  it('uses a public IPv6 literal as the pinned target without DNS lookup', async () => {
+    const dnsLookup = vi.fn(async () => [{ address: '93.184.216.34', family: 4 }] as const);
+
+    await expect(
+      resolveReviewTarget('https://[2606:2800:220:1:248:1893:25c8:1946]:8443/spec', dnsLookup),
+    ).resolves.toEqual({
+      hostname: '2606:2800:220:1:248:1893:25c8:1946',
+      port: 8443,
+      address: '2606:2800:220:1:248:1893:25c8:1946',
+      family: 6,
+    });
+    expect(dnsLookup).not.toHaveBeenCalled();
+  });
+
   it('binds the fetch transport to the selected validated DNS address', async () => {
     let targetAddress: string | undefined;
     const result = await fetchUrlContent(
@@ -413,6 +431,76 @@ describe('Issue #310: resolved URL targets are validated before fetch', () => {
       async () => response(Buffer.alloc(MAX_REVIEW_URL_RESPONSE_BYTES + 1, 'x')) as never,
     );
     expect(result).toMatchObject({ kind: 'blocked', code: 'COMMAND_BLOCKED' });
+  });
+
+  it('accepts an identity response exactly at the decoded byte limit', async () => {
+    const result = await fetchUrlContent(
+      'https://example.com/spec.md',
+      async () => [{ address: '93.184.216.34', family: 4 }],
+      async () => response(Buffer.alloc(MAX_REVIEW_URL_RESPONSE_BYTES, 'x')) as never,
+    );
+
+    expect(result).toMatchObject({ content: expect.any(String) });
+    if ('content' in result) expect(result.content).toHaveLength(MAX_REVIEW_URL_RESPONSE_BYTES);
+  });
+
+  it('preserves every chunk in a successful response body', async () => {
+    const result = await fetchUrlContent(
+      'https://example.com/spec.md',
+      async () => [{ address: '93.184.216.34', family: 4 }],
+      async () =>
+        Object.assign(Readable.from([Buffer.from('first '), Buffer.from('second')]), {
+          statusCode: 200,
+          statusMessage: 'OK',
+          headers: {},
+        }) as never,
+    );
+
+    expect(result).toEqual({ content: 'first second' });
+  });
+
+  it.each([199, 300])('blocks non-2xx HTTP status %i', async (statusCode) => {
+    const result = await fetchUrlContent(
+      'https://example.com/spec.md',
+      async () => [{ address: '93.184.216.34', family: 4 }],
+      async () =>
+        Object.assign(Readable.from([]), {
+          statusCode,
+          statusMessage: 'test',
+          headers: {},
+        }) as never,
+    );
+
+    expect(result).toMatchObject({ kind: 'blocked', code: 'COMMAND_BLOCKED' });
+  });
+
+  it.each([
+    'text/plain; charset=utf-8; charset=utf-8',
+    'text/plain; charset=utf-8; charset=iso-8859-1',
+  ])('blocks multiple charset declarations: %s', async (contentType) => {
+    const result = await fetchUrlContent(
+      'https://example.com/spec.md',
+      async () => [{ address: '93.184.216.34', family: 4 }],
+      async () =>
+        response(new TextEncoder().encode('review material'), {
+          'content-type': contentType,
+        }) as never,
+    );
+
+    expect(result).toMatchObject({ kind: 'blocked', code: 'REVIEW_URL_CONTENT_ENCODING_INVALID' });
+  });
+
+  it('blocks unsupported content encodings', async () => {
+    const result = await fetchUrlContent(
+      'https://example.com/spec.md',
+      async () => [{ address: '93.184.216.34', family: 4 }],
+      async () =>
+        response(new TextEncoder().encode('review material'), {
+          'content-encoding': 'compress',
+        }) as never,
+    );
+
+    expect(result).toMatchObject({ kind: 'blocked', code: 'REVIEW_URL_CONTENT_ENCODING_INVALID' });
   });
 });
 

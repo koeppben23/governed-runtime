@@ -17,7 +17,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -134,6 +134,23 @@ describe('Session Resolver', () => {
     }
   });
 
+  it('HAPPY: permits repeated equivalent root sets after binding', async () => {
+    const first = await repository('flowguard-mcp-first');
+    const second = await repository('flowguard-mcp-second');
+    process.env['FLOWGUARD_PROJECT_DIR'] = second;
+    try {
+      const binder = new McpSessionBinder('mcp-stable-session');
+      await binder.resolve([root(first), root(second), root(first)]);
+      const ctx = await binder.resolve([root(second), root(first)]);
+      expect(ctx.worktree).toBe(await realpath(second));
+    } finally {
+      await Promise.all([
+        rm(first, { recursive: true, force: true }),
+        rm(second, { recursive: true, force: true }),
+      ]);
+    }
+  });
+
   it('BAD: rejects no roots, filesystem paths, and non-existent roots', async () => {
     const binder = new McpSessionBinder();
     await expect(binder.resolve([])).rejects.toMatchObject({ code: 'SESSION_UNRESOLVABLE' });
@@ -145,6 +162,22 @@ describe('Session Resolver', () => {
     ).rejects.toMatchObject({
       code: 'SESSION_UNRESOLVABLE',
     });
+  });
+
+  it('BAD: reports invalid schemes and file roots distinctly', async () => {
+    const file = await mkdtemp(join(tmpdir(), 'flowguard-mcp-file-'));
+    const rootFile = join(file, 'root-file');
+    await writeFile(rootFile, 'not a directory');
+    try {
+      await expect(
+        new McpSessionBinder().resolve([{ uri: 'https://example.com' }]),
+      ).rejects.toThrow('MCP root must use file: URI scheme');
+      await expect(new McpSessionBinder().resolve([root(rootFile)])).rejects.toThrow(
+        'MCP root is not a directory',
+      );
+    } finally {
+      await rm(file, { recursive: true, force: true });
+    }
   });
 
   it('BAD: rejects a repository subdirectory root instead of widening it to the Git worktree', async () => {
@@ -316,6 +349,35 @@ describe('Tool Adapter Session Identity', () => {
       'mcp-stable-session',
     ]);
     expect(contexts[0]?.messageID).not.toBe(contexts[1]?.messageID);
+  });
+
+  it('maps structured tool output to a successful MCP text response', async () => {
+    let handler:
+      ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown) | null = null;
+    const fakeServer = {
+      registerTool: (_name: string, _config: unknown, registered: typeof handler) => {
+        handler = registered;
+      },
+    } as unknown as McpServer;
+    const tool: ToolDefinition = {
+      description: 'test tool',
+      args: {},
+      async execute() {
+        return { output: 'structured result', metadata: { ignoredByMcp: true } };
+      },
+    };
+
+    registerAllTools(fakeServer, { test: tool }, () => ({
+      sessionId: 'mcp-session',
+      directory: '/tmp/project',
+      worktree: '/tmp/project',
+    }));
+
+    const result = (await handler!({}, {})) as { isError: boolean; content: { text: string }[] };
+    expect(result).toEqual({
+      isError: false,
+      content: [{ type: 'text', text: 'structured result' }],
+    });
   });
 
   it('HAPPY: MCP tool execution provides adapter logger and log context', async () => {
@@ -565,6 +627,35 @@ describe('Tool Adapter Session Identity', () => {
     expect(calls).toBe(1);
     release();
     await first;
+  });
+
+  it('releases the concurrency slot after a successful execution', async () => {
+    let handler:
+      ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown) | null = null;
+    let calls = 0;
+    const fakeServer = {
+      registerTool: (_name: string, _config: unknown, registered: typeof handler) => {
+        handler = registered;
+      },
+    } as unknown as McpServer;
+    const tool: ToolDefinition = {
+      description: 'test tool',
+      args: {},
+      async execute() {
+        calls += 1;
+        return 'ok';
+      },
+    };
+    registerAllTools(
+      fakeServer,
+      { test: tool },
+      () => ({ sessionId: 'mcp-session', directory: '/tmp/project', worktree: '/tmp/project' }),
+      new McpExecutionLimiter({ timeoutMs: 1_000, maxConcurrent: 1, maxPerSecond: 10 }),
+    );
+
+    await handler!({}, {});
+    await handler!({}, {});
+    expect(calls).toBe(2);
   });
 
   it('returns a timeout while keeping a live executor in its concurrency slot', async () => {
