@@ -23,6 +23,8 @@ architecture certificate provenance section for PR #816 (CEF1/CEF2 fixed via
 the squash merge, CE1–CE3 open). A 2026-08-22 re-triage recorded the completed
 RFC 3161 TSA hardening from #832/#833 (TSA1–TSA4) and the separate archive
 redaction-composition assurance gap R14.
+The 2026-08-26 re-triage confirmed durable transition-audit reconciliation from
+#847 (MUT2) and external authority binding from #848 (M2).
 
 ## Status Legend
 
@@ -93,7 +95,7 @@ disproven, update the status and link the evidence."
 | B       | P1       | Fixed           | AC1, AC2, AC3, AC4, AC5, TSA1, TSA2, TSA3, TSA4 | Hash-chain, canonical digest, TSA, and NTP hardening. #832/#833 fix TSA1–TSA4 with a strict RFC 3161 verifier contract, including ESS signer-certificate binding.                         |
 | C       | P1       | Partially Fixed | AR1, AR2, AR3, AR4, AR5, AUD1, AUD2, AUD3, AUD4 | Archive integrity and audit write-lock recovery. AR1 and AUD2 fixed (#670); AR2 fixed by trusted-policy severity derivation; AR3/AR4/AUD1/AUD3/AUD4 fixed (#837); AR5 is tracked in #836. |
 | D       | P1       | Fixed           | R1, R2, R3, R4, R5, AC3                         | Secret-leak, redaction, logging, telemetry boundaries. R3, R5 fixed (#585); R1, R2, R4, AC3 fixed (redaction fail-closed).                                                                |
-| E       | P1       | Partially Fixed | H1, H2, H4, C1, C2, C3, C4, C5, M1, M2, M3, I4  | Hook, CLI, MCP, installer, and integration fail-closed hardening. H1, H2, H4, M1, M3 and C2–C5 fixed (#645, #646, #667); I4 is partially fixed; C1 and M2 remain open.                    |
+| E       | P1       | Partially Fixed | H1, H2, H4, C1, C2, C3, C4, C5, M1, M2, M3, I4  | Hook, CLI, MCP, installer, and integration fail-closed hardening. H1, H2, H4, M1, M3 and C2–C5 fixed (#645, #646, #667); M2 fixed by #848; I4 is partially fixed; C1 remains open.           |
 | F       | P2       | Partially Fixed | G3, G7, G9, G15, AC6, AC7, G12, G13             | State-machine correctness and audit completeness. G3 and G9 are fixed pre-existing; G7 is fixed by #421 and AC7 by #678; G15, AC6, and G12–G13 remain open.                               |
 
 ## High-Priority Findings
@@ -109,7 +111,7 @@ disproven, update the status and link the evidence."
 | H2   | HIGH     | Fixed     | HTTP and command hooks both block mutating tools while review obligations remain unresolved.                                                                                      |
 | H3   | HIGH     | Fixed     | #844 rejects Windows reserved device names, their extension variants, and session IDs with leading/trailing whitespace or trailing dots.                                         |
 | M1   | HIGH     | Fixed     | MCP tool execution uses server-scoped response deadlines and admission limits (#645).                                                                                             |
-| M2   | HIGH     | Open      | MCP session/project directory environment inputs need validation.                                                                                                                 |
+| M2   | HIGH     | Fixed     | #848 binds MCP roots to canonical Git worktrees; project/session environment hints can only select authorized roots and sessions.                                                |
 | M3   | HIGH     | Fixed     | MCP errors use trusted boundary codes and do not reflect arbitrary executor messages (#645).                                                                                      |
 | C1   | HIGH     | Open      | Non-OpenCode config install skip/error handling needs explicit surfacing.                                                                                                         |
 | C2   | HIGH     | Fixed     | Exclusive install lock, preflight, and existing-install protection implemented by #667.                                                                                           |
@@ -159,7 +161,7 @@ disproven, update the status and link the evidence."
 | S1   | MEDIUM   | Open            | State schema versioning needs forward-migration strategy.                                                                                                   |
 | S2   | MEDIUM   | Open            | Policy snapshot parse transforms can rewrite historical state.                                                                                              |
 | UP1  | MEDIUM-HIGH | Tracked      | Prerelease persisted-state compatibility was overstated: unversioned policy digests from `v1.2.0-tp.2` and earlier are intentionally incompatible with `policy-digest.v2`; upgrade recovery documentation is in this PR. |
-| MUT2 | MEDIUM   | Open            | Coverage excludes the production `src/integration/plugin-helpers.ts` by wildcard; its enforcement paths do not count toward the 80% gate or mutation scope. |
+| MUT2 | MEDIUM   | Fixed           | #847 includes production `src/integration/plugin-helpers.ts` and its tests in the Stryker mutation scope and Vitest projection.             |
 | MUT3 | MEDIUM   | Tracked         | The release workflow makes mutation a required dependency of the tag-release publish job; status requires v-tag workflow execution evidence.                |
 
 ## Low-Priority And Hardening Findings
@@ -225,7 +227,7 @@ disproven, update the status and link the evidence."
 | Silent success after caught failures | Open   | Error handling should surface audit/install/workspace failures explicitly.                                 |
 | Environment-variable trust boundary  | Open   | Runtime and installer environment inputs need validation/sandboxing review.                                |
 | Fail-open behavior                   | Open   | Hooks, MCP, plugin initialization, and audit persistence need fail-closed review.                          |
-| Assurance gate drift                 | Open   | MUT2 leaves production enforcement code outside coverage; release publication is source-gated on mutation, pending workflow execution evidence for MUT3. |
+| Assurance gate drift                 | Open   | Release publication is source-gated on mutation, pending workflow execution evidence for MUT3.                                      |
 
 ## Test-Pinned Bug Behaviors
 
@@ -238,7 +240,6 @@ behavior:
 | AC6 | Open   | `src/audit/audit-completeness.test.ts` |
 | AC7 | Open   | `src/audit/audit-completeness.test.ts` |
 | G6  | Open   | `src/machine/commands.test.ts`         |
-| M2  | Open   | `src/mcp-server/mcp-server.test.ts`    |
 | H6  | Open   | `src/hooks/pre-tool-use-fatal.test.ts` |
 | T1  | Open   | `src/templates/mandate-drift.test.ts`  |
 
