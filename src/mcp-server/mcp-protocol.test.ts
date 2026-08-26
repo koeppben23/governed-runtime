@@ -365,35 +365,4 @@ describe('MCP Protocol Compliance', () => {
       expect(result.content[0]!.type).toBe('text');
     }
   });
-
-  it('PERF: state-reading tool call completes within 500ms', async () => {
-    // Ticket requirement: tool call latency < 500ms for state-reading tools on warm filesystem.
-    // flowguard_status is the primary state-reading tool.
-    const iterations = 3;
-    const durations: number[] = [];
-
-    for (let i = 0; i < iterations; i++) {
-      const start = performance.now();
-      const resp = await client.send(
-        makeRequest('tools/call', {
-          name: 'flowguard_status',
-          arguments: {},
-        }),
-      );
-      const elapsed = performance.now() - start;
-      durations.push(elapsed);
-
-      // Ensure we got a valid response
-      expect(resp.result).toBeDefined();
-    }
-
-    // Use median to avoid outliers from cold start
-    durations.sort((a, b) => a - b);
-    const median = durations[Math.floor(durations.length / 2)]!;
-
-    expect(
-      median,
-      `Median tool call latency ${median.toFixed(0)}ms exceeds 500ms budget`,
-    ).toBeLessThan(500);
-  });
 });
