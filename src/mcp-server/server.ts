@@ -19,6 +19,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
 import { registerAllTools, type FlowGuardToolRegistry } from './tool-adapter.js';
 import { McpSessionBinder } from './session-resolver.js';
 import { installStdoutGuard } from './stdout-guard.js';
@@ -71,6 +72,10 @@ export const FLOWGUARD_TOOLS: FlowGuardToolRegistry = {
   observe_repository,
 };
 
+const rootsListChangedNotification = z.object({
+  method: z.literal('notifications/roots/list_changed'),
+});
+
 // --- Server Factory ---
 
 /**
@@ -94,16 +99,20 @@ export function createMcpServer(): McpServer {
   );
   const limiter = new McpExecutionLimiter(readMcpExecutionLimits());
   const sessionBinder = new McpSessionBinder(sessionId);
+  let cachedRoots: Awaited<ReturnType<typeof server.server.listRoots>>['roots'] | undefined;
+
+  // MCP clients notify root changes, which invalidates the authority cache.
+  server.server.setNotificationHandler(rootsListChangedNotification, () => {
+    cachedRoots = undefined;
+  });
 
   // Register FlowGuard tools
   registerAllTools(
     server,
     FLOWGUARD_TOOLS,
     async () => {
-      // The client supplies roots on every invocation. Binding checks each fresh
-      // response so a root-list change cannot retarget an existing transport.
-      const response = await server.server.listRoots();
-      return sessionBinder.resolve(response.roots);
+      cachedRoots ??= (await server.server.listRoots()).roots;
+      return sessionBinder.resolve(cachedRoots);
     },
     limiter,
   );
