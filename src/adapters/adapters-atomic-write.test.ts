@@ -58,6 +58,7 @@ import {
   PersistenceError,
   isEnoent,
   atomicWrite,
+  durableAtomicWrite,
 } from './persistence.js';
 import { appendAuditEvent, readAuditTrail } from './persistence-audit.js';
 import type { SessionState } from '../state/schema.js';
@@ -508,5 +509,83 @@ describe('persistence', () => {
       );
       expect(vi.mocked(fs.rename)).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+describe('durableAtomicWrite — directory fsync durability', () => {
+  const actual = (globalThis as Record<string, unknown>).__fsActual as typeof fs;
+
+  let tmpDir: string;
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-durable-'));
+  });
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('HAPPY: writes durably and fsyncs the parent directory', async () => {
+    const openSpy = vi.spyOn(fs, 'open');
+    try {
+      const filePath = path.join(tmpDir, 'session-state.json');
+      await durableAtomicWrite(filePath, '{"ok":true}\n');
+      expect(await fs.readFile(filePath, 'utf-8')).toBe('{"ok":true}\n');
+      expect(openSpy).toHaveBeenCalledWith(tmpDir, 'r', 0o600);
+    } finally {
+      openSpy.mockRestore();
+    }
+  });
+
+  it('BAD: fails closed when the directory fsync raises a real I/O error', async () => {
+    const openSpy = vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
+      if (args[1] === 'r') {
+        throw Object.assign(new Error('I/O error'), { code: 'EIO' });
+      }
+      return actual.open(...args);
+    });
+    try {
+      await expect(
+        durableAtomicWrite(path.join(tmpDir, 'session-state.json'), '{"ok":true}\n'),
+      ).rejects.toThrow(PersistenceError);
+    } finally {
+      openSpy.mockRestore();
+    }
+  });
+
+  it('CORNER: degrades silently for an unsupported directory open (EISDIR)', async () => {
+    const openSpy = vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
+      if (args[1] === 'r') {
+        throw Object.assign(new Error('EISDIR'), { code: 'EISDIR' });
+      }
+      return actual.open(...args);
+    });
+    try {
+      const filePath = path.join(tmpDir, 'session-state.json');
+      await durableAtomicWrite(filePath, '{"ok":true}\n');
+      expect(await fs.readFile(filePath, 'utf-8')).toBe('{"ok":true}\n');
+    } finally {
+      openSpy.mockRestore();
+    }
+  });
+
+  it('CORNER: degrades silently for an unsupported directory fsync (EINVAL)', async () => {
+    const openSpy = vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
+      const handle = await actual.open(...args);
+      if (args[1] === 'r') {
+        return {
+          ...handle,
+          sync: async () => {
+            throw Object.assign(new Error('EINVAL'), { code: 'EINVAL' });
+          },
+        };
+      }
+      return handle;
+    });
+    try {
+      const filePath = path.join(tmpDir, 'session-state.json');
+      await durableAtomicWrite(filePath, '{"ok":true}\n');
+      expect(await fs.readFile(filePath, 'utf-8')).toBe('{"ok":true}\n');
+    } finally {
+      openSpy.mockRestore();
+    }
   });
 });

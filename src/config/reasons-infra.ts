@@ -324,6 +324,28 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'AUDIT_SESSION_AUTHORITY_UNAVAILABLE',
+    category: 'adapter',
+    messageTemplate: 'Audit session authority is unavailable: {message}',
+    recoverySteps: [
+      'Run /hydrate to bootstrap or restore the FlowGuard session mapping',
+      'Check that the plugin workspace fingerprint resolution succeeded',
+      'Re-run the command after the audit session authority is resolvable',
+    ],
+  },
+
+  {
+    code: 'AUDIT_TRANSITION_EVIDENCE_GAP',
+    category: 'adapter',
+    messageTemplate: 'Persisted transition lacks durable audit evidence: {message}',
+    recoverySteps: [
+      'The session predates the durable audit outbox and its transition was never audited',
+      'Do not advance the session — contemporaneous audit evidence is absent',
+      'Start a new session with /hydrate to re-establish the audit contract',
+    ],
+  },
+
+  {
     code: 'TSA_TIMESTAMP_ASSURANCE_FAILED',
     category: 'adapter',
     messageTemplate: 'Timestamp authority assurance failed: {message}',

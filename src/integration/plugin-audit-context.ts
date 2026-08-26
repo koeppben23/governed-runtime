@@ -9,7 +9,7 @@
  * @version v1
  */
 
-import type { SessionState, Phase, Event } from '../state/schema.js';
+import type { SessionState } from '../state/schema.js';
 import { parseToolResult } from './plugin-helpers.js';
 import { checkNtpClock, type NtpCheckResult } from '../audit/ntp-check.js';
 import type { TimestampAssurancePolicy } from '../config/policy-types.js';
@@ -50,7 +50,6 @@ export interface AuditContext {
   now: string;
   prevHash: string;
   phase: string;
-  transitions: Array<{ from: Phase; to: Phase; event: Event; at: string }>;
   success: boolean;
   errorMessage: string | undefined;
   parsed: ReturnType<typeof parseToolResult>;
@@ -103,8 +102,7 @@ export async function resolveAuditContext(
       actor,
       now,
       prevHash,
-      phase: parsedOutput.phase,
-      transitions: parsedOutput.transitions,
+      phase: state.phase,
       success: parsedOutput.success,
       errorMessage: parsedOutput.errorMessage,
       parsed: parsedOutput.parsed,
@@ -135,13 +133,9 @@ export interface AuditContextResolution {
 
 function parseAuditOutput(
   output: unknown,
-): Pick<AuditContext, 'phase' | 'transitions' | 'success' | 'errorMessage' | 'parsed'> {
+): Pick<AuditContext, 'success' | 'errorMessage' | 'parsed'> {
   const parsed = parseToolResult(extractToolOutputValue(output));
-  const metadataTransitions = extractMetadataTransitions(output);
   return {
-    phase: typeof parsed?.phase === 'string' ? parsed.phase : 'unknown',
-    transitions:
-      metadataTransitions.length > 0 ? metadataTransitions : extractParsedTransitions(parsed),
     success: parsed?.error !== true,
     errorMessage: typeof parsed?.errorMessage === 'string' ? parsed.errorMessage : undefined,
     parsed,
@@ -152,23 +146,6 @@ function extractToolOutputValue(output: unknown): unknown {
   return typeof output === 'object' && output !== null && 'output' in output
     ? (output as { output?: unknown }).output
     : output;
-}
-
-function extractMetadataTransitions(output: unknown): AuditContext['transitions'] {
-  const metadata =
-    typeof output === 'object' && output !== null
-      ? ((output as Record<string, unknown>).metadata as Record<string, unknown> | undefined)
-      : undefined;
-  return Array.isArray(metadata?.transitions)
-    ? (metadata.transitions as AuditContext['transitions'])
-    : [];
-}
-
-function extractParsedTransitions(
-  parsed: ReturnType<typeof parseToolResult>,
-): AuditContext['transitions'] {
-  const rawTransitions = (parsed?._audit as { transitions?: unknown } | undefined)?.transitions;
-  return Array.isArray(rawTransitions) ? (rawTransitions as AuditContext['transitions']) : [];
 }
 
 function resolveTimestampAssurancePolicy(

@@ -179,6 +179,7 @@ function createAuditDeps(
   return {
     resolveFingerprint: ws.resolveFingerprint,
     getSessionDir: ws.getSessionDir,
+    resolveCanonicalSessionDir: ws.resolveCanonicalSessionDir,
     resolveSessionPolicy,
     initChain: ws.initChain,
     invalidateChainState: ws.invalidateChainState,

@@ -23,10 +23,7 @@ export function buildLifecycleDetail(
   finalPhase: Phase;
   reason?: string;
 } {
-  const finalPhase =
-    ctx.transitions.length > 0
-      ? ctx.transitions[ctx.transitions.length - 1]!.to
-      : (ctx.phase as Phase);
+  const finalPhase = state?.transition?.to ?? (ctx.phase as Phase);
   const reason =
     lifecycleAction === 'session_created' ? buildLifecycleReason(ctx, state, policy) : undefined;
   return {

@@ -317,6 +317,7 @@ function buildNewHydrateState(
         }
       : {}),
     transition: null,
+    pendingAuditOperations: [],
     error: null,
     createdAt: now,
   };

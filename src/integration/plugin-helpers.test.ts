@@ -37,7 +37,7 @@ describe('parseToolResult', () => {
   });
 
   it('GOOD: falls back to first line on multi-line content', () => {
-    const result = parseToolResult('{"ok":true}');
+    const result = parseToolResult('{"ok":true}\nsecond line is not JSON');
     expect(result).toEqual({ ok: true });
   });
 
@@ -121,6 +121,35 @@ describe('strictBlockedOutput', () => {
     );
     expect(parsed.diagnostics).toBeUndefined();
   });
+
+  it('GOOD: includes quickFix for a registered code with a quickFixCommand', () => {
+    const json = strictBlockedOutput('TICKET_REQUIRED', { action: 'plan' });
+    const parsed = JSON.parse(json) as Record<string, unknown>;
+
+    expect(parsed.quickFix).toBe('/ticket');
+  });
+
+  it('CORNER: omits quickFix for a registered code without a quickFixCommand', () => {
+    const json = strictBlockedOutput('SUBAGENT_REVIEW_NOT_INVOKED', {});
+    const parsed = JSON.parse(json) as Record<string, unknown>;
+
+    expect(parsed.quickFix).toBeUndefined();
+  });
+
+  it('GOOD: includes headline for a registered code with authored copy', () => {
+    const json = strictBlockedOutput('VALIDATION_EVIDENCE_REQUIRED', {});
+    const parsed = JSON.parse(json) as Record<string, unknown>;
+
+    expect(typeof parsed.headline).toBe('string');
+    expect((parsed.headline as string).length).toBeGreaterThan(0);
+  });
+
+  it('CORNER: omits headline for a registered code without authored copy', () => {
+    const json = strictBlockedOutput('TICKET_REQUIRED', { action: 'plan' });
+    const parsed = JSON.parse(json) as Record<string, unknown>;
+
+    expect(parsed.headline).toBeUndefined();
+  });
 });
 
 describe('buildEnforcementError (F2 — structured BLOCKED responses)', () => {
@@ -194,6 +223,20 @@ describe('buildEnforcementError (F2 — structured BLOCKED responses)', () => {
     expect(payload.recovery).toEqual(
       expect.arrayContaining([expect.stringContaining('[UNREGISTERED_REASON]')]),
     );
+  });
+
+  it('GOOD: includes quickFix for a registered code with a quickFixCommand', () => {
+    const err = buildEnforcementError('TICKET_REQUIRED', 'a ticket must exist');
+    const payload = JSON.parse(err.message.slice('[FlowGuard] '.length)) as Record<string, unknown>;
+
+    expect(payload.quickFix).toBe('/ticket');
+  });
+
+  it('CORNER: omits quickFix for a registered code without a quickFixCommand', () => {
+    const err = buildEnforcementError('SUBAGENT_REVIEW_NOT_INVOKED', 'did not run');
+    const payload = JSON.parse(err.message.slice('[FlowGuard] '.length)) as Record<string, unknown>;
+
+    expect(payload.quickFix).toBeUndefined();
   });
 
   it('GOOD: detail vars are interpolated into recovery steps', () => {
@@ -370,6 +413,24 @@ describe('isNativeEnforcementUnavailableDenial (#419)', () => {
   it('CORNER: false for a successful (non-blocked) tool result', () => {
     expect(isNativeEnforcementUnavailableDenial('{"ok":true}')).toBe(false);
   });
+
+  it('CORNER: false when diagnostics is null instead of an object', () => {
+    const output = JSON.stringify({
+      error: true,
+      code: 'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+      diagnostics: null,
+    });
+    expect(isNativeEnforcementUnavailableDenial(output)).toBe(false);
+  });
+
+  it('CORNER: false when diagnostics is an array (not a structured object)', () => {
+    const output = JSON.stringify({
+      error: true,
+      code: 'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+      diagnostics: [1, 2],
+    });
+    expect(isNativeEnforcementUnavailableDenial(output)).toBe(false);
+  });
 });
 
 describe('getHostTaskFindingsRejection (#424)', () => {
@@ -418,6 +479,33 @@ describe('getHostTaskFindingsRejection (#424)', () => {
   it('CORNER: returns null for unparseable output', () => {
     expect(getHostTaskFindingsRejection('not json at all')).toBeNull();
   });
+
+  it('CORNER: returns null when the rejection marker is null instead of an object', () => {
+    const output = JSON.stringify({
+      error: true,
+      code: 'SUBAGENT_EVIDENCE_REUSED',
+      hostTaskFindingsRejection: null,
+    });
+    expect(getHostTaskFindingsRejection(output)).toBeNull();
+  });
+
+  it('CORNER: omits obligationId when it is not a string', () => {
+    const output = JSON.stringify({
+      error: true,
+      code: 'SUBAGENT_EVIDENCE_REUSED',
+      hostTaskFindingsRejection: {
+        path: 'host_task',
+        reason: 'SUBAGENT_EVIDENCE_REUSED',
+        status: 'consumed',
+        obligationId: 42,
+      },
+    });
+    expect(getHostTaskFindingsRejection(output)).toEqual({
+      path: 'host_task',
+      reason: 'SUBAGENT_EVIDENCE_REUSED',
+      status: 'consumed',
+    });
+  });
 });
 
 describe('getReviewIdentityRejection (#425)', () => {
@@ -444,6 +532,44 @@ describe('getReviewIdentityRejection (#425)', () => {
 
   it('CORNER: returns null for unparseable output', () => {
     expect(getReviewIdentityRejection('not json at all')).toBeNull();
+  });
+
+  it('GOOD: recognizes reviewer_identity_uncomparable as a valid rejection reason', () => {
+    const output = JSON.stringify({
+      error: true,
+      code: 'FOUR_EYES_ACTOR_MATCH',
+      reviewIdentityRejection: { reason: 'reviewer_identity_uncomparable' },
+    });
+    expect(getReviewIdentityRejection(output)).toEqual({
+      reason: 'reviewer_identity_uncomparable',
+    });
+  });
+
+  it('BAD: ignores an unrecognized rejection reason', () => {
+    const output = JSON.stringify({
+      error: true,
+      code: 'FOUR_EYES_ACTOR_MATCH',
+      reviewIdentityRejection: { reason: 'something_else' },
+    });
+    expect(getReviewIdentityRejection(output)).toBeNull();
+  });
+
+  it('CORNER: returns null when the rejection marker is null instead of an object', () => {
+    const output = JSON.stringify({
+      error: true,
+      code: 'FOUR_EYES_ACTOR_MATCH',
+      reviewIdentityRejection: null,
+    });
+    expect(getReviewIdentityRejection(output)).toBeNull();
+  });
+
+  it('CORNER: omits obligationId when it is not a string', () => {
+    const output = JSON.stringify({
+      error: true,
+      code: 'FOUR_EYES_ACTOR_MATCH',
+      reviewIdentityRejection: { reason: 'reviewer_is_author', obligationId: 42 },
+    });
+    expect(getReviewIdentityRejection(output)).toEqual({ reason: 'reviewer_is_author' });
   });
 });
 
@@ -479,6 +605,27 @@ describe('getNativeAttestationRejection (#427)', () => {
     });
 
     expect(getNativeAttestationRejection(output)).toBeNull();
+  });
+
+  it('CORNER: returns null for a null rejection marker', () => {
+    const output = JSON.stringify({
+      phase: 'REVIEW_COMPLETE',
+      [NATIVE_ATTESTATION_REJECTION_FIELD]: null,
+    });
+    expect(getNativeAttestationRejection(output)).toBeNull();
+  });
+
+  it('CORNER: omits obligationId when it is not a string', () => {
+    const output = JSON.stringify({
+      phase: 'REVIEW_COMPLETE',
+      [NATIVE_ATTESTATION_REJECTION_FIELD]: {
+        reason: 'capture_session_mismatch',
+        obligationId: 42,
+      },
+    });
+    expect(getNativeAttestationRejection(output)).toEqual({
+      reason: 'capture_session_mismatch',
+    });
   });
 
   it('CORNER: returns null for unparseable output', () => {
@@ -520,6 +667,24 @@ describe('getAutoAdvanceOverflow (#428)', () => {
       error: true,
       code: 'AUTO_ADVANCE_OVERFLOW',
       autoAdvanceOverflow: { phase: 'PLAN_REVIEW', limit: '10' },
+    });
+    expect(getAutoAdvanceOverflow(output)).toBeNull();
+  });
+
+  it('CORNER: null when phase is not a string', () => {
+    const output = JSON.stringify({
+      error: true,
+      code: 'AUTO_ADVANCE_OVERFLOW',
+      autoAdvanceOverflow: { phase: 42, limit: 10 },
+    });
+    expect(getAutoAdvanceOverflow(output)).toBeNull();
+  });
+
+  it('CORNER: null when autoAdvanceOverflow is null', () => {
+    const output = JSON.stringify({
+      error: true,
+      code: 'AUTO_ADVANCE_OVERFLOW',
+      autoAdvanceOverflow: null,
     });
     expect(getAutoAdvanceOverflow(output)).toBeNull();
   });

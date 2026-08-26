@@ -26,6 +26,7 @@ import { FlowGuardAuditPlugin } from './plugin.js';
 import { makeState } from '../fixtures.js';
 import { createTestWorkspace, withTestEnv } from './test-helpers.js';
 import { readState, writeState } from '../adapters/persistence.js';
+import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
 import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
@@ -612,5 +613,49 @@ describe('reviewer attempt lifecycle through the real hooks', () => {
     );
     expect(forObligation, 'one obligation carries at most one evidence record').toHaveLength(1);
     expect(forObligation[0]?.childSessionId).toBe(CHILD_RETRY);
+  });
+
+  it('EDGE — unresolved durable audit operations block reviewer dispatch before attempt binding', async () => {
+    const ws = await createTestWorkspace();
+    cleanupWs = ws.cleanup;
+    await execFileAsync('git', ['init'], { cwd: ws.tmpDir });
+    const sessionID = crypto.randomUUID();
+    const sessDir = await seedSession(ws.tmpDir, sessionID);
+
+    const hooks = await FlowGuardAuditPlugin(
+      createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+    );
+    const beforeHook = hooks['tool.execute.before']!;
+    const afterHook = hooks['tool.execute.after']!;
+
+    const planOutput = planReviewRequiredOutput();
+    await afterHook(
+      { tool: 'flowguard_plan', sessionID, callID: 'call-plan', args: {} },
+      { title: 'flowguard_plan', output: planOutput, metadata: {} },
+    );
+
+    // Crash window: commit a durable audit operation, then make the audit trail
+    // unreadable so reconciliation must fail closed.
+    const current = await readState(sessDir);
+    const transition = {
+      from: 'PLAN',
+      to: 'PLAN_REVIEW',
+      event: 'SELF_REVIEW_PENDING',
+      at: '2026-05-15T12:00:00.000Z',
+    } as const;
+    await writeStateWithArtifactsAndAuditOperations(sessDir, { ...current!, transition }, [
+      transition,
+    ]);
+    await fs.writeFile(path.join(sessDir, 'audit.jsonl'), '{ malformed json\n', 'utf8');
+    const assuranceBefore = (await readState(sessDir))!.reviewAssurance;
+
+    const reviewerArgs = reviewerArgsFromReviewRequiredOutput(planOutput);
+    await expect(
+      beforeHook({ tool: 'task', sessionID, callID: 'call-1' }, { args: reviewerArgs }),
+    ).rejects.toThrow('AUDIT_PERSISTENCE_FAILED');
+
+    // No reviewer side effect may have been persisted before reconciliation.
+    const after = await readState(sessDir);
+    expect(after!.reviewAssurance).toEqual(assuranceBefore);
   });
 });

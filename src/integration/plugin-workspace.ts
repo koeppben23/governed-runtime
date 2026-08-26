@@ -47,6 +47,15 @@ export interface WorkspaceDeps {
 export interface PluginWorkspace {
   resolveFingerprint(): Promise<string | null>;
   getSessionDir(sessionId: string): string | null;
+  /**
+   * Canonical worktree + sessionId → sessionDir resolution, independent of the
+   * cached fingerprint state. Returns a discriminated outcome so callers can
+   * distinguish a positively resolved directory from an unavailable
+   * resolution authority — unavailable must never be treated as absent.
+   */
+  resolveCanonicalSessionDir(
+    sessionId: string,
+  ): Promise<{ status: 'resolved'; sessDir: string } | { status: 'unavailable' }>;
   getChainState(sessionId: string): MutableChainState;
   invalidateChainState(sessionId: string): void;
   initChain(sessDir: string | null, sessionId: string): Promise<string>;
@@ -119,6 +128,18 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
       return resolveSessionDir(this._cachedFingerprint, sessionId);
     } catch {
       return null;
+    }
+  }
+
+  async resolveCanonicalSessionDir(
+    sessionId: string,
+  ): Promise<{ status: 'resolved'; sessDir: string } | { status: 'unavailable' }> {
+    if (!this._deps.auditWorktree) return { status: 'unavailable' };
+    try {
+      const result = await computeFingerprint(this._deps.auditWorktree);
+      return { status: 'resolved', sessDir: resolveSessionDir(result.fingerprint, sessionId) };
+    } catch {
+      return { status: 'unavailable' };
     }
   }
 
@@ -259,6 +280,7 @@ export function createWorkspace(deps: WorkspaceDeps): PluginWorkspace {
   return {
     resolveFingerprint: () => impl.resolveFingerprint(),
     getSessionDir: (sid) => impl.getSessionDir(sid),
+    resolveCanonicalSessionDir: (sid) => impl.resolveCanonicalSessionDir(sid),
     getChainState: (sid) => impl.getChainState(sid),
     invalidateChainState: (sid) => impl.invalidateChainState(sid),
     initChain: (sd, sid) => impl.initChain(sd, sid),

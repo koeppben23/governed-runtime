@@ -61,6 +61,12 @@ export const CURRENT_AUDIT_FORMAT_VERSION: AuditFormatVersion = 'audit-chain.v2'
 /** Detail payload for transition events. */
 export interface TransitionDetail {
   kind: 'transition';
+  /** Durable state↔audit operation identity when emitted from the outbox. */
+  operationId?: string;
+  /** State-authority digests committed by the durable audit outbox. */
+  preStateDigest?: string;
+  mutationDigest?: string;
+  postStateDigest?: string;
   from: Phase;
   to: Phase;
   event: Event;
@@ -279,7 +285,7 @@ export function buildTransitionBody(
   prevHash: string,
 ): EventBody {
   return {
-    id: crypto.randomUUID(),
+    id: detail.operationId ?? crypto.randomUUID(),
     sessionId,
     phase,
     event: `transition:${detail.event}`,

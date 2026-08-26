@@ -122,6 +122,29 @@ export function isOperationalTool(toolName: string): boolean {
 }
 
 /**
+ * Operational tools that persist state, evidence, ledgers, or publishable
+ * artifacts. They are not workflow tools, but they mutate persisted
+ * authority and must therefore pass the durable audit reconciliation gate
+ * before their first side effect. Read-only projections (status/help) are
+ * deliberately absent from this set.
+ */
+const MUTATING_OPERATIONAL_TOOLS: ReadonlySet<string> = new Set([
+  TOOL_FLOWGUARD_ARCHIVE,
+  TOOL_FLOWGUARD_DECLARE_CONTRACT,
+  TOOL_FLOWGUARD_RECORD_MUTATION_EVIDENCE,
+  TOOL_FLOWGUARD_OBSERVE_REPOSITORY,
+]);
+
+/**
+ * True when the tool can create or change persisted state, evidence, ledger
+ * entries, or publishable artifacts — regardless of workflow/operational
+ * classification. This is the authority for the audit reconciliation gate.
+ */
+export function isMutatingFlowGuardTool(toolName: string): boolean {
+  return isWorkflowTool(toolName) || MUTATING_OPERATIONAL_TOOLS.has(toolName);
+}
+
+/**
  * Get tool classification.
  * Throws if tool is not classified.
  */

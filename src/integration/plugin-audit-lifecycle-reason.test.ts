@@ -12,7 +12,6 @@ const baseCtx: AuditContext = {
   now: '2026-01-01T00:00:00.000Z',
   prevHash: 'genesis',
   phase: 'READY',
-  transitions: [],
   success: true,
   errorMessage: undefined,
   parsed: {},
@@ -83,10 +82,11 @@ describe('buildLifecycleDetail', () => {
     const detail = buildLifecycleDetail(
       {
         ...baseCtx,
-        transitions: [{ event: 'APPROVE', from: 'IMPLEMENTATION', to: 'COMPLETE', at: 'now' }],
       },
       'session_completed',
-      null,
+      {
+        transition: { event: 'APPROVE', from: 'IMPLEMENTATION', to: 'COMPLETE', at: 'now' },
+      } as SessionState,
       { mode: 'policy-mode', requireHumanGates: true },
     );
 
