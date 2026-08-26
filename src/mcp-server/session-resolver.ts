@@ -36,11 +36,13 @@ export interface McpSessionContext {
   readonly sessionId: string;
   readonly directory: string;
   readonly worktree: string;
+  readonly workspaceFingerprint?: string;
 }
 
 interface BoundSession {
   readonly canonicalRootSetDigest: string;
   readonly canonicalWorktree: string;
+  readonly workspaceFingerprint: string;
 }
 
 interface ResolvedRoots {
@@ -69,6 +71,7 @@ export class McpSessionBinder {
       this.bound = {
         canonicalRootSetDigest: resolved.digest,
         canonicalWorktree: worktree,
+        workspaceFingerprint: fingerprint,
       };
     } else if (
       this.bound.canonicalRootSetDigest !== resolved.digest ||
@@ -77,7 +80,12 @@ export class McpSessionBinder {
       throw new McpSessionResolutionError('MCP roots or bound workspace changed during transport');
     }
 
-    return { sessionId: this.sessionId, directory: worktree, worktree };
+    return {
+      sessionId: this.sessionId,
+      directory: worktree,
+      worktree,
+      workspaceFingerprint: this.bound.workspaceFingerprint,
+    };
   }
 }
 

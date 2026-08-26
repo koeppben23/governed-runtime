@@ -30,7 +30,11 @@ import { registerAllTools, isGovernanceDenialCode } from './tool-adapter.js';
 import { McpExecutionLimiter, readMcpExecutionLimits } from './execution-limiter.js';
 import { reportMcpFatalError } from './fatal-error.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { ToolContext, ToolDefinition } from '../integration/tools/helpers.js';
+import {
+  resolveWorkspacePaths,
+  type ToolContext,
+  type ToolDefinition,
+} from '../integration/tools/helpers.js';
 import { getAdapterLogger, getLogTraceFields } from '../logging/adapter-logger.js';
 import { z } from 'zod';
 
@@ -148,6 +152,34 @@ describe('Session Resolver', () => {
         rm(first, { recursive: true, force: true }),
         rm(second, { recursive: true, force: true }),
       ]);
+    }
+  });
+
+  it('binds workspace paths to the initial fingerprint when the Git remote changes', async () => {
+    const repo = await repository('flowguard-mcp-fingerprint');
+    try {
+      await execFileAsync('git', ['remote', 'add', 'origin', 'https://example.com/org/first.git'], {
+        cwd: repo,
+      });
+      const binder = new McpSessionBinder('mcp-fingerprint-session');
+      const first = await binder.resolve([root(repo)]);
+      await execFileAsync(
+        'git',
+        ['remote', 'set-url', 'origin', 'https://example.com/org/second.git'],
+        {
+          cwd: repo,
+        },
+      );
+      const second = await binder.resolve([root(repo)]);
+
+      expect(second.workspaceFingerprint).toBe(first.workspaceFingerprint);
+      await expect(
+        resolveWorkspacePaths({ ...second, sessionID: second.sessionId }),
+      ).resolves.toMatchObject({
+        fingerprint: first.workspaceFingerprint,
+      });
+    } finally {
+      await rm(repo, { recursive: true, force: true });
     }
   });
 

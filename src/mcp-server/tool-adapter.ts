@@ -299,6 +299,7 @@ export function registerAllTools(
                   agent: 'mcp-client',
                   directory: sessionCtx.directory,
                   worktree: sessionCtx.worktree,
+                  workspaceFingerprint: sessionCtx.workspaceFingerprint,
                   abort: extra.signal,
                   metadata: () => {
                     /* MCP: metadata is embedded in text output */
