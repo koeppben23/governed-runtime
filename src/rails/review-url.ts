@@ -10,6 +10,7 @@
  */
 
 import { request } from 'node:https';
+import type { RequestOptions } from 'node:https';
 import { createBrotliDecompress, createGunzip, createInflate } from 'node:zlib';
 import type { IncomingMessage } from 'node:http';
 import { blocked } from '../config/reasons.js';
@@ -287,12 +288,15 @@ export async function fetchUrlContent(
 
 function requestPinnedTarget(url: string, target: ResolvedReviewTarget): Promise<IncomingMessage> {
   return new Promise((resolve, reject) => {
-    const req = request(url, {
+    const options: RequestOptions & { autoSelectFamily: false } = {
       agent: false,
+      family: target.family,
+      autoSelectFamily: false,
       servername: target.hostname,
       headers: { 'accept-encoding': 'gzip, deflate, br' },
       lookup: (_hostname, _options, callback) => callback(null, target.address, target.family),
-    });
+    };
+    const req = request(url, options);
     req.setTimeout(15_000, () => req.destroy(new Error('HTTPS request timed out')));
     req.once('error', reject);
     req.once('socket', (socket) => {

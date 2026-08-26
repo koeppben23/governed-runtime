@@ -10,6 +10,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Readable } from 'node:stream';
 import { gzipSync } from 'node:zlib';
+import { EventEmitter } from 'node:events';
+import { request } from 'node:https';
 import {
   executeReview,
   validateReviewUrl,
@@ -18,6 +20,8 @@ import {
 } from './review.js';
 import { fetchUrlContent, MAX_REVIEW_URL_RESPONSE_BYTES } from './review-url.js';
 import { makeState, makeProgressedState } from '../fixtures.js';
+
+vi.mock('node:https', () => ({ request: vi.fn() }));
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
@@ -246,6 +250,47 @@ describe('Issue #310: resolved URL targets are validated before fetch', () => {
 
     expect(result).toEqual({ content: 'review material' });
     expect(targetAddress).toBe('93.184.216.34');
+  });
+
+  it('disables Node auto-family selection while the default transport pins DNS', async () => {
+    let options: Record<string, unknown> | undefined;
+    vi.mocked(request).mockImplementationOnce((_url, requestOptions) => {
+      options = requestOptions as Record<string, unknown>;
+      const fakeRequest = new EventEmitter() as EventEmitter & {
+        setTimeout: () => void;
+        destroy: () => void;
+        end: () => void;
+      };
+      fakeRequest.setTimeout = () => undefined;
+      fakeRequest.destroy = () => undefined;
+      fakeRequest.end = () =>
+        queueMicrotask(() => fakeRequest.emit('error', new Error('test transport')));
+      return fakeRequest as never;
+    });
+
+    const result = await fetchUrlContent('https://example.com/spec.md', async () => [
+      { address: '93.184.216.34', family: 4 },
+    ]);
+
+    expect(result).toMatchObject({ kind: 'blocked', code: 'COMMAND_BLOCKED' });
+    expect(options).toMatchObject({
+      autoSelectFamily: false,
+      family: 4,
+      servername: 'example.com',
+    });
+    const lookup = options?.lookup;
+    expect(lookup).toEqual(expect.any(Function));
+    (
+      lookup as (
+        hostname: string,
+        options: unknown,
+        callback: (error: NodeJS.ErrnoException | null, address: string, family: 4 | 6) => void,
+      ) => void
+    )('example.com', { all: false }, (error, address, family) => {
+      expect(error).toBeNull();
+      expect(address).toBe('93.184.216.34');
+      expect(family).toBe(4);
+    });
   });
 
   it('blocks mixed DNS results when any resolved address is private', async () => {

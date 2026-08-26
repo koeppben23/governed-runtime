@@ -46,7 +46,6 @@ interface BoundSession {
 
 interface ResolvedRoots {
   readonly digest: string;
-  readonly worktrees: readonly string[];
   readonly roots: readonly string[];
 }
 
@@ -62,7 +61,7 @@ export class McpSessionBinder {
 
   async resolve(roots: readonly McpRoot[]): Promise<McpSessionContext> {
     const resolved = await resolveRoots(roots);
-    const worktree = await selectWorktree(resolved.worktrees);
+    const worktree = await selectWorktree(resolved.roots);
     const fingerprint = (await computeFingerprint(worktree)).fingerprint;
 
     await validateSessionHint(fingerprint);
@@ -88,18 +87,21 @@ async function resolveRoots(roots: readonly McpRoot[]): Promise<ResolvedRoots> {
   if (roots.length === 0) throw new McpSessionResolutionError('MCP client advertised no roots');
 
   const canonicalRoots = new Set<string>();
-  const worktrees = new Set<string>();
   for (const root of roots) {
     const rootPath = fileRootPath(root.uri);
     const canonicalRoot = await canonicalDirectory(rootPath, 'MCP root');
+    const worktree = await gitWorktree(canonicalRoot);
+    if (canonicalRoot !== worktree) {
+      throw new McpSessionResolutionError(
+        `MCP root must be the Git worktree root, not a repository subdirectory: ${canonicalRoot}`,
+      );
+    }
     canonicalRoots.add(canonicalRoot);
-    worktrees.add(await gitWorktree(canonicalRoot));
   }
 
   const sortedRoots = [...canonicalRoots].sort();
   return {
     roots: sortedRoots,
-    worktrees: [...worktrees].sort(),
     digest: hashTextShort(canonicalJsonStringify(sortedRoots), 64),
   };
 }
@@ -149,8 +151,8 @@ async function gitWorktree(directory: string): Promise<string> {
   }
 }
 
-async function selectWorktree(worktrees: readonly string[]): Promise<string> {
-  if (worktrees.length === 1) return worktrees[0]!;
+async function selectWorktree(roots: readonly string[]): Promise<string> {
+  if (roots.length === 1) return roots[0]!;
 
   const hint = process.env[ENV_PROJECT_DIR];
   if (!hint) {
@@ -159,13 +161,12 @@ async function selectWorktree(worktrees: readonly string[]): Promise<string> {
     );
   }
   const hintedPath = await canonicalDirectory(hint, ENV_PROJECT_DIR);
-  const hintedWorktree = await gitWorktree(hintedPath);
-  if (!worktrees.includes(hintedWorktree)) {
+  if (!roots.includes(hintedPath)) {
     throw new McpSessionResolutionError(
-      `${ENV_PROJECT_DIR} does not select an MCP-authorized worktree`,
+      `${ENV_PROJECT_DIR} does not select an MCP-authorized root`,
     );
   }
-  return hintedWorktree;
+  return hintedPath;
 }
 
 async function validateSessionHint(fingerprint: string): Promise<void> {

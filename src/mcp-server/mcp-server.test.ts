@@ -17,7 +17,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -147,6 +147,19 @@ describe('Session Resolver', () => {
     });
   });
 
+  it('BAD: rejects a repository subdirectory root instead of widening it to the Git worktree', async () => {
+    const repo = await repository('flowguard-mcp-root');
+    const subdirectory = join(repo, 'allowed', 'subdir');
+    await mkdir(subdirectory, { recursive: true });
+    try {
+      await expect(new McpSessionBinder().resolve([root(subdirectory)])).rejects.toMatchObject({
+        code: 'SESSION_UNRESOLVABLE',
+      });
+    } finally {
+      await rm(repo, { recursive: true, force: true });
+    }
+  });
+
   it('BAD: rejects ambiguous multi-root authority without a matching project hint', async () => {
     const first = await repository('flowguard-mcp-first');
     const second = await repository('flowguard-mcp-second');
@@ -171,6 +184,24 @@ describe('Session Resolver', () => {
     try {
       const ctx = await new McpSessionBinder().resolve([root(first), root(second)]);
       expect(ctx.worktree).toBe(await realpath(second));
+    } finally {
+      await Promise.all([
+        rm(first, { recursive: true, force: true }),
+        rm(second, { recursive: true, force: true }),
+      ]);
+    }
+  });
+
+  it('BAD: project hint must equal, not merely belong to, an authorized root', async () => {
+    const first = await repository('flowguard-mcp-first');
+    const second = await repository('flowguard-mcp-second');
+    const nestedHint = join(second, 'nested');
+    await mkdir(nestedHint);
+    process.env['FLOWGUARD_PROJECT_DIR'] = nestedHint;
+    try {
+      await expect(
+        new McpSessionBinder().resolve([root(first), root(second)]),
+      ).rejects.toMatchObject({ code: 'SESSION_UNRESOLVABLE' });
     } finally {
       await Promise.all([
         rm(first, { recursive: true, force: true }),
