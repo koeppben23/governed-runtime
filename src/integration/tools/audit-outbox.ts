@@ -9,7 +9,6 @@ import { hashText } from '../../shared/hashing.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { buildStateWriteBody, buildTransitionBody } from '../../audit/types.js';
 import { computeCanonicalEventDigest } from '../../audit/canonical-digest.js';
-import { finalizeImplementationEntry } from '../../adapters/implementation-base-authority.js';
 import {
   PersistenceError,
   readState,
@@ -82,6 +81,8 @@ async function prepareState(nextState: SessionState): Promise<SessionState> {
       `Refusing to persist invalid state: ${result.error.message}`,
     );
   }
+  const { finalizeImplementationEntry } =
+    await import('../../adapters/implementation-base-authority.js');
   const finalized = await finalizeImplementationEntry(result.data);
   const refreshed = SessionState.safeParse({
     ...finalized,
