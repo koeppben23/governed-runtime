@@ -302,8 +302,7 @@ const PendingAuditOperationBase = z.object({
 
 /** A phase transition commits its state↔audit binding through this operation. */
 const PendingTransitionAuditOperation = PendingAuditOperationBase.extend({
-  // Default preserves persisted operations created before the outbox union.
-  kind: z.literal('transition').default('transition'),
+  kind: z.literal('transition'),
   transition: Transition.extend({
     chainIndex: z.number().int().nonnegative(),
     autoAdvanced: z.boolean(),
