@@ -32,9 +32,6 @@ export type RuntimeLease = z.infer<typeof RuntimeLease>;
 
 export const RUNTIME_LEASE_FILE = 'runtime-lease.json';
 
-/** Default liveness window: a live holder must heartbeat at least this often. */
-export const DEFAULT_RUNTIME_LEASE_TTL_MS = 5 * 60_000;
-
 export type RuntimeLeaseAcquisition =
   | { readonly kind: 'held'; readonly lease: RuntimeLease }
   | { readonly kind: 'blocked'; readonly lease: RuntimeLease };
@@ -50,12 +47,6 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
-function heartbeatFresh(lease: RuntimeLease, nowMs: number, ttlMs: number): boolean {
-  const heartbeat = Date.parse(lease.lastHeartbeatAt);
-  if (!Number.isFinite(heartbeat)) return false;
-  return nowMs - heartbeat <= ttlMs;
-}
-
 /**
  * Acquire (or refresh) the runtime lease for this session.
  *
@@ -64,20 +55,21 @@ function heartbeatFresh(lease: RuntimeLease, nowMs: number, ttlMs: number): bool
  *
  * - No lease: mint generation 1 for the calling instance.
  * - Held by the calling instance: refresh the heartbeat.
- * - Held by another instance: blocked while the holder is alive and its
- *   heartbeat is fresh. A dead or stale holder is superseded with a LATER
- *   generation — the fencing token that ends the previous epoch.
+ * - Held by another instance: blocked while the holder's PID is alive.
+ *   Heartbeat staleness NEVER fences a provably live holder — a live process
+ *   may still be executing its host mutation. Only a provably dead holder
+ *   (ESRCH) is superseded with a LATER generation, the fencing token that
+ *   ends the previous epoch. (PID reuse on a dead holder fails closed: the
+ *   reused PID reads as alive and recovery stays blocked — an explicit
+ *   recovery authority for hung-but-live holders is out of scope.)
  */
 export async function acquireRuntimeLease(input: {
   readonly sessDir: string;
   readonly runtimeInstanceId: string;
   readonly pid: number;
   readonly now: string;
-  readonly ttlMs?: number;
 }): Promise<RuntimeLeaseAcquisition> {
-  const ttlMs = input.ttlMs ?? DEFAULT_RUNTIME_LEASE_TTL_MS;
   const filePath = path.join(input.sessDir, RUNTIME_LEASE_FILE);
-  const nowMs = Date.parse(input.now);
 
   let existing: RuntimeLease | null = null;
   try {
@@ -115,8 +107,9 @@ export async function acquireRuntimeLease(input: {
     return { kind: 'held', lease };
   }
 
-  const live = isProcessAlive(existing.holderPid) && heartbeatFresh(existing, nowMs, ttlMs);
-  if (live) {
+  // Fencing authority: only a provably dead holder ends an epoch. A live PID
+  // blocks unconditionally — its host mutation may still be running.
+  if (isProcessAlive(existing.holderPid)) {
     return { kind: 'blocked', lease: existing };
   }
 

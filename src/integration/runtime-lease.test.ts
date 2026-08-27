@@ -81,24 +81,26 @@ describe('runtime lease (fenced runtime epoch)', () => {
     expect(superseded.lease.generation).toBe(2);
   });
 
-  it('supersedes a stale heartbeat with a later generation', async () => {
+  it('never fences a live holder, not even on a stale heartbeat', async () => {
     await acquireRuntimeLease({
       sessDir,
       runtimeInstanceId: INSTANCE_A,
       pid: process.pid,
       now: NOW,
     });
-    // The holder is alive, but the heartbeat is far outside the TTL window.
-    const superseded = await acquireRuntimeLease({
+    // The holder PID is provably alive. A heartbeat that is arbitrarily old
+    // must never be fenced — the live process may still be executing its host
+    // mutation.
+    const blocked = await acquireRuntimeLease({
       sessDir,
       runtimeInstanceId: INSTANCE_B,
       pid: process.pid,
       now: '2026-08-28T20:00:00.000Z',
-      ttlMs: 60_000,
     });
-    expect(superseded.kind).toBe('held');
-    if (superseded.kind !== 'held') return;
-    expect(superseded.lease.generation).toBe(2);
+    expect(blocked.kind).toBe('blocked');
+    if (blocked.kind !== 'blocked') return;
+    expect(blocked.lease.holderRuntimeInstanceId).toBe(INSTANCE_A);
+    expect(blocked.lease.generation).toBe(1);
   });
 
   it('fails closed on a corrupt lease file', async () => {
