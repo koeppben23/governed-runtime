@@ -32,6 +32,7 @@ import { buildFrozenReviewMaterialContent } from '../review/reviewer-context.js'
 import { resolveAttemptDiscoveryOrBlock } from '../review/discovery-attempt-context.js';
 import { hasFrozenRepositoryAuthority } from '../../state/evidence-review.js';
 import { materializeApprovedPlanContractResult } from '../proofgraph/materialize-contract.js';
+import { latestUnknownOutcomeResolvedAt } from '../../state/evidence-mutation-episode.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Shared Types / Helpers
@@ -337,4 +338,24 @@ export function normalizeHostFindings(findings: ReviewFindings): ReviewFindings 
       findingId: crypto.randomUUID(),
     })),
   };
+}
+
+/**
+ * After an unknown-outcome resolution, every piece of pre-resolution
+ * implementation evidence is unreliable. The review verdict must be bound to
+ * a fresh worktree recapture: evidence recorded before the latest resolution
+ * blocks the review loop until a new /implement records new evidence.
+ */
+export function unknownOutcomeRevalidationBlock(
+  state: SessionState,
+  implementationExecutedAt: string,
+): string | null {
+  const latestResolution = latestUnknownOutcomeResolvedAt(state.mutationEpisodeResolutions);
+  if (latestResolution === null) return null;
+  if (implementationExecutedAt <= latestResolution) {
+    return formatBlocked('MUTATION_OUTCOME_UNKNOWN_REVALIDATION_REQUIRED', {
+      resolvedAt: latestResolution,
+    });
+  }
+  return null;
 }

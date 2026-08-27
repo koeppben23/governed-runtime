@@ -383,7 +383,7 @@ describe('audit integrity', () => {
     it('verifyChain rejects non-chained (legacy) records', () => {
       const legacyEvent: Record<string, unknown> = {
         id: 'legacy-1',
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         phase: 'PLAN',
         event: 'transition:PLAN_READY',
         occurredAt: TS1,
@@ -407,7 +407,7 @@ describe('audit integrity', () => {
       const chain = buildChain(2);
       const legacy: Record<string, unknown> = {
         id: 'legacy-1',
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         phase: 'PLAN',
         event: 'some:event',
         occurredAt: TS2,
@@ -464,7 +464,7 @@ describe('audit integrity', () => {
       const chain = buildChain(2);
       const legacy: Record<string, unknown> = {
         id: 'legacy-tail',
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         phase: 'COMPLETE',
         event: 'some:event',
         timestamp: TS3,
@@ -514,7 +514,7 @@ describe('audit integrity', () => {
       it('rejects a single legacy record in every mode', () => {
         const legacyEvent: Record<string, unknown> = {
           id: 'legacy-strict-1',
-          sessionId: SESSION_ID,
+          flowguardSessionId: SESSION_ID,
           phase: 'PLAN',
           event: 'transition:PLAN_READY',
           occurredAt: TS1,
@@ -533,7 +533,7 @@ describe('audit integrity', () => {
         const legacyEvents: Record<string, unknown>[] = [
           {
             id: 'leg-1',
-            sessionId: SESSION_ID,
+            flowguardSessionId: SESSION_ID,
             phase: 'TICKET',
             event: 'e1',
             occurredAt: TS1,
@@ -542,7 +542,7 @@ describe('audit integrity', () => {
           },
           {
             id: 'leg-2',
-            sessionId: SESSION_ID,
+            flowguardSessionId: SESSION_ID,
             phase: 'PLAN',
             event: 'e2',
             occurredAt: TS2,
@@ -551,7 +551,7 @@ describe('audit integrity', () => {
           },
           {
             id: 'leg-3',
-            sessionId: SESSION_ID,
+            flowguardSessionId: SESSION_ID,
             phase: 'PLAN',
             event: 'e3',
             occurredAt: TS3,
@@ -590,7 +590,7 @@ describe('audit integrity', () => {
       it('non-strict (default) with legacy records → still fails closed', () => {
         const legacyEvent: Record<string, unknown> = {
           id: 'legacy-compat',
-          sessionId: SESSION_ID,
+          flowguardSessionId: SESSION_ID,
           phase: 'PLAN',
           event: 'transition:PLAN_READY',
           occurredAt: TS1,
@@ -606,7 +606,7 @@ describe('audit integrity', () => {
       it('explicit strict: false also fails closed on legacy records', () => {
         const legacyEvent: Record<string, unknown> = {
           id: 'legacy-explicit-false',
-          sessionId: SESSION_ID,
+          flowguardSessionId: SESSION_ID,
           phase: 'PLAN',
           event: 'transition:PLAN_READY',
           occurredAt: TS1,
@@ -626,7 +626,7 @@ describe('audit integrity', () => {
         const chain = buildChain(2);
         const legacy: Record<string, unknown> = {
           id: 'legacy-mixed-strict',
-          sessionId: SESSION_ID,
+          flowguardSessionId: SESSION_ID,
           phase: 'PLAN',
           event: 'some:event',
           occurredAt: TS2,
@@ -649,7 +649,7 @@ describe('audit integrity', () => {
         const chain = buildChain(3);
         const legacy: Record<string, unknown> = {
           id: 'legacy-plus-break',
-          sessionId: SESSION_ID,
+          flowguardSessionId: SESSION_ID,
           phase: 'PLAN',
           event: 'some:event',
           occurredAt: TS2,
@@ -687,7 +687,7 @@ describe('audit integrity', () => {
 function buildNestedDecisionEvent(prevHash: string): ChainedAuditEvent {
   const body: Omit<ChainedAuditEvent, 'chainHash'> = {
     id: '11111111-1111-4111-8111-111111111111',
-    sessionId: SESSION_ID,
+    flowguardSessionId: SESSION_ID,
     phase: 'PLAN_REVIEW',
     event: 'decision:DEC-001',
     occurredAt: TS1,

@@ -133,7 +133,7 @@ describe('buildStatusProjection — E2E', () => {
       const projection = buildStatusProjection(state, policy);
 
       expect(projection.phase).toBe(phase);
-      expect(projection.sessionId).toBe('00000000-0000-4000-8000-000000000001');
+      expect(projection.flowguardSessionId).toBe('00000000-0000-4000-8000-000000000001');
       expect(Array.isArray(projection.allowedCommands)).toBe(true);
       expect(typeof projection.nextAction.summary).toBe('string');
     }
@@ -308,7 +308,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
       expect(projection).toMatchObject({
         phase: 'READY',
         phaseLabel: 'Ready',
-        sessionId: '00000000-0000-4000-8000-000000000001',
+        flowguardSessionId: '00000000-0000-4000-8000-000000000001',
         policyMode: 'solo',
         profileId: 'baseline',
         archiveStatus: 'verified',

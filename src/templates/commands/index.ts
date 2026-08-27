@@ -19,6 +19,7 @@ import { PLAN_COMMAND } from './plan.js';
 import { CONTINUE_COMMAND } from './continue.js';
 import { IMPLEMENT_COMMAND } from './implement.js';
 import { RESOLVE_IMPLEMENTATION_CHALLENGE_COMMAND } from './resolve-implementation-challenge.js';
+import { RECONCILE_MUTATION_EPISODE_COMMAND } from './reconcile-mutation-episode.js';
 import { VALIDATE_COMMAND } from './validate.js';
 import { REVIEW_DECISION_COMMAND } from './review-decision.js';
 import { REVIEW_COMMAND } from './review.js';
@@ -48,6 +49,7 @@ const COMMAND_BODIES: Record<string, string> = {
   'continue.md': CONTINUE_COMMAND,
   'implement.md': IMPLEMENT_COMMAND,
   'resolve-implementation-challenge.md': RESOLVE_IMPLEMENTATION_CHALLENGE_COMMAND,
+  'reconcile-mutation-episode.md': RECONCILE_MUTATION_EPISODE_COMMAND,
   'validate.md': VALIDATE_COMMAND,
   'review-decision.md': REVIEW_DECISION_COMMAND,
   'review.md': REVIEW_COMMAND,

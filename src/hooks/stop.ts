@@ -84,7 +84,8 @@ async function stopLogic(): Promise<void> {
   const now = new Date().toISOString();
   const auditEvent: AuditEventBody = {
     id: randomUUID(),
-    sessionId: session_id,
+    flowguardSessionId: state.flowguardSessionId,
+    hostSessionId: session_id,
     phase: state.phase,
     event: 'lifecycle',
     occurredAt: now,

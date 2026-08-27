@@ -36,6 +36,7 @@ import {
   TOOL_FLOWGUARD_ARCHIVE,
   TOOL_FLOWGUARD_ARCHITECTURE,
   TOOL_FLOWGUARD_HELP,
+  TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE,
 } from '../integration/tool-names.js';
 
 function sha256(value: string): string {
@@ -45,7 +46,7 @@ function sha256(value: string): string {
 describe('TEMPLATE_HASH_STABILITY', () => {
   it('TOOL_WRAPPER matches compiled output hash', () => {
     expect(sha256(TOOL_WRAPPER)).toBe(
-      'e5a8c92750dc027482ce2e1180c1983bf0bcd4444f986f9fcc18bd5cb4c50fa8',
+      '6b1a341a02d156b727d8a36be5bd8a3846c045c6f6794c317589b746751081aa',
     );
   });
 
@@ -250,11 +251,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // orchestration restart.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'cb3bcad3ebfff8e3f65d4705a73d078e47d49402119bf0c1842a3b02d330e1a4',
+      '26d982d7359f9ade2b517214129f9da2bad08d14d267131a12380c20a0964f47',
     );
   });
 
-  it('all 24 commands present', () => {
+  it('all 25 commands present', () => {
     const expected = [
       'abort.md',
       'approve.md',
@@ -269,6 +270,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
       'hydrate.md',
       'implement.md',
       'plan.md',
+      'reconcile-mutation-episode.md',
       'reject.md',
       'request-changes.md',
       'resolve-implementation-challenge.md',
@@ -309,6 +311,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
       TOOL_FLOWGUARD_ARCHITECTURE,
       TOOL_FLOWGUARD_HELP,
       TOOL_FLOWGUARD_OBSERVE_REPOSITORY,
+      TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE,
     ];
 
     // Parse the actual export identifiers from TOOL_WRAPPER's export block.

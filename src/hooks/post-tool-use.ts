@@ -82,7 +82,8 @@ async function postToolUseLogic(): Promise<void> {
   // Build and persist audit event.
   const auditEvent: AuditEventBody = {
     id: randomUUID(),
-    sessionId: session_id,
+    flowguardSessionId: state.flowguardSessionId,
+    hostSessionId: session_id,
     phase: state.phase,
     event: 'tool_call',
     occurredAt: now,

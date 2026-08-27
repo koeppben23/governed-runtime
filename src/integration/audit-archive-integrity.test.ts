@@ -46,6 +46,7 @@ import {
 import { verifyRegulatedArchive } from '../adapters/workspace/archive-verify-chain.js';
 import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
 import type { ToolDefinition } from './tools/helpers.js';
+import { FIXED_SESSION_UUID } from '../fixtures.js';
 
 vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
@@ -291,7 +292,8 @@ async function completeRegulatedSession(): Promise<{ fingerprint: string; sessDi
 function chainedEvent(prevHash: string, event: string): Record<string, unknown> {
   const base = {
     id: crypto.randomUUID(),
-    sessionId: 'ses_chain_test',
+    flowguardSessionId: FIXED_SESSION_UUID,
+    hostSessionId: 'ses_chain_test',
     phase: 'READY',
     event,
     auditSequence: 1,
@@ -390,7 +392,8 @@ describe('audit and archive integrity fail-closed behavior', () => {
       const ids = await completeRegulatedSession();
       const legacyEvent = {
         id: crypto.randomUUID(),
-        sessionId: ctx.sessionID,
+        flowguardSessionId: FIXED_SESSION_UUID,
+        hostSessionId: ctx.sessionID,
         phase: 'COMPLETE',
         event: 'legacy_after_archive',
         timestamp: new Date().toISOString(),

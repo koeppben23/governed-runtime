@@ -100,7 +100,8 @@ async function cleanTmpDir(dir: string): Promise<void> {
 function makeValidAuditEvent(overrides: Partial<AuditEventBody> = {}): AuditEventBody {
   return {
     id: FIXED_UUID,
-    sessionId: FIXED_SESSION_UUID,
+    flowguardSessionId: FIXED_SESSION_UUID,
+    hostSessionId: 'ses_host_test',
     phase: 'PLAN',
     event: 'transition:PLAN_READY',
     occurredAt: FIXED_TIME,

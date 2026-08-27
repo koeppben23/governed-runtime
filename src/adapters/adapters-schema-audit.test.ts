@@ -99,7 +99,8 @@ async function cleanTmpDir(dir: string): Promise<void> {
 function makeValidAuditEvent(overrides: Partial<AuditEventBody> = {}): AuditEventBody {
   return {
     id: FIXED_UUID,
-    sessionId: FIXED_SESSION_UUID,
+    flowguardSessionId: FIXED_SESSION_UUID,
+    hostSessionId: 'ses_host_test',
     phase: 'PLAN',
     event: 'transition:PLAN_READY',
     occurredAt: FIXED_TIME,
@@ -346,8 +347,8 @@ describe('persistence', () => {
       expect((caught as PersistenceError).code).toBe('SCHEMA_VALIDATION_FAILED');
     });
 
-    it('rejects event missing required field "sessionId"', async () => {
-      const { sessionId: _, ...invalid } = makeValidAuditEvent();
+    it('rejects event missing required field "flowguardSessionId"', async () => {
+      const { flowguardSessionId: _, ...invalid } = makeValidAuditEvent();
       await expect(appendAuditEvent(tmpDir, invalid as AuditEvent)).rejects.toThrow(
         PersistenceError,
       );
@@ -364,15 +365,15 @@ describe('persistence', () => {
       expect((caught as PersistenceError).code).toBe('SCHEMA_VALIDATION_FAILED');
     });
 
-    it('rejects event with invalid sessionId (empty)', async () => {
+    it('rejects event with invalid flowguardSessionId (empty)', async () => {
       await expect(
-        appendAuditEvent(tmpDir, makeValidAuditEvent({ sessionId: '' })),
+        appendAuditEvent(tmpDir, makeValidAuditEvent({ flowguardSessionId: '' })),
       ).rejects.toThrow(PersistenceError);
     });
 
-    it('rejects event with invalid sessionId (special characters)', async () => {
+    it('rejects event with invalid flowguardSessionId (non-UUID)', async () => {
       await expect(
-        appendAuditEvent(tmpDir, makeValidAuditEvent({ sessionId: 'bad.id' })),
+        appendAuditEvent(tmpDir, makeValidAuditEvent({ flowguardSessionId: 'bad.id' })),
       ).rejects.toThrow(PersistenceError);
     });
 

@@ -36,7 +36,7 @@ import {
   ValidationAttempt,
   ValidationResult,
 } from './evidence.js';
-import { MutationEpisode } from './evidence-mutation-episode.js';
+import { MutationEpisode, MutationEpisodeResolution } from './evidence-mutation-episode.js';
 import {
   DiscoverySummarySchema,
   DetectedStackSchema,
@@ -404,6 +404,9 @@ export const SessionState = z
 
     /** Durable host-mutation dispatch and completion ledger. */
     mutationEpisodes: z.array(MutationEpisode).default([]),
+
+    /** Append-only unknown-outcome resolution authority for host mutation episodes. */
+    mutationEpisodeResolutions: z.array(MutationEpisodeResolution).default([]),
 
     /** Advisory challenge-resolution evidence; defaults for legacy sessions. */
     challengeResolutions: z.array(ChallengeResolution).default([]),

@@ -200,7 +200,8 @@ describe('state schemas', () => {
     it('AuditEvent parses valid event with hash chain fields', () => {
       const event = {
         id: FIXED_UUID,
-        sessionId: FIXED_SESSION_UUID,
+        flowguardSessionId: FIXED_SESSION_UUID,
+        hostSessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
         phase: 'TICKET',
         event: 'lifecycle:session_created',
         occurredAt: FIXED_TIME,
@@ -219,7 +220,8 @@ describe('state schemas', () => {
     it('AuditEvent accepts OpenCode-style non-UUID session IDs', () => {
       const event = {
         id: FIXED_UUID,
-        sessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
+        flowguardSessionId: FIXED_SESSION_UUID,
+        hostSessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
         phase: 'READY',
         event: 'tool_call:flowguard_hydrate',
         occurredAt: FIXED_TIME,
@@ -272,7 +274,7 @@ describe('state schemas', () => {
       expect(() =>
         AuditEvent.parse({
           id: FIXED_UUID,
-          sessionId: 'bad/session',
+          flowguardSessionId: 'bad/session',
           phase: 'READY',
           event: 'tool_call:flowguard_hydrate',
           occurredAt: FIXED_TIME,
@@ -431,7 +433,8 @@ describe('state schemas', () => {
     it('AuditEvent rejects records without chain fields (legacy artifacts unsupported)', () => {
       const event = {
         id: FIXED_UUID,
-        sessionId: FIXED_SESSION_UUID,
+        flowguardSessionId: FIXED_SESSION_UUID,
+        hostSessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
         phase: 'TICKET',
         event: 'lifecycle:session_created',
         occurredAt: FIXED_TIME,

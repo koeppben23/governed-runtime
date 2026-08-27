@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 import { archiveSession, initWorkspace, verifyArchive } from './workspace/index.js';
 import { archiveRegulatedEvidence } from './workspace/archive.js';
 import { verifyRegulatedArchive } from './workspace/archive-verify-chain.js';
-import { writeState } from './persistence.js';
+import { writeState, readState } from './persistence.js';
 import { appendAuditEvent, readAuditTrail } from './persistence-audit.js';
 import * as persistenceAudit from './persistence-audit.js';
 import { makeState, REGULATED_POLICY_SNAPSHOT } from '../fixtures.js';
@@ -84,9 +84,11 @@ async function extract(archivePath: string): Promise<string> {
 }
 
 async function appendCompletionAuditEvent(sessDir: string, sessionId: string): Promise<void> {
+  const state = await readState(sessDir);
   await appendAuditEvent(sessDir, {
     id: crypto.randomUUID(),
-    sessionId,
+    flowguardSessionId: state!.flowguardSessionId,
+    hostSessionId: sessionId,
     phase: 'COMPLETE',
     event: 'lifecycle:session_completed',
     occurredAt: '2026-01-01T00:00:00.000Z',
@@ -152,7 +154,8 @@ describe('Archive Layout v2', () => {
     await writeState(initialized.sessionDir, makeState('COMPLETE'));
     await appendAuditEvent(initialized.sessionDir, {
       id: '11111111-1111-4111-8111-111111111111',
-      sessionId,
+      flowguardSessionId: makeState().flowguardSessionId,
+      hostSessionId: sessionId,
       phase: 'PLAN_REVIEW',
       event: 'decision:DEC-ARCHIVE-001',
       occurredAt: '2026-01-01T00:00:00.000Z',
@@ -402,7 +405,8 @@ describe('Archive Layout v2', () => {
     );
     await appendAuditEvent(initialized.sessionDir, {
       id: crypto.randomUUID(),
-      sessionId,
+      flowguardSessionId: makeState().flowguardSessionId,
+      hostSessionId: sessionId,
       phase: 'COMPLETE',
       event: 'lifecycle:session_completed',
       occurredAt: '2026-01-01T00:00:00.000Z',

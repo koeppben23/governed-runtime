@@ -161,7 +161,8 @@ function addAuditOperations(
       autoAdvanced: chainIndex > 0,
     };
     const body = buildTransitionBody(
-      next.id,
+      next.flowguardSessionId,
+      next.binding.hostSessionId,
       normalizedTransition.to,
       {
         operationId,
@@ -207,7 +208,8 @@ function addStateWriteOperation(
   );
   const at = new Date().toISOString();
   const body = buildStateWriteBody(
-    next.id,
+    next.flowguardSessionId,
+    next.binding.hostSessionId,
     next.phase,
     { operationId, preStateDigest, mutationDigest, postStateDigest },
     at,

@@ -241,9 +241,11 @@ describe('archive', () => {
           await import('../adapters/workspace/index.js');
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+        const priorState = await readState(sessDir);
         await appendAuditEvent(sessDir, {
           id: crypto.randomUUID(),
-          sessionId: ctx.sessionID,
+          flowguardSessionId: priorState!.flowguardSessionId,
+          hostSessionId: ctx.sessionID,
           phase: 'TICKET',
           event: 'test:sharing_secret',
           occurredAt: new Date().toISOString(),

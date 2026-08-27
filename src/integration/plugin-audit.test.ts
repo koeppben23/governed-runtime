@@ -1322,7 +1322,8 @@ describe('runAudit', () => {
         const pending = await readState(sessDir);
         const operation = requireTransition(pending!.pendingAuditOperations[0]!);
         const body = buildTransitionBody(
-          SESSION_ID,
+          pending!.flowguardSessionId,
+          pending!.binding.hostSessionId,
           operation.transition.to,
           {
             operationId: operation.operationId,
@@ -1471,6 +1472,7 @@ describe('runAudit', () => {
         const operation = requireTransition(pending!.pendingAuditOperations[0]!);
         const body = buildTransitionBody(
           SESSION_ID,
+          undefined,
           operation.transition.to,
           {
             operationId: operation.operationId,
@@ -1573,6 +1575,7 @@ describe('runAudit', () => {
         await writeState(sessDir, legacy);
         const body = buildTransitionBody(
           SESSION_ID,
+          undefined,
           transition.to,
           {
             from: transition.from,
@@ -1627,6 +1630,7 @@ describe('runAudit', () => {
         // Same kind/from/event/at, different `to` — must NOT count as evidence.
         const decoy = buildTransitionBody(
           SESSION_ID,
+          undefined,
           'PLAN_REVIEW',
           {
             from: transition.from,
@@ -1641,7 +1645,7 @@ describe('runAudit', () => {
         await appendAuditEvent(sessDir, finalizeWithTimestampEvidence(decoy, 'genesis'));
         // Same transition fields but a different event kind — must NOT count.
         const decoyToolCall = buildToolCallBody({
-          sessionId: SESSION_ID,
+          flowguardSessionId: SESSION_ID,
           phase: 'PLAN',
           detail: {
             tool: 'flowguard_plan',
@@ -1769,6 +1773,7 @@ describe('runAudit', () => {
         // Same id + operationId, different transition content.
         const divergent = buildTransitionBody(
           SESSION_ID,
+          undefined,
           'PLAN_REVIEW',
           {
             operationId: operation.operationId,

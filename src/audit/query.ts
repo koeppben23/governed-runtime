@@ -31,7 +31,10 @@ export interface DecisionReceipt {
   readonly transitionEvent: string;
   readonly policyMode: string;
   readonly eventId: string;
-  readonly sessionId: string;
+  /** FlowGuard session identity (the same FlowGuard UUID on every event class). */
+  readonly flowguardSessionId: string;
+  /** Host session identity where bound (OpenCode session id). */
+  readonly hostSessionId?: string;
   readonly timestamp: string;
 }
 
@@ -42,9 +45,13 @@ export type AuditFilter = (event: AuditEvent) => boolean;
 
 // ─── Basic Filters ────────────────────────────────────────────────────────────
 
-/** Filter events by session ID. */
+/**
+ * Filter events by session identity. Matches either explicit identity —
+ * `flowguardSessionId` (FlowGuard UUID) or `hostSessionId` (host session id).
+ * Events never carry a polymorphic sessionId.
+ */
 export function bySession(sessionId: string): AuditFilter {
-  return (event) => event.sessionId === sessionId;
+  return (event) => event.flowguardSessionId === sessionId || event.hostSessionId === sessionId;
 }
 
 /** Filter events by phase (exact match). */
@@ -196,7 +203,8 @@ function toDecisionReceipt(event: AuditEvent): DecisionReceipt | null {
     transitionEvent: detail.transitionEvent as string,
     policyMode: detail.policyMode as string,
     eventId: event.id,
-    sessionId: event.sessionId,
+    flowguardSessionId: event.flowguardSessionId,
+    ...(event.hostSessionId ? { hostSessionId: event.hostSessionId } : {}),
     timestamp: event.occurredAt,
   };
 }
@@ -211,12 +219,12 @@ export function decisionReceipts(events: AuditEvent[]): DecisionReceipt[] {
 }
 
 /**
- * Get distinct session IDs from the trail.
+ * Get distinct FlowGuard session IDs from the trail.
  */
 export function distinctSessions(events: AuditEvent[]): string[] {
   const seen = new Set<string>();
   for (const event of events) {
-    seen.add(event.sessionId);
+    seen.add(event.flowguardSessionId);
   }
   return Array.from(seen);
 }

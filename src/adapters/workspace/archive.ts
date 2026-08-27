@@ -466,13 +466,15 @@ async function appendArtifactBindingAuditEvent(
 ): Promise<void> {
   const artifacts = await collectArtifactBindings(sessDir);
   if (artifacts.length === 0) return;
+  if (!state) return;
   const { events } = await readAuditTrail(sessDir);
   const previous = findBindingArtifacts(events);
   if (bindingMatches(previous, artifacts)) return;
   await appendAuditEvent(sessDir, {
     id: crypto.randomUUID(),
-    sessionId,
-    phase: state?.phase ?? 'unknown',
+    flowguardSessionId: state.flowguardSessionId,
+    hostSessionId: sessionId,
+    phase: state.phase,
     event: ARTIFACT_BINDING_EVENT,
     occurredAt: new Date().toISOString(),
     actor: 'system',
@@ -491,12 +493,14 @@ async function appendPublicationBindingAuditEvent(
   state: import('../../state/schema.js').SessionState | null,
   publication: ArchivePublicationBinding,
 ): Promise<void> {
+  if (!state) return;
   const { events } = await readAuditTrail(sessDir);
   if (findPublicationBinding(events, publication)) return;
   await appendAuditEvent(sessDir, {
     id: crypto.randomUUID(),
-    sessionId,
-    phase: state?.phase ?? 'unknown',
+    flowguardSessionId: state.flowguardSessionId,
+    hostSessionId: sessionId,
+    phase: state.phase,
     event: ARCHIVE_PUBLICATION_BINDING_EVENT,
     occurredAt: new Date().toISOString(),
     actor: 'system',

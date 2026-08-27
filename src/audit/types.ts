@@ -27,7 +27,6 @@ import { hashText } from '../shared/hashing.js';
 import type { Phase, Event } from '../state/schema.js';
 import type { ReviewVerdict, TimestampEvidence } from '../state/evidence.js';
 import { canonicalJsonStringify, computeCanonicalEventDigest } from './canonical-digest.js';
-import { sanitizeDiagnosticString } from '../logging/redact.js';
 
 // P2b: Canonical ActorInfo and ActorVerificationMeta live in state/evidence.ts (Zod SSOT).
 // Re-exported here for backward compatibility — all existing consumers continue to work.
@@ -186,7 +185,10 @@ export type TypedDetail =
  */
 export interface ChainedAuditEvent {
   readonly id: string;
-  readonly sessionId: string;
+  /** FlowGuard session identity — the SAME FlowGuard UUID on every event class. */
+  readonly flowguardSessionId: string;
+  /** Host session identity (OpenCode session id), bound where host context exists. */
+  readonly hostSessionId?: string;
   readonly phase: string;
   readonly event: string;
   readonly auditSequence: number;
@@ -318,8 +320,10 @@ export type EventBody = Omit<
 /**
  * Build a transition event body (no chainHash, no canonical digest, no evidence).
  */
+// eslint-disable-next-line max-params -- positional factory API kept explicit for call-site auditability
 export function buildTransitionBody(
-  sessionId: string,
+  flowguardSessionId: string,
+  hostSessionId: string | undefined,
   phase: Phase,
   detail: Omit<TransitionDetail, 'kind'>,
   occurredAt: string,
@@ -327,7 +331,8 @@ export function buildTransitionBody(
 ): EventBody {
   return {
     id: detail.operationId ?? crypto.randomUUID(),
-    sessionId,
+    flowguardSessionId,
+    ...(hostSessionId ? { hostSessionId } : {}),
     phase,
     event: `transition:${detail.event}`,
     occurredAt,
@@ -339,8 +344,10 @@ export function buildTransitionBody(
 }
 
 /** Build a state-write event body from a durable outbox operation. */
+// eslint-disable-next-line max-params -- positional factory API kept explicit for call-site auditability
 export function buildStateWriteBody(
-  sessionId: string,
+  flowguardSessionId: string,
+  hostSessionId: string | undefined,
   phase: Phase,
   detail: Omit<StateWriteDetail, 'kind'>,
   occurredAt: string,
@@ -348,7 +355,8 @@ export function buildStateWriteBody(
 ): EventBody {
   return {
     id: detail.operationId,
-    sessionId,
+    flowguardSessionId,
+    ...(hostSessionId ? { hostSessionId } : {}),
     phase,
     event: 'state_write',
     occurredAt,
@@ -360,8 +368,10 @@ export function buildStateWriteBody(
 }
 
 /** Build a denied-enforcement event body from the synchronous host hook. */
+// eslint-disable-next-line max-params -- positional factory API kept explicit for call-site auditability
 export function buildEnforcementDeniedBody(
-  sessionId: string,
+  flowguardSessionId: string,
+  hostSessionId: string | undefined,
   phase: Phase,
   detail: Omit<EnforcementDeniedDetail, 'kind'>,
   occurredAt: string,
@@ -369,7 +379,8 @@ export function buildEnforcementDeniedBody(
 ): EventBody {
   return {
     id: crypto.randomUUID(),
-    sessionId,
+    flowguardSessionId,
+    ...(hostSessionId ? { hostSessionId } : {}),
     phase,
     event: 'enforcement:denied',
     occurredAt,
@@ -385,7 +396,8 @@ export function buildEnforcementDeniedBody(
  * Input object for createTransitionEvent.
  */
 export interface TransitionEventInput {
-  readonly sessionId: string;
+  readonly flowguardSessionId: string;
+  readonly hostSessionId?: string;
   readonly phase: Phase;
   readonly detail: Omit<TransitionDetail, 'kind'>;
   readonly occurredAt: string;
@@ -401,18 +413,20 @@ export function createTransitionEvent(
   ...args:
     | [input: TransitionEventInput]
     | [
-        sessionId: string,
+        flowguardSessionId: string,
         phase: Phase,
         detail: Omit<TransitionDetail, 'kind'>,
         occurredAt: string,
         prevHash: string,
         timestampEvidence?: TimestampEvidence,
+        hostSessionId?: string,
       ]
 ): ChainedAuditEvent {
   const input = normalizeTransitionEventInput(args);
   return finalizeWithTimestampEvidence(
     buildTransitionBody(
-      input.sessionId,
+      input.flowguardSessionId,
+      input.hostSessionId,
       input.phase,
       input.detail,
       input.occurredAt,
@@ -427,24 +441,42 @@ function normalizeTransitionEventInput(
   args:
     | [input: TransitionEventInput]
     | [
-        sessionId: string,
+        flowguardSessionId: string,
         phase: Phase,
         detail: Omit<TransitionDetail, 'kind'>,
         occurredAt: string,
         prevHash: string,
         timestampEvidence?: TimestampEvidence,
+        hostSessionId?: string,
       ],
 ): TransitionEventInput {
   if (args.length === 1) return args[0];
-  const [sessionId, phase, detail, occurredAt, prevHash, timestampEvidence] = args;
-  return { sessionId, phase, detail, occurredAt, prevHash, timestampEvidence };
+  const [
+    flowguardSessionId,
+    phase,
+    detail,
+    occurredAt,
+    prevHash,
+    timestampEvidence,
+    hostSessionId,
+  ] = args;
+  return {
+    flowguardSessionId,
+    hostSessionId,
+    phase,
+    detail,
+    occurredAt,
+    prevHash,
+    timestampEvidence,
+  };
 }
 
 /**
  * Input object for createToolCallEvent.
  */
 export interface ToolCallEventInput {
-  readonly sessionId: string;
+  readonly flowguardSessionId: string;
+  readonly hostSessionId?: string;
   readonly phase: string;
   readonly detail: Omit<ToolCallDetail, 'kind'>;
   readonly occurredAt: string;
@@ -462,10 +494,20 @@ export interface ToolCallEventInput {
  * Build a tool call event body (no chainHash, no canonical digest, no evidence).
  */
 export function buildToolCallBody(input: Omit<ToolCallEventInput, 'timestampEvidence'>): EventBody {
-  const { sessionId, phase, detail, occurredAt, actor, prevHash, actorInfo } = input;
+  const {
+    flowguardSessionId,
+    hostSessionId,
+    phase,
+    detail,
+    occurredAt,
+    actor,
+    prevHash,
+    actorInfo,
+  } = input;
   return {
     id: crypto.randomUUID(),
-    sessionId,
+    flowguardSessionId,
+    ...(hostSessionId ? { hostSessionId } : {}),
     phase,
     event: `tool_call:${detail.tool}`,
     occurredAt,
@@ -497,14 +539,16 @@ export function createToolCallEvent(input: ToolCallEventInput): ChainedAuditEven
  * Build an error event body (no chainHash, no canonical digest, no evidence).
  */
 export function buildErrorBody(
-  sessionId: string,
+  flowguardSessionId: string,
+  hostSessionId: string | undefined,
   detail: Omit<ErrorDetail, 'kind'>,
   occurredAt: string,
   prevHash: string,
 ): EventBody {
   return {
     id: crypto.randomUUID(),
-    sessionId,
+    flowguardSessionId,
+    ...(hostSessionId ? { hostSessionId } : {}),
     phase: detail.errorPhase,
     event: `error:${detail.code}`,
     occurredAt,
@@ -519,15 +563,17 @@ export function buildErrorBody(
  * Create an error audit event.
  * Emitted when the state machine enters an error state.
  */
+// eslint-disable-next-line max-params -- positional factory API kept explicit for call-site auditability
 export function createErrorEvent(
-  sessionId: string,
+  flowguardSessionId: string,
+  hostSessionId: string | undefined,
   detail: Omit<ErrorDetail, 'kind'>,
   occurredAt: string,
   prevHash: string,
   timestampEvidence?: TimestampEvidence,
 ): ChainedAuditEvent {
   return finalizeWithTimestampEvidence(
-    buildErrorBody(sessionId, detail, occurredAt, prevHash),
+    buildErrorBody(flowguardSessionId, hostSessionId, detail, occurredAt, prevHash),
     prevHash,
     timestampEvidence,
   );
@@ -537,7 +583,8 @@ export function createErrorEvent(
  * Input object for createLifecycleEvent.
  */
 export interface LifecycleEventInput {
-  readonly sessionId: string;
+  readonly flowguardSessionId: string;
+  readonly hostSessionId?: string;
   readonly detail: Omit<LifecycleDetail, 'kind'>;
   readonly occurredAt: string;
   readonly actor: string;
@@ -556,10 +603,12 @@ export interface LifecycleEventInput {
 export function buildLifecycleBody(
   input: Omit<LifecycleEventInput, 'timestampEvidence'>,
 ): EventBody {
-  const { sessionId, detail, occurredAt, actor, prevHash, actorInfo } = input;
+  const { flowguardSessionId, hostSessionId, detail, occurredAt, actor, prevHash, actorInfo } =
+    input;
   return {
     id: crypto.randomUUID(),
-    sessionId,
+    flowguardSessionId,
+    ...(hostSessionId ? { hostSessionId } : {}),
     phase: detail.finalPhase,
     event: `lifecycle:${detail.action}`,
     occurredAt,
@@ -587,7 +636,8 @@ export function createLifecycleEvent(input: LifecycleEventInput): ChainedAuditEv
  * Input object for createDecisionEvent.
  */
 export interface DecisionEventInput {
-  readonly sessionId: string;
+  readonly flowguardSessionId: string;
+  readonly hostSessionId?: string;
   readonly gatePhase: Phase;
   readonly detail: Omit<DecisionDetail, 'kind' | 'gatePhase'>;
   readonly occurredAt: string;
@@ -605,10 +655,20 @@ export interface DecisionEventInput {
  * Build a decision event body (no chainHash, no canonical digest, no evidence).
  */
 export function buildDecisionBody(input: Omit<DecisionEventInput, 'timestampEvidence'>): EventBody {
-  const { sessionId, gatePhase, detail, occurredAt, actor, prevHash, actorInfo } = input;
+  const {
+    flowguardSessionId,
+    hostSessionId,
+    gatePhase,
+    detail,
+    occurredAt,
+    actor,
+    prevHash,
+    actorInfo,
+  } = input;
   return {
     id: crypto.randomUUID(),
-    sessionId,
+    flowguardSessionId,
+    ...(hostSessionId ? { hostSessionId } : {}),
     phase: gatePhase,
     event: `decision:${detail.decisionId}`,
     occurredAt,
@@ -634,58 +694,6 @@ export function createDecisionEvent(input: DecisionEventInput): ChainedAuditEven
 
 // ─── Arg Summarizer ───────────────────────────────────────────────────────────
 
-/** Maximum string length before truncation in arg summaries. */
-const ARG_SUMMARY_TRUNCATION_LIMIT = 100;
-
-const SECRET_BEARING_PATTERNS = [
-  'secret',
-  'token',
-  'password',
-  'passphrase',
-  'credential',
-  'authorization',
-  'api_key',
-  'apikey',
-  'access_key',
-  'accesskey',
-  'private_key',
-  'privatekey',
-] as const;
-
-function isSecretBearingKey(key: string): boolean {
-  const normalized = key.toLowerCase();
-  return (
-    SECRET_BEARING_PATTERNS.some((pattern) => normalized.includes(pattern)) ||
-    /(^|[_-])key($|[_-])/.test(normalized)
-  );
-}
-
-/**
- * Summarize tool args for audit, redacting values on secret-bearing keys
- * and content-level secret patterns in all scalar strings via sanitizeDiagnosticString.
- * Scalar strings are truncated to ARG_SUMMARY_TRUNCATION_LIMIT chars.
- * Objects/arrays are replaced with type indicators.
- */
-export function summarizeArgs(args: Record<string, unknown>): Record<string, string> {
-  const summary: Record<string, string> = {};
-  for (const [key, value] of Object.entries(args)) {
-    if (isSecretBearingKey(key)) {
-      summary[key] = '[REDACTED]';
-    } else if (value === null || value === undefined) {
-      summary[key] = 'null';
-    } else if (typeof value === 'string') {
-      const sanitized = sanitizeDiagnosticString(value);
-      summary[key] =
-        sanitized.length > ARG_SUMMARY_TRUNCATION_LIMIT
-          ? sanitized.slice(0, ARG_SUMMARY_TRUNCATION_LIMIT) + '...'
-          : sanitized;
-    } else if (typeof value === 'number' || typeof value === 'boolean') {
-      summary[key] = String(value);
-    } else if (Array.isArray(value)) {
-      summary[key] = `[Array(${value.length})]`;
-    } else {
-      summary[key] = '[Object]';
-    }
-  }
-  return summary;
-}
+// Extracted to audit/arg-summary.ts (file-size budget); re-exported here so
+// existing consumers keep importing from the canonical audit types module.
+export { summarizeArgs } from './arg-summary.js';

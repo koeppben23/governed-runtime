@@ -39,6 +39,7 @@ export const TOOL_FLOWGUARD_ARCHIVE = 'flowguard_archive';
 export const TOOL_FLOWGUARD_HELP = 'flowguard_help';
 export const TOOL_FLOWGUARD_DECLARE_CONTRACT = 'flowguard_declare_contract';
 export const TOOL_FLOWGUARD_RECORD_MUTATION_EVIDENCE = 'flowguard_record_mutation_evidence';
+export const TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE = 'flowguard_reconcile_mutation_episode';
 /**
  * The sanctioned reviewer observation capability. The ONLY tool whose output
  * may become repository evidence authority. The reviewer agent templates
@@ -65,6 +66,7 @@ export const ALL_FLOWGUARD_TOOL_NAMES: ReadonlySet<string> = new Set([
   TOOL_FLOWGUARD_HELP,
   TOOL_FLOWGUARD_DECLARE_CONTRACT,
   TOOL_FLOWGUARD_RECORD_MUTATION_EVIDENCE,
+  TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE,
   TOOL_FLOWGUARD_OBSERVE_REPOSITORY,
 ]);
 

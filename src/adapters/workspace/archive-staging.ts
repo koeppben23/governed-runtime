@@ -106,7 +106,7 @@ async function buildStaging(
 
     // Decision receipts redaction
     const receipts = decisionReceipts(input.events as AuditEvent[]).filter(
-      (r) => r.sessionId === input.sessionId,
+      (r) => r.hostSessionId === input.sessionId || r.flowguardSessionId === input.sessionId,
     );
     if (receipts.length > 0) {
       const redactedReceipts = redactDecisionReceipts({ receipts }, input.redactionMode);
@@ -138,8 +138,9 @@ async function buildStaging(
       }
     }
     const receiptsExist =
-      decisionReceipts(input.events as AuditEvent[]).filter((r) => r.sessionId === input.sessionId)
-        .length > 0;
+      decisionReceipts(input.events as AuditEvent[]).filter(
+        (r) => r.hostSessionId === input.sessionId || r.flowguardSessionId === input.sessionId,
+      ).length > 0;
     if (receiptsExist) {
       await writeDecisionReceipts(archiveRoot, input.sessionId, input.events);
       rawFilesProduced.push(ARCHIVE_LAYOUT.receipts);
@@ -194,7 +195,7 @@ async function writeDecisionReceipts(
   events: readonly Record<string, unknown>[],
 ): Promise<void> {
   const receipts = decisionReceipts(events as AuditEvent[]).filter(
-    (receipt) => receipt.sessionId === sessionId,
+    (receipt) => receipt.hostSessionId === sessionId || receipt.flowguardSessionId === sessionId,
   );
   if (receipts.length === 0) return;
   const target = archivePath(archiveRoot, ARCHIVE_LAYOUT.receipts);
@@ -261,7 +262,7 @@ async function computeExcludedFiles(
 
   // Decision receipts — if events contain decision events for this session
   const receipts = decisionReceipts(events as AuditEvent[]).filter(
-    (r) => r.sessionId === sessionId,
+    (r) => r.hostSessionId === sessionId || r.flowguardSessionId === sessionId,
   );
   if (receipts.length > 0) {
     excluded.push(ARCHIVE_LAYOUT.receipts);

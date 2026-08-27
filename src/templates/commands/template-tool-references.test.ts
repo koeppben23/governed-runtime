@@ -23,6 +23,7 @@ import {
   TOOL_FLOWGUARD_ABORT,
   TOOL_FLOWGUARD_ARCHIVE,
   TOOL_FLOWGUARD_HELP,
+  TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE,
 } from '../../integration/tool-names.js';
 import { COMMANDS } from './index.js';
 import { TOOL_WRAPPER } from '../wrappers/index.js';
@@ -43,6 +44,7 @@ const REGISTERED_TOOLS: ReadonlySet<string> = new Set([
   TOOL_FLOWGUARD_ABORT,
   TOOL_FLOWGUARD_ARCHIVE,
   TOOL_FLOWGUARD_HELP,
+  TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE,
 ]);
 
 const TOOL_REFERENCE_PATTERN = /flowguard_[a-z_]+/g;

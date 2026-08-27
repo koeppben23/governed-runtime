@@ -129,7 +129,8 @@ function makeBaseProjection(overrides: Partial<StatusProjection> = {}): StatusPr
   return {
     phase: 'READY',
     phaseLabel: 'Ready',
-    sessionId: 'test-session',
+    flowguardSessionId: '00000000-0000-4000-8000-000000000002',
+    hostSessionId: 'test-session',
     policyMode: 'solo',
     profileId: 'none',
     actor: null,

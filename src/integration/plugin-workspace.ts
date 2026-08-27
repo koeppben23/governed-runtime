@@ -245,7 +245,9 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
       return next;
     }
     const { events } = await readAuditTrail(sessDir);
-    const receipts = decisionReceipts(events).filter((r) => r.sessionId === sessionId);
+    const receipts = decisionReceipts(events).filter(
+      (r) => r.hostSessionId === sessionId || r.flowguardSessionId === sessionId,
+    );
     const maxSequence = receipts.reduce((max, r) => Math.max(max, r.decisionSequence), 0);
     const next = maxSequence + 1;
     this._decisionSequenceCache.set(sessionId, next);

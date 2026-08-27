@@ -39,6 +39,7 @@ import { help as rawHelp } from './help-tool.js';
 import { resolve_implementation_challenge as rawResolveImplementationChallenge } from './challenge-resolution.js';
 import { declare_contract as rawDeclareContract } from './declare-contract.js';
 import { record_mutation_evidence as rawRecordMutationEvidence } from './record-mutation-evidence.js';
+import { reconcile_mutation_episode as rawReconcileMutationEpisode } from './reconcile-mutation-episode.js';
 import { observe_repository as rawObserveRepository } from './observe-repository.js';
 import type { ToolDefinition, ToolResult } from './helpers.js';
 import { readConfig } from '../../adapters/persistence-config.js';
@@ -234,6 +235,7 @@ export const resolve_implementation_challenge = withGovernanceFooter(
 );
 export const declare_contract = withGovernanceFooter(rawDeclareContract);
 export const record_mutation_evidence = withGovernanceFooter(rawRecordMutationEvidence);
+export const reconcile_mutation_episode = withGovernanceFooter(rawReconcileMutationEpisode);
 // The sanctioned reviewer observation capability — never wrapped in the
 // governance footer: its output is the deterministic observed-bytes payload
 // whose exact bytes the parent replay hashes to prove delivery.

@@ -150,7 +150,12 @@ export function validateImplRecordPrerequisites(input: ImplementRuntime): string
   const unresolvedEpisodes = input.state.mutationEpisodes.filter(
     (episode) => episode.status === 'dispatch_authorized',
   );
-  if (hasUnresolvedMutationEpisodes(input.state.mutationEpisodes)) {
+  if (
+    hasUnresolvedMutationEpisodes(
+      input.state.mutationEpisodes,
+      input.state.mutationEpisodeResolutions,
+    )
+  ) {
     return formatBlocked('MUTATION_EPISODE_UNRESOLVED', {
       count: String(unresolvedEpisodes.length),
     });
@@ -355,7 +360,11 @@ export async function handleImplRecord(
   const reducedCeremony = ceremony.profile === 'reduced';
   const nextState: SessionState = {
     ...input.state,
-    mutationEpisodes: reconcileMutationEpisodes(input.state.mutationEpisodes, implEvidence.digest),
+    mutationEpisodes: reconcileMutationEpisodes(
+      input.state.mutationEpisodes,
+      input.state.mutationEpisodeResolutions,
+      implEvidence.digest,
+    ),
     implementation: implEvidence,
     // #762: bind the risk classification to the exact revision it describes, so a
     // gate rail can consult it without re-deriving it from a later file set.

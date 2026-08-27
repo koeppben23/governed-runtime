@@ -45,7 +45,7 @@ import {
   unresolvedBlockingObligations,
 } from './shared/obligation-tracker.js';
 import { appendAuditEvent } from '../adapters/persistence-audit.js';
-import { ensureWorkspace, sessionDir, computeFingerprint } from '../adapters/workspace/index.js';
+import { ensureWorkspace } from '../adapters/workspace/index.js';
 import type { AuditEventBody } from '../state/evidence-audit.js';
 import type { HookEventName, HttpHookResponse } from './shared/types.js';
 
@@ -248,7 +248,8 @@ async function handlePostToolUse(payload: Record<string, unknown>): Promise<Http
   const now = new Date().toISOString();
   const auditEvent: AuditEventBody = {
     id: randomUUID(),
-    sessionId: session_id,
+    flowguardSessionId: resolution.state.flowguardSessionId,
+    hostSessionId: session_id,
     phase: resolution.state.phase,
     event: 'tool_call',
     occurredAt: now,
@@ -298,36 +299,41 @@ export async function handleSessionStart(
     return { decision: 'allow', reason: 'workspace bootstrap failed (non-blocking)' };
   }
 
-  // Attempt audit event persistence — split into focused error boundaries.
-  let sessDir: string | null = null;
+  // Resolve the governed session. Audit v3 events require the explicit
+  // FlowGuard identity; without resolved state the session_start event is
+  // skipped — no polymorphic sessionId records.
+  let resolution: Awaited<ReturnType<typeof resolveSession>>;
   try {
-    const fpResult = await computeFingerprint(cwd);
-    sessDir = sessionDir(fpResult.fingerprint, session_id);
+    resolution = await resolveSession(cwd, session_id);
   } catch (err) {
     log(
-      `WARN: session-resolution-failed (session-start): ${err instanceof Error ? err.message : String(err)}`,
+      `INFO: session resolution failed (session-start): ${err instanceof Error ? err.message : String(err)}`,
     );
+    return { decision: 'allow' };
+  }
+  if (!resolution.ok) {
+    log(`INFO: session state not available (${resolution.code}) — session_start audit skipped`);
+    return { decision: 'allow' };
   }
 
-  if (sessDir) {
-    try {
-      const now = new Date().toISOString();
-      const auditEvent: AuditEventBody = {
-        id: randomUUID(),
-        sessionId: session_id,
-        phase: 'READY',
-        event: 'lifecycle',
-        occurredAt: now,
-        actor: 'system',
-        detail: { action: 'session_start', hookSource: 'http_hook', platform, cwd },
-        enforcementLevel: 'hook_gated',
-      };
-      await appendAuditEvent(sessDir, auditEvent);
-    } catch (err) {
-      log(
-        `WARN: audit-append-failed (session-start): ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+  try {
+    const now = new Date().toISOString();
+    const auditEvent: AuditEventBody = {
+      id: randomUUID(),
+      flowguardSessionId: resolution.state.flowguardSessionId,
+      hostSessionId: session_id,
+      phase: 'READY',
+      event: 'lifecycle',
+      occurredAt: now,
+      actor: 'system',
+      detail: { action: 'session_start', hookSource: 'http_hook', platform, cwd },
+      enforcementLevel: 'hook_gated',
+    };
+    await appendAuditEvent(resolution.sessionDir, auditEvent);
+  } catch (err) {
+    log(
+      `WARN: audit-append-failed (session-start): ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
   return { decision: 'allow' };
@@ -358,7 +364,8 @@ async function handleStop(payload: Record<string, unknown>): Promise<HttpHookRes
   const now = new Date().toISOString();
   const auditEvent: AuditEventBody = {
     id: randomUUID(),
-    sessionId: session_id,
+    flowguardSessionId: state.flowguardSessionId,
+    hostSessionId: session_id,
     phase: state.phase,
     event: 'lifecycle',
     occurredAt: now,

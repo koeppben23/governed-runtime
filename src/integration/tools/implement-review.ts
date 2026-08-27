@@ -98,7 +98,11 @@ import { buildLatestImplementationReviewSummary } from './review-summary.js';
 import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
 import { buildHostTaskChallengeContract } from '../review/host-task-policy.js';
 import type { ImplementRuntime } from './implement-shared.js';
-import { nextImplementationReviewIteration, normalizeHostFindings } from './implement-shared.js';
+import {
+  nextImplementationReviewIteration,
+  normalizeHostFindings,
+  unknownOutcomeRevalidationBlock,
+} from './implement-shared.js';
 import { projectImplementationProofStatus } from '../proofgraph/proof-summary-projectors.js';
 import type { CompactProofPresentation } from '../../presentation/proof-model.js';
 import {
@@ -656,6 +660,16 @@ export async function handleImplReview(input: ImplementRuntime): Promise<string>
       receivedVerdict ? { receivedVerdict } : undefined,
     );
   }
+
+  // An unknown-outcome resolution declares all pre-resolution evidence
+  // unreliable. The review verdict must be bound to a fresh worktree
+  // recapture: implementation evidence recorded before the latest resolution
+  // can never satisfy the review loop.
+  const staleEvidenceBlock = unknownOutcomeRevalidationBlock(
+    input.state,
+    implementation.executedAt,
+  );
+  if (staleEvidenceBlock) return staleEvidenceBlock;
 
   const iteration = nextImplementationReviewIteration(input.state);
   const planVersion = (input.state.plan?.history.length ?? 0) + 1;

@@ -21,7 +21,8 @@ describe('evidence-audit', () => {
     it('AuditEvent parses valid event', () => {
       const event = {
         id: FIXED_UUID,
-        sessionId: 'ses_test123',
+        flowguardSessionId: FIXED_UUID,
+        hostSessionId: 'ses_test123',
         phase: 'TICKET',
         event: 'tool_call:flowguard_ticket',
         occurredAt: FIXED_TIME,
@@ -35,7 +36,8 @@ describe('evidence-audit', () => {
     it('AuditEvent parses event with actorInfo', () => {
       const event = {
         id: FIXED_UUID,
-        sessionId: 'ses_test123',
+        flowguardSessionId: FIXED_UUID,
+        hostSessionId: 'ses_test123',
         phase: 'PLAN_REVIEW',
         event: 'decision:approve',
         occurredAt: FIXED_TIME,
@@ -58,7 +60,8 @@ describe('evidence-audit', () => {
     it('AuditEvent parses event with hash chain fields', () => {
       const event = {
         id: FIXED_UUID,
-        sessionId: 'ses_test123',
+        flowguardSessionId: FIXED_UUID,
+        hostSessionId: 'ses_test123',
         phase: 'TICKET',
         event: 'lifecycle:session_created',
         occurredAt: FIXED_TIME,
@@ -75,7 +78,7 @@ describe('evidence-audit', () => {
       expect(() =>
         AuditEvent.parse({
           id: FIXED_UUID,
-          sessionId: 'bad/session',
+          flowguardSessionId: 'bad/session',
           phase: 'TICKET',
           event: 'test',
           occurredAt: FIXED_TIME,
@@ -89,7 +92,8 @@ describe('evidence-audit', () => {
     it('AuditEvent rejects missing id', () => {
       expect(() =>
         AuditEvent.parse({
-          sessionId: 'ses_test',
+          flowguardSessionId: FIXED_UUID,
+          hostSessionId: 'ses_test',
           phase: 'TICKET',
           event: 'test',
           occurredAt: FIXED_TIME,
@@ -105,7 +109,8 @@ describe('evidence-audit', () => {
     it('AuditEvent rejects records without chain fields (legacy artifacts unsupported)', () => {
       const event = {
         id: FIXED_UUID,
-        sessionId: 'ses_test',
+        flowguardSessionId: FIXED_UUID,
+        hostSessionId: 'ses_test',
         phase: 'TICKET',
         event: 'lifecycle:session_created',
         occurredAt: FIXED_TIME,
@@ -118,7 +123,8 @@ describe('evidence-audit', () => {
     it('AuditEvent rejects records without a semantic event digest', () => {
       const event = {
         id: FIXED_UUID,
-        sessionId: 'ses_test',
+        flowguardSessionId: FIXED_UUID,
+        hostSessionId: 'ses_test',
         phase: 'TICKET',
         event: 'lifecycle:session_created',
         occurredAt: FIXED_TIME,
@@ -133,7 +139,8 @@ describe('evidence-audit', () => {
     it('AuditEvent actorInfo is optional', () => {
       const event = {
         id: FIXED_UUID,
-        sessionId: 'ses_test',
+        flowguardSessionId: FIXED_UUID,
+        hostSessionId: 'ses_test',
         phase: 'IMPLEMENTATION',
         event: 'tool_call:flowguard_implement',
         occurredAt: FIXED_TIME,
@@ -149,7 +156,8 @@ describe('evidence-audit', () => {
     it('AuditEvent OpenCode sessionId can be non-UUID', () => {
       const event = {
         id: FIXED_UUID,
-        sessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
+        flowguardSessionId: FIXED_UUID,
+        hostSessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
         phase: 'READY',
         event: 'tool_call:flowguard_hydrate',
         occurredAt: FIXED_TIME,

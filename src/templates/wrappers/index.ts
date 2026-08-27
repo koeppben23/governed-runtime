@@ -26,6 +26,7 @@ export {
   architecture,
   help,
   observe_repository,
+  reconcile_mutation_episode,
 } from "@flowguard/core/integration";
 `;
 

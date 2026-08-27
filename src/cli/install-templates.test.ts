@@ -85,7 +85,7 @@ describe('DEV_REPO_INVARIANTS', () => {
 
     it('COMMANDS template covers all slash commands', () => {
       const commandNames = Object.keys(COMMANDS);
-      expect(commandNames).toHaveLength(24);
+      expect(commandNames).toHaveLength(25);
       for (const expected of [
         'hydrate.md',
         'status.md',
@@ -94,6 +94,7 @@ describe('DEV_REPO_INVARIANTS', () => {
         'continue.md',
         'implement.md',
         'resolve-implementation-challenge.md',
+        'reconcile-mutation-episode.md',
         'validate.md',
         'review-decision.md',
         'review.md',

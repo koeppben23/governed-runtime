@@ -226,14 +226,26 @@ async function recordMutationDispatch(
         'FlowGuard session state disappeared before mutation dispatch authorization.',
       );
     }
+    const result = authorizeMutationEpisode(state.mutationEpisodes, {
+      episodeId: randomUUID(),
+      hostCallId: callId,
+      toolName,
+      authorizedAt: new Date().toISOString(),
+    });
+    if (result.kind === 'replay_blocked') {
+      // A second Before with an already-seen hostCallId is a replay of an
+      // existing dispatch identity. Without a stable replay contract it is
+      // never idempotent success — the host call is blocked fail-closed.
+      throw buildEnforcementError(
+        'MUTATION_EPISODE_REPLAY_BLOCKED',
+        `hostCallId ${callId} already authorizes a host mutation dispatch for tool ${result.existing.toolName}. ` +
+          'The host call identity must be unique per dispatch.',
+        { hostCallId: callId, toolName, existingEpisodeId: result.existing.episodeId },
+      );
+    }
     await writeStateWithAuditOperationsAlreadyLocked(sessDir, {
       ...state,
-      mutationEpisodes: authorizeMutationEpisode(state.mutationEpisodes, {
-        episodeId: randomUUID(),
-        hostCallId: callId,
-        toolName,
-        authorizedAt: new Date().toISOString(),
-      }),
+      mutationEpisodes: result.episodes,
     });
   });
 }

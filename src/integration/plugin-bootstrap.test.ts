@@ -540,7 +540,12 @@ describe('plugin bootstrap fail-closed', () => {
 
         const persisted = await readState(sessDir);
         expect(persisted!.pendingAuditOperations[0]!.status).toBe('reconciled');
-        await expect(beforeHook(input, output)).resolves.toBeUndefined();
+        // A fresh host dispatch identity passes after reconciliation succeeds.
+        await expect(beforeHook({ ...input, callID: 'c2' }, output)).resolves.toBeUndefined();
+        // A replayed dispatch identity is blocked fail-closed (no second episode).
+        await expect(beforeHook(input, output)).rejects.toThrow('MUTATION_EPISODE_REPLAY_BLOCKED');
+        const afterRetry = await readState(sessDir);
+        expect(afterRetry!.mutationEpisodes).toHaveLength(2);
       } finally {
         await ws.cleanup();
       }

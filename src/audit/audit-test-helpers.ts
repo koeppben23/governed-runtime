@@ -18,7 +18,7 @@ const SYNTHETIC_DIGEST = 'f'.repeat(64);
 export function makeAuditEvent(overrides: Partial<AuditEvent> = {}): AuditEvent {
   return {
     id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-    sessionId: SESSION_ID,
+    flowguardSessionId: SESSION_ID,
     phase: 'PLAN',
     event: 'transition:PLAN_READY',
     auditFormatVersion: 'audit-chain.v3',

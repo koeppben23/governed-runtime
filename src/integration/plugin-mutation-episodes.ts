@@ -33,11 +33,25 @@ export async function recordMutationCompletion(input: {
   });
 }
 
-function mutationOutcome(hookOutput: ToolHookAfterOutput): 'success' | 'failure' {
+/**
+ * Best-effort outcome classification from the pinned OpenCode hook contract.
+ *
+ * The After-hook carries no normative, typed success/failure authority:
+ * `metadata` and `output` are host-owned and not a contractual verdict
+ * signal. Explicit error signals classify `failure`; explicit success
+ * signals classify `success`; anything else is `unknown`. All three are
+ * bound by the reconciliation — a host call that failed may still have
+ * mutated files, so binding never depends on this classification.
+ */
+function mutationOutcome(hookOutput: ToolHookAfterOutput): 'success' | 'failure' | 'unknown' {
   if (hookOutput.metadata.error === true) return 'failure';
+  let parsed: Record<string, unknown> | null = null;
   try {
-    return JSON.parse(hookOutput.output).error === true ? 'failure' : 'success';
+    parsed = JSON.parse(hookOutput.output) as Record<string, unknown>;
   } catch {
-    return 'success';
+    parsed = null;
   }
+  if (parsed?.error === true) return 'failure';
+  if (hookOutput.metadata.success === true || parsed?.success === true) return 'success';
+  return 'unknown';
 }

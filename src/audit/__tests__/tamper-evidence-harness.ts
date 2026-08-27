@@ -116,7 +116,7 @@ export function buildRichEvent(
 ): ChainedAuditEvent {
   const body: EventBody = {
     id: makeId(p.idHex),
-    sessionId: SESSION_ID,
+    flowguardSessionId: SESSION_ID,
     phase: p.phase,
     event: p.eventName,
     occurredAt: makeTimestamp(p.minute),

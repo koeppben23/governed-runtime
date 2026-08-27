@@ -269,6 +269,18 @@ Provide the challenge ID from the prior implementation review and one or more pa
 post-implementation validation attempt IDs for the current implementation digest. This
 does not accept the review, resolve the challenge by itself, or bypass EVIDENCE_REVIEW.
 
+### /reconcile-mutation-episode
+
+Resolve a host mutation episode whose outcome can never be observed (the host process
+died between the Before- and After-hook). Appends an append-only resolution record
+(`reconciled_after_unknown_outcome`, basis `worktree_recapture`).
+
+After resolution, **all** prior implementation, validation, and review evidence is
+unreliable: re-apply the work, record it with `/implement`, re-run the checks, and
+submit a fresh review. Never use this command for a host call with a known outcome.
+
+**Allowed in:** any phase with an unresolved `dispatch_authorized` host mutation episode.
+
 ### /architecture
 
 Create or revise an Architecture Decision Record (ADR).

@@ -290,6 +290,7 @@ function buildNewHydrateState(
     validationAttempts: [],
     mutationAttempts: [],
     mutationEpisodes: [],
+    mutationEpisodeResolutions: [],
     challengeResolutions: [],
     implValidation: [],
     implementation: null,

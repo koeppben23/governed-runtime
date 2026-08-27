@@ -100,7 +100,8 @@ async function cleanTmpDir(dir: string): Promise<void> {
 function makeValidAuditEvent(overrides: Partial<AuditEventBody> = {}): AuditEventBody {
   return {
     id: FIXED_UUID,
-    sessionId: FIXED_SESSION_UUID,
+    flowguardSessionId: FIXED_SESSION_UUID,
+    hostSessionId: 'ses_host_test',
     phase: 'PLAN',
     event: 'transition:PLAN_READY',
     occurredAt: FIXED_TIME,
@@ -300,15 +301,15 @@ describe('persistence', () => {
       expect(events[1]!.event).toBe('transition:TICKET_SET');
     });
 
-    it('appendAuditEvent accepts OpenCode-style non-UUID session IDs', async () => {
+    it('appendAuditEvent accepts OpenCode-style non-UUID host session IDs', async () => {
       const event = makeValidAuditEvent({
-        sessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
+        hostSessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
       });
       await appendAuditEvent(tmpDir, event);
       const { events, skipped } = await readAuditTrail(tmpDir);
       expect(skipped).toBe(0);
       expect(events).toHaveLength(1);
-      expect(events[0]!.sessionId).toBe('ses_260740c65ffe77OjxRP7z40yH8');
+      expect(events[0]!.hostSessionId).toBe('ses_260740c65ffe77OjxRP7z40yH8');
     });
 
     it('writeState auto-creates parent directory', async () => {

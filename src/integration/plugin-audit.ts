@@ -52,6 +52,24 @@ const LIFECYCLE_TOOLS: Record<string, string> = {
  * Audit failures are diagnostic-only here: the original denial must never be
  * weakened into an allow because recording its evidence failed.
  */
+/**
+ * Resolve the explicit audit identity pair. Audit events never carry a
+ * polymorphic sessionId: `flowguardSessionId` is the SAME FlowGuard UUID on
+ * every event class, and `hostSessionId` is bound separately where host
+ * context exists. Returns null when the FlowGuard identity is unavailable —
+ * the caller must skip the event instead of approximating an identity.
+ */
+function auditIdentity(state: SessionState | null): {
+  flowguardSessionId: string;
+  hostSessionId?: string;
+} | null {
+  if (!state) return null;
+  return {
+    flowguardSessionId: state.flowguardSessionId,
+    hostSessionId: state.binding.hostSessionId,
+  };
+}
+
 export async function auditEnforcementDenied(input: {
   deps: AuditDeps;
   sessionId: string;
@@ -63,10 +81,13 @@ export async function auditEnforcementDenied(input: {
   try {
     const resolved = await resolveAuditContext(input.deps, input.tool, {}, input.sessionId);
     if (!resolved) return;
-    const { ctx, policy } = resolved;
+    const { ctx, policy, state } = resolved;
+    const identity = auditIdentity(state);
+    if (!identity) return;
     const tracker = createStrictTimestampTracker(ctx.timestampAssurance);
     const body = buildEnforcementDeniedBody(
-      input.sessionId,
+      identity.flowguardSessionId,
+      identity.hostSessionId,
       ctx.phase as Phase,
       {
         tool: input.tool,
@@ -191,13 +212,16 @@ async function emitDecisionReceiptActorMissing(
   firstTransition: Transition,
   prevHash: string,
 ): Promise<string> {
-  const { deps, ctx, toolName, sessionId, recordTimestampFailure } = params;
+  const { deps, ctx, toolName, sessionId, state, recordTimestampFailure } = params;
   deps.log.warn('audit', 'skipping decision receipt: missing decidedBy', {
     tool: toolName,
     sessionId,
   });
+  const identity = auditIdentity(state);
+  if (!identity) return prevHash;
   const body = buildErrorBody(
-    sessionId,
+    identity.flowguardSessionId,
+    identity.hostSessionId,
     {
       code: 'DECISION_RECEIPT_ACTOR_MISSING',
       message: 'Decision receipt skipped because decidedBy is missing',
@@ -226,8 +250,11 @@ async function emitDecisionReceiptEvent(
   },
 ): Promise<string> {
   const { deps, ctx, sessionId, state, recordTimestampFailure } = params;
+  const identity = auditIdentity(state);
+  if (!identity) return input.prevHash;
   const body = buildDecisionBody({
-    sessionId,
+    flowguardSessionId: identity.flowguardSessionId,
+    hostSessionId: identity.hostSessionId,
     gatePhase: input.firstTransition.from,
     detail: {
       decisionId: input.decisionId,
@@ -296,36 +323,13 @@ async function maybeCompleteAndArchive(
   const toolLayerHandled = !!freshState?.archiveStatus;
 
   if (!toolLayerHandled) {
-    const body = buildLifecycleBody({
+    prevHash = await emitSessionCompletedLifecycle(
+      deps,
+      ctx,
       sessionId,
-      detail: { action: 'session_completed', finalPhase: 'COMPLETE' },
-      occurredAt: ctx.now,
-      actor: 'machine',
-      prevHash,
-      actorInfo: state?.actorInfo,
-    });
-    const digest = computeCanonicalEventDigest(body);
-    const resolution = ctx.timestampAssurance.enabled
-      ? await resolveTimestampEvidence({
-          policy: ctx.timestampAssurance,
-          canonicalEventDigest: digest,
-          eventKind: 'lifecycle',
-          localTimestamp: ctx.now,
-          ntpResult: ctx.ntpResult,
-          tsaProvider: deps.tsaProvider,
-          tsaVerifier: deps.timestampVerifier,
-        })
-      : undefined;
-    recordTimestampFailure('lifecycle', resolution?.error);
-    const evidence = resolution?.evidence;
-    const evt = finalizeWithTimestampEvidence(body, prevHash, evidence, digest);
-    await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
-    prevHash = evt.chainHash!;
-    // Stryker disable next-line ObjectLiteral,MethodExpression — diagnostic-only payload; the hash prefixes are not a behavioral contract.
-    deps.log.debug('audit', 'audit chain hash', {
-      prevHashPrefix: ctx.prevHash.slice(0, 8),
-      nextHashPrefix: prevHash.slice(0, 8),
-    });
+      state,
+      recordTimestampFailure,
+    );
   } else {
     // Stryker disable next-line ObjectLiteral — diagnostic-only payload.
     deps.log.debug('audit', 'session_completed handled by tool layer', {
@@ -335,6 +339,47 @@ async function maybeCompleteAndArchive(
 
   scheduleSoloArchive(deps, sessionId, state, freshState, toolLayerHandled);
   return prevHash;
+}
+
+async function emitSessionCompletedLifecycle(
+  deps: AuditDeps,
+  ctx: AuditContext,
+  sessionId: string,
+  state: SessionState | null,
+  recordTimestampFailure: (eventKind: string, error: string | undefined) => void,
+): Promise<string> {
+  const identity = auditIdentity(state);
+  if (!identity) return ctx.prevHash;
+  const body = buildLifecycleBody({
+    flowguardSessionId: identity.flowguardSessionId,
+    hostSessionId: identity.hostSessionId,
+    detail: { action: 'session_completed', finalPhase: 'COMPLETE' },
+    occurredAt: ctx.now,
+    actor: 'machine',
+    prevHash: ctx.prevHash,
+    actorInfo: state?.actorInfo,
+  });
+  const digest = computeCanonicalEventDigest(body);
+  const resolution = ctx.timestampAssurance.enabled
+    ? await resolveTimestampEvidence({
+        policy: ctx.timestampAssurance,
+        canonicalEventDigest: digest,
+        eventKind: 'lifecycle',
+        localTimestamp: ctx.now,
+        ntpResult: ctx.ntpResult,
+        tsaProvider: deps.tsaProvider,
+        tsaVerifier: deps.timestampVerifier,
+      })
+    : undefined;
+  recordTimestampFailure('lifecycle', resolution?.error);
+  const evt = finalizeWithTimestampEvidence(body, ctx.prevHash, resolution?.evidence, digest);
+  await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
+  // Stryker disable next-line ObjectLiteral,MethodExpression — diagnostic-only payload; the hash prefixes are not a behavioral contract.
+  deps.log.debug('audit', 'audit chain hash', {
+    prevHashPrefix: ctx.prevHash.slice(0, 8),
+    nextHashPrefix: evt.chainHash.slice(0, 8),
+  });
+  return evt.chainHash;
 }
 
 function scheduleSoloArchive(
@@ -374,8 +419,11 @@ async function emitToolCallAudit(input: {
 }): Promise<void> {
   const { deps, ctx, toolName, sessionId, state, timestampTracker } = input;
   if (!ctx.emitToolCalls) return;
+  const identity = auditIdentity(state);
+  if (!identity) return;
   const body = buildToolCallBody({
-    sessionId,
+    flowguardSessionId: identity.flowguardSessionId,
+    hostSessionId: identity.hostSessionId,
     phase: ctx.phase,
     detail: {
       tool: toolName,
@@ -417,10 +465,13 @@ async function emitLifecycleAudit(input: {
   const { deps, ctx, toolName, sessionId, state, policy, timestampTracker } = input;
   const lifecycleAction = LIFECYCLE_TOOLS[toolName];
   if (!lifecycleAction) return;
+  const identity = auditIdentity(state);
+  if (!identity) return;
   // Stryker disable next-line ObjectLiteral — diagnostic-only payload.
   deps.log.info('audit', 'lifecycle event', { action: lifecycleAction, tool: toolName });
   const body = buildLifecycleBody({
-    sessionId,
+    flowguardSessionId: identity.flowguardSessionId,
+    hostSessionId: identity.hostSessionId,
     detail: buildLifecycleDetail(ctx, lifecycleAction, state, policy),
     occurredAt: ctx.now,
     actor: ctx.actor,
@@ -443,14 +494,18 @@ async function emitToolErrorAudit(input: {
   ctx: AuditContext;
   toolName: string;
   sessionId: string;
+  state: SessionState | null;
   timestampTracker: StrictTimestampTracker;
 }): Promise<void> {
-  const { deps, ctx, toolName, sessionId, timestampTracker } = input;
+  const { deps, ctx, toolName, sessionId, state, timestampTracker } = input;
   if (ctx.success || !ctx.errorMessage) return;
+  const identity = auditIdentity(state);
+  if (!identity) return;
   // Stryker disable next-line ObjectLiteral — diagnostic-only payload.
   deps.log.warn('audit', 'tool reported error', { tool: toolName, errorMessage: ctx.errorMessage });
   const body = buildErrorBody(
-    sessionId,
+    identity.flowguardSessionId,
+    identity.hostSessionId,
     {
       code: ctx.errorCode ?? 'TOOL_ERROR',
       message: ctx.errorMessage,
@@ -521,7 +576,7 @@ export async function runAudit(
     });
 
     // ── 6. Emit error event ─────────────────────────────────────────────
-    await emitToolErrorAudit({ deps, ctx, toolName, sessionId, timestampTracker });
+    await emitToolErrorAudit({ deps, ctx, toolName, sessionId, state, timestampTracker });
 
     return await finalizeStrictTimestampFailure(ctx, timestampTracker.failure);
   } catch (err) {

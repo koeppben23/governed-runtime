@@ -18,10 +18,10 @@ import { randomUUID } from 'node:crypto';
 import { readStdin, validateSessionPayload } from './shared/stdin-reader.js';
 import { writeLog } from './shared/stdout-writer.js';
 import { installHookStdoutGuard } from './shared/stdout-guard.js';
+import { resolveSession } from './shared/session-resolver.js';
 import { detectPlatform } from './shared/platform-detect.js';
 import { ensureWorkspace } from '../adapters/workspace/index.js';
 import { appendAuditEvent } from '../adapters/persistence-audit.js';
-import { sessionDir } from '../adapters/workspace/index.js';
 import type { AuditEventBody } from '../state/evidence-audit.js';
 
 // ─── Main ────────────────────────────────────────────────────────────────────
@@ -60,11 +60,9 @@ async function sessionStartLogic(): Promise<void> {
   const { session_id, cwd } = validated;
 
   // Ensure workspace directories exist (idempotent).
-  let fingerprint: string;
   try {
-    const result = await ensureWorkspace(cwd);
-    fingerprint = result.fingerprint;
-    writeLog(`workspace ensured: ${result.workspaceDir}`);
+    await ensureWorkspace(cwd);
+    writeLog(`workspace ensured: ${cwd}`);
   } catch (err) {
     writeLog(
       `WARN: workspace bootstrap failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -72,21 +70,23 @@ async function sessionStartLogic(): Promise<void> {
     return;
   }
 
-  // Attempt to write session_start audit event.
-  // This may fail if session dir doesn't exist yet (no /hydrate run).
-  // That's OK — PreToolUse will enforce hydration requirement.
-  let sessDir: string;
-  try {
-    sessDir = sessionDir(fingerprint, session_id);
-  } catch {
-    writeLog(`WARN: cannot derive session dir (sessionId="${session_id}")`);
+  // Resolve the governed session. Audit v3 events require the explicit
+  // FlowGuard identity (flowguardSessionId); without resolved state the
+  // session_start event is skipped — no polymorphic sessionId records.
+  const resolution = await resolveSession(cwd, session_id);
+  if (!resolution.ok) {
+    writeLog(
+      `INFO: session state not available (${resolution.code}) — session_start audit skipped`,
+    );
     return;
   }
+  const { state, sessionDir: sessDir } = resolution;
 
   const now = new Date().toISOString();
   const auditEvent: AuditEventBody = {
     id: randomUUID(),
-    sessionId: session_id,
+    flowguardSessionId: state.flowguardSessionId,
+    hostSessionId: session_id,
     phase: 'READY',
     event: 'lifecycle',
     occurredAt: now,

@@ -390,17 +390,6 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     quickFixCommand: '/implement',
   },
   {
-    code: 'MUTATION_EPISODE_UNRESOLVED',
-    category: 'precondition',
-    messageTemplate:
-      'Implementation is blocked while {count} authorized host mutation episode(s) lack completion outcomes.',
-    recoverySteps: [
-      'Wait for the authorized host tool call to complete',
-      'If the host call was interrupted, inspect the session and retry the implementation work',
-    ],
-  },
-
-  {
     code: 'IMPLEMENT_REVIEW_LOOP_REQUIRED',
     category: 'precondition',
     messageTemplate:

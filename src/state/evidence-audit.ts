@@ -27,7 +27,10 @@ import { TimestampEvidence } from './evidence-timestamp.js';
 export const AuditEvent = z
   .object({
     id: z.string().uuid(),
-    sessionId: OpenCodeSessionId,
+    /** FlowGuard session identity — the SAME FlowGuard UUID on every event class. */
+    flowguardSessionId: z.string().uuid(),
+    /** Host session identity (OpenCode session id), bound where host context exists. */
+    hostSessionId: OpenCodeSessionId.optional(),
     phase: z.string(),
     event: z.string(),
     auditFormatVersion: z.literal('audit-chain.v3'),

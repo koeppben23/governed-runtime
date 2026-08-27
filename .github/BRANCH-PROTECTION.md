@@ -32,7 +32,7 @@ names exactly in the `Protect main and develop` ruleset.
 
 From `.github/workflows/ci.yml`:
 
-- `ci-gate` (aggregates `unit` + `integration`)
+- `ci-gate` (aggregates `unit` + `coverage` + `integration-perf` + `provider-conformance` + `mutation`)
 - `typecheck`
 - `lint`
 - `format`
@@ -48,7 +48,10 @@ From `.github/workflows/ci.yml`:
 - `independent-review-e2e`
 
 The `format` check is the merge-blocking Prettier gate for both protected
-branches.
+branches. The `mutation` job is the mandatory exact-head mutation gate
+(`npm run mutation` against the configured Stryker break threshold) — the
+real-OpenCode `mutation-episode-e2e` coverage runs inside `coverage`
+(unit + integration projects on the final SHA).
 
 ## Solo Maintainer Review Model
 

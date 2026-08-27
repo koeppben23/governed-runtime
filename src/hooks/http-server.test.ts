@@ -208,20 +208,22 @@ describe('handleSessionStart', () => {
   describe('HAPPY', () => {
     it('should return allow and persist audit event on success', async () => {
       mockEnsureWorkspace.mockResolvedValue(undefined);
-      mockComputeFingerprint.mockResolvedValue({ fingerprint: 'fp_abc123' });
-      mockSessionDir.mockReturnValue('/workspace/sessions/fp_abc123/sess_test_123');
+      mockResolveSession.mockResolvedValue({
+        ok: true,
+        sessionDir: '/workspace/sessions/fp_abc123/sess_test_123',
+        state: { flowguardSessionId: '00000000-0000-4000-8000-000000000002', phase: 'READY' },
+      });
       mockAppendAuditEvent.mockResolvedValue(undefined);
 
       const result = await handleSessionStart(validPayload);
 
       expect(result).toEqual({ decision: 'allow' });
       expect(mockEnsureWorkspace).toHaveBeenCalledWith('/tmp/project');
-      expect(mockComputeFingerprint).toHaveBeenCalledWith('/tmp/project');
-      expect(mockSessionDir).toHaveBeenCalledWith('fp_abc123', 'sess_test_123');
       expect(mockAppendAuditEvent).toHaveBeenCalledWith(
         '/workspace/sessions/fp_abc123/sess_test_123',
         expect.objectContaining({
-          sessionId: 'sess_test_123',
+          flowguardSessionId: '00000000-0000-4000-8000-000000000002',
+          hostSessionId: 'sess_test_123',
           phase: 'READY',
           event: 'lifecycle',
           actor: 'system',
@@ -247,25 +249,31 @@ describe('handleSessionStart', () => {
         reason: 'workspace bootstrap failed (non-blocking)',
       });
       // Should NOT attempt fingerprint or audit after workspace failure.
-      expect(mockComputeFingerprint).not.toHaveBeenCalled();
       expect(mockAppendAuditEvent).not.toHaveBeenCalled();
     });
 
-    it('should return allow when computeFingerprint fails (sessDir remains null)', async () => {
+    it('should return allow when session resolution fails (audit skipped)', async () => {
       mockEnsureWorkspace.mockResolvedValue(undefined);
-      mockComputeFingerprint.mockRejectedValue(new Error('git not found'));
+      mockResolveSession.mockResolvedValue({
+        ok: false,
+        code: 'SESSION_DIR_NOT_FOUND',
+        reason: 'no state',
+      });
 
       const result = await handleSessionStart(validPayload);
 
       expect(result).toEqual({ decision: 'allow' });
-      // Audit should NOT be called because sessDir is null.
+      // Audit should NOT be called without a resolved FlowGuard identity.
       expect(mockAppendAuditEvent).not.toHaveBeenCalled();
     });
 
     it('should return allow when appendAuditEvent fails (non-fatal)', async () => {
       mockEnsureWorkspace.mockResolvedValue(undefined);
-      mockComputeFingerprint.mockResolvedValue({ fingerprint: 'fp_xyz' });
-      mockSessionDir.mockReturnValue('/sessions/fp_xyz/sess_test_123');
+      mockResolveSession.mockResolvedValue({
+        ok: true,
+        sessionDir: '/sessions/fp_xyz/sess_test_123',
+        state: { flowguardSessionId: '00000000-0000-4000-8000-000000000002', phase: 'READY' },
+      });
       mockAppendAuditEvent.mockRejectedValue(new Error('disk full'));
 
       const result = await handleSessionStart(validPayload);
@@ -277,9 +285,9 @@ describe('handleSessionStart', () => {
   });
 
   describe('CORNER', () => {
-    it('should handle non-Error throw from computeFingerprint', async () => {
+    it('should handle non-Error throw from session resolution', async () => {
       mockEnsureWorkspace.mockResolvedValue(undefined);
-      mockComputeFingerprint.mockRejectedValue('string error');
+      mockResolveSession.mockRejectedValue('string error');
 
       const result = await handleSessionStart(validPayload);
 
@@ -519,7 +527,10 @@ describe('handleHttpRequest', () => {
     mockResolveSession.mockResolvedValue({
       ok: true,
       sessionDir: '/sessions/sess_test_123',
-      state: { phase: 'IMPLEMENTATION' },
+      state: {
+        flowguardSessionId: '00000000-0000-4000-8000-000000000002',
+        phase: 'IMPLEMENTATION',
+      },
     });
     mockAppendAuditEvent.mockResolvedValue(undefined);
     const req = makeRequest({
@@ -540,7 +551,8 @@ describe('handleHttpRequest', () => {
     expect(mockAppendAuditEvent).toHaveBeenCalledWith(
       '/sessions/sess_test_123',
       expect.objectContaining({
-        sessionId: 'sess_test_123',
+        flowguardSessionId: '00000000-0000-4000-8000-000000000002',
+        hostSessionId: 'sess_test_123',
         phase: 'IMPLEMENTATION',
         event: 'tool_call',
         actor: 'machine',
@@ -621,6 +633,7 @@ describe('handleHttpRequest', () => {
       ok: true,
       sessionDir: '/sessions/sess_test_123',
       state: {
+        flowguardSessionId: '00000000-0000-4000-8000-000000000002',
         phase: 'IMPL_REVIEW',
         reviewAssurance: {
           obligations: [
@@ -648,7 +661,8 @@ describe('handleHttpRequest', () => {
     expect(mockAppendAuditEvent).toHaveBeenCalledWith(
       '/sessions/sess_test_123',
       expect.objectContaining({
-        sessionId: 'sess_test_123',
+        flowguardSessionId: '00000000-0000-4000-8000-000000000002',
+        hostSessionId: 'sess_test_123',
         phase: 'IMPL_REVIEW',
         event: 'lifecycle',
         actor: 'system',

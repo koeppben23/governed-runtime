@@ -102,7 +102,8 @@ describe('prepareStateWithAuditOperations', () => {
     const prepared = await prepareStateWithAuditOperations(previous, next, undefined);
     const op = requireTransition(prepared.pendingAuditOperations[0]!);
     const body = buildTransitionBody(
-      prepared.id,
+      prepared.flowguardSessionId,
+      prepared.binding.hostSessionId,
       op.transition.to,
       {
         operationId: op.operationId,
@@ -173,7 +174,8 @@ describe('prepareStateWithAuditOperations', () => {
     expect(operation.kind).toBe('state_write');
     if (operation.kind !== 'state_write') throw new Error('expected state_write operation');
     const body = buildStateWriteBody(
-      prepared.id,
+      prepared.flowguardSessionId,
+      prepared.binding.hostSessionId,
       operation.stateWrite.phase,
       {
         operationId: operation.operationId,

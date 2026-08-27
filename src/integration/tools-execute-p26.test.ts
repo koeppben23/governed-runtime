@@ -666,7 +666,7 @@ describe('P26: regulated archive completion', () => {
       // Exactly one session_completed — tool-layer wrote it, no duplication
       expect(completionEvents).toHaveLength(1);
       expect(completionEvents[0]!.actor).toBe('machine');
-      expect(completionEvents[0]!.sessionId).toBe(ctx.sessionID);
+      expect(completionEvents[0]!.hostSessionId).toBe(ctx.sessionID);
 
       // archiveStatus on persisted state enables plugin to skip its own emission
       const finalState = await readState(sessDir);

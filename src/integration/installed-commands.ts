@@ -22,6 +22,7 @@ import {
   TOOL_FLOWGUARD_HYDRATE,
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_PLAN,
+  TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE,
   TOOL_FLOWGUARD_REVIEW,
   TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
   TOOL_FLOWGUARD_RUN_CHECK,
@@ -55,6 +56,7 @@ export type InstalledCommandId =
   | 'alias.export'
   | 'alias.why'
   | 'operational.finish'
+  | 'operational.reconcile-mutation-episode'
   | 'operational.help.context'
   | 'operational.help.commands'
   | 'operational.help.commands-all';
@@ -70,6 +72,7 @@ type ToolName =
   | typeof TOOL_FLOWGUARD_IMPLEMENT
   | typeof TOOL_FLOWGUARD_PLAN
   | typeof TOOL_FLOWGUARD_REVIEW
+  | typeof TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE
   | typeof TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE
   | typeof TOOL_FLOWGUARD_RUN_CHECK
   | typeof TOOL_FLOWGUARD_STATUS
@@ -348,6 +351,16 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     visibility: 'primary',
     presentationGroup: 'complete',
     description: 'Show completion readiness without changing the workflow.',
+  },
+  {
+    id: 'operational.reconcile-mutation-episode',
+    templateFile: 'reconcile-mutation-episode.md',
+    invocation: '/reconcile-mutation-episode',
+    kind: 'operational',
+    target: { toolName: TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE },
+    visibility: 'primary',
+    presentationGroup: 'recovery',
+    description: 'Resolve a host mutation episode whose outcome can never be observed.',
   },
   {
     id: 'operational.help.context',

@@ -123,7 +123,7 @@ function buildEvent(
 function buildNestedBody(decision: Record<string, unknown>): Omit<ChainedAuditEvent, 'chainHash'> {
   return {
     id: '22222222-2222-4222-8222-222222222222',
-    sessionId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    flowguardSessionId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
     phase: 'PLAN_REVIEW',
     event: 'decision:DEC-001',
     occurredAt: '2026-01-01T00:00:00.000Z',

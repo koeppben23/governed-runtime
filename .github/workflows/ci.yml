@@ -67,18 +67,19 @@ jobs:
   test:
     name: ci-gate
     runs-on: ubuntu-latest
-    needs: [unit, coverage, integration_perf, provider-conformance]
+    needs: [unit, coverage, integration_perf, provider-conformance, mutation]
     if: always()
     timeout-minutes: 1
     steps:
-      - name: Confirm test, coverage, PERF, and provider conformance jobs passed
+      - name: Confirm test, coverage, PERF, provider conformance, and mutation jobs passed
         run: |
           echo "unit: ${{ needs.unit.result }}"
           echo "coverage: ${{ needs.coverage.result }}"
           echo "integration-perf: ${{ needs.integration_perf.result }}"
           echo "provider-conformance: ${{ needs.provider-conformance.result }}"
-          if [ "${{ needs.unit.result }}" != "success" ] || [ "${{ needs.coverage.result }}" != "success" ] || [ "${{ needs.integration_perf.result }}" != "success" ] || [ "${{ needs.provider-conformance.result }}" != "success" ]; then
-            echo "Blocked: unit, coverage, integration-perf, or provider-conformance job failed"
+          echo "mutation: ${{ needs.mutation.result }}"
+          if [ "${{ needs.unit.result }}" != "success" ] || [ "${{ needs.coverage.result }}" != "success" ] || [ "${{ needs.integration_perf.result }}" != "success" ] || [ "${{ needs.provider-conformance.result }}" != "success" ] || [ "${{ needs.mutation.result }}" != "success" ]; then
+            echo "Blocked: unit, coverage, integration-perf, provider-conformance, or mutation job failed"
             exit 1
           fi
 
@@ -219,6 +220,34 @@ jobs:
         env:
           FORCE_COLOR: 0
           FLOWGUARD_PERF: '1'
+
+  mutation:
+    # Exact-head mutation gate: `npm run mutation` must stay >= the configured
+    # Stryker break threshold on every PR. This is mandatory merge assurance —
+    # the ci-gate job depends on it.
+    name: mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # actions/setup-node v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Run mutation tests
+        run: npm run mutation
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact v7.0.1
+        with:
+          name: mutation-report
+          path: reports/mutation/
+          retention-days: 1
 
   architecture:
     name: architecture
@@ -829,6 +858,7 @@ jobs:
       - test
       - coverage
       - integration_perf
+      - mutation
       - architecture
       - typecheck
       - sdk-baseline

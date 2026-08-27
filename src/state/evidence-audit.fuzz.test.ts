@@ -26,7 +26,8 @@ import type { ChainedAuditEvent } from '../audit/types.js';
 
 interface ChainedRecord extends Record<string, unknown> {
   id: string;
-  sessionId: string;
+  flowguardSessionId: string;
+  hostSessionId?: string;
   phase: string;
   event: string;
   auditSequence: number;
@@ -49,7 +50,7 @@ function makeId(chainSeed: number, idx: number): string {
 function buildEvent(id: string, prevHash: string, idx: number): ChainedRecord {
   const body = {
     id,
-    sessionId: 'aaaaaaaa-0000-4000-8000-000000000001',
+    flowguardSessionId: 'aaaaaaaa-0000-4000-8000-000000000001',
     phase: 'PLAN',
     event: 'transition:PLAN_READY',
     auditSequence: idx + 1,

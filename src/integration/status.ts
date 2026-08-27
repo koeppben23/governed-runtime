@@ -69,8 +69,10 @@ export interface StatusProjection {
   phase: string;
   /** Human-readable phase label for product display. */
   phaseLabel: string;
-  /** Session identifier. */
-  sessionId: string;
+  /** FlowGuard session identity (FlowGuard UUID). */
+  flowguardSessionId: string;
+  /** Host session identity (OpenCode session id). */
+  hostSessionId: string;
   /** Active policy mode (solo, team, team-ci, regulated). */
   policyMode: string;
   /** Active profile identifier. */
@@ -370,7 +372,8 @@ export function buildStatusProjection(
   return {
     phase: state.phase,
     phaseLabel: PHASE_LABELS[state.phase],
-    sessionId: state.id,
+    flowguardSessionId: state.flowguardSessionId,
+    hostSessionId: state.binding.hostSessionId,
     policyMode,
     profileId,
     actor,
