@@ -214,6 +214,7 @@ export function formatRailResult(
     result.state.phase,
     aborted,
     result.state.archiveStatus ?? null,
+    result.state,
   );
   const reviewDecision = result.state.reviewDecision;
   const { archiveStatus } = result.state;
@@ -564,7 +565,7 @@ export async function persistAndFormat(
   if (result.kind === 'ok') {
     if (result.transitions.length > 0) {
       getAdapterLogger().info('machine', 'transitions_applied', {
-        sessionId: result.state.binding.sessionId,
+        sessionId: result.state.binding.hostSessionId,
         stateId: result.state.id,
         path: result.transitions.map((t) => `${t.from}\u2192${t.to}`),
         count: result.transitions.length,
@@ -579,7 +580,7 @@ export async function persistAndFormat(
 
 function logPersistedLifecycle(result: Extract<RailResult, { kind: 'ok' }>): void {
   if (result.transitions.length === 0) return;
-  const sessionId = result.state.binding.sessionId;
+  const sessionId = result.state.binding.hostSessionId;
   const phase = result.state.phase;
   const log = getAdapterLogger();
 
@@ -667,6 +668,7 @@ export function enrichWithNextAction<T extends Record<string, unknown>>(
     state.phase,
     state.error?.code === 'ABORTED',
     state.archiveStatus ?? null,
+    state,
   );
   return {
     ...value,

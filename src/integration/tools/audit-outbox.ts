@@ -121,7 +121,7 @@ function inferTransition(
  * verify `operation.postStateDigest` against the actually persisted state.
  */
 export function computeStateDigest(state: SessionState): string {
-  return hashText(canonicalJsonStringify(authorityState(state)));
+  return hashText(`state-digest.v2:${canonicalJsonStringify(authorityState(state))}`);
 }
 
 function authorityState(state: SessionState): Omit<SessionState, 'pendingAuditOperations'> {
@@ -135,7 +135,9 @@ function addAuditOperations(
   transitions: ReadonlyArray<{ from: string; to: string; event: string; at: string }>,
 ): SessionState {
   if (!next.policySnapshot.audit.emitTransitions) return next;
-  const preStateDigest = previous ? computeStateDigest(previous) : hashText('absent');
+  const preStateDigest = previous
+    ? computeStateDigest(previous)
+    : hashText('state-digest.v2:absent');
   const postStateDigest = computeStateDigest(next);
   if (preStateDigest === postStateDigest) return next;
   // Session bootstrap has no prior authority to bind; hydrate owns its

@@ -259,199 +259,6 @@ async function syncDirectory(dir: string): Promise<void> {
  * Note: Zod parse creates a new object (deep copy). The caller gets a fresh
  * reference, never a shared mutable object.
  */
-/**
- * Backward-compat migration: the independent-reviewer loop verdict was renamed
- * `'approve'` -> `'accept'` (LoopVerdict) to disambiguate it from the user-gate
- * `ReviewVerdict 'approve'`. Map legacy persisted reviewer verdicts so existing
- * sessions written before the rename stay readable under the new schema.
- *
- * STRICTLY path-scoped to reviewer-loop slots (selfReview/implReview verdicts,
- * reviewFindings[].overallVerdict, and captured invocation evidence). It NEVER
- * touches the user-gate `reviewDecision.verdict` or audit decision verdicts,
- * which legitimately remain `'approve'`. Mutates the freshly-parsed (local) JSON
- * in place and reports whether any value was migrated.
- */
-function migrateLegacyReviewerVerdicts(json: unknown): boolean {
-  // Stryker disable next-line ConditionalExpression — equivalent: non-object payloads return false identically under every single mutation.
-  if (!json || typeof json !== 'object') return false;
-  const acc = { migrated: false };
-  const s = json as Record<string, unknown>;
-  mapVerdictField(s.selfReview, acc);
-  mapVerdictField(s.implReview, acc);
-  mapFindingsArray(findingsOf(s.plan), acc);
-  mapFindingsArray(findingsOf(s.architecture), acc);
-  mapFindingsArray(s.implReviewFindings, acc);
-  migrateAssuranceVerdicts(s.reviewAssurance, acc);
-  return acc.migrated;
-}
-
-function migrateLegacyValidationOutcomes(json: unknown): void {
-  // Stryker disable next-line ConditionalExpression,BooleanLiteral — equivalent: non-object payloads skip the walk identically under every single mutation.
-  if (!json || typeof json !== 'object') return;
-  walk(json);
-}
-
-function walk(node: unknown): void {
-  if (Array.isArray(node)) {
-    for (const item of node) walk(item);
-    return;
-  }
-  // Stryker disable next-line ConditionalExpression,EqualityOperator — equivalent: scalar/leaf nodes terminate the walk identically under every single mutation.
-  if (!node || typeof node !== 'object') return;
-  const obj = node as Record<string, unknown>;
-  // Stryker disable next-line ConditionalExpression,LogicalOperator — equivalent: the legacy-shape detection is covered by the outcome-migration tests; single-replacement variants of the conjunction preserve the same verdict.
-  if (
-    // Stryker disable next-line ConditionalExpression — equivalent: covered by the outcome-migration tests; the true variant matches legacy shapes and the false variant skips identically.
-    typeof obj.checkId === 'string' &&
-    // Stryker disable next-line ConditionalExpression — equivalent: see the legacy-shape conjunction note above.
-    typeof obj.passed === 'boolean' &&
-    // Stryker disable next-line ConditionalExpression — equivalent: see the legacy-shape conjunction note above.
-    typeof obj.executedAt === 'string' &&
-    obj.outcome === undefined
-  ) {
-    // Stryker disable next-line ConditionalExpression — equivalent: both branches are covered by the supported/inconclusive migration tests.
-    obj.outcome = obj.passed ? 'supported' : 'inconclusive';
-  }
-  for (const v of Object.values(obj)) walk(v);
-}
-
-function isLegacyApprove(v: unknown): boolean {
-  return v === 'approve';
-}
-
-/**
- * Shape-only review-assurance read migrations, chained at the read boundary:
- *
- * - v3 → v4: version literal only. The v4 form introduced frozen repository
- *   authority, opaque observation capabilities, and attempt-owned
- *   observations. Obligations persisted under v3 without frozen authority
- *   remain authority-less (and thus repository-evidence incapable) — never
- *   "repaired" by reading mutable runtime state.
- * - v4 → v5: version literal plus observation AUTHORITY invalidation. The v5
- *   form requires `resolvedObjectKind` and representation-bound `lineCount` —
- *   fields a VALID v4 observation could not carry (the v4 schema was strict).
- *   Therefore NO observation persisted under v4 can ever have been valid
- *   authority: the migration removes ALL `attempt.observations` from v4
- *   states unconditionally, regardless of their shape. A v5-shaped
- *   observation inside a v4-declared state is invalid previous-generation
- *   data, not a retained authority — keeping it would launder invalid state
- *   into current-generation governance. Nothing is manufactured; the
- *   transport capture ledgers remain the audit source. Only observations
- *   persisted under `review-assurance.v5` may ever be v5 evidence authority.
- */
-function migrateReviewAssuranceToV5(node: unknown, acc: { migrated: boolean }): void {
-  // Stryker disable next-line ConditionalExpression — equivalent: non-object payloads skip the migration identically under every single mutation.
-  if (!node || typeof node !== 'object' || Array.isArray(node)) return;
-  const assurance = (node as Record<string, unknown>).reviewAssurance;
-  // Stryker disable next-line ConditionalExpression — equivalent: null assurance slots skip the migration identically under every single mutation.
-  if (!assurance || typeof assurance !== 'object' || Array.isArray(assurance)) return;
-  const record = assurance as Record<string, unknown>;
-  // Stryker disable next-line ConditionalExpression,BooleanLiteral — equivalent: the v3 literal check is covered by the v3→v5 migration test; the literal mutation yields the same skip for current-generation states.
-  if (record.assuranceSchemaVersion === 'review-assurance.v3') {
-    record.assuranceSchemaVersion = 'review-assurance.v4';
-    // Stryker disable next-line BooleanLiteral — equivalent: the flag only drives the diagnostic warning; the version rewrite is the asserted contract.
-    acc.migrated = true;
-  }
-  // Stryker disable next-line ConditionalExpression,BooleanLiteral — equivalent: the v4 literal check is covered by the v3→v5 migration test; the literal mutation yields the same skip for current-generation states.
-  if (record.assuranceSchemaVersion === 'review-assurance.v4') {
-    record.assuranceSchemaVersion = 'review-assurance.v5';
-    // Stryker disable next-line BooleanLiteral — equivalent: the flag only drives the diagnostic warning; the version rewrite is the asserted contract.
-    acc.migrated = true;
-    invalidateV4Observations(record);
-  }
-}
-
-/**
- * v4 → v5: ALL attempts lose their observations unconditionally. A v4 state
- * cannot legally contain v5 authority; shape-independent removal is the only
- * fail-closed semantics. (Migration must not become a general sanitizer —
- * unrelated malformed authority still fails schema validation.)
- */
-function invalidateV4Observations(record: Record<string, unknown>): void {
-  const attempts = record.attempts;
-  // Stryker disable next-line ConditionalExpression,LogicalOperator — equivalent: a non-array attempts slot skips the invalidation identically under every single mutation.
-  if (!Array.isArray(attempts)) return;
-  for (const attempt of attempts) {
-    // Stryker disable next-line ConditionalExpression,EqualityOperator,BooleanLiteral,LogicalOperator — equivalent: non-object attempt entries skip the invalidation identically under every single mutation.
-    if (!attempt || typeof attempt !== 'object') continue;
-    delete (attempt as Record<string, unknown>).observations;
-  }
-}
-
-function findingsOf(node: unknown): unknown {
-  // Stryker disable next-line ConditionalExpression,EqualityOperator — equivalent: non-object plan/architecture slots yield undefined under every single mutation.
-  return node && typeof node === 'object'
-    ? (node as Record<string, unknown>).reviewFindings
-    : undefined;
-}
-
-function mapVerdictField(node: unknown, acc: { migrated: boolean }): void {
-  // Stryker disable next-line ConditionalExpression — equivalent: null review-loop slots skip the migration identically under every single mutation.
-  if (node && typeof node === 'object') {
-    const o = node as Record<string, unknown>;
-    // Stryker disable next-line ConditionalExpression,BooleanLiteral — equivalent: the legacy-literal check is covered by the selfReview migration test; the literal mutation yields the same skip for current-generation states.
-    if (isLegacyApprove(o.verdict)) {
-      o.verdict = 'accept';
-      acc.migrated = true;
-    }
-  }
-}
-
-function mapFindingsArray(arr: unknown, acc: { migrated: boolean }): void {
-  if (!Array.isArray(arr)) return;
-  for (const f of arr) {
-    // Stryker disable ConditionalExpression,LogicalOperator,EqualityOperator
-    // equivalent: malformed finding entries skip the migration; the
-    // overallVerdict literal check is shape-guarded by the object test.
-    if (
-      f &&
-      typeof f === 'object' &&
-      isLegacyApprove((f as Record<string, unknown>).overallVerdict)
-    ) {
-      // Stryker restore ConditionalExpression,LogicalOperator,EqualityOperator
-      // Stryker disable BlockStatement,BooleanLiteral
-      // equivalent: the legacy-verdict rewrite is shape-guarded; single
-      // mutations of the assignment cannot change the observable outcome.
-      (f as Record<string, unknown>).overallVerdict = 'accept';
-      acc.migrated = true;
-      // Stryker restore BlockStatement,BooleanLiteral
-    }
-  }
-}
-
-function migrateAssuranceVerdicts(node: unknown, acc: { migrated: boolean }): void {
-  // Stryker disable next-line ConditionalExpression,EqualityOperator,LogicalOperator,BooleanLiteral — equivalent: null assurance slots skip the migration identically under every single mutation.
-  if (!node || typeof node !== 'object') return;
-  const invocations = (node as Record<string, unknown>).invocations;
-  if (!Array.isArray(invocations)) return;
-  for (const inv of invocations) {
-    // Stryker disable next-line ConditionalExpression,LogicalOperator,EqualityOperator,BooleanLiteral — equivalent: malformed invocation entries skip the migration; the capturedVerdict literal check is shape-guarded by the object test.
-    if (!inv || typeof inv !== 'object') continue;
-    const o = inv as Record<string, unknown>;
-    // Stryker disable next-line ConditionalExpression — equivalent: the legacy-verdict check is shape-guarded; single mutations cannot change the observable outcome for covered inputs.
-    if (isLegacyApprove(o.capturedVerdict)) {
-      o.capturedVerdict = 'accept';
-      acc.migrated = true;
-    }
-    const raw = o.capturedRawFindings;
-    // Stryker disable ConditionalExpression,LogicalOperator,EqualityOperator
-    // equivalent: malformed capturedRawFindings entries skip the migration;
-    // the overallVerdict literal check is shape-guarded by the object test.
-    if (
-      raw &&
-      typeof raw === 'object' &&
-      isLegacyApprove((raw as Record<string, unknown>).overallVerdict)
-    ) {
-      // Stryker restore ConditionalExpression,LogicalOperator,EqualityOperator
-      // Stryker disable BlockStatement,BooleanLiteral
-      // equivalent: the legacy-verdict rewrite is shape-guarded; single
-      // mutations cannot change the observable outcome for covered inputs.
-      (raw as Record<string, unknown>).overallVerdict = 'accept';
-      acc.migrated = true;
-      // Stryker restore BlockStatement,BooleanLiteral
-    }
-  }
-}
 
 export async function readState(sessionDir: string): Promise<SessionState | null> {
   const filePath = statePath(sessionDir);
@@ -479,34 +286,20 @@ export async function readState(sessionDir: string): Promise<SessionState | null
     throw new PersistenceError('PARSE_FAILED', `State file is not valid JSON: ${filePath}`);
   }
 
-  const migrated = migrateLegacyReviewerVerdicts(json);
-  // Stryker disable ConditionalExpression,BlockStatement,ObjectLiteral,BooleanLiteral
-  // equivalent: the migration warning branch only renders a diagnostic payload;
-  // the migrated flag is asserted through the migration contract tests.
-  if (migrated) {
-    getAdapterLogger().warn(
-      'persistence',
-      "Migrated legacy reviewer verdict 'approve' -> 'accept' on read",
-      { filePath },
+  if (
+    !json ||
+    typeof json !== 'object' ||
+    (json as Record<string, unknown>).schemaVersion !== 'v2'
+  ) {
+    throw new PersistenceError(
+      'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+      `State file uses an unsupported pre-v2 Assurance format: ${filePath}`,
     );
   }
-  // Stryker restore ConditionalExpression,BlockStatement,ObjectLiteral,BooleanLiteral
 
-  migrateLegacyValidationOutcomes(json);
-
-  const assuranceMigration = { migrated: false };
-  migrateReviewAssuranceToV5(json, assuranceMigration);
-  // Stryker disable ConditionalExpression,BlockStatement,ObjectLiteral,BooleanLiteral
-  // equivalent: the migration warning branch only renders a diagnostic payload;
-  // the migrated flag is asserted through the assurance migration tests.
-  if (assuranceMigration.migrated) {
-    getAdapterLogger().warn(
-      'persistence',
-      "Migrated review assurance to 'review-assurance.v5' (shape-only)",
-      { filePath },
-    );
-  }
-  // Stryker restore ConditionalExpression,BlockStatement,ObjectLiteral,BooleanLiteral
+  // Assurance epoch: no read migrations. Legacy persisted authority is never
+  // reinterpreted — anything not already session-state v2 fails schema
+  // validation or the version preflight above.
 
   const result = SessionState.safeParse(json);
   if (!result.success) {

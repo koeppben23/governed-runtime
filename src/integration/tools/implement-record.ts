@@ -90,6 +90,10 @@ import { buildPendingReviewInstruction } from '../review/pending-instruction.js'
 import { resolveAttemptObservationCapability } from '../review/assurance.js';
 import { buildReviewerProofContext } from '../review/proof-context.js';
 import type { ImplementRuntime, ImplementationCeremony } from './implement-shared.js';
+import {
+  hasUnresolvedMutationEpisodes,
+  reconcileMutationEpisodes,
+} from '../../state/evidence-mutation-episode.js';
 import { normalizeHostFindings } from './implement-shared.js';
 import {
   activateReviewObligationAndPersist,
@@ -143,6 +147,14 @@ export function validateImplRecordPrerequisites(input: ImplementRuntime): string
   }
   if (!input.state.ticket) return formatBlocked('TICKET_REQUIRED', { action: 'implementation' });
   if (!input.state.plan) return formatBlocked('PLAN_REQUIRED', { action: 'implementation' });
+  const unresolvedEpisodes = input.state.mutationEpisodes.filter(
+    (episode) => episode.status === 'dispatch_authorized',
+  );
+  if (hasUnresolvedMutationEpisodes(input.state.mutationEpisodes)) {
+    return formatBlocked('MUTATION_EPISODE_UNRESOLVED', {
+      count: String(unresolvedEpisodes.length),
+    });
+  }
   return null;
 }
 
@@ -343,6 +355,7 @@ export async function handleImplRecord(
   const reducedCeremony = ceremony.profile === 'reduced';
   const nextState: SessionState = {
     ...input.state,
+    mutationEpisodes: reconcileMutationEpisodes(input.state.mutationEpisodes, implEvidence.digest),
     implementation: implEvidence,
     // #762: bind the risk classification to the exact revision it describes, so a
     // gate rail can consult it without re-deriving it from a later file set.

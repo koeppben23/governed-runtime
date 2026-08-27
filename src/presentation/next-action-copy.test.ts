@@ -78,7 +78,11 @@ describe('buildProductNextAction', () => {
 
     it('SESSION_COMPLETE redacted archive is not presented as a failure', () => {
       const action = resolveNextAction('COMPLETE', makeProgressedState('COMPLETE'));
-      const product = buildProductNextAction(action, 'COMPLETE', false, 'not_verifiable');
+      const product = buildProductNextAction(action, 'COMPLETE', false, null, {
+        lastExportPackagePurpose: 'sharing',
+        lastExportIntegrityCapability: 'not_verifiable',
+        lastExportVerificationStatus: 'not_run',
+      });
       expect(product.commands).toEqual(['/status', '/export']);
       expect(product.text).toContain('redacted sharing archive');
       expect(product.text).not.toContain('verification failed');

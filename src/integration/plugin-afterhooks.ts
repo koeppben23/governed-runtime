@@ -69,6 +69,7 @@ import {
 import type { ReviewAssuranceState, ReviewAttempt } from '../state/evidence-review.js';
 import { readState as readPersistedState } from '../adapters/persistence.js';
 import type { SessionState } from '../state/schema.js';
+import { recordMutationCompletion } from './plugin-mutation-episodes.js';
 
 /**
  * Attempt statuses that already carry reviewer evidence. Only these block a
@@ -106,6 +107,7 @@ export async function toolAfter(
         now,
       };
       await handleAfterDiagnostics(runtime, afterCtx);
+      await recordMutationCompletion({ runtime, ...afterCtx });
       await handleBashAfter(runtime, toolName, sessionId, hookOutput);
       // The durable transition outbox must be reconciled BEFORE the orchestrator
       // may persist its post-commit side effects (obligations, attempts):

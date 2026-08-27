@@ -61,7 +61,7 @@ import {
 } from './persistence.js';
 import { appendAuditEvent, readAuditTrail } from './persistence-audit.js';
 import type { SessionState } from '../state/schema.js';
-import type { AuditEvent, ReviewReport } from '../state/evidence.js';
+import type { AuditEvent, AuditEventBody, ReviewReport } from '../state/evidence.js';
 import { withTestEnv } from '../integration/test-helpers.js';
 import {
   makeState,
@@ -96,13 +96,13 @@ async function cleanTmpDir(dir: string): Promise<void> {
 }
 
 /** Create a minimal valid AuditEvent for persistence tests. */
-function makeValidAuditEvent(overrides: Partial<AuditEvent> = {}): AuditEvent {
+function makeValidAuditEvent(overrides: Partial<AuditEventBody> = {}): AuditEventBody {
   return {
     id: FIXED_UUID,
     sessionId: FIXED_SESSION_UUID,
     phase: 'PLAN',
     event: 'transition:PLAN_READY',
-    timestamp: FIXED_TIME,
+    occurredAt: FIXED_TIME,
     actor: 'machine',
     detail: { kind: 'transition', from: 'TICKET', to: 'PLAN' },
     ...overrides,
@@ -160,7 +160,8 @@ describe('persistence', () => {
 
     async function assertReadFails(
       json: unknown,
-      expectedCode: 'SCHEMA_VALIDATION_FAILED' | 'PARSE_FAILED',
+      expectedCode:
+        'SCHEMA_VALIDATION_FAILED' | 'PARSE_FAILED' | 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
     ) {
       await fs.writeFile(statePath(tmpDir), JSON.stringify(json), 'utf-8');
       let caught: unknown;
@@ -184,7 +185,7 @@ describe('persistence', () => {
     it('rejects missing required field "schemaVersion"', () => {
       const state = makeState('TICKET');
       const { schemaVersion: _, ...rest } = state;
-      return assertReadFails(rest, 'SCHEMA_VALIDATION_FAILED');
+      return assertReadFails(rest, 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
     });
 
     it('rejects missing required field "phase"', () => {
@@ -232,8 +233,8 @@ describe('persistence', () => {
 
     it('rejects wrong schemaVersion', () => {
       return assertReadFails(
-        { ...makeState('TICKET'), schemaVersion: 'v2' },
-        'SCHEMA_VALIDATION_FAILED',
+        { ...makeState('TICKET'), schemaVersion: 'v1' },
+        'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
       );
     });
 
@@ -253,7 +254,10 @@ describe('persistence', () => {
 
     it('rejects empty sessionId', () => {
       return assertReadFails(
-        { ...makeState('TICKET'), binding: { ...makeState('TICKET').binding, sessionId: '' } },
+        {
+          ...makeState('TICKET'),
+          binding: { ...makeState('TICKET').binding, hostSessionId: '' },
+        },
         'SCHEMA_VALIDATION_FAILED',
       );
     });
@@ -262,7 +266,7 @@ describe('persistence', () => {
       return assertReadFails(
         {
           ...makeState('TICKET'),
-          binding: { ...makeState('TICKET').binding, sessionId: 'a'.repeat(129) },
+          binding: { ...makeState('TICKET').binding, hostSessionId: 'a'.repeat(129) },
         },
         'SCHEMA_VALIDATION_FAILED',
       );
@@ -372,9 +376,9 @@ describe('persistence', () => {
       ).rejects.toThrow(PersistenceError);
     });
 
-    it('rejects event with invalid timestamp', async () => {
+    it('rejects event with invalid occurredAt', async () => {
       await expect(
-        appendAuditEvent(tmpDir, makeValidAuditEvent({ timestamp: 'now' })),
+        appendAuditEvent(tmpDir, makeValidAuditEvent({ occurredAt: 'now' })),
       ).rejects.toThrow(PersistenceError);
     });
 
@@ -461,10 +465,7 @@ describe('persistence', () => {
     // ── HAPPY ───────────────────────────────────────────────
 
     it('computes chainHash and prevHash under the append lock', async () => {
-      const event = makeValidAuditEvent({
-        prevHash: PREV_HASH_64,
-        chainHash: CHAIN_HASH_64,
-      });
+      const event = makeValidAuditEvent();
       await appendAuditEvent(tmpDir, event);
       const { events, skipped } = await readAuditTrail(tmpDir);
       expect(skipped).toBe(0);
@@ -503,7 +504,7 @@ describe('persistence', () => {
         } as Record<string, unknown>);
         const withTSA = {
           ...event,
-          canonicalEventDigest: canonicalDigest,
+          semanticEventDigest: canonicalDigest,
           timestampEvidence: {
             status: 'tsa_stamped' as const,
             source: 'tsa' as const,
@@ -543,7 +544,7 @@ describe('persistence', () => {
       delete stripped.chainHash;
       delete stripped.prevHash;
       delete stripped.timestampEvidence;
-      delete stripped.canonicalEventDigest;
+      delete stripped.semanticEventDigest;
       const bodyWithOldPrev: Record<string, unknown> = {
         ...stripped,
         prevHash: 'old-prev-hash-64-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
@@ -558,7 +559,7 @@ describe('persistence', () => {
 
       const withTsa = {
         ...event,
-        canonicalEventDigest: v1Digest,
+        semanticEventDigest: v1Digest,
         timestampEvidence: {
           status: 'tsa_stamped' as const,
           source: 'tsa' as const,
@@ -586,7 +587,7 @@ describe('persistence', () => {
       await fs.writeFile(auditFilePath, '{invalid-json\n', 'utf-8');
 
       const event = makeValidAuditEvent({ id: crypto.randomUUID() });
-      await expect(appendAuditEvent(tmpDir, event)).rejects.toThrow(/unparseable line/);
+      await expect(appendAuditEvent(tmpDir, event)).rejects.toThrow(/not valid JSONL|LEGACY/i);
 
       // Original corrupt trail is preserved, no partial append.
       const raw = await fs.readFile(auditFilePath, 'utf-8');

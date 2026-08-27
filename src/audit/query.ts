@@ -87,8 +87,8 @@ export function byEvent(eventName: string): AuditFilter {
  */
 export function byTimeRange(from: string | null, to: string | null): AuditFilter {
   return (event) => {
-    if (from !== null && event.timestamp < from) return false;
-    if (to !== null && event.timestamp > to) return false;
+    if (from !== null && event.occurredAt < from) return false;
+    if (to !== null && event.occurredAt > to) return false;
     return true;
   };
 }
@@ -197,7 +197,7 @@ function toDecisionReceipt(event: AuditEvent): DecisionReceipt | null {
     policyMode: detail.policyMode as string,
     eventId: event.id,
     sessionId: event.sessionId,
-    timestamp: event.timestamp,
+    timestamp: event.occurredAt,
   };
 }
 
@@ -253,8 +253,8 @@ export function timeSpan(
   events: AuditEvent[],
 ): { first: string; last: string; durationMs: number } | null {
   if (events.length === 0) return null;
-  const first = events[0]!.timestamp;
-  const last = events[events.length - 1]!.timestamp;
+  const first = events[0]!.occurredAt;
+  const last = events[events.length - 1]!.occurredAt;
   const durationMs = new Date(last).getTime() - new Date(first).getTime();
   return { first, last, durationMs };
 }

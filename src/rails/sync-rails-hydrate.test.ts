@@ -26,9 +26,9 @@ describe('hydrate rail', () => {
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
         expect(result.state.phase).toBe('READY');
-        expect(result.state.binding.sessionId).toBe(FIXED_SESSION_UUID);
+        expect(result.state.binding.hostSessionId).toBe(FIXED_SESSION_UUID);
         expect(result.state.binding.worktree).toBe('/tmp/test');
-        expect(result.state.schemaVersion).toBe('v1');
+        expect(result.state.schemaVersion).toBe('v2');
         expect(result.transitions.length).toBe(0);
         // Discovery fields initialize as null in new sessions
         expect(result.state.discoveryDigest).toBeNull();
@@ -56,7 +56,7 @@ describe('hydrate rail', () => {
       );
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        expect(result.state.binding.sessionId).toBe('ses_260740c65ffe77OjxRP7z40yH8');
+        expect(result.state.binding.hostSessionId).toBe('ses_260740c65ffe77OjxRP7z40yH8');
       }
     });
 

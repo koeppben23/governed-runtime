@@ -519,7 +519,7 @@ describe('FlowGuard tool-level E2E', () => {
         expect(typeof rA).toBe('string');
         expect(rA).not.toContain('INTERNAL_ERROR');
         st = await readState(s.sDir);
-        expect(st!.lastExportStatus).toBeTruthy();
+        expect(st!.lastExportPackagePurpose).toBeTruthy();
       });
 
       it('review: content → obligation → evidence → complete', async () => {

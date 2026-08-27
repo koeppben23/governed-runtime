@@ -46,7 +46,7 @@ import {
 } from './shared/obligation-tracker.js';
 import { appendAuditEvent } from '../adapters/persistence-audit.js';
 import { ensureWorkspace, sessionDir, computeFingerprint } from '../adapters/workspace/index.js';
-import type { AuditEvent } from '../state/evidence-audit.js';
+import type { AuditEventBody } from '../state/evidence-audit.js';
 import type { HookEventName, HttpHookResponse } from './shared/types.js';
 
 // ─── Configuration ───────────────────────────────────────────────────────────
@@ -246,12 +246,12 @@ async function handlePostToolUse(payload: Record<string, unknown>): Promise<Http
   }
 
   const now = new Date().toISOString();
-  const auditEvent: AuditEvent = {
+  const auditEvent: AuditEventBody = {
     id: randomUUID(),
     sessionId: session_id,
     phase: resolution.state.phase,
     event: 'tool_call',
-    timestamp: now,
+    occurredAt: now,
     actor: 'machine',
     detail: {
       tool: tool_name,
@@ -312,12 +312,12 @@ export async function handleSessionStart(
   if (sessDir) {
     try {
       const now = new Date().toISOString();
-      const auditEvent: AuditEvent = {
+      const auditEvent: AuditEventBody = {
         id: randomUUID(),
         sessionId: session_id,
         phase: 'READY',
         event: 'lifecycle',
-        timestamp: now,
+        occurredAt: now,
         actor: 'system',
         detail: { action: 'session_start', hookSource: 'http_hook', platform, cwd },
         enforcementLevel: 'hook_gated',
@@ -356,12 +356,12 @@ async function handleStop(payload: Record<string, unknown>): Promise<HttpHookRes
   }
 
   const now = new Date().toISOString();
-  const auditEvent: AuditEvent = {
+  const auditEvent: AuditEventBody = {
     id: randomUUID(),
     sessionId: session_id,
     phase: state.phase,
     event: 'lifecycle',
-    timestamp: now,
+    occurredAt: now,
     actor: 'system',
     detail: {
       action: 'session_stop',

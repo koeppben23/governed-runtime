@@ -85,21 +85,21 @@ describe('session-state upgrade compatibility', () => {
       await writeFixtureState(file);
       const result = parseToolResult(await status.execute({}, ctx));
       expect(result.error).toBe(true);
-      expect(result.code).toBe('SCHEMA_VALIDATION_FAILED');
+      expect(result.code).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
     }
   });
 
   it('rejects legacy regulated snapshots before a decision can execute', async () => {
     const sessDir = await writeFixtureState('v1-legacy-policy-snapshot.json');
     await expect(readState(sessDir)).rejects.toMatchObject({
-      code: 'SCHEMA_VALIDATION_FAILED',
+      code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
     });
   });
 
   it('rejects legacy ticket evidence with an unversioned digest', async () => {
     const sessDir = await writeFixtureState('v1-no-external-references.json');
     await expect(readState(sessDir)).rejects.toMatchObject({
-      code: 'SCHEMA_VALIDATION_FAILED',
+      code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
     });
   });
 
@@ -107,6 +107,6 @@ describe('session-state upgrade compatibility', () => {
     await writeFixtureState('v1-no-archive-status.json');
     const result = parseToolResult(await status.execute({}, ctx));
     expect(result.error).toBe(true);
-    expect(result.code).toBe('SCHEMA_VALIDATION_FAILED');
+    expect(result.code).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
   });
 });

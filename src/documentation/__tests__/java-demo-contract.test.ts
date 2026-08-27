@@ -91,8 +91,10 @@ describe('Java Task Manager demo contract', () => {
     expect(proofGraphVariants).toContain('PROOFGRAPH_CRITICAL_FACTS_UNPROVEN');
     expect(proofGraphVariants).toContain('flowguard_record_mutation_evidence');
     expect(proofGraphVariants).toContain('./demos/run-proofgraph-variants.sh');
-    expect(readme).toContain('archiveStatus: not_verifiable');
-    expect(demoScript).toContain('archiveStatus: not_verifiable');
+    expect(readme).toContain('integrityCapability: not_verifiable');
+    expect(readme).toContain('verificationStatus: not_run');
+    expect(demoScript).toContain('integrityCapability: not_verifiable');
+    expect(demoScript).toContain('verificationStatus: not_run');
     expect(readme).toContain('/export redactionMode=none includeRaw=true');
 
     // The committed seed must remain the reproducible failing baseline, not the fix.

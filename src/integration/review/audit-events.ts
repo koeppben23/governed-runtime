@@ -41,7 +41,7 @@ export async function appendReviewAuditEvent(
     sessionId,
     phase,
     event,
-    timestamp: new Date().toISOString(),
+    occurredAt: new Date().toISOString(),
     actor: 'machine',
     detail,
   });

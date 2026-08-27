@@ -1649,7 +1649,7 @@ describe('runAudit', () => {
             success: true,
             transitionCount: 0,
           },
-          timestamp: transition.at,
+          occurredAt: transition.at,
           actor: 'machine',
           prevHash: 'genesis',
         });

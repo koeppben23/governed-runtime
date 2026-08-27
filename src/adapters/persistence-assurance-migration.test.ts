@@ -1,9 +1,9 @@
 /**
  * @module persistence-assurance-migration.test
- * @description Read-boundary shape-only migrations: review-assurance.v3 →
- *              v4 (literal) and v4 → v5 (literal + pre-v5 observations become
- *              evidence-incapable). No authority is invented; legacy states
- *              stay loadable.
+ * @description Assurance epoch read boundary: legacy review-assurance v3/v4
+ *              state shapes are never migrated on read — they fail closed
+ *              with SCHEMA_VALIDATION_FAILED. Only current-generation
+ *              (review-assurance.v5) state loads.
  *
  * @test-policy HAPPY, BAD
  */
@@ -33,9 +33,9 @@ afterAll(() => {
   fs.rmSync(sessDir, { recursive: true, force: true });
 });
 
-describe('review-assurance shape-only read migrations', () => {
-  it('HAPPY: v3 state loads with the v5 literal and preserves obligations verbatim', async () => {
-    const { assurance, obligation } = createObligationAndAttempt(
+describe('review-assurance legacy rejection at the read boundary', () => {
+  it('BAD: a review-assurance.v3 state fails closed instead of migrating', async () => {
+    const { assurance } = createObligationAndAttempt(
       undefined,
       {
         obligationType: 'plan',
@@ -55,28 +55,16 @@ describe('review-assurance shape-only read migrations', () => {
     // Persist as if written by a v3 runtime: literal downgraded, no new fields.
     const legacy = JSON.parse(JSON.stringify(assurance)) as Record<string, unknown>;
     legacy.assuranceSchemaVersion = 'review-assurance.v3';
-    const legacyObligations = legacy.obligations as Record<string, unknown>[];
-    expect(legacyObligations[0]?.repositoryAuthority).toBeUndefined();
-    expect(legacyObligations[0]?.repositoryRevisionProvenance).toEqual({
-      kind: 'unavailable',
-      reason: 'frozen_repository_authority_missing',
-    });
 
     const legacyState = { ...makeState('PLAN'), reviewAssurance: legacy };
     fs.writeFileSync(statePath(sessDir), JSON.stringify(legacyState, null, 2) + '\n', 'utf-8');
 
-    const loaded = await readState(sessDir);
-    expect(loaded).not.toBeNull();
-    expect(loaded!.reviewAssurance?.assuranceSchemaVersion).toBe('review-assurance.v5');
-    // Shape-only: obligations preserved, no authority invented.
-    const loadedObligation = loaded!.reviewAssurance?.obligations[0];
-    expect(loadedObligation?.obligationId).toBe(obligation.obligationId);
-    expect(loadedObligation?.repositoryAuthority).toBeUndefined();
+    await expect(readState(sessDir)).rejects.toMatchObject({
+      code: 'SCHEMA_VALIDATION_FAILED',
+    });
   });
 
-  it('REGRESSION: v4 state observations become evidence-incapable regardless of shape', async () => {
-    // Build a VALID PR-A v4 state: attempt with old-shape observations
-    // (no resolvedObjectKind, no lineCount) minted by the real pre-v5 replay.
+  it('BAD: a review-assurance.v4 state fails closed instead of stripping observations', async () => {
     const { assurance, obligation } = createObligationAndAttempt(
       undefined,
       {
@@ -109,27 +97,17 @@ describe('review-assurance shape-only read migrations', () => {
       boundAt: '2026-08-13T10:00:00.000Z',
       acquisition: { kind: 'local_git_object' },
     };
-    // A v5-shaped observation inside a v4-declared state is INVALID previous
-    // generation data: it must NOT be laundered into current authority.
-    const futureShapeObservation = {
-      ...oldShapeObservation,
-      observationId: '22222222-2222-4222-8222-222222222222',
-      resolvedObjectKind: 'commit',
-      lineCount: 1,
-    };
     const legacyAssurance = JSON.parse(JSON.stringify(assurance)) as Record<string, unknown>;
     legacyAssurance.assuranceSchemaVersion = 'review-assurance.v4';
     const attempts = legacyAssurance.attempts as Record<string, unknown>[];
-    attempts[0]!.observations = [oldShapeObservation, futureShapeObservation];
+    attempts[0]!.observations = [oldShapeObservation];
 
     const legacyState = { ...makeState('PLAN'), reviewAssurance: legacyAssurance };
     fs.writeFileSync(statePath(sessDir), JSON.stringify(legacyState, null, 2) + '\n', 'utf-8');
 
-    const loaded = await readState(sessDir);
-    expect(loaded).not.toBeNull();
-    expect(loaded!.reviewAssurance?.assuranceSchemaVersion).toBe('review-assurance.v5');
-    // ALL v4-persisted observations are stripped — old-shape AND v5-shaped.
-    expect(loaded!.reviewAssurance?.attempts[0]?.observations ?? []).toEqual([]);
+    await expect(readState(sessDir)).rejects.toMatchObject({
+      code: 'SCHEMA_VALIDATION_FAILED',
+    });
   });
 
   it('REGRESSION: v5-persisted observations are preserved unchanged', async () => {

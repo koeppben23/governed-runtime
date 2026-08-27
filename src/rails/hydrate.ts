@@ -268,15 +268,17 @@ function buildNewHydrateState(
   const now = ctx.now();
   const snapshotWithContext = resolvePolicySnapshot(p, ctx, now);
   const binding: BindingInfo = {
-    sessionId: s.sessionId,
+    hostSessionId: s.sessionId,
     worktree: s.worktree,
     fingerprint: s.fingerprint,
     resolvedAt: now,
   };
 
+  const sessionId = crypto.randomUUID();
   const newState: SessionState = {
-    id: crypto.randomUUID(),
-    schemaVersion: 'v1',
+    id: sessionId,
+    flowguardSessionId: sessionId,
+    schemaVersion: 'v2',
     phase: 'READY',
     ...(s.claimedTaskClass ? { claimedTaskClass: s.claimedTaskClass } : {}),
     binding,
@@ -287,6 +289,7 @@ function buildNewHydrateState(
     validation: [],
     validationAttempts: [],
     mutationAttempts: [],
+    mutationEpisodes: [],
     challengeResolutions: [],
     implValidation: [],
     implementation: null,

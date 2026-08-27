@@ -24,7 +24,10 @@ describe('audit types', () => {
         sessionId: SESSION_ID,
         phase: 'PLAN',
         event: 'transition:PLAN_READY',
-        timestamp: TS1,
+        auditSequence: 1,
+        occurredAt: TS1,
+        recordedAt: TS1,
+        semanticEventDigest: 'a'.repeat(64),
         actor: 'machine',
         auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
         detail: {},
@@ -64,7 +67,7 @@ describe('audit types', () => {
           success: true,
           transitionCount: 1,
         },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'user-1',
         prevHash: GENESIS_HASH,
       });
@@ -90,7 +93,7 @@ describe('audit types', () => {
       const event = createLifecycleEvent({
         sessionId: SESSION_ID,
         detail: { action: 'session_created', finalPhase: 'TICKET' },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'system',
         prevHash: GENESIS_HASH,
       });
@@ -115,7 +118,7 @@ describe('audit types', () => {
           transitionEvent: 'APPROVE',
           policyMode: 'team',
         },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'human',
         prevHash: GENESIS_HASH,
       });
@@ -137,7 +140,7 @@ describe('audit types', () => {
       const event = createLifecycleEvent({
         sessionId: SESSION_ID,
         detail: { action: 'session_created', finalPhase: 'TICKET' },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'system',
         prevHash: GENESIS_HASH,
         actorInfo: actor,
@@ -157,7 +160,7 @@ describe('audit types', () => {
         sessionId: SESSION_ID,
         phase: 'PLAN',
         detail: { tool: 'flowguard_plan', argsSummary: {}, success: true, transitionCount: 1 },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'user',
         prevHash: GENESIS_HASH,
         actorInfo: actor,
@@ -188,7 +191,7 @@ describe('audit types', () => {
           transitionEvent: 'APPROVE',
           policyMode: 'team',
         },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'human',
         prevHash: GENESIS_HASH,
         actorInfo: actor,
@@ -201,7 +204,7 @@ describe('audit types', () => {
       const event = createLifecycleEvent({
         sessionId: SESSION_ID,
         detail: { action: 'session_created', finalPhase: 'TICKET' },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'system',
         prevHash: GENESIS_HASH,
         actorInfo: actor,
@@ -412,7 +415,10 @@ describe('audit types', () => {
         sessionId: SESSION_ID,
         phase: 'PLAN',
         event: 'transition:PLAN_READY',
-        timestamp: TS1,
+        auditSequence: 1,
+        occurredAt: TS1,
+        recordedAt: TS1,
+        semanticEventDigest: 'a'.repeat(64),
         actor: 'machine',
         auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
         detail: {},
@@ -429,7 +435,10 @@ describe('audit types', () => {
         sessionId: SESSION_ID,
         phase: 'PLAN',
         event: 'transition:PLAN_READY',
-        timestamp: TS1,
+        auditSequence: 1,
+        occurredAt: TS1,
+        recordedAt: TS1,
+        semanticEventDigest: 'a'.repeat(64),
         actor: 'machine',
         auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
         detail: {},
@@ -452,7 +461,7 @@ describe('audit types', () => {
         sessionId: SESSION_ID,
         phase: 'PLAN',
         detail: { tool: 'test', argsSummary: {}, success: true, transitionCount: 0 },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'user',
         prevHash: GENESIS_HASH,
       });
@@ -465,7 +474,7 @@ describe('audit types', () => {
       const l = createLifecycleEvent({
         sessionId: SESSION_ID,
         detail: { action: 'session_created', finalPhase: 'TICKET' },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'system',
         prevHash: GENESIS_HASH,
       });
@@ -484,7 +493,7 @@ describe('audit types', () => {
           transitionEvent: 'APPROVE',
           policyMode: 'team',
         },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'human',
         prevHash: GENESIS_HASH,
       });
@@ -503,20 +512,23 @@ describe('audit types', () => {
       const withoutActor = createLifecycleEvent({
         sessionId: SESSION_ID,
         detail: { action: 'session_created', finalPhase: 'TICKET' },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'system',
         prevHash: GENESIS_HASH,
       });
       // actorInfo should be absent from the object (not undefined-as-value)
       expect('actorInfo' in withoutActor).toBe(false);
 
-      // Manually build the same v2 event object as pre-P27 code would have produced.
+      // Manually build the same v3 event object as pre-P27 code would have produced.
       const prePatchEvent: Omit<ChainedAuditEvent, 'chainHash'> = {
         id: withoutActor.id,
         sessionId: withoutActor.sessionId,
         phase: withoutActor.phase,
         event: withoutActor.event,
-        timestamp: withoutActor.timestamp,
+        occurredAt: withoutActor.occurredAt,
+        auditSequence: withoutActor.auditSequence,
+        recordedAt: withoutActor.recordedAt,
+        semanticEventDigest: withoutActor.semanticEventDigest,
         actor: withoutActor.actor,
         auditFormatVersion: withoutActor.auditFormatVersion,
         detail: withoutActor.detail,
@@ -534,12 +546,15 @@ describe('audit types', () => {
         sessionId: SESSION_ID,
         phase: 'TICKET',
         event: 'lifecycle:session_created',
-        timestamp: TS1,
+        auditSequence: 1,
+        occurredAt: TS1,
+        recordedAt: TS1,
+        semanticEventDigest: 'a'.repeat(64),
         actor: 'system',
         auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
         detail: { kind: 'lifecycle', action: 'session_created', finalPhase: 'TICKET' },
         prevHash: GENESIS_HASH,
-      };
+      } satisfies Omit<ChainedAuditEvent, 'chainHash'>;
       const withActorInfo = { ...base, actorInfo: actor };
 
       const hashWithout = computeChainHash(GENESIS_HASH, base);
@@ -578,7 +593,10 @@ describe('audit types', () => {
         sessionId: SESSION_ID,
         phase: 'PLAN',
         event: 'transition:PLAN_READY',
-        timestamp: TS1,
+        auditSequence: 1,
+        occurredAt: TS1,
+        recordedAt: TS1,
+        semanticEventDigest: 'a'.repeat(64),
         actor: 'machine',
         auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
         detail: { kind: 'transition', from: 'TICKET', to: 'PLAN' },
@@ -604,7 +622,7 @@ describe('audit types', () => {
           success: true,
           transitionCount: 1,
         },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'human',
         prevHash: GENESIS_HASH,
       });
@@ -626,7 +644,7 @@ describe('audit types', () => {
           success: true,
           transitionCount: 1,
         },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'human',
         prevHash: GENESIS_HASH,
       });
@@ -640,7 +658,7 @@ describe('audit types', () => {
           success: true,
           transitionCount: 2,
         },
-        timestamp: TS2,
+        occurredAt: TS2,
         actor: 'human',
         prevHash: event1.chainHash,
       });

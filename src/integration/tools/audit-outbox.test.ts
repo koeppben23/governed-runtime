@@ -236,7 +236,9 @@ describe('prepareStateWithAuditOperations', () => {
     const next = makeState('PLAN', { id: SESSION_ID, transition: TICKET_TO_PLAN });
 
     const prepared = await prepareStateWithAuditOperations(null, next, undefined);
-    expect(prepared.pendingAuditOperations[0]!.preStateDigest).toBe(hashText('absent'));
+    expect(prepared.pendingAuditOperations[0]!.preStateDigest).toBe(
+      hashText('state-digest.v2:absent'),
+    );
   });
 });
 

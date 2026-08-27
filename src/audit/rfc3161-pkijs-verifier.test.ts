@@ -396,7 +396,7 @@ describe('PkijsTimestampVerifier', () => {
     });
     const stamped = {
       ...event,
-      canonicalEventDigest: canonicalDigest,
+      semanticEventDigest: canonicalDigest,
       timestampEvidence: {
         status: 'tsa_stamped',
         source: 'tsa',
@@ -431,7 +431,7 @@ describe('PkijsTimestampVerifier', () => {
     });
     const stamped = {
       ...event,
-      canonicalEventDigest: canonicalDigest,
+      semanticEventDigest: canonicalDigest,
       timestampEvidence: {
         status: 'tsa_stamped',
         source: 'tsa',
@@ -465,7 +465,7 @@ describe('PkijsTimestampVerifier', () => {
     });
     const stamped = {
       ...event,
-      canonicalEventDigest: canonicalDigest,
+      semanticEventDigest: canonicalDigest,
       timestampEvidence: {
         status: 'tsa_stamped',
         source: 'tsa',

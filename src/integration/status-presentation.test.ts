@@ -134,6 +134,11 @@ function makeBaseProjection(overrides: Partial<StatusProjection> = {}): StatusPr
     profileId: 'none',
     actor: null,
     archiveStatus: null,
+    lastExport: {
+      packagePurpose: null,
+      integrityCapability: null,
+      verificationStatus: null,
+    },
     allowedCommands: ['/ticket', '/architecture', '/review'],
     nextAction: { primaryCommand: '/hydrate', summary: 'Run /hydrate to bootstrap.' },
     productNextAction: { primaryCommand: '/hydrate', summary: '' },

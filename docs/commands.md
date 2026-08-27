@@ -46,21 +46,21 @@ After `/hydrate`, the session starts in the **READY** phase. Three standalone fl
 
 Product commands invoke canonical FlowGuard tools. Runtime enforcement remains in the canonical command policy or in the target tool's fail-closed checks.
 
-| Product command    | Canonical command                    | Description                                               |
-| ------------------ | ------------------------------------ | --------------------------------------------------------- |
-| `/start`           | `/hydrate`                           | Start a governed session                                  |
-| `/task`            | `/ticket`                            | Capture a governed task                                   |
-| `/plan`            | `/plan`                              | Generate an implementation plan (same name)               |
-| `/approve`         | `/review-decision approve`           | Approve the current review gate                           |
-| `/request-changes` | `/review-decision changes_requested` | Request changes at the current review gate                |
-| `/reject`          | `/review-decision reject`            | Reject the current review gate                            |
-| `/implement`       | `/implement`                         | Execute the approved plan (same name)                     |
-| `/check`           | `/validate`                          | Run validation checks                                     |
-| `/export`          | `/archive`                           | Export a verifiable audit package                         |
-| `/status`          | `/status`                            | Show current phase, evidence, and next action (same name) |
-| `/why`             | `/status --why-blocked`              | Show why the workflow is blocked                          |
-| `/review`          | `/review`                            | Generate a compliance/content review report (same name)   |
-| `/architecture`    | `/architecture`                      | Create an ADR (same name)                                 |
+| Product command    | Canonical command                    | Description                                                            |
+| ------------------ | ------------------------------------ | ---------------------------------------------------------------------- |
+| `/start`           | `/hydrate`                           | Start a governed session                                               |
+| `/task`            | `/ticket`                            | Capture a governed task                                                |
+| `/plan`            | `/plan`                              | Generate an implementation plan (same name)                            |
+| `/approve`         | `/review-decision approve`           | Approve the current review gate                                        |
+| `/request-changes` | `/review-decision changes_requested` | Request changes at the current review gate                             |
+| `/reject`          | `/review-decision reject`            | Reject the current review gate                                         |
+| `/implement`       | `/implement`                         | Execute the approved plan (same name)                                  |
+| `/check`           | `/validate`                          | Run validation checks                                                  |
+| `/export`          | `/archive`                           | Export a redacted sharing package or an authorized raw auditor package |
+| `/status`          | `/status`                            | Show current phase, evidence, and next action (same name)              |
+| `/why`             | `/status --why-blocked`              | Show why the workflow is blocked                                       |
+| `/review`          | `/review`                            | Generate a compliance/content review report (same name)                |
+| `/architecture`    | `/architecture`                      | Create an ADR (same name)                                              |
 
 Product commands are the recommended surface for daily use. Advanced/canonical commands are documented below and remain fully supported for scripts, CI, and power users.
 

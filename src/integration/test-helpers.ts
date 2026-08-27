@@ -452,7 +452,7 @@ export async function fulfillStrictReviewObligation(
     obligationType: input.obligationType,
     mandateDigest: obligation.mandateDigest,
     criteriaVersion: obligation.criteriaVersion,
-    parentSessionId: state.binding.sessionId,
+    parentSessionId: state.binding.hostSessionId,
     childSessionId: findings.reviewedBy.sessionId,
     invocationMode: isHostTask ? 'host_subagent_task' : 'sdk_session_prompt',
     hostVisible: isHostTask,

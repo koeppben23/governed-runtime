@@ -474,7 +474,7 @@ async function appendArtifactBindingAuditEvent(
     sessionId,
     phase: state?.phase ?? 'unknown',
     event: ARTIFACT_BINDING_EVENT,
-    timestamp: new Date().toISOString(),
+    occurredAt: new Date().toISOString(),
     actor: 'system',
     detail: {
       kind: 'archive_artifact_binding',
@@ -498,7 +498,7 @@ async function appendPublicationBindingAuditEvent(
     sessionId,
     phase: state?.phase ?? 'unknown',
     event: ARCHIVE_PUBLICATION_BINDING_EVENT,
-    timestamp: new Date().toISOString(),
+    occurredAt: new Date().toISOString(),
     actor: 'system',
     detail: {
       kind: 'archive_publication_binding',

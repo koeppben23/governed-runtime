@@ -81,8 +81,14 @@ export interface StatusProjection {
     source: 'env' | 'git' | 'claim' | 'oidc' | 'unknown';
     assurance: 'best_effort' | 'claim_validated' | 'idp_verified';
   } | null;
-  /** Archive lifecycle status. */
+  /** Regulated archive lifecycle compatibility status. */
   archiveStatus: string | null;
+  /** Semantics of the most recent user-requested archive export. */
+  lastExport: {
+    packagePurpose: 'sharing' | 'auditor' | null;
+    integrityCapability: 'verifiable' | 'not_verifiable' | null;
+    verificationStatus: 'not_run' | 'passed' | 'failed' | null;
+  };
   /** Commands that are currently admissible. */
   allowedCommands: string[];
   /** Next action guidance from the machine (canonical commands). */
@@ -318,6 +324,19 @@ export interface FinishCard {
  * @param policy - Resolved FlowGuard policy (from state or default).
  * @returns Structured status projection.
  */
+function buildLastExport(state: SessionState): StatusProjection['lastExport'] {
+  return {
+    packagePurpose: state.lastExportPackagePurpose ?? null,
+    integrityCapability: state.lastExportIntegrityCapability ?? null,
+    verificationStatus: state.lastExportVerificationStatus ?? null,
+  };
+}
+
+function remainingValidationChecks(state: SessionState): string[] | undefined {
+  if (state.phase !== 'VALIDATION' || state.activeChecks.length === 0) return undefined;
+  return state.activeChecks.filter((id) => !state.validation.some((v) => v.checkId === id));
+}
+
 export function buildStatusProjection(
   state: SessionState,
   policy: FlowGuardPolicy,
@@ -337,6 +356,7 @@ export function buildStatusProjection(
     state.phase,
     state.error?.code === 'ABORTED',
     state.archiveStatus,
+    state,
   );
 
   const actor = state.actorInfo
@@ -355,6 +375,7 @@ export function buildStatusProjection(
     profileId,
     actor,
     archiveStatus: state.archiveStatus ?? null,
+    lastExport: buildLastExport(state),
     allowedCommands: allowed.map((cmd: FlowGuardCommand) => `/${cmd}`),
     nextAction: {
       primaryCommand: next.commands[0] ?? null,
@@ -375,10 +396,7 @@ export function buildStatusProjection(
     proofSummary: projectProofStatusForState(state),
     proofApprovals: buildProofApprovalProjection(state),
     reviewLoop: getReviewLoopProgress(state),
-    remainingChecks:
-      state.phase === 'VALIDATION' && state.activeChecks.length > 0
-        ? state.activeChecks.filter((id) => !state.validation.some((v) => v.checkId === id))
-        : undefined,
+    remainingChecks: remainingValidationChecks(state),
     conclusion: projectStatusConclusion(evalResult, productNext),
     readiness: deriveReadinessField(evalResult, completeness),
   };

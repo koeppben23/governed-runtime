@@ -42,7 +42,7 @@ export const FIXED_FINGERPRINT = 'a1b2c3d4e5f6a1b2c3d4e5f6';
 // ─── Evidence Fixtures ────────────────────────────────────────────────────────
 
 export const BINDING: BindingInfo = {
-  sessionId: FIXED_SESSION_UUID,
+  hostSessionId: FIXED_SESSION_UUID,
   worktree: '/tmp/test-repo',
   fingerprint: FIXED_FINGERPRINT,
   resolvedAt: FIXED_TIME,
@@ -458,9 +458,11 @@ export function makeState(
   phase: Phase = 'READY',
   overrides: Partial<SessionState> = {},
 ): SessionState {
+  const id = overrides.id ?? FIXED_UUID;
   return {
-    id: FIXED_UUID,
-    schemaVersion: 'v1',
+    id,
+    flowguardSessionId: overrides.flowguardSessionId ?? id,
+    schemaVersion: 'v2',
     phase,
     binding: BINDING,
     ticket: null,
@@ -470,6 +472,7 @@ export function makeState(
     validation: [],
     validationAttempts: [],
     mutationAttempts: [],
+    mutationEpisodes: [],
     challengeResolutions: [],
     implValidation: [],
     implementation: null,

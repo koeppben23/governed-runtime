@@ -29,7 +29,10 @@ interface ChainedRecord extends Record<string, unknown> {
   sessionId: string;
   phase: string;
   event: string;
-  timestamp: string;
+  auditSequence: number;
+  occurredAt: string;
+  recordedAt: string;
+  semanticEventDigest: string;
   actor: string;
   auditFormatVersion: string;
   detail: Record<string, unknown>;
@@ -49,7 +52,10 @@ function buildEvent(id: string, prevHash: string, idx: number): ChainedRecord {
     sessionId: 'aaaaaaaa-0000-4000-8000-000000000001',
     phase: 'PLAN',
     event: 'transition:PLAN_READY',
-    timestamp: `2026-01-01T00:${String(idx).padStart(2, '0')}:00.000Z`,
+    auditSequence: idx + 1,
+    occurredAt: `2026-01-01T00:${String(idx).padStart(2, '0')}:00.000Z`,
+    recordedAt: `2026-01-01T00:${String(idx).padStart(2, '0')}:00.000Z`,
+    semanticEventDigest: 'e'.repeat(64),
     actor: 'machine',
     auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
     detail: {

@@ -294,7 +294,10 @@ function chainedEvent(prevHash: string, event: string): Record<string, unknown> 
     sessionId: 'ses_chain_test',
     phase: 'READY',
     event,
-    timestamp: new Date().toISOString(),
+    auditSequence: 1,
+    occurredAt: new Date().toISOString(),
+    recordedAt: new Date().toISOString(),
+    semanticEventDigest: 'a'.repeat(64),
     actor: 'test',
     auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
     detail: { event },
@@ -314,13 +317,13 @@ describe('audit and archive integrity fail-closed behavior', () => {
     expect(result.reason).toBe('CHAIN_BREAK');
   });
 
-  it('classifies chained pre-v2 audit events as legacy format, not chain tamper', () => {
+  it('classifies pre-v3 audit records as unsupported legacy, not chain tamper', () => {
     const first = chainedEvent('genesis', 'first');
     const { auditFormatVersion: _auditFormatVersion, ...legacy } = first;
 
     const result = verifyChain([legacy], { strict: true });
     expect(result.valid).toBe(false);
-    expect(result.reason).toBe('LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2');
+    expect(result.reason).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
   });
 
   it.skipIf(!tarOk)('regulated archive verification flags malformed audit lines', async () => {

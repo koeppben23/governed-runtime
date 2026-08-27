@@ -102,7 +102,7 @@ approval.
 /export
 ```
 
-Creates a verifiable audit package with integrity verification.
+Creates a redacted audit-sharing package. Canonical verification requires an authorized raw auditor package.
 
 All canonical commands (`/hydrate`, `/ticket`, `/review-decision`, `/validate`,
 `/architecture`, `/review`, `/archive`, `/abort`, `/continue`) remain fully

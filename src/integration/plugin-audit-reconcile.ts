@@ -231,7 +231,7 @@ async function assertNoLegacyTransitionGap(
       event.detail.from === transition.from &&
       event.detail.to === transition.to &&
       event.detail.event === transition.event &&
-      event.timestamp === transition.at,
+      event.occurredAt === transition.at,
   );
   if (!evidenceExists) throw new AuditTransitionEvidenceGapError(transition);
 }

@@ -79,11 +79,11 @@ cd demos/java-task-manager
 
 ### Step A6 — Export Architecture Evidence
 
-| Action                  | What I Say                                                                                                                                                              |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/export`               | "Ich exportiere ein redigiertes Sharing-Archiv mit ADR, Review-Findings, Audit-Trail-Projektionen und Manifest."                                                        |
-| Show `/export` response | "`archiveStatus: not_verifiable` ist ehrlich: Ohne rohe State- und Audit-Dateien kann die kanonische Hash-Chain nicht geprüft werden."                                  |
-| Archive location        | "Das Archiv liegt unter `~/.config/opencode/workspaces/.../archive/`. Es uberlebt Workspace-Resets — die Archive sind außerhalb des Projektverzeichnisses gespeichert." |
+| Action                  | What I Say                                                                                                                                                                      |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/export`               | "Ich exportiere ein redigiertes Sharing-Archiv mit ADR, Review-Findings, Audit-Trail-Projektionen und Manifest."                                                                |
+| Show `/export` response | "`integrityCapability: not_verifiable` und `verificationStatus: not_run` sind ehrlich: Ohne rohe State- und Audit-Dateien kann die kanonische Hash-Chain nicht geprüft werden." |
+| Archive location        | "Das Archiv liegt unter `~/.config/opencode/workspaces/.../archive/`. Es uberlebt Workspace-Resets — die Archive sind außerhalb des Projektverzeichnisses gespeichert."         |
 
 ### Transition to Part 2
 
@@ -264,11 +264,11 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ### Step 11 — Export the Evidence
 
-| Action                   | What I Say                                                                                                                                                                             |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/export`                | "Ich exportiere ein redigiertes Sharing-Archiv mit allen freigegebenen Artefakten."                                                                                                    |
-| Show `/export` response  | "Die Antwort zeigt `archiveStatus: not_verifiable`: Das Archiv ist erstellt, enthält aber absichtlich keine Rohdaten für eine kanonische Chain-Verifikation."                          |
-| Show export archive path | "Das Archiv liegt in `~/.config/opencode/workspaces/.../archive/` — außerhalb des Projektverzeichnisses. Es uberlebt Workspace-Resets und ist unabhängig von der aktiven MCP-Session." |
+| Action                   | What I Say                                                                                                                                                                                            |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/export`                | "Ich exportiere ein redigiertes Sharing-Archiv mit allen freigegebenen Artefakten."                                                                                                                   |
+| Show `/export` response  | "Die Antwort zeigt `integrityCapability: not_verifiable` und `verificationStatus: not_run`: Das Archiv ist erstellt, enthält aber absichtlich keine Rohdaten für eine kanonische Chain-Verifikation." |
+| Show export archive path | "Das Archiv liegt in `~/.config/opencode/workspaces/.../archive/` — außerhalb des Projektverzeichnisses. Es uberlebt Workspace-Resets und ist unabhängig von der aktiven MCP-Session."                |
 
 ---
 
@@ -403,6 +403,7 @@ If someone in the audience knows the other name, this is why both exist:
   `archive.redaction.allowRawExport=true` and the explicit invocation
   `/export redactionMode=none includeRaw=true`. It contains unredacted evidence
   and must be handled as confidential material. The default redacted export is
-  intentionally `not_verifiable`, not a failed integrity check.
+  reports `integrityCapability: not_verifiable` and `verificationStatus: not_run`,
+  not a failed integrity check.
   This permission applies to manual exports; regulated clean completion creates
   its mandatory local raw-evidence archive automatically.

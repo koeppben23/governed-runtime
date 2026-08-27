@@ -22,7 +22,7 @@ import { detectPlatform } from './shared/platform-detect.js';
 import { ensureWorkspace } from '../adapters/workspace/index.js';
 import { appendAuditEvent } from '../adapters/persistence-audit.js';
 import { sessionDir } from '../adapters/workspace/index.js';
-import type { AuditEvent } from '../state/evidence-audit.js';
+import type { AuditEventBody } from '../state/evidence-audit.js';
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
@@ -84,12 +84,12 @@ async function sessionStartLogic(): Promise<void> {
   }
 
   const now = new Date().toISOString();
-  const auditEvent: AuditEvent = {
+  const auditEvent: AuditEventBody = {
     id: randomUUID(),
     sessionId: session_id,
     phase: 'READY',
     event: 'lifecycle',
-    timestamp: now,
+    occurredAt: now,
     actor: 'system',
     detail: {
       action: 'session_start',

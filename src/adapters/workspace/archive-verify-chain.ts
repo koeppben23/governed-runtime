@@ -221,25 +221,17 @@ function logAuditChainVerificationFailure(chainResult: ChainVerification): void 
     log.error('archive', 'Audit chain verification failed', logExtra);
     return;
   }
-  log.warn('archive', 'Audit chain format is not verifiable with current v2 verifier', logExtra);
+  log.error('archive', 'Audit chain contains unsupported legacy assurance records', logExtra);
 }
 
 function addAuditFormatFindings(chainResult: ChainVerification, findings: ArchiveFinding[]): void {
-  if (chainResult.reason === 'LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2') {
+  if (chainResult.reason === 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED') {
     findings.push({
       code: 'audit_chain_legacy_format',
       severity: 'error',
       message:
-        'Audit chain uses a legacy/pre-v2 hash format and is not verifiable under the recursive v2 tamper-evidence guarantee; migrate or re-seal before treating it as current-format evidence',
-      file: 'audit.jsonl',
-    });
-  }
-  if (chainResult.reason === 'UNSUPPORTED_AUDIT_FORMAT_VERSION') {
-    findings.push({
-      code: 'audit_chain_unsupported_format',
-      severity: 'error',
-      message:
-        'Audit chain declares an unsupported auditFormatVersion and cannot be verified by this runtime',
+        'Audit chain contains records that are not audit-chain.v3 records. Legacy assurance ' +
+        'artifacts are unsupported and cannot be treated as verifiable evidence.',
       file: 'audit.jsonl',
     });
   }
@@ -434,16 +426,21 @@ async function verifyAuditChainIntegrity(
       await verifyTimestampChain(events, state, manifest, findings, strict);
     }
   } catch (error) {
-    if (strict) {
-      findings.push({
-        code: 'audit_chain_invalid',
-        severity: 'error',
-        message: `Audit chain verification could not read audit.jsonl: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        file: 'audit.jsonl',
-      });
-    }
+    // Fail closed in every mode: legacy or malformed audit records are never
+    // silently tolerated just because verification is non-strict.
+    findings.push({
+      code:
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED'
+          ? 'audit_chain_legacy_format'
+          : 'audit_chain_invalid',
+      severity: 'error',
+      message: `Audit chain verification could not read audit.jsonl: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      file: 'audit.jsonl',
+    });
   }
 }
 

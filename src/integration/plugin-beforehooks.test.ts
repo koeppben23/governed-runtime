@@ -306,7 +306,11 @@ describe('toolBefore — host tool fail-closed resolution', () => {
         discoveryHealthDeps: { getSessionDir: vi.fn(), getWorkspaceDir: vi.fn(() => ws.tmpDir) },
       });
       await expect(
-        toolBefore(runtime, { tool: 'bash', sessionID: SESSION_ID }, { args: { command: 'echo' } }),
+        toolBefore(
+          runtime,
+          { tool: 'bash', sessionID: SESSION_ID, callID: 'call-bash' },
+          { args: { command: 'echo' } },
+        ),
       ).resolves.toBeUndefined();
       expect(runtime.auditDeps.getSessionDir).toHaveBeenCalled();
     } finally {

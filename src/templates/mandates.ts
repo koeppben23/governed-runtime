@@ -237,7 +237,7 @@ Universal FlowGuard mandates outrank slash-command, profile, and local style rul
 
 Universal governance rules for every FlowGuard command:
 
-- Use only FlowGuard tools for state changes (shell commands and file edits bypass governance and break audit integrity).
+- Use FlowGuard tools for FlowGuard session state, evidence, decisions, and audit authority. During IMPLEMENTATION, approved host mutation tools may change repository files; their activity is only observed provenance until /implement freezes the resulting implementation subject.
 - Complete this command fully, then stop — the user invokes the next command explicitly.
 - Only an explicit FlowGuard command triggers workflow actions. Free-text like "go", "weiter", or "proceed" is conversation — respond without calling FlowGuard tools.
 
@@ -308,7 +308,7 @@ Universal FlowGuard mandates outrank slash-command rules, profile rules, and loc
 
 export const COMPACT_COMMAND_EXECUTION = `## Governance rules
 
-- Use only FlowGuard tools for state changes.
+- Use FlowGuard tools for FlowGuard state and evidence authority. Host mutation tools are allowed only in IMPLEMENTATION and remain observed provenance until /implement captures the subject.
 - Complete this command fully, then stop.
 - Only explicit FlowGuard commands trigger workflow actions.
 - Host convention: end every response with exactly one visible action conclusion. A verbatim
@@ -394,7 +394,7 @@ Universal FlowGuard mandates outrank slash-command rules, profile rules, and loc
 
 export const CONCISE_COMMAND_EXECUTION = `## Governance rules
 
-- Use only FlowGuard tools for state changes.
+- Use FlowGuard tools for FlowGuard state and evidence authority. Host mutation tools are allowed only in IMPLEMENTATION and remain observed provenance until /implement captures the subject.
 - Complete the current command fully, then stop.
 - Only explicit FlowGuard commands trigger workflow actions.
 - Host convention: end every response with exactly one visible action conclusion. A verbatim

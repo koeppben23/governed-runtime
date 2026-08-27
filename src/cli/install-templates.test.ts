@@ -425,7 +425,9 @@ describe('cli/templates', () => {
       expect(FLOWGUARD_MANDATES_BODY).toContain(
         'Universal governance rules for every FlowGuard command',
       );
-      expect(FLOWGUARD_MANDATES_BODY).toContain('Use only FlowGuard tools for state changes');
+      expect(FLOWGUARD_MANDATES_BODY).toContain(
+        'Use FlowGuard tools for FlowGuard session state, evidence, decisions, and audit authority',
+      );
       expect(FLOWGUARD_MANDATES_BODY).toContain('Complete this command fully, then stop');
       expect(FLOWGUARD_MANDATES_BODY).toContain('respond without calling FlowGuard tools');
       expect(FLOWGUARD_MANDATES_BODY).toContain('Host/profile output convention');

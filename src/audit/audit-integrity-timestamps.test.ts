@@ -30,7 +30,7 @@ describe('strict timestamp verification branches', () => {
       strict: true,
       strictTimestamps: true,
     });
-    expect(result.reason).toBe('TIMESTAMP_NON_MONOTONIC');
+    expect(result.reason).toBe('CLOCK_ANOMALY');
     expect(result.timestampMonotonicity?.valid).toBe(false);
     expect(result.timestampMonotonicity?.firstBreak).toBe(1);
   });

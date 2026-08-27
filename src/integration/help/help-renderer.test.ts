@@ -37,7 +37,9 @@ function noSessionResult(overrides?: Partial<HelpResult>): HelpResult {
     nextActionSummary: 'Start a governed session.',
     evidenceCompleteness: { status: 'not_applicable', summary: 'No session.' },
     archiveVerification: {
-      status: 'unknown',
+      packagePurpose: null,
+      integrityCapability: null,
+      verificationStatus: null,
       currentSnapshotVerified: false,
       summary: 'No session.',
     },

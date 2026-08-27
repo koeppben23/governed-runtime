@@ -36,6 +36,7 @@ import {
   ValidationAttempt,
   ValidationResult,
 } from './evidence.js';
+import { MutationEpisode } from './evidence-mutation-episode.js';
 import {
   DiscoverySummarySchema,
   DetectedStackSchema,
@@ -340,8 +341,15 @@ export const SessionState = z
     /** Unique session identifier. */
     id: z.string().uuid(),
 
-    /** Schema version — always "v1" for this generation. */
-    schemaVersion: z.literal('v1'),
+    /**
+     * Explicit FlowGuard session identifier for the Assurance epoch.
+     * Must equal `id` — the two fields are the same authority under an
+     * unambiguous name (no host/FlowGuard identity conflation).
+     */
+    flowguardSessionId: z.string().uuid(),
+
+    /** Schema version for the Assurance epoch. */
+    schemaVersion: z.literal('v2'),
 
     /** Current FlowGuard phase. */
     phase: Phase,
@@ -393,6 +401,9 @@ export const SessionState = z
      * digests, and reproducibility metadata. Produced by flowguard_record_mutation_evidence.
      */
     mutationAttempts: z.array(MutationAttempt).default([]),
+
+    /** Durable host-mutation dispatch and completion ledger. */
+    mutationEpisodes: z.array(MutationEpisode).default([]),
 
     /** Advisory challenge-resolution evidence; defaults for legacy sessions. */
     challengeResolutions: z.array(ChallengeResolution).default([]),
@@ -638,21 +649,31 @@ export const SessionState = z
     createdAt: z.string().datetime(),
 
     /** @deprecated Legacy combined archive status. New writes use the fields below. */
-    archiveStatus: z
-      .enum(['pending', 'created', 'verified', 'not_verifiable', 'failed'])
-      .nullable()
-      .optional(),
+    archiveStatus: z.enum(['pending', 'created', 'verified', 'failed']).nullable().optional(),
     /** Lifecycle of the immutable raw-evidence package required at regulated completion. */
     regulatedArchiveStatus: z
       .enum(['pending', 'created', 'verified', 'failed'])
       .nullable()
       .optional(),
-    /** Result of the most recent user-requested archive export. */
-    lastExportStatus: z.enum(['verified', 'not_verifiable', 'failed']).nullable().optional(),
-    /** Classification of the most recent user-requested archive export. */
-    lastExportKind: z.enum(['redacted', 'raw']).nullable().optional(),
+    /** Purpose of the most recent user-requested archive export. */
+    lastExportPackagePurpose: z.enum(['sharing', 'auditor']).nullable().optional(),
+    /** Whether the most recent export contains the canonical evidence required for verification. */
+    lastExportIntegrityCapability: z.enum(['verifiable', 'not_verifiable']).nullable().optional(),
+    /** Verification outcome for the most recent user-requested archive export. */
+    lastExportVerificationStatus: z.enum(['not_run', 'passed', 'failed']).nullable().optional(),
   })
   .superRefine((state, context) => {
+    // Identity invariant: flowguardSessionId is the same authority as id
+    // under an explicit name. Divergence would let two session identities
+    // claim one state — the STATE itself is invalid.
+    if (state.flowguardSessionId !== state.id) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['flowguardSessionId'],
+        message: `flowguardSessionId must equal id (${state.id})`,
+      });
+      return;
+    }
     // Outbox identity invariant: pendingAuditOperations operationIds are the
     // transition audit-event identity authority. Duplicates would let
     // acknowledgement update multiple records through one identity, so the
@@ -668,6 +689,18 @@ export const SessionState = z
         return;
       }
       seenOperationIds.add(operation.operationId);
+    }
+    const seenMutationCallIds = new Set<string>();
+    for (const episode of state.mutationEpisodes) {
+      if (seenMutationCallIds.has(episode.hostCallId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['mutationEpisodes'],
+          message: `duplicate mutation episode hostCallId: ${episode.hostCallId}`,
+        });
+        return;
+      }
+      seenMutationCallIds.add(episode.hostCallId);
     }
     // Standalone-review lifecycle invariant: a structurally broken evidence
     // chain (dangling supersession, cycles, completions on superseded entries,

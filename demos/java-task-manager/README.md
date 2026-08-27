@@ -17,7 +17,8 @@ can fix a Java bug. It proves that FlowGuard's governance model applies to
 | **Review**         | External contributions — content-aware branch diff analysis with subagent findings                       | Review Report, Obligation Binding, Audit Trail      |
 
 Each flow produces exportable evidence archives. The default redacted sharing
-archive is intentionally `not_verifiable`: canonical audit-chain verification
+archive reports `integrityCapability: not_verifiable` and
+`verificationStatus: not_run`: canonical audit-chain verification
 requires an explicitly authorized raw-evidence export.
 
 ## Prerequisites
@@ -85,7 +86,7 @@ and evidence are exported.
 ## Archive Verification
 
 `/export` creates a redacted sharing archive by default. It reports
-`archiveStatus: not_verifiable`, rather than claiming to verify an archive that
+`integrityCapability: not_verifiable` and `verificationStatus: not_run`, rather than claiming to verify an archive that
 intentionally excludes raw session state and the canonical audit trail.
 
 For a confidential auditor package, configure global
@@ -95,7 +96,8 @@ For a confidential auditor package, configure global
 /export redactionMode=none includeRaw=true
 ```
 
-Only that raw-evidence package can report `archiveStatus: verified`.
+Only that raw-evidence package can report `integrityCapability: verifiable` and
+`verificationStatus: passed`.
 
 This manual-export permission does not alter FlowGuard's regulated completion
 path, which creates its mandatory local raw-evidence archive automatically.

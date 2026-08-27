@@ -34,7 +34,7 @@ describe('audit query', () => {
       sessionId: 'sess-a',
       phase: 'TICKET',
       event: 'lifecycle:session_created',
-      timestamp: TS1,
+      occurredAt: TS1,
       actor: 'system',
     }),
     makeAuditEvent({
@@ -42,7 +42,7 @@ describe('audit query', () => {
       sessionId: 'sess-a',
       phase: 'PLAN',
       event: 'transition:TICKET_SET',
-      timestamp: TS1,
+      occurredAt: TS1,
       actor: 'machine',
     }),
     makeAuditEvent({
@@ -50,7 +50,7 @@ describe('audit query', () => {
       sessionId: 'sess-a',
       phase: 'PLAN',
       event: 'tool_call:flowguard_plan',
-      timestamp: TS2,
+      occurredAt: TS2,
       actor: 'user-1',
     }),
     makeAuditEvent({
@@ -58,7 +58,7 @@ describe('audit query', () => {
       sessionId: 'sess-b',
       phase: 'TICKET',
       event: 'lifecycle:session_created',
-      timestamp: TS2,
+      occurredAt: TS2,
       actor: 'system',
     }),
     makeAuditEvent({
@@ -66,7 +66,7 @@ describe('audit query', () => {
       sessionId: 'sess-a',
       phase: 'VALIDATION',
       event: 'error:CHECK_TIMEOUT',
-      timestamp: TS3,
+      occurredAt: TS3,
       actor: 'machine',
       detail: { kind: 'error', code: 'CHECK_TIMEOUT' },
     }),
@@ -75,7 +75,7 @@ describe('audit query', () => {
       sessionId: 'sess-a',
       phase: 'PLAN_REVIEW',
       event: 'decision:DEC-001',
-      timestamp: TS3,
+      occurredAt: TS3,
       actor: 'human',
       detail: {
         kind: 'decision',

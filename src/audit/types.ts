@@ -54,9 +54,9 @@ export const AUDIT_EVENT_KINDS = [
 
 export type AuditEventKind = (typeof AUDIT_EVENT_KINDS)[number];
 
-export type AuditFormatVersion = 'audit-chain.v1' | 'audit-chain.v2';
+export type AuditFormatVersion = 'audit-chain.v3';
 
-export const CURRENT_AUDIT_FORMAT_VERSION: AuditFormatVersion = 'audit-chain.v2';
+export const CURRENT_AUDIT_FORMAT_VERSION: AuditFormatVersion = 'audit-chain.v3';
 
 // ─── Detail Payloads (typed, but stored as Record<string, unknown>) ──────────
 
@@ -189,7 +189,9 @@ export interface ChainedAuditEvent {
   readonly sessionId: string;
   readonly phase: string;
   readonly event: string;
-  readonly timestamp: string;
+  readonly auditSequence: number;
+  readonly occurredAt: string;
+  readonly recordedAt: string;
   readonly actor: string;
   readonly auditFormatVersion: AuditFormatVersion;
   readonly actorInfo?: ActorInfo;
@@ -197,7 +199,7 @@ export interface ChainedAuditEvent {
   readonly prevHash: string;
   readonly chainHash: string;
   /** SHA-256 of event without timestampEvidence and chainHash. TSA anchoring. */
-  readonly canonicalEventDigest?: string;
+  readonly semanticEventDigest: string;
   /** Timestamp assurance evidence (NTP offset, TSA token, verification status). */
   readonly timestampEvidence?: TimestampEvidence;
   /**
@@ -227,7 +229,7 @@ export function computeChainHash(
   event: Omit<ChainedAuditEvent, 'chainHash'>,
 ): string {
   const canonical = canonicalJsonStringify(event);
-  const input = prevHash + canonical;
+  const input = `audit-chain.v3:${prevHash}:${canonical}`;
   return hashText(input);
 }
 
@@ -249,16 +251,26 @@ export function computeChainHash(
  *   computeCanonicalEventDigest(body). Required when evidence was resolved externally.
  */
 export function finalizeWithTimestampEvidence(
-  body: Omit<ChainedAuditEvent, 'chainHash' | 'canonicalEventDigest' | 'timestampEvidence'>,
+  body: EventBody,
   prevHash: string,
   timestampEvidence?: TimestampEvidence,
   preComputedDigest?: string,
 ): ChainedAuditEvent {
+  const semanticEventDigest = preComputedDigest ?? computeCanonicalEventDigest(body);
+  // Positional fields are provisional here: the append authority re-stamps
+  // auditSequence, recordedAt, and semanticEventDigest under the audit write
+  // lock when the event is persisted. These values keep the standalone
+  // ChainedAuditEvent well-formed without claiming chain position.
+  const finalized: Omit<ChainedAuditEvent, 'chainHash'> = {
+    ...body,
+    auditSequence: 0,
+    recordedAt: body.occurredAt,
+    semanticEventDigest,
+  };
   if (!timestampEvidence) {
-    const base: Omit<ChainedAuditEvent, 'chainHash'> = body;
-    return { ...base, chainHash: computeChainHash(prevHash, base) };
+    return { ...finalized, chainHash: computeChainHash(prevHash, finalized) };
   }
-  const canonicalDigest = preComputedDigest ?? computeCanonicalEventDigest(body);
+  const canonicalDigest = semanticEventDigest;
   const evidence: TimestampEvidence = timestampEvidence.tsa
     ? {
         ...timestampEvidence,
@@ -270,8 +282,7 @@ export function finalizeWithTimestampEvidence(
       }
     : timestampEvidence;
   const base: Omit<ChainedAuditEvent, 'chainHash'> = {
-    ...body,
-    canonicalEventDigest: canonicalDigest,
+    ...finalized,
     timestampEvidence: evidence,
   };
   return { ...base, chainHash: computeChainHash(prevHash, base) };
@@ -298,10 +309,10 @@ function toDetailRecord(detail: TypedDetail): Record<string, unknown> {
 
 // ─── Factory Functions ────────────────────────────────────────────────────────
 
-/** Body type used by build helpers — no hash, no timestamp evidence. */
+/** Body type used by build helpers — semantic fields only. */
 export type EventBody = Omit<
   ChainedAuditEvent,
-  'chainHash' | 'canonicalEventDigest' | 'timestampEvidence'
+  'chainHash' | 'timestampEvidence' | 'auditSequence' | 'recordedAt' | 'semanticEventDigest'
 >;
 
 /**
@@ -311,7 +322,7 @@ export function buildTransitionBody(
   sessionId: string,
   phase: Phase,
   detail: Omit<TransitionDetail, 'kind'>,
-  timestamp: string,
+  occurredAt: string,
   prevHash: string,
 ): EventBody {
   return {
@@ -319,7 +330,7 @@ export function buildTransitionBody(
     sessionId,
     phase,
     event: `transition:${detail.event}`,
-    timestamp,
+    occurredAt,
     actor: 'machine',
     auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
     detail: toDetailRecord({ ...detail, kind: 'transition' }),
@@ -332,7 +343,7 @@ export function buildStateWriteBody(
   sessionId: string,
   phase: Phase,
   detail: Omit<StateWriteDetail, 'kind'>,
-  timestamp: string,
+  occurredAt: string,
   prevHash: string,
 ): EventBody {
   return {
@@ -340,7 +351,7 @@ export function buildStateWriteBody(
     sessionId,
     phase,
     event: 'state_write',
-    timestamp,
+    occurredAt,
     actor: 'machine',
     auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
     detail: toDetailRecord({ ...detail, kind: 'state_write' }),
@@ -353,7 +364,7 @@ export function buildEnforcementDeniedBody(
   sessionId: string,
   phase: Phase,
   detail: Omit<EnforcementDeniedDetail, 'kind'>,
-  timestamp: string,
+  occurredAt: string,
   prevHash: string,
 ): EventBody {
   return {
@@ -361,7 +372,7 @@ export function buildEnforcementDeniedBody(
     sessionId,
     phase,
     event: 'enforcement:denied',
-    timestamp,
+    occurredAt,
     actor: 'machine',
     auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
     enforcementLevel: detail.enforcementLevel,
@@ -377,7 +388,7 @@ export interface TransitionEventInput {
   readonly sessionId: string;
   readonly phase: Phase;
   readonly detail: Omit<TransitionDetail, 'kind'>;
-  readonly timestamp: string;
+  readonly occurredAt: string;
   readonly prevHash: string;
   readonly timestampEvidence?: TimestampEvidence;
 }
@@ -393,7 +404,7 @@ export function createTransitionEvent(
         sessionId: string,
         phase: Phase,
         detail: Omit<TransitionDetail, 'kind'>,
-        timestamp: string,
+        occurredAt: string,
         prevHash: string,
         timestampEvidence?: TimestampEvidence,
       ]
@@ -404,7 +415,7 @@ export function createTransitionEvent(
       input.sessionId,
       input.phase,
       input.detail,
-      input.timestamp,
+      input.occurredAt,
       input.prevHash,
     ),
     input.prevHash,
@@ -419,14 +430,14 @@ function normalizeTransitionEventInput(
         sessionId: string,
         phase: Phase,
         detail: Omit<TransitionDetail, 'kind'>,
-        timestamp: string,
+        occurredAt: string,
         prevHash: string,
         timestampEvidence?: TimestampEvidence,
       ],
 ): TransitionEventInput {
   if (args.length === 1) return args[0];
-  const [sessionId, phase, detail, timestamp, prevHash, timestampEvidence] = args;
-  return { sessionId, phase, detail, timestamp, prevHash, timestampEvidence };
+  const [sessionId, phase, detail, occurredAt, prevHash, timestampEvidence] = args;
+  return { sessionId, phase, detail, occurredAt, prevHash, timestampEvidence };
 }
 
 /**
@@ -436,7 +447,7 @@ export interface ToolCallEventInput {
   readonly sessionId: string;
   readonly phase: string;
   readonly detail: Omit<ToolCallDetail, 'kind'>;
-  readonly timestamp: string;
+  readonly occurredAt: string;
   readonly actor: string;
   readonly prevHash: string;
   readonly actorInfo?: ActorInfo;
@@ -451,13 +462,13 @@ export interface ToolCallEventInput {
  * Build a tool call event body (no chainHash, no canonical digest, no evidence).
  */
 export function buildToolCallBody(input: Omit<ToolCallEventInput, 'timestampEvidence'>): EventBody {
-  const { sessionId, phase, detail, timestamp, actor, prevHash, actorInfo } = input;
+  const { sessionId, phase, detail, occurredAt, actor, prevHash, actorInfo } = input;
   return {
     id: crypto.randomUUID(),
     sessionId,
     phase,
     event: `tool_call:${detail.tool}`,
-    timestamp,
+    occurredAt,
     actor,
     auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
     ...(actorInfo ? { actorInfo } : {}),
@@ -488,7 +499,7 @@ export function createToolCallEvent(input: ToolCallEventInput): ChainedAuditEven
 export function buildErrorBody(
   sessionId: string,
   detail: Omit<ErrorDetail, 'kind'>,
-  timestamp: string,
+  occurredAt: string,
   prevHash: string,
 ): EventBody {
   return {
@@ -496,7 +507,7 @@ export function buildErrorBody(
     sessionId,
     phase: detail.errorPhase,
     event: `error:${detail.code}`,
-    timestamp,
+    occurredAt,
     actor: 'machine',
     auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
     detail: toDetailRecord({ ...detail, kind: 'error' }),
@@ -511,12 +522,12 @@ export function buildErrorBody(
 export function createErrorEvent(
   sessionId: string,
   detail: Omit<ErrorDetail, 'kind'>,
-  timestamp: string,
+  occurredAt: string,
   prevHash: string,
   timestampEvidence?: TimestampEvidence,
 ): ChainedAuditEvent {
   return finalizeWithTimestampEvidence(
-    buildErrorBody(sessionId, detail, timestamp, prevHash),
+    buildErrorBody(sessionId, detail, occurredAt, prevHash),
     prevHash,
     timestampEvidence,
   );
@@ -528,7 +539,7 @@ export function createErrorEvent(
 export interface LifecycleEventInput {
   readonly sessionId: string;
   readonly detail: Omit<LifecycleDetail, 'kind'>;
-  readonly timestamp: string;
+  readonly occurredAt: string;
   readonly actor: string;
   readonly prevHash: string;
   readonly actorInfo?: ActorInfo;
@@ -545,13 +556,13 @@ export interface LifecycleEventInput {
 export function buildLifecycleBody(
   input: Omit<LifecycleEventInput, 'timestampEvidence'>,
 ): EventBody {
-  const { sessionId, detail, timestamp, actor, prevHash, actorInfo } = input;
+  const { sessionId, detail, occurredAt, actor, prevHash, actorInfo } = input;
   return {
     id: crypto.randomUUID(),
     sessionId,
     phase: detail.finalPhase,
     event: `lifecycle:${detail.action}`,
-    timestamp,
+    occurredAt,
     actor,
     auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
     ...(actorInfo ? { actorInfo } : {}),
@@ -579,7 +590,7 @@ export interface DecisionEventInput {
   readonly sessionId: string;
   readonly gatePhase: Phase;
   readonly detail: Omit<DecisionDetail, 'kind' | 'gatePhase'>;
-  readonly timestamp: string;
+  readonly occurredAt: string;
   readonly actor: string;
   readonly prevHash: string;
   readonly actorInfo?: ActorInfo;
@@ -594,13 +605,13 @@ export interface DecisionEventInput {
  * Build a decision event body (no chainHash, no canonical digest, no evidence).
  */
 export function buildDecisionBody(input: Omit<DecisionEventInput, 'timestampEvidence'>): EventBody {
-  const { sessionId, gatePhase, detail, timestamp, actor, prevHash, actorInfo } = input;
+  const { sessionId, gatePhase, detail, occurredAt, actor, prevHash, actorInfo } = input;
   return {
     id: crypto.randomUUID(),
     sessionId,
     phase: gatePhase,
     event: `decision:${detail.decisionId}`,
-    timestamp,
+    occurredAt,
     actor,
     auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
     ...(actorInfo ? { actorInfo } : {}),

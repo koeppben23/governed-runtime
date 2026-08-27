@@ -70,7 +70,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // role/identity sentence and enriched ## 12. Extended Guidance to name the
     // owning authorities (commands/profiles/reviewer) without duplicating them.
     expect(sha256(FLOWGUARD_MANDATES_BODY)).toBe(
-      'a51c4d18d7ec1f924cd33237b7a98fe5685c6baa25fecd61d321bb542315d68b',
+      'de261e4dcad912540982ce2911a6c9dbfd4f33b7544e3c43c0a12df8c37273bb',
     );
   });
 
@@ -250,7 +250,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // orchestration restart.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '7c84d8357f173a0d0006d59d8e6425426446e2c4f8fa790a1e4cbe946c83e615',
+      'cb3bcad3ebfff8e3f65d4705a73d078e47d49402119bf0c1842a3b02d330e1a4',
     );
   });
 

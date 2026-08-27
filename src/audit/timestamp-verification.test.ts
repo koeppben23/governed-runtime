@@ -14,7 +14,7 @@ function makeTsaStampedEvent(overrides: Partial<AuditEvent> = {}): AuditEvent {
   const canonicalDigest = computeCanonicalEventDigest(event as Record<string, unknown>);
   return {
     ...event,
-    canonicalEventDigest: canonicalDigest,
+    semanticEventDigest: canonicalDigest,
     timestampEvidence: {
       status: 'tsa_stamped',
       source: 'tsa',
@@ -33,7 +33,7 @@ function makeTokenTsaStampedEvent(overrides: Partial<AuditEvent> = {}): AuditEve
   const canonicalDigest = computeCanonicalEventDigest(event as Record<string, unknown>);
   return {
     ...event,
-    canonicalEventDigest: canonicalDigest,
+    semanticEventDigest: canonicalDigest,
     timestampEvidence: {
       status: 'tsa_stamped',
       source: 'tsa',
@@ -52,9 +52,9 @@ function makeTokenTsaStampedEvent(overrides: Partial<AuditEvent> = {}): AuditEve
 describe('verifyTimestampMonotonicity', () => {
   it('passes for monotonically increasing timestamps', () => {
     const events = [
-      makeAuditEvent({ timestamp: '2026-01-01T00:00:00.000Z' }),
-      makeAuditEvent({ timestamp: '2026-01-01T00:01:00.000Z' }),
-      makeAuditEvent({ timestamp: '2026-01-01T00:02:00.000Z' }),
+      makeAuditEvent({ occurredAt: '2026-01-01T00:00:00.000Z' }),
+      makeAuditEvent({ occurredAt: '2026-01-01T00:01:00.000Z' }),
+      makeAuditEvent({ occurredAt: '2026-01-01T00:02:00.000Z' }),
     ];
     const result = verifyTimestampMonotonicity(events);
     expect(result.valid).toBe(true);
@@ -63,8 +63,8 @@ describe('verifyTimestampMonotonicity', () => {
 
   it('passes for equal timestamps', () => {
     const events = [
-      makeAuditEvent({ timestamp: '2026-01-01T00:00:00.000Z' }),
-      makeAuditEvent({ timestamp: '2026-01-01T00:00:00.000Z' }),
+      makeAuditEvent({ occurredAt: '2026-01-01T00:00:00.000Z' }),
+      makeAuditEvent({ occurredAt: '2026-01-01T00:00:00.000Z' }),
     ];
     const result = verifyTimestampMonotonicity(events);
     expect(result.valid).toBe(true);
@@ -72,8 +72,8 @@ describe('verifyTimestampMonotonicity', () => {
 
   it('fails for decreasing timestamps', () => {
     const events = [
-      makeAuditEvent({ timestamp: '2026-01-01T00:02:00.000Z' }),
-      makeAuditEvent({ timestamp: '2026-01-01T00:01:00.000Z' }),
+      makeAuditEvent({ occurredAt: '2026-01-01T00:02:00.000Z' }),
+      makeAuditEvent({ occurredAt: '2026-01-01T00:01:00.000Z' }),
     ];
     const result = verifyTimestampMonotonicity(events);
     expect(result.valid).toBe(false);
@@ -81,7 +81,7 @@ describe('verifyTimestampMonotonicity', () => {
   });
 
   it('passes for single event', () => {
-    const events = [makeAuditEvent({ timestamp: '2026-01-01T00:00:00.000Z' })];
+    const events = [makeAuditEvent({ occurredAt: '2026-01-01T00:00:00.000Z' })];
     const result = verifyTimestampMonotonicity(events);
     expect(result.valid).toBe(true);
   });
@@ -91,8 +91,8 @@ describe('verifyTimestampMonotonicity', () => {
       // 01:00+02:00 == 23:00Z the day before — lexically AFTER the next entry,
       // but temporally BEFORE it. Lexical comparison would flag this trail as
       // non-monotonic; parsed instants order it correctly.
-      makeAuditEvent({ timestamp: '2026-01-01T01:00:00.000+02:00' }),
-      makeAuditEvent({ timestamp: '2026-01-01T00:01:00.000Z' }),
+      makeAuditEvent({ occurredAt: '2026-01-01T01:00:00.000+02:00' }),
+      makeAuditEvent({ occurredAt: '2026-01-01T00:01:00.000Z' }),
     ];
     const result = verifyTimestampMonotonicity(events);
     expect(result.valid).toBe(true);
@@ -100,8 +100,8 @@ describe('verifyTimestampMonotonicity', () => {
 
   it('AC11: an unparseable timestamp is never sortable — trail invalid', () => {
     const events = [
-      makeAuditEvent({ timestamp: '2026-01-01T00:00:00.000Z' }),
-      makeAuditEvent({ timestamp: 'not-a-date' }),
+      makeAuditEvent({ occurredAt: '2026-01-01T00:00:00.000Z' }),
+      makeAuditEvent({ occurredAt: 'not-a-date' }),
     ];
     const result = verifyTimestampMonotonicity(events);
     expect(result.valid).toBe(false);
@@ -143,7 +143,7 @@ describe('verifyTsaMessageImprint', () => {
   it('passes when timestampEvidence has no TSA data', () => {
     const event = {
       ...makeAuditEvent(),
-      canonicalEventDigest: 'abcd1234',
+      semanticEventDigest: 'abcd1234',
       timestampEvidence: {
         status: 'local',
         source: 'local_clock',
@@ -162,7 +162,7 @@ describe('verifyTsaMessageImprint', () => {
   it('AC2: fails when tsa_failed status downgrades a present TSA payload', () => {
     const event = {
       ...makeAuditEvent(),
-      canonicalEventDigest: 'abcd1234',
+      semanticEventDigest: 'abcd1234',
       timestampEvidence: {
         status: 'tsa_failed',
         source: 'local_clock',
@@ -182,7 +182,7 @@ describe('verifyTsaMessageImprint', () => {
   it('AC2: a token payload with tsa_failed status is a downgrade (never a silent pass, never a downgrade bypass)', () => {
     const event = {
       ...makeAuditEvent(),
-      canonicalEventDigest: 'abcd1234',
+      semanticEventDigest: 'abcd1234',
       timestampEvidence: {
         status: 'tsa_failed',
         source: 'local_clock',
@@ -204,7 +204,7 @@ describe('verifyTsaMessageImprint', () => {
     for (const status of ['local', 'ntp_checked']) {
       const event = {
         ...makeAuditEvent(),
-        canonicalEventDigest: 'abcd1234',
+        semanticEventDigest: 'abcd1234',
         timestampEvidence: {
           status,
           source: 'local_clock',
@@ -236,7 +236,7 @@ describe('verifyTsaMessageImprint', () => {
       for (const [payloadName, tsaPayload] of Object.entries(payloads)) {
         const event = {
           ...makeAuditEvent(),
-          canonicalEventDigest: 'abcd1234',
+          semanticEventDigest: 'abcd1234',
           timestampEvidence: {
             status,
             source: 'local_clock',
@@ -300,7 +300,7 @@ describe('verifyTsaMessageImprint', () => {
     const attackerUpdatedDigest = computeCanonicalEventDigest(tampered as Record<string, unknown>);
     const event = {
       ...tampered,
-      canonicalEventDigest: attackerUpdatedDigest,
+      semanticEventDigest: attackerUpdatedDigest,
     } as unknown as AuditEvent;
 
     const result = verifyTsaMessageImprint(event);
@@ -309,16 +309,16 @@ describe('verifyTsaMessageImprint', () => {
     expect(result.reason).toContain('messageImprint');
   });
 
-  it('fails closed when stored canonicalEventDigest drifts from recomputed content digest', () => {
+  it('fails closed when stored semanticEventDigest drifts from recomputed content digest', () => {
     const event = {
       ...makeTsaStampedEvent(),
-      canonicalEventDigest: '0'.repeat(64),
+      semanticEventDigest: '0'.repeat(64),
     } as unknown as AuditEvent;
 
     const result = verifyTsaMessageImprint(event);
 
     expect(result.valid).toBe(false);
-    expect(result.reason).toContain('canonicalEventDigest');
+    expect(result.reason).toContain('semanticEventDigest');
   });
 
   it('fails-closed with needsTokenVerification when tokenDerBase64 exists and imprint is unverified', () => {
@@ -332,8 +332,10 @@ describe('verifyTsaMessageImprint', () => {
   });
 
   it('a tsa payload whose fields are non-string values is treated as having no imprint', () => {
+    const base = makeAuditEvent();
     const event = {
-      ...makeAuditEvent(),
+      ...base,
+      semanticEventDigest: computeCanonicalEventDigest(base as Record<string, unknown>),
       timestampEvidence: {
         status: 'tsa_stamped',
         source: 'tsa',
@@ -368,7 +370,7 @@ describe('verifyTsaMessageImprint', () => {
     const tsa = evidence.tsa as Record<string, unknown>;
     const coordinatedLocalEdit = {
       ...tampered,
-      canonicalEventDigest: attackerUpdatedDigest,
+      semanticEventDigest: attackerUpdatedDigest,
       timestampEvidence: {
         ...evidence,
         tsa: {

@@ -1,17 +1,20 @@
 /**
  * @module persistence-audit
- * @description Append-only JSONL audit trail operations.
+ * @description Append-only JSONL audit trail operations (audit-chain.v3 only).
  *
  * Audit events are appended as single-line JSON with trailing newline.
- * Reads tolerate corrupted lines and report a skipped count.
+ * Records that are not valid audit-chain.v3 records are rejected with
+ * LEGACY_ASSURANCE_FORMAT_UNSUPPORTED — legacy artifacts are never
+ * reinterpreted, migrated, or silently skipped.
  *
- * @version v1
+ * @version v3
  */
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
-import { AuditEvent } from '../state/evidence.js';
+import { AuditEvent, AuditEventBodySchema } from '../state/evidence.js';
+import type { AuditEventBody } from '../state/evidence.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import {
   auditPath,
@@ -36,22 +39,29 @@ const AUDIT_LOCK_TIMEOUT_MS = 10_000;
  * Append a single audit event to the JSONL audit trail.
  *
  * Design:
- * - Zod-validates before appending (fail-closed)
+ * - Zod-validates the semantic body before appending (fail-closed)
  * - Single-line JSON (no pretty-print -- JSONL format)
  * - Trailing newline ensures clean append semantics
  * - Takes the session write lock to serialize concurrent appenders
  * - Rewrites via temp file + fsync + atomic rename to avoid partial trailing JSON
+ * - The append authority stamps every positional/authority field under the
+ *   lock: auditFormatVersion, auditSequence, recordedAt, semanticEventDigest,
+ *   prevHash, and chainHash. Producer-supplied values for those fields are
+ *   never accepted or persisted.
  *
  * @param sessionDir - Absolute path to the session directory.
- * @param event - AuditEvent body to append. prevHash/chainHash are recomputed under lock.
- * @returns The exact chained event persisted to audit.jsonl.
+ * @param event - Audit event semantic body (no positional/hash fields).
+ * @returns The exact v3 event persisted to audit.jsonl.
  */
-export async function appendAuditEvent(sessionDir: string, event: AuditEvent): Promise<AuditEvent> {
-  const result = AuditEvent.safeParse(event);
+export async function appendAuditEvent(
+  sessionDir: string,
+  event: AuditEventBody,
+): Promise<AuditEvent> {
+  const result = AuditEventBodySchema.safeParse(event);
   if (!result.success) {
     throw new PersistenceError(
       'SCHEMA_VALIDATION_FAILED',
-      `Refusing to append invalid audit event: ${result.error.message}`,
+      `Refusing to append invalid audit event body: ${result.error.message}`,
     );
   }
 
@@ -68,7 +78,7 @@ export async function appendAuditEvent(sessionDir: string, event: AuditEvent): P
 
 async function appendAuditLineAtomically(
   sessionDir: string,
-  event: AuditEvent,
+  event: AuditEventBody,
 ): Promise<AuditEvent> {
   return await withAuditWriteLock(sessionDir, async () => {
     await ensureDir(sessionDir);
@@ -87,9 +97,9 @@ async function appendAuditLineAtomically(
 
     if (existingTrail.skipped > 0) {
       throw new PersistenceError(
-        'READ_FAILED',
-        `Refusing to append: existing audit trail contains ${existingTrail.skipped} unparseable line(s). ` +
-          'The corrupt portion must be repaired before new events can be appended.',
+        'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+        `Refusing to append: existing audit trail contains ${existingTrail.skipped} record(s) ` +
+          'that are not valid audit-chain.v3 records. Legacy audit artifacts are unsupported.',
       );
     }
 
@@ -109,18 +119,34 @@ async function appendAuditLineAtomically(
       );
     }
 
-    const eventBody = { ...event } as Record<string, unknown>;
-    delete eventBody.prevHash;
-    delete eventBody.chainHash;
-    const prevHash = getLastChainHash(existingTrail.events);
-    const bodyWithPrevHash = {
-      ...eventBody,
+    // Stamp the positional/authority fields. Producers cannot influence
+    // chain position, sequence authority, or record time — any
+    // producer-supplied positional/hash value is dropped before stamping so
+    // it can never leak into a computed digest.
+    const {
+      auditFormatVersion: _producerFormat,
+      auditSequence: _producerSequence,
+      recordedAt: _producerRecordedAt,
+      semanticEventDigest: _producerSemanticDigest,
+      prevHash: _producerPrevHash,
+      chainHash: _producerChainHash,
+      ...semanticBody
+    } = event as AuditEventBody & Record<string, unknown>;
+    const bodyWithPosition: Omit<ChainedAuditEvent, 'chainHash'> = {
+      ...semanticBody,
       auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
-      prevHash,
-    } as Omit<ChainedAuditEvent, 'chainHash'>;
+      auditSequence: existingTrail.events.length + 1,
+      recordedAt: new Date().toISOString(),
+      prevHash: getLastChainHash(existingTrail.events),
+    } as unknown as Omit<ChainedAuditEvent, 'chainHash'>;
+    const semanticEventDigest = computeCanonicalEventDigest(bodyWithPosition);
+    const finalized: Omit<ChainedAuditEvent, 'chainHash'> = {
+      ...bodyWithPosition,
+      semanticEventDigest,
+    };
     const chained = {
-      ...bodyWithPrevHash,
-      chainHash: computeChainHash(prevHash, bodyWithPrevHash),
+      ...finalized,
+      chainHash: computeChainHash(finalized.prevHash, finalized),
     };
     const chainedResult = AuditEvent.safeParse(chained);
     if (!chainedResult.success) {
@@ -154,23 +180,33 @@ async function appendAuditLineAtomically(
 
 function parseAuditTrail(raw: string): { events: AuditEvent[]; skipped: number } {
   const events: AuditEvent[] = [];
-  let skipped = 0;
+  const skipped = 0;
 
   for (const line of raw.split('\n')) {
     const trimmed = line.trim();
     if (!trimmed) continue;
 
+    let json: unknown;
     try {
-      const json = JSON.parse(trimmed);
-      const result = AuditEvent.safeParse(json);
-      if (result.success) {
-        events.push(result.data);
-      } else {
-        skipped++;
-      }
+      json = JSON.parse(trimmed);
     } catch {
-      skipped++;
+      throw new PersistenceError(
+        'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+        'Audit trail contains a record that is not valid JSONL. Legacy or malformed ' +
+          'assurance artifacts are unsupported.',
+      );
     }
+    const result = AuditEvent.safeParse(json);
+    if (!result.success) {
+      // Fail closed with an explicit epoch error: pre-v3 records must never
+      // be reinterpreted, migrated, or silently skipped.
+      throw new PersistenceError(
+        'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+        'Audit trail contains a record that is not a valid audit-chain.v3 record. ' +
+          'Legacy assurance artifacts are unsupported.',
+      );
+    }
+    events.push(result.data);
   }
 
   return { events, skipped };
@@ -199,13 +235,12 @@ async function acquireAuditWriteLock(sessionDir: string): Promise<() => Promise<
  * Read all audit events from the JSONL trail.
  *
  * Returns empty array if no audit file exists.
- * Skips malformed lines with best-effort tolerance:
- * - The audit trail is append-only. A single corrupt line should not
- *   prevent reading all other events.
- * - Corrupted lines are counted in the returned metadata for diagnostics.
+ * Fails closed with LEGACY_ASSURANCE_FORMAT_UNSUPPORTED on any record that
+ * is not a valid audit-chain.v3 record — legacy or malformed records are
+ * never reinterpreted or skipped.
  *
  * @param sessionDir - Absolute path to the session directory.
- * @returns Object with events array and optional skipped count.
+ * @returns Object with events array and skipped count (always 0 — rejects instead).
  */
 export async function readAuditTrail(
   sessionDir: string,

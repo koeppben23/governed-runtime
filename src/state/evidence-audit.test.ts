@@ -7,6 +7,15 @@ import { describe, it, expect } from 'vitest';
 import { AuditEvent } from './evidence-audit.js';
 import { FIXED_TIME, FIXED_UUID } from './evidence-test-constants.js';
 
+const V3_ENVELOPE = {
+  auditFormatVersion: 'audit-chain.v3' as const,
+  auditSequence: 1,
+  recordedAt: FIXED_TIME,
+  semanticEventDigest: 'a'.repeat(64),
+  prevHash: 'genesis',
+  chainHash: 'b'.repeat(64),
+};
+
 describe('evidence-audit', () => {
   describe('HAPPY', () => {
     it('AuditEvent parses valid event', () => {
@@ -15,9 +24,10 @@ describe('evidence-audit', () => {
         sessionId: 'ses_test123',
         phase: 'TICKET',
         event: 'tool_call:flowguard_ticket',
-        timestamp: FIXED_TIME,
+        occurredAt: FIXED_TIME,
         actor: 'human',
         detail: { tool: 'flowguard_ticket' },
+        ...V3_ENVELOPE,
       };
       expect(AuditEvent.parse(event)).toEqual(event);
     });
@@ -28,7 +38,7 @@ describe('evidence-audit', () => {
         sessionId: 'ses_test123',
         phase: 'PLAN_REVIEW',
         event: 'decision:approve',
-        timestamp: FIXED_TIME,
+        occurredAt: FIXED_TIME,
         actor: 'human',
         detail: { verdict: 'approve' },
         actorInfo: {
@@ -36,6 +46,7 @@ describe('evidence-audit', () => {
           email: 'user@example.com',
           source: 'env' as const,
         },
+        ...V3_ENVELOPE,
       };
       const parsed = AuditEvent.parse(event);
       expect(parsed.actor).toBe('human');
@@ -50,11 +61,10 @@ describe('evidence-audit', () => {
         sessionId: 'ses_test123',
         phase: 'TICKET',
         event: 'lifecycle:session_created',
-        timestamp: FIXED_TIME,
+        occurredAt: FIXED_TIME,
         actor: 'system',
         detail: {},
-        prevHash: 'genesis',
-        chainHash: 'sha256-chain',
+        ...V3_ENVELOPE,
       };
       expect(AuditEvent.parse(event)).toEqual(event);
     });
@@ -68,9 +78,10 @@ describe('evidence-audit', () => {
           sessionId: 'bad/session',
           phase: 'TICKET',
           event: 'test',
-          timestamp: FIXED_TIME,
+          occurredAt: FIXED_TIME,
           actor: 'system',
           detail: {},
+          ...V3_ENVELOPE,
         }),
       ).toThrow();
     });
@@ -81,26 +92,42 @@ describe('evidence-audit', () => {
           sessionId: 'ses_test',
           phase: 'TICKET',
           event: 'test',
-          timestamp: FIXED_TIME,
+          occurredAt: FIXED_TIME,
           actor: 'system',
           detail: {},
+          ...V3_ENVELOPE,
         }),
       ).toThrow();
     });
   });
 
   describe('CORNER', () => {
-    it('AuditEvent hash chain fields are optional (legacy compat)', () => {
+    it('AuditEvent rejects records without chain fields (legacy artifacts unsupported)', () => {
       const event = {
         id: FIXED_UUID,
         sessionId: 'ses_test',
         phase: 'TICKET',
         event: 'lifecycle:session_created',
-        timestamp: FIXED_TIME,
+        occurredAt: FIXED_TIME,
         actor: 'system',
         detail: {},
       };
-      expect(AuditEvent.parse(event)).toEqual(event);
+      expect(() => AuditEvent.parse(event)).toThrow();
+    });
+
+    it('AuditEvent rejects records without a semantic event digest', () => {
+      const event = {
+        id: FIXED_UUID,
+        sessionId: 'ses_test',
+        phase: 'TICKET',
+        event: 'lifecycle:session_created',
+        occurredAt: FIXED_TIME,
+        actor: 'system',
+        detail: {},
+        ...V3_ENVELOPE,
+        semanticEventDigest: undefined,
+      };
+      expect(() => AuditEvent.parse(event)).toThrow();
     });
 
     it('AuditEvent actorInfo is optional', () => {
@@ -109,9 +136,10 @@ describe('evidence-audit', () => {
         sessionId: 'ses_test',
         phase: 'IMPLEMENTATION',
         event: 'tool_call:flowguard_implement',
-        timestamp: FIXED_TIME,
+        occurredAt: FIXED_TIME,
         actor: 'machine',
         detail: {},
+        ...V3_ENVELOPE,
       };
       expect(AuditEvent.parse(event).actorInfo).toBeUndefined();
     });
@@ -124,9 +152,10 @@ describe('evidence-audit', () => {
         sessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
         phase: 'READY',
         event: 'tool_call:flowguard_hydrate',
-        timestamp: FIXED_TIME,
+        occurredAt: FIXED_TIME,
         actor: 'system',
         detail: {},
+        ...V3_ENVELOPE,
       };
       expect(AuditEvent.parse(event)).toEqual(event);
     });

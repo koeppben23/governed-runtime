@@ -54,11 +54,13 @@ describe('readState failure modes', () => {
     await expect(readState(dir)).rejects.toMatchObject({ code: 'PARSE_FAILED' });
   });
 
-  it('throws SCHEMA_VALIDATION_FAILED for invalid state JSON', async () => {
+  it('throws LEGACY_ASSURANCE_FORMAT_UNSUPPORTED for non-v2 state JSON', async () => {
     const dir = await tmpDir();
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, 'session-state.json'), '{"not":"a session"}', 'utf8');
-    await expect(readState(dir)).rejects.toMatchObject({ code: 'SCHEMA_VALIDATION_FAILED' });
+    await expect(readState(dir)).rejects.toMatchObject({
+      code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+    });
   });
 
   it('throws READ_FAILED when the file cannot be read', async () => {
@@ -76,7 +78,7 @@ describe('readState failure modes', () => {
 });
 
 describe('readState legacy migrations', () => {
-  it('migrates a legacy selfReview approve verdict to accept', async () => {
+  it('rejects a legacy selfReview approve verdict state (no read migration)', async () => {
     const dir = await tmpDir();
     await fs.mkdir(dir, { recursive: true });
     const state = makeState('PLAN', {
@@ -86,7 +88,7 @@ describe('readState legacy migrations', () => {
         prevDigest: null,
         currDigest: 'digest',
         revisionDelta: 'major',
-        verdict: 'approve' as never,
+        verdict: 'accept',
       },
     });
     const json = {
@@ -95,11 +97,12 @@ describe('readState legacy migrations', () => {
     };
     await fs.writeFile(path.join(dir, 'session-state.json'), JSON.stringify(json), 'utf8');
 
-    const loaded = await readState(dir);
-    expect(loaded?.selfReview?.verdict).toBe('accept');
+    await expect(readState(dir)).rejects.toMatchObject({
+      code: 'SCHEMA_VALIDATION_FAILED',
+    });
   });
 
-  it('migrates legacy review-assurance v3 states shape-only to v5', async () => {
+  it('rejects legacy review-assurance v3 states (no shape migration)', async () => {
     const dir = await tmpDir();
     await fs.mkdir(dir, { recursive: true });
     const state = makeState('PLAN', {
@@ -116,11 +119,12 @@ describe('readState legacy migrations', () => {
       'utf8',
     );
 
-    const loaded = await readState(dir);
-    expect(loaded?.reviewAssurance?.assuranceSchemaVersion).toBe('review-assurance.v5');
+    await expect(readState(dir)).rejects.toMatchObject({
+      code: 'SCHEMA_VALIDATION_FAILED',
+    });
   });
 
-  it('migrates legacy validation outcomes to the explicit outcome field', async () => {
+  it('rejects legacy validation outcomes without the explicit outcome field', async () => {
     const dir = await tmpDir();
     await fs.mkdir(dir, { recursive: true });
     const legacyEntry = { ...VALIDATION_PASSED[0]!, outcome: undefined };
@@ -132,11 +136,12 @@ describe('readState legacy migrations', () => {
     };
     await fs.writeFile(path.join(dir, 'session-state.json'), JSON.stringify(json), 'utf8');
 
-    const loaded = await readState(dir);
-    expect((loaded?.validation ?? [])[0]?.outcome).toBe('supported');
+    await expect(readState(dir)).rejects.toMatchObject({
+      code: 'SCHEMA_VALIDATION_FAILED',
+    });
   });
 
-  it('migrates a failing legacy validation outcome to inconclusive', async () => {
+  it('rejects a failing legacy validation outcome instead of migrating it', async () => {
     const dir = await tmpDir();
     await fs.mkdir(dir, { recursive: true });
     const legacyEntry = { ...VALIDATION_PASSED[0]!, passed: false, outcome: undefined };
@@ -148,11 +153,12 @@ describe('readState legacy migrations', () => {
     };
     await fs.writeFile(path.join(dir, 'session-state.json'), JSON.stringify(json), 'utf8');
 
-    const loaded = await readState(dir);
-    expect((loaded?.validation ?? [])[0]?.outcome).toBe('inconclusive');
+    await expect(readState(dir)).rejects.toMatchObject({
+      code: 'SCHEMA_VALIDATION_FAILED',
+    });
   });
 
-  it('reports no migration for current-generation states', async () => {
+  it('reads current-generation states unchanged', async () => {
     const dir = await tmpDir();
     await fs.mkdir(dir, { recursive: true });
     await writeState(dir, makeState('PLAN'));

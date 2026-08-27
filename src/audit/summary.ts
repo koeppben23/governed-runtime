@@ -113,7 +113,7 @@ export function generateTimeline(events: AuditEvent[], sessionId: string): Sessi
 
   // Build timeline entries
   const entries: TimelineEntry[] = filtered.map((event) => ({
-    timestamp: event.timestamp,
+    timestamp: event.occurredAt,
     kind: event.event.split(':')[0] || 'unknown',
     event: event.event,
     phase: event.phase,
@@ -297,13 +297,13 @@ function checkChainIntegrity(chainVerification: ChainVerification): ComplianceCh
   }
 
   // Failure — use typed reason for explicit detail.
-  const { reason, firstBreak, skippedCount } = chainVerification;
+  const { reason, firstBreak } = chainVerification;
 
-  if (reason === 'LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE') {
+  if (reason === 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED') {
     return {
       name: 'chain_integrity',
       passed: false,
-      detail: `STRICT: ${skippedCount} legacy event(s) without chain fields not allowed in strict verification mode`,
+      detail: `${firstBreak?.reason ?? 'Legacy assurance records are unsupported'} at event #${firstBreak?.index ?? '?'}`,
     };
   }
 

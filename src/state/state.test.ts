@@ -114,7 +114,7 @@ describe('state schemas', () => {
 
     it('BindingInfo accepts OpenCode-style session IDs', () => {
       const binding = {
-        sessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
+        hostSessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
         worktree: '/tmp/test',
         fingerprint: 'abcdef0123456789abcdef01',
         resolvedAt: FIXED_TIME,
@@ -203,11 +203,15 @@ describe('state schemas', () => {
         sessionId: FIXED_SESSION_UUID,
         phase: 'TICKET',
         event: 'lifecycle:session_created',
-        timestamp: FIXED_TIME,
+        occurredAt: FIXED_TIME,
+        auditFormatVersion: 'audit-chain.v3',
+        auditSequence: 1,
+        recordedAt: FIXED_TIME,
+        semanticEventDigest: 'a'.repeat(64),
+        prevHash: 'genesis',
+        chainHash: 'b'.repeat(64),
         actor: 'system',
         detail: {},
-        prevHash: 'genesis',
-        chainHash: 'abc123',
       };
       expect(() => AuditEvent.parse(event)).not.toThrow();
     });
@@ -218,7 +222,13 @@ describe('state schemas', () => {
         sessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
         phase: 'READY',
         event: 'tool_call:flowguard_hydrate',
-        timestamp: FIXED_TIME,
+        occurredAt: FIXED_TIME,
+        auditFormatVersion: 'audit-chain.v3',
+        auditSequence: 1,
+        recordedAt: FIXED_TIME,
+        semanticEventDigest: 'a'.repeat(64),
+        prevHash: 'genesis',
+        chainHash: 'b'.repeat(64),
         actor: 'system',
         detail: {},
       };
@@ -250,7 +260,7 @@ describe('state schemas', () => {
     it('BindingInfo rejects unsafe session IDs', () => {
       expect(() =>
         BindingInfo.parse({
-          sessionId: '../etc/passwd',
+          hostSessionId: '../etc/passwd',
           worktree: '/tmp/test',
           fingerprint: 'abcdef0123456789abcdef01',
           resolvedAt: FIXED_TIME,
@@ -265,7 +275,13 @@ describe('state schemas', () => {
           sessionId: 'bad/session',
           phase: 'READY',
           event: 'tool_call:flowguard_hydrate',
-          timestamp: FIXED_TIME,
+          occurredAt: FIXED_TIME,
+          auditFormatVersion: 'audit-chain.v3',
+          auditSequence: 1,
+          recordedAt: FIXED_TIME,
+          semanticEventDigest: 'a'.repeat(64),
+          prevHash: 'genesis',
+          chainHash: 'b'.repeat(64),
           actor: 'system',
           detail: {},
         }),
@@ -318,7 +334,7 @@ describe('state schemas', () => {
     });
 
     it('SessionState rejects invalid schemaVersion', () => {
-      const state = { ...makeState('TICKET'), schemaVersion: 'v2' };
+      const state = { ...makeState('TICKET'), schemaVersion: 'v1' };
       expect(() => SessionState.parse(state)).toThrow();
     });
 
@@ -412,17 +428,17 @@ describe('state schemas', () => {
       expect(() => PlanEvidence.parse(plan)).not.toThrow();
     });
 
-    it('AuditEvent hash chain fields are optional (legacy compat)', () => {
+    it('AuditEvent rejects records without chain fields (legacy artifacts unsupported)', () => {
       const event = {
         id: FIXED_UUID,
         sessionId: FIXED_SESSION_UUID,
         phase: 'TICKET',
         event: 'lifecycle:session_created',
-        timestamp: FIXED_TIME,
+        occurredAt: FIXED_TIME,
         actor: 'system',
         detail: {},
       };
-      expect(() => AuditEvent.parse(event)).not.toThrow();
+      expect(() => AuditEvent.parse(event)).toThrow();
     });
 
     it('validation array can be empty', () => {

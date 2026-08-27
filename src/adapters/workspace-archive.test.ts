@@ -89,7 +89,7 @@ async function appendCompletionAuditEvent(sessDir: string, sessionId: string): P
     sessionId,
     phase: 'COMPLETE',
     event: 'lifecycle:session_completed',
-    timestamp: '2026-01-01T00:00:00.000Z',
+    occurredAt: '2026-01-01T00:00:00.000Z',
     actor: 'machine',
     detail: { action: 'session_completed' },
   });
@@ -155,7 +155,7 @@ describe('Archive Layout v2', () => {
       sessionId,
       phase: 'PLAN_REVIEW',
       event: 'decision:DEC-ARCHIVE-001',
-      timestamp: '2026-01-01T00:00:00.000Z',
+      occurredAt: '2026-01-01T00:00:00.000Z',
       actor: 'human',
       detail: {
         kind: 'decision',
@@ -405,7 +405,7 @@ describe('Archive Layout v2', () => {
       sessionId,
       phase: 'COMPLETE',
       event: 'lifecycle:session_completed',
-      timestamp: '2026-01-01T00:00:00.000Z',
+      occurredAt: '2026-01-01T00:00:00.000Z',
       actor: 'machine',
       detail: { action: 'other_action' },
     });

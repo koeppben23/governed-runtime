@@ -20,7 +20,7 @@ import { installHookStdoutGuard } from './shared/stdout-guard.js';
 import { resolveSession } from './shared/session-resolver.js';
 import { detectPlatform } from './shared/platform-detect.js';
 import { appendAuditEvent } from '../adapters/persistence-audit.js';
-import type { AuditEvent } from '../state/evidence-audit.js';
+import type { AuditEventBody } from '../state/evidence-audit.js';
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
@@ -82,12 +82,12 @@ async function stopLogic(): Promise<void> {
 
   // Persist session_stop audit event.
   const now = new Date().toISOString();
-  const auditEvent: AuditEvent = {
+  const auditEvent: AuditEventBody = {
     id: randomUUID(),
     sessionId: session_id,
     phase: state.phase,
     event: 'lifecycle',
-    timestamp: now,
+    occurredAt: now,
     actor: 'system',
     detail: {
       action: 'session_stop',

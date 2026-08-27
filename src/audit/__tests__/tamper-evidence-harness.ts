@@ -49,7 +49,9 @@ import type { TimestampEvidence } from '../../state/evidence.js';
 export const IMPRINT_EXCLUDED_FIELDS: readonly string[] = [
   'chainHash',
   'prevHash',
-  'canonicalEventDigest',
+  'auditSequence',
+  'recordedAt',
+  'semanticEventDigest',
   'timestampEvidence',
 ];
 
@@ -106,7 +108,7 @@ function makeTimestamp(minute: number): string {
  *   detail.decision.{rationale,sequence,autoAdvanced}   (nested object)
  *   detail.tags[]                                       (array of scalars)
  *   actorInfo.verificationMeta.audience[]               (array of scalars, depth 3)
- *   timestampEvidence.tsa.* + canonicalEventDigest      (EXCLUDED fields present)
+ *   timestampEvidence.tsa.* + semanticEventDigest      (EXCLUDED fields present)
  */
 export function buildRichEvent(
   p: RichEventParams,
@@ -117,9 +119,9 @@ export function buildRichEvent(
     sessionId: SESSION_ID,
     phase: p.phase,
     event: p.eventName,
-    timestamp: makeTimestamp(p.minute),
+    occurredAt: makeTimestamp(p.minute),
     actor: p.actor,
-    auditFormatVersion: 'audit-chain.v2',
+    auditFormatVersion: 'audit-chain.v3',
     actorInfo: {
       id: 'operator-1',
       email: null,

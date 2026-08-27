@@ -545,6 +545,37 @@ describe('implement', () => {
   });
 
   describe('BAD', () => {
+    it('blocks recording while a dispatched host mutation has no completion outcome', async () => {
+      await reachImplementation();
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      if (!state) throw new Error('expected session state');
+      await writeState(sessDir, {
+        ...state,
+        mutationEpisodes: [
+          {
+            episodeId: crypto.randomUUID(),
+            hostCallId: 'host-call-1',
+            toolName: 'edit',
+            authorizedAt: new Date().toISOString(),
+            status: 'dispatch_authorized',
+            completedAt: null,
+            outcome: null,
+            implementationDigest: null,
+            evidenceStatus: 'ineligible',
+          },
+        ],
+      });
+
+      const result = parseToolResult(await implement.execute({}, ctx));
+      expect(result).toMatchObject({
+        error: true,
+        code: 'MUTATION_EPISODE_UNRESOLVED',
+      });
+    });
+  });
+
+  describe('BAD', () => {
     it('blocks without session', async () => {
       const raw = await implement.execute({}, ctx);
       await passImplValidation();

@@ -398,14 +398,14 @@ describe('audit/archive tamper matrix', () => {
       const { chainHash: _originalChainHash, ...lastWithoutHash } = last;
       const stampedBody: Omit<ChainedAuditEvent, 'chainHash'> = {
         ...lastWithoutHash,
-        canonicalEventDigest: originalDigest,
+        semanticEventDigest: originalDigest,
         timestampEvidence: {
           status: 'tsa_stamped',
           source: 'tsa',
-          resolvedAt: last.timestamp,
+          resolvedAt: last.occurredAt,
           tsa: {
             tokenDerBase64: 'trusted-token-material-not-logged',
-            receivedAt: last.timestamp,
+            receivedAt: last.occurredAt,
             messageImprint: originalDigest,
             digestAlgorithm: 'sha256',
             verificationStatus: 'unchecked',
@@ -426,7 +426,7 @@ describe('audit/archive tamper matrix', () => {
       };
       const resealedTamper = {
         ...tamperedBody,
-        canonicalEventDigest: computeCanonicalEventDigest(tamperedBody),
+        semanticEventDigest: computeCanonicalEventDigest(tamperedBody),
       };
       events[events.length - 1] = {
         ...resealedTamper,
@@ -490,14 +490,14 @@ describe('audit/archive tamper matrix', () => {
       const { chainHash: _originalChainHash, ...lastWithoutHash } = last;
       const stampedBody: Omit<ChainedAuditEvent, 'chainHash'> = {
         ...lastWithoutHash,
-        canonicalEventDigest: originalDigest,
+        semanticEventDigest: originalDigest,
         timestampEvidence: {
           status: 'tsa_stamped',
           source: 'tsa',
-          resolvedAt: last.timestamp,
+          resolvedAt: last.occurredAt,
           tsa: {
             tokenDerBase64: 'trusted-token-material-not-logged',
-            receivedAt: last.timestamp,
+            receivedAt: last.occurredAt,
             messageImprint: originalDigest,
             digestAlgorithm: 'sha256',
             verificationStatus: 'unchecked',
@@ -519,7 +519,7 @@ describe('audit/archive tamper matrix', () => {
       const attackerDigest = computeCanonicalEventDigest(tamperedBody);
       const coordinatedTamper: Omit<ChainedAuditEvent, 'chainHash'> = {
         ...tamperedBody,
-        canonicalEventDigest: attackerDigest,
+        semanticEventDigest: attackerDigest,
         timestampEvidence: {
           ...stampedBody.timestampEvidence!,
           tsa: {
@@ -546,7 +546,7 @@ describe('audit/archive tamper matrix', () => {
     },
   );
 
-  it.skipIf(!tarOk)('pre-v2 chained audit format -> explicit legacy archive finding', async () => {
+  it.skipIf(!tarOk)('pre-v3 audit record -> explicit legacy archive finding', async () => {
     const ids = await completeRegulatedSession();
     const lines = await readAuditLines(ids.sessDir);
     const events = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
@@ -563,7 +563,7 @@ describe('audit/archive tamper matrix', () => {
 
     const chainResult = verifyChain(events, { strict: true });
     expect(chainResult.valid).toBe(false);
-    expect(chainResult.reason).toBe('LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2');
+    expect(chainResult.reason).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
     const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
     expect(verification.passed).toBe(false);
     expect(verification.findings.some((f) => f.code === 'audit_chain_legacy_format')).toBe(true);
@@ -623,7 +623,11 @@ describe('audit/archive tamper matrix', () => {
 
     const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
     expect(verification.passed).toBe(false);
-    expect(verification.findings.some((f) => f.code === 'audit_records_skipped')).toBe(true);
+    expect(
+      verification.findings.some(
+        (f) => f.code === 'audit_chain_legacy_format' || f.code === 'audit_chain_invalid',
+      ),
+    ).toBe(true);
   });
 
   it.skipIf(!tarOk)('archive manifest digest tamper -> verify fail', async () => {

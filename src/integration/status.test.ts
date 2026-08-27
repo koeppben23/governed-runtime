@@ -299,6 +299,21 @@ describe('buildStatusProjection — BAD', () => {
 
     expect(projection.archiveStatus).toBeNull();
   });
+
+  it('projects manual export purpose, capability, and verification independently', () => {
+    const state = {
+      ...makeMinimalState('COMPLETE'),
+      lastExportPackagePurpose: 'sharing' as const,
+      lastExportIntegrityCapability: 'not_verifiable' as const,
+      lastExportVerificationStatus: 'not_run' as const,
+    };
+
+    expect(buildStatusProjection(state, policy).lastExport).toEqual({
+      packagePurpose: 'sharing',
+      integrityCapability: 'not_verifiable',
+      verificationStatus: 'not_run',
+    });
+  });
 });
 
 // ─── CORNER: Terminal Phases, READY Routing ───────────────────────────────────

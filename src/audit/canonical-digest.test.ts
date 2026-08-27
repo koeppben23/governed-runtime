@@ -61,10 +61,20 @@ describe('canonicalEventDigest', () => {
     );
   });
 
-  it('canonicalEventDigest field itself is excluded from computation', () => {
+  it('semanticEventDigest field itself is excluded from computation', () => {
     const base = buildEvent('TICKET', 'PLAN', 'PLAN_READY');
-    const withCanonical = { ...base, canonicalEventDigest: 'different_value' };
-    expect(computeCanonicalEventDigest(base)).toBe(computeCanonicalEventDigest(withCanonical));
+    const withSemantic = { ...base, semanticEventDigest: 'different_value' };
+    expect(computeCanonicalEventDigest(base)).toBe(computeCanonicalEventDigest(withSemantic));
+  });
+
+  it('auditSequence and recordedAt are excluded from computation (positional authority)', () => {
+    const base = buildEvent('TICKET', 'PLAN', 'PLAN_READY');
+    const positional = {
+      ...base,
+      auditSequence: 999,
+      recordedAt: '2027-01-01T00:00:00.000Z',
+    };
+    expect(computeCanonicalEventDigest(base)).toBe(computeCanonicalEventDigest(positional));
   });
 
   it('produces hex-formatted SHA-256', () => {
@@ -116,7 +126,10 @@ function buildNestedBody(decision: Record<string, unknown>): Omit<ChainedAuditEv
     sessionId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
     phase: 'PLAN_REVIEW',
     event: 'decision:DEC-001',
-    timestamp: '2026-01-01T00:00:00.000Z',
+    occurredAt: '2026-01-01T00:00:00.000Z',
+    auditSequence: 1,
+    recordedAt: '2026-01-01T00:00:00.000Z',
+    semanticEventDigest: 'd'.repeat(64),
     actor: 'human',
     auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
     detail: { decision },

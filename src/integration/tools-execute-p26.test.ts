@@ -606,7 +606,15 @@ describe('P26: regulated archive completion', () => {
           if (detail?.action === 'session_completed') {
             callOrder.push('session_completed');
           }
-          return event;
+          return {
+            ...event,
+            auditFormatVersion: 'audit-chain.v3' as const,
+            auditSequence: 1,
+            recordedAt: event.occurredAt,
+            semanticEventDigest: 'a'.repeat(64),
+            prevHash: 'genesis',
+            chainHash: 'b'.repeat(64),
+          };
         });
       vi.mocked(wsMock.archiveSession).mockImplementationOnce(async () => {
         callOrder.push('archiveSession');

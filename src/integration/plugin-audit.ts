@@ -241,7 +241,7 @@ async function emitDecisionReceiptEvent(
       transitionEvent: input.firstTransition.event,
       policyMode: input.policyMode,
     },
-    timestamp: ctx.now,
+    occurredAt: ctx.now,
     actor: ctx.actor,
     prevHash: input.prevHash,
     // Stryker disable next-line OptionalChaining — equivalent: decision receipts only run with a resolved, non-null session state.
@@ -299,7 +299,7 @@ async function maybeCompleteAndArchive(
     const body = buildLifecycleBody({
       sessionId,
       detail: { action: 'session_completed', finalPhase: 'COMPLETE' },
-      timestamp: ctx.now,
+      occurredAt: ctx.now,
       actor: 'machine',
       prevHash,
       actorInfo: state?.actorInfo,
@@ -387,7 +387,7 @@ async function emitToolCallAudit(input: {
         state?.pendingAuditOperations.filter((operation) => operation.status !== 'reconciled')
           .length ?? 0,
     },
-    timestamp: ctx.now,
+    occurredAt: ctx.now,
     actor: ctx.actor,
     prevHash: ctx.prevHash,
     actorInfo: state?.actorInfo,
@@ -422,7 +422,7 @@ async function emitLifecycleAudit(input: {
   const body = buildLifecycleBody({
     sessionId,
     detail: buildLifecycleDetail(ctx, lifecycleAction, state, policy),
-    timestamp: ctx.now,
+    occurredAt: ctx.now,
     actor: ctx.actor,
     prevHash: ctx.prevHash,
     actorInfo: state?.actorInfo,

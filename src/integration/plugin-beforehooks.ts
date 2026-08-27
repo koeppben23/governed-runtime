@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { readState } from '../adapters/persistence.js';
 import { workspacesHome } from '../adapters/workspace/index.js';
 import { buildEnforcementError } from './plugin-helpers.js';
@@ -28,6 +29,9 @@ import { registerExecutedTaskPrompt } from './review/enforcement/execution-prove
 import { resolveAttemptByCapability } from './review/observation-resolution.js';
 import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
 import { auditEnforcementDenied } from './plugin-audit.js';
+import { withSessionWriteLock } from '../adapters/persistence-lock.js';
+import { writeStateWithAuditOperationsAlreadyLocked } from './tools/audit-outbox.js';
+import { authorizeMutationEpisode } from '../state/evidence-mutation-episode.js';
 
 export async function commandBefore(
   runtime: FlowGuardPluginRuntime,
@@ -198,7 +202,40 @@ async function enforceBeforeRules(
       freshState,
       toolName,
     );
+    await recordMutationDispatch(runtime, hostResolution.sessDir, callId, toolName);
   }
+}
+
+async function recordMutationDispatch(
+  runtime: FlowGuardPluginRuntime,
+  sessDir: string,
+  callId: string,
+  toolName: string,
+): Promise<void> {
+  if (!callId) {
+    throw buildEnforcementError(
+      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+      'A mutating host tool requires a host callID for durable dispatch authorization.',
+    );
+  }
+  await withSessionWriteLock(sessDir, async () => {
+    const state = await readState(sessDir);
+    if (!state) {
+      throw buildEnforcementError(
+        'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+        'FlowGuard session state disappeared before mutation dispatch authorization.',
+      );
+    }
+    await writeStateWithAuditOperationsAlreadyLocked(sessDir, {
+      ...state,
+      mutationEpisodes: authorizeMutationEpisode(state.mutationEpisodes, {
+        episodeId: randomUUID(),
+        hostCallId: callId,
+        toolName,
+        authorizedAt: new Date().toISOString(),
+      }),
+    });
+  });
 }
 
 async function readFreshStateAfterReconcile(

@@ -77,7 +77,7 @@ export async function executeRegulatedCompletion(
     const completionEvt = createLifecycleEvent({
       sessionId: sessionID,
       detail: { action: 'session_completed', finalPhase: 'COMPLETE' as const },
-      timestamp: new Date().toISOString(),
+      occurredAt: new Date().toISOString(),
       actor: 'machine',
       prevHash,
       actorInfo: resultState.actorInfo,

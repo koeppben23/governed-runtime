@@ -11,7 +11,7 @@
  *   (workspace data lives at ~/.config/opencode/workspaces/{fingerprint}/)
  * - Multiple OpenCode sessions can work on the same worktree over time
  *   (session continuation: new conversation, same project)
- * - The binding.sessionId in SessionState records the ORIGINAL session that
+ * - The binding.hostSessionId in SessionState records the ORIGINAL session that
  *   created it -- it does NOT update on continuation
  *
  * Resolution strategy:

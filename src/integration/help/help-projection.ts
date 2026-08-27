@@ -54,7 +54,9 @@ export interface EvidenceCompleteness {
 }
 
 export interface ArchiveVerification {
-  readonly status: 'not_created' | 'previously_verified' | 'not_verifiable' | 'failed' | 'unknown';
+  readonly packagePurpose: 'sharing' | 'auditor' | null;
+  readonly integrityCapability: 'verifiable' | 'not_verifiable' | null;
+  readonly verificationStatus: 'not_run' | 'passed' | 'failed' | null;
   readonly currentSnapshotVerified: boolean;
   readonly summary: string;
 }
@@ -353,35 +355,45 @@ function buildEvidenceCompleteness(state: SessionState | null): EvidenceComplete
 function buildArchiveVerification(state: SessionState | null): ArchiveVerification {
   if (!state)
     return {
-      status: 'unknown',
+      packagePurpose: null,
+      integrityCapability: null,
+      verificationStatus: null,
       currentSnapshotVerified: false,
       summary: 'No session is available for archive verification.',
     };
-  if (state.archiveStatus === 'verified') {
+  if (state.lastExportVerificationStatus === 'passed') {
     return {
-      status: 'previously_verified',
+      packagePurpose: state.lastExportPackagePurpose ?? null,
+      integrityCapability: state.lastExportIntegrityCapability ?? null,
+      verificationStatus: 'passed',
       currentSnapshotVerified: false,
       summary:
         'A previous audit package verification succeeded. Current snapshot freshness is not established.',
     };
   }
-  if (state.archiveStatus === 'not_verifiable') {
+  if (state.lastExportIntegrityCapability === 'not_verifiable') {
     return {
-      status: 'not_verifiable',
+      packagePurpose: state.lastExportPackagePurpose ?? 'sharing',
+      integrityCapability: 'not_verifiable',
+      verificationStatus: state.lastExportVerificationStatus ?? 'not_run',
       currentSnapshotVerified: false,
       summary:
         'A redacted sharing archive was created. It intentionally excludes raw evidence, so canonical audit-chain verification is unavailable.',
     };
   }
-  if (state.archiveStatus === 'failed') {
+  if (state.lastExportVerificationStatus === 'failed') {
     return {
-      status: 'failed',
+      packagePurpose: state.lastExportPackagePurpose ?? null,
+      integrityCapability: state.lastExportIntegrityCapability ?? 'verifiable',
+      verificationStatus: 'failed',
       currentSnapshotVerified: false,
       summary: 'Audit package verification failed. Inspect status before retrying export.',
     };
   }
   return {
-    status: 'not_created',
+    packagePurpose: null,
+    integrityCapability: null,
+    verificationStatus: null,
     currentSnapshotVerified: false,
     summary: 'No audit package has been created yet.',
   };
