@@ -699,7 +699,9 @@ describe('persistence', () => {
         }),
       );
       const raw = await fs.readFile(auditPath(tmpDir), 'utf-8');
-      await fs.writeFile(auditPath(tmpDir), raw.replace('\n', '\n\n'), 'utf-8');
+      // Insert an empty line after every line (not just the first): the
+      // reader must tolerate blank lines between all valid v3 records.
+      await fs.writeFile(auditPath(tmpDir), raw.replace(/\n/g, '\n\n'), 'utf-8');
       const { events, skipped } = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(2);
       expect(skipped).toBe(0);
