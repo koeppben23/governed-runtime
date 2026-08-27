@@ -557,6 +557,7 @@ describe('implement', () => {
             episodeId: crypto.randomUUID(),
             hostCallId: 'host-call-1',
             toolName: 'edit',
+            runtimeInstanceId: crypto.randomUUID(),
             authorizedAt: new Date().toISOString(),
             status: 'dispatch_authorized',
             completedAt: null,

@@ -11,6 +11,8 @@ export const MutationEpisode = z
     episodeId: z.string().uuid(),
     hostCallId: z.string().min(1),
     toolName: z.string().min(1),
+    /** Runtime instance that authorized the dispatch (per-process boot identity). */
+    runtimeInstanceId: z.string().uuid(),
     authorizedAt: z.string().datetime(),
     status: z.enum(['dispatch_authorized', 'completed']),
     completedAt: z.string().datetime().nullable(),
@@ -89,7 +91,13 @@ export type AuthorizeMutationEpisodeResult =
  */
 export function authorizeMutationEpisode(
   episodes: readonly MutationEpisode[],
-  input: { episodeId: string; hostCallId: string; toolName: string; authorizedAt: string },
+  input: {
+    episodeId: string;
+    hostCallId: string;
+    toolName: string;
+    runtimeInstanceId: string;
+    authorizedAt: string;
+  },
 ): AuthorizeMutationEpisodeResult {
   const existing = episodes.find((episode) => episode.hostCallId === input.hostCallId);
   if (existing) return { kind: 'replay_blocked', existing };
@@ -204,4 +212,25 @@ export function latestUnknownOutcomeResolvedAt(
     if (latest === null || resolution.resolvedAt > latest) latest = resolution.resolvedAt;
   }
   return latest;
+}
+
+export type ResolveMutationEpisodeDecision =
+  | { readonly kind: 'allow' }
+  | { readonly kind: 'blocked'; readonly code: 'MUTATION_EPISODE_RUNTIME_EPOCH_ACTIVE' };
+
+/**
+ * Recovery Authority boundary: "outcome unknown" is an authority statement.
+ * A resolution may only be granted by a runtime instance OTHER than the one
+ * that authorized the dispatch — the authorizing process cannot prove its own
+ * call is no longer running, so it must never declare its own episode
+ * unrecoverable.
+ */
+export function canResolveMutationEpisode(
+  episode: MutationEpisode,
+  currentRuntimeInstanceId: string,
+): ResolveMutationEpisodeDecision {
+  if (episode.runtimeInstanceId === currentRuntimeInstanceId) {
+    return { kind: 'blocked', code: 'MUTATION_EPISODE_RUNTIME_EPOCH_ACTIVE' };
+  }
+  return { kind: 'allow' };
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   authorizeMutationEpisode,
+  canResolveMutationEpisode,
   completeMutationEpisode,
   hasUnresolvedMutationEpisodes,
   latestUnknownOutcomeResolvedAt,
@@ -10,6 +11,8 @@ import {
 
 const ID = '00000000-0000-4000-8000-000000000001';
 const SECOND_ID = '00000000-0000-4000-8000-000000000002';
+const RUNTIME_A = '00000000-0000-4000-8000-00000000000a';
+const RUNTIME_B = '00000000-0000-4000-8000-00000000000b';
 const TIME = '2026-01-01T00:00:00.000Z';
 
 describe('mutation episode evidence', () => {
@@ -18,6 +21,7 @@ describe('mutation episode evidence', () => {
       episodeId: ID,
       hostCallId: 'call-1',
       toolName: 'edit',
+      runtimeInstanceId: RUNTIME_A,
       authorizedAt: TIME,
     });
     expect(result.kind).toBe('authorized');
@@ -31,6 +35,7 @@ describe('mutation episode evidence', () => {
       episodeId: ID,
       hostCallId: 'call-1',
       toolName: 'edit',
+      runtimeInstanceId: RUNTIME_A,
       authorizedAt: TIME,
     });
     if (first.kind !== 'authorized') throw new Error('unexpected replay');
@@ -38,6 +43,7 @@ describe('mutation episode evidence', () => {
       episodeId: SECOND_ID,
       hostCallId: 'call-1',
       toolName: 'edit',
+      runtimeInstanceId: RUNTIME_A,
       authorizedAt: TIME,
     });
     expect(replay.kind).toBe('replay_blocked');
@@ -52,27 +58,23 @@ describe('mutation episode evidence', () => {
       episodeId: ID,
       hostCallId: 'call-1',
       toolName: 'edit',
+      runtimeInstanceId: RUNTIME_A,
       authorizedAt: TIME,
     });
     const second = authorizeMutationEpisode(first.kind === 'authorized' ? first.episodes : [], {
       episodeId: SECOND_ID,
       hostCallId: 'call-2',
       toolName: 'bash',
+      runtimeInstanceId: RUNTIME_A,
       authorizedAt: TIME,
     });
     const episodes = second.kind === 'authorized' ? second.episodes : [];
     const completed = completeMutationEpisode(
-      completeMutationEpisode(
-        completeMutationEpisode(episodes, 'call-1', TIME, 'failure'),
-        'call-2',
-        TIME,
-        'unknown',
-      ),
+      completeMutationEpisode(episodes, 'call-1', TIME, 'failure'),
       'call-2',
       TIME,
-      'success',
+      'unknown',
     );
-    // call-2 was already completed as 'unknown' — completion never rewrites.
     const bound = reconcileMutationEpisodes(completed, [], 'implementation-1');
     expect(bound).toEqual(
       expect.arrayContaining([
@@ -100,6 +102,7 @@ describe('mutation episode evidence', () => {
       episodeId: ID,
       hostCallId: 'call-1',
       toolName: 'bash',
+      runtimeInstanceId: RUNTIME_A,
       authorizedAt: TIME,
     });
     const episodes = first.kind === 'authorized' ? first.episodes : [];
@@ -138,5 +141,25 @@ describe('mutation episode evidence', () => {
       resolvedAt: '2026-02-01T00:00:00.000Z',
     });
     expect(again).toEqual(resolutions);
+  });
+
+  it('blocks unknown-outcome resolution from the runtime instance that dispatched the call', () => {
+    const first = authorizeMutationEpisode([], {
+      episodeId: ID,
+      hostCallId: 'call-1',
+      toolName: 'bash',
+      runtimeInstanceId: RUNTIME_A,
+      authorizedAt: TIME,
+    });
+    const episode = first.kind === 'authorized' ? first.episodes[0]! : null!;
+
+    // Same runtime instance: the call may simply still be running.
+    expect(canResolveMutationEpisode(episode, RUNTIME_A)).toEqual({
+      kind: 'blocked',
+      code: 'MUTATION_EPISODE_RUNTIME_EPOCH_ACTIVE',
+    });
+
+    // A subsequent runtime instance (restart) may resolve.
+    expect(canResolveMutationEpisode(episode, RUNTIME_B)).toEqual({ kind: 'allow' });
   });
 });

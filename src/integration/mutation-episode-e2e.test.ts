@@ -112,7 +112,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
     }
   });
 
-  it('keeps a crashed dispatch fail-closed and recovers via append-only resolution', async () => {
+  it('keeps a crashed dispatch fail-closed and recovers only after a runtime restart', async () => {
     const ws = await createTestWorkspace();
     try {
       const sessionID = crypto.randomUUID();
@@ -139,6 +139,34 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         await implement.execute({}, ctx as never),
       );
       expect(blockedResult.code).toBe('MUTATION_EPISODE_UNRESOLVED');
+
+      // Recovery Authority boundary: the CURRENT runtime instance dispatched
+      // the call, so it cannot declare the outcome unknown — the call may
+      // simply still be running.
+      const sameEpochResolution = parseToolResult<{ code?: string }>(
+        await reconcile_mutation_episode.execute({ hostCallId: crashedCallID }, ctx as never),
+      );
+      expect(sameEpochResolution.code).toBe('MUTATION_EPISODE_RUNTIME_EPOCH_ACTIVE');
+      const afterEpochBlock = await readState(sessDir);
+      expect(afterEpochBlock!.mutationEpisodeResolutions).toHaveLength(0);
+      expect(
+        hasUnresolvedMutationEpisodes(
+          afterEpochBlock!.mutationEpisodes,
+          afterEpochBlock!.mutationEpisodeResolutions,
+        ),
+      ).toBe(true);
+
+      // Simulate the restart: the persisted state now belongs to a previous
+      // runtime instance (as after a real process restart); the current
+      // process is a NEW runtime instance and may resolve.
+      const dispatchedByOldRuntime = await readState(sessDir);
+      await writeState(sessDir, {
+        ...dispatchedByOldRuntime!,
+        mutationEpisodes: dispatchedByOldRuntime!.mutationEpisodes.map((episode) => ({
+          ...episode,
+          runtimeInstanceId: crypto.randomUUID(),
+        })),
+      });
 
       const resolvedResult = parseToolResult<{ code?: string }>(
         await reconcile_mutation_episode.execute({ hostCallId: crashedCallID }, ctx as never),
@@ -203,6 +231,17 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       );
 
       const ctx = createToolContext({ sessionID, worktree: ws.tmpDir, directory: ws.tmpDir });
+
+      // Simulate the restart: the dispatch belongs to a previous runtime
+      // instance, so the current process may resolve it.
+      const preRestart = await readState(sessDir);
+      await writeState(sessDir, {
+        ...preRestart!,
+        mutationEpisodes: preRestart!.mutationEpisodes.map((episode) => ({
+          ...episode,
+          runtimeInstanceId: crypto.randomUUID(),
+        })),
+      });
       await reconcile_mutation_episode.execute({ hostCallId: crashedCallID }, ctx as never);
 
       // IMPL_EVIDENCE was recorded at the fixed 2026-01-01 fixture time —

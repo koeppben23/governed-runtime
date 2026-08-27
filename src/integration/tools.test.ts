@@ -35,6 +35,7 @@ import {
   help,
   declare_contract,
   observe_repository,
+  reconcile_mutation_episode,
   attachGovernanceFooter,
 } from './tools/index.js';
 import * as barrel from './index.js';
@@ -61,6 +62,7 @@ const TOOL_NAMES = [
   'help',
   'declare_contract',
   'observe_repository',
+  'reconcile_mutation_episode',
 ] as const;
 
 /** Tools imported directly for testing. */
@@ -82,6 +84,7 @@ const TOOLS: Record<string, unknown> = {
   help,
   declare_contract,
   observe_repository,
+  reconcile_mutation_episode,
 };
 
 /** Tools that accept arguments (have non-empty args schema). */
@@ -100,6 +103,7 @@ const TOOLS_WITH_ARGS = [
   'help',
   'declare_contract',
   'observe_repository',
+  'reconcile_mutation_episode',
 ] as const;
 
 /** Tools that have no arguments (args: {}). */
@@ -110,8 +114,8 @@ const TOOLS_WITHOUT_ARGS = ['implement'] as const;
 describe('integration/tools', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
   describe('HAPPY', () => {
-    it('exports exactly 17 tools', () => {
-      expect(Object.keys(TOOLS).length).toBe(17);
+    it('exports exactly 18 tools', () => {
+      expect(Object.keys(TOOLS).length).toBe(18);
     });
 
     for (const name of TOOL_NAMES) {
@@ -312,9 +316,9 @@ describe('integration/tools', () => {
       expect(output.presentation).toEqual({ markdown: 'Existing presentation.' });
     });
 
-    it('barrel has exactly 18 named exports (17 tools + 1 plugin)', () => {
+    it('barrel has exactly 19 named exports (18 tools + 1 plugin)', () => {
       const exports = Object.keys(barrel);
-      expect(exports.length).toBe(18);
+      expect(exports.length).toBe(19);
     });
   });
 

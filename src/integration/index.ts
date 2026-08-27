@@ -26,6 +26,7 @@ export {
   help,
   declare_contract,
   observe_repository,
+  reconcile_mutation_episode,
 } from './tools/index.js';
 
 export { FlowGuardAuditPlugin } from './plugin.js';

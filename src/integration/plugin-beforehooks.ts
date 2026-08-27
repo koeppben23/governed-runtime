@@ -32,6 +32,7 @@ import { auditEnforcementDenied } from './plugin-audit.js';
 import { withSessionWriteLock } from '../adapters/persistence-lock.js';
 import { writeStateWithAuditOperationsAlreadyLocked } from './tools/audit-outbox.js';
 import { authorizeMutationEpisode } from '../state/evidence-mutation-episode.js';
+import { getRuntimeInstanceId } from './runtime-instance.js';
 
 export async function commandBefore(
   runtime: FlowGuardPluginRuntime,
@@ -230,6 +231,7 @@ async function recordMutationDispatch(
       episodeId: randomUUID(),
       hostCallId: callId,
       toolName,
+      runtimeInstanceId: getRuntimeInstanceId(),
       authorizedAt: new Date().toISOString(),
     });
     if (result.kind === 'replay_blocked') {

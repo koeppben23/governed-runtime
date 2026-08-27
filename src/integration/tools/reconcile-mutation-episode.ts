@@ -19,17 +19,22 @@ import { withMutableSessionTransaction } from './helpers.js';
 import { formatError } from './error-format.js';
 import type { ToolDefinition } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
-import { resolveUnknownMutationOutcome } from '../../state/evidence-mutation-episode.js';
+import {
+  canResolveMutationEpisode,
+  resolveUnknownMutationOutcome,
+} from '../../state/evidence-mutation-episode.js';
+import { getRuntimeInstanceId } from '../runtime-instance.js';
 
 export const reconcile_mutation_episode: ToolDefinition = {
   description:
     'Resolve a host mutation episode whose outcome can never be observed (interrupted or ' +
     'crashed host tool call between Before- and After-hook). Appends an append-only ' +
     "resolution record (status 'reconciled_after_unknown_outcome', basis 'worktree_recapture'). " +
-    'After resolution, ALL prior implementation, validation, and review evidence is ' +
-    'unreliable: make the changes again, record them with flowguard_implement({}), re-run ' +
-    'the checks, and submit a fresh implementation review. Use only when the host call ' +
-    'outcome is truly unobservable.',
+    'A resolution may only be granted from a NEWER runtime instance than the one that ' +
+    'authorized the dispatch — the authorizing process can never prove its own call is no ' +
+    'longer running. After resolution, ALL prior implementation, validation, and review ' +
+    'evidence is unreliable: make the changes again, record them with flowguard_implement({}), ' +
+    're-run the checks, and submit a fresh implementation review.',
   args: {
     hostCallId: z
       .string()
@@ -54,6 +59,15 @@ export const reconcile_mutation_episode: ToolDefinition = {
         if (state.mutationEpisodeResolutions.some((r) => r.hostCallId === args.hostCallId)) {
           return formatBlocked('MUTATION_EPISODE_ALREADY_RESOLVED', {
             hostCallId: args.hostCallId,
+          });
+        }
+        // Recovery Authority boundary: the runtime instance that authorized the
+        // dispatch can never prove the host call is no longer running.
+        const decision = canResolveMutationEpisode(episode, getRuntimeInstanceId());
+        if (decision.kind === 'blocked') {
+          return formatBlocked(decision.code, {
+            hostCallId: args.hostCallId,
+            runtimeInstanceId: episode.runtimeInstanceId,
           });
         }
         const nextState: SessionState = {

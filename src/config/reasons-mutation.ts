@@ -41,6 +41,16 @@ export const MUTATION_REASONS: readonly BlockedReason[] = [
     ],
   },
   {
+    code: 'MUTATION_EPISODE_RUNTIME_EPOCH_ACTIVE',
+    category: 'precondition',
+    messageTemplate:
+      'hostCallId {hostCallId} was dispatched by the current runtime instance ({runtimeInstanceId}). The current process cannot prove its own host call is no longer running — the episode can only be resolved after a runtime restart.',
+    recoverySteps: [
+      'Let the host call complete so its outcome can be observed',
+      'If the host process was restarted, resolve the episode from the new runtime instance with flowguard_reconcile_mutation_episode({ hostCallId })',
+    ],
+  },
+  {
     code: 'MUTATION_EPISODE_NOT_FOUND',
     category: 'precondition',
     messageTemplate:

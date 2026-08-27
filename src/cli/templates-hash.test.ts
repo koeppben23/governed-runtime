@@ -347,4 +347,40 @@ describe('TEMPLATE_HASH_STABILITY', () => {
       `TOOL_WRAPPER exports unexpected identifiers (not canonical tools): ${stray.join(', ')}`,
     ).toEqual([]);
   });
+
+  // Drift guard for the installed-package surface: the wrapper's import
+  // (`export { ... } from "@flowguard/core/integration"`) resolves against the
+  // integration barrel at install time. A wrapper export that is missing from
+  // src/integration/index.ts breaks the OpenCode tool scan with an import
+  // error (HTTP 500 on the tool-ids endpoint) — this must never regress.
+  it('every TOOL_WRAPPER export exists in the integration barrel (installed package surface)', async () => {
+    const exportBlock = TOOL_WRAPPER.match(/export\s*\{([^}]*)\}/);
+    expect(exportBlock, 'TOOL_WRAPPER must contain an export block').not.toBeNull();
+    const wrapperExports = exportBlock![1]!
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    const barrel = await fs.readFile(
+      path.join(process.cwd(), 'src', 'integration', 'index.ts'),
+      'utf-8',
+    );
+    const barrelExportBlock = barrel.match(/export\s*\{([\s\S]*?)\}\s*from '\.\/tools\/index\.js'/);
+    expect(barrelExportBlock, 'integration barrel must re-export the tools').not.toBeNull();
+    const barrelExports = new Set(
+      barrelExportBlock![1]!
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0),
+    );
+
+    const missing = wrapperExports.filter((id) => !barrelExports.has(id));
+    expect(
+      missing,
+      `@flowguard/core/integration is missing exports referenced by TOOL_WRAPPER: ${missing.join(', ')}. ` +
+        `Add them to src/integration/index.ts or the OpenCode tool scan fails.`,
+    ).toEqual([]);
+  });
 });
