@@ -4,12 +4,14 @@
  *
  * The Recovery Authority contract: at most ONE runtime instance governs a
  * FlowGuard session at any time. The lease is a fencing token — a live
- * holder cannot be superseded by a concurrent instance; a dead or stale
- * holder can only be superseded by a LATER generation. A MutationEpisode
- * binds the generation of its authorizing lease, and an unknown-outcome
- * resolution is only admissible when the resolving instance holds a lease
- * with a LATER generation than the episode's bound generation: the
- * authorizing epoch is provably over.
+ * holder cannot be superseded by a concurrent instance; ONLY a provably
+ * dead holder (ESRCH) can be superseded by a LATER generation. Heartbeat
+ * staleness is never fencing authority: a live process may still be
+ * executing its host mutation. A MutationEpisode binds the generation of
+ * its authorizing lease, and an unknown-outcome resolution is only
+ * admissible when the resolving instance holds a lease with a LATER
+ * generation than the episode's bound generation: the authorizing epoch is
+ * provably over.
  */
 
 import * as fs from 'node:fs/promises';
