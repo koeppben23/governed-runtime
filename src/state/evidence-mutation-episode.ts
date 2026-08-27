@@ -13,6 +13,12 @@ export const MutationEpisode = z
     toolName: z.string().min(1),
     /** Runtime instance that authorized the dispatch (per-process boot identity). */
     runtimeInstanceId: z.string().uuid(),
+    /**
+     * Fencing generation of the runtime lease that authorized the dispatch.
+     * An unknown-outcome resolution requires a LATER generation — the
+     * authorizing epoch must be provably over.
+     */
+    leaseGeneration: z.number().int().positive(),
     authorizedAt: z.string().datetime(),
     status: z.enum(['dispatch_authorized', 'completed']),
     completedAt: z.string().datetime().nullable(),
@@ -96,6 +102,7 @@ export function authorizeMutationEpisode(
     hostCallId: string;
     toolName: string;
     runtimeInstanceId: string;
+    leaseGeneration: number;
     authorizedAt: string;
   },
 ): AuthorizeMutationEpisodeResult {
@@ -220,16 +227,17 @@ export type ResolveMutationEpisodeDecision =
 
 /**
  * Recovery Authority boundary: "outcome unknown" is an authority statement.
- * A resolution may only be granted by a runtime instance OTHER than the one
- * that authorized the dispatch — the authorizing process cannot prove its own
- * call is no longer running, so it must never declare its own episode
- * unrecoverable.
+ * A resolution is only admissible when the resolving instance holds a lease
+ * with a LATER generation than the episode's bound generation — generation
+ * inequality is a fencing token: the superseding lease acquisition proves
+ * the authorizing epoch ended (dead or stale holder), never mere process
+ * identity difference.
  */
 export function canResolveMutationEpisode(
   episode: MutationEpisode,
-  currentRuntimeInstanceId: string,
+  currentLease: { readonly holderRuntimeInstanceId: string; readonly generation: number },
 ): ResolveMutationEpisodeDecision {
-  if (episode.runtimeInstanceId === currentRuntimeInstanceId) {
+  if (currentLease.generation <= episode.leaseGeneration) {
     return { kind: 'blocked', code: 'MUTATION_EPISODE_RUNTIME_EPOCH_ACTIVE' };
   }
   return { kind: 'allow' };

@@ -33,6 +33,7 @@ import { withSessionWriteLock } from '../adapters/persistence-lock.js';
 import { writeStateWithAuditOperationsAlreadyLocked } from './tools/audit-outbox.js';
 import { authorizeMutationEpisode } from '../state/evidence-mutation-episode.js';
 import { getRuntimeInstanceId } from './runtime-instance.js';
+import { acquireRuntimeLease } from './runtime-lease.js';
 
 export async function commandBefore(
   runtime: FlowGuardPluginRuntime,
@@ -227,11 +228,31 @@ async function recordMutationDispatch(
         'FlowGuard session state disappeared before mutation dispatch authorization.',
       );
     }
+    // Fenced dispatch: a host mutation may only be authorized under the
+    // calling instance's live runtime lease. A live foreign lease blocks the
+    // dispatch — two runtimes must never govern one session concurrently.
+    const leaseAcquisition = await acquireRuntimeLease({
+      sessDir,
+      runtimeInstanceId: getRuntimeInstanceId(),
+      pid: process.pid,
+      now: new Date().toISOString(),
+    });
+    if (leaseAcquisition.kind === 'blocked') {
+      throw buildEnforcementError(
+        'MUTATION_EPISODE_LEASE_UNAVAILABLE',
+        `Session is governed by another live runtime instance (generation ${leaseAcquisition.lease.generation}). ` +
+          'The host mutation dispatch is blocked.',
+        {
+          activeLeaseGeneration: String(leaseAcquisition.lease.generation),
+        },
+      );
+    }
     const result = authorizeMutationEpisode(state.mutationEpisodes, {
       episodeId: randomUUID(),
       hostCallId: callId,
       toolName,
       runtimeInstanceId: getRuntimeInstanceId(),
+      leaseGeneration: leaseAcquisition.lease.generation,
       authorizedAt: new Date().toISOString(),
     });
     if (result.kind === 'replay_blocked') {

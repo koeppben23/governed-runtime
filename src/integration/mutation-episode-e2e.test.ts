@@ -33,6 +33,17 @@ import { writeStateWithArtifacts } from './tools/helpers.js';
 import { FROZEN_IMPLEMENTATION_BASE, IMPL_EVIDENCE, makeProgressedState } from '../fixtures.js';
 import { implement, review_implementation, reconcile_mutation_episode } from './tools/index.js';
 import { hasUnresolvedMutationEpisodes } from '../state/evidence-mutation-episode.js';
+import { resetRuntimeInstanceIdForTest } from './runtime-instance.js';
+import { RUNTIME_LEASE_FILE } from './runtime-lease.js';
+
+/** Simulate the death of the lease holder (a real dead process fails PID liveness). */
+async function killLeaseHolder(sessDir: string): Promise<void> {
+  const lease = JSON.parse(
+    await fs.readFile(path.join(sessDir, RUNTIME_LEASE_FILE), 'utf-8'),
+  ) as Record<string, unknown>;
+  lease.holderPid = 999999;
+  await fs.writeFile(path.join(sessDir, RUNTIME_LEASE_FILE), JSON.stringify(lease), 'utf-8');
+}
 
 function createMockInput(overrides: Record<string, unknown> = {}) {
   return {
@@ -112,9 +123,11 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
     }
   });
 
-  it('keeps a crashed dispatch fail-closed and recovers only after a runtime restart', async () => {
+  it('keeps a crashed dispatch fail-closed and recovers only after a fenced runtime restart', async () => {
     const ws = await createTestWorkspace();
     try {
+      // Fresh runtime identity for this test (simulates a fresh process).
+      resetRuntimeInstanceIdForTest();
       const sessionID = crypto.randomUUID();
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
@@ -140,34 +153,29 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       );
       expect(blockedResult.code).toBe('MUTATION_EPISODE_UNRESOLVED');
 
-      // Recovery Authority boundary: the CURRENT runtime instance dispatched
-      // the call, so it cannot declare the outcome unknown — the call may
-      // simply still be running.
+      // Recovery Authority boundary: the CURRENT runtime holds the SAME lease
+      // generation that authorized the dispatch — the authorizing epoch is
+      // not provably over.
       const sameEpochResolution = parseToolResult<{ code?: string }>(
         await reconcile_mutation_episode.execute({ hostCallId: crashedCallID }, ctx as never),
       );
       expect(sameEpochResolution.code).toBe('MUTATION_EPISODE_RUNTIME_EPOCH_ACTIVE');
       const afterEpochBlock = await readState(sessDir);
       expect(afterEpochBlock!.mutationEpisodeResolutions).toHaveLength(0);
-      expect(
-        hasUnresolvedMutationEpisodes(
-          afterEpochBlock!.mutationEpisodes,
-          afterEpochBlock!.mutationEpisodeResolutions,
-        ),
-      ).toBe(true);
 
-      // Simulate the restart: the persisted state now belongs to a previous
-      // runtime instance (as after a real process restart); the current
-      // process is a NEW runtime instance and may resolve.
-      const dispatchedByOldRuntime = await readState(sessDir);
-      await writeState(sessDir, {
-        ...dispatchedByOldRuntime!,
-        mutationEpisodes: dispatchedByOldRuntime!.mutationEpisodes.map((episode) => ({
-          ...episode,
-          runtimeInstanceId: crypto.randomUUID(),
-        })),
-      });
+      // A CONCURRENT instance cannot acquire the live lease at all — even a
+      // different process identity proves nothing about the authorizing epoch.
+      resetRuntimeInstanceIdForTest();
+      const concurrentInstance = parseToolResult<{ code?: string }>(
+        await reconcile_mutation_episode.execute({ hostCallId: crashedCallID }, ctx as never),
+      );
+      expect(concurrentInstance.code).toBe('MUTATION_EPISODE_LEASE_UNAVAILABLE');
+      const afterConcurrentBlock = await readState(sessDir);
+      expect(afterConcurrentBlock!.mutationEpisodeResolutions).toHaveLength(0);
 
+      // Restart with fencing: the holder DIES, and the new instance acquires a
+      // LATER lease generation — the provable end of the authorizing epoch.
+      await killLeaseHolder(sessDir);
       const resolvedResult = parseToolResult<{ code?: string }>(
         await reconcile_mutation_episode.execute({ hostCallId: crashedCallID }, ctx as never),
       );
@@ -206,6 +214,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       const afterDouble = await readState(sessDir);
       expect(afterDouble!.mutationEpisodeResolutions).toHaveLength(1);
     } finally {
+      resetRuntimeInstanceIdForTest();
       await ws.cleanup();
     }
   });
@@ -213,6 +222,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
   it('requires fresh implementation evidence after an unknown-outcome resolution', async () => {
     const ws = await createTestWorkspace();
     try {
+      resetRuntimeInstanceIdForTest();
       const sessionID = crypto.randomUUID();
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
@@ -232,16 +242,10 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
 
       const ctx = createToolContext({ sessionID, worktree: ws.tmpDir, directory: ws.tmpDir });
 
-      // Simulate the restart: the dispatch belongs to a previous runtime
-      // instance, so the current process may resolve it.
-      const preRestart = await readState(sessDir);
-      await writeState(sessDir, {
-        ...preRestart!,
-        mutationEpisodes: preRestart!.mutationEpisodes.map((episode) => ({
-          ...episode,
-          runtimeInstanceId: crypto.randomUUID(),
-        })),
-      });
+      // Simulate the fenced restart: the previous holder DIES, and the new
+      // runtime instance acquires a later lease generation.
+      await killLeaseHolder(sessDir);
+      resetRuntimeInstanceIdForTest();
       await reconcile_mutation_episode.execute({ hostCallId: crashedCallID }, ctx as never);
 
       // IMPL_EVIDENCE was recorded at the fixed 2026-01-01 fixture time —
@@ -267,6 +271,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       );
       expect(freshVerdict.code).not.toBe('MUTATION_OUTCOME_UNKNOWN_REVALIDATION_REQUIRED');
     } finally {
+      resetRuntimeInstanceIdForTest();
       await ws.cleanup();
     }
   });

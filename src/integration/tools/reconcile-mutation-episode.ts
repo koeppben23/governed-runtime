@@ -24,17 +24,19 @@ import {
   resolveUnknownMutationOutcome,
 } from '../../state/evidence-mutation-episode.js';
 import { getRuntimeInstanceId } from '../runtime-instance.js';
+import { acquireRuntimeLease } from '../runtime-lease.js';
 
 export const reconcile_mutation_episode: ToolDefinition = {
   description:
     'Resolve a host mutation episode whose outcome can never be observed (interrupted or ' +
     'crashed host tool call between Before- and After-hook). Appends an append-only ' +
     "resolution record (status 'reconciled_after_unknown_outcome', basis 'worktree_recapture'). " +
-    'A resolution may only be granted from a NEWER runtime instance than the one that ' +
-    'authorized the dispatch — the authorizing process can never prove its own call is no ' +
-    'longer running. After resolution, ALL prior implementation, validation, and review ' +
-    'evidence is unreliable: make the changes again, record them with flowguard_implement({}), ' +
-    're-run the checks, and submit a fresh implementation review.',
+    'A resolution is only admissible from a runtime instance holding a LATER lease generation ' +
+    'than the episode — the authorizing epoch must be provably over (fenced supersession of a ' +
+    'dead or stale holder), never mere process identity difference. After resolution, ALL prior ' +
+    'implementation, validation, and review evidence is unreliable: make the changes again, ' +
+    'record them with flowguard_implement({}), re-run the checks, and submit a fresh ' +
+    'implementation review.',
   args: {
     hostCallId: z
       .string()
@@ -61,13 +63,27 @@ export const reconcile_mutation_episode: ToolDefinition = {
             hostCallId: args.hostCallId,
           });
         }
-        // Recovery Authority boundary: the runtime instance that authorized the
-        // dispatch can never prove the host call is no longer running.
-        const decision = canResolveMutationEpisode(episode, getRuntimeInstanceId());
+        // Recovery Authority boundary: the resolving instance must hold the
+        // session lease. A live foreign lease cannot be superseded; a dead or
+        // stale holder yields a LATER generation — the fencing token.
+        const leaseAcquisition = await acquireRuntimeLease({
+          sessDir,
+          runtimeInstanceId: getRuntimeInstanceId(),
+          pid: process.pid,
+          now: new Date().toISOString(),
+        });
+        if (leaseAcquisition.kind === 'blocked') {
+          return formatBlocked('MUTATION_EPISODE_LEASE_UNAVAILABLE', {
+            hostCallId: args.hostCallId,
+            activeLeaseGeneration: String(leaseAcquisition.lease.generation),
+          });
+        }
+        const decision = canResolveMutationEpisode(episode, leaseAcquisition.lease);
         if (decision.kind === 'blocked') {
           return formatBlocked(decision.code, {
             hostCallId: args.hostCallId,
-            runtimeInstanceId: episode.runtimeInstanceId,
+            episodeLeaseGeneration: String(episode.leaseGeneration),
+            currentLeaseGeneration: String(leaseAcquisition.lease.generation),
           });
         }
         const nextState: SessionState = {

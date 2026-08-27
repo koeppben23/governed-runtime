@@ -44,10 +44,20 @@ export const MUTATION_REASONS: readonly BlockedReason[] = [
     code: 'MUTATION_EPISODE_RUNTIME_EPOCH_ACTIVE',
     category: 'precondition',
     messageTemplate:
-      'hostCallId {hostCallId} was dispatched by the current runtime instance ({runtimeInstanceId}). The current process cannot prove its own host call is no longer running — the episode can only be resolved after a runtime restart.',
+      'hostCallId {hostCallId} is bound to lease generation {episodeLeaseGeneration}; the current lease generation is {currentLeaseGeneration}. The authorizing epoch is not provably over — the episode can only be resolved after a later lease generation has fenced the previous holder.',
     recoverySteps: [
       'Let the host call complete so its outcome can be observed',
-      'If the host process was restarted, resolve the episode from the new runtime instance with flowguard_reconcile_mutation_episode({ hostCallId })',
+      'If the host process died, restart the runtime so the new instance supersedes the stale lease, then resolve with flowguard_reconcile_mutation_episode({ hostCallId })',
+    ],
+  },
+  {
+    code: 'MUTATION_EPISODE_LEASE_UNAVAILABLE',
+    category: 'precondition',
+    messageTemplate:
+      'The session is governed by another live runtime instance (lease generation {activeLeaseGeneration}); the requested recovery action cannot acquire the session lease.',
+    recoverySteps: [
+      'Stop the other runtime instance before operating on this session',
+      'If the other instance has already died, retry — the stale lease will be fenced by a later generation',
     ],
   },
   {

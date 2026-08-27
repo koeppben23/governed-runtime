@@ -19,3 +19,12 @@ export function getRuntimeInstanceId(): string {
   runtimeInstanceId ??= randomUUID();
   return runtimeInstanceId;
 }
+
+/**
+ * Test-only seam: simulate a fresh process identity. A real restart mints a
+ * new id automatically; this is never called from production code paths.
+ */
+export function resetRuntimeInstanceIdForTest(next?: string): string {
+  runtimeInstanceId = next ?? randomUUID();
+  return runtimeInstanceId;
+}

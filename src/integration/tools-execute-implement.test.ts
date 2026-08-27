@@ -558,6 +558,7 @@ describe('implement', () => {
             hostCallId: 'host-call-1',
             toolName: 'edit',
             runtimeInstanceId: crypto.randomUUID(),
+            leaseGeneration: 1,
             authorizedAt: new Date().toISOString(),
             status: 'dispatch_authorized',
             completedAt: null,

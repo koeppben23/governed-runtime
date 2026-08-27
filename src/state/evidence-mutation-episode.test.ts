@@ -13,6 +13,8 @@ const ID = '00000000-0000-4000-8000-000000000001';
 const SECOND_ID = '00000000-0000-4000-8000-000000000002';
 const RUNTIME_A = '00000000-0000-4000-8000-00000000000a';
 const RUNTIME_B = '00000000-0000-4000-8000-00000000000b';
+const LEASE_17 = { holderRuntimeInstanceId: RUNTIME_A, generation: 17 };
+const LEASE_18 = { holderRuntimeInstanceId: RUNTIME_B, generation: 18 };
 const TIME = '2026-01-01T00:00:00.000Z';
 
 describe('mutation episode evidence', () => {
@@ -22,6 +24,7 @@ describe('mutation episode evidence', () => {
       hostCallId: 'call-1',
       toolName: 'edit',
       runtimeInstanceId: RUNTIME_A,
+      leaseGeneration: 17,
       authorizedAt: TIME,
     });
     expect(result.kind).toBe('authorized');
@@ -36,6 +39,7 @@ describe('mutation episode evidence', () => {
       hostCallId: 'call-1',
       toolName: 'edit',
       runtimeInstanceId: RUNTIME_A,
+      leaseGeneration: 17,
       authorizedAt: TIME,
     });
     if (first.kind !== 'authorized') throw new Error('unexpected replay');
@@ -44,6 +48,7 @@ describe('mutation episode evidence', () => {
       hostCallId: 'call-1',
       toolName: 'edit',
       runtimeInstanceId: RUNTIME_A,
+      leaseGeneration: 17,
       authorizedAt: TIME,
     });
     expect(replay.kind).toBe('replay_blocked');
@@ -59,6 +64,7 @@ describe('mutation episode evidence', () => {
       hostCallId: 'call-1',
       toolName: 'edit',
       runtimeInstanceId: RUNTIME_A,
+      leaseGeneration: 17,
       authorizedAt: TIME,
     });
     const second = authorizeMutationEpisode(first.kind === 'authorized' ? first.episodes : [], {
@@ -66,6 +72,7 @@ describe('mutation episode evidence', () => {
       hostCallId: 'call-2',
       toolName: 'bash',
       runtimeInstanceId: RUNTIME_A,
+      leaseGeneration: 17,
       authorizedAt: TIME,
     });
     const episodes = second.kind === 'authorized' ? second.episodes : [];
@@ -103,6 +110,7 @@ describe('mutation episode evidence', () => {
       hostCallId: 'call-1',
       toolName: 'bash',
       runtimeInstanceId: RUNTIME_A,
+      leaseGeneration: 17,
       authorizedAt: TIME,
     });
     const episodes = first.kind === 'authorized' ? first.episodes : [];
@@ -143,23 +151,21 @@ describe('mutation episode evidence', () => {
     expect(again).toEqual(resolutions);
   });
 
-  it('blocks unknown-outcome resolution from the runtime instance that dispatched the call', () => {
+  it('blocks unknown-outcome resolution without a later lease generation', () => {
     const first = authorizeMutationEpisode([], {
       episodeId: ID,
       hostCallId: 'call-1',
       toolName: 'bash',
       runtimeInstanceId: RUNTIME_A,
+      leaseGeneration: 17,
       authorizedAt: TIME,
     });
     const episode = first.kind === 'authorized' ? first.episodes[0]! : null!;
 
     // Same runtime instance: the call may simply still be running.
-    expect(canResolveMutationEpisode(episode, RUNTIME_A)).toEqual({
+    expect(canResolveMutationEpisode(episode, LEASE_17)).toEqual({
       kind: 'blocked',
       code: 'MUTATION_EPISODE_RUNTIME_EPOCH_ACTIVE',
     });
-
-    // A subsequent runtime instance (restart) may resolve.
-    expect(canResolveMutationEpisode(episode, RUNTIME_B)).toEqual({ kind: 'allow' });
   });
 });
