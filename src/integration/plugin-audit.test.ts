@@ -998,7 +998,7 @@ describe('runAudit', () => {
     }
 
     function completeState(overrides: Partial<SessionState> = {}): SessionState {
-      return makeState('COMPLETE', {
+      const state = makeState('COMPLETE', {
         transition: {
           from: 'EVIDENCE_REVIEW',
           to: 'COMPLETE',
@@ -1007,6 +1007,18 @@ describe('runAudit', () => {
         },
         ...overrides,
       });
+      const transition = state.transition!;
+      const operation: Extract<PendingAuditOperation, { kind: 'transition' }> = {
+        kind: 'transition',
+        operationId: 'bbbbbbbb-0000-4000-8000-000000000001',
+        preStateDigest: 'a'.repeat(64),
+        mutationDigest: 'b'.repeat(64),
+        postStateDigest: 'c'.repeat(64),
+        auditEventDigest: 'd'.repeat(64),
+        status: 'reconciled',
+        transition: { ...transition, chainIndex: 0, autoAdvanced: false },
+      };
+      return { ...state, pendingAuditOperations: [...state.pendingAuditOperations, operation] };
     }
 
     it('emits session_completed lifecycle and archives in solo mode', async () => {

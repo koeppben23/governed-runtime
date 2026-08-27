@@ -15,11 +15,18 @@
 import { readState } from '../adapters/persistence.js';
 import { archiveSession } from '../adapters/workspace/index.js';
 import { serializeError } from '../logging/error-serialize.js';
-import type { SessionState, Phase, Event, Transition } from '../state/schema.js';
+import type {
+  PendingAuditOperation,
+  SessionState,
+  Phase,
+  Event,
+  Transition,
+} from '../state/schema.js';
 import {
   buildToolCallBody,
   buildErrorBody,
   buildLifecycleBody,
+  completionLifecycleEventId,
   buildDecisionBody,
   buildEnforcementDeniedBody,
   finalizeWithTimestampEvidence,
@@ -46,6 +53,17 @@ const LIFECYCLE_TOOLS: Record<string, string> = {
   flowguard_hydrate: 'session_created',
   flowguard_abort_session: 'session_aborted',
 };
+
+class TerminalTransitionAuthorityError extends Error {
+  readonly code = 'AUDIT_TERMINAL_TRANSITION_AUTHORITY_UNAVAILABLE';
+
+  constructor(matches: number) {
+    super(
+      `Terminal transition audit authority is unavailable: expected exactly one matching operation, found ${matches}`,
+    );
+    this.name = 'TerminalTransitionAuthorityError';
+  }
+}
 
 /**
  * Persist a synchronous host-tool denial before rethrowing it to OpenCode.
@@ -348,16 +366,19 @@ async function emitSessionCompletedLifecycle(
   state: SessionState | null,
   recordTimestampFailure: (eventKind: string, error: string | undefined) => void,
 ): Promise<string> {
+  if (!state) return ctx.prevHash;
   const identity = auditIdentity(state);
   if (!identity) return ctx.prevHash;
+  const terminalOperation = terminalTransitionOperation(state);
   const body = buildLifecycleBody({
+    id: completionLifecycleEventId(identity.flowguardSessionId, terminalOperation.operationId),
     flowguardSessionId: identity.flowguardSessionId,
     hostSessionId: identity.hostSessionId,
     detail: { action: 'session_completed', finalPhase: 'COMPLETE' },
-    occurredAt: ctx.now,
+    occurredAt: terminalOperation.transition.at,
     actor: 'machine',
     prevHash: ctx.prevHash,
-    actorInfo: state?.actorInfo,
+    actorInfo: state.actorInfo,
   });
   const digest = computeCanonicalEventDigest(body);
   const resolution = ctx.timestampAssurance.enabled
@@ -380,6 +401,25 @@ async function emitSessionCompletedLifecycle(
     nextHashPrefix: evt.chainHash.slice(0, 8),
   });
   return evt.chainHash;
+}
+
+function terminalTransitionOperation(
+  state: SessionState,
+): Extract<PendingAuditOperation, { kind: 'transition' }> {
+  const transition = state.transition;
+  if (!transition) {
+    throw new TerminalTransitionAuthorityError(0);
+  }
+  const matches = state.pendingAuditOperations.filter(
+    (operation): operation is Extract<PendingAuditOperation, { kind: 'transition' }> =>
+      operation.kind === 'transition' &&
+      operation.transition.from === transition.from &&
+      operation.transition.to === transition.to &&
+      operation.transition.event === transition.event &&
+      operation.transition.at === transition.at,
+  );
+  if (matches.length !== 1) throw new TerminalTransitionAuthorityError(matches.length);
+  return matches[0]!;
 }
 
 function scheduleSoloArchive(
@@ -585,7 +625,8 @@ export async function runAudit(
       return {
         auditOk: false,
         block: true,
-        code: 'AUDIT_PERSISTENCE_FAILED',
+        code:
+          err instanceof TerminalTransitionAuthorityError ? err.code : 'AUDIT_PERSISTENCE_FAILED',
         reason: err instanceof Error ? err.message : String(err),
       };
     }

@@ -346,6 +346,17 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'AUDIT_TERMINAL_TRANSITION_AUTHORITY_UNAVAILABLE',
+    category: 'adapter',
+    messageTemplate: 'Terminal transition audit authority is unavailable: {message}',
+    recoverySteps: [
+      'Do not rely on completion evidence from this session',
+      'Inspect the durable transition audit operation for the terminal transition',
+      'Start a new session with /hydrate if the terminal authority cannot be recovered',
+    ],
+  },
+
+  {
     code: 'TSA_TIMESTAMP_ASSURANCE_FAILED',
     category: 'adapter',
     messageTemplate: 'Timestamp authority assurance failed: {message}',

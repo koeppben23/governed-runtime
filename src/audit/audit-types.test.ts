@@ -7,6 +7,7 @@ import {
   createToolCallEvent,
   createErrorEvent,
   createLifecycleEvent,
+  completionLifecycleEventId,
   createDecisionEvent,
   summarizeArgs,
   type ChainedAuditEvent,
@@ -101,6 +102,20 @@ describe('audit types', () => {
       expect(event.event).toBe('lifecycle:session_created');
       expect(event.actor).toBe('system');
       expect(event.detail.kind).toBe('lifecycle');
+    });
+
+    it('derives a UUIDv5 completion ID from the session and terminal operation', () => {
+      const operationId = 'bbbbbbbb-0000-4000-8000-000000000001';
+      const first = completionLifecycleEventId(SESSION_ID, operationId);
+      const second = completionLifecycleEventId(SESSION_ID, operationId);
+
+      expect(first).toBe(second);
+      expect(first).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      );
+      expect(
+        completionLifecycleEventId(SESSION_ID, 'cccccccc-0000-4000-8000-000000000001'),
+      ).not.toBe(first);
     });
 
     it('createDecisionEvent produces valid chained event', () => {

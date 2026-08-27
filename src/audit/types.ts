@@ -583,6 +583,8 @@ export function createErrorEvent(
  * Input object for createLifecycleEvent.
  */
 export interface LifecycleEventInput {
+  /** Stable commit identity for retry-safe lifecycle events. */
+  readonly id?: string;
   readonly flowguardSessionId: string;
   readonly hostSessionId?: string;
   readonly detail: Omit<LifecycleDetail, 'kind'>;
@@ -603,10 +605,10 @@ export interface LifecycleEventInput {
 export function buildLifecycleBody(
   input: Omit<LifecycleEventInput, 'timestampEvidence'>,
 ): EventBody {
-  const { flowguardSessionId, hostSessionId, detail, occurredAt, actor, prevHash, actorInfo } =
+  const { id, flowguardSessionId, hostSessionId, detail, occurredAt, actor, prevHash, actorInfo } =
     input;
   return {
-    id: crypto.randomUUID(),
+    id: id ?? crypto.randomUUID(),
     flowguardSessionId,
     ...(hostSessionId ? { hostSessionId } : {}),
     phase: detail.finalPhase,
@@ -618,6 +620,35 @@ export function buildLifecycleBody(
     detail: toDetailRecord({ ...detail, kind: 'lifecycle' }),
     prevHash,
   };
+}
+
+/** Fixed namespace reserved for deterministic FlowGuard lifecycle commit IDs. */
+const FLOWGUARD_LIFECYCLE_UUID_NAMESPACE = 'd0e4b3a5-33e9-4fab-a851-08a9a9b0d58e';
+
+/**
+ * Return the retry-stable commit identity for one terminal transition.
+ *
+ * UUIDv5 keeps the ID schema-compatible while binding it to the immutable
+ * FlowGuard session identity and durable transition operation identity.
+ */
+export function completionLifecycleEventId(
+  flowguardSessionId: string,
+  terminalOperationId: string,
+): string {
+  return uuidV5(
+    `lifecycle:session_completed:${flowguardSessionId}:${terminalOperationId}`,
+    FLOWGUARD_LIFECYCLE_UUID_NAMESPACE,
+  );
+}
+
+function uuidV5(name: string, namespace: string): string {
+  const namespaceBytes = Buffer.from(namespace.replaceAll('-', ''), 'hex');
+  const digest = crypto.createHash('sha1').update(namespaceBytes).update(name, 'utf8').digest();
+  const bytes = digest.subarray(0, 16);
+  bytes[6] = (bytes[6]! & 0x0f) | 0x50;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = bytes.toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 /**
