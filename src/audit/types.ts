@@ -628,24 +628,30 @@ const FLOWGUARD_LIFECYCLE_UUID_NAMESPACE = 'd0e4b3a5-33e9-4fab-a851-08a9a9b0d58e
 /**
  * Return the retry-stable commit identity for one terminal transition.
  *
- * UUIDv5 keeps the ID schema-compatible while binding it to the immutable
+ * UUIDv8 keeps the ID schema-compatible while binding it to the immutable
  * FlowGuard session identity and durable transition operation identity.
  */
 export function completionLifecycleEventId(
   flowguardSessionId: string,
   terminalOperationId: string,
 ): string {
-  return uuidV5(
+  return uuidV8Sha256(
     `lifecycle:session_completed:${flowguardSessionId}:${terminalOperationId}`,
     FLOWGUARD_LIFECYCLE_UUID_NAMESPACE,
   );
 }
 
-function uuidV5(name: string, namespace: string): string {
+/**
+ * Derive a custom UUIDv8 from a namespace and name using SHA-256.
+ *
+ * UUIDv5 is SHA-1 by definition; UUIDv8 reserves this format for the
+ * SHA-256 name-based derivation used by FlowGuard.
+ */
+function uuidV8Sha256(name: string, namespace: string): string {
   const namespaceBytes = Buffer.from(namespace.replaceAll('-', ''), 'hex');
-  const digest = crypto.createHash('sha1').update(namespaceBytes).update(name, 'utf8').digest();
+  const digest = crypto.createHash('sha256').update(namespaceBytes).update(name, 'utf8').digest();
   const bytes = digest.subarray(0, 16);
-  bytes[6] = (bytes[6]! & 0x0f) | 0x50;
+  bytes[6] = (bytes[6]! & 0x0f) | 0x80;
   bytes[8] = (bytes[8]! & 0x3f) | 0x80;
   const hex = bytes.toString('hex');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
