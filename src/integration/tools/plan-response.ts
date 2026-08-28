@@ -143,10 +143,11 @@ function planRepositoryEvidenceWarning(
     : {};
 }
 
-export function buildPlanSubmissionResponse(
-  input: PlanSubmissionResponseInput,
-): Record<string, unknown> {
-  const { scope, finalState, planEvidence, planVersion, reviewFindings, transitions } = input;
+function planSubmissionReviewContext(
+  scope: PlanExecutionScope,
+  finalState: SessionState,
+  planVersion: number,
+) {
   const nextObligation = scope.reviewPolicy.subagentEnabled
     ? findLatestObligation(finalState.reviewAssurance?.obligations ?? [], 'plan', 0, planVersion)
     : null;
@@ -155,14 +156,29 @@ export function buildPlanSubmissionResponse(
         (a) => a.obligationId === nextObligation.obligationId && a.status === 'created',
       )?.attemptId ?? null)
     : null;
-  const reviewInstruction = buildPlanReviewInstruction({
+  return {
+    nextObligation,
+    planAttemptId,
+    reviewInstruction: buildPlanReviewInstruction({
+      scope,
+      obligation: nextObligation,
+      iteration: 0,
+      planVersion,
+      subjectLabel: 'full plan text and ticket text',
+      state: finalState,
+    }),
+  };
+}
+
+export function buildPlanSubmissionResponse(
+  input: PlanSubmissionResponseInput,
+): Record<string, unknown> {
+  const { scope, finalState, planEvidence, planVersion, reviewFindings, transitions } = input;
+  const { nextObligation, planAttemptId, reviewInstruction } = planSubmissionReviewContext(
     scope,
-    obligation: nextObligation,
-    iteration: 0,
+    finalState,
     planVersion,
-    subjectLabel: 'full plan text and ticket text',
-    state: finalState,
-  });
+  );
   const response: Record<string, unknown> = {
     phase: finalState.phase,
     status: 'Plan submitted (v' + planVersion + ').',
@@ -176,6 +192,9 @@ export function buildPlanSubmissionResponse(
     reviewInvocation: reviewInstruction.reviewInvocation,
     _audit: { transitions },
   };
+  if (finalState.plan?.claimSubmissionDiagnostics?.rejectedClaims.length) {
+    response.claimSubmissionDiagnostics = finalState.plan.claimSubmissionDiagnostics;
+  }
   const riskWarning = planRiskWarning(scope);
   if (riskWarning) response.proofGraphRiskWarning = riskWarning;
   if (reviewFindings)

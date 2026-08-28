@@ -80,6 +80,27 @@ export type ClaimContractResult =
       readonly detail: string;
     };
 
+export interface ClaimContractRejectedDeclaration {
+  readonly claim: NormalizedClaimDeclaration;
+  readonly index: number;
+  readonly result: Extract<ClaimContractResult, { kind: 'invalid' }>;
+}
+
+/**
+ * Classification used by write boundaries with an explicit partial-acceptance
+ * policy. Set-level invariants are never repaired by accepting one declaration
+ * and dropping another.
+ */
+export interface ClaimContractBatchResult {
+  readonly accepted: readonly {
+    readonly claim: NormalizedClaimDeclaration;
+    readonly index: number;
+  }[];
+  readonly rejectedNonBlocking: readonly ClaimContractRejectedDeclaration[];
+  readonly rejectedBlocking: readonly ClaimContractRejectedDeclaration[];
+  readonly setViolations: readonly Extract<ClaimContractResult, { kind: 'invalid' }>[];
+}
+
 /** Public field names per write boundary; diagnostics never leak internal names. */
 const FIELD_LABELS: Readonly<Record<ClaimContractSource, Readonly<Record<string, string>>>> = {
   plan: {
@@ -501,6 +522,43 @@ export function validateProofClaimContract(input: ClaimContractInput): ClaimCont
     if (violation) return violation;
   }
   return { kind: 'ok' };
+}
+
+/**
+ * Classify a declaration batch without choosing a write-boundary policy.
+ *
+ * Only non-critical claims that are structurally unsatisfiable may be omitted
+ * by a caller that explicitly opts into partial acceptance. Incomplete
+ * contracts and all set-level violations remain blocking.
+ */
+export function classifyProofClaimContract(input: ClaimContractInput): ClaimContractBatchResult {
+  const duplicate = checkUniqueIdentity(input);
+  if (duplicate?.kind === 'invalid') {
+    return {
+      accepted: [],
+      rejectedNonBlocking: [],
+      rejectedBlocking: [],
+      setViolations: [duplicate],
+    };
+  }
+
+  const accepted: { claim: NormalizedClaimDeclaration; index: number }[] = [];
+  const rejectedNonBlocking: ClaimContractRejectedDeclaration[] = [];
+  const rejectedBlocking: ClaimContractRejectedDeclaration[] = [];
+  for (const [index, claim] of input.claims.entries()) {
+    const result = validateProofClaimContract({ ...input, claims: [claim] });
+    if (result.kind === 'ok') {
+      accepted.push({ claim, index });
+      continue;
+    }
+    const rejected = { claim, index, result };
+    if (result.failureKind === 'unsatisfiable' && !claim.critical) {
+      rejectedNonBlocking.push(rejected);
+    } else {
+      rejectedBlocking.push(rejected);
+    }
+  }
+  return { accepted, rejectedNonBlocking, rejectedBlocking, setViolations: [] };
 }
 
 /**

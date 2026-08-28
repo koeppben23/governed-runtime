@@ -68,12 +68,6 @@ import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js'
 import { PlanClaimDeclarationInput as PlanClaimDeclarationSchema } from '../../state/proofgraph-approval.js';
 import { normalizePlanClaims } from '../../state/proofgraph-approval.js';
 import {
-  validateProofClaimContract,
-  formatClaimContractViolation,
-} from '../proofgraph/claim-contract.js';
-import { STRUCTURAL_SURFACE_IDS } from '../proofgraph/structural-provider.js';
-import { MUTATION_PROFILE_IDS } from '../proofgraph/mutation-provider.js';
-import {
   validateReviewFindings,
   requireReviewFindings,
   resolveHostTaskEffectiveFindings,
@@ -129,6 +123,7 @@ import type {
 
 import { classifyPlanCall, planInputFlags, planReviewPolicy } from './plan-types.js';
 import { routePlanInitialSubmission, blockedPlanReviewInProgress } from './plan-route.js';
+import { classifyPlanClaimSubmission } from './plan-claim-submission.js';
 import {
   buildPlanSubmissionResponse as buildSubmissionResponse,
   buildPlanReviewObligationInput,
@@ -159,48 +154,13 @@ function validatePlanInputShape(
   input: PlanInputFlags,
   state: SessionState,
 ): string | null {
-  return (
-    validateSubmissionInputShape(args, input) ??
-    validateReviewInputShape(input, state) ??
-    validatePlanClaimContract(args, state)
-  );
+  return validateSubmissionInputShape(args, input) ?? validateReviewInputShape(input, state);
 }
 
 function validateSubmissionInputShape(args: PlanArgs, input: PlanInputFlags): string | null {
   const mode = classifyPlanCall(args, input);
   if (mode.kind === 'invalid') return formatBlocked(mode.code, mode.params);
   return null;
-}
-
-/**
- * Reject a claim set that could never become PROVEN (#762).
- *
- * Runs before any plan evidence, digest, or state is produced, so a semantically
- * invalid declaration never reaches a certificate.
- */
-function validatePlanClaimContract(args: PlanArgs, state: SessionState): string | null {
-  if (!args.claims || args.claims.length === 0) return null;
-  const normalized = normalizePlanClaims(args.claims)!;
-  const result = validateProofClaimContract({
-    source: 'plan',
-    activeChecks: state.activeChecks,
-    allowedSurfaces: STRUCTURAL_SURFACE_IDS,
-    allowedMutationProfiles: MUTATION_PROFILE_IDS,
-    verificationCandidates: state.verificationCandidates ?? [],
-    claims: normalized.map((claim) => ({
-      claimId: claim.claimId,
-      statement: claim.statement,
-      critical: claim.critical,
-      claimScope: claim.claimScope,
-      positiveCheckId: claim.expectedCheckId,
-      counterexampleRequirement: claim.counterexampleRequirement,
-      structuralSurface: claim.structuralSurface,
-      mutationProfile: claim.mutationProfile,
-      authoritySectionId: claim.authoritySectionId,
-    })),
-  });
-  if (result.kind === 'ok') return null;
-  return formatClaimContractViolation(result, (code, params) => formatBlocked(code, params));
 }
 
 function validateReviewInputShape(input: PlanInputFlags, state: SessionState): string | null {
@@ -306,6 +266,12 @@ async function createPlanReviewAttempt(
   return { kind: 'ok', attemptResult };
 }
 
+function currentClaimSubmissionDiagnostics(scope: PlanExecutionScope) {
+  return scope.args.claims
+    ? scope.claimSubmissionDiagnostics
+    : scope.state.plan?.claimSubmissionDiagnostics;
+}
+
 function buildPlanSubmissionState(
   scope: PlanExecutionScope,
   planEvidence: PlanEvidence,
@@ -331,6 +297,7 @@ function buildPlanSubmissionState(
             claims: normalizePlanClaims(scope.args.claims)!,
           }
         : scope.state.plan?.claimDeclarations,
+      claimSubmissionDiagnostics: currentClaimSubmissionDiagnostics(scope),
       reviewCompletion: 'pending',
     },
     // #428: a new plan invalidates any prior validation evidence. Without this
@@ -481,6 +448,7 @@ function buildReviewedPlanState(
       claimDeclarations: scope.args.claims
         ? { flow: 'plan', version: 'v2' as const, claims: normalizePlanClaims(scope.args.claims)! }
         : scope.state.plan?.claimDeclarations,
+      claimSubmissionDiagnostics: currentClaimSubmissionDiagnostics(scope),
       reviewCompletion: resolvePlanReviewCompletion(
         nextIteration,
         scope.maxSelfReviewIterations,
@@ -694,7 +662,7 @@ export const plan: ToolDefinition = {
           args as PlanArgs,
           mutableSession.state,
         );
-        const scope: PlanExecutionScope = {
+        let scope: PlanExecutionScope = {
           ...mutableSession,
           args: typedArgs,
           context,
@@ -706,6 +674,19 @@ export const plan: ToolDefinition = {
         // any lifecycle routing can re-emit a review instruction.
         const shapeBlocked = validatePlanCallShape(scope);
         if (shapeBlocked) return shapeBlocked;
+        const claimClassification = classifyPlanClaimSubmission(
+          scope.args,
+          scope.state,
+          scope.ctx.digest,
+        );
+        if (claimClassification.kind === 'blocked') return claimClassification.message;
+        scope = {
+          ...scope,
+          args: claimClassification.args,
+          ...(claimClassification.diagnostics
+            ? { claimSubmissionDiagnostics: claimClassification.diagnostics }
+            : {}),
+        };
         if (scope.input.isInitialSubmission) {
           // Re-invocation routing for an existing plan obligation:
           // output-repair reissue or attempt re-emission. A blocked plan

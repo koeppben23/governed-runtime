@@ -287,6 +287,83 @@ describe('plan', () => {
       expect(result.selfReviewIteration).toBe(0);
     });
 
+    it('admits valid claims while recording an unsupported non-critical suite claim as diagnostic', async () => {
+      await hydrateAndTicket();
+      const sessionDir = await currentSessionDir();
+      const state = await readState(sessionDir);
+      await writeState(sessionDir, {
+        ...state!,
+        activeChecks: ['test'],
+        verificationCandidates: [
+          {
+            assertionCapability: 'structured',
+            kind: 'test',
+            command: 'npm test',
+            source: 'package.json:scripts.test',
+            confidence: 'high',
+            reason: 'repo test script',
+            assertionReport: {
+              collection: 'snapshot_diff',
+              transport: 'file',
+              format: 'junit_xml',
+              providerId: 'junit',
+              standardPatterns: ['reports/TEST-*.xml'],
+            },
+          },
+        ],
+      });
+
+      const raw = await plan.execute(
+        {
+          planText: '## Plan\n1. Fix missing task updates',
+          claims: [
+            {
+              statement: 'missing task updates return 404',
+              critical: true,
+              claimScope: 'specific_behavior',
+              expectedCheckId: 'test',
+              authoritySectionId: 'step-1',
+              counterexampleRequirement: {
+                kind: 'assertion',
+                checkId: 'test',
+                assertion: {
+                  providerId: 'junit',
+                  localId: 'TaskControllerTest#update_taskNotFound_returns404',
+                },
+              },
+            },
+            {
+              statement: 'the repository test suite passes',
+              critical: false,
+              claimScope: 'suite',
+              expectedCheckId: 'test',
+              authoritySectionId: 'step-1',
+            },
+          ],
+          targetPaths: ['docs/test.md'],
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.claimSubmissionDiagnostics).toMatchObject({
+        rejectedClaims: [
+          {
+            statement: 'the repository test suite passes',
+            disposition: 'rejected_non_blocking',
+            code: 'PROOFGRAPH_CLAIM_NOT_DECLARED',
+          },
+        ],
+      });
+
+      const persisted = await readState(sessionDir);
+      expect(persisted?.plan?.claimDeclarations?.claims).toHaveLength(1);
+      expect(persisted?.plan?.claimDeclarations?.claims[0]?.statement).toBe(
+        'missing task updates return 404',
+      );
+      expect(persisted?.plan?.claimSubmissionDiagnostics?.rejectedClaims).toHaveLength(1);
+    });
+
     it('Mode B: approve converges after mandatory subagent review', async () => {
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);

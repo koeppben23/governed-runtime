@@ -54,12 +54,27 @@ export type PlanReviewPolicy = {
   strictEnforcement: boolean;
 };
 
+export type PlanClaimSubmissionDiagnostics = {
+  submittedClaimDeclarationsDigest: string;
+  acceptedClaimDeclarationsDigest: string;
+  rejectedClaims: {
+    claimRef: string;
+    statement: string;
+    critical: boolean;
+    disposition: 'rejected_non_blocking';
+    code: string;
+    reason: string;
+    recovery: string[];
+  }[];
+};
+
 export type PlanExecutionScope = MutablePlanSession & {
   args: PlanArgs;
   context: ToolContext;
   input: PlanInputFlags;
   reviewPolicy: PlanReviewPolicy;
   maxSelfReviewIterations: number;
+  claimSubmissionDiagnostics?: PlanClaimSubmissionDiagnostics;
 };
 
 export type PlanRevisionResult = {

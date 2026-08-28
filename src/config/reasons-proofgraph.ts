@@ -41,6 +41,18 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'PROOFGRAPH_CLAIM_NOT_DECLARED',
+    category: 'precondition',
+    messageTemplate:
+      "Non-critical claim '{claimRef}' was not admitted to the ProofGraph: {field} — {detail}. The plan and its accepted claims remain valid.",
+    recoverySteps: [
+      'Keep the related command as a Verification obligation when no ProofGraph authority is required',
+      'Narrow the claim to a concrete behavior with assertion-capable evidence, or select a provider with explicit aggregate full-check completeness authority',
+      'Submit a plan revision only if suite-level ProofGraph authority is required',
+    ],
+  },
+
+  {
     code: 'PROOFGRAPH_CERTIFICATE_INVALID',
     category: 'precondition',
     messageTemplate:
