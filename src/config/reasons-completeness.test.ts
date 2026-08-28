@@ -165,9 +165,9 @@ describe('P10c — reason code split', () => {
       ...MUTATION_REASONS.map((r: { code: string }) => r.code),
     ];
 
-    expect(allSplitCodes).toHaveLength(283);
+    expect(allSplitCodes).toHaveLength(284);
     // No duplicates across the 5 arrays
-    expect(new Set(allSplitCodes).size).toBe(283);
+    expect(new Set(allSplitCodes).size).toBe(284);
     // All split codes are registered in the default registry
     for (const code of allSplitCodes) {
       expect(defaultReasonRegistry.get(code)).toBeDefined();
@@ -182,9 +182,9 @@ describe('P10c — reason code split', () => {
     }
   });
 
-  it('MUTATION_REASONS has exactly 9 entries', async () => {
+  it('MUTATION_REASONS has exactly 10 entries', async () => {
     const { MUTATION_REASONS } = await import('./reasons-mutation.js');
-    expect(MUTATION_REASONS.length).toBe(9);
+    expect(MUTATION_REASONS.length).toBe(10);
     for (const r of MUTATION_REASONS) {
       expect(r.category).toBe('precondition');
     }

@@ -140,6 +140,7 @@ function reviewerChallengeFromPrompt(
     scenario: 'Assume the cited evidence does not support the claim.',
     claim: 'The reviewed artifact is supported by the cited evidence.',
     locations: ['src/example.ts'],
+    outcome: challengeKind === 'implementation_challenge' ? 'pass' : 'supported',
     ...overrides,
   };
 }

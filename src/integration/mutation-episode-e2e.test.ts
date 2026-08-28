@@ -123,6 +123,38 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
     }
   });
 
+  it.each(['EVIDENCE_REVIEW', 'COMPLETE'] as const)(
+    'blocks apply_patch before dispatch in %s without recording a mutation episode',
+    async (phase) => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+        await fs.mkdir(sessDir, { recursive: true });
+        const implementationState = makeProgressedState('IMPLEMENTATION');
+        await writeStateWithArtifacts(sessDir, { ...implementationState, phase });
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        await expect(
+          beforeHook(
+            { tool: 'apply_patch', sessionID, callID: crypto.randomUUID() },
+            { args: { patch: '*** Begin Patch\n*** End Patch' } },
+          ),
+        ).rejects.toThrow('HOST_TOOL_PHASE_DENIED');
+
+        const persisted = await readState(sessDir);
+        expect(persisted!.mutationEpisodes).toHaveLength(0);
+      } finally {
+        await ws.cleanup();
+      }
+    },
+  );
+
   it('keeps a crashed dispatch fail-closed and recovers only after a fenced runtime restart', async () => {
     const ws = await createTestWorkspace();
     try {
@@ -227,7 +259,8 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
       await fs.mkdir(sessDir, { recursive: true });
-      await writeStateWithArtifacts(sessDir, makeProgressedState('IMPL_REVIEW'));
+      const reviewState = makeProgressedState('IMPL_REVIEW');
+      await writeStateWithArtifacts(sessDir, { ...reviewState, phase: 'IMPLEMENTATION' });
 
       const hooks = await FlowGuardAuditPlugin(
         createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
@@ -239,6 +272,11 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         { tool: 'edit', sessionID, callID: crashedCallID },
         { args: { filePath: 'x.ts', old: 'a', new: 'b' } },
       );
+
+      // Model a host crash after dispatch while the workflow has moved to the
+      // review stage. The recovery gate must still reject the stale evidence.
+      const dispatched = await readState(sessDir);
+      await writeState(sessDir, { ...dispatched!, phase: 'IMPL_REVIEW' });
 
       const ctx = createToolContext({ sessionID, worktree: ws.tmpDir, directory: ws.tmpDir });
 

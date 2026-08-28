@@ -91,7 +91,7 @@ function sessionDirMissing(detail: DiagnosticDetail): RuntimeDiagnostics {
 
 function hostToolPhaseDenied(detail: DiagnosticDetail): RuntimeDiagnostics {
   const tool = optionalField(detail.tool) ?? optionalField(detail.command) ?? 'mutating host tool';
-  const phase = optionalField(detail.phase) ?? 'current investigation phase';
+  const phase = optionalField(detail.phase) ?? 'current phase';
   return {
     diagnosticCode: 'HOST_TOOL_MUTATION_DENIED_IN_PHASE',
     severity: 'error',
@@ -101,12 +101,12 @@ function hostToolPhaseDenied(detail: DiagnosticDetail): RuntimeDiagnostics {
     rootCause: `${tool} is mutating and is not allowed while FlowGuard is in ${phase}.`,
     observed: clean([`tool=${tool}`, `phase=${phase}`]),
     required: [
-      'read-only investigation tools in this phase',
-      'implementation phase before mutating host tools',
+      'read-only tools outside IMPLEMENTATION',
+      'IMPLEMENTATION phase before mutating host tools',
     ],
     safeNextActions: [
-      'Use read-only tools such as read, glob, or grep while investigating.',
-      'Advance the FlowGuard workflow to the implementation phase before mutating files.',
+      'Use read-only tools such as read, glob, or grep outside IMPLEMENTATION.',
+      'Return to the IMPLEMENTATION phase before mutating files.',
     ],
   };
 }

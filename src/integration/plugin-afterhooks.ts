@@ -26,7 +26,7 @@ import { trackFlowGuardEnforcement } from './plugin-enforcement-tracking.js';
 import { runReviewOrchestration as runOrchestrator } from './plugin-orchestrator.js';
 import { runAudit as runAuditModule } from './plugin-audit.js';
 import { handleEvent, type EventHandlerDeps } from './plugin-events.js';
-import { appendReviewAuditEvent } from './review/audit-events.js';
+import { appendReviewAuditEventForState } from './review/audit-events.js';
 import { readState } from '../adapters/persistence.js';
 import { buildCompactionContext, type CompactionDeps } from './plugin-compaction.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
@@ -470,18 +470,6 @@ async function runFlowGuardAuditAfter(args: {
   });
 }
 
-/** Resolve the persisted phase for a session-error audit detail; empty object when unavailable so the audit event always records. */
-export async function resolveSessionErrorPhaseDetail(
-  sessDir: string,
-): Promise<Record<string, string>> {
-  try {
-    const state = await readState(sessDir);
-    return state?.phase ? { phase: state.phase } : {};
-  } catch {
-    return {};
-  }
-}
-
 export async function handlePluginEvent(
   runtime: FlowGuardPluginRuntime,
   event: unknown,
@@ -493,11 +481,14 @@ export async function handlePluginEvent(
       async emitSessionErrorAudit(sessionId, errorMessage, detail) {
         const sessDir = runtime.ws.getSessionDir(sessionId);
         if (!sessDir) return;
+        const state = await readState(sessDir);
+        // Without durable session identity there is no canonical audit event
+        // to append. The outer event handler remains fail-safe for the host.
+        if (!state) return;
         // Stryker disable next-line ObjectLiteral
-        await appendReviewAuditEvent(sessDir, sessionId, 'unknown', 'error:SESSION_ERROR', {
+        await appendReviewAuditEventForState(sessDir, sessionId, state, 'error:SESSION_ERROR', {
           code: 'SESSION_ERROR',
           message: errorMessage,
-          ...(await resolveSessionErrorPhaseDetail(sessDir)),
           ...detail,
         });
       },

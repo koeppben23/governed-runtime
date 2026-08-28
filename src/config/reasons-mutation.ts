@@ -31,6 +31,17 @@ export const MUTATION_REASONS: readonly BlockedReason[] = [
     ],
   },
   {
+    code: 'MUTATION_EPISODE_BINDING_REQUIRED',
+    category: 'precondition',
+    messageTemplate:
+      'Evidence approval is blocked while {count} host mutation episode(s) are unbound to implementation evidence.',
+    recoverySteps: [
+      'Return to IMPLEMENTATION and record a fresh implementation with /implement',
+      'Re-run required checks and obtain a review for the fresh implementation digest',
+    ],
+    quickFixCommand: '/implement',
+  },
+  {
     code: 'MUTATION_EPISODE_REPLAY_BLOCKED',
     category: 'precondition',
     messageTemplate:

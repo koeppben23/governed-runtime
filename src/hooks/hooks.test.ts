@@ -653,9 +653,10 @@ describe('pre-tool-use decision logic', () => {
       expect(result.allowed).toBe(true);
     });
 
-    it('should allow bash in VALIDATION phase', () => {
+    it('should deny bash in VALIDATION phase', () => {
       const result = isHostToolAllowedInPhase('bash', 'VALIDATION');
-      expect(result.allowed).toBe(true);
+      expect(result.allowed).toBe(false);
+      expect(result.code).toBe('HOST_TOOL_PHASE_DENIED');
     });
 
     it('should deny bash in TICKET phase', () => {

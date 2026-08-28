@@ -19,6 +19,7 @@ import type { PluginWorkspace } from './plugin-workspace.js';
 import { createSessionState } from './review/enforcement/enforcement.js';
 import { makeState, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
 import { writeState } from '../adapters/persistence.js';
+import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { createTestWorkspace } from './test-helpers.js';
 import { formatBlocked, formatAutoAdvanceOverflow } from './tools/helpers.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
@@ -349,6 +350,11 @@ describe('handlePluginEvent', () => {
       });
       const entries = await fs.readdir(sessDir);
       expect(entries).toContain('audit.jsonl');
+      const { events } = await readAuditTrail(sessDir);
+      expect(events[0]).toMatchObject({
+        phase: 'IMPLEMENTATION',
+        detail: { code: 'SESSION_ERROR' },
+      });
     } finally {
       await ws.cleanup();
     }

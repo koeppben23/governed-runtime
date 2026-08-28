@@ -260,7 +260,7 @@ describe('toolBefore — host tool fail-closed resolution', () => {
     }
   });
 
-  it('blocks a mutating host tool in an investigation-only phase', async () => {
+  it('blocks a mutating host tool outside IMPLEMENTATION', async () => {
     const ws = await createTestWorkspace();
     try {
       const sessDir = path.join(ws.tmpDir, 'sess-plan');

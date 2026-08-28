@@ -11,11 +11,11 @@ FlowGuard blocked this action.
 
 ## Required
 
-- read-only investigation tools in this phase
-- implementation phase before mutating host tools
+- read-only tools outside IMPLEMENTATION
+- IMPLEMENTATION phase before mutating host tools
 
 ## Recovery
 
 Use the canonical recovery steps below.
-- Use read-only tools such as read, glob, or grep while investigating.
-- Advance the FlowGuard workflow to the implementation phase before mutating files.
+- Use read-only tools such as read, glob, or grep outside IMPLEMENTATION.
+- Return to the IMPLEMENTATION phase before mutating files.

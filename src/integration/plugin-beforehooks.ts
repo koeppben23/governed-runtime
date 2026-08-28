@@ -571,13 +571,13 @@ function enforceHostToolPhase(
   });
   if (gateResult.allowed) return;
   // The denial reason is phase-specific only for HOST_TOOL_PHASE_DENIED (a
-  // mutating tool blocked in an investigation-only phase). HOST_TOOL_UNKNOWN_DENIED
+  // mutating tool blocked outside IMPLEMENTATION). HOST_TOOL_UNKNOWN_DENIED
   // is a phase-independent default-deny of an unrecognized host tool, so do not
-  // claim "investigation-only phase" for it.
+  // claim an implementation-phase restriction for it.
   // Stryker disable next-line ConditionalExpression,EqualityOperator — equivalent: the two denial codes are covered by dedicated phase/unknown tests; the ternary only selects the diagnostic label.
   const logMessage =
     gateResult.code === 'HOST_TOOL_PHASE_DENIED'
-      ? 'blocked host tool in investigation-only phase'
+      ? 'blocked host tool outside implementation phase'
       : 'blocked unknown host tool (default deny)';
   // Stryker disable next-line ObjectLiteral — diagnostic-only payload.
   runtime.log.warn('enforcement', logMessage, {

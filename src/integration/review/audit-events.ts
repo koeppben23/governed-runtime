@@ -17,6 +17,7 @@
 import * as crypto from 'node:crypto';
 import { appendAuditEvent } from '../../adapters/persistence-audit.js';
 import { readState } from '../../adapters/persistence.js';
+import type { SessionState } from '../../state/schema.js';
 
 /**
  * Append a review-related audit event to the session trail.
@@ -49,6 +50,30 @@ export async function appendReviewAuditEvent(
     flowguardSessionId: state.flowguardSessionId,
     hostSessionId,
     phase,
+    event,
+    occurredAt: new Date().toISOString(),
+    actor: 'machine',
+    detail,
+  });
+}
+
+/**
+ * Append a review audit event from one already-resolved state snapshot. This
+ * prevents an event envelope from disagreeing with the state used to identify
+ * its FlowGuard session.
+ */
+export async function appendReviewAuditEventForState(
+  sessDir: string,
+  hostSessionId: string,
+  state: Pick<SessionState, 'flowguardSessionId' | 'phase'>,
+  event: string,
+  detail: Record<string, unknown>,
+): Promise<void> {
+  await appendAuditEvent(sessDir, {
+    id: crypto.randomUUID(),
+    flowguardSessionId: state.flowguardSessionId,
+    hostSessionId,
+    phase: state.phase,
     event,
     occurredAt: new Date().toISOString(),
     actor: 'machine',

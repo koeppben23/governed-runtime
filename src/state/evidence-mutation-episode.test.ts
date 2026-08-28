@@ -3,6 +3,7 @@ import {
   authorizeMutationEpisode,
   canResolveMutationEpisode,
   completeMutationEpisode,
+  hasUnboundMutationEpisodes,
   hasUnresolvedMutationEpisodes,
   latestUnknownOutcomeResolvedAt,
   reconcileMutationEpisodes,
@@ -31,6 +32,7 @@ describe('mutation episode evidence', () => {
     if (result.kind !== 'authorized') return;
     expect(result.episodes).toHaveLength(1);
     expect(hasUnresolvedMutationEpisodes(result.episodes)).toBe(true);
+    expect(hasUnboundMutationEpisodes(result.episodes)).toBe(true);
   });
 
   it('blocks a replayed hostCallId instead of treating it as idempotent', () => {
@@ -102,6 +104,7 @@ describe('mutation episode evidence', () => {
 
     const reconciled = reconcileMutationEpisodes(bound, [], 'implementation-2');
     expect(reconciled[0]?.evidenceStatus).toBe('stale');
+    expect(hasUnboundMutationEpisodes(bound)).toBe(false);
   });
 
   it('resolved unknown-outcome episodes never bind and stay append-only', () => {

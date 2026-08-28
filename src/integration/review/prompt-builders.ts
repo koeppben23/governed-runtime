@@ -135,27 +135,8 @@ export interface ReviewerChallengePromptContract {
   readonly evidenceRefs?: readonly Record<string, unknown>[];
 }
 
-function challengeOutcome(kind: ReviewerChallengePromptContract['requiredChallengeKind']): string {
-  switch (kind) {
-    case 'implementation_challenge':
-      return 'pass';
-    case 'content_challenge':
-    case 'design_challenge':
-      return 'supported';
-    case undefined:
-      return 'not_verified';
-    default:
-      return 'not_verified';
-  }
-}
-
 /**
  * The complete `outcome` vocabulary the reviewer may use for this challenge kind.
- *
- * The example object below shows exactly one value. Without the full enum the
- * reviewer has to infer the remaining options, and any invented value (e.g. an
- * implementation vocabulary on a content challenge) is rejected at binding time
- * as `schema_invalid` — after the reviewer has already run.
  */
 function challengeOutcomeVocabulary(
   kind: ReviewerChallengePromptContract['requiredChallengeKind'],
@@ -188,7 +169,6 @@ function renderChallengeContract(
     locations: ['<concrete file or artifact location>'],
     kind: contract.requiredChallengeKind,
     evidenceRefs,
-    outcome: challengeOutcome(contract.requiredChallengeKind),
   };
   const outcomeVocabulary = challengeOutcomeVocabulary(contract.requiredChallengeKind);
   return [
@@ -196,6 +176,7 @@ function renderChallengeContract(
     '- When provided, clientReference MUST be fresh and unique (e.g. "c1", "c2"); use the exact obligationId below.',
     '- Copy evidenceRefs exactly from the schema below. Do not invent or alter a digest, sectionPath, or attemptId.',
     '- Omit challengeResolutionVerdicts unless the Task prompt explicitly supplies prior challenge IDs to resolve.',
+    '- Required field: outcome. Select it yourself only after completing the falsification attempt; there is no default outcome.',
     ...(outcomeVocabulary ? [outcomeVocabulary] : []),
     `- Required challenge object shape: ${JSON.stringify(challenge)}`,
     ...(evidenceRefs.length === 0

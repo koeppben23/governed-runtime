@@ -1194,6 +1194,96 @@ describe('review-decision rail', () => {
       expect(result.kind).toBe('ok');
     });
 
+    it('blocks final approval for a completed mutation episode not bound to implementation evidence', () => {
+      const state = makeState('EVIDENCE_REVIEW', {
+        implementation: IMPL_EVIDENCE,
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
+        mutationEpisodes: [
+          {
+            episodeId: '00000000-0000-4000-8000-000000000011',
+            hostCallId: 'post-review-edit',
+            toolName: 'apply_patch',
+            runtimeInstanceId: '00000000-0000-4000-8000-000000000012',
+            leaseGeneration: 1,
+            authorizedAt: FIXED_TIME,
+            status: 'completed',
+            completedAt: FIXED_TIME,
+            outcome: 'success',
+            implementationDigest: null,
+            evidenceStatus: 'ineligible',
+          },
+        ],
+      });
+
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'approve stale subject', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+
+      expect(result).toMatchObject({ kind: 'blocked', code: 'MUTATION_EPISODE_BINDING_REQUIRED' });
+    });
+
+    it('blocks final approval for a host mutation dispatched without a completion outcome', () => {
+      const state = makeState('EVIDENCE_REVIEW', {
+        implementation: IMPL_EVIDENCE,
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
+        mutationEpisodes: [
+          {
+            episodeId: '00000000-0000-4000-8000-000000000015',
+            hostCallId: 'pending-host-edit',
+            toolName: 'edit',
+            runtimeInstanceId: '00000000-0000-4000-8000-000000000016',
+            leaseGeneration: 1,
+            authorizedAt: FIXED_TIME,
+            status: 'dispatch_authorized',
+            completedAt: null,
+            outcome: null,
+            implementationDigest: null,
+            evidenceStatus: 'ineligible',
+          },
+        ],
+      });
+
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'approve pending subject', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+
+      expect(result).toMatchObject({ kind: 'blocked', code: 'MUTATION_EPISODE_BINDING_REQUIRED' });
+    });
+
+    it('does not block final approval for a historical episode bound stale by a later implementation', () => {
+      const state = makeState('EVIDENCE_REVIEW', {
+        implementation: IMPL_EVIDENCE,
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
+        mutationEpisodes: [
+          {
+            episodeId: '00000000-0000-4000-8000-000000000013',
+            hostCallId: 'prior-implementation-edit',
+            toolName: 'apply_patch',
+            runtimeInstanceId: '00000000-0000-4000-8000-000000000014',
+            leaseGeneration: 1,
+            authorizedAt: FIXED_TIME,
+            status: 'completed',
+            completedAt: FIXED_TIME,
+            outcome: 'success',
+            implementationDigest: 'previous-implementation-digest',
+            evidenceStatus: 'stale',
+          },
+        ],
+      });
+
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'approve current subject', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+
+      expect(result.kind).toBe('ok');
+    });
+
     it('P34: minimumActorAssuranceForApproval=idp_verified allows idp_verified actor', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,

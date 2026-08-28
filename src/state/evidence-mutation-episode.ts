@@ -210,6 +210,17 @@ export function hasUnresolvedMutationEpisodes(
   );
 }
 
+/**
+ * True when a host mutation has either not completed or has completed without
+ * being bound to an implementation digest. Final evidence approval must not
+ * advance while either condition can make its reviewed subject stale.
+ */
+export function hasUnboundMutationEpisodes(episodes: readonly MutationEpisode[]): boolean {
+  return episodes.some(
+    (episode) => episode.status === 'dispatch_authorized' || episode.implementationDigest === null,
+  );
+}
+
 /** Latest resolution time, or null when no unknown-outcome resolution exists. */
 export function latestUnknownOutcomeResolvedAt(
   resolutions: readonly MutationEpisodeResolution[],

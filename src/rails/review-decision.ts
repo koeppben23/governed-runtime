@@ -63,6 +63,7 @@ import {
   type ResolvedPlanReviewEvidence,
 } from './review-evidence-resolution.js';
 import { enforcePlanReviewEvidence, planCertificatePatch } from './plan-review-evidence.js';
+import { hasUnboundMutationEpisodes } from '../state/evidence-mutation-episode.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -311,6 +312,24 @@ function enforceProofGraphEvidenceApproval(
   return blocked(registryCode, undefined);
 }
 
+/**
+ * The final human approval is bound to the recorded implementation digest.
+ * Any dispatched or completed-but-unbound host mutation can have changed the
+ * worktree after that digest was captured, so it must return to IMPLEMENTATION.
+ */
+function enforceMutationEpisodeEvidenceApproval(
+  state: SessionState,
+  input: ReviewDecisionInput,
+): RailBlocked | null {
+  if (state.phase !== 'EVIDENCE_REVIEW' || input.verdict !== 'approve') return null;
+  const unboundCount = state.mutationEpisodes.filter(
+    (episode) => episode.status === 'dispatch_authorized' || episode.implementationDigest === null,
+  ).length;
+  return hasUnboundMutationEpisodes(state.mutationEpisodes)
+    ? blocked('MUTATION_EPISODE_BINDING_REQUIRED', { count: String(unboundCount) })
+    : null;
+}
+
 /** Architecture approval requires a completed reviewer cycle, never a pending loop. */
 function enforceArchitectureReviewCompletion(
   state: SessionState,
@@ -437,7 +456,7 @@ function approvalCertificatePatch(
 /**
  * Approval preconditions: four-eyes, decision identity, architecture review
  * completion, architecture evidence coherence, plan evidence coherence, and
- * the ProofGraph gate. Resolves the architecture AND plan evidence ONCE per
+ * the ProofGraph gate, and mutation evidence binding. Resolves the architecture AND plan evidence ONCE per
  * decision operation; the same resolved bindings are returned to the caller
  * and used later by the certificate patch, so gate and mint can never disagree
  * within this operation.
@@ -477,6 +496,8 @@ function enforceApprovalPreconditions(
     : null;
   const planEvidenceBlock = enforcePlanReviewEvidence(state, planEvidence);
   if (planEvidenceBlock) return { block: planEvidenceBlock, evidence, planEvidence };
+  const mutationEpisodeBlock = enforceMutationEpisodeEvidenceApproval(state, input);
+  if (mutationEpisodeBlock) return { block: mutationEpisodeBlock, evidence, planEvidence };
   const proofGraphBlock = enforceProofGraphEvidenceApproval(state, input);
   return { block: proofGraphBlock, evidence, planEvidence };
 }
