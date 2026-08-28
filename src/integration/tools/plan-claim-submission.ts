@@ -55,7 +55,9 @@ export function classifyPlanClaimSubmission(
     return {
       kind: 'blocked',
       message: formatClaimContractViolation(blocking, (code, params) =>
-        formatBlocked(code, params),
+        formatBlocked(code, params, {
+          recoveryAction: 'Run /plan after correcting the blocked claim declaration.',
+        }),
       ),
     };
   }

@@ -15,25 +15,21 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { z } from 'zod';
-
 // State & Machine
 import { SessionState } from '../../state/schema.js';
 import { hashText } from '../../shared/hashing.js';
 import type { EvalResult } from '../../machine/evaluate.js';
 import { resolveNextAction } from '../../machine/next-action.js';
 import { TERMINAL } from '../../machine/topology.js';
-
 // Rail helpers
 import type { RailResult, RailContext, AutoAdvanceOverflow } from '../../rails/types.js';
 import { AUTO_ADVANCE_OVERFLOW_CODE } from '../../rails/auto-advance-overflow.js';
-
 // Adapters
 import { readState, writeStateAlreadyLocked } from '../../adapters/persistence.js';
 import { finalizeImplementationEntry } from '../../adapters/implementation-base-authority.js';
 import { prepareStateWithAuditOperations } from './audit-outbox.js';
 import { acquireSessionWriteLock, withSessionWriteLock } from '../../adapters/persistence-lock.js';
 import { createRailContext } from '../../adapters/context.js';
-
 // Workspace
 import {
   computeFingerprint,
@@ -42,7 +38,6 @@ import {
   verifyEvidenceArtifacts,
   workspaceDir as resolveWorkspaceDir,
 } from '../../adapters/workspace/index.js';
-
 // Config
 import { resolvePolicyFromSnapshot } from '../../config/policy.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
@@ -279,7 +274,12 @@ export function formatBlocked(
   const info = defaultReasonRegistry.format(code, vars);
   // Render the diagnostic through the shared renderer so blocked returns from
   // inline tool logic present consistently with the rest of the surface.
-  const blockedPresentation = buildBlockedPresentation(info.code, info.reason, vars ?? {});
+  const blockedPresentation = buildBlockedPresentation(
+    info.code,
+    info.reason,
+    vars ?? {},
+    typeof extra?.recoveryAction === 'string' ? extra.recoveryAction : undefined,
+  );
   return JSON.stringify({
     error: true,
     code: info.code,

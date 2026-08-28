@@ -170,6 +170,24 @@ function planSubmissionReviewContext(
   };
 }
 
+function partialClaimAcceptancePresentation(
+  diagnostics: NonNullable<SessionState['plan']>['claimSubmissionDiagnostics'],
+  next: string,
+): { markdown: string } | undefined {
+  if (!diagnostics?.rejectedClaims.length) return undefined;
+  const rejected = diagnostics.rejectedClaims
+    .map((claim) => `- ${claim.statement}\n  ${claim.reason}`)
+    .join('\n');
+  return {
+    markdown:
+      '## Plan submitted\n\n' +
+      `FlowGuard did not admit ${diagnostics.rejectedClaims.length} non-critical claim declaration(s) to the ProofGraph. The related verification obligation remains active.\n\n` +
+      '## Declarations not admitted\n\n' +
+      rejected +
+      `\n\n## Next action\n\n${next}`,
+  };
+}
+
 export function buildPlanSubmissionResponse(
   input: PlanSubmissionResponseInput,
 ): Record<string, unknown> {
@@ -194,6 +212,10 @@ export function buildPlanSubmissionResponse(
   };
   if (finalState.plan?.claimSubmissionDiagnostics?.rejectedClaims.length) {
     response.claimSubmissionDiagnostics = finalState.plan.claimSubmissionDiagnostics;
+    response.presentation = partialClaimAcceptancePresentation(
+      finalState.plan.claimSubmissionDiagnostics,
+      reviewInstruction.next,
+    );
   }
   const riskWarning = planRiskWarning(scope);
   if (riskWarning) response.proofGraphRiskWarning = riskWarning;

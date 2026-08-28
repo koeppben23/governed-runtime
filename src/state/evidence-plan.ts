@@ -132,6 +132,31 @@ export const PlanRecord = z
       })
       .readonly()
       .optional(),
+    /** Append-only forensic history of non-authoritative rejected declarations. */
+    claimSubmissionHistory: z
+      .array(
+        z
+          .object({
+            planVersion: z.number().int().positive(),
+            submittedClaimDeclarationsDigest: z.string().regex(/^[a-f0-9]{64}$/),
+            acceptedClaimDeclarationsDigest: z.string().regex(/^[a-f0-9]{64}$/),
+            rejectedClaims: z.array(
+              z
+                .object({
+                  claimRef: z.string().uuid(),
+                  statement: z.string().min(1),
+                  critical: z.boolean(),
+                  disposition: z.literal('rejected_non_blocking'),
+                  code: z.string().min(1),
+                  reason: z.string().min(1),
+                  recovery: z.array(z.string().min(1)).min(1),
+                })
+                .readonly(),
+            ),
+          })
+          .readonly(),
+      )
+      .optional(),
     /** User approval certificate bound to the current plan authority. */
     approvalCertificate: PlanApprovalCertificate.optional(),
     /**

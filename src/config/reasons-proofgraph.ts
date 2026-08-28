@@ -33,9 +33,9 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       "Claim '{claimRef}' cannot be declared: {field} — {detail}. This claim can never become PROVEN regardless of fresh evidence.",
     recoverySteps: [
-      'Ensure the counterexample check has assertionCapability=structured',
-      'Verify the assertion provider matches the verification candidate',
-      'Confirm the assertion localId is valid for the provider codec',
+      'Correct the structural incompatibility identified in the claim detail',
+      'For a suite claim, remove or narrow the claim, or select a provider with explicit aggregate full-check completeness authority',
+      'For an assertion counterexample claim, ensure the selected provider, capability, and localId are valid',
       'Re-submit the plan with corrected claim declarations',
     ],
   },

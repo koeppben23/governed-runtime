@@ -510,18 +510,29 @@ export function validateProofClaimContract(input: ClaimContractInput): ClaimCont
   if (duplicate) return duplicate;
 
   for (const claim of input.claims) {
-    const violation =
-      checkCriticalContract(input, claim) ??
-      checkCheckReferences(input, claim) ??
-      checkRegistries(input, claim) ??
-      checkMutationSatisfiability(input, claim) ??
-      checkAuthoritySection(input, claim) ??
-      checkSuitePositiveSatisfiability(input, claim) ??
-      checkCounterexampleScope(input, claim) ??
-      checkCounterexampleSatisfiability(input, claim);
+    const violation = claimViolations(input, claim)[0];
     if (violation) return violation;
   }
   return { kind: 'ok' };
+}
+
+function claimViolations(
+  input: ClaimContractInput,
+  claim: NormalizedClaimDeclaration,
+): Extract<ClaimContractResult, { kind: 'invalid' }>[] {
+  return [
+    checkCriticalContract(input, claim),
+    checkCheckReferences(input, claim),
+    checkRegistries(input, claim),
+    checkMutationSatisfiability(input, claim),
+    checkAuthoritySection(input, claim),
+    checkSuitePositiveSatisfiability(input, claim),
+    checkCounterexampleScope(input, claim),
+    checkCounterexampleSatisfiability(input, claim),
+  ].filter(
+    (violation): violation is Extract<ClaimContractResult, { kind: 'invalid' }> =>
+      violation !== null,
+  );
 }
 
 /**
@@ -546,11 +557,13 @@ export function classifyProofClaimContract(input: ClaimContractInput): ClaimCont
   const rejectedNonBlocking: ClaimContractRejectedDeclaration[] = [];
   const rejectedBlocking: ClaimContractRejectedDeclaration[] = [];
   for (const [index, claim] of input.claims.entries()) {
-    const result = validateProofClaimContract({ ...input, claims: [claim] });
-    if (result.kind === 'ok') {
+    const violations = claimViolations(input, claim);
+    if (violations.length === 0) {
       accepted.push({ claim, index });
       continue;
     }
+    const result =
+      violations.find((violation) => violation.failureKind !== 'unsatisfiable') ?? violations[0]!;
     const rejected = { claim, index, result };
     if (result.failureKind === 'unsatisfiable' && !claim.critical) {
       rejectedNonBlocking.push(rejected);

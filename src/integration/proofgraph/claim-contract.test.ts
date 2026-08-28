@@ -156,6 +156,29 @@ describe('classifyProofClaimContract', () => {
     expect(result.rejectedNonBlocking).toEqual([]);
   });
 
+  it('prioritizes a non-critical contract violation over an earlier satisfiability violation', () => {
+    const result = classifyProofClaimContract({
+      ...BASE,
+      source: 'plan',
+      claims: [
+        planClaim({
+          critical: false,
+          claimScope: 'suite',
+          positiveCheckId: 'security',
+          counterexampleRequirement: {
+            kind: 'assertion',
+            checkId: 'security',
+            assertion: { providerId: 'junit', localId: 'com.example.Test#testMethod' },
+          },
+        }),
+      ],
+    });
+
+    expect(result.rejectedNonBlocking).toEqual([]);
+    expect(result.rejectedBlocking).toHaveLength(1);
+    expect(result.rejectedBlocking[0]?.result.field).toBe('counterexampleRequirement');
+  });
+
   it('keeps duplicate claim identities as a set-level blocker', () => {
     const result = classifyProofClaimContract({
       ...BASE,

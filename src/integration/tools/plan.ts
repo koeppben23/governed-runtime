@@ -272,6 +272,12 @@ function currentClaimSubmissionDiagnostics(scope: PlanExecutionScope) {
     : scope.state.plan?.claimSubmissionDiagnostics;
 }
 
+function appendClaimSubmissionHistory(scope: PlanExecutionScope, planVersion: number) {
+  const history = scope.state.plan?.claimSubmissionHistory ?? [];
+  if (!scope.args.claims || !scope.claimSubmissionDiagnostics) return history;
+  return [...history, { planVersion, ...scope.claimSubmissionDiagnostics }];
+}
+
 function buildPlanSubmissionState(
   scope: PlanExecutionScope,
   planEvidence: PlanEvidence,
@@ -298,6 +304,7 @@ function buildPlanSubmissionState(
           }
         : scope.state.plan?.claimDeclarations,
       claimSubmissionDiagnostics: currentClaimSubmissionDiagnostics(scope),
+      claimSubmissionHistory: appendClaimSubmissionHistory(scope, planVersion),
       reviewCompletion: 'pending',
     },
     // #428: a new plan invalidates any prior validation evidence. Without this
@@ -449,6 +456,7 @@ function buildReviewedPlanState(
         ? { flow: 'plan', version: 'v2' as const, claims: normalizePlanClaims(scope.args.claims)! }
         : scope.state.plan?.claimDeclarations,
       claimSubmissionDiagnostics: currentClaimSubmissionDiagnostics(scope),
+      claimSubmissionHistory: appendClaimSubmissionHistory(scope, revision.currentPlan.planVersion),
       reviewCompletion: resolvePlanReviewCompletion(
         nextIteration,
         scope.maxSelfReviewIterations,

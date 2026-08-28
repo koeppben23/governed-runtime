@@ -355,6 +355,10 @@ describe('plan', () => {
           },
         ],
       });
+      expect((result.presentation as { markdown: string }).markdown).toContain(
+        '## Declarations not admitted',
+      );
+      expect((result.presentation as { markdown: string }).markdown).toContain('## Next action');
 
       const persisted = await readState(sessionDir);
       expect(persisted?.plan?.claimDeclarations?.claims).toHaveLength(1);
@@ -362,6 +366,12 @@ describe('plan', () => {
         'missing task updates return 404',
       );
       expect(persisted?.plan?.claimSubmissionDiagnostics?.rejectedClaims).toHaveLength(1);
+      expect(persisted?.plan?.claimSubmissionHistory).toMatchObject([
+        {
+          planVersion: 1,
+          rejectedClaims: [{ statement: 'the repository test suite passes' }],
+        },
+      ]);
     });
 
     it('Mode B: approve converges after mandatory subagent review', async () => {
