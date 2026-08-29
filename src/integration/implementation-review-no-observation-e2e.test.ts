@@ -151,7 +151,7 @@ function implFindings(
   iter: number,
   pv: number,
   digest: string,
-  verdict: 'accept' | 'changes_requested',
+  verdict: 'accept' | 'changes_requested' | 'unable_to_review',
 ): ReviewFindings {
   return {
     iteration: iter,
@@ -192,7 +192,7 @@ function implFindings(
 /** Inject host-orchestrated evidence for the pending obligation (scope-preserving). */
 async function inject(
   oblType: string,
-  verdict: 'accept' | 'changes_requested',
+  verdict: 'accept' | 'changes_requested' | 'unable_to_review',
   digest: string,
 ): Promise<{ state: SessionState; oblId: string }> {
   const se = s!;
@@ -227,6 +227,9 @@ async function inject(
     fulfilledAt: FIXED_TIME,
     consumedByObligationId: null,
     capturedVerdict: verdict,
+    capturedRawFindings: ff,
+    attemptId: state!.reviewAssurance!.attempts.find((a) => a.obligationId === obl.obligationId)
+      ?.attemptId,
     reviewOutputMode: 'structured_output' as const,
     structuredOutputUsed: true,
     reviewAssuranceLevel: 'structured_high' as const,
@@ -239,7 +242,16 @@ async function inject(
         o.obligationId === obl.obligationId ? newObl : o,
       ),
       invocations: [...state!.reviewAssurance!.invocations, inv],
-      attempts: [],
+      attempts: state!.reviewAssurance!.attempts.map((attempt) =>
+        attempt.obligationId === obl.obligationId
+          ? {
+              ...attempt,
+              status: 'bound' as const,
+              childSessionId: 'ses_r',
+              completedAt: FIXED_TIME,
+            }
+          : attempt,
+      ),
       dispatches: state!.reviewAssurance!.dispatches,
     },
     reviewDecision: {
@@ -264,6 +276,84 @@ function expectNoRepositoryAuthority(obligation: {
 }
 
 describe('implementation review without repository observation authority', () => {
+  it('unable_to_review consumes bound evidence and mints a fresh unbound attempt', async () => {
+    s = await boot();
+    const se = s;
+    const implementationDigest = 'impl-unable-digest';
+    const base = makeState('IMPL_REVIEW', {
+      binding: { ...makeState('IMPL_REVIEW').binding, worktree: se.worktree },
+      ticket: TICKET,
+      plan: {
+        current: {
+          body: '## Plan\n1. Verify implementation',
+          digest: 'plan-digest',
+          sections: [],
+          createdAt: FIXED_TIME,
+          recordDigest: 'a'.repeat(64),
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+          lineageStatus: 'verified',
+        },
+        history: [],
+        reviewFindings: [],
+      },
+      implementation: {
+        changedFiles: ['src/auth.ts'],
+        domainFiles: ['src/auth.ts'],
+        digest: implementationDigest,
+        executedAt: FIXED_TIME,
+      },
+      policySnapshot: {
+        ...makeState('IMPL_REVIEW').policySnapshot,
+        reviewInvocationPolicy: 'host_task_required',
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+      },
+    });
+    await writeStateWithArtifacts(se.sDir, base);
+    const firstState = await readState(se.sDir);
+    const activated = await (
+      await import('./tools/implement-shared.js')
+    ).activateImplementationReviewObligation(firstState!, {
+      subagentEnabled: true,
+      iteration: 1,
+      planVersion: 1,
+      now: FIXED_TIME,
+      worktree: se.worktree,
+    });
+    await writeStateWithArtifacts(se.sDir, activated.state);
+    const first = activated.obligation!;
+    await inject('implement', 'unable_to_review', implementationDigest);
+
+    const result = await review_implementation.execute(
+      { reviewVerdict: 'unable_to_review' },
+      se.tc,
+    );
+    expect(String(result)).toContain('SUBAGENT_UNABLE_TO_REVIEW');
+
+    const finalState = await readState(se.sDir);
+    const obligations = finalState!.reviewAssurance!.obligations.filter(
+      (item) => item.obligationType === 'implement',
+    );
+    expect(obligations).toHaveLength(2);
+    expect(obligations[0]).toMatchObject({ obligationId: first.obligationId, status: 'consumed' });
+    expect(obligations[1]).toMatchObject({
+      status: 'pending',
+      subjectDigest: implementationDigest,
+    });
+    expect(obligations[1]!.obligationId).not.toBe(first.obligationId);
+    expect(finalState!.reviewAssurance!.invocations.at(-1)!.consumedByObligationId).toBe(
+      first.obligationId,
+    );
+    expect(finalState!.implReviewFindings?.at(-1)?.overallVerdict).toBe('unable_to_review');
+    const freshAttempt = finalState!.reviewAssurance!.attempts.find(
+      (attempt) => attempt.obligationId === obligations[1]!.obligationId,
+    );
+    expect(freshAttempt?.status).toBe('created');
+    expect(freshAttempt?.childSessionId).toBeUndefined();
+  });
+
   it('changes_requested binds via implementation anchor, re-record mints a fresh obligation, second review accepts', async () => {
     s = await boot();
 

@@ -86,6 +86,11 @@ const PRODUCT_GUIDANCE: Partial<Record<ActionCode, ProductNextAction>> = {
     commands: [],
     presentationForm: 'review_pending',
   },
+  SUBMIT_REVIEWER_VERDICT: {
+    text: 'Independent reviewer evidence is bound. Submit its exact verdict with flowguard_review_implementation.',
+    commands: ['flowguard_review_implementation'],
+    presentationForm: 'review_pending',
+  },
   REVIEW_STATE_INCOMPLETE: {
     text: 'Review state is incomplete: no pending reviewer obligation or persisted report is available. Inspect the session with /status or abort it; /continue cannot complete this state.',
     commands: [],

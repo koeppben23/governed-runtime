@@ -111,21 +111,23 @@ export const review_implementation: ToolDefinition = {
     "reviewVerdict is required for a reviewer result: 'accept' = the reviewer accepts the implementation; the loop " +
     'converges and advances to the EVIDENCE_REVIEW user gate (the user still approves via ' +
     "/review-decision). 'changes_requested' = the implementation needs revision; make changes " +
-    'then re-record with flowguard_implement.\n' +
+    "then re-record with flowguard_implement. 'unable_to_review' consumes the bound reviewer evidence, " +
+    'fails closed, and prepares a fresh independent review attempt.\n' +
     'Review loop runs up to maxIterations (from policy). ' +
     'Optionally accepts reviewFindings from the independent review agent. Under host_task_preferred only, ' +
     'reviewerUnavailable without a verdict or findings reports an actual OpenCode Task transport failure and ' +
     'requests the configured SDK transport; it never approves or persists review evidence.',
   args: {
     reviewVerdict: z
-      .enum(['accept', 'changes_requested'])
+      .enum(['accept', 'changes_requested', 'unable_to_review'])
       .optional()
       .describe(
         "The INDEPENDENT REVIEWER's verdict on the implementation — NOT user approval. " +
           'Required unless reporting an actual host Task transport failure with reviewerUnavailable: true. ' +
           "'accept' = the reviewer accepts the implementation; the loop converges and " +
           'advances to the EVIDENCE_REVIEW user gate (the user still approves via /review-decision). ' +
-          "'changes_requested' = the implementation needs revision.",
+          "'changes_requested' = the implementation needs revision. 'unable_to_review' must match " +
+          'bound reviewer evidence and fails closed before a fresh review attempt is prepared.',
       ),
     reviewFindings: ReviewFindingsSchema.optional().describe(
       "The reviewer's structured findings. SDK mode only — pass the reviewer output verbatim. " +

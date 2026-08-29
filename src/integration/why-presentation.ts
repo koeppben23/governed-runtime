@@ -85,9 +85,11 @@ export function buildWhyDocument(
     form:
       conclusion.kind === 'decision_required'
         ? 'decision'
-        : projection.blocker.blocked
-          ? 'blocked'
-          : 'success',
+        : conclusion.kind === 'review_pending'
+          ? 'review_pending'
+          : projection.blocker.blocked
+            ? 'blocked'
+            : 'success',
     sections,
     conclusion,
   };
@@ -189,6 +191,8 @@ function toPresentationConclusion(c: WhyConclusionProjection): PresentationConcl
         question: c.question,
         actions: c.actions.map((a) => ({ ...a })),
       };
+    case 'review_pending':
+      return { kind: 'review_pending', message: c.message };
     case 'terminal':
       return { kind: 'terminal', message: c.message };
   }

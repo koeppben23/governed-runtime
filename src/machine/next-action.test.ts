@@ -322,10 +322,60 @@ describe('resolveNextAction', () => {
       expectAction(action, ACTION_CODES.RUN_CONTINUE, ['/continue']);
     });
 
-    it('IMPL_REVIEW → RUN_CONTINUE', () => {
+    it('IMPL_REVIEW without bound evidence → RUN_REVIEWER_TASK', () => {
       const state = makeProgressedState('IMPL_REVIEW');
       const action = resolveNextAction('IMPL_REVIEW', state);
-      expectAction(action, ACTION_CODES.RUN_CONTINUE, ['/continue']);
+      expectAction(action, ACTION_CODES.RUN_REVIEWER_TASK, []);
+    });
+
+    it('IMPL_REVIEW with bound unconsumed evidence → submit reviewer verdict', () => {
+      const obligation = createReviewObligation({
+        obligationType: 'implement',
+        iteration: 1,
+        planVersion: 1,
+        subjectDigest: 'impl-digest',
+        reviewSubjectScope: { kind: 'implementation', implementationDigest: 'impl-digest' },
+        changedFiles: ['src/a.ts'],
+        policySnapshot: null,
+        now: '2026-01-01T00:00:00.000Z',
+      });
+      const state = makeState('IMPL_REVIEW', {
+        implementation: IMPL_EVIDENCE,
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v6',
+          obligations: [obligation],
+          attempts: [],
+          dispatches: [],
+          invocations: [
+            {
+              invocationId: '11111111-1111-4111-8111-111111111111',
+              obligationId: obligation.obligationId,
+              obligationType: 'implement',
+              parentSessionId: 'parent',
+              childSessionId: 'child',
+              agentType: 'flowguard-reviewer',
+              invocationMode: 'host_subagent_task',
+              hostVisible: true,
+              source: 'host-orchestrated',
+              promptHash: 'prompt',
+              mandateDigest: obligation.mandateDigest,
+              criteriaVersion: obligation.criteriaVersion,
+              findingsHash: 'findings',
+              invokedAt: '2026-01-01T00:00:00.000Z',
+              fulfilledAt: '2026-01-01T00:00:00.000Z',
+              consumedByObligationId: null,
+              capturedVerdict: 'unable_to_review',
+              reviewOutputMode: 'structured_output',
+              structuredOutputUsed: true,
+              reviewAssuranceLevel: 'structured_high',
+            },
+          ],
+        },
+      });
+      const action = resolveNextAction('IMPL_REVIEW', state);
+      expectAction(action, ACTION_CODES.SUBMIT_REVIEWER_VERDICT, [
+        'flowguard_review_implementation',
+      ]);
     });
 
     it('IMPL_REVIEW with a blocked implement obligation → /implement re-record', () => {

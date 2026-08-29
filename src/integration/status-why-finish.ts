@@ -36,6 +36,10 @@ export type WhyConclusionProjection =
       readonly kind: 'decision_required';
       readonly question: string;
       readonly actions: readonly PresentationAction[];
+    }
+  | {
+      readonly kind: 'review_pending';
+      readonly message: string;
     };
 
 export interface WhyPresentationProjection {
@@ -109,6 +113,9 @@ function buildWhyConclusion(
   evalResult: ReturnType<typeof evaluate>,
   productNext: ReturnType<typeof buildProductNextAction>,
 ): WhyConclusionProjection {
+  if (productNext.presentationForm === 'review_pending') {
+    return { kind: 'review_pending', message: productNext.text };
+  }
   const command = productNext.commands[0];
 
   switch (evalResult.kind) {

@@ -103,88 +103,15 @@ import {
   normalizeHostFindings,
   unknownOutcomeRevalidationBlock,
 } from './implement-shared.js';
-import { projectImplementationProofStatus } from '../proofgraph/proof-summary-projectors.js';
+import { handleUnableToReview } from './implement-unable-review.js';
 import type { CompactProofPresentation } from '../../presentation/proof-model.js';
-import {
-  buildImplReviewBlockedMarkdown,
-  buildImplReviewChangesRequestedMarkdown,
-} from './implement-review-presentation.js';
+import { buildImplReviewChangesRequestedMarkdown } from './implement-review-presentation.js';
 export { buildImplReviewChangesRequestedMarkdown } from './implement-review-presentation.js';
-
-function attachProofSummaryToBlockedResponse(
-  blockedResponse: string,
-  proofSummary: CompactProofPresentation,
-): string {
-  const parsed = JSON.parse(blockedResponse) as Record<string, unknown>;
-  parsed.proofSummary = proofSummary;
-  parsed.presentation = {
-    markdown: buildImplReviewBlockedMarkdown(
-      String(parsed.message ?? 'The independent review could not be completed.'),
-      proofSummary,
-    ),
-  };
-  return JSON.stringify(parsed);
-}
-
-function proofDecisionContextForVerdict(
-  verdict: LoopVerdict,
-): 'current_gate' | 'prospective_approval' {
-  return verdict === 'accept' ? 'current_gate' : 'prospective_approval';
-}
-
-function projectProofSummaryForVerdict(
-  state: SessionState,
-  verdict: LoopVerdict,
-): CompactProofPresentation {
-  return projectImplementationProofStatus(state, {
-    decisionContext: proofDecisionContextForVerdict(verdict),
-  });
-}
-
-export type ResolvedSubmittedReviewProof =
-  | {
-      readonly kind: 'blocked';
-      readonly response: string;
-    }
-  | {
-      readonly kind: 'proceed';
-      readonly proofSummary: CompactProofPresentation;
-    };
-
-/**
- * Branch logic for the proof context in a submitted implementation review.
- *
- * 1. If findings are blocked → blocked response with injected proof summary.
- * 2. If changes_requested → proceed with pre-transition (prospective) summary.
- * 3. If accept → proceed with post-review (current_gate) summary.
- *
- * Both the handler and tests call this function. Mutating the branch decisions
- * inside this function will break the corresponding tests.
- */
-export function resolveSubmittedReviewProofResponse(input: {
-  findingsBlocked: string | null;
-  preTransitionState: SessionState;
-  reviewedState: SessionState;
-  verdict: LoopVerdict;
-}): ResolvedSubmittedReviewProof {
-  const preProof = projectImplementationProofStatus(input.preTransitionState);
-
-  if (input.findingsBlocked) {
-    return {
-      kind: 'blocked',
-      response: attachProofSummaryToBlockedResponse(input.findingsBlocked, preProof),
-    };
-  }
-
-  if (input.verdict === 'changes_requested') {
-    return { kind: 'proceed', proofSummary: preProof };
-  }
-
-  return {
-    kind: 'proceed',
-    proofSummary: projectProofSummaryForVerdict(input.reviewedState, input.verdict),
-  };
-}
+export {
+  resolveSubmittedReviewProofResponse,
+  type ResolvedSubmittedReviewProof,
+} from './implement-review-proof.js';
+import { resolveSubmittedReviewProofResponse } from './implement-review-proof.js';
 
 function findPendingImplObligation(state: SessionState) {
   const assuranceBase = ensureReviewAssurance(state.reviewAssurance);
@@ -375,21 +302,30 @@ function appendImplReviewState(input: {
   planVersion: number;
   effectiveFindings?: ReviewFindings;
   evidenceInvocationId?: string;
+  obligationToConsume?: ReturnType<typeof findPendingImplObligation>;
 }) {
-  const { runtime, iteration, planVersion, effectiveFindings, evidenceInvocationId } = input;
+  const {
+    runtime,
+    iteration,
+    planVersion,
+    effectiveFindings,
+    evidenceInvocationId,
+    obligationToConsume,
+  } = input;
   const implementation = runtime.state.implementation!;
   const assuranceBase = ensureReviewAssurance(runtime.state.reviewAssurance);
   const strictObligation = runtime.strictEnforcement
     ? findLatestObligation(assuranceBase.obligations, 'implement', iteration, planVersion)
     : null;
+  const consumedObligation = obligationToConsume ?? strictObligation;
   const consumedAssurance = consumeReviewObligation(
     assuranceBase,
-    strictObligation,
+    consumedObligation,
     runtime.ctx.now(),
     evidenceInvocationId ??
       findAcceptedInvocationForFindings(
         assuranceBase,
-        strictObligation,
+        consumedObligation,
         runtime.args.reviewFindings,
       )?.invocationId,
   );
@@ -593,6 +529,7 @@ function handleTaskTransportFailureRetry(input: ImplementRuntime): string | null
   return handlePreferredTaskTransportFailure(input, findPendingImplObligation(input.state));
 }
 
+// eslint-disable-next-line max-lines-per-function -- ordered evidence resolution, consumption, and convergence branches must remain together.
 async function handleSubmittedImplementationReview(input: {
   runtime: ImplementRuntime;
   iteration: number;
@@ -607,6 +544,35 @@ async function handleSubmittedImplementationReview(input: {
   );
   if (resolved.blocked) return resolved.blocked;
 
+  if (resolved.effectiveFindings?.overallVerdict === 'unable_to_review') {
+    if (submittedVerdict !== 'unable_to_review') {
+      return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
+        reviewVerdict: submittedVerdict,
+        overallVerdict: resolved.effectiveFindings.overallVerdict,
+      });
+    }
+    if (!pendingObligation || !resolved.evidenceInvocationId) {
+      return formatBlocked('SUBAGENT_REVIEW_NOT_INVOKED', {
+        reason: 'unable_to_review requires bound host-task reviewer evidence',
+      });
+    }
+    const { reviewedState } = appendImplReviewState({
+      runtime,
+      iteration,
+      planVersion,
+      effectiveFindings: resolved.effectiveFindings,
+      evidenceInvocationId: resolved.evidenceInvocationId,
+      obligationToConsume: pendingObligation,
+    });
+    return handleUnableToReview({
+      runtime,
+      reviewedState,
+      iteration,
+      planVersion,
+      obligationId: pendingObligation.obligationId,
+    });
+  }
+
   const findingsBlocked = validateEffectiveFindings(
     resolved.effectiveFindings,
     submittedVerdict,
@@ -619,6 +585,7 @@ async function handleSubmittedImplementationReview(input: {
     planVersion,
     effectiveFindings: resolved.effectiveFindings,
     evidenceInvocationId: resolved.evidenceInvocationId,
+    obligationToConsume: pendingObligation,
   });
 
   const proofDecision = resolveSubmittedReviewProofResponse({

@@ -52,6 +52,7 @@ export const ACTION_CODES = {
   IMPLEMENTATION_REVIEW_BLOCKED: 'IMPLEMENTATION_REVIEW_BLOCKED',
   RUN_ARCHITECTURE: 'RUN_ARCHITECTURE',
   RUN_REVIEWER_TASK: 'RUN_REVIEWER_TASK',
+  SUBMIT_REVIEWER_VERDICT: 'SUBMIT_REVIEWER_VERDICT',
   REVIEW_STATE_INCOMPLETE: 'REVIEW_STATE_INCOMPLETE',
   SESSION_COMPLETE: 'SESSION_COMPLETE',
 } as const;
@@ -210,10 +211,25 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
         commands: ['/implement'],
       };
     }
+    const pendingInvocation = state.reviewAssurance?.invocations.find(
+      (invocation) =>
+        invocation.obligationId === last?.obligationId &&
+        invocation.capturedVerdict !== null &&
+        invocation.consumedByObligationId === null,
+    );
+    if (last?.status === 'pending' && pendingInvocation) {
+      return {
+        code: ACTION_CODES.SUBMIT_REVIEWER_VERDICT,
+        text:
+          'Independent implementation reviewer evidence is bound. Submit its exact verdict with ' +
+          'flowguard_review_implementation before continuing.',
+        commands: ['flowguard_review_implementation'],
+      };
+    }
     return {
-      code: ACTION_CODES.RUN_CONTINUE,
+      code: ACTION_CODES.RUN_REVIEWER_TASK,
       text: 'Implementation review is pending. Invoke the flowguard-reviewer task, then submit its verdict with flowguard_review_implementation.',
-      commands: ['/continue'],
+      commands: [],
     };
   },
 

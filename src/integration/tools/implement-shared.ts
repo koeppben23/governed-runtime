@@ -15,6 +15,7 @@ import type { SessionState } from '../../state/schema.js';
 import type { RailContext } from '../../rails/types.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import type {
+  LoopVerdict,
   ReviewAttemptDiscoveryContext,
   ReviewFindings,
   ReviewObligation,
@@ -249,7 +250,7 @@ export async function activateReviewObligationAndPersist(input: {
 }
 
 export type ImplementArgs = {
-  reviewVerdict?: 'accept' | 'changes_requested';
+  reviewVerdict?: LoopVerdict;
   reviewFindings?: ReviewFindings;
   reviewerUnavailable?: boolean;
 };
