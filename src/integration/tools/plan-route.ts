@@ -15,10 +15,11 @@ import { readState } from '../../adapters/persistence.js';
 import type { SessionState } from '../../state/schema.js';
 import { ensureReviewAssurance, reviewObligationResponseFields } from '../review/assurance.js';
 import { resolveReviewContinuation } from '../review/review-continuation.js';
+import { blockObligation } from '../review/obligation-state.js';
 import { reissueReviewAttempt } from './review-tool/continuation.js';
 import type { PlanExecutionScope } from './plan-types.js';
 import { buildPlanReviewInstruction } from './plan-response.js';
-import { appendNextAction, formatBlocked } from './helpers.js';
+import { appendNextAction, formatBlocked, writeStateWithArtifacts } from './helpers.js';
 
 /**
  * Gate an initial plan submission against the plan review loop: a pending plan
@@ -69,6 +70,11 @@ export async function routePlanInitialSubmission(
         obligationId: continuation.obligation.obligationId,
         reason: continuation.reason,
       });
+    // A pending obligation without any legal reviewer attempt can never be
+    // repaired by a re-invocation of the same plan: the broken obligation is
+    // deterministically closed so the NEXT /plan mints a fresh obligation.
+    case 'missing_attempt':
+      return routePlanMissingAttempt(scope, continuation.obligation, continuation.code);
     // A blocked plan obligation is recovered by the regular submission path
     // (fresh plan revision + fresh obligation), and an obligation awaiting a
     // verdict or an absent obligation fall through to the existing gates.
@@ -77,6 +83,20 @@ export async function routePlanInitialSubmission(
     case 'none':
       return null;
   }
+}
+
+async function routePlanMissingAttempt(
+  scope: PlanExecutionScope,
+  obligation: NonNullable<PlanExecutionScope['state']['reviewAssurance']>['obligations'][number],
+  code: string,
+): Promise<string> {
+  const blockedState = blockObligation(scope.state, obligation.obligationId, code);
+  await writeStateWithArtifacts(scope.sessDir, blockedState);
+  return formatBlocked(code, {
+    obligationId: obligation.obligationId,
+    recovery:
+      'The broken review obligation has been deterministically closed. Re-run /plan to submit a fresh plan revision and mint a new review obligation.',
+  });
 }
 
 async function routePlanOutputRepair(

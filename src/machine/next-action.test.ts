@@ -169,7 +169,7 @@ describe('resolveNextAction', () => {
       expect(action.text).toContain('REVIEWER_INVOCATION_EXHAUSTED');
     });
 
-    it('PLAN with a pending obligation but no bindable attempt → RUN_CONTINUE fallback', () => {
+    it('PLAN with a pending obligation but no legal attempt → /plan recovery, never /continue', () => {
       const obligation = pendingPlanObligation({ status: 'pending' });
       const bound = {
         ...bindableAttemptFor(obligation),
@@ -186,7 +186,9 @@ describe('resolveNextAction', () => {
         }),
       });
       const action = resolveNextAction('PLAN', state);
-      expectAction(action, ACTION_CODES.RUN_CONTINUE, ['/continue']);
+      expectAction(action, ACTION_CODES.RUN_PLAN, ['/plan']);
+      expect(action.commands).not.toContain('/continue');
+      expect(action.text).toContain('no legal reviewer attempt');
     });
 
     it('PLAN with a repairable rejected attempt → authorized repair via /plan', () => {

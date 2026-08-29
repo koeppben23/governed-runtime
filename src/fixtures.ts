@@ -167,6 +167,7 @@ export function assuranceWith(input: {
     obligations: [...obligations],
     invocations: input.invocations ? [...input.invocations] : [],
     attempts: input.attempts ? [...input.attempts] : [],
+    dispatches: [],
   };
 }
 

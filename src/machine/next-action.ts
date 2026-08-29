@@ -265,6 +265,7 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
   }),
 };
 
+// eslint-disable-next-line complexity -- review lifecycle projects one NextAction per continuation kind; each kind is an independent fail-closed branch.
 function reviewLifecycleAction(
   phase: Phase,
   state: SessionState,
@@ -300,6 +301,12 @@ function reviewLifecycleAction(
       return {
         code: ACTION_CODES.RUN_REVIEW_DECISION,
         text: `Independent ${label.toLowerCase()} review evidence is ready. Submit its verdict with ${command}.`,
+        commands: [command],
+      };
+    case 'missing_attempt':
+      return {
+        code: ACTION_CODES.RUN_PLAN,
+        text: `${label} review has no legal reviewer attempt (${continuation.code}). Re-run ${command} to close the broken obligation and issue a fresh review — this state can never be repaired by /continue.`,
         commands: [command],
       };
     case 'blocked':

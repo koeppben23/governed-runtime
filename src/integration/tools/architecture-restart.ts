@@ -42,6 +42,7 @@ import {
   resolveReviewContinuation,
   type ReviewContinuation,
 } from '../review/review-continuation.js';
+import { blockObligation } from '../review/obligation-state.js';
 import { reissueReviewAttempt } from './review-tool/continuation.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
 import {
@@ -60,6 +61,7 @@ import {
 } from './architecture-shared.js';
 import { appendNextAction, formatBlocked, writeStateWithArtifacts } from './helpers.js';
 
+// eslint-disable-next-line complexity -- the architecture continuation route is one sequential fail-closed chain (pending reissue, output repair, restart, missing-attempt close).
 export async function routeArchitectureInitialSubmission(
   args: ArchitectureArgs,
   session: ArchitectureSession,
@@ -79,12 +81,28 @@ export async function routeArchitectureInitialSubmission(
         obligationId: continuation.obligation.obligationId,
         reason: continuation.reason,
       });
+    case 'missing_attempt':
+      return routeArchitectureMissingAttempt(session, continuation.obligation, continuation.code);
     case 'blocked':
       return restartArchitectureReview(args, session, subagentEnabled, continuation.obligation);
     case 'awaiting_verdict':
     case 'none':
       return null;
   }
+}
+
+async function routeArchitectureMissingAttempt(
+  session: ArchitectureSession,
+  obligation: NonNullable<ArchitectureSession['state']['reviewAssurance']>['obligations'][number],
+  code: string,
+): Promise<string> {
+  const blockedState = blockObligation(session.state, obligation.obligationId, code);
+  await writeStateWithArtifacts(session.sessDir, blockedState);
+  return formatBlocked(code, {
+    obligationId: obligation.obligationId,
+    recovery:
+      'The broken architecture review obligation has been deterministically closed. Re-run /architecture to submit a fresh revision and mint a new review obligation.',
+  });
 }
 
 async function routePendingArchitectureContinuation(

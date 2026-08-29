@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { ReviewAssuranceState } from '../../../state/evidence.js';
 import { findBindableAttempt } from '../attempt-lifecycle.js';
+import { hasUnresolvedDispatch } from '../../../state/review-continuation.js';
 import { isPendingCaptureUsable } from './prepare-findings.js';
 import type { ExecutedTaskPrompt, PendingReview, SessionEnforcementState } from './types.js';
 
@@ -17,6 +18,7 @@ export type DispatchResolution =
  * Select one executable review solely from host state and create its ephemeral
  * before/after transport record. Model-provided Task arguments are diagnostic only.
  */
+// eslint-disable-next-line complexity -- the dispatch gate is one sequential fail-closed chain (persisted-transient rearm, durable-ledger, bindable selection).
 export function registerExecutedTaskPrompt(
   enforcement: SessionEnforcementState,
   assurance: ReviewAssuranceState | undefined,
@@ -51,7 +53,14 @@ export function registerExecutedTaskPrompt(
       reason: 'pending attempt is absent, superseded, or not bindable',
     };
   }
-  if (hasInFlightAttempt(enforcement, obligation.obligationId, attempt.attemptId)) {
+  if (
+    hasInFlightAttempt(enforcement, obligation.obligationId, attempt.attemptId) ||
+    // Durable before-without-after detection: a dispatch was persisted for
+    // this attempt before a previous host release, but no After completed it.
+    // The transient map is process-local and may be empty after a restart,
+    // so the durable ledger is the authoritative unknown-outcome signal.
+    hasUnresolvedDispatch(assurance, attempt.attemptId)
+  ) {
     return {
       kind: 'in_flight',
       obligationId: obligation.obligationId,

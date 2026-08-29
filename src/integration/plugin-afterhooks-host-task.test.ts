@@ -350,6 +350,17 @@ describe('reviewer host-task after-hook: extraction_invalid → sequential re-in
       expect(invocations[0]!.hostTaskCallId).toBe('call-2');
       expect(invocations[0]!.canonicalPromptDigest).toMatch(/^[a-f0-9]{64}$/);
       expect(invocations[0]!.modelPromptDigest).toMatch(/^[a-f0-9]{64}$/);
+
+      // The durable dispatch ledger closes both host calls as `completed` once
+      // their After is observed (call-1 succeeded in extraction? no — both
+      // Afters ran, so both ledger entries are `completed`).
+      const dispatches = afterSecond?.reviewAssurance?.dispatches ?? [];
+      expect(
+        dispatches.some((d) => d.dispatchStatus === 'completed' && d.hostCallId === 'call-1'),
+      ).toBe(true);
+      expect(
+        dispatches.some((d) => d.dispatchStatus === 'completed' && d.hostCallId === 'call-2'),
+      ).toBe(true);
     } finally {
       await ws.cleanup();
     }

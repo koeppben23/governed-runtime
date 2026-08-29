@@ -306,21 +306,20 @@ export function isCanonicallyRepairable(reason: ReviewAttemptRejectionReason): b
 }
 
 // ─── Assurance container primitives ──────────────────────────────────────────
+// `emptyReviewAssurance` / `ensureReviewAssurance` and the durable dispatch
+// ledger helpers live in `state/review-dispatch.ts`; imported here for local
+// use and re-exported for the historical import surface.
 
-export function emptyReviewAssurance(): ReviewAssuranceState {
-  return {
-    assuranceSchemaVersion: 'review-assurance.v5',
-    obligations: [],
-    invocations: [],
-    attempts: [],
-  };
-}
+import { ensureReviewAssurance } from './review-dispatch.js';
 
-export function ensureReviewAssurance(
-  assurance: ReviewAssuranceState | undefined,
-): ReviewAssuranceState {
-  return assurance ?? emptyReviewAssurance();
-}
+export {
+  appendReviewDispatch,
+  completeReviewDispatch,
+  emptyReviewAssurance,
+  ensureReviewAssurance,
+  hasUnresolvedDispatch,
+  markDispatchOutcomeUnknown,
+} from './review-dispatch.js';
 
 /**
  * The attempt a host Task can still be bound to for `obligationId`.
@@ -539,6 +538,19 @@ export type ReviewContinuation =
     }
   | { readonly kind: 'awaiting_verdict'; readonly obligation: ReviewObligation }
   | { readonly kind: 'blocked'; readonly obligation: ReviewObligation }
+  | {
+      /**
+       * The obligation is pending but has NO legal reviewer attempt: no
+       * bindable attempt exists and no output repair is authorized. This is
+       * never a state a self-review iteration can repair — it requires an
+       * explicit flow recovery (deterministic closure or a fresh attempt
+       * authority), never a silent fall-through.
+       */
+      readonly kind: 'missing_attempt';
+      readonly obligation: ReviewObligation;
+      readonly code: ReissueBlockCode;
+      readonly reason: string;
+    }
   | { readonly kind: 'none' };
 
 function latestObligationOfType(
@@ -580,5 +592,11 @@ export function resolveReviewContinuation(
       reason: authorization.reason,
     };
   }
-  return { kind: 'none' };
+  if (authorization.kind === 'bindable_exists') return { kind: 'none' };
+  return {
+    kind: 'missing_attempt',
+    obligation,
+    code: authorization.code,
+    reason: authorization.reason,
+  };
 }

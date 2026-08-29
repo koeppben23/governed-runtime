@@ -60,6 +60,7 @@ import { enforceRiskClassificationAfterBash as enforceRiskAfterBash } from './pl
 import { enforceDiscoveryHealthAfterBash } from './plugin-discovery-health.js';
 import { trackTaskEnforcement } from './plugin-enforcement-tracking.js';
 import { takeExecutedTaskPrompt } from './review/enforcement/execution-provenance.js';
+import { markReviewerDispatchCompleted } from './durable-dispatch.js';
 import { strictBlockedOutput, getToolMetadata, getToolCallID } from './plugin-helpers.js';
 import {
   ensureReviewAssurance,
@@ -295,6 +296,7 @@ function logHydrateLockSignal(
   }
 }
 
+// eslint-disable-next-line max-lines-per-function -- reviewer evidence capture is one sequential fail-closed chain (provenance gate, durable dispatch close, host binding).
 async function handleTaskAfter(
   runtime: FlowGuardPluginRuntime,
   ctx: AfterHookContext,
@@ -313,6 +315,17 @@ async function handleTaskAfter(
       callId: getToolCallID(ctx.hookInput),
     });
     return;
+  }
+  if (execution) {
+    // The After observed the host Task: close the durable dispatch ledger
+    // entry so a restart can never mistake this dispatch for unknown-outcome.
+    try {
+      await markReviewerDispatchCompleted(runtime, ctx.sessionId, execution.callId, ctx.now);
+    } catch (err) {
+      // A stuck `authorized` ledger entry is fail-closed: it only ever forces
+      // a fresh append-only re-arm, never a duplicate bind. Log and continue.
+      runtime.logError('reviewer dispatch completion failed', err);
+    }
   }
   const resolvedChildSessionId = resolveReviewerTaskSessionId(
     ctx.hookInput,

@@ -15,8 +15,8 @@ const SRC = join(process.cwd(), 'src');
 
 /** Production files that may call `createAttemptForExistingObligation(...)`. */
 const ALLOWED_CALLERS = [
+  'integration/durable-dispatch.ts',
   'integration/plugin-afterhooks.ts',
-  'integration/plugin-beforehooks.ts',
   'integration/tools/review-tool/obligation-creation.ts',
   'integration/tools/review-tool/continuation.ts',
 ];
@@ -70,8 +70,8 @@ describe('createAttemptForExistingObligation call-site whitelist', () => {
     const rearm = readFileSync(join(SRC, 'integration/plugin-afterhooks.ts'), 'utf8');
     expect(rearm).toContain('authorizeTaskLifecycleRearm');
     expect(rearm).not.toContain('authorizeOutputRepairReissue');
-    const beforeRearm = readFileSync(join(SRC, 'integration/plugin-beforehooks.ts'), 'utf8');
-    expect(beforeRearm).toContain('authorizeTaskLifecycleRearm');
-    expect(beforeRearm).not.toContain('authorizeOutputRepairReissue');
+    const durableRearm = readFileSync(join(SRC, 'integration/durable-dispatch.ts'), 'utf8');
+    expect(durableRearm).toContain('authorizeTaskLifecycleRearm');
+    expect(durableRearm).not.toContain('authorizeOutputRepairReissue');
   });
 });

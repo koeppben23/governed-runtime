@@ -608,6 +608,17 @@ Provide structured findings per the canonical reviewer contract.`.repeat(2);
           obligations: [obligation],
           invocations: [],
           attempts: [initialAttempt],
+          dispatches: [
+            {
+              dispatchId: crypto.randomUUID(),
+              attemptId: initialAttempt.attemptId,
+              obligationId: obligation.obligationId,
+              hostCallId: 'call-a',
+              canonicalPromptDigest: PROMPT_DIGEST,
+              dispatchAuthorizedAt: '2026-01-01T00:00:00.000Z',
+              dispatchStatus: 'authorized' as const,
+            },
+          ],
         },
       });
       await seedSession(sessDir, state);
@@ -660,6 +671,21 @@ Provide structured findings per the canonical reviewer contract.`.repeat(2);
       expect(attempts[1]!.childSessionId).toBeUndefined();
       expect(args.description).toBe('FlowGuard reviewer task');
       expect(args.prompt).toBe(PROMPT);
+      // The durable dispatch ledger: the stale predecessor's dispatch is marked
+      // unknown-outcome and the re-arm mints a fresh `authorized` entry.
+      const dispatches = persisted!.reviewAssurance!.dispatches;
+      expect(dispatches).toHaveLength(2);
+      const oldDispatch = dispatches!.find((d) => d.hostCallId === 'call-a');
+      const newDispatch = dispatches!.find((d) => d.hostCallId === 'call-b');
+      expect(oldDispatch).toMatchObject({
+        attemptId: initialAttempt.attemptId,
+        dispatchStatus: 'outcome_unknown',
+      });
+      expect(newDispatch).toMatchObject({
+        attemptId: rearmedId,
+        dispatchStatus: 'authorized',
+      });
+      expect(newDispatch!.dispatchId).not.toBe(oldDispatch!.dispatchId);
       expect(eState.executedTaskPrompts.has('call-a')).toBe(false);
       expect(eState.executedTaskPrompts.get('call-b')).toMatchObject({ attemptId: rearmedId });
       expect(eState.pendingReviews.get('flowguard_plan')!.attemptId).toBe(rearmedId);

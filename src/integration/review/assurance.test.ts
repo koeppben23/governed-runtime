@@ -661,6 +661,7 @@ describe('integration/review-assurance', () => {
         obligations: [],
         invocations: [],
         attempts: [],
+        dispatches: [],
       });
     });
   });
