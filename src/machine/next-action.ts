@@ -264,6 +264,28 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
   }),
 };
 
+function planReviewAction(phase: Phase, state: SessionState): NextAction | null {
+  if (phase !== 'PLAN') return null;
+  const latestPlanReview = [...(state.reviewAssurance?.obligations ?? [])]
+    .reverse()
+    .find((obligation) => obligation.obligationType === 'plan');
+  if (latestPlanReview?.status === 'pending') {
+    return {
+      code: ACTION_CODES.RUN_REVIEWER_TASK,
+      text: 'Independent plan review is pending. Invoke the flowguard-reviewer Task, then submit only its verdict with /plan.',
+      commands: [],
+    };
+  }
+  if (latestPlanReview?.status === 'fulfilled') {
+    return {
+      code: ACTION_CODES.RUN_REVIEW_DECISION,
+      text: 'Independent plan review evidence is ready. Submit its verdict with /plan.',
+      commands: ['/plan'],
+    };
+  }
+  return null;
+}
+
 // ─── Resolver ─────────────────────────────────────────────────────────────────
 
 /**
@@ -278,6 +300,8 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
  * @returns NextAction with code, guidance text, and available commands.
  */
 export function resolveNextAction(phase: Phase, state: SessionState): NextAction {
+  const planAction = planReviewAction(phase, state);
+  if (planAction) return planAction;
   const pendingStandaloneReview = state.reviewAssurance?.obligations.some(
     (obligation) => obligation.obligationType === 'review' && obligation.status === 'pending',
   );

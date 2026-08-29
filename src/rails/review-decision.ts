@@ -281,6 +281,16 @@ function enforceProofGraphEvidenceApproval(
   if (state.phase !== 'EVIDENCE_REVIEW' || input.verdict !== 'approve') {
     return null;
   }
+  const rejectedCriticalClaim = state.plan?.claimSubmissionDiagnostics?.rejectedClaims.find(
+    (claim) => claim.disposition === 'rejected_blocking',
+  );
+  if (rejectedCriticalClaim) {
+    return blocked('PROOFGRAPH_CLAIM_NOT_DECLARED', {
+      claimRef: rejectedCriticalClaim.claimRef,
+      field: 'claim declaration',
+      detail: rejectedCriticalClaim.reason,
+    });
+  }
   const authorization = authorizedCriticalPlanClaimIds(state.plan);
   const decision = evaluateProofGraphGate({
     projection: state.proofGraph,

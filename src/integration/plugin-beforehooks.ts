@@ -407,6 +407,10 @@ async function enforceTaskBefore(
     if (execution.kind === 'blocked') {
       throw buildEnforcementError('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE', execution.reason);
     }
+    // OpenCode validates Task arguments after this hook. These fields are
+    // transport metadata only; reviewer instructions always come from the
+    // canonical prompt injected below.
+    args.description = 'FlowGuard reviewer task';
     args.prompt = execution.prompt.canonicalPrompt;
 
     // Dispatch authority is the DURABLE attempt lifecycle (session assurance),

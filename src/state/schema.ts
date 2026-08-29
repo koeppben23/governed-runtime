@@ -50,6 +50,12 @@ import {
   resolveAuthoritativeStandaloneReviewTask,
 } from './standalone-review.js';
 
+/** Immutable compatibility contract for executable session authority. */
+export const CURRENT_ASSURANCE_EPOCH = 'assurance-epoch.v2' as const;
+export const CURRENT_SESSION_STATE_SCHEMA_VERSION = 'v2' as const;
+export const CURRENT_STATE_DIGEST_FORMAT = 'state-digest.v2' as const;
+export const CURRENT_AUDIT_CHAIN_FORMAT = 'audit-chain.v3' as const;
+
 // ─── Phase ────────────────────────────────────────────────────────────────────
 
 /**
@@ -348,8 +354,17 @@ export const SessionState = z
      */
     flowguardSessionId: z.string().uuid(),
 
-    /** Schema version for the Assurance epoch. */
-    schemaVersion: z.literal('v2'),
+    /** Schema version for the executable Assurance epoch. */
+    schemaVersion: z.literal(CURRENT_SESSION_STATE_SCHEMA_VERSION),
+
+    /** Hard-cut epoch; no prior or unknown epoch is executable authority. */
+    assuranceEpoch: z.literal(CURRENT_ASSURANCE_EPOCH),
+
+    /** Required state digest contract for this epoch. */
+    stateDigestFormat: z.literal(CURRENT_STATE_DIGEST_FORMAT),
+
+    /** Required audit-chain contract for this epoch. */
+    auditChainFormat: z.literal(CURRENT_AUDIT_CHAIN_FORMAT),
 
     /** Current FlowGuard phase. */
     phase: Phase,

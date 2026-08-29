@@ -24,7 +24,7 @@ export type PlanClaimSubmissionClassification =
     }
   | { readonly kind: 'blocked'; readonly message: string };
 
-/** Keep set-level and critical failures fail-closed; omit only unsupported optional authority. */
+/** Keep set-level failures fail-closed; persist rejected declarations for later admission. */
 export function classifyPlanClaimSubmission(
   args: PlanArgs,
   state: SessionState,
@@ -50,7 +50,7 @@ export function classifyPlanClaimSubmission(
       authoritySectionId: claim.authoritySectionId,
     })),
   });
-  const blocking = batch.setViolations[0] ?? batch.rejectedBlocking[0]?.result;
+  const blocking = batch.setViolations[0];
   if (blocking) {
     return {
       kind: 'blocked',
@@ -61,7 +61,8 @@ export function classifyPlanClaimSubmission(
       ),
     };
   }
-  if (batch.rejectedNonBlocking.length === 0) return { kind: 'ok', args };
+  const rejected = [...batch.rejectedNonBlocking, ...batch.rejectedBlocking];
+  if (rejected.length === 0) return { kind: 'ok', args };
 
   const acceptedIndexes = new Set(batch.accepted.map((entry) => entry.index));
   const acceptedClaims = args.claims.filter((_, index) => acceptedIndexes.has(index));
@@ -81,7 +82,7 @@ export function classifyPlanClaimSubmission(
     diagnostics: {
       submittedClaimDeclarationsDigest: digest(canonicalJsonStringify(submittedDeclarations)),
       acceptedClaimDeclarationsDigest: digest(canonicalJsonStringify(acceptedDeclarations)),
-      rejectedClaims: batch.rejectedNonBlocking.map(({ claim, result }) => {
+      rejectedClaims: rejected.map(({ claim, result }) => {
         const code = 'PROOFGRAPH_CLAIM_NOT_DECLARED';
         const formatted = defaultReasonRegistry.format(code, {
           claimRef: claim.claimId!,
@@ -92,7 +93,9 @@ export function classifyPlanClaimSubmission(
           claimRef: claim.claimId!,
           statement: claim.statement,
           critical: claim.critical,
-          disposition: 'rejected_non_blocking' as const,
+          disposition: claim.critical
+            ? ('rejected_blocking' as const)
+            : ('rejected_non_blocking' as const),
           code,
           reason: formatted.reason,
           recovery: [...formatted.recovery],

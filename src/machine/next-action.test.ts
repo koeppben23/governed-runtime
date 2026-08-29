@@ -81,6 +81,27 @@ describe('resolveNextAction', () => {
       expect(action.text).toContain('converged');
     });
 
+    it('PLAN with a pending review obligation → RUN_REVIEWER_TASK', () => {
+      const obligation = {
+        obligationType: 'plan',
+        status: 'pending',
+      } as unknown as NonNullable<
+        ReturnType<typeof makeState>['reviewAssurance']
+      >['obligations'][number];
+      const state = makeState('PLAN', {
+        ticket: TICKET,
+        plan: PLAN_RECORD,
+        selfReview: SELF_REVIEW_PENDING_FIX,
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          obligations: [obligation],
+          invocations: [],
+          attempts: [],
+        },
+      });
+      expectAction(resolveNextAction('PLAN', state), ACTION_CODES.RUN_REVIEWER_TASK, []);
+    });
+
     it('PLAN_REVIEW → RUN_REVIEW_DECISION', () => {
       const state = makeProgressedState('PLAN_REVIEW');
       const action = resolveNextAction('PLAN_REVIEW', state);

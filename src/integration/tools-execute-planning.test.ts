@@ -334,7 +334,7 @@ describe('plan', () => {
             },
             {
               statement: 'the repository test suite passes',
-              critical: false,
+              critical: true,
               claimScope: 'suite',
               expectedCheckId: 'test',
               authoritySectionId: 'step-1',
@@ -350,7 +350,7 @@ describe('plan', () => {
         rejectedClaims: [
           {
             statement: 'the repository test suite passes',
-            disposition: 'rejected_non_blocking',
+            disposition: 'rejected_blocking',
             code: 'PROOFGRAPH_CLAIM_NOT_DECLARED',
           },
         ],

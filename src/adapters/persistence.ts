@@ -54,7 +54,13 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import * as crypto from 'node:crypto';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
-import { SessionState } from '../state/schema.js';
+import {
+  CURRENT_ASSURANCE_EPOCH,
+  CURRENT_AUDIT_CHAIN_FORMAT,
+  CURRENT_SESSION_STATE_SCHEMA_VERSION,
+  CURRENT_STATE_DIGEST_FORMAT,
+  SessionState,
+} from '../state/schema.js';
 import { ReviewReport } from '../state/evidence.js';
 import { withSessionWriteLock } from './persistence-lock.js';
 import { assertImplementationEntryFrozen } from './implementation-entry-guard.js';
@@ -286,20 +292,23 @@ export async function readState(sessionDir: string): Promise<SessionState | null
     throw new PersistenceError('PARSE_FAILED', `State file is not valid JSON: ${filePath}`);
   }
 
+  const contract = json as Record<string, unknown> | null;
   if (
-    !json ||
-    typeof json !== 'object' ||
-    (json as Record<string, unknown>).schemaVersion !== 'v2'
+    !contract ||
+    typeof contract !== 'object' ||
+    contract.schemaVersion !== CURRENT_SESSION_STATE_SCHEMA_VERSION ||
+    contract.assuranceEpoch !== CURRENT_ASSURANCE_EPOCH ||
+    contract.stateDigestFormat !== CURRENT_STATE_DIGEST_FORMAT ||
+    contract.auditChainFormat !== CURRENT_AUDIT_CHAIN_FORMAT
   ) {
     throw new PersistenceError(
-      'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
-      `State file uses an unsupported pre-v2 Assurance format: ${filePath}`,
+      'SESSION_STATE_INCOMPATIBLE',
+      `State file does not satisfy the current executable Assurance epoch contract: ${filePath}. ` +
+        'Start a new FlowGuard session in the current Assurance Epoch.',
     );
   }
 
-  // Assurance epoch: no read migrations. Legacy persisted authority is never
-  // reinterpreted — anything not already session-state v2 fails schema
-  // validation or the version preflight above.
+  // No read migration, partial parsing, defaulting, or authority carry-forward.
 
   const result = SessionState.safeParse(json);
   if (!result.success) {

@@ -30,7 +30,14 @@
  * @version v1
  */
 
-import type { SessionState, TaskClass } from '../state/schema.js';
+import {
+  CURRENT_ASSURANCE_EPOCH,
+  CURRENT_AUDIT_CHAIN_FORMAT,
+  CURRENT_SESSION_STATE_SCHEMA_VERSION,
+  CURRENT_STATE_DIGEST_FORMAT,
+  type SessionState,
+  type TaskClass,
+} from '../state/schema.js';
 import type { BindingInfo } from '../state/evidence.js';
 import { FINGERPRINT_PATTERN } from '../state/evidence.js';
 import type { ActorInfo } from '../audit/types.js';
@@ -278,7 +285,10 @@ function buildNewHydrateState(
   const newState: SessionState = {
     id: sessionId,
     flowguardSessionId: sessionId,
-    schemaVersion: 'v2',
+    schemaVersion: CURRENT_SESSION_STATE_SCHEMA_VERSION,
+    assuranceEpoch: CURRENT_ASSURANCE_EPOCH,
+    stateDigestFormat: CURRENT_STATE_DIGEST_FORMAT,
+    auditChainFormat: CURRENT_AUDIT_CHAIN_FORMAT,
     phase: 'READY',
     ...(s.claimedTaskClass ? { claimedTaskClass: s.claimedTaskClass } : {}),
     binding,

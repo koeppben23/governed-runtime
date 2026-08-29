@@ -377,7 +377,7 @@ describe('persistence', () => {
       try {
         await readState(tmpDir);
       } catch (err) {
-        expect((err as PersistenceError).code).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
+        expect((err as PersistenceError).code).toBe('SESSION_STATE_INCOMPATIBLE');
       }
     });
 

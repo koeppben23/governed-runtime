@@ -54,12 +54,46 @@ describe('readState failure modes', () => {
     await expect(readState(dir)).rejects.toMatchObject({ code: 'PARSE_FAILED' });
   });
 
-  it('throws LEGACY_ASSURANCE_FORMAT_UNSUPPORTED for non-v2 state JSON', async () => {
+  it('throws SESSION_STATE_INCOMPATIBLE for non-current state JSON', async () => {
     const dir = await tmpDir();
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, 'session-state.json'), '{"not":"a session"}', 'utf8');
     await expect(readState(dir)).rejects.toMatchObject({
-      code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+      code: 'SESSION_STATE_INCOMPATIBLE',
+    });
+  });
+
+  it.each([
+    ['missing assurance epoch', (state: Record<string, unknown>) => delete state.assuranceEpoch],
+    [
+      'unknown assurance epoch',
+      (state: Record<string, unknown>) => (state.assuranceEpoch = 'assurance-epoch.v999'),
+    ],
+    [
+      'missing state digest format',
+      (state: Record<string, unknown>) => delete state.stateDigestFormat,
+    ],
+    [
+      'unknown state digest format',
+      (state: Record<string, unknown>) => (state.stateDigestFormat = 'state-digest.v999'),
+    ],
+    [
+      'missing audit chain format',
+      (state: Record<string, unknown>) => delete state.auditChainFormat,
+    ],
+    [
+      'unknown audit chain format',
+      (state: Record<string, unknown>) => (state.auditChainFormat = 'audit-chain.v999'),
+    ],
+  ])('rejects a current schema state with %s before schema parsing', async (_caseName, mutate) => {
+    const dir = await tmpDir();
+    await fs.mkdir(dir, { recursive: true });
+    const state = JSON.parse(JSON.stringify(makeState())) as Record<string, unknown>;
+    mutate(state);
+    await fs.writeFile(path.join(dir, 'session-state.json'), JSON.stringify(state), 'utf8');
+
+    await expect(readState(dir)).rejects.toMatchObject({
+      code: 'SESSION_STATE_INCOMPATIBLE',
     });
   });
 

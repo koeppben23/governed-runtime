@@ -6,7 +6,14 @@
  * All timestamps are fixed for deterministic assertions.
  */
 
-import type { SessionState, Phase } from './state/schema.js';
+import {
+  CURRENT_ASSURANCE_EPOCH,
+  CURRENT_AUDIT_CHAIN_FORMAT,
+  CURRENT_SESSION_STATE_SCHEMA_VERSION,
+  CURRENT_STATE_DIGEST_FORMAT,
+  type SessionState,
+  type Phase,
+} from './state/schema.js';
 import type {
   ReviewAssuranceState,
   ReviewAttempt,
@@ -462,7 +469,10 @@ export function makeState(
   return {
     id,
     flowguardSessionId: overrides.flowguardSessionId ?? id,
-    schemaVersion: 'v2',
+    schemaVersion: CURRENT_SESSION_STATE_SCHEMA_VERSION,
+    assuranceEpoch: CURRENT_ASSURANCE_EPOCH,
+    stateDigestFormat: CURRENT_STATE_DIGEST_FORMAT,
+    auditChainFormat: CURRENT_AUDIT_CHAIN_FORMAT,
     phase,
     binding: BINDING,
     ticket: null,

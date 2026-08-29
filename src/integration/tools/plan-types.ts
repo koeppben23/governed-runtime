@@ -61,7 +61,7 @@ export type PlanClaimSubmissionDiagnostics = {
     claimRef: string;
     statement: string;
     critical: boolean;
-    disposition: 'rejected_non_blocking';
+    disposition: 'rejected_non_blocking' | 'rejected_blocking';
     code: string;
     reason: string;
     recovery: string[];

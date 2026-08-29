@@ -161,8 +161,7 @@ describe('persistence', () => {
 
     async function assertReadFails(
       json: unknown,
-      expectedCode:
-        'SCHEMA_VALIDATION_FAILED' | 'PARSE_FAILED' | 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+      expectedCode: 'SCHEMA_VALIDATION_FAILED' | 'PARSE_FAILED' | 'SESSION_STATE_INCOMPATIBLE',
     ) {
       await fs.writeFile(statePath(tmpDir), JSON.stringify(json), 'utf-8');
       let caught: unknown;
@@ -186,7 +185,7 @@ describe('persistence', () => {
     it('rejects missing required field "schemaVersion"', () => {
       const state = makeState('TICKET');
       const { schemaVersion: _, ...rest } = state;
-      return assertReadFails(rest, 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
+      return assertReadFails(rest, 'SESSION_STATE_INCOMPATIBLE');
     });
 
     it('rejects missing required field "phase"', () => {
@@ -235,7 +234,7 @@ describe('persistence', () => {
     it('rejects wrong schemaVersion', () => {
       return assertReadFails(
         { ...makeState('TICKET'), schemaVersion: 'v1' },
-        'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+        'SESSION_STATE_INCOMPATIBLE',
       );
     });
 

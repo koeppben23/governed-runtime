@@ -292,33 +292,24 @@ function buildReviewerTaskPromptOrNull(
   });
 }
 
+// eslint-disable-next-line complexity, max-lines-per-function -- Response presentation combines the independent policy and authoring outcomes.
 function buildHostTaskBlockedOutput(
   result: Record<string, unknown>,
   input: HostTaskOutputInput,
 ): string {
-  const { policy, attestationMeta, challengeContract, proofContext } = input; // The original standalone response is CONTENT_ANALYSIS_REQUIRED and carries
-  // manual-findings recovery. Host-task policy replaces that contract entirely:
-  // only captured Task evidence plus a matching verdict can complete this path.
-  result.code = REASON_HOST_SUBAGENT_TASK_REQUIRED;
-  result.message = `Policy requires host-visible Task-tool evidence for ${REVIEWER_SUBAGENT_TYPE}; submit only the captured reviewer verdict after the Task completes.`;
-  result.recovery = [RECOVERY_HOST_SUBAGENT_TASK];
-  // BUG-16: Preserve iteration/planVersion so the agent can construct a correct
-  // subagent prompt that passes promptContainsValue enforcement. Standalone
-  // /review (CONTENT_ANALYSIS_REQUIRED) has no `next`, so the values are sourced
-  // from the obligation instead (see resolveHostTaskContext). BUG-18: Instruct
-  // the reviewer subagent to NOT call FlowGuard tools in its own session.
+  const authoringSucceeded = result.error !== true;
+  const { policy, attestationMeta, challengeContract, proofContext } = input;
+  if (!authoringSucceeded) {
+    result.code = REASON_HOST_SUBAGENT_TASK_REQUIRED;
+    result.message = `Policy requires host-visible Task-tool evidence for ${REVIEWER_SUBAGENT_TYPE}; submit only the captured reviewer verdict after the Task completes.`;
+    result.recovery = [RECOVERY_HOST_SUBAGENT_TASK];
+  }
   const ctx = resolveHostTaskContext(result, attestationMeta);
   const contextSuffix =
     ctx?.iteration != null
       ? renderReviewContext({ iteration: ctx.iteration, planVersion: ctx.planVersion })
       : '';
 
-  // F10: issue the host-injected canonical reviewer prompt so the agent does
-  // not free-compose one and omit the iteration=/planVersion= tokens the
-  // enforcement matcher requires (the first-attempt SUBAGENT_PROMPT_MISSING_CONTEXT
-  // root cause). The prompt embeds the review context via the SAME serializer the
-  // matcher validates against. Only emitted when both the attestation and the
-  // review context are available.
   const reviewerTaskPrompt = buildReviewerTaskPromptOrNull(attestationMeta, ctx, {
     challengeContract,
     proofContext,
@@ -335,11 +326,9 @@ function buildHostTaskBlockedOutput(
   const copyPromptStr = reviewerTaskPrompt
     ? ` A canonical reviewer prompt is provided in the reviewerTaskPrompt field. Call Task only ` +
       `with subagent_type="${REVIEWER_SUBAGENT_TYPE}"; FlowGuard injects the canonical bytes ` +
-      `at the host boundary, so the required review context is present on the first attempt.`
+      `and required host transport metadata at the host boundary.`
     : '';
 
-  // requiredReviewAttestation is host/parent context. The canonical prompt is
-  // the sole reviewer-output contract and contains only toolObligationId.
   const attestationStr = attestationMeta
     ? ` Host context identifies obligation ${attestationMeta.toolObligationId}; do not construct ` +
       `reviewer attestation fields outside reviewerTaskPrompt.`
@@ -384,15 +373,19 @@ function buildHostTaskBlockedOutput(
 
   result.reviewInvocation = {
     policy,
-    status: policy === 'host_task_required' ? 'blocked_until_host_task' : 'host_task_requested',
-    code: REASON_HOST_SUBAGENT_TASK_REQUIRED,
+    status: authoringSucceeded
+      ? 'pending_host_task'
+      : policy === 'host_task_required'
+        ? 'blocked_until_host_task'
+        : 'host_task_requested',
+    ...(!authoringSucceeded ? { code: REASON_HOST_SUBAGENT_TASK_REQUIRED } : {}),
     reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
     invocationMode: 'host_subagent_task',
     hostVisible: true,
-    recovery: [RECOVERY_HOST_SUBAGENT_TASK],
+    ...(!authoringSucceeded ? { recovery: [RECOVERY_HOST_SUBAGENT_TASK] } : {}),
   };
   applyBindableAttemptId(result, input.attemptId);
-  return JSON.stringify(refreshBlockedPresentation(result));
+  return JSON.stringify(authoringSucceeded ? result : refreshBlockedPresentation(result));
 }
 
 /**
