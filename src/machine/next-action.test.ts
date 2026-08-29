@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import { resolveNextAction, ACTION_CODES } from './next-action.js';
 import type { NextAction } from './next-action.js';
 import type { DiscoverySummary } from '../state/discovery-schemas.js';
+import { appendReviewDispatch } from '../state/review-dispatch.js';
 import {
   makeState,
   makeProgressedState,
@@ -140,6 +142,33 @@ describe('resolveNextAction', () => {
         }),
       });
       expectAction(resolveNextAction('PLAN', state), ACTION_CODES.RUN_REVIEWER_TASK, []);
+    });
+
+    it('PLAN with a bindable attempt + unresolved durable dispatch → /plan re-arm, never awaiting_task', () => {
+      const obligation = pendingPlanObligation({ status: 'pending' });
+      const attempt = bindableAttemptFor(obligation);
+      const base = assuranceWith({ obligation, attempts: [attempt] });
+      const state = makeState('PLAN', {
+        ticket: TICKET,
+        plan: PLAN_RECORD,
+        selfReview: SELF_REVIEW_PENDING_FIX,
+        reviewAssurance: appendReviewDispatch(base, {
+          dispatchId: randomUUID(),
+          attemptId: attempt.attemptId,
+          obligationId: obligation.obligationId,
+          hostCallId: 'call-old',
+          canonicalPromptDigest: 'a'.repeat(64),
+          dispatchAuthorizedAt: '2026-01-01T00:00:00.000Z',
+          dispatchStatus: 'authorized',
+        }),
+      });
+      const action = resolveNextAction('PLAN', state);
+      // The bindable attempt is NOT re-emitted as awaiting_task because its
+      // durable dispatch outcome is unresolved: /plan is the authorized trigger
+      // to re-arm it durably.
+      expectAction(action, ACTION_CODES.RUN_PLAN, ['/plan']);
+      expect(action.commands).not.toContain('/continue');
+      expect(action.text).toContain('interrupted');
     });
 
     it('PLAN with fulfilled review evidence → verdict submission via /plan', () => {

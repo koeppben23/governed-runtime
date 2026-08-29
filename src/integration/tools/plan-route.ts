@@ -17,6 +17,7 @@ import { ensureReviewAssurance, reviewObligationResponseFields } from '../review
 import { resolveReviewContinuation } from '../review/review-continuation.js';
 import { blockObligation } from '../review/obligation-state.js';
 import { reissueReviewAttempt } from './review-tool/continuation.js';
+import { buildInterruptedDispatchRearm } from '../durable-dispatch.js';
 import type { PlanExecutionScope } from './plan-types.js';
 import { buildPlanReviewInstruction } from './plan-response.js';
 import { appendNextAction, formatBlocked, writeStateWithArtifacts } from './helpers.js';
@@ -47,6 +48,7 @@ export function blockedPlanReviewInProgress(state: SessionState): string | null 
   return null;
 }
 
+// eslint-disable-next-line complexity -- the plan continuation route is one sequential fail-closed chain (pending re-emit, interrupted-dispatch re-arm, output repair, missing-attempt close).
 export async function routePlanInitialSubmission(
   scope: PlanExecutionScope,
 ): Promise<string | null> {
@@ -62,6 +64,16 @@ export async function routePlanInitialSubmission(
       const changed = changedSubjectWhilePending(scope, continuation.obligation);
       if (changed) return changed;
       return planInstructionResponse(scope, continuation.obligation, continuation.attemptId);
+    }
+    case 'interrupted_dispatch': {
+      // A bindable attempt carries an unresolved durable dispatch. `/plan` is
+      // the authorized trigger to re-arm the review durably: the spent attempt
+      // is staled, its dispatch marked outcome_unknown, and a fresh append-only
+      // attempt minted on the SAME obligation. Never a silent awaiting_task
+      // re-emission of the spent attempt.
+      const changed = changedSubjectWhilePending(scope, continuation.obligation);
+      if (changed) return changed;
+      return routePlanInterruptedDispatch(scope, continuation.obligation, continuation.attemptId);
     }
     case 'output_repair':
       return routePlanOutputRepair(scope, continuation.obligation);
@@ -97,6 +109,37 @@ async function routePlanMissingAttempt(
     recovery:
       'The broken review obligation has been deterministically closed. Re-run /plan to submit a fresh plan revision and mint a new review obligation.',
   });
+}
+
+async function routePlanInterruptedDispatch(
+  scope: PlanExecutionScope,
+  obligation: NonNullable<PlanExecutionScope['state']['reviewAssurance']>['obligations'][number],
+  attemptId: string,
+): Promise<string> {
+  const spent = scope.state.reviewAssurance?.attempts.find((a) => a.attemptId === attemptId);
+  if (!spent) {
+    return formatBlocked('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE', {
+      obligationId: obligation.obligationId,
+      reason: 'interrupted reviewer attempt is absent from assurance',
+    });
+  }
+  const rearmed = buildInterruptedDispatchRearm(
+    scope.state.reviewAssurance,
+    spent,
+    scope.ctx.now(),
+  );
+  if (rearmed.kind === 'blocked') {
+    return formatBlocked('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE', {
+      obligationId: obligation.obligationId,
+      reason: rearmed.reason,
+    });
+  }
+  await writeStateWithArtifacts(scope.sessDir, {
+    ...scope.state,
+    reviewAssurance: rearmed.assurance,
+  });
+  const fresh = (await readState(scope.sessDir)) ?? scope.state;
+  return planInstructionResponse({ ...scope, state: fresh }, obligation, rearmed.attempt.attemptId);
 }
 
 async function routePlanOutputRepair(

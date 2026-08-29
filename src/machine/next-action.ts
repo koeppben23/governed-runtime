@@ -285,6 +285,12 @@ function reviewLifecycleAction(
         text: `Independent ${label.toLowerCase()} review is pending. Invoke the flowguard-reviewer Task, then submit only its verdict with ${command}.`,
         commands: [],
       };
+    case 'interrupted_dispatch':
+      return {
+        code: ACTION_CODES.RUN_PLAN,
+        text: `Independent ${label.toLowerCase()} review was interrupted mid-dispatch (unresolved durable dispatch). Re-run ${command} to re-arm the review attempt durably on the existing obligation.`,
+        commands: [command],
+      };
     case 'output_repair':
       return {
         code: ACTION_CODES.RUN_PLAN,

@@ -35,7 +35,7 @@ import {
 } from '../state/review-continuation.js';
 import type { DispatchResolution } from './review/enforcement/execution-provenance.js';
 import type { ExecutedTaskPrompt, SessionEnforcementState } from './review/enforcement/types.js';
-import type { ReviewDispatchRecord } from '../state/evidence-review.js';
+import type { ReviewAttempt, ReviewDispatchRecord } from '../state/evidence-review.js';
 import type { SessionState } from '../state/schema.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 
@@ -122,11 +122,54 @@ export async function rearmInterruptedReviewerDispatch(
   if (!spent) {
     return { kind: 'blocked', reason: 'interrupted reviewer attempt is absent from assurance' };
   }
-  const authorization = authorizeTaskLifecycleRearm(assurance, spent);
+  const rearmed = buildInterruptedDispatchRearm(assurance, spent, new Date().toISOString());
+  if (rearmed.kind === 'blocked') {
+    return { kind: 'blocked', reason: rearmed.reason };
+  }
+  await writeStateWithAuditOperations(sessDir, {
+    ...state,
+    reviewAssurance: rearmed.assurance,
+  });
+  for (const [key, record] of eState.executedTaskPrompts) {
+    if (record.obligationId === spent.obligationId && record.attemptId === spent.attemptId) {
+      eState.executedTaskPrompts.delete(key);
+    }
+  }
+  for (const [tool, pending] of eState.pendingReviews) {
+    if (pending.obligationId === spent.obligationId && pending.attemptId === spent.attemptId) {
+      eState.pendingReviews.set(tool, { ...pending, attemptId: rearmed.attempt.attemptId });
+    }
+  }
+  return { kind: 'ok', assurance: rearmed.assurance };
+}
+
+/**
+ * Pure, tool-route-friendly composition of the reviewer dispatch re-arm. Unlike
+ * `rearmInterruptedReviewerDispatch`, it takes an in-memory assurance + spent
+ * attempt (not a plugin runtime / transient enforcement state) and performs NO
+ * write — the caller persists the resulting assurance with its own write
+ * authority. This is the shared authority so the plugin Task gate and the
+ * `/plan`/`/architecture` re-invocation routes cannot drift.
+ *
+ * Fails closed: a settled obligation is refused with `rearm_obligation_settled`.
+ */
+export type InterruptedDispatchRearm =
+  | {
+      readonly kind: 'ok';
+      readonly assurance: SessionState['reviewAssurance'];
+      readonly attempt: ReviewAttempt;
+    }
+  | { readonly kind: 'blocked'; readonly reason: string };
+
+export function buildInterruptedDispatchRearm(
+  assurance: SessionState['reviewAssurance'] | undefined,
+  spent: ReviewAttempt,
+  now: string,
+): InterruptedDispatchRearm {
+  const authorization = authorizeTaskLifecycleRearm(assurance!, spent);
   if (authorization.kind === 'blocked') {
     return { kind: 'blocked', reason: authorization.reason };
   }
-  const now = new Date().toISOString();
   const minted = createAttemptForExistingObligation(
     assurance,
     authorization.obligation,
@@ -137,21 +180,11 @@ export async function rearmInterruptedReviewerDispatch(
       repositoryDiscovery: spent.repositoryDiscovery,
     },
   );
-  await writeStateWithAuditOperations(sessDir, {
-    ...state,
-    reviewAssurance: markDispatchOutcomeUnknown(minted.assurance, spent.attemptId),
-  });
-  for (const [key, record] of eState.executedTaskPrompts) {
-    if (record.obligationId === spent.obligationId && record.attemptId === spent.attemptId) {
-      eState.executedTaskPrompts.delete(key);
-    }
-  }
-  for (const [tool, pending] of eState.pendingReviews) {
-    if (pending.obligationId === spent.obligationId && pending.attemptId === spent.attemptId) {
-      eState.pendingReviews.set(tool, { ...pending, attemptId: minted.attempt.attemptId });
-    }
-  }
-  return { kind: 'ok', assurance: minted.assurance };
+  return {
+    kind: 'ok',
+    assurance: markDispatchOutcomeUnknown(minted.assurance, spent.attemptId),
+    attempt: minted.attempt,
+  };
 }
 
 /**

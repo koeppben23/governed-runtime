@@ -10,6 +10,14 @@
  *
  *   awaiting_task  — a bindable attempt exists; re-emit the review instruction
  *                    for it. No new attempt, no new obligation.
+ *   interrupted_dispatch — a bindable attempt exists whose durable dispatch
+ *                    ledger still reports an unresolved `authorized` outcome
+ *                    (a crash/restart between Before and After). The attempt
+ *                    must be re-armed durably by re-invoking the originating
+ *                    command (/plan, /architecture): the old dispatch becomes
+ *                    `outcome_unknown`, the spent attempt is staled, and a
+ *                    fresh append-only attempt is minted on the same
+ *                    obligation.
  *   output_repair  — the latest attempt is rejected with a canonically
  *                    repairable output-contract reason and the frozen repair
  *                    budget remains; the originating command re-invocation is
@@ -310,7 +318,7 @@ export function isCanonicallyRepairable(reason: ReviewAttemptRejectionReason): b
 // ledger helpers live in `state/review-dispatch.ts`; imported here for local
 // use and re-exported for the historical import surface.
 
-import { ensureReviewAssurance } from './review-dispatch.js';
+import { ensureReviewAssurance, hasUnresolvedDispatch } from './review-dispatch.js';
 
 export {
   appendReviewDispatch,
@@ -526,6 +534,20 @@ export type ReviewContinuation =
       readonly attemptId: string;
     }
   | {
+      /**
+       * A bindable created attempt exists but its durable dispatch ledger still
+       * carries an unresolved `authorized` record (a crash/restart between
+       * Before and After). It must NOT be re-emitted as a plain `awaiting_task`:
+       * re-invoking the originating command is the authorized trigger to re-arm
+       * durably (the spent attempt is staled, its dispatch marked
+       * `outcome_unknown`, and a fresh append-only attempt minted on the same
+       * obligation).
+       */
+      readonly kind: 'interrupted_dispatch';
+      readonly obligation: ReviewObligation;
+      readonly attemptId: string;
+    }
+  | {
       readonly kind: 'output_repair';
       readonly obligation: ReviewObligation;
       readonly authorization: Extract<OutputRepairAuthorization, { readonly kind: 'authorized' }>;
@@ -578,6 +600,15 @@ export function resolveReviewContinuation(
 
   const bindable = findBindableAttempt(assurance, obligation.obligationId);
   if (bindable) {
+    // A created attempt whose durable dispatch ledger still reports an
+    // unresolved `authorized` outcome can NEVER be re-emitted as a plain
+    // awaiting_task: a crash/restart between Before and After would otherwise
+    // be mistaken for "never dispatched" and the spent attempt re-bound. It is
+    // an interrupted dispatch that the originating command (/plan,
+    // /architecture) must re-arm durably.
+    if (hasUnresolvedDispatch(assurance, bindable.attemptId)) {
+      return { kind: 'interrupted_dispatch', obligation, attemptId: bindable.attemptId };
+    }
     return { kind: 'awaiting_task', obligation, attemptId: bindable.attemptId };
   }
   const authorization = authorizeOutputRepairReissue(assurance, obligation);

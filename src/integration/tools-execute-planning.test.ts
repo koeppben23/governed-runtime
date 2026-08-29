@@ -45,6 +45,7 @@ import {
   archive,
 } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
+import { appendReviewDispatch } from '../state/review-dispatch.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import * as persistence from '../adapters/persistence.js';
 import {
@@ -543,6 +544,68 @@ describe('plan', () => {
       const changed = parseToolResult(changedRaw);
       expect(changed.error).toBe(true);
       expect(changed.code).toBe('REVIEW_SUBJECT_CHANGED_WHILE_PENDING');
+    });
+
+    it('re-arms a restarted reviewer dispatch on /plan re-invocation across a fresh process', async () => {
+      await hydrateAndTicket();
+      const firstRaw = await plan.execute(
+        { planText: '## Plan', targetPaths: ['docs/test.md'] },
+        ctx,
+      );
+      const first = parseToolResult(firstRaw);
+      expect(first.phase).toBe('PLAN');
+      const obligationId = first.reviewObligationId as string;
+      const spentAttemptId = first.reviewAttemptId as string;
+
+      // Simulate a crash/restart between the reviewer Task's Before and After:
+      // a durable `authorized` dispatch is recorded for the bindable A1, while
+      // the transient enforcement state (pendingReviews/executedTaskPrompts) is
+      // empty — this test's workspace is freshly created, so it already is.
+      // The spent attempt is still bindable (created, no child session) yet its
+      // durable dispatch outcome is unresolved.
+      const sessDir = await currentSessionDir();
+      const preCrash = (await readState(sessDir))!;
+      await writeState(sessDir, {
+        ...preCrash,
+        reviewAssurance: appendReviewDispatch(preCrash.reviewAssurance, {
+          dispatchId: crypto.randomUUID(),
+          attemptId: spentAttemptId,
+          obligationId,
+          hostCallId: 'call-old',
+          canonicalPromptDigest: 'a'.repeat(64),
+          dispatchAuthorizedAt: new Date().toISOString(),
+          dispatchStatus: 'authorized',
+        }),
+      });
+
+      // Re-invoke /plan in the fresh process: the durable resolver MUST detect
+      // the unresolved dispatch (interrupted_dispatch), NOT re-emit awaiting_task
+      // for the spent attempt.
+      const raw = await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).not.toBe(true);
+      expect(result.phase).toBe('PLAN');
+      expect(result.reviewObligationId).toBe(obligationId);
+      const rearmedAttemptId = result.reviewAttemptId as string;
+      expect(rearmedAttemptId).not.toBe(spentAttemptId);
+
+      // Durable outcome: A1 staled + dispatch outcome_unknown; A2 minted with
+      // origin task_rearm/interrupted on the SAME obligation (never a fresh
+      // obligation, never a re-bind of the spent attempt).
+      const after = (await readState(sessDir))!;
+      const attempts = after.reviewAssurance!.attempts;
+      const spent = attempts.find((a) => a.attemptId === spentAttemptId)!;
+      const rearmed = attempts.find((a) => a.attemptId === rearmedAttemptId)!;
+      expect(spent.status).toBe('stale');
+      expect(rearmed.origin.kind).toBe('task_rearm');
+      expect(rearmed.origin).toMatchObject({
+        predecessorAttemptId: spentAttemptId,
+        triggerReason: 'interrupted',
+      });
+      const dispatch = after.reviewAssurance!.dispatches.find(
+        (d) => d.attemptId === spentAttemptId,
+      );
+      expect(dispatch?.dispatchStatus).toBe('outcome_unknown');
     });
 
     it('blocks verdict before any plan exists with PLAN_SUBMISSION_REQUIRED', async () => {
