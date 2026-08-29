@@ -1335,7 +1335,7 @@ describe('plan', () => {
       const obligation = producerObligation(deps, 'plan-digest-reviewed');
       const findings = findingsFor(deps, obligation);
       const assuranceState = {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [obligation],
         invocations: [invocationFor(deps, obligation, findings, obligation.obligationId)],
         attempts: [],
@@ -1352,10 +1352,11 @@ describe('plan', () => {
       const obligation = producerObligation(deps, 'plan-digest-unbound');
       const findings = findingsFor(deps, obligation);
       const assuranceState = {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [obligation],
         invocations: [],
         attempts: [],
+        dispatches: [],
       };
       const summary = deps.latestPlanReviewSummary(assuranceState, findings, 1);
       expect(summary.reviewedDigest).toBeUndefined();

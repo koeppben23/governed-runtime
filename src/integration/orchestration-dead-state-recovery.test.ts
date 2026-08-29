@@ -194,10 +194,11 @@ async function setupPlanDeadState(blockedCount = 1): Promise<void> {
   const updatedState: SessionState = {
     ...state,
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: blockedObligations,
       invocations: state.reviewAssurance?.invocations ?? [],
       attempts: [],
+      dispatches: [],
     },
   };
 
@@ -247,10 +248,11 @@ async function setupImplementDeadState(blockedCount = 1): Promise<void> {
       executedAt: new Date().toISOString(),
     },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: blockedObligations,
       invocations: [],
       attempts: [],
+      dispatches: [],
     },
   };
 
@@ -291,10 +293,11 @@ async function setupArchitectureDeadState(blockedCount = 1): Promise<void> {
       verdict: 'changes_requested',
     },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: blockedObligations,
       invocations: [],
       attempts: [],
+      dispatches: [],
     },
   };
 
@@ -514,10 +517,11 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
       const updatedState: SessionState = {
         ...state,
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           obligations: [makePendingObligation('architecture', 0, 1)],
           invocations: [],
           attempts: [],
+          dispatches: [],
         },
       };
       await writeState(sessDir, updatedState);
@@ -652,10 +656,11 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         architecture: { ...state.architecture!, adrText: ADR_TEXT, digest: hashText(ADR_TEXT) },
         selfReview: { ...state.selfReview!, currDigest: hashText(ADR_TEXT) },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           obligations: [pending],
           invocations: [],
           attempts: [rejectedAttempt],
+          dispatches: [],
         },
       });
 
@@ -728,10 +733,11 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         architecture: { ...state.architecture!, adrText: ADR_TEXT, digest: hashText(ADR_TEXT) },
         selfReview: { ...state.selfReview!, currDigest: hashText(ADR_TEXT) },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           obligations: [tampered],
           invocations: [],
           attempts: [rejectedAttempt],
+          dispatches: [],
         },
       });
 
@@ -789,10 +795,11 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         architecture: { ...state.architecture!, adrText: ADR_TEXT, digest: hashText(ADR_TEXT) },
         selfReview: { ...state.selfReview!, currDigest: hashText(ADR_TEXT) },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           obligations: [tampered],
           invocations: [],
           attempts: [rejectedAttempt],
+          dispatches: [],
         },
       });
 

@@ -240,6 +240,7 @@ async function inject(
       ),
       invocations: [...state!.reviewAssurance!.invocations, inv],
       attempts: [],
+      dispatches: state!.reviewAssurance!.dispatches,
     },
     reviewDecision: {
       verdict: 'approve',

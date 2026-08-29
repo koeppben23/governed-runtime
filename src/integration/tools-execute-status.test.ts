@@ -789,10 +789,11 @@ describe('status', () => {
           verdict: 'changes_requested' as const,
         },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           obligations: [{ ...obligation, status: 'consumed' as const }],
           invocations: [invocation],
           attempts: [],
+          dispatches: [],
         },
       };
       await writeState(sessDir, state);

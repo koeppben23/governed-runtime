@@ -20,7 +20,11 @@
  * @version v1
  */
 
-import type { ReviewAssuranceState, ReviewDispatchRecord } from './evidence-review.js';
+import {
+  REVIEW_ASSURANCE_SCHEMA_VERSION,
+  type ReviewAssuranceState,
+  type ReviewDispatchRecord,
+} from './evidence-review.js';
 
 /** Whether the attempt carries a durable dispatch whose outcome is still unknown. */
 export function hasUnresolvedDispatch(
@@ -35,7 +39,7 @@ export function hasUnresolvedDispatch(
 /** The canonical empty assurance state. All requirement-bearing fields are present. */
 export function emptyReviewAssurance(): ReviewAssuranceState {
   return {
-    assuranceSchemaVersion: 'review-assurance.v5',
+    assuranceSchemaVersion: REVIEW_ASSURANCE_SCHEMA_VERSION,
     obligations: [],
     invocations: [],
     attempts: [],

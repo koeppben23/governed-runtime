@@ -111,10 +111,11 @@ describe('buildRailConclusion', () => {
       });
       const state = makeState('READY', {
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           obligations: [obligation],
           invocations: [],
           attempts: [],
+          dispatches: [],
         },
       });
       const evalResult: EvalResult = { kind: 'pending', phase: 'READY' };

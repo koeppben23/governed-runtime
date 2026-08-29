@@ -301,7 +301,7 @@ function implStateWithEvidence(
       verdict: 'changes_requested',
     },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       attempts: [
         {
           attemptId: OBLIGATION_ID.replace(/^(\w{8})/, 'd0000001'),
@@ -488,10 +488,11 @@ describe('BUG-17: implement evidence-first resolution', () => {
         verdict: 'changes_requested',
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [],
         invocations: [],
         attempts: [],
+        dispatches: [],
       },
     });
     mocks.state = stateNoEvidence;
@@ -638,7 +639,7 @@ describe('BUG-17: implement evidence-first resolution', () => {
         verdict: 'changes_requested',
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [
           {
             obligationId: OBLIGATION_ID,
@@ -665,6 +666,7 @@ describe('BUG-17: implement evidence-first resolution', () => {
         ],
         invocations: [manualAttestedInvocation({ obligationType: 'implement', findings })],
         attempts: [],
+        dispatches: [],
       },
     });
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);

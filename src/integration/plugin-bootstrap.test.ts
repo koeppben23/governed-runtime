@@ -103,7 +103,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
         },
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [
           {
             obligationId,
@@ -139,6 +139,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
         ],
         invocations: [],
         attempts: [],
+        dispatches: [],
       },
     }),
   );

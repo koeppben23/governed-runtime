@@ -14,11 +14,12 @@ import {
   type SessionState,
   type Phase,
 } from './state/schema.js';
-import type {
-  ReviewAssuranceState,
-  ReviewAttempt,
-  ReviewInvocationEvidence,
-  ReviewObligation,
+import {
+  REVIEW_ASSURANCE_SCHEMA_VERSION,
+  type ReviewAssuranceState,
+  type ReviewAttempt,
+  type ReviewInvocationEvidence,
+  type ReviewObligation,
 } from './state/evidence-review.js';
 import type {
   TicketEvidence,
@@ -151,7 +152,7 @@ export const ARCHITECTURE_DECISION: ArchitectureDecision = {
 /**
  * Canonical review-assurance envelope builder: one obligation (or an explicit
  * obligation list) plus optional invocations and attempts. The single
- * implementation of the `review-assurance.v5` envelope used across test
+ * implementation of the `review-assurance.v6` envelope used across test
  * suites; domain-specific obligation/invocation builders stay local to their
  * suites and feed this builder.
  */
@@ -163,7 +164,7 @@ export function assuranceWith(input: {
 }): ReviewAssuranceState {
   const obligations = input.obligations ?? (input.obligation ? [input.obligation] : []);
   return {
-    assuranceSchemaVersion: 'review-assurance.v5',
+    assuranceSchemaVersion: REVIEW_ASSURANCE_SCHEMA_VERSION,
     obligations: [...obligations],
     invocations: input.invocations ? [...input.invocations] : [],
     attempts: input.attempts ? [...input.attempts] : [],
@@ -177,7 +178,7 @@ export function assuranceWith(input: {
  * digest plus its invocation with a findings hash.
  */
 export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
-  assuranceSchemaVersion: 'review-assurance.v5',
+  assuranceSchemaVersion: REVIEW_ASSURANCE_SCHEMA_VERSION,
   obligations: [
     {
       obligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -235,6 +236,7 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
     },
   ],
   attempts: [],
+  dispatches: [],
 };
 
 /**

@@ -604,7 +604,7 @@ Provide structured findings per the canonical reviewer contract.`.repeat(2);
       const { obligation, initialAttempt } = planReviewFixture();
       const state = makeState('PLAN', {
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           obligations: [obligation],
           invocations: [],
           attempts: [initialAttempt],
@@ -703,10 +703,11 @@ Provide structured findings per the canonical reviewer contract.`.repeat(2);
       const { obligation, initialAttempt } = planReviewFixture();
       const state = makeState('PLAN', {
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           obligations: [obligation],
           invocations: [],
           attempts: [initialAttempt],
+          dispatches: [],
         },
       });
       await seedSession(sessDir, state);
@@ -834,7 +835,7 @@ describe('toolBefore — observation capability parent binding', () => {
     const now = new Date().toISOString();
     const state = makeState('PLAN', {
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [
           {
             obligationId: OBLIGATION_ID,
@@ -888,6 +889,7 @@ describe('toolBefore — observation capability parent binding', () => {
             createdAt: now,
           },
         ],
+        dispatches: [],
       },
     });
     await writeState(sessDir, state);

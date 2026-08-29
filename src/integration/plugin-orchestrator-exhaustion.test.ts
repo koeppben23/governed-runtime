@@ -69,7 +69,7 @@ function buildState(strictEnforcement: boolean): SessionState {
       reviewOutputPolicy: 'structured_required',
     },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [
         {
           obligationId: OBLIGATION_ID,
@@ -96,6 +96,7 @@ function buildState(strictEnforcement: boolean): SessionState {
       ],
       invocations: [],
       attempts: [],
+      dispatches: [],
     },
   });
 }
@@ -114,7 +115,7 @@ function buildAlreadyBlockedState(): SessionState {
       reviewOutputPolicy: 'structured_required',
     },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [
         {
           obligationId: OBLIGATION_ID,
@@ -141,6 +142,7 @@ function buildAlreadyBlockedState(): SessionState {
       ],
       invocations: [],
       attempts: [],
+      dispatches: [],
     },
   });
 }
@@ -443,7 +445,7 @@ describe('BUG-07: obligation blocked after total invocation failure', () => {
           reviewInvocationPolicy: 'host_task_required',
         },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           obligations: [
             {
               obligationId: OBLIGATION_ID,
@@ -470,6 +472,7 @@ describe('BUG-07: obligation blocked after total invocation failure', () => {
           ],
           invocations: [],
           attempts: [],
+          dispatches: [],
         },
       });
       const stateRef = { current: state };

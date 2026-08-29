@@ -86,7 +86,7 @@ function buildState(): SessionState {
   return {
     binding: { fingerprint: 'testfp' },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5',
+      assuranceSchemaVersion: 'review-assurance.v6',
       obligations: [obligation],
       invocations: [],
       attempts: [attempt],
@@ -246,6 +246,7 @@ describe('replayObservationCaptures', () => {
         reviewAssurance: {
           ...state.reviewAssurance!,
           attempts: [legacy],
+          dispatches: [],
         },
       },
       worktree: repo,

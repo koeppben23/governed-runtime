@@ -510,6 +510,14 @@ export const ReviewDispatchRecord = z
 export type ReviewDispatchRecord = z.infer<typeof ReviewDispatchRecord>;
 
 /**
+ * Canonical hard-cutover literal for the review-assurance authority generation.
+ * Every accepted current-generation `ReviewAssuranceState` MUST carry an
+ * explicit durable dispatch ledger (`dispatches`); absence of that ledger is an
+ * incompatible state shape, never equivalent to an empty ledger.
+ */
+export const REVIEW_ASSURANCE_SCHEMA_VERSION = 'review-assurance.v6' as const;
+
+/**
  * Persistent strict review assurance state.
  *
  * `attempts` is REQUIRED, not optional. Binding resolves a callback against a
@@ -517,18 +525,21 @@ export type ReviewDispatchRecord = z.infer<typeof ReviewDispatchRecord>;
  * array would make every obligation permanently unbindable while looking valid.
  *
  * `dispatches` is the append-only reviewer-dispatch ledger (see
- * `state/review-dispatch.ts`). Optional for states persisted before the ledger
- * existed; every controlled writer appends through the dispatch helpers.
+ * `state/review-dispatch.ts`). It is REQUIRED and authority-bearing: its
+ * absence must never be interpreted as "no dispatch occurred", so the field may
+ * not be optional and may not default. Every controlled writer explicitly
+ * persists it (an empty ledger is `dispatches: []`).
  *
  * `assuranceSchemaVersion` is a REQUIRED hard version literal: v2 introduced
  * authority-bearing attempt origins and frozen output-repair budgets; v3 bound
  * host-owned repository Discovery snapshots to attempts; v4 introduced frozen
  * repository authority, observation capabilities, and attempt-owned
- * observations; v5 makes observations representation-typed. States persisted
- * under older forms MUST fail parsing — there is deliberately no defaulting
- * path for authority-bearing fields. The sanctioned transitions are the
- * shape-only read migrations in the persistence adapter (v3→v4, v4→v5), which
- * add NO authority that was not present.
+ * observations; v5 makes observations representation-typed; v6 makes the
+ * reviewer-dispatch ledger a required authority. States persisted under older
+ * forms MUST fail parsing — there is deliberately no defaulting path for
+ * authority-bearing fields, and no read migration across authority-bearing
+ * generations. A `review-assurance.v5` state is NOT current, even if it
+ * fabricates a `dispatches` field: the generation literal decides.
  *
  * Cross-record invariants: an attempt's `repositoryDiscovery` variant must
  * structurally match its owning obligation's frozen repository authority, and
@@ -537,11 +548,11 @@ export type ReviewDispatchRecord = z.infer<typeof ReviewDispatchRecord>;
  */
 export const ReviewAssuranceState = z
   .object({
-    assuranceSchemaVersion: z.literal('review-assurance.v5'),
+    assuranceSchemaVersion: z.literal(REVIEW_ASSURANCE_SCHEMA_VERSION),
     obligations: z.array(ReviewObligation),
     invocations: z.array(ReviewInvocationEvidence),
     attempts: z.array(ReviewAttempt),
-    dispatches: z.array(ReviewDispatchRecord).optional(),
+    dispatches: z.array(ReviewDispatchRecord),
   })
   .superRefine(refineAssuranceIdentityUniqueness)
   .superRefine(refineAssuranceDiscoveryCoherence)

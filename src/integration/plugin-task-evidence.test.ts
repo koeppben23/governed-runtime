@@ -65,7 +65,7 @@ function makeStateInfo(policyMode: string = 'host_task_required'): SessionState 
         policyMode as SessionState['policySnapshot']['reviewInvocationPolicy'],
     },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [],
       invocations: [],
       attempts: [],
@@ -122,6 +122,7 @@ beforeEach(() => {
     obligations: [],
     invocations: [{}],
     attempts: [],
+    dispatches: [],
   });
   mockStrictBlockedOutput.mockImplementation(
     (code, detail) => `BLOCKED: ${code} (${JSON.stringify(detail)})`,

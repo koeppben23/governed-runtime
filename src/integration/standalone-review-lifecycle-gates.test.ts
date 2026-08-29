@@ -91,10 +91,11 @@ describe('standalone-review lifecycle gates', () => {
       makeState('REVIEW_COMPLETE', {
         standaloneReviewEvidence: [...evidenceA, ...evidenceB],
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5',
+          assuranceSchemaVersion: 'review-assurance.v6',
           obligations: [obligation(OBLIGATION_A), obligation(OBLIGATION_B)],
           invocations: [],
           attempts: [],
+          dispatches: [],
         },
       }),
       [],

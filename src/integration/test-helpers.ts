@@ -360,10 +360,11 @@ export async function fulfillStrictReviewObligation(
   const state = await readState(sessDir);
   if (!state) throw new Error('No test session state found');
   const assurance = state.reviewAssurance ?? {
-    assuranceSchemaVersion: 'review-assurance.v5' as const,
+    assuranceSchemaVersion: 'review-assurance.v6' as const,
     obligations: [],
     invocations: [],
     attempts: [],
+    dispatches: [],
   };
   const obligation = findLatestObligation(
     assurance.obligations,

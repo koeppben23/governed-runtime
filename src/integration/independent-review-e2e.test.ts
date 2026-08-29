@@ -209,7 +209,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [
           {
             obligationId: OBLIGATION_ID,
@@ -258,6 +258,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
             createdAt: now,
           },
         ],
+        dispatches: [],
       },
     }),
   );

@@ -225,10 +225,11 @@ async function resolveCapturedFixture(
   });
   const result = resolveHostTaskFindings(
     {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [obligation],
       invocations: [invocation],
       attempts: [attempt],
+      dispatches: [],
     },
     obligation,
   );
@@ -301,7 +302,7 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
   expect(
     resolveHostTaskFindings(
       {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [firstObligation],
         invocations: [firstInvocation],
         attempts: [firstAttempt],
@@ -321,10 +322,11 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
       },
       implReviewFindings: [firstFindings],
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [firstObligation],
         invocations: [firstInvocation],
         attempts: [firstAttempt],
+        dispatches: [],
       },
       validationAttempts: [
         {
@@ -399,10 +401,11 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
   );
   const reReview = resolveHostTaskFindings(
     {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [secondObligation],
       invocations: [secondInvocation],
       attempts: [secondAttempt],
+      dispatches: [],
     },
     secondObligation,
     state ? computeTargetedResolutionChallengeIds(state) : undefined,

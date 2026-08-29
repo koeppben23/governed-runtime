@@ -577,7 +577,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       { reviewVerdict: 'accept' },
       {
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           obligations: [],
           invocations: [],
           attempts: [],
@@ -598,7 +598,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       { reviewVerdict: 'accept' },
       {
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           obligations: [],
           invocations: [],
           attempts: [],
@@ -643,10 +643,11 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       { reviewVerdict: 'accept' },
       {
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           obligations: [],
           invocations: [],
           attempts: [],
+          dispatches: [],
         },
       },
       true,
@@ -696,7 +697,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
     const state = createSessionState();
     const sessionState = {
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [
           {
             obligationId: '00000000-0000-4000-8000-bug21pending01',
@@ -743,7 +744,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
     const state = createSessionState();
     const sessionState = {
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [
           {
             obligationId: '00000000-0000-4000-8000-bug21impl0001',
@@ -841,10 +842,11 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       { planText: '## Revised Plan', reviewVerdict: 'accept' },
       {
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           obligations: [],
           invocations: [],
           attempts: [],
+          dispatches: [],
         },
       },
       true,
@@ -860,7 +862,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       { planText: '## Revised Plan', reviewFindings: {} },
       {
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           obligations: [],
           invocations: [],
           attempts: [],
@@ -879,7 +881,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       { planText: '## Revised Plan', reviewerUnavailable: true },
       {
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           obligations: [],
           invocations: [],
           attempts: [],
@@ -909,10 +911,11 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       { reviewVerdict: 'accept', reviewFindings: null },
       {
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           obligations: [],
           invocations: [],
           attempts: [],
+          dispatches: [],
         },
       },
     );

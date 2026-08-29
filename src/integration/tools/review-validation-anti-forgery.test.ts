@@ -100,7 +100,7 @@ function strictFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings
 }
 
 type ReviewAssuranceFixture = {
-  assuranceSchemaVersion: 'review-assurance.v5';
+  assuranceSchemaVersion: 'review-assurance.v6';
   attempts: [];
   obligations: ReviewObligation[];
   invocations: ReviewInvocationEvidence[];
@@ -110,8 +110,9 @@ function strictAssuranceFixture(
   findings: ReviewFindings = strictFindings(),
 ): ReviewAssuranceFixture {
   return {
-    assuranceSchemaVersion: 'review-assurance.v5' as const,
+    assuranceSchemaVersion: 'review-assurance.v6' as const,
     attempts: [],
+    dispatches: [],
     obligations: [
       {
         obligationId: '11111111-1111-4111-8111-111111111111',

@@ -3,7 +3,10 @@
  * Import target only — never executed as a test suite.
  */
 
-import type { ReviewAssuranceState } from '../state/evidence-review.js';
+import {
+  REVIEW_ASSURANCE_SCHEMA_VERSION,
+  type ReviewAssuranceState,
+} from '../state/evidence-review.js';
 
 export const ARCH_OBLIGATION_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 export const ARCH_INVOCATION_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -92,5 +95,11 @@ export function assuranceChain(entries: AssuranceEntry[]): ReviewAssuranceState 
         reviewAssuranceLevel: 'structured_high',
       };
     });
-  return { assuranceSchemaVersion: 'review-assurance.v5', obligations, invocations, attempts: [] };
+  return {
+    assuranceSchemaVersion: REVIEW_ASSURANCE_SCHEMA_VERSION,
+    obligations,
+    invocations,
+    attempts: [],
+    dispatches: [],
+  };
 }

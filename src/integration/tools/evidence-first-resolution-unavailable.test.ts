@@ -246,8 +246,9 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         attempts: [],
+        dispatches: [],
         obligations: [
           {
             obligationId: OBLIGATION_ID,
@@ -318,7 +319,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [
           {
             obligationId: OBLIGATION_ID,
@@ -341,6 +342,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
         ],
         invocations: [],
         attempts: [],
+        dispatches: [],
       },
     });
   }

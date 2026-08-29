@@ -80,7 +80,7 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
       reviewOutputPolicy: 'structured_required',
     },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [
         {
           obligationId: OBLIGATION_ID,

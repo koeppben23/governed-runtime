@@ -88,7 +88,7 @@ describe('resolveHostTaskFindings', () => {
 
   it('HAPPY: resolves findings from host-task invocation with capturedRawFindings', () => {
     const assurance = {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [makeObligation()],
       invocations: [makeHostTaskInvocation()],
       attempts: [makeBoundAttempt()],
@@ -107,7 +107,7 @@ describe('resolveHostTaskFindings', () => {
   it('HAPPY: resolves changes_requested verdict from evidence', () => {
     const rawFindings = { ...validRawFindings, overallVerdict: 'changes_requested' };
     const assurance = {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       attempts: [
         makeBoundAttempt(),
         makeBoundAttempt({
@@ -158,7 +158,7 @@ describe('resolveHostTaskFindings', () => {
       requiredChallengeKind: 'implementation_challenge',
     });
     const assurance = {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       attempts: [makeBoundAttempt({ obligationType: 'implement' })],
       obligations: [obligation],
       invocations: [
@@ -188,7 +188,7 @@ describe('resolveHostTaskFindings', () => {
       blockingIssues: [finding()],
     };
     const assurance = {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       attempts: [
         makeBoundAttempt(),
         makeBoundAttempt({
@@ -223,7 +223,7 @@ describe('resolveHostTaskFindings', () => {
       ],
     };
     const assurance = {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       attempts: [
         makeBoundAttempt(),
         makeBoundAttempt({
@@ -254,7 +254,7 @@ describe('resolveHostTaskFindings', () => {
       blockingIssues: [finding({ severity: 'critical', category: 'correctness', message: 'bug' })],
     };
     const assurance = {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       attempts: [makeBoundAttempt()],
       obligations: [makeObligation()],
       invocations: [
@@ -283,7 +283,7 @@ describe('resolveHostTaskFindings', () => {
     const laterInvocationId = '33333333-3333-4333-8333-333333333333';
     const retryAttemptId = '77777777-7777-4777-8777-777777777777';
     const assurance = {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       attempts: [
         makeBoundAttempt(),
         makeBoundAttempt({
@@ -325,7 +325,7 @@ describe('resolveHostTaskFindings', () => {
 
   it('BAD: returns null when obligation is null', () => {
     const assurance = {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [makeObligation()],
       invocations: [makeHostTaskInvocation()],
       attempts: [
@@ -342,7 +342,7 @@ describe('resolveHostTaskFindings', () => {
 
   it('BAD: returns null when no invocation exists for obligation', () => {
     const assurance = {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       attempts: [makeBoundAttempt()],
       obligations: [makeObligation()],
       invocations: [], // no invocations
@@ -352,7 +352,7 @@ describe('resolveHostTaskFindings', () => {
 
   it('BAD: returns null when invocation has no capturedRawFindings', () => {
     const assurance = {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       attempts: [makeBoundAttempt()],
       obligations: [makeObligation()],
       invocations: [
@@ -367,7 +367,7 @@ describe('resolveHostTaskFindings', () => {
   it('BAD: returns unparseable when capturedRawFindings fails Zod parse (missing required fields)', () => {
     const invalidRaw = { overallVerdict: 'accept' }; // missing required fields
     const assurance = {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       attempts: [makeBoundAttempt()],
       obligations: [makeObligation()],
       invocations: [
@@ -399,7 +399,7 @@ describe('resolveHostTaskFindings', () => {
     };
     const laterInvocationId = '44444444-4444-4444-8444-444444444444';
     const assurance = {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       attempts: [
         makeBoundAttempt(),
         makeBoundAttempt({
@@ -441,10 +441,11 @@ describe('resolveHostTaskFindings', () => {
     try {
       const invalidRaw = { overallVerdict: 'accept' }; // present but malformed
       const assurance = {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [makeObligation()],
         invocations: [makeHostTaskInvocation({ capturedRawFindings: invalidRaw })],
         attempts: [makeBoundAttempt()],
+        dispatches: [],
       };
 
       const result = resolveHostTaskFindings(assurance, makeObligation());
@@ -470,7 +471,7 @@ describe('resolveHostTaskFindings', () => {
     setAdapterLogger(spy);
     try {
       const assurance = {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [makeObligation()],
         invocations: [],
         attempts: [makeBoundAttempt()],
@@ -484,7 +485,7 @@ describe('resolveHostTaskFindings', () => {
 
   it('BAD: rejects host-task findings when obligation is blocked', () => {
     const assurance = {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [
         makeObligation({
           status: 'blocked',
@@ -508,7 +509,7 @@ describe('resolveHostTaskFindings', () => {
 
   it('BAD: rejects host-task findings when obligation status is consumed', () => {
     const assurance = {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [makeObligation({ status: 'consumed' })],
       invocations: [makeHostTaskInvocation()],
       attempts: [makeBoundAttempt()],
@@ -525,7 +526,7 @@ describe('resolveHostTaskFindings', () => {
   it('BAD: rejects host-task findings when obligation has consumedAt', () => {
     const consumedAt = new Date(Date.now() + 1).toISOString();
     const assurance = {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [makeObligation({ consumedAt })],
       invocations: [makeHostTaskInvocation()],
       attempts: [makeBoundAttempt()],
@@ -543,7 +544,7 @@ describe('resolveHostTaskFindings', () => {
 
   it('EDGE: skips already-consumed invocations', () => {
     const assurance = {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       attempts: [makeBoundAttempt()],
       obligations: [makeObligation()],
       invocations: [
@@ -562,7 +563,7 @@ describe('resolveHostTaskFindings', () => {
 
   it('EDGE: skips SDK invocations (only host_subagent_task)', () => {
     const assurance = {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       attempts: [makeBoundAttempt()],
       obligations: [makeObligation()],
       invocations: [
@@ -577,7 +578,7 @@ describe('resolveHostTaskFindings', () => {
 
   it('EDGE: skips non-host-visible invocations', () => {
     const assurance = {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       attempts: [makeBoundAttempt()],
       obligations: [makeObligation()],
       invocations: [
@@ -591,7 +592,7 @@ describe('resolveHostTaskFindings', () => {
 
   it('EDGE: skips invocations with mismatched obligationId', () => {
     const assurance = {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       attempts: [makeBoundAttempt()],
       obligations: [makeObligation()],
       invocations: [
@@ -605,7 +606,7 @@ describe('resolveHostTaskFindings', () => {
 
   it('EDGE: rejects the first matching consumed invocation when multiple exist', () => {
     const assurance = {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       attempts: [makeBoundAttempt()],
       obligations: [makeObligation()],
       invocations: [
@@ -633,7 +634,7 @@ describe('resolveHostTaskFindings', () => {
       _internal: { foo: 'bar' },
     };
     const assurance = {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       attempts: [makeBoundAttempt()],
       obligations: [makeObligation()],
       invocations: [
@@ -652,7 +653,7 @@ describe('resolveHostTaskFindings', () => {
   it('CORNER: findings with unable_to_review verdict still resolve (defense-in-depth at tool layer)', () => {
     const rawFindings = { ...validRawFindings, overallVerdict: 'unable_to_review' };
     const assurance = {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       attempts: [makeBoundAttempt()],
       obligations: [makeObligation()],
       invocations: [
@@ -684,7 +685,7 @@ describe('resolveHostTaskFindings', () => {
       blockingIssues: [finding({ message: 'stale' })],
     };
     const assurance = {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [makeObligation()],
       invocations: [
         makeHostTaskInvocation({
@@ -743,7 +744,7 @@ describe('resolveHostTaskFindings', () => {
       ],
     };
     const assurance = {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [makeObligation({ requiredChallengeCount: 1 })],
       invocations: [
         makeHostTaskInvocation({
@@ -796,7 +797,7 @@ describe('resolveHostTaskFindings', () => {
     });
     const result = resolveHostTaskFindings(
       {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [makeObligation()],
         invocations: [invocation],
         attempts: [
@@ -853,7 +854,7 @@ describe('resolveHostTaskFindings', () => {
     });
     const result = resolveHostTaskFindings(
       {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [makeObligation()],
         invocations: [invocation],
         attempts: [
@@ -904,7 +905,7 @@ describe('resolveHostTaskFindings', () => {
     });
     const result = resolveHostTaskFindings(
       {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [makeObligation()],
         invocations: [invocation],
         attempts: [makeBoundAttempt()],
@@ -921,7 +922,7 @@ describe('resolveHostTaskFindings', () => {
     const invocation = makeHostTaskInvocation({ obligationType: 'implement' });
     const result = resolveHostTaskFindings(
       {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [makeObligation()],
         invocations: [invocation],
         attempts: [makeBoundAttempt()],
@@ -957,7 +958,7 @@ describe('resolveHostTaskFindings', () => {
 
     const result = resolveHostTaskFindings(
       {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [makeObligation()],
         attempts: [
           makeBoundAttempt({
@@ -982,6 +983,7 @@ describe('resolveHostTaskFindings', () => {
             findingsHash: hashFindings(coherentRetry),
           }),
         ],
+        dispatches: [],
       },
       makeObligation(),
     );
@@ -1074,10 +1076,11 @@ describe('resolveHostTaskEffectiveFindings — directly-submitted challenge fres
       input: { reviewFindings: submittedFindings(evidenceRefs), verdict: 'accept' },
       state: {
         assurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           obligations: [challengeObligation()],
           invocations: [],
           attempts: [],
+          dispatches: [],
         },
         sessionId: 'ses_parent',
         reviewHostPlatform: 'opencode' as const,

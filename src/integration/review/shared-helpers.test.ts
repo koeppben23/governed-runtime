@@ -342,7 +342,7 @@ function implementPromptState(overrides: {
         }
       : null,
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5',
+      assuranceSchemaVersion: 'review-assurance.v6',
       obligations: [obligation],
       invocations: [],
       attempts: [],
@@ -421,10 +421,11 @@ it('fails closed when the orchestration context does not resolve an exact implem
   params.sessionState = {
     ...params.sessionState,
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5',
+      assuranceSchemaVersion: 'review-assurance.v6',
       obligations: [],
       invocations: [],
       attempts: [],
+      dispatches: [],
     },
   };
   expect(() => buildToolPrompt(params)).toThrowError(
@@ -464,10 +465,11 @@ it('fails closed when the resolved obligation is not an implement obligation', (
   params.sessionState = {
     ...params.sessionState,
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5',
+      assuranceSchemaVersion: 'review-assurance.v6',
       obligations: [wrongType],
       invocations: [],
       attempts: [],
+      dispatches: [],
     },
   };
   expect(() => buildToolPrompt(params)).toThrowError(

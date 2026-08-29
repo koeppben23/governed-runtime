@@ -145,7 +145,7 @@ function buildState(
       reviewOutputPolicy,
     },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [
         {
           obligationId: OBLIGATION_ID,
@@ -598,10 +598,11 @@ it('blocks WITHOUT invoking the reviewer when no exact implement obligation reso
   const stateWithoutObligation = {
     ...base,
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [],
       invocations: [],
       attempts: [],
+      dispatches: [],
     },
   };
   const stateRef = { current: stateWithoutObligation };

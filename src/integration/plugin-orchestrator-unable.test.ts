@@ -186,7 +186,7 @@ function buildSessionState() {
       inputOrigin: 'manual_text' as const,
     },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [
         {
           obligationId: OBLIGATION_ID,
@@ -218,6 +218,7 @@ function buildSessionState() {
       ],
       invocations: [],
       attempts: [],
+      dispatches: [],
     },
   });
 }

@@ -645,10 +645,11 @@ describe('evidence-review', () => {
 
     it('ReviewAssuranceState parses valid assurance state', () => {
       const state = {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [],
         invocations: [],
         attempts: [],
+        dispatches: [],
       };
       expect(ReviewAssuranceState.parse(state)).toEqual(state);
     });
@@ -678,10 +679,11 @@ describe('evidence-review', () => {
         consumedByObligationId: null,
       };
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [obligation],
         invocations: [invocation],
         attempts: [],
+        dispatches: [],
       });
       expect(result.success).toBe(false);
       if (result.success) throw new TypeError('expected schema rejection');
@@ -713,10 +715,11 @@ describe('evidence-review', () => {
         consumedByObligationId: null,
       };
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [obligation],
         invocations: [invocation],
         attempts: [],
+        dispatches: [],
       });
       expect(result.success).toBe(false);
       if (result.success) throw new TypeError('expected schema rejection');
@@ -738,10 +741,11 @@ describe('evidence-review', () => {
       });
       const obligationB = { ...obligationA, subjectDigest: 'b'.repeat(64) };
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [obligationA, obligationB],
         invocations: [],
         attempts: [],
+        dispatches: [],
       });
       expect(result.success).toBe(false);
       if (result.success) throw new TypeError('expected schema rejection');
@@ -773,10 +777,11 @@ describe('evidence-review', () => {
         capturedVerdict: 'changes_requested',
       };
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [],
         invocations: [invocation, contradictory],
         attempts: [],
+        dispatches: [],
       });
       expect(result.success).toBe(false);
       if (result.success) throw new TypeError('expected schema rejection');
@@ -796,10 +801,11 @@ describe('evidence-review', () => {
         createdAt: FIXED_TIME,
       };
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [],
         invocations: [],
         attempts: [attempt, { ...attempt, ordinal: 1 }],
+        dispatches: [],
       });
       expect(result.success).toBe(false);
       if (result.success) throw new TypeError('expected schema rejection');
@@ -810,10 +816,11 @@ describe('evidence-review', () => {
       const obligation = repositoryReviewObligation();
       const attempt = attemptForObligation(obligation, { kind: 'not_applicable' });
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [obligation],
         invocations: [],
         attempts: [attempt],
+        dispatches: [],
       });
       expect(result.success).toBe(false);
       if (result.success) throw new TypeError('expected schema rejection');
@@ -864,10 +871,11 @@ describe('evidence-review', () => {
         },
       });
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [obligation],
         invocations: [],
         attempts: [attempt],
+        dispatches: [],
       });
       expect(result.success).toBe(false);
       if (result.success) throw new TypeError('expected schema rejection');

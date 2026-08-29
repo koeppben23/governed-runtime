@@ -92,10 +92,11 @@ function hostInvocation(
 
 function assurance(obligations: ReviewObligation[], invocations: ReviewInvocationEvidence[]) {
   return {
-    assuranceSchemaVersion: 'review-assurance.v5' as const,
+    assuranceSchemaVersion: 'review-assurance.v6' as const,
     obligations,
     invocations,
     attempts: [],
+    dispatches: [],
   };
 }
 

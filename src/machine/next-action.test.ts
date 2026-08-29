@@ -321,10 +321,11 @@ describe('resolveNextAction', () => {
       const state = makeState('IMPL_REVIEW', {
         implementation: IMPL_EVIDENCE,
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5',
+          assuranceSchemaVersion: 'review-assurance.v6',
           obligations: [blocked],
           invocations: [],
           attempts: [],
+          dispatches: [],
         },
       });
       const action = resolveNextAction('IMPL_REVIEW', state);
@@ -357,7 +358,7 @@ describe('resolveNextAction', () => {
       const state = makeState('IMPL_REVIEW', {
         implementation: IMPL_EVIDENCE,
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5',
+          assuranceSchemaVersion: 'review-assurance.v6',
           obligations,
           invocations: [],
           attempts: [],
@@ -447,7 +448,7 @@ describe('resolveNextAction', () => {
       });
       const state = makeState('READY', {
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           obligations: [obligation],
           invocations: [],
           attempts: [],
@@ -468,10 +469,11 @@ describe('resolveNextAction', () => {
       });
       const state = makeState('REVIEW', {
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           obligations: [obligation],
           invocations: [],
           attempts: [],
+          dispatches: [],
         },
       });
       const action = resolveNextAction('REVIEW', state);

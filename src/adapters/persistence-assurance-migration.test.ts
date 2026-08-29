@@ -3,7 +3,7 @@
  * @description Assurance epoch read boundary: legacy review-assurance v3/v4
  *              state shapes are never migrated on read — they fail closed
  *              with SCHEMA_VALIDATION_FAILED. Only current-generation
- *              (review-assurance.v5) state loads.
+ *              (review-assurance.v6) state loads.
  *
  * @test-policy HAPPY, BAD
  */
@@ -50,7 +50,7 @@ describe('review-assurance legacy rejection at the read boundary', () => {
       },
       '2026-08-13T10:00:00.000Z',
     );
-    expect(assurance.assuranceSchemaVersion).toBe('review-assurance.v5');
+    expect(assurance.assuranceSchemaVersion).toBe('review-assurance.v6');
 
     // Persist as if written by a v3 runtime: literal downgraded, no new fields.
     const legacy = JSON.parse(JSON.stringify(assurance)) as Record<string, unknown>;
@@ -110,7 +110,7 @@ describe('review-assurance legacy rejection at the read boundary', () => {
     });
   });
 
-  it('REGRESSION: v5-persisted observations are preserved unchanged', async () => {
+  it('REGRESSION: v6-persisted observations are preserved unchanged', async () => {
     const { assurance, obligation } = createObligationAndAttempt(
       undefined,
       {
@@ -145,16 +145,16 @@ describe('review-assurance legacy rejection at the read boundary', () => {
       boundAt: '2026-08-13T10:00:00.000Z',
       acquisition: { kind: 'local_git_object' },
     };
-    const v5Assurance = JSON.parse(JSON.stringify(assurance)) as Record<string, unknown>;
-    const attempts = v5Assurance.attempts as Record<string, unknown>[];
+    const v6Assurance = JSON.parse(JSON.stringify(assurance)) as Record<string, unknown>;
+    const attempts = v6Assurance.attempts as Record<string, unknown>[];
     attempts[0]!.observations = [validObservation];
 
-    const v5State = { ...makeState('PLAN'), reviewAssurance: v5Assurance };
-    fs.writeFileSync(statePath(sessDir), JSON.stringify(v5State, null, 2) + '\n', 'utf-8');
+    const v6State = { ...makeState('PLAN'), reviewAssurance: v6Assurance };
+    fs.writeFileSync(statePath(sessDir), JSON.stringify(v6State, null, 2) + '\n', 'utf-8');
 
     const loaded = await readState(sessDir);
     expect(loaded).not.toBeNull();
-    expect(loaded!.reviewAssurance?.assuranceSchemaVersion).toBe('review-assurance.v5');
+    expect(loaded!.reviewAssurance?.assuranceSchemaVersion).toBe('review-assurance.v6');
     const loadedObservations = loaded!.reviewAssurance?.attempts[0]?.observations ?? [];
     expect(loadedObservations).toHaveLength(1);
     expect(loadedObservations[0]!.observationId).toBe('33333333-3333-4333-8333-333333333333');
@@ -171,7 +171,81 @@ describe('review-assurance legacy rejection at the read boundary', () => {
     });
   });
 
-  it('EDGE: writeState persists the v5 literal', async () => {
+  it('BAD: a persisted review-assurance.v5 state without dispatches fails closed', async () => {
+    const legacy = JSON.parse(
+      JSON.stringify(
+        createObligationAndAttempt(
+          undefined,
+          {
+            obligationType: 'plan',
+            repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+            iteration: 0,
+            planVersion: 1,
+            now: '2026-08-13T10:00:00.000Z',
+            subjectDigest: 'subject-digest',
+            reviewMaterial: FROZEN_MATERIAL,
+            reviewSubjectScope: artifactReviewSubjectScope(
+              'plan',
+              '# Plan\nBody',
+              'subject-digest',
+            ),
+            changedFiles: ['src/a.ts'],
+          },
+          '2026-08-13T10:00:00.000Z',
+        ).assurance,
+      ),
+    ) as Record<string, unknown>;
+    // Downgrade the generation literal and drop the authority-bearing dispatch
+    // ledger — the shape of every state persisted before the v6 cutover.
+    legacy.assuranceSchemaVersion = 'review-assurance.v5';
+    delete legacy.dispatches;
+
+    const legacyState = { ...makeState('PLAN'), reviewAssurance: legacy };
+    fs.writeFileSync(statePath(sessDir), JSON.stringify(legacyState, null, 2) + '\n', 'utf-8');
+
+    await expect(readState(sessDir)).rejects.toMatchObject({
+      code: 'SCHEMA_VALIDATION_FAILED',
+    });
+  });
+
+  it('BAD: a persisted review-assurance.v5 state with fabricated dispatches fails closed', async () => {
+    const legacy = JSON.parse(
+      JSON.stringify(
+        createObligationAndAttempt(
+          undefined,
+          {
+            obligationType: 'plan',
+            repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+            iteration: 0,
+            planVersion: 1,
+            now: '2026-08-13T10:00:00.000Z',
+            subjectDigest: 'subject-digest',
+            reviewMaterial: FROZEN_MATERIAL,
+            reviewSubjectScope: artifactReviewSubjectScope(
+              'plan',
+              '# Plan\nBody',
+              'subject-digest',
+            ),
+            changedFiles: ['src/a.ts'],
+          },
+          '2026-08-13T10:00:00.000Z',
+        ).assurance,
+      ),
+    ) as Record<string, unknown>;
+    // Downgrade the generation literal EVEN IF a fabricated dispatch ledger is
+    // present: the generation literal decides compatibility, not the field.
+    legacy.assuranceSchemaVersion = 'review-assurance.v5';
+    legacy.dispatches = [];
+
+    const legacyState = { ...makeState('PLAN'), reviewAssurance: legacy };
+    fs.writeFileSync(statePath(sessDir), JSON.stringify(legacyState, null, 2) + '\n', 'utf-8');
+
+    await expect(readState(sessDir)).rejects.toMatchObject({
+      code: 'SCHEMA_VALIDATION_FAILED',
+    });
+  });
+
+  it('EDGE: writeState persists the v6 literal', async () => {
     const obligation = createReviewObligation({
       obligationType: 'plan',
       repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
@@ -201,6 +275,6 @@ describe('review-assurance legacy rejection at the read boundary', () => {
     void obligation;
     await writeState(sessDir, { ...makeState('PLAN'), reviewAssurance: assurance });
     const raw = fs.readFileSync(statePath(sessDir), 'utf-8');
-    expect(raw).toContain('"review-assurance.v5"');
+    expect(raw).toContain('"review-assurance.v6"');
   });
 });

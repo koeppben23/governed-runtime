@@ -77,7 +77,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [
           {
             obligationId: OBLIGATION_ID,
@@ -124,6 +124,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
             createdAt: now,
           },
         ],
+        dispatches: [],
       },
     }),
   );
@@ -438,6 +439,7 @@ describe('reviewer host-task after-hook: extraction_invalid → sequential re-in
         reviewAssurance: {
           ...state!.reviewAssurance!,
           attempts: state!.reviewAssurance!.attempts.map((attempt) => ({
+            dispatches: [],
             ...attempt,
             status: 'bound' as const,
             childSessionId: CHILD_VALID,
