@@ -171,6 +171,7 @@ function buildState(
       obligations: [],
       invocations: [],
       attempts: [],
+      dispatches: [],
     },
     ...overrides,
   });

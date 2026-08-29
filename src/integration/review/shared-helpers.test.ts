@@ -346,6 +346,7 @@ function implementPromptState(overrides: {
       obligations: [obligation],
       invocations: [],
       attempts: [],
+      dispatches: [],
     },
   });
   return {

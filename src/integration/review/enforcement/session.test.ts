@@ -581,6 +581,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
           obligations: [],
           invocations: [],
           attempts: [],
+          dispatches: [],
         },
       },
     );
@@ -602,6 +603,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
           obligations: [],
           invocations: [],
           attempts: [],
+          dispatches: [],
         },
       },
     );
@@ -724,6 +726,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
         ],
         invocations: [],
         attempts: [],
+        dispatches: [],
       },
     };
     const result = enforceBeforeVerdict(
@@ -771,6 +774,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
         ],
         invocations: [],
         attempts: [],
+        dispatches: [],
       },
     };
     const result = enforceBeforeVerdict(
@@ -866,6 +870,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
           obligations: [],
           invocations: [],
           attempts: [],
+          dispatches: [],
         },
       },
       true,
@@ -885,6 +890,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
           obligations: [],
           invocations: [],
           attempts: [],
+          dispatches: [],
         },
       },
       true,

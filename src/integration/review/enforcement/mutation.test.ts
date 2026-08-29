@@ -575,6 +575,7 @@ describe('review-enforcement mutation kills', () => {
           ],
           invocations: [],
           attempts: [],
+          dispatches: [],
         },
       };
       const result = enforceBeforeVerdict(

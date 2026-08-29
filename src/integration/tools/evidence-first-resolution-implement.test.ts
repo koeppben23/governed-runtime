@@ -316,6 +316,7 @@ function implStateWithEvidence(
           createdAt: now,
         },
       ],
+      dispatches: [],
       obligations: [
         {
           obligationId: OBLIGATION_ID,

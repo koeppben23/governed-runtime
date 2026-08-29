@@ -69,6 +69,7 @@ function makeStateInfo(policyMode: string = 'host_task_required'): SessionState 
       obligations: [],
       invocations: [],
       attempts: [],
+      dispatches: [],
     },
   }) as SessionState;
 }

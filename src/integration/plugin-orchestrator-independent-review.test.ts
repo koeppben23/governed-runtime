@@ -195,6 +195,7 @@ function buildState(
           createdAt: NOW,
         },
       ],
+      dispatches: [],
     },
   });
 }

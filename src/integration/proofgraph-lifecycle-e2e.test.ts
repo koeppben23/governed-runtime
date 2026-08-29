@@ -1065,6 +1065,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             createdAt: FIXED_TIME,
           },
         ],
+        dispatches: [],
       },
     });
     const approved = executeReviewDecision(

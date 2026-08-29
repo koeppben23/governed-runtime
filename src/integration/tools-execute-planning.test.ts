@@ -1339,6 +1339,7 @@ describe('plan', () => {
         obligations: [obligation],
         invocations: [invocationFor(deps, obligation, findings, obligation.obligationId)],
         attempts: [],
+        dispatches: [],
       };
       const summary = deps.latestPlanReviewSummary(assuranceState, findings, 1);
       expect(summary.reviewedDigest).toBe('plan-digest-reviewed');

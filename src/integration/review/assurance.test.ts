@@ -647,6 +647,7 @@ describe('integration/review-assurance', () => {
           obligations: [],
           invocations: [invocation],
           attempts: [],
+          dispatches: [],
         },
         obligation,
       );
@@ -780,6 +781,7 @@ describe('integration/review-assurance', () => {
           obligations: [obligation],
           invocations: [invocation],
           attempts: [],
+          dispatches: [],
         },
         obligation,
         NOW,
@@ -796,6 +798,7 @@ describe('integration/review-assurance', () => {
         obligations: [makeObligation()],
         invocations: [],
         attempts: [],
+        dispatches: [],
       };
       expect(consumeReviewObligation(assurance, null, NOW)).toBe(assurance);
     });
@@ -824,6 +827,7 @@ describe('integration/review-assurance', () => {
         obligations: [obligation],
         invocations: [rejectedInvocation, acceptedInvocation],
         attempts: [],
+        dispatches: [],
       };
 
       const accepted = findAcceptedInvocationForFindings(assurance, obligation, findings);
@@ -862,6 +866,7 @@ describe('integration/review-assurance', () => {
         obligations: [fulfilledObligation],
         invocations: [duplicateInvocation, boundInvocation],
         attempts: [],
+        dispatches: [],
       };
 
       const accepted = findAcceptedInvocationForFindings(assurance, fulfilledObligation, findings);

@@ -102,6 +102,7 @@ function strictFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings
 type ReviewAssuranceFixture = {
   assuranceSchemaVersion: 'review-assurance.v6';
   attempts: [];
+  dispatches: [];
   obligations: ReviewObligation[];
   invocations: ReviewInvocationEvidence[];
 };

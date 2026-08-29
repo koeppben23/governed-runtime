@@ -200,6 +200,7 @@ function buildSessionState(
           createdAt: NOW,
         },
       ],
+      dispatches: [],
     },
   });
 }

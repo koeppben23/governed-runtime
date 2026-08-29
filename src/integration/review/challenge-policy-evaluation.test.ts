@@ -306,6 +306,7 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
         obligations: [firstObligation],
         invocations: [firstInvocation],
         attempts: [firstAttempt],
+        dispatches: [],
       },
       firstObligation,
     ).kind,

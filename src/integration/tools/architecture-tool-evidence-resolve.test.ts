@@ -247,6 +247,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
         reviewAssurance: {
           assuranceSchemaVersion: 'review-assurance.v6' as const,
           attempts: [boundAttempt('test-subject-digest')],
+          dispatches: [],
           obligations: [
             {
               obligationId: OBLIGATION_ID,
@@ -459,6 +460,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
         reviewAssurance: {
           assuranceSchemaVersion: 'review-assurance.v6' as const,
           attempts: [boundAttempt('test-subject-digest')],
+          dispatches: [],
           obligations: [
             {
               obligationId: OBLIGATION_ID,

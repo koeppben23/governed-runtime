@@ -276,6 +276,7 @@ describe('getReviewLoopProgress', () => {
               },
             },
           ],
+          dispatches: [],
         },
       });
       const p = getReviewLoopProgress(state)!;

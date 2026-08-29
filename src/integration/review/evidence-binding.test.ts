@@ -630,6 +630,7 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
           obligations: [obligation],
           invocations: [],
           attempts: boundAttempts,
+          dispatches: [],
         }),
         bind.evidence!,
       );
@@ -1242,6 +1243,7 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
         obligations: [obligation],
         invocations,
         attempts: [attemptCorrupt, attemptValid],
+        dispatches: [],
       },
       obligation,
     );
@@ -1279,6 +1281,7 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
         obligations: [obligation],
         invocations,
         attempts: [attemptCorrupt, { ...attemptValid, status: 'bound' as const }],
+        dispatches: [],
       },
       obligation,
     );
@@ -1337,7 +1340,6 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
       obligations: [obligation],
       invocations: [],
       attempts: [attempt],
-      dispatches: [],
       execution: { obligationId: obligation.obligationId, attemptId: attempt.attemptId },
     });
     expect(bindFirst.evidence).toBeNull();

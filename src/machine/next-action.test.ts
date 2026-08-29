@@ -362,6 +362,7 @@ describe('resolveNextAction', () => {
           obligations,
           invocations: [],
           attempts: [],
+          dispatches: [],
         },
       });
       const action = resolveNextAction('IMPL_REVIEW', state);
@@ -452,6 +453,7 @@ describe('resolveNextAction', () => {
           obligations: [obligation],
           invocations: [],
           attempts: [],
+          dispatches: [],
         },
       });
       const action = resolveNextAction('READY', state);

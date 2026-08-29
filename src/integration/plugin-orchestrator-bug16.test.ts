@@ -126,6 +126,7 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
           createdAt: NOW,
         },
       ],
+      dispatches: [],
     },
     ...overrides,
   });

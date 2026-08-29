@@ -145,6 +145,7 @@ describe('readState legacy migrations', () => {
         obligations: [],
         invocations: [],
         attempts: [],
+        dispatches: [],
       },
     });
     await fs.writeFile(

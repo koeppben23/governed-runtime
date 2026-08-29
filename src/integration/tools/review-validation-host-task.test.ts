@@ -92,6 +92,7 @@ describe('resolveHostTaskFindings', () => {
       obligations: [makeObligation()],
       invocations: [makeHostTaskInvocation()],
       attempts: [makeBoundAttempt()],
+      dispatches: [],
     };
     const result = resolveHostTaskFindings(assurance, makeObligation());
 
@@ -124,9 +125,9 @@ describe('resolveHostTaskFindings', () => {
           findingsHash: hashFindings(rawFindings),
         }),
       ],
+      dispatches: [],
     };
     const result = resolveHostTaskFindings(assurance, makeObligation());
-
     expect(result.kind).toBe('resolved');
     if (result.kind !== 'resolved') throw new Error('expected resolved findings');
     expect(result.findings.overallVerdict).toBe('changes_requested');
@@ -168,6 +169,7 @@ describe('resolveHostTaskFindings', () => {
           findingsHash: hashFindings(rawFindings),
         }),
       ],
+      dispatches: [],
     };
 
     expect(resolveHostTaskFindings(assurance, obligation, undefined, evidenceRefs).kind).toBe(
@@ -205,7 +207,9 @@ describe('resolveHostTaskFindings', () => {
           findingsHash: hashFindings(rawFindings),
         }),
       ],
+      dispatches: [],
     };
+
     const result = resolveHostTaskFindings(assurance, makeObligation());
 
     expect(result.kind).toBe('incoherent');
@@ -240,8 +244,11 @@ describe('resolveHostTaskFindings', () => {
           findingsHash: hashFindings(rawFindings),
         }),
       ],
+      dispatches: [],
     };
+
     const result = resolveHostTaskFindings(assurance, makeObligation());
+
     expect(result.kind).toBe('incoherent');
     if (result.kind !== 'incoherent') throw new Error('expected incoherent');
     expect(result.blockingIssueCount).toBe(2);
@@ -264,6 +271,7 @@ describe('resolveHostTaskFindings', () => {
           findingsHash: hashFindings(rawFindings),
         }),
       ],
+      dispatches: [],
     };
     const result = resolveHostTaskFindings(assurance, makeObligation());
     expect(result.kind).toBe('resolved');
@@ -307,6 +315,7 @@ describe('resolveHostTaskFindings', () => {
           findingsHash: hashFindings(coherentRawFindings),
         }),
       ],
+      dispatches: [],
     };
 
     const result = resolveHostTaskFindings(assurance, makeObligation());
@@ -336,6 +345,7 @@ describe('resolveHostTaskFindings', () => {
           ordinal: 1,
         }),
       ],
+      dispatches: [],
     };
     expect(resolveHostTaskFindings(assurance, null).kind).toBe('not_found');
   });
@@ -346,6 +356,7 @@ describe('resolveHostTaskFindings', () => {
       attempts: [makeBoundAttempt()],
       obligations: [makeObligation()],
       invocations: [], // no invocations
+      dispatches: [],
     };
     expect(resolveHostTaskFindings(assurance, makeObligation()).kind).toBe('not_found');
   });
@@ -360,6 +371,7 @@ describe('resolveHostTaskFindings', () => {
           capturedRawFindings: undefined,
         }),
       ],
+      dispatches: [],
     };
     expect(resolveHostTaskFindings(assurance, makeObligation()).kind).toBe('not_found');
   });
@@ -375,6 +387,7 @@ describe('resolveHostTaskFindings', () => {
           capturedRawFindings: invalidRaw,
         }),
       ],
+      dispatches: [],
     };
     // Evidence WAS captured (reviewer ran) but is corrupt — distinct from the
     // "no evidence at all" not_found case so the caller can emit a distinct block.
@@ -420,6 +433,7 @@ describe('resolveHostTaskFindings', () => {
           childSessionId: 'ses_child_retry',
         }),
       ],
+      dispatches: [],
     };
 
     const result = resolveHostTaskFindings(assurance, makeObligation());
@@ -475,6 +489,7 @@ describe('resolveHostTaskFindings', () => {
         obligations: [makeObligation()],
         invocations: [],
         attempts: [makeBoundAttempt()],
+        dispatches: [],
       };
       expect(resolveHostTaskFindings(assurance, makeObligation()).kind).toBe('not_found');
       expect(warnCalls.find((m) => /unparseable/i.test(m))).toBeUndefined();
@@ -494,6 +509,7 @@ describe('resolveHostTaskFindings', () => {
       ],
       invocations: [makeHostTaskInvocation()],
       attempts: [makeBoundAttempt()],
+      dispatches: [],
     };
     const result = resolveHostTaskFindings(
       assurance,
@@ -513,6 +529,7 @@ describe('resolveHostTaskFindings', () => {
       obligations: [makeObligation({ status: 'consumed' })],
       invocations: [makeHostTaskInvocation()],
       attempts: [makeBoundAttempt()],
+      dispatches: [],
     };
     const result = resolveHostTaskFindings(assurance, makeObligation({ status: 'consumed' }));
 
@@ -530,6 +547,7 @@ describe('resolveHostTaskFindings', () => {
       obligations: [makeObligation({ consumedAt })],
       invocations: [makeHostTaskInvocation()],
       attempts: [makeBoundAttempt()],
+      dispatches: [],
     };
     const result = resolveHostTaskFindings(assurance, makeObligation({ consumedAt }));
 
@@ -552,6 +570,7 @@ describe('resolveHostTaskFindings', () => {
           consumedByObligationId: '99999999-9999-4999-8999-999999999999',
         }),
       ],
+      dispatches: [],
     };
     const result = resolveHostTaskFindings(assurance, makeObligation());
     expect(result.kind).toBe('rejected');
@@ -572,6 +591,7 @@ describe('resolveHostTaskFindings', () => {
           hostVisible: false,
         }),
       ],
+      dispatches: [],
     };
     expect(resolveHostTaskFindings(assurance, makeObligation()).kind).toBe('not_found');
   });
@@ -586,6 +606,7 @@ describe('resolveHostTaskFindings', () => {
           hostVisible: false,
         }),
       ],
+      dispatches: [],
     };
     expect(resolveHostTaskFindings(assurance, makeObligation()).kind).toBe('not_found');
   });
@@ -600,6 +621,7 @@ describe('resolveHostTaskFindings', () => {
           obligationId: '33333333-3333-4333-8333-333333333333',
         }),
       ],
+      dispatches: [],
     };
     expect(resolveHostTaskFindings(assurance, makeObligation()).kind).toBe('not_found');
   });
@@ -618,6 +640,7 @@ describe('resolveHostTaskFindings', () => {
           // unconsumed
         }),
       ],
+      dispatches: [],
     };
     const result = resolveHostTaskFindings(assurance, makeObligation());
 
@@ -642,6 +665,7 @@ describe('resolveHostTaskFindings', () => {
           capturedRawFindings: rawWithExtras,
         }),
       ],
+      dispatches: [],
     };
     const result = resolveHostTaskFindings(assurance, makeObligation());
 
@@ -663,6 +687,7 @@ describe('resolveHostTaskFindings', () => {
           findingsHash: hashFindings(rawFindings),
         }),
       ],
+      dispatches: [],
     };
     // resolveHostTaskFindings itself does NOT block unable_to_review —
     // that's the tool layer's defense-in-depth responsibility.
@@ -709,6 +734,7 @@ describe('resolveHostTaskFindings', () => {
           createdAt: now,
         },
       ],
+      dispatches: [],
     };
     const result = resolveHostTaskFindings(assurance, makeObligation());
     expect(result.kind).toBe('incoherent');
@@ -769,6 +795,7 @@ describe('resolveHostTaskFindings', () => {
           createdAt: now,
         },
       ],
+      dispatches: [],
     };
     const result = resolveHostTaskFindings(
       assurance,
@@ -826,6 +853,7 @@ describe('resolveHostTaskFindings', () => {
             createdAt: now,
           },
         ],
+        dispatches: [],
       },
       makeObligation(),
     );
@@ -883,6 +911,7 @@ describe('resolveHostTaskFindings', () => {
             createdAt: now,
           },
         ],
+        dispatches: [],
       },
       makeObligation(),
     );
@@ -909,6 +938,7 @@ describe('resolveHostTaskFindings', () => {
         obligations: [makeObligation()],
         invocations: [invocation],
         attempts: [makeBoundAttempt()],
+        dispatches: [],
       },
       makeObligation(),
     );
@@ -926,6 +956,7 @@ describe('resolveHostTaskFindings', () => {
         obligations: [makeObligation()],
         invocations: [invocation],
         attempts: [makeBoundAttempt()],
+        dispatches: [],
       },
       makeObligation(),
     );

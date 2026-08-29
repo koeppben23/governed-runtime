@@ -301,6 +301,7 @@ function planStateWithEvidence(
           createdAt: now,
         },
       ],
+      dispatches: [],
       obligations: [
         {
           obligationId: OBLIGATION_ID,

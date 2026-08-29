@@ -80,6 +80,7 @@ function stateWithMaterial(
           createdAt: NOW,
         },
       ],
+      dispatches: [],
     },
   }) as SessionState;
 }
