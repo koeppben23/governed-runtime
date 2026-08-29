@@ -269,6 +269,13 @@ function planReviewAction(phase: Phase, state: SessionState): NextAction | null 
   const latestPlanReview = [...(state.reviewAssurance?.obligations ?? [])]
     .reverse()
     .find((obligation) => obligation.obligationType === 'plan');
+  if (latestPlanReview?.status === 'blocked') {
+    return {
+      code: ACTION_CODES.RUN_PLAN,
+      text: `Plan review is blocked (${latestPlanReview.blockedCode ?? 'unknown'}). Submit a corrected plan revision with /plan to mint a fresh review obligation.`,
+      commands: ['/plan'],
+    };
+  }
   if (latestPlanReview?.status === 'pending') {
     return {
       code: ACTION_CODES.RUN_REVIEWER_TASK,

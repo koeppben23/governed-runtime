@@ -30,6 +30,15 @@ import {
   CURRENT_AUDIT_FORMAT_VERSION,
   type ChainedAuditEvent,
 } from '../audit/types.js';
+
+class AuditFormatError extends Error {
+  readonly code = 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED' as const;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'AuditFormatError';
+  }
+}
 import { acquireNamedWriteLock } from './persistence-lock.js';
 
 const AUDIT_LOCK_FILE = 'audit.jsonl.lock';
@@ -96,8 +105,7 @@ async function appendAuditLineAtomically(
     const existingTrail = parseAuditTrail(existing);
 
     if (existingTrail.skipped > 0) {
-      throw new PersistenceError(
-        'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+      throw new AuditFormatError(
         `Refusing to append: existing audit trail contains ${existingTrail.skipped} record(s) ` +
           'that are not valid audit-chain.v3 records. Legacy audit artifacts are unsupported.',
       );
@@ -190,8 +198,7 @@ function parseAuditTrail(raw: string): { events: AuditEvent[]; skipped: number }
     try {
       json = JSON.parse(trimmed);
     } catch {
-      throw new PersistenceError(
-        'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+      throw new AuditFormatError(
         'Audit trail contains a record that is not valid JSONL. Legacy or malformed ' +
           'assurance artifacts are unsupported.',
       );
@@ -200,8 +207,7 @@ function parseAuditTrail(raw: string): { events: AuditEvent[]; skipped: number }
     if (!result.success) {
       // Fail closed with an explicit epoch error: pre-v3 records must never
       // be reinterpreted, migrated, or silently skipped.
-      throw new PersistenceError(
-        'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+      throw new AuditFormatError(
         'Audit trail contains a record that is not a valid audit-chain.v3 record. ' +
           'Legacy assurance artifacts are unsupported.',
       );

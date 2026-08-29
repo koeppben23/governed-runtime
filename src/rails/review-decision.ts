@@ -278,7 +278,10 @@ function enforceProofGraphEvidenceApproval(
   state: SessionState,
   input: ReviewDecisionInput,
 ): RailBlocked | null {
-  if (state.phase !== 'EVIDENCE_REVIEW' || input.verdict !== 'approve') {
+  if (
+    (state.phase !== 'PLAN_REVIEW' && state.phase !== 'EVIDENCE_REVIEW') ||
+    input.verdict !== 'approve'
+  ) {
     return null;
   }
   const rejectedCriticalClaim = state.plan?.claimSubmissionDiagnostics?.rejectedClaims.find(
@@ -291,6 +294,7 @@ function enforceProofGraphEvidenceApproval(
       detail: rejectedCriticalClaim.reason,
     });
   }
+  if (state.phase !== 'EVIDENCE_REVIEW') return null;
   const authorization = authorizedCriticalPlanClaimIds(state.plan);
   const decision = evaluateProofGraphGate({
     projection: state.proofGraph,
