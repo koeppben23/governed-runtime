@@ -339,12 +339,27 @@ describe('resolveNextAction', () => {
         policySnapshot: null,
         now: '2026-01-01T00:00:00.000Z',
       });
+      const fulfilledObligation = { ...obligation, status: 'fulfilled' as const };
       const state = makeState('IMPL_REVIEW', {
         implementation: IMPL_EVIDENCE,
         reviewAssurance: {
           assuranceSchemaVersion: 'review-assurance.v6',
-          obligations: [obligation],
-          attempts: [],
+          obligations: [fulfilledObligation],
+          attempts: [
+            {
+              attemptId: '22222222-2222-4222-8222-222222222222',
+              obligationId: obligation.obligationId,
+              obligationType: 'implement',
+              subjectDigest: 'impl-digest',
+              ordinal: 1,
+              origin: { kind: 'initial' },
+              repositoryDiscovery: { kind: 'not_applicable' },
+              status: 'bound',
+              childSessionId: 'child',
+              completedAt: '2026-01-01T00:00:00.000Z',
+              createdAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
           dispatches: [],
           invocations: [
             {
@@ -365,6 +380,7 @@ describe('resolveNextAction', () => {
               fulfilledAt: '2026-01-01T00:00:00.000Z',
               consumedByObligationId: null,
               capturedVerdict: 'unable_to_review',
+              attemptId: '22222222-2222-4222-8222-222222222222',
               reviewOutputMode: 'structured_output',
               structuredOutputUsed: true,
               reviewAssuranceLevel: 'structured_high',

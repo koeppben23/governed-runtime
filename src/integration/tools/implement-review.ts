@@ -99,6 +99,7 @@ import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
 import { buildHostTaskChallengeContract } from '../review/host-task-policy.js';
 import type { ImplementRuntime } from './implement-shared.js';
 import {
+  activateImplementationReviewObligation,
   nextImplementationReviewIteration,
   normalizeHostFindings,
   unknownOutcomeRevalidationBlock,
@@ -529,7 +530,7 @@ function handleTaskTransportFailureRetry(input: ImplementRuntime): string | null
   return handlePreferredTaskTransportFailure(input, findPendingImplObligation(input.state));
 }
 
-// eslint-disable-next-line max-lines-per-function -- ordered evidence resolution, consumption, and convergence branches must remain together.
+// eslint-disable-next-line max-lines-per-function, complexity -- ordered evidence resolution, consumption, and convergence branches must remain together.
 async function handleSubmittedImplementationReview(input: {
   runtime: ImplementRuntime;
   iteration: number;
@@ -556,6 +557,31 @@ async function handleSubmittedImplementationReview(input: {
         reason: 'unable_to_review requires bound host-task reviewer evidence',
       });
     }
+    // Prepare the successor before consuming evidence. A failed Discovery mint
+    // must preserve the current bound verdict as the executable recovery path.
+    const reissued = await activateImplementationReviewObligation(runtime.state, {
+      subagentEnabled: runtime.subagentEnabled,
+      iteration: iteration + 1,
+      planVersion,
+      now: runtime.ctx.now(),
+      worktree: runtime.worktree,
+    });
+    if (reissued.blocked || !reissued.obligation || !reissued.attemptId) {
+      return appendNextAction(
+        formatBlocked('REVIEWER_CONTEXT_UNAVAILABLE', {
+          reason: reissued.blocked?.reason ?? 'a fresh reviewer obligation could not be activated',
+        }),
+        runtime.state,
+      );
+    }
+    const retryAttempt = reissued.state.reviewAssurance?.attempts.find(
+      (attempt) => attempt.attemptId === reissued.attemptId,
+    );
+    if (!retryAttempt) {
+      return formatBlocked('REVIEWER_CONTEXT_UNAVAILABLE', {
+        reason: 'a fresh reviewer attempt could not be activated',
+      });
+    }
     const { reviewedState } = appendImplReviewState({
       runtime,
       iteration,
@@ -567,9 +593,9 @@ async function handleSubmittedImplementationReview(input: {
     return handleUnableToReview({
       runtime,
       reviewedState,
-      iteration,
-      planVersion,
       obligationId: pendingObligation.obligationId,
+      retryObligation: reissued.obligation,
+      retryAttempt,
     });
   }
 

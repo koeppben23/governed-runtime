@@ -57,6 +57,29 @@ export const ACTION_CODES = {
   SESSION_COMPLETE: 'SESSION_COMPLETE',
 } as const;
 
+function hasBoundImplementationVerdict(
+  state: SessionState,
+  obligationId: string | undefined,
+): boolean {
+  if (!obligationId) return false;
+  const assurance = state.reviewAssurance;
+  const invocation = assurance?.invocations.find(
+    (item) =>
+      item.obligationId === obligationId &&
+      item.capturedVerdict !== null &&
+      item.consumedByObligationId === null,
+  );
+  return Boolean(
+    invocation &&
+    assurance?.attempts.some(
+      (attempt) =>
+        attempt.obligationId === obligationId &&
+        attempt.attemptId === invocation.attemptId &&
+        attempt.status === 'bound',
+    ),
+  );
+}
+
 // ─── Next Action Resolver — Lookup Table ──────────────────────────────────────
 
 /**
@@ -211,13 +234,11 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
         commands: ['/implement'],
       };
     }
-    const pendingInvocation = state.reviewAssurance?.invocations.find(
-      (invocation) =>
-        invocation.obligationId === last?.obligationId &&
-        invocation.capturedVerdict !== null &&
-        invocation.consumedByObligationId === null,
-    );
-    if (last?.status === 'pending' && pendingInvocation) {
+    if (
+      last &&
+      last.status !== 'consumed' &&
+      hasBoundImplementationVerdict(state, last.obligationId)
+    ) {
       return {
         code: ACTION_CODES.SUBMIT_REVIEWER_VERDICT,
         text:

@@ -46,6 +46,14 @@ vi.mock('../verification/executor', () => ({
     })),
 }));
 
+vi.mock('./review/discovery-attempt-context.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./review/discovery-attempt-context.js')>();
+  return {
+    ...actual,
+    resolveAttemptDiscoveryOrBlock: vi.fn(actual.resolveAttemptDiscoveryOrBlock),
+  };
+});
+
 import { readState } from '../adapters/persistence.js';
 import { hashWorktreeFiles } from '../adapters/git.js';
 import { hashText } from '../shared/hashing.js';
@@ -66,6 +74,8 @@ import {
   REVIEW_MANDATE_DIGEST,
   hashFindings,
 } from './review/assurance.js';
+import { resolveAttemptDiscoveryOrBlock } from './review/discovery-attempt-context.js';
+import { resolveNextAction, ACTION_CODES } from '../machine/next-action.js';
 
 const FIXED_TIME = '2026-08-15T14:00:00.000Z';
 
@@ -87,6 +97,7 @@ beforeEach(() => {
   pc = process.env.OPENCODE_CONFIG_DIR;
   pr = process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
   pp = process.env.FLOWGUARD_HOST_PLATFORM;
+  vi.mocked(resolveAttemptDiscoveryOrBlock).mockClear();
 });
 
 afterEach(() => {
@@ -275,56 +286,65 @@ function expectNoRepositoryAuthority(obligation: {
   });
 }
 
+async function prepareBoundUnableReview(se: SE, implementationDigest: string) {
+  const base = makeState('IMPL_REVIEW', {
+    binding: { ...makeState('IMPL_REVIEW').binding, worktree: se.worktree },
+    ticket: TICKET,
+    plan: {
+      current: {
+        body: '## Plan\n1. Verify implementation',
+        digest: 'plan-digest',
+        sections: [],
+        createdAt: FIXED_TIME,
+        recordDigest: 'a'.repeat(64),
+        planVersion: 1,
+        supersedesRecordDigest: null,
+        originatingReviewObligationId: null,
+        revisionReason: null,
+        lineageStatus: 'verified',
+      },
+      history: [],
+      reviewFindings: [],
+    },
+    implementation: {
+      changedFiles: ['src/auth.ts'],
+      domainFiles: ['src/auth.ts'],
+      digest: implementationDigest,
+      executedAt: FIXED_TIME,
+    },
+    policySnapshot: {
+      ...makeState('IMPL_REVIEW').policySnapshot,
+      reviewInvocationPolicy: 'host_task_required',
+      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+    },
+  });
+  await writeStateWithArtifacts(se.sDir, base);
+  const firstState = await readState(se.sDir);
+  const activated = await (
+    await import('./tools/implement-shared.js')
+  ).activateImplementationReviewObligation(firstState!, {
+    subagentEnabled: true,
+    iteration: 1,
+    planVersion: 1,
+    now: FIXED_TIME,
+    worktree: se.worktree,
+  });
+  await writeStateWithArtifacts(se.sDir, activated.state);
+  await inject('implement', 'unable_to_review', implementationDigest);
+  return activated.obligation!;
+}
+
 describe('implementation review without repository observation authority', () => {
   it('unable_to_review consumes bound evidence and mints a fresh unbound attempt', async () => {
     s = await boot();
     const se = s;
     const implementationDigest = 'impl-unable-digest';
-    const base = makeState('IMPL_REVIEW', {
-      binding: { ...makeState('IMPL_REVIEW').binding, worktree: se.worktree },
-      ticket: TICKET,
-      plan: {
-        current: {
-          body: '## Plan\n1. Verify implementation',
-          digest: 'plan-digest',
-          sections: [],
-          createdAt: FIXED_TIME,
-          recordDigest: 'a'.repeat(64),
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-          lineageStatus: 'verified',
-        },
-        history: [],
-        reviewFindings: [],
-      },
-      implementation: {
-        changedFiles: ['src/auth.ts'],
-        domainFiles: ['src/auth.ts'],
-        digest: implementationDigest,
-        executedAt: FIXED_TIME,
-      },
-      policySnapshot: {
-        ...makeState('IMPL_REVIEW').policySnapshot,
-        reviewInvocationPolicy: 'host_task_required',
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
-      },
-    });
-    await writeStateWithArtifacts(se.sDir, base);
-    const firstState = await readState(se.sDir);
-    const activated = await (
-      await import('./tools/implement-shared.js')
-    ).activateImplementationReviewObligation(firstState!, {
-      subagentEnabled: true,
-      iteration: 1,
-      planVersion: 1,
-      now: FIXED_TIME,
-      worktree: se.worktree,
-    });
-    await writeStateWithArtifacts(se.sDir, activated.state);
-    const first = activated.obligation!;
-    await inject('implement', 'unable_to_review', implementationDigest);
+    const first = await prepareBoundUnableReview(se, implementationDigest);
+
+    const boundState = await readState(se.sDir);
+    expect(resolveNextAction('IMPL_REVIEW', boundState!).code).toBe(
+      ACTION_CODES.SUBMIT_REVIEWER_VERDICT,
+    );
 
     const result = await review_implementation.execute(
       { reviewVerdict: 'unable_to_review' },
@@ -352,6 +372,33 @@ describe('implementation review without repository observation authority', () =>
     );
     expect(freshAttempt?.status).toBe('created');
     expect(freshAttempt?.childSessionId).toBeUndefined();
+  });
+
+  it('keeps bound unable_to_review evidence unconsumed when successor minting is blocked', async () => {
+    s = await boot();
+    const se = s;
+    const first = await prepareBoundUnableReview(se, 'impl-unable-retry-failure');
+    vi.mocked(resolveAttemptDiscoveryOrBlock).mockResolvedValueOnce({
+      kind: 'blocked',
+      reason: 'persisted Discovery basis is unavailable for this repository review',
+    });
+
+    const result = await review_implementation.execute(
+      { reviewVerdict: 'unable_to_review' },
+      se.tc,
+    );
+    expect(String(result)).toContain('REVIEWER_CONTEXT_UNAVAILABLE');
+
+    const finalState = await readState(se.sDir);
+    const obligations = finalState!.reviewAssurance!.obligations.filter(
+      (item) => item.obligationType === 'implement',
+    );
+    expect(obligations).toHaveLength(1);
+    expect(obligations[0]).toMatchObject({ obligationId: first.obligationId, status: 'fulfilled' });
+    expect(finalState!.reviewAssurance!.invocations.at(-1)!.consumedByObligationId).toBeNull();
+    expect(resolveNextAction('IMPL_REVIEW', finalState!).code).toBe(
+      ACTION_CODES.SUBMIT_REVIEWER_VERDICT,
+    );
   });
 
   it('changes_requested binds via implementation anchor, re-record mints a fresh obligation, second review accepts', async () => {
