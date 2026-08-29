@@ -432,8 +432,7 @@ describe('runReviewOrchestration strict independent review with footer output', 
     expect(parsed.next).toEqual(expect.stringContaining('INDEPENDENT_REVIEW_REQUIRED'));
     expect(parsed.reviewInvocation).toMatchObject({
       policy: 'host_task_required',
-      status: 'blocked_until_host_task',
-      code: 'HOST_SUBAGENT_TASK_REQUIRED',
+      status: 'pending_host_task',
       invocationMode: 'host_subagent_task',
       hostVisible: true,
     });
@@ -483,7 +482,7 @@ describe('runReviewOrchestration strict independent review with footer output', 
     expect(parsed.next).toEqual(expect.stringContaining('INDEPENDENT_REVIEW_REQUIRED'));
     expect(parsed.reviewInvocation).toMatchObject({
       policy: 'host_task_preferred',
-      status: 'host_task_requested',
+      status: 'pending_host_task',
       invocationMode: 'host_subagent_task',
       hostVisible: true,
     });

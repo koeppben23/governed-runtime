@@ -18,6 +18,9 @@ import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import type { AuditDeps } from './plugin-audit.js';
 import type { PluginWorkspace } from './plugin-workspace.js';
 import { createSessionState } from './review/enforcement/enforcement.js';
+import type { PendingReview } from './review/enforcement/types.js';
+import { pendingObligation } from './plugin-host-task-diagnostics-helpers.js';
+import { hashCanonicalReviewContent, normalizeReviewContent } from '../shared/review-subject.js';
 import { makeState, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
 import { writeState, readState } from '../adapters/persistence.js';
 import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
@@ -525,6 +528,200 @@ describe('toolBefore — reviewer task authorization', () => {
         { args: { subagent_type: 42, prompt: 'x' } },
       ),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('toolBefore — reviewer dispatch recovery (before-without-after)', () => {
+  const PROMPT = `Review the host-issued artifact with the full plan context.
+
+## Plan
+1. Fix authentication
+2. Add regression tests
+3. Update documentation
+
+iteration=0
+planVersion=1
+
+Provide structured findings per the canonical reviewer contract.`.repeat(2);
+  const PROMPT_DIGEST = crypto.createHash('sha256').update(PROMPT, 'utf8').digest('hex');
+  const PLAN_BODY = normalizeReviewContent('# Plan\n1. Fix auth');
+  const MATERIAL_DIGEST = hashCanonicalReviewContent(PLAN_BODY);
+
+  function pendingReviewFor(obligationId: string, attemptId: string): PendingReview {
+    return {
+      tool: 'flowguard_plan',
+      requestedAt: '2026-01-01T00:00:00.000Z',
+      obligationId,
+      attemptId,
+      subagentCalled: false,
+      subagentRecord: null,
+      contentMeta: null,
+      canonicalPromptAnchor: null,
+      expectedPromptDigest: PROMPT_DIGEST,
+      canonicalPrompt: PROMPT,
+      capturedFindings: null,
+      retryCount: 0,
+      hostAttestationConstants: null,
+      enforcementFailure: null,
+      lastSchemaErrors: null,
+      repairPromptRequired: false,
+      expectedRepairPromptDigest: null,
+    };
+  }
+
+  function planReviewFixture() {
+    const obligation = {
+      ...pendingObligation(),
+      reviewMaterial: {
+        content: PLAN_BODY,
+        materialDigest: MATERIAL_DIGEST,
+        subjectDigest: 'diagnostics-test-subject',
+      },
+      repositoryAuthority: undefined,
+      repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' } as const,
+    };
+    const initialAttempt = {
+      attemptId: crypto.randomUUID(),
+      obligationId: obligation.obligationId,
+      obligationType: 'plan' as const,
+      subjectDigest: obligation.subjectDigest,
+      reviewMaterial: obligation.reviewMaterial,
+      ordinal: 0,
+      status: 'created' as const,
+      origin: { kind: 'initial' } as const,
+      repositoryDiscovery: { kind: 'not_applicable' } as const,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    };
+    return { obligation, initialAttempt };
+  }
+
+  it('HAPPY — a phantom in-flight dispatch is re-armed as a NEW append-only attempt', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const fingerprint = (await computeFingerprint(ws.tmpDir)).fingerprint;
+      const sessionId = crypto.randomUUID();
+      const sessDir = resolveSessionDir(fingerprint, sessionId);
+      const { obligation, initialAttempt } = planReviewFixture();
+      const state = makeState('PLAN', {
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          obligations: [obligation],
+          invocations: [],
+          attempts: [initialAttempt],
+        },
+      });
+      await seedSession(sessDir, state);
+
+      const eState = createSessionState();
+      eState.pendingReviews.set(
+        'flowguard_plan',
+        pendingReviewFor(obligation.obligationId, initialAttempt.attemptId),
+      );
+      eState.executedTaskPrompts.set('call-a', {
+        callId: 'call-a',
+        obligationId: obligation.obligationId,
+        attemptId: initialAttempt.attemptId,
+        canonicalPrompt: PROMPT,
+        canonicalPromptDigest: PROMPT_DIGEST,
+        modelPromptDigest: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      });
+
+      const runtime = makeRuntime({
+        ws: {
+          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          getEnforcementState: vi.fn(() => eState),
+        },
+        auditDeps: { ...makeAuditDeps(sessDir, state), cachedFingerprint: fingerprint },
+      });
+      const args: Record<string, unknown> = {
+        subagent_type: REVIEWER_SUBAGENT_TYPE,
+        prompt: PROMPT,
+      };
+      await expect(
+        toolBefore(runtime, { tool: 'task', sessionID: sessionId, callID: 'call-b' }, { args }),
+      ).resolves.toBeUndefined();
+
+      const persisted = await readState(sessDir);
+      const attempts = persisted!.reviewAssurance!.attempts;
+      expect(attempts).toHaveLength(2);
+      expect(attempts[0]).toMatchObject({ attemptId: initialAttempt.attemptId, status: 'stale' });
+      expect(attempts[1]).toMatchObject({
+        status: 'created',
+        ordinal: 2,
+        origin: {
+          kind: 'task_rearm',
+          predecessorAttemptId: initialAttempt.attemptId,
+          triggerReason: 'interrupted',
+        },
+      });
+      const rearmedId = attempts[1]!.attemptId;
+      expect(rearmedId).not.toBe(initialAttempt.attemptId);
+      expect(attempts[1]!.childSessionId).toBeUndefined();
+      expect(args.description).toBe('FlowGuard reviewer task');
+      expect(args.prompt).toBe(PROMPT);
+      expect(eState.executedTaskPrompts.has('call-a')).toBe(false);
+      expect(eState.executedTaskPrompts.get('call-b')).toMatchObject({ attemptId: rearmedId });
+      expect(eState.pendingReviews.get('flowguard_plan')!.attemptId).toBe(rearmedId);
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('BAD — a phantom record naming a missing attempt fails closed without mutation', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const fingerprint = (await computeFingerprint(ws.tmpDir)).fingerprint;
+      const sessionId = crypto.randomUUID();
+      const sessDir = resolveSessionDir(fingerprint, sessionId);
+      const { obligation, initialAttempt } = planReviewFixture();
+      const state = makeState('PLAN', {
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          obligations: [obligation],
+          invocations: [],
+          attempts: [initialAttempt],
+        },
+      });
+      await seedSession(sessDir, state);
+
+      const ghostAttemptId = crypto.randomUUID();
+      const eState = createSessionState();
+      eState.pendingReviews.set(
+        'flowguard_plan',
+        pendingReviewFor(obligation.obligationId, ghostAttemptId),
+      );
+      eState.executedTaskPrompts.set('call-a', {
+        callId: 'call-a',
+        obligationId: obligation.obligationId,
+        attemptId: ghostAttemptId,
+        canonicalPrompt: PROMPT,
+        canonicalPromptDigest: PROMPT_DIGEST,
+        modelPromptDigest: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      });
+
+      const runtime = makeRuntime({
+        ws: {
+          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          getEnforcementState: vi.fn(() => eState),
+        },
+        auditDeps: { ...makeAuditDeps(sessDir, state), cachedFingerprint: fingerprint },
+      });
+      await expect(
+        toolBefore(
+          runtime,
+          { tool: 'task', sessionID: sessionId, callID: 'call-b' },
+          {
+            args: { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: PROMPT },
+          },
+        ),
+      ).rejects.toThrow('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
+      const persisted = await readState(sessDir);
+      expect(persisted!.reviewAssurance!.attempts).toHaveLength(1);
+    } finally {
+      await ws.cleanup();
+    }
   });
 });
 

@@ -4,8 +4,13 @@ import { findBindableAttempt } from '../attempt-lifecycle.js';
 import { isPendingCaptureUsable } from './prepare-findings.js';
 import type { ExecutedTaskPrompt, PendingReview, SessionEnforcementState } from './types.js';
 
-type DispatchResolution =
+export type DispatchResolution =
   | { readonly kind: 'ready'; readonly prompt: ExecutedTaskPrompt }
+  | {
+      readonly kind: 'in_flight';
+      readonly obligationId: string;
+      readonly attemptId: string;
+    }
   | { readonly kind: 'blocked'; readonly reason: string };
 
 /**
@@ -47,7 +52,11 @@ export function registerExecutedTaskPrompt(
     };
   }
   if (hasInFlightAttempt(enforcement, obligation.obligationId, attempt.attemptId)) {
-    return { kind: 'blocked', reason: 'pending attempt already has an in-flight reviewer Task' };
+    return {
+      kind: 'in_flight',
+      obligationId: obligation.obligationId,
+      attemptId: attempt.attemptId,
+    };
   }
   const canonicalPrompt = pending.canonicalPrompt!;
   const canonicalPromptDigest = digest(canonicalPrompt);

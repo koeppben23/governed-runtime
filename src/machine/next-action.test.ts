@@ -5,6 +5,7 @@ import type { DiscoverySummary } from '../state/discovery-schemas.js';
 import {
   makeState,
   makeProgressedState,
+  assuranceWith,
   TICKET,
   PLAN_RECORD,
   SELF_REVIEW_CONVERGED,
@@ -15,10 +16,55 @@ import {
   ARCHITECTURE_DECISION,
 } from '../fixtures.js';
 import { Phase } from '../state/schema.js';
+import type { ReviewAttempt, ReviewObligation } from '../state/evidence.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
-import { createReviewObligation } from '../integration/review/assurance.js';
+import {
+  artifactReviewSubjectScope,
+  createReviewObligation,
+} from '../integration/review/assurance.js';
+import { hashCanonicalReviewContent, normalizeReviewContent } from '../shared/review-subject.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const PLAN_BODY = normalizeReviewContent('## Plan\n1. Fix auth\n2. Add tests');
+
+function pendingPlanObligation(overrides: Partial<ReviewObligation> = {}): ReviewObligation {
+  const base = createReviewObligation({
+    obligationType: 'plan',
+    iteration: 0,
+    planVersion: 1,
+    now: '2026-01-01T00:00:00.000Z',
+    subjectDigest: 'plan-subject-digest',
+    reviewMaterial: {
+      content: PLAN_BODY,
+      materialDigest: hashCanonicalReviewContent(PLAN_BODY),
+      subjectDigest: 'plan-subject-digest',
+    },
+    reviewSubjectScope: artifactReviewSubjectScope('plan', PLAN_BODY, 'plan-subject-digest'),
+    changedFiles: ['src/auth.ts'],
+    repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+  });
+  return { ...base, ...overrides };
+}
+
+function bindableAttemptFor(obligation: ReviewObligation): ReviewAttempt {
+  return {
+    attemptId: 'attempt-1',
+    obligationId: obligation.obligationId,
+    obligationType: obligation.obligationType,
+    subjectDigest: obligation.subjectDigest,
+    ordinal: 0,
+    status: 'created',
+    origin: { kind: 'initial' },
+    repositoryDiscovery: { kind: 'not_applicable' },
+    createdAt: '2026-01-01T00:00:00.000Z',
+    reviewMaterial: {
+      content: PLAN_BODY,
+      materialDigest: hashCanonicalReviewContent(PLAN_BODY),
+      subjectDigest: 'plan-subject-digest',
+    },
+  };
+}
 
 /** Assert NextAction shape. */
 function expectAction(
@@ -81,25 +127,91 @@ describe('resolveNextAction', () => {
       expect(action.text).toContain('converged');
     });
 
-    it('PLAN with a pending review obligation → RUN_REVIEWER_TASK', () => {
-      const obligation = {
-        obligationType: 'plan',
-        status: 'pending',
-      } as unknown as NonNullable<
-        ReturnType<typeof makeState>['reviewAssurance']
-      >['obligations'][number];
+    it('PLAN with a bindable plan attempt → RUN_REVIEWER_TASK', () => {
+      const obligation = pendingPlanObligation({ status: 'pending' });
+      const attempt = bindableAttemptFor(obligation);
       const state = makeState('PLAN', {
         ticket: TICKET,
         plan: PLAN_RECORD,
         selfReview: SELF_REVIEW_PENDING_FIX,
-        reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
-          obligations: [obligation],
-          invocations: [],
-          attempts: [],
-        },
+        reviewAssurance: assuranceWith({
+          obligation,
+          attempts: [attempt],
+        }),
       });
       expectAction(resolveNextAction('PLAN', state), ACTION_CODES.RUN_REVIEWER_TASK, []);
+    });
+
+    it('PLAN with fulfilled review evidence → verdict submission via /plan', () => {
+      const obligation = pendingPlanObligation({ status: 'fulfilled' });
+      const state = makeState('PLAN', {
+        ticket: TICKET,
+        plan: PLAN_RECORD,
+        selfReview: SELF_REVIEW_PENDING_FIX,
+        reviewAssurance: assuranceWith({ obligation }),
+      });
+      expectAction(resolveNextAction('PLAN', state), ACTION_CODES.RUN_REVIEW_DECISION, ['/plan']);
+    });
+
+    it('PLAN with a blocked review obligation → fresh revision via /plan', () => {
+      const obligation = pendingPlanObligation({
+        status: 'blocked',
+        blockedCode: 'REVIEWER_INVOCATION_EXHAUSTED',
+      });
+      const state = makeState('PLAN', {
+        ticket: TICKET,
+        plan: PLAN_RECORD,
+        selfReview: SELF_REVIEW_PENDING_FIX,
+        reviewAssurance: assuranceWith({ obligation }),
+      });
+      const action = resolveNextAction('PLAN', state);
+      expectAction(action, ACTION_CODES.RUN_PLAN, ['/plan']);
+      expect(action.text).toContain('REVIEWER_INVOCATION_EXHAUSTED');
+    });
+
+    it('PLAN with a pending obligation but no bindable attempt → RUN_CONTINUE fallback', () => {
+      const obligation = pendingPlanObligation({ status: 'pending' });
+      const bound = {
+        ...bindableAttemptFor(obligation),
+        attemptId: 'attempt-bound',
+        childSessionId: 'child-session-1',
+      };
+      const state = makeState('PLAN', {
+        ticket: TICKET,
+        plan: PLAN_RECORD,
+        selfReview: SELF_REVIEW_PENDING_FIX,
+        reviewAssurance: assuranceWith({
+          obligation,
+          attempts: [bound],
+        }),
+      });
+      const action = resolveNextAction('PLAN', state);
+      expectAction(action, ACTION_CODES.RUN_CONTINUE, ['/continue']);
+    });
+
+    it('PLAN with a repairable rejected attempt → authorized repair via /plan', () => {
+      const obligation = pendingPlanObligation({
+        status: 'pending',
+        maxReviewerOutputRepairAttempts: 1,
+      });
+      const rejected = {
+        ...bindableAttemptFor(obligation),
+        attemptId: 'attempt-rejected',
+        status: 'rejected' as const,
+        rejectionReason: 'schema_invalid' as const,
+      };
+      const state = makeState('PLAN', {
+        ticket: TICKET,
+        plan: PLAN_RECORD,
+        selfReview: SELF_REVIEW_PENDING_FIX,
+        reviewAssurance: assuranceWith({
+          obligation,
+          attempts: [rejected],
+        }),
+      });
+      const action = resolveNextAction('PLAN', state);
+      expectAction(action, ACTION_CODES.RUN_PLAN, ['/plan']);
+      expect(action.text).toContain('authorized repair');
     });
 
     it('PLAN_REVIEW → RUN_REVIEW_DECISION', () => {

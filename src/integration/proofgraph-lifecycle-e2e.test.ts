@@ -456,7 +456,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     expect(context).toContain('Plan approval certificate: none recorded');
   });
 
-  it('rejects a critical claim without a counterexample check at submission', async () => {
+  it('persists a critical claim without a counterexample check as rejected_blocking', async () => {
     env = await boot('plan-reject');
     await writeStateWithArtifacts(
       env.sDir,
@@ -476,15 +476,18 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     );
     const parsed = JSON.parse(String(raw));
 
-    expect(parsed.error).toBe(true);
-    expect(parsed.code).toBe('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE');
-    // Nothing may be persisted: an unprovable claim must never reach a certificate.
+    expect(parsed.error).toBeUndefined();
+    expect(parsed.claimSubmissionDiagnostics).toMatchObject({
+      rejectedClaims: [{ disposition: 'rejected_blocking' }],
+    });
+    // The plan persists, but nothing unprovable reaches the declaration authority.
     const state = await readState(env.sDir);
-    expect(state!.plan).toBeFalsy();
-    expect(state!.phase).toBe('TICKET');
+    expect(state!.plan).toBeTruthy();
+    expect(state!.plan!.claimDeclarations?.claims).toHaveLength(0);
+    expect(state!.plan!.claimSubmissionDiagnostics!.rejectedClaims).toHaveLength(1);
   });
 
-  it('rejects a critical claim that reuses its positive check at submission', async () => {
+  it('persists a critical claim that reuses its positive check as rejected_blocking', async () => {
     env = await boot('plan-same-check');
     await writeStateWithArtifacts(
       env.sDir,
@@ -513,15 +516,17 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     );
     const parsed = JSON.parse(String(raw));
 
-    expect(parsed.code).toBe('PROOFGRAPH_CLAIM_UNSATISFIABLE');
-    expect(String(parsed.message)).toContain('counterexampleRequirement');
-    expect(String(parsed.message)).toContain('assertionCapability');
+    expect(parsed.error).toBeUndefined();
+    expect(parsed.claimSubmissionDiagnostics).toMatchObject({
+      rejectedClaims: [{ disposition: 'rejected_blocking' }],
+    });
     const state = await readState(env.sDir);
-    expect(state!.plan).toBeFalsy();
-    expect(state!.phase).toBe('TICKET');
+    expect(state!.plan).toBeTruthy();
+    expect(state!.plan!.claimDeclarations?.claims).toHaveLength(0);
+    expect(state!.plan!.claimSubmissionDiagnostics!.rejectedClaims).toHaveLength(1);
   });
 
-  it('rejects a claim referencing a check that is not active', async () => {
+  it('persists a claim referencing a check that is not active as rejected_blocking', async () => {
     env = await boot('plan-inactive-check');
     await writeStateWithArtifacts(
       env.sDir,
@@ -535,8 +540,14 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     const raw = await plan.execute({ planText: PLAN_TEXT, claims: [CRITICAL_CLAIM_INPUT] }, env.tc);
     const parsed = JSON.parse(String(raw));
 
-    expect(parsed.code).toBe('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE');
-    expect(String(parsed.message)).toContain('security');
+    expect(parsed.error).toBeUndefined();
+    expect(parsed.claimSubmissionDiagnostics).toMatchObject({
+      rejectedClaims: [{ disposition: 'rejected_blocking' }],
+    });
+    const state = await readState(env.sDir);
+    expect(state!.plan).toBeTruthy();
+    expect(state!.plan!.claimDeclarations?.claims).toHaveLength(0);
+    expect(state!.plan!.claimSubmissionDiagnostics!.rejectedClaims).toHaveLength(1);
   });
 
   it('warns early when target paths look HIGH-RISK without a critical claim', async () => {

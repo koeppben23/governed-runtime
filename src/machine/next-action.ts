@@ -17,6 +17,7 @@
  */
 
 import type { Phase, SessionState } from '../state/schema.js';
+import { resolveReviewContinuation } from '../state/review-continuation.js';
 import { isConverged } from './guards.js';
 import { evaluateValidationEvidence } from './validation-evidence.js';
 
@@ -264,33 +265,52 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
   }),
 };
 
-function planReviewAction(phase: Phase, state: SessionState): NextAction | null {
-  if (phase !== 'PLAN') return null;
-  const latestPlanReview = [...(state.reviewAssurance?.obligations ?? [])]
-    .reverse()
-    .find((obligation) => obligation.obligationType === 'plan');
-  if (latestPlanReview?.status === 'blocked') {
-    return {
-      code: ACTION_CODES.RUN_PLAN,
-      text: `Plan review is blocked (${latestPlanReview.blockedCode ?? 'unknown'}). Submit a corrected plan revision with /plan to mint a fresh review obligation.`,
-      commands: ['/plan'],
-    };
+function reviewLifecycleAction(
+  phase: Phase,
+  state: SessionState,
+  flow: 'PLAN' | 'ARCHITECTURE',
+): NextAction | null {
+  if (phase !== flow) return null;
+  const continuation = resolveReviewContinuation(
+    state.reviewAssurance,
+    flow === 'PLAN' ? 'plan' : 'architecture',
+  );
+  const command = flow === 'PLAN' ? '/plan' : '/architecture';
+  const label = flow === 'PLAN' ? 'Plan' : 'Architecture';
+  switch (continuation.kind) {
+    case 'awaiting_task':
+      return {
+        code: ACTION_CODES.RUN_REVIEWER_TASK,
+        text: `Independent ${label.toLowerCase()} review is pending. Invoke the flowguard-reviewer Task, then submit only its verdict with ${command}.`,
+        commands: [],
+      };
+    case 'output_repair':
+      return {
+        code: ACTION_CODES.RUN_PLAN,
+        text: `The latest ${label.toLowerCase()} review attempt needs an authorized repair. Re-run ${command} to re-issue the reviewer attempt on the existing obligation.`,
+        commands: [command],
+      };
+    case 'integrity_blocked':
+      return {
+        code: ACTION_CODES.REVIEW_STATE_INCOMPLETE,
+        text: `${label} review material integrity is blocked (${continuation.code}). Submit a fresh revision with ${command}; the broken obligation is never repaired in place.`,
+        commands: [command],
+      };
+    case 'awaiting_verdict':
+      return {
+        code: ACTION_CODES.RUN_REVIEW_DECISION,
+        text: `Independent ${label.toLowerCase()} review evidence is ready. Submit its verdict with ${command}.`,
+        commands: [command],
+      };
+    case 'blocked':
+      return {
+        code: ACTION_CODES.RUN_PLAN,
+        text: `${label} review is blocked (${continuation.obligation.blockedCode ?? 'unknown'}). Submit a corrected revision with ${command} to mint a fresh review obligation.`,
+        commands: [command],
+      };
+    case 'none':
+      return null;
   }
-  if (latestPlanReview?.status === 'pending') {
-    return {
-      code: ACTION_CODES.RUN_REVIEWER_TASK,
-      text: 'Independent plan review is pending. Invoke the flowguard-reviewer Task, then submit only its verdict with /plan.',
-      commands: [],
-    };
-  }
-  if (latestPlanReview?.status === 'fulfilled') {
-    return {
-      code: ACTION_CODES.RUN_REVIEW_DECISION,
-      text: 'Independent plan review evidence is ready. Submit its verdict with /plan.',
-      commands: ['/plan'],
-    };
-  }
-  return null;
 }
 
 // ─── Resolver ─────────────────────────────────────────────────────────────────
@@ -307,8 +327,10 @@ function planReviewAction(phase: Phase, state: SessionState): NextAction | null 
  * @returns NextAction with code, guidance text, and available commands.
  */
 export function resolveNextAction(phase: Phase, state: SessionState): NextAction {
-  const planAction = planReviewAction(phase, state);
+  const planAction = reviewLifecycleAction(phase, state, 'PLAN');
   if (planAction) return planAction;
+  const architectureAction = reviewLifecycleAction(phase, state, 'ARCHITECTURE');
+  if (architectureAction) return architectureAction;
   const pendingStandaloneReview = state.reviewAssurance?.obligations.some(
     (obligation) => obligation.obligationType === 'review' && obligation.status === 'pending',
   );

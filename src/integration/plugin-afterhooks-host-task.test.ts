@@ -355,12 +355,12 @@ describe('reviewer host-task after-hook: extraction_invalid → sequential re-in
     }
   });
 
-  it('blocks a concurrent reviewer dispatch before either Task can bind the attempt', async () => {
+  it('re-arms a concurrent reviewer dispatch onto a NEW append-only attempt', async () => {
     const ws = await createTestWorkspace();
     try {
       await execFileAsync('git', ['init'], { cwd: ws.tmpDir });
       const sessionID = crypto.randomUUID();
-      await seedHostTaskPlanSession(ws.tmpDir, sessionID);
+      const sessDir = await seedHostTaskPlanSession(ws.tmpDir, sessionID);
       const hooks = await FlowGuardAuditPlugin(
         createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
       );
@@ -382,8 +382,17 @@ describe('reviewer host-task after-hook: extraction_invalid → sequential re-in
         beforeHook({ tool: 'task', sessionID, callID: 'call-b' }, { args: { ...reviewerArgs } }),
       ]);
 
-      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-      expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+      // Both dispatches are legal: the second is re-armed onto a fresh attempt
+      // instead of deadlocking the obligation's liveness.
+      expect(results.every((result) => result.status === 'fulfilled')).toBe(true);
+
+      const persisted = await readState(sessDir);
+      const attempts = persisted!.reviewAssurance!.attempts;
+      expect(attempts).toHaveLength(2);
+      expect(attempts.filter((attempt) => attempt.status === 'stale')).toHaveLength(1);
+      const rearmed = attempts.find((attempt) => attempt.status === 'created')!;
+      expect(rearmed.origin).toMatchObject({ kind: 'task_rearm', triggerReason: 'interrupted' });
+      expect(rearmed.childSessionId).toBeUndefined();
     } finally {
       await ws.cleanup();
     }

@@ -54,14 +54,18 @@ describe('registerExecutedTaskPrompt', () => {
     expect(result).toMatchObject({ kind: 'ready', prompt: { attemptId: attempt.attemptId } });
   });
 
-  it('reserves an attempt for exactly one in-flight reviewer Task', () => {
-    const { enforcement, assurance } = setup();
+  it('reports a second dispatch of the same attempt as in-flight, not blocked', () => {
+    const { enforcement, assurance, obligation, attempt } = setup();
 
     const first = registerExecutedTaskPrompt(enforcement, assurance, 'call-a', PROMPT, NOW);
     const concurrent = registerExecutedTaskPrompt(enforcement, assurance, 'call-b', PROMPT, NOW);
 
     expect(first).toMatchObject({ kind: 'ready' });
-    expect(concurrent).toMatchObject({ kind: 'blocked' });
+    expect(concurrent).toMatchObject({
+      kind: 'in_flight',
+      obligationId: obligation.obligationId,
+      attemptId: attempt.attemptId,
+    });
     expect(enforcement.executedTaskPrompts).toHaveLength(1);
     expect(enforcement.executedTaskPrompts.has('call-a')).toBe(true);
   });

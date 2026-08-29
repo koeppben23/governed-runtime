@@ -273,7 +273,20 @@ function enforceApprovalIdentity(
   return verifyAssuranceThreshold(input, ctx);
 }
 
-/** Enforce ProofGraph only for the governed lifecycle's final evidence approval. */
+function rejectedCriticalClaimBlock(state: SessionState): RailBlocked | null {
+  const claim = state.plan?.claimSubmissionDiagnostics?.rejectedClaims.find(
+    (item) => item.disposition === 'rejected_blocking',
+  );
+  return claim
+    ? blocked('PROOFGRAPH_CLAIM_NOT_DECLARED', {
+        claimRef: claim.claimRef,
+        field: 'claim declaration',
+        detail: claim.reason,
+      })
+    : null;
+}
+
+/** Enforce ProofGraph only for governed plan and final evidence approval. */
 function enforceProofGraphEvidenceApproval(
   state: SessionState,
   input: ReviewDecisionInput,
@@ -284,16 +297,8 @@ function enforceProofGraphEvidenceApproval(
   ) {
     return null;
   }
-  const rejectedCriticalClaim = state.plan?.claimSubmissionDiagnostics?.rejectedClaims.find(
-    (claim) => claim.disposition === 'rejected_blocking',
-  );
-  if (rejectedCriticalClaim) {
-    return blocked('PROOFGRAPH_CLAIM_NOT_DECLARED', {
-      claimRef: rejectedCriticalClaim.claimRef,
-      field: 'claim declaration',
-      detail: rejectedCriticalClaim.reason,
-    });
-  }
+  const rejectedBlock = rejectedCriticalClaimBlock(state);
+  if (rejectedBlock) return rejectedBlock;
   if (state.phase !== 'EVIDENCE_REVIEW') return null;
   const authorization = authorizedCriticalPlanClaimIds(state.plan);
   const decision = evaluateProofGraphGate({
