@@ -133,6 +133,9 @@ describe('mutation episode evidence', () => {
 
     // Resolution unblocks /implement.
     expect(hasUnresolvedMutationEpisodes(episodes, resolutions)).toBe(false);
+    // The same resolution also makes the historical dispatch non-blocking for
+    // final approval; fresh evidence is enforced by the revalidation authority.
+    expect(hasUnboundMutationEpisodes(episodes, resolutions)).toBe(false);
     // The dispatch_authorized episode itself is unchanged.
     expect(episodes[0]?.status).toBe('dispatch_authorized');
 

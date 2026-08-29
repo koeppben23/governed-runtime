@@ -211,14 +211,28 @@ export function hasUnresolvedMutationEpisodes(
 }
 
 /**
- * True when a host mutation has either not completed or has completed without
- * being bound to an implementation digest. Final evidence approval must not
- * advance while either condition can make its reviewed subject stale.
+ * True when a host mutation has either not completed without an append-only
+ * unknown-outcome resolution, or has completed without being bound to an
+ * implementation digest. Final evidence approval must not advance while either
+ * condition can make its reviewed subject stale.
  */
-export function hasUnboundMutationEpisodes(episodes: readonly MutationEpisode[]): boolean {
-  return episodes.some(
-    (episode) => episode.status === 'dispatch_authorized' || episode.implementationDigest === null,
-  );
+export function countUnboundMutationEpisodes(
+  episodes: readonly MutationEpisode[],
+  resolutions: readonly MutationEpisodeResolution[] = [],
+): number {
+  const resolvedCallIds = new Set(resolutions.map((resolution) => resolution.hostCallId));
+  return episodes.filter(
+    (episode) =>
+      (episode.status === 'dispatch_authorized' && !resolvedCallIds.has(episode.hostCallId)) ||
+      (episode.status === 'completed' && episode.implementationDigest === null),
+  ).length;
+}
+
+export function hasUnboundMutationEpisodes(
+  episodes: readonly MutationEpisode[],
+  resolutions: readonly MutationEpisodeResolution[] = [],
+): boolean {
+  return countUnboundMutationEpisodes(episodes, resolutions) > 0;
 }
 
 /** Latest resolution time, or null when no unknown-outcome resolution exists. */

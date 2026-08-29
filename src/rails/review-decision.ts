@@ -63,7 +63,7 @@ import {
   type ResolvedPlanReviewEvidence,
 } from './review-evidence-resolution.js';
 import { enforcePlanReviewEvidence, planCertificatePatch } from './plan-review-evidence.js';
-import { hasUnboundMutationEpisodes } from '../state/evidence-mutation-episode.js';
+import { countUnboundMutationEpisodes } from '../state/evidence-mutation-episode.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -314,18 +314,21 @@ function enforceProofGraphEvidenceApproval(
 
 /**
  * The final human approval is bound to the recorded implementation digest.
- * Any dispatched or completed-but-unbound host mutation can have changed the
- * worktree after that digest was captured, so it must return to IMPLEMENTATION.
+ * Any unresolved dispatch or completed-but-unbound host mutation can have
+ * changed the worktree after that digest was captured. A fenced unknown-outcome
+ * resolution is historical provenance; fresh evidence is enforced separately
+ * by the canonical revalidation gate before review acceptance.
  */
 function enforceMutationEpisodeEvidenceApproval(
   state: SessionState,
   input: ReviewDecisionInput,
 ): RailBlocked | null {
   if (state.phase !== 'EVIDENCE_REVIEW' || input.verdict !== 'approve') return null;
-  const unboundCount = state.mutationEpisodes.filter(
-    (episode) => episode.status === 'dispatch_authorized' || episode.implementationDigest === null,
-  ).length;
-  return hasUnboundMutationEpisodes(state.mutationEpisodes)
+  const unboundCount = countUnboundMutationEpisodes(
+    state.mutationEpisodes,
+    state.mutationEpisodeResolutions,
+  );
+  return unboundCount > 0
     ? blocked('MUTATION_EPISODE_BINDING_REQUIRED', { count: String(unboundCount) })
     : null;
 }

@@ -58,6 +58,12 @@ describe('config/reasons', () => {
       expect(reason?.quickFixCommand).toBe('/review-decision changes_requested');
       expect(reason?.recoverySteps[0]).toContain('Request changes');
     });
+
+    it('mutation binding recovery first reopens IMPLEMENTATION from the evidence gate', () => {
+      const reason = defaultReasonRegistry.get('MUTATION_EPISODE_BINDING_REQUIRED');
+      expect(reason?.quickFixCommand).toBe('/request-changes');
+      expect(reason?.recoverySteps[0]).toContain('/request-changes');
+    });
   });
 
   // ─── BAD ───────────────────────────────────────────────────

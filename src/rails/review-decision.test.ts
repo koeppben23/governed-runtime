@@ -1254,6 +1254,46 @@ describe('review-decision rail', () => {
       expect(result).toMatchObject({ kind: 'blocked', code: 'MUTATION_EPISODE_BINDING_REQUIRED' });
     });
 
+    it('allows final approval after a fenced unknown-outcome resolution and fresh review evidence', () => {
+      const state = makeState('EVIDENCE_REVIEW', {
+        implementation: { ...IMPL_EVIDENCE, executedAt: '2026-02-01T00:00:00.000Z' },
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
+        mutationEpisodes: [
+          {
+            episodeId: '00000000-0000-4000-8000-000000000017',
+            hostCallId: 'crashed-host-edit',
+            toolName: 'edit',
+            runtimeInstanceId: '00000000-0000-4000-8000-000000000018',
+            leaseGeneration: 1,
+            authorizedAt: FIXED_TIME,
+            status: 'dispatch_authorized',
+            completedAt: null,
+            outcome: null,
+            implementationDigest: null,
+            evidenceStatus: 'ineligible',
+          },
+        ],
+        mutationEpisodeResolutions: [
+          {
+            resolutionId: '00000000-0000-4000-8000-000000000019',
+            hostCallId: 'crashed-host-edit',
+            status: 'reconciled_after_unknown_outcome',
+            basis: 'worktree_recapture',
+            resolvedAt: '2026-01-15T00:00:00.000Z',
+          },
+        ],
+      });
+
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'approve recaptured subject', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') expect(result.state.phase).toBe('COMPLETE');
+    });
+
     it('does not block final approval for a historical episode bound stale by a later implementation', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,

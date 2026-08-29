@@ -31,10 +31,16 @@ import {
 import { readState, writeState } from '../adapters/persistence.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
 import { FROZEN_IMPLEMENTATION_BASE, IMPL_EVIDENCE, makeProgressedState } from '../fixtures.js';
-import { implement, review_implementation, reconcile_mutation_episode } from './tools/index.js';
+import {
+  decision,
+  implement,
+  review_implementation,
+  reconcile_mutation_episode,
+} from './tools/index.js';
 import { hasUnresolvedMutationEpisodes } from '../state/evidence-mutation-episode.js';
 import { resetRuntimeInstanceIdForTest } from './runtime-instance.js';
 import { RUNTIME_LEASE_FILE } from './runtime-lease.js';
+import { recordUserDecisionIntent } from './user-decision-intent.js';
 
 /** Simulate the death of the lease holder (a real dead process fails PID liveness). */
 async function killLeaseHolder(sessDir: string): Promise<void> {
@@ -310,6 +316,66 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       expect(freshVerdict.code).not.toBe('MUTATION_OUTCOME_UNKNOWN_REVALIDATION_REQUIRED');
     } finally {
       resetRuntimeInstanceIdForTest();
+      await ws.cleanup();
+    }
+  });
+
+  it('allows a fenced recovered session with fresh evidence to complete', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessionID = crypto.randomUUID();
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+      await fs.mkdir(sessDir, { recursive: true });
+      const recoveredState = makeProgressedState('EVIDENCE_REVIEW');
+      await writeStateWithArtifacts(sessDir, {
+        ...recoveredState,
+        implementation: {
+          ...recoveredState.implementation!,
+          executedAt: '2026-02-01T00:00:00.000Z',
+        },
+        mutationEpisodes: [
+          {
+            episodeId: crypto.randomUUID(),
+            hostCallId: 'crashed-host-edit',
+            toolName: 'edit',
+            runtimeInstanceId: crypto.randomUUID(),
+            leaseGeneration: 1,
+            authorizedAt: '2026-01-01T00:00:00.000Z',
+            status: 'dispatch_authorized',
+            completedAt: null,
+            outcome: null,
+            implementationDigest: null,
+            evidenceStatus: 'ineligible',
+          },
+        ],
+        mutationEpisodeResolutions: [
+          {
+            resolutionId: crypto.randomUUID(),
+            hostCallId: 'crashed-host-edit',
+            status: 'reconciled_after_unknown_outcome',
+            basis: 'worktree_recapture',
+            resolvedAt: '2026-01-15T00:00:00.000Z',
+          },
+        ],
+      });
+      const ctx = createToolContext({ sessionID, worktree: ws.tmpDir, directory: ws.tmpDir });
+      recordUserDecisionIntent({
+        sessionId: sessionID,
+        command: '/approve',
+        expectedVerdict: 'approve',
+      });
+
+      const approval = parseToolResult<{ code?: string }>(
+        await decision.execute(
+          { verdict: 'approve', rationale: 'fresh recovery evidence' },
+          ctx as never,
+        ),
+      );
+
+      expect(approval.code).not.toBe('MUTATION_EPISODE_BINDING_REQUIRED');
+      expect((await readState(sessDir))!.phase).toBe('COMPLETE');
+    } finally {
       await ws.cleanup();
     }
   });
