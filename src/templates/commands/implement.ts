@@ -35,6 +35,10 @@ ${DISCOVERY_REVIEW_CAPTURE}
    to retrieve the complete canonical plan content. Use ONLY the returned content — do not
    reconstruct or infer plan details from metadata alone.)
 3. Execute each step in order:
+   - FIRST confirm this is a git repository (e.g. \`git rev-parse --is-inside-work-tree\` in the
+     worktree). Implementation evidence is git-derived; in a non-Git directory \`flowguard_implement\`
+     fails closed with \`NOT_GIT_REPO\` and no code change can be recorded. Verify git availability and
+     initialize a repository before making any file changes.
    - Use \`read\` to examine existing files before modifying.
    - Use \`write\` or \`edit\` to create or modify files.
    - Use \`bash\` for commands (install dependencies, run formatters, etc.).
@@ -50,8 +54,10 @@ ${DISCOVERY_REVIEW_CAPTURE}
     IMPL_VALIDATION) and \`verificationCandidates\`. The session is now in IMPL_VALIDATION after
     recording evidence.
     - If both \`activeChecks\`/\`remainingChecks\` and \`verificationCandidates\` are empty:
-      report no active checks and stop — the IMPL_REVIEW gate cannot be reached without
-      canonical check execution. Surface the current \`nextAction\` from status.
+      report no active checks and stop without calling \`flowguard_run_check\`. Read the
+      canonical \`nextAction\`: the machine MAY permit a vacuous validation transition only
+      through \`/validate\` when policy allows it, otherwise Discovery recovery is required.
+      Report that exact \`nextAction\`.
     - If \`activeChecks\`/\`remainingChecks\` is non-empty: for each kind, call
       \`flowguard_run_check({ kind: "<kind>" })\`.
     - If \`activeChecks\`/\`remainingChecks\` is empty but \`verificationCandidates\` is non-empty:

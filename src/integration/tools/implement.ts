@@ -13,6 +13,7 @@ import {
   handleImplRecord,
   validateImplRecordPrerequisites,
   validateInitialReviewFindings,
+  validateGitPrerequisite,
 } from './implement-record.js';
 import { handleImplReview } from './implement-review.js';
 
@@ -30,6 +31,12 @@ async function executeImplementRecord(context: ToolContext): Promise<string> {
   if (prereqBlocked) return prereqBlocked;
   const findingsBlocked = validateInitialReviewFindings(probeRuntime);
   if (findingsBlocked) return findingsBlocked;
+
+  // Git prerequisite (#575): fail closed with a clear block before running any
+  // worktree git inspection, so a non-Git development flow is caught here rather
+  // than after the agent has made code changes.
+  const gitBlocked = await validateGitPrerequisite(probe.worktree);
+  if (gitBlocked) return gitBlocked;
 
   // Git/worktree inspection can be slow and must not hold the session write lock.
   const files = await changedFiles(probe.worktree);

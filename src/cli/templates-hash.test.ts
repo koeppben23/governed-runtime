@@ -96,8 +96,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // p41 -> p42: mandate semantics fixed (removed 'info' severity, corrected type names,
     //   evidenceLocations may be empty). Refreshed for reviewer-owned input DTO:
     // reviewer provenance is host-stamped after strict input validation.
+    // Refreshed for the untrusted-data compactness fix: merged the
+    // untrusted-data sentence onto a single line, keeping the reviewer prompt
+    // within its compactness budget.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      '5f0f74912c51e1fab914de853e705ab62fdd93c1370010c419dc274d5a3cc93a',
+      'd69f8bcf75c2d42bb32ac3838d9243d3baae61b90f4450d62e11c01b02a34c83',
     );
   });
 
@@ -275,7 +278,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '0fa4f2d5fddd92da6530d06e572013154b74a1bb3b86fafedc70168e2dfd226f',
+      'fad31d6e9b95d503a87a3ce6b8da65d2f628674aa7d55b034d18ba643cdf9344',
     );
   });
 

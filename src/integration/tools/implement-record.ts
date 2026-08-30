@@ -70,7 +70,7 @@ import { isCommandAllowed, Command } from '../../machine/commands.js';
 // Rail helpers
 
 // Adapters
-import { changedFiles, hashWorktreeFiles, worktreeDiff } from '../../adapters/git.js';
+import { changedFiles, hashWorktreeFiles, isGitRepo, worktreeDiff } from '../../adapters/git.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import { writeImplementationDiffArtifact } from './implement-diff-artifact.js';
 
@@ -162,6 +162,19 @@ export function validateImplRecordPrerequisites(input: ImplementRuntime): string
     });
   }
   return null;
+}
+
+/**
+ * Git prerequisite for recording implementation evidence (#575): recording is
+ * git-derived (changed-file detection, content hashes, and the diff artifact
+ * all read the worktree via git). Fail closed here with a clear `NOT_GIT_REPO`
+ * block BEFORE any git command runs, so a non-Git development worktree surfaces
+ * an actionable reason instead of a raw `GIT_COMMAND_FAILED` dead-end after the
+ * agent has already made code changes.
+ */
+export async function validateGitPrerequisite(worktree: string): Promise<string | null> {
+  if (await isGitRepo(worktree)) return null;
+  return formatBlocked('NOT_GIT_REPO', { path: worktree });
 }
 
 function buildImplRecordedResponse(input: {
@@ -361,6 +374,9 @@ export async function handleImplRecord(
 ): Promise<string> {
   const blocked = validateImplRecordPrerequisites(input);
   if (blocked) return blocked;
+
+  const gitBlocked = await validateGitPrerequisite(input.worktree);
+  if (gitBlocked) return gitBlocked;
 
   const rawFiles = changedFilesOverride ?? (await changedFiles(input.worktree));
   const scoped = await scopeImplementationFiles(
