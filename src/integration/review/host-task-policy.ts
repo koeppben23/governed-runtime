@@ -10,7 +10,11 @@ import { createHash } from 'node:crypto';
 import { parseToolResult, getToolOutput } from '../plugin-helpers.js';
 import { extractContentMeta } from './enforcement/extraction.js';
 import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
-import { renderReviewContext, renderReviewerTaskPrompt } from './prompt-builders.js';
+import {
+  type AdvisoryChallengeResolution,
+  renderReviewContext,
+  renderReviewerTaskPrompt,
+} from './prompt-builders.js';
 import { rebuildBlockedPresentation } from '../tools/blocked-presentation.js';
 import {
   verifyFrozenMaterialForObligation,
@@ -34,7 +38,10 @@ import {
 } from './assurance.js';
 import { updateObligation } from './obligation-state.js';
 import { resolveRepositoryObservationAccess } from './observation-access.js';
-import { buildArtifactContext } from './artifact-review-context.js';
+import {
+  buildArtifactContext,
+  buildHostTaskChallengeResolutions,
+} from './artifact-review-context.js';
 import type { SessionState } from '../../state/schema.js';
 import {
   hasFrozenRepositoryAuthority,
@@ -129,6 +136,8 @@ interface HostTaskOutputInput {
    */
   readonly observationRevisions: readonly ('base' | 'head')[];
   readonly repositoryReview: boolean;
+  /** Same advisory resolutions as the SDK path, for the current implementation digest. */
+  readonly challengeResolutions: ReadonlyArray<AdvisoryChallengeResolution>;
 }
 
 /**
@@ -243,33 +252,7 @@ function resolveHostTaskContext(
 function buildReviewerTaskPromptOrNull(
   attestationMeta: HostTaskAttestationMeta | null,
   ctx: { iteration: number; planVersion: number | null } | null,
-  opts: {
-    readonly challengeContract: Parameters<typeof renderReviewerTaskPrompt>[0]['challengeContract'];
-    readonly proofContext: readonly string[];
-    readonly artifactContext: readonly string[];
-    readonly frozenReviewerContext: FrozenReviewerContext | null;
-    /**
-     * Host-enforced artifact anchor contract for artifact-scoped obligations
-     * (plan/ADR). Empty for standalone subjects.
-     */
-    readonly artifactAnchorContract: readonly string[];
-    /**
-     * Host-enforced subject anchor contract for implementation-scoped
-     * obligations. Empty for other obligation types.
-     */
-    readonly implementationAnchorContract: readonly string[];
-    readonly retrySchemaErrors: readonly string[] | null;
-    readonly repositoryDiscoverySnapshot: RepositoryDiscoverySnapshot | null;
-    readonly observationCapability: string | null;
-    /**
-     * Exact frozen revisions the reviewer may observe, derived from the owning
-     * obligation's frozen authority. Empty when no frozen revision resolves —
-     * the renderer then advertises no observation contract even if a stale
-     * capability string exists on the attempt.
-     */
-    readonly observationRevisions: readonly ('base' | 'head')[];
-    readonly repositoryReview: boolean;
-  },
+  input: HostTaskOutputInput,
 ): string | null {
   if (!attestationMeta || ctx?.iteration == null) return null;
   return renderReviewerTaskPrompt({
@@ -279,27 +262,28 @@ function buildReviewerTaskPromptOrNull(
     mandateDigest: attestationMeta.mandateDigest,
     criteriaVersion: attestationMeta.criteriaVersion,
     subjectLabel: 'the artifact under review',
-    repositoryReview: opts.repositoryReview,
-    challengeContract: opts.challengeContract,
-    proofContext: opts.proofContext,
-    artifactContext: opts.artifactContext,
-    frozenReviewerContext: opts.frozenReviewerContext ?? undefined,
-    artifactAnchorContract: opts.artifactAnchorContract,
-    implementationAnchorContract: opts.implementationAnchorContract,
-    retrySchemaErrors: opts.retrySchemaErrors ?? undefined,
-    repositoryDiscoverySnapshot: opts.repositoryDiscoverySnapshot,
-    ...(opts.observationCapability ? { observationCapability: opts.observationCapability } : {}),
-    observationRevisions: opts.observationRevisions,
+    repositoryReview: input.repositoryReview,
+    challengeContract: input.challengeContract,
+    proofContext: input.proofContext,
+    artifactContext: input.artifactContext,
+    challengeResolutions: input.challengeResolutions,
+    frozenReviewerContext: input.frozenReviewerContext ?? undefined,
+    artifactAnchorContract: input.artifactAnchorContract,
+    implementationAnchorContract: input.implementationAnchorContract,
+    retrySchemaErrors: input.retrySchemaErrors ?? undefined,
+    repositoryDiscoverySnapshot: input.repositoryDiscoverySnapshot,
+    ...(input.observationCapability ? { observationCapability: input.observationCapability } : {}),
+    observationRevisions: input.observationRevisions,
   });
 }
 
-// eslint-disable-next-line complexity, max-lines-per-function -- Response presentation combines the independent policy and authoring outcomes.
+// eslint-disable-next-line complexity -- Response presentation combines the independent policy and authoring outcomes.
 function buildHostTaskBlockedOutput(
   result: Record<string, unknown>,
   input: HostTaskOutputInput,
 ): string {
   const authoringSucceeded = result.error !== true;
-  const { policy, attestationMeta, challengeContract, proofContext } = input;
+  const { policy, attestationMeta } = input;
   if (!authoringSucceeded) {
     result.code = REASON_HOST_SUBAGENT_TASK_REQUIRED;
     result.message = `Policy requires host-visible Task-tool evidence for ${REVIEWER_SUBAGENT_TYPE}; submit only the captured reviewer verdict after the Task completes.`;
@@ -311,19 +295,7 @@ function buildHostTaskBlockedOutput(
       ? renderReviewContext({ iteration: ctx.iteration, planVersion: ctx.planVersion })
       : '';
 
-  const reviewerTaskPrompt = buildReviewerTaskPromptOrNull(attestationMeta, ctx, {
-    challengeContract,
-    proofContext,
-    artifactContext: input.artifactContext,
-    frozenReviewerContext: input.frozenReviewerContext,
-    artifactAnchorContract: input.artifactAnchorContract,
-    implementationAnchorContract: input.implementationAnchorContract,
-    retrySchemaErrors: input.retrySchemaErrors,
-    repositoryDiscoverySnapshot: input.repositoryDiscoverySnapshot,
-    observationCapability: input.observationCapability,
-    observationRevisions: input.observationRevisions,
-    repositoryReview: input.repositoryReview,
-  });
+  const reviewerTaskPrompt = buildReviewerTaskPromptOrNull(attestationMeta, ctx, input);
   const copyPromptStr = reviewerTaskPrompt
     ? ` A canonical reviewer prompt is provided in the reviewerTaskPrompt field. Call Task only ` +
       `with subagent_type="${REVIEWER_SUBAGENT_TYPE}"; FlowGuard injects the canonical bytes ` +
@@ -605,6 +577,7 @@ function buildHostTaskOutputInput(
       observationAccess?.available === true ? observationAccess.capability : null,
     observationRevisions: observationAccess?.revisions ?? [],
     repositoryReview: obligation ? hasFrozenRepositoryAuthority(obligation) : false,
+    challengeResolutions: buildHostTaskChallengeResolutions(sessionState),
   };
 }
 

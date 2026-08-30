@@ -69,6 +69,14 @@ export function renderFrozenReviewSubjectEnvelope(context: FrozenReviewerContext
   ];
 }
 
+/** Advisory author-recorded implementation challenge resolution (NOT_VERIFIED). */
+export interface AdvisoryChallengeResolution {
+  readonly challengeId: string;
+  readonly implementationDigest: string;
+  readonly validationAttemptIds: string[];
+  readonly resolvedAt: string;
+}
+
 /** Inputs for the canonical, copy-ready reviewer Task prompt (F10). */
 export interface ReviewerTaskPromptInput {
   readonly iteration: number;
@@ -97,6 +105,13 @@ export interface ReviewerTaskPromptInput {
    * judges an artifact without knowing what was promised or which checks ran.
    */
   readonly artifactContext?: readonly string[];
+  /**
+   * Advisory author-recorded implementation challenge resolutions (NOT_VERIFIED)
+   * for the current implementation digest. Supplied by the caller so this
+   * renderer stays free of state access. Mirrors the SDK path so a host-task
+   * reviewer sees the same advisory resolutions.
+   */
+  readonly challengeResolutions?: ReadonlyArray<AdvisoryChallengeResolution>;
   /** Integrity-verified standalone-review material, subject, scope, and anchor contract. */
   readonly frozenReviewerContext?: FrozenReviewerContext;
   /** Host-enforced anchor contract lines for artifact-scoped plan/ADR reviews. */
@@ -314,6 +329,15 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
       : []),
     ...(input.proofContext && input.proofContext.length > 0 ? [...input.proofContext] : []),
     '',
+    ...(input.challengeResolutions && input.challengeResolutions.length > 0
+      ? [
+          '## Advisory Challenge Resolutions (NOT_VERIFIED)',
+          '',
+          'These author-recorded bindings do not establish correctness or alter acceptance. Inspect the referenced challenge and validation attempts independently:',
+          JSON.stringify(input.challengeResolutions),
+          '',
+        ]
+      : []),
     // Host-enforced anchor contracts — rendered before the generic grammar so
     // the reviewer anchors to the exact frozen subject.
     ...renderAnchorContractLines(input),
