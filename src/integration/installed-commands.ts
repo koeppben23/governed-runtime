@@ -18,6 +18,7 @@ import {
   TOOL_FLOWGUARD_ARCHIVE,
   TOOL_FLOWGUARD_CONTINUE,
   TOOL_FLOWGUARD_DECISION,
+  TOOL_FLOWGUARD_EXTEND_IMPLEMENTATION_REVIEW,
   TOOL_FLOWGUARD_HELP,
   TOOL_FLOWGUARD_HYDRATE,
   TOOL_FLOWGUARD_IMPLEMENT,
@@ -40,6 +41,7 @@ export type InstalledCommandId =
   | 'workflow.plan'
   | 'workflow.continue'
   | 'workflow.implement'
+  | 'workflow.extend-implementation-review'
   | 'workflow.resolve-implementation-challenge'
   | 'workflow.validate'
   | 'workflow.review-decision'
@@ -67,6 +69,7 @@ type ToolName =
   | typeof TOOL_FLOWGUARD_ARCHIVE
   | typeof TOOL_FLOWGUARD_CONTINUE
   | typeof TOOL_FLOWGUARD_DECISION
+  | typeof TOOL_FLOWGUARD_EXTEND_IMPLEMENTATION_REVIEW
   | typeof TOOL_FLOWGUARD_HELP
   | typeof TOOL_FLOWGUARD_HYDRATE
   | typeof TOOL_FLOWGUARD_IMPLEMENT
@@ -164,6 +167,19 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     visibility: 'primary',
     presentationGroup: 'work',
     description: 'Record implementation evidence for the approved plan.',
+  },
+  {
+    id: 'workflow.extend-implementation-review',
+    templateFile: 'extend-implementation-review.md',
+    invocation: '/extend-implementation-review',
+    kind: 'workflow',
+    target: {
+      toolName: TOOL_FLOWGUARD_EXTEND_IMPLEMENTATION_REVIEW,
+      workflowCommand: Command.EXTEND_IMPLEMENTATION_REVIEW,
+    },
+    visibility: 'compatibility',
+    presentationGroup: 'recovery',
+    description: 'Authorize a finite extension to an exhausted implementation review budget.',
   },
   {
     id: 'workflow.resolve-implementation-challenge',

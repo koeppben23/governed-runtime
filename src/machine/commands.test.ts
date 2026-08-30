@@ -193,8 +193,8 @@ describe('commands', () => {
       expect(isCommandAllowed('TICKET', 'unknown' as Command)).toBe(false);
     });
 
-    it('Command enum has exactly 11 entries', () => {
-      expect(Object.keys(Command).length).toBe(11);
+    it('Command enum has exactly 12 entries', () => {
+      expect(Object.keys(Command).length).toBe(12);
     });
 
     it('/plan is allowed in TICKET and PLAN only (not READY)', () => {
@@ -239,6 +239,7 @@ describe('commands', () => {
         [Command.PLAN]: ['TICKET', 'PLAN'],
         [Command.CONTINUE]: '*',
         [Command.IMPLEMENT]: ['IMPLEMENTATION'],
+        [Command.EXTEND_IMPLEMENTATION_REVIEW]: ['IMPLEMENTATION'],
         [Command.RESOLVE_IMPLEMENTATION_CHALLENGE]: ['IMPL_REVIEW'],
         [Command.REVIEW_DECISION]: ['PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW'],
         [Command.VALIDATE]: ['VALIDATION'],

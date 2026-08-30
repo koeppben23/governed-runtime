@@ -59,7 +59,7 @@ function extractCommandList(content: string, label: RegExp): string[] {
 function extractProductIdentityCoreCommandTable(): string[] {
   const content = readDoc('PRODUCT_IDENTITY.md');
   const section = content.match(
-    /Seventeen installed core FlowGuard commands[\s\S]*?\n\nProduct commands/,
+    /Eighteen installed core FlowGuard commands[\s\S]*?\n\nProduct commands/,
   );
   expect(section, 'PRODUCT_IDENTITY.md must contain the core command table').toBeTruthy();
   return extractSlashCommands(section![0]);

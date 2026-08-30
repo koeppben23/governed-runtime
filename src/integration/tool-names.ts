@@ -28,6 +28,7 @@ export const TOOL_FLOWGUARD_IMPLEMENT = 'flowguard_implement';
  * evidence-record call — unrepresentable at the tool surface.
  */
 export const TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION = 'flowguard_review_implementation';
+export const TOOL_FLOWGUARD_EXTEND_IMPLEMENTATION_REVIEW = 'flowguard_extend_implementation_review';
 export const TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE =
   'flowguard_resolve_implementation_challenge';
 export const TOOL_FLOWGUARD_RUN_CHECK = 'flowguard_run_check';
@@ -56,6 +57,7 @@ export const ALL_FLOWGUARD_TOOL_NAMES: ReadonlySet<string> = new Set([
   TOOL_FLOWGUARD_DECISION,
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
+  TOOL_FLOWGUARD_EXTEND_IMPLEMENTATION_REVIEW,
   TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
   TOOL_FLOWGUARD_RUN_CHECK,
   TOOL_FLOWGUARD_REVIEW,

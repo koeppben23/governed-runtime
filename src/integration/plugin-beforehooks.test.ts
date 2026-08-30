@@ -21,7 +21,7 @@ import { createSessionState } from './review/enforcement/enforcement.js';
 import type { PendingReview } from './review/enforcement/types.js';
 import { pendingObligation } from './plugin-host-task-diagnostics-helpers.js';
 import { hashCanonicalReviewContent, normalizeReviewContent } from '../shared/review-subject.js';
-import { makeState, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
+import { makeState, FROZEN_IMPLEMENTATION_BASE, IMPL_EVIDENCE } from '../fixtures.js';
 import { writeState, readState } from '../adapters/persistence.js';
 import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
 import {
@@ -32,6 +32,7 @@ import { createTestWorkspace } from './test-helpers.js';
 import type { SessionState } from '../state/schema.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
+import { createReviewObligation } from './review/assurance.js';
 
 function makeRuntime(
   overrides: Omit<Partial<FlowGuardPluginRuntime>, 'ws'> & { ws?: Partial<PluginWorkspace> } = {},
@@ -467,6 +468,82 @@ describe('toolBefore — reviewer task authorization', () => {
           { args: { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'x' } },
         ),
       ).rejects.toThrow('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('blocks implementation reviewer dispatch until every prior failure has current-digest resolution evidence', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessDir = path.join(ws.tmpDir, 'sess-impl-resolution-required');
+      const obligation = createReviewObligation({
+        obligationType: 'implement',
+        iteration: 1,
+        planVersion: 1,
+        subjectDigest: IMPL_EVIDENCE.digest,
+        reviewSubjectScope: { kind: 'implementation', implementationDigest: IMPL_EVIDENCE.digest },
+        changedFiles: IMPL_EVIDENCE.changedFiles,
+        reviewMaterial: {
+          content: '# Implementation\n\nCurrent implementation',
+          materialDigest: hashCanonicalReviewContent('# Implementation\n\nCurrent implementation'),
+          subjectDigest: IMPL_EVIDENCE.digest,
+        },
+        policySnapshot: null,
+        now: '2026-01-01T00:00:00.000Z',
+      });
+      const state = makeState('IMPL_REVIEW', {
+        implementation: IMPL_EVIDENCE,
+        implReviewFindings: [
+          {
+            iteration: 1,
+            planVersion: 1,
+            reviewMode: 'subagent',
+            overallVerdict: 'changes_requested',
+            blockingIssues: [],
+            majorRisks: [],
+            missingVerification: [],
+            scopeCreep: [],
+            unknowns: [],
+            reviewedBy: { sessionId: 'reviewer' },
+            reviewedAt: '2026-01-01T00:00:00.000Z',
+            challenges: [
+              {
+                challengeId: '00000000-0000-4000-8000-00000000000a',
+                obligationId: obligation.obligationId,
+                kind: 'implementation_challenge',
+                outcome: 'fail',
+                scenario: 'Exercise the failed behavior',
+                claim: 'The implementation handles the behavior correctly',
+                locations: ['src/auth.ts'],
+                evidenceRefs: [
+                  { kind: 'implementation', implementationDigest: IMPL_EVIDENCE.digest },
+                ],
+              },
+            ],
+          },
+        ],
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v6',
+          obligations: [obligation],
+          attempts: [],
+          dispatches: [],
+          invocations: [],
+        },
+      });
+      await seedSession(sessDir, state);
+      const runtime = makeRuntime({
+        ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) },
+        auditDeps: makeAuditDeps(sessDir, state),
+      });
+
+      await expect(
+        toolBefore(
+          runtime,
+          { tool: 'task', sessionID: SESSION_ID, callID: 'c1' },
+          { args: { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'x' } },
+        ),
+      ).rejects.toThrow('SUBAGENT_PRIOR_CHALLENGE_UNRESOLVED');
     } finally {
       await ws.cleanup();
     }

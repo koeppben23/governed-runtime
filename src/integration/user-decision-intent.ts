@@ -1,11 +1,17 @@
 import type { ReviewVerdict } from '../state/evidence.js';
 
-export type UserDecisionCommand = '/approve' | '/request-changes' | '/reject' | '/review-decision';
+export type UserDecisionCommand =
+  | '/approve'
+  | '/request-changes'
+  | '/reject'
+  | '/review-decision'
+  | '/extend-implementation-review';
 
 export interface UserDecisionIntent {
   readonly sessionId: string;
   readonly command: UserDecisionCommand;
   readonly expectedVerdict: ReviewVerdict;
+  readonly additionalIterations?: number;
   readonly createdAt: string;
   readonly expiresAt: string;
   readonly consumed: false;
@@ -78,6 +84,30 @@ export function recordUserDecisionIntentFromCommand(input: {
   readonly nowMs?: number;
   readonly ttlMs?: number;
 }): UserDecisionIntent | null {
+  if (normalizeCommand(input.command) === '/extend-implementation-review') {
+    const additionalIterations = Number(firstToken(input.arguments));
+    if (
+      !Number.isFinite(additionalIterations) ||
+      !Number.isInteger(additionalIterations) ||
+      additionalIterations <= 0
+    ) {
+      return null;
+    }
+    const createdAtMs = input.nowMs ?? Date.now();
+    const intent: UserDecisionIntent = {
+      sessionId: input.sessionId,
+      command: '/extend-implementation-review',
+      // This sentinel is never accepted by decision tools; extension consumption
+      // additionally binds the captured iteration count below.
+      expectedVerdict: 'reject',
+      additionalIterations,
+      createdAt: nowDate(createdAtMs).toISOString(),
+      expiresAt: nowDate(createdAtMs + (input.ttlMs ?? DEFAULT_TTL_MS)).toISOString(),
+      consumed: false,
+    };
+    intents.set(input.sessionId, intent);
+    return intent;
+  }
   const parsed = parseUserDecisionCommand(input);
   if (!parsed) return null;
   return recordUserDecisionIntent({
@@ -87,6 +117,25 @@ export function recordUserDecisionIntentFromCommand(input: {
     nowMs: input.nowMs,
     ttlMs: input.ttlMs,
   });
+}
+
+export function consumeImplementationReviewExtensionIntent(input: {
+  readonly sessionId: string;
+  readonly additionalIterations: number;
+  readonly nowMs?: number;
+}): UserDecisionIntentConsumeResult {
+  const intent = intents.get(input.sessionId);
+  if (!intent) return { ok: false, reason: 'missing' };
+  intents.delete(input.sessionId);
+  if (Date.parse(intent.expiresAt) <= (input.nowMs ?? Date.now()))
+    return { ok: false, reason: 'expired' };
+  if (
+    intent.command !== '/extend-implementation-review' ||
+    intent.additionalIterations !== input.additionalIterations
+  ) {
+    return { ok: false, reason: 'verdict_mismatch' };
+  }
+  return { ok: true, intent };
 }
 
 /**

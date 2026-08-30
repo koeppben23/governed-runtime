@@ -1,18 +1,20 @@
 # MCP Tool Surface
 
-FlowGuard exposes **17 Integration Tools** (`src/integration/tools/index.ts`).
-**16 of these** are registered in the MCP server
-(`src/mcp-server/server.ts` `FLOWGUARD_TOOLS`). One tool is not available via
+FlowGuard exposes **20 Integration Tools** (`src/integration/tools/index.ts`).
+**18 of these** are registered in the MCP server
+(`src/mcp-server/server.ts` `FLOWGUARD_TOOLS`). Two tools are not available via
 MCP.
 
-## Excluded Tool
+## Excluded Tools
 
-**`flowguard_resolve_implementation_challenge`** is the only Integration Tool
+**`flowguard_resolve_implementation_challenge`** and
+**`flowguard_reconcile_mutation_episode`** are the only Integration Tools
 not registered in the MCP surface.
 
-This is an intentional capability asymmetry: the tool records advisory
-implementation-review evidence and is not required to complete the governed
-review flow.
+This is an intentional capability asymmetry: `resolve_implementation_challenge`
+records advisory implementation-review evidence and is not required to complete
+the governed review flow, while `reconcile_mutation_episode` is an operational
+recovery helper.
 
 ## Tool Behaviour
 

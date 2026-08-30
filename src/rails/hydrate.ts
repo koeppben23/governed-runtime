@@ -290,6 +290,8 @@ function buildNewHydrateState(
     stateDigestFormat: CURRENT_STATE_DIGEST_FORMAT,
     auditChainFormat: CURRENT_AUDIT_CHAIN_FORMAT,
     phase: 'READY',
+    implementationRework: null,
+    implementationReviewExtensions: [],
     ...(s.claimedTaskClass ? { claimedTaskClass: s.claimedTaskClass } : {}),
     binding,
     ticket: null,

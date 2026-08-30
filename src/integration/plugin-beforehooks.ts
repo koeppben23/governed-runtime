@@ -23,6 +23,7 @@ import { isFlowGuardVerdictTool } from './tool-names.js';
 import { runWithAdapterLoggerAsync } from '../logging/adapter-logger.js';
 import { runWithLogContextAsync } from '../logging/log-context.js';
 import type { SessionState } from '../state/schema.js';
+import { projectUnaddressedImplementationChallengeIds } from '../state/implementation-review-findings.js';
 import { enforceRiskClassificationBefore as enforceRiskBefore } from './plugin-risk.js';
 import { enforceDiscoveryHealthBefore } from './plugin-discovery-health.js';
 import { registerExecutedTaskPrompt } from './review/enforcement/execution-provenance.js';
@@ -394,6 +395,7 @@ async function enforceTaskBefore(
       'subagent',
     );
     await enforceReviewerObligationCheck(runtime, sessionState, strictEnforcement);
+    enforceImplementationChallengeResolutionCheck(sessionState);
 
     // Pure authorization ends here. The durable audit outbox is reconciled
     // BEFORE the execution record is registered: a failed reconciliation must
@@ -518,6 +520,24 @@ async function enforceReviewerObligationCheck(
     pendingObligationCount: obligations.filter((o) => o.status === 'pending').length,
   });
   throw buildEnforcementError(obligationResult.code, obligationResult.reason);
+}
+
+/** Deny implementation reviewer dispatch until every open prior challenge has current-digest author evidence. */
+function enforceImplementationChallengeResolutionCheck(sessionState: SessionState | null): void {
+  const hasPendingImplementationObligation = sessionState?.reviewAssurance?.obligations.some(
+    (obligation) => obligation.obligationType === 'implement' && obligation.status === 'pending',
+  );
+  if (!hasPendingImplementationObligation) return;
+  const unaddressed = projectUnaddressedImplementationChallengeIds(
+    sessionState?.implReviewFindings,
+    sessionState?.challengeResolutions ?? [],
+    sessionState?.implementation?.digest,
+  );
+  if (unaddressed.length === 0) return;
+  throw buildEnforcementError(
+    'SUBAGENT_PRIOR_CHALLENGE_UNRESOLVED',
+    'Record current-digest author resolution evidence for every prior failing implementation challenge before dispatching the reviewer Task.',
+  );
 }
 
 async function resolveHostToolStateOrThrow(

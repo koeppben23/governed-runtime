@@ -269,6 +269,19 @@ Provide the challenge ID from the prior implementation review and one or more pa
 post-implementation validation attempt IDs for the current implementation digest. This
 does not accept the review, resolve the challenge by itself, or bypass EVIDENCE_REVIEW.
 
+### /extend-implementation-review
+
+Authorize a finite additional independent implementation review budget after the
+existing budget was exhausted with `changes_requested`.
+
+**Allowed in:** IMPL_REVIEW
+
+This is an explicit user authorization (recorded command intent
+`/extend-implementation-review <integer>`). It only opens the requested finite
+review budget; it never records implementation evidence, runs validation, or
+submits a review verdict. The implementation must still be re-recorded via
+`/implement` (or `flowguard_implement`) and re-validated before the next review.
+
 ### /reconcile-mutation-episode
 
 Resolve a host mutation episode whose outcome can never be observed (the host process

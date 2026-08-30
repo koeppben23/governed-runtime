@@ -34,6 +34,7 @@ import { hydrate } from '../integration/tools/index.js';
 import { plan } from '../integration/tools/index.js';
 import { implement } from '../integration/tools/index.js';
 import { review_implementation } from '../integration/tools/index.js';
+import { extend_implementation_review } from '../integration/tools/index.js';
 import { architecture } from '../integration/tools/index.js';
 import { decision } from '../integration/tools/index.js';
 import { run_check } from '../integration/tools/index.js';
@@ -58,6 +59,7 @@ export const FLOWGUARD_TOOLS: FlowGuardToolRegistry = {
   plan,
   implement,
   review_implementation,
+  extend_implementation_review,
   architecture,
   decision,
   run_check,
