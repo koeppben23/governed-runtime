@@ -7,6 +7,25 @@ export type UserDecisionCommand =
   | '/review-decision'
   | '/extend-implementation-review';
 
+/**
+ * The decision-intent family accepted by {@link peekUserDecisionIntent} and
+ * {@link consumeUserDecisionIntent}. `/extend-implementation-review` intents are
+ * deliberately kept OUT of this family: they authorize only a finite review
+ * budget and must never satisfy a `flowguard_decision` verdict — the extension
+ * path alone consumes them via
+ * {@link consumeImplementationReviewExtensionIntent}.
+ */
+const DECISION_COMMANDS: ReadonlySet<string> = new Set([
+  '/approve',
+  '/request-changes',
+  '/reject',
+  '/review-decision',
+]);
+
+function isDecisionFamilyCommand(command: string): boolean {
+  return DECISION_COMMANDS.has(command);
+}
+
 export interface UserDecisionIntent {
   readonly sessionId: string;
   readonly command: UserDecisionCommand;
@@ -159,6 +178,13 @@ export function peekUserDecisionIntent(input: {
 }): UserDecisionIntentConsumeResult {
   const intent = intents.get(input.sessionId);
   if (!intent) return { ok: false, reason: 'missing' };
+  if (!isDecisionFamilyCommand(intent.command)) {
+    // A non-decision intent (implementation-review extension) must never
+    // authorize a decision verdict. It is NOT deleted here: only the extension
+    // consumer may remove it. Reported as 'missing' so the decision gate fails
+    // closed with HUMAN_DECISION_REQUIRED.
+    return { ok: false, reason: 'missing' };
+  }
 
   const nowMs = input.nowMs ?? Date.now();
   if (Date.parse(intent.expiresAt) <= nowMs) {
@@ -179,6 +205,12 @@ export function consumeUserDecisionIntent(input: {
 }): UserDecisionIntentConsumeResult {
   const intent = intents.get(input.sessionId);
   if (!intent) return { ok: false, reason: 'missing' };
+  if (!isDecisionFamilyCommand(intent.command)) {
+    // Non-decision intents are outside this consumer's authority. Leave them
+    // intact for {@link consumeImplementationReviewExtensionIntent}; report
+    // 'missing' so decision processing never treats them as accepted.
+    return { ok: false, reason: 'missing' };
+  }
 
   // Consume/delete on every observed attempt so stale or mismatched approvals
   // cannot become an implicit approval cache for a later tool call.

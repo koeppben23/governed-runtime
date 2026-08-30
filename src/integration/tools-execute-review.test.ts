@@ -61,6 +61,7 @@ import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers
 import { TEAM_POLICY } from '../config/policy.js';
 import {
   clearUserDecisionIntents,
+  consumeImplementationReviewExtensionIntent,
   peekUserDecisionIntent,
   recordUserDecisionIntent,
   recordUserDecisionIntentFromCommand,
@@ -670,6 +671,33 @@ describe('decision', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('HUMAN_DECISION_REQUIRED');
+    });
+
+    it('P0: /extend-implementation-review intent never authorizes a decision verdict', async () => {
+      await reachPlanReview();
+      // Simulate OpenCode command.execute.before recording the extension command.
+      recordUserDecisionIntentFromCommand({
+        sessionId: ctx.sessionID,
+        command: '/extend-implementation-review',
+        arguments: '1',
+      });
+      const blocked = parseToolResult(
+        await decision.execute({ verdict: 'reject', rationale: 'Not authorized' }, ctx),
+      );
+      expect(blocked.error).toBe(true);
+      expect(blocked.code).toBe('HUMAN_DECISION_REQUIRED');
+
+      // No state transition: the extension intent cannot gate a reject.
+      const state = await readState(await currentSessionDir());
+      expect(state?.phase).toBe('PLAN_REVIEW');
+
+      // The extension intent is still intact for the extension tool.
+      expect(
+        consumeImplementationReviewExtensionIntent({
+          sessionId: ctx.sessionID,
+          additionalIterations: 1,
+        }),
+      ).toMatchObject({ ok: true });
     });
 
     it('consumes user-command intent once', async () => {
