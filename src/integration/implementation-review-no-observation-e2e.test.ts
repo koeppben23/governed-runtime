@@ -699,4 +699,187 @@ describe('implementation review without repository observation authority', () =>
     state = await readState(se2.sDir);
     expect(state!.phase).toBe('EVIDENCE_REVIEW');
   });
+
+  it('a digest rejected in an EARLIER round stays blocked after a later round closes the marker and rejects a different digest (multi-round reuse)', async () => {
+    s = await boot();
+
+    // Phase 1: ticket → plan Mode A → approved plan evidence.
+    await ticket.execute({ text: 'Fix update path', source: 'user' }, s.tc);
+    const r1 = await plan.execute(
+      { planText: '## Plan\n1. Fix update', targetPaths: ['src/auth.ts'] },
+      s.tc,
+    );
+    expect(r1).not.toContain('INTERNAL_ERROR');
+    const planInjected = await inject('plan', 'accept', 'plan-digest');
+    const r2 = await plan.execute(
+      {
+        reviewVerdict: 'accept',
+        reviewFindings: implFindings(planInjected.oblId, 0, 1, 'plan-digest', 'accept'),
+      },
+      s.tc,
+    );
+    expect(r2).not.toContain('INTERNAL_ERROR');
+
+    // Phase 2: implementation evidence for D1 (no repository authority).
+    const se2 = s!;
+    const st = await readState(se2.sDir);
+    mkdirSync(join(s.worktree, 'src'), { recursive: true });
+    writeFileSync(join(s.worktree, 'src', 'auth.ts'), 'export const auth = () => true;\n');
+    execSync('git add src', { cwd: s.worktree, stdio: 'pipe' });
+    const implHashes = await hashWorktreeFiles(se2.worktree, ['src/auth.ts']);
+    const implDigest1 = hashText(`src/auth.ts:${implHashes['src/auth.ts'] ?? 'deleted'}`);
+    await writeStateWithArtifacts(
+      se2.sDir,
+      makeState('IMPL_VALIDATION', {
+        binding: { ...makeState('IMPL_VALIDATION').binding, worktree: se2.worktree },
+        implementationBaseAuthority: undefined,
+        ticket: TICKET,
+        plan: st!.plan,
+        reviewDecision: st!.reviewDecision,
+        implementation: {
+          changedFiles: ['src/auth.ts'],
+          domainFiles: ['src/auth.ts'],
+          digest: implDigest1,
+          executedAt: FIXED_TIME,
+        },
+        activeChecks: ['typecheck'],
+        verificationCandidates: [
+          {
+            assertionCapability: 'unsupported' as const,
+            kind: 'typecheck',
+            command: 'npx tsc --noEmit',
+            source: 'test',
+            confidence: 'high',
+            reason: 'E2E test candidate',
+          },
+        ],
+        executionSubjectInputsByKind: { typecheck: [{ kind: 'implementation' as const }] },
+      }),
+    );
+    const rc1 = await run_check.execute({ kind: 'typecheck' }, se2.tc);
+    expect(String(rc1)).not.toContain('"error":true');
+    let state = await readState(se2.sDir);
+    expect(state!.phase).toBe('IMPL_REVIEW');
+
+    // Phase 3: Reviewer A changes_requested(D1) → IMPLEMENTATION + rework(D1).
+    const { oblId } = await inject('implement', 'changes_requested', implDigest1);
+    const r3 = await review_implementation.execute(
+      {
+        reviewVerdict: 'changes_requested',
+        reviewFindings: implFindings(oblId, 1, 1, implDigest1, 'changes_requested'),
+      },
+      s.tc,
+    );
+    expect(r3).not.toContain('INTERNAL_ERROR');
+    state = await readState(se2.sDir);
+    expect(state!.phase).toBe('IMPLEMENTATION');
+    expect(state!.implementationRework).toMatchObject({ rejectedDigest: implDigest1 });
+
+    // Phase 4: repair D2, re-record, GREEN revalidation → IMPL_REVIEW. The marker
+    // is CLOSED on the ALL_PASSED edge — only the historical projection can still
+    // remember that D1 was rejected.
+    writeFileSync(join(s.worktree, 'src', 'auth.ts'), 'export const auth = () => false;\n');
+    execSync('git add src/auth.ts', { cwd: s.worktree, stdio: 'pipe' });
+    const r4 = await implement.execute({}, se2.tc);
+    expect(r4).not.toContain('INTERNAL_ERROR');
+    await run_check.execute({ kind: 'typecheck' }, s.tc);
+    state = await readState(se2.sDir);
+    expect(state!.phase).toBe('IMPL_REVIEW');
+    expect(state!.implementationRework).toBeNull();
+    const implObligations2 = state!.reviewAssurance!.obligations.filter(
+      (o) => o.obligationType === 'implement',
+    );
+    expect(implObligations2).toHaveLength(2);
+    const second = implObligations2.at(-1)!;
+    expect(second.iteration).toBe(2);
+    const secondScope = second.reviewSubjectScope;
+    if (secondScope.kind !== 'implementation') throw new Error('expected implementation scope');
+    const implDigest2 = secondScope.implementationDigest;
+    expect(implDigest2).not.toBe(implDigest1);
+
+    // Phase 5: Reviewer B changes_requested(D2) → IMPLEMENTATION; the single-slot
+    // marker moves on to D2.
+    const { oblId: oblId2 } = await inject('implement', 'changes_requested', implDigest2);
+    const r5 = await review_implementation.execute(
+      {
+        reviewVerdict: 'changes_requested',
+        reviewFindings: implFindings(
+          oblId2,
+          second.iteration,
+          second.planVersion,
+          implDigest2,
+          'changes_requested',
+        ),
+      },
+      s.tc,
+    );
+    expect(r5).not.toContain('INTERNAL_ERROR');
+    state = await readState(se2.sDir);
+    expect(state!.phase).toBe('IMPLEMENTATION');
+    expect(state!.implementation).toBeNull();
+    expect(state!.implementationRework).toMatchObject({
+      rejectedDigest: implDigest2,
+      exhausted: false,
+    });
+
+    // Phase 6 (mandatory regression): restoring the EXACT rejected D1 after the
+    // marker has moved to D2 is still blocked — no validation, no obligation, no
+    // fresh reviewer can ever re-review D1.
+    const obligationsBeforeBlock = state!.reviewAssurance!.obligations.filter(
+      (o) => o.obligationType === 'implement',
+    ).length;
+    const validationsBeforeBlock = state!.implValidation.length;
+    writeFileSync(join(s.worktree, 'src', 'auth.ts'), 'export const auth = () => true;\n');
+    execSync('git add src/auth.ts', { cwd: s.worktree, stdio: 'pipe' });
+    const blockedRaw = await implement.execute({}, se2.tc);
+    expect(blockedRaw).toContain('IMPLEMENTATION_REWORK_REQUIRED');
+    state = await readState(se2.sDir);
+    expect(state!.phase).toBe('IMPLEMENTATION');
+    expect(state!.implementation).toBeNull();
+    expect(state!.implValidation).toHaveLength(validationsBeforeBlock);
+    expect(
+      state!.reviewAssurance!.obligations.filter((o) => o.obligationType === 'implement'),
+    ).toHaveLength(obligationsBeforeBlock);
+
+    // Phase 7: a repair D3 (≠ D1, ≠ D2) is still recordable — the guard blocks
+    // only digests that were EVER rejected.
+    writeFileSync(join(s.worktree, 'src', 'auth.ts'), 'export const auth = () => 42;\n');
+    execSync('git add src/auth.ts', { cwd: s.worktree, stdio: 'pipe' });
+    const r6 = await implement.execute({}, se2.tc);
+    expect(r6).not.toContain('INTERNAL_ERROR');
+    await run_check.execute({ kind: 'typecheck' }, s.tc);
+    state = await readState(se2.sDir);
+    expect(state!.phase).toBe('IMPL_REVIEW');
+    const implObligations3 = state!.reviewAssurance!.obligations.filter(
+      (o) => o.obligationType === 'implement',
+    );
+    const third = implObligations3.at(-1)!;
+    expect(implObligations3).toHaveLength(obligationsBeforeBlock + 1);
+    expect(third.iteration).toBe(3);
+    const thirdScope = third.reviewSubjectScope;
+    if (thirdScope.kind !== 'implementation') throw new Error('expected implementation scope');
+    expect(thirdScope.implementationDigest).not.toBe(implDigest1);
+    expect(thirdScope.implementationDigest).not.toBe(implDigest2);
+    const { oblId: oblIdAccept } = await inject(
+      'implement',
+      'accept',
+      thirdScope.implementationDigest,
+    );
+    const r7 = await review_implementation.execute(
+      {
+        reviewVerdict: 'accept',
+        reviewFindings: implFindings(
+          oblIdAccept,
+          third.iteration,
+          third.planVersion,
+          thirdScope.implementationDigest,
+          'accept',
+        ),
+      },
+      s.tc,
+    );
+    expect(r7).not.toContain('INTERNAL_ERROR');
+    state = await readState(se2.sDir);
+    expect(state!.phase).toBe('EVIDENCE_REVIEW');
+  });
 });

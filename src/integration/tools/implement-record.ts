@@ -81,6 +81,7 @@ import { validateReviewFindings } from './review-validation.js';
 import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.js';
 import { ensureReviewAssurance, reviewObligationResponseFields } from '../review/assurance.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
+import { collectHistoricallyRejectedImplementationDigests } from '../review/rejected-digests.js';
 import { resolveCeremonyProfile, isNonDomainConfigPath } from '../phase-tool-gate.js';
 import {
   resolveRuntimeReviewPlatform,
@@ -341,7 +342,14 @@ function reworkBlock(state: SessionState, digest: string): string | null {
   if (state.implementationRework?.exhausted === true) {
     return formatBlocked('IMPLEMENTATION_REVIEW_EXTENSION_REQUIRED');
   }
-  if (state.implementationRework?.rejectedDigest === digest) {
+  // The single-slot marker covers the immediate round, but the historical
+  // projection is the load-bearing check: any digest an independent reviewer
+  // EVER rejected (changes_requested, derived from the append-only obligations
+  // + bound findings) stays blocked even after a later round closed the marker.
+  if (
+    collectHistoricallyRejectedImplementationDigests(state).has(digest) ||
+    (state.implementationRework?.rejectedDigest ?? null) === digest
+  ) {
     return formatBlocked('IMPLEMENTATION_REWORK_REQUIRED');
   }
   return null;
