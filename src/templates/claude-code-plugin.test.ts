@@ -153,6 +153,11 @@ describe('Claude Code plugin templates', () => {
     );
     expect(implementSkill).toContain('no intermediate presentation card');
     expect(implementSkill).toContain('never stop for user input between iterations');
+    // IMPL_VALIDATION is explicit, never assumed: the skill must enumerate and
+    // run every active check through flowguard_run_check before a fresh review.
+    expect(implementSkill).toContain('mcp__flowguard__flowguard_status');
+    expect(implementSkill).toContain('flowguard_run_check');
+    expect(implementSkill).toContain('run EVERY active check');
     // Plan/architecture keep the revise-and-resubmit ordering (no verdict-first
     // preamble) so the adapter loop stays aligned with each artifact's contract.
     expect(planSkill).not.toContain('do NOT edit any files before FlowGuard records it');

@@ -96,6 +96,11 @@ describe('Codex plugin templates', () => {
       'call `mcp__flowguard__flowguard_implement` again to re-record',
     );
     expect(implementSkill).toContain('never stop or wait for a user command between iterations');
+    // IMPL_VALIDATION is explicit, never assumed: the SKILL must enumerate and
+    // run every active check through flowguard_run_check before a fresh review.
+    expect(implementSkill).toContain('mcp__flowguard__flowguard_status');
+    expect(implementSkill).toContain('flowguard_run_check');
+    expect(implementSkill).toContain('run EVERY active check');
     // The SKILL stays next-driven: it never authorizes self-approval.
     expect(implementSkill).toContain("Submit only the verdict FlowGuard's `next` field instructs");
   });
