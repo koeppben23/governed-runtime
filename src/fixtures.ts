@@ -490,6 +490,8 @@ export function makeState(
     challengeResolutions: [],
     implValidation: [],
     implementation: null,
+    implementationRework: null,
+    implementationReviewExtensions: [],
     reducedCeremony: null,
     implReview: null,
     reviewDecision: null,

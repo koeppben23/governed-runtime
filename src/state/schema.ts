@@ -23,6 +23,8 @@ import {
   DecisionIdentitySchema,
   ErrorInfo,
   FrozenRepositoryRevisionTarget,
+  ImplementationRework,
+  ImplementationReviewExtension,
   ImplEvidence,
   ImplReviewResult,
   MutationAttempt,
@@ -368,10 +370,8 @@ export const SessionState = z
 
     /** Current FlowGuard phase. */
     phase: Phase,
-
     /** Agent/operator risk-classification claim. Not runtime authority. */
     claimedTaskClass: TaskClass.optional(),
-
     /** Persistent runtime risk gate block state for mutating host tools. */
     riskGate: RiskGate.optional(),
 
@@ -381,6 +381,8 @@ export const SessionState = z
      */
     implementationRiskAssessment: ImplementationRiskAssessment.optional(),
 
+    implementationRework: ImplementationRework.nullable().default(null),
+    implementationReviewExtensions: z.array(ImplementationReviewExtension).default([]),
     /** Persistent Discovery health gate block state for mutating host tools (#399). */
     discoveryHealthGate: DiscoveryHealthGate.optional(),
 

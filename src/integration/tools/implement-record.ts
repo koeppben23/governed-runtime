@@ -304,14 +304,10 @@ async function buildImplEvidence(
   input: ImplementRuntime,
   files: string[],
   domainFiles: string[],
+  digest: string,
 ): Promise<ImplEvidence> {
-  const sortedFiles = [...files].sort();
-  const contentHashes = await hashWorktreeFiles(input.worktree, sortedFiles);
-  const digest = input.ctx.digest(
-    sortedFiles.map((f) => `${f}:${contentHashes[f] ?? 'deleted'}`).join('\n'),
-  );
-
   let diffDigest: string | undefined;
+  const sortedFiles = [...files].sort();
   const diffText = await worktreeDiff(input.worktree, sortedFiles);
   if (diffText.trim().length > 0) {
     const candidateDigest = input.ctx.digest(diffText);
@@ -328,6 +324,27 @@ async function buildImplEvidence(
     ...(diffDigest ? { diffDigest } : {}),
     executedAt: input.ctx.now(),
   };
+}
+
+async function buildImplementationDigest(
+  input: ImplementRuntime,
+  files: string[],
+): Promise<string> {
+  const sortedFiles = [...files].sort();
+  const contentHashes = await hashWorktreeFiles(input.worktree, sortedFiles);
+  return input.ctx.digest(
+    sortedFiles.map((f) => `${f}:${contentHashes[f] ?? 'deleted'}`).join('\n'),
+  );
+}
+
+function reworkBlock(state: SessionState, digest: string): string | null {
+  if (state.implementationRework?.exhausted === true) {
+    return formatBlocked('IMPLEMENTATION_REVIEW_EXTENSION_REQUIRED');
+  }
+  if (state.implementationRework?.rejectedDigest === digest) {
+    return formatBlocked('IMPLEMENTATION_REWORK_REQUIRED');
+  }
+  return null;
 }
 
 export async function handleImplRecord(
@@ -349,7 +366,10 @@ export async function handleImplRecord(
   const domainFiles = files.filter(
     (f) => !f.startsWith('.opencode/') && !f.includes('node_modules/') && !isNonDomainConfigPath(f),
   );
-  const implEvidence = await buildImplEvidence(input, files, domainFiles);
+  const digest = await buildImplementationDigest(input, files);
+  const reworkBlocked = reworkBlock(input.state, digest);
+  if (reworkBlocked) return reworkBlocked;
+  const implEvidence = await buildImplEvidence(input, files, domainFiles, digest);
   const existingFindings = input.state.implReviewFindings ?? [];
   const newReviewFindings = input.args.reviewFindings
     ? [...existingFindings, normalizeHostFindings(input.args.reviewFindings)]
@@ -366,6 +386,7 @@ export async function handleImplRecord(
       implEvidence.digest,
     ),
     implementation: implEvidence,
+    implementationRework: null,
     // #762: bind the risk classification to the exact revision it describes, so a
     // gate rail can consult it without re-deriving it from a later file set.
     implementationRiskAssessment: {

@@ -145,6 +145,41 @@ describe('state schemas', () => {
       expect(SessionState.parse(legacy).challengeResolutions).toEqual([]);
     });
 
+    it('SessionState defaults and parses implementationRework', () => {
+      const state = makeState('TICKET');
+      expect(SessionState.parse(state).implementationRework).toBeNull();
+      expect(
+        SessionState.parse({
+          ...state,
+          implementationRework: { rejectedDigest: 'rejected-implementation-digest' },
+        }).implementationRework,
+      ).toEqual({ rejectedDigest: 'rejected-implementation-digest', exhausted: false });
+    });
+
+    it('defaults and preserves implementation review extension evidence', () => {
+      const state = makeState('TICKET');
+      const legacy: Record<string, unknown> = { ...state };
+      delete legacy.implementationReviewExtensions;
+      expect(SessionState.parse(legacy).implementationReviewExtensions).toEqual([]);
+      expect(
+        SessionState.parse({
+          ...state,
+          implementationReviewExtensions: [
+            {
+              additionalIterations: 1,
+              authorizedAt: '2025-01-01T00:00:00.000Z',
+              authorizedBy: {
+                actorId: 'reviewer-1',
+                actorEmail: null,
+                actorSource: 'oidc',
+                actorAssurance: 'idp_verified',
+              },
+            },
+          ],
+        }).implementationReviewExtensions,
+      ).toHaveLength(1);
+    });
+
     it('SessionState parses legacy state without risk classification fields', () => {
       const state = makeState('TICKET', { claimedTaskClass: 'HIGH-RISK' });
       const legacy: Record<string, unknown> = { ...state };
