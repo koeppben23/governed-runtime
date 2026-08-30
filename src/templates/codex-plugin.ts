@@ -209,8 +209,9 @@ Use the existing FlowGuard MCP tools. Do not interpret FlowGuard phase or policy
 1. Call \`mcp__flowguard__flowguard_status\` to obtain the runtime-provided next action.
 2. After completing the plan steps, call \`mcp__flowguard__flowguard_implement\` (no arguments) to record implementation evidence.
 3. To submit the independent reviewer's verdict, call \`mcp__flowguard__flowguard_review_implementation\` with \`reviewVerdict\` (record and verdict are separate single-purpose tools). Submit only the verdict FlowGuard's \`next\` field instructs; never self-approve.
-4. If FlowGuard blocks, fails, or requests review evidence, report the exact blocker and stop.
-5. Use mutating host tools only after FlowGuard explicitly allows implementation.
+4. If the review returns \`changes_requested\`, the negative verdict is recorded first and routes back to IMPLEMENTATION; FlowGuard returns no intermediate presentation card, and the repair loop is an INTERNAL continuation. Make the requested code changes, call \`mcp__flowguard__flowguard_implement\` again to re-record (validation auto-chains), record resolutions for any open implementation challenges, then invoke the reviewer again and submit the fresh verdict exactly as \`next\` instructs. Continue automatically until convergence or the budget is exhausted — never stop or wait for a user command between iterations, and never render an intermediate result as final.
+5. If FlowGuard blocks, fails, or requests review evidence, report the exact blocker and stop.
+6. Use mutating host tools only after FlowGuard explicitly allows implementation.
 `,
 } as const;
 

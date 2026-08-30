@@ -139,6 +139,25 @@ describe('Claude Code plugin templates', () => {
     }
   });
 
+  it('auto-continuation parity: implement skill records the negative verdict FIRST and continues the repair loop without intermediate cards', () => {
+    const files = claudeCodePluginFiles('1.2.3');
+    const implementSkill = files['skills/implement/SKILL.md'];
+    const planSkill = files['skills/plan/SKILL.md'];
+
+    // Implementation: the negative verdict is recorded before any edits
+    // (verdict and record are separate single-purpose tools)...
+    expect(implementSkill).toContain('do NOT edit any files before FlowGuard records it');
+    // ...then the loop continues automatically through the repair-recheck cycle.
+    expect(implementSkill).toContain(
+      'call `mcp__flowguard__flowguard_implement` again to re-record',
+    );
+    expect(implementSkill).toContain('no intermediate presentation card');
+    expect(implementSkill).toContain('never stop for user input between iterations');
+    // Plan/architecture keep the revise-and-resubmit ordering (no verdict-first
+    // preamble) so the adapter loop stays aligned with each artifact's contract.
+    expect(planSkill).not.toContain('do NOT edit any files before FlowGuard records it');
+  });
+
   it('host-task verdict-only parity: standalone /review skill has a host-task verdict-only branch', () => {
     const files = claudeCodePluginFiles('1.2.3');
     const reviewSkill = files['skills/review/SKILL.md'];

@@ -188,12 +188,40 @@ const CLAUDE_DISCOVERY_CAPTURE = `Capture the compact Discovery context from the
 // skill never infers verdicts and never self-approves. There is deliberately
 // no "reviewer unavailable" self-approval path: on this host, an unobtainable
 // reviewer fails closed.
-function claudeReviewLoop(tool: string, artifact: string, verdictTool: string = tool): string {
+//
+// Implementation-specific repair-recheck continuation (Patch E parity with the
+// OpenCode /implement template): the negative verdict is recorded FIRST, then
+// the loop continues automatically (repair -> re-record -> validation ->
+// challenge resolution -> fresh independent review) with no intermediate card.
+const CLAUDE_IMPLEMENT_CONTINUATION = `make the code changes based on the blocking issues, call \`mcp__flowguard__flowguard_implement\` again to re-record (advances to IMPL_VALIDATION; validation auto-chains), record resolutions for any open implementation challenges, then invoke a fresh independent review and loop until convergence or the budget is exhausted. FlowGuard returns no intermediate presentation card while the loop is active — never render an intermediate result as final and never stop for user input between iterations; only the loop's terminal responses (converged acceptance, exhausted budget, or a BLOCKED code) end the loop and carry a card to display verbatim.`;
+
+interface ClaudeReviewLoopOptions {
+  /**
+   * Implementation: the reviewer's negative verdict is recorded BEFORE any
+   * edits, because record (flowguard_implement) and verdict
+   * (flowguard_review_implementation) are separate single-purpose tools — the
+   * verdict routes back to IMPLEMENTATION and only then does repair begin.
+   */
+  verdictFirst?: boolean;
+  /** Extra continuation steps appended after the changes_requested verdict. */
+  continuation?: string;
+}
+
+function claudeReviewLoop(
+  tool: string,
+  artifact: string,
+  verdictTool: string = tool,
+  options: ClaudeReviewLoopOptions = {},
+): string {
   return `## Independent review loop (host-driven, fail-closed)
 
 FlowGuard drives this loop. Read the \`next\` field of every tool response and follow it exactly. Never infer review state, verdicts, or policy yourself.
 
-- When \`next\` starts with \`INDEPENDENT_REVIEW_COMPLETED\`: read \`overallVerdict\` from \`pluginReviewFindings\`. For "accept", call \`${verdictTool}({ reviewVerdict: "accept" })\` (reviewer acceptance, not user approval). For "changes_requested", revise the ${artifact} to resolve every blocking issue, then resubmit the verdict exactly as \`next\` instructs.
+- When \`next\` starts with \`INDEPENDENT_REVIEW_COMPLETED\`: read \`overallVerdict\` from \`pluginReviewFindings\`. For "accept", call \`${verdictTool}({ reviewVerdict: "accept" })\` (reviewer acceptance, not user approval). For "changes_requested", ${
+    options.verdictFirst
+      ? `record the reviewer's negative verdict FIRST by submitting the verdict exactly as \`next\` instructs (do NOT edit any files before FlowGuard records it). Then continue automatically: ${options.continuation ?? ''}`
+      : `revise the ${artifact} to resolve every blocking issue, then resubmit the verdict exactly as \`next\` instructs.`
+  }
 - When \`next\` starts with \`INDEPENDENT_REVIEW_REQUIRED\`:
   1. Delegate to the \`flowguard-reviewer\` subagent (for example: "Use the flowguard-reviewer subagent to independently review this ${artifact}."). The subagent runs in its own context and already has the \`mcp__flowguard__flowguard_review\` tool.
   2. Give the reviewer the ${artifact} text, the ticket text, the \`requiredReviewAttestation\` values (\`toolObligationId\`, \`iteration\`, \`planVersion\`, \`mandateDigest\`, \`criteriaVersion\`), and the captured Discovery context. Instruct it to check Discovery health and drift before any repo-dependent claim and to mark uncorrelated claims \`NOT_VERIFIED\`.
@@ -296,7 +324,12 @@ Use the existing FlowGuard MCP tools. Do not interpret FlowGuard phase or policy
 5. Record a \`## Verification Evidence\` section distinguishing planned checks from checks actually executed; mark every unexecuted check \`NOT_VERIFIED\`.
 
 ## Phase 3 — Review
-${claudeReviewLoop('mcp__flowguard__flowguard_implement', 'implementation', 'mcp__flowguard__flowguard_review_implementation')}
+${claudeReviewLoop(
+  'mcp__flowguard__flowguard_implement',
+  'implementation',
+  'mcp__flowguard__flowguard_review_implementation',
+  { verdictFirst: true, continuation: CLAUDE_IMPLEMENT_CONTINUATION },
+)}
 
 When the review returns changes_requested, make the actual code changes based on the blocking issues, then call \`mcp__flowguard__flowguard_implement({})\` again to re-record before resubmitting the verdict.
 
