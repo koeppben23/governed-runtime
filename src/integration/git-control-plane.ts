@@ -31,22 +31,31 @@ function sha256Text(text: string): string {
   return createHash('sha256').update(text, 'utf8').digest('hex');
 }
 
+/** Node/libuv reports reading a directory as EISDIR on every platform. */
+function isEisDirError(err: unknown): boolean {
+  return (
+    typeof err === 'object' && err !== null && (err as NodeJS.ErrnoException).code === 'EISDIR'
+  );
+}
+
 /**
  * Resolve the actual git metadata directory for a worktree.
  *
  * A regular repository has a `.git` DIRECTORY; a linked worktree or submodule
- * has a `.git` FILE containing `gitdir: <path>`. Returns null when `.git` is
- * absent or unreadable — the marker then records the absence itself.
+ * has a `.git` FILE containing `gitdir: <path>`. Both cases are discriminated
+ * by a SINGLE read operation — a directory read fails with EISDIR on every
+ * platform Node supports, so there is no check-then-use race between a stat
+ * and a subsequent read. Returns null when `.git` is absent or unreadable —
+ * the marker then records the absence itself.
  */
 async function resolveGitDir(worktree: string): Promise<string | null> {
   const dotGit = path.join(worktree, '.git');
   try {
-    const stat = await fs.stat(dotGit);
-    if (stat.isDirectory()) return dotGit;
     const content = await fs.readFile(dotGit, 'utf8');
     const match = /^gitdir:\s*(.+)$/m.exec(content);
     return match ? path.resolve(worktree, match[1]!.trim()) : null;
-  } catch {
+  } catch (err) {
+    if (isEisDirError(err)) return dotGit;
     return null;
   }
 }
@@ -71,15 +80,12 @@ async function hooksMarker(gitDir: string | null): Promise<string> {
   const parts: string[] = [];
   for (const name of names) {
     const full = path.join(gitDir, 'hooks', name);
+    // Single read per entry: directories fail with EISDIR, unreadable entries
+    // fall back to a stable placeholder — no stat-then-read race.
     try {
-      const stat = await fs.stat(full);
-      if (stat.isDirectory()) {
-        parts.push(`${name}:dir`);
-        continue;
-      }
       parts.push(`${name}:${sha256Text(await fs.readFile(full, 'utf8'))}`);
-    } catch {
-      parts.push(`${name}:missing`);
+    } catch (err) {
+      parts.push(isEisDirError(err) ? `${name}:dir` : `${name}:missing`);
     }
   }
   return parts.join(',');
