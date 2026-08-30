@@ -21,6 +21,7 @@
 import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
 import { verifyChain } from '../audit/integrity.js';
+import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import { computeChainHash, CURRENT_AUDIT_FORMAT_VERSION, GENESIS_HASH } from '../audit/types.js';
 import type { ChainedAuditEvent } from '../audit/types.js';
 
@@ -48,7 +49,7 @@ function makeId(chainSeed: number, idx: number): string {
 }
 
 function buildEvent(id: string, prevHash: string, idx: number): ChainedRecord {
-  const body = {
+  const bodyWithoutDigest = {
     id,
     flowguardSessionId: 'aaaaaaaa-0000-4000-8000-000000000001',
     phase: 'PLAN',
@@ -56,7 +57,6 @@ function buildEvent(id: string, prevHash: string, idx: number): ChainedRecord {
     auditSequence: idx + 1,
     occurredAt: `2026-01-01T00:${String(idx).padStart(2, '0')}:00.000Z`,
     recordedAt: `2026-01-01T00:${String(idx).padStart(2, '0')}:00.000Z`,
-    semanticEventDigest: 'e'.repeat(64),
     actor: 'machine',
     auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
     detail: {
@@ -68,6 +68,15 @@ function buildEvent(id: string, prevHash: string, idx: number): ChainedRecord {
       chainIndex: idx,
     },
     prevHash,
+  };
+  // The semantic digest authority is recomputed by the verifier — a synthetic
+  // placeholder would make every compliant chain invalid.
+  const semanticEventDigest = computeCanonicalEventDigest(
+    bodyWithoutDigest as unknown as Record<string, unknown>,
+  );
+  const body = {
+    ...bodyWithoutDigest,
+    semanticEventDigest,
   } satisfies Omit<ChainedAuditEvent, 'chainHash'>;
   return {
     ...body,

@@ -60,11 +60,19 @@ function pick<T>(items: readonly T[], selector: number): T {
 }
 
 describe('audit tamper-evidence property invariants — deep fuzz (#435)', () => {
-  it('P-A (C1): any single-leaf mutation at any depth breaks chain verification', () => {
+  it('P-A (C1): any single CONTENT-leaf mutation at any depth breaks chain verification', () => {
+    // Authority fields (chainHash/prevHash/auditSequence/recordedAt/
+    // semanticEventDigest/timestampEvidence) are append-lock stamped, not
+    // producer content; their mutation coverage lives in the dedicated
+    // hash-authority unit tests (audit-integrity.test.ts). Every CONTENT
+    // leaf is bound by the semanticEventDigest authority, so a mutated event
+    // that still verifies is a hard failure.
     fc.assert(
       fc.property(paramsArb, fc.integer({ min: 0, max: 1_000_000 }), (params, selector) => {
         const event = buildRichEvent(params);
-        const path = pick(collectLeafPaths(event), selector);
+        const contentPaths = collectLeafPaths(event).filter((p) => !isExcludedPath(p));
+        expect(contentPaths.length).toBeGreaterThan(0);
+        const path = pick(contentPaths, selector);
         expect(mutatedChainVerifies(event, path)).toBe(false);
       }),
       FC_OPTIONS,
