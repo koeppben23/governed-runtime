@@ -274,6 +274,72 @@ function isNotRepoFailure(message: string): boolean {
 }
 
 /**
+ * The git control-plane layout of a worktree, resolved by GIT ITSELF.
+ */
+export interface GitControlPlaneLayout {
+  /** The worktree-private $GIT_DIR (a `.git/worktrees/<id>` dir for linked worktrees). */
+  readonly gitDir: string;
+  /** The common $GIT_COMMON_DIR (owns the shared config/hooks). */
+  readonly commonDir: string;
+  /** `--git-path HEAD` (worktree-private HEAD). */
+  readonly headPath: string;
+  /** `--git-path config` (the common config, per-worktree under worktreeConfig). */
+  readonly configPath: string;
+  /** `--git-path config.worktree` (exists only with extensions.worktreeConfig). */
+  readonly worktreeConfigPath: string;
+  /** `--git-path hooks` (the effective hook authority dir). */
+  readonly hooksPath: string;
+}
+
+/**
+ * Resolve the git control-plane layout for a worktree via
+ * `git rev-parse --git-path ...` (#852).
+ *
+ * Never guess the layout manually: linked worktrees (`git worktree add`)
+ * relocate HEAD/config/hooks between the private $GIT_DIR and the common
+ * $GIT_COMMON_DIR, and `extensions.worktreeConfig` adds a per-worktree
+ * `config.worktree`. Only git's own path resolution is authoritative.
+ *
+ * All returned paths are absolute (OS-normalized).
+ *
+ * @throws GitError with the typed diagnosis when the worktree is not a git
+ *         repository or git cannot resolve the layout.
+ */
+export async function resolveGitControlPlanePaths(
+  worktree: string,
+): Promise<GitControlPlaneLayout> {
+  const out = await git(worktree, [
+    'rev-parse',
+    '--git-dir',
+    '--git-common-dir',
+    '--git-path',
+    'HEAD',
+    '--git-path',
+    'config',
+    '--git-path',
+    'config.worktree',
+    '--git-path',
+    'hooks',
+  ]);
+  const lines = out.split('\n').map((line) => line.trim());
+  if (lines.length !== 6 || lines.some((line) => line.length === 0)) {
+    throw new GitError(
+      'GIT_COMMAND_FAILED',
+      `git rev-parse returned an unexpected control-plane layout: "${out}"`,
+    );
+  }
+  const resolve = (line: string) => path.resolve(worktree, line);
+  return {
+    gitDir: resolve(lines[0]!),
+    commonDir: resolve(lines[1]!),
+    headPath: resolve(lines[2]!),
+    configPath: resolve(lines[3]!),
+    worktreeConfigPath: resolve(lines[4]!),
+    hooksPath: resolve(lines[5]!),
+  };
+}
+
+/**
  * Check if a directory is inside a git repository.
  * Non-throwing convenience wrapper around resolveRoot.
  */

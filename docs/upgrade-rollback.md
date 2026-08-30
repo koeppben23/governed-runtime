@@ -88,26 +88,28 @@ upgrade before managed artifacts are written.
 
 FlowGuard is a prerelease product. The persisted session-state schema is the
 Assurance epoch `schemaVersion: 'v2'` and audit records are strictly
-`audit-chain.v3`. Pre-v2 state and pre-v3 audit records are **hard-rejected**
-with `LEGACY_ASSURANCE_FORMAT_UNSUPPORTED` at every persistence and
-verification boundary — legacy artifacts are never migrated, reinterpreted, or
-re-sealed. Archive or complete active sessions before crossing the epoch
-boundary. See
+`audit-chain.v3`. Pre-v2 state is **hard-rejected** with
+`SESSION_STATE_INCOMPATIBLE` at the `readState` preflight, and pre-v3 audit
+records are rejected with `LEGACY_ASSURANCE_FORMAT_UNSUPPORTED` at every
+audit persistence and verification boundary — legacy artifacts are never
+migrated, reinterpreted, or re-sealed. Archive or complete active sessions
+before crossing the epoch boundary. See
 [`docs/architecture/schema-migration.md`](./architecture/schema-migration.md)
 for the superseded migration proposal.
 
-| From Version                                                                 | To Version                                | Compatibility                                                                                                                                              |
-| ---------------------------------------------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Any prerelease                                                               | Later prerelease                          | No forward-compatibility guarantee. Archive or complete active sessions before upgrading.                                                                  |
-| Pre-Assurance-epoch sessions (`schemaVersion: v1`, `audit-chain.v2`/earlier) | Assurance epoch (`v2` / `audit-chain.v3`) | Incompatible by design. Rejected with `LEGACY_ASSURANCE_FORMAT_UNSUPPORTED`; no migration or re-seal path. Start a fresh session.                          |
-| `v1.2.0-tp.2` and earlier unversioned policy digests                         | A release requiring `policy-digest.v2`    | Incompatible by design. The old digest did not bind nested policy fields; archive or complete the session with the old artifact, then start a new session. |
+| From Version                                                                 | To Version                                | Compatibility                                                                                                                                                                             |
+| ---------------------------------------------------------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Any prerelease                                                               | Later prerelease                          | No forward-compatibility guarantee. Archive or complete active sessions before upgrading.                                                                                                 |
+| Pre-Assurance-epoch sessions (`schemaVersion: v1`, `audit-chain.v2`/earlier) | Assurance epoch (`v2` / `audit-chain.v3`) | Incompatible by design. State rejected with `SESSION_STATE_INCOMPATIBLE` (audit records with `LEGACY_ASSURANCE_FORMAT_UNSUPPORTED`); no migration or re-seal path. Start a fresh session. |
+| `v1.2.0-tp.2` and earlier unversioned policy digests                         | A release requiring `policy-digest.v2`    | Incompatible by design. The old digest did not bind nested policy fields; archive or complete the session with the old artifact, then start a new session.                                |
 
 **FlowGuard validates state on read.** A release that requires an incompatible
 schema or evidence contract rejects the state at hydrate time with an explicit
-BLOCKED `SCHEMA_VALIDATION_FAILED` (or `LEGACY_ASSURANCE_FORMAT_UNSUPPORTED`
-for pre-v2 state). Do not edit persisted state to bridge that boundary. Use
-the previously installed artifact to archive or complete the session, then
-start a fresh session after upgrading.
+BLOCKED `SCHEMA_VALIDATION_FAILED` (or `SESSION_STATE_INCOMPATIBLE` at the
+`readState` contract preflight for pre-v2 state).
+Do not edit persisted state to bridge that boundary. Use the previously
+installed artifact to archive or complete the session, then start a fresh
+session after upgrading.
 
 **Customer Responsibility:**
 

@@ -50,30 +50,30 @@ function makeTokenTsaStampedEvent(overrides: Partial<AuditEvent> = {}): AuditEve
 }
 
 describe('verifyTimestampMonotonicity', () => {
-  it('passes for monotonically increasing timestamps', () => {
+  it('passes for monotonically increasing record timestamps', () => {
     const events = [
-      makeAuditEvent({ occurredAt: '2026-01-01T00:00:00.000Z' }),
-      makeAuditEvent({ occurredAt: '2026-01-01T00:01:00.000Z' }),
-      makeAuditEvent({ occurredAt: '2026-01-01T00:02:00.000Z' }),
+      makeAuditEvent({ recordedAt: '2026-01-01T00:00:00.000Z' }),
+      makeAuditEvent({ recordedAt: '2026-01-01T00:01:00.000Z' }),
+      makeAuditEvent({ recordedAt: '2026-01-01T00:02:00.000Z' }),
     ];
     const result = verifyTimestampMonotonicity(events);
     expect(result.valid).toBe(true);
     expect(result.firstBreak).toBeNull();
   });
 
-  it('passes for equal timestamps', () => {
+  it('passes for equal record timestamps', () => {
     const events = [
-      makeAuditEvent({ occurredAt: '2026-01-01T00:00:00.000Z' }),
-      makeAuditEvent({ occurredAt: '2026-01-01T00:00:00.000Z' }),
+      makeAuditEvent({ recordedAt: '2026-01-01T00:00:00.000Z' }),
+      makeAuditEvent({ recordedAt: '2026-01-01T00:00:00.000Z' }),
     ];
     const result = verifyTimestampMonotonicity(events);
     expect(result.valid).toBe(true);
   });
 
-  it('fails for decreasing timestamps', () => {
+  it('fails for decreasing record timestamps', () => {
     const events = [
-      makeAuditEvent({ occurredAt: '2026-01-01T00:02:00.000Z' }),
-      makeAuditEvent({ occurredAt: '2026-01-01T00:01:00.000Z' }),
+      makeAuditEvent({ recordedAt: '2026-01-01T00:02:00.000Z' }),
+      makeAuditEvent({ recordedAt: '2026-01-01T00:01:00.000Z' }),
     ];
     const result = verifyTimestampMonotonicity(events);
     expect(result.valid).toBe(false);
@@ -81,7 +81,7 @@ describe('verifyTimestampMonotonicity', () => {
   });
 
   it('passes for single event', () => {
-    const events = [makeAuditEvent({ occurredAt: '2026-01-01T00:00:00.000Z' })];
+    const events = [makeAuditEvent({ recordedAt: '2026-01-01T00:00:00.000Z' })];
     const result = verifyTimestampMonotonicity(events);
     expect(result.valid).toBe(true);
   });
@@ -91,22 +91,40 @@ describe('verifyTimestampMonotonicity', () => {
       // 01:00+02:00 == 23:00Z the day before — lexically AFTER the next entry,
       // but temporally BEFORE it. Lexical comparison would flag this trail as
       // non-monotonic; parsed instants order it correctly.
-      makeAuditEvent({ occurredAt: '2026-01-01T01:00:00.000+02:00' }),
-      makeAuditEvent({ occurredAt: '2026-01-01T00:01:00.000Z' }),
+      makeAuditEvent({ recordedAt: '2026-01-01T01:00:00.000+02:00' }),
+      makeAuditEvent({ recordedAt: '2026-01-01T00:01:00.000Z' }),
     ];
     const result = verifyTimestampMonotonicity(events);
     expect(result.valid).toBe(true);
   });
 
-  it('AC11: an unparseable timestamp is never sortable — trail invalid', () => {
+  it('AC11: an unparseable record timestamp is never sortable — trail invalid', () => {
     const events = [
-      makeAuditEvent({ occurredAt: '2026-01-01T00:00:00.000Z' }),
-      makeAuditEvent({ occurredAt: 'not-a-date' }),
+      makeAuditEvent({ recordedAt: '2026-01-01T00:00:00.000Z' }),
+      makeAuditEvent({ recordedAt: 'not-a-date' }),
     ];
     const result = verifyTimestampMonotonicity(events);
     expect(result.valid).toBe(false);
     expect(result.firstBreak).toBe(1);
     expect(result.message).toContain('not a parseable UTC instant');
+  });
+
+  it('a deferred outbox event with an EARLIER occurredAt is a legitimate record (not a clock anomaly)', () => {
+    // The durable audit outbox reconciles older state_write operations after
+    // newer direct appends: occurredAt regresses while the record order
+    // (recordedAt) is monotonic — this must NOT be classified as CLOCK_ANOMALY.
+    const events = [
+      makeAuditEvent({
+        occurredAt: '2026-01-01T00:02:00.000Z',
+        recordedAt: '2026-01-01T00:02:00.000Z',
+      }),
+      makeAuditEvent({
+        occurredAt: '2026-01-01T00:01:00.000Z',
+        recordedAt: '2026-01-01T00:03:00.000Z',
+      }),
+    ];
+    const result = verifyTimestampMonotonicity(events);
+    expect(result.valid).toBe(true);
   });
 
   it('passes for empty array', () => {

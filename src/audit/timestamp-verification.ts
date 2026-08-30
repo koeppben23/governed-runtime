@@ -54,10 +54,16 @@ function epochOf(value: string): number | null {
 }
 
 /**
- * Verify that audit event timestamps are monotonically non-decreasing,
- * comparing PARSED UTC instants — never lexical strings (offset formats such
- * as `+02:00` vs `Z` must not yield ordering artifacts). An unparseable
- * timestamp makes the trail invalid, not ignorable.
+ * Verify that audit event RECORD timestamps are monotonically
+ * non-decreasing, comparing PARSED UTC instants — never lexical strings
+ * (offset formats such as `+02:00` vs `Z` must not yield ordering artifacts).
+ * An unparseable timestamp makes the trail invalid, not ignorable.
+ *
+ * The chain-order authority is `recordedAt` (stamped by the append authority
+ * under the audit write lock), NOT `occurredAt`: the durable audit outbox
+ * reconciles older operations after newer direct appends, so an event whose
+ * `occurredAt` predates its successor's is a legitimate deferred record —
+ * only a RECORD order regression is a clock anomaly.
  *
  * @param events - Audit events in chronological order.
  */
@@ -65,27 +71,27 @@ export function verifyTimestampMonotonicity(
   events: readonly AuditEvent[],
 ): TimestampMonotonicityResult {
   for (let i = 1; i < events.length; i++) {
-    const current = epochOf(events[i]!.occurredAt);
+    const current = epochOf(events[i]!.recordedAt);
     if (current === null) {
       return {
         valid: false,
         firstBreak: i,
-        message: `Timestamp at index ${i} is not a parseable UTC instant: "${events[i]!.occurredAt}"`,
+        message: `Record timestamp at index ${i} is not a parseable UTC instant: "${events[i]!.recordedAt}"`,
       };
     }
-    const previous = epochOf(events[i - 1]!.occurredAt);
+    const previous = epochOf(events[i - 1]!.recordedAt);
     if (previous === null) {
       return {
         valid: false,
         firstBreak: i - 1,
-        message: `Timestamp at index ${i - 1} is not a parseable UTC instant: "${events[i - 1]!.occurredAt}"`,
+        message: `Record timestamp at index ${i - 1} is not a parseable UTC instant: "${events[i - 1]!.recordedAt}"`,
       };
     }
     if (current < previous) {
       return {
         valid: false,
         firstBreak: i,
-        message: `Timestamp non-monotonic at index ${i}: "${events[i]!.occurredAt}" < "${events[i - 1]!.occurredAt}"`,
+        message: `Record timestamp non-monotonic at index ${i}: "${events[i]!.recordedAt}" < "${events[i - 1]!.recordedAt}"`,
       };
     }
   }

@@ -183,6 +183,17 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
   it('refuses to bind a mutation episode when the git control plane diverged from the hydrate baseline (#852)', async () => {
     const ws = await createTestWorkspace();
     try {
+      // A REAL git repository: the marker resolves the control-plane layout
+      // through git itself, so the fake `.git` marker dir cannot serve.
+      const { execFile } = await import('node:child_process');
+      const { promisify } = await import('node:util');
+      const execFileAsync = promisify(execFile);
+      await execFileAsync('git', ['init'], { cwd: ws.tmpDir });
+      await execFileAsync('git', ['config', 'user.email', 'test@example.com'], {
+        cwd: ws.tmpDir,
+      });
+      await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: ws.tmpDir });
+
       const sessionID = crypto.randomUUID();
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
@@ -340,11 +351,21 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
 
       const resolved = await readState(sessDir);
       expect(resolved!.mutationEpisodeResolutions).toHaveLength(1);
-      expect(resolved!.mutationEpisodeResolutions[0]).toMatchObject({
+      // The resolution DURABLY binds the fencing authority: the resolving
+      // runtime instance and a LATER lease generation than the authorizing one.
+      const resolution = resolved!.mutationEpisodeResolutions[0]!;
+      expect(resolution).toMatchObject({
         hostCallId: crashedCallID,
         status: 'reconciled_after_unknown_outcome',
         basis: 'worktree_recapture',
       });
+      const resolvedEpisode = resolved!.mutationEpisodes.find(
+        (episode) => episode.hostCallId === crashedCallID,
+      )!;
+      expect(resolution.resolvingRuntimeInstanceId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+      );
+      expect(resolution.resolvingLeaseGeneration).toBeGreaterThan(resolvedEpisode.leaseGeneration);
       // The episode itself stays dispatch_authorized forever — only the
       // resolution makes it non-blocking.
       expect(
@@ -475,6 +496,8 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
             status: 'reconciled_after_unknown_outcome',
             basis: 'worktree_recapture',
             resolvedAt: '2026-01-15T00:00:00.000Z',
+            resolvingRuntimeInstanceId: crypto.randomUUID(),
+            resolvingLeaseGeneration: 2,
           },
         ],
       });

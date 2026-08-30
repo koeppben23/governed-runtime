@@ -70,6 +70,11 @@ export type MutationEpisode = z.infer<typeof MutationEpisode>;
  * After-hook). The episode itself remains `dispatch_authorized`; the
  * resolution is what makes it non-blocking for /implement — and forces a
  * fresh worktree recapture instead of trusting pre-crash evidence.
+ *
+ * The resolution DUARABLY binds the fencing authority that made it admissible:
+ * `resolvingRuntimeInstanceId` and `resolvingLeaseGeneration` prove — from the
+ * persisted state alone — that the resolving instance held a lease with a
+ * LATER generation than the episode's authorizing generation.
  */
 export const MutationEpisodeResolution = z
   .object({
@@ -78,6 +83,14 @@ export const MutationEpisodeResolution = z
     status: z.literal('reconciled_after_unknown_outcome'),
     basis: z.literal('worktree_recapture'),
     resolvedAt: z.string().datetime(),
+    /** Runtime instance that held the lease authorizing this resolution. */
+    resolvingRuntimeInstanceId: z.string().uuid(),
+    /**
+     * Lease generation under which the resolution was granted. MUST be LATER
+     * than the resolved episode's `leaseGeneration` (enforced by the state
+     * invariant in schema.ts).
+     */
+    resolvingLeaseGeneration: z.number().int().positive(),
   })
   .strict()
   .readonly();
@@ -144,11 +157,18 @@ export function completeMutationEpisode(
 
 /**
  * Append an unknown-outcome resolution. Append-only: a hostCallId can never
- * be resolved twice, and resolutions are never removed or rewritten.
+ * be resolved twice, and resolutions are never removed or rewritten. The
+ * resolution durably binds the fencing authority under which it was granted.
  */
 export function resolveUnknownMutationOutcome(
   resolutions: readonly MutationEpisodeResolution[],
-  input: { resolutionId: string; hostCallId: string; resolvedAt: string },
+  input: {
+    resolutionId: string;
+    hostCallId: string;
+    resolvedAt: string;
+    resolvingRuntimeInstanceId: string;
+    resolvingLeaseGeneration: number;
+  },
 ): MutationEpisodeResolution[] {
   if (resolutions.some((resolution) => resolution.hostCallId === input.hostCallId)) {
     return [...resolutions];
@@ -226,6 +246,71 @@ export function countUnboundMutationEpisodes(
       (episode.status === 'dispatch_authorized' && !resolvedCallIds.has(episode.hostCallId)) ||
       (episode.status === 'completed' && episode.implementationDigest === null),
   ).length;
+}
+
+/**
+ * Relational state invariants for mutation episodes and the recovery fencing
+ * authority (#852), enforced by the SessionState schema boundary:
+ * - episode hostCallIds are unique (durable dispatch identity);
+ * - a resolution must reference an EXISTING `dispatch_authorized` episode;
+ * - at most one resolution per episode (append-only identity);
+ * - the resolution must durably prove a LATER resolving lease generation
+ *   than the episode's authorizing generation — never a mere process
+ *   identity claim.
+ *
+ * @returns true when an issue was added (the caller must stop immediately —
+ *          the schema contract is one-issue-at-a-time fail-closed).
+ */
+export function enforceMutationEpisodeInvariants(
+  episodes: readonly MutationEpisode[],
+  resolutions: readonly MutationEpisodeResolution[],
+  context: z.RefinementCtx,
+): boolean {
+  const seenMutationCallIds = new Set<string>();
+  for (const episode of episodes) {
+    if (seenMutationCallIds.has(episode.hostCallId)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['mutationEpisodes'],
+        message: `duplicate mutation episode hostCallId: ${episode.hostCallId}`,
+      });
+      return true;
+    }
+    seenMutationCallIds.add(episode.hostCallId);
+  }
+  const seenResolutionCallIds = new Set<string>();
+  for (const resolution of resolutions) {
+    const episode = episodes.find((candidate) => candidate.hostCallId === resolution.hostCallId);
+    if (!episode || episode.status !== 'dispatch_authorized') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['mutationEpisodeResolutions'],
+        message: `mutation episode resolution references missing or completed episode: ${resolution.hostCallId}`,
+      });
+      return true;
+    }
+    if (seenResolutionCallIds.has(resolution.hostCallId)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['mutationEpisodeResolutions'],
+        message: `duplicate mutation episode resolution hostCallId: ${resolution.hostCallId}`,
+      });
+      return true;
+    }
+    seenResolutionCallIds.add(resolution.hostCallId);
+    if (resolution.resolvingLeaseGeneration <= episode.leaseGeneration) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['mutationEpisodeResolutions'],
+        message:
+          `resolution for ${resolution.hostCallId} carries lease generation ` +
+          `${resolution.resolvingLeaseGeneration} which does not supersede the ` +
+          `episode's authorizing generation ${episode.leaseGeneration}`,
+      });
+      return true;
+    }
+  }
+  return false;
 }
 
 export function hasUnboundMutationEpisodes(

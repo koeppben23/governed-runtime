@@ -1280,6 +1280,8 @@ describe('review-decision rail', () => {
             status: 'reconciled_after_unknown_outcome',
             basis: 'worktree_recapture',
             resolvedAt: '2026-01-15T00:00:00.000Z',
+            resolvingRuntimeInstanceId: '00000000-0000-4000-8000-000000000020',
+            resolvingLeaseGeneration: 2,
           },
         ],
       });

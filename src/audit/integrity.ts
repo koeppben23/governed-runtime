@@ -34,6 +34,7 @@ import {
   GENESIS_HASH,
   type ChainedAuditEvent,
 } from './types.js';
+import { computeCanonicalEventDigest } from './canonical-digest.js';
 import {
   verifyTimestampMonotonicity,
   verifyTsaMessageImprint,
@@ -218,6 +219,40 @@ export function verifyEvent(
       reasonCode: 'CHAIN_BREAK',
       expectedChainHash: recomputed,
       actualChainHash: chainHash,
+    };
+  }
+
+  // Sequence authority: the append lock stamps auditSequence as the 1-based
+  // chain position. Any other value means the record was re-stamped outside
+  // the append authority — e.g. a trail carrying 1, 7, 7.
+  if (!Number.isInteger(event.auditSequence) || event.auditSequence !== index + 1) {
+    return {
+      index,
+      eventId: event.id,
+      valid: false,
+      reason: `auditSequence mismatch: expected ${index + 1}, got ${String(event.auditSequence)}`,
+      reasonCode: 'CHAIN_BREAK',
+    };
+  }
+
+  // Semantic digest authority: semanticEventDigest must equal the recomputed
+  // canonical content digest of the record. A re-sealed trail whose stamped
+  // digest was not recomputed over the actual content is invalid even when
+  // every chainHash is internally consistent.
+  const recomputedSemanticDigest = computeCanonicalEventDigest(
+    event as unknown as Record<string, unknown>,
+  );
+  if (!safeHashEqual(recomputedSemanticDigest, event.semanticEventDigest)) {
+    return {
+      index,
+      eventId: event.id,
+      valid: false,
+      reason:
+        `semanticEventDigest mismatch: expected "${recomputedSemanticDigest}", ` +
+        `got "${event.semanticEventDigest}"`,
+      reasonCode: 'CHAIN_BREAK',
+      expectedChainHash: recomputedSemanticDigest,
+      actualChainHash: event.semanticEventDigest,
     };
   }
 

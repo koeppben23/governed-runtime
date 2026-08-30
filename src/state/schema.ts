@@ -39,6 +39,7 @@ import {
   ValidationResult,
 } from './evidence.js';
 import { MutationEpisode, MutationEpisodeResolution } from './evidence-mutation-episode.js';
+import { enforceMutationEpisodeInvariants } from './evidence-mutation-episode.js';
 import {
   DiscoverySummarySchema,
   DetectedStackSchema,
@@ -61,8 +62,8 @@ export const CURRENT_AUDIT_CHAIN_FORMAT = 'audit-chain.v3' as const;
 // ─── Phase ────────────────────────────────────────────────────────────────────
 
 /**
- * The 14 FlowGuard phases across 3 standalone flows.
- * init() is a function (bootstrap, workspace, binding, discovery) — not a phase.
+ * The 14 FlowGuard phases across 3 standalone flows; init() is a
+ * function (bootstrap, workspace, binding, discovery) — not a phase.
  *
  * After /hydrate, the session starts at READY — a routing phase
  * where the user selects one of 3 standalone flows:
@@ -206,7 +207,7 @@ export type DiscoveryHealthGateCode = z.infer<typeof DiscoveryHealthGateCode>;
  * Persistent Discovery health gate (#399).
  *
  * Separates the gate DECISION (`status`) from cached drift EVIDENCE
- * (`lastDriftAssessment`). A blocked gate stops the next mutating tool.
+ * (`lastDriftAssessment`); a blocked gate stops the next mutating tool.
  * The gate is cleared ONLY by reconcileDiscoveryHealthGate at /hydrate with
  * fresh healthy Discovery and bounded drift — never by /status or by a
  * subsequent unavailable re-read at the tool seam.
@@ -709,18 +710,15 @@ export const SessionState = z
       }
       seenOperationIds.add(operation.operationId);
     }
-    const seenMutationCallIds = new Set<string>();
-    for (const episode of state.mutationEpisodes) {
-      if (seenMutationCallIds.has(episode.hostCallId)) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['mutationEpisodes'],
-          message: `duplicate mutation episode hostCallId: ${episode.hostCallId}`,
-        });
-        return;
-      }
-      seenMutationCallIds.add(episode.hostCallId);
-    }
+    // #852: mutation-episode identity + recovery-fencing invariants.
+    if (
+      enforceMutationEpisodeInvariants(
+        state.mutationEpisodes,
+        state.mutationEpisodeResolutions,
+        context,
+      )
+    )
+      return;
     // Standalone-review lifecycle invariant: a structurally broken evidence
     // chain (dangling supersession, cycles, completions on superseded entries,
     // multiple authoritative incarnations) makes the STATE invalid — it must

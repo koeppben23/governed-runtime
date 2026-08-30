@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import {
   authorizeMutationEpisode,
   canResolveMutationEpisode,
   completeMutationEpisode,
+  enforceMutationEpisodeInvariants,
   hasUnboundMutationEpisodes,
   hasUnresolvedMutationEpisodes,
   latestUnknownOutcomeResolvedAt,
   reconcileMutationEpisodes,
   resolveUnknownMutationOutcome,
+  type MutationEpisode,
+  type MutationEpisodeResolution,
 } from './evidence-mutation-episode.js';
 
 const ID = '00000000-0000-4000-8000-000000000001';
@@ -123,11 +127,15 @@ describe('mutation episode evidence', () => {
       resolutionId: '00000000-0000-4000-8000-000000000099',
       hostCallId: 'call-1',
       resolvedAt: TIME,
+      resolvingRuntimeInstanceId: RUNTIME_B,
+      resolvingLeaseGeneration: 18,
     });
     expect(resolutions).toHaveLength(1);
     expect(resolutions[0]).toMatchObject({
       status: 'reconciled_after_unknown_outcome',
       basis: 'worktree_recapture',
+      resolvingRuntimeInstanceId: RUNTIME_B,
+      resolvingLeaseGeneration: 18,
     });
     expect(latestUnknownOutcomeResolvedAt(resolutions)).toBe(TIME);
 
@@ -153,6 +161,8 @@ describe('mutation episode evidence', () => {
       resolutionId: '00000000-0000-4000-8000-000000000098',
       hostCallId: 'call-1',
       resolvedAt: '2026-02-01T00:00:00.000Z',
+      resolvingRuntimeInstanceId: RUNTIME_B,
+      resolvingLeaseGeneration: 19,
     });
     expect(again).toEqual(resolutions);
   });
@@ -173,5 +183,90 @@ describe('mutation episode evidence', () => {
       kind: 'blocked',
       code: 'MUTATION_EPISODE_RUNTIME_EPOCH_ACTIVE',
     });
+  });
+});
+
+// ─── Schema-boundary invariants (enforceMutationEpisodeInvariants) ──────────────
+
+function authorizedEpisode(hostCallId: string, leaseGeneration = 17): MutationEpisode {
+  const result = authorizeMutationEpisode([], {
+    episodeId: crypto.randomUUID(),
+    hostCallId,
+    toolName: 'bash',
+    runtimeInstanceId: RUNTIME_A,
+    leaseGeneration,
+    authorizedAt: TIME,
+  });
+  return (result as { episodes: MutationEpisode[] }).episodes[0]!;
+}
+
+function resolutionFor(
+  hostCallId: string,
+  resolvingLeaseGeneration: number,
+): MutationEpisodeResolution {
+  return {
+    resolutionId: crypto.randomUUID(),
+    hostCallId,
+    status: 'reconciled_after_unknown_outcome',
+    basis: 'worktree_recapture',
+    resolvedAt: '2026-01-15T00:00:00.000Z',
+    resolvingRuntimeInstanceId: RUNTIME_B,
+    resolvingLeaseGeneration,
+  };
+}
+
+function makeContext(): { ctx: z.RefinementCtx; issues: string[] } {
+  const issues: string[] = [];
+  const ctx = {
+    addIssue: (issue: { message?: string }) => {
+      issues.push(issue.message ?? '');
+    },
+  } as unknown as z.RefinementCtx;
+  return { ctx, issues };
+}
+
+describe('enforceMutationEpisodeInvariants (schema boundary)', () => {
+  it('accepts a valid episode + fenced resolution (HAPPY)', () => {
+    const episode = authorizedEpisode('call-1');
+    const resolution = resolutionFor('call-1', 18);
+    const { ctx, issues } = makeContext();
+    expect(enforceMutationEpisodeInvariants([episode], [resolution], ctx)).toBe(false);
+    expect(issues).toEqual([]);
+  });
+
+  it('rejects duplicate episode hostCallIds (BAD)', () => {
+    const episode = authorizedEpisode('call-1');
+    const { ctx, issues } = makeContext();
+    expect(enforceMutationEpisodeInvariants([episode, episode], [], ctx)).toBe(true);
+    expect(issues[0]).toContain('duplicate mutation episode hostCallId');
+  });
+
+  it('rejects a resolution without a matching dispatch_authorized episode (BAD)', () => {
+    const resolution = resolutionFor('ghost-call', 18);
+    const { ctx, issues } = makeContext();
+    expect(enforceMutationEpisodeInvariants([], [resolution], ctx)).toBe(true);
+    expect(issues[0]).toContain('missing or completed episode');
+  });
+
+  it('rejects duplicate resolutions for one episode (BAD)', () => {
+    const episode = authorizedEpisode('call-1');
+    const { ctx, issues } = makeContext();
+    expect(
+      enforceMutationEpisodeInvariants(
+        [episode],
+        [resolutionFor('call-1', 18), resolutionFor('call-1', 19)],
+        ctx,
+      ),
+    ).toBe(true);
+    expect(issues[0]).toContain('duplicate mutation episode resolution');
+  });
+
+  it('rejects a resolution whose lease generation does not supersede the episode (BAD)', () => {
+    const episode = authorizedEpisode('call-1', 17);
+    const { ctx, issues } = makeContext();
+    expect(enforceMutationEpisodeInvariants([episode], [resolutionFor('call-1', 17)], ctx)).toBe(
+      true,
+    );
+    expect(issues[0]).toContain('does not supersede');
   });
 });

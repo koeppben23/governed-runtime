@@ -3,7 +3,12 @@
  * @description Shared test fixtures for the audit test suite.
  */
 
-import { GENESIS_HASH, createTransitionEvent, type ChainedAuditEvent } from './types.js';
+import {
+  GENESIS_HASH,
+  computeChainHash,
+  createTransitionEvent,
+  type ChainedAuditEvent,
+} from './types.js';
 import type { AuditEvent } from '../state/evidence.js';
 import { FIXED_SESSION_UUID } from '../fixtures.js';
 
@@ -34,6 +39,27 @@ export function makeAuditEvent(overrides: Partial<AuditEvent> = {}): AuditEvent 
   };
 }
 
+/**
+ * Re-stamp the 1-based sequence authority on a factory-built event.
+ *
+ * `finalizeWithTimestampEvidence` stamps a PROVISIONAL `auditSequence: 0`
+ * (the real sequence authority is stamped by the append lock). Fixtures that
+ * feed `verifyChain` must therefore re-stamp the sequence — and re-chain the
+ * hash, which covers `auditSequence` — so the events represent a compliant
+ * persisted trail.
+ */
+export function stampChainSequence(
+  event: ChainedAuditEvent,
+  auditSequence: number,
+): ChainedAuditEvent {
+  const { chainHash: _chainHash, ...body } = event;
+  const restamped = { ...body, auditSequence };
+  return {
+    ...restamped,
+    chainHash: computeChainHash(restamped.prevHash, restamped),
+  };
+}
+
 /** Build a chain of N chained audit events (for integrity tests). */
 export function buildChain(length: number): ChainedAuditEvent[] {
   const events: ChainedAuditEvent[] = [];
@@ -53,8 +79,9 @@ export function buildChain(length: number): ChainedAuditEvent[] {
       `2026-01-01T00:${String(i).padStart(2, '0')}:00.000Z`,
       prevHash,
     );
-    events.push(event);
-    prevHash = event.chainHash;
+    const stamped = stampChainSequence(event, i + 1);
+    events.push(stamped);
+    prevHash = stamped.chainHash;
   }
 
   return events;

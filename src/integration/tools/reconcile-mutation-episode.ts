@@ -94,6 +94,11 @@ export const reconcile_mutation_episode: ToolDefinition = {
               resolutionId: randomUUID(),
               hostCallId: args.hostCallId,
               resolvedAt: new Date().toISOString(),
+              // Durably bind the fencing authority: the persisted resolution
+              // must prove, from state alone, that the resolving instance held
+              // a LATER lease generation than the episode's authorizing one.
+              resolvingRuntimeInstanceId: leaseAcquisition.lease.holderRuntimeInstanceId,
+              resolvingLeaseGeneration: leaseAcquisition.lease.generation,
             },
           ),
         };

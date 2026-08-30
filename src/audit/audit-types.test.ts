@@ -15,7 +15,7 @@ import {
 } from './types.js';
 import { verifyChain } from './integrity.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
-import { SESSION_ID, TS1, TS2, TS3 } from './audit-test-helpers.js';
+import { SESSION_ID, TS1, TS2, TS3, stampChainSequence } from './audit-test-helpers.js';
 describe('audit types', () => {
   // ─── HAPPY ──────────────────────────────────────────────────
   describe('HAPPY', () => {
@@ -648,38 +648,46 @@ describe('audit types', () => {
       expect((event.detail.argsSummary as Record<string, string>).api_key).toBe('[REDACTED]');
       expect(JSON.stringify(event)).not.toContain(canary);
 
-      const result = verifyChain([event as unknown as Record<string, unknown>]);
+      const result = verifyChain([
+        stampChainSequence(event, 1) as unknown as Record<string, unknown>,
+      ]);
       expect(result.valid).toBe(true);
     });
 
     it('multi-event chain with secret-bearing args remains valid', () => {
-      const event1 = createToolCallEvent({
-        flowguardSessionId: SESSION_ID,
-        phase: 'PLAN',
-        detail: {
-          tool: 'bash',
-          argsSummary: summarizeArgs({ token: 'ghp_secret', prompt: 'plan' }),
-          success: true,
-          transitionCount: 1,
-        },
-        occurredAt: TS1,
-        actor: 'human',
-        prevHash: GENESIS_HASH,
-      });
+      const event1 = stampChainSequence(
+        createToolCallEvent({
+          flowguardSessionId: SESSION_ID,
+          phase: 'PLAN',
+          detail: {
+            tool: 'bash',
+            argsSummary: summarizeArgs({ token: 'ghp_secret', prompt: 'plan' }),
+            success: true,
+            transitionCount: 1,
+          },
+          occurredAt: TS1,
+          actor: 'human',
+          prevHash: GENESIS_HASH,
+        }),
+        1,
+      );
 
-      const event2 = createToolCallEvent({
-        flowguardSessionId: SESSION_ID,
-        phase: 'IMPLEMENTATION',
-        detail: {
-          tool: 'write_file',
-          argsSummary: summarizeArgs({ file: 'src/app.ts', api_key: 'sk-abc' }),
-          success: true,
-          transitionCount: 2,
-        },
-        occurredAt: TS2,
-        actor: 'human',
-        prevHash: event1.chainHash,
-      });
+      const event2 = stampChainSequence(
+        createToolCallEvent({
+          flowguardSessionId: SESSION_ID,
+          phase: 'IMPLEMENTATION',
+          detail: {
+            tool: 'write_file',
+            argsSummary: summarizeArgs({ file: 'src/app.ts', api_key: 'sk-abc' }),
+            success: true,
+            transitionCount: 2,
+          },
+          occurredAt: TS2,
+          actor: 'human',
+          prevHash: event1.chainHash,
+        }),
+        2,
+      );
 
       expect((event1.detail.argsSummary as Record<string, string>).token).toBe('[REDACTED]');
       expect(JSON.stringify(event1)).not.toContain('ghp_secret');

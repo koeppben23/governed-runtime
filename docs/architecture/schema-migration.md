@@ -9,14 +9,15 @@ audit-chain.v3, hard rejection of legacy artifacts).
 > **Superseded.** The Assurance epoch deliberately replaces read-time
 > migration with a hard cutover: `SessionState.schemaVersion` is
 > `z.literal('v2')`, persisted audit records are strictly `audit-chain.v3`,
-> and any pre-v2 state or pre-v3 audit record is rejected with
-> `LEGACY_ASSURANCE_FORMAT_UNSUPPORTED` at every persistence and verification
-> boundary (`src/adapters/persistence.ts`, `src/adapters/persistence-audit.ts`,
-> `src/audit/integrity.ts`). Legacy artifacts are never migrated,
-> reinterpreted, or re-sealed. This document is retained for historical
-> context only; the migration pipeline it proposes (`src/state/migration.ts`,
-> `SESSION_MIGRATIONS`, `migrateToCurrent()`) does not exist and is not
-> planned.
+> and any pre-v2 STATE is rejected with `SESSION_STATE_INCOMPATIBLE` at the
+> `readState` contract preflight (`src/adapters/persistence.ts`) while any
+> pre-v3 AUDIT record is rejected with `LEGACY_ASSURANCE_FORMAT_UNSUPPORTED`
+> at every audit persistence and verification boundary
+> (`src/adapters/persistence-audit.ts`, `src/audit/integrity.ts`). Legacy
+> artifacts are never migrated, reinterpreted, or re-sealed. This document is
+> retained for historical context only; the migration pipeline it proposes
+> (`src/state/migration.ts`, `SESSION_MIGRATIONS`, `migrateToCurrent()`) does
+> not exist and is not planned.
 
 ## 1. Problem Statement
 

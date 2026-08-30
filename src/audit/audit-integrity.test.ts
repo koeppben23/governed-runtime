@@ -9,18 +9,21 @@ import {
 import { verifyEvent, verifyChain, getLastChainHash } from './integrity.js';
 import { computeCanonicalEventDigest } from './canonical-digest.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
-import { SESSION_ID, TS1, TS2, TS3, buildChain } from './audit-test-helpers.js';
+import { SESSION_ID, TS1, TS2, TS3, buildChain, stampChainSequence } from './audit-test-helpers.js';
 
 describe('audit integrity', () => {
   // ─── HAPPY ──────────────────────────────────────────────────
   describe('HAPPY', () => {
     it('verifyEvent passes for valid event with correct prevHash', () => {
-      const event = createTransitionEvent(
-        SESSION_ID,
-        'PLAN',
-        { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', autoAdvanced: false, chainIndex: -1 },
-        TS1,
-        GENESIS_HASH,
+      const event = stampChainSequence(
+        createTransitionEvent(
+          SESSION_ID,
+          'PLAN',
+          { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', autoAdvanced: false, chainIndex: -1 },
+          TS1,
+          GENESIS_HASH,
+        ),
+        1,
       );
       const result = verifyEvent(event, GENESIS_HASH, 0);
       expect(result.valid).toBe(true);
@@ -42,6 +45,46 @@ describe('audit integrity', () => {
       const chain = buildChain(3);
       const lastHash = getLastChainHash(chain.map((event) => ({ ...event })));
       expect(lastHash).toBe(chain[2]!.chainHash);
+    });
+
+    it('verifyChain rejects a trail whose sequence authority is not index + 1 (1, 7, 7)', () => {
+      const chain = buildChain(3);
+      const resealed = chain.map((event, i) => {
+        const { chainHash: _chainHash, ...body } = event;
+        const restamped = {
+          ...body,
+          auditSequence: i === 0 ? 1 : 7,
+        } as unknown as Omit<ChainedAuditEvent, 'chainHash'>;
+        return {
+          ...restamped,
+          chainHash: computeChainHash(restamped.prevHash, restamped),
+        };
+      });
+      // Re-chain so every chainHash is internally consistent: the sequence
+      // authority alone must still invalidate the trail.
+      const result = verifyChain(resealed);
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('CHAIN_BREAK');
+      expect(result.firstBreak?.reason).toContain('auditSequence mismatch');
+    });
+
+    it('verifyChain rejects a re-sealed trail whose semanticEventDigest was not recomputed', () => {
+      const chain = buildChain(2);
+      const resealed = chain.map((event) => {
+        const { chainHash: _chainHash, ...body } = event;
+        const tamperedBody = {
+          ...body,
+          semanticEventDigest: '0'.repeat(64),
+        } as unknown as Omit<ChainedAuditEvent, 'chainHash'>;
+        return {
+          ...tamperedBody,
+          chainHash: computeChainHash(tamperedBody.prevHash, tamperedBody),
+        };
+      });
+      const result = verifyChain(resealed);
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('CHAIN_BREAK');
+      expect(result.firstBreak?.reason).toContain('semanticEventDigest mismatch');
     });
   });
 
@@ -151,9 +194,14 @@ describe('audit integrity', () => {
           },
         },
       } as Omit<ChainedAuditEvent, 'chainHash'>;
+      // A coordinated local edit recomputes BOTH the stamped semantic digest
+      // and the chainHash — the TSA imprint is the only authority it cannot
+      // regenerate, so verification must fall through to the TSA check.
       const tamperedWithUpdatedLocalDigest = {
         ...tamperedBody,
-        canonicalEventDigest: computeCanonicalEventDigest(tamperedBody),
+        semanticEventDigest: computeCanonicalEventDigest(
+          tamperedBody as unknown as Record<string, unknown>,
+        ),
       };
       const resealedTamper = {
         ...tamperedWithUpdatedLocalDigest,
@@ -265,12 +313,15 @@ describe('audit integrity', () => {
     });
 
     it('verifyEvent passes with matching hash', () => {
-      const event = createTransitionEvent(
-        SESSION_ID,
-        'PLAN',
-        { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', autoAdvanced: false, chainIndex: -1 },
-        TS1,
-        GENESIS_HASH,
+      const event = stampChainSequence(
+        createTransitionEvent(
+          SESSION_ID,
+          'PLAN',
+          { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', autoAdvanced: false, chainIndex: -1 },
+          TS1,
+          GENESIS_HASH,
+        ),
+        1,
       );
       // Use the actual correct prevHash
       const result = verifyEvent(event, GENESIS_HASH, 0);
@@ -414,11 +465,13 @@ describe('audit integrity', () => {
         actor: 'machine',
         detail: {},
       };
-      // Insert legacy between two chained events
+      // Append the legacy record after the chained events (inserting it
+      // between chained events would additionally break the sequence authority
+      // of every following record, which the dedicated sequence test covers).
       const mixed = [
         chain[0] as unknown as Record<string, unknown>,
-        legacy,
         chain[1] as unknown as Record<string, unknown>,
+        legacy,
       ];
       const result = verifyChain(mixed);
       // Legacy records are never skipped — the chain fails closed.
@@ -426,7 +479,7 @@ describe('audit integrity', () => {
       expect(result.skippedCount).toBe(0);
       expect(result.valid).toBe(false);
       expect(result.reason).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
-      expect(result.firstBreak?.index).toBe(1);
+      expect(result.firstBreak?.index).toBe(2);
     });
 
     it('insertion attack detected — new event breaks prevHash chain', () => {
@@ -445,10 +498,13 @@ describe('audit integrity', () => {
         TS2,
         chain[0]!.chainHash, // Uses correct prevHash for [0]
       );
+      // The inserted event carries a compliant sequence for its chain position;
+      // the attack is exposed by the prevHash break of the event AFTER it.
+      const insertedStamped = stampChainSequence(inserted, 2);
       // Insert between [0] and [1] — [1]'s prevHash still points to [0], not inserted
       const tampered = [
         chain[0] as unknown as Record<string, unknown>,
-        inserted as unknown as Record<string, unknown>,
+        insertedStamped as unknown as Record<string, unknown>,
         chain[1] as unknown as Record<string, unknown>, // prevHash = chain[0].chainHash, not inserted.chainHash
         chain[2] as unknown as Record<string, unknown>,
       ];
@@ -635,14 +691,14 @@ describe('audit integrity', () => {
         };
         const mixed = [
           chain[0] as unknown as Record<string, unknown>,
-          legacy,
           chain[1] as unknown as Record<string, unknown>,
+          legacy,
         ];
         const result = verifyChain(mixed, { strict: true });
         expect(result.valid).toBe(false);
         expect(result.reason).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
         expect(result.skippedCount).toBe(0);
-        expect(result.firstBreak?.index).toBe(1);
+        expect(result.firstBreak?.index).toBe(2);
       });
 
       it('strict mode: chain break + legacy record → reason is CHAIN_BREAK (severity priority)', () => {

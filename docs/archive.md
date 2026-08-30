@@ -255,7 +255,11 @@ verification boundary. Legacy assurance artifacts are never migrated,
 reinterpreted, or re-sealed: a trail containing them fails verification with
 the `audit_chain_legacy_format` finding, not `audit_chain_invalid`, so operators
 can distinguish unsupported epoch data from a tampered v3 chain. A time
-regression between `occurredAt` values is reported as `CLOCK_ANOMALY`.
+regression between `recordedAt` values is reported as `CLOCK_ANOMALY`.
+(Chain-order authority is the append-stamped `recordedAt`: the durable audit
+outbox reconciles older operations after newer direct appends, so an earlier
+`occurredAt` on a later-recorded event is a legitimate deferred record, not a
+clock anomaly.)
 
 ## Retention
 

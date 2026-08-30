@@ -3,29 +3,39 @@
  * @description Deterministic git control-plane integrity marker (#852).
  *
  * The implementation review subject covers worktree content (`changedFiles`,
- * content digests, diff artifacts). Git CONTROL-PLANE state — `.git/config`,
- * `.git/hooks/*`, `.git/HEAD`, the git-dir reference itself — is invisible to
- * `git status`, so a host mutation touching it would change how the repository
- * behaves WITHOUT ever appearing in the recorded implementation evidence.
+ * content digests, diff artifacts). Git CONTROL-PLANE state — the common
+ * `config`, `hooks/`, worktree-private `HEAD`, and the git-dir reference
+ * itself — is invisible to `git status`, so a host mutation touching it would
+ * change how the repository behaves WITHOUT ever appearing in the recorded
+ * implementation evidence.
  *
  * The marker freezes the control-plane state at session baseline (hydrate).
  * Implementation recording fails closed when the current marker diverges from
  * the baseline: a mutation whose repository effect is not covered by the
  * implementation subject can never be certified as bound evidence.
  *
- * Marker shape (all parts hashed as one SHA-256):
- * - the resolved git-dir reference (`.git` existence/type or the gitfile
- *   target for linked worktrees/submodules);
- * - `.git/config` content;
- * - `.git/HEAD` content;
- * - every `.git/hooks/` entry (name + content hash, directory names as-is).
+ * Layout resolution is delegated to git itself (`git rev-parse --git-dir
+ * --git-common-dir --git-path HEAD --git-path config --git-path
+ * config.worktree --git-path hooks`): linked worktrees relocate these paths
+ * between the private $GIT_DIR and the common $GIT_COMMON_DIR, and
+ * `extensions.worktreeConfig` adds a per-worktree `config.worktree` — the
+ * layout is never guessed manually. A worktree that git cannot resolve makes
+ * marker computation THROW (callers fail closed), never a guessed fallback.
  *
- * @version v1
+ * Marker shape (all parts hashed as one SHA-256):
+ * - the resolved git-dir and common-dir paths;
+ * - `config` content;
+ * - `config.worktree` content (or a stable missing label);
+ * - `HEAD` content;
+ * - every `hooks/` entry (name + content hash).
+ *
+ * @version v2
  */
 
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import { resolveGitControlPlanePaths } from '../adapters/git.js';
 
 function sha256Text(text: string): string {
   return createHash('sha256').update(text, 'utf8').digest('hex');
@@ -38,30 +48,7 @@ function isEisDirError(err: unknown): boolean {
   );
 }
 
-/**
- * Resolve the actual git metadata directory for a worktree.
- *
- * A regular repository has a `.git` DIRECTORY; a linked worktree or submodule
- * has a `.git` FILE containing `gitdir: <path>`. Both cases are discriminated
- * by a SINGLE read operation — a directory read fails with EISDIR on every
- * platform Node supports, so there is no check-then-use race between a stat
- * and a subsequent read. Returns null when `.git` is absent or unreadable —
- * the marker then records the absence itself.
- */
-async function resolveGitDir(worktree: string): Promise<string | null> {
-  const dotGit = path.join(worktree, '.git');
-  try {
-    const content = await fs.readFile(dotGit, 'utf8');
-    const match = /^gitdir:\s*(.+)$/m.exec(content);
-    return match ? path.resolve(worktree, match[1]!.trim()) : null;
-  } catch (err) {
-    if (isEisDirError(err)) return dotGit;
-    return null;
-  }
-}
-
-async function markerForFile(filePath: string | null, missingLabel: string): Promise<string> {
-  if (!filePath) return missingLabel;
+async function markerForFile(filePath: string, missingLabel: string): Promise<string> {
   try {
     return sha256Text(await fs.readFile(filePath, 'utf8'));
   } catch {
@@ -69,17 +56,16 @@ async function markerForFile(filePath: string | null, missingLabel: string): Pro
   }
 }
 
-async function hooksMarker(gitDir: string | null): Promise<string> {
-  if (!gitDir) return 'missing';
+async function hooksMarker(hooksDir: string): Promise<string> {
   let names: string[];
   try {
-    names = (await fs.readdir(path.join(gitDir, 'hooks'))).sort();
+    names = (await fs.readdir(hooksDir)).sort();
   } catch {
     return 'missing';
   }
   const parts: string[] = [];
   for (const name of names) {
-    const full = path.join(gitDir, 'hooks', name);
+    const full = path.join(hooksDir, name);
     // Single read per entry: directories fail with EISDIR, unreadable entries
     // fall back to a stable placeholder — no stat-then-read race.
     try {
@@ -95,15 +81,19 @@ async function hooksMarker(gitDir: string | null): Promise<string> {
  * Compute the git control-plane integrity marker for a worktree.
  *
  * Deterministic for an unchanged control plane; changes when the git-dir
- * reference, config, HEAD, or any hook changes (or `.git` disappears).
+ * reference, the common config, the per-worktree config.worktree, HEAD, or
+ * any hook changes. Throws when git cannot resolve the layout (not a
+ * repository, git missing, corrupted layout) — callers fail closed.
  */
 export async function computeGitControlPlaneMarker(worktree: string): Promise<string> {
-  const gitDir = await resolveGitDir(worktree);
+  const layout = await resolveGitControlPlanePaths(worktree);
   const parts = [
-    `gitdir:${gitDir ?? 'missing'}`,
-    `config:${await markerForFile(gitDir ? path.join(gitDir, 'config') : null, 'missing')}`,
-    `HEAD:${await markerForFile(gitDir ? path.join(gitDir, 'HEAD') : null, 'missing')}`,
-    `hooks:${await hooksMarker(gitDir)}`,
+    `gitdir:${layout.gitDir}`,
+    `commondir:${layout.commonDir}`,
+    `config:${await markerForFile(layout.configPath, 'missing')}`,
+    `config.worktree:${await markerForFile(layout.worktreeConfigPath, 'missing')}`,
+    `HEAD:${await markerForFile(layout.headPath, 'missing')}`,
+    `hooks:${await hooksMarker(layout.hooksPath)}`,
   ];
   return sha256Text(parts.join('\n'));
 }
