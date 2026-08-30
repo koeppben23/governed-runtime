@@ -408,6 +408,166 @@ describe('toolBefore — command scope', () => {
       await ws.cleanup();
     }
   });
+
+  it('denies flowguard_implement during /check when no rework marker is active', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessDir = path.join(ws.tmpDir, 'sess-impl');
+      await seedSession(
+        sessDir,
+        makeState('IMPLEMENTATION', {
+          implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+        }),
+      );
+      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      runtime.activeCommandScopes.set(SESSION_ID, 'check');
+      await expect(
+        toolBefore(runtime, { tool: 'flowguard_implement', sessionID: SESSION_ID }, { args: {} }),
+      ).rejects.toThrow('COMMAND_SCOPE_DENIED');
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('denies flowguard_implement during /check when the rework budget is exhausted', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessDir = path.join(ws.tmpDir, 'sess-impl');
+      const exhaustedState = makeState('IMPLEMENTATION', {
+        implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+        implementationRework: { rejectedDigest: 'digest-x', exhausted: true },
+      });
+      await seedSession(sessDir, exhaustedState);
+      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      runtime.activeCommandScopes.set(SESSION_ID, 'check');
+      await expect(
+        toolBefore(runtime, { tool: 'flowguard_implement', sessionID: SESSION_ID }, { args: {} }),
+      ).rejects.toThrow('COMMAND_SCOPE_DENIED');
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('allows flowguard_implement during /check with an active non-exhausted rework marker', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessDir = path.join(ws.tmpDir, 'sess-impl');
+      const state = makeState('IMPLEMENTATION', {
+        implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+        implementationRework: { rejectedDigest: 'digest-x', exhausted: false },
+      });
+      await seedSession(sessDir, state);
+      const runtime = makeRuntime({
+        ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) },
+        auditDeps: makeAuditDeps(sessDir, state),
+      });
+      runtime.activeCommandScopes.set(SESSION_ID, 'check');
+      await expect(
+        toolBefore(runtime, { tool: 'flowguard_implement', sessionID: SESSION_ID }, { args: {} }),
+      ).resolves.toBeUndefined();
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('denies a mutating host tool during /check in IMPLEMENTATION without active rework', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessDir = path.join(ws.tmpDir, 'sess-impl');
+      await seedSession(
+        sessDir,
+        makeState('IMPLEMENTATION', {
+          implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+        }),
+      );
+      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      runtime.activeCommandScopes.set(SESSION_ID, 'check');
+      await expect(
+        toolBefore(
+          runtime,
+          { tool: 'write', sessionID: SESSION_ID, callID: 'call-write' },
+          { args: {} },
+        ),
+      ).rejects.toThrow('COMMAND_SCOPE_DENIED');
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('allows a mutating host tool during /check with active non-exhausted rework', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessDir = path.join(ws.tmpDir, 'sess-impl');
+      const state = makeState('IMPLEMENTATION', {
+        implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+        implementationRework: { rejectedDigest: 'digest-x', exhausted: false },
+      });
+      await seedSession(sessDir, state);
+      const runtime = makeRuntime({
+        ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) },
+        auditDeps: makeAuditDeps(sessDir, state),
+        riskDeps: { getSessionDir: vi.fn(), getWorktreeRoot: vi.fn(() => ws.tmpDir) },
+        discoveryHealthDeps: { getSessionDir: vi.fn(), getWorkspaceDir: vi.fn(() => ws.tmpDir) },
+      });
+      runtime.activeCommandScopes.set(SESSION_ID, 'check');
+      await expect(
+        toolBefore(
+          runtime,
+          { tool: 'bash', sessionID: SESSION_ID, callID: 'call-bash' },
+          { args: { command: 'echo' } },
+        ),
+      ).resolves.toBeUndefined();
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('allows flowguard_resolve_implementation_challenge in IMPL_REVIEW during /check', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessDir = path.join(ws.tmpDir, 'sess-impl-review');
+      const state = makeState('IMPL_REVIEW');
+      await seedSession(sessDir, state);
+      const runtime = makeRuntime({
+        ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) },
+        auditDeps: makeAuditDeps(sessDir, state),
+      });
+      runtime.activeCommandScopes.set(SESSION_ID, 'check');
+      await expect(
+        toolBefore(
+          runtime,
+          { tool: 'flowguard_resolve_implementation_challenge', sessionID: SESSION_ID },
+          { args: {} },
+        ),
+      ).resolves.toBeUndefined();
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('denies flowguard_resolve_implementation_challenge outside IMPL_REVIEW during /check', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessDir = path.join(ws.tmpDir, 'sess-impl');
+      await seedSession(
+        sessDir,
+        makeState('IMPLEMENTATION', {
+          implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+        }),
+      );
+      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      runtime.activeCommandScopes.set(SESSION_ID, 'check');
+      await expect(
+        toolBefore(
+          runtime,
+          { tool: 'flowguard_resolve_implementation_challenge', sessionID: SESSION_ID },
+          { args: {} },
+        ),
+      ).rejects.toThrow('COMMAND_SCOPE_DENIED');
+    } finally {
+      await ws.cleanup();
+    }
+  });
 });
 
 describe('toolBefore — reviewer task authorization', () => {

@@ -258,9 +258,15 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // presentation card. /check branches the IMPL_REVIEW outcome (accept /
     // changes_requested / blocked) and no longer treats a negative verdict as
     // completion. Changes the command bodies and therefore the COMMANDS hash.
+    // Refreshed for the /check rework continuation: an active non-exhausted
+    // implementationRework marker now continues the repair → flowguard_implement
+    // → status → flowguard_run_check → challenge resolution loop until a terminal
+    // verdict, scoped to the verified rework case by the /check command scope
+    // (flowguard_resolve_implementation_challenge is referenced from /check).
+    // Changes the /check body and therefore the COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '35350936c4b81ebb76bd8ccd3af8cf747b990b2ebd5165d0a2c427ea04372c57',
+      'f73a381c9afec3ce076493ae56ce94dd92482332cfff5e0e868f29875c72e97c',
     );
   });
 

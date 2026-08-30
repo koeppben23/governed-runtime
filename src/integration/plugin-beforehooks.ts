@@ -19,7 +19,11 @@ import {
   type ActiveCommandScope,
   type FlowGuardPluginRuntime,
 } from './plugin-shared.js';
-import { isFlowGuardVerdictTool } from './tool-names.js';
+import {
+  isFlowGuardVerdictTool,
+  TOOL_FLOWGUARD_IMPLEMENT,
+  TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
+} from './tool-names.js';
 import { runWithAdapterLoggerAsync } from '../logging/adapter-logger.js';
 import { runWithLogContextAsync } from '../logging/log-context.js';
 import type { SessionState } from '../state/schema.js';
@@ -347,6 +351,46 @@ function updateCommandScope(
   runtime.activeCommandScopes.delete(sessionId);
 }
 
+async function readScopedState(
+  runtime: FlowGuardPluginRuntime,
+  sessionId: string,
+): Promise<SessionState | null> {
+  const sessDir = runtime.ws.getSessionDir(sessionId);
+  return sessDir ? await readState(sessDir) : null;
+}
+
+async function isAllowedInImplReview(
+  runtime: FlowGuardPluginRuntime,
+  toolName: string,
+  sessionId: string,
+): Promise<boolean> {
+  const reviewSurface =
+    toolName === 'flowguard_review_implementation' ||
+    toolName === 'task' ||
+    toolName === TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE;
+  if (!reviewSurface) return false;
+  return (await readScopedState(runtime, sessionId))?.phase === 'IMPL_REVIEW';
+}
+
+async function isAllowedReworkContinuation(
+  runtime: FlowGuardPluginRuntime,
+  toolName: string,
+  sessionId: string,
+): Promise<boolean> {
+  // Automatic repair continuation (Patch E parity): a /check that drove the
+  // review to `changes_requested` must continue without a manual /implement
+  // hand-off. This is strictly bound to an ACTIVE non-exhausted rework marker
+  // while the phase is IMPLEMENTATION — it never blanket-opens IMPLEMENTATION
+  // to arbitrary tooling under /check. Only the repair tool family is unlocked:
+  // mutating host tools (repair) and flowguard_implement (re-record), plus the
+  // status/run_check surface allowed elsewhere in the scope.
+  const repairTool = toolName === TOOL_FLOWGUARD_IMPLEMENT || isMutatingHostTool(toolName);
+  if (!repairTool) return false;
+  const state = await readScopedState(runtime, sessionId);
+  if (state?.phase !== 'IMPLEMENTATION') return false;
+  return state.implementationRework != null && state.implementationRework.exhausted === false;
+}
+
 async function enforceCommandScope(
   runtime: FlowGuardPluginRuntime,
   toolName: string,
@@ -356,10 +400,11 @@ async function enforceCommandScope(
   if (scope !== 'check') return;
 
   const allowed = new Set(['flowguard_status', 'flowguard_run_check']);
-  if (toolName === 'flowguard_review_implementation' || toolName === 'task') {
-    const sessDir = runtime.ws.getSessionDir(sessionId);
-    const state = sessDir ? await readState(sessDir) : null;
-    if (state?.phase === 'IMPL_REVIEW') allowed.add(toolName);
+  if (await isAllowedInImplReview(runtime, toolName, sessionId)) {
+    allowed.add(toolName);
+  }
+  if (await isAllowedReworkContinuation(runtime, toolName, sessionId)) {
+    allowed.add(toolName);
   }
   if (allowed.has(toolName)) return;
 
