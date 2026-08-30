@@ -43,6 +43,27 @@ export const MUTATION_REASONS: readonly BlockedReason[] = [
     quickFixCommand: '/request-changes',
   },
   {
+    code: 'MUTATION_EPISODE_CONTROL_PLANE_MUTATED',
+    category: 'precondition',
+    messageTemplate:
+      'The git control plane (.git config/hooks/HEAD) changed since the session baseline was captured. The repository effect of a host mutation is not covered by the implementation subject, so recording fails closed.',
+    recoverySteps: [
+      'Restore the git control plane to its baseline state',
+      'Or start a fresh /hydrate session so a new baseline is established',
+      'Re-apply the implementation work and record fresh evidence with /implement',
+    ],
+  },
+  {
+    code: 'MUTATION_EPISODE_CONTROL_PLANE_UNAVAILABLE',
+    category: 'precondition',
+    messageTemplate:
+      'The git control plane (.git config/hooks/HEAD) could not be read for evidence binding. Recording fails closed because a host mutation effect cannot be verified against the baseline.',
+    recoverySteps: [
+      'Verify the .git directory is present and readable',
+      'Restore or re-initialize the git repository, then start a fresh /hydrate session',
+    ],
+  },
+  {
     code: 'MUTATION_EPISODE_REPLAY_BLOCKED',
     category: 'precondition',
     messageTemplate:

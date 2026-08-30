@@ -78,6 +78,7 @@ import {
   isGitRepoStrict,
   worktreeDiff,
 } from '../../adapters/git.js';
+import { computeGitControlPlaneMarker } from '../git-control-plane.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import { writeImplementationDiffArtifact } from './implement-diff-artifact.js';
 
@@ -199,6 +200,31 @@ export async function validateGitPrerequisite(worktree: string): Promise<string 
     throw err;
   }
   return formatBlocked('NOT_GIT_REPO', { path: worktree });
+}
+
+/**
+ * Git control-plane binding (#852): the implementation review subject covers
+ * worktree content, but `.git` control-plane state (config/hooks/HEAD) is
+ * invisible to `git status`. If the live control plane diverges from the
+ * baseline frozen at hydrate, the repository effect of some authorized host
+ * mutation cannot be part of the implementation subject — recording fails
+ * closed instead of certifying uncovered control-plane mutations as bound
+ * evidence. Legacy baselines without a marker skip the check.
+ */
+export async function validateControlPlaneBinding(input: ImplementRuntime): Promise<string | null> {
+  const baselineMarker = input.state.implementationBaseline?.controlPlaneMarker;
+  if (!baselineMarker) return null;
+  let currentMarker: string;
+  try {
+    currentMarker = await computeGitControlPlaneMarker(input.worktree);
+  } catch {
+    return formatBlocked('MUTATION_EPISODE_CONTROL_PLANE_UNAVAILABLE');
+  }
+  if (currentMarker === baselineMarker) return null;
+  return formatBlocked('MUTATION_EPISODE_CONTROL_PLANE_MUTATED', {
+    marker: currentMarker,
+    baselineMarker,
+  });
 }
 
 function buildImplRecordedResponse(input: {
@@ -392,6 +418,20 @@ function reworkBlock(state: SessionState, digest: string): string | null {
   return null;
 }
 
+/**
+ * Combined record-path git prerequisites: a non-Git worktree (or a control
+ * plane that diverged from the hydrate baseline) blocks BEFORE any git
+ * inspection, so no evidence is ever recorded over a mutation the
+ * implementation subject cannot cover.
+ */
+export async function validateRecordGitPrerequisites(
+  input: ImplementRuntime,
+): Promise<string | null> {
+  const gitBlocked = await validateGitPrerequisite(input.worktree);
+  if (gitBlocked) return gitBlocked;
+  return validateControlPlaneBinding(input);
+}
+
 export async function handleImplRecord(
   input: ImplementRuntime,
   changedFilesOverride?: string[],
@@ -399,7 +439,7 @@ export async function handleImplRecord(
   const blocked = validateImplRecordPrerequisites(input);
   if (blocked) return blocked;
 
-  const gitBlocked = await validateGitPrerequisite(input.worktree);
+  const gitBlocked = await validateRecordGitPrerequisites(input);
   if (gitBlocked) return gitBlocked;
 
   const rawFiles = changedFilesOverride ?? (await changedFiles(input.worktree));

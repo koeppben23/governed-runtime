@@ -273,6 +273,10 @@ describe('implement command: validation-gate contract', () => {
     expect(body).toContain('Go DIRECTLY to Phase 5');
     // Reduced ceremony: the machine may land in EVIDENCE_REVIEW within the call.
     expect(body).toContain('No checks, no reviewer, no further steps');
+    // Terminal: a policy-permitted automatic approval may land in COMPLETE.
+    expect(body).toContain('`COMPLETE`: terminal');
+    // Shared review loop is policy-neutral about the convergence target.
+    expect(body).toContain("the policy's terminal gate");
     // No invented phase transition.
     expect(body).toContain('never invent the next phase');
     expect(body).not.toContain('The session advances to IMPL_VALIDATION');

@@ -55,6 +55,9 @@ ${DISCOVERY_REVIEW_CAPTURE}
       authoritative, never an assumed sequence:
       - \`EVIDENCE_REVIEW\`: display \`presentation.markdown\` (or the legacy \`reviewCard\`)
         verbatim and STOP. No checks, no reviewer, no further steps — this is the user gate.
+      - \`COMPLETE\`: terminal — the workflow reached a policy-permitted final phase
+        without a human gate (e.g. automatic approval under reduced ceremony). Display any
+        returned presentation verbatim and STOP.
       - \`IMPL_REVIEW\`: validation already passed. Go DIRECTLY to Phase 5 (review loop) and
         continue automatically — do not stop and do not treat the session as IMPL_VALIDATION.
       - \`IMPLEMENTATION\` or \`error\`/\`blocked\`: follow the exact recovery in the tool
@@ -153,7 +156,8 @@ Zero-check path (machine advances within the record call):
 2. go DIRECTLY to the review loop — no status re-read, no invented IMPL_VALIDATION step
 
 Reduced-ceremony path:
-1. \`flowguard_implement({})\` → returns phase: EVIDENCE_REVIEW + presentation
+1. \`flowguard_implement({})\` → returns phase: EVIDENCE_REVIEW + presentation (or COMPLETE
+   under a policy-permitted automatic approval)
 2. display \`presentation.markdown\` verbatim and STOP
 
 Revision path (when review returns changes_requested):

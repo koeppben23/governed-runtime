@@ -241,9 +241,15 @@ export function parsePorcelainZ(raw: string): string[] {
 /**
  * Resolve the git worktree root from any subdirectory.
  *
+ * Only the actual "not a git repository" git failure (stderr signature
+ * `not a git repository`) is normalized to NOT_GIT_REPO. Every other git
+ * failure — a corrupt repository, an invalid gitfile, a config error — keeps
+ * its typed GIT_COMMAND_FAILED diagnosis so callers never mislabel an
+ * infrastructure problem as a missing repository.
+ *
  * @param dir - Any directory inside a git repository.
  * @returns Absolute, OS-normalized path to the worktree root.
- * @throws GitError if not inside a git repository.
+ * @throws GitError NOT_GIT_REPO when outside a repository; typed code otherwise.
  */
 export async function resolveRoot(dir: string): Promise<string> {
   try {
@@ -251,11 +257,20 @@ export async function resolveRoot(dir: string): Promise<string> {
     // git always outputs forward slashes; normalize for the OS
     return path.normalize(root);
   } catch (err) {
-    if (err instanceof GitError && err.code === 'GIT_COMMAND_FAILED') {
+    if (
+      err instanceof GitError &&
+      err.code === 'GIT_COMMAND_FAILED' &&
+      isNotRepoFailure(err.message)
+    ) {
       throw new GitError('NOT_GIT_REPO', `Directory is not inside a git repository: ${dir}`);
     }
     throw err;
   }
+}
+
+/** git's stable stderr signature for operating outside a repository. */
+function isNotRepoFailure(message: string): boolean {
+  return /not a git repository/i.test(message);
 }
 
 /**

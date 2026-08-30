@@ -14,6 +14,7 @@ import {
   validateImplRecordPrerequisites,
   validateInitialReviewFindings,
   validateGitPrerequisite,
+  validateControlPlaneBinding,
 } from './implement-record.js';
 import { handleImplReview } from './implement-review.js';
 
@@ -37,6 +38,12 @@ async function executeImplementRecord(context: ToolContext): Promise<string> {
   // than after the agent has made code changes.
   const gitBlocked = await validateGitPrerequisite(probe.worktree);
   if (gitBlocked) return gitBlocked;
+
+  // Git control-plane binding (#852): fail closed before the git inspection
+  // when the control plane diverged from the hydrate baseline, so no digest is
+  // ever recorded over a mutation the review subject cannot cover.
+  const controlPlaneBlocked = await validateControlPlaneBinding(probeRuntime);
+  if (controlPlaneBlocked) return controlPlaneBlocked;
 
   // Git/worktree inspection can be slow and must not hold the session write lock.
   const files = await changedFiles(probe.worktree);

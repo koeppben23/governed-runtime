@@ -37,10 +37,14 @@ import {
   review_implementation,
   reconcile_mutation_episode,
 } from './tools/index.js';
-import { hasUnresolvedMutationEpisodes } from '../state/evidence-mutation-episode.js';
+import {
+  hasUnresolvedMutationEpisodes,
+  hasUnboundMutationEpisodes,
+} from '../state/evidence-mutation-episode.js';
 import { resetRuntimeInstanceIdForTest } from './runtime-instance.js';
 import { RUNTIME_LEASE_FILE } from './runtime-lease.js';
 import { recordUserDecisionIntent } from './user-decision-intent.js';
+import { computeGitControlPlaneMarker } from './git-control-plane.js';
 
 // The plugin/persistence/hook pipeline itself is unmocked; only the git
 // ADAPTER (external system boundary) is mocked: the test workspace carries a
@@ -171,6 +175,74 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
 
       const persisted = await readState(sessDir);
       expect(persisted!.mutationEpisodes).toHaveLength(0);
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('refuses to bind a mutation episode when the git control plane diverged from the hydrate baseline (#852)', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessionID = crypto.randomUUID();
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+      await fs.mkdir(sessDir, { recursive: true });
+
+      // Baseline frozen at hydrate with the control-plane marker of the
+      // pristine worktree.
+      const baselineMarker = await computeGitControlPlaneMarker(ws.tmpDir);
+      await writeStateWithArtifacts(sessDir, {
+        ...makeProgressedState('IMPLEMENTATION'),
+        implementationBaseline: {
+          dirtyFiles: [],
+          capturedAt: '2026-01-01T00:00:00.000Z',
+          controlPlaneMarker: baselineMarker,
+        },
+      });
+
+      const hooks = await FlowGuardAuditPlugin(
+        createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+      );
+      const beforeHook = hooks['tool.execute.before']!;
+      const afterHook = hooks['tool.execute.after']!;
+
+      // A governed host mutation runs against the git control plane itself —
+      // invisible to `git status`, invisible to the reviewer subject.
+      const callID = crypto.randomUUID();
+      await beforeHook(
+        { tool: 'bash', sessionID, callID },
+        { args: { command: 'git config core.hooksPath .malicious-hooks' } },
+      );
+      await fs.mkdir(path.join(ws.tmpDir, '.git'), { recursive: true });
+      await fs.writeFile(
+        path.join(ws.tmpDir, '.git', 'config'),
+        '[core]\n\thooksPath = .malicious-hooks\n',
+        'utf8',
+      );
+      await afterHook(
+        { tool: 'bash', sessionID, callID, args: { command: 'git config' } },
+        { title: 'bash', output: '{}', metadata: { success: true } },
+      );
+
+      // Recording must fail closed: the control-plane mutation cannot be part
+      // of the implementation subject, so no digest may be certified over it.
+      const ctx = createToolContext({ sessionID, worktree: ws.tmpDir, directory: ws.tmpDir });
+      const blockedResult = parseToolResult<{ code?: string }>(
+        await implement.execute({}, ctx as never),
+      );
+      expect(blockedResult.code).toBe('MUTATION_EPISODE_CONTROL_PLANE_MUTATED');
+
+      // The episode stays unbound: it can never pass the final evidence gate.
+      const persisted = await readState(sessDir);
+      const episode = persisted!.mutationEpisodes.find((e) => e.hostCallId === callID)!;
+      expect(episode.implementationDigest).toBeNull();
+      expect(episode.evidenceStatus).toBe('ineligible');
+      expect(
+        hasUnboundMutationEpisodes(
+          persisted!.mutationEpisodes,
+          persisted!.mutationEpisodeResolutions,
+        ),
+      ).toBe(true);
     } finally {
       await ws.cleanup();
     }

@@ -93,7 +93,7 @@ export interface ReviewLoopParams {
  */
 export function SHARED_REVIEW_LOOP(p: ReviewLoopParams): string {
   const verdictTool = p.verdictToolName ?? p.toolName;
-  return `   - \`reviewVerdict\` records the INDEPENDENT REVIEWER's result, never your own approval. On convergence it only advances to the human review gate, where the USER approves the ${p.artifactName} via /review-decision. \`flowguard_decision\` is the only user approval.
+  return `   - \`reviewVerdict\` records the INDEPENDENT REVIEWER's result, never your own approval. On convergence it advances to the policy's terminal gate — the human review gate, where the USER approves the ${p.artifactName} via /review-decision, or a policy-permitted automatic terminal phase (e.g. \`COMPLETE\`) — whichever the tool response returns; the returned phase is authoritative. \`flowguard_decision\` is the only user approval.
    - When \`next\` starts with "INDEPENDENT_REVIEW_COMPLETED":
        1. Read \`overallVerdict\` from \`pluginReviewFindings\` in the response.
        2. host_task_required mode: findings are resolved from plugin evidence automatically — submit ONLY the verdict, never \`reviewFindings\` (not even an empty placeholder object). Any \`reviewFindings\` sent here are ignored and logged as misuse, and the submitted verdict is validated against the captured reviewer evidence (a mismatch is rejected).
