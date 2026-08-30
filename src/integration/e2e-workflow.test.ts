@@ -824,6 +824,7 @@ describe('e2e-workflow', () => {
       await callOk(plan, {
         reviewVerdict: 'changes_requested',
         planText: '## Revised Plan\n1. Concrete step A\n2. Concrete step B',
+        claims: [],
         targetPaths: ['docs/test.md'],
       });
 

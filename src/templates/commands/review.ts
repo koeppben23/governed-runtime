@@ -106,9 +106,8 @@ Start the compliance review flow for the current FlowGuard session.
      - If host-task mode reports \`duplicate_evidence\`, do not rerun the reviewer. Use the
         already-bound reviewer verdict and call \`flowguard_review\` with \`reviewObligationId\`
         from \`requiredReviewAttestation.toolObligationId\` plus \`reviewVerdict\`.
-     - If the Task cannot spawn the reviewer, follow the policy-specific recovery in the FlowGuard
-       response: required stops blocked; preferred retries the originating \`flowguard_review\`
-       invocation with unchanged content input. Never submit copied or fabricated findings.
+     - If the Task cannot spawn the reviewer, report the transport failure and stop. Do not retry
+       the same standalone-review obligation, submit copied findings, or fabricate a verdict.
 
 6. If no external content is supplied, call \`flowguard_review\` with optional \`inputOrigin\` and \`references\` only.
 

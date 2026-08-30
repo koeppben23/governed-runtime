@@ -728,7 +728,7 @@ describe('plugin bootstrap fail-closed', () => {
 
         const input = { tool: 'bash', sessionID: crypto.randomUUID(), callID: 'c1' };
         const output = { args: { command: 'echo hello' } };
-        await expect(beforeHook(input, output)).rejects.toThrow('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+        await expect(beforeHook(input, output)).rejects.toThrow('SESSION_DIR_NOT_FOUND');
       } finally {
         await fs.rm(tmp, { recursive: true, force: true });
       }

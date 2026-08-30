@@ -420,6 +420,9 @@ function applyPlanRevision(
 
   const revisedBody = scope.args.planText?.trim();
   if (!revisedBody) return formatBlocked('REVISED_PLAN_REQUIRED');
+  if (!scope.args.claims) {
+    return formatBlocked('REVISED_PLAN_CLAIMS_REQUIRED');
+  }
 
   const predecessorVersion = currentPlan.planVersion;
   const revised = buildPlanEvidence(revisedBody, scope, {
@@ -613,8 +616,8 @@ export const plan: ToolDefinition = {
     'Submit a plan OR record an independent reviewer verdict. Two modes:\n' +
     'Mode A (submit plan): provide planText. Records the plan and starts the independent review loop.\n' +
     "Mode B (reviewer verdict): provide reviewVerdict ('accept' or 'changes_requested'). " +
-    'In host-task mode the plugin resolves the reviewer findings automatically — submit the verdict only. ' +
-    "In SDK mode pass the reviewer's exact reviewFindings. If 'changes_requested', also provide revised planText.\n" +
+    'In host-task mode the plugin resolves the reviewer findings automatically — do not submit reviewFindings. ' +
+    "In SDK mode pass the reviewer's exact reviewFindings. If 'changes_requested', provide revised planText and claims.\n" +
     'The independent review loop runs up to maxIterations (from policy). ' +
     'On convergence it advances to the PLAN_REVIEW user gate; it does NOT approve the plan. ' +
     'Only the user approves via flowguard_decision (/review-decision).',

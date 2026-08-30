@@ -39,10 +39,8 @@ export function isUsableWorktree(worktree: string | undefined): boolean {
   const normalized = path.resolve(worktree);
   if (normalized === '/' || /^[A-Za-z]:[\\/]?$/.test(normalized)) return false;
   try {
-    const gitPath = path.join(normalized, '.git');
-    if (!existsSync(gitPath)) return false;
-    const st = statSync(gitPath);
-    return st.isDirectory() || st.isFile();
+    if (!existsSync(normalized)) return false;
+    return statSync(normalized).isDirectory();
   } catch {
     return false;
   }

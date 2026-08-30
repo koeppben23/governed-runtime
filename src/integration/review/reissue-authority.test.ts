@@ -303,7 +303,7 @@ describe('authorizeOutputRepairReissue', () => {
     });
   });
 
-  it('countOutputRepairAttempts counts only output_repair origins', () => {
+  it('countOutputRepairAttempts counts output_repair and task_rearm origins', () => {
     const obligation = makeObligation();
     const initial = initialAttempt(obligation);
     const repair = createAttemptForExistingObligation(
@@ -335,7 +335,7 @@ describe('authorizeOutputRepairReissue', () => {
       },
     ).attempt;
     const assurance = assuranceWith(obligation, [initial, repair, rearmed]);
-    expect(countOutputRepairAttempts(assurance, obligation.obligationId)).toBe(1);
+    expect(countOutputRepairAttempts(assurance, obligation.obligationId)).toBe(2);
   });
 
   it('latestAttemptForObligation returns the highest ordinal', () => {

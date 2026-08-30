@@ -389,7 +389,9 @@ export function countOutputRepairAttempts(
   obligationId: string,
 ): number {
   return (assurance?.attempts ?? []).filter(
-    (a) => a.obligationId === obligationId && a.origin.kind === 'output_repair',
+    (a) =>
+      a.obligationId === obligationId &&
+      (a.origin.kind === 'output_repair' || a.origin.kind === 'task_rearm'),
   ).length;
 }
 

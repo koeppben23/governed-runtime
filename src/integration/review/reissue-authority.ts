@@ -58,6 +58,17 @@ export function authorizeTaskLifecycleRearm(
   ) {
     return { kind: 'blocked', reason: 'rearm_obligation_settled' };
   }
+  const repairs = assurance.attempts.filter(
+    (attempt) =>
+      attempt.obligationId === obligation.obligationId &&
+      (attempt.origin.kind === 'task_rearm' || attempt.origin.kind === 'output_repair'),
+  ).length;
+  if (repairs >= obligation.maxReviewerOutputRepairAttempts) {
+    return {
+      kind: 'blocked',
+      reason: `reviewer repair budget exhausted (${repairs}/${obligation.maxReviewerOutputRepairAttempts})`,
+    };
+  }
   const triggerReason =
     spent.status === 'created'
       ? 'interrupted'

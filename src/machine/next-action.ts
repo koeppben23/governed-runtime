@@ -19,7 +19,7 @@
 import type { Phase, SessionState } from '../state/schema.js';
 import { resolveReviewContinuation } from '../state/review-continuation.js';
 import { projectUnaddressedImplementationChallengeIds } from '../state/implementation-review-findings.js';
-import { isConverged } from './guards.js';
+import { implValidationPassed, isConverged } from './guards.js';
 import { evaluateValidationEvidence } from './validation-evidence.js';
 
 // ─── Type ─────────────────────────────────────────────────────────────────────
@@ -214,7 +214,7 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
         },
 
   IMPL_VALIDATION: (state) =>
-    state.implValidation.length === 0
+    !implValidationPassed(state)
       ? {
           code: ACTION_CODES.RUN_VALIDATE,
           text: 'Implementation recorded. Re-run the verification checks against the fixed code with /check',

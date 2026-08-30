@@ -304,6 +304,15 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
       "When reviewVerdict is 'changes_requested', planText with the revised plan is required.",
     recoverySteps: ["Provide revised planText alongside reviewVerdict: 'changes_requested'"],
   },
+  {
+    code: 'REVISED_PLAN_CLAIMS_REQUIRED',
+    category: 'input',
+    messageTemplate:
+      "When reviewVerdict is 'changes_requested', complete revised claims are required with planText.",
+    recoverySteps: [
+      "Provide complete claims alongside planText and reviewVerdict: 'changes_requested'",
+    ],
+  },
 
   {
     code: 'MISSING_CHECKS',

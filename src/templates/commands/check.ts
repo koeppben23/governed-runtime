@@ -16,7 +16,7 @@ Run automated verification checks for the current implementation.
 ## Steps
 
 1. Call \`flowguard_status\` with NO focused flags (no whyBlocked/evidence/context/readiness) so the full projection is returned, then read \`activeChecks\` (equivalently \`remainingChecks\` in VALIDATION) and \`verificationCandidates\`.
-2. If \`activeChecks\` is empty AND \`verificationCandidates\` is empty, report that no verification checks are active (no discoverable commands).
+2. If \`activeChecks\` is empty AND \`verificationCandidates\` is empty, do not call \`flowguard_run_check\`. Read the canonical \`nextAction\`: policy may permit a vacuous transition only through \`/validate\`, otherwise it will require Discovery recovery. Report that exact action.
 3. For each kind in \`activeChecks\` (or \`remainingChecks\`), call \`flowguard_run_check({ kind: "<kind>" })\` sequentially. Never run two state-mutating checks concurrently.
     - FlowGuard executes the discovered command and returns execution evidence.
     - You may also call \`flowguard_run_check({ kind: "<kind>" })\` directly for any kind in \`verificationCandidates\`; it validates the kind against canonical state, not against the status output.
@@ -37,7 +37,7 @@ Run automated verification checks for the current implementation.
 ${GOVERNANCE_RULES}
 ## Done-when
 
-- If both \`activeChecks\` and \`verificationCandidates\` are empty: report no active checks.
+- If both \`activeChecks\` and \`verificationCandidates\` are empty: report the canonical next action; do not claim validation passed.
 - All active checks executed via flowguard_run_check.
 - When checks advance to \`IMPL_REVIEW\`, the independent \`${REVIEWER_SUBAGENT_TYPE}\` has run and its verdict has been submitted through \`flowguard_review_implementation\`.
 - When checks advance to \`IMPLEMENTATION\`: a fresh /check without a prior \`changes_requested\` verdict was reported and stopped without implementation work; an /check already inside the repair-recheck continuation was continued automatically through repair-recheck until the review loop's terminal response.

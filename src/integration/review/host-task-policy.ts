@@ -34,6 +34,7 @@ import {
 } from './assurance.js';
 import { updateObligation } from './obligation-state.js';
 import { resolveRepositoryObservationAccess } from './observation-access.js';
+import { buildArtifactContext } from './artifact-review-context.js';
 import type { SessionState } from '../../state/schema.js';
 import {
   hasFrozenRepositoryAuthority,
@@ -582,7 +583,7 @@ function buildHostTaskOutputInput(
     attemptId: bindableAttempt?.attemptId ?? null,
     challengeContract: buildHostTaskChallengeContract(sessionState, obligation),
     proofContext: buildReviewerProofContext(sessionState),
-    artifactContext: [],
+    artifactContext: buildArtifactContext(sessionState),
     frozenReviewerContext,
     artifactAnchorContract: buildArtifactAnchorContractLines(obligation),
     implementationAnchorContract: buildImplementationAnchorContractLines(

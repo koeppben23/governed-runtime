@@ -119,8 +119,8 @@ describe('SDK Contract: Plugin factory resilience', () => {
       expect(isUsableWorktree('D:/')).toBe(false);
     });
 
-    it('path without .git returns false', () => {
-      expect(isUsableWorktree('/tmp')).toBe(false);
+    it('existing non-Git directory returns true', () => {
+      expect(isUsableWorktree('/tmp')).toBe(true);
     });
   });
 

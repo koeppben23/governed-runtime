@@ -398,6 +398,7 @@ describe('plan', () => {
         {
           reviewVerdict: 'changes_requested',
           planText: '## Revised Plan\n1. Better approach',
+          claims: [],
           reviewFindings,
           targetPaths: ['docs/test.md'],
         },
@@ -417,6 +418,7 @@ describe('plan', () => {
         {
           reviewVerdict: 'changes_requested',
           planText: '## Revised Plan\n1. Better approach',
+          claims: [],
           reviewFindings,
           targetPaths: ['docs/test.md'],
         },
@@ -794,6 +796,7 @@ describe('plan', () => {
           {
             reviewVerdict: 'changes_requested',
             planText: `## Revised plan ${k}`,
+            claims: [],
             reviewFindings: findings,
             targetPaths: ['docs/test.md'],
           },
@@ -931,6 +934,24 @@ describe('plan', () => {
       expect(result.code).toBe('REVISED_PLAN_REQUIRED');
     });
 
+    it('Mode B changes_requested requires replacement claims', async () => {
+      await hydrateAndTicket();
+      await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
+      const reviewFindings = await fulfillPlanReview(0, 'changes_requested');
+      const raw = await plan.execute(
+        {
+          reviewVerdict: 'changes_requested',
+          planText: '## Revised Plan',
+          reviewFindings,
+          targetPaths: ['docs/test.md'],
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVISED_PLAN_CLAIMS_REQUIRED');
+    });
+
     it('Mode B uses mandatory subagent review even when old snapshots are weakened', async () => {
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
@@ -940,6 +961,7 @@ describe('plan', () => {
         {
           reviewVerdict: 'changes_requested',
           planText: '## Revised Plan',
+          claims: [],
           reviewFindings,
           targetPaths: ['docs/test.md'],
         },

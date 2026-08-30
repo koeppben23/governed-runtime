@@ -807,7 +807,11 @@ describe('BUG-17: plan evidence-first resolution', () => {
     const parsed = JSON.parse(
       String(
         await plan.execute(
-          { reviewVerdict: 'changes_requested', planText: '## Plan\n1. Fix\n2. Revised' },
+          {
+            reviewVerdict: 'changes_requested',
+            planText: '## Plan\n1. Fix\n2. Revised',
+            claims: [],
+          },
           {} as never,
         ),
       ),
@@ -866,6 +870,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
           {
             reviewVerdict: 'changes_requested',
             planText: '## Plan\n1. Fix\n2. Revised',
+            claims: [],
             targetPaths: ['src/api.ts'],
           },
           {} as never,

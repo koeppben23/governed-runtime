@@ -75,9 +75,9 @@ export type RepositoryDiscoverySnapshot = z.infer<typeof RepositoryDiscoverySnap
 
 /**
  * Attempt-bound Discovery context. REQUIRED on every review attempt:
- * `repository` for standalone repository reviews (frozen subject kind
- * `repository_change`) — the snapshot is resolved BEFORE the attempt is minted;
- * `not_applicable` for artifact/content/lifecycle review attempts. No
+ * `repository` whenever an obligation has frozen repository authority — the
+ * snapshot is resolved BEFORE the attempt is minted; `not_applicable` when it
+ * does not. No
  * `undefined` semantics exist: absence of the field is a schema violation.
  */
 export const ReviewAttemptDiscoveryContext = z.discriminatedUnion('kind', [

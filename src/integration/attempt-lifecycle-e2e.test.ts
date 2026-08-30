@@ -515,10 +515,10 @@ describe('reviewer attempt lifecycle through the real hooks', () => {
         metadata: { sessionID: 'ses_child_lifecycle_rejected_1' },
       },
     );
-    // Third call: must be blocked — matchPendingReview returns null (retry exhausted)
+    // Third call: must be blocked because the shared repair budget exhausted the obligation.
     await expect(
       beforeHook({ tool: 'task', sessionID, callID: 'call-blocked' }, { args: reviewerArgs }),
-    ).rejects.toThrow('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
+    ).rejects.toThrow('REVIEWER_TASK_REQUIRES_PENDING_OBLIGATION');
 
     const state = await readState(sessDir);
     const attempts = state?.reviewAssurance?.attempts ?? [];
