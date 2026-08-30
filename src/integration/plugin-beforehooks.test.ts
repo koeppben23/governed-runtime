@@ -569,9 +569,11 @@ describe('toolBefore — command scope', () => {
   it('keeps the repair surface unlocked after re-record and a failing fresh check (latch, no marker)', async () => {
     const ws = await createTestWorkspace();
     try {
-      // Real-machine outcome D3 from the review: a re-record cleared the active
-      // rework marker (flowguard_implement sets implementationRework to null)
-      // and a fresh check FAILED → IMPLEMENTATION with the marker still null.
+      // Defensive side of the continuity contract: even if a continuation-state
+      // carried NO rework marker in IMPLEMENTATION (the marker is normally
+      // retained across re-records now, but the latch must not key on it), a
+      // latched continuation keeps the repair surface unlocked after a fresh
+      // check FAILED → IMPLEMENTATION.
       const sessDir = path.join(ws.tmpDir, 'sess-impl');
       const postRerecordState = makeState('IMPLEMENTATION', {
         implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,

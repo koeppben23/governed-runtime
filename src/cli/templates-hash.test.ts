@@ -265,13 +265,17 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // (flowguard_resolve_implementation_challenge is referenced from /check).
     // Refreshed again for the full loop: read/glob/grep are part of the repair
     // surface, and the continuation is keyed to "this /check already recorded a
-    // changes_requested verdict" — not to the persisted marker (which a re-record
-    // clears) — so a failing FRESH check after re-record still continues the loop
-    // instead of stopping for a manual /implement hand-off. Changes the /check
-    // body and therefore the COMMANDS hash.
+    // changes_requested verdict" so a failing FRESH check after re-record still
+    // continues the loop instead of stopping for a manual /implement hand-off.
+    // Changes the /check body and therefore the COMMANDS hash.
+    // Refreshed for the same-digest invariant: the rework marker is RETAINED
+    // across re-records and only closed when the fresh revalidation fully passes
+    // into IMPL_REVIEW, so restoring an earlier rejected revision after a failing
+    // revalidation is blocked again. Changes the /check body and therefore the
+    // COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'ae54e440c2e79c35da5d8b5a576d48ce9856eece013a92b4937b93cedb7ce6ec',
+      '0fa4f2d5fddd92da6530d06e572013154b74a1bb3b86fafedc70168e2dfd226f',
     );
   });
 

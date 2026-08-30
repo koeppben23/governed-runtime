@@ -1226,7 +1226,7 @@ describe('implement', () => {
       expect((await readState(sessDir))?.implementationReviewExtensions).toHaveLength(0);
     });
 
-    it('Mode B: extension authorizes a changed re-record that clears the exhausted rework', async () => {
+    it('Mode B: extension authorizes a changed re-record that retains the rejected digest', async () => {
       await reachImplementation();
       await implement.execute({}, ctx);
       await passImplValidation();
@@ -1263,7 +1263,10 @@ describe('implement', () => {
       expect(recordResult.error).toBeUndefined();
       expect(recordResult.phase).toBe('IMPL_VALIDATION');
       const afterRecord = await readState(sessDir);
-      expect(afterRecord?.implementationRework).toBeNull();
+      expect(afterRecord?.implementationRework).toEqual({
+        rejectedDigest: extendedState?.implementationRework?.rejectedDigest,
+        exhausted: false,
+      });
       expect(afterRecord?.implementationReviewExtensions).toHaveLength(1);
       expect(afterRecord?.implementation?.digest).not.toBe(
         extendedState?.implementationRework?.rejectedDigest,

@@ -85,6 +85,32 @@ describe('rails/types', () => {
       expect(next.error).toBeNull();
     });
 
+    it('applyTransition closes the rework marker exactly on IMPL_VALIDATION → IMPL_REVIEW', () => {
+      const marker = { rejectedDigest: 'digest-d1', exhausted: false };
+      const entering = applyTransition(
+        makeState('IMPL_VALIDATION', { implementationRework: marker }),
+        'IMPL_VALIDATION',
+        'IMPL_REVIEW',
+        'ALL_PASSED',
+        '2026-01-01T00:00:00.000Z',
+      );
+      expect(entering.phase).toBe('IMPL_REVIEW');
+      expect(entering.implementationRework).toBeNull();
+
+      // Any other edge keeps the marker intact — e.g. a failing fresh validation
+      // routing back to IMPLEMENTATION must preserve the rejected digest so a
+      // later restore of that revision is still blocked.
+      const retreating = applyTransition(
+        makeState('IMPL_VALIDATION', { implementationRework: marker }),
+        'IMPL_VALIDATION',
+        'IMPLEMENTATION',
+        'CHECK_FAILED',
+        '2026-01-01T00:00:00.000Z',
+      );
+      expect(retreating.phase).toBe('IMPLEMENTATION');
+      expect(retreating.implementationRework).toEqual(marker);
+    });
+
     it('autoAdvance transitions through guard-based phases', () => {
       // TICKET with ticket+plan → should advance to PLAN via PLAN_READY
       const state = makeState('TICKET', { ticket: TICKET, plan: PLAN_RECORD });

@@ -386,7 +386,13 @@ export async function handleImplRecord(
       implEvidence.digest,
     ),
     implementation: implEvidence,
-    implementationRework: null,
+    // The rework marker is deliberately NOT cleared here: it carries the digest
+    // of the revision the independent reviewer already rejected, and it must
+    // survive the re-record (and a subsequent failing fresh revalidation) so
+    // that restoring that earlier revision is still blocked. It is closed only
+    // when the fresh validation of this record FULLY passes and the machine
+    // advances to IMPL_REVIEW (applyTransition closes it on that exact edge).
+    implementationRework: input.state.implementationRework,
     // #762: bind the risk classification to the exact revision it describes, so a
     // gate rail can consult it without re-deriving it from a later file set.
     implementationRiskAssessment: {

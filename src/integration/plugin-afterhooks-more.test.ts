@@ -444,12 +444,13 @@ describe('afterhook — /check rework-continuation latch', () => {
       runtime.activeCommandScopes.set(SESSION_ID, 'check');
       await updateCheckReworkContinuation(runtime, 'flowguard_review_implementation', SESSION_ID);
       expect(runtime.checkReworkContinuations.has(SESSION_ID)).toBe(true);
-      // Re-record: marker cleared, phase IMPL_VALIDATION — latch must survive.
+      // Re-record RETAINS the marker (only a full validation pass into IMPL_REVIEW
+      // closes it); phase IMPL_VALIDATION — the latch must survive the loop.
       await writeState(
         sessDir,
         makeState('IMPL_VALIDATION', {
           implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
-          implementationRework: null,
+          implementationRework: { rejectedDigest: 'digest-d1', exhausted: false },
         }),
       );
       await updateCheckReworkContinuation(runtime, 'flowguard_implement', SESSION_ID);

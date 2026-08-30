@@ -31,11 +31,11 @@ export type ActiveCommandScope = 'check';
 
 /**
  * Session IDs whose /check command is inside a reviewer-requested repair
- * continuation. The persisted `implementationRework` marker is cleared by the
- * first re-record (`flowguard_implement` sets it to null), so the continuation
- * cannot hang on that marker; this command-scope-local latch keeps the repair
- * surface unlocked through IMPLEMENTATION → IMPL_VALIDATION → IMPLEMENTATION
- * until the review loop's terminal verdict.
+ * continuation. The persisted `implementationRework` marker is retained across
+ * re-records and closed only on the full validation pass into IMPL_REVIEW; the
+ * command-scope-local latch additionally keeps the repair surface unlocked
+ * through IMPLEMENTATION → IMPL_VALIDATION → IMPLEMENTATION until the review
+ * loop's terminal verdict even if the marker were absent.
  */
 export interface FlowGuardPluginRuntime {
   readonly ws: PluginWorkspaceRuntime;

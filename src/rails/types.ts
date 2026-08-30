@@ -197,6 +197,12 @@ export function applyTransition(
     phase: to,
     transition: { from, to, event, at },
     error: null,
+    // Entering IMPL_REVIEW is possible only from IMPL_VALIDATION with a FULLY
+    // passing fresh validation of the current record. That is the exact point
+    // where the repair loop converges, so the rework marker closes here: after
+    // this, repository mutations are forbidden and only the reviewed revision
+    // can be presented to a fresh independent reviewer.
+    ...(from === 'IMPL_VALIDATION' && to === 'IMPL_REVIEW' ? { implementationRework: null } : {}),
   };
 }
 

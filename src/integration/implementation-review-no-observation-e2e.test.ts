@@ -617,16 +617,16 @@ describe('implementation review without repository observation authority', () =>
     expect(state!.phase).toBe('IMPLEMENTATION');
     expect(state!.implementationRework).toMatchObject({ exhausted: false });
 
-    // Phase 4: repair D2, re-record (marker cleared), then a FRESH check FAILS:
-    // the machine routes IMPL_VALIDATION → IMPLEMENTATION with the marker STILL
-    // null — the state the /check continuation latch must survive (review-D3).
+    // Phase 4: repair D2, re-record (marker RETAINED), then a FRESH check FAILS:
+    // the machine routes IMPL_VALIDATION → IMPLEMENTATION with the rejected-D1
+    // marker still present — restoring D1 must now be blocked again.
     writeFileSync(join(s.worktree, 'src', 'auth.ts'), 'export const auth = () => false;\n');
     execSync('git add src/auth.ts', { cwd: s.worktree, stdio: 'pipe' });
     const r4 = await implement.execute({}, se2.tc);
     expect(r4).not.toContain('INTERNAL_ERROR');
     state = await readState(se2.sDir);
     expect(state!.phase).toBe('IMPL_VALIDATION');
-    expect(state!.implementationRework).toBeNull();
+    expect(state!.implementationRework).toMatchObject({ rejectedDigest: implDigest1 });
     vi.mocked(executeCheck).mockResolvedValueOnce({
       kind: 'typecheck',
       command: 'npx tsc --noEmit',
@@ -643,11 +643,30 @@ describe('implementation review without repository observation authority', () =>
     state = await readState(se2.sDir);
     expect(state!.phase).toBe('IMPLEMENTATION');
     expect(state!.implementation).toBeNull();
-    expect(state!.implementationRework).toBeNull();
+    expect(state!.implementationRework).toMatchObject({ rejectedDigest: implDigest1 });
     expect(state!.implValidation.some((v) => !v.passed)).toBe(true);
 
+    // Phase 4b (mandatory regression): restoring the EXACT rejected D1 after the
+    // failing fresh D2 revalidation is blocked — no validation, no obligation,
+    // no fresh reviewer can ever re-review D1.
+    const implObligationsBeforeBlock = state!.reviewAssurance!.obligations.filter(
+      (o) => o.obligationType === 'implement',
+    ).length;
+    writeFileSync(join(s.worktree, 'src', 'auth.ts'), 'export const auth = () => true;\n');
+    execSync('git add src/auth.ts', { cwd: s.worktree, stdio: 'pipe' });
+    const blockedRaw = await implement.execute({}, se2.tc);
+    expect(blockedRaw).toContain('IMPLEMENTATION_REWORK_REQUIRED');
+    state = await readState(se2.sDir);
+    expect(state!.phase).toBe('IMPLEMENTATION');
+    expect(state!.implementation).toBeNull();
+    expect(state!.implValidation.some((v) => !v.passed)).toBe(true);
+    expect(
+      state!.reviewAssurance!.obligations.filter((o) => o.obligationType === 'implement'),
+    ).toHaveLength(implObligationsBeforeBlock);
+
     // Phase 5: repair D3 (no new command needed — gate regression covers the
-    // /check scope), re-record, green revalidation, fresh reviewer accepts.
+    // /check scope), re-record, green revalidation (marker closes at IMPL_REVIEW),
+    // fresh reviewer accepts.
     writeFileSync(join(s.worktree, 'src', 'auth.ts'), 'export const auth = () => 42;\n');
     execSync('git add src/auth.ts', { cwd: s.worktree, stdio: 'pipe' });
     const r5 = await implement.execute({}, se2.tc);
@@ -655,6 +674,7 @@ describe('implementation review without repository observation authority', () =>
     await run_check.execute({ kind: 'typecheck' }, s.tc);
     state = await readState(se2.sDir);
     expect(state!.phase).toBe('IMPL_REVIEW');
+    expect(state!.implementationRework).toBeNull();
     const implObligations = state!.reviewAssurance!.obligations.filter(
       (o) => o.obligationType === 'implement',
     );
