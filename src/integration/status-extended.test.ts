@@ -290,6 +290,45 @@ describe('status.ts MUTATION_KILL matrix', () => {
   }
 
   describe('SMOKE buildStatusProjection exact shape', () => {
+    it('projects rework from the marker and append-only implementation findings', () => {
+      const blockingIssue = { category: 'correctness', summary: 'Fix the boundary' };
+      const state = {
+        ...makeMinimalState('IMPLEMENTATION'),
+        implementationRework: { rejectedDigest: 'rejected-digest' },
+        implReviewFindings: [
+          {
+            iteration: 3,
+            overallVerdict: 'changes_requested',
+            blockingIssues: [blockingIssue],
+            majorRisks: [blockingIssue],
+            missingVerification: ['Run focused test'],
+            scopeCreep: ['Unrelated edit'],
+            unknowns: ['Runtime behavior'],
+            challenges: [
+              { challengeId: 'open-challenge', kind: 'implementation_challenge', outcome: 'fail' },
+              {
+                challengeId: 'closed-challenge',
+                kind: 'implementation_challenge',
+                outcome: 'fail',
+              },
+            ],
+            challengeResolutionVerdicts: [{ challengeId: 'closed-challenge', verdict: 'resolved' }],
+          },
+        ],
+      } as unknown as SessionState;
+
+      expect(buildStatusProjection(state, solo).implementationRework).toEqual({
+        rejectedDigest: 'rejected-digest',
+        iteration: 3,
+        blockingIssues: [blockingIssue],
+        majorRisks: [blockingIssue],
+        missingVerification: ['Run focused test'],
+        scopeCreep: ['Unrelated edit'],
+        unknowns: ['Runtime behavior'],
+        openChallengeIds: ['open-challenge'],
+      });
+    });
+
     it('projects actor, policy, profile, archive, next action, product next action, and command prefixes', () => {
       const state: SessionState = {
         ...stateWithTicket('READY'),

@@ -24,6 +24,7 @@
  */
 
 import type { SessionState } from '../state/schema.js';
+import type { ReviewFindings } from '../state/evidence.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 import { evaluate } from '../machine/evaluate.js';
 import { resolveNextAction, type NextAction } from '../machine/next-action.js';
@@ -53,6 +54,7 @@ import {
 import { projectProofStatusForState } from './proofgraph/proof-summary-projectors.js';
 import { evaluateProofGraphGateFromState } from '../audit/proofgraph/gate.js';
 import { mapEnforcementReasonToRegistryCode } from '../audit/proofgraph/reason-code-mapping.js';
+import { projectOpenImplementationChallengeIds } from '../state/implementation-review-findings.js';
 
 // Re-export for consumers
 export type { StatusConclusionProjection };
@@ -129,6 +131,17 @@ export interface StatusProjection {
   proofApprovals: ProofApprovalProjection;
   /** Review loop progress during review phases (null when not in a review phase). */
   reviewLoop: ReviewLoopProgress | null;
+  /** Current rework required by an independent implementation review, if any. */
+  implementationRework: {
+    rejectedDigest: string;
+    iteration: number | null;
+    blockingIssues: ReviewFindings['blockingIssues'];
+    majorRisks: ReviewFindings['majorRisks'];
+    missingVerification: ReviewFindings['missingVerification'];
+    scopeCreep: ReviewFindings['scopeCreep'];
+    unknowns: ReviewFindings['unknowns'];
+    openChallengeIds: readonly string[];
+  } | null;
   /**
    * Active check IDs that have not yet been validated.
    * Populated only during VALIDATION phase. Absent otherwise.
@@ -339,6 +352,47 @@ function remainingValidationChecks(state: SessionState): string[] | undefined {
   return state.activeChecks.filter((id) => !state.validation.some((v) => v.checkId === id));
 }
 
+function projectImplementationReworkIssues(
+  findings: ReviewFindings | undefined,
+): Pick<
+  NonNullable<StatusProjection['implementationRework']>,
+  'iteration' | 'blockingIssues' | 'majorRisks' | 'missingVerification' | 'scopeCreep' | 'unknowns'
+> {
+  if (!findings) {
+    return {
+      iteration: null,
+      blockingIssues: [],
+      majorRisks: [],
+      missingVerification: [],
+      scopeCreep: [],
+      unknowns: [],
+    };
+  }
+  return {
+    iteration: findings.iteration,
+    blockingIssues: findings.blockingIssues,
+    majorRisks: findings.majorRisks,
+    missingVerification: findings.missingVerification,
+    scopeCreep: findings.scopeCreep,
+    unknowns: findings.unknowns,
+  };
+}
+
+function projectImplementationRework(
+  state: SessionState,
+): StatusProjection['implementationRework'] {
+  const marker = state.implementationRework;
+  if (!marker) return null;
+  const findings = [...(state.implReviewFindings ?? [])]
+    .reverse()
+    .find((item) => item.overallVerdict === 'changes_requested');
+  return {
+    rejectedDigest: marker.rejectedDigest,
+    ...projectImplementationReworkIssues(findings),
+    openChallengeIds: projectOpenImplementationChallengeIds(state.implReviewFindings),
+  };
+}
+
 export function buildStatusProjection(
   state: SessionState,
   policy: FlowGuardPolicy,
@@ -399,6 +453,7 @@ export function buildStatusProjection(
     proofSummary: projectProofStatusForState(state),
     proofApprovals: buildProofApprovalProjection(state),
     reviewLoop: getReviewLoopProgress(state),
+    implementationRework: projectImplementationRework(state),
     remainingChecks: remainingValidationChecks(state),
     conclusion: projectStatusConclusion(evalResult, productNext),
     readiness: deriveReadinessField(evalResult, completeness),

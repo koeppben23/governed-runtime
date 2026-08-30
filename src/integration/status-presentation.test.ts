@@ -178,6 +178,7 @@ function makeBaseProjection(overrides: Partial<StatusProjection> = {}): StatusPr
       coverageGaps: [],
     },
     reviewLoop: null,
+    implementationRework: null,
     readiness: 'READY',
     conclusion: {
       kind: 'next_action' as const,

@@ -496,7 +496,10 @@ describe('implementation review without repository observation authority', () =>
     expect(state!.phase).toBe('IMPLEMENTATION');
     expect(state!.implementation).toBeNull();
 
-    // Phase 4: re-record → fresh obligation (iteration 2) → second reviewer accepts.
+    // Phase 4: change the rejected implementation before re-recording, then mint
+    // a fresh obligation (iteration 2) for the second review.
+    writeFileSync(join(s.worktree, 'src', 'auth.ts'), 'export const auth = () => false;\n');
+    execSync('git add src/auth.ts', { cwd: s.worktree, stdio: 'pipe' });
     const r4 = await implement.execute({}, se2.tc);
     expect(r4).not.toContain('INTERNAL_ERROR');
     await run_check.execute({ kind: 'typecheck' }, s.tc);

@@ -37,6 +37,7 @@ import {
   decision,
   implement,
   review_implementation,
+  extend_implementation_review,
   run_check,
   review,
   abort_session,
@@ -56,9 +57,11 @@ import {
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
 } from '../fixtures.js';
+import type { SessionState } from '../state/schema.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import { TEAM_POLICY } from '../config/policy.js';
 import { runWithAdapterLoggerAsync, type AdapterLogger } from '../logging/adapter-logger.js';
+import { recordUserDecisionIntentFromCommand } from './user-decision-intent.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -1065,6 +1068,61 @@ describe('implement', () => {
       expect(result.status).toContain('Changes requested');
     });
 
+    it('Mode B: exhausted changes_requested carries the terminal extension card', async () => {
+      await reachImplementation();
+      await implement.execute({}, ctx);
+      await passImplValidation();
+
+      const validModeBFindings = await fulfillReview('implement', 1, 'changes_requested');
+      const raw = await review_implementation.execute(
+        { reviewVerdict: 'changes_requested', reviewFindings: validModeBFindings },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      // Solo preset maxImplReviewIterations=1 -> the single negative verdict
+      // exhausts the budget, so the loop ENDS in a user decision and the
+      // terminal presentation card IS rendered.
+      expect(result.status).toContain('exhausted');
+      expect(result.presentation).toBeDefined();
+      expect((result.presentation as { markdown: string } | undefined)?.markdown).toContain(
+        'extend-implementation-review',
+      );
+    });
+
+    it('Mode B: non-exhausted changes_requested is an internal continuation without an intermediate card', async () => {
+      await reachImplementation();
+      await implement.execute({}, ctx);
+      await passImplValidation();
+
+      // Allow multiple iterations so the loop continues after the first
+      // negative verdict instead of ending in a user decision.
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      await writeState(sessDir, {
+        ...state!,
+        policySnapshot: { ...state!.policySnapshot, maxImplReviewIterations: 3 },
+      });
+
+      const validModeBFindings = await fulfillReview('implement', 1, 'changes_requested');
+      const raw = await review_implementation.execute(
+        { reviewVerdict: 'changes_requested', reviewFindings: validModeBFindings },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('IMPLEMENTATION');
+      expect(result.status).toContain('iteration 1/3');
+      expect(result.status).not.toContain('exhausted');
+      expect(String(result.next)).toContain('flowguard_implement');
+      expect(String(result.next)).toContain('re-record');
+      // Active loop: no intermediate presentation card — the negative verdict
+      // is an internal continuation (repair -> re-record -> validation ->
+      // challenge resolution -> fresh review), not a terminal result.
+      expect(result.presentation).toBeUndefined();
+      const after = await readState(sessDir);
+      expect(after?.implementationRework?.exhausted).toBe(false);
+    });
+
     it('Mode B: changes_requested returns to IMPLEMENTATION for fresh implementation evidence', async () => {
       await reachImplementation();
       await implement.execute({}, ctx);
@@ -1084,29 +1142,132 @@ describe('implement', () => {
       expect(afterReviewState?.implementation).toBeNull();
       expect(afterReviewState?.implReview).toBeNull();
       expect(afterReviewState?.reducedCeremony).toBeNull();
+      expect(afterReviewState?.implementationRework).toEqual({
+        rejectedDigest: expect.any(String),
+        exhausted: true,
+      });
+
+      const rejectedState = afterReviewState!;
+      const blockedRaw = await implement.execute({}, ctx);
+      const blockedResult = parseToolResult(blockedRaw);
+      expect(blockedResult.code).toBe('IMPLEMENTATION_REVIEW_EXTENSION_REQUIRED');
+      expect(await readState(sessDir)).toEqual(rejectedState);
+
+      recordUserDecisionIntentFromCommand({
+        sessionId: ctx.sessionID,
+        command: '/extend-implementation-review',
+        arguments: '1',
+      });
+      const extensionRaw = await extend_implementation_review.execute(
+        { additionalIterations: 1 },
+        ctx,
+      );
+      const extensionResult = parseToolResult(extensionRaw);
+      expect(extensionResult.error).toBeUndefined();
+      const extendedState = await readState(sessDir);
+      expect(extendedState?.implementationRework?.exhausted).toBe(false);
+      expect(extendedState?.implementationReviewExtensions).toEqual([
+        expect.objectContaining({
+          additionalIterations: 1,
+          authorizedBy: expect.objectContaining({ actorId: expect.any(String) }),
+        }),
+      ]);
+    });
+
+    it('Mode B: extension without a matching explicit user command intent is BLOCKED', async () => {
+      await reachImplementation();
+      await implement.execute({}, ctx);
+      await passImplValidation();
+      const findings = await fulfillReview('implement', 1, 'changes_requested');
+      const reviewRaw = await review_implementation.execute(
+        { reviewVerdict: 'changes_requested', reviewFindings: findings },
+        ctx,
+      );
+      expect(parseToolResult(reviewRaw).phase).toBe('IMPLEMENTATION');
+      const sessDir = await currentSessionDir();
+      const before = await readState(sessDir);
+      expect(before?.implementationRework?.exhausted).toBe(true);
+
+      const extensionRaw = await extend_implementation_review.execute(
+        { additionalIterations: 1 },
+        ctx,
+      );
+      const extensionResult = parseToolResult(extensionRaw);
+      expect(extensionResult.code).toBe('HUMAN_DECISION_REQUIRED');
+      expect(await readState(sessDir)).toEqual(before);
+    });
+
+    it('Mode B: extension is BLOCKED when the implementation review budget is not exhausted', async () => {
+      await reachImplementation();
+      await implement.execute({}, ctx);
+      await passImplValidation();
+      const findings = await fulfillReview('implement', 1, 'changes_requested');
+      await review_implementation.execute(
+        { reviewVerdict: 'changes_requested', reviewFindings: findings },
+        ctx,
+      );
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      const notExhausted: SessionState = {
+        ...state!,
+        implementationRework: {
+          rejectedDigest: state!.implementationRework!.rejectedDigest,
+          exhausted: false,
+        },
+      };
+      await writeStateWithArtifacts(sessDir, notExhausted);
+
+      const extensionRaw = await extend_implementation_review.execute(
+        { additionalIterations: 1 },
+        ctx,
+      );
+      expect(parseToolResult(extensionRaw).code).toBe('IMPLEMENTATION_REVIEW_NOT_EXHAUSTED');
+      expect((await readState(sessDir))?.implementationRework?.exhausted).toBe(false);
+      expect((await readState(sessDir))?.implementationReviewExtensions).toHaveLength(0);
+    });
+
+    it('Mode B: extension authorizes a changed re-record that clears the exhausted rework', async () => {
+      await reachImplementation();
+      await implement.execute({}, ctx);
+      await passImplValidation();
+      const findings = await fulfillReview('implement', 1, 'changes_requested');
+      await review_implementation.execute(
+        { reviewVerdict: 'changes_requested', reviewFindings: findings },
+        ctx,
+      );
+
+      const gitMock = await import('../adapters/git.js');
+      vi.mocked(gitMock.hashWorktreeFiles).mockImplementationOnce(async (_w, paths) => {
+        const out: Record<string, string | null> = {};
+        for (const p of paths) out[p] = `fixed:${p}`;
+        return out;
+      });
+
+      const sessDir = await currentSessionDir();
+      recordUserDecisionIntentFromCommand({
+        sessionId: ctx.sessionID,
+        command: '/extend-implementation-review',
+        arguments: '1',
+      });
+      const extensionRaw = await extend_implementation_review.execute(
+        { additionalIterations: 1 },
+        ctx,
+      );
+      const extensionResult = parseToolResult(extensionRaw);
+      expect(extensionResult.error).toBeUndefined();
+      const extendedState = await readState(sessDir);
+      expect(extendedState?.implementationRework?.exhausted).toBe(false);
 
       const recordRaw = await implement.execute({}, ctx);
-      const validationResult = await passImplValidation();
       const recordResult = parseToolResult(recordRaw);
       expect(recordResult.error).toBeUndefined();
       expect(recordResult.phase).toBe('IMPL_VALIDATION');
-      expect(recordResult.reviewObligationIteration).toBeUndefined();
-      expect(validationResult?.reviewObligationIteration).toBe(2);
-
-      const afterRecordState = await readState(sessDir);
-      expect(afterRecordState?.implementation).not.toBeNull();
-      expect(afterRecordState?.implReview).toBeNull();
-      expect(afterRecordState?.implReviewFindings).toHaveLength(1);
-
-      const secondReviewFindings = await fulfillReview('implement', 2, 'accept');
-      const approveRaw = await review_implementation.execute(
-        { reviewVerdict: 'accept', reviewFindings: secondReviewFindings },
-        ctx,
+      const afterRecord = await readState(sessDir);
+      expect(afterRecord?.implementationRework).toBeNull();
+      expect(afterRecord?.implementationReviewExtensions).toHaveLength(1);
+      expect(afterRecord?.implementation?.digest).not.toBe(
+        extendedState?.implementationRework?.rejectedDigest,
       );
-      const approveResult = parseToolResult(approveRaw);
-      expect(approveResult.error).toBeUndefined();
-      expect(approveResult.implReviewIteration).toBe(2);
-      expect(['EVIDENCE_REVIEW', 'COMPLETE']).toContain(approveResult.phase);
     });
 
     it('approve + subagentEnabled=true + missing reviewFindings -> BLOCKED', async () => {
@@ -1121,38 +1282,19 @@ describe('implement', () => {
       expect(result.code).toBe('REVIEW_FINDINGS_REQUIRED');
     });
 
-    it('Mode B: changes_requested with NO resolvable findings still returns to IMPLEMENTATION (no dead-state)', async () => {
-      // Regression: a reviewer asking for changes must never wedge the session
-      // into an unrecoverable IMPL_REVIEW state. Unlike `accept`, changes_requested
-      // closes the loop by returning to IMPLEMENTATION (fresh evidence replaces the
-      // stale evidence), so it must NOT require bindable reviewer findings. The
-      // sibling `accept` case above stays BLOCKED with REVIEW_FINDINGS_REQUIRED.
+    it('Mode B: changes_requested without findings blocks without changing phase or obligation', async () => {
       await reachImplementation();
       await enterImplReview(); // pending obligation, but NO bound reviewer evidence
+      const sessDir = await currentSessionDir();
+      const before = await readState(sessDir);
 
       const reviewRaw = await review_implementation.execute(
         { reviewVerdict: 'changes_requested' },
         ctx,
       );
       const reviewResult = parseToolResult(reviewRaw);
-      expect(reviewResult.error).toBeUndefined();
-      expect(reviewResult.phase).toBe('IMPLEMENTATION');
-
-      const sessDir = await currentSessionDir();
-      const afterReviewState = await readState(sessDir);
-      expect(afterReviewState?.implementation).toBeNull();
-      expect(afterReviewState?.implReview).toBeNull();
-
-      // Recovery is actually reachable: re-recording implementation works.
-      const recordRaw = await implement.execute({}, ctx);
-      const validationResult = await passImplValidation();
-      const recordResult = parseToolResult(recordRaw);
-      expect(recordResult.error).toBeUndefined();
-      expect(recordResult.phase).toBe('IMPL_VALIDATION');
-      // No reviewer findings were recorded for the changes_requested cycle, so the
-      // next review obligation starts fresh at iteration 1 (not 2).
-      expect(recordResult.reviewObligationIteration).toBeUndefined();
-      expect(validationResult?.reviewObligationIteration).toBe(1);
+      expect(reviewResult.code).toBe('REVIEW_FINDINGS_REQUIRED');
+      expect(await readState(sessDir)).toEqual(before);
     });
 
     it('approve + subagentEnabled=true + valid reviewFindings -> accepted', async () => {
