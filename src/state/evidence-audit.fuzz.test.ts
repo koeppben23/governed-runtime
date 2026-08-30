@@ -178,9 +178,9 @@ describe('audit chain fuzz', () => {
           });
 
           expect(result.valid).toBe(false);
-          expect(['CHAIN_BREAK', 'LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE']).toContain(
-            result.reason,
-          );
+          // The generated data is explicitly v3 and the current epoch removed
+          // the legacy strict-mode reason — only CHAIN_BREAK is admissible.
+          expect(result.reason).toBe('CHAIN_BREAK');
         },
       ),
       {
@@ -242,9 +242,9 @@ describe('audit chain fuzz', () => {
           });
 
           expect(result.valid).toBe(false);
-          expect(['CHAIN_BREAK', 'LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE']).toContain(
-            result.reason,
-          );
+          // The generated data is explicitly v3 and the current epoch removed
+          // the legacy strict-mode reason — only CHAIN_BREAK is admissible.
+          expect(result.reason).toBe('CHAIN_BREAK');
         },
       ),
       {

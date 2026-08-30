@@ -92,6 +92,25 @@ describe('computeGitControlPlaneMarker on a regular repository', () => {
     expect(changedHook).not.toBe(withHook);
   });
 
+  it('diverges when a hook becomes executable without any content change (BAD)', async () => {
+    // Git ignores non-executable hooks: chmod +x changes repository behavior
+    // while name, content, and `git status` all stay identical — the marker
+    // must bind the permission bits to close this control-plane bypass.
+    const repo = await initRepo(tmpDir);
+    const hookPath = path.join(repo, '.git', 'hooks', 'pre-commit');
+    await fs.writeFile(hookPath, '#!/bin/sh\nexit 1\n', { mode: 0o644 });
+    const nonExecutable = await computeGitControlPlaneMarker(repo);
+
+    await fs.chmod(hookPath, 0o755);
+    const executable = await computeGitControlPlaneMarker(repo);
+    expect(executable).not.toBe(nonExecutable);
+
+    await fs.chmod(hookPath, 0o644);
+    const restored = await computeGitControlPlaneMarker(repo);
+    expect(restored).not.toBe(executable);
+    expect(restored).toBe(nonExecutable);
+  });
+
   it('diverges when HEAD changes (BAD)', async () => {
     const repo = await initRepo(tmpDir);
     const before = await computeGitControlPlaneMarker(repo);

@@ -66,12 +66,31 @@ async function hooksMarker(hooksDir: string): Promise<string> {
   const parts: string[] = [];
   for (const name of names) {
     const full = path.join(hooksDir, name);
-    // Single read per entry: directories fail with EISDIR, unreadable entries
-    // fall back to a stable placeholder — no stat-then-read race.
+    // Content AND permission bits are read through the SAME opened handle
+    // (open → fstat/readFile): no stat-then-read race, and the executable
+    // bits are git hook AUTHORITY — git ignores non-executable hooks, so a
+    // chmod +x changes repository behavior without changing content.
+    let handle: fs.FileHandle;
     try {
-      parts.push(`${name}:${sha256Text(await fs.readFile(full, 'utf8'))}`);
+      handle = await fs.open(full, 'r');
     } catch (err) {
+      // Directory entries (POSIX opens directories; Windows fails with
+      // EISDIR) and unreadable entries get a stable placeholder.
       parts.push(isEisDirError(err) ? `${name}:dir` : `${name}:missing`);
+      continue;
+    }
+    try {
+      const stat = await handle.stat();
+      if (stat.isDirectory()) {
+        parts.push(`${name}:dir`);
+        continue;
+      }
+      const mode = (stat.mode & 0o777).toString(8);
+      parts.push(`${name}:${mode}:${sha256Text(await handle.readFile('utf8'))}`);
+    } catch {
+      parts.push(`${name}:missing`);
+    } finally {
+      await handle.close();
     }
   }
   return parts.join(',');
