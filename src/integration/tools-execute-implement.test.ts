@@ -70,6 +70,7 @@ vi.mock('../adapters/git', async (importOriginal) => {
   return {
     ...original,
     isGitRepo: vi.fn().mockResolvedValue(true),
+    isGitRepoStrict: vi.fn().mockResolvedValue(true),
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
     changedFiles: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.changedFiles),
     headCommitFull: vi.fn().mockResolvedValue('d'.repeat(40)),

@@ -117,6 +117,7 @@ vi.mock('../../machine/commands.js', () => ({
 vi.mock('../../adapters/git.js', () => ({
   changedFiles: mocks.changedFiles,
   isGitRepo: vi.fn().mockResolvedValue(true),
+  isGitRepoStrict: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock('../../machine/evaluate.js', () => ({

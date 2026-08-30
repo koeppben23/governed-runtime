@@ -265,6 +265,24 @@ describe('implement command: validation-gate contract', () => {
     expect(body).not.toContain('skip to Phase 5');
   });
 
+  it('dispatches on the actual returned phase instead of an assumed sequence (#852)', () => {
+    const body = COMMANDS['implement.md'];
+    expect(body).toContain('Dispatch on the RETURNED `phase` field');
+    expect(body).toContain('never an assumed sequence');
+    // Zero-check: the machine may land in IMPL_REVIEW within the record call.
+    expect(body).toContain('Go DIRECTLY to Phase 5');
+    // Reduced ceremony: the machine may land in EVIDENCE_REVIEW within the call.
+    expect(body).toContain('No checks, no reviewer, no further steps');
+    // No invented phase transition.
+    expect(body).toContain('never invent the next phase');
+    expect(body).not.toContain('The session advances to IMPL_VALIDATION');
+  });
+
+  it('never claims the IMPL_REVIEW gate is unreachable without checks (#852)', () => {
+    const body = COMMANDS['implement.md'];
+    expect(body).not.toContain('cannot be reached');
+  });
+
   it('requires a confirming runtime response before entering IMPL_REVIEW', () => {
     const body = COMMANDS['implement.md'];
     expect(body).toContain('Never assume IMPL_REVIEW without');

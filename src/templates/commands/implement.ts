@@ -36,28 +36,42 @@ ${DISCOVERY_REVIEW_CAPTURE}
    reconstruct or infer plan details from metadata alone.)
 3. Execute each step in order:
    - FIRST confirm this is a git repository (e.g. \`git rev-parse --is-inside-work-tree\` in the
-     worktree). Implementation evidence is git-derived; in a non-Git directory \`flowguard_implement\`
-     fails closed with \`NOT_GIT_REPO\` and no code change can be recorded. Verify git availability and
-     initialize a repository before making any file changes.
+     worktree). Implementation evidence is git-derived: the runtime blocks every mutating host tool
+     with \`NOT_GIT_REPO\` in a non-Git worktree, and \`flowguard_implement\` cannot record evidence
+     there. If this is not a git repository, STOP and report it — the user must initialize git
+     OUTSIDE this session and start a fresh \`/hydrate\` (establishing a new implementation baseline)
+     before implementation can proceed. Do NOT run \`git init\` inside this session: a session
+     hydrated without git has no baseline, and recording afterwards would attribute the entire
+     pre-existing project to this implementation.
    - Use \`read\` to examine existing files before modifying.
    - Use \`write\` or \`edit\` to create or modify files.
    - Use \`bash\` for commands (install dependencies, run formatters, etc.).
    - Follow the plan steps exactly — add nothing beyond what the plan specifies.
  4. After completing ALL plan steps, call \`flowguard_implement({})\` with no arguments.
-    - The tool auto-detects changed files via git and records evidence.
-    - The session advances to IMPL_VALIDATION.
+    - The tool records evidence and auto-advances the state machine. It can cross MULTIPLE
+      phases in one call — e.g. straight past IMPL_VALIDATION into IMPL_REVIEW (a
+      policy-permitted zero-check transition) or into EVIDENCE_REVIEW (reduced ceremony).
+    - Dispatch on the RETURNED \`phase\` field of the tool response; the returned phase is
+      authoritative, never an assumed sequence:
+      - \`EVIDENCE_REVIEW\`: display \`presentation.markdown\` (or the legacy \`reviewCard\`)
+        verbatim and STOP. No checks, no reviewer, no further steps — this is the user gate.
+      - \`IMPL_REVIEW\`: validation already passed. Go DIRECTLY to Phase 5 (review loop) and
+        continue automatically — do not stop and do not treat the session as IMPL_VALIDATION.
+      - \`IMPLEMENTATION\` or \`error\`/\`blocked\`: follow the exact recovery in the tool
+        response and STOP; never invent the next phase.
+      - \`IMPL_VALIDATION\`: continue to Phase 3.
 
 ### Phase 3: Post-Implementation Validation
 
- 5. Call \`flowguard_status\` again with NO focused flags (no whyBlocked/evidence/context/readiness)
-    to get the full projection, then read \`activeChecks\` (equivalently \`remainingChecks\` in
-    IMPL_VALIDATION) and \`verificationCandidates\`. The session is now in IMPL_VALIDATION after
-    recording evidence.
+ 5. Only when the returned phase is \`IMPL_VALIDATION\`: call \`flowguard_status\` with NO focused
+    flags (no whyBlocked/evidence/context/readiness) to get the full projection, then read
+    \`activeChecks\` (equivalently \`remainingChecks\` in IMPL_VALIDATION) and
+    \`verificationCandidates\`.
     - If both \`activeChecks\`/\`remainingChecks\` and \`verificationCandidates\` are empty:
-      report no active checks and stop without calling \`flowguard_run_check\`. Read the
-      canonical \`nextAction\`: the machine MAY permit a vacuous validation transition only
-      through \`/validate\` when policy allows it, otherwise Discovery recovery is required.
-      Report that exact \`nextAction\`.
+      report no active checks and stop without calling \`flowguard_run_check\`. The MACHINE
+      itself decides a vacuous transition — read the canonical \`nextAction\` and the actual
+      phase from the tool response; never claim the IMPL_REVIEW gate is unreachable and never
+      invent a transition path.
     - If \`activeChecks\`/\`remainingChecks\` is non-empty: for each kind, call
       \`flowguard_run_check({ kind: "<kind>" })\`.
     - If \`activeChecks\`/\`remainingChecks\` is empty but \`verificationCandidates\` is non-empty:
@@ -91,7 +105,7 @@ ${SHARED_REVIEW_LOOP({
   artifactName: 'implementation',
   reviseParams: '',
   changesRequestedExtra:
-    '\n         Then run the repair-recheck cycle: make the code changes based on blockingIssues, call flowguard_implement({}) again to re-record (advances to IMPL_VALIDATION), execute the post-recording checks again (validation auto-chain), record resolutions for any open implementation challenges (first bullet of step 7), then continue the review loop automatically from step 7.',
+    '\n         Then run the repair-recheck cycle: make the code changes based on blockingIssues, call flowguard_implement({}) again to re-record, dispatch on the returned phase again (step 4), run the post-recording checks only while the machine is still in IMPL_VALIDATION, record resolutions for any open implementation challenges (first bullet of step 7), then continue the review loop automatically from step 7.',
   changesRequestedVerdictFirst: true,
   strictRecoveryCall: 'flowguard_implement({})',
   strictRecoveryVerb: 'Re-record',
@@ -115,10 +129,10 @@ ${SHARED_REVIEW_LOOP({
 - Solve the problem generally; never special-case test inputs or hardcode values to make checks pass (see AP-B12 Test-Fitting). If a test looks wrong, surface it instead of fitting to it.
 - Use the standard project tools; do not build helper-script workarounds to shortcut a task. Remove any temporary files or scaffolding created for iteration before finishing.
 - Record evidence with \`flowguard_implement({})\` (no arguments) BEFORE starting the review loop.
-- After \`flowguard_implement({})\`, auto-run \`flowguard_run_check\` — do not skip IMPL_VALIDATION.
+- After every \`flowguard_implement({})\`, dispatch on the returned phase (step 4) and run
+  \`flowguard_run_check\` only while the machine is still in IMPL_VALIDATION with checks to run.
 - When changes are requested in the review loop: make the actual code changes, then re-record
-  with \`flowguard_implement({})\` (which advances to IMPL_VALIDATION and triggers the auto-chain
-  again).
+  with \`flowguard_implement({})\` and dispatch on the returned phase again.
 - In Verification Evidence, list only checks that were actually executed. Mark all others as NOT_VERIFIED.
 - Follow profile rules from \`flowguard_status\` when implementing.
 - Do not call flowguard_plan during /implement — planning is complete.
@@ -126,19 +140,27 @@ ${SHARED_REVIEW_LOOP({
 
 ## Example (correct tool sequences)
 
-Happy path:
+Happy path (checks exist):
 1. \`flowguard_status\` → phase: IMPLEMENTATION, plan approved
 2. (execute plan steps: read/write/edit/bash)
-3. \`flowguard_implement({})\` → records evidence, session advances to IMPL_VALIDATION
+3. \`flowguard_implement({})\` → returns phase: IMPL_VALIDATION
 4. \`flowguard_status\` (unfocused) → read \`activeChecks\`
 5. \`flowguard_run_check({ kind: "<kind>" })\` for each active check → passes, advances to IMPL_REVIEW
 6. (review loop) \`flowguard_review_implementation({ reviewVerdict: "accept" })\` → EVIDENCE_REVIEW (user gate — the USER approves via /review-decision; this call does NOT approve the implementation)
 
+Zero-check path (machine advances within the record call):
+1. \`flowguard_implement({})\` → returns phase: IMPL_REVIEW (policy-permitted vacuous validation)
+2. go DIRECTLY to the review loop — no status re-read, no invented IMPL_VALIDATION step
+
+Reduced-ceremony path:
+1. \`flowguard_implement({})\` → returns phase: EVIDENCE_REVIEW + presentation
+2. display \`presentation.markdown\` verbatim and STOP
+
 Revision path (when review returns changes_requested):
 1. \`flowguard_review_implementation({ reviewVerdict: "changes_requested" })\` → routes back to IMPLEMENTATION
 2. (fix code based on blockingIssues)
-3. \`flowguard_implement({})\` → re-records evidence, advances to IMPL_VALIDATION
-4. \`flowguard_status\` (unfocused) → read \`activeChecks\`
+3. \`flowguard_implement({})\` → dispatch on the returned phase (step 4)
+4. While still IMPL_VALIDATION: \`flowguard_status\` (unfocused) → read \`activeChecks\`
 5. \`flowguard_run_check({ kind: "<kind>" })\` for each active check → passes, advances to IMPL_REVIEW
 6. (review loop) \`flowguard_review_implementation({ reviewVerdict: "accept" })\` → EVIDENCE_REVIEW (user gate)
 

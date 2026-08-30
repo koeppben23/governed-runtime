@@ -2,7 +2,7 @@
  * @module integration/plugin-bootstrap.test
  * @description Fail-closed bootstrap tests for FlowGuardAuditPlugin.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import { FlowGuardAuditPlugin, isUsableWorktree } from './plugin.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
@@ -25,6 +25,18 @@ import {
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import { computeRecordDigest } from '../state/evidence-plan.js';
 import { fileURLToPath } from 'node:url';
+
+// The test workspace carries a fake `.git` marker (not a real repository), but
+// the git prerequisite gate for mutating host tools must treat it as a
+// repository. Risk-gate tests below init a REAL repo via initGitRepo; the
+// spread keeps their real changedFiles/remoteOriginUrl behavior intact.
+vi.mock('../adapters/git.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/git.js')>();
+  return {
+    ...original,
+    isGitRepoStrict: vi.fn().mockResolvedValue(true),
+  };
+});
 
 const execFileAsync = promisify(execFile);
 

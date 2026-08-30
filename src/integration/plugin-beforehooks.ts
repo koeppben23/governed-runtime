@@ -41,6 +41,7 @@ import { authorizeMutationEpisode } from '../state/evidence-mutation-episode.js'
 import { persistAuthorizedDispatch, rearmInterruptedReviewerDispatch } from './durable-dispatch.js';
 import { getRuntimeInstanceId } from './runtime-instance.js';
 import { acquireRuntimeLease } from './runtime-lease.js';
+import { enforceGitPrerequisiteBeforeMutation } from './plugin-git-gate.js';
 
 export async function commandBefore(
   runtime: FlowGuardPluginRuntime,
@@ -204,6 +205,13 @@ async function enforceBeforeRules(
     // (e.g. through a risk-gate block) would roll the monotonic operation
     // state backwards and corrupt the state↔audit digest binding.
     const freshState = await readFreshStateAfterReconcile(runtime, sessionId, hostResolution);
+    // Git prerequisite (#852): implementation evidence is git-derived, so a
+    // non-Git worktree can never bind this mutation into recordable evidence.
+    // Fail closed BEFORE any mutation dispatch is authorized (no
+    // MutationEpisode, no repository mutation) and before the risk gate, so
+    // the root cause surfaces as NOT_GIT_REPO (or the typed git diagnosis)
+    // instead of a misleading evidence-unavailable risk block.
+    await enforceGitPrerequisiteBeforeMutation(runtime.riskDeps, toolName);
     await enforceRiskBefore(runtime.riskDeps, hostResolution.sessDir, freshState, toolName, args);
     await enforceDiscoveryHealthBefore(
       runtime.discoveryHealthDeps,

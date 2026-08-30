@@ -34,6 +34,18 @@ import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import { createReviewObligation } from './review/assurance.js';
 
+// The test workspace carries a fake `.git` marker rather than a real
+// repository; the git prerequisite gate for mutating host tools treats it as a
+// repository. The non-Git block is covered by the dedicated e2e regression in
+// mutation-episode-e2e.test.ts and the plugin-git-gate unit suite.
+vi.mock('../adapters/git.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/git.js')>();
+  return {
+    ...original,
+    isGitRepoStrict: vi.fn().mockResolvedValue(true),
+  };
+});
+
 function makeRuntime(
   overrides: Omit<Partial<FlowGuardPluginRuntime>, 'ws'> & { ws?: Partial<PluginWorkspace> } = {},
 ): FlowGuardPluginRuntime {

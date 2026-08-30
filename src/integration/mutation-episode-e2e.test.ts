@@ -17,7 +17,7 @@
  * No part of the plugin, persistence, or hook pipeline is mocked.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
@@ -41,6 +41,19 @@ import { hasUnresolvedMutationEpisodes } from '../state/evidence-mutation-episod
 import { resetRuntimeInstanceIdForTest } from './runtime-instance.js';
 import { RUNTIME_LEASE_FILE } from './runtime-lease.js';
 import { recordUserDecisionIntent } from './user-decision-intent.js';
+
+// The plugin/persistence/hook pipeline itself is unmocked; only the git
+// ADAPTER (external system boundary) is mocked: the test workspace carries a
+// fake `.git` marker rather than a real repository. The git prerequisite gate
+// is exercised for real in the dedicated non-Git regression below, which
+// overrides this default with mockResolvedValueOnce(false).
+vi.mock('../adapters/git.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/git.js')>();
+  return {
+    ...original,
+    isGitRepoStrict: vi.fn().mockResolvedValue(true),
+  };
+});
 
 /** Simulate the death of the lease holder (a real dead process fails PID liveness). */
 async function killLeaseHolder(sessDir: string): Promise<void> {
@@ -124,6 +137,40 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         status: 'completed',
         outcome: 'success',
       });
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('blocks the first mutating host operation in a non-Git worktree (NOT_GIT_REPO) without authorizing a dispatch', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessionID = crypto.randomUUID();
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+      await fs.mkdir(sessDir, { recursive: true });
+      await writeStateWithArtifacts(sessDir, makeProgressedState('IMPLEMENTATION'));
+
+      const hooks = await FlowGuardAuditPlugin(
+        createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+      );
+      const beforeHook = hooks['tool.execute.before']!;
+
+      // Non-Git worktree: the git prerequisite gate must fail closed BEFORE the
+      // dispatch is authorized — no MutationEpisode, no repository mutation.
+      const gitAdapter = await import('../adapters/git.js');
+      vi.mocked(gitAdapter.isGitRepoStrict).mockResolvedValueOnce(false);
+
+      const callID = crypto.randomUUID();
+      await expect(
+        beforeHook(
+          { tool: 'bash', sessionID, callID },
+          { args: { command: 'echo blocked-mutation' } },
+        ),
+      ).rejects.toThrow('NOT_GIT_REPO');
+
+      const persisted = await readState(sessDir);
+      expect(persisted!.mutationEpisodes).toHaveLength(0);
     } finally {
       await ws.cleanup();
     }

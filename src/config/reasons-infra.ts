@@ -230,6 +230,17 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'GIT_TIMEOUT',
+    category: 'adapter',
+    messageTemplate: 'git operation timed out: {message}',
+    recoverySteps: [
+      'Retry the operation; the git command exceeded its time limit',
+      'Check repository size and filesystem performance',
+      'Review any active git lock files or stalled operations',
+    ],
+  },
+
+  {
     code: 'GIT_COMMAND_FAILED',
     category: 'adapter',
     messageTemplate: 'git command failed: {message}',

@@ -272,6 +272,32 @@ export async function isGitRepo(dir: string): Promise<boolean> {
 }
 
 /**
+ * Typed git-repository probe for fail-closed lifecycle gates.
+ *
+ * Unlike {@link isGitRepo} — which collapses EVERY failure (missing git
+ * executable, timeout, command failure) into `false` — this probe preserves
+ * the typed diagnosis:
+ *
+ * - a directory that is genuinely outside a repository resolves to `false`
+ *   (via {@link resolveRoot}'s NOT_GIT_REPO mapping);
+ * - GIT_NOT_FOUND and GIT_TIMEOUT propagate so the caller can surface the real
+ *   infrastructure failure instead of mislabeling it as NOT_GIT_REPO.
+ *
+ * @param dir - Directory to probe.
+ * @returns true when the directory is inside a git repository.
+ * @throws GitError with the typed code for infrastructure failures.
+ */
+export async function isGitRepoStrict(dir: string): Promise<boolean> {
+  try {
+    await resolveRoot(dir);
+    return true;
+  } catch (err) {
+    if (err instanceof GitError && err.code === 'NOT_GIT_REPO') return false;
+    throw err;
+  }
+}
+
+/**
  * Get the current branch name.
  *
  * @returns Branch name, or null for detached HEAD.

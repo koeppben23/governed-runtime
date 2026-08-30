@@ -58,6 +58,7 @@ import {
   appendNextAction,
   writeStateWithArtifacts,
 } from './helpers.js';
+import { existsSync } from 'node:fs';
 
 // State & Machine
 import { evaluate } from '../../machine/evaluate.js';
@@ -70,7 +71,13 @@ import { isCommandAllowed, Command } from '../../machine/commands.js';
 // Rail helpers
 
 // Adapters
-import { changedFiles, hashWorktreeFiles, isGitRepo, worktreeDiff } from '../../adapters/git.js';
+import {
+  changedFiles,
+  GitError,
+  hashWorktreeFiles,
+  isGitRepoStrict,
+  worktreeDiff,
+} from '../../adapters/git.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import { writeImplementationDiffArtifact } from './implement-diff-artifact.js';
 
@@ -167,13 +174,30 @@ export function validateImplRecordPrerequisites(input: ImplementRuntime): string
 /**
  * Git prerequisite for recording implementation evidence (#575): recording is
  * git-derived (changed-file detection, content hashes, and the diff artifact
- * all read the worktree via git). Fail closed here with a clear `NOT_GIT_REPO`
- * block BEFORE any git command runs, so a non-Git development worktree surfaces
- * an actionable reason instead of a raw `GIT_COMMAND_FAILED` dead-end after the
- * agent has already made code changes.
+ * all read the worktree via git). Fail closed here BEFORE any git command runs,
+ * so a non-Git development worktree surfaces an actionable reason instead of a
+ * raw `GIT_COMMAND_FAILED` dead-end after the agent has already made code
+ * changes.
+ *
+ * Error typing (#852): the probe preserves the git diagnosis — a genuine
+ * non-repo worktree is blocked with `NOT_GIT_REPO`, while infrastructure
+ * failures (missing git executable, git timeout) surface their own reason
+ * codes instead of being mislabeled as a repository problem.
  */
 export async function validateGitPrerequisite(worktree: string): Promise<string | null> {
-  if (await isGitRepo(worktree)) return null;
+  try {
+    if (await isGitRepoStrict(worktree)) return null;
+  } catch (err) {
+    if (err instanceof GitError) {
+      // execFile reports a missing cwd as ENOENT, which gitRaw mislabels as
+      // GIT_NOT_FOUND. A missing worktree path is definitively not a git
+      // repository; every other typed diagnosis is preserved.
+      const code =
+        err.code === 'GIT_NOT_FOUND' && !existsSync(worktree) ? 'NOT_GIT_REPO' : err.code;
+      return formatBlocked(code, { path: worktree, message: err.message, reason: err.message });
+    }
+    throw err;
+  }
   return formatBlocked('NOT_GIT_REPO', { path: worktree });
 }
 
