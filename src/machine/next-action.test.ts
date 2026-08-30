@@ -17,7 +17,7 @@ import {
   IMPL_REVIEW_CONVERGED,
   ARCHITECTURE_DECISION,
 } from '../fixtures.js';
-import { Phase } from '../state/schema.js';
+import { Phase, type SessionState } from '../state/schema.js';
 import type { ReviewAttempt, ReviewObligation } from '../state/evidence.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import {
@@ -316,6 +316,25 @@ describe('resolveNextAction', () => {
       expectAction(action, ACTION_CODES.RUN_IMPLEMENT, ['/implement']);
     });
 
+    it('IMPLEMENTATION with exhausted rework → IMPLEMENTATION_REVIEW_EXHAUSTED', () => {
+      const state = makeState('IMPLEMENTATION', {
+        implementationRework: { rejectedDigest: 'rejected-digest', exhausted: true },
+      });
+      const action = resolveNextAction('IMPLEMENTATION', state);
+      expectAction(action, ACTION_CODES.IMPLEMENTATION_REVIEW_EXHAUSTED, [
+        '/extend-implementation-review',
+        '/abort',
+      ]);
+    });
+
+    it('IMPLEMENTATION with pending (non-exhausted) rework → RUN_IMPLEMENT', () => {
+      const state = makeState('IMPLEMENTATION', {
+        implementationRework: { rejectedDigest: 'rejected-digest', exhausted: false },
+      });
+      const action = resolveNextAction('IMPLEMENTATION', state);
+      expectAction(action, ACTION_CODES.RUN_IMPLEMENT, ['/implement']);
+    });
+
     it('IMPLEMENTATION (has impl) → RUN_CONTINUE', () => {
       const state = makeState('IMPLEMENTATION', { implementation: IMPL_EVIDENCE });
       const action = resolveNextAction('IMPLEMENTATION', state);
@@ -326,6 +345,29 @@ describe('resolveNextAction', () => {
       const state = makeProgressedState('IMPL_REVIEW');
       const action = resolveNextAction('IMPL_REVIEW', state);
       expectAction(action, ACTION_CODES.RUN_REVIEWER_TASK, []);
+    });
+
+    it('IMPL_REVIEW with an unaddressed prior challenge → resolve it before reviewer dispatch', () => {
+      const state = {
+        ...makeProgressedState('IMPL_REVIEW'),
+        implReviewFindings: [
+          {
+            challenges: [
+              {
+                challengeId: '00000000-0000-4000-8000-00000000000a',
+                kind: 'implementation_challenge',
+                outcome: 'fail',
+              },
+            ],
+          },
+        ] as unknown as SessionState['implReviewFindings'],
+      };
+
+      expectAction(
+        resolveNextAction('IMPL_REVIEW', state),
+        ACTION_CODES.RESOLVE_IMPLEMENTATION_CHALLENGES,
+        ['flowguard_resolve_implementation_challenge'],
+      );
     });
 
     it('IMPL_REVIEW with bound unconsumed evidence → submit reviewer verdict', () => {

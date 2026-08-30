@@ -18,6 +18,7 @@
 
 import type { Phase, SessionState } from '../state/schema.js';
 import { resolveReviewContinuation } from '../state/review-continuation.js';
+import { projectUnaddressedImplementationChallengeIds } from '../state/implementation-review-findings.js';
 import { isConverged } from './guards.js';
 import { evaluateValidationEvidence } from './validation-evidence.js';
 
@@ -49,6 +50,8 @@ export const ACTION_CODES = {
   VALIDATION_EVIDENCE_REQUIRED: 'VALIDATION_EVIDENCE_REQUIRED',
   VALIDATION_EVIDENCE_UNVERIFIED: 'VALIDATION_EVIDENCE_UNVERIFIED',
   RUN_IMPLEMENT: 'RUN_IMPLEMENT',
+  IMPLEMENTATION_REVIEW_EXHAUSTED: 'IMPLEMENTATION_REVIEW_EXHAUSTED',
+  RESOLVE_IMPLEMENTATION_CHALLENGES: 'RESOLVE_IMPLEMENTATION_CHALLENGES',
   IMPLEMENTATION_REVIEW_BLOCKED: 'IMPLEMENTATION_REVIEW_BLOCKED',
   RUN_ARCHITECTURE: 'RUN_ARCHITECTURE',
   RUN_REVIEWER_TASK: 'RUN_REVIEWER_TASK',
@@ -190,11 +193,20 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
 
   IMPLEMENTATION: (state) =>
     state.implementation === null
-      ? {
-          code: ACTION_CODES.RUN_IMPLEMENT,
-          text: 'Execute the implementation with /implement',
-          commands: ['/implement'],
-        }
+      ? state.implementationRework?.exhausted === true
+        ? {
+            code: ACTION_CODES.IMPLEMENTATION_REVIEW_EXHAUSTED,
+            text:
+              'Implementation review exhausted its authorized iteration budget with changes requested. ' +
+              'A user must explicitly authorize additional review iterations with ' +
+              '/extend-implementation-review <positive integer>, or abort the session.',
+            commands: ['/extend-implementation-review', '/abort'],
+          }
+        : {
+            code: ACTION_CODES.RUN_IMPLEMENT,
+            text: 'Execute the implementation with /implement',
+            commands: ['/implement'],
+          }
       : {
           code: ACTION_CODES.RUN_CONTINUE,
           text: 'Implementation complete. Run /continue to advance',
@@ -232,6 +244,20 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
         code: ACTION_CODES.IMPLEMENTATION_REVIEW_BLOCKED,
         text: `Implementation review obligation is blocked (${last.blockedCode ?? 'unknown'}). Re-run /implement to re-record the implementation and mint a fresh review obligation.`,
         commands: ['/implement'],
+      };
+    }
+    const unaddressedChallengeIds = projectUnaddressedImplementationChallengeIds(
+      state.implReviewFindings,
+      state.challengeResolutions,
+      state.implementation?.digest,
+    );
+    if (unaddressedChallengeIds.length > 0) {
+      return {
+        code: ACTION_CODES.RESOLVE_IMPLEMENTATION_CHALLENGES,
+        text:
+          'Record current-digest author resolution evidence for every prior failing implementation ' +
+          'challenge with flowguard_resolve_implementation_challenge before invoking the independent reviewer.',
+        commands: ['flowguard_resolve_implementation_challenge'],
       };
     }
     if (
