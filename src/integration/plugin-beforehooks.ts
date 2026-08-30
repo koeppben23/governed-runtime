@@ -4,6 +4,7 @@ import { readState } from '../adapters/persistence.js';
 import { workspacesHome } from '../adapters/workspace/index.js';
 import { buildEnforcementError } from './plugin-helpers.js';
 import { isMutatingHostTool, isHostToolAllowedInPhase } from './phase-tool-gate.js';
+import { isAllowedReworkContinuation } from './plugin-rework-continuation.js';
 import { isMutatingFlowGuardTool } from './tool-classification.js';
 import {
   enforceBeforeVerdict,
@@ -21,7 +22,6 @@ import {
 } from './plugin-shared.js';
 import {
   isFlowGuardVerdictTool,
-  TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
 } from './tool-names.js';
 import { runWithAdapterLoggerAsync } from '../logging/adapter-logger.js';
@@ -341,6 +341,10 @@ function updateCommandScope(
   sessionId: string,
   command: string,
 ): void {
+  // The rework-continuation latch belongs to exactly one /check invocation; a
+  // new command (including a fresh /check) resets it so a later repair only
+  // resumes after the next reviewer changes_requested verdict.
+  runtime.checkReworkContinuations.delete(sessionId);
   // Stryker disable next-line MethodExpression — equivalent: mutating the replace argument leaves already-normalized inputs unchanged; the '/check' normalization is covered by the scope test.
   const normalized = command.trim().replace(/^\/+/, '');
   const scope: ActiveCommandScope | undefined = normalized === 'check' ? 'check' : undefined;
@@ -370,25 +374,6 @@ async function isAllowedInImplReview(
     toolName === TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE;
   if (!reviewSurface) return false;
   return (await readScopedState(runtime, sessionId))?.phase === 'IMPL_REVIEW';
-}
-
-async function isAllowedReworkContinuation(
-  runtime: FlowGuardPluginRuntime,
-  toolName: string,
-  sessionId: string,
-): Promise<boolean> {
-  // Automatic repair continuation (Patch E parity): a /check that drove the
-  // review to `changes_requested` must continue without a manual /implement
-  // hand-off. This is strictly bound to an ACTIVE non-exhausted rework marker
-  // while the phase is IMPLEMENTATION — it never blanket-opens IMPLEMENTATION
-  // to arbitrary tooling under /check. Only the repair tool family is unlocked:
-  // mutating host tools (repair) and flowguard_implement (re-record), plus the
-  // status/run_check surface allowed elsewhere in the scope.
-  const repairTool = toolName === TOOL_FLOWGUARD_IMPLEMENT || isMutatingHostTool(toolName);
-  if (!repairTool) return false;
-  const state = await readScopedState(runtime, sessionId);
-  if (state?.phase !== 'IMPLEMENTATION') return false;
-  return state.implementationRework != null && state.implementationRework.exhausted === false;
 }
 
 async function enforceCommandScope(

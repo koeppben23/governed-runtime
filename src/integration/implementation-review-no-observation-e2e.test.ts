@@ -76,6 +76,7 @@ import {
 } from './review/assurance.js';
 import { resolveAttemptDiscoveryOrBlock } from './review/discovery-attempt-context.js';
 import { resolveNextAction, ACTION_CODES } from '../machine/next-action.js';
+import { executeCheck } from '../verification/executor.js';
 
 const FIXED_TIME = '2026-08-15T14:00:00.000Z';
 
@@ -537,6 +538,144 @@ describe('implementation review without repository observation authority', () =>
       s.tc,
     );
     expect(r5).not.toContain('INTERNAL_ERROR');
+    state = await readState(se2.sDir);
+    expect(state!.phase).toBe('EVIDENCE_REVIEW');
+  });
+
+  it('a failing FRESH check after re-record keeps the repair loop autonomous (D3) and converges on the second repair', async () => {
+    s = await boot();
+
+    // Phase 1: ticket → plan Mode A → approved plan evidence.
+    await ticket.execute({ text: 'Fix update path', source: 'user' }, s.tc);
+    const r1 = await plan.execute(
+      { planText: '## Plan\n1. Fix update', targetPaths: ['src/auth.ts'] },
+      s.tc,
+    );
+    expect(r1).not.toContain('INTERNAL_ERROR');
+    const planInjected = await inject('plan', 'accept', 'plan-digest');
+    const r2 = await plan.execute(
+      {
+        reviewVerdict: 'accept',
+        reviewFindings: implFindings(planInjected.oblId, 0, 1, 'plan-digest', 'accept'),
+      },
+      s.tc,
+    );
+    expect(r2).not.toContain('INTERNAL_ERROR');
+
+    // Phase 2: implementation evidence.
+    const se2 = s!;
+    const st = await readState(se2.sDir);
+    mkdirSync(join(s.worktree, 'src'), { recursive: true });
+    writeFileSync(join(s.worktree, 'src', 'auth.ts'), 'export const auth = () => true;\n');
+    execSync('git add src', { cwd: s.worktree, stdio: 'pipe' });
+    const implHashes = await hashWorktreeFiles(se2.worktree, ['src/auth.ts']);
+    const implDigest1 = hashText(`src/auth.ts:${implHashes['src/auth.ts'] ?? 'deleted'}`);
+    await writeStateWithArtifacts(
+      se2.sDir,
+      makeState('IMPL_VALIDATION', {
+        binding: { ...makeState('IMPL_VALIDATION').binding, worktree: se2.worktree },
+        implementationBaseAuthority: undefined,
+        ticket: TICKET,
+        plan: st!.plan,
+        reviewDecision: st!.reviewDecision,
+        implementation: {
+          changedFiles: ['src/auth.ts'],
+          domainFiles: ['src/auth.ts'],
+          digest: implDigest1,
+          executedAt: FIXED_TIME,
+        },
+        activeChecks: ['typecheck'],
+        verificationCandidates: [
+          {
+            assertionCapability: 'unsupported' as const,
+            kind: 'typecheck',
+            command: 'npx tsc --noEmit',
+            source: 'test',
+            confidence: 'high',
+            reason: 'E2E test candidate',
+          },
+        ],
+        executionSubjectInputsByKind: { typecheck: [{ kind: 'implementation' as const }] },
+      }),
+    );
+    const rc1 = await run_check.execute({ kind: 'typecheck' }, se2.tc);
+    expect(String(rc1)).not.toContain('"error":true');
+    let state = await readState(se2.sDir);
+    expect(state!.phase).toBe('IMPL_REVIEW');
+
+    // Phase 3: reviewer changes_requested → IMPLEMENTATION + rework(D1).
+    const { oblId } = await inject('implement', 'changes_requested', implDigest1);
+    const r3 = await review_implementation.execute(
+      {
+        reviewVerdict: 'changes_requested',
+        reviewFindings: implFindings(oblId, 1, 1, implDigest1, 'changes_requested'),
+      },
+      s.tc,
+    );
+    expect(r3).not.toContain('INTERNAL_ERROR');
+    state = await readState(se2.sDir);
+    expect(state!.phase).toBe('IMPLEMENTATION');
+    expect(state!.implementationRework).toMatchObject({ exhausted: false });
+
+    // Phase 4: repair D2, re-record (marker cleared), then a FRESH check FAILS:
+    // the machine routes IMPL_VALIDATION → IMPLEMENTATION with the marker STILL
+    // null — the state the /check continuation latch must survive (review-D3).
+    writeFileSync(join(s.worktree, 'src', 'auth.ts'), 'export const auth = () => false;\n');
+    execSync('git add src/auth.ts', { cwd: s.worktree, stdio: 'pipe' });
+    const r4 = await implement.execute({}, se2.tc);
+    expect(r4).not.toContain('INTERNAL_ERROR');
+    state = await readState(se2.sDir);
+    expect(state!.phase).toBe('IMPL_VALIDATION');
+    expect(state!.implementationRework).toBeNull();
+    vi.mocked(executeCheck).mockResolvedValueOnce({
+      kind: 'typecheck',
+      command: 'npx tsc --noEmit',
+      exitCode: 1,
+      passed: false,
+      executionMs: 100,
+      outputDigest: 'c'.repeat(64),
+      stdout: 'src/auth.ts: error TS2322',
+      stderr: '',
+      timedOut: false,
+      startedAt: new Date().toISOString(),
+    });
+    await run_check.execute({ kind: 'typecheck' }, se2.tc);
+    state = await readState(se2.sDir);
+    expect(state!.phase).toBe('IMPLEMENTATION');
+    expect(state!.implementation).toBeNull();
+    expect(state!.implementationRework).toBeNull();
+    expect(state!.implValidation.some((v) => !v.passed)).toBe(true);
+
+    // Phase 5: repair D3 (no new command needed — gate regression covers the
+    // /check scope), re-record, green revalidation, fresh reviewer accepts.
+    writeFileSync(join(s.worktree, 'src', 'auth.ts'), 'export const auth = () => 42;\n');
+    execSync('git add src/auth.ts', { cwd: s.worktree, stdio: 'pipe' });
+    const r5 = await implement.execute({}, se2.tc);
+    expect(r5).not.toContain('INTERNAL_ERROR');
+    await run_check.execute({ kind: 'typecheck' }, s.tc);
+    state = await readState(se2.sDir);
+    expect(state!.phase).toBe('IMPL_REVIEW');
+    const implObligations = state!.reviewAssurance!.obligations.filter(
+      (o) => o.obligationType === 'implement',
+    );
+    const obligation = implObligations.at(-1)!;
+    const scope = obligation.reviewSubjectScope;
+    if (scope.kind !== 'implementation') throw new Error('expected implementation scope');
+    const { oblId: oblIdAccept } = await inject('implement', 'accept', scope.implementationDigest);
+    const r6 = await review_implementation.execute(
+      {
+        reviewVerdict: 'accept',
+        reviewFindings: implFindings(
+          oblIdAccept,
+          obligation.iteration,
+          obligation.planVersion,
+          scope.implementationDigest,
+          'accept',
+        ),
+      },
+      s.tc,
+    );
+    expect(r6).not.toContain('INTERNAL_ERROR');
     state = await readState(se2.sDir);
     expect(state!.phase).toBe('EVIDENCE_REVIEW');
   });

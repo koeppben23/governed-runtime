@@ -29,6 +29,11 @@ import { handleEvent, type EventHandlerDeps } from './plugin-events.js';
 import { appendReviewAuditEventForState } from './review/audit-events.js';
 import { readState } from '../adapters/persistence.js';
 import { buildCompactionContext, type CompactionDeps } from './plugin-compaction.js';
+import {
+  isReviewableFlowGuardTool,
+  updateCheckReworkContinuation,
+} from './plugin-rework-continuation.js';
+export { updateCheckReworkContinuation } from './plugin-rework-continuation.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 import type { SessionEnforcementState } from './review/enforcement/types.js';
 import { handleHostTaskEvidence } from './plugin-task-evidence.js';
@@ -47,14 +52,9 @@ import { resolveSubagentSessionId } from './review/enforcement/extraction.js';
 import type { ToolHookAfterInput, ToolHookAfterOutput } from './types.js';
 import { FG_PREFIX, getToolTraceId, type FlowGuardPluginRuntime } from './plugin-shared.js';
 import {
-  TOOL_FLOWGUARD_PLAN,
-  TOOL_FLOWGUARD_IMPLEMENT,
-  TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
-  TOOL_FLOWGUARD_ARCHITECTURE,
   TOOL_FLOWGUARD_REVIEW,
   TOOL_FLOWGUARD_CONTINUE,
   TOOL_FLOWGUARD_HYDRATE,
-  TOOL_FLOWGUARD_RUN_CHECK,
 } from './tool-names.js';
 import { enforceRiskClassificationAfterBash as enforceRiskAfterBash } from './plugin-risk.js';
 import { enforceDiscoveryHealthAfterBash } from './plugin-discovery-health.js';
@@ -122,6 +122,7 @@ export async function toolAfter(
         sessionId,
         now,
       });
+      await updateCheckReworkContinuation(runtime, toolName, sessionId);
       trackReviewableEnforcement(runtime, afterCtx);
     });
   });
@@ -151,18 +152,6 @@ async function handleAfterDiagnostics(
   if (ctx.toolName === TOOL_FLOWGUARD_HYDRATE)
     logHydrateLockSignal(runtime, ctx.sessionId, ctx.hookOutput);
   if (ctx.toolName === 'task') await handleTaskAfter(runtime, ctx);
-}
-
-function isReviewableFlowGuardTool(toolName: string): boolean {
-  // Stryker disable next-line ConditionalExpression
-  return [
-    TOOL_FLOWGUARD_PLAN,
-    TOOL_FLOWGUARD_IMPLEMENT,
-    TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
-    TOOL_FLOWGUARD_ARCHITECTURE,
-    TOOL_FLOWGUARD_REVIEW,
-    TOOL_FLOWGUARD_RUN_CHECK,
-  ].includes(toolName);
 }
 
 function handleReviewableAfter(runtime: FlowGuardPluginRuntime, ctx: AfterHookContext): void {

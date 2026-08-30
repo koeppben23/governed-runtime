@@ -12,7 +12,12 @@ import { describe, it, expect, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { toolAfter, handlePluginEvent, handleCompaction } from './plugin-afterhooks.js';
+import {
+  toolAfter,
+  handlePluginEvent,
+  handleCompaction,
+  updateCheckReworkContinuation,
+} from './plugin-afterhooks.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import type { AuditDeps } from './plugin-audit.js';
 import type { PluginWorkspace } from './plugin-workspace.js';
@@ -47,6 +52,7 @@ function makeRuntime(
     auditDeps: makeAuditDeps(),
     toolTraceIds: new Map<string, string>(),
     activeCommandScopes: new Map<string, 'check'>(),
+    checkReworkContinuations: new Set<string>(),
     setCurrentSessionId: vi.fn(),
     logError: vi.fn(),
   };
@@ -388,6 +394,70 @@ describe('handleCompaction', () => {
       const output = { context: [] as string[] };
       await handleCompaction(runtime, { sessionID: SESSION_ID }, output);
       expect(output.context.length).toBeGreaterThan(0);
+    } finally {
+      await ws.cleanup();
+    }
+  });
+});
+
+describe('afterhook — /check rework-continuation latch', () => {
+  function activeReworkState() {
+    return makeState('IMPLEMENTATION', {
+      implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+      implementationRework: { rejectedDigest: 'digest-d1', exhausted: false },
+    });
+  }
+
+  it('flips the latch when a /check session commits an active rework marker', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessDir = path.join(ws.tmpDir, 'sess-impl');
+      await writeState(sessDir, activeReworkState());
+      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      runtime.activeCommandScopes.set(SESSION_ID, 'check');
+      await updateCheckReworkContinuation(runtime, 'flowguard_review_implementation', SESSION_ID);
+      expect(runtime.checkReworkContinuations.has(SESSION_ID)).toBe(true);
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('does not flip the latch without a /check scope', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessDir = path.join(ws.tmpDir, 'sess-impl');
+      await writeState(sessDir, activeReworkState());
+      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      await updateCheckReworkContinuation(runtime, 'flowguard_review_implementation', SESSION_ID);
+      expect(runtime.checkReworkContinuations.has(SESSION_ID)).toBe(false);
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('keeps the latch through the loop phases and drops it at a terminal phase', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessDir = path.join(ws.tmpDir, 'sess-impl');
+      await writeState(sessDir, activeReworkState());
+      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      runtime.activeCommandScopes.set(SESSION_ID, 'check');
+      await updateCheckReworkContinuation(runtime, 'flowguard_review_implementation', SESSION_ID);
+      expect(runtime.checkReworkContinuations.has(SESSION_ID)).toBe(true);
+      // Re-record: marker cleared, phase IMPL_VALIDATION — latch must survive.
+      await writeState(
+        sessDir,
+        makeState('IMPL_VALIDATION', {
+          implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+          implementationRework: null,
+        }),
+      );
+      await updateCheckReworkContinuation(runtime, 'flowguard_implement', SESSION_ID);
+      expect(runtime.checkReworkContinuations.has(SESSION_ID)).toBe(true);
+      // Acceptance: loop reaches a terminal phase → latch dropped.
+      await writeState(sessDir, makeState('EVIDENCE_REVIEW'));
+      await updateCheckReworkContinuation(runtime, 'flowguard_review_implementation', SESSION_ID);
+      expect(runtime.checkReworkContinuations.has(SESSION_ID)).toBe(false);
     } finally {
       await ws.cleanup();
     }

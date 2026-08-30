@@ -51,6 +51,7 @@ function makeRuntime(
     auditDeps: makeAuditDeps(null, null),
     toolTraceIds: new Map<string, string>(),
     activeCommandScopes: new Map<string, 'check'>(),
+    checkReworkContinuations: new Set<string>(),
     setCurrentSessionId: vi.fn(),
     logError: vi.fn(),
   };
@@ -517,6 +518,161 @@ describe('toolBefore — command scope', () => {
           { args: { command: 'echo' } },
         ),
       ).resolves.toBeUndefined();
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('allows read/glob/grep during /check with an active non-exhausted rework marker', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessDir = path.join(ws.tmpDir, 'sess-impl');
+      const state = makeState('IMPLEMENTATION', {
+        implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+        implementationRework: { rejectedDigest: 'digest-x', exhausted: false },
+      });
+      await seedSession(sessDir, state);
+      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      runtime.activeCommandScopes.set(SESSION_ID, 'check');
+      for (const tool of ['read', 'glob', 'grep']) {
+        await expect(
+          toolBefore(runtime, { tool, sessionID: SESSION_ID }, { args: {} }),
+        ).resolves.toBeUndefined();
+      }
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('denies read/glob/grep during /check without a rework marker', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessDir = path.join(ws.tmpDir, 'sess-impl');
+      await seedSession(
+        sessDir,
+        makeState('IMPLEMENTATION', {
+          implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+        }),
+      );
+      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      runtime.activeCommandScopes.set(SESSION_ID, 'check');
+      for (const tool of ['read', 'glob', 'grep']) {
+        await expect(
+          toolBefore(runtime, { tool, sessionID: SESSION_ID }, { args: {} }),
+        ).rejects.toThrow('COMMAND_SCOPE_DENIED');
+      }
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('keeps the repair surface unlocked after re-record and a failing fresh check (latch, no marker)', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      // Real-machine outcome D3 from the review: a re-record cleared the active
+      // rework marker (flowguard_implement sets implementationRework to null)
+      // and a fresh check FAILED → IMPLEMENTATION with the marker still null.
+      const sessDir = path.join(ws.tmpDir, 'sess-impl');
+      const postRerecordState = makeState('IMPLEMENTATION', {
+        implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+        implementation: null,
+        implementationRework: null,
+        implValidation: [
+          {
+            checkId: 'test',
+            passed: false,
+            detail: 'Failed (exit 1, 100ms)',
+            executedAt: new Date().toISOString(),
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 1,
+            executionMs: 100,
+            outputDigest: 'b'.repeat(64),
+            timedOut: false,
+            outcome: 'inconclusive' as const,
+          },
+        ],
+      });
+      await seedSession(sessDir, postRerecordState);
+      const runtime = makeRuntime({
+        ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) },
+        auditDeps: makeAuditDeps(sessDir, postRerecordState),
+        riskDeps: { getSessionDir: vi.fn(), getWorktreeRoot: vi.fn(() => ws.tmpDir) },
+        discoveryHealthDeps: { getSessionDir: vi.fn(), getWorkspaceDir: vi.fn(() => ws.tmpDir) },
+      });
+      runtime.activeCommandScopes.set(SESSION_ID, 'check');
+      // The afterhook latched the continuation when it observed the active
+      // rework marker at the changes_requested verdict; it survives re-records.
+      runtime.checkReworkContinuations.add(SESSION_ID);
+      for (const tool of ['read', 'glob', 'grep']) {
+        await expect(
+          toolBefore(runtime, { tool, sessionID: SESSION_ID }, { args: {} }),
+        ).resolves.toBeUndefined();
+      }
+      await expect(
+        toolBefore(runtime, { tool: 'flowguard_implement', sessionID: SESSION_ID }, { args: {} }),
+      ).resolves.toBeUndefined();
+      await expect(
+        toolBefore(
+          runtime,
+          { tool: 'bash', sessionID: SESSION_ID, callID: 'call-bash' },
+          { args: { command: 'echo' } },
+        ),
+      ).resolves.toBeUndefined();
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('denies the repair surface after a failing fresh check when no continuation is latched', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessDir = path.join(ws.tmpDir, 'sess-impl');
+      await seedSession(
+        sessDir,
+        makeState('IMPLEMENTATION', {
+          implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+        }),
+      );
+      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      runtime.activeCommandScopes.set(SESSION_ID, 'check');
+      for (const tool of ['read', 'bash', 'flowguard_implement']) {
+        await expect(
+          toolBefore(
+            runtime,
+            { tool, sessionID: SESSION_ID, callID: `call-${tool}` },
+            { args: {} },
+          ),
+        ).rejects.toThrow('COMMAND_SCOPE_DENIED');
+      }
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('denies the repair surface during /check when the rework budget is exhausted despite the latch', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessDir = path.join(ws.tmpDir, 'sess-impl');
+      await seedSession(
+        sessDir,
+        makeState('IMPLEMENTATION', {
+          implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+          implementationRework: { rejectedDigest: 'digest-x', exhausted: true },
+        }),
+      );
+      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      runtime.activeCommandScopes.set(SESSION_ID, 'check');
+      runtime.checkReworkContinuations.add(SESSION_ID);
+      for (const tool of ['read', 'bash', 'flowguard_implement']) {
+        await expect(
+          toolBefore(
+            runtime,
+            { tool, sessionID: SESSION_ID, callID: `call-${tool}` },
+            { args: {} },
+          ),
+        ).rejects.toThrow('COMMAND_SCOPE_DENIED');
+      }
     } finally {
       await ws.cleanup();
     }

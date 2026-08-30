@@ -263,10 +263,15 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // → status → flowguard_run_check → challenge resolution loop until a terminal
     // verdict, scoped to the verified rework case by the /check command scope
     // (flowguard_resolve_implementation_challenge is referenced from /check).
-    // Changes the /check body and therefore the COMMANDS hash.
+    // Refreshed again for the full loop: read/glob/grep are part of the repair
+    // surface, and the continuation is keyed to "this /check already recorded a
+    // changes_requested verdict" — not to the persisted marker (which a re-record
+    // clears) — so a failing FRESH check after re-record still continues the loop
+    // instead of stopping for a manual /implement hand-off. Changes the /check
+    // body and therefore the COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'f73a381c9afec3ce076493ae56ce94dd92482332cfff5e0e868f29875c72e97c',
+      'ae54e440c2e79c35da5d8b5a576d48ce9856eece013a92b4937b93cedb7ce6ec',
     );
   });
 
