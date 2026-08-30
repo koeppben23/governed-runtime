@@ -75,8 +75,8 @@ ${DISCOVERY_REVIEW_CAPTURE}
 ### Phase 5: Implementation Review Loop
 
 7. Read the \`next\` field from the tool response and follow its instructions exactly:
-   - Before submitting the reviewer verdict, optionally record each addressed prior implementation
-     challenge with \`flowguard_resolve_implementation_challenge({ challengeId, validationAttemptIds })\`.
+   - If prior failing implementation challenges are open, before invoking the reviewer Task you MUST
+     record each one with \`flowguard_resolve_implementation_challenge({ challengeId, validationAttemptIds })\`.
      Use only post-implementation validation attempt IDs for the current digest. This is advisory
      \`NOT_VERIFIED\` evidence and never changes reviewer acceptance or the user gate.
 ${SHARED_REVIEW_LOOP({
@@ -85,7 +85,8 @@ ${SHARED_REVIEW_LOOP({
   artifactName: 'implementation',
   reviseParams: '',
   changesRequestedExtra:
-    '\n       Then make the code changes based on blockingIssues, then call flowguard_implement({}) again to re-record.',
+    '\n         Then run the repair-recheck cycle: make the code changes based on blockingIssues, call flowguard_implement({}) again to re-record (advances to IMPL_VALIDATION), execute the post-recording checks again (validation auto-chain), record resolutions for any open implementation challenges (first bullet of step 7), then continue the review loop automatically from step 7.',
+  changesRequestedVerdictFirst: true,
   strictRecoveryCall: 'flowguard_implement({})',
   strictRecoveryVerb: 'Re-record',
   strictRecoveryNoun: 're-recordings',
@@ -99,6 +100,7 @@ ${SHARED_REVIEW_LOOP({
   unableRecoveryB:
     'record substantially-new implementation evidence (new flowguard_implement({}) call after additional code changes, which starts a fresh review obligation)',
 })}
+   - The changes_requested branch is an INTERNAL continuation, not a terminal result: FlowGuard returns no presentation card while the review loop is still active. Never render an intermediate outcome as final, and never stop for user input between iterations. Only the loop's terminal responses — converged acceptance (EVIDENCE_REVIEW), exhausted budget (user extension decision), or a BLOCKED code — end the loop and carry a presentation card to display verbatim.
 
 ## Rules
 

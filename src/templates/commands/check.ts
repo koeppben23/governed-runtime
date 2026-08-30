@@ -28,7 +28,10 @@ Run automated verification checks for the current implementation.
       1. Invoke the \`${REVIEWER_SUBAGENT_TYPE}\` via the Task tool. When FlowGuard provides a \`reviewerTaskPrompt\`, call Task only with \`subagent_type: "${REVIEWER_SUBAGENT_TYPE}"\`; FlowGuard injects the canonical host-issued prompt at the Task boundary. Do not append or modify reviewer instructions. Otherwise give the reviewer the implementation diff, executed verification evidence, and the response's \`requiredReviewAttestation\`. The reviewer MUST NOT call FlowGuard tools and MUST return its structured verdict.
       2. If the Task returns a structured verdict, call \`flowguard_review_implementation({ reviewVerdict })\` with only that verdict. Do not submit, copy, or fabricate \`reviewFindings\`; the host-task plugin binds the reviewer evidence.
       3. If the Task cannot spawn the reviewer, follow the policy-specific recovery in the FlowGuard response: required stops blocked; preferred reports the actual transport failure with \`flowguard_review_implementation({ reviewerUnavailable: true })\` only, without a verdict or findings, so FlowGuard can use the configured SDK transport. Never fabricate findings or make the subsequent human approval decision.
-      4. Present the returned review card or recovery. Never make the subsequent human approval decision.
+      4. After submitting the verdict, follow the response's \`next\`:
+         - \`accept\`: the review converged. Present the returned review card. Never make the subsequent human approval decision.
+         - \`changes_requested\`: the review has NOT converged — FlowGuard routes back to IMPLEMENTATION and intentionally returns no intermediate presentation card (repair + re-record + validation + challenge resolution happen in an explicit \`/implement\` continuation). Report that the implementation requires repair and STOP; do not render the negative verdict as a completion, do not retry the review on unchanged evidence, and do not call \`flowguard_implement\` from /check.
+         - \`unable_to_review\` or any BLOCKED code: surface the recovery steps from the FlowGuard response and stop. Never retry the review on the same evidence.
 5. Report which checks passed, which failed, and whether the workflow can proceed.
 ${GOVERNANCE_RULES}
 ## Done-when

@@ -26,6 +26,7 @@ import {
   TOOL_FLOWGUARD_TICKET,
   TOOL_FLOWGUARD_PLAN,
   TOOL_FLOWGUARD_DECISION,
+  TOOL_FLOWGUARD_EXTEND_IMPLEMENTATION_REVIEW,
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
   TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
@@ -46,7 +47,7 @@ function sha256(value: string): string {
 describe('TEMPLATE_HASH_STABILITY', () => {
   it('TOOL_WRAPPER matches compiled output hash', () => {
     expect(sha256(TOOL_WRAPPER)).toBe(
-      '6b1a341a02d156b727d8a36be5bd8a3846c045c6f6794c317589b746751081aa',
+      '2832703d740a9a77afeb0f81fa145ae48d9a8e4e55d6edaf31dc176d18dc5e29',
     );
   });
 
@@ -249,13 +250,21 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // instruction no longer asks the agent to supply ADR/ticket text (the host
     // injects the canonical prompt); re-runs route to output repair or review
     // orchestration restart.
+    // Refreshed for auto-continuation review loops: shared-review-loop now
+    // instructs agents to CONTINUE AUTOMATICALLY between iterations instead of
+    // "Repeat from step X" and records the implement reviewer's negative verdict
+    // FIRST (changesRequestedVerdictFirst) before any edits. /implement documents
+    // that changes_requested is an INTERNAL continuation with no intermediate
+    // presentation card. /check branches the IMPL_REVIEW outcome (accept /
+    // changes_requested / blocked) and no longer treats a negative verdict as
+    // completion. Changes the command bodies and therefore the COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '26d982d7359f9ade2b517214129f9da2bad08d14d267131a12380c20a0964f47',
+      '35350936c4b81ebb76bd8ccd3af8cf747b990b2ebd5165d0a2c427ea04372c57',
     );
   });
 
-  it('all 25 commands present', () => {
+  it('all 26 commands present', () => {
     const expected = [
       'abort.md',
       'approve.md',
@@ -265,6 +274,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
       'commands.md',
       'continue.md',
       'export.md',
+      'extend-implementation-review.md',
       'finish.md',
       'help.md',
       'hydrate.md',
@@ -300,6 +310,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
       TOOL_FLOWGUARD_TICKET,
       TOOL_FLOWGUARD_PLAN,
       TOOL_FLOWGUARD_DECISION,
+      TOOL_FLOWGUARD_EXTEND_IMPLEMENTATION_REVIEW,
       TOOL_FLOWGUARD_IMPLEMENT,
       TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
       TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
