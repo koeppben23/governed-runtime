@@ -66,31 +66,24 @@ async function hooksMarker(hooksDir: string): Promise<string> {
   const parts: string[] = [];
   for (const name of names) {
     const full = path.join(hooksDir, name);
-    // Content AND permission bits are read through the SAME opened handle
-    // (open → fstat/readFile): no stat-then-read race, and the executable
-    // bits are git hook AUTHORITY — git ignores non-executable hooks, so a
-    // chmod +x changes repository behavior without changing content.
-    let handle: fs.FileHandle;
+    // Content is read FIRST, then the permission bits: a directory read fails
+    // with EISDIR on every platform (never a silent mislabel), and the
+    // permission bits are git hook AUTHORITY — git ignores non-executable
+    // hooks, so a bare chmod +x changes repository behavior without changing
+    // content. The (content, mode) pair is settled before the record-time
+    // comparison re-reads it, so a persistent mode change still diverges the
+    // marker fail-closed.
     try {
-      handle = await fs.open(full, 'r');
-    } catch (err) {
-      // Directory entries (POSIX opens directories; Windows fails with
-      // EISDIR) and unreadable entries get a stable placeholder.
-      parts.push(isEisDirError(err) ? `${name}:dir` : `${name}:missing`);
-      continue;
-    }
-    try {
-      const stat = await handle.stat();
+      const content = await fs.readFile(full, 'utf8');
+      const stat = await fs.stat(full);
       if (stat.isDirectory()) {
         parts.push(`${name}:dir`);
         continue;
       }
       const mode = (stat.mode & 0o777).toString(8);
-      parts.push(`${name}:${mode}:${sha256Text(await handle.readFile('utf8'))}`);
-    } catch {
-      parts.push(`${name}:missing`);
-    } finally {
-      await handle.close();
+      parts.push(`${name}:${mode}:${sha256Text(content)}`);
+    } catch (err) {
+      parts.push(isEisDirError(err) ? `${name}:dir` : `${name}:missing`);
     }
   }
   return parts.join(',');
