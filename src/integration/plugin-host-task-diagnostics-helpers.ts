@@ -123,7 +123,14 @@ export function pendingObligation(overrides: Partial<ReviewObligation> = {}): Re
       '# Diagnostics\nBody',
       'diagnostics-test-subject',
     ),
-    changedFiles: ['src/foo.ts'],
+    changedFiles: ['docs/test.md'],
+    policySnapshot: {
+      challengePolicy: {
+        version: 'challenge-policy.v1',
+        counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+      },
+      maxReviewerOutputRepairAttempts: 1,
+    },
     repositoryAuthority: {
       kind: 'context',
       context: {

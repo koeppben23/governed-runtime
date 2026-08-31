@@ -37,7 +37,8 @@ function obligation(): ReviewObligation {
       revisions: ['base', 'head'],
     },
     requiredChallengeCount: 1,
-    requiredChallengeKind: 'implementation_challenge',
+    requiredChallengeKind: 'implementation_challenge' as const,
+    challengePolicyVersion: 'challenge-policy.v1' as const,
   };
 }
 

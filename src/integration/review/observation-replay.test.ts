@@ -51,6 +51,13 @@ function git(args: string[], cwd = repo): string {
 
 function buildState(): SessionState {
   const obligation = createReviewObligation({
+    policySnapshot: {
+      challengePolicy: {
+        version: 'challenge-policy.v1',
+        counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+      },
+      maxReviewerOutputRepairAttempts: 1,
+    },
     obligationType: 'implement',
     iteration: 0,
     planVersion: 1,

@@ -85,6 +85,9 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
         {
           obligationId: OBLIGATION_ID,
           obligationType: 'plan',
+          requiredChallengeCount: 0,
+          requiredChallengeKind: 'design_challenge',
+          challengePolicyVersion: 'challenge-policy.v1',
           subjectDigest: 'test-subject-digest',
           iteration: 2,
           planVersion: 3,

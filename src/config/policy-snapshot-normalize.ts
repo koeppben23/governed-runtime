@@ -46,7 +46,11 @@ import { normalizeCoreFields } from './policy-snapshot-core-normalize.js';
  *
  * @internal Used by resolvePolicyFromSnapshot in policy-snapshot.ts.
  */
-export function normalizeSelfReviewConfig(value: unknown): SelfReviewConfig {
+export function normalizeSelfReviewConfig(value: unknown): {
+  subagentEnabled: true;
+  fallbackToSelf: false;
+  strictEnforcement: true;
+} {
   if (value === null || typeof value !== 'object') {
     getAdapterLogger().warn(
       'policy',

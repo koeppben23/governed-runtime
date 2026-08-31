@@ -352,7 +352,7 @@ async function prepareBoundUnableReview(se: SE, implementationDigest: string) {
     policySnapshot: {
       ...makeState('IMPL_REVIEW').policySnapshot,
       reviewInvocationPolicy: 'host_task_required',
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
     },
   });
   await writeStateWithArtifacts(se.sDir, base);

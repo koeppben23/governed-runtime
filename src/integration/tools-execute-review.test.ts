@@ -453,7 +453,7 @@ describe('P34a: Policy-Driven Branches', () => {
       ...state!,
       policySnapshot: {
         ...state!.policySnapshot,
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
     });
 
@@ -479,7 +479,7 @@ describe('P34a: Policy-Driven Branches', () => {
       ...state!,
       policySnapshot: {
         ...state!.policySnapshot,
-        selfReview: { subagentEnabled: true, fallbackToSelf: true, strictEnforcement: false },
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
     });
 
@@ -507,7 +507,7 @@ describe('P34a: Policy-Driven Branches', () => {
       ...state!,
       policySnapshot: {
         ...state!.policySnapshot,
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
     });
 
@@ -535,7 +535,7 @@ describe('P34a: Policy-Driven Branches', () => {
       ...state!,
       policySnapshot: {
         ...state!.policySnapshot,
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
     });
 
@@ -560,7 +560,7 @@ describe('P34a: Policy-Driven Branches', () => {
       ...state!,
       policySnapshot: {
         ...state!.policySnapshot,
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
     });
 

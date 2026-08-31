@@ -66,6 +66,13 @@ describe('review orchestration mode projection', () => {
 describe('pending review instruction renderer', () => {
   it('states external agents are transport only and includes binding envelope', () => {
     const obligation = createReviewObligation({
+      policySnapshot: {
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
+        maxReviewerOutputRepairAttempts: 1,
+      },
       obligationType: 'plan',
       repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
       iteration: 0,

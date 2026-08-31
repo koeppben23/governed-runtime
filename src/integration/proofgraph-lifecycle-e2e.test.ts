@@ -1028,6 +1028,9 @@ describe('ProofGraph materialization and gate (runtime)', () => {
           {
             obligationId,
             obligationType: 'plan' as const,
+            requiredChallengeCount: 0,
+            requiredChallengeKind: 'design_challenge' as const,
+            challengePolicyVersion: 'challenge-policy.v1' as const,
             subjectDigest: 'plan-digest',
             claimDeclarationsDigest: hashText(
               canonicalJsonStringify({ flow: 'plan', version: 'v2', claims: [CRITICAL_CLAIM] }),
@@ -1044,7 +1047,6 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             blockedCode: null,
             fulfilledAt: FIXED_TIME,
             consumedAt: null,
-            requiredChallengeCount: undefined,
             reviewSubjectScope: { kind: 'unavailable', reason: 'no changed files available' },
           },
         ],

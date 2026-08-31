@@ -61,6 +61,13 @@ function candidateObligation(
   obligationType: 'plan' | 'implement' = 'implement',
 ): ReviewObligation {
   return createReviewObligation({
+    policySnapshot: {
+      challengePolicy: {
+        version: 'challenge-policy.v1',
+        counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+      },
+      maxReviewerOutputRepairAttempts: 1,
+    },
     obligationType,
     iteration: 0,
     planVersion: 1,
@@ -73,7 +80,7 @@ function candidateObligation(
       : {
           reviewSubjectScope: { kind: 'implementation', implementationDigest: 'impl-digest' },
         }),
-    changedFiles: ['src/foo.ts'],
+    changedFiles: ['docs/test.md'],
     repositoryAuthority: {
       kind: 'candidate_pair',
       base: { kind: 'commit', repositoryIdentity: UPSTREAM, objectSha: BASE_SHA },

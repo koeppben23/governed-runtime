@@ -65,7 +65,7 @@ function makeWarningState(): SessionState {
         subagentEnabled: false,
         fallbackToSelf: true,
         strictEnforcement: false,
-      },
+      } as never,
     },
   } as SessionState;
 }
@@ -148,14 +148,16 @@ describe('deriveFinishOverallStatus — overall status matrix', () => {
 
   it('non-terminal phase stays IN_PROGRESS even with warnings', () => {
     const state = makeProgressedState('PLAN');
+    // Legacy-shaped in-memory injection for runtime-projection robustness;
+    // the persisted schema no longer admits weakened selfReview.
     state.policySnapshot = {
       ...state.policySnapshot,
       selfReview: {
         subagentEnabled: false,
         fallbackToSelf: true,
         strictEnforcement: false,
-      },
-    };
+      } as never,
+    } as typeof state.policySnapshot;
     const card = buildFinishCard(state, policy);
     expect(card.readiness.warnings.length).toBeGreaterThan(0);
     expect(card.overallStatus).toBe('IN_PROGRESS');

@@ -52,6 +52,13 @@ describe('external review transport evidence binding', () => {
     await mkdir(join(sessDir, 'review-evidence'));
     await writeFile(join(sessDir, 'review-evidence', 'bad.json'), '{"not":"findings"}', 'utf-8');
     const obligation = createReviewObligation({
+      policySnapshot: {
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
+        maxReviewerOutputRepairAttempts: 1,
+      },
       obligationType: 'plan',
       repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
       iteration: 0,
@@ -83,6 +90,13 @@ describe('external review transport evidence binding', () => {
     const sessDir = await mkdtemp(join(tmpdir(), 'fg-review-evidence-'));
     await mkdir(join(sessDir, 'review-evidence'));
     const obligation = createReviewObligation({
+      policySnapshot: {
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
+        maxReviewerOutputRepairAttempts: 1,
+      },
       obligationType: 'plan',
       repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
       iteration: 0,
@@ -119,6 +133,13 @@ describe('external review transport evidence binding', () => {
     const sessDir = await mkdtemp(join(tmpdir(), 'fg-review-evidence-'));
     await mkdir(join(sessDir, 'review-evidence'));
     const obligation = createReviewObligation({
+      policySnapshot: {
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
+        maxReviewerOutputRepairAttempts: 1,
+      },
       obligationType: 'plan',
       repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
       iteration: 0,
@@ -164,6 +185,13 @@ describe('external review transport evidence binding', () => {
     const sessDir = await mkdtemp(join(tmpdir(), 'fg-review-evidence-'));
     await mkdir(join(sessDir, 'review-evidence'));
     const obligation = createReviewObligation({
+      policySnapshot: {
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
+        maxReviewerOutputRepairAttempts: 1,
+      },
       obligationType: 'plan',
       repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
       iteration: 0,
@@ -203,6 +231,13 @@ describe('external review transport evidence binding', () => {
     const sessDir = await mkdtemp(join(tmpdir(), 'fg-review-evidence-'));
     await mkdir(join(sessDir, 'review-evidence'));
     const obligation = createReviewObligation({
+      policySnapshot: {
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
+        maxReviewerOutputRepairAttempts: 1,
+      },
       obligationType: 'plan',
       repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
       iteration: 0,

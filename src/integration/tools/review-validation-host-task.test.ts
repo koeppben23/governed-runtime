@@ -156,7 +156,7 @@ describe('resolveHostTaskFindings', () => {
     const obligation = makeObligation({
       obligationType: 'implement',
       requiredChallengeCount: 1,
-      requiredChallengeKind: 'implementation_challenge',
+      requiredChallengeKind: 'implementation_challenge' as const,
     });
     const assurance = {
       assuranceSchemaVersion: 'review-assurance.v6' as const,
@@ -1057,6 +1057,7 @@ describe('resolveHostTaskEffectiveFindings — directly-submitted challenge fres
       consumedAt: null,
       requiredChallengeCount: 1,
       requiredChallengeKind: 'implementation_challenge' as const,
+      challengePolicyVersion: 'challenge-policy.v1' as const,
       reviewSubjectScope: {
         kind: 'repository_change',
         paths: ['src/foo.ts'],

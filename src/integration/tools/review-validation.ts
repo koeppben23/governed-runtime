@@ -252,7 +252,7 @@ export function validateReviewFindings(
 
   const challengeConsistency = validateChallengeConsistency({
     overallVerdict: findings.overallVerdict,
-    requiredChallengeCount: obligation?.requiredChallengeCount,
+    requiredChallengeCount: obligation?.requiredChallengeCount ?? 0,
     requiredChallengeKind: obligation?.requiredChallengeKind ?? 'implementation_challenge',
     challenges: findings.challenges,
     expectedObligationId: ctx.expectedObligationId ?? obligation?.obligationId,

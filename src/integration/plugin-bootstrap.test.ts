@@ -121,6 +121,9 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
           {
             obligationId,
             obligationType: 'plan',
+            requiredChallengeCount: 0,
+            requiredChallengeKind: 'design_challenge',
+            challengePolicyVersion: 'challenge-policy.v1',
             subjectDigest: 'test-subject-digest',
             iteration: 0,
             planVersion: 1,

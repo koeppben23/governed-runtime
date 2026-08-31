@@ -713,6 +713,13 @@ describe('status', () => {
       if (!current) throw new Error('expected hydrated state');
 
       const obligation = createReviewObligation({
+        policySnapshot: {
+          challengePolicy: {
+            version: 'challenge-policy.v1',
+            counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+          },
+          maxReviewerOutputRepairAttempts: 1,
+        },
         obligationType: 'architecture',
         iteration: 0,
         planVersion: 1,

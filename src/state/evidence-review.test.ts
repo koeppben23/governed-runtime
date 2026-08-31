@@ -374,6 +374,9 @@ describe('evidence-review', () => {
       return {
         obligationId: FIXED_UUID,
         obligationType: 'review' as const,
+        requiredChallengeCount: 0,
+        requiredChallengeKind: 'content_challenge' as const,
+        challengePolicyVersion: 'challenge-policy.v1' as const,
         subjectDigest: 'a'.repeat(64),
         iteration: 0,
         planVersion: 1,
@@ -427,6 +430,9 @@ describe('evidence-review', () => {
       const obligation = {
         obligationId: FIXED_UUID,
         obligationType: 'plan' as const,
+        requiredChallengeCount: 0,
+        requiredChallengeKind: 'design_challenge' as const,
+        challengePolicyVersion: 'challenge-policy.v1' as const,
         subjectDigest: 'a'.repeat(64),
         iteration: 0,
         planVersion: 1,
@@ -514,6 +520,9 @@ describe('evidence-review', () => {
           },
         },
         maxReviewerOutputRepairAttempts: 1,
+        requiredChallengeCount: 0,
+        requiredChallengeKind: 'design_challenge' as const,
+        challengePolicyVersion: 'challenge-policy.v1' as const,
         repositoryAuthority: {
           kind: 'context' as const,
           context: {
@@ -1116,6 +1125,9 @@ describe('evidence-review', () => {
       const obligation = {
         obligationId: FIXED_UUID,
         obligationType: 'review' as const,
+        requiredChallengeCount: 0,
+        requiredChallengeKind: 'content_challenge' as const,
+        challengePolicyVersion: 'challenge-policy.v1' as const,
         subjectDigest: 'a'.repeat(64),
         iteration: 0,
         planVersion: 1,
@@ -1237,6 +1249,9 @@ describe('evidence-review', () => {
       const obligation = {
         obligationId: FIXED_UUID,
         obligationType: 'plan' as const,
+        requiredChallengeCount: 0,
+        requiredChallengeKind: 'design_challenge' as const,
+        challengePolicyVersion: 'challenge-policy.v1' as const,
         subjectDigest: 'sha256-subject',
         iteration: 0,
         planVersion: 1,
@@ -1269,6 +1284,9 @@ describe('evidence-review', () => {
       const legacy = {
         obligationId: FIXED_UUID,
         obligationType: 'plan' as const,
+        requiredChallengeCount: 0,
+        requiredChallengeKind: 'design_challenge' as const,
+        challengePolicyVersion: 'challenge-policy.v1' as const,
         subjectDigest: 'sha256-subject',
         iteration: 0,
         planVersion: 1,
@@ -1304,6 +1322,9 @@ describe('Implementation subject scope coherence (schema refinement)', () => {
     return {
       obligationId: FIXED_UUID,
       obligationType: 'implement' as const,
+      requiredChallengeCount: 0,
+      requiredChallengeKind: 'implementation_challenge' as const,
+      challengePolicyVersion: 'challenge-policy.v1' as const,
       subjectDigest: 'a'.repeat(64),
       iteration: 1,
       planVersion: 1,

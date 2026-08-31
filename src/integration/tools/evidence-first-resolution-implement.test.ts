@@ -322,6 +322,9 @@ function implStateWithEvidence(
         {
           obligationId: OBLIGATION_ID,
           obligationType: 'implement',
+          requiredChallengeCount: 0,
+          requiredChallengeKind: 'implementation_challenge' as const,
+          challengePolicyVersion: 'challenge-policy.v1' as const,
           subjectDigest: 'test-subject-digest',
           iteration: 1,
           planVersion: 1,
@@ -648,6 +651,9 @@ describe('BUG-17: implement evidence-first resolution', () => {
           {
             obligationId: OBLIGATION_ID,
             obligationType: 'implement',
+            requiredChallengeCount: 0,
+            requiredChallengeKind: 'implementation_challenge' as const,
+            challengePolicyVersion: 'challenge-policy.v1' as const,
             subjectDigest: 'test-subject-digest',
             iteration: 1,
             planVersion: 1,

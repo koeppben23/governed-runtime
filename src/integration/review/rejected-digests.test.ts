@@ -17,6 +17,9 @@ function implementObligation(id: string, digest: string): ReviewObligation {
   return {
     obligationId: id,
     obligationType: 'implement',
+    requiredChallengeCount: 0,
+    requiredChallengeKind: 'implementation_challenge',
+    challengePolicyVersion: 'challenge-policy.v1',
     iteration: 1,
     planVersion: 1,
     criteriaVersion: 'criteria-v1',
@@ -39,6 +42,9 @@ function planObligation(id: string, digest: string): ReviewObligation {
   return {
     obligationId: id,
     obligationType: 'plan',
+    requiredChallengeCount: 0,
+    requiredChallengeKind: 'design_challenge',
+    challengePolicyVersion: 'challenge-policy.v1',
     iteration: 0,
     planVersion: 1,
     criteriaVersion: 'criteria-v1',

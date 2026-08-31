@@ -113,10 +113,10 @@ export function challengeKindForObligation(obligationType: string): ChallengeKin
 }
 
 /** Mandatory independent review configuration for FlowGuardPolicy. */
-export const DEFAULT_SELF_REVIEW_CONFIG: SelfReviewConfig = {
-  subagentEnabled: true,
-  fallbackToSelf: false,
-  strictEnforcement: true,
+export const DEFAULT_SELF_REVIEW_CONFIG = {
+  subagentEnabled: true as const,
+  fallbackToSelf: false as const,
+  strictEnforcement: true as const,
 };
 
 /**

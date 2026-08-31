@@ -111,13 +111,14 @@ export const PolicySnapshotSchema = z
     identityProviderMode: z.enum(['optional', 'required']),
     /**
      * Self-review configuration for independent review.
-     * Frozen at hydrate time. REQUIRED — the strict subagent-review
-     * configuration is persisted explicitly, never reconstructed on read.
+     * Frozen at hydrate time. REQUIRED, and — Hard Assurance Epoch — the ONLY
+     * current-contract-valid shape is the mandatory strict subagent review;
+     * anything else fails parsing instead of being re-normalized at runtime.
      */
     selfReview: z.object({
-      subagentEnabled: z.boolean(),
-      fallbackToSelf: z.boolean(),
-      strictEnforcement: z.boolean(),
+      subagentEnabled: z.literal(true),
+      fallbackToSelf: z.literal(false),
+      strictEnforcement: z.literal(true),
     }),
     /** Frozen review output policy for structured vs text-compatible evidence. */
     reviewOutputPolicy: z.enum(['structured_required', 'text_compat_allowed']),

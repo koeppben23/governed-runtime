@@ -417,13 +417,15 @@ export const ReviewObligation = z
     reviewProfile: ReviewProfile.optional(),
     /** Provenance of the frozen review profile (see ReviewProfileSource). */
     profileSource: ReviewProfileSource.optional(),
-    /** Challenge coverage frozen from the runtime-computed minimum task class. */
-    requiredChallengeCount: z.number().int().min(0).max(2).optional(),
+    /** Challenge coverage frozen from the runtime-computed minimum task class. REQUIRED — 0 is the explicit TRIVIAL value, never an implicit no-policy state. */
+    requiredChallengeCount: z.number().int().min(0).max(2),
     /** The sole challenge evidence kind required for this obligation. */
-    requiredChallengeKind: z
-      .enum(['design_challenge', 'implementation_challenge', 'content_challenge'])
-      .optional(),
-    challengePolicyVersion: z.literal('challenge-policy.v1').optional(),
+    requiredChallengeKind: z.enum([
+      'design_challenge',
+      'implementation_challenge',
+      'content_challenge',
+    ]),
+    challengePolicyVersion: z.literal('challenge-policy.v1'),
     /**
      * Digest of the subject artifact (plan, implementation, or reviewed content)
      * frozen at obligation creation. This is the host-authoritative identity of

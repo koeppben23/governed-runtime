@@ -65,7 +65,7 @@ function buildState(strictEnforcement: boolean): SessionState {
         subagentEnabled: true,
         fallbackToSelf: false,
         strictEnforcement,
-      },
+      } as never,
       reviewOutputPolicy: 'structured_required',
     },
     reviewAssurance: {
@@ -74,6 +74,9 @@ function buildState(strictEnforcement: boolean): SessionState {
         {
           obligationId: OBLIGATION_ID,
           obligationType: 'plan',
+          requiredChallengeCount: 0,
+          requiredChallengeKind: 'design_challenge',
+          challengePolicyVersion: 'challenge-policy.v1',
           subjectDigest: 'test-subject-digest',
           iteration: 1,
           planVersion: 1,
@@ -111,7 +114,7 @@ function buildAlreadyBlockedState(): SessionState {
         subagentEnabled: true,
         fallbackToSelf: false,
         strictEnforcement: false,
-      },
+      } as never,
       reviewOutputPolicy: 'structured_required',
     },
     reviewAssurance: {
@@ -120,6 +123,9 @@ function buildAlreadyBlockedState(): SessionState {
         {
           obligationId: OBLIGATION_ID,
           obligationType: 'plan',
+          requiredChallengeCount: 0,
+          requiredChallengeKind: 'design_challenge',
+          challengePolicyVersion: 'challenge-policy.v1',
           subjectDigest: 'test-subject-digest',
           iteration: 1,
           planVersion: 1,
@@ -440,7 +446,7 @@ describe('BUG-07: obligation blocked after total invocation failure', () => {
             subagentEnabled: true,
             fallbackToSelf: false,
             strictEnforcement: false,
-          },
+          } as never,
           reviewOutputPolicy: 'structured_required',
           reviewInvocationPolicy: 'host_task_required',
         },
@@ -450,6 +456,9 @@ describe('BUG-07: obligation blocked after total invocation failure', () => {
             {
               obligationId: OBLIGATION_ID,
               obligationType: 'plan',
+              requiredChallengeCount: 0,
+              requiredChallengeKind: 'design_challenge',
+              challengePolicyVersion: 'challenge-policy.v1',
               subjectDigest: 'test-subject-digest',
               iteration: 1,
               planVersion: 1,

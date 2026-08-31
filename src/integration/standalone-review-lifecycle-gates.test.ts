@@ -24,6 +24,13 @@ const TASK_B = '00000000-0000-4000-8000-00000000000d';
 function obligation(id: string): ReturnType<typeof createReviewObligation> {
   return {
     ...createReviewObligation({
+      policySnapshot: {
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
+        maxReviewerOutputRepairAttempts: 1,
+      },
       obligationType: 'review',
       iteration: 1,
       planVersion: 1,

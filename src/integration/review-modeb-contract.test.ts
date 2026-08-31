@@ -207,6 +207,13 @@ describe('plan / architecture Mode-B review contract', () => {
 
         const obl = {
           ...createReviewObligation({
+            policySnapshot: {
+              challengePolicy: {
+                version: 'challenge-policy.v1',
+                counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+              },
+              maxReviewerOutputRepairAttempts: 1,
+            },
             obligationType: 'plan',
             repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
             iteration: 0,
@@ -214,7 +221,7 @@ describe('plan / architecture Mode-B review contract', () => {
             now: NOW(),
             subjectDigest: 'test',
             reviewSubjectScope: artifactReviewSubjectScope('plan', '# Plan\nBody', 'test'),
-            changedFiles: ['src/foo.ts'],
+            changedFiles: ['docs/test.md'],
           }),
           reviewMaterial: {
             content: REVIEW_MATERIAL_CONTENT,
@@ -257,6 +264,13 @@ describe('plan / architecture Mode-B review contract', () => {
 
         const obl = {
           ...createReviewObligation({
+            policySnapshot: {
+              challengePolicy: {
+                version: 'challenge-policy.v1',
+                counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+              },
+              maxReviewerOutputRepairAttempts: 1,
+            },
             obligationType: 'architecture',
             repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
             iteration: 0,
@@ -268,7 +282,7 @@ describe('plan / architecture Mode-B review contract', () => {
               '## Context\nC\n## Decision\nD',
               'test',
             ),
-            changedFiles: ['src/foo.ts'],
+            changedFiles: ['docs/test.md'],
           }),
           reviewMaterial: {
             content: REVIEW_MATERIAL_CONTENT,

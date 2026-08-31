@@ -295,7 +295,7 @@ describe('integration/review-assurance', () => {
         expect(result).toMatchObject({
           requiredChallengeCount,
           requiredChallengeKind,
-          challengePolicyVersion: 'challenge-policy.v1',
+          challengePolicyVersion: 'challenge-policy.v1' as const,
         });
       },
     );
@@ -384,9 +384,11 @@ describe('integration/review-assurance', () => {
         reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
         policySnapshot: { maxReviewerOutputRepairAttempts: 1 },
       });
-      expect(result.requiredChallengeCount).toBeUndefined();
-      expect(result.requiredChallengeKind).toBeUndefined();
-      expect(result.challengePolicyVersion).toBeUndefined();
+      // Hard Assurance Epoch: the mint always freezes the canonical challenge
+      // matrix (writer-side default), never an implicit no-policy state.
+      expect(result.requiredChallengeCount).toBe(2);
+      expect(result.requiredChallengeKind).toBe('implementation_challenge');
+      expect(result.challengePolicyVersion).toBe('challenge-policy.v1');
     });
 
     it('creates p41 obligations without rewriting prior attestation values', () => {

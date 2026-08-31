@@ -22,10 +22,10 @@ import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
 export interface ChallengeConsistencyInput {
   readonly overallVerdict: 'accept' | 'changes_requested' | 'unable_to_review';
   /**
-   * Frozen challenge requirement. Undefined is the legacy no-policy state;
-   * an explicit zero requires that the reviewer omit challenges.
+   * Frozen challenge requirement. REQUIRED in the Hard Assurance Epoch:
+   * 0 is the explicit TRIVIAL value; there is no undefined no-policy state.
    */
-  readonly requiredChallengeCount: number | undefined;
+  readonly requiredChallengeCount: number;
   readonly requiredChallengeKind:
     'design_challenge' | 'implementation_challenge' | 'content_challenge';
   readonly challenges:
@@ -83,7 +83,7 @@ function hasValidationAttemptReference(challenge: Challenge): boolean {
   );
 }
 
-// eslint-disable-next-line complexity, max-lines-per-function -- explicit fail-closed challenge checks
+// eslint-disable-next-line complexity -- explicit fail-closed challenge checks
 function validateChallenge(
   input: ChallengeConsistencyInput,
   challenge: Challenge,
@@ -99,11 +99,7 @@ function validateChallenge(
       details: { kind: challenge.kind, reason: 'obligation_mismatch' },
     };
   }
-  if (
-    input.requiredChallengeCount !== undefined &&
-    input.requiredChallengeCount > 0 &&
-    challenge.kind !== input.requiredChallengeKind
-  ) {
+  if (input.requiredChallengeCount > 0 && challenge.kind !== input.requiredChallengeKind) {
     return {
       ok: false,
       code: 'SUBAGENT_CHALLENGE_KIND_INCOHERENT',
@@ -178,10 +174,7 @@ export function validateChallengeConsistency(
   if (input.overallVerdict === 'unable_to_review') {
     return validateChallengeCountFlexible(input, challenges);
   }
-  if (
-    input.requiredChallengeCount !== undefined &&
-    challenges.length !== input.requiredChallengeCount
-  ) {
+  if (challenges.length !== input.requiredChallengeCount) {
     return {
       ok: false,
       code: 'SUBAGENT_CHALLENGE_COUNT_INCOHERENT',

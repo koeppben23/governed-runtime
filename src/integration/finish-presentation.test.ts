@@ -64,14 +64,12 @@ describe('golden fixtures for /finish', () => {
   });
 
   it('finish-ready-with-warnings matches golden output', async () => {
-    const warnSnapshot = createPolicySnapshot(
-      {
-        ...getPolicyPreset('solo'),
-        selfReview: { subagentEnabled: false, fallbackToSelf: true, strictEnforcement: false },
-      } as any,
-      '2026-01-01T00:00:00.000Z',
-      hashText,
-    );
+    const warnSnapshot = {
+      ...createPolicySnapshot(getPolicyPreset('solo'), '2026-01-01T00:00:00.000Z', hashText),
+      // Legacy-shaped in-memory injection for runtime-projection robustness;
+      // the persisted schema no longer admits weakened selfReview.
+      selfReview: { subagentEnabled: false, fallbackToSelf: true, strictEnforcement: false },
+    } as unknown as ReturnType<typeof createPolicySnapshot>;
     const state = completeState({ policySnapshot: warnSnapshot });
     const policy = getPolicyPreset('solo');
     const card = buildFinishCard(state, policy);
@@ -239,14 +237,12 @@ describe('buildFinishDocument', () => {
   });
 
   it('renders warning notice for each warning', () => {
-    const warnSnapshot = createPolicySnapshot(
-      {
-        ...getPolicyPreset('solo'),
-        selfReview: { subagentEnabled: false, fallbackToSelf: true, strictEnforcement: false },
-      } as any,
-      '2026-01-01T00:00:00.000Z',
-      hashText,
-    );
+    const warnSnapshot = {
+      ...createPolicySnapshot(getPolicyPreset('solo'), '2026-01-01T00:00:00.000Z', hashText),
+      // Legacy-shaped in-memory injection for runtime-projection robustness;
+      // the persisted schema no longer admits weakened selfReview.
+      selfReview: { subagentEnabled: false, fallbackToSelf: true, strictEnforcement: false },
+    } as unknown as ReturnType<typeof createPolicySnapshot>;
     const state = completeState({ policySnapshot: warnSnapshot });
     const card = buildFinishCard(state, getPolicyPreset('solo'));
     const pres = buildFinishPresentationProjection(state, card);

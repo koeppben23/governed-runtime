@@ -139,7 +139,9 @@ export function createPolicySnapshot(
     minimumActorAssuranceForApproval: policy.minimumActorAssuranceForApproval,
     ...(policy.identityProvider ? { identityProvider: policy.identityProvider } : {}),
     identityProviderMode: policy.identityProviderMode,
-    selfReview: policy.selfReview,
+    // Writer-side normalization to the mandatory strict contract: config may
+    // express weakened values, the persisted snapshot never does.
+    selfReview: normalizeSelfReviewConfig(policy.selfReview),
     reviewOutputPolicy: policy.reviewOutputPolicy,
     reviewInvocationPolicy: policy.reviewInvocationPolicy,
     reviewProfile: policy.reviewProfile,
@@ -216,7 +218,9 @@ export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPo
     maxReviewerOutputRepairAttempts:
       snapshot.maxReviewerOutputRepairAttempts ?? DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS,
     allowSelfApproval: snapshot.allowSelfApproval,
-    selfReview: normalizeSelfReviewConfig(snapshot.selfReview),
+    // Hard Assurance Epoch: selfReview is a literal-strict persisted
+    // authority — project it verbatim, never re-normalize weakened values.
+    selfReview: { ...snapshot.selfReview },
     reviewOutputPolicy: reviewPolicies.reviewOutputPolicy,
     reviewInvocationPolicy: reviewPolicies.reviewInvocationPolicy,
     reviewProfile: reviewPolicies.reviewProfile,

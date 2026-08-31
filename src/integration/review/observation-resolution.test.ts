@@ -28,6 +28,13 @@ describe('resolveAttemptByCapability', () => {
     await fs.writeFile(path.join(sessions, 'child-transport-artifact'), 'not a directory', 'utf8');
 
     const obligation = createReviewObligation({
+      policySnapshot: {
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
+        maxReviewerOutputRepairAttempts: 1,
+      },
       obligationType: 'implement',
       iteration: 1,
       planVersion: 1,

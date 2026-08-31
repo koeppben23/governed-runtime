@@ -553,6 +553,9 @@ describe('review-enforcement mutation kills', () => {
             {
               obligationId: '00000000-0000-4000-8000-000000000001',
               obligationType: 'plan' as const,
+              requiredChallengeCount: 0,
+              requiredChallengeKind: 'design_challenge' as const,
+              challengePolicyVersion: 'challenge-policy.v1' as const,
               subjectDigest: 'test-subject-digest',
               iteration: 0,
               planVersion: 1,
@@ -601,6 +604,9 @@ describe('review-enforcement mutation kills', () => {
             {
               obligationId: '00000000-0000-4000-8000-000000000002',
               obligationType: 'plan' as const,
+              requiredChallengeCount: 0,
+              requiredChallengeKind: 'design_challenge' as const,
+              challengePolicyVersion: 'challenge-policy.v1' as const,
               subjectDigest: 'test-subject-digest',
               iteration: 0,
               planVersion: 1,

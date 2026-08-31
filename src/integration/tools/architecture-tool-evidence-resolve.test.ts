@@ -252,6 +252,9 @@ describe('architecture — BUG-15 evidence-resolve', () => {
             {
               obligationId: OBLIGATION_ID,
               obligationType: 'architecture',
+              requiredChallengeCount: 0,
+              requiredChallengeKind: 'design_challenge',
+              challengePolicyVersion: 'challenge-policy.v1',
               subjectDigest: 'test-subject-digest',
               iteration: 0,
               planVersion: 1,
@@ -344,6 +347,9 @@ describe('architecture — BUG-15 evidence-resolve', () => {
             {
               obligationId: OBLIGATION_ID,
               obligationType: 'architecture',
+              requiredChallengeCount: 0,
+              requiredChallengeKind: 'design_challenge',
+              challengePolicyVersion: 'challenge-policy.v1',
               subjectDigest: 'test-subject-digest',
               iteration: 0,
               planVersion: 1,
@@ -465,6 +471,9 @@ describe('architecture — BUG-15 evidence-resolve', () => {
             {
               obligationId: OBLIGATION_ID,
               obligationType: 'architecture',
+              requiredChallengeCount: 0,
+              requiredChallengeKind: 'design_challenge',
+              challengePolicyVersion: 'challenge-policy.v1',
               subjectDigest: 'test-subject-digest',
               iteration: 0,
               planVersion: 1,

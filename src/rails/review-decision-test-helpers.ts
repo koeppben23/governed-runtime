@@ -52,6 +52,9 @@ export function assuranceChain(entries: AssuranceEntry[]): ReviewAssuranceState 
       fulfilledAt: createdAt,
       consumedAt: e.status === 'consumed' ? createdAt : null,
       subjectDigest,
+      requiredChallengeCount: 0,
+      requiredChallengeKind: 'design_challenge',
+      challengePolicyVersion: 'challenge-policy.v1',
       ...(e.claimDeclarationsDigest ? { claimDeclarationsDigest: e.claimDeclarationsDigest } : {}),
       reviewMaterial: {
         content: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',

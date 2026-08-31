@@ -192,6 +192,9 @@ function buildSessionState() {
         {
           obligationId: OBLIGATION_ID,
           obligationType: 'plan' as const,
+          requiredChallengeCount: 0,
+          requiredChallengeKind: 'design_challenge',
+          challengePolicyVersion: 'challenge-policy.v1',
           iteration: 0,
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,

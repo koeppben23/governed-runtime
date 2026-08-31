@@ -307,6 +307,9 @@ function implementPromptState(overrides: {
   const obligation = {
     obligationId: 'ob-1',
     obligationType: 'implement' as const,
+    requiredChallengeCount: 0,
+    requiredChallengeKind: 'implementation_challenge' as const,
+    challengePolicyVersion: 'challenge-policy.v1' as const,
     iteration: 1,
     planVersion: 1,
     criteriaVersion: 'p41-v1',
@@ -439,6 +442,9 @@ it('fails closed when the resolved obligation is not an implement obligation', (
   const wrongType = {
     obligationId: 'ob-1',
     obligationType: 'plan' as const,
+    requiredChallengeCount: 0,
+    requiredChallengeKind: 'design_challenge' as const,
+    challengePolicyVersion: 'challenge-policy.v1' as const,
     iteration: 1,
     planVersion: 1,
     criteriaVersion: 'p41-v1',

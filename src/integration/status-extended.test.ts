@@ -635,7 +635,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
             subagentEnabled: true,
             fallbackToSelf: false,
             strictEnforcement: true,
-          },
+          } as never,
         },
       };
 
@@ -648,7 +648,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
             subagentEnabled: false,
             fallbackToSelf: false,
             strictEnforcement: true,
-          },
+          } as never,
         },
       };
 
@@ -661,7 +661,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
             subagentEnabled: true,
             fallbackToSelf: true,
             strictEnforcement: true,
-          },
+          } as never,
         },
       };
 
@@ -674,7 +674,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
             subagentEnabled: true,
             fallbackToSelf: false,
             strictEnforcement: false,
-          },
+          } as never,
         },
       };
 
@@ -807,7 +807,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
             subagentEnabled: true,
             fallbackToSelf: false,
             strictEnforcement: true,
-          },
+          } as never,
         },
       };
       const readiness = buildReadinessProjection(state, solo);
@@ -826,7 +826,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
             subagentEnabled: false, // weakened
             fallbackToSelf: false,
             strictEnforcement: true,
-          },
+          } as never,
         },
       };
       const readiness = buildReadinessProjection(state, solo);

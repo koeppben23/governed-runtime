@@ -207,6 +207,9 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
       fulfilledAt: FIXED_TIME,
       consumedAt: FIXED_TIME,
       subjectDigest: ARCHITECTURE_DECISION.digest,
+      requiredChallengeCount: 0,
+      requiredChallengeKind: 'design_challenge',
+      challengePolicyVersion: 'challenge-policy.v1',
       reviewMaterial: {
         content: ARCHITECTURE_DECISION.adrText,
         materialDigest: 'material-digest-of-architecture-review',
@@ -277,6 +280,9 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
     claimDeclarationsDigest: hashText(
       canonicalJsonStringify({ flow: 'plan', version: 'v2', claims: [] }),
     ),
+    requiredChallengeCount: 0,
+    requiredChallengeKind: 'design_challenge',
+    challengePolicyVersion: 'challenge-policy.v1',
     reviewMaterial: {
       content: '## Plan\n1. Fix auth\n2. Add tests',
       materialDigest: 'material-digest-of-plan-review',

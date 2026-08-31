@@ -48,13 +48,21 @@ describe('review/enforcement/challenge-consistency', () => {
       });
     });
 
-    it('does not enforce a challenge count for legacy obligations without a frozen policy', () => {
+    it('enforces the explicit zero: no challenges are permitted for a TRIVIAL obligation', () => {
       expect(
         validateChallengeConsistency({
           overallVerdict: 'accept',
-          requiredChallengeCount: undefined,
+          requiredChallengeCount: 0,
           requiredChallengeKind: 'implementation_challenge',
           challenges: [implementationChallenge],
+        }),
+      ).toMatchObject({ ok: false, code: 'SUBAGENT_CHALLENGE_COUNT_INCOHERENT' });
+      expect(
+        validateChallengeConsistency({
+          overallVerdict: 'accept',
+          requiredChallengeCount: 0,
+          requiredChallengeKind: 'implementation_challenge',
+          challenges: [],
         }),
       ).toEqual({ ok: true });
     });

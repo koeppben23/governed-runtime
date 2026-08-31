@@ -15,6 +15,9 @@ const subjectDigest = hashCanonicalContentSubject(materialDigest);
 const obligation = {
   obligationId: '11111111-1111-4111-8111-111111111111',
   obligationType: 'review' as const,
+  requiredChallengeCount: 0,
+  requiredChallengeKind: 'content_challenge' as const,
+  challengePolicyVersion: 'challenge-policy.v1' as const,
   subjectDigest,
   iteration: 1,
   planVersion: 1,
@@ -74,6 +77,9 @@ describe('verifyFrozenMaterialForObligation', () => {
   const artifactObligation: ReviewObligation = {
     obligationId: '44444444-4444-4444-8444-444444444444',
     obligationType: 'architecture',
+    requiredChallengeCount: 0,
+    requiredChallengeKind: 'design_challenge' as const,
+    challengePolicyVersion: 'challenge-policy.v1' as const,
     iteration: 0,
     planVersion: 1,
     criteriaVersion: 'p41-v1',

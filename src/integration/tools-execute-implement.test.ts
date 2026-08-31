@@ -873,7 +873,7 @@ describe('implement', () => {
         ...state!,
         policySnapshot: {
           ...state!.policySnapshot,
-          selfReview: { subagentEnabled, fallbackToSelf, strictEnforcement: false },
+          selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
         },
       });
     }

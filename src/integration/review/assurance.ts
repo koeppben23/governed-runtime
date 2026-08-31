@@ -31,6 +31,7 @@ import { indexMarkdownSections } from '../../shared/markdown-sections.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import {
   DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS,
+  CHALLENGE_POLICY_V1,
   type ChallengePolicy,
 } from '../../config/policy-types.js';
 import type { TaskClass } from '../../state/schema.js';
@@ -166,12 +167,11 @@ export function createReviewObligation(input: {
   /** Provenance of the frozen profile. Defaults to 'policy_default'. */
   profileSource?: ReviewProfileSource;
   /**
-   * Frozen session policy; without its challenge policy, enforcement is
-   * disabled. The output-repair budget is frozen onto the obligation from the
-   * snapshot at creation — the reissue gate never re-reads live config.
-   * `challengePolicy` is tolerant at the MINT boundary (standalone/pre-discovery
-   * obligations may legitimately carry none), while the persisted snapshot
-   * requires it.
+   * Frozen session policy. Hard Assurance Epoch: the persisted v6 obligation
+   * REQUIRES the frozen challenge authority, so the mint boundary requires
+   * `challengePolicy` whenever a snapshot is provided. The output-repair
+   * budget is frozen onto the obligation from the snapshot at creation — the
+   * reissue gate never re-reads live config.
    */
   policySnapshot?:
     | (Pick<PolicySnapshot, 'maxReviewerOutputRepairAttempts'> & {
@@ -207,7 +207,12 @@ export function createReviewObligation(input: {
   assertSubjectDigest(input.subjectDigest);
   assertRepositoryFreezeCoherence(input);
   requireArtifactSubjectScope(input.obligationType, input.reviewSubjectScope);
-  const challengePolicy = input.policySnapshot?.challengePolicy;
+  // Hard Assurance Epoch: the persisted v6 obligation REQUIRES the frozen
+  // challenge triple, so the mint always materializes it. A mint without a
+  // policy snapshot freezes the canonical TRIVIAL matrix — the obligation
+  // still carries the explicit authority, never an implicit no-policy state.
+  const challengePolicy = input.policySnapshot?.challengePolicy ?? CHALLENGE_POLICY_V1;
+  const resolvedChallengeRequirements = resolveChallengeRequirements(challengePolicy, input);
   const subjectDigest = resolveSubjectDigest(input);
   const reviewSubjectScope = resolveSubjectScope(
     subjectDigest,
@@ -235,7 +240,7 @@ export function createReviewObligation(input: {
     // supplied. The profile is fixed here, before the reviewer is invoked.
     reviewProfile: input.reviewProfile ?? 'core',
     profileSource: input.profileSource ?? 'policy_default',
-    ...resolveChallengeRequirements(challengePolicy, input),
+    ...resolvedChallengeRequirements,
     subjectDigest,
     ...(input.claimDeclarationsDigest
       ? { claimDeclarationsDigest: input.claimDeclarationsDigest }

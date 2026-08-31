@@ -1247,6 +1247,9 @@ describe('toolBefore — observation capability parent binding', () => {
           {
             obligationId: OBLIGATION_ID,
             obligationType: 'plan',
+            requiredChallengeCount: 0,
+            requiredChallengeKind: 'design_challenge' as const,
+            challengePolicyVersion: 'challenge-policy.v1' as const,
             subjectDigest: 'obs-subject-digest',
             iteration: 0,
             planVersion: 1,

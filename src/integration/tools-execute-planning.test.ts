@@ -986,7 +986,7 @@ describe('plan', () => {
         ...state!,
         policySnapshot: {
           ...state!.policySnapshot,
-          selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+          selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
         },
       });
 
@@ -1350,6 +1350,13 @@ describe('plan', () => {
 
     function producerObligation(deps: Dependencies, subjectDigest: string) {
       return deps.createReviewObligation({
+        policySnapshot: {
+          challengePolicy: {
+            version: 'challenge-policy.v1',
+            counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+          },
+          maxReviewerOutputRepairAttempts: 1,
+        },
         obligationType: 'plan',
         iteration: 0,
         planVersion: 1,

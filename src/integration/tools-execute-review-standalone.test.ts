@@ -1540,6 +1540,9 @@ describe('review (standalone flow)', () => {
         const obligation = {
           obligationId: '00000000-0000-0000-0000-000000000001',
           obligationType: 'review' as const,
+          requiredChallengeCount: 0,
+          requiredChallengeKind: 'content_challenge' as const,
+          challengePolicyVersion: 'challenge-policy.v1' as const,
           subjectDigest: 'test-subject-digest',
           iteration: 1,
           planVersion: 1,
