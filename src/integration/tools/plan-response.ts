@@ -63,6 +63,8 @@ import {
 } from '../review/orchestration-mode.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
 import { projectPlanProofStatus } from '../proofgraph/proof-summary-projectors.js';
+import { canonicalJsonStringify } from '../../shared/canonical-json.js';
+import { hashText } from '../../shared/hashing.js';
 
 function findPriorPlanTargetPaths(
   assurance: import('../../state/schema.js').SessionState['reviewAssurance'],
@@ -99,18 +101,24 @@ export function buildPlanReviewObligationInput(
   planEvidence: PlanEvidence,
   planVersion: number,
   classificationFiles: readonly string[] | undefined,
-  freeze: RepositoryAuthorityFreezeResult,
+  options: {
+    freeze: RepositoryAuthorityFreezeResult;
+    planClaimDeclarations?: import('../../state/proofgraph-approval.js').PlanClaimDeclarations;
+  },
 ): Parameters<typeof createObligationAndAttempt>[1] {
   const metadata: Record<string, unknown> = {};
   if (classificationFiles && classificationFiles.length > 0) {
     metadata.targetPaths = [...classificationFiles];
   }
+  const effectiveClaimDeclarations = options.planClaimDeclarations ??
+    scope.state.plan?.claimDeclarations ?? { flow: 'plan' as const, claims: [] };
   return {
     obligationType: 'plan',
     iteration: 0,
     planVersion,
     now: scope.ctx.now(),
     subjectDigest: planEvidence.digest,
+    claimDeclarationsDigest: hashText(canonicalJsonStringify(effectiveClaimDeclarations)),
     // Frozen review material: the exact plan artifact plus originating
     // ticket context, canonicalized and digest-bound at creation time.
     reviewMaterial: freezeReviewMaterial(
@@ -118,6 +126,7 @@ export function buildPlanReviewObligationInput(
         obligationType: 'plan',
         state: scope.state,
         artifact: planEvidence.body,
+        planClaimDeclarations: effectiveClaimDeclarations,
       }),
       planEvidence.digest,
     ),
@@ -128,10 +137,10 @@ export function buildPlanReviewObligationInput(
     changedFiles: classificationFiles,
     claimedTaskClass: scope.state.claimedTaskClass,
     metadata,
-    repositoryAuthority: frozenAuthorityOrUndefined(freeze),
+    repositoryAuthority: frozenAuthorityOrUndefined(options.freeze),
     // Durable freeze outcome: continuations and forensics render the exact
     // degradation cause from persisted state.
-    repositoryEvidenceFreeze: freezeOutcomeRecord(freeze),
+    repositoryEvidenceFreeze: freezeOutcomeRecord(options.freeze),
   };
 }
 
@@ -324,6 +333,7 @@ export async function convergedPlanReviewCardResponse(
     taskTitle: firstLine(finalState.ticket?.text),
     forcedConvergence,
     proofSummary: projectPlanProofStatus(finalState),
+    claimDeclarations: finalState.plan?.claimDeclarations,
     currentPlanDigest: revision.currentPlan.digest,
     reviewedDigest: reviewedIdentity?.reviewedDigest,
     reviewedObligationId: reviewedIdentity?.reviewedObligationId,
@@ -463,6 +473,11 @@ async function mintPlanRevisionAttempt(input: {
           planVersion: nextPlanVersion,
           now: scope.ctx.now(),
           subjectDigest: revision.currentPlan.digest,
+          claimDeclarationsDigest: hashText(
+            canonicalJsonStringify(
+              finalState.plan?.claimDeclarations ?? { flow: 'plan', claims: [] },
+            ),
+          ),
           // Frozen review material: the exact (possibly revised) plan artifact
           // plus originating ticket context, digest-bound at creation time.
           reviewMaterial: freezeReviewMaterial(

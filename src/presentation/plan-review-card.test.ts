@@ -105,6 +105,42 @@ function buildPlanReviewCard(
 }
 
 describe('buildPlanReviewCard', () => {
+  it('renders every authority-relevant claim declaration field', () => {
+    const card = buildPlanReviewCard({
+      planText: 'Plan.',
+      phase: 'PLAN_REVIEW',
+      phaseLabel: 'Ready for plan approval',
+      productNextAction,
+      claimDeclarations: {
+        flow: 'plan',
+        version: 'v2',
+        claims: [
+          {
+            claimId: '00000000-0000-4000-8000-000000000001',
+            statement: 'Invalid payment is rejected.',
+            critical: true,
+            authoritySectionId: 'payment-validation',
+            claimScope: 'specific_behavior',
+            expectedCheckId: 'payment-invalid-test',
+            counterexampleRequirement: {
+              kind: 'assertion',
+              checkId: 'payment-invalid-test',
+              assertion: { providerId: 'vitest', localId: 'rejects-invalid-payment' },
+            },
+            structuralSurface: 'src/payments/validate.ts',
+            mutationProfile: 'boundary',
+          },
+        ],
+      },
+    });
+
+    expect(card).toContain('Claim Declarations Under Approval');
+    expect(card).toContain('Claim scope: specific_behavior');
+    expect(card).toContain('providerId: vitest');
+    expect(card).toContain('localId: rejects-invalid-payment');
+    expect(card).toContain('Structural surface: src/payments/validate.ts');
+  });
+
   it('keeps Unicode canonical by default and supports an ASCII transient rendering', () => {
     const input = {
       planText: 'Plan.',

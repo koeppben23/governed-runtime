@@ -434,6 +434,8 @@ export const ReviewObligation = z
      * failure, surfaces any site that forgets to freeze the subject.
      */
     subjectDigest: z.string().min(1),
+    /** Exact plan-claim declaration digest frozen before reviewer invocation. */
+    claimDeclarationsDigest: z.string().min(1).optional(),
     reviewMaterial: ReviewMaterial.optional(),
     reviewSubject: FrozenReviewSubject.optional(),
     /** Missing means the legacy v1 fingerprint algorithm. */

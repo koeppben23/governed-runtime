@@ -259,7 +259,10 @@ async function createPlanReviewAttempt(
   }
   const attemptResult = createObligationAndAttempt(
     scope.state.reviewAssurance,
-    buildPlanReviewObligationInput(scope, planEvidence, planVersion, classificationFiles, freeze),
+    buildPlanReviewObligationInput(scope, planEvidence, planVersion, classificationFiles, {
+      freeze,
+      planClaimDeclarations: submittedPlanClaimDeclarations(scope),
+    }),
     scope.ctx.now(),
     discovery.context,
   );
@@ -270,6 +273,19 @@ function currentClaimSubmissionDiagnostics(scope: PlanExecutionScope) {
   return scope.args.claims
     ? scope.claimSubmissionDiagnostics
     : scope.state.plan?.claimSubmissionDiagnostics;
+}
+
+/** The declaration set a plan submission writes: fresh normalized claims or the carried-over set. */
+function submittedPlanClaimDeclarations(
+  scope: PlanExecutionScope,
+): import('../../state/proofgraph-approval.js').PlanClaimDeclarations | undefined {
+  return scope.args.claims
+    ? {
+        flow: 'plan',
+        version: 'v2' as const,
+        claims: normalizePlanClaims(scope.args.claims)!,
+      }
+    : scope.state.plan?.claimDeclarations;
 }
 
 function appendClaimSubmissionHistory(scope: PlanExecutionScope, planVersion: number) {
@@ -296,13 +312,7 @@ function buildPlanSubmissionState(
       reviewFindings: reviewFindings
         ? [...(scope.state.plan?.reviewFindings ?? []), reviewFindings]
         : scope.state.plan?.reviewFindings,
-      claimDeclarations: scope.args.claims
-        ? {
-            flow: 'plan',
-            version: 'v2' as const,
-            claims: normalizePlanClaims(scope.args.claims)!,
-          }
-        : scope.state.plan?.claimDeclarations,
+      claimDeclarations: submittedPlanClaimDeclarations(scope),
       claimSubmissionDiagnostics: currentClaimSubmissionDiagnostics(scope),
       claimSubmissionHistory: appendClaimSubmissionHistory(scope, planVersion),
       reviewCompletion: 'pending',
@@ -455,9 +465,7 @@ function buildReviewedPlanState(
       current: revision.currentPlan,
       history: revision.history,
       reviewFindings: newReviewFindings,
-      claimDeclarations: scope.args.claims
-        ? { flow: 'plan', version: 'v2' as const, claims: normalizePlanClaims(scope.args.claims)! }
-        : scope.state.plan?.claimDeclarations,
+      claimDeclarations: submittedPlanClaimDeclarations(scope),
       claimSubmissionDiagnostics: currentClaimSubmissionDiagnostics(scope),
       claimSubmissionHistory: appendClaimSubmissionHistory(scope, revision.currentPlan.planVersion),
       reviewCompletion: resolvePlanReviewCompletion(

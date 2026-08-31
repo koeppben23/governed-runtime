@@ -4,8 +4,10 @@
  */
 
 import type { SessionState } from '../../state/schema.js';
+import type { PlanClaimDeclarations } from '../../state/proofgraph-approval.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { stateVerificationEvidence } from './shared-helpers.js';
+import { renderPlanClaimDeclarations } from '../../presentation/index.js';
 
 /**
  * Presentation cleanup (NOT requirement provenance): when no ticket was
@@ -34,13 +36,24 @@ export function buildFrozenReviewMaterialContent(input: {
   readonly obligationType: 'plan' | 'architecture' | 'implement';
   readonly state: SessionState;
   readonly artifact: string;
+  /** Effective plan claim declarations for a fresh plan submission. */
+  readonly planClaimDeclarations?: PlanClaimDeclarations;
 }): string {
   const ticket = section(
     'Ticket Under Review (originating request)',
     canonicalJsonStringify(ticketProjection(input.state)),
   );
   if (input.obligationType === 'plan') {
-    return [...ticket, ...section('Plan Artifact', input.artifact)].join('\n');
+    return [
+      ...ticket,
+      ...section('Plan Artifact', input.artifact),
+      ...section(
+        'Plan Claim Declarations Under Review',
+        renderPlanClaimDeclarations(
+          input.planClaimDeclarations ?? input.state.plan?.claimDeclarations,
+        ),
+      ),
+    ].join('\n');
   }
   if (input.obligationType === 'architecture') {
     return [...ticket, ...section('Architecture Decision Artifact', input.artifact)].join('\n');

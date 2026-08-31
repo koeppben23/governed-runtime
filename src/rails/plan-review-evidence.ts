@@ -27,7 +27,7 @@ import { emptyClaimDeclarations } from '../state/proofgraph-approval.js';
 import type { RailBlocked, RailContext } from './types.js';
 import { blocked } from '../config/reasons.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
-import { digestToId } from '../shared/hashing.js';
+import { digestToId, hashText } from '../shared/hashing.js';
 import type { ResolvedPlanReviewEvidence } from './review-evidence-resolution.js';
 
 export function enforcePlanReviewEvidence(
@@ -45,6 +45,15 @@ export function enforcePlanReviewEvidence(
   }
   if (resolution.reviewerVerdict === undefined) {
     return blockedPlanEvidenceRequired(completion, 'resolved', 'missing');
+  }
+  const claimDeclarationsDigest = hashText(
+    canonicalJsonStringify(plan?.claimDeclarations ?? emptyClaimDeclarations('plan')),
+  );
+  if (
+    resolution.claimDeclarationsDigest !== undefined &&
+    resolution.claimDeclarationsDigest !== claimDeclarationsDigest
+  ) {
+    return blockedPlanEvidenceRequired(completion, 'resolved', 'claim_declarations_mismatch');
   }
   if (completion === 'reviewer_accepted') {
     return enforceAcceptedPlanVerdict(resolution.reviewerVerdict);
@@ -137,7 +146,7 @@ export function createPlanApprovalCertificate(
   reviewBinding: PlanReviewBinding,
 ): PlanApprovalCertificate {
   const claimDeclarations = plan.claimDeclarations ?? emptyClaimDeclarations('plan');
-  const claimDeclarationsDigest = ctx.digest(canonicalJsonStringify(claimDeclarations));
+  const claimDeclarationsDigest = hashText(canonicalJsonStringify(claimDeclarations));
   const decisionAttestationDigest = ctx.digest(canonicalJsonStringify(decision));
   const planVersion = plan.current.planVersion;
   const planRecordDigest = plan.current.recordDigest;

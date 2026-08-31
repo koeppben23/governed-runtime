@@ -83,7 +83,7 @@ describe('renderDeclarationPreview', () => {
     const text = renderDeclarationPreview(planState).join('\n');
     expect(text).toContain('These are stated intent, NOT evidence.');
     expect(text).toContain('Plan claim declarations (1)');
-    expect(text).toContain('expected check: build');
+    expect(text).toContain('Expected check: build');
   });
 
   it('marks declarations as not certificate-bound before approval', () => {
@@ -164,7 +164,9 @@ describe('renderDeclarationPreview', () => {
       },
     };
     const text = renderDeclarationPreview(state).join('\n');
-    expect(text).toContain('counterexample check: security (assertion: my-test)');
+    expect(text).toContain(
+      'Counterexample requirement: security; assertion providerId: junit; localId: my-test',
+    );
   });
 
   it('renders counterexample requirement with explicit assertionId', () => {
@@ -191,7 +193,9 @@ describe('renderDeclarationPreview', () => {
       },
     };
     const text = renderDeclarationPreview(state).join('\n');
-    expect(text).toContain('counterexample check: security (assertion: com.example.Test#method)');
+    expect(text).toContain(
+      'Counterexample requirement: security; assertion providerId: junit; localId: com.example.Test#method',
+    );
   });
 
   it('renders nothing when no declarations exist', () => {

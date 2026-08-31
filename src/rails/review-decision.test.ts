@@ -16,6 +16,7 @@ import {
   ARCH_OBLIGATION_ID,
 } from './review-decision-test-helpers.js';
 import { hashText } from '../shared/hashing.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
 
 const baseCtx = {
   now: () => FIXED_TIME,
@@ -36,6 +37,7 @@ function architectureAssurance(input: {
   iteration?: number;
   findingsHash?: string;
   capturedVerdict?: string;
+  claimDeclarationsDigest?: string;
   obligationInvocationId?: boolean;
 }): ReviewAssuranceState {
   return assuranceChain([
@@ -46,6 +48,7 @@ function architectureAssurance(input: {
       iteration: input.iteration,
       findingsHash: input.findingsHash,
       capturedVerdict: input.capturedVerdict,
+      claimDeclarationsDigest: input.claimDeclarationsDigest,
       invocationId: input.obligationInvocationId === false ? null : ARCH_INVOCATION_ID,
       consumedByObligationId: input.status === 'consumed' ? ARCH_OBLIGATION_ID : null,
     },
@@ -69,6 +72,7 @@ interface PlanAssuranceInput {
   iteration?: number;
   createdAt?: string;
   capturedVerdict?: string;
+  claimDeclarationsDigest?: string;
 }
 
 /** Minimal single-obligation assurance for plan-certificate binding tests. */
@@ -85,6 +89,7 @@ function planAssurance(input: PlanAssuranceInput): ReviewAssuranceState {
       invocationId: input.invocationId ?? PLAN_INVOCATION_ID,
       findingsHash: input.findingsHash ?? 'a'.repeat(64),
       capturedVerdict: input.capturedVerdict,
+      claimDeclarationsDigest: input.claimDeclarationsDigest,
       consumedByObligationId: input.status === 'consumed' ? obligationId : null,
     },
   ]);
@@ -152,6 +157,9 @@ describe('review-decision rail', () => {
         subjectDigest: PLAN_RECORD.current.digest,
         status: 'consumed',
         capturedVerdict: 'accept',
+        claimDeclarationsDigest: hashText(
+          canonicalJsonStringify({ flow: 'plan', claims: [PLAN_CLAIM] }),
+        ),
       }),
     });
 
@@ -166,7 +174,7 @@ describe('review-decision rail', () => {
       expect(result.state.plan?.approvalCertificate).toMatchObject({
         flow: 'plan',
         authorityDigest: PLAN_RECORD.current.digest,
-        claimDeclarationsDigest: baseCtx.digest(
+        claimDeclarationsDigest: hashText(
           '{"claims":[{"authoritySectionId":"authentication","claimId":"00000000-0000-4000-8000-000000000003","critical":true,"expectedCheckId":"test","statement":"The login flow rejects invalid credentials."}],"flow":"plan"}',
         ),
         decisionAttestationDigest: baseCtx.digest(

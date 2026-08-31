@@ -149,6 +149,8 @@ export function createReviewObligation(input: {
    * rejected; no binding is possible without a proven subject identity.
    */
   subjectDigest: string;
+  /** Exact plan-claim declaration digest frozen before reviewer invocation. */
+  claimDeclarationsDigest?: string;
   /** Frozen standalone content/repository subject, when this is a standalone review. */
   reviewSubject?: FrozenReviewSubject;
   /** Exact normalized artifact bytes frozen for host-task delivery. */
@@ -228,6 +230,9 @@ export function createReviewObligation(input: {
     profileSource: input.profileSource ?? 'policy_default',
     ...resolveChallengeRequirements(challengePolicy, input),
     subjectDigest,
+    ...(input.claimDeclarationsDigest
+      ? { claimDeclarationsDigest: input.claimDeclarationsDigest }
+      : {}),
     ...(input.reviewMaterial ? { reviewMaterial: input.reviewMaterial } : {}),
     reviewSubject: input.reviewSubject,
     metadata: input.metadata,

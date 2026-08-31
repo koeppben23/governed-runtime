@@ -338,7 +338,10 @@ export type ProofGraphApprovalCertificate = z.infer<typeof ProofGraphApprovalCer
 
 /** Claims declared against the current plan authority. */
 export const PlanClaimDeclarations = z.union([
-  z.object({ flow: z.literal('plan'), claims: z.array(LegacyPlanClaimDeclaration) }).readonly(),
+  z
+    .object({ flow: z.literal('plan'), claims: z.array(LegacyPlanClaimDeclaration) })
+    .strict()
+    .readonly(),
   z
     .object({
       flow: z.literal('plan'),

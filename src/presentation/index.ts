@@ -21,6 +21,7 @@ export {
 export type { ReasonProjection } from './reason-projection.js';
 export type { ActionIntent } from './action-intent.js';
 export { buildPlanReviewCard } from './plan-review-card.js';
+export { renderPlanClaimDeclarations } from './plan-claim-declarations.js';
 export {
   buildReviewDecisionConclusion,
   projectReviewDecision,

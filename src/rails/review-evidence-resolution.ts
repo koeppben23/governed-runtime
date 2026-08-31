@@ -36,6 +36,7 @@ export interface ResolvedBoundReviewEvidence {
   readonly invocationId: string;
   readonly findingsHash: string;
   readonly subjectDigest: string;
+  readonly claimDeclarationsDigest?: string;
   readonly reviewerVerdict?: string;
 }
 
@@ -77,6 +78,9 @@ export function resolveEvidenceForObligation(
     invocationId: invocation.invocationId,
     findingsHash: invocation.findingsHash,
     subjectDigest: obligation.subjectDigest,
+    ...(obligation.claimDeclarationsDigest
+      ? { claimDeclarationsDigest: obligation.claimDeclarationsDigest }
+      : {}),
     ...(invocation.capturedVerdict ? { reviewerVerdict: invocation.capturedVerdict } : {}),
   };
 }

@@ -141,6 +141,7 @@ describe('presentation/index.ts barrel', () => {
     'humanCounterexampleRequirementText',
     'humanRequiredEvidenceText',
     'buildProofGraphSection',
+    'renderPlanClaimDeclarations',
     'USER_IMPACT_COPY',
     'humanImpactText',
     'projectReviewDecision',

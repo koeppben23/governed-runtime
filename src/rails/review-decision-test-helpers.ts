@@ -24,6 +24,7 @@ export interface AssuranceEntry {
   invokedAt?: string;
   consumedByObligationId?: string | null;
   capturedVerdict?: string;
+  claimDeclarationsDigest?: string;
 }
 
 /** Arbitrary assurance chains for resolver tests (one obligation per entry). */
@@ -49,6 +50,7 @@ export function assuranceChain(entries: AssuranceEntry[]): ReviewAssuranceState 
       fulfilledAt: createdAt,
       consumedAt: e.status === 'consumed' ? createdAt : null,
       subjectDigest,
+      ...(e.claimDeclarationsDigest ? { claimDeclarationsDigest: e.claimDeclarationsDigest } : {}),
       reviewMaterial: {
         content: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
         materialDigest: 'material-digest-of-architecture-review',
