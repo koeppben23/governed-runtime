@@ -37,12 +37,7 @@ import type {
 } from './policy-types.js';
 import type { PolicyResolution } from './policy-resolver.js';
 import type { HydratePolicyResolution } from './policy-types.js';
-import {
-  normalizeSelfReviewConfig,
-  modeConsistentDefaults,
-  normalizeDiscoveryHealthField,
-  normalizeValidationEvidenceField,
-} from './policy-snapshot-normalize.js';
+import { normalizeSelfReviewConfig, modeConsistentDefaults } from './policy-snapshot-normalize.js';
 
 // ─── Canonical Snapshot Creation ──────────────────────────────────────────────
 
@@ -258,13 +253,12 @@ export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPo
       modeConsistentDefaults(snapshot.mode).allowRiskDowngradeOverride,
     allowReducedCeremony:
       snapshot.allowReducedCeremony ?? modeConsistentDefaults(snapshot.mode).allowReducedCeremony,
-    discoveryHealth: normalizeDiscoveryHealthField(
-      (snapshot as Record<string, unknown>).discoveryHealth,
-      modeConsistentDefaults(snapshot.mode).discoveryHealth,
-    ).value,
-    validationEvidence: normalizeValidationEvidenceField(
-      (snapshot as Record<string, unknown>).validationEvidence,
-      modeConsistentDefaults(snapshot.mode).validationEvidence,
-    ).value,
+    // Hard Assurance Epoch: discoveryHealth and validationEvidence are REQUIRED
+    // persisted authority. readState() schema-validated them — project them
+    // verbatim instead of re-normalizing (re-normalization historically
+    // misread the contract value 'allow' and replaced it with the mode
+    // default, silently drifting the runtime policy from the frozen digest).
+    discoveryHealth: { ...snapshot.discoveryHealth },
+    validationEvidence: { ...snapshot.validationEvidence },
   };
 }
