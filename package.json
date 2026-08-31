@@ -139,7 +139,7 @@
     "@opencode-ai/plugin": "1.18.16",
     "@stryker-mutator/core": "^9.6.1",
     "@stryker-mutator/typescript-checker": "^9.6.1",
-    "@stryker-mutator/vitest-runner": "^9.6.1",
+    "@stryker-mutator/vitest-runner": "^10.0.0",
     "@types/node": "^26.4.0",
     "@vitest/coverage-v8": "^4.1.11",
     "conventional-changelog": "^8.1.3",
