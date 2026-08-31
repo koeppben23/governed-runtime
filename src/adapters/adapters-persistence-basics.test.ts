@@ -196,6 +196,25 @@ describe('persistence', () => {
       }
     });
 
+    it('readState rejects current-epoch states missing mutation/audit authority arrays', async () => {
+      for (const field of [
+        'mutationEpisodes',
+        'mutationEpisodeResolutions',
+        'pendingAuditOperations',
+      ]) {
+        const state = makeProgressedState('TICKET') as unknown as Record<string, unknown>;
+        const incomplete = { ...state };
+        delete incomplete[field];
+
+        await fs.mkdir(tmpDir, { recursive: true });
+        await fs.writeFile(statePath(tmpDir), JSON.stringify(incomplete), 'utf-8');
+
+        await expect(readState(tmpDir)).rejects.toMatchObject({
+          code: 'SCHEMA_VALIDATION_FAILED',
+        });
+      }
+    });
+
     it('stateExists returns true after writeState', async () => {
       expect(await stateExists(tmpDir)).toBe(false);
       await writeState(tmpDir, makeProgressedState('TICKET'));

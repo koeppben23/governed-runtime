@@ -139,16 +139,30 @@ describe('state schemas', () => {
       expect(() => SessionState.parse(state)).not.toThrow();
     });
 
-    it('SessionState defaults missing validationAttempts for legacy sessions', () => {
-      const legacy: Record<string, unknown> = { ...makeState('TICKET') };
-      delete legacy.validationAttempts;
-      expect(SessionState.parse(legacy).validationAttempts).toEqual([]);
+    it('SessionState rejects a state missing validationAttempts (no read-time defaulting)', () => {
+      const incomplete: Record<string, unknown> = { ...makeState('TICKET') };
+      delete incomplete.validationAttempts;
+      expect(() => SessionState.parse(incomplete)).toThrow();
     });
 
-    it('SessionState defaults missing challengeResolutions for legacy sessions', () => {
-      const legacy: Record<string, unknown> = { ...makeState('TICKET') };
-      delete legacy.challengeResolutions;
-      expect(SessionState.parse(legacy).challengeResolutions).toEqual([]);
+    it('SessionState rejects a state missing challengeResolutions (no read-time defaulting)', () => {
+      const incomplete: Record<string, unknown> = { ...makeState('TICKET') };
+      delete incomplete.challengeResolutions;
+      expect(() => SessionState.parse(incomplete)).toThrow();
+    });
+
+    it('SessionState rejects a state missing mutationEpisodes / mutationEpisodeResolutions / pendingAuditOperations', () => {
+      const withoutEpisodes: Record<string, unknown> = { ...makeState('TICKET') };
+      delete withoutEpisodes.mutationEpisodes;
+      expect(() => SessionState.parse(withoutEpisodes)).toThrow();
+
+      const withoutResolutions: Record<string, unknown> = { ...makeState('TICKET') };
+      delete withoutResolutions.mutationEpisodeResolutions;
+      expect(() => SessionState.parse(withoutResolutions)).toThrow();
+
+      const withoutOutbox: Record<string, unknown> = { ...makeState('TICKET') };
+      delete withoutOutbox.pendingAuditOperations;
+      expect(() => SessionState.parse(withoutOutbox)).toThrow();
     });
 
     it('SessionState defaults and parses implementationRework', () => {
@@ -162,11 +176,11 @@ describe('state schemas', () => {
       ).toEqual({ rejectedDigest: 'rejected-implementation-digest', exhausted: false });
     });
 
-    it('defaults and preserves implementation review extension evidence', () => {
+    it('rejects missing and preserves present implementation review extension evidence', () => {
       const state = makeState('TICKET');
-      const legacy: Record<string, unknown> = { ...state };
-      delete legacy.implementationReviewExtensions;
-      expect(SessionState.parse(legacy).implementationReviewExtensions).toEqual([]);
+      const incomplete: Record<string, unknown> = { ...state };
+      delete incomplete.implementationReviewExtensions;
+      expect(() => SessionState.parse(incomplete)).toThrow();
       expect(
         SessionState.parse({
           ...state,

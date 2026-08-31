@@ -38,8 +38,6 @@ const CERTIFICATE = {
     reviewEvidenceDigest: 'review-evidence-digest',
     reviewedSubjectDigest: 'plan-digest',
   },
-  reviewObligationId: '00000000-0000-4000-8000-00000000000a',
-  reviewEvidenceDigest: 'review-evidence-digest',
 };
 const PLAN_CLAIM = {
   claimId: '00000000-0000-4000-8000-000000000002',

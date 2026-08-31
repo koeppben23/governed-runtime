@@ -58,18 +58,16 @@ export const ReviewInvocationEvidence = z
     /** Evidence source: host-orchestrated or agent-submitted-attested. */
     source: z.enum(['host-orchestrated', 'agent-submitted-attested']).optional(),
     /** Reviewer output transport used to obtain the findings. */
-    reviewOutputMode: z.enum(['structured_output', 'text_compat']).default('structured_output'),
+    reviewOutputMode: z.enum(['structured_output', 'text_compat']),
     /** True only when OpenCode SDK structured_output was present and used. */
-    structuredOutputUsed: z.boolean().default(true),
+    structuredOutputUsed: z.boolean(),
     /** Review-output assurance tier, distinct from actor identity assurance.
      *  - structured_high: reviewer output parsed as clean, schema-conforming JSON.
      *  - structured_recovered: findings recovered from an embedded/brace-balanced
      *    JSON block in mixed model output; extraction succeeded but the response
      *    was not a clean structured payload, so provenance confidence is reduced. (F8)
      *  - text_compat_lower: text-compatibility extraction path. */
-    reviewAssuranceLevel: z
-      .enum(['structured_high', 'structured_recovered', 'text_compat_lower'])
-      .default('structured_high'),
+    reviewAssuranceLevel: z.enum(['structured_high', 'structured_recovered', 'text_compat_lower']),
     /** JSON extraction strategy used for text compatibility mode only. */
     extractionMethod: z.enum(['direct_json', 'json_fence', 'outermost_braces']).optional(),
     /** Original model capability error that caused text compatibility mode. */

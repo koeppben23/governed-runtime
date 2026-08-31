@@ -1094,8 +1094,21 @@ describe('ProofGraph materialization and gate (runtime)', () => {
     if (approved.kind !== 'ok') throw new Error('plan approval failed');
     const cert = approved.state.plan?.approvalCertificate;
     expect(cert).toBeDefined();
-    expect(cert!.reviewObligationId).toBe(obligationId);
-    expect(cert!.reviewEvidenceDigest).toBe(findingsHash);
-    expect(cert!.reviewEvidenceDigest).toMatch(/^[0-9a-f]{64}$/);
+    expect(cert!.reviewBinding.kind).toBe('current_review');
+    expect(
+      cert!.reviewBinding.kind === 'current_review'
+        ? cert!.reviewBinding.reviewObligationId
+        : undefined,
+    ).toBe(obligationId);
+    expect(
+      cert!.reviewBinding.kind === 'current_review'
+        ? cert!.reviewBinding.reviewEvidenceDigest
+        : undefined,
+    ).toBe(findingsHash);
+    expect(
+      cert!.reviewBinding.kind === 'current_review'
+        ? cert!.reviewBinding.reviewEvidenceDigest
+        : undefined,
+    ).toMatch(/^[0-9a-f]{64}$/);
   });
 });

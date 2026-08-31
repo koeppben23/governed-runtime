@@ -295,8 +295,6 @@ describe('evaluateProofGraphGateFromState', () => {
         reviewEvidenceDigest: 'review-evidence-digest',
         reviewedSubjectDigest: 'plan-digest',
       },
-      reviewObligationId: '00000000-0000-4000-8000-0000000000cf',
-      reviewEvidenceDigest: 'review-evidence-digest',
     };
   }
 

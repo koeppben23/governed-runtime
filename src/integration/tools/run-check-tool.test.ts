@@ -966,8 +966,6 @@ describe('CORNER', () => {
             reviewEvidenceDigest: 'e'.repeat(64),
             reviewedSubjectDigest: state!.plan!.current.digest,
           },
-          reviewObligationId: '00000000-0000-4000-8000-0000000000ab',
-          reviewEvidenceDigest: 'e'.repeat(64),
         },
       },
     });

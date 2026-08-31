@@ -139,8 +139,6 @@ function stateWithClaims() {
           reviewEvidenceDigest: 'e'.repeat(64),
           reviewedSubjectDigest: PLAN_DIGEST,
         },
-        reviewObligationId: '00000000-0000-4000-8000-0000000000ab',
-        reviewEvidenceDigest: 'e'.repeat(64),
       },
     },
     reviewDecision: {

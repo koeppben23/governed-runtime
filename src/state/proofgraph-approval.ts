@@ -197,10 +197,6 @@ export const PlanApprovalCertificate = z
      * parsing instead of degrading to a readable-but-unauthoritative shape.
      */
     reviewBinding: PlanReviewBinding,
-    /** Materialized presentation mirror of the binding (the binding is the authority). */
-    reviewObligationId: z.string().uuid(),
-    /** Materialized presentation mirror of the binding (the binding is the authority). */
-    reviewEvidenceDigest: z.string().min(1),
   })
   .superRefine((certificate, ctx) => {
     const binding = certificate.reviewBinding;

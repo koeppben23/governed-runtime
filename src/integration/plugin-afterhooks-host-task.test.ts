@@ -754,9 +754,22 @@ describe('host-task evidence → plan certificate lineage', () => {
 
       const cert = approved.state.plan?.approvalCertificate;
       expect(cert).toBeDefined();
-      expect(cert!.reviewObligationId).toBe(OBLIGATION_ID);
-      expect(cert!.reviewEvidenceDigest).toBe(invocation?.findingsHash);
-      expect(cert!.reviewEvidenceDigest).toMatch(/^[0-9a-f]{64}$/);
+      expect(cert!.reviewBinding.kind).toBe('current_review');
+      expect(
+        cert!.reviewBinding.kind === 'current_review'
+          ? cert!.reviewBinding.reviewObligationId
+          : undefined,
+      ).toBe(OBLIGATION_ID);
+      expect(
+        cert!.reviewBinding.kind === 'current_review'
+          ? cert!.reviewBinding.reviewEvidenceDigest
+          : undefined,
+      ).toBe(invocation?.findingsHash);
+      expect(
+        cert!.reviewBinding.kind === 'current_review'
+          ? cert!.reviewBinding.reviewEvidenceDigest
+          : undefined,
+      ).toMatch(/^[0-9a-f]{64}$/);
     } finally {
       await ws.cleanup();
     }

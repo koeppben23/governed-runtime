@@ -636,6 +636,9 @@ describe('evidence-review', () => {
         invokedAt: FIXED_TIME,
         fulfilledAt: null,
         consumedByObligationId: null,
+        reviewOutputMode: 'structured_output' as const,
+        structuredOutputUsed: true,
+        reviewAssuranceLevel: 'structured_high' as const,
       };
       const parsed = ReviewInvocationEvidence.parse(invocation);
       expect(parsed.reviewOutputMode).toBe('structured_output');
@@ -677,6 +680,9 @@ describe('evidence-review', () => {
         invokedAt: FIXED_TIME,
         fulfilledAt: FIXED_TIME,
         consumedByObligationId: null,
+        reviewOutputMode: 'structured_output' as const,
+        structuredOutputUsed: true,
+        reviewAssuranceLevel: 'structured_high' as const,
       };
       const result = ReviewAssuranceState.safeParse({
         assuranceSchemaVersion: 'review-assurance.v6' as const,
@@ -713,6 +719,9 @@ describe('evidence-review', () => {
         invokedAt: FIXED_TIME,
         fulfilledAt: FIXED_TIME,
         consumedByObligationId: null,
+        reviewOutputMode: 'structured_output' as const,
+        structuredOutputUsed: true,
+        reviewAssuranceLevel: 'structured_high' as const,
       };
       const result = ReviewAssuranceState.safeParse({
         assuranceSchemaVersion: 'review-assurance.v6' as const,
@@ -770,6 +779,9 @@ describe('evidence-review', () => {
         fulfilledAt: FIXED_TIME,
         consumedByObligationId: null,
         capturedVerdict: 'accept',
+        reviewOutputMode: 'structured_output' as const,
+        structuredOutputUsed: true,
+        reviewAssuranceLevel: 'structured_high' as const,
       };
       const contradictory = {
         ...invocation,

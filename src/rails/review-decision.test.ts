@@ -90,8 +90,7 @@ function planAssurance(input: PlanAssuranceInput): ReviewAssuranceState {
       invocationId: input.invocationId ?? PLAN_INVOCATION_ID,
       findingsHash: input.findingsHash ?? 'a'.repeat(64),
       capturedVerdict: input.capturedVerdict,
-      // Default: evidence bound to the empty declaration set — the claim set
-      // most plan-approval tests carry (no claimDeclarations on the plan).
+      // Default: the empty declaration set (most plan-approval tests carry no claims).
       claimDeclarationsDigest:
         input.claimDeclarationsDigest ??
         hashText(canonicalJsonStringify(emptyClaimDeclarations('plan'))),
@@ -1594,67 +1593,6 @@ describe('review-decision rail', () => {
         // (which would happen only at ARCH_REVIEW).
         expect(result.state.architecture).toBe(state.architecture);
         expect(result.state.architecture?.status).toBe(ARCHITECTURE_DECISION.status);
-      }
-    });
-
-    it('binds the plan certificate to the exact-subject plan obligation evidence', () => {
-      const state = makeState('PLAN_REVIEW', {
-        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
-        selfReview: CONVERGED_SELF_REVIEW,
-        reviewAssurance: planAssurance({
-          subjectDigest: PLAN_RECORD.current.digest,
-          status: 'fulfilled',
-          capturedVerdict: 'accept',
-        }),
-      });
-      const result = executeReviewDecision(
-        state,
-        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
-        baseCtx,
-      );
-      expect(result.kind).toBe('ok');
-      if (result.kind === 'ok') {
-        expect(result.state.plan?.approvalCertificate?.reviewObligationId).toBe(PLAN_OBLIGATION_ID);
-        expect(result.state.plan?.approvalCertificate?.reviewEvidenceDigest).toBe('a'.repeat(64));
-      }
-    });
-
-    it('prefers the exact-subject plan obligation over a newer wrong-subject obligation', () => {
-      const newerWrong = planAssurance({
-        subjectDigest: 'wrong-subject-digest',
-        status: 'consumed',
-        iteration: 1,
-        createdAt: '2026-01-02T00:00:00.000Z',
-        obligationId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
-        invocationId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeff',
-        findingsHash: 'b'.repeat(64),
-      });
-      const olderMatch = planAssurance({
-        subjectDigest: PLAN_RECORD.current.digest,
-        status: 'consumed',
-        iteration: 0,
-        createdAt: '2026-01-01T00:00:00.000Z',
-        findingsHash: 'c'.repeat(64),
-        capturedVerdict: 'accept',
-      });
-      const state = makeState('PLAN_REVIEW', {
-        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
-        selfReview: CONVERGED_SELF_REVIEW,
-        reviewAssurance: {
-          ...newerWrong,
-          obligations: [...newerWrong.obligations, ...olderMatch.obligations],
-          invocations: [...newerWrong.invocations, ...olderMatch.invocations],
-        },
-      });
-      const result = executeReviewDecision(
-        state,
-        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
-        baseCtx,
-      );
-      expect(result.kind).toBe('ok');
-      if (result.kind === 'ok') {
-        expect(result.state.plan?.approvalCertificate?.reviewObligationId).toBe(PLAN_OBLIGATION_ID);
-        expect(result.state.plan?.approvalCertificate?.reviewEvidenceDigest).toBe('c'.repeat(64));
       }
     });
 

@@ -382,8 +382,8 @@ export const SessionState = z
      */
     implementationRiskAssessment: ImplementationRiskAssessment.optional(),
 
-    implementationRework: ImplementationRework.nullable().default(null),
-    implementationReviewExtensions: z.array(ImplementationReviewExtension).default([]),
+    implementationRework: ImplementationRework.nullable(),
+    implementationReviewExtensions: z.array(ImplementationReviewExtension),
     /** Persistent Discovery health gate block state for mutating host tools (#399). */
     discoveryHealthGate: DiscoveryHealthGate.optional(),
 
@@ -411,23 +411,23 @@ export const SessionState = z
      * Append-only execution ledger. Unlike the current per-check projections above,
      * this preserves every successful validation-result persistence for audit.
      */
-    validationAttempts: z.array(ValidationAttempt).default([]),
+    validationAttempts: z.array(ValidationAttempt),
 
     /**
      * Append-only mutation-attempt ledger (#762). Records every FlowGuard-attested
      * mutation report observation, with implementation binding, artifact/projection
      * digests, and reproducibility metadata. Produced by flowguard_record_mutation_evidence.
      */
-    mutationAttempts: z.array(MutationAttempt).default([]),
+    mutationAttempts: z.array(MutationAttempt),
 
     /** Durable host-mutation dispatch and completion ledger. */
-    mutationEpisodes: z.array(MutationEpisode).default([]),
+    mutationEpisodes: z.array(MutationEpisode),
 
     /** Append-only unknown-outcome resolution authority for host mutation episodes. */
-    mutationEpisodeResolutions: z.array(MutationEpisodeResolution).default([]),
+    mutationEpisodeResolutions: z.array(MutationEpisodeResolution),
 
     /** Advisory challenge-resolution evidence; defaults for legacy sessions. */
-    challengeResolutions: z.array(ChallengeResolution).default([]),
+    challengeResolutions: z.array(ChallengeResolution),
 
     /**
      * Post-implementation validation check results (IMPL_VALIDATION phase). Kept
@@ -435,7 +435,7 @@ export const SessionState = z
      * trail retains both the baseline and the re-run of checks against the fixed code.
      * Defaulted to [] for backward compatibility with pre-IMPL_VALIDATION sessions.
      */
-    implValidation: z.array(ValidationResult).default([]),
+    implValidation: z.array(ValidationResult),
 
     /** Implementation evidence from /implement. */
     implementation: ImplEvidence.nullable(),
@@ -451,7 +451,7 @@ export const SessionState = z
     implementationBaseAuthority: FrozenRepositoryRevisionTarget.optional(),
 
     /** Explicit runtime evidence for reducing implementation-review ceremony. */
-    reducedCeremony: ReducedCeremonyDecision.nullable().default(null),
+    reducedCeremony: ReducedCeremonyDecision.nullable(),
 
     /** Implementation review iteration result (IMPL_REVIEW phase, digest-stop). */
     implReview: ImplReviewResult.nullable(),
@@ -469,10 +469,10 @@ export const SessionState = z
     reviewDecision: ReviewDecision.nullable(),
 
     /** Absolute path to the generated review report file (REVIEW phase, P8b). */
-    reviewReportPath: z.string().nullable().default(null),
+    reviewReportPath: z.string().nullable(),
 
     /** Append-only deterministic task preparation and completion evidence for /review. */
-    standaloneReviewEvidence: z.array(StandaloneReviewEvidence).default([]),
+    standaloneReviewEvidence: z.array(StandaloneReviewEvidence),
 
     /**
      * Thin ProofGraph contract declaration (advisory; #762).
@@ -660,7 +660,7 @@ export const SessionState = z
      * State-owned audit outbox. Operations remain after reconciliation as
      * durable correlation evidence; their status is monotonic.
      */
-    pendingAuditOperations: z.array(PendingAuditOperation).default([]),
+    pendingAuditOperations: z.array(PendingAuditOperation),
 
     /** Error state. Non-null triggers ERROR event in guard evaluation. */
     error: ErrorInfo.nullable(),

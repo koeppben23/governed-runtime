@@ -180,16 +180,6 @@ export function createPlanApprovalCertificate(
     planVersion,
     planRecordDigest,
     reviewBinding,
-    // Legacy presentation mirrors of the binding (kept for consumers that
-    // predate the binding contract; the binding is the sole authority).
-    reviewObligationId:
-      reviewBinding.kind === 'current_review'
-        ? reviewBinding.reviewObligationId
-        : reviewBinding.lastReviewObligationId,
-    reviewEvidenceDigest:
-      reviewBinding.kind === 'current_review'
-        ? reviewBinding.reviewEvidenceDigest
-        : reviewBinding.lastReviewEvidenceDigest,
   };
 }
 

@@ -51,8 +51,6 @@ function contractState(overrides: Partial<SessionState> = {}): SessionState {
           reviewEvidenceDigest: 'd'.repeat(64),
           reviewedSubjectDigest: PLAN_RECORD.current.digest,
         },
-        reviewObligationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-        reviewEvidenceDigest: 'd'.repeat(64),
       },
     },
     proofContract: {
