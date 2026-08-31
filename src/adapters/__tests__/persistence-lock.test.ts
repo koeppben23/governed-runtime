@@ -173,7 +173,7 @@ describe('persistence-lock', () => {
       ...args: [options?: Parameters<typeof fs.readFile>[1]]
     ) => {
       if (String(file) === lockPath) throw errno('EACCES', 'permission denied');
-      return actualFs().readFile(file, args[0]);
+      return args[0] === undefined ? actualFs().readFile(file) : actualFs().readFile(file, args[0]);
     }) as typeof fs.readFile);
 
     await expect(acquireSessionWriteLock(sessionDir, 0)).rejects.toMatchObject({
@@ -207,7 +207,7 @@ describe('persistence-lock', () => {
         await actualFs().unlink(lockPath);
         return `pid=${stalePid}\ntoken=changed\n`;
       }
-      return actualFs().readFile(file, args[0]);
+      return args[0] === undefined ? actualFs().readFile(file) : actualFs().readFile(file, args[0]);
     }) as typeof fs.readFile);
 
     const lock = await acquireSessionWriteLock(sessionDir, 1000);
@@ -262,7 +262,7 @@ describe('persistence-lock', () => {
         reads += 1;
         return Promise.resolve(`pid=${stalePid}\ntoken=churn-${reads}\n`);
       }
-      return actualFs().readFile(file, args[0]);
+      return args[0] === undefined ? actualFs().readFile(file) : actualFs().readFile(file, args[0]);
     }) as typeof fs.readFile);
 
     const timerSpy = vi.spyOn(global, 'setTimeout');
@@ -309,7 +309,7 @@ describe('persistence-lock', () => {
         await actualFs().writeFile(lockPath, foreign, 'utf-8');
         return foreign;
       }
-      return actualFs().readFile(file, args[0]);
+      return args[0] === undefined ? actualFs().readFile(file) : actualFs().readFile(file, args[0]);
     }) as typeof fs.readFile);
 
     // Zero-timeout: after refusing to delete the foreign lock, acquisition must
@@ -343,7 +343,7 @@ describe('persistence-lock', () => {
         if (reads === 1) return Promise.resolve(`pid=${stalePid}\ntoken=dead-token\n`);
         return Promise.reject(errno('EACCES', 'permission denied'));
       }
-      return actualFs().readFile(file, args[0]);
+      return args[0] === undefined ? actualFs().readFile(file) : actualFs().readFile(file, args[0]);
     }) as typeof fs.readFile);
 
     await expect(acquireSessionWriteLock(sessionDir, 0)).rejects.toMatchObject({
@@ -394,7 +394,7 @@ describe('persistence-lock', () => {
       ...args: [options?: Parameters<typeof fs.readFile>[1]]
     ) => {
       if (String(file) === lockPath) throw errno('ENOENT', 'lock disappeared');
-      return actualFs().readFile(file, args[0]);
+      return args[0] === undefined ? actualFs().readFile(file) : actualFs().readFile(file, args[0]);
     }) as typeof fs.readFile);
 
     const lock = await acquireSessionWriteLock(sessionDir, 1000);
@@ -493,7 +493,9 @@ describe('persistence-lock', () => {
         ...args: [options?: Parameters<typeof fs.readFile>[1]]
       ) => {
         if (String(file) === lockPath) throw errno('ENOENT', 'lock disappeared');
-        return actualFs().readFile(file, args[0]);
+        return args[0] === undefined
+          ? actualFs().readFile(file)
+          : actualFs().readFile(file, args[0]);
       }) as typeof fs.readFile);
 
       const lock = await acquireSessionWriteLock(sessionDir, 1000);
@@ -512,7 +514,7 @@ describe('persistence-lock', () => {
       vi.mocked(fs.readFile).mockImplementation(((file: Parameters<typeof fs.readFile>[0]) => {
         if (String(file) === lockPath) throw errno('EACCES', 'permission denied');
         return actualFs().readFile(file, { encoding: 'utf-8' });
-      }) as typeof fs.readFile);
+      }) as unknown as typeof fs.readFile);
 
       // Release should throw EACCES (not swallow it)
       await expect(lock.release()).rejects.toMatchObject({ code: 'EACCES' });
@@ -532,7 +534,7 @@ describe('persistence-lock', () => {
       vi.mocked(fs.readFile).mockImplementation(((file: Parameters<typeof fs.readFile>[0]) => {
         if (String(file) === lockPath) throw errno('EACCES', 'permission denied');
         return actualFs().readFile(file, { encoding: 'utf-8' });
-      }) as typeof fs.readFile);
+      }) as unknown as typeof fs.readFile);
 
       try {
         await expect(acquireSessionWriteLock(sessionDir, 0)).rejects.toMatchObject({
