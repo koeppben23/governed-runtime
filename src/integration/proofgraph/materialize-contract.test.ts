@@ -79,6 +79,7 @@ function stateWithClaims() {
         lineageStatus: 'verified' as const,
       },
       history: [],
+      reviewCompletion: 'pending',
       claimDeclarations: {
         flow: 'plan',
         version: 'v2',

@@ -109,8 +109,14 @@ describe('renderDeclarationPreview', () => {
           certificateId: '44444444-4444-4444-8444-444444444444',
           planVersion: 1,
           planRecordDigest: 'record-digest',
-          reviewObligationId: null,
-          reviewEvidenceDigest: null,
+          reviewBinding: {
+            kind: 'current_review',
+            reviewObligationId: '55555555-5555-4555-8555-555555555555',
+            reviewEvidenceDigest: 'review-evidence-digest',
+            reviewedSubjectDigest: 'authority-digest',
+          },
+          reviewObligationId: '55555555-5555-4555-8555-555555555555',
+          reviewEvidenceDigest: 'review-evidence-digest',
         },
       },
     };

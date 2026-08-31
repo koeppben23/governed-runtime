@@ -151,11 +151,10 @@ export const PlanRecord = z
     /**
      * Completion of the independent plan review cycle for the current subject
      * (CE5). Lifecycle evidence, never part of the plan's content identity.
-     * Optional for legacy hydration: absent means `pending` at the authority
-     * boundary — a converged-but-unmarked legacy plan cannot be approved, the
-     * review loop must converge again. All controlled writers set it.
+     * REQUIRED in the Hard Assurance Epoch — all controlled writers set it;
+     * absence fails parsing instead of defaulting to `pending`.
      */
-    reviewCompletion: ReviewCompletion.optional(),
+    reviewCompletion: ReviewCompletion,
   })
   .readonly();
 export type PlanRecord = z.infer<typeof PlanRecord>;

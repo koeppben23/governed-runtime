@@ -177,6 +177,7 @@ function buildSessionState() {
         lineageStatus: 'verified' as const,
       },
       history: [],
+      reviewCompletion: 'pending',
     },
     ticket: {
       text: 'ticket text',

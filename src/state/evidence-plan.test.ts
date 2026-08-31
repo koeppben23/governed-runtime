@@ -50,7 +50,7 @@ describe('evidence-plan', () => {
         revisionReason: null,
         lineageStatus: 'verified' as const,
       };
-      const record = { current, history: [] };
+      const record = { current, history: [], reviewCompletion: 'pending' as const };
       expect(PlanRecord.parse(record).current).toMatchObject(current);
     });
 
@@ -67,7 +67,7 @@ describe('evidence-plan', () => {
         revisionReason: null,
         lineageStatus: 'verified' as const,
       };
-      const record = { current, history: [] };
+      const record = { current, history: [], reviewCompletion: 'pending' as const };
       expect(PlanRecord.parse(record).current).toMatchObject(current);
     });
 

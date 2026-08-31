@@ -347,6 +347,7 @@ describe('FlowGuard tool-level E2E', () => {
                 lineageStatus: 'verified' as const,
               },
               history: [],
+              reviewCompletion: 'pending',
               reviewFindings: undefined,
             },
             // No active checks → IMPL_VALIDATION passes vacuously and auto-advances to

@@ -111,6 +111,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
           lineageStatus: 'verified' as const,
         },
         history: [],
+        reviewCompletion: 'pending',
         reviewFindings: [],
       },
       selfReview: {

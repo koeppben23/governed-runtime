@@ -285,6 +285,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
           lineageStatus: 'verified' as const,
         },
         history: [],
+        reviewCompletion: 'pending',
       },
     };
   }

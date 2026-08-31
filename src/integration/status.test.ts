@@ -404,6 +404,7 @@ describe('buildBlockedProjection — ProofGraph gate', () => {
         lineageStatus: 'verified',
       },
       history: [],
+      reviewCompletion: 'pending',
       claimDeclarations: declarations(),
       approvalCertificate: certificate(),
     };
@@ -528,6 +529,7 @@ describe('buildStatusProjection — EDGE evidence', () => {
           lineageStatus: 'verified' as const,
         },
         history: [],
+        reviewCompletion: 'pending',
       },
     };
     const projection = buildStatusProjection(state, policy);
@@ -677,6 +679,7 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
           lineageStatus: 'verified' as const,
         },
         history: [],
+        reviewCompletion: 'pending',
       },
       selfReview: {
         iteration: 1,
@@ -775,6 +778,7 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
           lineageStatus: 'verified' as const,
         },
         history: [],
+        reviewCompletion: 'pending',
       },
       selfReview: {
         iteration: 1,

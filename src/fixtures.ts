@@ -77,6 +77,7 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
   identityProviderMode: 'optional',
   reviewOutputPolicy: 'text_compat_allowed',
   reviewInvocationPolicy: 'sdk_allowed',
+  reviewProfile: 'core',
   enforceRiskClassification: false,
   allowRiskDowngradeOverride: false,
   allowReducedCeremony: false,

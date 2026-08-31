@@ -315,6 +315,7 @@ describe('evaluateProofGraphGateFromState', () => {
         lineageStatus: 'verified',
       },
       history: [],
+      reviewCompletion: 'pending',
       claimDeclarations: decls,
       ...(cert ? { approvalCertificate: cert } : {}),
     };

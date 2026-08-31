@@ -1388,6 +1388,7 @@ describe('declare_contract', () => {
           lineageStatus: 'verified' as const,
         },
         history: [],
+        reviewCompletion: 'pending',
       },
       proofContract: { version: 'contract.v1', claims: [existingClaim] },
       proofContractCoverage: coverage,

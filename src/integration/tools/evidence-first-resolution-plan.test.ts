@@ -275,6 +275,7 @@ function planStateWithEvidence(
         lineageStatus: 'verified' as const,
       },
       history: [],
+      reviewCompletion: 'pending',
       reviewFindings: [],
     },
     selfReview: {
@@ -497,6 +498,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
           lineageStatus: 'verified' as const,
         },
         history: [],
+        reviewCompletion: 'pending',
         reviewFindings: [],
       },
       selfReview: {
@@ -711,6 +713,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
           lineageStatus: 'verified' as const,
         },
         history: [],
+        reviewCompletion: 'pending',
         reviewFindings: [],
       },
       selfReview: {

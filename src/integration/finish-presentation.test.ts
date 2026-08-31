@@ -204,6 +204,7 @@ describe('buildFinishDocument', () => {
           lineageStatus: 'verified',
         },
         history: [],
+        reviewCompletion: 'pending',
         claimDeclarations: declarations,
         approvalCertificate: certificate,
       },

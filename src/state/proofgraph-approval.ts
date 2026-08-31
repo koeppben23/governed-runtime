@@ -191,20 +191,18 @@ export const PlanApprovalCertificate = z
     /** Record-digest of the plan this certificate binds (content + lineage). */
     planRecordDigest: z.string().min(1),
     /**
-     * Canonical review-evidence provenance edge. Optional ONLY for legacy
-     * hydration: certificates minted before the binding contract carry neither
-     * field. Such certificates fail `hasCurrentPlanApprovalCertificate` and
-     * can never authorize critical claims — the authority boundary fails
-     * closed, old serialized values stay readable.
+     * Canonical review-evidence provenance edge. REQUIRED in the Hard
+     * Assurance Epoch: every certificate is minted with its binding, and a
+     * certificate without one is not a current-epoch artifact — it fails
+     * parsing instead of degrading to a readable-but-unauthoritative shape.
      */
-    reviewBinding: PlanReviewBinding.optional(),
-    /** Legacy mirror of the binding (presentation/compat; the binding is the authority). */
-    reviewObligationId: z.string().uuid().nullable(),
-    /** Legacy mirror of the binding (presentation/compat; the binding is the authority). */
-    reviewEvidenceDigest: z.string().min(1).nullable(),
+    reviewBinding: PlanReviewBinding,
+    /** Materialized presentation mirror of the binding (the binding is the authority). */
+    reviewObligationId: z.string().uuid(),
+    /** Materialized presentation mirror of the binding (the binding is the authority). */
+    reviewEvidenceDigest: z.string().min(1),
   })
   .superRefine((certificate, ctx) => {
-    if (!certificate.reviewBinding) return;
     const binding = certificate.reviewBinding;
     if (binding.kind === 'current_review') {
       if (binding.reviewedSubjectDigest !== certificate.authorityDigest) {

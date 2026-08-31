@@ -193,6 +193,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
           lineageStatus: 'verified' as const,
         },
         history: [],
+        reviewCompletion: 'pending',
         reviewFindings: [],
       },
       selfReview: {

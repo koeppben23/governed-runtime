@@ -229,6 +229,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
           lineageStatus: 'verified' as const,
         },
         history: [],
+        reviewCompletion: 'pending',
         reviewFindings: [],
       },
       selfReview: {
@@ -296,6 +297,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
           lineageStatus: 'verified' as const,
         },
         history: [],
+        reviewCompletion: 'pending',
         reviewFindings: [],
       },
       implementation: {

@@ -144,6 +144,7 @@ describe('ProofGraph approval schemas', () => {
               lineageStatus: 'verified' as const,
             },
             history: [],
+            reviewCompletion: 'pending',
             approvalCertificate: {
               ...CERTIFICATE,
               flow: 'architecture',
@@ -183,6 +184,7 @@ describe('ProofGraph approval schemas', () => {
             lineageStatus: 'verified' as const,
           },
           history: [],
+          reviewCompletion: 'pending',
           claimDeclarations: { flow: 'plan', version: 'v2', claims: [PLAN_CLAIM] },
           approvalCertificate: CERTIFICATE,
         },

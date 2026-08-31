@@ -266,6 +266,7 @@ function implStateWithEvidence(
         lineageStatus: 'verified' as const,
       },
       history: [],
+      reviewCompletion: 'pending',
       reviewFindings: [],
     },
     implementation: {
@@ -472,6 +473,7 @@ describe('BUG-17: implement evidence-first resolution', () => {
           lineageStatus: 'verified' as const,
         },
         history: [],
+        reviewCompletion: 'pending',
         reviewFindings: [],
       },
       implementation: {
@@ -607,6 +609,7 @@ describe('BUG-17: implement evidence-first resolution', () => {
           lineageStatus: 'verified' as const,
         },
         history: [],
+        reviewCompletion: 'pending',
         reviewFindings: [],
       },
       implementation: {

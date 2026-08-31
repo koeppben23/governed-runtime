@@ -283,6 +283,7 @@ describe('BUG-09: plan text SSOT enforcement', () => {
             lineageStatus: 'verified' as const,
           },
           history: [],
+          reviewCompletion: 'pending' as const,
         },
       };
       const { capturedPrompts } = await runPlanReview('LLM fallback text', emptyPlanState);
@@ -343,6 +344,7 @@ describe('BUG-09: plan text SSOT enforcement', () => {
             lineageStatus: 'verified' as const,
           },
           history: [],
+          reviewCompletion: 'pending' as const,
         },
       };
       const { capturedPrompts } = await runPlanReview('short LLM text', longPlanState);

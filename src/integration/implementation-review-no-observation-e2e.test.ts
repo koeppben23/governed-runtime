@@ -305,6 +305,7 @@ async function prepareBoundUnableReview(se: SE, implementationDigest: string) {
         lineageStatus: 'verified',
       },
       history: [],
+      reviewCompletion: 'pending',
       reviewFindings: [],
     },
     implementation: {
