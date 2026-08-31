@@ -174,11 +174,7 @@ export async function materializeApprovedPlanContractResult(
       attempt.scope === 'implementation' && attempt.implementationDigest === implementationDigest,
   );
   const coverage: ProofContractCoverage[] = [];
-  const legacyDeclarations = !('version' in declarations);
   const claims = declarations.claims.map((declaration) => {
-    if (legacyDeclarations) {
-      coverage.push({ claimId: declaration.claimId, cause: 'legacy_claim_declaration_v1' });
-    }
     const expectedAttempts = attempts.filter(
       (attempt) => attempt.result.checkId === declaration.expectedCheckId,
     );
@@ -223,9 +219,8 @@ export async function materializeApprovedPlanContractResult(
         attemptId: attempt.attemptId,
       })),
       counterexampleRequirement: declaration.counterexampleRequirement,
-      proofEligibility: legacyDeclarations
-        ? ('legacy_declaration_v1' as const)
-        : ('eligible' as const),
+      // Hard Assurance Epoch: plan declarations are v2-only — every claim is eligible.
+      proofEligibility: 'eligible' as const,
       requiredEvidence: requiredEvidence(declaration),
     };
   });

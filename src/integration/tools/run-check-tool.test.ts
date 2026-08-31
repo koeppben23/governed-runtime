@@ -920,12 +920,14 @@ describe('CORNER', () => {
         ...state!.plan!,
         claimDeclarations: {
           flow: 'plan',
+          version: 'v2',
           claims: [
             {
               claimId,
               statement: 'approved plan behavior is implemented',
               critical: true,
               authoritySectionId: 'implementation',
+              claimScope: 'specific_behavior',
               expectedCheckId: 'typecheck',
             },
           ],
@@ -936,12 +938,14 @@ describe('CORNER', () => {
           claimDeclarationsDigest: hashText(
             canonicalJsonStringify({
               flow: 'plan',
+              version: 'v2',
               claims: [
                 {
                   claimId,
                   statement: 'approved plan behavior is implemented',
                   critical: true,
                   authoritySectionId: 'implementation',
+                  claimScope: 'specific_behavior',
                   expectedCheckId: 'typecheck',
                 },
               ],

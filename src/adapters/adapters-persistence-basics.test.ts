@@ -173,10 +173,10 @@ describe('persistence', () => {
       expect(loaded!.plan!.current.digest).toBe(state.plan!.current.digest);
     });
 
-    it('readState normalizes legacy regulated/team-ci snapshots to risk enforcement on', async () => {
+    it('readState rejects current-epoch states missing authority fields (no read-time defaulting)', async () => {
       for (const mode of ['regulated', 'team-ci'] as const) {
         const state = makeProgressedState('TICKET');
-        const legacy = {
+        const incomplete = {
           ...state,
           policySnapshot: {
             ...state.policySnapshot,
@@ -184,15 +184,15 @@ describe('persistence', () => {
             requestedMode: mode,
           },
         };
-        delete (legacy.policySnapshot as Record<string, unknown>).enforceRiskClassification;
-        delete (legacy.policySnapshot as Record<string, unknown>).allowRiskDowngradeOverride;
+        delete (incomplete.policySnapshot as Record<string, unknown>).enforceRiskClassification;
+        delete (incomplete.policySnapshot as Record<string, unknown>).allowRiskDowngradeOverride;
 
         await fs.mkdir(tmpDir, { recursive: true });
-        await fs.writeFile(statePath(tmpDir), JSON.stringify(legacy), 'utf-8');
-        const loaded = await readState(tmpDir);
+        await fs.writeFile(statePath(tmpDir), JSON.stringify(incomplete), 'utf-8');
 
-        expect(loaded?.policySnapshot.enforceRiskClassification).toBe(true);
-        expect(loaded?.policySnapshot.allowRiskDowngradeOverride).toBe(false);
+        await expect(readState(tmpDir)).rejects.toMatchObject({
+          code: 'SCHEMA_VALIDATION_FAILED',
+        });
       }
     });
 

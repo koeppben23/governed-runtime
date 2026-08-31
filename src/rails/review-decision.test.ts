@@ -138,6 +138,7 @@ const PLAN_CLAIM = {
   statement: 'The login flow rejects invalid credentials.',
   critical: true,
   authoritySectionId: 'authentication',
+  claimScope: 'specific_behavior' as const,
   expectedCheckId: 'test',
 };
 
@@ -155,7 +156,7 @@ describe('review-decision rail', () => {
       plan: {
         current: PLAN_RECORD.current,
         history: PLAN_RECORD.history,
-        claimDeclarations: { flow: 'plan', claims: [PLAN_CLAIM] },
+        claimDeclarations: { flow: 'plan', version: 'v2', claims: [PLAN_CLAIM] },
         reviewCompletion: 'reviewer_accepted',
       },
       reviewAssurance: planAssurance({
@@ -163,7 +164,7 @@ describe('review-decision rail', () => {
         status: 'consumed',
         capturedVerdict: 'accept',
         claimDeclarationsDigest: hashText(
-          canonicalJsonStringify({ flow: 'plan', claims: [PLAN_CLAIM] }),
+          canonicalJsonStringify({ flow: 'plan', version: 'v2', claims: [PLAN_CLAIM] }),
         ),
       }),
     });
@@ -180,7 +181,7 @@ describe('review-decision rail', () => {
         flow: 'plan',
         authorityDigest: PLAN_RECORD.current.digest,
         claimDeclarationsDigest: hashText(
-          '{"claims":[{"authoritySectionId":"authentication","claimId":"00000000-0000-4000-8000-000000000003","critical":true,"expectedCheckId":"test","statement":"The login flow rejects invalid credentials."}],"flow":"plan"}',
+          '{"claims":[{"authoritySectionId":"authentication","claimId":"00000000-0000-4000-8000-000000000003","claimScope":"specific_behavior","critical":true,"expectedCheckId":"test","statement":"The login flow rejects invalid credentials."}],"flow":"plan","version":"v2"}',
         ),
         decisionAttestationDigest: baseCtx.digest(
           '{"decidedAt":"2026-01-01T00:00:00.000Z","decidedBy":"reviewer-1","rationale":"approved","verdict":"approve"}',

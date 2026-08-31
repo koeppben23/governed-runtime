@@ -264,7 +264,9 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
     subjectDigest: 'digest-of-plan',
     // Bound to the (empty) claim declaration set of PLAN_RECORD: the plan
     // approval gate fails closed when evidence carries no claim binding.
-    claimDeclarationsDigest: hashText(canonicalJsonStringify({ flow: 'plan', claims: [] })),
+    claimDeclarationsDigest: hashText(
+      canonicalJsonStringify({ flow: 'plan', version: 'v2', claims: [] }),
+    ),
     reviewMaterial: {
       content: '## Plan\n1. Fix auth\n2. Add tests',
       materialDigest: 'material-digest-of-plan-review',

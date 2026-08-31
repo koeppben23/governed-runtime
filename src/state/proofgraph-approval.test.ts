@@ -46,6 +46,7 @@ const PLAN_CLAIM = {
   statement: 'The change preserves the intended behavior.',
   critical: true,
   authoritySectionId: 'behavior',
+  claimScope: 'specific_behavior' as const,
   expectedCheckId: 'test',
 };
 
@@ -68,8 +69,11 @@ describe('ProofGraph approval schemas', () => {
   });
 
   it('parses plan and architecture pre-evidence declarations', () => {
-    expect(PlanClaimDeclarations.parse({ flow: 'plan', claims: [PLAN_CLAIM] })).toEqual({
+    expect(
+      PlanClaimDeclarations.parse({ flow: 'plan', version: 'v2', claims: [PLAN_CLAIM] }),
+    ).toEqual({
       flow: 'plan',
+      version: 'v2',
       claims: [PLAN_CLAIM],
     });
     expect(
@@ -77,12 +81,9 @@ describe('ProofGraph approval schemas', () => {
     ).toEqual({ flow: 'architecture', claims: [ARCHITECTURE_CLAIM] });
   });
 
-  it('preserves persisted v1 declarations without adding v2 fields', () => {
-    const legacy = { flow: 'plan', claims: [PLAN_CLAIM] };
-    const before = canonicalJsonStringify(legacy);
-    const parsed = PlanClaimDeclarations.parse(legacy);
-    expect(parsed).toEqual(legacy);
-    expect(canonicalJsonStringify(parsed)).toBe(before);
+  it('rejects versionless (legacy) plan declarations — no legacy branch in this epoch', () => {
+    expect(() => PlanClaimDeclarations.parse({ flow: 'plan', claims: [PLAN_CLAIM] })).toThrow();
+    expect(() => FlowClaimDeclarations.parse({ flow: 'plan', claims: [PLAN_CLAIM] })).toThrow();
   });
 
   it('rejects a declaration with a mismatched flow', () => {
@@ -95,6 +96,7 @@ describe('ProofGraph approval schemas', () => {
     expect(() =>
       PlanClaimDeclarations.parse({
         flow: 'plan',
+        version: 'v2',
         claims: [{ ...PLAN_CLAIM, expectedCheckId: undefined, evidenceRefs: [] }],
       }),
     ).toThrow();
@@ -181,7 +183,7 @@ describe('ProofGraph approval schemas', () => {
             lineageStatus: 'verified' as const,
           },
           history: [],
-          claimDeclarations: { flow: 'plan', claims: [PLAN_CLAIM] },
+          claimDeclarations: { flow: 'plan', version: 'v2', claims: [PLAN_CLAIM] },
           approvalCertificate: CERTIFICATE,
         },
       }),
@@ -395,8 +397,10 @@ describe('certificate integrity', () => {
     statement: 'modern',
     critical: true,
     authoritySectionId: 's1',
+    claimScope: 'specific_behavior' as const,
     expectedCheckId: 'test',
     counterexampleRequirement: {
+      kind: 'assertion' as const,
       checkId: 'security',
       assertion: { providerId: 'junit', localId: 'some-id' },
     },
@@ -437,6 +441,7 @@ describe('certificate integrity', () => {
 
   const declarations: PlanClaimDeclarations = {
     flow: 'plan',
+    version: 'v2',
     claims: [MODERN_CLAIM],
   };
 
@@ -450,6 +455,7 @@ describe('certificate integrity', () => {
     const digest = hashText(
       canonicalJsonStringify({
         flow: 'plan',
+        version: 'v2',
         claims: [{ ...MODERN_CLAIM, claimId: '00000000-0000-4000-8000-000000000099' }],
       }),
     );
@@ -476,6 +482,7 @@ describe('read-model schema boundaries', () => {
     statement: 'test',
     critical: true,
     authoritySectionId: 's1',
+    claimScope: 'specific_behavior',
     expectedCheckId: 'test',
   };
 
@@ -483,11 +490,13 @@ describe('read-model schema boundaries', () => {
     const result = PlanClaimDeclaration.parse({
       ...BASE,
       counterexampleRequirement: {
+        kind: 'assertion',
         checkId: 'security',
         assertion: { providerId: 'junit', localId: 'some-id' },
       },
     });
     expect(result.counterexampleRequirement).toEqual({
+      kind: 'assertion',
       checkId: 'security',
       assertion: { providerId: 'junit', localId: 'some-id' },
     });
@@ -497,11 +506,13 @@ describe('read-model schema boundaries', () => {
     const result = PlanClaimDeclaration.parse({
       ...BASE,
       counterexampleRequirement: {
+        kind: 'assertion',
         checkId: 'security',
         assertion: { providerId: 'junit', localId: 'x#y' },
       },
     });
     expect(result.counterexampleRequirement).toEqual({
+      kind: 'assertion',
       checkId: 'security',
       assertion: { providerId: 'junit', localId: 'x#y' },
     });
@@ -525,18 +536,16 @@ describe('read-model schema boundaries', () => {
     ).toThrow();
   });
 
-  it('PlanClaimDeclaration preserves legacy counterexampleRequirement for audit reads', () => {
-    const result = PlanClaimDeclaration.parse({
-      ...BASE,
-      counterexampleRequirement: {
-        checkId: 'security',
-        assertion: { providerId: 'junit', localId: 'x#y' },
-      },
-    });
-    expect(result.counterexampleRequirement).toEqual({
-      checkId: 'security',
-      assertion: { providerId: 'junit', localId: 'x#y' },
-    });
+  it('PlanClaimDeclaration rejects versionless (legacy) counterexample requirements', () => {
+    expect(() =>
+      PlanClaimDeclaration.parse({
+        ...BASE,
+        counterexampleRequirement: {
+          checkId: 'security',
+          assertion: { providerId: 'junit', localId: 'x#y' },
+        },
+      }),
+    ).toThrow();
   });
 
   it('PlanClaimDeclarationInput accepts counterexampleRequirement', () => {

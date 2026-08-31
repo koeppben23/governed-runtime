@@ -20,6 +20,8 @@ const MINIMAL_POLICY_SNAPSHOT = {
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
   allowSelfApproval: true,
+  enforceRiskClassification: false,
+  allowRiskDowngradeOverride: false,
   audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
   actorClassification: { flowguard_decision: 'human' },
 };
@@ -38,6 +40,8 @@ describe('evidence-policy', () => {
         maxSelfReviewIterations: 3,
         maxImplReviewIterations: 3,
         allowSelfApproval: true,
+        enforceRiskClassification: false,
+        allowRiskDowngradeOverride: false,
         audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
         actorClassification: { flowguard_decision: 'human' },
       };
@@ -61,6 +65,8 @@ describe('evidence-policy', () => {
         maxSelfReviewIterations: 3,
         maxImplReviewIterations: 3,
         allowSelfApproval: true,
+        enforceRiskClassification: false,
+        allowRiskDowngradeOverride: false,
         audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
         actorClassification: { flowguard_decision: 'human' },
       };
@@ -81,6 +87,8 @@ describe('evidence-policy', () => {
         maxImplReviewIterations: 3,
         allowSelfApproval: false,
         minimumActorAssuranceForApproval: 'claim_validated' as const,
+        enforceRiskClassification: true,
+        allowRiskDowngradeOverride: false,
         audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
         actorClassification: { flowguard_decision: 'human' },
       };
@@ -174,6 +182,8 @@ describe('evidence-policy', () => {
         maxSelfReviewIterations: 3,
         maxImplReviewIterations: 3,
         allowSelfApproval: true,
+        enforceRiskClassification: false,
+        allowRiskDowngradeOverride: false,
         audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
         actorClassification: { flowguard_decision: 'human' },
       };
@@ -194,6 +204,8 @@ describe('evidence-policy', () => {
         maxSelfReviewIterations: 3,
         maxImplReviewIterations: 3,
         allowSelfApproval: true,
+        enforceRiskClassification: false,
+        allowRiskDowngradeOverride: false,
         audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
         actorClassification: { flowguard_decision: 'human' },
         // discoveryHealth intentionally absent (legacy snapshot)
@@ -217,6 +229,8 @@ describe('evidence-policy', () => {
         maxSelfReviewIterations: 3,
         maxImplReviewIterations: 3,
         allowSelfApproval: false,
+        enforceRiskClassification: true,
+        allowRiskDowngradeOverride: false,
         audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
         actorClassification: { flowguard_decision: 'human' },
         // discoveryHealth intentionally absent (legacy snapshot)
@@ -240,6 +254,8 @@ describe('evidence-policy', () => {
         maxSelfReviewIterations: 3,
         maxImplReviewIterations: 3,
         allowSelfApproval: true,
+        enforceRiskClassification: false,
+        allowRiskDowngradeOverride: false,
         audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
         actorClassification: { flowguard_decision: 'human' },
         discoveryHealth: {
@@ -266,6 +282,8 @@ describe('evidence-policy', () => {
       maxSelfReviewIterations: 3,
       maxImplReviewIterations: 3,
       allowSelfApproval: true,
+      enforceRiskClassification: false,
+      allowRiskDowngradeOverride: false,
       audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
       actorClassification: { flowguard_decision: 'human' },
     };
@@ -325,6 +343,8 @@ describe('evidence-policy', () => {
       maxSelfReviewIterations: 3,
       maxImplReviewIterations: 3,
       allowSelfApproval: true,
+      enforceRiskClassification: false,
+      allowRiskDowngradeOverride: false,
       audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
       actorClassification: { flowguard_decision: 'human' },
     };

@@ -21,7 +21,7 @@ export function renderPlanClaimDeclarations(
         `- **${claim.claimId}** (${claim.critical ? 'critical' : 'non-critical'})`,
         `  - Statement: ${claim.statement}`,
         `  - Authority section: ${claim.authoritySectionId}`,
-        `  - Claim scope: ${'claimScope' in claim ? claim.claimScope : 'specific_behavior (legacy)'}`,
+        `  - Claim scope: ${claim.claimScope}`,
         `  - Expected check: ${claim.expectedCheckId}`,
         `  - Counterexample requirement: ${counterexampleText}`,
         `  - Structural surface: ${claim.structuralSurface ?? 'none'}`,

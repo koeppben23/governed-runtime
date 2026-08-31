@@ -23,12 +23,14 @@ function contractState(overrides: Partial<SessionState> = {}): SessionState {
       ...PLAN_RECORD,
       claimDeclarations: {
         flow: 'plan',
+        version: 'v2',
         claims: [
           {
             claimId: CLAIM_ID,
             statement: 'updateTask rejects unknown ids',
             critical: true,
             authoritySectionId: 'step-1',
+            claimScope: 'specific_behavior',
             expectedCheckId: 'build',
           },
         ],

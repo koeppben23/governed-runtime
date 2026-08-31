@@ -201,7 +201,7 @@ describe('buildFinishDocument', () => {
           supersedesRecordDigest: null,
           originatingReviewObligationId: null,
           revisionReason: null,
-          lineageStatus: 'unavailable',
+          lineageStatus: 'verified',
         },
         history: [],
         claimDeclarations: declarations,

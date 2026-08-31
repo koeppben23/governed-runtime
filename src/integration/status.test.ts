@@ -401,7 +401,7 @@ describe('buildBlockedProjection — ProofGraph gate', () => {
         supersedesRecordDigest: null,
         originatingReviewObligationId: null,
         revisionReason: null,
-        lineageStatus: 'unavailable',
+        lineageStatus: 'verified',
       },
       history: [],
       claimDeclarations: declarations(),

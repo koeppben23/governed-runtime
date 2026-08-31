@@ -45,7 +45,7 @@ export function computeRecordDigest(input: {
   );
 }
 
-export const LineageStatus = z.enum(['verified', 'legacy_inferred', 'unavailable']);
+export const LineageStatus = z.literal('verified');
 export type LineageStatus = z.infer<typeof LineageStatus>;
 
 /** A single plan version (immutable snapshot). */
@@ -56,36 +56,25 @@ export const PlanEvidence = z.object({
   sections: z.array(z.string()),
   createdAt: z.string().datetime(),
 
-  // ── Lineage (Commit 3) ──────────────────────────────────────────────
-  /**
-   * Cryptographic record digest: domain-separated hash of (contentDigest,
-   * planVersion, supersedesRecordDigest, originatingReviewObligationId,
-   * revisionReason). Computed by `computeRecordDigest()`.
-   * Defaults to a sentinel for backward-compatible legacy parsing; controlled
-   * construction paths (buildPlanEvidence) always override with a real value.
-   */
-  recordDigest: z.string().min(1).default('unavailable-record-digest'),
+  // ── Lineage ─────────────────────────────────────────────────────────
+  // Hard Assurance Epoch: every current-epoch plan version carries the full
+  // lineage computed by computeRecordDigest(). There is NO legacy hydration,
+  // sentinel default, or inferred status — incomplete lineage fails parsing.
+  /** Cryptographic record digest: domain-separated hash of (contentDigest, planVersion, supersedesRecordDigest, originatingReviewObligationId, revisionReason). */
+  recordDigest: z.string().min(1),
   /** Immutable version number within this plan's lineage (1-based). */
-  planVersion: z.number().int().positive().default(1),
+  planVersion: z.number().int().positive(),
   /**
    * Record-digest of the immediate predecessor, or null for v1.
    * References the predecessor's `recordDigest`, NOT its content `digest`.
    */
-  supersedesRecordDigest: z.string().nullable().default(null),
+  supersedesRecordDigest: z.string().nullable(),
   /** The review obligation that triggered this revision, or null for fresh. */
-  originatingReviewObligationId: z.string().uuid().nullable().default(null),
+  originatingReviewObligationId: z.string().uuid().nullable(),
   /** Human or machine summary of why this revision was created. */
-  revisionReason: z.string().nullable().default(null),
-  /**
-   * Trust status of the lineage.
-   * - 'verified': computed by `computeRecordDigest` from authoritative fields.
-   * - 'legacy_inferred': reconstructed from pre-lineage data (best-effort, not
-   *    cryptographically guaranteed).
-   * - 'unavailable': plan was parsed from legacy data with no lineage metadata.
-   *    The Zod schema default is 'unavailable' — only the controlled creation
-   *    paths in buildPlanEvidence() override this to 'verified'.
-   */
-  lineageStatus: LineageStatus.default('unavailable'),
+  revisionReason: z.string().nullable(),
+  /** Only 'verified' exists in this epoch — lineage is computed, never inferred. */
+  lineageStatus: LineageStatus,
 });
 export type PlanEvidence = z.infer<typeof PlanEvidence>;
 

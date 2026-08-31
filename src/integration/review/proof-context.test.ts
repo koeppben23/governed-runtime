@@ -66,12 +66,14 @@ describe('renderDeclarationPreview', () => {
       ...PLAN_RECORD,
       claimDeclarations: {
         flow: 'plan',
+        version: 'v2',
         claims: [
           {
             claimId: CLAIM_ID,
             statement: 'updateTask rejects unknown ids',
             critical: true,
             authoritySectionId: 'implementation-step-1',
+            claimScope: 'specific_behavior',
             expectedCheckId: 'build',
           },
         ],
@@ -147,14 +149,17 @@ describe('renderDeclarationPreview', () => {
         ...planState.plan!,
         claimDeclarations: {
           flow: 'plan',
+          version: 'v2',
           claims: [
             {
               claimId: CLAIM_ID,
               statement: 'counterexample claim',
               critical: true,
               authoritySectionId: 's1',
+              claimScope: 'specific_behavior',
               expectedCheckId: 'build',
               counterexampleRequirement: {
+                kind: 'assertion',
                 checkId: 'security',
                 assertion: { providerId: 'junit', localId: 'my-test' },
               },
@@ -176,14 +181,17 @@ describe('renderDeclarationPreview', () => {
         ...planState.plan!,
         claimDeclarations: {
           flow: 'plan',
+          version: 'v2',
           claims: [
             {
               claimId: CLAIM_ID,
               statement: 'counterexample claim with explicit assertion',
               critical: true,
               authoritySectionId: 's1',
+              claimScope: 'specific_behavior',
               expectedCheckId: 'build',
               counterexampleRequirement: {
+                kind: 'assertion',
                 checkId: 'security',
                 assertion: { providerId: 'junit', localId: 'com.example.Test#method' },
               },

@@ -88,11 +88,17 @@ describe('state schemas', () => {
         digest: 'abc',
         sections: ['Plan'],
         createdAt: FIXED_TIME,
+        recordDigest: 'record',
+        planVersion: 1,
+        supersedesRecordDigest: null,
+        originatingReviewObligationId: null,
+        revisionReason: null,
+        lineageStatus: 'verified',
       };
       const parsed = PlanEvidence.parse(plan);
       expect(parsed.body).toBe(plan.body);
       expect(parsed.planVersion).toBe(1);
-      expect(parsed.lineageStatus).toBe('unavailable');
+      expect(parsed.lineageStatus).toBe('verified');
     });
 
     it('ValidationResult parses valid result', () => {
@@ -212,10 +218,10 @@ describe('state schemas', () => {
       ]);
     });
 
-    it('SessionState normalizes legacy regulated/team-ci snapshots to risk enforcement on', () => {
+    it('SessionState rejects snapshots missing risk authority fields (no read-time defaulting)', () => {
       for (const mode of ['regulated', 'team-ci'] as const) {
         const state = makeState('TICKET');
-        const legacy = {
+        const incomplete = {
           ...state,
           policySnapshot: {
             ...state.policySnapshot,
@@ -223,12 +229,10 @@ describe('state schemas', () => {
             requestedMode: mode,
           },
         };
-        delete (legacy.policySnapshot as Record<string, unknown>).enforceRiskClassification;
-        delete (legacy.policySnapshot as Record<string, unknown>).allowRiskDowngradeOverride;
+        delete (incomplete.policySnapshot as Record<string, unknown>).enforceRiskClassification;
+        delete (incomplete.policySnapshot as Record<string, unknown>).allowRiskDowngradeOverride;
 
-        const parsed = SessionState.parse(legacy);
-        expect(parsed.policySnapshot.enforceRiskClassification).toBe(true);
-        expect(parsed.policySnapshot.allowRiskDowngradeOverride).toBe(false);
+        expect(() => SessionState.parse(incomplete)).toThrow();
       }
     });
 
@@ -449,6 +453,12 @@ describe('state schemas', () => {
           digest: 'abc',
           sections: [],
           createdAt: FIXED_TIME,
+          recordDigest: 'record',
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+          lineageStatus: 'verified',
         },
         history: [],
       };
@@ -461,6 +471,12 @@ describe('state schemas', () => {
         digest: 'abc',
         sections: [],
         createdAt: FIXED_TIME,
+        recordDigest: 'record',
+        planVersion: 1,
+        supersedesRecordDigest: null,
+        originatingReviewObligationId: null,
+        revisionReason: null,
+        lineageStatus: 'verified',
       };
       expect(() => PlanEvidence.parse(plan)).not.toThrow();
     });
@@ -574,6 +590,8 @@ describe('state schemas', () => {
         maxSelfReviewIterations: 3,
         maxImplReviewIterations: 3,
         allowSelfApproval: true,
+        enforceRiskClassification: false,
+        allowRiskDowngradeOverride: false,
         audit: {
           emitTransitions: true,
           emitToolCalls: true,
@@ -601,6 +619,8 @@ describe('state schemas', () => {
         allowSelfApproval: true,
         minimumActorAssuranceForApproval: 'best_effort',
         requireVerifiedActorsForApproval: false,
+        enforceRiskClassification: false,
+        allowRiskDowngradeOverride: false,
         reviewOutputPolicy: 'text_compat_allowed',
         identityProvider: {
           mode: 'jwks',
@@ -675,6 +695,8 @@ describe('state schemas', () => {
         maxImplReviewIterations: 3,
         allowSelfApproval: false,
         requireVerifiedActorsForApproval: false,
+        enforceRiskClassification: true,
+        allowRiskDowngradeOverride: false,
         reviewOutputPolicy: 'structured_required',
         audit: {
           emitTransitions: true,

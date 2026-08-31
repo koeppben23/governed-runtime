@@ -8,12 +8,14 @@ import { assuranceChain } from './review-decision-test-helpers.js';
 
 const declarations = {
   flow: 'plan' as const,
+  version: 'v2' as const,
   claims: [
     {
       claimId: '00000000-0000-4000-8000-000000000003',
       statement: 'The login flow rejects invalid credentials.',
       critical: true,
       authoritySectionId: 'authentication',
+      claimScope: 'specific_behavior' as const,
       expectedCheckId: 'test',
     },
   ],
@@ -126,7 +128,9 @@ describe('plan approval certificate authority (version-tuple binding)', () => {
           capturedVerdict: 'accept',
           invocationId: `${O2}-inv`,
           findingsHash: 'b'.repeat(64),
-          claimDeclarationsDigest: hashText(canonicalJsonStringify({ flow: 'plan', claims: [] })),
+          claimDeclarationsDigest: hashText(
+            canonicalJsonStringify({ flow: 'plan', version: 'v2', claims: [] }),
+          ),
         },
       ]),
     });

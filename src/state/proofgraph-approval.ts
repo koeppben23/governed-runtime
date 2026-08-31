@@ -11,14 +11,10 @@
 import { z } from 'zod';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { hashText } from '../shared/hashing.js';
-import {
-  LegacyAssertionCounterexampleRequirement,
-  V2CounterexampleRequirement,
-} from './proofgraph.js';
+import { V2CounterexampleRequirement } from './proofgraph.js';
 export {
   AggregateCounterexampleRequirement,
   AssertionCounterexampleRequirement,
-  LegacyAssertionCounterexampleRequirement,
   V2CounterexampleRequirement,
 } from './proofgraph.js';
 import * as crypto from 'node:crypto';
@@ -61,19 +57,6 @@ const preEvidenceClaimDeclaration = {
   authoritySectionId: z.string().min(1),
 } as const;
 
-const LegacyPlanClaimDeclaration = z
-  .object({
-    claimId: z.string().uuid(),
-    statement: z.string().min(1),
-    critical: z.boolean(),
-    authoritySectionId: z.string().min(1),
-    expectedCheckId: z.string().min(1),
-    counterexampleRequirement: LegacyAssertionCounterexampleRequirement.optional(),
-    structuralSurface: z.string().min(1).optional(),
-    mutationProfile: z.string().min(1).optional(),
-  })
-  .strict()
-  .readonly();
 const v2PlanBase = z
   .object({
     ...preEvidenceClaimDeclaration,
@@ -84,8 +67,9 @@ const v2PlanBase = z
     mutationProfile: z.string().min(1).optional(),
   })
   .strict();
-const V2PlanClaimDeclaration = v2PlanBase.readonly();
-export const PlanClaimDeclaration = z.union([LegacyPlanClaimDeclaration, V2PlanClaimDeclaration]);
+export const V2PlanClaimDeclaration = v2PlanBase.readonly();
+/** The ONLY executable plan claim declaration shape in this epoch — no legacy branch. */
+export const PlanClaimDeclaration = V2PlanClaimDeclaration;
 export type PlanClaimDeclaration = z.infer<typeof PlanClaimDeclaration>;
 
 /** Public input for a plan claim — claimId is minted host-side. */
@@ -336,20 +320,14 @@ export const ProofGraphApprovalCertificate = z.discriminatedUnion('flow', [
 ]);
 export type ProofGraphApprovalCertificate = z.infer<typeof ProofGraphApprovalCertificate>;
 
-/** Claims declared against the current plan authority. */
-export const PlanClaimDeclarations = z.union([
-  z
-    .object({ flow: z.literal('plan'), claims: z.array(LegacyPlanClaimDeclaration) })
-    .strict()
-    .readonly(),
-  z
-    .object({
-      flow: z.literal('plan'),
-      version: z.literal('v2'),
-      claims: z.array(V2PlanClaimDeclaration),
-    })
-    .readonly(),
-]);
+/** Claims declared against the current plan authority — v2 only in this epoch. */
+export const PlanClaimDeclarations = z
+  .object({
+    flow: z.literal('plan'),
+    version: z.literal('v2'),
+    claims: z.array(V2PlanClaimDeclaration),
+  })
+  .readonly();
 export type PlanClaimDeclarations = z.infer<typeof PlanClaimDeclarations>;
 
 /** Claims declared against the current architecture decision authority. */
@@ -363,14 +341,7 @@ export type ArchitectureClaimDeclarations = z.infer<typeof ArchitectureClaimDecl
 
 /** The flow-specific declaration shapes accepted by approval persistence. */
 export const FlowClaimDeclarations = z.union([
-  z.object({ flow: z.literal('plan'), claims: z.array(LegacyPlanClaimDeclaration) }).readonly(),
-  z
-    .object({
-      flow: z.literal('plan'),
-      version: z.literal('v2'),
-      claims: z.array(V2PlanClaimDeclaration),
-    })
-    .readonly(),
+  PlanClaimDeclarations,
   ArchitectureClaimDeclarations,
 ]);
 export type FlowClaimDeclarations = z.infer<typeof FlowClaimDeclarations>;
@@ -392,7 +363,9 @@ export function emptyClaimDeclarations(flow: 'architecture'): ArchitectureClaimD
 export function emptyClaimDeclarations(
   flow: 'plan' | 'architecture',
 ): PlanClaimDeclarations | ArchitectureClaimDeclarations {
-  return flow === 'plan' ? { flow: 'plan', claims: [] } : { flow: 'architecture', claims: [] };
+  return flow === 'plan'
+    ? { flow: 'plan', version: 'v2', claims: [] }
+    : { flow: 'architecture', claims: [] };
 }
 
 /** Whether the certificate binds the plan's current declaration set exactly. */

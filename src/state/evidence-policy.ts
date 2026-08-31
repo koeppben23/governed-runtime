@@ -159,10 +159,10 @@ export const PolicySnapshotSchema = z
         }),
       })
       .optional(),
-    /** Runtime risk-classification enforcement frozen at hydrate time. */
-    enforceRiskClassification: z.boolean().optional(),
-    /** Structured downgrade override permission. Defaults closed for legacy snapshots. */
-    allowRiskDowngradeOverride: z.boolean().optional(),
+    /** Runtime risk-classification enforcement frozen at hydrate time. Required — no legacy defaulting. */
+    enforceRiskClassification: z.boolean(),
+    /** Structured downgrade override permission. Required — no legacy defaulting. */
+    allowRiskDowngradeOverride: z.boolean(),
     /** Reduced ceremony permission. Defaults closed for legacy snapshots. */
     allowReducedCeremony: z.boolean().optional(),
     /**
@@ -224,9 +224,6 @@ export const PolicySnapshotSchema = z
   })
   .transform((snapshot) => ({
     ...snapshot,
-    enforceRiskClassification:
-      snapshot.enforceRiskClassification ?? defaultsToEnforcement(snapshot.mode),
-    allowRiskDowngradeOverride: snapshot.allowRiskDowngradeOverride ?? false,
     allowReducedCeremony: snapshot.allowReducedCeremony ?? false,
     discoveryHealth:
       snapshot.discoveryHealth ??

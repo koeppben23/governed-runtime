@@ -80,7 +80,7 @@ function planReviewEvidenceFor(
       ...obligation,
       subjectDigest,
       claimDeclarationsDigest: hashText(
-        canonicalJsonStringify(claimDeclarations ?? { flow: 'plan', claims: [] }),
+        canonicalJsonStringify(claimDeclarations ?? { flow: 'plan', version: 'v2', claims: [] }),
       ),
       reviewMaterial: {
         content: obligation.reviewMaterial?.content ?? '## Plan\n1. Fix auth\n2. Add tests',

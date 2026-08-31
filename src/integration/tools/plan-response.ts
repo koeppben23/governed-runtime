@@ -111,7 +111,11 @@ export function buildPlanReviewObligationInput(
     metadata.targetPaths = [...classificationFiles];
   }
   const effectiveClaimDeclarations = options.planClaimDeclarations ??
-    scope.state.plan?.claimDeclarations ?? { flow: 'plan' as const, claims: [] };
+    scope.state.plan?.claimDeclarations ?? {
+      flow: 'plan' as const,
+      version: 'v2' as const,
+      claims: [],
+    };
   return {
     obligationType: 'plan',
     iteration: 0,

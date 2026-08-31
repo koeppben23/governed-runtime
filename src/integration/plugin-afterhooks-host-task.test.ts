@@ -51,12 +51,14 @@ const CHILD_VALID = 'ses_child_valid_e2e';
 /** The claim declaration set the seeded plan carries — its digest is frozen on the obligation. */
 const PLAN_CLAIM_DECLARATIONS = {
   flow: 'plan' as const,
+  version: 'v2' as const,
   claims: [
     {
       claimId: 'a1b2c3d4-e5f6-7890-8abc-def123456789',
       statement: 'The change preserves the intended behavior.',
       critical: true,
       authoritySectionId: 's1',
+      claimScope: 'specific_behavior' as const,
       expectedCheckId: 'build',
     },
   ],
