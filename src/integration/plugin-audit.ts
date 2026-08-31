@@ -36,6 +36,7 @@ import {
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import { resolveTimestampEvidence } from '../audit/timestamp-resolution.js';
 import { resolveAuditContext, type AuditContext } from './plugin-audit-context.js';
+import { getToolMetadata } from './plugin-helpers.js';
 import { buildLifecycleDetail } from './plugin-audit-lifecycle-reason.js';
 import {
   createStrictTimestampTracker,
@@ -453,6 +454,7 @@ async function emitToolCallAudit(input: {
   ctx: AuditContext;
   toolName: string;
   input: unknown;
+  output: unknown;
   sessionId: string;
   state: SessionState | null;
   timestampTracker: StrictTimestampTracker;
@@ -471,10 +473,7 @@ async function emitToolCallAudit(input: {
       success: ctx.success,
       errorCode: ctx.errorCode,
       errorMessage: ctx.errorMessage,
-      transitionCount:
-        state?.pendingAuditOperations.filter(
-          (operation) => operation.kind === 'transition' && operation.status !== 'reconciled',
-        ).length ?? 0,
+      transitionCount: transitionCountFromToolOutput(input.output),
     },
     occurredAt: ctx.now,
     actor: ctx.actor,
@@ -492,6 +491,11 @@ async function emitToolCallAudit(input: {
   });
   // Stryker disable next-line ObjectLiteral — diagnostic-only payload.
   deps.log.debug('audit', 'emitted tool_call event', { tool: toolName, phase: ctx.phase });
+}
+
+function transitionCountFromToolOutput(output: unknown): number {
+  const transitions = getToolMetadata(output).transitions;
+  return Array.isArray(transitions) ? transitions.length : 0;
 }
 
 async function emitLifecycleAudit(input: {
@@ -588,7 +592,16 @@ export async function runAudit(
     const timestampTracker = createStrictTimestampTracker(ctx.timestampAssurance);
 
     // ── 1. Emit tool_call event ──────────────────────────────────────────
-    await emitToolCallAudit({ deps, ctx, toolName, input, sessionId, state, timestampTracker });
+    await emitToolCallAudit({
+      deps,
+      ctx,
+      toolName,
+      input,
+      output,
+      sessionId,
+      state,
+      timestampTracker,
+    });
 
     // ── 2. Emit transition events ───────────────────────────────────────
     await emitTransitionAudits({ deps, ctx, sessionId, timestampTracker });

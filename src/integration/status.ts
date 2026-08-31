@@ -27,7 +27,7 @@ import type { SessionState } from '../state/schema.js';
 import type { ReviewFindings } from '../state/evidence.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 import { evaluate } from '../machine/evaluate.js';
-import { allValidationsPassed } from '../machine/guards.js';
+import { allValidationsPassed, implValidationPassed } from '../machine/guards.js';
 import { resolveNextAction, type NextAction } from '../machine/next-action.js';
 import { evaluateValidationEvidence } from '../machine/validation-evidence.js';
 import {
@@ -349,11 +349,16 @@ function buildLastExport(state: SessionState): StatusProjection['lastExport'] {
 }
 
 function remainingValidationChecks(state: SessionState): string[] | undefined {
-  if (state.phase !== 'VALIDATION' || state.activeChecks.length === 0) return undefined;
-  if (allValidationsPassed(state)) return [];
-  return state.activeChecks.filter(
-    (id) => !state.validation.some((v) => v.checkId === id && v.passed),
-  );
+  if (
+    (state.phase !== 'VALIDATION' && state.phase !== 'IMPL_VALIDATION') ||
+    state.activeChecks.length === 0
+  )
+    return undefined;
+  const results = state.phase === 'VALIDATION' ? state.validation : state.implValidation;
+  const passed =
+    state.phase === 'VALIDATION' ? allValidationsPassed(state) : implValidationPassed(state);
+  if (passed) return [];
+  return state.activeChecks.filter((id) => !results.some((v) => v.checkId === id && v.passed));
 }
 
 function projectImplementationReworkIssues(

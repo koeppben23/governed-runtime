@@ -48,7 +48,6 @@ function classifyAggregateOutcome(
 function classifyClaimOutcome(
   result: ValidationResult,
   requirement: CounterexampleRequirement,
-  claimStatement: string,
 ): ClassifiedOutcome {
   if ('kind' in requirement && requirement.kind === 'aggregate_check') {
     return classifyAggregateOutcome(result, requirement);
@@ -63,7 +62,6 @@ function classifyClaimOutcome(
     requirement,
     checkId: result.checkId,
     extraction,
-    claimStatement,
   });
 
   if (binding.status !== 'bound') {
@@ -90,7 +88,6 @@ export interface CounterexampleBindingResult {
 function bindClaimCounterexamples(
   claim: {
     claimId: string;
-    statement: string;
     counterexampleRefs: readonly { kind: string; attemptId?: string }[];
     counterexampleRequirement?: CounterexampleRequirement;
   },
@@ -117,7 +114,7 @@ function bindClaimCounterexamples(
     }
     const requirement = claim.counterexampleRequirement;
     const classified = requirement
-      ? classifyClaimOutcome(attempt.result, requirement, claim.statement)
+      ? classifyClaimOutcome(attempt.result, requirement)
       : { outcome: 'not_verified' as const };
     if (classified.diagnosticCode) {
       if (!diagnostics.has(claim.claimId)) {

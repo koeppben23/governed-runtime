@@ -138,17 +138,15 @@ interface StatusArgs {
  * discoveryDrift, implementationGuidance, detectedStack) which require reading
  * the persisted discovery artifact; those stay full-projection-only.
  *
- * `remainingChecks` mirrors the gate in buildStatusProjection (status.ts).
- * Both `activeChecks` and `remainingChecks` are surfaced so command prompts
- * referencing either name resolve.
+ * Check readiness is projected solely by buildStatusProjection (status.ts).
  */
-function buildCheckProjectionFields(state: SessionState): Record<string, unknown> {
-  const remainingChecks =
-    state.phase === 'VALIDATION' && state.activeChecks.length > 0
-      ? state.activeChecks.filter((id) => !state.validation.some((v) => v.checkId === id))
-      : undefined;
+function buildCheckProjectionFields(
+  state: SessionState,
+  policy: FlowGuardPolicy,
+): Record<string, unknown> {
+  const { remainingChecks } = buildStatusProjection(state, policy);
   return {
-    activeChecks: state.activeChecks,
+    activeChecks: remainingChecks ?? [],
     verificationCandidates: state.verificationCandidates ?? [],
     ...(remainingChecks !== undefined ? { remainingChecks } : {}),
   };
@@ -221,7 +219,7 @@ interface ResolveProjectionInput {
 
 async function resolveProjection(input: ResolveProjectionInput): Promise<string | null> {
   const { args, state, policy, sessDir, presentation } = input;
-  const checkFields = buildCheckProjectionFields(state);
+  const checkFields = buildCheckProjectionFields(state, policy);
   // /finish is the most comprehensive focused projection and is placed first so
   // its own template call is never shadowed by a stray additional flag. This
   // preserves the existing first-match dispatch semantics for all other flags.

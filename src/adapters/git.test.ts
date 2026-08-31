@@ -18,7 +18,7 @@ import * as path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
-import { isGitRepoStrict, resolveRoot, GitError } from './git.js';
+import { headCommitFullStrict, isGitRepoStrict, resolveRoot, GitError } from './git.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -108,6 +108,32 @@ describe('isGitRepoStrict typed probe', () => {
     await fs.mkdir(corrupt);
     await fs.writeFile(path.join(corrupt, '.git'), 'garbage not a gitfile', 'utf8');
     await expect(isGitRepoStrict(corrupt)).rejects.toSatisfy(
+      (err: unknown) => gitErrorCode(err) === 'GIT_COMMAND_FAILED',
+    );
+  });
+});
+
+describe('headCommitFullStrict', () => {
+  beforeEach(async () => {
+    tmpDir = await createTmpDir();
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns null only for a valid repository without a HEAD commit', async () => {
+    const repo = path.join(tmpDir, 'empty');
+    await fs.mkdir(repo);
+    await git(repo, ['init']);
+    await expect(headCommitFullStrict(repo)).resolves.toBeNull();
+  });
+
+  it('preserves a corrupt repository failure', async () => {
+    const corrupt = path.join(tmpDir, 'corrupt');
+    await fs.mkdir(corrupt);
+    await fs.writeFile(path.join(corrupt, '.git'), 'garbage not a gitfile', 'utf8');
+    await expect(headCommitFullStrict(corrupt)).rejects.toSatisfy(
       (err: unknown) => gitErrorCode(err) === 'GIT_COMMAND_FAILED',
     );
   });

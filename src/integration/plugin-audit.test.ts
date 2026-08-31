@@ -1167,7 +1167,7 @@ describe('runAudit', () => {
       resetChainSeq();
     });
 
-    it('counts only unreconciled transition operations in tool_call transitionCount', async () => {
+    it('counts only transitions emitted by the current tool call', async () => {
       resetChainSeq();
       const unreconciledA = {
         kind: 'transition',
@@ -1186,31 +1186,8 @@ describe('runAudit', () => {
         },
         status: 'state_committed',
       } as const;
-      const unreconciledB = {
-        ...unreconciledA,
-        operationId: 'eeeeeeee-0000-4000-8000-000000000001',
-      } as const;
-      const reconciled = {
-        ...unreconciledA,
-        operationId: 'dddddddd-0000-4000-8000-000000000001',
-        status: 'reconciled',
-      } as const;
       const state = makeState('PLAN', {
-        pendingAuditOperations: [
-          unreconciledA,
-          unreconciledB,
-          reconciled,
-          {
-            kind: 'state_write',
-            operationId: 'ffffffff-0000-4000-8000-000000000001',
-            preStateDigest: 'a'.repeat(64),
-            mutationDigest: 'b'.repeat(64),
-            postStateDigest: 'c'.repeat(64),
-            auditEventDigest: 'd'.repeat(64),
-            status: 'state_committed',
-            stateWrite: { phase: 'PLAN', at: FIXED_DECISION_AT },
-          },
-        ],
+        pendingAuditOperations: [unreconciledA],
       });
       const deps = makeDeps({
         resolveSessionPolicy: vi.fn().mockResolvedValue({
@@ -1228,7 +1205,10 @@ describe('runAudit', () => {
         deps,
         'flowguard_plan',
         { input: {} },
-        { phase: 'PLAN', error: false },
+        {
+          output: JSON.stringify({ phase: 'PLAN', error: false }),
+          metadata: { transitions: [unreconciledA.transition, unreconciledA.transition] },
+        },
         SESSION_ID,
       );
 

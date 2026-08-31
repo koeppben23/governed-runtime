@@ -530,6 +530,31 @@ export async function headCommitFull(worktree: string): Promise<string | null> {
 }
 
 /**
+ * Resolve HEAD as an immutable commit without collapsing infrastructure failures.
+ * A missing HEAD in an otherwise valid repository is represented by `null`; all
+ * other typed Git failures propagate to the freeze authority.
+ */
+export async function headCommitFullStrict(worktree: string): Promise<string | null> {
+  await resolveRoot(worktree);
+  try {
+    return await git(worktree, ['rev-parse', '--verify', '--end-of-options', 'HEAD^{commit}']);
+  } catch (err) {
+    if (
+      err instanceof GitError &&
+      err.code === 'GIT_COMMAND_FAILED' &&
+      isMissingHeadFailure(err.message)
+    ) {
+      return null;
+    }
+    throw err;
+  }
+}
+
+function isMissingHeadFailure(message: string): boolean {
+  return /needed a single revision|unknown revision|does not have any commits yet/i.test(message);
+}
+
+/**
  * Get the default branch name for the repository.
  *
  * Strategy:
