@@ -17,6 +17,7 @@ import {
 } from './review-decision-test-helpers.js';
 import { hashText } from '../shared/hashing.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { emptyClaimDeclarations } from '../state/proofgraph-approval.js';
 
 const baseCtx = {
   now: () => FIXED_TIME,
@@ -89,7 +90,11 @@ function planAssurance(input: PlanAssuranceInput): ReviewAssuranceState {
       invocationId: input.invocationId ?? PLAN_INVOCATION_ID,
       findingsHash: input.findingsHash ?? 'a'.repeat(64),
       capturedVerdict: input.capturedVerdict,
-      claimDeclarationsDigest: input.claimDeclarationsDigest,
+      // Default: evidence bound to the empty declaration set — the claim set
+      // most plan-approval tests carry (no claimDeclarations on the plan).
+      claimDeclarationsDigest:
+        input.claimDeclarationsDigest ??
+        hashText(canonicalJsonStringify(emptyClaimDeclarations('plan'))),
       consumedByObligationId: input.status === 'consumed' ? obligationId : null,
     },
   ]);

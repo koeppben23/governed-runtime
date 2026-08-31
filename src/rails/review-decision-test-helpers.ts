@@ -18,6 +18,8 @@ export interface AssuranceEntry {
   status: 'fulfilled' | 'consumed' | 'pending';
   iteration?: number;
   createdAt?: string;
+  /** Plan version the obligation reviewed (default 1 — PLAN_RECORD's version). */
+  planVersion?: number;
   /** `null` = obligation without linkage; `undefined` = no invocation entry. */
   invocationId?: string | null;
   findingsHash?: string;
@@ -37,7 +39,7 @@ export function assuranceChain(entries: AssuranceEntry[]): ReviewAssuranceState 
       obligationId: e.obligationId,
       obligationType: e.obligationType ?? 'architecture',
       iteration: e.iteration ?? 0,
-      planVersion: 1,
+      planVersion: e.planVersion ?? 1,
       criteriaVersion: 'criteria-v1',
       mandateDigest: 'm'.repeat(64),
       createdAt,

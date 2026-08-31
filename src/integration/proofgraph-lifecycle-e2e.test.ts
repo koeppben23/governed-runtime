@@ -36,6 +36,7 @@ import type { ReviewFindings } from '../state/evidence.js';
 import { executeReviewDecision } from '../rails/review-decision.js';
 import { createTestContext } from '../testing.js';
 import { hashText } from '../shared/hashing.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { computeRecordDigest } from '../state/evidence-plan.js';
 import { materializeApprovedPlanContractResult } from './proofgraph/materialize-contract.js';
 import { summarizeProofGraph, summarizePersistedProofGraph } from '../audit/proofgraph/summary.js';
@@ -56,6 +57,7 @@ import type { ReviewAssuranceState } from '../state/evidence-review.js';
 import type {
   PlanClaimDeclaration,
   PlanClaimDeclarationInput,
+  PlanClaimDeclarations,
 } from '../state/proofgraph-approval.js';
 
 type V2PlanClaimDeclaration = Extract<
@@ -63,8 +65,11 @@ type V2PlanClaimDeclaration = Extract<
   { claimScope: 'suite' | 'specific_behavior' }
 >;
 
-/** Canonical plan review assurance re-targeted to an arbitrary plan subject. */
-function planReviewEvidenceFor(subjectDigest: string): ReviewAssuranceState {
+/** Canonical plan review assurance re-targeted to an arbitrary plan subject and claim set. */
+function planReviewEvidenceFor(
+  subjectDigest: string,
+  claimDeclarations: PlanClaimDeclarations | undefined,
+): ReviewAssuranceState {
   const obligation = PLAN_REVIEW_ASSURANCE.obligations[0];
   const invocation = PLAN_REVIEW_ASSURANCE.invocations[0];
   if (!obligation || !invocation) {
@@ -74,6 +79,9 @@ function planReviewEvidenceFor(subjectDigest: string): ReviewAssuranceState {
     obligation: {
       ...obligation,
       subjectDigest,
+      claimDeclarationsDigest: hashText(
+        canonicalJsonStringify(claimDeclarations ?? { flow: 'plan', claims: [] }),
+      ),
       reviewMaterial: {
         content: obligation.reviewMaterial?.content ?? '## Plan\n1. Fix auth\n2. Add tests',
         materialDigest:
@@ -598,7 +606,10 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
           ...submitted!.plan!,
           reviewCompletion: 'reviewer_accepted',
         },
-        reviewAssurance: planReviewEvidenceFor(submitted!.plan!.current.digest),
+        reviewAssurance: planReviewEvidenceFor(
+          submitted!.plan!.current.digest,
+          submitted!.plan!.claimDeclarations,
+        ),
       },
       { verdict: 'approve', rationale: 'ok', decidedBy: 'approver' },
       realDigestContext(),
@@ -817,7 +828,11 @@ describe('ProofGraph materialization and gate (runtime)', () => {
         claimDeclarations: { flow: 'plan', version: 'v2', claims: [claim] },
         reviewCompletion: 'reviewer_accepted',
       },
-      reviewAssurance: planReviewEvidenceFor('plan-digest'),
+      reviewAssurance: planReviewEvidenceFor('plan-digest', {
+        flow: 'plan',
+        version: 'v2',
+        claims: [claim],
+      }),
     });
     const approved = executeReviewDecision(
       base,
@@ -1011,6 +1026,9 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             obligationId,
             obligationType: 'plan' as const,
             subjectDigest: 'plan-digest',
+            claimDeclarationsDigest: hashText(
+              canonicalJsonStringify({ flow: 'plan', version: 'v2', claims: [CRITICAL_CLAIM] }),
+            ),
             iteration: 0,
             planVersion: 1,
             criteriaVersion: 'p40-v1',

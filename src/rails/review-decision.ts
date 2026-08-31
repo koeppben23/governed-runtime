@@ -62,7 +62,11 @@ import {
   type ArchitectureReviewEvidenceResolution,
   type ResolvedPlanReviewEvidence,
 } from './review-evidence-resolution.js';
-import { enforcePlanReviewEvidence, planCertificatePatch } from './plan-review-evidence.js';
+import {
+  enforcePlanReviewEvidence,
+  planCertificatePatch,
+  planClaimDeclarationsDigest,
+} from './plan-review-evidence.js';
 import { countUnboundMutationEpisodes } from '../state/evidence-mutation-episode.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
@@ -507,14 +511,24 @@ function enforceApprovalPreconditions(
   const architectureEvidenceBlock = enforceArchitectureReviewEvidence(state, evidence);
   if (architectureEvidenceBlock)
     return { block: architectureEvidenceBlock, evidence, planEvidence: null };
-  // The plan resolution follows the recorded completion: exact-subject for
+  // The plan resolution follows the recorded completion: exact revision for
   // reviewer_accepted, latest-bound for review_exhausted (the gate then
-  // enforces reviewed==approved). Resolving is a pure read.
+  // enforces reviewed==approved). Both resolve against the SAME authority
+  // tuple — content digest + planVersion + claim declarations digest — so a
+  // review of an older revision with identical content can never win.
+  // Resolving is a pure read.
   const plan = state.plan;
   const planEvidence = plan
-    ? plan.reviewCompletion === 'review_exhausted'
-      ? resolveLatestPlanReviewEvidence(state)
-      : resolvePlanReviewEvidence(state, plan.current.digest)
+    ? (() => {
+        const authority = {
+          subjectDigest: plan.current.digest,
+          planVersion: plan.current.planVersion,
+          claimDeclarationsDigest: planClaimDeclarationsDigest(plan),
+        };
+        return plan.reviewCompletion === 'review_exhausted'
+          ? resolveLatestPlanReviewEvidence(state, authority)
+          : resolvePlanReviewEvidence(state, authority);
+      })()
     : null;
   const planEvidenceBlock = enforcePlanReviewEvidence(state, planEvidence);
   if (planEvidenceBlock) return { block: planEvidenceBlock, evidence, planEvidence };

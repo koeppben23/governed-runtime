@@ -39,6 +39,7 @@ import { computeRecordDigest } from '../state/evidence-plan.js';
 import { createTestContext } from '../testing.js';
 import { FIXED_TIME } from '../fixtures.js';
 import { hashText } from '../shared/hashing.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -46,6 +47,20 @@ const OBLIGATION_ID = '11111111-1111-4111-8111-111111111111';
 const ATTEMPT_ID = '11111111-2222-4111-8111-111111111111';
 const SUBJECT_DIGEST = 'host-task-plan-subject-digest';
 const CHILD_VALID = 'ses_child_valid_e2e';
+
+/** The claim declaration set the seeded plan carries — its digest is frozen on the obligation. */
+const PLAN_CLAIM_DECLARATIONS = {
+  flow: 'plan' as const,
+  claims: [
+    {
+      claimId: 'a1b2c3d4-e5f6-7890-8abc-def123456789',
+      statement: 'The change preserves the intended behavior.',
+      critical: true,
+      authoritySectionId: 's1',
+      expectedCheckId: 'build',
+    },
+  ],
+};
 
 function createMockInput(overrides: Record<string, unknown> = {}) {
   return {
@@ -96,6 +111,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
             fulfilledAt: null,
             consumedAt: null,
             subjectDigest: SUBJECT_DIGEST,
+            claimDeclarationsDigest: hashText(canonicalJsonStringify(PLAN_CLAIM_DECLARATIONS)),
             reviewSubjectScope: {
               kind: 'artifact',
               artifact: {
@@ -720,18 +736,7 @@ describe('host-task evidence → plan certificate lineage', () => {
           history: [],
           reviewFindings: undefined,
           reviewCompletion: 'reviewer_accepted',
-          claimDeclarations: {
-            flow: 'plan' as const,
-            claims: [
-              {
-                claimId: 'a1b2c3d4-e5f6-7890-8abc-def123456789',
-                statement: 'The change preserves the intended behavior.',
-                critical: true,
-                authoritySectionId: 's1',
-                expectedCheckId: 'build',
-              },
-            ],
-          },
+          claimDeclarations: PLAN_CLAIM_DECLARATIONS,
         },
       });
 

@@ -38,6 +38,8 @@ import type {
 } from './state/evidence.js';
 import { computeRecordDigest } from './state/evidence-plan.js';
 import { POLICY_DIGEST_VERSION } from './shared/policy-digest.js';
+import { canonicalJsonStringify } from './shared/canonical-json.js';
+import { hashText } from './shared/hashing.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -260,6 +262,9 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
     fulfilledAt: FIXED_TIME,
     consumedAt: FIXED_TIME,
     subjectDigest: 'digest-of-plan',
+    // Bound to the (empty) claim declaration set of PLAN_RECORD: the plan
+    // approval gate fails closed when evidence carries no claim binding.
+    claimDeclarationsDigest: hashText(canonicalJsonStringify({ flow: 'plan', claims: [] })),
     reviewMaterial: {
       content: '## Plan\n1. Fix auth\n2. Add tests',
       materialDigest: 'material-digest-of-plan-review',

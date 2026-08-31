@@ -46,19 +46,25 @@ export function enforcePlanReviewEvidence(
   if (resolution.reviewerVerdict === undefined) {
     return blockedPlanEvidenceRequired(completion, 'resolved', 'missing');
   }
-  const claimDeclarationsDigest = hashText(
-    canonicalJsonStringify(plan?.claimDeclarations ?? emptyClaimDeclarations('plan')),
-  );
-  if (
-    resolution.claimDeclarationsDigest !== undefined &&
-    resolution.claimDeclarationsDigest !== claimDeclarationsDigest
-  ) {
+  // The claim-declaration binding is part of the evidence authority: evidence
+  // that never froze the reviewed claim set cannot certify the current claims.
+  if (resolution.claimDeclarationsDigest === undefined) {
+    return blockedPlanEvidenceRequired(completion, 'resolved', 'claim_declarations_missing');
+  }
+  if (resolution.claimDeclarationsDigest !== planClaimDeclarationsDigest(plan)) {
     return blockedPlanEvidenceRequired(completion, 'resolved', 'claim_declarations_mismatch');
   }
   if (completion === 'reviewer_accepted') {
     return enforceAcceptedPlanVerdict(resolution.reviewerVerdict);
   }
   return enforceExhaustedPlanVerdict(plan, resolution.reviewerVerdict, resolution);
+}
+
+/** Canonical digest of the claim declarations currently bound to a plan authority. */
+export function planClaimDeclarationsDigest(plan: SessionState['plan']): string {
+  return hashText(
+    canonicalJsonStringify(plan?.claimDeclarations ?? emptyClaimDeclarations('plan')),
+  );
 }
 
 function blockedPlanEvidenceRequired(
@@ -145,8 +151,7 @@ export function createPlanApprovalCertificate(
   ctx: RailContext,
   reviewBinding: PlanReviewBinding,
 ): PlanApprovalCertificate {
-  const claimDeclarations = plan.claimDeclarations ?? emptyClaimDeclarations('plan');
-  const claimDeclarationsDigest = hashText(canonicalJsonStringify(claimDeclarations));
+  const claimDeclarationsDigest = planClaimDeclarationsDigest(plan);
   const decisionAttestationDigest = ctx.digest(canonicalJsonStringify(decision));
   const planVersion = plan.current.planVersion;
   const planRecordDigest = plan.current.recordDigest;

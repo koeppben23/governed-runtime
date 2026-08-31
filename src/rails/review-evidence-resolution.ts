@@ -217,15 +217,29 @@ export function resolveArchitectureReviewEvidence(
 }
 
 /**
- * Plan review evidence resolved under the same canonical, exact-subject
- * contract as the architecture path (CE4 hardening): ONLY obligations whose
- * `subjectDigest` equals the plan subject being approved bind; the
- * `subjectMatched ?? latest` cross-subject fallback is gone. The caller's gate
- * enforces verdict presence and coherence; the resolver is a pure read.
+ * Authority tuple identifying the exact plan revision under approval.
+ * A plan content digest alone is not a revision identity: two revisions with
+ * identical Markdown share a `digest` while differing in `planVersion` and
+ * lineage. Only evidence bound to the same version AND the same frozen claim
+ * declarations may authorize the current plan.
+ */
+export interface PlanReviewSubjectAuthority {
+  readonly subjectDigest: string;
+  readonly planVersion: number;
+  readonly claimDeclarationsDigest: string;
+}
+
+/**
+ * Plan review evidence resolved under the canonical authority-tuple contract:
+ * ONLY obligations whose `subjectDigest`, `planVersion`, AND
+ * `claimDeclarationsDigest` all match the plan revision being approved bind.
+ * A review of an older revision with identical content (or identical claims)
+ * can never win over the current revision's review; the caller's gate enforces
+ * verdict presence and coherence; the resolver is a pure read.
  */
 export function resolvePlanReviewEvidence(
   state: SessionState,
-  planSubjectDigest: string,
+  authority: PlanReviewSubjectAuthority,
 ): ResolvedPlanReviewEvidence | null {
   const assurance = state.reviewAssurance;
   if (!assurance) return null;
@@ -234,7 +248,9 @@ export function resolvePlanReviewEvidence(
       (o) =>
         o.obligationType === 'plan' &&
         (o.status === 'fulfilled' || o.status === 'consumed') &&
-        o.subjectDigest === planSubjectDigest,
+        o.subjectDigest === authority.subjectDigest &&
+        o.planVersion === authority.planVersion &&
+        o.claimDeclarationsDigest === authority.claimDeclarationsDigest,
     )
     .sort(latestBoundFirst);
   for (const obligation of candidates) {
@@ -245,20 +261,28 @@ export function resolvePlanReviewEvidence(
 }
 
 /**
- * Latest bound plan review evidence regardless of subject. Intended ONLY for
- * the plan `review_exhausted_override` path, where the result's `subjectDigest`
- * documents what was actually reviewed. Unlike the architecture override, the
- * plan gate requires `reviewedSubjectDigest === approvedSubjectDigest` — the
- * caller enforces that divergence is never releasable.
+ * Latest bound plan review evidence for the CURRENT plan version and claim
+ * set. A review iteration of an older plan version must never win — the
+ * version-tuple filter applies here exactly as on the accepted path. The
+ * subject digest is deliberately NOT filtered: the result's `subjectDigest`
+ * documents what was actually reviewed, and the caller's gate requires
+ * `reviewedSubjectDigest === approvedSubjectDigest`, so a subject divergence
+ * surfaces as the explicit override mismatch instead of disappearing into a
+ * generic missing-evidence block.
  */
 export function resolveLatestPlanReviewEvidence(
   state: SessionState,
+  authority: PlanReviewSubjectAuthority,
 ): ResolvedPlanReviewEvidence | null {
   const assurance = state.reviewAssurance;
   if (!assurance) return null;
   const candidates = assurance.obligations
     .filter(
-      (o) => o.obligationType === 'plan' && (o.status === 'fulfilled' || o.status === 'consumed'),
+      (o) =>
+        o.obligationType === 'plan' &&
+        (o.status === 'fulfilled' || o.status === 'consumed') &&
+        o.planVersion === authority.planVersion &&
+        o.claimDeclarationsDigest === authority.claimDeclarationsDigest,
     )
     .sort(latestBoundFirst);
   for (const obligation of candidates) {
