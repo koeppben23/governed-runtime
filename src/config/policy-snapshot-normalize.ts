@@ -154,13 +154,12 @@ function normalizeReviewPolicies(
 
 function normalizeChallengePolicy(
   raw: unknown,
-  fallback: ChallengePolicy | undefined,
-): NormalizedField<ChallengePolicy | undefined> {
-  // Absent field: fail closed to the mode default (solo → undefined, enforced
-  // modes → canonical matrix), so a legacy/stripped snapshot in an enforced mode
-  // cannot silently disable enforcement (finding A2). `normalized` is true only
-  // when a value is substituted.
-  if (raw === undefined) return { value: fallback, normalized: fallback !== undefined };
+  fallback: ChallengePolicy,
+): NormalizedField<ChallengePolicy> {
+  // Absent field: fail closed to the canonical matrix — a stripped/legacy
+  // snapshot can never silently disable challenge enforcement. `normalized`
+  // is true whenever a value is substituted.
+  if (raw === undefined) return { value: fallback, normalized: true };
   const candidate = raw !== null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const counts = candidate.counts;
   if (
@@ -246,7 +245,7 @@ function normalizePolicyFields(
   allowReducedCeremony: boolean;
   discoveryHealth: DiscoveryHealthPolicy;
   validationEvidence: ValidationEvidencePolicy;
-  challengePolicy?: ChallengePolicy;
+  challengePolicy: ChallengePolicy;
   normalized: boolean;
 } {
   let norm = false;
@@ -606,7 +605,7 @@ export function normalizePolicySnapshotWithMeta(
       allowReducedCeremony: policy.allowReducedCeremony,
       discoveryHealth: policy.discoveryHealth,
       validationEvidence: policy.validationEvidence,
-      ...(policy.challengePolicy ? { challengePolicy: policy.challengePolicy } : {}),
+      challengePolicy: policy.challengePolicy,
     },
     normalized: anyNormalized,
     reason: anyNormalized ? 'incomplete_snapshot_normalized' : undefined,
@@ -702,7 +701,7 @@ export function modeConsistentDefaults(mode: PolicyMode): {
   readonly allowReducedCeremony: boolean;
   readonly discoveryHealth: DiscoveryHealthPolicy;
   readonly validationEvidence: ValidationEvidencePolicy;
-  readonly challengePolicy?: ChallengePolicy;
+  readonly challengePolicy: ChallengePolicy;
 } {
   const base =
     mode === 'solo'

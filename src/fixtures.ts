@@ -78,6 +78,15 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
   reviewOutputPolicy: 'text_compat_allowed',
   reviewInvocationPolicy: 'sdk_allowed',
   reviewProfile: 'core',
+  selfReview: {
+    subagentEnabled: true,
+    fallbackToSelf: false,
+    strictEnforcement: true,
+  },
+  challengePolicy: {
+    version: 'challenge-policy.v1',
+    counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+  },
   enforceRiskClassification: false,
   allowRiskDowngradeOverride: false,
   allowReducedCeremony: false,

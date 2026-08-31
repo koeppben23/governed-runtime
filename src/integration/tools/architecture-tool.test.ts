@@ -519,50 +519,6 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(savedState.reviewAssurance?.obligations ?? []).toHaveLength(0);
   });
 
-  it('creates an obligation without challenge requirements and skips discovery when no challengePolicy is active', async () => {
-    // Guard: an absent challengePolicy (e.g. a solo-derived snapshot) short-circuits
-    // before the discovery read; the subagent obligation is created but carries no
-    // challenge-count requirement.
-    const policySnapshot = {
-      ...makeState('READY').policySnapshot,
-      challengePolicy: undefined,
-    };
-    mocks.state = makeState('READY', { policySnapshot });
-    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
-    mocks.executeArchitecture.mockReturnValue({
-      kind: 'ok',
-      state: makeState('ARCHITECTURE', {
-        policySnapshot,
-        architecture: {
-          id: 'ADR-001',
-          title: 'ADR',
-          adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
-          digest: 'digest-adr',
-          status: 'proposed',
-          reviewCompletion: 'pending',
-          createdAt: '2026-01-01T00:00:00.000Z',
-        },
-      }),
-      transitions: [],
-    });
-    mocks.resolvePolicyFromState.mockReturnValue({
-      ...TEAM_POLICY,
-      selfReview: { ...TEAM_POLICY.selfReview, subagentEnabled: true },
-    });
-
-    const { architecture } = await import('./architecture.js');
-    const parsed = JSON.parse(
-      String(await architecture.execute({ title: 'x', adrText: 'y' }, {} as never)),
-    );
-
-    expect(parsed.phase).toBe('ARCHITECTURE');
-    expect(mocks.readDiscovery).not.toHaveBeenCalled();
-    const savedState = mocks.writeStateWithArtifacts.mock.calls.at(-1)?.[1] as SessionState;
-    const obligation = savedState.reviewAssurance?.obligations.at(-1);
-    expect(obligation?.obligationType).toBe('architecture');
-    expect(obligation?.requiredChallengeCount).toBeUndefined();
-  });
-
   it('blocks mixed ADR submission and review verdict', async () => {
     const { architecture } = await import('./architecture.js');
     const res = await architecture.execute(

@@ -739,7 +739,10 @@ describe('standalone review hypotheses (runtime)', () => {
   it('reports hypotheses separately from an undeclared contract', async () => {
     env = await boot('standalone-coverage');
     await writeStateWithArtifacts(env.sDir, makeState('READY'));
-    await review.execute({ inputOrigin: 'manual_text', text: 'PR under review' }, env.tc);
+    await review.execute(
+      { inputOrigin: 'manual_text', text: 'PR under review', targetPaths: ['README.md'] },
+      env.tc,
+    );
 
     const state = await readState(env.sDir);
     const summary = summarizePersistedProofGraph(state!);

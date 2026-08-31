@@ -111,16 +111,14 @@ export const PolicySnapshotSchema = z
     identityProviderMode: z.enum(['optional', 'required']),
     /**
      * Self-review configuration for independent review.
-     * Frozen at hydrate time. Optional: absence means the runtime applies the
-     * policy default when reconstructing the executable policy.
+     * Frozen at hydrate time. REQUIRED — the strict subagent-review
+     * configuration is persisted explicitly, never reconstructed on read.
      */
-    selfReview: z
-      .object({
-        subagentEnabled: z.boolean(),
-        fallbackToSelf: z.boolean(),
-        strictEnforcement: z.boolean(),
-      })
-      .optional(),
+    selfReview: z.object({
+      subagentEnabled: z.boolean(),
+      fallbackToSelf: z.boolean(),
+      strictEnforcement: z.boolean(),
+    }),
     /** Frozen review output policy for structured vs text-compatible evidence. */
     reviewOutputPolicy: z.enum(['structured_required', 'text_compat_allowed']),
     /** Frozen review invocation policy — how the reviewer must be invoked. */
@@ -128,19 +126,18 @@ export const PolicySnapshotSchema = z
     /** Frozen mandatory review coverage profile. */
     reviewProfile: z.enum(['core', 'full']),
     /**
-     * Versioned review-challenge policy. Optional: absence means the policy
-     * prescribes no challenge counts.
+     * Versioned review-challenge policy. REQUIRED in the Hard Assurance Epoch:
+     * a snapshot without it would silently disable mandatory challenge
+     * coverage when obligations are minted — absence must fail parsing.
      */
-    challengePolicy: z
-      .object({
-        version: z.literal('challenge-policy.v1'),
-        counts: z.object({
-          TRIVIAL: z.literal(0),
-          STANDARD: z.literal(1),
-          'HIGH-RISK': z.literal(2),
-        }),
-      })
-      .optional(),
+    challengePolicy: z.object({
+      version: z.literal('challenge-policy.v1'),
+      counts: z.object({
+        TRIVIAL: z.literal(0),
+        STANDARD: z.literal(1),
+        'HIGH-RISK': z.literal(2),
+      }),
+    }),
     /** Runtime risk-classification enforcement frozen at hydrate time. */
     enforceRiskClassification: z.boolean(),
     /** Structured downgrade override permission. */

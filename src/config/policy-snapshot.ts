@@ -144,18 +144,14 @@ export function createPolicySnapshot(
     minimumActorAssuranceForApproval: policy.minimumActorAssuranceForApproval,
     ...(policy.identityProvider ? { identityProvider: policy.identityProvider } : {}),
     identityProviderMode: policy.identityProviderMode,
-    ...(policy.selfReview ? { selfReview: policy.selfReview } : {}),
+    selfReview: policy.selfReview,
     reviewOutputPolicy: policy.reviewOutputPolicy,
     reviewInvocationPolicy: policy.reviewInvocationPolicy,
     reviewProfile: policy.reviewProfile,
-    ...(policy.challengePolicy
-      ? {
-          challengePolicy: {
-            version: policy.challengePolicy.version,
-            counts: { ...policy.challengePolicy.counts },
-          },
-        }
-      : {}),
+    challengePolicy: {
+      version: policy.challengePolicy.version,
+      counts: { ...policy.challengePolicy.counts },
+    },
     enforceRiskClassification: policy.enforceRiskClassification,
     allowRiskDowngradeOverride: policy.allowRiskDowngradeOverride,
     allowReducedCeremony: policy.allowReducedCeremony,

@@ -188,10 +188,6 @@ describe('createPolicySnapshot', () => {
       },
       {
         ...SOLO_POLICY,
-        challengePolicy: undefined,
-      },
-      {
-        ...SOLO_POLICY,
         validationEvidence: {
           ...SOLO_POLICY.validationEvidence,
           allowNoCommands: !SOLO_POLICY.validationEvidence.allowNoCommands,

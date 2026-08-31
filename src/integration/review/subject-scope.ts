@@ -91,7 +91,7 @@ export function resolveSubjectScope(
  * Empty when no challenge policy is frozen on the obligation.
  */
 export function resolveChallengeRequirements(
-  challengePolicy: Pick<PolicySnapshot, 'challengePolicy'>['challengePolicy'],
+  challengePolicy: Pick<PolicySnapshot, 'challengePolicy'>['challengePolicy'] | undefined,
   input: {
     obligationType: ReviewObligationType;
     changedFiles?: readonly string[];

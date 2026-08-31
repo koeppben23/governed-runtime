@@ -623,6 +623,15 @@ describe('state schemas', () => {
         allowReducedCeremony: false,
         discoveryHealth: { enforcement: 'off', onDegraded: 'allow', onDrift: 'allow' },
         validationEvidence: { enforcement: 'off', allowNoCommands: false },
+        selfReview: {
+          subagentEnabled: true,
+          fallbackToSelf: false,
+          strictEnforcement: true,
+        },
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
         audit: {
           emitTransitions: true,
           emitToolCalls: true,
@@ -671,6 +680,15 @@ describe('state schemas', () => {
         reviewOutputPolicy: 'text_compat_allowed',
         reviewInvocationPolicy: 'sdk_allowed',
         reviewProfile: 'core',
+        selfReview: {
+          subagentEnabled: true,
+          fallbackToSelf: false,
+          strictEnforcement: true,
+        },
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
         identityProvider: {
           mode: 'jwks',
           issuer: 'https://issuer.example.com',
@@ -765,6 +783,15 @@ describe('state schemas', () => {
         reviewOutputPolicy: 'structured_required',
         reviewInvocationPolicy: 'host_task_required',
         reviewProfile: 'core',
+        selfReview: {
+          subagentEnabled: true,
+          fallbackToSelf: false,
+          strictEnforcement: true,
+        },
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
         audit: {
           emitTransitions: true,
           emitToolCalls: true,

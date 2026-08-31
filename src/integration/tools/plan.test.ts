@@ -269,6 +269,15 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         reviewOutputPolicy: 'text_compat_allowed',
         reviewInvocationPolicy: 'sdk_allowed',
         reviewProfile: 'core',
+        selfReview: {
+          subagentEnabled: true,
+          fallbackToSelf: false,
+          strictEnforcement: true,
+        },
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
         audit: {
           emitTransitions: true,
           emitToolCalls: true,
@@ -284,11 +293,6 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
           },
         },
         actorClassification: {},
-        selfReview: {
-          subagentEnabled: true,
-          fallbackToSelf: true,
-          strictEnforcement: false,
-        },
       });
 
       const policy = resolvePolicyFromSnapshot(snapshotWithSelfReview);
@@ -326,6 +330,15 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         reviewOutputPolicy: 'text_compat_allowed',
         reviewInvocationPolicy: 'sdk_allowed',
         reviewProfile: 'core',
+        selfReview: {
+          subagentEnabled: true,
+          fallbackToSelf: false,
+          strictEnforcement: true,
+        },
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
         audit: {
           emitTransitions: true,
           emitToolCalls: true,
@@ -376,6 +389,15 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         reviewOutputPolicy: 'text_compat_allowed',
         reviewInvocationPolicy: 'sdk_allowed',
         reviewProfile: 'core',
+        selfReview: {
+          subagentEnabled: true,
+          fallbackToSelf: false,
+          strictEnforcement: true,
+        },
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
         audit: {
           emitTransitions: true,
           emitToolCalls: true,
@@ -391,21 +413,16 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
           },
         },
         actorClassification: {},
-        selfReview: {
-          subagentEnabled: true,
-          fallbackToSelf: false,
-          strictEnforcement: true,
-        },
       });
 
       expect(snapshotWithSelfReview.selfReview).toBeDefined();
       expect(snapshotWithSelfReview.selfReview?.subagentEnabled).toBe(true);
     });
 
-    it('PolicySnapshotSchema allows missing selfReview (backward compat)', async () => {
+    it('PolicySnapshotSchema rejects a snapshot missing selfReview (hard epoch)', async () => {
       const { PolicySnapshotSchema } = await import('../../state/evidence.js');
 
-      const snapshotWithoutSelfReview = PolicySnapshotSchema.parse({
+      const complete = {
         mode: 'solo',
         hash: POLICY_DIGEST,
         hashVersion: POLICY_DIGEST_VERSION,
@@ -429,6 +446,15 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         reviewOutputPolicy: 'text_compat_allowed',
         reviewInvocationPolicy: 'sdk_allowed',
         reviewProfile: 'core',
+        selfReview: {
+          subagentEnabled: true,
+          fallbackToSelf: false,
+          strictEnforcement: true,
+        },
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
         audit: {
           emitTransitions: true,
           emitToolCalls: true,
@@ -444,9 +470,15 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
           },
         },
         actorClassification: {},
-      });
+      };
 
-      expect(snapshotWithoutSelfReview.selfReview).toBeUndefined();
+      const { selfReview: _sr, ...snapshotWithoutSelfReview } = complete;
+      expect(() => PolicySnapshotSchema.parse(snapshotWithoutSelfReview)).toThrow();
+      expect(PolicySnapshotSchema.parse(complete).selfReview).toEqual({
+        subagentEnabled: true,
+        fallbackToSelf: false,
+        strictEnforcement: true,
+      });
     });
   });
 });

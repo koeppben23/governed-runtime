@@ -29,7 +29,10 @@ import { hashCanonicalReviewContent, normalizeReviewContent } from '../../shared
 import { deriveRepositoryRevisionProvenance } from '../../state/evidence.js';
 import { indexMarkdownSections } from '../../shared/markdown-sections.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
-import { DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS } from '../../config/policy-types.js';
+import {
+  DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS,
+  type ChallengePolicy,
+} from '../../config/policy-types.js';
 import type { TaskClass } from '../../state/schema.js';
 import type { ReviewSubjectScope } from '../../state/evidence-review.js';
 import type { RepositoryEvidenceFreeze } from '../../state/evidence-review-freeze.js';
@@ -166,11 +169,15 @@ export function createReviewObligation(input: {
    * Frozen session policy; without its challenge policy, enforcement is
    * disabled. The output-repair budget is frozen onto the obligation from the
    * snapshot at creation — the reissue gate never re-reads live config.
+   * `challengePolicy` is tolerant at the MINT boundary (standalone/pre-discovery
+   * obligations may legitimately carry none), while the persisted snapshot
+   * requires it.
    */
-  policySnapshot?: Pick<
-    PolicySnapshot,
-    'challengePolicy' | 'maxReviewerOutputRepairAttempts'
-  > | null;
+  policySnapshot?:
+    | (Pick<PolicySnapshot, 'maxReviewerOutputRepairAttempts'> & {
+        challengePolicy?: ChallengePolicy;
+      })
+    | null;
   /** Runtime paths classified by the canonical phase-tool gate. */
   changedFiles?: readonly string[];
   /**
@@ -276,7 +283,11 @@ export function resolveFrozenReviewProfile(
  */
 function resolveFrozenOutputRepairBudget(
   policySnapshot:
-    Pick<PolicySnapshot, 'challengePolicy' | 'maxReviewerOutputRepairAttempts'> | null | undefined,
+    | (Pick<PolicySnapshot, 'maxReviewerOutputRepairAttempts'> & {
+        challengePolicy?: ChallengePolicy;
+      })
+    | null
+    | undefined,
 ): number {
   return (
     policySnapshot?.maxReviewerOutputRepairAttempts ?? DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS

@@ -962,7 +962,7 @@ Provide structured findings per the canonical reviewer contract.`.repeat(2);
       attemptId,
       subagentCalled: false,
       subagentRecord: null,
-      contentMeta: null,
+      contentMeta: { expectedIteration: 0, expectedPlanVersion: 1 },
       canonicalPromptAnchor: null,
       expectedPromptDigest: PROMPT_DIGEST,
       canonicalPrompt: PROMPT,

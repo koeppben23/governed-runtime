@@ -31,6 +31,15 @@ const CURRENT_SNAPSHOT = {
   reviewOutputPolicy: 'text_compat_allowed' as const,
   reviewInvocationPolicy: 'sdk_allowed' as const,
   reviewProfile: 'core' as const,
+  selfReview: {
+    subagentEnabled: true,
+    fallbackToSelf: false,
+    strictEnforcement: true,
+  },
+  challengePolicy: {
+    version: 'challenge-policy.v1' as const,
+    counts: { TRIVIAL: 0 as const, STANDARD: 1 as const, 'HIGH-RISK': 2 as const },
+  },
   enforceRiskClassification: false,
   allowRiskDowngradeOverride: false,
   allowReducedCeremony: false,
@@ -171,6 +180,16 @@ describe('evidence-policy', () => {
           enableChainHash: true,
         },
       };
+      expect(() => PolicySnapshotSchema.parse(snapshot)).toThrow();
+    });
+
+    it('rejects a snapshot missing challengePolicy (no silent challenge-coverage disable)', () => {
+      const { challengePolicy: _c, ...snapshot } = CURRENT_SNAPSHOT;
+      expect(() => PolicySnapshotSchema.parse(snapshot)).toThrow();
+    });
+
+    it('rejects a snapshot missing selfReview (no read-time reconstruction)', () => {
+      const { selfReview: _s, ...snapshot } = CURRENT_SNAPSHOT;
       expect(() => PolicySnapshotSchema.parse(snapshot)).toThrow();
     });
 

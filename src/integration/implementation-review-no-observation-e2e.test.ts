@@ -158,18 +158,45 @@ async function boot(): Promise<SE> {
 }
 
 /** Host-orchestrated reviewer evidence with an implementation subject anchor. */
+function validationAttemptIdFor(state: SessionState, digest: string): string {
+  return (
+    state.validationAttempts.find(
+      (a) => a.scope === 'implementation' && a.implementationDigest === digest && a.result.passed,
+    )?.attemptId ?? ''
+  );
+}
+
+function implementationChallenge(oblId: string, digest: string, attemptId: string) {
+  return {
+    challengeId: `${oblId.slice(0, 8)}-${oblId.slice(9, 13)}-4${oblId.slice(15, 18)}-8${oblId.slice(20, 23)}-${oblId.slice(24)}`,
+    obligationId: oblId,
+    scenario: 'Exercise the changed behavior against its implementation evidence.',
+    claim: 'The implementation handles the reviewed scenario.',
+    locations: ['implementation evidence'],
+    kind: 'implementation_challenge' as const,
+    evidenceRefs: [
+      { kind: 'implementation' as const, implementationDigest: digest },
+      { kind: 'validation_attempt' as const, attemptId },
+    ],
+    outcome: 'pass' as const,
+  };
+}
+
 function implFindings(
   oblId: string,
   iter: number,
   pv: number,
   digest: string,
   verdict: 'accept' | 'changes_requested' | 'unable_to_review',
+  withChallenge = false,
+  attemptId = '',
 ): ReviewFindings {
   return {
     iteration: iter,
     planVersion: pv,
     reviewMode: 'subagent' as const,
     overallVerdict: verdict,
+    ...(withChallenge ? { challenges: [implementationChallenge(oblId, digest, attemptId)] } : {}),
     blockingIssues:
       verdict === 'changes_requested'
         ? [
@@ -213,7 +240,15 @@ async function inject(
     (o) => o.obligationType === oblType && o.status === 'pending',
   );
   if (!obl) throw new Error(`No pending ${oblType} obligation`);
-  const ff = implFindings(obl.obligationId, obl.iteration, obl.planVersion, digest, verdict);
+  const ff = implFindings(
+    obl.obligationId,
+    obl.iteration,
+    obl.planVersion,
+    digest,
+    verdict,
+    oblType === 'implement' && verdict !== 'unable_to_review',
+    validationAttemptIdFor(state!, digest),
+  );
   const fh = hashFindings(ff);
   const newObl = {
     ...obl,
@@ -489,7 +524,15 @@ describe('implementation review without repository observation authority', () =>
     const r3 = await review_implementation.execute(
       {
         reviewVerdict: 'changes_requested',
-        reviewFindings: implFindings(oblId, 1, 1, implDigest1, 'changes_requested'),
+        reviewFindings: implFindings(
+          oblId,
+          1,
+          1,
+          implDigest1,
+          'changes_requested',
+          true,
+          validationAttemptIdFor(state!, implDigest1),
+        ),
       },
       s.tc,
     );
@@ -534,6 +577,8 @@ describe('implementation review without repository observation authority', () =>
           second.planVersion,
           secondScope.implementationDigest,
           'accept',
+          true,
+          validationAttemptIdFor(state!, secondScope.implementationDigest),
         ),
       },
       s.tc,
@@ -609,7 +654,15 @@ describe('implementation review without repository observation authority', () =>
     const r3 = await review_implementation.execute(
       {
         reviewVerdict: 'changes_requested',
-        reviewFindings: implFindings(oblId, 1, 1, implDigest1, 'changes_requested'),
+        reviewFindings: implFindings(
+          oblId,
+          1,
+          1,
+          implDigest1,
+          'changes_requested',
+          true,
+          validationAttemptIdFor(state!, implDigest1),
+        ),
       },
       s.tc,
     );
@@ -692,6 +745,8 @@ describe('implementation review without repository observation authority', () =>
           obligation.planVersion,
           scope.implementationDigest,
           'accept',
+          true,
+          validationAttemptIdFor(state!, scope.implementationDigest),
         ),
       },
       s.tc,
@@ -767,7 +822,15 @@ describe('implementation review without repository observation authority', () =>
     const r3 = await review_implementation.execute(
       {
         reviewVerdict: 'changes_requested',
-        reviewFindings: implFindings(oblId, 1, 1, implDigest1, 'changes_requested'),
+        reviewFindings: implFindings(
+          oblId,
+          1,
+          1,
+          implDigest1,
+          'changes_requested',
+          true,
+          validationAttemptIdFor(state!, implDigest1),
+        ),
       },
       s.tc,
     );
@@ -810,6 +873,8 @@ describe('implementation review without repository observation authority', () =>
           second.planVersion,
           implDigest2,
           'changes_requested',
+          true,
+          validationAttemptIdFor(state!, implDigest2),
         ),
       },
       s.tc,
@@ -875,6 +940,8 @@ describe('implementation review without repository observation authority', () =>
           third.planVersion,
           thirdScope.implementationDigest,
           'accept',
+          true,
+          validationAttemptIdFor(state!, thirdScope.implementationDigest),
         ),
       },
       s.tc,
