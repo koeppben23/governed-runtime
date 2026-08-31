@@ -252,9 +252,11 @@ export function formatRailResult(
 }
 
 function buildEvidenceApprovalCompletionPresentation(state: SessionState): { markdown: string } {
+  const latestFindings = state.implReviewFindings?.at(-1);
   const document = buildEvidenceApprovalCompletionDocument({
     proofSummary: projectCompletionProofStatus(state),
     exportAction: projectStatusActionFromCommand('/export', 'recommended'),
+    missingVerification: latestFindings?.missingVerification,
   });
   const markdown = renderMarkdown(document);
   emitPresentationTelemetry(document, state.phase, state.id);

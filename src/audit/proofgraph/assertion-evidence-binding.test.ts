@@ -119,6 +119,39 @@ describe('bindAssertionEvidence', () => {
     }
   });
 
+  it('a broader claim statement than the reported assertion → rejected', () => {
+    const req = requirement('pytest', 'tests/test_user.py::test_create');
+    const extraction = extractedResult('pytest', 'pytest_json', [
+      { localId: 'tests/test_user.py::test_create', status: 'passed' },
+    ]);
+
+    const result = bindAssertionEvidence({
+      requirement: req,
+      checkId: 'test',
+      extraction,
+      claimStatement: 'Every user creation path enforces authorization.',
+    });
+
+    expect(result.status).toBe('rejected');
+    if (result.status === 'rejected') expect(result.reasonCode).toBe('assertion_mismatch');
+  });
+
+  it('an exactly covered claim statement → bound', () => {
+    const req = requirement('pytest', 'tests/test_user.py::test_create');
+    const extraction = extractedResult('pytest', 'pytest_json', [
+      { localId: 'tests/test_user.py::test_create', status: 'passed' },
+    ]);
+
+    const result = bindAssertionEvidence({
+      requirement: req,
+      checkId: 'test',
+      extraction,
+      claimStatement: 'tests/test_user.py::test_create',
+    });
+
+    expect(result.status).toBe('bound');
+  });
+
   it('check_only evidence → rejected with check_only_evidence', () => {
     const req = requirement('vitest', 'src/math.test.ts::adds numbers');
     const extraction = extractedResult(

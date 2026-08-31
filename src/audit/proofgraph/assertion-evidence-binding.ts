@@ -5,7 +5,7 @@
  * Evaluates whether a validation result's structured assertion extraction
  * satisfies a specific CounterexampleRequirement. Handles all aspects of
  * the binding decision — checkId matching, provider matching, assertion
- * identity matching, and capability checking.
+ * identity matching, explicit claim-statement coverage, and capability checking.
  *
  * @version v2
  */
@@ -35,6 +35,8 @@ export interface AssertionBindingRequest {
   readonly requirement: CounterexampleRequirement;
   readonly checkId: string;
   readonly extraction: AssertionExtractionResult | undefined;
+  /** Claim statement that the provider-reported assertion must cover exactly. */
+  readonly claimStatement?: string;
 }
 
 type AssertionRequirement = {
@@ -96,6 +98,7 @@ function validatePreconditions(request: AssertionBindingRequest): AssertionBindi
 function matchAssertion(
   requirement: AssertionRequirement,
   extraction: AssertionExtractionResult & { status: 'extracted' },
+  claimStatement: string | undefined,
 ): AssertionBindingDecision {
   if (extraction.providerId !== requirement.assertion.providerId) {
     return {
@@ -126,6 +129,16 @@ function matchAssertion(
     };
   }
 
+  if (claimStatement !== undefined && assertion.testName !== claimStatement) {
+    return {
+      status: 'rejected',
+      reasonCode: 'assertion_mismatch',
+      detail:
+        `assertion '${assertion.testName}' does not exactly cover claim statement ` +
+        `'${claimStatement}'`,
+    };
+  }
+
   return {
     status: 'bound',
     assertion,
@@ -140,5 +153,6 @@ export function bindAssertionEvidence(request: AssertionBindingRequest): Asserti
   return matchAssertion(
     request.requirement as AssertionRequirement,
     request.extraction as AssertionExtractionResult & { status: 'extracted' },
+    request.claimStatement,
   );
 }

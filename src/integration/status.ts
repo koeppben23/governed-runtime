@@ -27,6 +27,7 @@ import type { SessionState } from '../state/schema.js';
 import type { ReviewFindings } from '../state/evidence.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 import { evaluate } from '../machine/evaluate.js';
+import { allValidationsPassed } from '../machine/guards.js';
 import { resolveNextAction, type NextAction } from '../machine/next-action.js';
 import { evaluateValidationEvidence } from '../machine/validation-evidence.js';
 import {
@@ -349,7 +350,10 @@ function buildLastExport(state: SessionState): StatusProjection['lastExport'] {
 
 function remainingValidationChecks(state: SessionState): string[] | undefined {
   if (state.phase !== 'VALIDATION' || state.activeChecks.length === 0) return undefined;
-  return state.activeChecks.filter((id) => !state.validation.some((v) => v.checkId === id));
+  if (allValidationsPassed(state)) return [];
+  return state.activeChecks.filter(
+    (id) => !state.validation.some((v) => v.checkId === id && v.passed),
+  );
 }
 
 function projectImplementationReworkIssues(

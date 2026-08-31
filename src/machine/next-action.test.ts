@@ -263,6 +263,15 @@ describe('resolveNextAction', () => {
       expectAction(action, ACTION_CODES.RUN_CONTINUE, ['/continue']);
     });
 
+    it('VALIDATION (partial pass) → RUN_VALIDATE', () => {
+      const state = makeState('VALIDATION', {
+        activeChecks: ['test', 'lint'],
+        validation: [VALIDATION_PASSED[0]!],
+      });
+      const action = resolveNextAction('VALIDATION', state);
+      expectAction(action, ACTION_CODES.RUN_VALIDATE, ['/validate']);
+    });
+
     it('VALIDATION (blocked evidence, trustworthy discovery) → VALIDATION_EVIDENCE_REQUIRED', () => {
       const state = makeState('VALIDATION', {
         validation: [],

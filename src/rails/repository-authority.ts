@@ -23,7 +23,7 @@
  * @version v2
  */
 
-import { headCommitFull, isGitRepo } from '../adapters/git.js';
+import { headCommitFull, isGitRepoStrict } from '../adapters/git.js';
 import { FrozenRepositoryError, freezeWorktreeCandidate } from '../adapters/frozen-repository.js';
 import type { SessionState } from '../state/schema.js';
 import type { FrozenRepositoryAuthority } from '../state/evidence.js';
@@ -123,7 +123,7 @@ export async function freezeContextAuthorityAtHead(
 ): Promise<RepositoryAuthorityFreezeResult> {
   const objectSha = await headCommitFull(worktree);
   if (!objectSha) {
-    const repoExists = await isGitRepo(worktree);
+    const repoExists = await isGitRepoStrict(worktree);
     return {
       kind: 'unavailable',
       reason: repoExists ? 'head_unavailable' : 'repository_unavailable',

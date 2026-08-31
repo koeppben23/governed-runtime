@@ -19,7 +19,7 @@
 import type { Phase, SessionState } from '../state/schema.js';
 import { resolveReviewContinuation } from '../state/review-continuation.js';
 import { projectUnaddressedImplementationChallengeIds } from '../state/implementation-review-findings.js';
-import { implValidationPassed, isConverged } from './guards.js';
+import { allValidationsPassed, implValidationPassed, isConverged } from './guards.js';
 import { evaluateValidationEvidence } from './validation-evidence.js';
 
 // ─── Type ─────────────────────────────────────────────────────────────────────
@@ -178,7 +178,7 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
             commands: ['/hydrate', '/status'],
           };
     }
-    return state.validation.length === 0
+    return state.validation.length === 0 || !allValidationsPassed(state)
       ? {
           code: ACTION_CODES.RUN_VALIDATE,
           text: 'Run validation checks with /validate',

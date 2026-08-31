@@ -1167,7 +1167,7 @@ describe('runAudit', () => {
       resetChainSeq();
     });
 
-    it('counts only unreconciled outbox operations in tool_call transitionCount', async () => {
+    it('counts only unreconciled transition operations in tool_call transitionCount', async () => {
       resetChainSeq();
       const unreconciledA = {
         kind: 'transition',
@@ -1196,7 +1196,21 @@ describe('runAudit', () => {
         status: 'reconciled',
       } as const;
       const state = makeState('PLAN', {
-        pendingAuditOperations: [unreconciledA, unreconciledB, reconciled],
+        pendingAuditOperations: [
+          unreconciledA,
+          unreconciledB,
+          reconciled,
+          {
+            kind: 'state_write',
+            operationId: 'ffffffff-0000-4000-8000-000000000001',
+            preStateDigest: 'a'.repeat(64),
+            mutationDigest: 'b'.repeat(64),
+            postStateDigest: 'c'.repeat(64),
+            auditEventDigest: 'd'.repeat(64),
+            status: 'state_committed',
+            stateWrite: { phase: 'PLAN', at: FIXED_DECISION_AT },
+          },
+        ],
       });
       const deps = makeDeps({
         resolveSessionPolicy: vi.fn().mockResolvedValue({

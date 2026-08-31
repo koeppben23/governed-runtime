@@ -233,4 +233,38 @@ describe('formatRailResult', () => {
     expect(presentation.markdown).toContain('/export');
     expect(presentation.markdown).not.toContain('/approve');
   });
+
+  it('retains missing verification from the latest implementation review at completion', () => {
+    const state = makeProgressedState('COMPLETE');
+    const result = formatRailResult(
+      {
+        kind: 'ok',
+        state: {
+          ...state,
+          implReviewFindings: [
+            {
+              iteration: 1,
+              planVersion: 1,
+              reviewMode: 'subagent',
+              overallVerdict: 'accept',
+              reviewedBy: { sessionId: 'reviewer' },
+              reviewedAt: '2025-01-01T00:00:00Z',
+              blockingIssues: [],
+              majorRisks: [],
+              missingVerification: ['No negative-path test'],
+              scopeCreep: [],
+              unknowns: [],
+            },
+          ],
+        },
+        evalResult: { kind: 'terminal' },
+        transitions: [],
+      } as RailResult,
+      { evidenceApprovalCompletion: true },
+    );
+    const output = typeof result === 'string' ? result : result.output;
+    expect((parseJSON(output).presentation as { markdown: string }).markdown).toContain(
+      'No negative-path test',
+    );
+  });
 });

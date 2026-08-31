@@ -472,8 +472,9 @@ async function emitToolCallAudit(input: {
       errorCode: ctx.errorCode,
       errorMessage: ctx.errorMessage,
       transitionCount:
-        state?.pendingAuditOperations.filter((operation) => operation.status !== 'reconciled')
-          .length ?? 0,
+        state?.pendingAuditOperations.filter(
+          (operation) => operation.kind === 'transition' && operation.status !== 'reconciled',
+        ).length ?? 0,
     },
     occurredAt: ctx.now,
     actor: ctx.actor,
