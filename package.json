@@ -136,7 +136,7 @@
     "@commitlint/cli": "^21.2.2",
     "@commitlint/config-conventional": "^21.0.2",
     "@eslint/js": "^9.37.0",
-    "@opencode-ai/plugin": "1.18.16",
+    "@opencode-ai/plugin": "1.18.25",
     "@stryker-mutator/core": "^10.0.0",
     "@stryker-mutator/typescript-checker": "^10.0.0",
     "@stryker-mutator/vitest-runner": "^10.0.0",
