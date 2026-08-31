@@ -165,13 +165,21 @@ describe('state schemas', () => {
       expect(() => SessionState.parse(withoutOutbox)).toThrow();
     });
 
-    it('SessionState defaults and parses implementationRework', () => {
+    it('SessionState rejects an implementationRework missing the exhausted authority flag', () => {
       const state = makeState('TICKET');
-      expect(SessionState.parse(state).implementationRework).toBeNull();
-      expect(
+      expect(() =>
         SessionState.parse({
           ...state,
           implementationRework: { rejectedDigest: 'rejected-implementation-digest' },
+        }),
+      ).toThrow();
+      expect(
+        SessionState.parse({
+          ...state,
+          implementationRework: {
+            rejectedDigest: 'rejected-implementation-digest',
+            exhausted: false,
+          },
         }).implementationRework,
       ).toEqual({ rejectedDigest: 'rejected-implementation-digest', exhausted: false });
     });
