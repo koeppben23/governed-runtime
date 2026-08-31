@@ -1055,11 +1055,11 @@ describe('hydrate', () => {
       const state = await readState(sessDir);
       expect(state).not.toBeNull();
       // sessionID lives in binding, actorInfo is separate
-      expect(state!.binding.sessionId).toBe(ctx.sessionID);
+      expect(state!.binding.hostSessionId).toBe(ctx.sessionID);
       expect(state!.actorInfo).toBeDefined();
       expect(state!.initiatedBy).toBe(state!.actorInfo!.id);
-      expect(state!.binding.sessionId).not.toBe(state!.actorInfo!.id);
-      expect(state!.binding.sessionId).not.toBe(state!.initiatedBy);
+      expect(state!.binding.hostSessionId).not.toBe(state!.actorInfo!.id);
+      expect(state!.binding.hostSessionId).not.toBe(state!.initiatedBy);
     });
   });
 });

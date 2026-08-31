@@ -24,8 +24,10 @@
  */
 
 import type { SessionState } from '../state/schema.js';
+import type { ReviewFindings } from '../state/evidence.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 import { evaluate } from '../machine/evaluate.js';
+import { allValidationsPassed, implValidationPassed } from '../machine/guards.js';
 import { resolveNextAction, type NextAction } from '../machine/next-action.js';
 import { evaluateValidationEvidence } from '../machine/validation-evidence.js';
 import {
@@ -53,6 +55,7 @@ import {
 import { projectProofStatusForState } from './proofgraph/proof-summary-projectors.js';
 import { evaluateProofGraphGateFromState } from '../audit/proofgraph/gate.js';
 import { mapEnforcementReasonToRegistryCode } from '../audit/proofgraph/reason-code-mapping.js';
+import { projectOpenImplementationChallengeIds } from '../state/implementation-review-findings.js';
 
 // Re-export for consumers
 export type { StatusConclusionProjection };
@@ -69,8 +72,10 @@ export interface StatusProjection {
   phase: string;
   /** Human-readable phase label for product display. */
   phaseLabel: string;
-  /** Session identifier. */
-  sessionId: string;
+  /** FlowGuard session identity (FlowGuard UUID). */
+  flowguardSessionId: string;
+  /** Host session identity (OpenCode session id). */
+  hostSessionId: string;
   /** Active policy mode (solo, team, team-ci, regulated). */
   policyMode: string;
   /** Active profile identifier. */
@@ -81,8 +86,14 @@ export interface StatusProjection {
     source: 'env' | 'git' | 'claim' | 'oidc' | 'unknown';
     assurance: 'best_effort' | 'claim_validated' | 'idp_verified';
   } | null;
-  /** Archive lifecycle status. */
+  /** Regulated archive lifecycle compatibility status. */
   archiveStatus: string | null;
+  /** Semantics of the most recent user-requested archive export. */
+  lastExport: {
+    packagePurpose: 'sharing' | 'auditor' | null;
+    integrityCapability: 'verifiable' | 'not_verifiable' | null;
+    verificationStatus: 'not_run' | 'passed' | 'failed' | null;
+  };
   /** Commands that are currently admissible. */
   allowedCommands: string[];
   /** Next action guidance from the machine (canonical commands). */
@@ -121,6 +132,17 @@ export interface StatusProjection {
   proofApprovals: ProofApprovalProjection;
   /** Review loop progress during review phases (null when not in a review phase). */
   reviewLoop: ReviewLoopProgress | null;
+  /** Current rework required by an independent implementation review, if any. */
+  implementationRework: {
+    rejectedDigest: string;
+    iteration: number | null;
+    blockingIssues: ReviewFindings['blockingIssues'];
+    majorRisks: ReviewFindings['majorRisks'];
+    missingVerification: ReviewFindings['missingVerification'];
+    scopeCreep: ReviewFindings['scopeCreep'];
+    unknowns: ReviewFindings['unknowns'];
+    openChallengeIds: readonly string[];
+  } | null;
   /**
    * Active check IDs that have not yet been validated.
    * Populated only during VALIDATION phase. Absent otherwise.
@@ -318,6 +340,68 @@ export interface FinishCard {
  * @param policy - Resolved FlowGuard policy (from state or default).
  * @returns Structured status projection.
  */
+function buildLastExport(state: SessionState): StatusProjection['lastExport'] {
+  return {
+    packagePurpose: state.lastExportPackagePurpose ?? null,
+    integrityCapability: state.lastExportIntegrityCapability ?? null,
+    verificationStatus: state.lastExportVerificationStatus ?? null,
+  };
+}
+
+function remainingValidationChecks(state: SessionState): string[] | undefined {
+  if (
+    (state.phase !== 'VALIDATION' && state.phase !== 'IMPL_VALIDATION') ||
+    state.activeChecks.length === 0
+  )
+    return undefined;
+  const results = state.phase === 'VALIDATION' ? state.validation : state.implValidation;
+  const passed =
+    state.phase === 'VALIDATION' ? allValidationsPassed(state) : implValidationPassed(state);
+  if (passed) return [];
+  return state.activeChecks.filter((id) => !results.some((v) => v.checkId === id && v.passed));
+}
+
+function projectImplementationReworkIssues(
+  findings: ReviewFindings | undefined,
+): Pick<
+  NonNullable<StatusProjection['implementationRework']>,
+  'iteration' | 'blockingIssues' | 'majorRisks' | 'missingVerification' | 'scopeCreep' | 'unknowns'
+> {
+  if (!findings) {
+    return {
+      iteration: null,
+      blockingIssues: [],
+      majorRisks: [],
+      missingVerification: [],
+      scopeCreep: [],
+      unknowns: [],
+    };
+  }
+  return {
+    iteration: findings.iteration,
+    blockingIssues: findings.blockingIssues,
+    majorRisks: findings.majorRisks,
+    missingVerification: findings.missingVerification,
+    scopeCreep: findings.scopeCreep,
+    unknowns: findings.unknowns,
+  };
+}
+
+function projectImplementationRework(
+  state: SessionState,
+): StatusProjection['implementationRework'] {
+  const marker = state.implementationRework;
+  if (!marker) return null;
+  const findings = [...(state.implReviewFindings ?? [])]
+    .reverse()
+    .find((item) => item.overallVerdict === 'changes_requested');
+  return {
+    rejectedDigest: marker.rejectedDigest,
+    ...projectImplementationReworkIssues(findings),
+    openChallengeIds: projectOpenImplementationChallengeIds(state.implReviewFindings),
+  };
+}
+
 export function buildStatusProjection(
   state: SessionState,
   policy: FlowGuardPolicy,
@@ -337,6 +421,7 @@ export function buildStatusProjection(
     state.phase,
     state.error?.code === 'ABORTED',
     state.archiveStatus,
+    state,
   );
 
   const actor = state.actorInfo
@@ -350,11 +435,13 @@ export function buildStatusProjection(
   return {
     phase: state.phase,
     phaseLabel: PHASE_LABELS[state.phase],
-    sessionId: state.id,
+    flowguardSessionId: state.flowguardSessionId,
+    hostSessionId: state.binding.hostSessionId,
     policyMode,
     profileId,
     actor,
     archiveStatus: state.archiveStatus ?? null,
+    lastExport: buildLastExport(state),
     allowedCommands: allowed.map((cmd: FlowGuardCommand) => `/${cmd}`),
     nextAction: {
       primaryCommand: next.commands[0] ?? null,
@@ -375,10 +462,8 @@ export function buildStatusProjection(
     proofSummary: projectProofStatusForState(state),
     proofApprovals: buildProofApprovalProjection(state),
     reviewLoop: getReviewLoopProgress(state),
-    remainingChecks:
-      state.phase === 'VALIDATION' && state.activeChecks.length > 0
-        ? state.activeChecks.filter((id) => !state.validation.some((v) => v.checkId === id))
-        : undefined,
+    implementationRework: projectImplementationRework(state),
+    remainingChecks: remainingValidationChecks(state),
     conclusion: projectStatusConclusion(evalResult, productNext),
     readiness: deriveReadinessField(evalResult, completeness),
   };

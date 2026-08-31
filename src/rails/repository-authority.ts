@@ -23,7 +23,7 @@
  * @version v2
  */
 
-import { headCommitFull, isGitRepo } from '../adapters/git.js';
+import { GitError, headCommitFullStrict } from '../adapters/git.js';
 import { FrozenRepositoryError, freezeWorktreeCandidate } from '../adapters/frozen-repository.js';
 import type { SessionState } from '../state/schema.js';
 import type { FrozenRepositoryAuthority } from '../state/evidence.js';
@@ -121,18 +121,28 @@ export function freezeContextAuthority(
 export async function freezeContextAuthorityAtHead(
   worktree: string,
 ): Promise<RepositoryAuthorityFreezeResult> {
-  const objectSha = await headCommitFull(worktree);
-  if (!objectSha) {
-    const repoExists = await isGitRepo(worktree);
+  try {
+    const objectSha = await headCommitFullStrict(worktree);
+    if (objectSha) return freezeContextAuthority(worktree, objectSha);
     return {
       kind: 'unavailable',
-      reason: repoExists ? 'head_unavailable' : 'repository_unavailable',
-      diagnostic: repoExists
-        ? 'No resolvable HEAD commit exists in the repository.'
-        : 'Workspace is not a Git repository.',
+      reason: 'head_unavailable',
+      diagnostic: 'No resolvable HEAD commit exists in the repository.',
+    };
+  } catch (err) {
+    if (err instanceof GitError && err.code === 'NOT_GIT_REPO') {
+      return {
+        kind: 'unavailable',
+        reason: 'repository_unavailable',
+        diagnostic: 'Workspace is not a Git repository.',
+      };
+    }
+    return {
+      kind: 'unavailable',
+      reason: 'freeze_failed',
+      diagnostic: err instanceof Error ? err.message : String(err),
     };
   }
-  return freezeContextAuthority(worktree, objectSha);
 }
 
 /**

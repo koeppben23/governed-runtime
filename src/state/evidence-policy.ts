@@ -8,25 +8,21 @@
 import { z } from 'zod';
 import { POLICY_DIGEST_PATTERN, POLICY_DIGEST_VERSION } from './evidence-identifiers.js';
 import { IdpConfigSchema } from './policy-idp-config.js';
-import { PolicyModeSchema, CentralMinimumModeSchema, type PolicyMode } from './policy-mode.js';
-
-/**
- * Modes that enable risk-classification, Discovery-health, and validation-evidence
- * enforcement by default when a (legacy) snapshot omits the explicit field.
- *
- * Centralized, typed predicate so the enforcement default is decided in one place
- * instead of scattered string comparisons. `mode` is a typed {@link PolicyMode},
- * so a near-miss literal would be a compile-time error rather than a silent miss.
- */
-function defaultsToEnforcement(mode: PolicyMode): boolean {
-  return mode === 'regulated' || mode === 'team-ci';
-}
+import { PolicyModeSchema, CentralMinimumModeSchema } from './policy-mode.js';
 
 /**
  * Immutable policy snapshot embedded in SessionState.
  *
  * Stores all FlowGuard-critical fields so auditors can verify which rules
  * governed a session — even after policy presets are updated.
+ *
+ * Hard Assurance Epoch contract: every authority-bearing field the controlled
+ * hydrate writer persists is REQUIRED here. There is no read-time defaulting,
+ * no legacy-snapshot synthesis, and no backward-compatibility transform —
+ * an incomplete current-epoch snapshot fails parsing. Only fields whose
+ * absence is itself legitimate current semantics (a not-configured optional
+ * integration, or provenance that only exists for central-policy sources)
+ * remain optional.
  *
  * The hash is SHA-256 of recursively canonicalized policy content, identified
  * by `hashVersion: policy-digest.v2`. It supports integrity comparison against
@@ -70,150 +66,111 @@ export const PolicySnapshotSchema = z
     /** Redacted policy path hint from central policy bundle (P29). */
     policyPathHint: z.string().optional(),
 
-    // ── Governance-critical fields (frozen copy) ───────────────
+    // ─── Governance-critical fields (frozen copy) ───────────────
     requireHumanGates: z.boolean(),
     maxSelfReviewIterations: z.number().int().positive(),
     maxImplReviewIterations: z.number().int().positive(),
     /** Frozen retry budget for F12-incoherent reviewer captures. */
-    maxIncoherentReviewerCaptureRetries: z.number().int().nonnegative().optional(),
-    /**
-     * Frozen obligation-level reviewer output-repair budget. Optional in the
-     * snapshot schema (pre-existing normalization fills legacy snapshots) —
-     * REQUIRED once frozen onto a ReviewObligation, where the reissue gate
-     * reads it.
-     */
-    maxReviewerOutputRepairAttempts: z.number().int().min(0).max(5).optional(),
+    maxIncoherentReviewerCaptureRetries: z.number().int().nonnegative(),
+    /** Frozen obligation-level reviewer output-repair budget. */
+    maxReviewerOutputRepairAttempts: z.number().int().min(0).max(5),
     allowSelfApproval: z.boolean(),
     /**
      * P34: Minimum required actor assurance for regulated approval decisions.
-     * Newer field added alongside requireVerifiedActorsForApproval.
      *
      * Resolution precedence (see verifyAssuranceThreshold in
      * src/rails/review-decision.ts):
-     *   1. requireVerifiedActorsForApproval (P33, legacy) — if `true`, the
+     *   1. requireVerifiedActorsForApproval (P33) — if `true`, the
      *      approver must be at assurance `claim_validated` or higher and this
      *      field is the gate; minimumActorAssuranceForApproval is then ignored.
-     *   2. minimumActorAssuranceForApproval (P34, current) — used only when
-     *      requireVerifiedActorsForApproval is `false`/unset.
+     *   2. minimumActorAssuranceForApproval (P34) — used only when
+     *      requireVerifiedActorsForApproval is `false`.
      *
      * Operators relaxing requireVerifiedActorsForApproval=true by setting
      * minimumActorAssuranceForApproval to a lower tier MUST also flip
      * requireVerifiedActorsForApproval to `false`, otherwise the stricter
-     * legacy gate keeps winning.
+     * gate keeps winning.
      */
-    minimumActorAssuranceForApproval: z
-      .enum(['best_effort', 'claim_validated', 'idp_verified'])
-      .default('best_effort'),
+    minimumActorAssuranceForApproval: z.enum(['best_effort', 'claim_validated', 'idp_verified']),
     /**
-     * P33 (legacy, still authoritative when set true): Whether regulated
+     * P33 (still authoritative when set true): Whether regulated
      * approvals require verified actor identity (claim_validated or higher).
      * Checked BEFORE minimumActorAssuranceForApproval; when `true`, takes
      * precedence and minimumActorAssuranceForApproval is not consulted.
      */
-    requireVerifiedActorsForApproval: z.boolean().default(false),
+    requireVerifiedActorsForApproval: z.boolean(),
     /**
      * P35a/P35b1/P35b2: IdP configuration for static keys or JWKS authority.
-     * Frozen at hydrate time. When set, allows idp_verified actors via FLOWGUARD_ACTOR_TOKEN_PATH.
+     * Frozen at hydrate time. Optional: absence means no IdP is configured.
      */
     identityProvider: IdpConfigSchema.optional(),
     /**
      * P35a: IdP verification mode ('optional' or 'required').
      * Controls whether IdP verification failure blocks session creation.
      */
-    identityProviderMode: z.enum(['optional', 'required']).default('optional'),
+    identityProviderMode: z.enum(['optional', 'required']),
     /**
      * Self-review configuration for independent review.
-     * Frozen at hydrate time. Controls subagent-based review behavior.
+     * Frozen at hydrate time. REQUIRED, and — Hard Assurance Epoch — the ONLY
+     * current-contract-valid shape is the mandatory strict subagent review;
+     * anything else fails parsing instead of being re-normalized at runtime.
      */
-    selfReview: z
-      .object({
-        subagentEnabled: z.boolean(),
-        fallbackToSelf: z.boolean(),
-        strictEnforcement: z.boolean().default(false),
-      })
-      .optional(),
+    selfReview: z.object({
+      subagentEnabled: z.literal(true),
+      fallbackToSelf: z.literal(false),
+      strictEnforcement: z.literal(true),
+    }),
     /** Frozen review output policy for structured vs text-compatible evidence. */
-    reviewOutputPolicy: z.enum(['structured_required', 'text_compat_allowed']).optional(),
+    reviewOutputPolicy: z.enum(['structured_required', 'text_compat_allowed']),
     /** Frozen review invocation policy — how the reviewer must be invoked. */
-    reviewInvocationPolicy: z
-      .enum(['host_task_required', 'host_task_preferred', 'sdk_allowed'])
-      .optional(),
+    reviewInvocationPolicy: z.enum(['host_task_required', 'host_task_preferred', 'sdk_allowed']),
+    /** Frozen mandatory review coverage profile. */
+    reviewProfile: z.enum(['core', 'full']),
     /**
-     * Frozen mandatory review coverage profile. 'core' is the non-optional
-     * baseline; 'full' is reserved for Wave 2 (#730). Optional for backward
-     * compatibility; resolvePolicyFromSnapshot applies a fail-closed,
-     * mode-consistent default ('core') for legacy snapshots.
+     * Versioned review-challenge policy. REQUIRED in the Hard Assurance Epoch:
+     * a snapshot without it would silently disable mandatory challenge
+     * coverage when obligations are minted — absence must fail parsing.
      */
-    reviewProfile: z.enum(['core', 'full']).optional(),
-    /**
-     * Versioned review-challenge policy. Optional intentionally: snapshots
-     * written before #747 must not acquire new challenge enforcement.
-     */
-    challengePolicy: z
-      .object({
-        version: z.literal('challenge-policy.v1'),
-        counts: z.object({
-          TRIVIAL: z.literal(0),
-          STANDARD: z.literal(1),
-          'HIGH-RISK': z.literal(2),
-        }),
-      })
-      .optional(),
+    challengePolicy: z.object({
+      version: z.literal('challenge-policy.v1'),
+      counts: z.object({
+        TRIVIAL: z.literal(0),
+        STANDARD: z.literal(1),
+        'HIGH-RISK': z.literal(2),
+      }),
+    }),
     /** Runtime risk-classification enforcement frozen at hydrate time. */
-    enforceRiskClassification: z.boolean().optional(),
-    /** Structured downgrade override permission. Defaults closed for legacy snapshots. */
-    allowRiskDowngradeOverride: z.boolean().optional(),
-    /** Reduced ceremony permission. Defaults closed for legacy snapshots. */
-    allowReducedCeremony: z.boolean().optional(),
-    /**
-     * Policy-gated Discovery health enforcement frozen at hydrate time (#399).
-     * Optional for backward compatibility; the transform below applies a
-     * fail-closed, mode-consistent default for legacy snapshots.
-     */
-    discoveryHealth: z
-      .object({
-        enforcement: z.enum(['off', 'advisory', 'required']),
-        onDegraded: z.enum(['allow', 'warn', 'block']),
-        onDrift: z.enum(['allow', 'warn', 'block']),
-      })
-      .optional(),
-    /**
-     * Policy-gated validation-evidence enforcement frozen at hydrate time (#400).
-     * Optional for backward compatibility; the transform below applies a
-     * fail-closed, mode-consistent default for legacy snapshots.
-     */
-    validationEvidence: z
-      .object({
-        enforcement: z.enum(['off', 'advisory', 'required']),
-        allowNoCommands: z.boolean(),
-      })
-      .optional(),
+    enforceRiskClassification: z.boolean(),
+    /** Structured downgrade override permission. */
+    allowRiskDowngradeOverride: z.boolean(),
+    /** Reduced ceremony permission. */
+    allowReducedCeremony: z.boolean(),
+    /** Policy-gated Discovery health enforcement frozen at hydrate time (#399). */
+    discoveryHealth: z.object({
+      enforcement: z.enum(['off', 'advisory', 'required']),
+      onDegraded: z.enum(['allow', 'warn', 'block']),
+      onDrift: z.enum(['allow', 'warn', 'block']),
+    }),
+    /** Policy-gated validation-evidence enforcement frozen at hydrate time (#400). */
+    validationEvidence: z.object({
+      enforcement: z.enum(['off', 'advisory', 'required']),
+      allowNoCommands: z.boolean(),
+    }),
     audit: z.object({
       emitTransitions: z.boolean(),
       emitToolCalls: z.boolean(),
       enableChainHash: z.boolean(),
-      timestampAssurance: z
-        .object({
-          enabled: z.boolean().default(false),
-          mode: z.enum(['local_only', 'ntp_check', 'tsa_critical']).default('local_only'),
-          strict: z.boolean().default(false),
-          criticalEvents: z.array(z.string()).default(['decision', 'lifecycle']),
-          tsaUrl: z.string().optional(),
-          trustAnchors: z.array(z.string()).optional(),
-          ntpServers: z.array(z.string()).optional(),
-          ntpDriftThresholdMs: z.number().default(30000),
-          tsaTimeoutMs: z.number().default(10000),
-        })
-        .optional()
-        .default({
-          enabled: false,
-          mode: 'local_only' as const,
-          strict: false,
-          criticalEvents: ['decision', 'lifecycle'],
-          ntpServers: ['pool.ntp.org'],
-          ntpDriftThresholdMs: 30000,
-          tsaTimeoutMs: 10000,
-        }),
+      timestampAssurance: z.object({
+        enabled: z.boolean(),
+        mode: z.enum(['local_only', 'ntp_check', 'tsa_critical']),
+        strict: z.boolean(),
+        criticalEvents: z.array(z.string()),
+        tsaUrl: z.string().optional(),
+        trustAnchors: z.array(z.string()).optional(),
+        ntpServers: z.array(z.string()).optional(),
+        ntpDriftThresholdMs: z.number(),
+        tsaTimeoutMs: z.number(),
+      }),
     }),
     /**
      * Actor classification map — frozen copy from policy preset.
@@ -222,28 +179,5 @@ export const PolicySnapshotSchema = z
      */
     actorClassification: z.record(z.string(), z.string()),
   })
-  .transform((snapshot) => ({
-    ...snapshot,
-    enforceRiskClassification:
-      snapshot.enforceRiskClassification ?? defaultsToEnforcement(snapshot.mode),
-    allowRiskDowngradeOverride: snapshot.allowRiskDowngradeOverride ?? false,
-    allowReducedCeremony: snapshot.allowReducedCeremony ?? false,
-    discoveryHealth:
-      snapshot.discoveryHealth ??
-      (defaultsToEnforcement(snapshot.mode)
-        ? {
-            enforcement: 'required' as const,
-            onDegraded: 'warn' as const,
-            onDrift: 'block' as const,
-          }
-        : { enforcement: 'off' as const, onDegraded: 'allow' as const, onDrift: 'allow' as const }),
-    validationEvidence:
-      snapshot.validationEvidence ??
-      (defaultsToEnforcement(snapshot.mode)
-        ? { enforcement: 'required' as const, allowNoCommands: false }
-        : { enforcement: 'off' as const, allowNoCommands: false }),
-    maxIncoherentReviewerCaptureRetries: snapshot.maxIncoherentReviewerCaptureRetries ?? 1,
-    maxReviewerOutputRepairAttempts: snapshot.maxReviewerOutputRepairAttempts ?? 1,
-  }))
   .readonly();
 export type PolicySnapshot = z.infer<typeof PolicySnapshotSchema>;

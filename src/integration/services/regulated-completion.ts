@@ -75,9 +75,10 @@ export async function executeRegulatedCompletion(
     const { events } = await readAuditTrail(sessDir);
     const prevHash = getLastChainHash(events);
     const completionEvt = createLifecycleEvent({
-      sessionId: sessionID,
+      flowguardSessionId: resultState.flowguardSessionId,
+      hostSessionId: sessionID,
       detail: { action: 'session_completed', finalPhase: 'COMPLETE' as const },
-      timestamp: new Date().toISOString(),
+      occurredAt: new Date().toISOString(),
       actor: 'machine',
       prevHash,
       actorInfo: resultState.actorInfo,

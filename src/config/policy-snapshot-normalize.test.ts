@@ -207,9 +207,9 @@ describe('normalizePolicySnapshot', () => {
       expect(() => normalizePolicySnapshot(null)).toThrow(PolicyConfigurationError);
     });
 
-    it('leaves an absent challengePolicy disabled in solo mode (legacy-tolerant)', () => {
+    it('normalizes an absent challengePolicy in solo mode to the canonical matrix (hard epoch)', () => {
       const result = normalizePolicySnapshot({ mode: 'solo' });
-      expect(result.challengePolicy).toBeUndefined();
+      expect(result.challengePolicy).toEqual(CHALLENGE_POLICY_V1);
     });
 
     it('fails closed to the frozen matrix for an absent challengePolicy in an enforced mode (A2)', () => {

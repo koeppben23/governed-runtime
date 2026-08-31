@@ -150,8 +150,9 @@ function pluginHandshakeAssurance(
   obligationType: (typeof ALL_OBLIGATION_TYPES)[number],
 ): ReviewAssuranceState {
   return {
-    assuranceSchemaVersion: 'review-assurance.v5' as const,
+    assuranceSchemaVersion: 'review-assurance.v6' as const,
     attempts: [],
+    dispatches: [],
     obligations: [
       {
         obligationId: OBLIGATION_ID,
@@ -162,6 +163,9 @@ function pluginHandshakeAssurance(
         criteriaVersion: REVIEW_CRITERIA_VERSION,
         mandateDigest: REVIEW_MANDATE_DIGEST,
         maxReviewerOutputRepairAttempts: 1,
+        requiredChallengeCount: 0,
+        requiredChallengeKind: 'design_challenge' as const,
+        challengePolicyVersion: 'challenge-policy.v1' as const,
         createdAt: NOW,
         pluginHandshakeAt: NOW,
         status: 'fulfilled' as const,
@@ -415,6 +419,7 @@ describe('assurance lifecycle persistence across hosts', () => {
           ),
           invocations: assurance.invocations,
           attempts: [],
+          dispatches: assurance.dispatches,
         };
         assurance = appendInvocationEvidence(assurance, invocationP);
         assurance = consumeReviewObligation(assurance, obligationP, NOW, INVOCATION_ID_PLAN);
@@ -469,6 +474,7 @@ describe('assurance lifecycle persistence across hosts', () => {
           ),
           invocations: implAssurance.invocations,
           attempts: [],
+          dispatches: implAssurance.dispatches,
         };
         implAssurance = appendInvocationEvidence(implAssurance, invocationI);
         implAssurance = consumeReviewObligation(
@@ -546,6 +552,7 @@ describe('assurance lifecycle persistence across hosts', () => {
           ),
           invocations: archAssurance.invocations,
           attempts: [],
+          dispatches: archAssurance.dispatches,
         };
         archAssurance = appendInvocationEvidence(archAssurance, invocationA);
         archAssurance = consumeReviewObligation(

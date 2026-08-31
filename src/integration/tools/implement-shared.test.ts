@@ -370,10 +370,11 @@ function implReviewState(): SessionState {
     },
     validationAttempts: [],
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5',
+      assuranceSchemaVersion: 'review-assurance.v6',
       obligations: [],
       invocations: [],
       attempts: [],
+      dispatches: [],
     },
   });
 }

@@ -199,13 +199,12 @@ describe('isCurrentChainIntegrityFailure', () => {
     expect(isCurrentChainIntegrityFailure('CHAIN_BREAK')).toBe(true);
   });
 
-  it('returns true for LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE', () => {
-    expect(isCurrentChainIntegrityFailure('LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE')).toBe(true);
+  it('returns false for legacy/format reasons (they have their own finding class)', () => {
+    expect(isCurrentChainIntegrityFailure('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED')).toBe(false);
   });
 
   it('returns false for other reasons', () => {
-    expect(isCurrentChainIntegrityFailure('LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2')).toBe(false);
-    expect(isCurrentChainIntegrityFailure('UNSUPPORTED_AUDIT_FORMAT_VERSION')).toBe(false);
+    expect(isCurrentChainIntegrityFailure('CLOCK_ANOMALY')).toBe(false);
   });
 
   it('returns false for null', () => {
@@ -216,17 +215,13 @@ describe('isCurrentChainIntegrityFailure', () => {
 // ─── isAuditFormatFailure ─────────────────────────────────────────────────────
 
 describe('isAuditFormatFailure', () => {
-  it('returns true for LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2', () => {
-    expect(isAuditFormatFailure('LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2')).toBe(true);
-  });
-
-  it('returns true for UNSUPPORTED_AUDIT_FORMAT_VERSION', () => {
-    expect(isAuditFormatFailure('UNSUPPORTED_AUDIT_FORMAT_VERSION')).toBe(true);
+  it('returns true for LEGACY_ASSURANCE_FORMAT_UNSUPPORTED', () => {
+    expect(isAuditFormatFailure('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED')).toBe(true);
   });
 
   it('returns false for other reasons', () => {
     expect(isAuditFormatFailure('CHAIN_BREAK')).toBe(false);
-    expect(isAuditFormatFailure('LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE')).toBe(false);
+    expect(isAuditFormatFailure('CLOCK_ANOMALY')).toBe(false);
   });
 
   it('returns false for null', () => {

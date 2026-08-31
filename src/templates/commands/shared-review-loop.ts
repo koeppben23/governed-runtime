@@ -55,6 +55,13 @@ export interface ReviewLoopParams {
   reviseParams: string;
   /** Extra steps after changes_requested before re-recording (implement only). */
   changesRequestedExtra: string;
+  /**
+   * When true, the reviewer's negative verdict is recorded BEFORE any edits:
+   * the verdict tool call opens the repair cycle, so editing must never precede
+   * the verdict submission (implement). When false, the artifact is revised and
+   * resubmitted inside the verdict call (plan/architecture).
+   */
+  changesRequestedVerdictFirst?: boolean;
   /** The tool call to recover from STRICT_REVIEW_ORCHESTRATION_FAILED,
    *  e.g. `flowguard_plan({ planText: <same plan text> })`. */
   strictRecoveryCall: string;
@@ -86,13 +93,17 @@ export interface ReviewLoopParams {
  */
 export function SHARED_REVIEW_LOOP(p: ReviewLoopParams): string {
   const verdictTool = p.verdictToolName ?? p.toolName;
-  return `   - \`reviewVerdict\` records the INDEPENDENT REVIEWER's result, never your own approval. On convergence it only advances to the human review gate, where the USER approves the ${p.artifactName} via /review-decision. \`flowguard_decision\` is the only user approval.
+  return `   - \`reviewVerdict\` records the INDEPENDENT REVIEWER's result, never your own approval. On convergence it advances to the policy's terminal gate — the human review gate, where the USER approves the ${p.artifactName} via /review-decision, or a policy-permitted automatic terminal phase (e.g. \`COMPLETE\`) — whichever the tool response returns; the returned phase is authoritative. \`flowguard_decision\` is the only user approval.
    - When \`next\` starts with "INDEPENDENT_REVIEW_COMPLETED":
        1. Read \`overallVerdict\` from \`pluginReviewFindings\` in the response.
        2. host_task_required mode: findings are resolved from plugin evidence automatically — submit ONLY the verdict, never \`reviewFindings\` (not even an empty placeholder object). Any \`reviewFindings\` sent here are ignored and logged as misuse, and the submitted verdict is validated against the captured reviewer evidence (a mismatch is rejected).
        3. SDK mode: pass the entire \`pluginReviewFindings\` object as \`reviewFindings\`.
        4. "accept": Call \`${verdictTool}({ reviewVerdict: "accept" })\` (or with \`reviewFindings\` in SDK mode). This is the reviewer's acceptance, not user approval.
-       5. "changes_requested": Revise the ${p.artifactName} to address blocking issues, then call \`${verdictTool}({ reviewVerdict: "changes_requested"${p.reviseParams ? `, ${p.reviseParams}` : ''} })\` (or with \`reviewFindings\` in SDK mode).${p.changesRequestedExtra}
+       5. "changes_requested": ${
+         p.changesRequestedVerdictFirst
+           ? `Record the reviewer's negative verdict FIRST: call \`${verdictTool}({ reviewVerdict: "changes_requested"${p.reviseParams ? `, ${p.reviseParams}` : ''} })\` (or with \`reviewFindings\` in SDK mode) — do NOT modify the ${p.artifactName} before FlowGuard records this verdict.${p.changesRequestedExtra}`
+           : `Revise the ${p.artifactName} to address blocking issues, then call \`${verdictTool}({ reviewVerdict: "changes_requested"${p.reviseParams ? `, ${p.reviseParams}` : ''} })\` (or with \`reviewFindings\` in SDK mode).${p.changesRequestedExtra}`
+       }
        6. "unable_to_review": The reviewer declared the ${p.artifactName} unreviewable (${p.unableDescription}). The tool will be BLOCKED with reason \`SUBAGENT_UNABLE_TO_REVIEW\`. DO NOT retry the review with the same ${p.artifactName} — that obligation is consumed. Report the reviewer's findings to the user, then either ${p.unableRecoveryA} OR ${p.unableRecoveryB}.
    - When \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED":
            1. Call the ${REVIEWER_SUBAGENT_TYPE} subagent via Task tool${p.subagentExtra}. Issue this Task call SEQUENTIALLY — only AFTER the preceding \`${verdictTool}\` call has returned and you have read its \`reviewObligation\`/\`iteration\` from the response; never fire the reviewer Task in parallel with a \`${verdictTool}({ reviewVerdict })\` submission. If binding returns \`HOST_SUBAGENT_TASK_REQUIRED\` with \`bindOutcome=schema_invalid\` or \`extraction_invalid\`, do NOT re-run Task directly. Re-run the originating FlowGuard command so it can authorize a fresh repair attempt and emit a new \`reviewerTaskPrompt\`; then call Task only with \`subagent_type: "${REVIEWER_SUBAGENT_TYPE}"\`. FlowGuard injects the canonical prompt at the host boundary. Do not add a Task \`prompt\`, artifact content, Discovery context, attestation, instructions, or commentary. If it is absent, report the FlowGuard blocker and stop; never free-compose a governed reviewer prompt.
@@ -100,7 +111,7 @@ export function SHARED_REVIEW_LOOP(p: ReviewLoopParams): string {
        3. In strict mode, manual JSON/attestation copy alone is diagnostic context only; FlowGuard must persist matching \`ReviewInvocationEvidence\` before reviewFindings satisfy governance.
          4. **FALLBACK**: If the Task tool cannot spawn the reviewer (error, agent unavailable${p.fallbackExtra}), do NOT invent ReviewFindings and do NOT approve. \`host_task_required\` remains blocked and stops. For implementation review under \`host_task_preferred\`, report the actual transport failure with \`flowguard_review_implementation({ reviewerUnavailable: true })\` only, without a verdict or findings, so the configured SDK transport can run. For other review types, report the failure and stop. Never submit copied or fabricated findings on either path.
    - If review converged: Report the result per the Presentation section below.
-   - If another iteration is needed: Repeat from step ${p.repeatStep} ${p.iterationNote}.
+   - If another iteration is needed: CONTINUE AUTOMATICALLY — do not stop and do not wait for a new user command between iterations. Run the next iteration from step ${p.repeatStep}, looping until the reviewer accepts (convergence) or the budget is exhausted ${p.iterationNote}.
    - If the tool returns BLOCKED with code \`SUBAGENT_UNABLE_TO_REVIEW\`: Stop the review loop. Treat the obligation as consumed (no retry). Surface the recovery steps from the reason payload.
    - If the tool returns BLOCKED with code \`STRICT_REVIEW_ORCHESTRATION_FAILED\`: The plugin review pipeline encountered a transient failure. ${p.strictRecoveryVerb} the ${p.artifactName}: call \`${p.strictRecoveryCall}\` to create a fresh review obligation and retry the orchestration. Do NOT treat this as a permanent failure — up to 3 ${p.strictRecoveryNoun} are allowed.
    - If the tool returns BLOCKED with code \`ORCHESTRATION_PERMANENTLY_FAILED\`: The review orchestration has failed on multiple consecutive attempts. Report this to the user with the recovery steps from the error payload and stop.`;

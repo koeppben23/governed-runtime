@@ -216,11 +216,20 @@ function severityToPresentation(severity: string): FindingGroup['severity'] {
 export function buildEvidenceApprovalCompletionDocument(input: {
   proofSummary: CompactProofPresentation;
   exportAction: PresentationAction;
+  missingVerification?: readonly string[];
 }): ReviewCardDocument {
+  const sections: PresentationSection[] = [buildProofGraphSection(input.proofSummary)];
+  if (input.missingVerification && input.missingVerification.length > 0) {
+    sections.push({
+      kind: 'bulletList',
+      heading: `Missing Verification (${input.missingVerification.length})`,
+      items: input.missingVerification,
+    });
+  }
   return {
     kind: 'review_card',
     form: 'success',
-    sections: [buildProofGraphSection(input.proofSummary)],
+    sections,
     conclusion: { kind: 'next_action', action: input.exportAction },
   };
 }

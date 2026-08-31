@@ -17,6 +17,7 @@ export {
   decision,
   implement,
   review_implementation,
+  extend_implementation_review,
   resolve_implementation_challenge,
   run_check,
   review,
@@ -26,6 +27,7 @@ export {
   architecture,
   help,
   observe_repository,
+  reconcile_mutation_episode,
 } from "@flowguard/core/integration";
 `;
 

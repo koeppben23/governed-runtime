@@ -86,6 +86,25 @@ describe('Codex plugin templates', () => {
     expect(files['skills/plan/SKILL.md']).toContain('mcp__flowguard__flowguard_plan');
   });
 
+  it('auto-continuation parity: implement skill continues the repair cycle after changes_requested without intermediate cards', () => {
+    const files = codexPluginFiles('1.2.3');
+    const implementSkill = files['skills/implement/SKILL.md'];
+
+    expect(implementSkill).toContain('no intermediate presentation card');
+    expect(implementSkill).toContain('INTERNAL continuation');
+    expect(implementSkill).toContain(
+      'call `mcp__flowguard__flowguard_implement` again to re-record',
+    );
+    expect(implementSkill).toContain('never stop or wait for a user command between iterations');
+    // IMPL_VALIDATION is explicit, never assumed: the SKILL must enumerate and
+    // run every active check through flowguard_run_check before a fresh review.
+    expect(implementSkill).toContain('mcp__flowguard__flowguard_status');
+    expect(implementSkill).toContain('flowguard_run_check');
+    expect(implementSkill).toContain('run EVERY active check');
+    // The SKILL stays next-driven: it never authorizes self-approval.
+    expect(implementSkill).toContain("Submit only the verdict FlowGuard's `next` field instructs");
+  });
+
   it('pre-tool wrapper denies with Codex-compatible hookSpecificOutput when unreachable', async () => {
     const files = codexPluginFiles('1.2.3');
     const pluginRoot = await mkdtemp(join(tmpdir(), 'flowguard-codex-plugin-'));

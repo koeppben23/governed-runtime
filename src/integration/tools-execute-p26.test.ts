@@ -67,6 +67,8 @@ vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
   return {
     ...original,
+    isGitRepo: vi.fn().mockResolvedValue(true),
+    isGitRepoStrict: vi.fn().mockResolvedValue(true),
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
     changedFiles: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.changedFiles),
     listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
@@ -606,7 +608,15 @@ describe('P26: regulated archive completion', () => {
           if (detail?.action === 'session_completed') {
             callOrder.push('session_completed');
           }
-          return event;
+          return {
+            ...event,
+            auditFormatVersion: 'audit-chain.v3' as const,
+            auditSequence: 1,
+            recordedAt: event.occurredAt,
+            semanticEventDigest: 'a'.repeat(64),
+            prevHash: 'genesis',
+            chainHash: 'b'.repeat(64),
+          };
         });
       vi.mocked(wsMock.archiveSession).mockImplementationOnce(async () => {
         callOrder.push('archiveSession');
@@ -658,7 +668,7 @@ describe('P26: regulated archive completion', () => {
       // Exactly one session_completed — tool-layer wrote it, no duplication
       expect(completionEvents).toHaveLength(1);
       expect(completionEvents[0]!.actor).toBe('machine');
-      expect(completionEvents[0]!.sessionId).toBe(ctx.sessionID);
+      expect(completionEvents[0]!.hostSessionId).toBe(ctx.sessionID);
 
       // archiveStatus on persisted state enables plugin to skip its own emission
       const finalState = await readState(sessDir);

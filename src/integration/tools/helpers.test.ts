@@ -53,10 +53,10 @@ describe('formatBlocked', () => {
     expect(typeof result.message).toBe('string');
   });
 
-  it('omits presentation.markdown for codes without a diagnostic builder', () => {
+  it('renders registry-backed presentation for codes without a diagnostic builder', () => {
     const result = parseJSON(formatBlocked('COMMAND_NOT_ALLOWED'));
     expect(result.diagnostics).toBeUndefined();
-    expect(result.presentation).toBeUndefined();
+    expect((result.presentation as { markdown: string }).markdown).toContain('## Recovery');
   });
 
   it('renders presentation.markdown via the shared renderer for diagnostic-bearing codes', () => {
@@ -69,6 +69,27 @@ describe('formatBlocked', () => {
     expect(presentation!.markdown).toContain('FlowGuard blocked this action.');
     expect(presentation!.markdown.startsWith('\n')).toBe(false);
     expect(presentation!.markdown.endsWith('\n')).toBe(false);
+  });
+
+  it('renders registered ProofGraph blockers with their canonical recovery', () => {
+    const result = parseJSON(
+      formatBlocked(
+        'PROOFGRAPH_CLAIM_UNSATISFIABLE',
+        {
+          claimRef: 'claim-1',
+          field: 'expectedCheckId',
+          detail: 'candidate lacks full-check scope completeness attestation',
+        },
+        { recoveryAction: 'Run /plan after correcting the blocked claim declaration.' },
+      ),
+    );
+    const presentation = result.presentation as { markdown: string } | undefined;
+
+    expect(presentation?.markdown).toContain('## Recovery');
+    expect(presentation?.markdown).toContain('For a suite claim, remove or narrow the claim');
+    expect(presentation?.markdown).toContain(
+      'Run /plan after correcting the blocked claim declaration.',
+    );
   });
 
   it('adds the migrated headline field only for migrated codes', () => {
@@ -211,5 +232,39 @@ describe('formatRailResult', () => {
     expect(presentation.markdown).toContain('## Verification');
     expect(presentation.markdown).toContain('/export');
     expect(presentation.markdown).not.toContain('/approve');
+  });
+
+  it('retains missing verification from the latest implementation review at completion', () => {
+    const state = makeProgressedState('COMPLETE');
+    const result = formatRailResult(
+      {
+        kind: 'ok',
+        state: {
+          ...state,
+          implReviewFindings: [
+            {
+              iteration: 1,
+              planVersion: 1,
+              reviewMode: 'subagent',
+              overallVerdict: 'accept',
+              reviewedBy: { sessionId: 'reviewer' },
+              reviewedAt: '2025-01-01T00:00:00Z',
+              blockingIssues: [],
+              majorRisks: [],
+              missingVerification: ['No negative-path test'],
+              scopeCreep: [],
+              unknowns: [],
+            },
+          ],
+        },
+        evalResult: { kind: 'terminal' },
+        transitions: [],
+      } as RailResult,
+      { evidenceApprovalCompletion: true },
+    );
+    const output = typeof result === 'string' ? result : result.output;
+    expect((parseJSON(output).presentation as { markdown: string }).markdown).toContain(
+      'No negative-path test',
+    );
   });
 });

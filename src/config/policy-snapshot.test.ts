@@ -188,10 +188,6 @@ describe('createPolicySnapshot', () => {
       },
       {
         ...SOLO_POLICY,
-        challengePolicy: undefined,
-      },
-      {
-        ...SOLO_POLICY,
         validationEvidence: {
           ...SOLO_POLICY.validationEvidence,
           allowNoCommands: !SOLO_POLICY.validationEvidence.allowNoCommands,
@@ -291,6 +287,38 @@ describe('resolvePolicyFromSnapshot', () => {
       expect(resolvePolicyFromSnapshot(snapshot).challengePolicy).toEqual(
         SOLO_POLICY.challengePolicy,
       );
+    });
+
+    it('preserves an explicit discoveryHealth onDegraded=allow through the runtime rebuild', () => {
+      const policy = {
+        ...REGULATED_POLICY,
+        discoveryHealth: {
+          ...REGULATED_POLICY.discoveryHealth,
+          onDegraded: 'allow' as const,
+        },
+      };
+      const snapshot = createPolicySnapshot(policy, NOW, sha256);
+      expect(snapshot.discoveryHealth.onDegraded).toBe('allow');
+      expect(resolvePolicyFromSnapshot(snapshot).discoveryHealth).toEqual({
+        ...REGULATED_POLICY.discoveryHealth,
+        onDegraded: 'allow',
+      });
+    });
+
+    it('preserves an explicit discoveryHealth onDrift=allow through the runtime rebuild', () => {
+      const policy = {
+        ...REGULATED_POLICY,
+        discoveryHealth: {
+          ...REGULATED_POLICY.discoveryHealth,
+          onDrift: 'allow' as const,
+        },
+      };
+      const snapshot = createPolicySnapshot(policy, NOW, sha256);
+      expect(snapshot.discoveryHealth.onDrift).toBe('allow');
+      expect(resolvePolicyFromSnapshot(snapshot).discoveryHealth).toEqual({
+        ...REGULATED_POLICY.discoveryHealth,
+        onDrift: 'allow',
+      });
     });
   });
 

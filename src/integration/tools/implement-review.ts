@@ -98,89 +98,26 @@ import { buildLatestImplementationReviewSummary } from './review-summary.js';
 import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
 import { buildHostTaskChallengeContract } from '../review/host-task-policy.js';
 import type { ImplementRuntime } from './implement-shared.js';
-import { nextImplementationReviewIteration, normalizeHostFindings } from './implement-shared.js';
-import { projectImplementationProofStatus } from '../proofgraph/proof-summary-projectors.js';
-import type { CompactProofPresentation } from '../../presentation/proof-model.js';
 import {
-  buildImplReviewBlockedMarkdown,
-  buildImplReviewChangesRequestedMarkdown,
-} from './implement-review-presentation.js';
+  activateImplementationReviewObligation,
+  effectiveImplementationReviewIterations,
+  nextImplementationReviewIteration,
+  normalizeHostFindings,
+  unknownOutcomeRevalidationBlock,
+} from './implement-shared.js';
+import { handleUnableToReview } from './implement-unable-review.js';
+import type { CompactProofPresentation } from '../../presentation/proof-model.js';
+import { buildImplReviewChangesRequestedMarkdown } from './implement-review-presentation.js';
+import {
+  projectOpenImplementationChallengeIds,
+  projectUnaddressedImplementationChallengeIds,
+} from '../../state/implementation-review-findings.js';
 export { buildImplReviewChangesRequestedMarkdown } from './implement-review-presentation.js';
-
-function attachProofSummaryToBlockedResponse(
-  blockedResponse: string,
-  proofSummary: CompactProofPresentation,
-): string {
-  const parsed = JSON.parse(blockedResponse) as Record<string, unknown>;
-  parsed.proofSummary = proofSummary;
-  parsed.presentation = {
-    markdown: buildImplReviewBlockedMarkdown(
-      String(parsed.message ?? 'The independent review could not be completed.'),
-      proofSummary,
-    ),
-  };
-  return JSON.stringify(parsed);
-}
-
-function proofDecisionContextForVerdict(
-  verdict: LoopVerdict,
-): 'current_gate' | 'prospective_approval' {
-  return verdict === 'accept' ? 'current_gate' : 'prospective_approval';
-}
-
-function projectProofSummaryForVerdict(
-  state: SessionState,
-  verdict: LoopVerdict,
-): CompactProofPresentation {
-  return projectImplementationProofStatus(state, {
-    decisionContext: proofDecisionContextForVerdict(verdict),
-  });
-}
-
-export type ResolvedSubmittedReviewProof =
-  | {
-      readonly kind: 'blocked';
-      readonly response: string;
-    }
-  | {
-      readonly kind: 'proceed';
-      readonly proofSummary: CompactProofPresentation;
-    };
-
-/**
- * Branch logic for the proof context in a submitted implementation review.
- *
- * 1. If findings are blocked → blocked response with injected proof summary.
- * 2. If changes_requested → proceed with pre-transition (prospective) summary.
- * 3. If accept → proceed with post-review (current_gate) summary.
- *
- * Both the handler and tests call this function. Mutating the branch decisions
- * inside this function will break the corresponding tests.
- */
-export function resolveSubmittedReviewProofResponse(input: {
-  findingsBlocked: string | null;
-  preTransitionState: SessionState;
-  reviewedState: SessionState;
-  verdict: LoopVerdict;
-}): ResolvedSubmittedReviewProof {
-  const preProof = projectImplementationProofStatus(input.preTransitionState);
-
-  if (input.findingsBlocked) {
-    return {
-      kind: 'blocked',
-      response: attachProofSummaryToBlockedResponse(input.findingsBlocked, preProof),
-    };
-  }
-
-  if (input.verdict === 'changes_requested') {
-    return { kind: 'proceed', proofSummary: preProof };
-  }
-
-  return {
-    kind: 'proceed',
-    proofSummary: projectProofSummaryForVerdict(input.reviewedState, input.verdict),
-  };
-}
+export {
+  resolveSubmittedReviewProofResponse,
+  type ResolvedSubmittedReviewProof,
+} from './implement-review-proof.js';
+import { resolveSubmittedReviewProofResponse } from './implement-review-proof.js';
 
 function findPendingImplObligation(state: SessionState) {
   const assuranceBase = ensureReviewAssurance(state.reviewAssurance);
@@ -194,64 +131,6 @@ function findPendingImplObligation(state: SessionState) {
           item.consumedAt == null,
       ) ?? null
   );
-}
-
-/**
- * Canonical lifecycle projection of implementation-challenge open-state (#747).
- *
- * The open-state of a challenge cannot be read from the last findings entry
- * alone: after a `still_failing`/`not_verified` re-review the reviewer emits
- * FRESH challenges and carries the prior challenge forward only as a
- * `challengeResolutionVerdicts` entry, so the original `implementation_challenge`
- * object is no longer present in the latest `challenges[]`. This projects the
- * whole append-only `implReviewFindings` history:
- *
- *  - origin: a challenge id first seen as an `implementation_challenge` whose
- *    outcome was `fail`/`not_verified`;
- *  - latestVerdict: the MOST RECENT independent `challengeResolutionVerdict` for
- *    that id, in `implReviewFindings` append order (later findings win).
- *
- * A challenge is OPEN iff it has a failing origin AND its latest independent
- * verdict is not `resolved` (no verdict yet ⇒ still open). Author resolutions are
- * advisory and never appear here — they never change open-state.
- *
- * Note (NOT_VERIFIED, by design): ordering uses `implReviewFindings` append
- * position; neither `ChallengeResolutionVerdict` nor `ChallengeResolution`
- * carries an explicit iteration/obligation/flow binding in the schema, so
- * cross-iteration binding is positional plus digest only. A schema-level binding
- * is intentionally out of scope here.
- */
-function projectOpenChallengeIds(state: SessionState): ReadonlySet<string> {
-  const failingOrigin = new Set<string>();
-  const latestVerdict = new Map<string, string>();
-  for (const findings of state.implReviewFindings ?? []) {
-    projectFindingsChallengeLifecycle(findings, failingOrigin, latestVerdict);
-  }
-  const open = new Set<string>();
-  for (const id of failingOrigin) {
-    if (latestVerdict.get(id) !== 'resolved') open.add(id);
-  }
-  return open;
-}
-
-function projectFindingsChallengeLifecycle(
-  findings: NonNullable<SessionState['implReviewFindings']>[number],
-  failingOrigin: Set<string>,
-  latestVerdict: Map<string, string>,
-): void {
-  for (const challenge of findings.challenges ?? []) {
-    if (
-      challenge.kind === 'implementation_challenge' &&
-      (challenge.outcome === 'fail' || challenge.outcome === 'not_verified')
-    ) {
-      failingOrigin.add(challenge.challengeId);
-    }
-  }
-  for (const verdict of findings.challengeResolutionVerdicts ?? []) {
-    if (findings.overallVerdict !== 'unable_to_review' || verdict.verdict !== 'resolved') {
-      latestVerdict.set(verdict.challengeId, verdict.verdict);
-    }
-  }
 }
 
 /** Challenge ids the author has recorded a resolution for against the CURRENT digest. */
@@ -274,9 +153,9 @@ function resolvedForCurrentDigestIds(state: SessionState): ReadonlySet<string> {
  * therefore the ones that require an independent verdict, NOT ids to drop.
  */
 export function computeTargetedResolutionChallengeIds(state: SessionState): readonly string[] {
-  const open = projectOpenChallengeIds(state);
+  const open = projectOpenImplementationChallengeIds(state.implReviewFindings);
   const resolvedIds = resolvedForCurrentDigestIds(state);
-  return [...open].filter((id) => resolvedIds.has(id));
+  return open.filter((id) => resolvedIds.has(id));
 }
 
 /**
@@ -287,9 +166,11 @@ export function computeTargetedResolutionChallengeIds(state: SessionState): read
  * findings-consistency gate fails acceptance closed while this set is non-empty.
  */
 export function computeUnaddressedPriorFailIds(state: SessionState): readonly string[] {
-  const open = projectOpenChallengeIds(state);
-  const resolvedIds = resolvedForCurrentDigestIds(state);
-  return [...open].filter((id) => !resolvedIds.has(id));
+  return projectUnaddressedImplementationChallengeIds(
+    state.implReviewFindings,
+    state.challengeResolutions,
+    state.implementation?.digest,
+  );
 }
 
 /**
@@ -300,7 +181,7 @@ export function computeUnaddressedPriorFailIds(state: SessionState): readonly st
  * `implementation_challenge` object is no longer in the latest `challenges[]`.
  */
 export function isOpenImplementationChallenge(state: SessionState, challengeId: string): boolean {
-  return projectOpenChallengeIds(state).has(challengeId);
+  return projectOpenImplementationChallengeIds(state.implReviewFindings).includes(challengeId);
 }
 
 function resolveImplementationFindings(
@@ -343,14 +224,6 @@ function validateEffectiveFindings(
   obligationId: string,
 ): string | null {
   if (!findings) {
-    // changes_requested closes the review loop by returning to IMPLEMENTATION,
-    // where fresh evidence replaces the stale evidence on the next /implement.
-    // It therefore does NOT require bindable reviewer findings to proceed: a
-    // reviewer asking for changes must not be able to wedge the session into an
-    // unrecoverable IMPL_REVIEW dead-state (no command can leave IMPL_REVIEW once
-    // this guard blocks). Only `accept` — which advances to the evidence-review
-    // user gate and renders the review card — still requires findings.
-    if (submittedVerdict === 'changes_requested') return null;
     return requireReviewFindings(false);
   }
   if (findings.overallVerdict === 'unable_to_review') {
@@ -371,21 +244,30 @@ function appendImplReviewState(input: {
   planVersion: number;
   effectiveFindings?: ReviewFindings;
   evidenceInvocationId?: string;
+  obligationToConsume?: ReturnType<typeof findPendingImplObligation>;
 }) {
-  const { runtime, iteration, planVersion, effectiveFindings, evidenceInvocationId } = input;
+  const {
+    runtime,
+    iteration,
+    planVersion,
+    effectiveFindings,
+    evidenceInvocationId,
+    obligationToConsume,
+  } = input;
   const implementation = runtime.state.implementation!;
   const assuranceBase = ensureReviewAssurance(runtime.state.reviewAssurance);
   const strictObligation = runtime.strictEnforcement
     ? findLatestObligation(assuranceBase.obligations, 'implement', iteration, planVersion)
     : null;
+  const consumedObligation = obligationToConsume ?? strictObligation;
   const consumedAssurance = consumeReviewObligation(
     assuranceBase,
-    strictObligation,
+    consumedObligation,
     runtime.ctx.now(),
     evidenceInvocationId ??
       findAcceptedInvocationForFindings(
         assuranceBase,
-        strictObligation,
+        consumedObligation,
         runtime.args.reviewFindings,
       )?.invocationId,
   );
@@ -397,7 +279,10 @@ function appendImplReviewState(input: {
     ...runtime.state,
     implReview: {
       iteration,
-      maxIterations: runtime.maxImplReviewIterations,
+      maxIterations: effectiveImplementationReviewIterations(
+        runtime.state,
+        runtime.maxImplReviewIterations,
+      ),
       prevDigest: implementation.digest,
       currDigest: implementation.digest,
       revisionDelta: 'none',
@@ -438,10 +323,19 @@ async function handleChangesRequestedReview(input: {
   }
 
   const at = input.runtime.ctx.now();
+  const maxIterations = effectiveImplementationReviewIterations(
+    input.runtime.state,
+    input.runtime.maxImplReviewIterations,
+  );
+  const exhausted = input.iteration >= maxIterations;
   const finalState = applyTransition(
     {
       ...input.reviewedState,
       implementation: null,
+      implementationRework: {
+        rejectedDigest: input.runtime.state.implementation!.digest,
+        exhausted,
+      },
       implValidation: [],
       implReview: null,
       reducedCeremony: null,
@@ -459,22 +353,33 @@ async function handleChangesRequestedReview(input: {
   const response: Record<string, unknown> = {
     phase: finalState.phase,
     implReviewIteration: input.iteration,
-    status: `Implementation review iteration ${input.iteration}/${input.runtime.maxImplReviewIterations}. Changes requested.`,
-    next:
-      'Make the requested code changes using read/write/bash tools, ' +
-      'then call flowguard_implement (without reviewVerdict) to re-record the implementation. ' +
-      `After re-recording, call the ${REVIEWER_SUBAGENT_TYPE} subagent again for independent review.`,
+    status: exhausted
+      ? `Implementation review iteration ${input.iteration}/${maxIterations} exhausted with Changes requested.`
+      : `Implementation review iteration ${input.iteration}/${maxIterations}. Changes requested.`,
+    next: exhausted
+      ? 'A user must explicitly authorize more review iterations with /extend-implementation-review <positive integer> before implementation evidence can be re-recorded.'
+      : 'Make the requested code changes using read/write/bash tools, then call flowguard_implement (without reviewVerdict) to re-record the implementation. ' +
+        `After re-recording, call the ${REVIEWER_SUBAGENT_TYPE} subagent again for independent review.`,
     _audit: { transitions },
   };
   addLatestImplementationReview(response, input.reviewFindings);
   response.proofSummary = input.proofSummary;
-  response.presentation = {
-    markdown: buildImplReviewChangesRequestedMarkdown(
-      `Implementation review iteration ${input.iteration}/${input.runtime.maxImplReviewIterations}. Changes requested.`,
-      input.proofSummary,
-      buildProductNextAction(resolveNextAction(finalState.phase, finalState), finalState.phase),
-    ),
-  };
+  // No intermediate cards in the active review loop: while the budget is not
+  // exhausted, changes_requested is an INTERNAL continuation (repair ->
+  // re-record -> validation -> challenge resolution -> fresh independent
+  // review), so the response carries compact status/next guidance and NO
+  // presentation card. Only when the budget is exhausted does the loop end in
+  // a user decision; that terminal state renders the full card with the
+  // /extend-implementation-review action.
+  if (exhausted) {
+    response.presentation = {
+      markdown: buildImplReviewChangesRequestedMarkdown(
+        `Implementation review iteration ${input.iteration}/${maxIterations} exhausted with Changes requested.`,
+        input.proofSummary,
+        buildProductNextAction(resolveNextAction(finalState.phase, finalState), finalState.phase),
+      ),
+    };
+  }
   return appendNextAction(JSON.stringify(response), finalState);
 }
 
@@ -589,6 +494,7 @@ function handleTaskTransportFailureRetry(input: ImplementRuntime): string | null
   return handlePreferredTaskTransportFailure(input, findPendingImplObligation(input.state));
 }
 
+// eslint-disable-next-line max-lines-per-function, complexity -- ordered evidence resolution, consumption, and convergence branches must remain together.
 async function handleSubmittedImplementationReview(input: {
   runtime: ImplementRuntime;
   iteration: number;
@@ -603,6 +509,60 @@ async function handleSubmittedImplementationReview(input: {
   );
   if (resolved.blocked) return resolved.blocked;
 
+  if (resolved.effectiveFindings?.overallVerdict === 'unable_to_review') {
+    if (submittedVerdict !== 'unable_to_review') {
+      return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
+        reviewVerdict: submittedVerdict,
+        overallVerdict: resolved.effectiveFindings.overallVerdict,
+      });
+    }
+    if (!pendingObligation || !resolved.evidenceInvocationId) {
+      return formatBlocked('SUBAGENT_REVIEW_NOT_INVOKED', {
+        reason: 'unable_to_review requires bound host-task reviewer evidence',
+      });
+    }
+    // Prepare the successor before consuming evidence. A failed Discovery mint
+    // must preserve the current bound verdict as the executable recovery path.
+    const reissued = await activateImplementationReviewObligation(runtime.state, {
+      subagentEnabled: runtime.subagentEnabled,
+      iteration: iteration + 1,
+      planVersion,
+      now: runtime.ctx.now(),
+      worktree: runtime.worktree,
+    });
+    if (reissued.blocked || !reissued.obligation || !reissued.attemptId) {
+      return appendNextAction(
+        formatBlocked('REVIEWER_CONTEXT_UNAVAILABLE', {
+          reason: reissued.blocked?.reason ?? 'a fresh reviewer obligation could not be activated',
+        }),
+        runtime.state,
+      );
+    }
+    const retryAttempt = reissued.state.reviewAssurance?.attempts.find(
+      (attempt) => attempt.attemptId === reissued.attemptId,
+    );
+    if (!retryAttempt) {
+      return formatBlocked('REVIEWER_CONTEXT_UNAVAILABLE', {
+        reason: 'a fresh reviewer attempt could not be activated',
+      });
+    }
+    const { reviewedState } = appendImplReviewState({
+      runtime,
+      iteration,
+      planVersion,
+      effectiveFindings: resolved.effectiveFindings,
+      evidenceInvocationId: resolved.evidenceInvocationId,
+      obligationToConsume: pendingObligation,
+    });
+    return handleUnableToReview({
+      runtime,
+      reviewedState,
+      obligationId: pendingObligation.obligationId,
+      retryObligation: reissued.obligation,
+      retryAttempt,
+    });
+  }
+
   const findingsBlocked = validateEffectiveFindings(
     resolved.effectiveFindings,
     submittedVerdict,
@@ -615,6 +575,7 @@ async function handleSubmittedImplementationReview(input: {
     planVersion,
     effectiveFindings: resolved.effectiveFindings,
     evidenceInvocationId: resolved.evidenceInvocationId,
+    obligationToConsume: pendingObligation,
   });
 
   const proofDecision = resolveSubmittedReviewProofResponse({
@@ -656,6 +617,16 @@ export async function handleImplReview(input: ImplementRuntime): Promise<string>
       receivedVerdict ? { receivedVerdict } : undefined,
     );
   }
+
+  // An unknown-outcome resolution declares all pre-resolution evidence
+  // unreliable. The review verdict must be bound to a fresh worktree
+  // recapture: implementation evidence recorded before the latest resolution
+  // can never satisfy the review loop.
+  const staleEvidenceBlock = unknownOutcomeRevalidationBlock(
+    input.state,
+    implementation.executedAt,
+  );
+  if (staleEvidenceBlock) return staleEvidenceBlock;
 
   const iteration = nextImplementationReviewIteration(input.state);
   const planVersion = (input.state.plan?.history.length ?? 0) + 1;

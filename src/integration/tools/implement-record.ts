@@ -58,6 +58,7 @@ import {
   appendNextAction,
   writeStateWithArtifacts,
 } from './helpers.js';
+import { existsSync } from 'node:fs';
 
 // State & Machine
 import { evaluate } from '../../machine/evaluate.js';
@@ -70,7 +71,14 @@ import { isCommandAllowed, Command } from '../../machine/commands.js';
 // Rail helpers
 
 // Adapters
-import { changedFiles, hashWorktreeFiles, worktreeDiff } from '../../adapters/git.js';
+import {
+  changedFiles,
+  GitError,
+  hashWorktreeFiles,
+  isGitRepoStrict,
+  worktreeDiff,
+} from '../../adapters/git.js';
+import { computeGitControlPlaneMarker } from '../git-control-plane.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import { writeImplementationDiffArtifact } from './implement-diff-artifact.js';
 
@@ -81,6 +89,7 @@ import { validateReviewFindings } from './review-validation.js';
 import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.js';
 import { ensureReviewAssurance, reviewObligationResponseFields } from '../review/assurance.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
+import { collectHistoricallyRejectedImplementationDigests } from '../review/rejected-digests.js';
 import { resolveCeremonyProfile, isNonDomainConfigPath } from '../phase-tool-gate.js';
 import {
   resolveRuntimeReviewPlatform,
@@ -90,6 +99,10 @@ import { buildPendingReviewInstruction } from '../review/pending-instruction.js'
 import { resolveAttemptObservationCapability } from '../review/assurance.js';
 import { buildReviewerProofContext } from '../review/proof-context.js';
 import type { ImplementRuntime, ImplementationCeremony } from './implement-shared.js';
+import {
+  hasUnresolvedMutationEpisodes,
+  reconcileMutationEpisodes,
+} from '../../state/evidence-mutation-episode.js';
 import { normalizeHostFindings } from './implement-shared.js';
 import {
   activateReviewObligationAndPersist,
@@ -143,7 +156,75 @@ export function validateImplRecordPrerequisites(input: ImplementRuntime): string
   }
   if (!input.state.ticket) return formatBlocked('TICKET_REQUIRED', { action: 'implementation' });
   if (!input.state.plan) return formatBlocked('PLAN_REQUIRED', { action: 'implementation' });
+  const unresolvedEpisodes = input.state.mutationEpisodes.filter(
+    (episode) => episode.status === 'dispatch_authorized',
+  );
+  if (
+    hasUnresolvedMutationEpisodes(
+      input.state.mutationEpisodes,
+      input.state.mutationEpisodeResolutions,
+    )
+  ) {
+    return formatBlocked('MUTATION_EPISODE_UNRESOLVED', {
+      count: String(unresolvedEpisodes.length),
+    });
+  }
   return null;
+}
+
+/**
+ * Git prerequisite for recording implementation evidence (#575): recording is
+ * git-derived (changed-file detection, content hashes, and the diff artifact
+ * all read the worktree via git). Fail closed here BEFORE any git command runs,
+ * so a non-Git development worktree surfaces an actionable reason instead of a
+ * raw `GIT_COMMAND_FAILED` dead-end after the agent has already made code
+ * changes.
+ *
+ * Error typing (#852): the probe preserves the git diagnosis — a genuine
+ * non-repo worktree is blocked with `NOT_GIT_REPO`, while infrastructure
+ * failures (missing git executable, git timeout) surface their own reason
+ * codes instead of being mislabeled as a repository problem.
+ */
+export async function validateGitPrerequisite(worktree: string): Promise<string | null> {
+  try {
+    if (await isGitRepoStrict(worktree)) return null;
+  } catch (err) {
+    if (err instanceof GitError) {
+      // execFile reports a missing cwd as ENOENT, which gitRaw mislabels as
+      // GIT_NOT_FOUND. A missing worktree path is definitively not a git
+      // repository; every other typed diagnosis is preserved.
+      const code =
+        err.code === 'GIT_NOT_FOUND' && !existsSync(worktree) ? 'NOT_GIT_REPO' : err.code;
+      return formatBlocked(code, { path: worktree, message: err.message, reason: err.message });
+    }
+    throw err;
+  }
+  return formatBlocked('NOT_GIT_REPO', { path: worktree });
+}
+
+/**
+ * Git control-plane binding (#852): the implementation review subject covers
+ * worktree content, but `.git` control-plane state (config/hooks/HEAD) is
+ * invisible to `git status`. If the live control plane diverges from the
+ * baseline frozen at hydrate, the repository effect of some authorized host
+ * mutation cannot be part of the implementation subject — recording fails
+ * closed instead of certifying uncovered control-plane mutations as bound
+ * evidence. Legacy baselines without a marker skip the check.
+ */
+export async function validateControlPlaneBinding(input: ImplementRuntime): Promise<string | null> {
+  const baselineMarker = input.state.implementationBaseline?.controlPlaneMarker;
+  if (!baselineMarker) return null;
+  let currentMarker: string;
+  try {
+    currentMarker = await computeGitControlPlaneMarker(input.worktree);
+  } catch {
+    return formatBlocked('MUTATION_EPISODE_CONTROL_PLANE_UNAVAILABLE');
+  }
+  if (currentMarker === baselineMarker) return null;
+  return formatBlocked('MUTATION_EPISODE_CONTROL_PLANE_MUTATED', {
+    marker: currentMarker,
+    baselineMarker,
+  });
 }
 
 function buildImplRecordedResponse(input: {
@@ -287,14 +368,10 @@ async function buildImplEvidence(
   input: ImplementRuntime,
   files: string[],
   domainFiles: string[],
+  digest: string,
 ): Promise<ImplEvidence> {
-  const sortedFiles = [...files].sort();
-  const contentHashes = await hashWorktreeFiles(input.worktree, sortedFiles);
-  const digest = input.ctx.digest(
-    sortedFiles.map((f) => `${f}:${contentHashes[f] ?? 'deleted'}`).join('\n'),
-  );
-
   let diffDigest: string | undefined;
+  const sortedFiles = [...files].sort();
   const diffText = await worktreeDiff(input.worktree, sortedFiles);
   if (diffText.trim().length > 0) {
     const candidateDigest = input.ctx.digest(diffText);
@@ -313,12 +390,57 @@ async function buildImplEvidence(
   };
 }
 
+async function buildImplementationDigest(
+  input: ImplementRuntime,
+  files: string[],
+): Promise<string> {
+  const sortedFiles = [...files].sort();
+  const contentHashes = await hashWorktreeFiles(input.worktree, sortedFiles);
+  return input.ctx.digest(
+    sortedFiles.map((f) => `${f}:${contentHashes[f] ?? 'deleted'}`).join('\n'),
+  );
+}
+
+function reworkBlock(state: SessionState, digest: string): string | null {
+  if (state.implementationRework?.exhausted === true) {
+    return formatBlocked('IMPLEMENTATION_REVIEW_EXTENSION_REQUIRED');
+  }
+  // The single-slot marker covers the immediate round, but the historical
+  // projection is the load-bearing check: any digest an independent reviewer
+  // EVER rejected (changes_requested, derived from the append-only obligations
+  // + bound findings) stays blocked even after a later round closed the marker.
+  if (
+    collectHistoricallyRejectedImplementationDigests(state).has(digest) ||
+    (state.implementationRework?.rejectedDigest ?? null) === digest
+  ) {
+    return formatBlocked('IMPLEMENTATION_REWORK_REQUIRED');
+  }
+  return null;
+}
+
+/**
+ * Combined record-path git prerequisites: a non-Git worktree (or a control
+ * plane that diverged from the hydrate baseline) blocks BEFORE any git
+ * inspection, so no evidence is ever recorded over a mutation the
+ * implementation subject cannot cover.
+ */
+export async function validateRecordGitPrerequisites(
+  input: ImplementRuntime,
+): Promise<string | null> {
+  const gitBlocked = await validateGitPrerequisite(input.worktree);
+  if (gitBlocked) return gitBlocked;
+  return validateControlPlaneBinding(input);
+}
+
 export async function handleImplRecord(
   input: ImplementRuntime,
   changedFilesOverride?: string[],
 ): Promise<string> {
   const blocked = validateImplRecordPrerequisites(input);
   if (blocked) return blocked;
+
+  const gitBlocked = await validateRecordGitPrerequisites(input);
+  if (gitBlocked) return gitBlocked;
 
   const rawFiles = changedFilesOverride ?? (await changedFiles(input.worktree));
   const scoped = await scopeImplementationFiles(
@@ -332,7 +454,10 @@ export async function handleImplRecord(
   const domainFiles = files.filter(
     (f) => !f.startsWith('.opencode/') && !f.includes('node_modules/') && !isNonDomainConfigPath(f),
   );
-  const implEvidence = await buildImplEvidence(input, files, domainFiles);
+  const digest = await buildImplementationDigest(input, files);
+  const reworkBlocked = reworkBlock(input.state, digest);
+  if (reworkBlocked) return reworkBlocked;
+  const implEvidence = await buildImplEvidence(input, files, domainFiles, digest);
   const existingFindings = input.state.implReviewFindings ?? [];
   const newReviewFindings = input.args.reviewFindings
     ? [...existingFindings, normalizeHostFindings(input.args.reviewFindings)]
@@ -343,7 +468,19 @@ export async function handleImplRecord(
   const reducedCeremony = ceremony.profile === 'reduced';
   const nextState: SessionState = {
     ...input.state,
+    mutationEpisodes: reconcileMutationEpisodes(
+      input.state.mutationEpisodes,
+      input.state.mutationEpisodeResolutions,
+      implEvidence.digest,
+    ),
     implementation: implEvidence,
+    // The rework marker is deliberately NOT cleared here: it carries the digest
+    // of the revision the independent reviewer already rejected, and it must
+    // survive the re-record (and a subsequent failing fresh revalidation) so
+    // that restoring that earlier revision is still blocked. It is closed only
+    // when the fresh validation of this record FULLY passes and the machine
+    // advances to IMPL_REVIEW (applyTransition closes it on that exact edge).
+    implementationRework: input.state.implementationRework,
     // #762: bind the risk classification to the exact revision it describes, so a
     // gate rail can consult it without re-deriving it from a later file set.
     implementationRiskAssessment: {

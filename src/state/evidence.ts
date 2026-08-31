@@ -83,6 +83,11 @@ export type * from './evidence-audit.js';
 export * from './evidence-mutation.js';
 export type * from './evidence-mutation.js';
 
+// ─── Implementation review budget ────────────────────────────────────────────
+
+export * from './implementation-review-budget.js';
+export type * from './implementation-review-budget.js';
+
 // ─── Timestamp ─────────────────────────────────────────────────────────────────
 
 export * from './evidence-timestamp.js';

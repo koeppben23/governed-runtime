@@ -54,14 +54,17 @@ function proofGraph(
 function withCertifiedCriticalPlan(state: ReturnType<typeof makeProgressedState>) {
   const declarations = {
     flow: 'plan' as const,
+    version: 'v2' as const,
     claims: [
       {
         claimId: '00000000-0000-4000-8000-000000000763',
         statement: 'The protected behavior holds.',
         critical: true,
         authoritySectionId: 'proof',
+        claimScope: 'specific_behavior' as const,
         expectedCheckId: 'test',
         counterexampleRequirement: {
+          kind: 'assertion' as const,
           checkId: 'security',
           assertion: { providerId: 'junit', localId: 'some-id' },
         },

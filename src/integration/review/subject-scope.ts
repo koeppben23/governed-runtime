@@ -13,7 +13,7 @@
 import type { ReviewSubjectScope } from '../../state/evidence-review.js';
 import type { TaskClass } from '../../state/schema.js';
 import { assessMinimumTaskClass, maxTaskClass } from '../phase-tool-gate.js';
-import { challengeKindForObligation } from '../../config/policy-types.js';
+import { challengeKindForObligation, type ChallengeKind } from '../../config/policy-types.js';
 import type { PolicySnapshot } from '../../state/evidence.js';
 import type { ReviewObligationType } from '../../state/evidence.js';
 
@@ -97,8 +97,14 @@ export function resolveChallengeRequirements(
     changedFiles?: readonly string[];
     claimedTaskClass?: TaskClass;
   },
-): Record<string, unknown> {
-  if (!challengePolicy) return {};
+): {
+  requiredChallengeCount: number;
+  requiredChallengeKind: ChallengeKind;
+  challengePolicyVersion: 'challenge-policy.v1';
+} {
+  // Hard Assurance Epoch: the persisted policy snapshot requires
+  // challengePolicy, and the obligation freezes the requirement explicitly.
+  // TRIVIAL is the explicit zero — never an implicit no-policy state.
   return {
     requiredChallengeCount:
       challengePolicy.counts[

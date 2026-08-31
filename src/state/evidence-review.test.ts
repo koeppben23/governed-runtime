@@ -374,6 +374,9 @@ describe('evidence-review', () => {
       return {
         obligationId: FIXED_UUID,
         obligationType: 'review' as const,
+        requiredChallengeCount: 0,
+        requiredChallengeKind: 'content_challenge' as const,
+        challengePolicyVersion: 'challenge-policy.v1' as const,
         subjectDigest: 'a'.repeat(64),
         iteration: 0,
         planVersion: 1,
@@ -427,6 +430,9 @@ describe('evidence-review', () => {
       const obligation = {
         obligationId: FIXED_UUID,
         obligationType: 'plan' as const,
+        requiredChallengeCount: 0,
+        requiredChallengeKind: 'design_challenge' as const,
+        challengePolicyVersion: 'challenge-policy.v1' as const,
         subjectDigest: 'a'.repeat(64),
         iteration: 0,
         planVersion: 1,
@@ -514,6 +520,9 @@ describe('evidence-review', () => {
           },
         },
         maxReviewerOutputRepairAttempts: 1,
+        requiredChallengeCount: 0,
+        requiredChallengeKind: 'design_challenge' as const,
+        challengePolicyVersion: 'challenge-policy.v1' as const,
         repositoryAuthority: {
           kind: 'context' as const,
           context: {
@@ -636,6 +645,9 @@ describe('evidence-review', () => {
         invokedAt: FIXED_TIME,
         fulfilledAt: null,
         consumedByObligationId: null,
+        reviewOutputMode: 'structured_output' as const,
+        structuredOutputUsed: true,
+        reviewAssuranceLevel: 'structured_high' as const,
       };
       const parsed = ReviewInvocationEvidence.parse(invocation);
       expect(parsed.reviewOutputMode).toBe('structured_output');
@@ -645,10 +657,11 @@ describe('evidence-review', () => {
 
     it('ReviewAssuranceState parses valid assurance state', () => {
       const state = {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [],
         invocations: [],
         attempts: [],
+        dispatches: [],
       };
       expect(ReviewAssuranceState.parse(state)).toEqual(state);
     });
@@ -676,12 +689,16 @@ describe('evidence-review', () => {
         invokedAt: FIXED_TIME,
         fulfilledAt: FIXED_TIME,
         consumedByObligationId: null,
+        reviewOutputMode: 'structured_output' as const,
+        structuredOutputUsed: true,
+        reviewAssuranceLevel: 'structured_high' as const,
       };
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [obligation],
         invocations: [invocation],
         attempts: [],
+        dispatches: [],
       });
       expect(result.success).toBe(false);
       if (result.success) throw new TypeError('expected schema rejection');
@@ -711,12 +728,16 @@ describe('evidence-review', () => {
         invokedAt: FIXED_TIME,
         fulfilledAt: FIXED_TIME,
         consumedByObligationId: null,
+        reviewOutputMode: 'structured_output' as const,
+        structuredOutputUsed: true,
+        reviewAssuranceLevel: 'structured_high' as const,
       };
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [obligation],
         invocations: [invocation],
         attempts: [],
+        dispatches: [],
       });
       expect(result.success).toBe(false);
       if (result.success) throw new TypeError('expected schema rejection');
@@ -738,10 +759,11 @@ describe('evidence-review', () => {
       });
       const obligationB = { ...obligationA, subjectDigest: 'b'.repeat(64) };
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [obligationA, obligationB],
         invocations: [],
         attempts: [],
+        dispatches: [],
       });
       expect(result.success).toBe(false);
       if (result.success) throw new TypeError('expected schema rejection');
@@ -766,6 +788,9 @@ describe('evidence-review', () => {
         fulfilledAt: FIXED_TIME,
         consumedByObligationId: null,
         capturedVerdict: 'accept',
+        reviewOutputMode: 'structured_output' as const,
+        structuredOutputUsed: true,
+        reviewAssuranceLevel: 'structured_high' as const,
       };
       const contradictory = {
         ...invocation,
@@ -773,10 +798,11 @@ describe('evidence-review', () => {
         capturedVerdict: 'changes_requested',
       };
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [],
         invocations: [invocation, contradictory],
         attempts: [],
+        dispatches: [],
       });
       expect(result.success).toBe(false);
       if (result.success) throw new TypeError('expected schema rejection');
@@ -796,10 +822,11 @@ describe('evidence-review', () => {
         createdAt: FIXED_TIME,
       };
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [],
         invocations: [],
         attempts: [attempt, { ...attempt, ordinal: 1 }],
+        dispatches: [],
       });
       expect(result.success).toBe(false);
       if (result.success) throw new TypeError('expected schema rejection');
@@ -810,10 +837,11 @@ describe('evidence-review', () => {
       const obligation = repositoryReviewObligation();
       const attempt = attemptForObligation(obligation, { kind: 'not_applicable' });
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [obligation],
         invocations: [],
         attempts: [attempt],
+        dispatches: [],
       });
       expect(result.success).toBe(false);
       if (result.success) throw new TypeError('expected schema rejection');
@@ -864,10 +892,11 @@ describe('evidence-review', () => {
         },
       });
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [obligation],
         invocations: [],
         attempts: [attempt],
+        dispatches: [],
       });
       expect(result.success).toBe(false);
       if (result.success) throw new TypeError('expected schema rejection');
@@ -1096,6 +1125,9 @@ describe('evidence-review', () => {
       const obligation = {
         obligationId: FIXED_UUID,
         obligationType: 'review' as const,
+        requiredChallengeCount: 0,
+        requiredChallengeKind: 'content_challenge' as const,
+        challengePolicyVersion: 'challenge-policy.v1' as const,
         subjectDigest: 'a'.repeat(64),
         iteration: 0,
         planVersion: 1,
@@ -1217,6 +1249,9 @@ describe('evidence-review', () => {
       const obligation = {
         obligationId: FIXED_UUID,
         obligationType: 'plan' as const,
+        requiredChallengeCount: 0,
+        requiredChallengeKind: 'design_challenge' as const,
+        challengePolicyVersion: 'challenge-policy.v1' as const,
         subjectDigest: 'sha256-subject',
         iteration: 0,
         planVersion: 1,
@@ -1249,6 +1284,9 @@ describe('evidence-review', () => {
       const legacy = {
         obligationId: FIXED_UUID,
         obligationType: 'plan' as const,
+        requiredChallengeCount: 0,
+        requiredChallengeKind: 'design_challenge' as const,
+        challengePolicyVersion: 'challenge-policy.v1' as const,
         subjectDigest: 'sha256-subject',
         iteration: 0,
         planVersion: 1,
@@ -1284,6 +1322,9 @@ describe('Implementation subject scope coherence (schema refinement)', () => {
     return {
       obligationId: FIXED_UUID,
       obligationType: 'implement' as const,
+      requiredChallengeCount: 0,
+      requiredChallengeKind: 'implementation_challenge' as const,
+      challengePolicyVersion: 'challenge-policy.v1' as const,
       subjectDigest: 'a'.repeat(64),
       iteration: 1,
       planVersion: 1,

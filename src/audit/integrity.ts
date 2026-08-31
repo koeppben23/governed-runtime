@@ -12,11 +12,11 @@
  * Verification modes:
  * 1. Full chain verification — walks entire trail, reports first break
  * 2. Single event verification — checks one event against its predecessor
- * 3. Mixed trail support — events without hash fields (pre-chain) are skipped
- *    with a warning (backward-compatible with legacy trails)
- * 4. Strict mode — events without hash fields are treated as integrity failures.
- *    Regulated verification paths must use strict mode to ensure no unchained
- *    events are silently tolerated in new sessions.
+ * 3. Assurance epoch: every record must be an audit-chain.v3 record.
+ *    Legacy records are never skipped, migrated, or interpreted — they fail
+ *    closed with LEGACY_ASSURANCE_FORMAT_UNSUPPORTED.
+ * 4. Timestamp verification — optional strictTimestamps checks monotonicity
+ *    (CLOCK_ANOMALY), TSA imprint binding, and required evidence presence.
  *
  * Why this matters for DATEV/banks:
  * - Regulators require proof that audit trails have not been tampered with
@@ -34,6 +34,7 @@ import {
   GENESIS_HASH,
   type ChainedAuditEvent,
 } from './types.js';
+import { computeCanonicalEventDigest } from './canonical-digest.js';
 import {
   verifyTimestampMonotonicity,
   verifyTsaMessageImprint,
@@ -58,13 +59,10 @@ function safeHashEqual(a: string, b: string): boolean {
 /**
  * Options for chain verification.
  *
- * - `strict: false` (default): legacy events without chain fields are skipped
- *   and counted in `skippedCount`. The chain remains valid. Use for migration
- *   and diagnostic workflows with mixed legacy/chained trails.
- *
- * - `strict: true`: legacy events without chain fields are treated as integrity
- *   failures. `skippedCount > 0` makes the chain invalid. Regulated verification
- *   paths must use strict mode.
+ * - `strict`: retained for API compatibility. Legacy tolerance has been
+ *   removed for the Assurance epoch — every non-v3 record is an integrity
+ *   failure in every mode, so this flag no longer changes verification
+ *   behavior.
  *
  * - `strictTimestamps: false` (default): timestamp evidence is not checked.
  *   Timestamp monotonicity, TSA message imprint matching, and required evidence
@@ -83,11 +81,10 @@ export interface ChainVerifyOptions {
  * Typed failure reason for chain verification.
  *
  * - `CHAIN_BREAK`: hash chain integrity failure (tampered, inserted, or deleted event).
- * - `LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE`: strict mode rejects unchained events.
- * - `LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2`: chained pre-v2 events cannot be verified
- *   under the current recursive canonical hash guarantee.
- * - `UNSUPPORTED_AUDIT_FORMAT_VERSION`: event declares an unknown audit chain format.
- * - `TIMESTAMP_NON_MONOTONIC`: event timestamps are not strictly non-decreasing.
+ * - `LEGACY_ASSURANCE_FORMAT_UNSUPPORTED`: record is not an audit-chain.v3
+ *   record (missing/legacy format, or no chain fields). Legacy artifacts are
+ *   never interpreted — they fail closed.
+ * - `CLOCK_ANOMALY`: event timestamps are not strictly non-decreasing.
  * - `TIMESTAMP_EVIDENCE_MISSING`: critical event lacks required timestamp evidence.
  * - `TSA_MESSAGE_IMPRINT_MISMATCH`: TSA messageImprint does not match recomputed canonical content digest.
  *   Returned when no tokenDerBase64 exists (internal-imprint model) and the cached imprint
@@ -101,10 +98,8 @@ export interface ChainVerifyOptions {
  */
 export type ChainVerificationReason =
   | 'CHAIN_BREAK'
-  | 'LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE'
-  | 'LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2'
-  | 'UNSUPPORTED_AUDIT_FORMAT_VERSION'
-  | 'TIMESTAMP_NON_MONOTONIC'
+  | 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED'
+  | 'CLOCK_ANOMALY'
   | 'TIMESTAMP_EVIDENCE_MISSING'
   | 'TSA_MESSAGE_IMPRINT_MISMATCH'
   | 'TOKEN_VERIFICATION_REQUIRED'
@@ -148,18 +143,15 @@ export interface ChainVerification {
    * Top-level failure classification. Null when chain is valid.
    *
    * - `CHAIN_BREAK`: hash mismatch detected (firstBreak has details).
-   * - `LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE`: strict mode rejects
-   *   unchained legacy events (skippedCount > 0).
-   * - `LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2`: chained legacy format cannot
-   *   be verified under current v2 guarantees.
-   * - `UNSUPPORTED_AUDIT_FORMAT_VERSION`: event declares an unknown format.
-   * - `TIMESTAMP_NON_MONOTONIC`: timestamps decrease between events.
+   * - `LEGACY_ASSURANCE_FORMAT_UNSUPPORTED`: a record is not a chained
+   *   audit-chain.v3 record. Legacy artifacts fail closed everywhere.
+   * - `CLOCK_ANOMALY`: timestamps decrease between events.
    * - `TIMESTAMP_EVIDENCE_MISSING`: critical events lack timestamp evidence.
    * - `TSA_MESSAGE_IMPRINT_MISMATCH`: TSA stamp does not match canonical digest.
    * - `TOKEN_VERIFICATION_REQUIRED`: TSA-stamped event has tokenDerBase64 that must be
    *   cryptographically verified before imprint can be trusted.
    *
-   * Priority: CHAIN_BREAK > unsupported format > legacy format > legacy unchained > timestamp_*.
+   * Priority: CHAIN_BREAK > legacy format > timestamp_*.
    */
   readonly reason: ChainVerificationReason | null;
   /** Timestamp monotonicity result (null if strictTimestamps not enabled). */
@@ -193,35 +185,13 @@ export function verifyEvent(
   index: number,
 ): EventVerification {
   const formatVersion = (event as unknown as Record<string, unknown>).auditFormatVersion;
-  if (formatVersion === undefined) {
-    return {
-      index,
-      eventId: event.id,
-      valid: false,
-      reason:
-        'legacy audit chain format: missing auditFormatVersion cannot be verified with recursive v2 chain hashing',
-      reasonCode: 'LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2',
-    };
-  }
-
-  if (formatVersion === 'audit-chain.v1') {
-    return {
-      index,
-      eventId: event.id,
-      valid: false,
-      reason:
-        'legacy audit chain format audit-chain.v1 cannot be verified with recursive v2 chain hashing',
-      reasonCode: 'LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2',
-    };
-  }
-
   if (formatVersion !== CURRENT_AUDIT_FORMAT_VERSION) {
     return {
       index,
       eventId: event.id,
       valid: false,
-      reason: `unsupported audit chain format: ${String(formatVersion)}`,
-      reasonCode: 'UNSUPPORTED_AUDIT_FORMAT_VERSION',
+      reason: `legacy or unsupported audit chain format: ${String(formatVersion)}`,
+      reasonCode: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
     };
   }
 
@@ -252,6 +222,40 @@ export function verifyEvent(
     };
   }
 
+  // Sequence authority: the append lock stamps auditSequence as the 1-based
+  // chain position. Any other value means the record was re-stamped outside
+  // the append authority — e.g. a trail carrying 1, 7, 7.
+  if (!Number.isInteger(event.auditSequence) || event.auditSequence !== index + 1) {
+    return {
+      index,
+      eventId: event.id,
+      valid: false,
+      reason: `auditSequence mismatch: expected ${index + 1}, got ${String(event.auditSequence)}`,
+      reasonCode: 'CHAIN_BREAK',
+    };
+  }
+
+  // Semantic digest authority: semanticEventDigest must equal the recomputed
+  // canonical content digest of the record. A re-sealed trail whose stamped
+  // digest was not recomputed over the actual content is invalid even when
+  // every chainHash is internally consistent.
+  const recomputedSemanticDigest = computeCanonicalEventDigest(
+    event as unknown as Record<string, unknown>,
+  );
+  if (!safeHashEqual(recomputedSemanticDigest, event.semanticEventDigest)) {
+    return {
+      index,
+      eventId: event.id,
+      valid: false,
+      reason:
+        `semanticEventDigest mismatch: expected "${recomputedSemanticDigest}", ` +
+        `got "${event.semanticEventDigest}"`,
+      reasonCode: 'CHAIN_BREAK',
+      expectedChainHash: recomputedSemanticDigest,
+      actualChainHash: event.semanticEventDigest,
+    };
+  }
+
   return { index, eventId: event.id, valid: true, reason: null, reasonCode: null };
 }
 
@@ -263,33 +267,38 @@ export function verifyEvent(
  * 2. Each subsequent event has prevHash === previous event's chainHash
  * 3. Each event's chainHash matches recomputation
  *
- * Events without chainHash/prevHash fields are skipped (legacy support).
- * The chain continues from the last known hash after skipped events.
- *
- * In strict mode (`options.strict = true`), skipped events make the chain
- * invalid. Regulated verification paths must use strict mode.
+ * Every record must be an audit-chain.v3 record. Records without chain
+ * fields or with a legacy format fail closed with
+ * LEGACY_ASSURANCE_FORMAT_UNSUPPORTED — no skipping, no migration.
  *
  * @param events - The audit trail events in chronological order.
- * @param options - Verification options (strict mode, etc.).
+ * @param options - Verification options (strictTimestamps).
  * @returns ChainVerification with full results.
  */
 export function verifyChain(
   events: Record<string, unknown>[],
   options?: ChainVerifyOptions,
 ): ChainVerification {
-  const strict = options?.strict === true;
   const strictTimestamps = options?.strictTimestamps === true;
   const results: EventVerification[] = [];
   const failures: FirstVerificationFailures = {};
-  let skippedCount = 0;
   let lastHash = GENESIS_HASH;
 
   for (let i = 0; i < events.length; i++) {
     const raw = events[i]!;
 
-    // Check if this event has chain fields
+    // Legacy-tolerant skipping is gone: any record that is not a chained
+    // audit-chain.v3 record is a verification failure.
     if (!isChainedEvent(raw)) {
-      skippedCount++;
+      const verification: EventVerification = {
+        index: i,
+        eventId: typeof raw.id === 'string' ? raw.id : 'unknown',
+        valid: false,
+        reason: 'record is not a chained audit-chain.v3 record',
+        reasonCode: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+      };
+      results.push(verification);
+      trackVerificationFailure(failures, verification);
       continue;
     }
 
@@ -303,19 +312,13 @@ export function verifyChain(
   }
 
   const timestampChecks = verifyTimestampChecks(events, strictTimestamps);
-  const reason = resolveChainReason(
-    failures,
-    strict,
-    skippedCount,
-    strictTimestamps,
-    timestampChecks,
-  );
+  const reason = resolveChainReason(failures, strictTimestamps, timestampChecks);
 
   return {
     valid: reason === null,
     totalEvents: events.length,
     verifiedCount: results.length,
-    skippedCount,
+    skippedCount: 0,
     firstBreak: failures.firstBreak ?? null,
     results,
     reason,
@@ -331,7 +334,6 @@ interface FirstVerificationFailures {
   firstBreak?: EventVerification;
   firstChainBreak?: EventVerification;
   firstLegacyFormat?: EventVerification;
-  firstUnsupportedFormat?: EventVerification;
 }
 
 interface TimestampChecks {
@@ -350,11 +352,8 @@ function trackVerificationFailure(
 
   failures.firstBreak ??= verification;
   if (verification.reasonCode === 'CHAIN_BREAK') failures.firstChainBreak ??= verification;
-  if (verification.reasonCode === 'LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2') {
+  if (verification.reasonCode === 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED') {
     failures.firstLegacyFormat ??= verification;
-  }
-  if (verification.reasonCode === 'UNSUPPORTED_AUDIT_FORMAT_VERSION') {
-    failures.firstUnsupportedFormat ??= verification;
   }
 }
 
@@ -410,12 +409,10 @@ function verifyTimestampChecks(
 
 function resolveChainReason(
   failures: FirstVerificationFailures,
-  strict: boolean,
-  skippedCount: number,
   strictTimestamps: boolean,
   timestampChecks: TimestampChecks,
 ): ChainVerificationReason | null {
-  const structuralReason = resolveStructuralChainReason(failures, strict, skippedCount);
+  const structuralReason = resolveStructuralChainReason(failures);
   if (structuralReason) return structuralReason;
   if (!strictTimestamps) return null;
 
@@ -424,19 +421,15 @@ function resolveChainReason(
 
 function resolveStructuralChainReason(
   failures: FirstVerificationFailures,
-  strict: boolean,
-  skippedCount: number,
 ): ChainVerificationReason | null {
   if (failures.firstChainBreak) return 'CHAIN_BREAK';
-  if (failures.firstUnsupportedFormat) return 'UNSUPPORTED_AUDIT_FORMAT_VERSION';
-  if (failures.firstLegacyFormat) return 'LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2';
-  if (strict && skippedCount > 0) return 'LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE';
+  if (failures.firstLegacyFormat) return 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED';
   return null;
 }
 
 function resolveTimestampReason(timestampChecks: TimestampChecks): ChainVerificationReason | null {
   if (timestampChecks.timestampMonotonicity?.valid === false) {
-    return 'TIMESTAMP_NON_MONOTONIC';
+    return 'CLOCK_ANOMALY';
   }
   if (timestampChecks.tokenVerificationRequired.length > 0) {
     return 'TOKEN_VERIFICATION_REQUIRED';
@@ -474,7 +467,7 @@ export function getLastChainHash(events: Record<string, unknown>[]): string {
 
 /**
  * Type guard: does this event have chain hash fields?
- * Used to distinguish chained events from legacy events in mixed trails.
+ * Every audit-chain.v3 record is chained; non-chained input is legacy.
  */
 function isChainedEvent(event: Record<string, unknown>): boolean {
   return (

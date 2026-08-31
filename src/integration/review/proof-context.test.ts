@@ -66,12 +66,14 @@ describe('renderDeclarationPreview', () => {
       ...PLAN_RECORD,
       claimDeclarations: {
         flow: 'plan',
+        version: 'v2',
         claims: [
           {
             claimId: CLAIM_ID,
             statement: 'updateTask rejects unknown ids',
             critical: true,
             authoritySectionId: 'implementation-step-1',
+            claimScope: 'specific_behavior',
             expectedCheckId: 'build',
           },
         ],
@@ -83,7 +85,7 @@ describe('renderDeclarationPreview', () => {
     const text = renderDeclarationPreview(planState).join('\n');
     expect(text).toContain('These are stated intent, NOT evidence.');
     expect(text).toContain('Plan claim declarations (1)');
-    expect(text).toContain('expected check: build');
+    expect(text).toContain('Expected check: build');
   });
 
   it('marks declarations as not certificate-bound before approval', () => {
@@ -107,8 +109,12 @@ describe('renderDeclarationPreview', () => {
           certificateId: '44444444-4444-4444-8444-444444444444',
           planVersion: 1,
           planRecordDigest: 'record-digest',
-          reviewObligationId: null,
-          reviewEvidenceDigest: null,
+          reviewBinding: {
+            kind: 'current_review',
+            reviewObligationId: '55555555-5555-4555-8555-555555555555',
+            reviewEvidenceDigest: 'review-evidence-digest',
+            reviewedSubjectDigest: 'authority-digest',
+          },
         },
       },
     };
@@ -147,14 +153,17 @@ describe('renderDeclarationPreview', () => {
         ...planState.plan!,
         claimDeclarations: {
           flow: 'plan',
+          version: 'v2',
           claims: [
             {
               claimId: CLAIM_ID,
               statement: 'counterexample claim',
               critical: true,
               authoritySectionId: 's1',
+              claimScope: 'specific_behavior',
               expectedCheckId: 'build',
               counterexampleRequirement: {
+                kind: 'assertion',
                 checkId: 'security',
                 assertion: { providerId: 'junit', localId: 'my-test' },
               },
@@ -164,7 +173,9 @@ describe('renderDeclarationPreview', () => {
       },
     };
     const text = renderDeclarationPreview(state).join('\n');
-    expect(text).toContain('counterexample check: security (assertion: my-test)');
+    expect(text).toContain(
+      'Counterexample requirement: security; assertion providerId: junit; localId: my-test',
+    );
   });
 
   it('renders counterexample requirement with explicit assertionId', () => {
@@ -174,14 +185,17 @@ describe('renderDeclarationPreview', () => {
         ...planState.plan!,
         claimDeclarations: {
           flow: 'plan',
+          version: 'v2',
           claims: [
             {
               claimId: CLAIM_ID,
               statement: 'counterexample claim with explicit assertion',
               critical: true,
               authoritySectionId: 's1',
+              claimScope: 'specific_behavior',
               expectedCheckId: 'build',
               counterexampleRequirement: {
+                kind: 'assertion',
                 checkId: 'security',
                 assertion: { providerId: 'junit', localId: 'com.example.Test#method' },
               },
@@ -191,7 +205,9 @@ describe('renderDeclarationPreview', () => {
       },
     };
     const text = renderDeclarationPreview(state).join('\n');
-    expect(text).toContain('counterexample check: security (assertion: com.example.Test#method)');
+    expect(text).toContain(
+      'Counterexample requirement: security; assertion providerId: junit; localId: com.example.Test#method',
+    );
   });
 
   it('renders nothing when no declarations exist', () => {

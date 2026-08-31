@@ -36,7 +36,7 @@ import { review } from './tools/review-tool/index.js';
 import { run_check } from './tools/run-check-tool.js';
 import { archive } from './tools/archive-tool.js';
 import type { ToolContext } from './tools/helpers.js';
-import type { ReviewFindings } from '../state/evidence.js';
+import type { ReviewFindings, ReviewObligation } from '../state/evidence.js';
 import {
   hashFindings,
   REVIEW_CRITERIA_VERSION,
@@ -91,7 +91,12 @@ function isOpen(host: HostId) {
   return host === 'opencode';
 }
 
-function f(oblId: string, iter = 0, pv = 1): ReviewFindings {
+function f(
+  oblId: string,
+  iter = 0,
+  pv = 1,
+  challenges: ReviewFindings['challenges'] = [],
+): ReviewFindings {
   return {
     iteration: iter,
     planVersion: pv,
@@ -102,6 +107,7 @@ function f(oblId: string, iter = 0, pv = 1): ReviewFindings {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges,
     reviewedBy: { sessionId: 'ses_r' },
     reviewedAt: FIXED_TIME,
     attestation: {
@@ -113,6 +119,36 @@ function f(oblId: string, iter = 0, pv = 1): ReviewFindings {
       reviewedBy: 'flowguard-reviewer',
     },
   };
+}
+
+function challengesFor(
+  state: SessionState,
+  obligation: ReviewObligation,
+): ReviewFindings['challenges'] {
+  return Array.from({ length: obligation.requiredChallengeCount ?? 0 }, (_, index) => ({
+    challengeId: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    obligationId: obligation.obligationId,
+    scenario: 'Exercise the changed behavior against its implementation evidence.',
+    claim: 'The implementation handles the reviewed scenario.',
+    locations: ['implementation evidence'],
+    kind: (obligation.requiredChallengeKind ??
+      'implementation_challenge') as 'implementation_challenge',
+    evidenceRefs: [
+      {
+        kind: 'implementation' as const,
+        implementationDigest: state.implementation?.digest ?? 'missing',
+      },
+      {
+        kind: 'validation_attempt' as const,
+        attemptId:
+          state.validationAttempts.find((a) => a.scope === 'implementation' && a.result.passed)
+            ?.attemptId ??
+          state.validationAttempts[0]?.attemptId ??
+          '99999999-9999-4999-8999-999999999999',
+      },
+    ],
+    outcome: 'pass' as const,
+  }));
 }
 
 interface SE {
@@ -179,7 +215,7 @@ async function inject(
     (o) => o.obligationType === oblType && o.status === 'pending',
   );
   if (!obl) throw new Error(`No pending ${oblType} obligation`);
-  const ff = f(obl.obligationId, obl.iteration, obl.planVersion);
+  const ff = f(obl.obligationId, obl.iteration, obl.planVersion, challengesFor(state, obl));
   const fh = hashFindings(ff);
   const newObl = {
     ...obl,
@@ -223,6 +259,7 @@ async function inject(
       ),
       invocations: [...state.reviewAssurance!.invocations, inv],
       attempts: [],
+      dispatches: state.reviewAssurance!.dispatches,
     },
     reviewDecision: {
       verdict: 'approve',
@@ -346,6 +383,7 @@ describe('FlowGuard tool-level E2E', () => {
                 lineageStatus: 'verified' as const,
               },
               history: [],
+              reviewCompletion: 'pending',
               reviewFindings: undefined,
             },
             // No active checks → IMPL_VALIDATION passes vacuously and auto-advances to
@@ -367,7 +405,12 @@ describe('FlowGuard tool-level E2E', () => {
         const b = await review_implementation.execute(
           {
             reviewVerdict: 'accept',
-            reviewFindings: f(o1.obligationId, o1.iteration, o1.planVersion),
+            reviewFindings: f(
+              o1.obligationId,
+              o1.iteration,
+              o1.planVersion,
+              challengesFor(st!, o1),
+            ),
           },
           s.tc,
         );
@@ -519,7 +562,7 @@ describe('FlowGuard tool-level E2E', () => {
         expect(typeof rA).toBe('string');
         expect(rA).not.toContain('INTERNAL_ERROR');
         st = await readState(s.sDir);
-        expect(st!.lastExportStatus).toBeTruthy();
+        expect(st!.lastExportPackagePurpose).toBeTruthy();
       });
 
       it('review: content → obligation → evidence → complete', async () => {

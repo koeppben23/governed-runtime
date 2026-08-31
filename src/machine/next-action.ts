@@ -17,7 +17,9 @@
  */
 
 import type { Phase, SessionState } from '../state/schema.js';
-import { isConverged } from './guards.js';
+import { resolveReviewContinuation } from '../state/review-continuation.js';
+import { projectUnaddressedImplementationChallengeIds } from '../state/implementation-review-findings.js';
+import { allValidationsPassed, implValidationPassed, isConverged } from './guards.js';
 import { evaluateValidationEvidence } from './validation-evidence.js';
 
 // ─── Type ─────────────────────────────────────────────────────────────────────
@@ -48,12 +50,38 @@ export const ACTION_CODES = {
   VALIDATION_EVIDENCE_REQUIRED: 'VALIDATION_EVIDENCE_REQUIRED',
   VALIDATION_EVIDENCE_UNVERIFIED: 'VALIDATION_EVIDENCE_UNVERIFIED',
   RUN_IMPLEMENT: 'RUN_IMPLEMENT',
+  IMPLEMENTATION_REVIEW_EXHAUSTED: 'IMPLEMENTATION_REVIEW_EXHAUSTED',
+  RESOLVE_IMPLEMENTATION_CHALLENGES: 'RESOLVE_IMPLEMENTATION_CHALLENGES',
   IMPLEMENTATION_REVIEW_BLOCKED: 'IMPLEMENTATION_REVIEW_BLOCKED',
   RUN_ARCHITECTURE: 'RUN_ARCHITECTURE',
   RUN_REVIEWER_TASK: 'RUN_REVIEWER_TASK',
+  SUBMIT_REVIEWER_VERDICT: 'SUBMIT_REVIEWER_VERDICT',
   REVIEW_STATE_INCOMPLETE: 'REVIEW_STATE_INCOMPLETE',
   SESSION_COMPLETE: 'SESSION_COMPLETE',
 } as const;
+
+function hasBoundImplementationVerdict(
+  state: SessionState,
+  obligationId: string | undefined,
+): boolean {
+  if (!obligationId) return false;
+  const assurance = state.reviewAssurance;
+  const invocation = assurance?.invocations.find(
+    (item) =>
+      item.obligationId === obligationId &&
+      item.capturedVerdict !== null &&
+      item.consumedByObligationId === null,
+  );
+  return Boolean(
+    invocation &&
+    assurance?.attempts.some(
+      (attempt) =>
+        attempt.obligationId === obligationId &&
+        attempt.attemptId === invocation.attemptId &&
+        attempt.status === 'bound',
+    ),
+  );
+}
 
 // ─── Next Action Resolver — Lookup Table ──────────────────────────────────────
 
@@ -150,7 +178,7 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
             commands: ['/hydrate', '/status'],
           };
     }
-    return state.validation.length === 0
+    return state.validation.length === 0 || !allValidationsPassed(state)
       ? {
           code: ACTION_CODES.RUN_VALIDATE,
           text: 'Run validation checks with /validate',
@@ -165,11 +193,20 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
 
   IMPLEMENTATION: (state) =>
     state.implementation === null
-      ? {
-          code: ACTION_CODES.RUN_IMPLEMENT,
-          text: 'Execute the implementation with /implement',
-          commands: ['/implement'],
-        }
+      ? state.implementationRework?.exhausted === true
+        ? {
+            code: ACTION_CODES.IMPLEMENTATION_REVIEW_EXHAUSTED,
+            text:
+              'Implementation review exhausted its authorized iteration budget with changes requested. ' +
+              'A user must explicitly authorize additional review iterations with ' +
+              '/extend-implementation-review <positive integer>, or abort the session.',
+            commands: ['/extend-implementation-review', '/abort'],
+          }
+        : {
+            code: ACTION_CODES.RUN_IMPLEMENT,
+            text: 'Execute the implementation with /implement',
+            commands: ['/implement'],
+          }
       : {
           code: ACTION_CODES.RUN_CONTINUE,
           text: 'Implementation complete. Run /continue to advance',
@@ -177,7 +214,7 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
         },
 
   IMPL_VALIDATION: (state) =>
-    state.implValidation.length === 0
+    !implValidationPassed(state)
       ? {
           code: ACTION_CODES.RUN_VALIDATE,
           text: 'Implementation recorded. Re-run the verification checks against the fixed code with /check',
@@ -209,10 +246,37 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
         commands: ['/implement'],
       };
     }
+    const unaddressedChallengeIds = projectUnaddressedImplementationChallengeIds(
+      state.implReviewFindings,
+      state.challengeResolutions,
+      state.implementation?.digest,
+    );
+    if (unaddressedChallengeIds.length > 0) {
+      return {
+        code: ACTION_CODES.RESOLVE_IMPLEMENTATION_CHALLENGES,
+        text:
+          'Record current-digest author resolution evidence for every prior failing implementation ' +
+          'challenge with flowguard_resolve_implementation_challenge before invoking the independent reviewer.',
+        commands: ['flowguard_resolve_implementation_challenge'],
+      };
+    }
+    if (
+      last &&
+      last.status !== 'consumed' &&
+      hasBoundImplementationVerdict(state, last.obligationId)
+    ) {
+      return {
+        code: ACTION_CODES.SUBMIT_REVIEWER_VERDICT,
+        text:
+          'Independent implementation reviewer evidence is bound. Submit its exact verdict with ' +
+          'flowguard_review_implementation before continuing.',
+        commands: ['flowguard_review_implementation'],
+      };
+    }
     return {
-      code: ACTION_CODES.RUN_CONTINUE,
+      code: ACTION_CODES.RUN_REVIEWER_TASK,
       text: 'Implementation review is pending. Invoke the flowguard-reviewer task, then submit its verdict with flowguard_review_implementation.',
-      commands: ['/continue'],
+      commands: [],
     };
   },
 
@@ -264,6 +328,67 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
   }),
 };
 
+// eslint-disable-next-line complexity -- review lifecycle projects one NextAction per continuation kind; each kind is an independent fail-closed branch.
+function reviewLifecycleAction(
+  phase: Phase,
+  state: SessionState,
+  flow: 'PLAN' | 'ARCHITECTURE',
+): NextAction | null {
+  if (phase !== flow) return null;
+  const continuation = resolveReviewContinuation(
+    state.reviewAssurance,
+    flow === 'PLAN' ? 'plan' : 'architecture',
+  );
+  const command = flow === 'PLAN' ? '/plan' : '/architecture';
+  const label = flow === 'PLAN' ? 'Plan' : 'Architecture';
+  switch (continuation.kind) {
+    case 'awaiting_task':
+      return {
+        code: ACTION_CODES.RUN_REVIEWER_TASK,
+        text: `Independent ${label.toLowerCase()} review is pending. Invoke the flowguard-reviewer Task, then submit only its verdict with ${command}.`,
+        commands: [],
+      };
+    case 'interrupted_dispatch':
+      return {
+        code: ACTION_CODES.RUN_PLAN,
+        text: `Independent ${label.toLowerCase()} review was interrupted mid-dispatch (unresolved durable dispatch). Re-run ${command} to re-arm the review attempt durably on the existing obligation.`,
+        commands: [command],
+      };
+    case 'output_repair':
+      return {
+        code: ACTION_CODES.RUN_PLAN,
+        text: `The latest ${label.toLowerCase()} review attempt needs an authorized repair. Re-run ${command} to re-issue the reviewer attempt on the existing obligation.`,
+        commands: [command],
+      };
+    case 'integrity_blocked':
+      return {
+        code: ACTION_CODES.REVIEW_STATE_INCOMPLETE,
+        text: `${label} review material integrity is blocked (${continuation.code}). Submit a fresh revision with ${command}; the broken obligation is never repaired in place.`,
+        commands: [command],
+      };
+    case 'awaiting_verdict':
+      return {
+        code: ACTION_CODES.RUN_REVIEW_DECISION,
+        text: `Independent ${label.toLowerCase()} review evidence is ready. Submit its verdict with ${command}.`,
+        commands: [command],
+      };
+    case 'missing_attempt':
+      return {
+        code: ACTION_CODES.RUN_PLAN,
+        text: `${label} review has no legal reviewer attempt (${continuation.code}). Re-run ${command} to close the broken obligation and issue a fresh review — this state can never be repaired by /continue.`,
+        commands: [command],
+      };
+    case 'blocked':
+      return {
+        code: ACTION_CODES.RUN_PLAN,
+        text: `${label} review is blocked (${continuation.obligation.blockedCode ?? 'unknown'}). Submit a corrected revision with ${command} to mint a fresh review obligation.`,
+        commands: [command],
+      };
+    case 'none':
+      return null;
+  }
+}
+
 // ─── Resolver ─────────────────────────────────────────────────────────────────
 
 /**
@@ -278,6 +403,10 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
  * @returns NextAction with code, guidance text, and available commands.
  */
 export function resolveNextAction(phase: Phase, state: SessionState): NextAction {
+  const planAction = reviewLifecycleAction(phase, state, 'PLAN');
+  if (planAction) return planAction;
+  const architectureAction = reviewLifecycleAction(phase, state, 'ARCHITECTURE');
+  if (architectureAction) return architectureAction;
   const pendingStandaloneReview = state.reviewAssurance?.obligations.some(
     (obligation) => obligation.obligationType === 'review' && obligation.status === 'pending',
   );

@@ -285,15 +285,19 @@ async function scenarioLegacyAuditStrictness(mode: Mode): Promise<CellResult> {
     sessionId: ctx.sessionID,
     phase: 'READY',
     event: 'legacy_event',
-    timestamp: new Date().toISOString(),
+    occurredAt: new Date().toISOString(),
     actor: 'legacy',
     detail: { source: 'policy-matrix' },
   };
   await fs.appendFile(path.join(dir, 'audit.jsonl'), `${JSON.stringify(legacyEvent)}\n`, 'utf-8');
-  const { events } = await readAuditTrail(dir);
-  const result = verifyChain(events as unknown as Array<Record<string, unknown>>, {
-    strict: mode === 'regulated',
-  });
+  // Read the raw trail (the epoch reader itself rejects legacy records with
+  // LEGACY_ASSURANCE_FORMAT_UNSUPPORTED) and verify the chain over raw lines.
+  const raw = await fs.readFile(path.join(dir, 'audit.jsonl'), 'utf-8');
+  const events = raw
+    .split('\n')
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  const result = verifyChain(events, { strict: true });
   return {
     allowed: result.valid,
     code: result.valid ? undefined : (result.reason ?? undefined),
@@ -350,10 +354,10 @@ const MATRIX: Array<{
     scenario: 'legacy_audit_strictness',
     run: scenarioLegacyAuditStrictness,
     expected: {
-      solo: { allowed: true, phase: 'READY' },
-      team: { allowed: true, phase: 'READY' },
-      'team-ci': { allowed: true, phase: 'READY' },
-      regulated: { allowed: false, code: 'LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE' },
+      solo: { allowed: false, code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED', phase: 'READY' },
+      team: { allowed: false, code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED', phase: 'READY' },
+      'team-ci': { allowed: false, code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED', phase: 'READY' },
+      regulated: { allowed: false, code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED', phase: 'READY' },
     },
   },
 ];

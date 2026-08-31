@@ -90,16 +90,7 @@ export function deriveProofGraph(
 }
 
 function normalizeContractClaims(state: SessionState) {
-  // Pre-v2 plan declarations did not persist proofEligibility. Preserve their
-  // certificate for audit while denying proof even for already-materialized claims.
-  const declarations = state.plan?.claimDeclarations;
-  const legacyPlanClaimIds =
-    declarations && !('version' in declarations)
-      ? new Set(declarations.claims.map((claim) => claim.claimId))
-      : new Set<string>();
-  return (state.proofContract?.claims ?? []).map((claim) =>
-    claim.proofEligibility === undefined && legacyPlanClaimIds.has(claim.claimId)
-      ? { ...claim, proofEligibility: 'legacy_declaration_v1' as const }
-      : claim,
-  );
+  // Hard Assurance Epoch: plan declarations are v2-only; there is no legacy
+  // declaration branch to reinterpret — persisted contract claims pass through.
+  return state.proofContract?.claims ?? [];
 }

@@ -20,6 +20,12 @@ describe('evidence-plan', () => {
         digest: 'sha256-plan',
         sections: ['Plan'],
         createdAt: FIXED_TIME,
+        recordDigest: 'record-digest',
+        planVersion: 1,
+        supersedesRecordDigest: null,
+        originatingReviewObligationId: null,
+        revisionReason: null,
+        lineageStatus: 'verified' as const,
       };
       const parsed = PlanEvidence.parse(plan);
       expect(parsed.body).toBe(plan.body);
@@ -28,7 +34,7 @@ describe('evidence-plan', () => {
       expect(parsed.createdAt).toBe(plan.createdAt);
       expect(parsed.planVersion).toBe(1);
       expect(parsed.supersedesRecordDigest).toBeNull();
-      expect(parsed.lineageStatus).toBe('unavailable');
+      expect(parsed.lineageStatus).toBe('verified');
     });
 
     it('PlanRecord parses record with history', () => {
@@ -37,13 +43,14 @@ describe('evidence-plan', () => {
         digest: 'digest-v2',
         sections: ['Plan'],
         createdAt: FIXED_TIME,
+        recordDigest: 'record-v2',
         planVersion: 2,
         supersedesRecordDigest: null,
         originatingReviewObligationId: null,
         revisionReason: null,
         lineageStatus: 'verified' as const,
       };
-      const record = { current, history: [] };
+      const record = { current, history: [], reviewCompletion: 'pending' as const };
       expect(PlanRecord.parse(record).current).toMatchObject(current);
     });
 
@@ -53,13 +60,14 @@ describe('evidence-plan', () => {
         digest: 'abc',
         sections: [],
         createdAt: FIXED_TIME,
+        recordDigest: 'record',
         planVersion: 1,
         supersedesRecordDigest: null,
         originatingReviewObligationId: null,
         revisionReason: null,
         lineageStatus: 'verified' as const,
       };
-      const record = { current, history: [] };
+      const record = { current, history: [], reviewCompletion: 'pending' as const };
       expect(PlanRecord.parse(record).current).toMatchObject(current);
     });
 
@@ -93,6 +101,23 @@ describe('evidence-plan', () => {
       expect(() =>
         PlanEvidence.parse({
           body: '',
+          digest: 'abc',
+          sections: [],
+          createdAt: FIXED_TIME,
+          recordDigest: 'record',
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+          lineageStatus: 'verified',
+        }),
+      ).toThrow();
+    });
+
+    it('PlanEvidence rejects a version missing its lineage (no legacy defaulting)', () => {
+      expect(() =>
+        PlanEvidence.parse({
+          body: 'Plan',
           digest: 'abc',
           sections: [],
           createdAt: FIXED_TIME,
@@ -134,6 +159,12 @@ describe('evidence-plan', () => {
         digest: 'abc',
         sections: [],
         createdAt: FIXED_TIME,
+        recordDigest: 'record',
+        planVersion: 1,
+        supersedesRecordDigest: null,
+        originatingReviewObligationId: null,
+        revisionReason: null,
+        lineageStatus: 'verified' as const,
       };
       const parsed = PlanEvidence.parse(plan);
       expect(parsed.body).toBe(plan.body);
@@ -144,7 +175,18 @@ describe('evidence-plan', () => {
     it('PlanRecord rejects missing history', () => {
       expect(() =>
         PlanRecord.parse({
-          current: { body: 'Plan', digest: 'abc', sections: [], createdAt: FIXED_TIME },
+          current: {
+            body: 'Plan',
+            digest: 'abc',
+            sections: [],
+            createdAt: FIXED_TIME,
+            recordDigest: 'record',
+            planVersion: 1,
+            supersedesRecordDigest: null,
+            originatingReviewObligationId: null,
+            revisionReason: null,
+            lineageStatus: 'verified',
+          },
         }),
       ).toThrow();
     });

@@ -20,7 +20,7 @@ describe('binding', () => {
     it('validateBinding passes for matching worktrees', () => {
       const state = makeState('TICKET', {
         binding: {
-          sessionId: 'old-session',
+          hostSessionId: 'old-session',
           worktree: tmpDir || '/tmp/test-repo',
           fingerprint: 'test-fingerprint',
           resolvedAt: FIXED_TIME,
@@ -42,7 +42,7 @@ describe('binding', () => {
       const worktree = path.resolve('/tmp/continuity-repo');
       const state = makeState('PLAN', {
         binding: {
-          sessionId: 'session-old',
+          hostSessionId: 'session-old',
           worktree,
           fingerprint: 'test-fingerprint',
           resolvedAt: FIXED_TIME,
@@ -59,7 +59,7 @@ describe('binding', () => {
     it('validateBinding throws on worktree mismatch', () => {
       const state = makeState('TICKET', {
         binding: {
-          sessionId: 'sess-1',
+          hostSessionId: 'sess-1',
           worktree: '/tmp/repo-a',
           fingerprint: 'test-fingerprint',
           resolvedAt: FIXED_TIME,
@@ -81,7 +81,7 @@ describe('binding', () => {
       const basePath = path.resolve('/tmp/norm-test');
       const state = makeState('TICKET', {
         binding: {
-          sessionId: 's1',
+          hostSessionId: 's1',
           worktree: basePath,
           fingerprint: 'test-fingerprint',
           resolvedAt: FIXED_TIME,
@@ -116,7 +116,7 @@ describe('binding', () => {
       const worktree = path.resolve('/tmp/perf-repo');
       const state = makeState('TICKET', {
         binding: {
-          sessionId: 's1',
+          hostSessionId: 's1',
           worktree,
           fingerprint: 'test-fingerprint',
           resolvedAt: FIXED_TIME,

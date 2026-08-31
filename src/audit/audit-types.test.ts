@@ -7,6 +7,7 @@ import {
   createToolCallEvent,
   createErrorEvent,
   createLifecycleEvent,
+  completionLifecycleEventId,
   createDecisionEvent,
   summarizeArgs,
   type ChainedAuditEvent,
@@ -14,17 +15,20 @@ import {
 } from './types.js';
 import { verifyChain } from './integrity.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
-import { SESSION_ID, TS1, TS2, TS3 } from './audit-test-helpers.js';
+import { SESSION_ID, TS1, TS2, TS3, stampChainSequence } from './audit-test-helpers.js';
 describe('audit types', () => {
   // ─── HAPPY ──────────────────────────────────────────────────
   describe('HAPPY', () => {
     it('computeChainHash produces 64-char hex string', () => {
       const base: Omit<ChainedAuditEvent, 'chainHash'> = {
         id: 'test-id',
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         phase: 'PLAN',
         event: 'transition:PLAN_READY',
-        timestamp: TS1,
+        auditSequence: 1,
+        occurredAt: TS1,
+        recordedAt: TS1,
+        semanticEventDigest: 'a'.repeat(64),
         actor: 'machine',
         auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
         detail: {},
@@ -42,7 +46,7 @@ describe('audit types', () => {
         TS1,
         GENESIS_HASH,
       );
-      expect(event.sessionId).toBe(SESSION_ID);
+      expect(event.flowguardSessionId).toBe(SESSION_ID);
       expect(event.phase).toBe('PLAN');
       expect(event.event).toBe('transition:PLAN_READY');
       expect(event.actor).toBe('machine');
@@ -56,7 +60,7 @@ describe('audit types', () => {
 
     it('createToolCallEvent produces valid chained event', () => {
       const event = createToolCallEvent({
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         phase: 'PLAN',
         detail: {
           tool: 'flowguard_plan',
@@ -64,7 +68,7 @@ describe('audit types', () => {
           success: true,
           transitionCount: 1,
         },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'user-1',
         prevHash: GENESIS_HASH,
       });
@@ -77,6 +81,7 @@ describe('audit types', () => {
     it('createErrorEvent produces valid chained event', () => {
       const event = createErrorEvent(
         SESSION_ID,
+        undefined,
         { code: 'TOOL_ERROR', message: 'oops', recoveryHint: 'retry', errorPhase: 'PLAN' },
         TS1,
         GENESIS_HASH,
@@ -88,9 +93,9 @@ describe('audit types', () => {
 
     it('createLifecycleEvent produces valid chained event', () => {
       const event = createLifecycleEvent({
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         detail: { action: 'session_created', finalPhase: 'TICKET' },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'system',
         prevHash: GENESIS_HASH,
       });
@@ -99,9 +104,23 @@ describe('audit types', () => {
       expect(event.detail.kind).toBe('lifecycle');
     });
 
+    it('derives a SHA-256 UUIDv8 completion ID from the session and terminal operation', () => {
+      const operationId = 'bbbbbbbb-0000-4000-8000-000000000001';
+      const first = completionLifecycleEventId(SESSION_ID, operationId);
+      const second = completionLifecycleEventId(SESSION_ID, operationId);
+
+      expect(first).toBe(second);
+      expect(first).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      );
+      expect(
+        completionLifecycleEventId(SESSION_ID, 'cccccccc-0000-4000-8000-000000000001'),
+      ).not.toBe(first);
+    });
+
     it('createDecisionEvent produces valid chained event', () => {
       const event = createDecisionEvent({
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         gatePhase: 'PLAN_REVIEW',
         detail: {
           decisionId: 'DEC-001',
@@ -115,7 +134,7 @@ describe('audit types', () => {
           transitionEvent: 'APPROVE',
           policyMode: 'team',
         },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'human',
         prevHash: GENESIS_HASH,
       });
@@ -135,9 +154,9 @@ describe('audit types', () => {
         assurance: 'best_effort',
       };
       const event = createLifecycleEvent({
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         detail: { action: 'session_created', finalPhase: 'TICKET' },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'system',
         prevHash: GENESIS_HASH,
         actorInfo: actor,
@@ -154,10 +173,10 @@ describe('audit types', () => {
         assurance: 'best_effort',
       };
       const event = createToolCallEvent({
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         phase: 'PLAN',
         detail: { tool: 'flowguard_plan', argsSummary: {}, success: true, transitionCount: 1 },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'user',
         prevHash: GENESIS_HASH,
         actorInfo: actor,
@@ -174,7 +193,7 @@ describe('audit types', () => {
         assurance: 'best_effort',
       };
       const event = createDecisionEvent({
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         gatePhase: 'PLAN_REVIEW',
         detail: {
           decisionId: 'DEC-002',
@@ -188,7 +207,7 @@ describe('audit types', () => {
           transitionEvent: 'APPROVE',
           policyMode: 'team',
         },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'human',
         prevHash: GENESIS_HASH,
         actorInfo: actor,
@@ -199,16 +218,16 @@ describe('audit types', () => {
     it('sessionID is still present separately from actorInfo', () => {
       const actor: ActorInfo = { id: 'dev1', email: null, source: 'git', assurance: 'best_effort' };
       const event = createLifecycleEvent({
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         detail: { action: 'session_created', finalPhase: 'TICKET' },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'system',
         prevHash: GENESIS_HASH,
         actorInfo: actor,
       });
-      expect(event.sessionId).toBe(SESSION_ID);
+      expect(event.flowguardSessionId).toBe(SESSION_ID);
       expect(event.actorInfo).toBeDefined();
-      expect(event.sessionId).not.toBe(event.actorInfo!.id);
+      expect(event.flowguardSessionId).not.toBe(event.actorInfo!.id);
     });
 
     it('summarizeArgs handles all scalar types', () => {
@@ -409,10 +428,13 @@ describe('audit types', () => {
     it('computeChainHash is deterministic (same input → same output)', () => {
       const base: Omit<ChainedAuditEvent, 'chainHash'> = {
         id: 'deterministic-test',
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         phase: 'PLAN',
         event: 'transition:PLAN_READY',
-        timestamp: TS1,
+        auditSequence: 1,
+        occurredAt: TS1,
+        recordedAt: TS1,
+        semanticEventDigest: 'a'.repeat(64),
         actor: 'machine',
         auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
         detail: {},
@@ -426,10 +448,13 @@ describe('audit types', () => {
     it('computeChainHash differs with different prevHash', () => {
       const base: Omit<ChainedAuditEvent, 'chainHash'> = {
         id: 'test-id',
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         phase: 'PLAN',
         event: 'transition:PLAN_READY',
-        timestamp: TS1,
+        auditSequence: 1,
+        occurredAt: TS1,
+        recordedAt: TS1,
+        semanticEventDigest: 'a'.repeat(64),
         actor: 'machine',
         auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
         detail: {},
@@ -449,28 +474,29 @@ describe('audit types', () => {
         GENESIS_HASH,
       );
       const tc = createToolCallEvent({
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         phase: 'PLAN',
         detail: { tool: 'test', argsSummary: {}, success: true, transitionCount: 0 },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'user',
         prevHash: GENESIS_HASH,
       });
       const e = createErrorEvent(
         SESSION_ID,
+        undefined,
         { code: 'ERR', message: 'msg', recoveryHint: 'fix', errorPhase: 'PLAN' },
         TS1,
         GENESIS_HASH,
       );
       const l = createLifecycleEvent({
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         detail: { action: 'session_created', finalPhase: 'TICKET' },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'system',
         prevHash: GENESIS_HASH,
       });
       const d = createDecisionEvent({
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         gatePhase: 'PLAN_REVIEW',
         detail: {
           decisionId: 'DEC-001',
@@ -484,7 +510,7 @@ describe('audit types', () => {
           transitionEvent: 'APPROVE',
           policyMode: 'team',
         },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'human',
         prevHash: GENESIS_HASH,
       });
@@ -501,22 +527,25 @@ describe('audit types', () => {
     it('event without actorInfo has same hash as event created before P27', () => {
       // Simulate a "pre-P27" event — no actorInfo parameter
       const withoutActor = createLifecycleEvent({
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         detail: { action: 'session_created', finalPhase: 'TICKET' },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'system',
         prevHash: GENESIS_HASH,
       });
       // actorInfo should be absent from the object (not undefined-as-value)
       expect('actorInfo' in withoutActor).toBe(false);
 
-      // Manually build the same v2 event object as pre-P27 code would have produced.
+      // Manually build the same v3 event object as pre-P27 code would have produced.
       const prePatchEvent: Omit<ChainedAuditEvent, 'chainHash'> = {
         id: withoutActor.id,
-        sessionId: withoutActor.sessionId,
+        flowguardSessionId: withoutActor.flowguardSessionId,
         phase: withoutActor.phase,
         event: withoutActor.event,
-        timestamp: withoutActor.timestamp,
+        occurredAt: withoutActor.occurredAt,
+        auditSequence: withoutActor.auditSequence,
+        recordedAt: withoutActor.recordedAt,
+        semanticEventDigest: withoutActor.semanticEventDigest,
         actor: withoutActor.actor,
         auditFormatVersion: withoutActor.auditFormatVersion,
         detail: withoutActor.detail,
@@ -531,15 +560,18 @@ describe('audit types', () => {
       const sharedId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
       const base = {
         id: sharedId,
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         phase: 'TICKET',
         event: 'lifecycle:session_created',
-        timestamp: TS1,
+        auditSequence: 1,
+        occurredAt: TS1,
+        recordedAt: TS1,
+        semanticEventDigest: 'a'.repeat(64),
         actor: 'system',
         auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
         detail: { kind: 'lifecycle', action: 'session_created', finalPhase: 'TICKET' },
         prevHash: GENESIS_HASH,
-      };
+      } satisfies Omit<ChainedAuditEvent, 'chainHash'>;
       const withActorInfo = { ...base, actorInfo: actor };
 
       const hashWithout = computeChainHash(GENESIS_HASH, base);
@@ -561,6 +593,7 @@ describe('audit types', () => {
       );
       const error = createErrorEvent(
         SESSION_ID,
+        undefined,
         { code: 'ERR', message: 'msg', recoveryHint: 'fix', errorPhase: 'PLAN' },
         TS1,
         GENESIS_HASH,
@@ -575,10 +608,13 @@ describe('audit types', () => {
     it('computeChainHash < 1ms (p99 over 200 iterations)', () => {
       const base: Omit<ChainedAuditEvent, 'chainHash'> = {
         id: 'perf-test',
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         phase: 'PLAN',
         event: 'transition:PLAN_READY',
-        timestamp: TS1,
+        auditSequence: 1,
+        occurredAt: TS1,
+        recordedAt: TS1,
+        semanticEventDigest: 'a'.repeat(64),
         actor: 'machine',
         auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
         detail: { kind: 'transition', from: 'TICKET', to: 'PLAN' },
@@ -596,7 +632,7 @@ describe('audit types', () => {
       const canary = 'sk-canary-audit-chain-test';
 
       const event = createToolCallEvent({
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         phase: 'PLAN',
         detail: {
           tool: 'bash',
@@ -604,7 +640,7 @@ describe('audit types', () => {
           success: true,
           transitionCount: 1,
         },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'human',
         prevHash: GENESIS_HASH,
       });
@@ -612,38 +648,46 @@ describe('audit types', () => {
       expect((event.detail.argsSummary as Record<string, string>).api_key).toBe('[REDACTED]');
       expect(JSON.stringify(event)).not.toContain(canary);
 
-      const result = verifyChain([event as unknown as Record<string, unknown>]);
+      const result = verifyChain([
+        stampChainSequence(event, 1) as unknown as Record<string, unknown>,
+      ]);
       expect(result.valid).toBe(true);
     });
 
     it('multi-event chain with secret-bearing args remains valid', () => {
-      const event1 = createToolCallEvent({
-        sessionId: SESSION_ID,
-        phase: 'PLAN',
-        detail: {
-          tool: 'bash',
-          argsSummary: summarizeArgs({ token: 'ghp_secret', prompt: 'plan' }),
-          success: true,
-          transitionCount: 1,
-        },
-        timestamp: TS1,
-        actor: 'human',
-        prevHash: GENESIS_HASH,
-      });
+      const event1 = stampChainSequence(
+        createToolCallEvent({
+          flowguardSessionId: SESSION_ID,
+          phase: 'PLAN',
+          detail: {
+            tool: 'bash',
+            argsSummary: summarizeArgs({ token: 'ghp_secret', prompt: 'plan' }),
+            success: true,
+            transitionCount: 1,
+          },
+          occurredAt: TS1,
+          actor: 'human',
+          prevHash: GENESIS_HASH,
+        }),
+        1,
+      );
 
-      const event2 = createToolCallEvent({
-        sessionId: SESSION_ID,
-        phase: 'IMPLEMENTATION',
-        detail: {
-          tool: 'write_file',
-          argsSummary: summarizeArgs({ file: 'src/app.ts', api_key: 'sk-abc' }),
-          success: true,
-          transitionCount: 2,
-        },
-        timestamp: TS2,
-        actor: 'human',
-        prevHash: event1.chainHash,
-      });
+      const event2 = stampChainSequence(
+        createToolCallEvent({
+          flowguardSessionId: SESSION_ID,
+          phase: 'IMPLEMENTATION',
+          detail: {
+            tool: 'write_file',
+            argsSummary: summarizeArgs({ file: 'src/app.ts', api_key: 'sk-abc' }),
+            success: true,
+            transitionCount: 2,
+          },
+          occurredAt: TS2,
+          actor: 'human',
+          prevHash: event1.chainHash,
+        }),
+        2,
+      );
 
       expect((event1.detail.argsSummary as Record<string, string>).token).toBe('[REDACTED]');
       expect(JSON.stringify(event1)).not.toContain('ghp_secret');

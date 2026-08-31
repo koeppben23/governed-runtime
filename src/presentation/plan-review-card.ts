@@ -18,8 +18,10 @@ import type { ReviewCardDocument, PresentationSection, KeyValueItem } from './mo
 import { renderMarkdown } from './markdown.js';
 import type { PresentationRenderOptions } from './glyph-profile.js';
 import type { CompactProofPresentation } from './proof-model.js';
+import type { PlanClaimDeclarations } from '../state/proofgraph-approval.js';
 import { buildProofGraphSection } from './proof-summary.js';
 import { buildReviewDecisionConclusion } from './review-decision.js';
+import { renderPlanClaimDeclarations } from './plan-claim-declarations.js';
 
 // ─── Card Input ──────────────────────────────────────────────────────────────
 
@@ -49,6 +51,8 @@ export interface PlanReviewCardInput {
   forcedConvergence?: boolean;
   /** Compact ProofGraph summary for the review card (pre-approval declarations). */
   proofSummary: CompactProofPresentation;
+  /** Exact claim declarations that the approval certificate will bind. */
+  claimDeclarations?: PlanClaimDeclarations;
   /** Digest of the plan revision currently at the gate. */
   currentPlanDigest?: string;
   /** Digest of the plan revision these findings were bound to. */
@@ -162,6 +166,14 @@ export function buildPlanReviewDocument(input: PlanReviewCardInput): ReviewCardD
 
   // ── Proof obligations (pre-approval) ───────────────────────────────
   sections.push(buildProofGraphSection(input.proofSummary));
+
+  if (input.claimDeclarations) {
+    sections.push({
+      kind: 'embeddedMarkdown',
+      heading: 'Claim Declarations Under Approval',
+      content: renderPlanClaimDeclarations(input.claimDeclarations),
+    });
+  }
 
   // ── Plan Body (verbatim) ───────────────────────────────────────────
   sections.push({

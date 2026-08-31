@@ -30,7 +30,14 @@
  * @version v1
  */
 
-import type { SessionState, TaskClass } from '../state/schema.js';
+import {
+  CURRENT_ASSURANCE_EPOCH,
+  CURRENT_AUDIT_CHAIN_FORMAT,
+  CURRENT_SESSION_STATE_SCHEMA_VERSION,
+  CURRENT_STATE_DIGEST_FORMAT,
+  type SessionState,
+  type TaskClass,
+} from '../state/schema.js';
 import type { BindingInfo } from '../state/evidence.js';
 import { FINGERPRINT_PATTERN } from '../state/evidence.js';
 import type { ActorInfo } from '../audit/types.js';
@@ -83,6 +90,12 @@ export interface HydrateSessionInput {
    * scope (records the full worktree, as before) and marks scoping unavailable.
    */
   readonly baselineDirtyFiles?: ReadonlyArray<{ path: string; hash: string | null }>;
+  /**
+   * Git control-plane integrity marker captured at baseline time (#852).
+   * Frozen into `implementationBaseline.controlPlaneMarker`; implementation
+   * recording fails closed when the live control plane diverges.
+   */
+  readonly baselineControlPlaneMarker?: string;
 }
 
 /**
@@ -257,6 +270,27 @@ function resolveProfile(pr: HydrateProfileInput, s: HydrateSessionInput) {
   return { profile, activeChecks, activeProfile };
 }
 
+/**
+ * Pre-implementation baseline object for a NEW session, or null when the
+ * async tool layer captured no dirty-file baseline (git unreadable).
+ * Includes the git control-plane integrity marker frozen at baseline (#852).
+ */
+function buildImplementationBaseline(
+  s: HydrateSessionInput,
+  now: string,
+): {
+  dirtyFiles: Array<{ path: string; hash: string | null }>;
+  capturedAt: string;
+  controlPlaneMarker?: string;
+} | null {
+  if (!s.baselineDirtyFiles) return null;
+  return {
+    dirtyFiles: s.baselineDirtyFiles.map((d) => ({ path: d.path, hash: d.hash })),
+    capturedAt: now,
+    ...(s.baselineControlPlaneMarker ? { controlPlaneMarker: s.baselineControlPlaneMarker } : {}),
+  };
+}
+
 function buildNewHydrateState(
   s: HydrateSessionInput,
   p: HydratePolicyInput,
@@ -268,16 +302,24 @@ function buildNewHydrateState(
   const now = ctx.now();
   const snapshotWithContext = resolvePolicySnapshot(p, ctx, now);
   const binding: BindingInfo = {
-    sessionId: s.sessionId,
+    hostSessionId: s.sessionId,
     worktree: s.worktree,
     fingerprint: s.fingerprint,
     resolvedAt: now,
   };
 
+  const sessionId = crypto.randomUUID();
+  const implementationBaseline = buildImplementationBaseline(s, now);
   const newState: SessionState = {
-    id: crypto.randomUUID(),
-    schemaVersion: 'v1',
+    id: sessionId,
+    flowguardSessionId: sessionId,
+    schemaVersion: CURRENT_SESSION_STATE_SCHEMA_VERSION,
+    assuranceEpoch: CURRENT_ASSURANCE_EPOCH,
+    stateDigestFormat: CURRENT_STATE_DIGEST_FORMAT,
+    auditChainFormat: CURRENT_AUDIT_CHAIN_FORMAT,
     phase: 'READY',
+    implementationRework: null,
+    implementationReviewExtensions: [],
     ...(s.claimedTaskClass ? { claimedTaskClass: s.claimedTaskClass } : {}),
     binding,
     ticket: null,
@@ -287,6 +329,8 @@ function buildNewHydrateState(
     validation: [],
     validationAttempts: [],
     mutationAttempts: [],
+    mutationEpisodes: [],
+    mutationEpisodeResolutions: [],
     challengeResolutions: [],
     implValidation: [],
     implementation: null,
@@ -308,14 +352,7 @@ function buildNewHydrateState(
     verificationCandidates: s.verificationCandidates ?? [],
     executionSubjectInputsByKind: s.executionSubjectInputsByKind ?? {},
     executionSubjectInputsByCandidateId: s.executionSubjectInputsByCandidateId ?? {},
-    ...(s.baselineDirtyFiles
-      ? {
-          implementationBaseline: {
-            dirtyFiles: s.baselineDirtyFiles.map((d) => ({ path: d.path, hash: d.hash })),
-            capturedAt: now,
-          },
-        }
-      : {}),
+    ...(implementationBaseline ? { implementationBaseline } : {}),
     transition: null,
     pendingAuditOperations: [],
     error: null,

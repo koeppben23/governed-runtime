@@ -23,6 +23,8 @@ import {
   DecisionIdentitySchema,
   ErrorInfo,
   FrozenRepositoryRevisionTarget,
+  ImplementationRework,
+  ImplementationReviewExtension,
   ImplEvidence,
   ImplReviewResult,
   MutationAttempt,
@@ -36,6 +38,8 @@ import {
   ValidationAttempt,
   ValidationResult,
 } from './evidence.js';
+import { MutationEpisode, MutationEpisodeResolution } from './evidence-mutation-episode.js';
+import { enforceMutationEpisodeInvariants } from './evidence-mutation-episode.js';
 import {
   DiscoverySummarySchema,
   DetectedStackSchema,
@@ -49,11 +53,17 @@ import {
   resolveAuthoritativeStandaloneReviewTask,
 } from './standalone-review.js';
 
+/** Immutable compatibility contract for executable session authority. */
+export const CURRENT_ASSURANCE_EPOCH = 'assurance-epoch.v2' as const;
+export const CURRENT_SESSION_STATE_SCHEMA_VERSION = 'v2' as const;
+export const CURRENT_STATE_DIGEST_FORMAT = 'state-digest.v2' as const;
+export const CURRENT_AUDIT_CHAIN_FORMAT = 'audit-chain.v3' as const;
+
 // ─── Phase ────────────────────────────────────────────────────────────────────
 
 /**
- * The 14 FlowGuard phases across 3 standalone flows.
- * init() is a function (bootstrap, workspace, binding, discovery) — not a phase.
+ * The 14 FlowGuard phases across 3 standalone flows; init() is a
+ * function (bootstrap, workspace, binding, discovery) — not a phase.
  *
  * After /hydrate, the session starts at READY — a routing phase
  * where the user selects one of 3 standalone flows:
@@ -197,7 +207,7 @@ export type DiscoveryHealthGateCode = z.infer<typeof DiscoveryHealthGateCode>;
  * Persistent Discovery health gate (#399).
  *
  * Separates the gate DECISION (`status`) from cached drift EVIDENCE
- * (`lastDriftAssessment`). A blocked gate stops the next mutating tool.
+ * (`lastDriftAssessment`); a blocked gate stops the next mutating tool.
  * The gate is cleared ONLY by reconcileDiscoveryHealthGate at /hydrate with
  * fresh healthy Discovery and bounded drift — never by /status or by a
  * subsequent unavailable re-read at the tool seam.
@@ -340,15 +350,29 @@ export const SessionState = z
     /** Unique session identifier. */
     id: z.string().uuid(),
 
-    /** Schema version — always "v1" for this generation. */
-    schemaVersion: z.literal('v1'),
+    /**
+     * Explicit FlowGuard session identifier for the Assurance epoch.
+     * Must equal `id` — the two fields are the same authority under an
+     * unambiguous name (no host/FlowGuard identity conflation).
+     */
+    flowguardSessionId: z.string().uuid(),
+
+    /** Schema version for the executable Assurance epoch. */
+    schemaVersion: z.literal(CURRENT_SESSION_STATE_SCHEMA_VERSION),
+
+    /** Hard-cut epoch; no prior or unknown epoch is executable authority. */
+    assuranceEpoch: z.literal(CURRENT_ASSURANCE_EPOCH),
+
+    /** Required state digest contract for this epoch. */
+    stateDigestFormat: z.literal(CURRENT_STATE_DIGEST_FORMAT),
+
+    /** Required audit-chain contract for this epoch. */
+    auditChainFormat: z.literal(CURRENT_AUDIT_CHAIN_FORMAT),
 
     /** Current FlowGuard phase. */
     phase: Phase,
-
     /** Agent/operator risk-classification claim. Not runtime authority. */
     claimedTaskClass: TaskClass.optional(),
-
     /** Persistent runtime risk gate block state for mutating host tools. */
     riskGate: RiskGate.optional(),
 
@@ -358,6 +382,8 @@ export const SessionState = z
      */
     implementationRiskAssessment: ImplementationRiskAssessment.optional(),
 
+    implementationRework: ImplementationRework.nullable(),
+    implementationReviewExtensions: z.array(ImplementationReviewExtension),
     /** Persistent Discovery health gate block state for mutating host tools (#399). */
     discoveryHealthGate: DiscoveryHealthGate.optional(),
 
@@ -385,17 +411,23 @@ export const SessionState = z
      * Append-only execution ledger. Unlike the current per-check projections above,
      * this preserves every successful validation-result persistence for audit.
      */
-    validationAttempts: z.array(ValidationAttempt).default([]),
+    validationAttempts: z.array(ValidationAttempt),
 
     /**
      * Append-only mutation-attempt ledger (#762). Records every FlowGuard-attested
      * mutation report observation, with implementation binding, artifact/projection
      * digests, and reproducibility metadata. Produced by flowguard_record_mutation_evidence.
      */
-    mutationAttempts: z.array(MutationAttempt).default([]),
+    mutationAttempts: z.array(MutationAttempt),
+
+    /** Durable host-mutation dispatch and completion ledger. */
+    mutationEpisodes: z.array(MutationEpisode),
+
+    /** Append-only unknown-outcome resolution authority for host mutation episodes. */
+    mutationEpisodeResolutions: z.array(MutationEpisodeResolution),
 
     /** Advisory challenge-resolution evidence; defaults for legacy sessions. */
-    challengeResolutions: z.array(ChallengeResolution).default([]),
+    challengeResolutions: z.array(ChallengeResolution),
 
     /**
      * Post-implementation validation check results (IMPL_VALIDATION phase). Kept
@@ -403,7 +435,7 @@ export const SessionState = z
      * trail retains both the baseline and the re-run of checks against the fixed code.
      * Defaulted to [] for backward compatibility with pre-IMPL_VALIDATION sessions.
      */
-    implValidation: z.array(ValidationResult).default([]),
+    implValidation: z.array(ValidationResult),
 
     /** Implementation evidence from /implement. */
     implementation: ImplEvidence.nullable(),
@@ -419,7 +451,7 @@ export const SessionState = z
     implementationBaseAuthority: FrozenRepositoryRevisionTarget.optional(),
 
     /** Explicit runtime evidence for reducing implementation-review ceremony. */
-    reducedCeremony: ReducedCeremonyDecision.nullable().default(null),
+    reducedCeremony: ReducedCeremonyDecision.nullable(),
 
     /** Implementation review iteration result (IMPL_REVIEW phase, digest-stop). */
     implReview: ImplReviewResult.nullable(),
@@ -437,10 +469,10 @@ export const SessionState = z
     reviewDecision: ReviewDecision.nullable(),
 
     /** Absolute path to the generated review report file (REVIEW phase, P8b). */
-    reviewReportPath: z.string().nullable().default(null),
+    reviewReportPath: z.string().nullable(),
 
     /** Append-only deterministic task preparation and completion evidence for /review. */
-    standaloneReviewEvidence: z.array(StandaloneReviewEvidence).default([]),
+    standaloneReviewEvidence: z.array(StandaloneReviewEvidence),
 
     /**
      * Thin ProofGraph contract declaration (advisory; #762).
@@ -585,18 +617,15 @@ export const SessionState = z
       .optional(),
 
     /**
-     * Pre-implementation worktree baseline (P-baseline).
+     * Pre-implementation worktree baseline (P-baseline): files already dirty
+     * at session start (hydrate), used by flowguard_implement to scope recorded
+     * evidence to files the task actually changed — pre-existing dirty files
+     * (e.g. a stale opencode.json) are subtracted so they are not attributed to
+     * the implementation or used to raise the risk floor.
      *
-     * Snapshot of files already dirty at session start (hydrate), used by
-     * flowguard_implement to scope recorded evidence to files the task actually
-     * changed — pre-existing dirty files (e.g. a stale opencode.json) are
-     * subtracted so they are not attributed to the implementation or used to
-     * raise the risk floor.
-     *
-     * `.optional()` for backward compatibility (no schema version bump): legacy
-     * sessions and sessions hydrated by an older plugin have no baseline. When
-     * absent, implement does NOT subtract (it records the full worktree exactly
-     * as before) and surfaces `baselineScoping: "unavailable"` — it never hides
+     * `.optional()` for backward compatibility (no schema version bump): when
+     * absent, implement does NOT subtract (records the full worktree exactly as
+     * before) and surfaces `baselineScoping: "unavailable"` — it never hides
      * evidence. Null is treated identically to absent.
      */
     implementationBaseline: z
@@ -616,6 +645,8 @@ export const SessionState = z
         ),
         /** ISO-8601 capture timestamp (hydrate time). */
         capturedAt: z.string().datetime(),
+        // #852: git control-plane marker frozen at baseline; optional for legacy baselines.
+        controlPlaneMarker: z.string().min(1).optional(),
       })
       .nullable()
       .optional(),
@@ -629,7 +660,7 @@ export const SessionState = z
      * State-owned audit outbox. Operations remain after reconciliation as
      * durable correlation evidence; their status is monotonic.
      */
-    pendingAuditOperations: z.array(PendingAuditOperation).default([]),
+    pendingAuditOperations: z.array(PendingAuditOperation),
 
     /** Error state. Non-null triggers ERROR event in guard evaluation. */
     error: ErrorInfo.nullable(),
@@ -638,21 +669,31 @@ export const SessionState = z
     createdAt: z.string().datetime(),
 
     /** @deprecated Legacy combined archive status. New writes use the fields below. */
-    archiveStatus: z
-      .enum(['pending', 'created', 'verified', 'not_verifiable', 'failed'])
-      .nullable()
-      .optional(),
+    archiveStatus: z.enum(['pending', 'created', 'verified', 'failed']).nullable().optional(),
     /** Lifecycle of the immutable raw-evidence package required at regulated completion. */
     regulatedArchiveStatus: z
       .enum(['pending', 'created', 'verified', 'failed'])
       .nullable()
       .optional(),
-    /** Result of the most recent user-requested archive export. */
-    lastExportStatus: z.enum(['verified', 'not_verifiable', 'failed']).nullable().optional(),
-    /** Classification of the most recent user-requested archive export. */
-    lastExportKind: z.enum(['redacted', 'raw']).nullable().optional(),
+    /** Purpose of the most recent user-requested archive export. */
+    lastExportPackagePurpose: z.enum(['sharing', 'auditor']).nullable().optional(),
+    /** Whether the most recent export contains the canonical evidence required for verification. */
+    lastExportIntegrityCapability: z.enum(['verifiable', 'not_verifiable']).nullable().optional(),
+    /** Verification outcome for the most recent user-requested archive export. */
+    lastExportVerificationStatus: z.enum(['not_run', 'passed', 'failed']).nullable().optional(),
   })
   .superRefine((state, context) => {
+    // Identity invariant: flowguardSessionId is the same authority as id
+    // under an explicit name. Divergence would let two session identities
+    // claim one state — the STATE itself is invalid.
+    if (state.flowguardSessionId !== state.id) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['flowguardSessionId'],
+        message: `flowguardSessionId must equal id (${state.id})`,
+      });
+      return;
+    }
     // Outbox identity invariant: pendingAuditOperations operationIds are the
     // transition audit-event identity authority. Duplicates would let
     // acknowledgement update multiple records through one identity, so the
@@ -669,6 +710,15 @@ export const SessionState = z
       }
       seenOperationIds.add(operation.operationId);
     }
+    // #852: mutation-episode identity + recovery-fencing invariants.
+    if (
+      enforceMutationEpisodeInvariants(
+        state.mutationEpisodes,
+        state.mutationEpisodeResolutions,
+        context,
+      )
+    )
+      return;
     // Standalone-review lifecycle invariant: a structurally broken evidence
     // chain (dangling supersession, cycles, completions on superseded entries,
     // multiple authoritative incarnations) makes the STATE invalid — it must

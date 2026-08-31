@@ -139,16 +139,19 @@ function buildSessionState(
         subagentEnabled: true,
         fallbackToSelf: false,
         strictEnforcement,
-      },
+      } as never,
       reviewOutputPolicy,
       ...(reviewInvocationPolicy ? { reviewInvocationPolicy } : {}),
     },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [
         {
           obligationId: OBLIGATION_ID,
           obligationType: 'review',
+          requiredChallengeCount: 0,
+          requiredChallengeKind: 'content_challenge',
+          challengePolicyVersion: 'challenge-policy.v1',
           subjectDigest: SUBJECT_DIGEST,
           iteration: 1,
           planVersion: 1,
@@ -200,6 +203,7 @@ function buildSessionState(
           createdAt: NOW,
         },
       ],
+      dispatches: [],
     },
   });
 }

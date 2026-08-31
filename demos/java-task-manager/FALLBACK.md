@@ -29,7 +29,7 @@ Capture: OpenCode window + terminal side-by-side. The recording should show:
 - `INDEPENDENT_REVIEW_REQUIRED` → subagent invoked
 - Architecture Review Card with reviewer findings
 - `/approve` → `ARCH_COMPLETE`
-- `/export` → `archiveStatus: not_verifiable` for the default redacted sharing archive
+- `/export` → `packagePurpose: sharing`, `integrityCapability: not_verifiable`, and `verificationStatus: not_run` for the default redacted sharing archive
 
 ### 2. Screen Recording — Part 2: Implementation (~5–6 min)
 
@@ -51,7 +51,7 @@ Capture: OpenCode window + terminal side-by-side. The recording should show:
 - `/approve` → COMPLETE
 - `./mvnw test` — 16 green, 0 skipped
 - `/finish` Finish Card (`overallStatus: READY`, non-normative `actionGuidance`, `exitOptions`)
-- `/export` response (`archiveStatus: not_verifiable` for the default redacted sharing archive)
+- `/export` response (`packagePurpose: sharing`, `integrityCapability: not_verifiable`, and `verificationStatus: not_run` for the default redacted sharing archive)
 
 ### 3. Screen Recording — Part 3: Review (~3–5 min)
 

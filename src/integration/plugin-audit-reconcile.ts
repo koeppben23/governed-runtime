@@ -120,7 +120,8 @@ function buildOperationAuditBody(
 ): EventBody {
   if (operation.kind === 'state_write') {
     return buildStateWriteBody(
-      state.id,
+      state.flowguardSessionId,
+      state.binding.hostSessionId,
       operation.stateWrite.phase,
       {
         operationId: operation.operationId,
@@ -134,7 +135,8 @@ function buildOperationAuditBody(
   }
   const t = operation.transition;
   return buildTransitionBody(
-    state.id,
+    state.flowguardSessionId,
+    state.binding.hostSessionId,
     t.to,
     {
       operationId: operation.operationId,
@@ -231,7 +233,7 @@ async function assertNoLegacyTransitionGap(
       event.detail.from === transition.from &&
       event.detail.to === transition.to &&
       event.detail.event === transition.event &&
-      event.timestamp === transition.at,
+      event.occurredAt === transition.at,
   );
   if (!evidenceExists) throw new AuditTransitionEvidenceGapError(transition);
 }

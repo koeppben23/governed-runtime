@@ -229,6 +229,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
           lineageStatus: 'verified' as const,
         },
         history: [],
+        reviewCompletion: 'pending',
         reviewFindings: [],
       },
       selfReview: {
@@ -243,15 +244,19 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
         ...POLICY_SNAPSHOT,
         mode: 'team',
         reviewInvocationPolicy: 'host_task_required',
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         attempts: [],
+        dispatches: [],
         obligations: [
           {
             obligationId: OBLIGATION_ID,
             obligationType: 'plan',
+            requiredChallengeCount: 0,
+            requiredChallengeKind: 'design_challenge',
+            challengePolicyVersion: 'challenge-policy.v1',
             subjectDigest: 'test-subject-digest',
             iteration: 0,
             planVersion: 1,
@@ -295,6 +300,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
           lineageStatus: 'verified' as const,
         },
         history: [],
+        reviewCompletion: 'pending',
         reviewFindings: [],
       },
       implementation: {
@@ -315,14 +321,17 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
         ...POLICY_SNAPSHOT,
         mode: 'team',
         reviewInvocationPolicy: 'host_task_required',
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [
           {
             obligationId: OBLIGATION_ID,
             obligationType: 'implement',
+            requiredChallengeCount: 0,
+            requiredChallengeKind: 'implementation_challenge',
+            challengePolicyVersion: 'challenge-policy.v1',
             subjectDigest: 'test-subject-digest',
             iteration: 1,
             planVersion: 1,
@@ -341,6 +350,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
         ],
         invocations: [],
         attempts: [],
+        dispatches: [],
       },
     });
   }

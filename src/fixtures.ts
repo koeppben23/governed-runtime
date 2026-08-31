@@ -6,12 +6,20 @@
  * All timestamps are fixed for deterministic assertions.
  */
 
-import type { SessionState, Phase } from './state/schema.js';
-import type {
-  ReviewAssuranceState,
-  ReviewAttempt,
-  ReviewInvocationEvidence,
-  ReviewObligation,
+import {
+  CURRENT_ASSURANCE_EPOCH,
+  CURRENT_AUDIT_CHAIN_FORMAT,
+  CURRENT_SESSION_STATE_SCHEMA_VERSION,
+  CURRENT_STATE_DIGEST_FORMAT,
+  type SessionState,
+  type Phase,
+} from './state/schema.js';
+import {
+  REVIEW_ASSURANCE_SCHEMA_VERSION,
+  type ReviewAssuranceState,
+  type ReviewAttempt,
+  type ReviewInvocationEvidence,
+  type ReviewObligation,
 } from './state/evidence-review.js';
 import type {
   TicketEvidence,
@@ -30,6 +38,8 @@ import type {
 } from './state/evidence.js';
 import { computeRecordDigest } from './state/evidence-plan.js';
 import { POLICY_DIGEST_VERSION } from './shared/policy-digest.js';
+import { canonicalJsonStringify } from './shared/canonical-json.js';
+import { hashText } from './shared/hashing.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -42,7 +52,7 @@ export const FIXED_FINGERPRINT = 'a1b2c3d4e5f6a1b2c3d4e5f6';
 // ─── Evidence Fixtures ────────────────────────────────────────────────────────
 
 export const BINDING: BindingInfo = {
-  sessionId: FIXED_SESSION_UUID,
+  hostSessionId: FIXED_SESSION_UUID,
   worktree: '/tmp/test-repo',
   fingerprint: FIXED_FINGERPRINT,
   resolvedAt: FIXED_TIME,
@@ -67,6 +77,16 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
   identityProviderMode: 'optional',
   reviewOutputPolicy: 'text_compat_allowed',
   reviewInvocationPolicy: 'sdk_allowed',
+  reviewProfile: 'core',
+  selfReview: {
+    subagentEnabled: true,
+    fallbackToSelf: false,
+    strictEnforcement: true,
+  },
+  challengePolicy: {
+    version: 'challenge-policy.v1',
+    counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+  },
   enforceRiskClassification: false,
   allowRiskDowngradeOverride: false,
   allowReducedCeremony: false,
@@ -144,7 +164,7 @@ export const ARCHITECTURE_DECISION: ArchitectureDecision = {
 /**
  * Canonical review-assurance envelope builder: one obligation (or an explicit
  * obligation list) plus optional invocations and attempts. The single
- * implementation of the `review-assurance.v5` envelope used across test
+ * implementation of the `review-assurance.v6` envelope used across test
  * suites; domain-specific obligation/invocation builders stay local to their
  * suites and feed this builder.
  */
@@ -156,10 +176,11 @@ export function assuranceWith(input: {
 }): ReviewAssuranceState {
   const obligations = input.obligations ?? (input.obligation ? [input.obligation] : []);
   return {
-    assuranceSchemaVersion: 'review-assurance.v5',
+    assuranceSchemaVersion: REVIEW_ASSURANCE_SCHEMA_VERSION,
     obligations: [...obligations],
     invocations: input.invocations ? [...input.invocations] : [],
     attempts: input.attempts ? [...input.attempts] : [],
+    dispatches: [],
   };
 }
 
@@ -169,7 +190,7 @@ export function assuranceWith(input: {
  * digest plus its invocation with a findings hash.
  */
 export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
-  assuranceSchemaVersion: 'review-assurance.v5',
+  assuranceSchemaVersion: REVIEW_ASSURANCE_SCHEMA_VERSION,
   obligations: [
     {
       obligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -186,6 +207,9 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
       fulfilledAt: FIXED_TIME,
       consumedAt: FIXED_TIME,
       subjectDigest: ARCHITECTURE_DECISION.digest,
+      requiredChallengeCount: 0,
+      requiredChallengeKind: 'design_challenge',
+      challengePolicyVersion: 'challenge-policy.v1',
       reviewMaterial: {
         content: ARCHITECTURE_DECISION.adrText,
         materialDigest: 'material-digest-of-architecture-review',
@@ -227,6 +251,7 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
     },
   ],
   attempts: [],
+  dispatches: [],
 };
 
 /**
@@ -250,6 +275,14 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
     fulfilledAt: FIXED_TIME,
     consumedAt: FIXED_TIME,
     subjectDigest: 'digest-of-plan',
+    // Bound to the (empty) claim declaration set of PLAN_RECORD: the plan
+    // approval gate fails closed when evidence carries no claim binding.
+    claimDeclarationsDigest: hashText(
+      canonicalJsonStringify({ flow: 'plan', version: 'v2', claims: [] }),
+    ),
+    requiredChallengeCount: 0,
+    requiredChallengeKind: 'design_challenge',
+    challengePolicyVersion: 'challenge-policy.v1',
     reviewMaterial: {
       content: '## Plan\n1. Fix auth\n2. Add tests',
       materialDigest: 'material-digest-of-plan-review',
@@ -458,9 +491,14 @@ export function makeState(
   phase: Phase = 'READY',
   overrides: Partial<SessionState> = {},
 ): SessionState {
+  const id = overrides.id ?? FIXED_UUID;
   return {
-    id: FIXED_UUID,
-    schemaVersion: 'v1',
+    id,
+    flowguardSessionId: overrides.flowguardSessionId ?? id,
+    schemaVersion: CURRENT_SESSION_STATE_SCHEMA_VERSION,
+    assuranceEpoch: CURRENT_ASSURANCE_EPOCH,
+    stateDigestFormat: CURRENT_STATE_DIGEST_FORMAT,
+    auditChainFormat: CURRENT_AUDIT_CHAIN_FORMAT,
     phase,
     binding: BINDING,
     ticket: null,
@@ -470,9 +508,13 @@ export function makeState(
     validation: [],
     validationAttempts: [],
     mutationAttempts: [],
+    mutationEpisodes: [],
+    mutationEpisodeResolutions: [],
     challengeResolutions: [],
     implValidation: [],
     implementation: null,
+    implementationRework: null,
+    implementationReviewExtensions: [],
     reducedCeremony: null,
     implReview: null,
     reviewDecision: null,

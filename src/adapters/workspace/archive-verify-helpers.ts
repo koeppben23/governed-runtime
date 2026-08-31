@@ -118,14 +118,11 @@ export function hasTimestampEvidence(event: Record<string, unknown>): boolean {
 }
 
 export function isCurrentChainIntegrityFailure(reason: ChainVerificationReason | null): boolean {
-  return reason === 'CHAIN_BREAK' || reason === 'LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE';
+  return reason === 'CHAIN_BREAK';
 }
 
 export function isAuditFormatFailure(reason: ChainVerificationReason | null): boolean {
-  return (
-    reason === 'LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2' ||
-    reason === 'UNSUPPORTED_AUDIT_FORMAT_VERSION'
-  );
+  return reason === 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED';
 }
 
 export function timestampFindingCode(reason: ChainVerificationReason | null): ArchiveFindingCode {

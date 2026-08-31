@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import { resolveNextAction, ACTION_CODES } from './next-action.js';
 import type { NextAction } from './next-action.js';
 import type { DiscoverySummary } from '../state/discovery-schemas.js';
+import { appendReviewDispatch } from '../state/review-dispatch.js';
 import {
   makeState,
   makeProgressedState,
+  assuranceWith,
   TICKET,
   PLAN_RECORD,
   SELF_REVIEW_CONVERGED,
@@ -14,11 +17,56 @@ import {
   IMPL_REVIEW_CONVERGED,
   ARCHITECTURE_DECISION,
 } from '../fixtures.js';
-import { Phase } from '../state/schema.js';
+import { Phase, type SessionState } from '../state/schema.js';
+import type { ReviewAttempt, ReviewObligation } from '../state/evidence.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
-import { createReviewObligation } from '../integration/review/assurance.js';
+import {
+  artifactReviewSubjectScope,
+  createReviewObligation,
+} from '../integration/review/assurance.js';
+import { hashCanonicalReviewContent, normalizeReviewContent } from '../shared/review-subject.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const PLAN_BODY = normalizeReviewContent('## Plan\n1. Fix auth\n2. Add tests');
+
+function pendingPlanObligation(overrides: Partial<ReviewObligation> = {}): ReviewObligation {
+  const base = createReviewObligation({
+    obligationType: 'plan',
+    iteration: 0,
+    planVersion: 1,
+    now: '2026-01-01T00:00:00.000Z',
+    subjectDigest: 'plan-subject-digest',
+    reviewMaterial: {
+      content: PLAN_BODY,
+      materialDigest: hashCanonicalReviewContent(PLAN_BODY),
+      subjectDigest: 'plan-subject-digest',
+    },
+    reviewSubjectScope: artifactReviewSubjectScope('plan', PLAN_BODY, 'plan-subject-digest'),
+    changedFiles: ['src/auth.ts'],
+    repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+  });
+  return { ...base, ...overrides };
+}
+
+function bindableAttemptFor(obligation: ReviewObligation): ReviewAttempt {
+  return {
+    attemptId: 'attempt-1',
+    obligationId: obligation.obligationId,
+    obligationType: obligation.obligationType,
+    subjectDigest: obligation.subjectDigest,
+    ordinal: 0,
+    status: 'created',
+    origin: { kind: 'initial' },
+    repositoryDiscovery: { kind: 'not_applicable' },
+    createdAt: '2026-01-01T00:00:00.000Z',
+    reviewMaterial: {
+      content: PLAN_BODY,
+      materialDigest: hashCanonicalReviewContent(PLAN_BODY),
+      subjectDigest: 'plan-subject-digest',
+    },
+  };
+}
 
 /** Assert NextAction shape. */
 function expectAction(
@@ -81,6 +129,122 @@ describe('resolveNextAction', () => {
       expect(action.text).toContain('converged');
     });
 
+    it('PLAN with a bindable plan attempt → RUN_REVIEWER_TASK', () => {
+      const obligation = pendingPlanObligation({ status: 'pending' });
+      const attempt = bindableAttemptFor(obligation);
+      const state = makeState('PLAN', {
+        ticket: TICKET,
+        plan: PLAN_RECORD,
+        selfReview: SELF_REVIEW_PENDING_FIX,
+        reviewAssurance: assuranceWith({
+          obligation,
+          attempts: [attempt],
+        }),
+      });
+      expectAction(resolveNextAction('PLAN', state), ACTION_CODES.RUN_REVIEWER_TASK, []);
+    });
+
+    it('PLAN with a bindable attempt + unresolved durable dispatch → /plan re-arm, never awaiting_task', () => {
+      const obligation = pendingPlanObligation({ status: 'pending' });
+      const attempt = bindableAttemptFor(obligation);
+      const base = assuranceWith({ obligation, attempts: [attempt] });
+      const state = makeState('PLAN', {
+        ticket: TICKET,
+        plan: PLAN_RECORD,
+        selfReview: SELF_REVIEW_PENDING_FIX,
+        reviewAssurance: appendReviewDispatch(base, {
+          dispatchId: randomUUID(),
+          attemptId: attempt.attemptId,
+          obligationId: obligation.obligationId,
+          hostCallId: 'call-old',
+          canonicalPromptDigest: 'a'.repeat(64),
+          dispatchAuthorizedAt: '2026-01-01T00:00:00.000Z',
+          dispatchStatus: 'authorized',
+        }),
+      });
+      const action = resolveNextAction('PLAN', state);
+      // The bindable attempt is NOT re-emitted as awaiting_task because its
+      // durable dispatch outcome is unresolved: /plan is the authorized trigger
+      // to re-arm it durably.
+      expectAction(action, ACTION_CODES.RUN_PLAN, ['/plan']);
+      expect(action.commands).not.toContain('/continue');
+      expect(action.text).toContain('interrupted');
+    });
+
+    it('PLAN with fulfilled review evidence → verdict submission via /plan', () => {
+      const obligation = pendingPlanObligation({ status: 'fulfilled' });
+      const state = makeState('PLAN', {
+        ticket: TICKET,
+        plan: PLAN_RECORD,
+        selfReview: SELF_REVIEW_PENDING_FIX,
+        reviewAssurance: assuranceWith({ obligation }),
+      });
+      expectAction(resolveNextAction('PLAN', state), ACTION_CODES.RUN_REVIEW_DECISION, ['/plan']);
+    });
+
+    it('PLAN with a blocked review obligation → fresh revision via /plan', () => {
+      const obligation = pendingPlanObligation({
+        status: 'blocked',
+        blockedCode: 'REVIEWER_INVOCATION_EXHAUSTED',
+      });
+      const state = makeState('PLAN', {
+        ticket: TICKET,
+        plan: PLAN_RECORD,
+        selfReview: SELF_REVIEW_PENDING_FIX,
+        reviewAssurance: assuranceWith({ obligation }),
+      });
+      const action = resolveNextAction('PLAN', state);
+      expectAction(action, ACTION_CODES.RUN_PLAN, ['/plan']);
+      expect(action.text).toContain('REVIEWER_INVOCATION_EXHAUSTED');
+    });
+
+    it('PLAN with a pending obligation but no legal attempt → /plan recovery, never /continue', () => {
+      const obligation = pendingPlanObligation({ status: 'pending' });
+      const bound = {
+        ...bindableAttemptFor(obligation),
+        attemptId: 'attempt-bound',
+        childSessionId: 'child-session-1',
+      };
+      const state = makeState('PLAN', {
+        ticket: TICKET,
+        plan: PLAN_RECORD,
+        selfReview: SELF_REVIEW_PENDING_FIX,
+        reviewAssurance: assuranceWith({
+          obligation,
+          attempts: [bound],
+        }),
+      });
+      const action = resolveNextAction('PLAN', state);
+      expectAction(action, ACTION_CODES.RUN_PLAN, ['/plan']);
+      expect(action.commands).not.toContain('/continue');
+      expect(action.text).toContain('no legal reviewer attempt');
+    });
+
+    it('PLAN with a repairable rejected attempt → authorized repair via /plan', () => {
+      const obligation = pendingPlanObligation({
+        status: 'pending',
+        maxReviewerOutputRepairAttempts: 1,
+      });
+      const rejected = {
+        ...bindableAttemptFor(obligation),
+        attemptId: 'attempt-rejected',
+        status: 'rejected' as const,
+        rejectionReason: 'schema_invalid' as const,
+      };
+      const state = makeState('PLAN', {
+        ticket: TICKET,
+        plan: PLAN_RECORD,
+        selfReview: SELF_REVIEW_PENDING_FIX,
+        reviewAssurance: assuranceWith({
+          obligation,
+          attempts: [rejected],
+        }),
+      });
+      const action = resolveNextAction('PLAN', state);
+      expectAction(action, ACTION_CODES.RUN_PLAN, ['/plan']);
+      expect(action.text).toContain('authorized repair');
+    });
+
     it('PLAN_REVIEW → RUN_REVIEW_DECISION', () => {
       const state = makeProgressedState('PLAN_REVIEW');
       const action = resolveNextAction('PLAN_REVIEW', state);
@@ -97,6 +261,15 @@ describe('resolveNextAction', () => {
       const state = makeState('VALIDATION', { validation: VALIDATION_PASSED });
       const action = resolveNextAction('VALIDATION', state);
       expectAction(action, ACTION_CODES.RUN_CONTINUE, ['/continue']);
+    });
+
+    it('VALIDATION (partial pass) → RUN_VALIDATE', () => {
+      const state = makeState('VALIDATION', {
+        activeChecks: ['test', 'lint'],
+        validation: [VALIDATION_PASSED[0]!],
+      });
+      const action = resolveNextAction('VALIDATION', state);
+      expectAction(action, ACTION_CODES.RUN_VALIDATE, ['/validate']);
     });
 
     it('VALIDATION (blocked evidence, trustworthy discovery) → VALIDATION_EVIDENCE_REQUIRED', () => {
@@ -152,16 +325,124 @@ describe('resolveNextAction', () => {
       expectAction(action, ACTION_CODES.RUN_IMPLEMENT, ['/implement']);
     });
 
+    it('IMPLEMENTATION with exhausted rework → IMPLEMENTATION_REVIEW_EXHAUSTED', () => {
+      const state = makeState('IMPLEMENTATION', {
+        implementationRework: { rejectedDigest: 'rejected-digest', exhausted: true },
+      });
+      const action = resolveNextAction('IMPLEMENTATION', state);
+      expectAction(action, ACTION_CODES.IMPLEMENTATION_REVIEW_EXHAUSTED, [
+        '/extend-implementation-review',
+        '/abort',
+      ]);
+    });
+
+    it('IMPLEMENTATION with pending (non-exhausted) rework → RUN_IMPLEMENT', () => {
+      const state = makeState('IMPLEMENTATION', {
+        implementationRework: { rejectedDigest: 'rejected-digest', exhausted: false },
+      });
+      const action = resolveNextAction('IMPLEMENTATION', state);
+      expectAction(action, ACTION_CODES.RUN_IMPLEMENT, ['/implement']);
+    });
+
     it('IMPLEMENTATION (has impl) → RUN_CONTINUE', () => {
       const state = makeState('IMPLEMENTATION', { implementation: IMPL_EVIDENCE });
       const action = resolveNextAction('IMPLEMENTATION', state);
       expectAction(action, ACTION_CODES.RUN_CONTINUE, ['/continue']);
     });
 
-    it('IMPL_REVIEW → RUN_CONTINUE', () => {
+    it('IMPL_REVIEW without bound evidence → RUN_REVIEWER_TASK', () => {
       const state = makeProgressedState('IMPL_REVIEW');
       const action = resolveNextAction('IMPL_REVIEW', state);
-      expectAction(action, ACTION_CODES.RUN_CONTINUE, ['/continue']);
+      expectAction(action, ACTION_CODES.RUN_REVIEWER_TASK, []);
+    });
+
+    it('IMPL_REVIEW with an unaddressed prior challenge → resolve it before reviewer dispatch', () => {
+      const state = {
+        ...makeProgressedState('IMPL_REVIEW'),
+        implReviewFindings: [
+          {
+            challenges: [
+              {
+                challengeId: '00000000-0000-4000-8000-00000000000a',
+                kind: 'implementation_challenge',
+                outcome: 'fail',
+              },
+            ],
+          },
+        ] as unknown as SessionState['implReviewFindings'],
+      };
+
+      expectAction(
+        resolveNextAction('IMPL_REVIEW', state),
+        ACTION_CODES.RESOLVE_IMPLEMENTATION_CHALLENGES,
+        ['flowguard_resolve_implementation_challenge'],
+      );
+    });
+
+    it('IMPL_REVIEW with bound unconsumed evidence → submit reviewer verdict', () => {
+      const obligation = createReviewObligation({
+        obligationType: 'implement',
+        iteration: 1,
+        planVersion: 1,
+        subjectDigest: 'impl-digest',
+        reviewSubjectScope: { kind: 'implementation', implementationDigest: 'impl-digest' },
+        changedFiles: ['src/a.ts'],
+        policySnapshot: null,
+        now: '2026-01-01T00:00:00.000Z',
+      });
+      const fulfilledObligation = { ...obligation, status: 'fulfilled' as const };
+      const state = makeState('IMPL_REVIEW', {
+        implementation: IMPL_EVIDENCE,
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v6',
+          obligations: [fulfilledObligation],
+          attempts: [
+            {
+              attemptId: '22222222-2222-4222-8222-222222222222',
+              obligationId: obligation.obligationId,
+              obligationType: 'implement',
+              subjectDigest: 'impl-digest',
+              ordinal: 1,
+              origin: { kind: 'initial' },
+              repositoryDiscovery: { kind: 'not_applicable' },
+              status: 'bound',
+              childSessionId: 'child',
+              completedAt: '2026-01-01T00:00:00.000Z',
+              createdAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
+          dispatches: [],
+          invocations: [
+            {
+              invocationId: '11111111-1111-4111-8111-111111111111',
+              obligationId: obligation.obligationId,
+              obligationType: 'implement',
+              parentSessionId: 'parent',
+              childSessionId: 'child',
+              agentType: 'flowguard-reviewer',
+              invocationMode: 'host_subagent_task',
+              hostVisible: true,
+              source: 'host-orchestrated',
+              promptHash: 'prompt',
+              mandateDigest: obligation.mandateDigest,
+              criteriaVersion: obligation.criteriaVersion,
+              findingsHash: 'findings',
+              invokedAt: '2026-01-01T00:00:00.000Z',
+              fulfilledAt: '2026-01-01T00:00:00.000Z',
+              consumedByObligationId: null,
+              capturedVerdict: 'unable_to_review',
+              attemptId: '22222222-2222-4222-8222-222222222222',
+              reviewOutputMode: 'structured_output',
+              structuredOutputUsed: true,
+              reviewAssuranceLevel: 'structured_high',
+            },
+          ],
+        },
+      });
+      const action = resolveNextAction('IMPL_REVIEW', state);
+      expectAction(action, ACTION_CODES.SUBMIT_REVIEWER_VERDICT, [
+        'flowguard_review_implementation',
+      ]);
     });
 
     it('IMPL_REVIEW with a blocked implement obligation → /implement re-record', () => {
@@ -186,10 +467,11 @@ describe('resolveNextAction', () => {
       const state = makeState('IMPL_REVIEW', {
         implementation: IMPL_EVIDENCE,
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5',
+          assuranceSchemaVersion: 'review-assurance.v6',
           obligations: [blocked],
           invocations: [],
           attempts: [],
+          dispatches: [],
         },
       });
       const action = resolveNextAction('IMPL_REVIEW', state);
@@ -222,10 +504,11 @@ describe('resolveNextAction', () => {
       const state = makeState('IMPL_REVIEW', {
         implementation: IMPL_EVIDENCE,
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5',
+          assuranceSchemaVersion: 'review-assurance.v6',
           obligations,
           invocations: [],
           attempts: [],
+          dispatches: [],
         },
       });
       const action = resolveNextAction('IMPL_REVIEW', state);
@@ -312,10 +595,11 @@ describe('resolveNextAction', () => {
       });
       const state = makeState('READY', {
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           obligations: [obligation],
           invocations: [],
           attempts: [],
+          dispatches: [],
         },
       });
       const action = resolveNextAction('READY', state);
@@ -333,10 +617,11 @@ describe('resolveNextAction', () => {
       });
       const state = makeState('REVIEW', {
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           obligations: [obligation],
           invocations: [],
           attempts: [],
+          dispatches: [],
         },
       });
       const action = resolveNextAction('REVIEW', state);

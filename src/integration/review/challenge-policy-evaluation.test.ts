@@ -180,7 +180,6 @@ async function fixtureReviewer(
 
 async function resolveCapturedFixture(
   fixture: Fixture,
-  frozen: boolean,
 ): Promise<{ blocked: boolean; reviewerLatencyMs: number }> {
   const obligation = withReviewMaterial(
     createReviewObligation({
@@ -191,9 +190,7 @@ async function resolveCapturedFixture(
       subjectDigest: 'test',
       changedFiles: ['src/example.ts'],
       reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
-      policySnapshot: frozen
-        ? { challengePolicy: CHALLENGE_POLICY_V1, maxReviewerOutputRepairAttempts: 1 }
-        : { maxReviewerOutputRepairAttempts: 1 },
+      policySnapshot: { challengePolicy: CHALLENGE_POLICY_V1, maxReviewerOutputRepairAttempts: 1 },
     }),
   );
   const reviewerStartedAt = performance.now();
@@ -225,17 +222,18 @@ async function resolveCapturedFixture(
   });
   const result = resolveHostTaskFindings(
     {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [obligation],
       invocations: [invocation],
       attempts: [attempt],
+      dispatches: [],
     },
     obligation,
   );
   return { blocked: result.kind !== 'resolved', reviewerLatencyMs };
 }
 
-async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boolean> {
+async function runResolutionAndIndependentReReview(): Promise<boolean> {
   const ws = await createTestWorkspace();
   cleanup = ws.cleanup;
   const sessionID = `ses_challenge_eval_${crypto.randomUUID().replace(/-/g, '')}`;
@@ -253,9 +251,7 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
       subjectDigest: 'test',
       changedFiles: ['src/example.ts'],
       reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
-      policySnapshot: frozen
-        ? { challengePolicy: CHALLENGE_POLICY_V1, maxReviewerOutputRepairAttempts: 1 }
-        : { maxReviewerOutputRepairAttempts: 1 },
+      policySnapshot: { challengePolicy: CHALLENGE_POLICY_V1, maxReviewerOutputRepairAttempts: 1 },
     }),
   );
   const challengeId = '22222222-2222-4222-8222-222222222222';
@@ -301,10 +297,11 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
   expect(
     resolveHostTaskFindings(
       {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [firstObligation],
         invocations: [firstInvocation],
         attempts: [firstAttempt],
+        dispatches: [],
       },
       firstObligation,
     ).kind,
@@ -321,10 +318,11 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
       },
       implReviewFindings: [firstFindings],
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [firstObligation],
         invocations: [firstInvocation],
         attempts: [firstAttempt],
+        dispatches: [],
       },
       validationAttempts: [
         {
@@ -368,9 +366,7 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
       subjectDigest: 'test',
       changedFiles: ['src/example.ts'],
       reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
-      policySnapshot: frozen
-        ? { challengePolicy: CHALLENGE_POLICY_V1, maxReviewerOutputRepairAttempts: 1 }
-        : { maxReviewerOutputRepairAttempts: 1 },
+      policySnapshot: { challengePolicy: CHALLENGE_POLICY_V1, maxReviewerOutputRepairAttempts: 1 },
     }),
   );
   const secondFindings = capturedFindings(secondObligation.obligationId, 1, 'structurally_valid', {
@@ -399,10 +395,11 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
   );
   const reReview = resolveHostTaskFindings(
     {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [secondObligation],
       invocations: [secondInvocation],
       attempts: [secondAttempt],
+      dispatches: [],
     },
     secondObligation,
     state ? computeTargetedResolutionChallengeIds(state) : undefined,
@@ -415,7 +412,7 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
   );
 }
 
-async function evaluateFixtures(frozen: boolean): Promise<Metrics> {
+async function evaluateFixtures(): Promise<Metrics> {
   const pipelineStartedAt = performance.now();
   let truePositives = 0;
   let falsePositives = 0;
@@ -424,7 +421,7 @@ async function evaluateFixtures(frozen: boolean): Promise<Metrics> {
   let reviewerLatencyMs = 0;
 
   for (const fixture of FIXTURES) {
-    const result = await resolveCapturedFixture(fixture, frozen);
+    const result = await resolveCapturedFixture(fixture);
     const isBlocked = result.blocked;
     reviewerLatencyMs += result.reviewerLatencyMs;
     if (isBlocked) blocked++;
@@ -433,7 +430,7 @@ async function evaluateFixtures(frozen: boolean): Promise<Metrics> {
     if (!isBlocked && fixture.expectedPolicyBlock) falseNegatives++;
   }
 
-  const secondReviewOccurred = await runResolutionAndIndependentReReview(frozen);
+  const secondReviewOccurred = await runResolutionAndIndependentReReview();
   const totalFixtures = FIXTURES.length + 1;
   return {
     recall: truePositives / (truePositives + falseNegatives),
@@ -449,27 +446,16 @@ async function evaluateFixtures(frozen: boolean): Promise<Metrics> {
 }
 
 describe('controlled challenge-policy lifecycle evaluation (#747)', () => {
-  it('compares frozen policy with legacy obligations using captured findings and an actual re-review', async () => {
-    const withoutFrozenRequirements = await evaluateFixtures(false);
-    await cleanup?.();
-    cleanup = null;
-    const withFrozenRequirements = await evaluateFixtures(true);
+  it('evaluates the frozen challenge policy against captured findings and an actual re-review', async () => {
+    const withFrozenRequirements = await evaluateFixtures();
 
-    expect(withoutFrozenRequirements).toMatchObject({
-      recall: 0,
-      precision: null,
-      blockingRate: 0,
-      reReviewRate: 1 / 5,
-    });
     expect(withFrozenRequirements).toMatchObject({
       recall: 1 / 2,
       precision: 1 / 2,
       blockingRate: 2 / 5,
       reReviewRate: 1 / 5,
     });
-    expect(withoutFrozenRequirements.pipelineValidationLatencyMs).toBeGreaterThanOrEqual(0);
     expect(withFrozenRequirements.pipelineValidationLatencyMs).toBeGreaterThanOrEqual(0);
-    expect(withoutFrozenRequirements.fixtureReviewerLatencyMs).toBeGreaterThanOrEqual(0);
     expect(withFrozenRequirements.fixtureReviewerLatencyMs).toBeGreaterThanOrEqual(0);
   });
 });

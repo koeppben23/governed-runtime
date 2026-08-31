@@ -46,6 +46,8 @@ vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
   return {
     ...original,
+    isGitRepo: vi.fn().mockResolvedValue(true),
+    isGitRepoStrict: vi.fn().mockResolvedValue(true),
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
     changedFiles: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.changedFiles),
     listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
@@ -268,7 +270,7 @@ describe('regulated-e2e critical path', () => {
     expect(await phase()).toBe('VALIDATION');
   });
 
-  it('strict regulated audit verification rejects legacy unchained events', async () => {
+  it('audit verification rejects legacy unchained records in every mode', async () => {
     await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
     const dir = await sessDir();
     const legacyEvent = {
@@ -276,17 +278,25 @@ describe('regulated-e2e critical path', () => {
       sessionId: ctx.sessionID,
       phase: 'READY',
       event: 'legacy_event',
-      timestamp: new Date().toISOString(),
+      occurredAt: new Date().toISOString(),
       actor: 'legacy',
       detail: { source: 'test' },
     };
     await fs.appendFile(path.join(dir, 'audit.jsonl'), `${JSON.stringify(legacyEvent)}\n`, 'utf-8');
 
-    const { events } = await readAuditTrail(dir);
-    const result = verifyChain(events as unknown as Array<Record<string, unknown>>, {
-      strict: true,
+    // The epoch reader itself rejects the legacy record.
+    await expect(readAuditTrail(dir)).rejects.toMatchObject({
+      code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
     });
+
+    // Verification over raw lines also fails closed.
+    const raw = await fs.readFile(path.join(dir, 'audit.jsonl'), 'utf-8');
+    const events = raw
+      .split('\n')
+      .filter((line) => line.trim().length > 0)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    const result = verifyChain(events, { strict: true });
     expect(result.valid).toBe(false);
-    expect(result.reason).toBe('LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE');
+    expect(result.reason).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
   });
 });

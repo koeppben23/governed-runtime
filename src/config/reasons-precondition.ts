@@ -389,7 +389,35 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     ],
     quickFixCommand: '/implement',
   },
-
+  {
+    code: 'IMPLEMENTATION_REWORK_REQUIRED',
+    category: 'precondition',
+    messageTemplate:
+      'Implementation review requested changes, but the re-recorded implementation has the same rejected digest.',
+    recoverySteps: [
+      'Make a substantive implementation change that addresses the review feedback',
+      'Call flowguard_implement again after the changed worktree produces a new digest',
+    ],
+    quickFixCommand: '/implement',
+  },
+  {
+    code: 'IMPLEMENTATION_REVIEW_EXTENSION_REQUIRED',
+    category: 'precondition',
+    messageTemplate:
+      'Implementation review exhausted its authorized iteration budget with changes requested. A user-authorized extension is required before implementation can be re-recorded.',
+    recoverySteps: [
+      'Ask the user to run /extend-implementation-review <positive integer>',
+      'Then make the requested changes and re-record implementation evidence',
+    ],
+    quickFixCommand: '/extend-implementation-review',
+  },
+  {
+    code: 'IMPLEMENTATION_REVIEW_NOT_EXHAUSTED',
+    category: 'precondition',
+    messageTemplate:
+      'Implementation review budget has not been exhausted with changes requested; no extension can be authorized.',
+    recoverySteps: ['Continue the required implementation review workflow.'],
+  },
   {
     code: 'IMPLEMENT_REVIEW_LOOP_REQUIRED',
     category: 'precondition',

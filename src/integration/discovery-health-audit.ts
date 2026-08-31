@@ -32,7 +32,7 @@ export async function auditDiscoveryHealthGateTransition(
   const ph = state.policySnapshot.discoveryHealth;
   await appendReviewAuditEvent(
     sessDir,
-    state.binding.sessionId,
+    state.binding.hostSessionId,
     state.phase,
     'discovery_health:gate_changed',
     {

@@ -1,11 +1,36 @@
 import type { ReviewVerdict } from '../state/evidence.js';
 
-export type UserDecisionCommand = '/approve' | '/request-changes' | '/reject' | '/review-decision';
+export type UserDecisionCommand =
+  | '/approve'
+  | '/request-changes'
+  | '/reject'
+  | '/review-decision'
+  | '/extend-implementation-review';
+
+/**
+ * The decision-intent family accepted by {@link peekUserDecisionIntent} and
+ * {@link consumeUserDecisionIntent}. `/extend-implementation-review` intents are
+ * deliberately kept OUT of this family: they authorize only a finite review
+ * budget and must never satisfy a `flowguard_decision` verdict — the extension
+ * path alone consumes them via
+ * {@link consumeImplementationReviewExtensionIntent}.
+ */
+const DECISION_COMMANDS: ReadonlySet<string> = new Set([
+  '/approve',
+  '/request-changes',
+  '/reject',
+  '/review-decision',
+]);
+
+function isDecisionFamilyCommand(command: string): boolean {
+  return DECISION_COMMANDS.has(command);
+}
 
 export interface UserDecisionIntent {
   readonly sessionId: string;
   readonly command: UserDecisionCommand;
   readonly expectedVerdict: ReviewVerdict;
+  readonly additionalIterations?: number;
   readonly createdAt: string;
   readonly expiresAt: string;
   readonly consumed: false;
@@ -78,6 +103,30 @@ export function recordUserDecisionIntentFromCommand(input: {
   readonly nowMs?: number;
   readonly ttlMs?: number;
 }): UserDecisionIntent | null {
+  if (normalizeCommand(input.command) === '/extend-implementation-review') {
+    const additionalIterations = Number(firstToken(input.arguments));
+    if (
+      !Number.isFinite(additionalIterations) ||
+      !Number.isInteger(additionalIterations) ||
+      additionalIterations <= 0
+    ) {
+      return null;
+    }
+    const createdAtMs = input.nowMs ?? Date.now();
+    const intent: UserDecisionIntent = {
+      sessionId: input.sessionId,
+      command: '/extend-implementation-review',
+      // This sentinel is never accepted by decision tools; extension consumption
+      // additionally binds the captured iteration count below.
+      expectedVerdict: 'reject',
+      additionalIterations,
+      createdAt: nowDate(createdAtMs).toISOString(),
+      expiresAt: nowDate(createdAtMs + (input.ttlMs ?? DEFAULT_TTL_MS)).toISOString(),
+      consumed: false,
+    };
+    intents.set(input.sessionId, intent);
+    return intent;
+  }
   const parsed = parseUserDecisionCommand(input);
   if (!parsed) return null;
   return recordUserDecisionIntent({
@@ -87,6 +136,25 @@ export function recordUserDecisionIntentFromCommand(input: {
     nowMs: input.nowMs,
     ttlMs: input.ttlMs,
   });
+}
+
+export function consumeImplementationReviewExtensionIntent(input: {
+  readonly sessionId: string;
+  readonly additionalIterations: number;
+  readonly nowMs?: number;
+}): UserDecisionIntentConsumeResult {
+  const intent = intents.get(input.sessionId);
+  if (!intent) return { ok: false, reason: 'missing' };
+  intents.delete(input.sessionId);
+  if (Date.parse(intent.expiresAt) <= (input.nowMs ?? Date.now()))
+    return { ok: false, reason: 'expired' };
+  if (
+    intent.command !== '/extend-implementation-review' ||
+    intent.additionalIterations !== input.additionalIterations
+  ) {
+    return { ok: false, reason: 'verdict_mismatch' };
+  }
+  return { ok: true, intent };
 }
 
 /**
@@ -110,6 +178,13 @@ export function peekUserDecisionIntent(input: {
 }): UserDecisionIntentConsumeResult {
   const intent = intents.get(input.sessionId);
   if (!intent) return { ok: false, reason: 'missing' };
+  if (!isDecisionFamilyCommand(intent.command)) {
+    // A non-decision intent (implementation-review extension) must never
+    // authorize a decision verdict. It is NOT deleted here: only the extension
+    // consumer may remove it. Reported as 'missing' so the decision gate fails
+    // closed with HUMAN_DECISION_REQUIRED.
+    return { ok: false, reason: 'missing' };
+  }
 
   const nowMs = input.nowMs ?? Date.now();
   if (Date.parse(intent.expiresAt) <= nowMs) {
@@ -130,6 +205,12 @@ export function consumeUserDecisionIntent(input: {
 }): UserDecisionIntentConsumeResult {
   const intent = intents.get(input.sessionId);
   if (!intent) return { ok: false, reason: 'missing' };
+  if (!isDecisionFamilyCommand(intent.command)) {
+    // Non-decision intents are outside this consumer's authority. Leave them
+    // intact for {@link consumeImplementationReviewExtensionIntent}; report
+    // 'missing' so decision processing never treats them as accepted.
+    return { ok: false, reason: 'missing' };
+  }
 
   // Consume/delete on every observed attempt so stale or mismatched approvals
   // cannot become an implicit approval cache for a later tool call.

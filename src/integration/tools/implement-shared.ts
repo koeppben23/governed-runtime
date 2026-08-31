@@ -15,6 +15,7 @@ import type { SessionState } from '../../state/schema.js';
 import type { RailContext } from '../../rails/types.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import type {
+  LoopVerdict,
   ReviewAttemptDiscoveryContext,
   ReviewFindings,
   ReviewObligation,
@@ -32,6 +33,7 @@ import { buildFrozenReviewMaterialContent } from '../review/reviewer-context.js'
 import { resolveAttemptDiscoveryOrBlock } from '../review/discovery-attempt-context.js';
 import { hasFrozenRepositoryAuthority } from '../../state/evidence-review.js';
 import { materializeApprovedPlanContractResult } from '../proofgraph/materialize-contract.js';
+import { latestUnknownOutcomeResolvedAt } from '../../state/evidence-mutation-episode.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Shared Types / Helpers
@@ -43,6 +45,20 @@ export function nextImplementationReviewIteration(state: SessionState): number {
     latest = Math.max(latest, findings.iteration);
   }
   return latest + 1;
+}
+
+/** The policy budget plus every durable user-authorized extension. */
+export function effectiveImplementationReviewIterations(
+  state: SessionState,
+  policyIterations: number,
+): number {
+  return (
+    policyIterations +
+    state.implementationReviewExtensions.reduce(
+      (total, extension) => total + extension.additionalIterations,
+      0,
+    )
+  );
 }
 
 /**
@@ -248,7 +264,7 @@ export async function activateReviewObligationAndPersist(input: {
 }
 
 export type ImplementArgs = {
-  reviewVerdict?: 'accept' | 'changes_requested';
+  reviewVerdict?: LoopVerdict;
   reviewFindings?: ReviewFindings;
   reviewerUnavailable?: boolean;
 };
@@ -337,4 +353,24 @@ export function normalizeHostFindings(findings: ReviewFindings): ReviewFindings 
       findingId: crypto.randomUUID(),
     })),
   };
+}
+
+/**
+ * After an unknown-outcome resolution, every piece of pre-resolution
+ * implementation evidence is unreliable. The review verdict must be bound to
+ * a fresh worktree recapture: evidence recorded before the latest resolution
+ * blocks the review loop until a new /implement records new evidence.
+ */
+export function unknownOutcomeRevalidationBlock(
+  state: SessionState,
+  implementationExecutedAt: string,
+): string | null {
+  const latestResolution = latestUnknownOutcomeResolvedAt(state.mutationEpisodeResolutions);
+  if (latestResolution === null) return null;
+  if (implementationExecutedAt <= latestResolution) {
+    return formatBlocked('MUTATION_OUTCOME_UNKNOWN_REVALIDATION_REQUIRED', {
+      resolvedAt: latestResolution,
+    });
+  }
+  return null;
 }

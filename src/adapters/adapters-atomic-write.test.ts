@@ -62,7 +62,7 @@ import {
 } from './persistence.js';
 import { appendAuditEvent, readAuditTrail } from './persistence-audit.js';
 import type { SessionState } from '../state/schema.js';
-import type { AuditEvent, ReviewReport } from '../state/evidence.js';
+import type { AuditEvent, AuditEventBody, ReviewReport } from '../state/evidence.js';
 import { withTestEnv } from '../integration/test-helpers.js';
 import {
   makeState,
@@ -97,13 +97,14 @@ async function cleanTmpDir(dir: string): Promise<void> {
 }
 
 /** Create a minimal valid AuditEvent for persistence tests. */
-function makeValidAuditEvent(overrides: Partial<AuditEvent> = {}): AuditEvent {
+function makeValidAuditEvent(overrides: Partial<AuditEventBody> = {}): AuditEventBody {
   return {
     id: FIXED_UUID,
-    sessionId: FIXED_SESSION_UUID,
+    flowguardSessionId: FIXED_SESSION_UUID,
+    hostSessionId: 'ses_host_test',
     phase: 'PLAN',
     event: 'transition:PLAN_READY',
-    timestamp: FIXED_TIME,
+    occurredAt: FIXED_TIME,
     actor: 'machine',
     detail: { kind: 'transition', from: 'TICKET', to: 'PLAN' },
     ...overrides,

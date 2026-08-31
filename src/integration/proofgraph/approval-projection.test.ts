@@ -23,12 +23,14 @@ function contractState(overrides: Partial<SessionState> = {}): SessionState {
       ...PLAN_RECORD,
       claimDeclarations: {
         flow: 'plan',
+        version: 'v2',
         claims: [
           {
             claimId: CLAIM_ID,
             statement: 'updateTask rejects unknown ids',
             critical: true,
             authoritySectionId: 'step-1',
+            claimScope: 'specific_behavior',
             expectedCheckId: 'build',
           },
         ],
@@ -43,8 +45,12 @@ function contractState(overrides: Partial<SessionState> = {}): SessionState {
         certificateId: CERTIFICATE_ID,
         planVersion: 1,
         planRecordDigest: 'record-digest',
-        reviewObligationId: null,
-        reviewEvidenceDigest: null,
+        reviewBinding: {
+          kind: 'current_review',
+          reviewObligationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          reviewEvidenceDigest: 'd'.repeat(64),
+          reviewedSubjectDigest: PLAN_RECORD.current.digest,
+        },
       },
     },
     proofContract: {

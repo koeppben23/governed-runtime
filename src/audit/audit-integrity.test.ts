@@ -9,18 +9,21 @@ import {
 import { verifyEvent, verifyChain, getLastChainHash } from './integrity.js';
 import { computeCanonicalEventDigest } from './canonical-digest.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
-import { SESSION_ID, TS1, TS2, TS3, buildChain } from './audit-test-helpers.js';
+import { SESSION_ID, TS1, TS2, TS3, buildChain, stampChainSequence } from './audit-test-helpers.js';
 
 describe('audit integrity', () => {
   // ─── HAPPY ──────────────────────────────────────────────────
   describe('HAPPY', () => {
     it('verifyEvent passes for valid event with correct prevHash', () => {
-      const event = createTransitionEvent(
-        SESSION_ID,
-        'PLAN',
-        { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', autoAdvanced: false, chainIndex: -1 },
-        TS1,
-        GENESIS_HASH,
+      const event = stampChainSequence(
+        createTransitionEvent(
+          SESSION_ID,
+          'PLAN',
+          { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', autoAdvanced: false, chainIndex: -1 },
+          TS1,
+          GENESIS_HASH,
+        ),
+        1,
       );
       const result = verifyEvent(event, GENESIS_HASH, 0);
       expect(result.valid).toBe(true);
@@ -42,6 +45,46 @@ describe('audit integrity', () => {
       const chain = buildChain(3);
       const lastHash = getLastChainHash(chain.map((event) => ({ ...event })));
       expect(lastHash).toBe(chain[2]!.chainHash);
+    });
+
+    it('verifyChain rejects a trail whose sequence authority is not index + 1 (1, 7, 7)', () => {
+      const chain = buildChain(3);
+      const resealed = chain.map((event, i) => {
+        const { chainHash: _chainHash, ...body } = event;
+        const restamped = {
+          ...body,
+          auditSequence: i === 0 ? 1 : 7,
+        } as unknown as Omit<ChainedAuditEvent, 'chainHash'>;
+        return {
+          ...restamped,
+          chainHash: computeChainHash(restamped.prevHash, restamped),
+        };
+      });
+      // Re-chain so every chainHash is internally consistent: the sequence
+      // authority alone must still invalidate the trail.
+      const result = verifyChain(resealed);
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('CHAIN_BREAK');
+      expect(result.firstBreak?.reason).toContain('auditSequence mismatch');
+    });
+
+    it('verifyChain rejects a re-sealed trail whose semanticEventDigest was not recomputed', () => {
+      const chain = buildChain(2);
+      const resealed = chain.map((event) => {
+        const { chainHash: _chainHash, ...body } = event;
+        const tamperedBody = {
+          ...body,
+          semanticEventDigest: '0'.repeat(64),
+        } as unknown as Omit<ChainedAuditEvent, 'chainHash'>;
+        return {
+          ...tamperedBody,
+          chainHash: computeChainHash(tamperedBody.prevHash, tamperedBody),
+        };
+      });
+      const result = verifyChain(resealed);
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('CHAIN_BREAK');
+      expect(result.firstBreak?.reason).toContain('semanticEventDigest mismatch');
     });
   });
 
@@ -122,7 +165,7 @@ describe('audit integrity', () => {
       const { chainHash: _originalChainHash, ...originalBody } = original;
       const stampedBody: Omit<ChainedAuditEvent, 'chainHash'> = {
         ...originalBody,
-        canonicalEventDigest: originalDigest,
+        semanticEventDigest: originalDigest,
         timestampEvidence: {
           status: 'tsa_stamped',
           source: 'tsa',
@@ -151,9 +194,14 @@ describe('audit integrity', () => {
           },
         },
       } as Omit<ChainedAuditEvent, 'chainHash'>;
+      // A coordinated local edit recomputes BOTH the stamped semantic digest
+      // and the chainHash — the TSA imprint is the only authority it cannot
+      // regenerate, so verification must fall through to the TSA check.
       const tamperedWithUpdatedLocalDigest = {
         ...tamperedBody,
-        canonicalEventDigest: computeCanonicalEventDigest(tamperedBody),
+        semanticEventDigest: computeCanonicalEventDigest(
+          tamperedBody as unknown as Record<string, unknown>,
+        ),
       };
       const resealedTamper = {
         ...tamperedWithUpdatedLocalDigest,
@@ -173,7 +221,7 @@ describe('audit integrity', () => {
       const { chainHash: _originalChainHash, ...originalBody } = original;
       const downgradedBody: Omit<ChainedAuditEvent, 'chainHash'> = {
         ...originalBody,
-        canonicalEventDigest: originalDigest,
+        semanticEventDigest: originalDigest,
         timestampEvidence: {
           status: 'local',
           source: 'local_clock',
@@ -265,12 +313,15 @@ describe('audit integrity', () => {
     });
 
     it('verifyEvent passes with matching hash', () => {
-      const event = createTransitionEvent(
-        SESSION_ID,
-        'PLAN',
-        { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', autoAdvanced: false, chainIndex: -1 },
-        TS1,
-        GENESIS_HASH,
+      const event = stampChainSequence(
+        createTransitionEvent(
+          SESSION_ID,
+          'PLAN',
+          { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', autoAdvanced: false, chainIndex: -1 },
+          TS1,
+          GENESIS_HASH,
+        ),
+        1,
       );
       // Use the actual correct prevHash
       const result = verifyEvent(event, GENESIS_HASH, 0);
@@ -292,17 +343,17 @@ describe('audit integrity', () => {
       expect(result.reason).toBe('CHAIN_BREAK');
     });
 
-    it('verifyChain reports chained pre-v2 events as legacy format, not tampering', () => {
+    it('verifyChain reports pre-v3 records as unsupported legacy, not tampering', () => {
       const event = buildNestedDecisionEvent(GENESIS_HASH);
       const { auditFormatVersion: _auditFormatVersion, ...legacy } = event;
 
       const result = verifyChain([legacy as unknown as Record<string, unknown>], { strict: true });
       expect(result.valid).toBe(false);
-      expect(result.reason).toBe('LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2');
-      expect(result.firstBreak?.reasonCode).toBe('LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2');
+      expect(result.reason).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
+      expect(result.firstBreak?.reasonCode).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
     });
 
-    it('verifyChain reports audit-chain.v1 as legacy format, not tampering', () => {
+    it('verifyChain reports audit-chain.v1 as unsupported legacy, not tampering', () => {
       const event = {
         ...buildNestedDecisionEvent(GENESIS_HASH),
         auditFormatVersion: 'audit-chain.v1',
@@ -310,11 +361,11 @@ describe('audit integrity', () => {
 
       const result = verifyChain([event as unknown as Record<string, unknown>], { strict: true });
       expect(result.valid).toBe(false);
-      expect(result.reason).toBe('LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2');
-      expect(result.firstBreak?.reasonCode).toBe('LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2');
+      expect(result.reason).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
+      expect(result.firstBreak?.reasonCode).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
     });
 
-    it('verifyChain reports unknown audit format as unsupported', () => {
+    it('verifyChain reports unknown audit format as unsupported legacy', () => {
       const event = {
         ...buildNestedDecisionEvent(GENESIS_HASH),
         auditFormatVersion: 'audit-chain.v999',
@@ -322,8 +373,8 @@ describe('audit integrity', () => {
 
       const result = verifyChain([event as unknown as Record<string, unknown>], { strict: true });
       expect(result.valid).toBe(false);
-      expect(result.reason).toBe('UNSUPPORTED_AUDIT_FORMAT_VERSION');
-      expect(result.firstBreak?.reasonCode).toBe('UNSUPPORTED_AUDIT_FORMAT_VERSION');
+      expect(result.reason).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
+      expect(result.firstBreak?.reasonCode).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
     });
   });
 
@@ -361,10 +412,11 @@ describe('audit integrity', () => {
         chainHash: '',
         prevHash: 'abc123',
       };
-      const chain = buildChain(1);
-      // verifyChain should skip this event (handled internally via isChainedEvent)
+      // verifyChain treats non-chained records as unsupported legacy — no skipping.
       const result = verifyChain([event]);
-      expect(result.skippedCount).toBe(1);
+      expect(result.skippedCount).toBe(0);
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
     });
 
     it('isChainedEvent returns false for empty prevHash string', () => {
@@ -374,59 +426,60 @@ describe('audit integrity', () => {
         prevHash: '',
       };
       const result = verifyChain([event]);
-      expect(result.skippedCount).toBe(1);
+      expect(result.skippedCount).toBe(0);
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
     });
 
-    it('verifyChain skips non-chained (legacy) events', () => {
+    it('verifyChain rejects non-chained (legacy) records', () => {
       const legacyEvent: Record<string, unknown> = {
         id: 'legacy-1',
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         phase: 'PLAN',
         event: 'transition:PLAN_READY',
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'machine',
         detail: {},
         // No prevHash, no chainHash
       };
       const result = verifyChain([legacyEvent]);
-      expect(result.valid).toBe(true);
+      expect(result.valid).toBe(false);
       expect(result.totalEvents).toBe(1);
-      expect(result.verifiedCount).toBe(0);
-      expect(result.skippedCount).toBe(1);
-      expect(result.reason).toBeNull();
+      expect(result.verifiedCount).toBe(1);
+      expect(result.skippedCount).toBe(0);
+      expect(result.reason).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
+      expect(result.firstBreak?.reasonCode).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
     });
   });
 
   // ─── EDGE ───────────────────────────────────────────────────
   describe('EDGE', () => {
-    it('verifyChain with mixed chained and legacy events', () => {
+    it('verifyChain with mixed chained and legacy records fails closed on the legacy record', () => {
       const chain = buildChain(2);
       const legacy: Record<string, unknown> = {
         id: 'legacy-1',
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         phase: 'PLAN',
         event: 'some:event',
-        timestamp: TS2,
+        occurredAt: TS2,
         actor: 'machine',
         detail: {},
       };
-      // Insert legacy between two chained events
+      // Append the legacy record after the chained events (inserting it
+      // between chained events would additionally break the sequence authority
+      // of every following record, which the dedicated sequence test covers).
       const mixed = [
         chain[0] as unknown as Record<string, unknown>,
-        legacy,
         chain[1] as unknown as Record<string, unknown>,
+        legacy,
       ];
       const result = verifyChain(mixed);
-      // Chain continues from event[0].chainHash to event[2].prevHash
-      // Event[2] was created with event[0].chainHash as prevHash
-      // so after skipping the legacy event, the chain should still be valid
+      // Legacy records are never skipped — the chain fails closed.
       expect(result.totalEvents).toBe(3);
-      expect(result.skippedCount).toBe(1);
-      expect(result.verifiedCount).toBe(2);
-      // The chain is valid because event[1] (chained, index=2) was built
-      // with event[0].chainHash as prevHash
-      expect(result.valid).toBe(true);
-      expect(result.reason).toBeNull();
+      expect(result.skippedCount).toBe(0);
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
+      expect(result.firstBreak?.index).toBe(2);
     });
 
     it('insertion attack detected — new event breaks prevHash chain', () => {
@@ -445,10 +498,13 @@ describe('audit integrity', () => {
         TS2,
         chain[0]!.chainHash, // Uses correct prevHash for [0]
       );
+      // The inserted event carries a compliant sequence for its chain position;
+      // the attack is exposed by the prevHash break of the event AFTER it.
+      const insertedStamped = stampChainSequence(inserted, 2);
       // Insert between [0] and [1] — [1]'s prevHash still points to [0], not inserted
       const tampered = [
         chain[0] as unknown as Record<string, unknown>,
-        inserted as unknown as Record<string, unknown>,
+        insertedStamped as unknown as Record<string, unknown>,
         chain[1] as unknown as Record<string, unknown>, // prevHash = chain[0].chainHash, not inserted.chainHash
         chain[2] as unknown as Record<string, unknown>,
       ];
@@ -464,7 +520,7 @@ describe('audit integrity', () => {
       const chain = buildChain(2);
       const legacy: Record<string, unknown> = {
         id: 'legacy-tail',
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         phase: 'COMPLETE',
         event: 'some:event',
         timestamp: TS3,
@@ -511,58 +567,58 @@ describe('audit integrity', () => {
 
     // ─── BAD ────────────────────────────────────────────────
     describe('BAD', () => {
-      it('strict mode rejects single legacy event', () => {
+      it('rejects a single legacy record in every mode', () => {
         const legacyEvent: Record<string, unknown> = {
           id: 'legacy-strict-1',
-          sessionId: SESSION_ID,
+          flowguardSessionId: SESSION_ID,
           phase: 'PLAN',
           event: 'transition:PLAN_READY',
-          timestamp: TS1,
+          occurredAt: TS1,
           actor: 'machine',
           detail: {},
         };
         const result = verifyChain([legacyEvent], { strict: true });
         expect(result.valid).toBe(false);
-        expect(result.reason).toBe('LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE');
-        expect(result.skippedCount).toBe(1);
-        expect(result.verifiedCount).toBe(0);
-        expect(result.firstBreak).toBeNull();
+        expect(result.reason).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
+        expect(result.skippedCount).toBe(0);
+        expect(result.verifiedCount).toBe(1);
+        expect(result.firstBreak?.index).toBe(0);
       });
 
-      it('strict mode rejects multiple legacy events', () => {
+      it('rejects multiple legacy records in every mode', () => {
         const legacyEvents: Record<string, unknown>[] = [
           {
             id: 'leg-1',
-            sessionId: SESSION_ID,
+            flowguardSessionId: SESSION_ID,
             phase: 'TICKET',
             event: 'e1',
-            timestamp: TS1,
+            occurredAt: TS1,
             actor: 'machine',
             detail: {},
           },
           {
             id: 'leg-2',
-            sessionId: SESSION_ID,
+            flowguardSessionId: SESSION_ID,
             phase: 'PLAN',
             event: 'e2',
-            timestamp: TS2,
+            occurredAt: TS2,
             actor: 'machine',
             detail: {},
           },
           {
             id: 'leg-3',
-            sessionId: SESSION_ID,
+            flowguardSessionId: SESSION_ID,
             phase: 'PLAN',
             event: 'e3',
-            timestamp: TS3,
+            occurredAt: TS3,
             actor: 'machine',
             detail: {},
           },
         ];
         const result = verifyChain(legacyEvents, { strict: true });
         expect(result.valid).toBe(false);
-        expect(result.reason).toBe('LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE');
-        expect(result.skippedCount).toBe(3);
+        expect(result.reason).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
+        expect(result.skippedCount).toBe(0);
       });
 
       it('strict mode with tampered event → CHAIN_BREAK (not legacy)', () => {
@@ -580,85 +636,83 @@ describe('audit integrity', () => {
 
     // ─── CORNER ─────────────────────────────────────────────
     describe('CORNER', () => {
-      it('strict mode with empty trail → valid (nothing to skip)', () => {
+      it('strict mode with empty trail → valid', () => {
         const result = verifyChain([], { strict: true });
         expect(result.valid).toBe(true);
         expect(result.reason).toBeNull();
         expect(result.skippedCount).toBe(0);
       });
 
-      it('non-strict (default) with legacy events → still valid (backward compat)', () => {
+      it('non-strict (default) with legacy records → still fails closed', () => {
         const legacyEvent: Record<string, unknown> = {
           id: 'legacy-compat',
-          sessionId: SESSION_ID,
+          flowguardSessionId: SESSION_ID,
           phase: 'PLAN',
           event: 'transition:PLAN_READY',
-          timestamp: TS1,
+          occurredAt: TS1,
           actor: 'machine',
           detail: {},
         };
         const result = verifyChain([legacyEvent]);
-        expect(result.valid).toBe(true);
-        expect(result.reason).toBeNull();
-        expect(result.skippedCount).toBe(1);
+        expect(result.valid).toBe(false);
+        expect(result.reason).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
+        expect(result.skippedCount).toBe(0);
       });
 
-      it('explicit strict: false behaves like default (legacy-tolerant)', () => {
+      it('explicit strict: false also fails closed on legacy records', () => {
         const legacyEvent: Record<string, unknown> = {
           id: 'legacy-explicit-false',
-          sessionId: SESSION_ID,
+          flowguardSessionId: SESSION_ID,
           phase: 'PLAN',
           event: 'transition:PLAN_READY',
-          timestamp: TS1,
+          occurredAt: TS1,
           actor: 'machine',
           detail: {},
         };
         const result = verifyChain([legacyEvent], { strict: false });
-        expect(result.valid).toBe(true);
-        expect(result.reason).toBeNull();
-        expect(result.skippedCount).toBe(1);
+        expect(result.valid).toBe(false);
+        expect(result.reason).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
+        expect(result.skippedCount).toBe(0);
       });
     });
 
     // ─── EDGE ───────────────────────────────────────────────
     describe('EDGE', () => {
-      it('strict mode with mixed chained + legacy → fails on legacy', () => {
+      it('mixed chained + legacy → fails closed on the legacy record', () => {
         const chain = buildChain(2);
         const legacy: Record<string, unknown> = {
           id: 'legacy-mixed-strict',
-          sessionId: SESSION_ID,
+          flowguardSessionId: SESSION_ID,
           phase: 'PLAN',
           event: 'some:event',
-          timestamp: TS2,
+          occurredAt: TS2,
           actor: 'machine',
           detail: {},
         };
         const mixed = [
           chain[0] as unknown as Record<string, unknown>,
-          legacy,
           chain[1] as unknown as Record<string, unknown>,
+          legacy,
         ];
         const result = verifyChain(mixed, { strict: true });
         expect(result.valid).toBe(false);
-        expect(result.reason).toBe('LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE');
-        expect(result.skippedCount).toBe(1);
-        expect(result.verifiedCount).toBe(2);
-        // Chain hashes themselves are valid — the break is due to legacy event
-        expect(result.firstBreak).toBeNull();
+        expect(result.reason).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
+        expect(result.skippedCount).toBe(0);
+        expect(result.firstBreak?.index).toBe(2);
       });
 
-      it('strict mode: chain break + legacy events → reason is CHAIN_BREAK (severity priority)', () => {
+      it('strict mode: chain break + legacy record → reason is CHAIN_BREAK (severity priority)', () => {
         const chain = buildChain(3);
         const legacy: Record<string, unknown> = {
           id: 'legacy-plus-break',
-          sessionId: SESSION_ID,
+          flowguardSessionId: SESSION_ID,
           phase: 'PLAN',
           event: 'some:event',
-          timestamp: TS2,
+          occurredAt: TS2,
           actor: 'machine',
           detail: {},
         };
-        // Tamper chain[1] AND insert a legacy event
+        // Tamper chain[1] AND insert a legacy record
         const tampered = [
           chain[0] as unknown as Record<string, unknown>,
           legacy,
@@ -667,9 +721,9 @@ describe('audit integrity', () => {
         ];
         const result = verifyChain(tampered, { strict: true });
         expect(result.valid).toBe(false);
-        // CHAIN_BREAK wins over LEGACY — more severe
+        // CHAIN_BREAK wins over legacy — more severe
         expect(result.reason).toBe('CHAIN_BREAK');
-        expect(result.skippedCount).toBe(1);
+        expect(result.skippedCount).toBe(0);
         expect(result.firstBreak).not.toBeNull();
       });
     });
@@ -689,10 +743,13 @@ describe('audit integrity', () => {
 function buildNestedDecisionEvent(prevHash: string): ChainedAuditEvent {
   const body: Omit<ChainedAuditEvent, 'chainHash'> = {
     id: '11111111-1111-4111-8111-111111111111',
-    sessionId: SESSION_ID,
+    flowguardSessionId: SESSION_ID,
     phase: 'PLAN_REVIEW',
     event: 'decision:DEC-001',
-    timestamp: TS1,
+    occurredAt: TS1,
+    auditSequence: 1,
+    recordedAt: TS1,
+    semanticEventDigest: 'c'.repeat(64),
     actor: 'human',
     auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
     detail: {

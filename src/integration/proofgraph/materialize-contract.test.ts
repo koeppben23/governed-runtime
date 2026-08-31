@@ -79,16 +79,20 @@ function stateWithClaims() {
         lineageStatus: 'verified' as const,
       },
       history: [],
+      reviewCompletion: 'pending',
       claimDeclarations: {
         flow: 'plan',
+        version: 'v2',
         claims: [
           {
             claimId: CLAIM_ID,
             statement: 'the approved plan behavior is implemented',
             critical: true,
             authoritySectionId: 'implementation',
+            claimScope: 'specific_behavior',
             expectedCheckId: 'test',
             counterexampleRequirement: {
+              kind: 'assertion',
               checkId: 'security',
               assertion: { providerId: 'junit', localId: 'some-id' },
             },
@@ -103,14 +107,17 @@ function stateWithClaims() {
         claimDeclarationsDigest: hashText(
           canonicalJsonStringify({
             flow: 'plan',
+            version: 'v2',
             claims: [
               {
                 claimId: CLAIM_ID,
                 statement: 'the approved plan behavior is implemented',
                 critical: true,
                 authoritySectionId: 'implementation',
+                claimScope: 'specific_behavior',
                 expectedCheckId: 'test',
                 counterexampleRequirement: {
+                  kind: 'assertion',
                   checkId: 'security',
                   assertion: { providerId: 'junit', localId: 'some-id' },
                 },
@@ -132,8 +139,6 @@ function stateWithClaims() {
           reviewEvidenceDigest: 'e'.repeat(64),
           reviewedSubjectDigest: PLAN_DIGEST,
         },
-        reviewObligationId: '00000000-0000-4000-8000-0000000000ab',
-        reviewEvidenceDigest: 'e'.repeat(64),
       },
     },
     reviewDecision: {
@@ -173,63 +178,14 @@ function stateWithClaims() {
 }
 
 describe('materializeApprovedPlanContract', () => {
-  it('keeps a current legacy certificate audit-valid while making its claim proof-ineligible', async () => {
+  it('materializes current v2 declarations as proof-eligible without legacy reinterpretation', async () => {
     const state = stateWithClaims();
     const materialized = await materializeApprovedPlanContractResult(state, process.cwd());
-    expect(materialized.coverage).toContainEqual({
+    expect(materialized.coverage).not.toContainEqual({
       claimId: CLAIM_ID,
       cause: 'legacy_claim_declaration_v1',
     });
-    expect(materialized.contract.claims[0]!.proofEligibility).toBe('legacy_declaration_v1');
-    const projection = evaluateProofGraph(
-      {
-        claims: materialized.contract.claims,
-        providerResults: [],
-        counterexamples: [],
-        currentImplementationDigest: IMPL_DIGEST,
-      },
-      NOW,
-    );
-    expect(projection.claims[0]!.verificationState).toBe('NOT_VERIFIED');
-  });
-
-  it('keeps an already-materialized legacy claim from becoming PROVEN when eligibility is absent', () => {
-    const state = stateWithClaims();
-    const claim = {
-      claimId: CLAIM_ID,
-      statement: 'the approved plan behavior is implemented',
-      signalClass: 'fact' as const,
-      critical: false,
-      provenance: {
-        kind: 'canonical_authority' as const,
-        authorityId: 'plan',
-        digest: PLAN_DIGEST,
-      },
-      evidenceRefs: [],
-      counterexampleRefs: [],
-    };
-    const projection = deriveProofGraph(
-      { ...state, proofContract: { version: 'contract.v1' as const, claims: [claim] } },
-      [
-        {
-          claimId: CLAIM_ID,
-          providerKind: 'executed_test',
-          providerId: 'test-provider',
-          providerVersion: '1',
-          status: 'pass',
-          input: { command: 'npm test' },
-          source: { location: 'package.json', stableId: 'test' },
-          binding: { kind: 'implementation', digest: IMPL_DIGEST },
-          resultDigest: 'a'.repeat(64),
-          executedAt: NOW,
-          attestation: 'flowguard_executed',
-        },
-      ],
-      [],
-      NOW,
-    );
-    expect(state.plan!.approvalCertificate).toBeDefined();
-    expect(projection.claims[0]!.verificationState).toBe('NOT_VERIFIED');
+    expect(materialized.contract.claims[0]!.proofEligibility).toBe('eligible');
   });
 
   it('materializes approved pre-evidence claims with current implementation attempts only', async () => {
@@ -277,7 +233,6 @@ describe('materializeApprovedPlanContract', () => {
         )
       ).coverage,
     ).toEqual([
-      { claimId: CLAIM_ID, cause: 'legacy_claim_declaration_v1' },
       { claimId: CLAIM_ID, cause: 'missing_expected_check' },
       { claimId: CLAIM_ID, cause: 'unverified_mutation_profile' },
     ]);
@@ -300,6 +255,7 @@ describe('materializeApprovedPlanContract', () => {
       const initial = stateWithClaims();
       const declarations = {
         flow: 'plan' as const,
+        version: 'v2' as const,
         claims: [
           {
             ...initial.plan!.claimDeclarations!.claims[0]!,
@@ -471,6 +427,7 @@ describe('materializeApprovedPlanContract', () => {
       '22222222-2222-4222-8222-222222222222',
     );
     expect(claim!.counterexampleRequirement).toEqual({
+      kind: 'assertion',
       checkId: 'security',
       assertion: { providerId: 'junit', localId: 'some-id' },
     });
@@ -570,12 +527,14 @@ describe('materializeApprovedPlanContractResult — mutation coverage', () => {
     const state = stateWithClaims();
     const declarations = {
       flow: 'plan' as const,
+      version: 'v2' as const,
       claims: [
         {
           claimId: '55555555-5555-4555-8555-555555555555',
           statement: 'config defaults claim',
           critical: false,
           authoritySectionId: 'implementation',
+          claimScope: 'specific_behavior' as const,
           expectedCheckId: 'test',
           structuralSurface: 'config-defaults',
         },
@@ -584,6 +543,7 @@ describe('materializeApprovedPlanContractResult — mutation coverage', () => {
           statement: 'command registration claim',
           critical: false,
           authoritySectionId: 'implementation',
+          claimScope: 'specific_behavior' as const,
           expectedCheckId: 'test',
           structuralSurface: 'command-registration',
         },

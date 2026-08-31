@@ -27,7 +27,7 @@ import { emptyClaimDeclarations } from '../state/proofgraph-approval.js';
 import type { RailBlocked, RailContext } from './types.js';
 import { blocked } from '../config/reasons.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
-import { digestToId } from '../shared/hashing.js';
+import { digestToId, hashText } from '../shared/hashing.js';
 import type { ResolvedPlanReviewEvidence } from './review-evidence-resolution.js';
 
 export function enforcePlanReviewEvidence(
@@ -46,10 +46,25 @@ export function enforcePlanReviewEvidence(
   if (resolution.reviewerVerdict === undefined) {
     return blockedPlanEvidenceRequired(completion, 'resolved', 'missing');
   }
+  // The claim-declaration binding is part of the evidence authority: evidence
+  // that never froze the reviewed claim set cannot certify the current claims.
+  if (resolution.claimDeclarationsDigest === undefined) {
+    return blockedPlanEvidenceRequired(completion, 'resolved', 'claim_declarations_missing');
+  }
+  if (resolution.claimDeclarationsDigest !== planClaimDeclarationsDigest(plan)) {
+    return blockedPlanEvidenceRequired(completion, 'resolved', 'claim_declarations_mismatch');
+  }
   if (completion === 'reviewer_accepted') {
     return enforceAcceptedPlanVerdict(resolution.reviewerVerdict);
   }
   return enforceExhaustedPlanVerdict(plan, resolution.reviewerVerdict, resolution);
+}
+
+/** Canonical digest of the claim declarations currently bound to a plan authority. */
+export function planClaimDeclarationsDigest(plan: SessionState['plan']): string {
+  return hashText(
+    canonicalJsonStringify(plan?.claimDeclarations ?? emptyClaimDeclarations('plan')),
+  );
 }
 
 function blockedPlanEvidenceRequired(
@@ -136,8 +151,7 @@ export function createPlanApprovalCertificate(
   ctx: RailContext,
   reviewBinding: PlanReviewBinding,
 ): PlanApprovalCertificate {
-  const claimDeclarations = plan.claimDeclarations ?? emptyClaimDeclarations('plan');
-  const claimDeclarationsDigest = ctx.digest(canonicalJsonStringify(claimDeclarations));
+  const claimDeclarationsDigest = planClaimDeclarationsDigest(plan);
   const decisionAttestationDigest = ctx.digest(canonicalJsonStringify(decision));
   const planVersion = plan.current.planVersion;
   const planRecordDigest = plan.current.recordDigest;
@@ -166,16 +180,6 @@ export function createPlanApprovalCertificate(
     planVersion,
     planRecordDigest,
     reviewBinding,
-    // Legacy presentation mirrors of the binding (kept for consumers that
-    // predate the binding contract; the binding is the sole authority).
-    reviewObligationId:
-      reviewBinding.kind === 'current_review'
-        ? reviewBinding.reviewObligationId
-        : reviewBinding.lastReviewObligationId,
-    reviewEvidenceDigest:
-      reviewBinding.kind === 'current_review'
-        ? reviewBinding.reviewEvidenceDigest
-        : reviewBinding.lastReviewEvidenceDigest,
   };
 }
 

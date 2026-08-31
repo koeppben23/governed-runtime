@@ -85,7 +85,7 @@ describe('DEV_REPO_INVARIANTS', () => {
 
     it('COMMANDS template covers all slash commands', () => {
       const commandNames = Object.keys(COMMANDS);
-      expect(commandNames).toHaveLength(24);
+      expect(commandNames).toHaveLength(26);
       for (const expected of [
         'hydrate.md',
         'status.md',
@@ -93,7 +93,9 @@ describe('DEV_REPO_INVARIANTS', () => {
         'plan.md',
         'continue.md',
         'implement.md',
+        'extend-implementation-review.md',
         'resolve-implementation-challenge.md',
+        'reconcile-mutation-episode.md',
         'validate.md',
         'review-decision.md',
         'review.md',
@@ -425,7 +427,9 @@ describe('cli/templates', () => {
       expect(FLOWGUARD_MANDATES_BODY).toContain(
         'Universal governance rules for every FlowGuard command',
       );
-      expect(FLOWGUARD_MANDATES_BODY).toContain('Use only FlowGuard tools for state changes');
+      expect(FLOWGUARD_MANDATES_BODY).toContain(
+        'Use FlowGuard tools for FlowGuard session state, evidence, decisions, and audit authority',
+      );
       expect(FLOWGUARD_MANDATES_BODY).toContain('Complete this command fully, then stop');
       expect(FLOWGUARD_MANDATES_BODY).toContain('respond without calling FlowGuard tools');
       expect(FLOWGUARD_MANDATES_BODY).toContain('Host/profile output convention');

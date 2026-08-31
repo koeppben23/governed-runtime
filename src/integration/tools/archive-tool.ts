@@ -54,31 +54,31 @@ function buildArchiveGuidance(
 async function verifyArchiveIntegrity(
   fingerprint: string,
   sessionID: string,
-): Promise<{ archiveStatus: 'verified' | 'failed'; status: string }> {
+): Promise<{ verificationStatus: 'passed' | 'failed'; status: string }> {
   try {
     const { verifyArchive } = await import('../../adapters/workspace/index.js');
     const verification = await verifyArchive(fingerprint, sessionID);
     if (verification.passed) {
-      return { archiveStatus: 'verified', status: 'Session archived and verified.' };
+      return { verificationStatus: 'passed', status: 'Session archived and verified.' };
     }
     const errs = verification.findings.filter((f) => f.severity === 'error');
     const detail = errs.map((f) => f.code).join(', ') || 'integrity verification failed';
     return {
-      archiveStatus: 'failed',
+      verificationStatus: 'failed',
       status: `Session archived, but integrity verification failed: ${detail}.`,
     };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     return {
-      archiveStatus: 'failed',
+      verificationStatus: 'failed',
       status: `Session archived, but integrity verification failed: ${detail}.`,
     };
   }
 }
 
-function redactedArchiveIntegrityStatus(): { archiveStatus: 'not_verifiable'; status: string } {
+function redactedArchiveIntegrityStatus(): { verificationStatus: 'not_run'; status: string } {
   return {
-    archiveStatus: 'not_verifiable',
+    verificationStatus: 'not_run',
     status:
       'Session archived as a redacted sharing package. Canonical integrity verification requires raw state and audit evidence, which this archive intentionally excludes.',
   };
@@ -132,19 +132,26 @@ export const archive: ToolDefinition = {
         includeRaw,
       });
 
-      const { archiveStatus, status } = includeRaw
+      const packagePurpose = includeRaw ? ('auditor' as const) : ('sharing' as const);
+      const integrityCapability = includeRaw
+        ? ('verifiable' as const)
+        : ('not_verifiable' as const);
+      const { verificationStatus, status } = includeRaw
         ? await verifyArchiveIntegrity(fingerprint, context.sessionID)
         : redactedArchiveIntegrityStatus();
       const archivedState = {
         ...state,
-        lastExportStatus: archiveStatus,
-        lastExportKind: includeRaw ? ('raw' as const) : ('redacted' as const),
+        lastExportPackagePurpose: packagePurpose,
+        lastExportIntegrityCapability: integrityCapability,
+        lastExportVerificationStatus: verificationStatus,
       };
       await writeStateWithArtifacts(sessDir, archivedState);
       getAdapterLogger().info('machine', 'session_archived', {
         sessionId: context.sessionID,
         phase: archivedState.phase,
-        archiveStatus,
+        packagePurpose,
+        integrityCapability,
+        verificationStatus,
         redactionMode,
         includeRaw,
         ...getLogTraceFields(),
@@ -164,12 +171,14 @@ export const archive: ToolDefinition = {
           phase: state.phase,
           status,
           archivePath,
-          archiveStatus,
+          packagePurpose,
+          integrityCapability,
+          verificationStatus,
           redactionMode,
           includeRaw,
           guidance,
         }),
-        { ...archivedState, archiveStatus },
+        archivedState,
       );
     } catch (err) {
       return formatError(err);

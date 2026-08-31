@@ -29,6 +29,14 @@ const TRACE_REGISTRY_LIMIT = 1000;
 /** Limits tool use until the host observes the next explicit user command. */
 export type ActiveCommandScope = 'check';
 
+/**
+ * Session IDs whose /check command is inside a reviewer-requested repair
+ * continuation. The persisted `implementationRework` marker is retained across
+ * re-records and closed only on the full validation pass into IMPL_REVIEW; the
+ * command-scope-local latch additionally keeps the repair surface unlocked
+ * through IMPLEMENTATION → IMPL_VALIDATION → IMPLEMENTATION until the review
+ * loop's terminal verdict even if the marker were absent.
+ */
 export interface FlowGuardPluginRuntime {
   readonly ws: PluginWorkspaceRuntime;
   readonly log: PluginLogger;
@@ -39,6 +47,7 @@ export interface FlowGuardPluginRuntime {
   readonly auditDeps: AuditDeps;
   readonly toolTraceIds: Map<string, string>;
   readonly activeCommandScopes: Map<string, ActiveCommandScope>;
+  readonly checkReworkContinuations: Set<string>;
   readonly setCurrentSessionId: (sessionId: string) => void;
   readonly logError: (message: string, err: unknown) => void;
 }

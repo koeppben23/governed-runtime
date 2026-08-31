@@ -95,7 +95,7 @@ Three governed flows are available after `/start` (or `/hydrate`):
 5. `/check` — run validation checks on the baseline
 6. `/implement` — execute the approved plan (subagent-reviewed iteratively, including post-implementation validation)
 7. `/approve` — approve the implementation evidence
-8. `/export` — create a verifiable audit package
+8. `/export` — create a redacted audit-sharing package; authorized raw evidence is required for canonical verification
 
 **Architecture flow** — record an Architecture Decision Record (ADR):
 

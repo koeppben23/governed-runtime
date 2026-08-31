@@ -23,8 +23,8 @@
  * - **Integration Tools** — registered `ToolDefinition` exports from
  *   `src/integration/tools/index.ts`
  * - **MCP Tools** — entries in the `FLOWGUARD_TOOLS` registry
- *   (`src/mcp-server/server.ts`). Currently 14 of 15 Integration Tools; see
- *   docs for the one excluded tool.
+ *   (`src/mcp-server/server.ts`). 18 of 20 Integration Tools; see
+ *   docs for the two excluded tools.
  * - **Installed Command Definitions** — entries in `INSTALLED_COMMANDS`
  *   (`src/integration/installed-commands.ts`), including aliases, variants,
  *   product commands, and operational helpers.
@@ -48,10 +48,10 @@
  * - **Mutation Files** — entries in `stryker.conf.json` `mutate` array
  */
 export const PRODUCT_INVENTORY = {
-  machineCommands: 11,
-  integrationTools: 18,
-  mcpTools: 17,
-  installedCommandDefs: 25,
+  machineCommands: 12,
+  integrationTools: 20,
+  mcpTools: 18,
+  installedCommandDefs: 27,
   phases: 15,
   policyModes: 4,
   profiles: 4,

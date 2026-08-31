@@ -13,6 +13,8 @@ import {
   handleImplRecord,
   validateImplRecordPrerequisites,
   validateInitialReviewFindings,
+  validateGitPrerequisite,
+  validateControlPlaneBinding,
 } from './implement-record.js';
 import { handleImplReview } from './implement-review.js';
 
@@ -30,6 +32,18 @@ async function executeImplementRecord(context: ToolContext): Promise<string> {
   if (prereqBlocked) return prereqBlocked;
   const findingsBlocked = validateInitialReviewFindings(probeRuntime);
   if (findingsBlocked) return findingsBlocked;
+
+  // Git prerequisite (#575): fail closed with a clear block before running any
+  // worktree git inspection, so a non-Git development flow is caught here rather
+  // than after the agent has made code changes.
+  const gitBlocked = await validateGitPrerequisite(probe.worktree);
+  if (gitBlocked) return gitBlocked;
+
+  // Git control-plane binding (#852): fail closed before the git inspection
+  // when the control plane diverged from the hydrate baseline, so no digest is
+  // ever recorded over a mutation the review subject cannot cover.
+  const controlPlaneBlocked = await validateControlPlaneBinding(probeRuntime);
+  if (controlPlaneBlocked) return controlPlaneBlocked;
 
   // Git/worktree inspection can be slow and must not hold the session write lock.
   const files = await changedFiles(probe.worktree);
@@ -111,21 +125,23 @@ export const review_implementation: ToolDefinition = {
     "reviewVerdict is required for a reviewer result: 'accept' = the reviewer accepts the implementation; the loop " +
     'converges and advances to the EVIDENCE_REVIEW user gate (the user still approves via ' +
     "/review-decision). 'changes_requested' = the implementation needs revision; make changes " +
-    'then re-record with flowguard_implement.\n' +
+    "then re-record with flowguard_implement. 'unable_to_review' consumes the bound reviewer evidence, " +
+    'fails closed, and prepares a fresh independent review attempt.\n' +
     'Review loop runs up to maxIterations (from policy). ' +
     'Optionally accepts reviewFindings from the independent review agent. Under host_task_preferred only, ' +
     'reviewerUnavailable without a verdict or findings reports an actual OpenCode Task transport failure and ' +
     'requests the configured SDK transport; it never approves or persists review evidence.',
   args: {
     reviewVerdict: z
-      .enum(['accept', 'changes_requested'])
+      .enum(['accept', 'changes_requested', 'unable_to_review'])
       .optional()
       .describe(
         "The INDEPENDENT REVIEWER's verdict on the implementation — NOT user approval. " +
           'Required unless reporting an actual host Task transport failure with reviewerUnavailable: true. ' +
           "'accept' = the reviewer accepts the implementation; the loop converges and " +
           'advances to the EVIDENCE_REVIEW user gate (the user still approves via /review-decision). ' +
-          "'changes_requested' = the implementation needs revision.",
+          "'changes_requested' = the implementation needs revision. 'unable_to_review' must match " +
+          'bound reviewer evidence and fails closed before a fresh review attempt is prepared.',
       ),
     reviewFindings: ReviewFindingsSchema.optional().describe(
       "The reviewer's structured findings. SDK mode only — pass the reviewer output verbatim. " +

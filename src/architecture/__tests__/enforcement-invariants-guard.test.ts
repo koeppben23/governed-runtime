@@ -85,10 +85,7 @@ describe('enforcement contract invariants', () => {
   });
 
   it('anchor contract is typed per review subject kind', () => {
-    const content = readFileSync(
-      join(SRC_ROOT, 'integration/review/frozen-reviewer-context.ts'),
-      'utf8',
-    );
+    const content = readFileSync(join(SRC_ROOT, 'state/review-continuation.ts'), 'utf8');
     expect(content).toContain('buildAnchorContract');
     expect(content).toContain('ReviewAnchorContract');
     expect(content).toContain("kind: 'repository_change'");

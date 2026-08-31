@@ -14,7 +14,7 @@ import {
   isRiskClassificationAllowed,
   resolveCeremonyProfile,
   MUTATING_HOST_TOOLS,
-  INVESTIGATION_ONLY_PHASES,
+  HOST_MUTATION_PHASE,
 } from './phase-tool-gate.js';
 import type { Phase } from '../state/schema.js';
 import { makeState } from '../fixtures.js';
@@ -214,37 +214,39 @@ describe('phase-tool-gate', () => {
       });
     });
 
-    describe('CORNER — mutating tools allowed in non-investigation phases', () => {
-      it('T27: bash in VALIDATION → allowed (tests need bash)', () => {
+    describe('BAD — mutating tools blocked outside IMPLEMENTATION', () => {
+      it('T27: bash in VALIDATION → blocked', () => {
         const result = isHostToolAllowedInPhase('bash', 'VALIDATION');
-        expect(result.allowed).toBe(true);
+        expect(result.allowed).toBe(false);
+        expect(result.code).toBe('HOST_TOOL_PHASE_DENIED');
       });
 
-      it('T28: bash in READY → allowed (entry phase, no restriction)', () => {
+      it('T28: bash in READY → blocked', () => {
         const result = isHostToolAllowedInPhase('bash', 'READY');
-        expect(result.allowed).toBe(true);
+        expect(result.allowed).toBe(false);
       });
 
-      it('T29: bash in PLAN_REVIEW → allowed (reviewer has platform restrictions)', () => {
+      it('T29: bash in PLAN_REVIEW → blocked', () => {
         const result = isHostToolAllowedInPhase('bash', 'PLAN_REVIEW');
-        expect(result.allowed).toBe(true);
+        expect(result.allowed).toBe(false);
       });
 
-      it('T30: bash in IMPL_REVIEW → allowed', () => {
+      it('T30: bash in IMPL_REVIEW → blocked', () => {
         const result = isHostToolAllowedInPhase('bash', 'IMPL_REVIEW');
-        expect(result.allowed).toBe(true);
+        expect(result.allowed).toBe(false);
       });
 
-      it('T31: edit in EVIDENCE_REVIEW → allowed', () => {
+      it('T31: edit in EVIDENCE_REVIEW → blocked', () => {
         const result = isHostToolAllowedInPhase('edit', 'EVIDENCE_REVIEW');
-        expect(result.allowed).toBe(true);
+        expect(result.allowed).toBe(false);
       });
     });
 
     describe('EDGE — boundary and terminal phases', () => {
-      it('T32: bash in COMPLETE → allowed (terminal, no active work)', () => {
+      it('T32: bash in COMPLETE → blocked', () => {
         const result = isHostToolAllowedInPhase('bash', 'COMPLETE');
-        expect(result.allowed).toBe(true);
+        expect(result.allowed).toBe(false);
+        expect(result.code).toBe('HOST_TOOL_PHASE_DENIED');
       });
 
       it('T33: flowguard_plan in PLAN → allowed (not in MUTATING_HOST_TOOLS)', () => {
@@ -276,29 +278,41 @@ describe('phase-tool-gate', () => {
         expect(MUTATING_HOST_TOOLS.has('apply_patch')).toBe(true);
       });
 
-      it('T37: INVESTIGATION_ONLY_PHASES contains exactly TICKET, PLAN, ARCHITECTURE', () => {
-        expect(INVESTIGATION_ONLY_PHASES.size).toBe(3);
-        expect(INVESTIGATION_ONLY_PHASES.has('TICKET')).toBe(true);
-        expect(INVESTIGATION_ONLY_PHASES.has('PLAN')).toBe(true);
-        expect(INVESTIGATION_ONLY_PHASES.has('ARCHITECTURE')).toBe(true);
+      it('T37: HOST_MUTATION_PHASE is IMPLEMENTATION', () => {
+        expect(HOST_MUTATION_PHASE).toBe('IMPLEMENTATION');
       });
 
       it('T38: blocked result includes actionable reason text', () => {
         const result = isHostToolAllowedInPhase('bash', 'PLAN');
         expect(result.allowed).toBe(false);
-        expect(result.reason).toContain('read-only tools');
+        expect(result.reason).toContain('only allowed in phase IMPLEMENTATION');
         expect(result.reason).toContain('read, glob, grep');
       });
     });
 
     // ── E2E — full matrix coverage ──────────────────────────────────────
 
-    describe('E2E — every mutating tool × every investigation phase → blocked', () => {
+    describe('E2E — every mutating tool × every non-implementation phase → blocked', () => {
       const mutatingTools = ['bash', 'write', 'edit', 'apply_patch'] as const;
-      const investigationPhases: Phase[] = ['TICKET', 'PLAN', 'ARCHITECTURE'];
+      const nonImplementationPhases: Phase[] = [
+        'READY',
+        'TICKET',
+        'PLAN',
+        'PLAN_REVIEW',
+        'VALIDATION',
+        'IMPL_VALIDATION',
+        'IMPL_REVIEW',
+        'EVIDENCE_REVIEW',
+        'COMPLETE',
+        'ARCHITECTURE',
+        'ARCH_REVIEW',
+        'ARCH_COMPLETE',
+        'REVIEW',
+        'REVIEW_COMPLETE',
+      ];
 
       for (const tool of mutatingTools) {
-        for (const phase of investigationPhases) {
+        for (const phase of nonImplementationPhases) {
           it(`T-MATRIX: ${tool} × ${phase} → blocked`, () => {
             const result = isHostToolAllowedInPhase(tool, phase);
             expect(result.allowed).toBe(false);
@@ -308,29 +322,14 @@ describe('phase-tool-gate', () => {
       }
     });
 
-    describe('E2E — every mutating tool × every non-investigation phase → allowed', () => {
-      const mutatingTools = ['bash', 'write', 'edit'] as const;
-      const nonInvestigationPhases: Phase[] = [
-        'READY',
-        'PLAN_REVIEW',
-        'VALIDATION',
-        'IMPLEMENTATION',
-        'IMPL_REVIEW',
-        'EVIDENCE_REVIEW',
-        'COMPLETE',
-        'ARCH_REVIEW',
-        'ARCH_COMPLETE',
-        'REVIEW',
-        'REVIEW_COMPLETE',
-      ];
+    describe('E2E — every mutating tool × IMPLEMENTATION → allowed', () => {
+      const mutatingTools = ['bash', 'write', 'edit', 'apply_patch'] as const;
 
       for (const tool of mutatingTools) {
-        for (const phase of nonInvestigationPhases) {
-          it(`T-MATRIX: ${tool} × ${phase} → allowed`, () => {
-            const result = isHostToolAllowedInPhase(tool, phase);
-            expect(result.allowed).toBe(true);
-          });
-        }
+        it(`T-MATRIX: ${tool} × IMPLEMENTATION → allowed`, () => {
+          const result = isHostToolAllowedInPhase(tool, 'IMPLEMENTATION');
+          expect(result.allowed).toBe(true);
+        });
       }
     });
   });

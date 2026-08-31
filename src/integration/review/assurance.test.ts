@@ -205,10 +205,11 @@ describe('integration/review-assurance', () => {
   describe('ensureReviewAssurance', () => {
     it('returns the given assurance when defined', () => {
       const existing = {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [makeObligation()],
         invocations: [],
         attempts: [],
+        dispatches: [],
       };
       expect(ensureReviewAssurance(existing)).toBe(existing);
     });
@@ -294,7 +295,7 @@ describe('integration/review-assurance', () => {
         expect(result).toMatchObject({
           requiredChallengeCount,
           requiredChallengeKind,
-          challengePolicyVersion: 'challenge-policy.v1',
+          challengePolicyVersion: 'challenge-policy.v1' as const,
         });
       },
     );
@@ -383,9 +384,11 @@ describe('integration/review-assurance', () => {
         reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
         policySnapshot: { maxReviewerOutputRepairAttempts: 1 },
       });
-      expect(result.requiredChallengeCount).toBeUndefined();
-      expect(result.requiredChallengeKind).toBeUndefined();
-      expect(result.challengePolicyVersion).toBeUndefined();
+      // Hard Assurance Epoch: the mint always freezes the canonical challenge
+      // matrix (writer-side default), never an implicit no-policy state.
+      expect(result.requiredChallengeCount).toBe(2);
+      expect(result.requiredChallengeKind).toBe('implementation_challenge');
+      expect(result.challengePolicyVersion).toBe('challenge-policy.v1');
     });
 
     it('creates p41 obligations without rewriting prior attestation values', () => {
@@ -642,10 +645,11 @@ describe('integration/review-assurance', () => {
       const obligation = makeObligation();
       const result = appendReviewObligation(
         {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           obligations: [],
           invocations: [invocation],
           attempts: [],
+          dispatches: [],
         },
         obligation,
       );
@@ -657,10 +661,11 @@ describe('integration/review-assurance', () => {
     it('returns ensured assurance unchanged when obligation is null', () => {
       const result = appendReviewObligation(undefined, null);
       expect(result).toEqual({
-        assuranceSchemaVersion: 'review-assurance.v5',
+        assuranceSchemaVersion: 'review-assurance.v6',
         obligations: [],
         invocations: [],
         attempts: [],
+        dispatches: [],
       });
     });
   });
@@ -774,10 +779,11 @@ describe('integration/review-assurance', () => {
       };
       const result = consumeReviewObligation(
         {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           obligations: [obligation],
           invocations: [invocation],
           attempts: [],
+          dispatches: [],
         },
         obligation,
         NOW,
@@ -790,10 +796,11 @@ describe('integration/review-assurance', () => {
 
     it('returns the same assurance when obligation is null', () => {
       const assurance = {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [makeObligation()],
         invocations: [],
         attempts: [],
+        dispatches: [],
       };
       expect(consumeReviewObligation(assurance, null, NOW)).toBe(assurance);
     });
@@ -818,10 +825,11 @@ describe('integration/review-assurance', () => {
         hostVisible: true,
       });
       const assurance = {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [obligation],
         invocations: [rejectedInvocation, acceptedInvocation],
         attempts: [],
+        dispatches: [],
       };
 
       const accepted = findAcceptedInvocationForFindings(assurance, obligation, findings);
@@ -856,10 +864,11 @@ describe('integration/review-assurance', () => {
         fulfilledAt: NOW,
       };
       const assurance = {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [fulfilledObligation],
         invocations: [duplicateInvocation, boundInvocation],
         attempts: [],
+        dispatches: [],
       };
 
       const accepted = findAcceptedInvocationForFindings(assurance, fulfilledObligation, findings);

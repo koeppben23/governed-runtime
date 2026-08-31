@@ -230,6 +230,17 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'GIT_TIMEOUT',
+    category: 'adapter',
+    messageTemplate: 'git operation timed out: {message}',
+    recoverySteps: [
+      'Retry the operation; the git command exceeded its time limit',
+      'Check repository size and filesystem performance',
+      'Review any active git lock files or stalled operations',
+    ],
+  },
+
+  {
     code: 'GIT_COMMAND_FAILED',
     category: 'adapter',
     messageTemplate: 'git command failed: {message}',
@@ -342,6 +353,17 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
       'The session predates the durable audit outbox and its transition was never audited',
       'Do not advance the session — contemporaneous audit evidence is absent',
       'Start a new session with /hydrate to re-establish the audit contract',
+    ],
+  },
+
+  {
+    code: 'AUDIT_TERMINAL_TRANSITION_AUTHORITY_UNAVAILABLE',
+    category: 'adapter',
+    messageTemplate: 'Terminal transition audit authority is unavailable: {message}',
+    recoverySteps: [
+      'Do not rely on completion evidence from this session',
+      'Inspect the durable transition audit operation for the terminal transition',
+      'Start a new session with /hydrate if the terminal authority cannot be recovered',
     ],
   },
 

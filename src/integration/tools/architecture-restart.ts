@@ -42,7 +42,9 @@ import {
   resolveReviewContinuation,
   type ReviewContinuation,
 } from '../review/review-continuation.js';
+import { blockObligation } from '../review/obligation-state.js';
 import { reissueReviewAttempt } from './review-tool/continuation.js';
+import { buildInterruptedDispatchRearm } from '../durable-dispatch.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
 import {
   freezeContextAuthorityAtHead,
@@ -60,6 +62,7 @@ import {
 } from './architecture-shared.js';
 import { appendNextAction, formatBlocked, writeStateWithArtifacts } from './helpers.js';
 
+// eslint-disable-next-line complexity -- the architecture continuation route is one sequential fail-closed chain (pending reissue, output repair, restart, missing-attempt close).
 export async function routeArchitectureInitialSubmission(
   args: ArchitectureArgs,
   session: ArchitectureSession,
@@ -74,17 +77,40 @@ export async function routeArchitectureInitialSubmission(
     case 'awaiting_task':
     case 'output_repair':
       return routePendingArchitectureContinuation(args, session, continuation);
+    case 'interrupted_dispatch':
+      return routeArchitectureInterruptedDispatch(
+        args,
+        session,
+        continuation.obligation,
+        continuation.attemptId,
+      );
     case 'integrity_blocked':
       return formatBlocked(continuation.code, {
         obligationId: continuation.obligation.obligationId,
         reason: continuation.reason,
       });
+    case 'missing_attempt':
+      return routeArchitectureMissingAttempt(session, continuation.obligation, continuation.code);
     case 'blocked':
       return restartArchitectureReview(args, session, subagentEnabled, continuation.obligation);
     case 'awaiting_verdict':
     case 'none':
       return null;
   }
+}
+
+async function routeArchitectureMissingAttempt(
+  session: ArchitectureSession,
+  obligation: NonNullable<ArchitectureSession['state']['reviewAssurance']>['obligations'][number],
+  code: string,
+): Promise<string> {
+  const blockedState = blockObligation(session.state, obligation.obligationId, code);
+  await writeStateWithArtifacts(session.sessDir, blockedState);
+  return formatBlocked(code, {
+    obligationId: obligation.obligationId,
+    recovery:
+      'The broken architecture review obligation has been deterministically closed. Re-run /architecture to submit a fresh revision and mint a new review obligation.',
+  });
 }
 
 async function routePendingArchitectureContinuation(
@@ -147,6 +173,49 @@ async function routeArchitectureOutputRepair(
       obligation,
       attemptId: reissue.attempt.attemptId,
       status: 'Architecture review repair attempt issued.',
+      iteration: obligation.iteration,
+      planVersion: obligation.planVersion,
+    },
+  );
+}
+
+async function routeArchitectureInterruptedDispatch(
+  args: ArchitectureArgs,
+  session: ArchitectureSession,
+  obligation: ReviewObligation,
+  attemptId: string,
+): Promise<string> {
+  const changed = changedSubjectWhilePending(args, obligation, session);
+  if (changed) return changed;
+  const spent = session.state.reviewAssurance?.attempts.find((a) => a.attemptId === attemptId);
+  if (!spent) {
+    return formatBlocked('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE', {
+      obligationId: obligation.obligationId,
+      reason: 'interrupted reviewer attempt is absent from assurance',
+    });
+  }
+  const rearmed = buildInterruptedDispatchRearm(
+    session.state.reviewAssurance,
+    spent,
+    session.ctx.now(),
+  );
+  if (rearmed.kind === 'blocked') {
+    return formatBlocked('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE', {
+      obligationId: obligation.obligationId,
+      reason: rearmed.reason,
+    });
+  }
+  await writeStateWithArtifacts(session.sessDir, {
+    ...session.state,
+    reviewAssurance: rearmed.assurance,
+  });
+  const fresh = (await readState(session.sessDir)) ?? session.state;
+  return architectureInstructionResponse(
+    { ...session, state: fresh },
+    {
+      obligation,
+      attemptId: rearmed.attempt.attemptId,
+      status: 'Architecture review re-armed after interrupted dispatch.',
       iteration: obligation.iteration,
       planVersion: obligation.planVersion,
     },

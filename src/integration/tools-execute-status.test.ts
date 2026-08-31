@@ -713,6 +713,13 @@ describe('status', () => {
       if (!current) throw new Error('expected hydrated state');
 
       const obligation = createReviewObligation({
+        policySnapshot: {
+          challengePolicy: {
+            version: 'challenge-policy.v1',
+            counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+          },
+          maxReviewerOutputRepairAttempts: 1,
+        },
         obligationType: 'architecture',
         iteration: 0,
         planVersion: 1,
@@ -789,10 +796,11 @@ describe('status', () => {
           verdict: 'changes_requested' as const,
         },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           obligations: [{ ...obligation, status: 'consumed' as const }],
           invocations: [invocation],
           attempts: [],
+          dispatches: [],
         },
       };
       await writeState(sessDir, state);
@@ -1387,6 +1395,7 @@ describe('declare_contract', () => {
           lineageStatus: 'verified' as const,
         },
         history: [],
+        reviewCompletion: 'pending',
       },
       proofContract: { version: 'contract.v1', claims: [existingClaim] },
       proofContractCoverage: coverage,

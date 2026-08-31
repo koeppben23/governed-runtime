@@ -63,7 +63,7 @@ function stateWithMaterial(
 ) {
   return makeState('REVIEW', {
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [obligation(material)],
       invocations: [],
       attempts: [
@@ -80,6 +80,7 @@ function stateWithMaterial(
           createdAt: NOW,
         },
       ],
+      dispatches: [],
     },
   }) as SessionState;
 }

@@ -31,51 +31,51 @@ describe('audit query', () => {
   const events: AuditEvent[] = [
     makeAuditEvent({
       id: 'e1',
-      sessionId: 'sess-a',
+      hostSessionId: 'sess-a',
       phase: 'TICKET',
       event: 'lifecycle:session_created',
-      timestamp: TS1,
+      occurredAt: TS1,
       actor: 'system',
     }),
     makeAuditEvent({
       id: 'e2',
-      sessionId: 'sess-a',
+      hostSessionId: 'sess-a',
       phase: 'PLAN',
       event: 'transition:TICKET_SET',
-      timestamp: TS1,
+      occurredAt: TS1,
       actor: 'machine',
     }),
     makeAuditEvent({
       id: 'e3',
-      sessionId: 'sess-a',
+      hostSessionId: 'sess-a',
       phase: 'PLAN',
       event: 'tool_call:flowguard_plan',
-      timestamp: TS2,
+      occurredAt: TS2,
       actor: 'user-1',
     }),
     makeAuditEvent({
       id: 'e4',
-      sessionId: 'sess-b',
+      hostSessionId: 'sess-b',
       phase: 'TICKET',
       event: 'lifecycle:session_created',
-      timestamp: TS2,
+      occurredAt: TS2,
       actor: 'system',
     }),
     makeAuditEvent({
       id: 'e5',
-      sessionId: 'sess-a',
+      hostSessionId: 'sess-a',
       phase: 'VALIDATION',
       event: 'error:CHECK_TIMEOUT',
-      timestamp: TS3,
+      occurredAt: TS3,
       actor: 'machine',
       detail: { kind: 'error', code: 'CHECK_TIMEOUT' },
     }),
     makeAuditEvent({
       id: 'e6',
-      sessionId: 'sess-a',
+      hostSessionId: 'sess-a',
       phase: 'PLAN_REVIEW',
       event: 'decision:DEC-001',
-      timestamp: TS3,
+      occurredAt: TS3,
       actor: 'human',
       detail: {
         kind: 'decision',
@@ -99,7 +99,7 @@ describe('audit query', () => {
     it('bySession filters by session ID', () => {
       const result = filterEvents(events, bySession('sess-a'));
       expect(result).toHaveLength(5);
-      expect(result.every((e) => e.sessionId === 'sess-a')).toBe(true);
+      expect(result.every((e) => e.hostSessionId === 'sess-a')).toBe(true);
     });
 
     it('byPhase filters by exact phase', () => {
@@ -158,11 +158,10 @@ describe('audit query', () => {
       expect(receipts[0]!.policyMode).toBe('team');
     });
 
-    it('distinctSessions returns unique session IDs', () => {
+    it('distinctSessions returns unique FlowGuard session IDs', () => {
       const ids = distinctSessions(events);
-      expect(ids).toHaveLength(2);
-      expect(ids).toContain('sess-a');
-      expect(ids).toContain('sess-b');
+      expect(ids).toHaveLength(1);
+      expect(ids).toContain(SESSION_ID);
     });
 
     it('countByKind counts events by kind prefix', () => {
@@ -259,7 +258,7 @@ describe('audit query', () => {
     it('not negates a filter', () => {
       const result = filterEvents(events, not(bySession('sess-a')));
       expect(result).toHaveLength(1);
-      expect(result[0]!.sessionId).toBe('sess-b');
+      expect(result[0]!.hostSessionId).toBe('sess-b');
     });
 
     it('allOf with zero filters matches everything', () => {
@@ -297,7 +296,7 @@ describe('audit query', () => {
       const largeTrail: AuditEvent[] = Array.from({ length: 10000 }, (_, i) =>
         makeAuditEvent({
           id: `perf-${i}`,
-          sessionId: i % 2 === 0 ? 'sess-a' : 'sess-b',
+          hostSessionId: i % 2 === 0 ? 'sess-a' : 'sess-b',
           phase: i % 3 === 0 ? 'PLAN' : 'TICKET',
           event: `transition:EVENT_${i}`,
         }),

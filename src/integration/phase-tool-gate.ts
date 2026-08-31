@@ -2,10 +2,8 @@
  * @module integration/phase-tool-gate
  * @description Phase-aware gate for host-platform tools.
  *
- * Investigation-only phases (TICKET, PLAN, ARCHITECTURE) restrict mutating
- * host tools (bash, write, edit) to prevent premature execution during
- * planning and investigation. Read-only tools (read, glob, grep, webfetch,
- * todowrite) are always allowed.
+ * Host mutations are authorized exclusively during IMPLEMENTATION. Read-only
+ * tools (read, glob, grep, webfetch, todowrite) are always allowed.
  *
  * FlowGuard's own tools (`flowguard_*`) and `task` subagent calls are
  * excluded — they have their own enforcement in review-enforcement.ts
@@ -25,8 +23,8 @@ import { randomUUID } from 'node:crypto';
  * Host-platform tools known to be mutating.
  *
  * These tools can write to the filesystem or execute arbitrary commands.
- * They are blocked during investigation-only phases where the agent should
- * only read and analyze — not execute or modify.
+ * They are allowed only during IMPLEMENTATION, where the recorded
+ * implementation evidence can bind their outcomes to a review subject.
  *
  * Intentionally does NOT include:
  * - `read`, `glob`, `grep`: read-only investigation tools
@@ -62,27 +60,11 @@ function isGovernedOutsideHostPhaseGate(toolName: string): boolean {
 }
 
 /**
- * Phases where only investigation (read-only) tools are allowed.
- *
- * In these phases, the agent is gathering information and formulating
- * plans — not executing changes. Mutating host tools are blocked.
- *
- * - TICKET: gathering requirements, reading codebase
- * - PLAN: writing a plan, reading code to understand structure
- * - ARCHITECTURE: writing an ADR, reading code and docs
- *
- * Phases NOT included (mutating tools allowed):
- * - IMPLEMENTATION: agent implements changes → full tool access
- * - VALIDATION: agent runs tests → needs bash for test execution
- * - READY: entry phase, agent may explore → no restriction
- * - *_REVIEW: reviewer subagent has platform-level permission restrictions
- * - COMPLETE, *_COMPLETE: terminal phases, no active work
+ * The sole phase in which a host mutation may be authorized. This is a
+ * positive authority boundary: allowing a mutation elsewhere can make the
+ * reviewed implementation digest stale before human approval.
  */
-export const INVESTIGATION_ONLY_PHASES: ReadonlySet<Phase> = new Set([
-  'TICKET',
-  'PLAN',
-  'ARCHITECTURE',
-]);
+export const HOST_MUTATION_PHASE: Phase = 'IMPLEMENTATION';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -491,8 +473,8 @@ export function isMutatingHostTool(toolName: string): boolean {
  *
  * Rules (evaluated in order):
  * 1. Non-mutating tools → always allowed.
- * 2. Mutating tools in non-investigation phases → allowed.
- * 3. Mutating tools in investigation-only phases → BLOCKED.
+ * 2. Mutating tools in IMPLEMENTATION → allowed.
+ * 3. Mutating tools in every other phase → BLOCKED.
  *
  * @param toolName - Host-platform tool name (e.g. 'bash', 'write', 'read')
  * @param phase - Current session phase
@@ -511,7 +493,7 @@ export function isHostToolAllowedInPhase(toolName: string, phase: Phase): PhaseG
     };
   }
 
-  if (!INVESTIGATION_ONLY_PHASES.has(phase)) {
+  if (phase === HOST_MUTATION_PHASE) {
     return { allowed: true };
   }
 
@@ -519,7 +501,7 @@ export function isHostToolAllowedInPhase(toolName: string, phase: Phase): PhaseG
     allowed: false,
     code: 'HOST_TOOL_PHASE_DENIED',
     reason:
-      `'${toolName}' is not allowed in phase ${phase}. ` +
-      `Use read-only tools (read, glob, grep) for investigation during planning.`,
+      `'${toolName}' is only allowed in phase ${HOST_MUTATION_PHASE}, not ${phase}. ` +
+      'Use read-only tools (read, glob, grep) outside implementation.',
   };
 }

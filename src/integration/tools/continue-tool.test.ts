@@ -116,6 +116,8 @@ vi.mock('../../machine/commands.js', () => ({
 
 vi.mock('../../adapters/git.js', () => ({
   changedFiles: mocks.changedFiles,
+  isGitRepo: vi.fn().mockResolvedValue(true),
+  isGitRepoStrict: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock('../../machine/evaluate.js', () => ({
@@ -337,6 +339,7 @@ describe('implement: empty evidence guard (P8a.1)', () => {
           { body: 'test plan', digest: 'pd', sections: [], createdAt: '2026-01-01T00:00:00.000Z' },
         ],
       },
+      mutationEpisodes: [],
     };
     mocks.isCommandAllowed.mockReturnValue(true);
     mocks.changedFilesResult = [];

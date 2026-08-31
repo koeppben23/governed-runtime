@@ -15,25 +15,21 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { z } from 'zod';
-
 // State & Machine
 import { SessionState } from '../../state/schema.js';
 import { hashText } from '../../shared/hashing.js';
 import type { EvalResult } from '../../machine/evaluate.js';
 import { resolveNextAction } from '../../machine/next-action.js';
 import { TERMINAL } from '../../machine/topology.js';
-
 // Rail helpers
 import type { RailResult, RailContext, AutoAdvanceOverflow } from '../../rails/types.js';
 import { AUTO_ADVANCE_OVERFLOW_CODE } from '../../rails/auto-advance-overflow.js';
-
 // Adapters
 import { readState, writeStateAlreadyLocked } from '../../adapters/persistence.js';
 import { finalizeImplementationEntry } from '../../adapters/implementation-base-authority.js';
 import { prepareStateWithAuditOperations } from './audit-outbox.js';
 import { acquireSessionWriteLock, withSessionWriteLock } from '../../adapters/persistence-lock.js';
 import { createRailContext } from '../../adapters/context.js';
-
 // Workspace
 import {
   computeFingerprint,
@@ -42,7 +38,6 @@ import {
   verifyEvidenceArtifacts,
   workspaceDir as resolveWorkspaceDir,
 } from '../../adapters/workspace/index.js';
-
 // Config
 import { resolvePolicyFromSnapshot } from '../../config/policy.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
@@ -214,6 +209,7 @@ export function formatRailResult(
     result.state.phase,
     aborted,
     result.state.archiveStatus ?? null,
+    result.state,
   );
   const reviewDecision = result.state.reviewDecision;
   const { archiveStatus } = result.state;
@@ -256,9 +252,11 @@ export function formatRailResult(
 }
 
 function buildEvidenceApprovalCompletionPresentation(state: SessionState): { markdown: string } {
+  const latestFindings = state.implReviewFindings?.at(-1);
   const document = buildEvidenceApprovalCompletionDocument({
     proofSummary: projectCompletionProofStatus(state),
     exportAction: projectStatusActionFromCommand('/export', 'recommended'),
+    missingVerification: latestFindings?.missingVerification,
   });
   const markdown = renderMarkdown(document);
   emitPresentationTelemetry(document, state.phase, state.id);
@@ -278,7 +276,12 @@ export function formatBlocked(
   const info = defaultReasonRegistry.format(code, vars);
   // Render the diagnostic through the shared renderer so blocked returns from
   // inline tool logic present consistently with the rest of the surface.
-  const blockedPresentation = buildBlockedPresentation(info.code, info.reason, vars ?? {});
+  const blockedPresentation = buildBlockedPresentation(
+    info.code,
+    info.reason,
+    vars ?? {},
+    typeof extra?.recoveryAction === 'string' ? extra.recoveryAction : undefined,
+  );
   return JSON.stringify({
     error: true,
     code: info.code,
@@ -564,7 +567,7 @@ export async function persistAndFormat(
   if (result.kind === 'ok') {
     if (result.transitions.length > 0) {
       getAdapterLogger().info('machine', 'transitions_applied', {
-        sessionId: result.state.binding.sessionId,
+        sessionId: result.state.binding.hostSessionId,
         stateId: result.state.id,
         path: result.transitions.map((t) => `${t.from}\u2192${t.to}`),
         count: result.transitions.length,
@@ -579,7 +582,7 @@ export async function persistAndFormat(
 
 function logPersistedLifecycle(result: Extract<RailResult, { kind: 'ok' }>): void {
   if (result.transitions.length === 0) return;
-  const sessionId = result.state.binding.sessionId;
+  const sessionId = result.state.binding.hostSessionId;
   const phase = result.state.phase;
   const log = getAdapterLogger();
 
@@ -667,6 +670,7 @@ export function enrichWithNextAction<T extends Record<string, unknown>>(
     state.phase,
     state.error?.code === 'ABORTED',
     state.archiveStatus ?? null,
+    state,
   );
   return {
     ...value,

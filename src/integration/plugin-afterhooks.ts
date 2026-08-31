@@ -26,9 +26,14 @@ import { trackFlowGuardEnforcement } from './plugin-enforcement-tracking.js';
 import { runReviewOrchestration as runOrchestrator } from './plugin-orchestrator.js';
 import { runAudit as runAuditModule } from './plugin-audit.js';
 import { handleEvent, type EventHandlerDeps } from './plugin-events.js';
-import { appendReviewAuditEvent } from './review/audit-events.js';
+import { appendReviewAuditEventForState } from './review/audit-events.js';
 import { readState } from '../adapters/persistence.js';
 import { buildCompactionContext, type CompactionDeps } from './plugin-compaction.js';
+import {
+  isReviewableFlowGuardTool,
+  updateCheckReworkContinuation,
+} from './plugin-rework-continuation.js';
+export { updateCheckReworkContinuation } from './plugin-rework-continuation.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 import type { SessionEnforcementState } from './review/enforcement/types.js';
 import { handleHostTaskEvidence } from './plugin-task-evidence.js';
@@ -47,19 +52,15 @@ import { resolveSubagentSessionId } from './review/enforcement/extraction.js';
 import type { ToolHookAfterInput, ToolHookAfterOutput } from './types.js';
 import { FG_PREFIX, getToolTraceId, type FlowGuardPluginRuntime } from './plugin-shared.js';
 import {
-  TOOL_FLOWGUARD_PLAN,
-  TOOL_FLOWGUARD_IMPLEMENT,
-  TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
-  TOOL_FLOWGUARD_ARCHITECTURE,
   TOOL_FLOWGUARD_REVIEW,
   TOOL_FLOWGUARD_CONTINUE,
   TOOL_FLOWGUARD_HYDRATE,
-  TOOL_FLOWGUARD_RUN_CHECK,
 } from './tool-names.js';
 import { enforceRiskClassificationAfterBash as enforceRiskAfterBash } from './plugin-risk.js';
 import { enforceDiscoveryHealthAfterBash } from './plugin-discovery-health.js';
 import { trackTaskEnforcement } from './plugin-enforcement-tracking.js';
 import { takeExecutedTaskPrompt } from './review/enforcement/execution-provenance.js';
+import { markReviewerDispatchCompleted } from './durable-dispatch.js';
 import { strictBlockedOutput, getToolMetadata, getToolCallID } from './plugin-helpers.js';
 import {
   ensureReviewAssurance,
@@ -69,6 +70,7 @@ import {
 import type { ReviewAssuranceState, ReviewAttempt } from '../state/evidence-review.js';
 import { readState as readPersistedState } from '../adapters/persistence.js';
 import type { SessionState } from '../state/schema.js';
+import { recordMutationCompletion } from './plugin-mutation-episodes.js';
 
 /**
  * Attempt statuses that already carry reviewer evidence. Only these block a
@@ -106,6 +108,7 @@ export async function toolAfter(
         now,
       };
       await handleAfterDiagnostics(runtime, afterCtx);
+      await recordMutationCompletion({ runtime, ...afterCtx });
       await handleBashAfter(runtime, toolName, sessionId, hookOutput);
       // The durable transition outbox must be reconciled BEFORE the orchestrator
       // may persist its post-commit side effects (obligations, attempts):
@@ -119,6 +122,7 @@ export async function toolAfter(
         sessionId,
         now,
       });
+      await updateCheckReworkContinuation(runtime, toolName, sessionId);
       trackReviewableEnforcement(runtime, afterCtx);
     });
   });
@@ -148,18 +152,6 @@ async function handleAfterDiagnostics(
   if (ctx.toolName === TOOL_FLOWGUARD_HYDRATE)
     logHydrateLockSignal(runtime, ctx.sessionId, ctx.hookOutput);
   if (ctx.toolName === 'task') await handleTaskAfter(runtime, ctx);
-}
-
-function isReviewableFlowGuardTool(toolName: string): boolean {
-  // Stryker disable next-line ConditionalExpression
-  return [
-    TOOL_FLOWGUARD_PLAN,
-    TOOL_FLOWGUARD_IMPLEMENT,
-    TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
-    TOOL_FLOWGUARD_ARCHITECTURE,
-    TOOL_FLOWGUARD_REVIEW,
-    TOOL_FLOWGUARD_RUN_CHECK,
-  ].includes(toolName);
 }
 
 function handleReviewableAfter(runtime: FlowGuardPluginRuntime, ctx: AfterHookContext): void {
@@ -293,6 +285,7 @@ function logHydrateLockSignal(
   }
 }
 
+// eslint-disable-next-line max-lines-per-function -- reviewer evidence capture is one sequential fail-closed chain (provenance gate, durable dispatch close, host binding).
 async function handleTaskAfter(
   runtime: FlowGuardPluginRuntime,
   ctx: AfterHookContext,
@@ -311,6 +304,17 @@ async function handleTaskAfter(
       callId: getToolCallID(ctx.hookInput),
     });
     return;
+  }
+  if (execution) {
+    // The After observed the host Task: close the durable dispatch ledger
+    // entry so a restart can never mistake this dispatch for unknown-outcome.
+    try {
+      await markReviewerDispatchCompleted(runtime, ctx.sessionId, execution.callId, ctx.now);
+    } catch (err) {
+      // A stuck `authorized` ledger entry is fail-closed: it only ever forces
+      // a fresh append-only re-arm, never a duplicate bind. Log and continue.
+      runtime.logError('reviewer dispatch completion failed', err);
+    }
   }
   const resolvedChildSessionId = resolveReviewerTaskSessionId(
     ctx.hookInput,
@@ -468,18 +472,6 @@ async function runFlowGuardAuditAfter(args: {
   });
 }
 
-/** Resolve the persisted phase for a session-error audit detail; empty object when unavailable so the audit event always records. */
-export async function resolveSessionErrorPhaseDetail(
-  sessDir: string,
-): Promise<Record<string, string>> {
-  try {
-    const state = await readState(sessDir);
-    return state?.phase ? { phase: state.phase } : {};
-  } catch {
-    return {};
-  }
-}
-
 export async function handlePluginEvent(
   runtime: FlowGuardPluginRuntime,
   event: unknown,
@@ -491,11 +483,14 @@ export async function handlePluginEvent(
       async emitSessionErrorAudit(sessionId, errorMessage, detail) {
         const sessDir = runtime.ws.getSessionDir(sessionId);
         if (!sessDir) return;
+        const state = await readState(sessDir);
+        // Without durable session identity there is no canonical audit event
+        // to append. The outer event handler remains fail-safe for the host.
+        if (!state) return;
         // Stryker disable next-line ObjectLiteral
-        await appendReviewAuditEvent(sessDir, sessionId, 'unknown', 'error:SESSION_ERROR', {
+        await appendReviewAuditEventForState(sessDir, sessionId, state, 'error:SESSION_ERROR', {
           code: 'SESSION_ERROR',
           message: errorMessage,
-          ...(await resolveSessionErrorPhaseDetail(sessDir)),
           ...detail,
         });
       },

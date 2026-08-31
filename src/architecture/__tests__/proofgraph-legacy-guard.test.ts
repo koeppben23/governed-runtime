@@ -164,7 +164,7 @@ describe('proofgraph legacy guard', () => {
 
   it('plan declarations are only written as v2', () => {
     const content = readFileSync(join(SRC, 'integration/tools/plan.ts'), 'utf-8');
-    expect(content.match(/version:\s*'v2' as const/g)).toHaveLength(2);
+    expect(content.match(/version:\s*'v2' as const/g)).toHaveLength(1);
   });
 
   it('production code does not construct legacy plan declaration literals', () => {

@@ -25,6 +25,7 @@ import {
   decision,
   implement,
   review_implementation,
+  extend_implementation_review,
   resolve_implementation_challenge,
   run_check,
   review,
@@ -35,6 +36,7 @@ import {
   help,
   declare_contract,
   observe_repository,
+  reconcile_mutation_episode,
   attachGovernanceFooter,
 } from './tools/index.js';
 import * as barrel from './index.js';
@@ -42,7 +44,7 @@ import { benchmarkSync } from '../test-policy.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** All 16 exported tool names, matching the filenames OpenCode will discover. */
+/** All 19 exported tool names, matching the filenames OpenCode will discover. */
 const TOOL_NAMES = [
   'status',
   'hydrate',
@@ -51,6 +53,7 @@ const TOOL_NAMES = [
   'decision',
   'implement',
   'review_implementation',
+  'extend_implementation_review',
   'resolve_implementation_challenge',
   'run_check',
   'review',
@@ -61,6 +64,7 @@ const TOOL_NAMES = [
   'help',
   'declare_contract',
   'observe_repository',
+  'reconcile_mutation_episode',
 ] as const;
 
 /** Tools imported directly for testing. */
@@ -72,6 +76,7 @@ const TOOLS: Record<string, unknown> = {
   decision,
   implement,
   review_implementation,
+  extend_implementation_review,
   resolve_implementation_challenge,
   run_check,
   review,
@@ -82,6 +87,7 @@ const TOOLS: Record<string, unknown> = {
   help,
   declare_contract,
   observe_repository,
+  reconcile_mutation_episode,
 };
 
 /** Tools that accept arguments (have non-empty args schema). */
@@ -92,6 +98,7 @@ const TOOLS_WITH_ARGS = [
   'plan',
   'decision',
   'review_implementation',
+  'extend_implementation_review',
   'resolve_implementation_challenge',
   'run_check',
   'abort_session',
@@ -100,6 +107,7 @@ const TOOLS_WITH_ARGS = [
   'help',
   'declare_contract',
   'observe_repository',
+  'reconcile_mutation_episode',
 ] as const;
 
 /** Tools that have no arguments (args: {}). */
@@ -110,8 +118,8 @@ const TOOLS_WITHOUT_ARGS = ['implement'] as const;
 describe('integration/tools', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
   describe('HAPPY', () => {
-    it('exports exactly 17 tools', () => {
-      expect(Object.keys(TOOLS).length).toBe(17);
+    it('exports exactly 19 tools', () => {
+      expect(Object.keys(TOOLS).length).toBe(19);
     });
 
     for (const name of TOOL_NAMES) {
@@ -312,9 +320,9 @@ describe('integration/tools', () => {
       expect(output.presentation).toEqual({ markdown: 'Existing presentation.' });
     });
 
-    it('barrel has exactly 18 named exports (17 tools + 1 plugin)', () => {
+    it('barrel has exactly 20 named exports (19 tools + 1 plugin)', () => {
       const exports = Object.keys(barrel);
-      expect(exports.length).toBe(18);
+      expect(exports.length).toBe(20);
     });
   });
 

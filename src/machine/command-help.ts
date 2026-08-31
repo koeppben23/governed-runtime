@@ -61,6 +61,15 @@ export const COMMAND_HELP: Record<Command, CommandHelpEntry> = {
     presentationGroup: 'work',
     displayOrder: 50,
   },
+  [Command.EXTEND_IMPLEMENTATION_REVIEW]: {
+    label: 'Extend implementation review',
+    description: 'Authorize a finite review-budget extension after exhausted rework.',
+    does: ['Opens only additional independent review iterations.'],
+    doesNot: ['Record implementation evidence or submit a review verdict.'],
+    examples: ['/extend-implementation-review 1'],
+    presentationGroup: 'recovery',
+    displayOrder: 52,
+  },
   [Command.RESOLVE_IMPLEMENTATION_CHALLENGE]: {
     label: 'Record challenge resolution',
     description: 'Record advisory validation evidence for one implementation challenge.',

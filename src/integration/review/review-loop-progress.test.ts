@@ -50,8 +50,9 @@ describe('getReviewLoopProgress', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           attempts: [],
+          dispatches: [],
           obligations: [],
           invocations: [
             {
@@ -247,7 +248,7 @@ describe('getReviewLoopProgress', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           attempts: [],
           obligations: [],
           invocations: [
@@ -275,6 +276,7 @@ describe('getReviewLoopProgress', () => {
               },
             },
           ],
+          dispatches: [],
         },
       });
       const p = getReviewLoopProgress(state)!;
@@ -293,8 +295,9 @@ describe('getReviewLoopProgress', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           attempts: [],
+          dispatches: [],
           obligations: [],
           invocations: [
             {

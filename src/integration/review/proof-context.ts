@@ -17,6 +17,7 @@ import type { SessionState } from '../../state/schema.js';
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
 import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval.js';
 import { evaluateProofGraphGate } from '../../audit/proofgraph/gate.js';
+import { renderPlanClaimDeclarations } from '../../presentation/index.js';
 
 /** Bound on rendered list entries so a large graph cannot dominate the prompt. */
 const MAX_RENDERED_ENTRIES = 20;
@@ -99,25 +100,7 @@ function renderPlanDeclarations(state: SessionState): string[] {
   if (!declarations || declarations.claims.length === 0) return [];
   return [
     `### Plan claim declarations (${declarations.claims.length})`,
-    ...bounded(
-      declarations.claims.map((claim) => {
-        const detail = [
-          `authority section: ${claim.authoritySectionId}`,
-          `expected check: ${claim.expectedCheckId}`,
-          ...(claim.counterexampleRequirement && 'assertion' in claim.counterexampleRequirement
-            ? [
-                `counterexample check: ${claim.counterexampleRequirement.checkId} (assertion: ${claim.counterexampleRequirement.assertion.localId})`,
-              ]
-            : claim.counterexampleRequirement
-              ? [`counterexample check: ${claim.counterexampleRequirement.checkId} (aggregate)`]
-              : []),
-          ...(claim.structuralSurface ? [`structural surface: ${claim.structuralSurface}`] : []),
-          ...(claim.mutationProfile ? [`mutation profile: ${claim.mutationProfile}`] : []),
-        ].join('; ');
-        return `- [${claim.critical ? 'critical' : 'non-critical'}] ${claim.claimId}: ${claim.statement}\n  ${detail}`;
-      }),
-      'plan declaration(s)',
-    ),
+    renderPlanClaimDeclarations(declarations),
     renderCertificateLine('Plan', state.plan?.approvalCertificate),
     '',
   ];

@@ -75,4 +75,9 @@ export interface BuildHydrateInputParams {
    * existing sessions.
    */
   readonly baselineDirtyFiles?: ReadonlyArray<{ path: string; hash: string | null }>;
+  /**
+   * Git control-plane integrity marker captured at baseline time (#852).
+   * Frozen into `implementationBaseline.controlPlaneMarker`.
+   */
+  readonly baselineControlPlaneMarker?: string;
 }

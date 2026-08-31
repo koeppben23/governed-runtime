@@ -3,7 +3,12 @@
  * @description Shared test fixtures for the audit test suite.
  */
 
-import { GENESIS_HASH, createTransitionEvent, type ChainedAuditEvent } from './types.js';
+import {
+  GENESIS_HASH,
+  computeChainHash,
+  createTransitionEvent,
+  type ChainedAuditEvent,
+} from './types.js';
 import type { AuditEvent } from '../state/evidence.js';
 import { FIXED_SESSION_UUID } from '../fixtures.js';
 
@@ -12,17 +17,46 @@ export const TS1 = '2026-01-01T00:00:00.000Z';
 export const TS2 = '2026-01-01T00:01:00.000Z';
 export const TS3 = '2026-01-01T00:02:00.000Z';
 
-/** Build a minimal AuditEvent for query tests. */
+const SYNTHETIC_DIGEST = 'f'.repeat(64);
+
+/** Build a minimal audit-chain.v3 AuditEvent for query tests. */
 export function makeAuditEvent(overrides: Partial<AuditEvent> = {}): AuditEvent {
   return {
     id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-    sessionId: SESSION_ID,
+    flowguardSessionId: SESSION_ID,
     phase: 'PLAN',
     event: 'transition:PLAN_READY',
-    timestamp: TS1,
+    auditFormatVersion: 'audit-chain.v3',
+    auditSequence: 1,
+    occurredAt: TS1,
+    recordedAt: TS1,
+    semanticEventDigest: SYNTHETIC_DIGEST,
+    prevHash: 'genesis',
+    chainHash: SYNTHETIC_DIGEST,
     actor: 'machine',
     detail: { from: 'TICKET', to: 'PLAN', kind: 'transition' },
     ...overrides,
+  };
+}
+
+/**
+ * Re-stamp the 1-based sequence authority on a factory-built event.
+ *
+ * `finalizeWithTimestampEvidence` stamps a PROVISIONAL `auditSequence: 0`
+ * (the real sequence authority is stamped by the append lock). Fixtures that
+ * feed `verifyChain` must therefore re-stamp the sequence — and re-chain the
+ * hash, which covers `auditSequence` — so the events represent a compliant
+ * persisted trail.
+ */
+export function stampChainSequence(
+  event: ChainedAuditEvent,
+  auditSequence: number,
+): ChainedAuditEvent {
+  const { chainHash: _chainHash, ...body } = event;
+  const restamped = { ...body, auditSequence };
+  return {
+    ...restamped,
+    chainHash: computeChainHash(restamped.prevHash, restamped),
   };
 }
 
@@ -45,8 +79,9 @@ export function buildChain(length: number): ChainedAuditEvent[] {
       `2026-01-01T00:${String(i).padStart(2, '0')}:00.000Z`,
       prevHash,
     );
-    events.push(event);
-    prevHash = event.chainHash;
+    const stamped = stampChainSequence(event, i + 1);
+    events.push(stamped);
+    prevHash = stamped.chainHash;
   }
 
   return events;
@@ -58,21 +93,21 @@ function buildEarlyTrailEvents(): AuditEvent[] {
     makeAuditEvent({
       event: 'lifecycle:session_created',
       phase: 'TICKET',
-      timestamp: TS1,
+      occurredAt: TS1,
       actor: 'system',
       detail: { kind: 'lifecycle', action: 'session_created', finalPhase: 'TICKET' },
     }),
     makeAuditEvent({
       event: 'tool_call:flowguard_ticket',
       phase: 'TICKET',
-      timestamp: TS1,
+      occurredAt: TS1,
       actor: 'user',
       detail: { kind: 'tool_call', tool: 'flowguard_ticket', success: true, transitionCount: 1 },
     }),
     makeAuditEvent({
       event: 'transition:TICKET_SET',
       phase: 'PLAN',
-      timestamp: TS1,
+      occurredAt: TS1,
       detail: {
         kind: 'transition',
         from: 'TICKET',
@@ -85,7 +120,7 @@ function buildEarlyTrailEvents(): AuditEvent[] {
     makeAuditEvent({
       event: 'transition:PLAN_READY',
       phase: 'PLAN',
-      timestamp: TS2,
+      occurredAt: TS2,
       detail: {
         kind: 'transition',
         from: 'PLAN',
@@ -98,7 +133,7 @@ function buildEarlyTrailEvents(): AuditEvent[] {
     makeAuditEvent({
       event: 'transition:APPROVE',
       phase: 'VALIDATION',
-      timestamp: TS2,
+      occurredAt: TS2,
       detail: {
         kind: 'transition',
         from: 'PLAN_REVIEW',
@@ -111,14 +146,14 @@ function buildEarlyTrailEvents(): AuditEvent[] {
     makeAuditEvent({
       event: 'tool_call:flowguard_run_check',
       phase: 'VALIDATION',
-      timestamp: TS2,
+      occurredAt: TS2,
       actor: 'machine',
       detail: { kind: 'tool_call', tool: 'flowguard_run_check', success: true, transitionCount: 1 },
     }),
     makeAuditEvent({
       event: 'transition:ALL_PASSED',
       phase: 'IMPLEMENTATION',
-      timestamp: TS2,
+      occurredAt: TS2,
       detail: {
         kind: 'transition',
         from: 'VALIDATION',
@@ -136,7 +171,7 @@ function buildLateTrailEvents(): AuditEvent[] {
     makeAuditEvent({
       event: 'transition:IMPL_COMPLETE',
       phase: 'IMPL_REVIEW',
-      timestamp: TS3,
+      occurredAt: TS3,
       detail: {
         kind: 'transition',
         from: 'IMPLEMENTATION',
@@ -149,7 +184,7 @@ function buildLateTrailEvents(): AuditEvent[] {
     makeAuditEvent({
       event: 'transition:REVIEW_CONVERGED',
       phase: 'EVIDENCE_REVIEW',
-      timestamp: TS3,
+      occurredAt: TS3,
       detail: {
         kind: 'transition',
         from: 'IMPL_REVIEW',
@@ -162,7 +197,7 @@ function buildLateTrailEvents(): AuditEvent[] {
     makeAuditEvent({
       event: 'transition:APPROVE',
       phase: 'COMPLETE',
-      timestamp: TS3,
+      occurredAt: TS3,
       detail: {
         kind: 'transition',
         from: 'EVIDENCE_REVIEW',
@@ -175,7 +210,7 @@ function buildLateTrailEvents(): AuditEvent[] {
     makeAuditEvent({
       event: 'lifecycle:session_completed',
       phase: 'COMPLETE',
-      timestamp: TS3,
+      occurredAt: TS3,
       actor: 'system',
       detail: { kind: 'lifecycle', action: 'session_completed', finalPhase: 'COMPLETE' },
     }),

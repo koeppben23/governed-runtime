@@ -24,31 +24,10 @@
 import type { ReviewAttemptRejectionReason } from '../../../state/evidence.js';
 import type { HostTaskBindOutcome } from './types.js';
 
-/** Canonical repairability policy per structural rejection reason. */
-export const REVIEW_ATTEMPT_REJECTION_POLICY: Readonly<
-  Record<ReviewAttemptRejectionReason, { readonly repair: 'canonical_output_retry' | 'none' }>
-> = {
-  // Output-contract defects: a fresh reviewer attempt can plausibly repair
-  // these against the same frozen subject.
-  schema_invalid: { repair: 'canonical_output_retry' },
-  extraction_invalid: { repair: 'canonical_output_retry' },
-  attestation_invalid: { repair: 'canonical_output_retry' },
-  relation_invalid: { repair: 'canonical_output_retry' },
-  // Governance/integrity failures: never re-issuable via this path.
-  scope_invalid: { repair: 'none' },
-  evidence_unavailable: { repair: 'none' },
-  material_integrity_failed: { repair: 'none' },
-  subject_mismatch: { repair: 'none' },
-  consistency_invalid: { repair: 'none' },
-  // Execution failures: separate availability/execution domain.
-  reviewer_unavailable: { repair: 'none' },
-  task_failed: { repair: 'none' },
-};
-
-/** Whether a structural rejection reason authorizes an output-repair reissue. */
-export function isCanonicallyRepairable(reason: ReviewAttemptRejectionReason): boolean {
-  return REVIEW_ATTEMPT_REJECTION_POLICY[reason].repair === 'canonical_output_retry';
-}
+export {
+  REVIEW_ATTEMPT_REJECTION_POLICY,
+  isCanonicallyRepairable,
+} from '../../../state/review-continuation.js';
 
 /**
  * Canonical mapping from every host-task bind outcome to the structural

@@ -46,21 +46,21 @@ After `/hydrate`, the session starts in the **READY** phase. Three standalone fl
 
 Product commands invoke canonical FlowGuard tools. Runtime enforcement remains in the canonical command policy or in the target tool's fail-closed checks.
 
-| Product command    | Canonical command                    | Description                                               |
-| ------------------ | ------------------------------------ | --------------------------------------------------------- |
-| `/start`           | `/hydrate`                           | Start a governed session                                  |
-| `/task`            | `/ticket`                            | Capture a governed task                                   |
-| `/plan`            | `/plan`                              | Generate an implementation plan (same name)               |
-| `/approve`         | `/review-decision approve`           | Approve the current review gate                           |
-| `/request-changes` | `/review-decision changes_requested` | Request changes at the current review gate                |
-| `/reject`          | `/review-decision reject`            | Reject the current review gate                            |
-| `/implement`       | `/implement`                         | Execute the approved plan (same name)                     |
-| `/check`           | `/validate`                          | Run validation checks                                     |
-| `/export`          | `/archive`                           | Export a verifiable audit package                         |
-| `/status`          | `/status`                            | Show current phase, evidence, and next action (same name) |
-| `/why`             | `/status --why-blocked`              | Show why the workflow is blocked                          |
-| `/review`          | `/review`                            | Generate a compliance/content review report (same name)   |
-| `/architecture`    | `/architecture`                      | Create an ADR (same name)                                 |
+| Product command    | Canonical command                    | Description                                                            |
+| ------------------ | ------------------------------------ | ---------------------------------------------------------------------- |
+| `/start`           | `/hydrate`                           | Start a governed session                                               |
+| `/task`            | `/ticket`                            | Capture a governed task                                                |
+| `/plan`            | `/plan`                              | Generate an implementation plan (same name)                            |
+| `/approve`         | `/review-decision approve`           | Approve the current review gate                                        |
+| `/request-changes` | `/review-decision changes_requested` | Request changes at the current review gate                             |
+| `/reject`          | `/review-decision reject`            | Reject the current review gate                                         |
+| `/implement`       | `/implement`                         | Execute the approved plan (same name)                                  |
+| `/check`           | `/validate`                          | Run validation checks                                                  |
+| `/export`          | `/archive`                           | Export a redacted sharing package or an authorized raw auditor package |
+| `/status`          | `/status`                            | Show current phase, evidence, and next action (same name)              |
+| `/why`             | `/status --why-blocked`              | Show why the workflow is blocked                                       |
+| `/review`          | `/review`                            | Generate a compliance/content review report (same name)                |
+| `/architecture`    | `/architecture`                      | Create an ADR (same name)                                              |
 
 Product commands are the recommended surface for daily use. Advanced/canonical commands are documented below and remain fully supported for scripts, CI, and power users.
 
@@ -268,6 +268,31 @@ Record advisory `NOT_VERIFIED` evidence that a prior implementation challenge wa
 Provide the challenge ID from the prior implementation review and one or more passing
 post-implementation validation attempt IDs for the current implementation digest. This
 does not accept the review, resolve the challenge by itself, or bypass EVIDENCE_REVIEW.
+
+### /extend-implementation-review
+
+Authorize a finite additional independent implementation review budget after the
+existing budget was exhausted with `changes_requested`.
+
+**Allowed in:** IMPL_REVIEW
+
+This is an explicit user authorization (recorded command intent
+`/extend-implementation-review <integer>`). It only opens the requested finite
+review budget; it never records implementation evidence, runs validation, or
+submits a review verdict. The implementation must still be re-recorded via
+`/implement` (or `flowguard_implement`) and re-validated before the next review.
+
+### /reconcile-mutation-episode
+
+Resolve a host mutation episode whose outcome can never be observed (the host process
+died between the Before- and After-hook). Appends an append-only resolution record
+(`reconciled_after_unknown_outcome`, basis `worktree_recapture`).
+
+After resolution, **all** prior implementation, validation, and review evidence is
+unreliable: re-apply the work, record it with `/implement`, re-run the checks, and
+submit a fresh review. Never use this command for a host call with a known outcome.
+
+**Allowed in:** any phase with an unresolved `dispatch_authorized` host mutation episode.
 
 ### /architecture
 

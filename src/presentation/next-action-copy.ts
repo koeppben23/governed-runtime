@@ -14,7 +14,7 @@
 
 import type { NextAction } from '../machine/next-action.js';
 import { ACTION_CODES } from '../machine/next-action.js';
-import type { Phase } from '../state/schema.js';
+import type { Phase, SessionState } from '../state/schema.js';
 import { PHASE_LABELS } from './phase-labels.js';
 
 // ─── Product Guidance ─────────────────────────────────────────────────
@@ -74,7 +74,7 @@ const PRODUCT_GUIDANCE: Partial<Record<ActionCode, ProductNextAction>> = {
     commands: ['/implement'],
   },
   SESSION_COMPLETE: {
-    text: 'Workflow complete. Run /export to create a verifiable audit package.\n/export parameters: redactionMode=none|basic|pseudonymous (default: basic), includeRaw=true|false (default: false)',
+    text: 'Workflow complete. Run /export to create a redacted sharing package. Canonical verification requires an authorized raw auditor package.\n/export parameters: redactionMode=none|basic|pseudonymous (default: basic), includeRaw=true|false (default: false)',
     commands: ['/export'],
   },
   RUN_ARCHITECTURE: {
@@ -84,6 +84,11 @@ const PRODUCT_GUIDANCE: Partial<Record<ActionCode, ProductNextAction>> = {
   RUN_REVIEWER_TASK: {
     text: 'Independent content review is pending. Run the flowguard-reviewer Task, then submit only its verdict with flowguard_review.',
     commands: [],
+    presentationForm: 'review_pending',
+  },
+  SUBMIT_REVIEWER_VERDICT: {
+    text: 'Independent reviewer evidence is bound. Submit its exact verdict with flowguard_review_implementation.',
+    commands: ['flowguard_review_implementation'],
     presentationForm: 'review_pending',
   },
   REVIEW_STATE_INCOMPLETE: {
@@ -111,6 +116,10 @@ export function buildProductNextAction(
   phase: Phase,
   aborted = false,
   archiveStatus?: string | null,
+  lastExport?: Pick<
+    SessionState,
+    'lastExportPackagePurpose' | 'lastExportIntegrityCapability' | 'lastExportVerificationStatus'
+  >,
 ): ProductNextAction {
   const code = action.code as ActionCode;
   const guidance = PRODUCT_GUIDANCE[code];
@@ -136,13 +145,7 @@ export function buildProductNextAction(
   // /finish remains available as read-only orientation, but /export is the sole
   // primary audit-package invocation. Do not present both as competing next actions.
   if (action.code === 'SESSION_COMPLETE') {
-    if (archiveStatus === 'verified') {
-      return {
-        text: `${phaseLabel}. The audit package has been verified. Inspect the session with /status.`,
-        commands: ['/status'],
-      };
-    }
-    if (archiveStatus === 'not_verifiable') {
+    if (lastExport?.lastExportIntegrityCapability === 'not_verifiable') {
       return {
         text:
           `${phaseLabel}. A redacted sharing archive was created, but it cannot verify the canonical audit chain without raw evidence. ` +
@@ -150,14 +153,20 @@ export function buildProductNextAction(
         commands: ['/status', '/export'],
       };
     }
-    if (archiveStatus === 'failed') {
+    if (lastExport?.lastExportVerificationStatus === 'passed' || archiveStatus === 'verified') {
+      return {
+        text: `${phaseLabel}. The audit package has been verified. Inspect the session with /status.`,
+        commands: ['/status'],
+      };
+    }
+    if (lastExport?.lastExportVerificationStatus === 'failed' || archiveStatus === 'failed') {
       return {
         text: `${phaseLabel}. Audit package verification failed. Inspect the failure with /status, then retry /export after recovery.`,
         commands: ['/status', '/export'],
       };
     }
     return {
-      text: `${phaseLabel}. Run /export to create a verifiable audit package.\n/export parameters: redactionMode=none|basic|pseudonymous (default: basic), includeRaw=true|false (default: false)`,
+      text: `${phaseLabel}. Run /export to create a redacted sharing package. A verifiable auditor package requires authorized raw evidence.\n/export parameters: redactionMode=none|basic|pseudonymous (default: basic), includeRaw=true|false (default: false)`,
       commands: guidance.commands,
     };
   }

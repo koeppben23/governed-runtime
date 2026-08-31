@@ -275,6 +275,7 @@ function planStateWithEvidence(
         lineageStatus: 'verified' as const,
       },
       history: [],
+      reviewCompletion: 'pending',
       reviewFindings: [],
     },
     selfReview: {
@@ -286,7 +287,7 @@ function planStateWithEvidence(
       verdict: 'changes_requested',
     },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       attempts: [
         {
           attemptId: OBLIGATION_ID.replace(/^(\w{8})/, 'd0000001'),
@@ -301,10 +302,14 @@ function planStateWithEvidence(
           createdAt: now,
         },
       ],
+      dispatches: [],
       obligations: [
         {
           obligationId: OBLIGATION_ID,
           obligationType: 'plan',
+          requiredChallengeCount: 0,
+          requiredChallengeKind: 'design_challenge' as const,
+          challengePolicyVersion: 'challenge-policy.v1' as const,
           subjectDigest: 'test-subject-digest',
           iteration: 0,
           planVersion: 1,
@@ -496,6 +501,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
           lineageStatus: 'verified' as const,
         },
         history: [],
+        reviewCompletion: 'pending',
         reviewFindings: [],
       },
       selfReview: {
@@ -507,10 +513,11 @@ describe('BUG-17: plan evidence-first resolution', () => {
         verdict: 'changes_requested',
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [],
         invocations: [],
         attempts: [],
+        dispatches: [],
       },
     });
     mocks.state = stateNoEvidence;
@@ -709,6 +716,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
           lineageStatus: 'verified' as const,
         },
         history: [],
+        reviewCompletion: 'pending',
         reviewFindings: [],
       },
       selfReview: {
@@ -720,11 +728,14 @@ describe('BUG-17: plan evidence-first resolution', () => {
         verdict: 'changes_requested',
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [
           {
             obligationId: OBLIGATION_ID,
             obligationType: 'plan',
+            requiredChallengeCount: 0,
+            requiredChallengeKind: 'design_challenge' as const,
+            challengePolicyVersion: 'challenge-policy.v1' as const,
             subjectDigest: 'test-subject-digest',
             iteration: 0,
             planVersion: 1,
@@ -747,6 +758,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
         ],
         invocations: [manualAttestedInvocation({ obligationType: 'plan', findings })],
         attempts: [],
+        dispatches: [],
       },
     });
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
@@ -804,7 +816,11 @@ describe('BUG-17: plan evidence-first resolution', () => {
     const parsed = JSON.parse(
       String(
         await plan.execute(
-          { reviewVerdict: 'changes_requested', planText: '## Plan\n1. Fix\n2. Revised' },
+          {
+            reviewVerdict: 'changes_requested',
+            planText: '## Plan\n1. Fix\n2. Revised',
+            claims: [],
+          },
           {} as never,
         ),
       ),
@@ -863,6 +879,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
           {
             reviewVerdict: 'changes_requested',
             planText: '## Plan\n1. Fix\n2. Revised',
+            claims: [],
             targetPaths: ['src/api.ts'],
           },
           {} as never,

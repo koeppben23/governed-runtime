@@ -14,6 +14,7 @@
  */
 
 import * as fs from 'node:fs/promises';
+import type { Dirent } from 'node:fs';
 import * as path from 'node:path';
 import { readState } from '../../adapters/persistence.js';
 import { sessionDir } from '../../adapters/workspace/index.js';
@@ -46,14 +47,17 @@ export async function resolveAttemptByCapability(input: {
   readonly capability: string;
 }): Promise<CapabilityResolution | null> {
   const sessionsRoot = path.join(input.workspaceHome, input.fingerprint, 'sessions');
-  let entries: string[];
+  let entries: Dirent[];
   try {
-    entries = await fs.readdir(sessionsRoot);
+    entries = await fs.readdir(sessionsRoot, { withFileTypes: true });
   } catch {
     return null;
   }
   for (const entry of entries) {
-    const sessDir = sessionDir(input.fingerprint, entry);
+    // OpenCode may place child-session transport artifacts beside FlowGuard
+    // session directories. Only directories can own session-state.json.
+    if (!entry.isDirectory()) continue;
+    const sessDir = sessionDir(input.fingerprint, entry.name);
     let state: SessionState | null;
     try {
       state = await readState(sessDir);
@@ -69,7 +73,7 @@ export async function resolveAttemptByCapability(input: {
       (o) => o.obligationId === attempt.obligationId,
     );
     if (!obligation) return null;
-    return { sessDir, sessionId: entry, attempt, obligation };
+    return { sessDir, sessionId: entry.name, attempt, obligation };
   }
   return null;
 }

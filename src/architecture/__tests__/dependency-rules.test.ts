@@ -629,6 +629,10 @@ describe('Layer Dependency Rules', () => {
     const allowedStateSharedImports = new Set([
       '../shared/canonical-json.js',
       '../shared/hashing.js',
+      // The canonical review-continuation authority (state/review-continuation.ts)
+      // verifies frozen review material itself and reuses the single content
+      // normalization/digest authority instead of duplicating it in state.
+      '../shared/review-subject.js',
     ]);
     const forbiddenStateSharedAuthorityImports = new Set([
       '../shared/flowguard-identifiers.js',

@@ -25,9 +25,10 @@ Archive the current completed FlowGuard session.
    - If not terminal: report the current phase and tell the user to complete or abort first.
 
 3. Report the archive result:
-    - Archive file path and verification status. \`not_verifiable\` means a redacted
-      sharing archive intentionally excludes raw state and audit evidence; it is
-      not an integrity failure.
+    - Archive file path plus \`packagePurpose\`, \`integrityCapability\`, and
+      \`verificationStatus\`. The default is \`sharing\`, \`not_verifiable\`,
+      and \`not_run\`: its redacted package intentionally excludes raw state and
+      audit evidence, which is not an integrity failure.
    - Redaction mode used (\`none\`, \`basic\`, or \`pseudonymous\`)
    - Whether raw evidence is included (\`includeRaw\`)
    - The \`guidance\` text from the tool response verbatim
@@ -41,6 +42,6 @@ ${GOVERNANCE_RULES}
 ## Done-when
 
 - Session archive created as tar.gz.
-- Redaction parameters, guidance, and archive verification status reported to the user.
+- Redaction parameters, guidance, and archive semantic fields reported to the user.
 - Response ends with \`Next action: run /hydrate to start a new session.\`
 `;

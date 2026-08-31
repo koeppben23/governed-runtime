@@ -140,6 +140,7 @@ function reviewerChallengeFromPrompt(
     scenario: 'Assume the cited evidence does not support the claim.',
     claim: 'The reviewed artifact is supported by the cited evidence.',
     locations: ['src/example.ts'],
+    outcome: challengeKind === 'implementation_challenge' ? 'pass' : 'supported',
     ...overrides,
   };
 }
@@ -352,9 +353,11 @@ describe('challenge contract enforcement at binding time', () => {
     expect(result.attempt?.status).toBe('rejected');
   });
 
-  it('HAPPY — an obligation with no frozen challenge count still binds', () => {
+  it('HAPPY — an obligation with an explicit TRIVIAL zero count binds without challenges', () => {
     const obligation = pendingObligation({ obligationId: OBLIGATION_ID, obligationType: 'plan' });
-    expect(obligation.requiredChallengeCount).toBeUndefined();
+    expect(obligation.requiredChallengeCount).toBe(0);
+    expect(obligation.requiredChallengeKind).toBe('design_challenge');
+    expect(obligation.challengePolicyVersion).toBe('challenge-policy.v1');
 
     const result = bind(TOOL_FLOWGUARD_PLAN, obligation, []);
 

@@ -122,6 +122,12 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
           digest: 'sha256-v1',
           sections: ['Plan'],
           createdAt: new Date().toISOString(),
+          recordDigest: 'record-v1',
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+          lineageStatus: 'verified',
         },
         history: [
           {
@@ -129,8 +135,15 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
             digest: 'sha256-orig',
             sections: [],
             createdAt: new Date().toISOString(),
+            recordDigest: 'record-orig',
+            planVersion: 1,
+            supersedesRecordDigest: null,
+            originatingReviewObligationId: null,
+            revisionReason: null,
+            lineageStatus: 'verified',
           },
         ],
+        reviewCompletion: 'pending',
         reviewFindings: [
           {
             iteration: 0,
@@ -183,8 +196,15 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
           digest: 'sha256',
           sections: [],
           createdAt: new Date().toISOString(),
+          recordDigest: 'record',
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+          lineageStatus: 'verified',
         },
         history: [],
+        reviewCompletion: 'pending',
       };
 
       const result = PlanRecord.safeParse(recordWithoutReview);
@@ -238,19 +258,41 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         allowSelfApproval: true,
         minimumActorAssuranceForApproval: 'best_effort',
         requireVerifiedActorsForApproval: false,
+        enforceRiskClassification: false,
+        allowRiskDowngradeOverride: false,
         identityProviderMode: 'optional',
+        maxIncoherentReviewerCaptureRetries: 1,
+        maxReviewerOutputRepairAttempts: 1,
+        allowReducedCeremony: false,
+        discoveryHealth: { enforcement: 'off', onDegraded: 'allow', onDrift: 'allow' },
+        validationEvidence: { enforcement: 'off', allowNoCommands: false },
         reviewOutputPolicy: 'text_compat_allowed',
+        reviewInvocationPolicy: 'sdk_allowed',
+        reviewProfile: 'core',
+        selfReview: {
+          subagentEnabled: true,
+          fallbackToSelf: false,
+          strictEnforcement: true,
+        },
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
         audit: {
           emitTransitions: true,
           emitToolCalls: true,
           enableChainHash: true,
+          timestampAssurance: {
+            enabled: false,
+            mode: 'local_only',
+            strict: false,
+            criticalEvents: ['decision', 'lifecycle'],
+            ntpServers: ['pool.ntp.org'],
+            ntpDriftThresholdMs: 30000,
+            tsaTimeoutMs: 10000,
+          },
         },
         actorClassification: {},
-        selfReview: {
-          subagentEnabled: true,
-          fallbackToSelf: true,
-          strictEnforcement: false,
-        },
       });
 
       const policy = resolvePolicyFromSnapshot(snapshotWithSelfReview);
@@ -277,12 +319,39 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         allowSelfApproval: true,
         minimumActorAssuranceForApproval: 'best_effort',
         requireVerifiedActorsForApproval: false,
+        enforceRiskClassification: false,
+        allowRiskDowngradeOverride: false,
         identityProviderMode: 'optional',
+        maxIncoherentReviewerCaptureRetries: 1,
+        maxReviewerOutputRepairAttempts: 1,
+        allowReducedCeremony: false,
+        discoveryHealth: { enforcement: 'off', onDegraded: 'allow', onDrift: 'allow' },
+        validationEvidence: { enforcement: 'off', allowNoCommands: false },
         reviewOutputPolicy: 'text_compat_allowed',
+        reviewInvocationPolicy: 'sdk_allowed',
+        reviewProfile: 'core',
+        selfReview: {
+          subagentEnabled: true,
+          fallbackToSelf: false,
+          strictEnforcement: true,
+        },
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
         audit: {
           emitTransitions: true,
           emitToolCalls: true,
           enableChainHash: false,
+          timestampAssurance: {
+            enabled: false,
+            mode: 'local_only',
+            strict: false,
+            criticalEvents: ['decision', 'lifecycle'],
+            ntpServers: ['pool.ntp.org'],
+            ntpDriftThresholdMs: 30000,
+            tsaTimeoutMs: 10000,
+          },
         },
         actorClassification: {},
       });
@@ -309,29 +378,51 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         allowSelfApproval: true,
         minimumActorAssuranceForApproval: 'best_effort',
         requireVerifiedActorsForApproval: false,
+        enforceRiskClassification: false,
+        allowRiskDowngradeOverride: false,
         identityProviderMode: 'optional',
+        maxIncoherentReviewerCaptureRetries: 1,
+        maxReviewerOutputRepairAttempts: 1,
+        allowReducedCeremony: false,
+        discoveryHealth: { enforcement: 'off', onDegraded: 'allow', onDrift: 'allow' },
+        validationEvidence: { enforcement: 'off', allowNoCommands: false },
         reviewOutputPolicy: 'text_compat_allowed',
-        audit: {
-          emitTransitions: true,
-          emitToolCalls: true,
-          enableChainHash: true,
-        },
-        actorClassification: {},
+        reviewInvocationPolicy: 'sdk_allowed',
+        reviewProfile: 'core',
         selfReview: {
           subagentEnabled: true,
           fallbackToSelf: false,
           strictEnforcement: true,
         },
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
+        audit: {
+          emitTransitions: true,
+          emitToolCalls: true,
+          enableChainHash: true,
+          timestampAssurance: {
+            enabled: false,
+            mode: 'local_only',
+            strict: false,
+            criticalEvents: ['decision', 'lifecycle'],
+            ntpServers: ['pool.ntp.org'],
+            ntpDriftThresholdMs: 30000,
+            tsaTimeoutMs: 10000,
+          },
+        },
+        actorClassification: {},
       });
 
       expect(snapshotWithSelfReview.selfReview).toBeDefined();
       expect(snapshotWithSelfReview.selfReview?.subagentEnabled).toBe(true);
     });
 
-    it('PolicySnapshotSchema allows missing selfReview (backward compat)', async () => {
+    it('PolicySnapshotSchema rejects a snapshot missing selfReview (hard epoch)', async () => {
       const { PolicySnapshotSchema } = await import('../../state/evidence.js');
 
-      const snapshotWithoutSelfReview = PolicySnapshotSchema.parse({
+      const complete = {
         mode: 'solo',
         hash: POLICY_DIGEST,
         hashVersion: POLICY_DIGEST_VERSION,
@@ -344,17 +435,50 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         allowSelfApproval: true,
         minimumActorAssuranceForApproval: 'best_effort',
         requireVerifiedActorsForApproval: false,
+        enforceRiskClassification: false,
+        allowRiskDowngradeOverride: false,
         identityProviderMode: 'optional',
+        maxIncoherentReviewerCaptureRetries: 1,
+        maxReviewerOutputRepairAttempts: 1,
+        allowReducedCeremony: false,
+        discoveryHealth: { enforcement: 'off', onDegraded: 'allow', onDrift: 'allow' },
+        validationEvidence: { enforcement: 'off', allowNoCommands: false },
         reviewOutputPolicy: 'text_compat_allowed',
+        reviewInvocationPolicy: 'sdk_allowed',
+        reviewProfile: 'core',
+        selfReview: {
+          subagentEnabled: true,
+          fallbackToSelf: false,
+          strictEnforcement: true,
+        },
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
         audit: {
           emitTransitions: true,
           emitToolCalls: true,
           enableChainHash: false,
+          timestampAssurance: {
+            enabled: false,
+            mode: 'local_only',
+            strict: false,
+            criticalEvents: ['decision', 'lifecycle'],
+            ntpServers: ['pool.ntp.org'],
+            ntpDriftThresholdMs: 30000,
+            tsaTimeoutMs: 10000,
+          },
         },
         actorClassification: {},
-      });
+      };
 
-      expect(snapshotWithoutSelfReview.selfReview).toBeUndefined();
+      const { selfReview: _sr, ...snapshotWithoutSelfReview } = complete;
+      expect(() => PolicySnapshotSchema.parse(snapshotWithoutSelfReview)).toThrow();
+      expect(PolicySnapshotSchema.parse(complete).selfReview).toEqual({
+        subagentEnabled: true,
+        fallbackToSelf: false,
+        strictEnforcement: true,
+      });
     });
   });
 });
@@ -447,8 +571,15 @@ describe('P34a: Agent-Orchestrated Review Input Validation', () => {
         digest: 'd1',
         sections: [],
         createdAt: new Date().toISOString(),
+        recordDigest: 'record-d1',
+        planVersion: 1,
+        supersedesRecordDigest: null,
+        originatingReviewObligationId: null,
+        revisionReason: null,
+        lineageStatus: 'verified',
       },
       history: [],
+      reviewCompletion: 'pending',
       reviewFindings: [validReviewFindingsSubagent],
     } as any;
 

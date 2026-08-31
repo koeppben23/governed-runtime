@@ -1540,6 +1540,9 @@ describe('review (standalone flow)', () => {
         const obligation = {
           obligationId: '00000000-0000-0000-0000-000000000001',
           obligationType: 'review' as const,
+          requiredChallengeCount: 0,
+          requiredChallengeKind: 'content_challenge' as const,
+          challengePolicyVersion: 'challenge-policy.v1' as const,
           subjectDigest: 'test-subject-digest',
           iteration: 1,
           planVersion: 1,
@@ -1641,7 +1644,7 @@ describe('review (standalone flow)', () => {
         expect((report.completeness as Record<string, unknown>).phase).toBe('REVIEW_COMPLETE');
       });
 
-      it('blocks manual /review attestation when snapshot misses reviewInvocationPolicy (fail-closed)', async () => {
+      it('rejects persisting a current-epoch state whose snapshot misses reviewInvocationPolicy', async () => {
         await hydrateAndGetReady();
         const { computeFingerprint, sessionDir: resolveSessionDir } =
           await import('../adapters/workspace/index.js');
@@ -1650,33 +1653,15 @@ describe('review (standalone flow)', () => {
         const state = await readState(sessDir);
         if (!state) throw new TypeError('Expected persisted session state');
 
-        // Simulate legacy snapshot: remove reviewInvocationPolicy from snapshot.
+        // Hard Assurance Epoch: an incomplete snapshot is rejected at persist
+        // time, not normalized on read.
         const { reviewInvocationPolicy: _ri, ...snapshotWithoutPolicy } = state.policySnapshot;
-        await writeState(sessDir, {
-          ...state,
-          policySnapshot: snapshotWithoutPolicy,
-        });
-
-        // First call: create obligation (CONTENT_ANALYSIS_REQUIRED)
-        const firstRaw = await review.execute(
-          { prNumber: 55, inputOrigin: 'pr', targetPaths: ['docs/test.md'] },
-          ctx,
-        );
-        const firstResult = parseToolResult(firstRaw);
-        expect(firstResult.code).toBe('CONTENT_ANALYSIS_REQUIRED');
-        const uuid = requiredString(firstResult.requiredReviewAttestation, 'toolObligationId');
-
-        // Second call: submit manual findings — should block because
-        // the missing reviewInvocationPolicy falls back to host_task_required.
-        const findings = buildAnalysisFindings('accept', uuid);
-        const raw = await review.execute(
-          { prNumber: 55, reviewFindings: findings as never, inputOrigin: 'pr' },
-          ctx,
-        );
-        const result = parseToolResult(raw);
-
-        expect(result.error).toBe(true);
-        expect(result.code).toBe('HOST_SUBAGENT_TASK_REQUIRED');
+        await expect(
+          writeState(sessDir, {
+            ...state,
+            policySnapshot: snapshotWithoutPolicy as typeof state.policySnapshot,
+          }),
+        ).rejects.toMatchObject({ code: 'SCHEMA_VALIDATION_FAILED' });
       });
     });
   });

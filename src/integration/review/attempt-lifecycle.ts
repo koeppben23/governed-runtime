@@ -22,22 +22,15 @@ import type {
   ReviewObligation,
   ReviewObligationType,
 } from '../../state/evidence.js';
+import { ensureReviewAssurance } from '../../state/review-continuation.js';
 import { resolveObservationRevisions } from './observation-access.js';
 
-export function emptyReviewAssurance(): ReviewAssuranceState {
-  return {
-    assuranceSchemaVersion: 'review-assurance.v5',
-    obligations: [],
-    invocations: [],
-    attempts: [],
-  };
-}
-
-export function ensureReviewAssurance(
-  assurance: ReviewAssuranceState | undefined,
-): ReviewAssuranceState {
-  return assurance ?? emptyReviewAssurance();
-}
+export {
+  emptyReviewAssurance,
+  ensureReviewAssurance,
+  findBindableAttempt,
+  latestReviewMaterial,
+} from '../../state/review-continuation.js';
 
 /**
  * Mint an opaque, attempt-bound observation capability. Cryptographically
@@ -168,19 +161,6 @@ export function createAttemptForExistingObligation(
   };
 }
 
-export function latestReviewMaterial(
-  assurance: ReviewAssuranceState,
-  obligationId: string,
-): ReviewMaterial | undefined {
-  for (let index = assurance.attempts.length - 1; index >= 0; index--) {
-    const attempt = assurance.attempts[index];
-    if (attempt?.obligationId === obligationId && attempt.reviewMaterial) {
-      return attempt.reviewMaterial;
-    }
-  }
-  return undefined;
-}
-
 export function appendReviewAttempt(
   assurance: ReviewAssuranceState,
   attempt: ReviewAttempt,
@@ -241,27 +221,6 @@ export function resolveEvidenceAuthorizingAttempt(
       EVIDENCE_AUTHORIZING_ATTEMPT_STATUSES.has(a.status),
   );
   return eligible.length === 1 ? eligible[0]! : null;
-}
-
-/**
- * The attempt a host Task can still be bound to for `obligationId`.
- *
- * Bindable means: created but not yet correlated with a reviewer child session,
- * and not superseded (`appendObligationWithAttempt` stales earlier attempts, so
- * at most one attempt per obligation qualifies). Returns the highest ordinal if
- * that invariant is ever violated, and null when no attempt can accept a
- * binding — callers must not fall back to an arbitrary attempt.
- */
-export function findBindableAttempt(
-  assurance: ReviewAssuranceState | undefined,
-  obligationId: string,
-): ReviewAttempt | null {
-  const base = ensureReviewAssurance(assurance);
-  const candidates = (base.attempts ?? []).filter(
-    (a) => a.obligationId === obligationId && a.status === 'created' && !a.childSessionId,
-  );
-  if (candidates.length === 0) return null;
-  return candidates.reduce((best, a) => (a.ordinal > best.ordinal ? a : best));
 }
 
 export function updateAttemptStatus(

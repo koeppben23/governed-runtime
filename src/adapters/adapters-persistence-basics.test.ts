@@ -60,7 +60,7 @@ import {
 } from './persistence.js';
 import { appendAuditEvent, readAuditTrail } from './persistence-audit.js';
 import type { SessionState } from '../state/schema.js';
-import type { AuditEvent, ReviewReport } from '../state/evidence.js';
+import type { AuditEvent, AuditEventBody, ReviewReport } from '../state/evidence.js';
 import { buildReviewReportCard } from '../presentation/review-report-card.js';
 import type { CompactProofPresentation } from '../presentation/proof-model.js';
 import { withTestEnv } from '../integration/test-helpers.js';
@@ -97,13 +97,14 @@ async function cleanTmpDir(dir: string): Promise<void> {
 }
 
 /** Create a minimal valid AuditEvent for persistence tests. */
-function makeValidAuditEvent(overrides: Partial<AuditEvent> = {}): AuditEvent {
+function makeValidAuditEvent(overrides: Partial<AuditEventBody> = {}): AuditEventBody {
   return {
     id: FIXED_UUID,
-    sessionId: FIXED_SESSION_UUID,
+    flowguardSessionId: FIXED_SESSION_UUID,
+    hostSessionId: 'ses_host_test',
     phase: 'PLAN',
     event: 'transition:PLAN_READY',
-    timestamp: FIXED_TIME,
+    occurredAt: FIXED_TIME,
     actor: 'machine',
     detail: { kind: 'transition', from: 'TICKET', to: 'PLAN' },
     ...overrides,
@@ -172,10 +173,10 @@ describe('persistence', () => {
       expect(loaded!.plan!.current.digest).toBe(state.plan!.current.digest);
     });
 
-    it('readState normalizes legacy regulated/team-ci snapshots to risk enforcement on', async () => {
+    it('readState rejects current-epoch states missing authority fields (no read-time defaulting)', async () => {
       for (const mode of ['regulated', 'team-ci'] as const) {
         const state = makeProgressedState('TICKET');
-        const legacy = {
+        const incomplete = {
           ...state,
           policySnapshot: {
             ...state.policySnapshot,
@@ -183,15 +184,34 @@ describe('persistence', () => {
             requestedMode: mode,
           },
         };
-        delete (legacy.policySnapshot as Record<string, unknown>).enforceRiskClassification;
-        delete (legacy.policySnapshot as Record<string, unknown>).allowRiskDowngradeOverride;
+        delete (incomplete.policySnapshot as Record<string, unknown>).enforceRiskClassification;
+        delete (incomplete.policySnapshot as Record<string, unknown>).allowRiskDowngradeOverride;
 
         await fs.mkdir(tmpDir, { recursive: true });
-        await fs.writeFile(statePath(tmpDir), JSON.stringify(legacy), 'utf-8');
-        const loaded = await readState(tmpDir);
+        await fs.writeFile(statePath(tmpDir), JSON.stringify(incomplete), 'utf-8');
 
-        expect(loaded?.policySnapshot.enforceRiskClassification).toBe(true);
-        expect(loaded?.policySnapshot.allowRiskDowngradeOverride).toBe(false);
+        await expect(readState(tmpDir)).rejects.toMatchObject({
+          code: 'SCHEMA_VALIDATION_FAILED',
+        });
+      }
+    });
+
+    it('readState rejects current-epoch states missing mutation/audit authority arrays', async () => {
+      for (const field of [
+        'mutationEpisodes',
+        'mutationEpisodeResolutions',
+        'pendingAuditOperations',
+      ]) {
+        const state = makeProgressedState('TICKET') as unknown as Record<string, unknown>;
+        const incomplete = { ...state };
+        delete incomplete[field];
+
+        await fs.mkdir(tmpDir, { recursive: true });
+        await fs.writeFile(statePath(tmpDir), JSON.stringify(incomplete), 'utf-8');
+
+        await expect(readState(tmpDir)).rejects.toMatchObject({
+          code: 'SCHEMA_VALIDATION_FAILED',
+        });
       }
     });
 
@@ -300,15 +320,15 @@ describe('persistence', () => {
       expect(events[1]!.event).toBe('transition:TICKET_SET');
     });
 
-    it('appendAuditEvent accepts OpenCode-style non-UUID session IDs', async () => {
+    it('appendAuditEvent accepts OpenCode-style non-UUID host session IDs', async () => {
       const event = makeValidAuditEvent({
-        sessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
+        hostSessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
       });
       await appendAuditEvent(tmpDir, event);
       const { events, skipped } = await readAuditTrail(tmpDir);
       expect(skipped).toBe(0);
       expect(events).toHaveLength(1);
-      expect(events[0]!.sessionId).toBe('ses_260740c65ffe77OjxRP7z40yH8');
+      expect(events[0]!.hostSessionId).toBe('ses_260740c65ffe77OjxRP7z40yH8');
     });
 
     it('writeState auto-creates parent directory', async () => {
@@ -376,7 +396,7 @@ describe('persistence', () => {
       try {
         await readState(tmpDir);
       } catch (err) {
-        expect((err as PersistenceError).code).toBe('SCHEMA_VALIDATION_FAILED');
+        expect((err as PersistenceError).code).toBe('SESSION_STATE_INCOMPATIBLE');
       }
     });
 
@@ -545,20 +565,33 @@ describe('persistence', () => {
 
   // ─── CORNER ─────────────────────────────────────────────────
   describe('CORNER', () => {
-    it('readAuditTrail skips malformed lines but reads valid ones', async () => {
+    it('readAuditTrail fails closed on malformed or legacy lines', async () => {
       await fs.mkdir(tmpDir, { recursive: true });
-      const validEvent = makeValidAuditEvent();
-      const content = [
-        JSON.stringify(validEvent),
-        'this is not json',
-        JSON.stringify({ invalid: 'schema' }),
-        JSON.stringify(makeValidAuditEvent({ id: '22222222-2222-4222-8222-222222222222' })),
-        '',
-      ].join('\n');
+      const content = ['this is not json', ''].join('\n');
       await fs.writeFile(auditPath(tmpDir), content, 'utf-8');
+      await expect(readAuditTrail(tmpDir)).rejects.toMatchObject({
+        code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+      });
+    });
+
+    it('readAuditTrail fails closed on valid JSON that is not an audit-chain.v3 record', async () => {
+      await fs.mkdir(tmpDir, { recursive: true });
+      await fs.writeFile(auditPath(tmpDir), JSON.stringify({ invalid: 'schema' }) + '\n', 'utf-8');
+      await expect(readAuditTrail(tmpDir)).rejects.toMatchObject({
+        code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+      });
+    });
+
+    it('readAuditTrail reads appended v3 records', async () => {
+      await fs.mkdir(tmpDir, { recursive: true });
+      await appendAuditEvent(tmpDir, makeValidAuditEvent());
+      await appendAuditEvent(
+        tmpDir,
+        makeValidAuditEvent({ id: '22222222-2222-4222-8222-222222222222' }),
+      );
       const { events, skipped } = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(2);
-      expect(skipped).toBe(2); // malformed JSON + valid JSON but invalid schema
+      expect(skipped).toBe(0);
     });
 
     it('readAuditTrail handles empty file', async () => {
@@ -602,7 +635,7 @@ describe('persistence', () => {
         makeState('TICKET', {
           id: FIXED_UUID,
           binding: {
-            sessionId: FIXED_SESSION_UUID,
+            hostSessionId: FIXED_SESSION_UUID,
             worktree: `/tmp/test-${i}`,
             fingerprint: 'a1b2c3d4e5f6a1b2c3d4e5f6',
             resolvedAt: FIXED_TIME,
@@ -665,37 +698,43 @@ describe('persistence', () => {
 
     // ── CORNER ──────────────────────────────────────────────
 
-    it('handles truncated last line (partial JSON)', async () => {
-      const validEvent = makeValidAuditEvent();
-      const content = [
-        JSON.stringify(validEvent),
-        '{"id":"00000000-0000-4000-8000', // truncated, no closing brace
-      ].join('\n');
+    it('fails closed on a truncated last line (partial JSON)', async () => {
+      await appendAuditEvent(tmpDir, makeValidAuditEvent());
+      const raw = await fs.readFile(auditPath(tmpDir), 'utf-8');
+      const content = raw + '{"id":"00000000-0000-4000-8000'; // truncated, no closing brace
       await fs.writeFile(auditPath(tmpDir), content, 'utf-8');
-      const { events, skipped } = await readAuditTrail(tmpDir);
-      expect(events).toHaveLength(1);
-      expect(skipped).toBe(1);
+      await expect(readAuditTrail(tmpDir)).rejects.toMatchObject({
+        code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+      });
     });
 
     it('ignores empty lines between valid events', async () => {
-      const e1 = JSON.stringify(makeValidAuditEvent({ event: 'first' }));
-      const e2 = JSON.stringify(
+      await appendAuditEvent(tmpDir, makeValidAuditEvent({ event: 'first' }));
+      await appendAuditEvent(
+        tmpDir,
         makeValidAuditEvent({
           id: '11111111-1111-4111-8111-111111111111',
           event: 'second',
         }),
       );
-      const content = [e1, '', '', e2, ''].join('\n');
-      await fs.writeFile(auditPath(tmpDir), content, 'utf-8');
+      const raw = await fs.readFile(auditPath(tmpDir), 'utf-8');
+      // Insert an empty line after every line (not just the first): the
+      // reader must tolerate blank lines between all valid v3 records.
+      await fs.writeFile(auditPath(tmpDir), raw.replace(/\n/g, '\n\n'), 'utf-8');
       const { events, skipped } = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(2);
       expect(skipped).toBe(0);
     });
 
     it('handles lines with leading and trailing whitespace', async () => {
-      const event = makeValidAuditEvent({ event: 'whitespace-test' });
-      const content = ['  ', `  ${JSON.stringify(event)}  `, '\t'].join('\n');
-      await fs.writeFile(auditPath(tmpDir), content, 'utf-8');
+      await appendAuditEvent(tmpDir, makeValidAuditEvent({ event: 'whitespace-test' }));
+      const raw = await fs.readFile(auditPath(tmpDir), 'utf-8');
+      const padded = raw
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => `  ${line}  `)
+        .join('\n');
+      await fs.writeFile(auditPath(tmpDir), padded, 'utf-8');
       const { events, skipped } = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(1);
       expect(events[0]!.event).toBe('whitespace-test');
@@ -709,69 +748,59 @@ describe('persistence', () => {
       expect(skipped).toBe(0);
     });
 
-    it('skips valid JSON that is not an AuditEvent (array)', async () => {
-      const validEvent = JSON.stringify(makeValidAuditEvent());
-      const content = [validEvent, '[1,2,3]', validEvent].join('\n');
-      await fs.writeFile(auditPath(tmpDir), content, 'utf-8');
-      const { events, skipped } = await readAuditTrail(tmpDir);
-      expect(events).toHaveLength(2);
-      expect(skipped).toBe(1);
+    it('fails closed on valid JSON that is not an audit-chain.v3 record (array)', async () => {
+      await appendAuditEvent(tmpDir, makeValidAuditEvent());
+      const raw = await fs.readFile(auditPath(tmpDir), 'utf-8');
+      await fs.writeFile(auditPath(tmpDir), raw + '[1,2,3]\n', 'utf-8');
+      await expect(readAuditTrail(tmpDir)).rejects.toMatchObject({
+        code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+      });
     });
 
-    it('skips valid JSON primitives (string, number, boolean)', async () => {
-      const validEvent = JSON.stringify(makeValidAuditEvent());
-      const content = ['"just a string"', validEvent, '42', 'true', validEvent].join('\n');
-      await fs.writeFile(auditPath(tmpDir), content, 'utf-8');
-      const { events, skipped } = await readAuditTrail(tmpDir);
-      expect(events).toHaveLength(2);
-      expect(skipped).toBe(3);
+    it('fails closed on valid JSON primitives (string, number, boolean)', async () => {
+      await appendAuditEvent(tmpDir, makeValidAuditEvent());
+      const raw = await fs.readFile(auditPath(tmpDir), 'utf-8');
+      await fs.writeFile(auditPath(tmpDir), '"just a string"\n' + raw + '42\ntrue\n', 'utf-8');
+      await expect(readAuditTrail(tmpDir)).rejects.toMatchObject({
+        code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+      });
     });
 
     // ── EDGE ─────────────────────────────────────────────────
 
     it('handles UTF-8 BOM at start of file', async () => {
-      const event = makeValidAuditEvent();
-      const json = JSON.stringify(event);
+      await appendAuditEvent(tmpDir, makeValidAuditEvent());
+      const raw = await fs.readFile(auditPath(tmpDir), 'utf-8');
       const bom = '\uFEFF';
-      await fs.writeFile(auditPath(tmpDir), bom + json + '\n', 'utf-8');
+      await fs.writeFile(auditPath(tmpDir), bom + raw, 'utf-8');
       const { events, skipped } = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(1);
       expect(skipped).toBe(0);
     });
 
-    it('counts skipped lines accurately with mixed content', async () => {
-      const valid = JSON.stringify(makeValidAuditEvent());
-      const content = [
-        valid,
-        'not json',
-        '{"invalid":"schema"}',
-        valid,
-        '',
-        valid,
-        '{truncated',
-      ].join('\n');
+    it('fails closed on mixed content with malformed and non-v3 lines', async () => {
+      await appendAuditEvent(tmpDir, makeValidAuditEvent());
+      const raw = await fs.readFile(auditPath(tmpDir), 'utf-8');
+      const content = raw + 'not json\n{"invalid":"schema"}\n{truncated\n';
       await fs.writeFile(auditPath(tmpDir), content, 'utf-8');
-      const { events, skipped } = await readAuditTrail(tmpDir);
-      expect(events).toHaveLength(3);
-      expect(skipped).toBe(3);
+      await expect(readAuditTrail(tmpDir)).rejects.toMatchObject({
+        code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+      });
     });
 
     // ── PERF ─────────────────────────────────────────────────
 
     it('handles large audit trail (500 events) correctly', async () => {
-      const lines: string[] = [];
       for (let i = 0; i < 500; i++) {
         const idSuffix = String(i).padStart(12, '0');
-        lines.push(
-          JSON.stringify(
-            makeValidAuditEvent({
-              id: `00000000-0000-4000-8000-${idSuffix}`,
-              event: `event_${i}`,
-            }),
-          ),
+        await appendAuditEvent(
+          tmpDir,
+          makeValidAuditEvent({
+            id: `00000000-0000-4000-8000-${idSuffix}`,
+            event: `event_${i}`,
+          }),
         );
       }
-      await fs.writeFile(auditPath(tmpDir), lines.join('\n'), 'utf-8');
       const { events, skipped } = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(500);
       expect(skipped).toBe(0);

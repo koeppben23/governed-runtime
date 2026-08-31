@@ -18,10 +18,12 @@ import {
   TOOL_FLOWGUARD_ARCHIVE,
   TOOL_FLOWGUARD_CONTINUE,
   TOOL_FLOWGUARD_DECISION,
+  TOOL_FLOWGUARD_EXTEND_IMPLEMENTATION_REVIEW,
   TOOL_FLOWGUARD_HELP,
   TOOL_FLOWGUARD_HYDRATE,
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_PLAN,
+  TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE,
   TOOL_FLOWGUARD_REVIEW,
   TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
   TOOL_FLOWGUARD_RUN_CHECK,
@@ -39,6 +41,7 @@ export type InstalledCommandId =
   | 'workflow.plan'
   | 'workflow.continue'
   | 'workflow.implement'
+  | 'workflow.extend-implementation-review'
   | 'workflow.resolve-implementation-challenge'
   | 'workflow.validate'
   | 'workflow.review-decision'
@@ -55,6 +58,7 @@ export type InstalledCommandId =
   | 'alias.export'
   | 'alias.why'
   | 'operational.finish'
+  | 'operational.reconcile-mutation-episode'
   | 'operational.help.context'
   | 'operational.help.commands'
   | 'operational.help.commands-all';
@@ -65,11 +69,13 @@ type ToolName =
   | typeof TOOL_FLOWGUARD_ARCHIVE
   | typeof TOOL_FLOWGUARD_CONTINUE
   | typeof TOOL_FLOWGUARD_DECISION
+  | typeof TOOL_FLOWGUARD_EXTEND_IMPLEMENTATION_REVIEW
   | typeof TOOL_FLOWGUARD_HELP
   | typeof TOOL_FLOWGUARD_HYDRATE
   | typeof TOOL_FLOWGUARD_IMPLEMENT
   | typeof TOOL_FLOWGUARD_PLAN
   | typeof TOOL_FLOWGUARD_REVIEW
+  | typeof TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE
   | typeof TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE
   | typeof TOOL_FLOWGUARD_RUN_CHECK
   | typeof TOOL_FLOWGUARD_STATUS
@@ -161,6 +167,19 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     visibility: 'primary',
     presentationGroup: 'work',
     description: 'Record implementation evidence for the approved plan.',
+  },
+  {
+    id: 'workflow.extend-implementation-review',
+    templateFile: 'extend-implementation-review.md',
+    invocation: '/extend-implementation-review',
+    kind: 'workflow',
+    target: {
+      toolName: TOOL_FLOWGUARD_EXTEND_IMPLEMENTATION_REVIEW,
+      workflowCommand: Command.EXTEND_IMPLEMENTATION_REVIEW,
+    },
+    visibility: 'compatibility',
+    presentationGroup: 'recovery',
+    description: 'Authorize a finite extension to an exhausted implementation review budget.',
   },
   {
     id: 'workflow.resolve-implementation-challenge',
@@ -348,6 +367,16 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     visibility: 'primary',
     presentationGroup: 'complete',
     description: 'Show completion readiness without changing the workflow.',
+  },
+  {
+    id: 'operational.reconcile-mutation-episode',
+    templateFile: 'reconcile-mutation-episode.md',
+    invocation: '/reconcile-mutation-episode',
+    kind: 'operational',
+    target: { toolName: TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE },
+    visibility: 'primary',
+    presentationGroup: 'recovery',
+    description: 'Resolve a host mutation episode whose outcome can never be observed.',
   },
   {
     id: 'operational.help.context',

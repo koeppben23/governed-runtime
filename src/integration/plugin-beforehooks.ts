@@ -1,8 +1,10 @@
 import { existsSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { readState } from '../adapters/persistence.js';
 import { workspacesHome } from '../adapters/workspace/index.js';
 import { buildEnforcementError } from './plugin-helpers.js';
 import { isMutatingHostTool, isHostToolAllowedInPhase } from './phase-tool-gate.js';
+import { isAllowedReworkContinuation } from './plugin-rework-continuation.js';
 import { isMutatingFlowGuardTool } from './tool-classification.js';
 import {
   enforceBeforeVerdict,
@@ -18,16 +20,28 @@ import {
   type ActiveCommandScope,
   type FlowGuardPluginRuntime,
 } from './plugin-shared.js';
-import { isFlowGuardVerdictTool } from './tool-names.js';
+import {
+  isFlowGuardVerdictTool,
+  TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
+} from './tool-names.js';
 import { runWithAdapterLoggerAsync } from '../logging/adapter-logger.js';
 import { runWithLogContextAsync } from '../logging/log-context.js';
 import type { SessionState } from '../state/schema.js';
+import { projectUnaddressedImplementationChallengeIds } from '../state/implementation-review-findings.js';
 import { enforceRiskClassificationBefore as enforceRiskBefore } from './plugin-risk.js';
 import { enforceDiscoveryHealthBefore } from './plugin-discovery-health.js';
 import { registerExecutedTaskPrompt } from './review/enforcement/execution-provenance.js';
+import type { ExecutedTaskPrompt } from './review/enforcement/types.js';
 import { resolveAttemptByCapability } from './review/observation-resolution.js';
 import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
 import { auditEnforcementDenied } from './plugin-audit.js';
+import { withSessionWriteLock } from '../adapters/persistence-lock.js';
+import { writeStateWithAuditOperationsAlreadyLocked } from './tools/audit-outbox.js';
+import { authorizeMutationEpisode } from '../state/evidence-mutation-episode.js';
+import { persistAuthorizedDispatch, rearmInterruptedReviewerDispatch } from './durable-dispatch.js';
+import { getRuntimeInstanceId } from './runtime-instance.js';
+import { acquireRuntimeLease } from './runtime-lease.js';
+import { enforceGitPrerequisiteBeforeMutation } from './plugin-git-gate.js';
 
 export async function commandBefore(
   runtime: FlowGuardPluginRuntime,
@@ -191,6 +205,13 @@ async function enforceBeforeRules(
     // (e.g. through a risk-gate block) would roll the monotonic operation
     // state backwards and corrupt the state↔audit digest binding.
     const freshState = await readFreshStateAfterReconcile(runtime, sessionId, hostResolution);
+    // Git prerequisite (#852): implementation evidence is git-derived, so a
+    // non-Git worktree can never bind this mutation into recordable evidence.
+    // Fail closed BEFORE any mutation dispatch is authorized (no
+    // MutationEpisode, no repository mutation) and before the risk gate, so
+    // the root cause surfaces as NOT_GIT_REPO (or the typed git diagnosis)
+    // instead of a misleading evidence-unavailable risk block.
+    await enforceGitPrerequisiteBeforeMutation(runtime.riskDeps, toolName);
     await enforceRiskBefore(runtime.riskDeps, hostResolution.sessDir, freshState, toolName, args);
     await enforceDiscoveryHealthBefore(
       runtime.discoveryHealthDeps,
@@ -198,7 +219,73 @@ async function enforceBeforeRules(
       freshState,
       toolName,
     );
+    await recordMutationDispatch(runtime, hostResolution.sessDir, callId, toolName);
   }
+}
+
+async function recordMutationDispatch(
+  runtime: FlowGuardPluginRuntime,
+  sessDir: string,
+  callId: string,
+  toolName: string,
+): Promise<void> {
+  if (!callId) {
+    throw buildEnforcementError(
+      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+      'A mutating host tool requires a host callID for durable dispatch authorization.',
+    );
+  }
+  await withSessionWriteLock(sessDir, async () => {
+    const state = await readState(sessDir);
+    if (!state) {
+      throw buildEnforcementError(
+        'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+        'FlowGuard session state disappeared before mutation dispatch authorization.',
+      );
+    }
+    // Fenced dispatch: a host mutation may only be authorized under the
+    // calling instance's live runtime lease. A live foreign lease blocks the
+    // dispatch — two runtimes must never govern one session concurrently.
+    const leaseAcquisition = await acquireRuntimeLease({
+      sessDir,
+      runtimeInstanceId: getRuntimeInstanceId(),
+      pid: process.pid,
+      now: new Date().toISOString(),
+    });
+    if (leaseAcquisition.kind === 'blocked') {
+      throw buildEnforcementError(
+        'MUTATION_EPISODE_LEASE_UNAVAILABLE',
+        `Session is governed by another live runtime instance (generation ${leaseAcquisition.lease.generation}). ` +
+          'The host mutation dispatch is blocked.',
+        {
+          activeLeaseGeneration: String(leaseAcquisition.lease.generation),
+        },
+      );
+    }
+    const result = authorizeMutationEpisode(state.mutationEpisodes, {
+      episodeId: randomUUID(),
+      hostCallId: callId,
+      toolName,
+      runtimeInstanceId: getRuntimeInstanceId(),
+      leaseGeneration: leaseAcquisition.lease.generation,
+      authorizedAt: new Date().toISOString(),
+    });
+    if (result.kind === 'replay_blocked') {
+      // A second Before with an already-seen hostCallId is a replay of an
+      // existing dispatch identity. Without a stable replay contract it is
+      // never idempotent success — the host call is blocked fail-closed.
+      throw buildEnforcementError(
+        'MUTATION_EPISODE_REPLAY_BLOCKED',
+        `hostCallId ${callId} already authorizes a host mutation dispatch for tool ${result.existing.toolName}. ` +
+          'The host call identity must be unique per dispatch.',
+        { hostCallId: callId, toolName, existingEpisodeId: result.existing.episodeId },
+      );
+    }
+    await writeStateWithAuditOperationsAlreadyLocked(sessDir, {
+      ...state,
+      mutationEpisodes: result.episodes,
+    });
+  });
 }
 
 async function readFreshStateAfterReconcile(
@@ -262,6 +349,10 @@ function updateCommandScope(
   sessionId: string,
   command: string,
 ): void {
+  // The rework-continuation latch belongs to exactly one /check invocation; a
+  // new command (including a fresh /check) resets it so a later repair only
+  // resumes after the next reviewer changes_requested verdict.
+  runtime.checkReworkContinuations.delete(sessionId);
   // Stryker disable next-line MethodExpression — equivalent: mutating the replace argument leaves already-normalized inputs unchanged; the '/check' normalization is covered by the scope test.
   const normalized = command.trim().replace(/^\/+/, '');
   const scope: ActiveCommandScope | undefined = normalized === 'check' ? 'check' : undefined;
@@ -270,6 +361,27 @@ function updateCommandScope(
     return;
   }
   runtime.activeCommandScopes.delete(sessionId);
+}
+
+async function readScopedState(
+  runtime: FlowGuardPluginRuntime,
+  sessionId: string,
+): Promise<SessionState | null> {
+  const sessDir = runtime.ws.getSessionDir(sessionId);
+  return sessDir ? await readState(sessDir) : null;
+}
+
+async function isAllowedInImplReview(
+  runtime: FlowGuardPluginRuntime,
+  toolName: string,
+  sessionId: string,
+): Promise<boolean> {
+  const reviewSurface =
+    toolName === 'flowguard_review_implementation' ||
+    toolName === 'task' ||
+    toolName === TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE;
+  if (!reviewSurface) return false;
+  return (await readScopedState(runtime, sessionId))?.phase === 'IMPL_REVIEW';
 }
 
 async function enforceCommandScope(
@@ -281,10 +393,11 @@ async function enforceCommandScope(
   if (scope !== 'check') return;
 
   const allowed = new Set(['flowguard_status', 'flowguard_run_check']);
-  if (toolName === 'flowguard_review_implementation' || toolName === 'task') {
-    const sessDir = runtime.ws.getSessionDir(sessionId);
-    const state = sessDir ? await readState(sessDir) : null;
-    if (state?.phase === 'IMPL_REVIEW') allowed.add(toolName);
+  if (await isAllowedInImplReview(runtime, toolName, sessionId)) {
+    allowed.add(toolName);
+  }
+  if (await isAllowedReworkContinuation(runtime, toolName, sessionId)) {
+    allowed.add(toolName);
   }
   if (allowed.has(toolName)) return;
 
@@ -296,6 +409,7 @@ async function enforceCommandScope(
   );
 }
 
+// eslint-disable-next-line complexity, max-lines-per-function -- the reviewer Task before-gate is one sequential fail-closed chain; splitting it would interleave the durable rearm recovery with the dispatch checks.
 async function enforceTaskBefore(
   runtime: FlowGuardPluginRuntime,
   toolName: string,
@@ -319,34 +433,82 @@ async function enforceTaskBefore(
       'subagent',
     );
     await enforceReviewerObligationCheck(runtime, sessionState, strictEnforcement);
+    enforceImplementationChallengeResolutionCheck(sessionState);
 
     // Pure authorization ends here. The durable audit outbox is reconciled
     // BEFORE the execution record is registered: a failed reconciliation must
     // not leave a phantom in-flight reviewer execution that blocks retries.
     await reconcileBeforeMutation(runtime, sessionId, toolName);
 
-    const execution = registerExecutedTaskPrompt(
+    const registered = registerExecutedTaskPrompt(
       eState,
       sessionState?.reviewAssurance,
       callId,
       args.prompt,
       new Date().toISOString(),
     );
-    if (execution.kind === 'blocked') {
-      throw buildEnforcementError('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE', execution.reason);
+    let gateAssurance = sessionState?.reviewAssurance;
+    let prompt: ExecutedTaskPrompt;
+    if (registered.kind === 'in_flight') {
+      // Before-without-After recovery: a prior reviewer Task registered its
+      // execution record but no after-hook ever consumed it. The spent attempt
+      // is re-armed durably — a NEW append-only attempt plus a NEW host call ID
+      // — so the in-flight phantom never blocks the obligation's liveness.
+      const rearmed = await rearmInterruptedReviewerDispatch(
+        runtime,
+        sessionId,
+        eState,
+        registered,
+      );
+      if (rearmed.kind === 'blocked') {
+        throw buildEnforcementError(
+          rearmed.code ?? 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+          rearmed.reason,
+        );
+      }
+      gateAssurance = rearmed.assurance;
+      const reRegistered = registerExecutedTaskPrompt(
+        eState,
+        rearmed.assurance,
+        callId,
+        args.prompt,
+        new Date().toISOString(),
+      );
+      if (reRegistered.kind !== 'ready') {
+        throw buildEnforcementError(
+          'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+          reRegistered.kind === 'blocked'
+            ? reRegistered.reason
+            : 're-armed attempt is still reported in-flight',
+        );
+      }
+      prompt = reRegistered.prompt;
+    } else if (registered.kind === 'ready') {
+      prompt = registered.prompt;
+    } else {
+      throw buildEnforcementError(
+        'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+        registered.reason,
+      );
     }
-    args.prompt = execution.prompt.canonicalPrompt;
+    // OpenCode validates Task arguments after this hook. These fields are
+    // transport metadata only; reviewer instructions always come from the
+    // canonical prompt injected below.
+    args.description = 'FlowGuard reviewer task';
+    args.prompt = prompt.canonicalPrompt;
 
     // Dispatch authority is the DURABLE attempt lifecycle (session assurance),
     // never the transient capture: a bare Task call cannot re-arm a rejected
     // attempt — only the originating FlowGuard command can re-issue one.
-    const result = enforceBeforeSubagentCall(
-      eState,
-      args,
-      strictEnforcement,
-      sessionState?.reviewAssurance,
-    );
-    if (result.allowed) return;
+    const result = enforceBeforeSubagentCall(eState, args, strictEnforcement, gateAssurance);
+    if (result.allowed) {
+      // Durable dispatch BEFORE host release: a crash between Before and
+      // After must never let the next runtime treat this attempt as never
+      // dispatched. The ledger entry is the restart-stable unknown-outcome
+      // signal that drives the append-only re-arm on the next dispatch.
+      await persistAuthorizedDispatch(runtime, sessionId, prompt);
+      return;
+    }
     eState.executedTaskPrompts.delete(callId);
     // Stryker disable next-line ObjectLiteral — diagnostic-only payload.
     runtime.log.warn('enforcement', 'blocked subagent call', {
@@ -396,6 +558,24 @@ async function enforceReviewerObligationCheck(
     pendingObligationCount: obligations.filter((o) => o.status === 'pending').length,
   });
   throw buildEnforcementError(obligationResult.code, obligationResult.reason);
+}
+
+/** Deny implementation reviewer dispatch until every open prior challenge has current-digest author evidence. */
+function enforceImplementationChallengeResolutionCheck(sessionState: SessionState | null): void {
+  const hasPendingImplementationObligation = sessionState?.reviewAssurance?.obligations.some(
+    (obligation) => obligation.obligationType === 'implement' && obligation.status === 'pending',
+  );
+  if (!hasPendingImplementationObligation) return;
+  const unaddressed = projectUnaddressedImplementationChallengeIds(
+    sessionState?.implReviewFindings,
+    sessionState?.challengeResolutions ?? [],
+    sessionState?.implementation?.digest,
+  );
+  if (unaddressed.length === 0) return;
+  throw buildEnforcementError(
+    'SUBAGENT_PRIOR_CHALLENGE_UNRESOLVED',
+    'Record current-digest author resolution evidence for every prior failing implementation challenge before dispatching the reviewer Task.',
+  );
 }
 
 async function resolveHostToolStateOrThrow(
@@ -499,13 +679,13 @@ function enforceHostToolPhase(
   });
   if (gateResult.allowed) return;
   // The denial reason is phase-specific only for HOST_TOOL_PHASE_DENIED (a
-  // mutating tool blocked in an investigation-only phase). HOST_TOOL_UNKNOWN_DENIED
+  // mutating tool blocked outside IMPLEMENTATION). HOST_TOOL_UNKNOWN_DENIED
   // is a phase-independent default-deny of an unrecognized host tool, so do not
-  // claim "investigation-only phase" for it.
+  // claim an implementation-phase restriction for it.
   // Stryker disable next-line ConditionalExpression,EqualityOperator — equivalent: the two denial codes are covered by dedicated phase/unknown tests; the ternary only selects the diagnostic label.
   const logMessage =
     gateResult.code === 'HOST_TOOL_PHASE_DENIED'
-      ? 'blocked host tool in investigation-only phase'
+      ? 'blocked host tool outside implementation phase'
       : 'blocked unknown host tool (default deny)';
   // Stryker disable next-line ObjectLiteral — diagnostic-only payload.
   runtime.log.warn('enforcement', logMessage, {

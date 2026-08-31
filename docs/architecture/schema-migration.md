@@ -1,17 +1,23 @@
 # Schema Migration Architecture
 
-**Status:** Design Proposal — Infrastructure not yet implemented
+**Status:** Superseded by the Assurance epoch decision (session state v2 +
+audit-chain.v3, hard rejection of legacy artifacts).
 **Version:** v1
 **Author:** FlowGuard Core Team
 **Governance:** Long-term schema evolution contract for audit archive integrity.
 
-> **Forward-looking content notice.** Sections 3–7 describe a planned design,
-> not current code. References below to `src/state/migration.ts`,
-> `SESSION_MIGRATIONS`, `migrateToCurrent()`, and the
-> `SESSION_MIGRATION_MISSING` reason code describe deliverables of the
-> proposed Phase 1 implementation. They do not exist in `src/` today; the
-> current state continues to be the hard-locked `z.literal('v1')` model
-> described in Section 2.
+> **Superseded.** The Assurance epoch deliberately replaces read-time
+> migration with a hard cutover: `SessionState.schemaVersion` is
+> `z.literal('v2')`, persisted audit records are strictly `audit-chain.v3`,
+> and any pre-v2 STATE is rejected with `SESSION_STATE_INCOMPATIBLE` at the
+> `readState` contract preflight (`src/adapters/persistence.ts`) while any
+> pre-v3 AUDIT record is rejected with `LEGACY_ASSURANCE_FORMAT_UNSUPPORTED`
+> at every audit persistence and verification boundary
+> (`src/adapters/persistence-audit.ts`, `src/audit/integrity.ts`). Legacy
+> artifacts are never migrated, reinterpreted, or re-sealed. This document is
+> retained for historical context only; the migration pipeline it proposes
+> (`src/state/migration.ts`, `SESSION_MIGRATIONS`, `migrateToCurrent()`) does
+> not exist and is not planned.
 
 ## 1. Problem Statement
 
@@ -38,7 +44,7 @@ change lands.
 
 | Schema                              | File                                                              | Lock Mechanism                                                |
 | ----------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------- |
-| `SessionState.schemaVersion`        | `src/state/schema.ts` (line ~255)                                 | `z.literal('v1')`                                             |
+| `SessionState.schemaVersion`        | `src/state/schema.ts` (line ~255)                                 | `z.literal('v2')` (Assurance epoch)                           |
 | `FlowGuardConfig.schemaVersion`     | `src/config/flowguard-config.ts` (line ~32)                       | `z.literal('v1')`                                             |
 | `PolicySnapshot` (embedded)         | `src/state/evidence-policy.ts` (`PolicySnapshotSchema`, line ~36) | Inherited from SessionState                                   |
 | `CentralPolicyBundle.schemaVersion` | `src/config/policy-types.ts` (line ~340)                          | Frozen literal                                                |

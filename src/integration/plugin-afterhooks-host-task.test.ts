@@ -39,6 +39,7 @@ import { computeRecordDigest } from '../state/evidence-plan.js';
 import { createTestContext } from '../testing.js';
 import { FIXED_TIME } from '../fixtures.js';
 import { hashText } from '../shared/hashing.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -46,6 +47,22 @@ const OBLIGATION_ID = '11111111-1111-4111-8111-111111111111';
 const ATTEMPT_ID = '11111111-2222-4111-8111-111111111111';
 const SUBJECT_DIGEST = 'host-task-plan-subject-digest';
 const CHILD_VALID = 'ses_child_valid_e2e';
+
+/** The claim declaration set the seeded plan carries — its digest is frozen on the obligation. */
+const PLAN_CLAIM_DECLARATIONS = {
+  flow: 'plan' as const,
+  version: 'v2' as const,
+  claims: [
+    {
+      claimId: 'a1b2c3d4-e5f6-7890-8abc-def123456789',
+      statement: 'The change preserves the intended behavior.',
+      critical: true,
+      authoritySectionId: 's1',
+      claimScope: 'specific_behavior' as const,
+      expectedCheckId: 'build',
+    },
+  ],
+};
 
 function createMockInput(overrides: Record<string, unknown> = {}) {
   return {
@@ -77,11 +94,14 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [
           {
             obligationId: OBLIGATION_ID,
             obligationType: 'plan',
+            requiredChallengeCount: 0,
+            requiredChallengeKind: 'design_challenge',
+            challengePolicyVersion: 'challenge-policy.v1',
             repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
             iteration: 0,
             planVersion: 1,
@@ -96,6 +116,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
             fulfilledAt: null,
             consumedAt: null,
             subjectDigest: SUBJECT_DIGEST,
+            claimDeclarationsDigest: hashText(canonicalJsonStringify(PLAN_CLAIM_DECLARATIONS)),
             reviewSubjectScope: {
               kind: 'artifact',
               artifact: {
@@ -124,6 +145,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
             createdAt: now,
           },
         ],
+        dispatches: [],
       },
     }),
   );
@@ -350,17 +372,28 @@ describe('reviewer host-task after-hook: extraction_invalid → sequential re-in
       expect(invocations[0]!.hostTaskCallId).toBe('call-2');
       expect(invocations[0]!.canonicalPromptDigest).toMatch(/^[a-f0-9]{64}$/);
       expect(invocations[0]!.modelPromptDigest).toMatch(/^[a-f0-9]{64}$/);
+
+      // The durable dispatch ledger closes both host calls as `completed` once
+      // their After is observed (call-1 succeeded in extraction? no — both
+      // Afters ran, so both ledger entries are `completed`).
+      const dispatches = afterSecond?.reviewAssurance?.dispatches ?? [];
+      expect(
+        dispatches.some((d) => d.dispatchStatus === 'completed' && d.hostCallId === 'call-1'),
+      ).toBe(true);
+      expect(
+        dispatches.some((d) => d.dispatchStatus === 'completed' && d.hostCallId === 'call-2'),
+      ).toBe(true);
     } finally {
       await ws.cleanup();
     }
   });
 
-  it('blocks a concurrent reviewer dispatch before either Task can bind the attempt', async () => {
+  it('re-arms a concurrent reviewer dispatch onto a NEW append-only attempt', async () => {
     const ws = await createTestWorkspace();
     try {
       await execFileAsync('git', ['init'], { cwd: ws.tmpDir });
       const sessionID = crypto.randomUUID();
-      await seedHostTaskPlanSession(ws.tmpDir, sessionID);
+      const sessDir = await seedHostTaskPlanSession(ws.tmpDir, sessionID);
       const hooks = await FlowGuardAuditPlugin(
         createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
       );
@@ -382,8 +415,17 @@ describe('reviewer host-task after-hook: extraction_invalid → sequential re-in
         beforeHook({ tool: 'task', sessionID, callID: 'call-b' }, { args: { ...reviewerArgs } }),
       ]);
 
-      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-      expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+      // Both dispatches are legal: the second is re-armed onto a fresh attempt
+      // instead of deadlocking the obligation's liveness.
+      expect(results.every((result) => result.status === 'fulfilled')).toBe(true);
+
+      const persisted = await readState(sessDir);
+      const attempts = persisted!.reviewAssurance!.attempts;
+      expect(attempts).toHaveLength(2);
+      expect(attempts.filter((attempt) => attempt.status === 'stale')).toHaveLength(1);
+      const rearmed = attempts.find((attempt) => attempt.status === 'created')!;
+      expect(rearmed.origin).toMatchObject({ kind: 'task_rearm', triggerReason: 'interrupted' });
+      expect(rearmed.childSessionId).toBeUndefined();
     } finally {
       await ws.cleanup();
     }
@@ -418,6 +460,7 @@ describe('reviewer host-task after-hook: extraction_invalid → sequential re-in
         reviewAssurance: {
           ...state!.reviewAssurance!,
           attempts: state!.reviewAssurance!.attempts.map((attempt) => ({
+            dispatches: [],
             ...attempt,
             status: 'bound' as const,
             childSessionId: CHILD_VALID,
@@ -698,18 +741,7 @@ describe('host-task evidence → plan certificate lineage', () => {
           history: [],
           reviewFindings: undefined,
           reviewCompletion: 'reviewer_accepted',
-          claimDeclarations: {
-            flow: 'plan' as const,
-            claims: [
-              {
-                claimId: 'a1b2c3d4-e5f6-7890-8abc-def123456789',
-                statement: 'The change preserves the intended behavior.',
-                critical: true,
-                authoritySectionId: 's1',
-                expectedCheckId: 'build',
-              },
-            ],
-          },
+          claimDeclarations: PLAN_CLAIM_DECLARATIONS,
         },
       });
 
@@ -725,9 +757,22 @@ describe('host-task evidence → plan certificate lineage', () => {
 
       const cert = approved.state.plan?.approvalCertificate;
       expect(cert).toBeDefined();
-      expect(cert!.reviewObligationId).toBe(OBLIGATION_ID);
-      expect(cert!.reviewEvidenceDigest).toBe(invocation?.findingsHash);
-      expect(cert!.reviewEvidenceDigest).toMatch(/^[0-9a-f]{64}$/);
+      expect(cert!.reviewBinding.kind).toBe('current_review');
+      expect(
+        cert!.reviewBinding.kind === 'current_review'
+          ? cert!.reviewBinding.reviewObligationId
+          : undefined,
+      ).toBe(OBLIGATION_ID);
+      expect(
+        cert!.reviewBinding.kind === 'current_review'
+          ? cert!.reviewBinding.reviewEvidenceDigest
+          : undefined,
+      ).toBe(invocation?.findingsHash);
+      expect(
+        cert!.reviewBinding.kind === 'current_review'
+          ? cert!.reviewBinding.reviewEvidenceDigest
+          : undefined,
+      ).toMatch(/^[0-9a-f]{64}$/);
     } finally {
       await ws.cleanup();
     }

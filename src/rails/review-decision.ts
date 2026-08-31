@@ -62,7 +62,12 @@ import {
   type ArchitectureReviewEvidenceResolution,
   type ResolvedPlanReviewEvidence,
 } from './review-evidence-resolution.js';
-import { enforcePlanReviewEvidence, planCertificatePatch } from './plan-review-evidence.js';
+import {
+  enforcePlanReviewEvidence,
+  planCertificatePatch,
+  planClaimDeclarationsDigest,
+} from './plan-review-evidence.js';
+import { countUnboundMutationEpisodes } from '../state/evidence-mutation-episode.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -272,14 +277,33 @@ function enforceApprovalIdentity(
   return verifyAssuranceThreshold(input, ctx);
 }
 
-/** Enforce ProofGraph only for the governed lifecycle's final evidence approval. */
+function rejectedCriticalClaimBlock(state: SessionState): RailBlocked | null {
+  const claim = state.plan?.claimSubmissionDiagnostics?.rejectedClaims.find(
+    (item) => item.disposition === 'rejected_blocking',
+  );
+  return claim
+    ? blocked('PROOFGRAPH_CLAIM_NOT_DECLARED', {
+        claimRef: claim.claimRef,
+        field: 'claim declaration',
+        detail: claim.reason,
+      })
+    : null;
+}
+
+/** Enforce ProofGraph only for governed plan and final evidence approval. */
 function enforceProofGraphEvidenceApproval(
   state: SessionState,
   input: ReviewDecisionInput,
 ): RailBlocked | null {
-  if (state.phase !== 'EVIDENCE_REVIEW' || input.verdict !== 'approve') {
+  if (
+    (state.phase !== 'PLAN_REVIEW' && state.phase !== 'EVIDENCE_REVIEW') ||
+    input.verdict !== 'approve'
+  ) {
     return null;
   }
+  const rejectedBlock = rejectedCriticalClaimBlock(state);
+  if (rejectedBlock) return rejectedBlock;
+  if (state.phase !== 'EVIDENCE_REVIEW') return null;
   const authorization = authorizedCriticalPlanClaimIds(state.plan);
   const decision = evaluateProofGraphGate({
     projection: state.proofGraph,
@@ -309,6 +333,27 @@ function enforceProofGraphEvidenceApproval(
     return blocked(registryCode, { claimIds: decision.blockingClaimIds.join(', ') });
   }
   return blocked(registryCode, undefined);
+}
+
+/**
+ * The final human approval is bound to the recorded implementation digest.
+ * Any unresolved dispatch or completed-but-unbound host mutation can have
+ * changed the worktree after that digest was captured. A fenced unknown-outcome
+ * resolution is historical provenance; fresh evidence is enforced separately
+ * by the canonical revalidation gate before review acceptance.
+ */
+function enforceMutationEpisodeEvidenceApproval(
+  state: SessionState,
+  input: ReviewDecisionInput,
+): RailBlocked | null {
+  if (state.phase !== 'EVIDENCE_REVIEW' || input.verdict !== 'approve') return null;
+  const unboundCount = countUnboundMutationEpisodes(
+    state.mutationEpisodes,
+    state.mutationEpisodeResolutions,
+  );
+  return unboundCount > 0
+    ? blocked('MUTATION_EPISODE_BINDING_REQUIRED', { count: String(unboundCount) })
+    : null;
 }
 
 /** Architecture approval requires a completed reviewer cycle, never a pending loop. */
@@ -437,7 +482,7 @@ function approvalCertificatePatch(
 /**
  * Approval preconditions: four-eyes, decision identity, architecture review
  * completion, architecture evidence coherence, plan evidence coherence, and
- * the ProofGraph gate. Resolves the architecture AND plan evidence ONCE per
+ * the ProofGraph gate, and mutation evidence binding. Resolves the architecture AND plan evidence ONCE per
  * decision operation; the same resolved bindings are returned to the caller
  * and used later by the certificate patch, so gate and mint can never disagree
  * within this operation.
@@ -466,17 +511,29 @@ function enforceApprovalPreconditions(
   const architectureEvidenceBlock = enforceArchitectureReviewEvidence(state, evidence);
   if (architectureEvidenceBlock)
     return { block: architectureEvidenceBlock, evidence, planEvidence: null };
-  // The plan resolution follows the recorded completion: exact-subject for
+  // The plan resolution follows the recorded completion: exact revision for
   // reviewer_accepted, latest-bound for review_exhausted (the gate then
-  // enforces reviewed==approved). Resolving is a pure read.
+  // enforces reviewed==approved). Both resolve against the SAME authority
+  // tuple — content digest + planVersion + claim declarations digest — so a
+  // review of an older revision with identical content can never win.
+  // Resolving is a pure read.
   const plan = state.plan;
   const planEvidence = plan
-    ? plan.reviewCompletion === 'review_exhausted'
-      ? resolveLatestPlanReviewEvidence(state)
-      : resolvePlanReviewEvidence(state, plan.current.digest)
+    ? (() => {
+        const authority = {
+          subjectDigest: plan.current.digest,
+          planVersion: plan.current.planVersion,
+          claimDeclarationsDigest: planClaimDeclarationsDigest(plan),
+        };
+        return plan.reviewCompletion === 'review_exhausted'
+          ? resolveLatestPlanReviewEvidence(state, authority)
+          : resolvePlanReviewEvidence(state, authority);
+      })()
     : null;
   const planEvidenceBlock = enforcePlanReviewEvidence(state, planEvidence);
   if (planEvidenceBlock) return { block: planEvidenceBlock, evidence, planEvidence };
+  const mutationEpisodeBlock = enforceMutationEpisodeEvidenceApproval(state, input);
+  if (mutationEpisodeBlock) return { block: mutationEpisodeBlock, evidence, planEvidence };
   const proofGraphBlock = enforceProofGraphEvidenceApproval(state, input);
   return { block: proofGraphBlock, evidence, planEvidence };
 }

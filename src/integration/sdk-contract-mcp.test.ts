@@ -173,10 +173,14 @@ describe('SDK Contract: MCP tool registry', () => {
       expect(props.reviewVerdict!.enum).toEqual(['accept', 'changes_requested']);
     });
 
-    it('flowguard_review_implementation reviewVerdict enum has 2 values', () => {
+    it('flowguard_review_implementation reviewVerdict enum has 3 values', () => {
       const schema = loadSchema('flowguard_review_implementation.json');
       const props = schema.properties as Record<string, Record<string, unknown>>;
-      expect(props.reviewVerdict!.enum).toEqual(['accept', 'changes_requested']);
+      expect(props.reviewVerdict!.enum).toEqual([
+        'accept',
+        'changes_requested',
+        'unable_to_review',
+      ]);
     });
   });
 

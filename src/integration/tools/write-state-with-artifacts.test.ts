@@ -120,7 +120,7 @@ describe('writeStateWithArtifacts — artifacts-first ordering', () => {
       expect(content.endsWith('\n')).toBe(true);
       const parsed = JSON.parse(content);
       expect(parsed.phase).toBe('READY');
-      expect(parsed.schemaVersion).toBe('v1');
+      expect(parsed.schemaVersion).toBe('v2');
     });
   });
 

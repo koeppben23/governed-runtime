@@ -219,7 +219,11 @@ describe('archive', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.status).toContain('archived');
-      expect(result.archiveStatus).toBe('not_verifiable');
+      expect(result).toMatchObject({
+        packagePurpose: 'sharing',
+        integrityCapability: 'not_verifiable',
+        verificationStatus: 'not_run',
+      });
       expect(String(result.status)).toContain('requires raw');
       expect(wsMock.verifyArchive).not.toHaveBeenCalled();
       expect(typeof result.archivePath).toBe('string');
@@ -237,12 +241,14 @@ describe('archive', () => {
           await import('../adapters/workspace/index.js');
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+        const priorState = await readState(sessDir);
         await appendAuditEvent(sessDir, {
           id: crypto.randomUUID(),
-          sessionId: ctx.sessionID,
+          flowguardSessionId: priorState!.flowguardSessionId,
+          hostSessionId: ctx.sessionID,
           phase: 'TICKET',
           event: 'test:sharing_secret',
-          timestamp: new Date().toISOString(),
+          occurredAt: new Date().toISOString(),
           actor: 'system',
           detail: { secret },
         });
@@ -259,7 +265,11 @@ describe('archive', () => {
         const rawResult = parseToolResult(
           await archive.execute({ redactionMode: 'none', includeRaw: true }, ctx),
         );
-        expect(rawResult.archiveStatus).toBe('verified');
+        expect(rawResult).toMatchObject({
+          packagePurpose: 'auditor',
+          integrityCapability: 'verifiable',
+          verificationStatus: 'passed',
+        });
         const { stdout: rawStateInArchive } = await promisify(execFile)('tar', [
           'xOf',
           rawResult.archivePath as string,
@@ -268,7 +278,11 @@ describe('archive', () => {
         expect(rawStateInArchive).toContain(secret);
 
         const sharingResult = parseToolResult(await archive.execute({}, ctx));
-        expect(sharingResult.archiveStatus).toBe('not_verifiable');
+        expect(sharingResult).toMatchObject({
+          packagePurpose: 'sharing',
+          integrityCapability: 'not_verifiable',
+          verificationStatus: 'not_run',
+        });
         const archivePath = sharingResult.archivePath as string;
         expect((await fs.readFile(archivePath)).includes(secret)).toBe(false);
 
@@ -317,13 +331,20 @@ describe('archive', () => {
 
         const result = parseToolResult(await archive.execute({}, ctx));
         const persisted = await readState(sessDir);
-        expect(result.archiveStatus).toBe('not_verifiable');
+        expect(result).toMatchObject({
+          packagePurpose: 'sharing',
+          integrityCapability: 'not_verifiable',
+          verificationStatus: 'not_run',
+        });
         expect((result.productNextAction as { text: string }).text).toContain(
           'redacted sharing archive',
         );
         expect(persisted?.archiveStatus).toBe('verified');
-        expect(persisted?.lastExportStatus).toBe('not_verifiable');
-        expect(persisted?.lastExportKind).toBe('redacted');
+        expect(persisted).toMatchObject({
+          lastExportPackagePurpose: 'sharing',
+          lastExportIntegrityCapability: 'not_verifiable',
+          lastExportVerificationStatus: 'not_run',
+        });
       },
     );
 
@@ -415,39 +436,40 @@ describe('archive', () => {
       },
     );
 
-    it.skipIf(!tarOk)(
-      'manual archive after a prior archive reports verified (status and archiveStatus agree)',
-      async () => {
-        await hydrateSession();
-        await ticket.execute({ text: 'Archive status consistency test', source: 'user' }, ctx);
-        await plan.execute({ planText: '## Plan\n1. Step', targetPaths: ['docs/test.md'] }, ctx);
+    it.skipIf(!tarOk)('manual auditor archive reports a passed verification outcome', async () => {
+      await hydrateSession();
+      await ticket.execute({ text: 'Archive status consistency test', source: 'user' }, ctx);
+      await plan.execute({ planText: '## Plan\n1. Step', targetPaths: ['docs/test.md'] }, ctx);
 
-        const {
-          computeFingerprint,
-          sessionDir: resolveSessionDir,
-          archiveSession,
-        } = await import('../adapters/workspace/index.js');
-        const fp = await computeFingerprint(ws.tmpDir);
-        const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
-        const state = await readState(sessDir);
-        await writeState(sessDir, { ...state!, phase: 'COMPLETE' });
+      const {
+        computeFingerprint,
+        sessionDir: resolveSessionDir,
+        archiveSession,
+      } = await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      await writeState(sessDir, { ...state!, phase: 'COMPLETE' });
 
-        // Prior explicit archive.
-        await archiveSession(fp.fingerprint, ctx.sessionID, {
-          redactionMode: 'none',
-          includeRaw: true,
-        });
+      // Prior explicit archive.
+      await archiveSession(fp.fingerprint, ctx.sessionID, {
+        redactionMode: 'none',
+        includeRaw: true,
+      });
 
-        // Manual /export now must not race to failed.
-        const result = parseToolResult(
-          await archive.execute({ redactionMode: 'none' as const, includeRaw: true }, ctx),
-        );
-        expect(result.error).toBeUndefined();
-        expect(result.archiveStatus).toBe('verified');
-        expect(String(result.status)).toContain('verified');
-        expect(String(result.status)).not.toContain('failed');
-      },
-    );
+      // Manual /export now must not race to failed.
+      const result = parseToolResult(
+        await archive.execute({ redactionMode: 'none' as const, includeRaw: true }, ctx),
+      );
+      expect(result.error).toBeUndefined();
+      expect(result).toMatchObject({
+        packagePurpose: 'auditor',
+        integrityCapability: 'verifiable',
+        verificationStatus: 'passed',
+      });
+      expect(String(result.status)).toContain('verified');
+      expect(String(result.status)).not.toContain('failed');
+    });
   });
 
   describe('BAD', () => {

@@ -35,6 +35,7 @@ import {
   type EventBody,
 } from '../types.js';
 import { canonicalJsonStringify, computeCanonicalEventDigest } from '../canonical-digest.js';
+import { stampChainSequence } from '../audit-test-helpers.js';
 import { verifyChain } from '../integrity.js';
 import type { TimestampEvidence } from '../../state/evidence.js';
 
@@ -49,7 +50,9 @@ import type { TimestampEvidence } from '../../state/evidence.js';
 export const IMPRINT_EXCLUDED_FIELDS: readonly string[] = [
   'chainHash',
   'prevHash',
-  'canonicalEventDigest',
+  'auditSequence',
+  'recordedAt',
+  'semanticEventDigest',
   'timestampEvidence',
 ];
 
@@ -106,7 +109,7 @@ function makeTimestamp(minute: number): string {
  *   detail.decision.{rationale,sequence,autoAdvanced}   (nested object)
  *   detail.tags[]                                       (array of scalars)
  *   actorInfo.verificationMeta.audience[]               (array of scalars, depth 3)
- *   timestampEvidence.tsa.* + canonicalEventDigest      (EXCLUDED fields present)
+ *   timestampEvidence.tsa.* + semanticEventDigest      (EXCLUDED fields present)
  */
 export function buildRichEvent(
   p: RichEventParams,
@@ -114,12 +117,12 @@ export function buildRichEvent(
 ): ChainedAuditEvent {
   const body: EventBody = {
     id: makeId(p.idHex),
-    sessionId: SESSION_ID,
+    flowguardSessionId: SESSION_ID,
     phase: p.phase,
     event: p.eventName,
-    timestamp: makeTimestamp(p.minute),
+    occurredAt: makeTimestamp(p.minute),
     actor: p.actor,
-    auditFormatVersion: 'audit-chain.v2',
+    auditFormatVersion: 'audit-chain.v3',
     actorInfo: {
       id: 'operator-1',
       email: null,
@@ -240,17 +243,24 @@ export function isExcludedPath(path: Path): boolean {
 }
 
 /**
- * P-A (C1): a single-event chain with one leaf mutated must fail verifyChain.
- * Uses the production verifier; covers all leaves incl. chainHash/prevHash.
+ * P-A (C1): a single-event chain with one CONTENT leaf mutated must fail
+ * verifyChain. Uses the production verifier; authority-field mutation
+ * coverage lives in the dedicated hash-authority unit tests.
  */
+/** Re-stamp the single-event chain position (1-based sequence authority). */
+function asStampedSingleEventChain(event: ChainedAuditEvent): Record<string, unknown> {
+  return stampChainSequence(event, 1) as unknown as Record<string, unknown>;
+}
+
+/** P-A (C1): a single-event chain with one leaf mutated must fail verifyChain. */
 export function mutatedChainVerifies(event: ChainedAuditEvent, path: Path): boolean {
   const tampered = mutateLeaf(event, path);
-  return verifyChain([tampered as unknown as Record<string, unknown>], { strict: true }).valid;
+  return verifyChain([asStampedSingleEventChain(tampered)], { strict: true }).valid;
 }
 
 /** Baseline: an untampered single-event chain must verify. */
 export function pristineChainVerifies(event: ChainedAuditEvent): boolean {
-  return verifyChain([event as unknown as Record<string, unknown>], { strict: true }).valid;
+  return verifyChain([asStampedSingleEventChain(event)], { strict: true }).valid;
 }
 
 /** C2 digest of an event (the value a TSA stamps as messageImprint). */

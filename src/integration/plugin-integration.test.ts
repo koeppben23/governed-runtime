@@ -41,7 +41,7 @@ import {
 } from '../adapters/workspace/index.js';
 import { verifyChain } from '../audit/integrity.js';
 import { makeState, makeProgressedState, POLICY_SNAPSHOT } from '../fixtures.js';
-import { Transition, type Phase } from '../state/schema.js';
+import { Transition, type Phase, type SessionState } from '../state/schema.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -99,7 +99,7 @@ beforeEach(async () => {
   const state = makeState('TICKET', {
     id: crypto.randomUUID(),
     binding: {
-      sessionId,
+      hostSessionId: sessionId,
       worktree: ws.tmpDir,
       fingerprint,
       resolvedAt: new Date().toISOString(),
@@ -199,15 +199,17 @@ async function getEvents() {
 
 async function persistTransition(
   transition: { from: string; to: string; event: string; at: string },
-  state = makeState(transition.to as Phase),
+  state?: SessionState,
 ) {
   const current = await readState(sessDir);
   const persistedTransition = Transition.parse(transition);
+  const base = state ?? makeState(transition.to as Phase, { id: current!.id });
   await writeStateWithArtifactsAndAuditOperations(
     sessDir,
     {
-      ...state,
+      ...base,
       id: current!.id,
+      flowguardSessionId: current!.id,
       binding: current!.binding,
       policySnapshot: current!.policySnapshot,
       transition: persistedTransition,
@@ -312,7 +314,7 @@ describe('plugin-integration', () => {
       await writeState(sessDir, {
         ...state,
         binding: {
-          sessionId,
+          hostSessionId: sessionId,
           worktree: ws.tmpDir,
           fingerprint,
           resolvedAt: new Date().toISOString(),
@@ -602,7 +604,7 @@ describe('plugin-integration', () => {
       const soloState = makeState('TICKET', {
         id: crypto.randomUUID(),
         binding: {
-          sessionId,
+          hostSessionId: sessionId,
           worktree: ws.tmpDir,
           fingerprint,
           resolvedAt: new Date().toISOString(),
@@ -667,7 +669,7 @@ describe('plugin-integration', () => {
       const customState = makeState('TICKET', {
         id: crypto.randomUUID(),
         binding: {
-          sessionId,
+          hostSessionId: sessionId,
           worktree: ws.tmpDir,
           fingerprint,
           resolvedAt: new Date().toISOString(),
@@ -822,7 +824,7 @@ describe('plugin-integration', () => {
       const state2 = makeState('TICKET', {
         id: crypto.randomUUID(),
         binding: {
-          sessionId: sessionId2,
+          hostSessionId: sessionId2,
           worktree: ws.tmpDir,
           fingerprint,
           resolvedAt: new Date().toISOString(),

@@ -54,16 +54,42 @@ describe('registerExecutedTaskPrompt', () => {
     expect(result).toMatchObject({ kind: 'ready', prompt: { attemptId: attempt.attemptId } });
   });
 
-  it('reserves an attempt for exactly one in-flight reviewer Task', () => {
-    const { enforcement, assurance } = setup();
+  it('reports a second dispatch of the same attempt as in-flight, not blocked', () => {
+    const { enforcement, assurance, obligation, attempt } = setup();
 
     const first = registerExecutedTaskPrompt(enforcement, assurance, 'call-a', PROMPT, NOW);
     const concurrent = registerExecutedTaskPrompt(enforcement, assurance, 'call-b', PROMPT, NOW);
 
     expect(first).toMatchObject({ kind: 'ready' });
-    expect(concurrent).toMatchObject({ kind: 'blocked' });
+    expect(concurrent).toMatchObject({
+      kind: 'in_flight',
+      obligationId: obligation.obligationId,
+      attemptId: attempt.attemptId,
+    });
     expect(enforcement.executedTaskPrompts).toHaveLength(1);
     expect(enforcement.executedTaskPrompts.has('call-a')).toBe(true);
+  });
+
+  it('reports in-flight after a restart: durable dispatch exists, transient map is empty', () => {
+    const { enforcement, assurance, obligation, attempt } = setup();
+    assurance.dispatches!.push({
+      dispatchId: randomUUID(),
+      attemptId: attempt.attemptId,
+      obligationId: obligation.obligationId,
+      hostCallId: 'call-old',
+      canonicalPromptDigest: createHash('sha256').update(PROMPT, 'utf8').digest('hex'),
+      dispatchAuthorizedAt: NOW,
+      dispatchStatus: 'authorized' as const,
+    });
+
+    const result = registerExecutedTaskPrompt(enforcement, assurance, 'call-new', PROMPT, NOW);
+
+    expect(result).toMatchObject({
+      kind: 'in_flight',
+      obligationId: obligation.obligationId,
+      attemptId: attempt.attemptId,
+    });
+    expect(enforcement.executedTaskPrompts).toHaveLength(0);
   });
 
   it('rejects missing and duplicate host call IDs without overwriting a reservation', () => {

@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { resolveActor, ActorClaimError } from '../../adapters/actor.js';
 import { readState, PersistenceError } from '../../adapters/persistence.js';
 import { changedFiles, hashWorktreeFiles } from '../../adapters/git.js';
+import { computeGitControlPlaneMarker } from '../git-control-plane.js';
 import { readConfig } from '../../adapters/persistence-config.js';
 import { initWorkspace, writeSessionPointer } from '../../adapters/workspace/index.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
@@ -59,6 +60,19 @@ async function captureBaselineDirtyFiles(
 }
 
 /**
+ * Freeze the git control-plane state at baseline time (#852). Fail-soft like
+ * the dirty-file baseline: undefined means implementation recording skips the
+ * control-plane divergence check instead of hardening.
+ */
+async function captureBaselineControlPlaneMarker(worktree: string): Promise<string | undefined> {
+  try {
+    return await computeGitControlPlaneMarker(worktree);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * The lock is intentionally held across discovery/git for the duration of the
  * transaction; the 10s acquisition timeout in the lock adapter is the
  * fail-closed compensation (mapped to SESSION_LOCK_CONTENDED by the caller).
@@ -76,6 +90,8 @@ async function runHydrate(args: HydrateArgs, context: ToolContext): Promise<Tool
     // unreadable, leave it undefined and implement records the full worktree.
     const baselineDirtyFiles =
       existing === null ? await captureBaselineDirtyFiles(worktree) : undefined;
+    const baselineControlPlaneMarker =
+      existing === null ? await captureBaselineControlPlaneMarker(worktree) : undefined;
     const policyContext = await resolveHydratePolicy(existing, config, args);
     getAdapterLogger().info('policy', 'policy_resolved', {
       sessionId: context.sessionID,
@@ -105,6 +121,7 @@ async function runHydrate(args: HydrateArgs, context: ToolContext): Promise<Tool
         actorInfo,
         args,
         baselineDirtyFiles,
+        baselineControlPlaneMarker,
       }),
       policyContext.ctx,
     );

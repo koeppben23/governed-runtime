@@ -39,15 +39,14 @@ export function isUsableWorktree(worktree: string | undefined): boolean {
   const normalized = path.resolve(worktree);
   if (normalized === '/' || /^[A-Za-z]:[\\/]?$/.test(normalized)) return false;
   try {
-    const gitPath = path.join(normalized, '.git');
-    if (!existsSync(gitPath)) return false;
-    const st = statSync(gitPath);
-    return st.isDirectory() || st.isFile();
+    if (!existsSync(normalized)) return false;
+    return statSync(normalized).isDirectory();
   } catch {
     return false;
   }
 }
 
+// eslint-disable-next-line max-lines-per-function -- plugin runtime composition wires the workspace, logger, config, and every hook dependency together in one factory.
 export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree }) => {
   const candidateWorktree = worktree || directory;
   const auditWorktree = isUsableWorktree(candidateWorktree) ? candidateWorktree : undefined;
@@ -103,6 +102,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
   const orchestratorDeps = createOrchestratorDeps(ws, log, typedClient, adapter);
   const toolTraceIds = new Map<string, string>();
   const activeCommandScopes = new Map<string, ActiveCommandScope>();
+  const checkReworkContinuations = new Set<string>();
   const auditDeps = createAuditDeps(
     ws,
     log,
@@ -131,6 +131,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     auditDeps,
     toolTraceIds,
     activeCommandScopes,
+    checkReworkContinuations,
     setCurrentSessionId: (sessionId) => {
       currentSessionId = sessionId;
     },

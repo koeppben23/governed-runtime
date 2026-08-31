@@ -32,7 +32,7 @@ names exactly in the `Protect main and develop` ruleset.
 
 From `.github/workflows/ci.yml`:
 
-- `ci-gate` (aggregates `unit` + `integration`)
+- `ci-gate` (aggregates `unit` + `coverage` + `integration-perf` + `provider-conformance`)
 - `typecheck`
 - `lint`
 - `format`
@@ -48,7 +48,11 @@ From `.github/workflows/ci.yml`:
 - `independent-review-e2e`
 
 The `format` check is the merge-blocking Prettier gate for both protected
-branches.
+branches. Mutation testing is deliberately NOT a PR gate: it runs on the
+scheduled/release cadence via `.github/workflows/mutation.yml` (the full-suite
+Stryker run is too expensive for per-PR execution; per-PR mutation was
+evaluated and rejected). The real-plugin mutation-episode E2E runs inside
+`coverage` (unit + integration projects on the final SHA).
 
 ## Solo Maintainer Review Model
 

@@ -107,11 +107,14 @@ async function seedSession(
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [
           {
             obligationId: OBLIGATION_ID,
             obligationType: 'plan',
+            requiredChallengeCount: 0,
+            requiredChallengeKind: 'design_challenge',
+            challengePolicyVersion: 'challenge-policy.v1',
             repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
             iteration: 0,
             planVersion: 1,
@@ -143,6 +146,7 @@ async function seedSession(
         ],
         invocations: [],
         attempts: [attempt],
+        dispatches: [],
       },
     }),
   );
@@ -514,10 +518,10 @@ describe('reviewer attempt lifecycle through the real hooks', () => {
         metadata: { sessionID: 'ses_child_lifecycle_rejected_1' },
       },
     );
-    // Third call: must be blocked — matchPendingReview returns null (retry exhausted)
+    // Third call: must be blocked because the shared repair budget exhausted the obligation.
     await expect(
       beforeHook({ tool: 'task', sessionID, callID: 'call-blocked' }, { args: reviewerArgs }),
-    ).rejects.toThrow('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
+    ).rejects.toThrow('REVIEWER_TASK_REQUIRES_PENDING_OBLIGATION');
 
     const state = await readState(sessDir);
     const attempts = state?.reviewAssurance?.attempts ?? [];

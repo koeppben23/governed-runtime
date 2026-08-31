@@ -51,6 +51,13 @@ describe('review profile freeze (Wave 1 — #730)', () => {
   describe('createReviewObligation freezes the profile before invocation', () => {
     it('defaults to the mandatory core baseline when no profile is supplied', () => {
       const obligation = createReviewObligation({
+        policySnapshot: {
+          challengePolicy: {
+            version: 'challenge-policy.v1',
+            counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+          },
+          maxReviewerOutputRepairAttempts: 1,
+        },
         obligationType: 'plan',
         repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
@@ -67,6 +74,13 @@ describe('review profile freeze (Wave 1 — #730)', () => {
 
     it('honors an explicitly frozen profile and source', () => {
       const obligation = createReviewObligation({
+        policySnapshot: {
+          challengePolicy: {
+            version: 'challenge-policy.v1',
+            counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+          },
+          maxReviewerOutputRepairAttempts: 1,
+        },
         obligationType: 'implement',
         iteration: 1,
         planVersion: 2,

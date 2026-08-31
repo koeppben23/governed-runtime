@@ -11,7 +11,7 @@ describe('evidence-binding', () => {
   describe('HAPPY', () => {
     it('BindingInfo parses valid binding with OpenCode-style session ID', () => {
       const binding = {
-        sessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
+        hostSessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
         worktree: '/tmp/test-repo',
         fingerprint: 'abcdef0123456789abcdef01',
         resolvedAt: FIXED_TIME,
@@ -24,7 +24,7 @@ describe('evidence-binding', () => {
     it('BindingInfo rejects unsafe session IDs', () => {
       expect(() =>
         BindingInfo.parse({
-          sessionId: '../etc/passwd',
+          hostSessionId: '../etc/passwd',
           worktree: '/tmp/test',
           fingerprint: 'abcdef0123456789abcdef01',
           resolvedAt: FIXED_TIME,
@@ -35,7 +35,7 @@ describe('evidence-binding', () => {
     it('BindingInfo rejects empty worktree', () => {
       expect(() =>
         BindingInfo.parse({
-          sessionId: 'ses_test',
+          hostSessionId: 'ses_test',
           worktree: '',
           fingerprint: 'abcdef0123456789abcdef01',
           resolvedAt: FIXED_TIME,
@@ -46,7 +46,7 @@ describe('evidence-binding', () => {
     it('BindingInfo rejects invalid fingerprint (wrong length)', () => {
       expect(() =>
         BindingInfo.parse({
-          sessionId: 'ses_test',
+          hostSessionId: 'ses_test',
           worktree: '/tmp/test',
           fingerprint: 'abc',
           resolvedAt: FIXED_TIME,
@@ -59,7 +59,7 @@ describe('evidence-binding', () => {
     it('BindingInfo rejects missing fingerprint', () => {
       expect(() =>
         BindingInfo.parse({
-          sessionId: 'ses_test',
+          hostSessionId: 'ses_test',
           worktree: '/tmp/test',
           resolvedAt: FIXED_TIME,
         }),
@@ -72,7 +72,7 @@ describe('evidence-binding', () => {
       // Valid 24-hex
       expect(() =>
         BindingInfo.parse({
-          sessionId: 'ses_test',
+          hostSessionId: 'ses_test',
           worktree: '/tmp/test',
           fingerprint: 'abcdef0123456789abcdef01',
           resolvedAt: FIXED_TIME,
@@ -81,7 +81,7 @@ describe('evidence-binding', () => {
       // Invalid: 23 chars
       expect(() =>
         BindingInfo.parse({
-          sessionId: 'ses_test',
+          hostSessionId: 'ses_test',
           worktree: '/tmp/test',
           fingerprint: 'abc',
           resolvedAt: FIXED_TIME,

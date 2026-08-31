@@ -111,6 +111,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
           lineageStatus: 'verified' as const,
         },
         history: [],
+        reviewCompletion: 'pending',
         reviewFindings: [],
       },
       selfReview: {
@@ -130,11 +131,14 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
         },
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [
           {
             obligationId,
             obligationType: 'plan',
+            requiredChallengeCount: 0,
+            requiredChallengeKind: 'design_challenge',
+            challengePolicyVersion: 'challenge-policy.v1',
             repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
             subjectDigest: 'test-subject-digest',
             iteration: 0,
@@ -172,6 +176,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
             createdAt: now,
           },
         ],
+        dispatches: [],
       },
     }),
   );

@@ -59,6 +59,8 @@ vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
   return {
     ...original,
+    isGitRepo: vi.fn().mockResolvedValue(true),
+    isGitRepoStrict: vi.fn().mockResolvedValue(true),
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
     changedFiles: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.changedFiles),
     listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
@@ -824,6 +826,7 @@ describe('e2e-workflow', () => {
       await callOk(plan, {
         reviewVerdict: 'changes_requested',
         planText: '## Revised Plan\n1. Concrete step A\n2. Concrete step B',
+        claims: [],
         targetPaths: ['docs/test.md'],
       });
 
@@ -1340,7 +1343,7 @@ describe('ProofGraph demo fixtures', () => {
     expect(after!.proofContract?.claims[1]?.provenance).not.toHaveProperty('approval');
   });
 
-  it('rejects a plan claim with mutationProfile when no proving mutation provider exists', async () => {
+  it('persists a plan claim with mutationProfile but no proving provider as rejected_blocking', async () => {
     await fs.writeFile(`${ws.tmpDir}/mvnw`, '#!/bin/sh\necho "mvnw"', 'utf-8');
     await fs.chmod(`${ws.tmpDir}/mvnw`, 0o755);
     await fs.writeFile(
@@ -1350,7 +1353,7 @@ describe('ProofGraph demo fixtures', () => {
     );
     await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
     await callOk(ticket, { text: 'Demonstrate ProofGraph evidence.', source: 'user' });
-    const blocked = parseToolResult(
+    const result = parseToolResult(
       await plan.execute(
         {
           planText: PLAN_TEXT,
@@ -1359,7 +1362,13 @@ describe('ProofGraph demo fixtures', () => {
         ctx,
       ),
     );
-    expect(blocked.error).toBe(true);
-    expect(blocked.code).toBe('PROOFGRAPH_CLAIM_UNSATISFIABLE');
+    expect(result.error).toBeUndefined();
+    expect(result.claimSubmissionDiagnostics).toMatchObject({
+      rejectedClaims: [{ disposition: 'rejected_blocking' }],
+    });
+    const state = await readState(await getSessDir());
+    expect(state!.plan).not.toBeNull();
+    expect(state!.plan!.claimDeclarations?.claims).toHaveLength(0);
+    expect(state!.plan!.claimSubmissionDiagnostics!.rejectedClaims).toHaveLength(1);
   });
 });

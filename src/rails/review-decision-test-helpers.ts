@@ -3,7 +3,10 @@
  * Import target only — never executed as a test suite.
  */
 
-import type { ReviewAssuranceState } from '../state/evidence-review.js';
+import {
+  REVIEW_ASSURANCE_SCHEMA_VERSION,
+  type ReviewAssuranceState,
+} from '../state/evidence-review.js';
 
 export const ARCH_OBLIGATION_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 export const ARCH_INVOCATION_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -15,12 +18,15 @@ export interface AssuranceEntry {
   status: 'fulfilled' | 'consumed' | 'pending';
   iteration?: number;
   createdAt?: string;
+  /** Plan version the obligation reviewed (default 1 — PLAN_RECORD's version). */
+  planVersion?: number;
   /** `null` = obligation without linkage; `undefined` = no invocation entry. */
   invocationId?: string | null;
   findingsHash?: string;
   invokedAt?: string;
   consumedByObligationId?: string | null;
   capturedVerdict?: string;
+  claimDeclarationsDigest?: string;
 }
 
 /** Arbitrary assurance chains for resolver tests (one obligation per entry). */
@@ -33,7 +39,7 @@ export function assuranceChain(entries: AssuranceEntry[]): ReviewAssuranceState 
       obligationId: e.obligationId,
       obligationType: e.obligationType ?? 'architecture',
       iteration: e.iteration ?? 0,
-      planVersion: 1,
+      planVersion: e.planVersion ?? 1,
       criteriaVersion: 'criteria-v1',
       mandateDigest: 'm'.repeat(64),
       createdAt,
@@ -46,6 +52,10 @@ export function assuranceChain(entries: AssuranceEntry[]): ReviewAssuranceState 
       fulfilledAt: createdAt,
       consumedAt: e.status === 'consumed' ? createdAt : null,
       subjectDigest,
+      requiredChallengeCount: 0,
+      requiredChallengeKind: 'design_challenge',
+      challengePolicyVersion: 'challenge-policy.v1',
+      ...(e.claimDeclarationsDigest ? { claimDeclarationsDigest: e.claimDeclarationsDigest } : {}),
       reviewMaterial: {
         content: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
         materialDigest: 'material-digest-of-architecture-review',
@@ -92,5 +102,11 @@ export function assuranceChain(entries: AssuranceEntry[]): ReviewAssuranceState 
         reviewAssuranceLevel: 'structured_high',
       };
     });
-  return { assuranceSchemaVersion: 'review-assurance.v5', obligations, invocations, attempts: [] };
+  return {
+    assuranceSchemaVersion: REVIEW_ASSURANCE_SCHEMA_VERSION,
+    obligations,
+    invocations,
+    attempts: [],
+    dispatches: [],
+  };
 }

@@ -45,6 +45,7 @@ import {
   archive,
 } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
+import { appendReviewDispatch } from '../state/review-dispatch.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import * as persistence from '../adapters/persistence.js';
 import {
@@ -287,6 +288,93 @@ describe('plan', () => {
       expect(result.selfReviewIteration).toBe(0);
     });
 
+    it('admits valid claims while recording an unsupported non-critical suite claim as diagnostic', async () => {
+      await hydrateAndTicket();
+      const sessionDir = await currentSessionDir();
+      const state = await readState(sessionDir);
+      await writeState(sessionDir, {
+        ...state!,
+        activeChecks: ['test'],
+        verificationCandidates: [
+          {
+            assertionCapability: 'structured',
+            kind: 'test',
+            command: 'npm test',
+            source: 'package.json:scripts.test',
+            confidence: 'high',
+            reason: 'repo test script',
+            assertionReport: {
+              collection: 'snapshot_diff',
+              transport: 'file',
+              format: 'junit_xml',
+              providerId: 'junit',
+              standardPatterns: ['reports/TEST-*.xml'],
+            },
+          },
+        ],
+      });
+
+      const raw = await plan.execute(
+        {
+          planText: '## Plan\n1. Fix missing task updates',
+          claims: [
+            {
+              statement: 'missing task updates return 404',
+              critical: true,
+              claimScope: 'specific_behavior',
+              expectedCheckId: 'test',
+              authoritySectionId: 'step-1',
+              counterexampleRequirement: {
+                kind: 'assertion',
+                checkId: 'test',
+                assertion: {
+                  providerId: 'junit',
+                  localId: 'TaskControllerTest#update_taskNotFound_returns404',
+                },
+              },
+            },
+            {
+              statement: 'the repository test suite passes',
+              critical: true,
+              claimScope: 'suite',
+              expectedCheckId: 'test',
+              authoritySectionId: 'step-1',
+            },
+          ],
+          targetPaths: ['docs/test.md'],
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.claimSubmissionDiagnostics).toMatchObject({
+        rejectedClaims: [
+          {
+            statement: 'the repository test suite passes',
+            disposition: 'rejected_blocking',
+            code: 'PROOFGRAPH_CLAIM_NOT_DECLARED',
+          },
+        ],
+      });
+      expect((result.presentation as { markdown: string }).markdown).toContain(
+        '## Declarations not admitted',
+      );
+      expect((result.presentation as { markdown: string }).markdown).toContain('## Next action');
+
+      const persisted = await readState(sessionDir);
+      expect(persisted?.plan?.claimDeclarations?.claims).toHaveLength(1);
+      expect(persisted?.plan?.claimDeclarations?.claims[0]?.statement).toBe(
+        'missing task updates return 404',
+      );
+      expect(persisted?.plan?.claimSubmissionDiagnostics?.rejectedClaims).toHaveLength(1);
+      expect(persisted?.plan?.claimSubmissionHistory).toMatchObject([
+        {
+          planVersion: 1,
+          rejectedClaims: [{ statement: 'the repository test suite passes' }],
+        },
+      ]);
+    });
+
     it('Mode B: approve converges after mandatory subagent review', async () => {
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
@@ -310,6 +398,7 @@ describe('plan', () => {
         {
           reviewVerdict: 'changes_requested',
           planText: '## Revised Plan\n1. Better approach',
+          claims: [],
           reviewFindings,
           targetPaths: ['docs/test.md'],
         },
@@ -329,6 +418,7 @@ describe('plan', () => {
         {
           reviewVerdict: 'changes_requested',
           planText: '## Revised Plan\n1. Better approach',
+          claims: [],
           reviewFindings,
           targetPaths: ['docs/test.md'],
         },
@@ -456,6 +546,68 @@ describe('plan', () => {
       const changed = parseToolResult(changedRaw);
       expect(changed.error).toBe(true);
       expect(changed.code).toBe('REVIEW_SUBJECT_CHANGED_WHILE_PENDING');
+    });
+
+    it('re-arms a restarted reviewer dispatch on /plan re-invocation across a fresh process', async () => {
+      await hydrateAndTicket();
+      const firstRaw = await plan.execute(
+        { planText: '## Plan', targetPaths: ['docs/test.md'] },
+        ctx,
+      );
+      const first = parseToolResult(firstRaw);
+      expect(first.phase).toBe('PLAN');
+      const obligationId = first.reviewObligationId as string;
+      const spentAttemptId = first.reviewAttemptId as string;
+
+      // Simulate a crash/restart between the reviewer Task's Before and After:
+      // a durable `authorized` dispatch is recorded for the bindable A1, while
+      // the transient enforcement state (pendingReviews/executedTaskPrompts) is
+      // empty — this test's workspace is freshly created, so it already is.
+      // The spent attempt is still bindable (created, no child session) yet its
+      // durable dispatch outcome is unresolved.
+      const sessDir = await currentSessionDir();
+      const preCrash = (await readState(sessDir))!;
+      await writeState(sessDir, {
+        ...preCrash,
+        reviewAssurance: appendReviewDispatch(preCrash.reviewAssurance, {
+          dispatchId: crypto.randomUUID(),
+          attemptId: spentAttemptId,
+          obligationId,
+          hostCallId: 'call-old',
+          canonicalPromptDigest: 'a'.repeat(64),
+          dispatchAuthorizedAt: new Date().toISOString(),
+          dispatchStatus: 'authorized',
+        }),
+      });
+
+      // Re-invoke /plan in the fresh process: the durable resolver MUST detect
+      // the unresolved dispatch (interrupted_dispatch), NOT re-emit awaiting_task
+      // for the spent attempt.
+      const raw = await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).not.toBe(true);
+      expect(result.phase).toBe('PLAN');
+      expect(result.reviewObligationId).toBe(obligationId);
+      const rearmedAttemptId = result.reviewAttemptId as string;
+      expect(rearmedAttemptId).not.toBe(spentAttemptId);
+
+      // Durable outcome: A1 staled + dispatch outcome_unknown; A2 minted with
+      // origin task_rearm/interrupted on the SAME obligation (never a fresh
+      // obligation, never a re-bind of the spent attempt).
+      const after = (await readState(sessDir))!;
+      const attempts = after.reviewAssurance!.attempts;
+      const spent = attempts.find((a) => a.attemptId === spentAttemptId)!;
+      const rearmed = attempts.find((a) => a.attemptId === rearmedAttemptId)!;
+      expect(spent.status).toBe('stale');
+      expect(rearmed.origin.kind).toBe('task_rearm');
+      expect(rearmed.origin).toMatchObject({
+        predecessorAttemptId: spentAttemptId,
+        triggerReason: 'interrupted',
+      });
+      const dispatch = after.reviewAssurance!.dispatches.find(
+        (d) => d.attemptId === spentAttemptId,
+      );
+      expect(dispatch?.dispatchStatus).toBe('outcome_unknown');
     });
 
     it('blocks verdict before any plan exists with PLAN_SUBMISSION_REQUIRED', async () => {
@@ -644,6 +796,7 @@ describe('plan', () => {
           {
             reviewVerdict: 'changes_requested',
             planText: `## Revised plan ${k}`,
+            claims: [],
             reviewFindings: findings,
             targetPaths: ['docs/test.md'],
           },
@@ -698,14 +851,15 @@ describe('plan', () => {
       expect(reviewed!.subjectDigest).not.toBe(state!.plan!.current.digest);
     });
 
-    it('TEAM: human approve of the force-converged plan blocks on subject divergence (CE5)', async () => {
+    it('TEAM: human approve of the force-converged plan blocks when the last review covered a prior plan version (CE5/P2)', async () => {
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
       await exhaustPlanReviews(3);
 
       // The last independent review covered the PRIOR plan revision; the final
-      // revision was never reviewed. An exhaustion override may only release
-      // the exact subject the last review covered — approve must fail closed.
+      // revision was never reviewed. Resolution binds the exact
+      // subjectDigest+planVersion+claimDeclarationsDigest tuple, so no
+      // current-version evidence exists — approve must fail closed.
       recordUserDecision('approve');
       const decisionResult = parseToolResult(
         await decision.execute(
@@ -714,7 +868,7 @@ describe('plan', () => {
         ),
       );
       expect(decisionResult.error).toBe(true);
-      expect(decisionResult.code).toBe('PLAN_REVIEW_OVERRIDE_SUBJECT_MISMATCH');
+      expect(decisionResult.code).toBe('PLAN_REVIEW_EVIDENCE_REQUIRED');
       const state = await readState(await currentSessionDir());
       expect(state!.phase).toBe('PLAN_REVIEW');
       expect(state!.plan?.approvalCertificate).toBeUndefined();
@@ -781,6 +935,24 @@ describe('plan', () => {
       expect(result.code).toBe('REVISED_PLAN_REQUIRED');
     });
 
+    it('Mode B changes_requested requires replacement claims', async () => {
+      await hydrateAndTicket();
+      await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
+      const reviewFindings = await fulfillPlanReview(0, 'changes_requested');
+      const raw = await plan.execute(
+        {
+          reviewVerdict: 'changes_requested',
+          planText: '## Revised Plan',
+          reviewFindings,
+          targetPaths: ['docs/test.md'],
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVISED_PLAN_CLAIMS_REQUIRED');
+    });
+
     it('Mode B uses mandatory subagent review even when old snapshots are weakened', async () => {
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
@@ -790,6 +962,7 @@ describe('plan', () => {
         {
           reviewVerdict: 'changes_requested',
           planText: '## Revised Plan',
+          claims: [],
           reviewFindings,
           targetPaths: ['docs/test.md'],
         },
@@ -813,7 +986,7 @@ describe('plan', () => {
         ...state!,
         policySnapshot: {
           ...state!.policySnapshot,
-          selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+          selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
         },
       });
 
@@ -1177,6 +1350,13 @@ describe('plan', () => {
 
     function producerObligation(deps: Dependencies, subjectDigest: string) {
       return deps.createReviewObligation({
+        policySnapshot: {
+          challengePolicy: {
+            version: 'challenge-policy.v1',
+            counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+          },
+          maxReviewerOutputRepairAttempts: 1,
+        },
         obligationType: 'plan',
         iteration: 0,
         planVersion: 1,
@@ -1248,10 +1428,11 @@ describe('plan', () => {
       const obligation = producerObligation(deps, 'plan-digest-reviewed');
       const findings = findingsFor(deps, obligation);
       const assuranceState = {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [obligation],
         invocations: [invocationFor(deps, obligation, findings, obligation.obligationId)],
         attempts: [],
+        dispatches: [],
       };
       const summary = deps.latestPlanReviewSummary(assuranceState, findings, 1);
       expect(summary.reviewedDigest).toBe('plan-digest-reviewed');
@@ -1265,10 +1446,11 @@ describe('plan', () => {
       const obligation = producerObligation(deps, 'plan-digest-unbound');
       const findings = findingsFor(deps, obligation);
       const assuranceState = {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [obligation],
         invocations: [],
         attempts: [],
+        dispatches: [],
       };
       const summary = deps.latestPlanReviewSummary(assuranceState, findings, 1);
       expect(summary.reviewedDigest).toBeUndefined();

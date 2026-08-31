@@ -80,6 +80,27 @@ export type ClaimContractResult =
       readonly detail: string;
     };
 
+export interface ClaimContractRejectedDeclaration {
+  readonly claim: NormalizedClaimDeclaration;
+  readonly index: number;
+  readonly result: Extract<ClaimContractResult, { kind: 'invalid' }>;
+}
+
+/**
+ * Classification used by write boundaries with an explicit partial-acceptance
+ * policy. Set-level invariants are never repaired by accepting one declaration
+ * and dropping another.
+ */
+export interface ClaimContractBatchResult {
+  readonly accepted: readonly {
+    readonly claim: NormalizedClaimDeclaration;
+    readonly index: number;
+  }[];
+  readonly rejectedNonBlocking: readonly ClaimContractRejectedDeclaration[];
+  readonly rejectedBlocking: readonly ClaimContractRejectedDeclaration[];
+  readonly setViolations: readonly Extract<ClaimContractResult, { kind: 'invalid' }>[];
+}
+
 /** Public field names per write boundary; diagnostics never leak internal names. */
 const FIELD_LABELS: Readonly<Record<ClaimContractSource, Readonly<Record<string, string>>>> = {
   plan: {
@@ -489,18 +510,68 @@ export function validateProofClaimContract(input: ClaimContractInput): ClaimCont
   if (duplicate) return duplicate;
 
   for (const claim of input.claims) {
-    const violation =
-      checkCriticalContract(input, claim) ??
-      checkCheckReferences(input, claim) ??
-      checkRegistries(input, claim) ??
-      checkMutationSatisfiability(input, claim) ??
-      checkAuthoritySection(input, claim) ??
-      checkSuitePositiveSatisfiability(input, claim) ??
-      checkCounterexampleScope(input, claim) ??
-      checkCounterexampleSatisfiability(input, claim);
+    const violation = claimViolations(input, claim)[0];
     if (violation) return violation;
   }
   return { kind: 'ok' };
+}
+
+function claimViolations(
+  input: ClaimContractInput,
+  claim: NormalizedClaimDeclaration,
+): Extract<ClaimContractResult, { kind: 'invalid' }>[] {
+  return [
+    checkCriticalContract(input, claim),
+    checkCheckReferences(input, claim),
+    checkRegistries(input, claim),
+    checkMutationSatisfiability(input, claim),
+    checkAuthoritySection(input, claim),
+    checkSuitePositiveSatisfiability(input, claim),
+    checkCounterexampleScope(input, claim),
+    checkCounterexampleSatisfiability(input, claim),
+  ].filter(
+    (violation): violation is Extract<ClaimContractResult, { kind: 'invalid' }> =>
+      violation !== null,
+  );
+}
+
+/**
+ * Classify a declaration batch without choosing a write-boundary policy.
+ *
+ * Only non-critical claims that are structurally unsatisfiable may be omitted
+ * by a caller that explicitly opts into partial acceptance. Incomplete
+ * contracts and all set-level violations remain blocking.
+ */
+export function classifyProofClaimContract(input: ClaimContractInput): ClaimContractBatchResult {
+  const duplicate = checkUniqueIdentity(input);
+  if (duplicate?.kind === 'invalid') {
+    return {
+      accepted: [],
+      rejectedNonBlocking: [],
+      rejectedBlocking: [],
+      setViolations: [duplicate],
+    };
+  }
+
+  const accepted: { claim: NormalizedClaimDeclaration; index: number }[] = [];
+  const rejectedNonBlocking: ClaimContractRejectedDeclaration[] = [];
+  const rejectedBlocking: ClaimContractRejectedDeclaration[] = [];
+  for (const [index, claim] of input.claims.entries()) {
+    const violations = claimViolations(input, claim);
+    if (violations.length === 0) {
+      accepted.push({ claim, index });
+      continue;
+    }
+    const result =
+      violations.find((violation) => violation.failureKind !== 'unsatisfiable') ?? violations[0]!;
+    const rejected = { claim, index, result };
+    if (result.failureKind === 'unsatisfiable' && !claim.critical) {
+      rejectedNonBlocking.push(rejected);
+    } else {
+      rejectedBlocking.push(rejected);
+    }
+  }
+  return { accepted, rejectedNonBlocking, rejectedBlocking, setViolations: [] };
 }
 
 /**

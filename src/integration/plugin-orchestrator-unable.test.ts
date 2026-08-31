@@ -177,6 +177,7 @@ function buildSessionState() {
         lineageStatus: 'verified' as const,
       },
       history: [],
+      reviewCompletion: 'pending',
     },
     ticket: {
       text: 'ticket text',
@@ -186,11 +187,14 @@ function buildSessionState() {
       inputOrigin: 'manual_text' as const,
     },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [
         {
           obligationId: OBLIGATION_ID,
           obligationType: 'plan' as const,
+          requiredChallengeCount: 0,
+          requiredChallengeKind: 'design_challenge',
+          challengePolicyVersion: 'challenge-policy.v1',
           iteration: 0,
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
@@ -218,6 +222,7 @@ function buildSessionState() {
       ],
       invocations: [],
       attempts: [],
+      dispatches: [],
     },
   });
 }

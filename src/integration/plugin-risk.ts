@@ -226,7 +226,7 @@ export async function appendRiskDecisionAudit(
 ): Promise<void> {
   await appendReviewAuditEvent(
     sessDir,
-    state.binding.sessionId,
+    state.binding.hostSessionId,
     state.phase,
     'risk:classification_checked',
     {
@@ -253,7 +253,7 @@ function throwRiskBlocked(
   const code = decision.code ?? 'RISK_CLASSIFICATION_MISMATCH';
   const reason = decision.reason ?? 'Risk classification gate blocked this mutating tool.';
   throw buildEnforcementError(code, reason, {
-    sessionId: state.binding.sessionId,
+    sessionId: state.binding.hostSessionId,
     tool: toolName,
     claimedTaskClass: decision.claimedTaskClass ?? 'missing',
     minimumTaskClass: decision.minimumTaskClass,

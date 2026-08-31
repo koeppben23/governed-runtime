@@ -49,7 +49,7 @@ function planObligation(): ReviewObligation {
 function stateWith(obligation: ReviewObligation, attempts: ReviewAttempt[] = []): SessionState {
   return {
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [obligation],
       invocations: [],
       attempts,
@@ -77,10 +77,11 @@ function attemptFor(
   if (status === 'created') return base;
   const assurance = updateAttemptStatus(
     ensureReviewAssurance({
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [obligation],
       invocations: [],
       attempts: [base],
+      dispatches: [],
     }),
     base.attemptId,
     status,

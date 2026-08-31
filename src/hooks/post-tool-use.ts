@@ -30,7 +30,7 @@ import {
   writeReviewerCapture,
 } from './shared/reviewer-capture-writer.js';
 import { appendAuditEvent } from '../adapters/persistence-audit.js';
-import type { AuditEvent } from '../state/evidence-audit.js';
+import type { AuditEventBody } from '../state/evidence-audit.js';
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
@@ -80,12 +80,13 @@ async function postToolUseLogic(): Promise<void> {
   const now = new Date().toISOString();
 
   // Build and persist audit event.
-  const auditEvent: AuditEvent = {
+  const auditEvent: AuditEventBody = {
     id: randomUUID(),
-    sessionId: session_id,
+    flowguardSessionId: state.flowguardSessionId,
+    hostSessionId: session_id,
     phase: state.phase,
     event: 'tool_call',
-    timestamp: now,
+    occurredAt: now,
     actor: 'machine',
     detail: {
       tool: tool_name,

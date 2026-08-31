@@ -133,7 +133,7 @@ describe('buildStatusProjection — E2E', () => {
       const projection = buildStatusProjection(state, policy);
 
       expect(projection.phase).toBe(phase);
-      expect(projection.sessionId).toBe('00000000-0000-4000-8000-000000000001');
+      expect(projection.flowguardSessionId).toBe('00000000-0000-4000-8000-000000000001');
       expect(Array.isArray(projection.allowedCommands)).toBe(true);
       expect(typeof projection.nextAction.summary).toBe('string');
     }
@@ -285,11 +285,51 @@ describe('status.ts MUTATION_KILL matrix', () => {
           lineageStatus: 'verified' as const,
         },
         history: [],
+        reviewCompletion: 'pending',
       },
     };
   }
 
   describe('SMOKE buildStatusProjection exact shape', () => {
+    it('projects rework from the marker and append-only implementation findings', () => {
+      const blockingIssue = { category: 'correctness', summary: 'Fix the boundary' };
+      const state = {
+        ...makeMinimalState('IMPLEMENTATION'),
+        implementationRework: { rejectedDigest: 'rejected-digest' },
+        implReviewFindings: [
+          {
+            iteration: 3,
+            overallVerdict: 'changes_requested',
+            blockingIssues: [blockingIssue],
+            majorRisks: [blockingIssue],
+            missingVerification: ['Run focused test'],
+            scopeCreep: ['Unrelated edit'],
+            unknowns: ['Runtime behavior'],
+            challenges: [
+              { challengeId: 'open-challenge', kind: 'implementation_challenge', outcome: 'fail' },
+              {
+                challengeId: 'closed-challenge',
+                kind: 'implementation_challenge',
+                outcome: 'fail',
+              },
+            ],
+            challengeResolutionVerdicts: [{ challengeId: 'closed-challenge', verdict: 'resolved' }],
+          },
+        ],
+      } as unknown as SessionState;
+
+      expect(buildStatusProjection(state, solo).implementationRework).toEqual({
+        rejectedDigest: 'rejected-digest',
+        iteration: 3,
+        blockingIssues: [blockingIssue],
+        majorRisks: [blockingIssue],
+        missingVerification: ['Run focused test'],
+        scopeCreep: ['Unrelated edit'],
+        unknowns: ['Runtime behavior'],
+        openChallengeIds: ['open-challenge'],
+      });
+    });
+
     it('projects actor, policy, profile, archive, next action, product next action, and command prefixes', () => {
       const state: SessionState = {
         ...stateWithTicket('READY'),
@@ -308,7 +348,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
       expect(projection).toMatchObject({
         phase: 'READY',
         phaseLabel: 'Ready',
-        sessionId: '00000000-0000-4000-8000-000000000001',
+        flowguardSessionId: '00000000-0000-4000-8000-000000000001',
         policyMode: 'solo',
         profileId: 'baseline',
         archiveStatus: 'verified',
@@ -595,7 +635,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
             subagentEnabled: true,
             fallbackToSelf: false,
             strictEnforcement: true,
-          },
+          } as never,
         },
       };
 
@@ -608,7 +648,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
             subagentEnabled: false,
             fallbackToSelf: false,
             strictEnforcement: true,
-          },
+          } as never,
         },
       };
 
@@ -621,7 +661,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
             subagentEnabled: true,
             fallbackToSelf: true,
             strictEnforcement: true,
-          },
+          } as never,
         },
       };
 
@@ -634,7 +674,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
             subagentEnabled: true,
             fallbackToSelf: false,
             strictEnforcement: false,
-          },
+          } as never,
         },
       };
 
@@ -767,7 +807,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
             subagentEnabled: true,
             fallbackToSelf: false,
             strictEnforcement: true,
-          },
+          } as never,
         },
       };
       const readiness = buildReadinessProjection(state, solo);
@@ -786,7 +826,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
             subagentEnabled: false, // weakened
             fallbackToSelf: false,
             strictEnforcement: true,
-          },
+          } as never,
         },
       };
       const readiness = buildReadinessProjection(state, solo);

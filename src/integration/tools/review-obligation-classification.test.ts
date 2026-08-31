@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
+import type { SessionState } from '../../state/schema.js';
 import { makeState } from '../../fixtures.js';
 import { CHALLENGE_POLICY_V1 } from '../../config/policy-types.js';
 
@@ -31,10 +31,15 @@ describe('resolveChallengeClassificationEvidence', () => {
     mocks.loadPrChangedFiles.mockReset();
   });
 
-  it('returns not_required when no challenge policy is frozen', async () => {
-    const result = await resolveChallengeClassificationEvidence(makeState('REVIEW'), '/repo', {
-      targetPaths: ['docs/x.md'],
-    });
+  it('returns not_required when the session carries no policy snapshot', async () => {
+    const state = makeState('REVIEW');
+    const result = await resolveChallengeClassificationEvidence(
+      { ...state, policySnapshot: undefined as unknown as SessionState['policySnapshot'] },
+      '/repo',
+      {
+        targetPaths: ['docs/x.md'],
+      },
+    );
     expect(result).toEqual({ kind: 'not_required' });
   });
 

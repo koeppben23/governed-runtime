@@ -59,6 +59,7 @@ function planWith(body: string): PlanRecord {
       lineageStatus: 'verified' as const,
     },
     history: [],
+    reviewCompletion: 'pending',
   };
 }
 

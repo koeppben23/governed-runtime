@@ -299,6 +299,21 @@ describe('buildStatusProjection — BAD', () => {
 
     expect(projection.archiveStatus).toBeNull();
   });
+
+  it('projects manual export purpose, capability, and verification independently', () => {
+    const state = {
+      ...makeMinimalState('COMPLETE'),
+      lastExportPackagePurpose: 'sharing' as const,
+      lastExportIntegrityCapability: 'not_verifiable' as const,
+      lastExportVerificationStatus: 'not_run' as const,
+    };
+
+    expect(buildStatusProjection(state, policy).lastExport).toEqual({
+      packagePurpose: 'sharing',
+      integrityCapability: 'not_verifiable',
+      verificationStatus: 'not_run',
+    });
+  });
 });
 
 // ─── CORNER: Terminal Phases, READY Routing ───────────────────────────────────
@@ -369,8 +384,6 @@ describe('buildBlockedProjection — ProofGraph gate', () => {
         reviewEvidenceDigest: 'e'.repeat(64),
         reviewedSubjectDigest: 'plan-digest',
       },
-      reviewObligationId: '00000000-0000-4000-8000-0000000000cd',
-      reviewEvidenceDigest: 'e'.repeat(64),
     };
   }
 
@@ -386,9 +399,10 @@ describe('buildBlockedProjection — ProofGraph gate', () => {
         supersedesRecordDigest: null,
         originatingReviewObligationId: null,
         revisionReason: null,
-        lineageStatus: 'unavailable',
+        lineageStatus: 'verified',
       },
       history: [],
+      reviewCompletion: 'pending',
       claimDeclarations: declarations(),
       approvalCertificate: certificate(),
     };
@@ -513,6 +527,7 @@ describe('buildStatusProjection — EDGE evidence', () => {
           lineageStatus: 'verified' as const,
         },
         history: [],
+        reviewCompletion: 'pending',
       },
     };
     const projection = buildStatusProjection(state, policy);
@@ -662,6 +677,7 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
           lineageStatus: 'verified' as const,
         },
         history: [],
+        reviewCompletion: 'pending',
       },
       selfReview: {
         iteration: 1,
@@ -760,6 +776,7 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
           lineageStatus: 'verified' as const,
         },
         history: [],
+        reviewCompletion: 'pending',
       },
       selfReview: {
         iteration: 1,

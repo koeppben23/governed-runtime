@@ -90,11 +90,14 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
       reviewOutputPolicy: 'structured_required',
     },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [
         {
           obligationId: OBLIGATION_ID,
           obligationType: 'plan',
+          requiredChallengeCount: 0,
+          requiredChallengeKind: 'design_challenge',
+          challengePolicyVersion: 'challenge-policy.v1',
           subjectDigest: 'test-subject-digest',
           iteration: 1,
           planVersion: 1,
@@ -117,6 +120,7 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
       ],
       invocations: [],
       attempts: [],
+      dispatches: [],
     },
     ...overrides,
   });
@@ -282,6 +286,7 @@ describe('BUG-09: plan text SSOT enforcement', () => {
             lineageStatus: 'verified' as const,
           },
           history: [],
+          reviewCompletion: 'pending' as const,
         },
       };
       const { capturedPrompts } = await runPlanReview('LLM fallback text', emptyPlanState);
@@ -342,6 +347,7 @@ describe('BUG-09: plan text SSOT enforcement', () => {
             lineageStatus: 'verified' as const,
           },
           history: [],
+          reviewCompletion: 'pending' as const,
         },
       };
       const { capturedPrompts } = await runPlanReview('short LLM text', longPlanState);

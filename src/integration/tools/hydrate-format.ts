@@ -140,6 +140,9 @@ export function buildHydrateInput(params: BuildHydrateInputParams): HydrateInput
       executionSubjectInputsByKind: discovery.executionSubjectInputsByKind,
       executionSubjectInputsByCandidateId: discovery.executionSubjectInputsByCandidateId,
       ...(params.baselineDirtyFiles ? { baselineDirtyFiles: params.baselineDirtyFiles } : {}),
+      ...(params.baselineControlPlaneMarker
+        ? { baselineControlPlaneMarker: params.baselineControlPlaneMarker }
+        : {}),
     },
     policy: buildPolicyInput(
       existingWithCentralEvidence,

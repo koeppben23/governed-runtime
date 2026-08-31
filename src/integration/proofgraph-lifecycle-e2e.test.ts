@@ -36,6 +36,7 @@ import type { ReviewFindings } from '../state/evidence.js';
 import { executeReviewDecision } from '../rails/review-decision.js';
 import { createTestContext } from '../testing.js';
 import { hashText } from '../shared/hashing.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { computeRecordDigest } from '../state/evidence-plan.js';
 import { materializeApprovedPlanContractResult } from './proofgraph/materialize-contract.js';
 import { summarizeProofGraph, summarizePersistedProofGraph } from '../audit/proofgraph/summary.js';
@@ -56,6 +57,7 @@ import type { ReviewAssuranceState } from '../state/evidence-review.js';
 import type {
   PlanClaimDeclaration,
   PlanClaimDeclarationInput,
+  PlanClaimDeclarations,
 } from '../state/proofgraph-approval.js';
 
 type V2PlanClaimDeclaration = Extract<
@@ -63,8 +65,11 @@ type V2PlanClaimDeclaration = Extract<
   { claimScope: 'suite' | 'specific_behavior' }
 >;
 
-/** Canonical plan review assurance re-targeted to an arbitrary plan subject. */
-function planReviewEvidenceFor(subjectDigest: string): ReviewAssuranceState {
+/** Canonical plan review assurance re-targeted to an arbitrary plan subject and claim set. */
+function planReviewEvidenceFor(
+  subjectDigest: string,
+  claimDeclarations: PlanClaimDeclarations | undefined,
+): ReviewAssuranceState {
   const obligation = PLAN_REVIEW_ASSURANCE.obligations[0];
   const invocation = PLAN_REVIEW_ASSURANCE.invocations[0];
   if (!obligation || !invocation) {
@@ -74,6 +79,9 @@ function planReviewEvidenceFor(subjectDigest: string): ReviewAssuranceState {
     obligation: {
       ...obligation,
       subjectDigest,
+      claimDeclarationsDigest: hashText(
+        canonicalJsonStringify(claimDeclarations ?? { flow: 'plan', version: 'v2', claims: [] }),
+      ),
       reviewMaterial: {
         content: obligation.reviewMaterial?.content ?? '## Plan\n1. Fix auth\n2. Add tests',
         materialDigest:
@@ -451,12 +459,12 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
 
     expect(context).toContain('Declared Claims (pre-evidence, advisory)');
     expect(context).toContain(CRITICAL_CLAIM_ID);
-    expect(context).toContain('expected check: build');
+    expect(context).toContain('Expected check: build');
     // Not yet approved: the reviewer must see that nothing is certificate-bound.
     expect(context).toContain('Plan approval certificate: none recorded');
   });
 
-  it('rejects a critical claim without a counterexample check at submission', async () => {
+  it('persists a critical claim without a counterexample check as rejected_blocking', async () => {
     env = await boot('plan-reject');
     await writeStateWithArtifacts(
       env.sDir,
@@ -476,15 +484,18 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     );
     const parsed = JSON.parse(String(raw));
 
-    expect(parsed.error).toBe(true);
-    expect(parsed.code).toBe('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE');
-    // Nothing may be persisted: an unprovable claim must never reach a certificate.
+    expect(parsed.error).toBeUndefined();
+    expect(parsed.claimSubmissionDiagnostics).toMatchObject({
+      rejectedClaims: [{ disposition: 'rejected_blocking' }],
+    });
+    // The plan persists, but nothing unprovable reaches the declaration authority.
     const state = await readState(env.sDir);
-    expect(state!.plan).toBeFalsy();
-    expect(state!.phase).toBe('TICKET');
+    expect(state!.plan).toBeTruthy();
+    expect(state!.plan!.claimDeclarations?.claims).toHaveLength(0);
+    expect(state!.plan!.claimSubmissionDiagnostics!.rejectedClaims).toHaveLength(1);
   });
 
-  it('rejects a critical claim that reuses its positive check at submission', async () => {
+  it('persists a critical claim that reuses its positive check as rejected_blocking', async () => {
     env = await boot('plan-same-check');
     await writeStateWithArtifacts(
       env.sDir,
@@ -513,15 +524,17 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     );
     const parsed = JSON.parse(String(raw));
 
-    expect(parsed.code).toBe('PROOFGRAPH_CLAIM_UNSATISFIABLE');
-    expect(String(parsed.message)).toContain('counterexampleRequirement');
-    expect(String(parsed.message)).toContain('assertionCapability');
+    expect(parsed.error).toBeUndefined();
+    expect(parsed.claimSubmissionDiagnostics).toMatchObject({
+      rejectedClaims: [{ disposition: 'rejected_blocking' }],
+    });
     const state = await readState(env.sDir);
-    expect(state!.plan).toBeFalsy();
-    expect(state!.phase).toBe('TICKET');
+    expect(state!.plan).toBeTruthy();
+    expect(state!.plan!.claimDeclarations?.claims).toHaveLength(0);
+    expect(state!.plan!.claimSubmissionDiagnostics!.rejectedClaims).toHaveLength(1);
   });
 
-  it('rejects a claim referencing a check that is not active', async () => {
+  it('persists a claim referencing a check that is not active as rejected_blocking', async () => {
     env = await boot('plan-inactive-check');
     await writeStateWithArtifacts(
       env.sDir,
@@ -535,8 +548,14 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     const raw = await plan.execute({ planText: PLAN_TEXT, claims: [CRITICAL_CLAIM_INPUT] }, env.tc);
     const parsed = JSON.parse(String(raw));
 
-    expect(parsed.code).toBe('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE');
-    expect(String(parsed.message)).toContain('security');
+    expect(parsed.error).toBeUndefined();
+    expect(parsed.claimSubmissionDiagnostics).toMatchObject({
+      rejectedClaims: [{ disposition: 'rejected_blocking' }],
+    });
+    const state = await readState(env.sDir);
+    expect(state!.plan).toBeTruthy();
+    expect(state!.plan!.claimDeclarations?.claims).toHaveLength(0);
+    expect(state!.plan!.claimSubmissionDiagnostics!.rejectedClaims).toHaveLength(1);
   });
 
   it('warns early when target paths look HIGH-RISK without a critical claim', async () => {
@@ -587,7 +606,10 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
           ...submitted!.plan!,
           reviewCompletion: 'reviewer_accepted',
         },
-        reviewAssurance: planReviewEvidenceFor(submitted!.plan!.current.digest),
+        reviewAssurance: planReviewEvidenceFor(
+          submitted!.plan!.current.digest,
+          submitted!.plan!.claimDeclarations,
+        ),
       },
       { verdict: 'approve', rationale: 'ok', decidedBy: 'approver' },
       realDigestContext(),
@@ -717,7 +739,10 @@ describe('standalone review hypotheses (runtime)', () => {
   it('reports hypotheses separately from an undeclared contract', async () => {
     env = await boot('standalone-coverage');
     await writeStateWithArtifacts(env.sDir, makeState('READY'));
-    await review.execute({ inputOrigin: 'manual_text', text: 'PR under review' }, env.tc);
+    await review.execute(
+      { inputOrigin: 'manual_text', text: 'PR under review', targetPaths: ['README.md'] },
+      env.tc,
+    );
 
     const state = await readState(env.sDir);
     const summary = summarizePersistedProofGraph(state!);
@@ -806,7 +831,11 @@ describe('ProofGraph materialization and gate (runtime)', () => {
         claimDeclarations: { flow: 'plan', version: 'v2', claims: [claim] },
         reviewCompletion: 'reviewer_accepted',
       },
-      reviewAssurance: planReviewEvidenceFor('plan-digest'),
+      reviewAssurance: planReviewEvidenceFor('plan-digest', {
+        flow: 'plan',
+        version: 'v2',
+        claims: [claim],
+      }),
     });
     const approved = executeReviewDecision(
       base,
@@ -994,12 +1023,18 @@ describe('ProofGraph materialization and gate (runtime)', () => {
         reviewCompletion: 'reviewer_accepted',
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [
           {
             obligationId,
             obligationType: 'plan' as const,
+            requiredChallengeCount: 0,
+            requiredChallengeKind: 'design_challenge' as const,
+            challengePolicyVersion: 'challenge-policy.v1' as const,
             subjectDigest: 'plan-digest',
+            claimDeclarationsDigest: hashText(
+              canonicalJsonStringify({ flow: 'plan', version: 'v2', claims: [CRITICAL_CLAIM] }),
+            ),
             iteration: 0,
             planVersion: 1,
             criteriaVersion: 'p40-v1',
@@ -1012,7 +1047,6 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             blockedCode: null,
             fulfilledAt: FIXED_TIME,
             consumedAt: null,
-            requiredChallengeCount: undefined,
             reviewSubjectScope: { kind: 'unavailable', reason: 'no changed files available' },
           },
         ],
@@ -1054,6 +1088,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             createdAt: FIXED_TIME,
           },
         ],
+        dispatches: [],
       },
     });
     const approved = executeReviewDecision(
@@ -1064,8 +1099,21 @@ describe('ProofGraph materialization and gate (runtime)', () => {
     if (approved.kind !== 'ok') throw new Error('plan approval failed');
     const cert = approved.state.plan?.approvalCertificate;
     expect(cert).toBeDefined();
-    expect(cert!.reviewObligationId).toBe(obligationId);
-    expect(cert!.reviewEvidenceDigest).toBe(findingsHash);
-    expect(cert!.reviewEvidenceDigest).toMatch(/^[0-9a-f]{64}$/);
+    expect(cert!.reviewBinding.kind).toBe('current_review');
+    expect(
+      cert!.reviewBinding.kind === 'current_review'
+        ? cert!.reviewBinding.reviewObligationId
+        : undefined,
+    ).toBe(obligationId);
+    expect(
+      cert!.reviewBinding.kind === 'current_review'
+        ? cert!.reviewBinding.reviewEvidenceDigest
+        : undefined,
+    ).toBe(findingsHash);
+    expect(
+      cert!.reviewBinding.kind === 'current_review'
+        ? cert!.reviewBinding.reviewEvidenceDigest
+        : undefined,
+    ).toMatch(/^[0-9a-f]{64}$/);
   });
 });

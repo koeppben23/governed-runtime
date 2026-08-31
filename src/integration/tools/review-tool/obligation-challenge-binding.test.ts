@@ -37,7 +37,8 @@ function reviewObligation(): ReviewObligation {
       revisions: ['base', 'head'],
     },
     requiredChallengeCount: 1,
-    requiredChallengeKind: 'content_challenge',
+    requiredChallengeKind: 'content_challenge' as const,
+    challengePolicyVersion: 'challenge-policy.v1' as const,
     metadata: { fingerprint: FINGERPRINT },
   };
 }

@@ -417,13 +417,15 @@ export const ReviewObligation = z
     reviewProfile: ReviewProfile.optional(),
     /** Provenance of the frozen review profile (see ReviewProfileSource). */
     profileSource: ReviewProfileSource.optional(),
-    /** Challenge coverage frozen from the runtime-computed minimum task class. */
-    requiredChallengeCount: z.number().int().min(0).max(2).optional(),
+    /** Challenge coverage frozen from the runtime-computed minimum task class. REQUIRED — 0 is the explicit TRIVIAL value, never an implicit no-policy state. */
+    requiredChallengeCount: z.number().int().min(0).max(2),
     /** The sole challenge evidence kind required for this obligation. */
-    requiredChallengeKind: z
-      .enum(['design_challenge', 'implementation_challenge', 'content_challenge'])
-      .optional(),
-    challengePolicyVersion: z.literal('challenge-policy.v1').optional(),
+    requiredChallengeKind: z.enum([
+      'design_challenge',
+      'implementation_challenge',
+      'content_challenge',
+    ]),
+    challengePolicyVersion: z.literal('challenge-policy.v1'),
     /**
      * Digest of the subject artifact (plan, implementation, or reviewed content)
      * frozen at obligation creation. This is the host-authoritative identity of
@@ -434,6 +436,8 @@ export const ReviewObligation = z
      * failure, surfaces any site that forgets to freeze the subject.
      */
     subjectDigest: z.string().min(1),
+    /** Exact plan-claim declaration digest frozen before reviewer invocation. */
+    claimDeclarationsDigest: z.string().min(1).optional(),
     reviewMaterial: ReviewMaterial.optional(),
     reviewSubject: FrozenReviewSubject.optional(),
     /** Missing means the legacy v1 fingerprint algorithm. */
@@ -474,93 +478,48 @@ export const ReviewObligation = z
   .superRefine(refineRepositoryEvidenceFreezeCoherence);
 export type ReviewObligation = z.infer<typeof ReviewObligation>;
 
-const Sha256Digest = z.string().regex(/^[a-f0-9]{64}$/);
+// `ReviewInvocationEvidence` schema lives in `evidence-review-invocation.ts`;
+// imported for the assurance schema and re-exported for the historical surface.
+import { ReviewInvocationEvidence } from './evidence-review-invocation.js';
+export { ReviewInvocationEvidence } from './evidence-review-invocation.js';
 
-export const ReviewInvocationEvidence = z
+/**
+ * Durable reviewer-dispatch ledger entry. Persisted BEFORE the host releases a
+ * reviewer Task so a crash between Before and After can never be mistaken for
+ * a never-dispatched attempt:
+ *
+ *   authorized      — dispatch persisted, host Task released, no After yet.
+ *                     An attempt with an `authorized` record has unknown
+ *                     outcome and must never be re-used as first-dispatch.
+ *   completed       — the After consumed the execution record for this call.
+ *   outcome_unknown — a re-arm superseded this dispatch; the attempt is
+ *                     historical and its late completion can never bind.
+ */
+export const ReviewDispatchStatus = z.enum(['authorized', 'completed', 'outcome_unknown']);
+export type ReviewDispatchStatus = z.infer<typeof ReviewDispatchStatus>;
+
+export const ReviewDispatchRecord = z
   .object({
-    invocationId: z.string().uuid(),
+    dispatchId: z.string().uuid(),
+    attemptId: z.string().uuid(),
     obligationId: z.string().uuid(),
-    obligationType: ReviewObligationType,
-    parentSessionId: z.string().min(1),
-    childSessionId: z.string().min(1),
-    agentType: z.literal(REVIEWER_SUBAGENT_TYPE),
-    /** Persisted attempt identity. Populated at binding time from the host-authoritative
-     *  attempt. Optional for legacy records; absent lineage MUST be treated as a hard
-     *  blocker (attempt_lineage_unavailable) by any status-mutating path. */
-    attemptId: z.string().uuid().optional(),
-    /** How the reviewer was invoked: host-visible Task tool, SDK, manual attested, or
-     *  manual attested corroborated by a FlowGuard-captured host hook (native_subagent_attested). */
-    invocationMode: z.enum([
-      'host_subagent_task',
-      'sdk_session_prompt',
-      'manual_attested',
-      'native_subagent_attested',
-    ]),
-    /** Whether this invocation produced a host-visible child session in the OpenCode GUI. */
-    hostVisible: z.boolean(),
-    promptHash: z.string().min(1),
-    canonicalPromptDigest: Sha256Digest.optional(),
-    modelPromptDigest: Sha256Digest.nullable().optional(),
-    hostTaskCallId: z.string().min(1).optional(),
-    mandateDigest: z.string().min(1),
-    criteriaVersion: z.string().min(1),
-    findingsHash: z.string().min(1),
-    invokedAt: z.string().datetime(),
-    fulfilledAt: z.string().datetime().nullable(),
-    consumedByObligationId: z.string().uuid().nullable(),
-    /** Captured verdict from the reviewer's actual output (host-task authoritative). */
-    capturedVerdict: z.string().optional(),
-    /** Complete raw findings captured by the plugin from the reviewer's output (host-task only).
-     *  Enables evidence-based findings resolution: the tool reads findings directly from
-     *  invocation evidence, eliminating agent-side reconstruction of the ReviewFindings object. */
-    capturedRawFindings: z.record(z.string(), z.unknown()).optional(),
-    /** Evidence source: host-orchestrated or agent-submitted-attested. */
-    source: z.enum(['host-orchestrated', 'agent-submitted-attested']).optional(),
-    /** Reviewer output transport used to obtain the findings. */
-    reviewOutputMode: z.enum(['structured_output', 'text_compat']).default('structured_output'),
-    /** True only when OpenCode SDK structured_output was present and used. */
-    structuredOutputUsed: z.boolean().default(true),
-    /** Review-output assurance tier, distinct from actor identity assurance.
-     *  - structured_high: reviewer output parsed as clean, schema-conforming JSON.
-     *  - structured_recovered: findings recovered from an embedded/brace-balanced
-     *    JSON block in mixed model output; extraction succeeded but the response
-     *    was not a clean structured payload, so provenance confidence is reduced. (F8)
-     *  - text_compat_lower: text-compatibility extraction path. */
-    reviewAssuranceLevel: z
-      .enum(['structured_high', 'structured_recovered', 'text_compat_lower'])
-      .default('structured_high'),
-    /** JSON extraction strategy used for text compatibility mode only. */
-    extractionMethod: z.enum(['direct_json', 'json_fence', 'outermost_braces']).optional(),
-    /** Original model capability error that caused text compatibility mode. */
-    modelCapabilityError: z.string().optional(),
-    /** Host-captured corroboration (native_subagent_attested only).
-     *  Populated from a FlowGuard hook (SubagentStop / PostToolUse) that fired inside the
-     *  reviewer subagent. These fields are the independent host witness that the review tool
-     *  was invoked from within a genuine `flowguard-reviewer` subagent, not the main thread. */
-    hostCapturedAgentId: z.string().min(1).optional(),
-    hostCapturedAgentType: z.literal(REVIEWER_SUBAGENT_TYPE).optional(),
-    hostCaptureSource: z.enum(['subagent_stop_hook', 'post_tool_use_hook']).optional(),
-    /** Resolved full head commit SHA (branch reviews only). */
-    resolvedBranchSha: z
-      .string()
-      .regex(/^[0-9a-f]{40,64}$/i)
-      .nullable()
-      .optional(),
-    /** Resolved full base commit SHA (branch reviews only). */
-    resolvedBaseSha: z
-      .string()
-      .regex(/^[0-9a-f]{40,64}$/i)
-      .nullable()
-      .optional(),
-    /** SHA-256 digest of the extracted/reviewed content (branch reviews only). */
-    reviewedContentDigest: z
-      .string()
-      .regex(/^[0-9a-f]{64}$/i)
-      .nullable()
-      .optional(),
+    hostCallId: z.string().min(1),
+    canonicalPromptDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    dispatchAuthorizedAt: z.string().datetime(),
+    dispatchStatus: ReviewDispatchStatus,
+    completedAt: z.string().datetime().optional(),
   })
+  .strict()
   .readonly();
-export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;
+export type ReviewDispatchRecord = z.infer<typeof ReviewDispatchRecord>;
+
+/**
+ * Canonical hard-cutover literal for the review-assurance authority generation.
+ * Every accepted current-generation `ReviewAssuranceState` MUST carry an
+ * explicit durable dispatch ledger (`dispatches`); absence of that ledger is an
+ * incompatible state shape, never equivalent to an empty ledger.
+ */
+export const REVIEW_ASSURANCE_SCHEMA_VERSION = 'review-assurance.v6' as const;
 
 /**
  * Persistent strict review assurance state.
@@ -569,15 +528,22 @@ export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;
  * pre-recorded invocation attempt, so an assurance state without an attempts
  * array would make every obligation permanently unbindable while looking valid.
  *
+ * `dispatches` is the append-only reviewer-dispatch ledger (see
+ * `state/review-dispatch.ts`). It is REQUIRED and authority-bearing: its
+ * absence must never be interpreted as "no dispatch occurred", so the field may
+ * not be optional and may not default. Every controlled writer explicitly
+ * persists it (an empty ledger is `dispatches: []`).
+ *
  * `assuranceSchemaVersion` is a REQUIRED hard version literal: v2 introduced
  * authority-bearing attempt origins and frozen output-repair budgets; v3 bound
  * host-owned repository Discovery snapshots to attempts; v4 introduced frozen
  * repository authority, observation capabilities, and attempt-owned
- * observations; v5 makes observations representation-typed. States persisted
- * under older forms MUST fail parsing — there is deliberately no defaulting
- * path for authority-bearing fields. The sanctioned transitions are the
- * shape-only read migrations in the persistence adapter (v3→v4, v4→v5), which
- * add NO authority that was not present.
+ * observations; v5 makes observations representation-typed; v6 makes the
+ * reviewer-dispatch ledger a required authority. States persisted under older
+ * forms MUST fail parsing — there is deliberately no defaulting path for
+ * authority-bearing fields, and no read migration across authority-bearing
+ * generations. A `review-assurance.v5` state is NOT current, even if it
+ * fabricates a `dispatches` field: the generation literal decides.
  *
  * Cross-record invariants: an attempt's `repositoryDiscovery` variant must
  * structurally match its owning obligation's frozen repository authority, and
@@ -586,10 +552,11 @@ export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;
  */
 export const ReviewAssuranceState = z
   .object({
-    assuranceSchemaVersion: z.literal('review-assurance.v5'),
+    assuranceSchemaVersion: z.literal(REVIEW_ASSURANCE_SCHEMA_VERSION),
     obligations: z.array(ReviewObligation),
     invocations: z.array(ReviewInvocationEvidence),
     attempts: z.array(ReviewAttempt),
+    dispatches: z.array(ReviewDispatchRecord),
   })
   .superRefine(refineAssuranceIdentityUniqueness)
   .superRefine(refineAssuranceDiscoveryCoherence)

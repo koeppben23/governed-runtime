@@ -245,12 +245,16 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           attempts: [boundAttempt('test-subject-digest')],
+          dispatches: [],
           obligations: [
             {
               obligationId: OBLIGATION_ID,
               obligationType: 'architecture',
+              requiredChallengeCount: 0,
+              requiredChallengeKind: 'design_challenge',
+              challengePolicyVersion: 'challenge-policy.v1',
               subjectDigest: 'test-subject-digest',
               iteration: 0,
               planVersion: 1,
@@ -336,12 +340,16 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           attempts: [boundAttempt('test-subject-digest')],
+          dispatches: [],
           obligations: [
             {
               obligationId: OBLIGATION_ID,
               obligationType: 'architecture',
+              requiredChallengeCount: 0,
+              requiredChallengeKind: 'design_challenge',
+              challengePolicyVersion: 'challenge-policy.v1',
               subjectDigest: 'test-subject-digest',
               iteration: 0,
               planVersion: 1,
@@ -456,12 +464,16 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           attempts: [boundAttempt('test-subject-digest')],
+          dispatches: [],
           obligations: [
             {
               obligationId: OBLIGATION_ID,
               obligationType: 'architecture',
+              requiredChallengeCount: 0,
+              requiredChallengeKind: 'design_challenge',
+              challengePolicyVersion: 'challenge-policy.v1',
               subjectDigest: 'test-subject-digest',
               iteration: 0,
               planVersion: 1,
@@ -592,10 +604,11 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           obligations: [],
           invocations: [],
           attempts: [],
+          dispatches: [],
         },
       });
       mocks.state = stateNoEvidence;

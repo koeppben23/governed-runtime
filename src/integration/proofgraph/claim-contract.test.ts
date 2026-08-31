@@ -14,6 +14,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildHeuristicRiskWarning,
+  classifyProofClaimContract,
   validateProofClaimContract,
   type NormalizedClaimDeclaration,
 } from './claim-contract.js';
@@ -108,6 +109,85 @@ describe('validateProofClaimContract — accepted declarations', () => {
     expect(validateProofClaimContract({ ...BASE, source: 'plan', claims: [] })).toEqual({
       kind: 'ok',
     });
+  });
+});
+
+describe('classifyProofClaimContract', () => {
+  it('omits an unsatisfiable non-critical suite claim without rejecting valid authority', () => {
+    const result = classifyProofClaimContract({
+      ...BASE,
+      source: 'plan',
+      claims: [
+        planClaim(),
+        planClaim({
+          claimId: CLAIM_B,
+          statement: 'the complete suite passes',
+          critical: false,
+          claimScope: 'suite',
+          positiveCheckId: 'security',
+          counterexampleRequirement: { kind: 'aggregate_check', checkId: 'security' },
+        }),
+      ],
+    });
+
+    expect(result.accepted).toHaveLength(1);
+    expect(result.rejectedNonBlocking).toHaveLength(1);
+    expect(result.rejectedBlocking).toEqual([]);
+    expect(result.setViolations).toEqual([]);
+    expect(result.rejectedNonBlocking[0]?.result.detail).toContain(
+      'scope completeness attestation',
+    );
+  });
+
+  it('keeps an unsatisfiable critical claim blocking', () => {
+    const result = classifyProofClaimContract({
+      ...BASE,
+      source: 'plan',
+      claims: [
+        planClaim({
+          claimScope: 'suite',
+          positiveCheckId: 'security',
+          counterexampleRequirement: { kind: 'aggregate_check', checkId: 'security' },
+        }),
+      ],
+    });
+
+    expect(result.rejectedBlocking).toHaveLength(1);
+    expect(result.rejectedNonBlocking).toEqual([]);
+  });
+
+  it('prioritizes a non-critical contract violation over an earlier satisfiability violation', () => {
+    const result = classifyProofClaimContract({
+      ...BASE,
+      source: 'plan',
+      claims: [
+        planClaim({
+          critical: false,
+          claimScope: 'suite',
+          positiveCheckId: 'security',
+          counterexampleRequirement: {
+            kind: 'assertion',
+            checkId: 'security',
+            assertion: { providerId: 'junit', localId: 'com.example.Test#testMethod' },
+          },
+        }),
+      ],
+    });
+
+    expect(result.rejectedNonBlocking).toEqual([]);
+    expect(result.rejectedBlocking).toHaveLength(1);
+    expect(result.rejectedBlocking[0]?.result.field).toBe('counterexampleRequirement');
+  });
+
+  it('keeps duplicate claim identities as a set-level blocker', () => {
+    const result = classifyProofClaimContract({
+      ...BASE,
+      source: 'plan',
+      claims: [planClaim(), planClaim({ critical: false, statement: 'duplicate identity' })],
+    });
+
+    expect(result.setViolations).toHaveLength(1);
+    expect(result.accepted).toEqual([]);
   });
 });
 

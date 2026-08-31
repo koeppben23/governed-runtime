@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach } from 'vitest';
 
 import {
   clearUserDecisionIntents,
+  consumeImplementationReviewExtensionIntent,
   consumeUserDecisionIntent,
   parseUserDecisionCommand,
   peekUserDecisionIntent,
@@ -42,6 +43,75 @@ describe('UserDecisionIntent', () => {
         arguments: '',
       }),
     ).toBeNull();
+  });
+
+  it('binds an implementation review extension to the explicit user command iteration count', () => {
+    expect(
+      recordUserDecisionIntentFromCommand({
+        sessionId: 's1',
+        command: '/extend-implementation-review',
+        arguments: '2',
+        nowMs: 1_000,
+      }),
+    ).toMatchObject({ command: '/extend-implementation-review', additionalIterations: 2 });
+    expect(
+      consumeImplementationReviewExtensionIntent({
+        sessionId: 's1',
+        additionalIterations: 1,
+        nowMs: 2_000,
+      }),
+    ).toEqual({ ok: false, reason: 'verdict_mismatch' });
+    expect(
+      recordUserDecisionIntentFromCommand({
+        sessionId: 's1',
+        command: '/extend-implementation-review',
+        arguments: '2',
+        nowMs: 3_000,
+      }),
+    ).not.toBeNull();
+    expect(
+      consumeImplementationReviewExtensionIntent({
+        sessionId: 's1',
+        additionalIterations: 2,
+        nowMs: 4_000,
+      }),
+    ).toMatchObject({ ok: true });
+  });
+
+  it('P0: extension intent never authorizes a decision verdict and survives the decision gate', () => {
+    expect(
+      recordUserDecisionIntentFromCommand({
+        sessionId: 's1',
+        command: '/extend-implementation-review',
+        arguments: '2',
+        nowMs: 1_000,
+      }),
+    ).toMatchObject({ command: '/extend-implementation-review', additionalIterations: 2 });
+
+    // The decision consumers must fail closed, NOT delete the extension intent.
+    expect(peekUserDecisionIntent({ sessionId: 's1', verdict: 'reject', nowMs: 2_000 })).toEqual({
+      ok: false,
+      reason: 'missing',
+    });
+    expect(consumeUserDecisionIntent({ sessionId: 's1', verdict: 'reject', nowMs: 3_000 })).toEqual(
+      {
+        ok: false,
+        reason: 'missing',
+      },
+    );
+
+    // The extension intent is still intact for its own consumer.
+    expect(
+      consumeImplementationReviewExtensionIntent({
+        sessionId: 's1',
+        additionalIterations: 2,
+        nowMs: 4_000,
+      }),
+    ).toMatchObject({ ok: true });
+    expect(peekUserDecisionIntent({ sessionId: 's1', verdict: 'reject', nowMs: 5_000 })).toEqual({
+      ok: false,
+      reason: 'missing',
+    });
   });
 
   it('consumes a matching intent exactly once', () => {

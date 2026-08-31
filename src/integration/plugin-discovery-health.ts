@@ -107,7 +107,7 @@ export async function enforceDiscoveryHealthBefore(
   }
 
   throw buildEnforcementError(code, reason, {
-    sessionId: state.binding.sessionId,
+    sessionId: state.binding.hostSessionId,
     tool: toolName,
     reason: decision.detail ?? '',
     driftStatus: decision.driftStatus ?? '',

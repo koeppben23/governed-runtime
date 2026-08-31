@@ -63,6 +63,8 @@ import {
 } from '../review/orchestration-mode.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
 import { projectPlanProofStatus } from '../proofgraph/proof-summary-projectors.js';
+import { canonicalJsonStringify } from '../../shared/canonical-json.js';
+import { hashText } from '../../shared/hashing.js';
 
 function findPriorPlanTargetPaths(
   assurance: import('../../state/schema.js').SessionState['reviewAssurance'],
@@ -99,18 +101,28 @@ export function buildPlanReviewObligationInput(
   planEvidence: PlanEvidence,
   planVersion: number,
   classificationFiles: readonly string[] | undefined,
-  freeze: RepositoryAuthorityFreezeResult,
+  options: {
+    freeze: RepositoryAuthorityFreezeResult;
+    planClaimDeclarations?: import('../../state/proofgraph-approval.js').PlanClaimDeclarations;
+  },
 ): Parameters<typeof createObligationAndAttempt>[1] {
   const metadata: Record<string, unknown> = {};
   if (classificationFiles && classificationFiles.length > 0) {
     metadata.targetPaths = [...classificationFiles];
   }
+  const effectiveClaimDeclarations = options.planClaimDeclarations ??
+    scope.state.plan?.claimDeclarations ?? {
+      flow: 'plan' as const,
+      version: 'v2' as const,
+      claims: [],
+    };
   return {
     obligationType: 'plan',
     iteration: 0,
     planVersion,
     now: scope.ctx.now(),
     subjectDigest: planEvidence.digest,
+    claimDeclarationsDigest: hashText(canonicalJsonStringify(effectiveClaimDeclarations)),
     // Frozen review material: the exact plan artifact plus originating
     // ticket context, canonicalized and digest-bound at creation time.
     reviewMaterial: freezeReviewMaterial(
@@ -118,6 +130,7 @@ export function buildPlanReviewObligationInput(
         obligationType: 'plan',
         state: scope.state,
         artifact: planEvidence.body,
+        planClaimDeclarations: effectiveClaimDeclarations,
       }),
       planEvidence.digest,
     ),
@@ -128,10 +141,10 @@ export function buildPlanReviewObligationInput(
     changedFiles: classificationFiles,
     claimedTaskClass: scope.state.claimedTaskClass,
     metadata,
-    repositoryAuthority: frozenAuthorityOrUndefined(freeze),
+    repositoryAuthority: frozenAuthorityOrUndefined(options.freeze),
     // Durable freeze outcome: continuations and forensics render the exact
     // degradation cause from persisted state.
-    repositoryEvidenceFreeze: freezeOutcomeRecord(freeze),
+    repositoryEvidenceFreeze: freezeOutcomeRecord(options.freeze),
   };
 }
 
@@ -143,10 +156,11 @@ function planRepositoryEvidenceWarning(
     : {};
 }
 
-export function buildPlanSubmissionResponse(
-  input: PlanSubmissionResponseInput,
-): Record<string, unknown> {
-  const { scope, finalState, planEvidence, planVersion, reviewFindings, transitions } = input;
+function planSubmissionReviewContext(
+  scope: PlanExecutionScope,
+  finalState: SessionState,
+  planVersion: number,
+) {
   const nextObligation = scope.reviewPolicy.subagentEnabled
     ? findLatestObligation(finalState.reviewAssurance?.obligations ?? [], 'plan', 0, planVersion)
     : null;
@@ -155,14 +169,47 @@ export function buildPlanSubmissionResponse(
         (a) => a.obligationId === nextObligation.obligationId && a.status === 'created',
       )?.attemptId ?? null)
     : null;
-  const reviewInstruction = buildPlanReviewInstruction({
+  return {
+    nextObligation,
+    planAttemptId,
+    reviewInstruction: buildPlanReviewInstruction({
+      scope,
+      obligation: nextObligation,
+      iteration: 0,
+      planVersion,
+      subjectLabel: 'full plan text and ticket text',
+      state: finalState,
+    }),
+  };
+}
+
+function partialClaimAcceptancePresentation(
+  diagnostics: NonNullable<SessionState['plan']>['claimSubmissionDiagnostics'],
+  next: string,
+): { markdown: string } | undefined {
+  if (!diagnostics?.rejectedClaims.length) return undefined;
+  const rejected = diagnostics.rejectedClaims
+    .map((claim) => `- ${claim.statement}\n  ${claim.reason}`)
+    .join('\n');
+  return {
+    markdown:
+      '## Plan submitted\n\n' +
+      `FlowGuard did not admit ${diagnostics.rejectedClaims.length} claim declaration(s) to the ProofGraph. Rejected critical claims block final evidence approval until corrected in a new plan revision.\n\n` +
+      '## Declarations not admitted\n\n' +
+      rejected +
+      `\n\n## Next action\n\n${next}`,
+  };
+}
+
+export function buildPlanSubmissionResponse(
+  input: PlanSubmissionResponseInput,
+): Record<string, unknown> {
+  const { scope, finalState, planEvidence, planVersion, reviewFindings, transitions } = input;
+  const { nextObligation, planAttemptId, reviewInstruction } = planSubmissionReviewContext(
     scope,
-    obligation: nextObligation,
-    iteration: 0,
+    finalState,
     planVersion,
-    subjectLabel: 'full plan text and ticket text',
-    state: finalState,
-  });
+  );
   const response: Record<string, unknown> = {
     phase: finalState.phase,
     status: 'Plan submitted (v' + planVersion + ').',
@@ -176,6 +223,13 @@ export function buildPlanSubmissionResponse(
     reviewInvocation: reviewInstruction.reviewInvocation,
     _audit: { transitions },
   };
+  if (finalState.plan?.claimSubmissionDiagnostics?.rejectedClaims.length) {
+    response.claimSubmissionDiagnostics = finalState.plan.claimSubmissionDiagnostics;
+    response.presentation = partialClaimAcceptancePresentation(
+      finalState.plan.claimSubmissionDiagnostics,
+      reviewInstruction.next,
+    );
+  }
   const riskWarning = planRiskWarning(scope);
   if (riskWarning) response.proofGraphRiskWarning = riskWarning;
   if (reviewFindings)
@@ -283,6 +337,7 @@ export async function convergedPlanReviewCardResponse(
     taskTitle: firstLine(finalState.ticket?.text),
     forcedConvergence,
     proofSummary: projectPlanProofStatus(finalState),
+    claimDeclarations: finalState.plan?.claimDeclarations,
     currentPlanDigest: revision.currentPlan.digest,
     reviewedDigest: reviewedIdentity?.reviewedDigest,
     reviewedObligationId: reviewedIdentity?.reviewedObligationId,
@@ -422,6 +477,11 @@ async function mintPlanRevisionAttempt(input: {
           planVersion: nextPlanVersion,
           now: scope.ctx.now(),
           subjectDigest: revision.currentPlan.digest,
+          claimDeclarationsDigest: hashText(
+            canonicalJsonStringify(
+              finalState.plan?.claimDeclarations ?? { flow: 'plan', claims: [] },
+            ),
+          ),
           // Frozen review material: the exact (possibly revised) plan artifact
           // plus originating ticket context, digest-bound at creation time.
           reviewMaterial: freezeReviewMaterial(

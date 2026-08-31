@@ -2,7 +2,7 @@
  * @module evidence-audit
  * @description Audit event schema — tamper-evident JSONL audit trail entries with hash-chain linking.
  *
- * @version v3 — added auditFormatVersion for recursive chain-hash canonicalization.
+ * @version v3 — Assurance epoch audit envelope.
  */
 
 import { z } from 'zod';
@@ -14,17 +14,8 @@ import { TimestampEvidence } from './evidence-timestamp.js';
  * Single audit event — appended to JSONL audit trail.
  * Phase is a plain string (forward-compatible: new phases don't break old logs).
  *
- * Hash chain fields (prevHash, chainHash) are optional for backward compatibility:
- * - Legacy events (pre-chain) omit these fields
- * - New events always include them
- * - The integrity verifier handles mixed trails gracefully
- * - Chained events without auditFormatVersion are pre-v2 legacy format and are
- *   not verifiable under the current recursive chain-hash guarantee.
- *
- * Timestamp assurance fields (canonicalEventDigest, timestampEvidence) are optional:
- * - Legacy events (pre-#269) omit these fields
- * - Events without timestampEvidence are treated as status:'local' by verification
- * - canonicalEventDigest anchors TSA messageImprint
+ * All persisted events use the single audit-chain.v3 format. Legacy records
+ * are rejected at every persistence and verification boundary.
  *
  * Actor identity (P27):
  * - `actor`: Classification label — "human", "machine", or "system" (string)
@@ -36,22 +27,25 @@ import { TimestampEvidence } from './evidence-timestamp.js';
 export const AuditEvent = z
   .object({
     id: z.string().uuid(),
-    sessionId: OpenCodeSessionId,
+    /** FlowGuard session identity — the SAME FlowGuard UUID on every event class. */
+    flowguardSessionId: z.string().uuid(),
+    /** Host session identity (OpenCode session id), bound where host context exists. */
+    hostSessionId: OpenCodeSessionId.optional(),
     phase: z.string(),
     event: z.string(),
-    timestamp: z.string().datetime(),
+    auditFormatVersion: z.literal('audit-chain.v3'),
+    auditSequence: z.number().int().positive(),
+    occurredAt: z.string().datetime(),
+    recordedAt: z.string().datetime(),
     actor: z.string(),
-    /** Audit chain hash format. Current events use audit-chain.v2. */
-    auditFormatVersion: z.enum(['audit-chain.v1', 'audit-chain.v2']).optional(),
     detail: z.record(z.string(), z.unknown()),
     /** Resolved actor identity. Present on human-influenced events, absent on machine-only. */
     actorInfo: ActorInfoSchema.optional(),
     /** Hash of the previous event in the chain (or "genesis" for the first event). */
-    prevHash: z.string().optional(),
-    /** SHA-256(prevHash + canonical JSON of this event). Tamper-evident chain link. */
-    chainHash: z.string().optional(),
-    /** SHA-256 of event content without timestampEvidence and chainHash. For TSA anchoring. */
-    canonicalEventDigest: z.string().optional(),
+    prevHash: z.string().regex(/^[a-f0-9]{64}$|^genesis$/),
+    semanticEventDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    /** SHA-256 of the versioned, position-bound audit record. */
+    chainHash: z.string().regex(/^[a-f0-9]{64}$/),
     /** Timestamp assurance evidence (NTP offset, TSA token, verification status). */
     timestampEvidence: TimestampEvidence.optional(),
     /**
@@ -66,5 +60,39 @@ export const AuditEvent = z
      */
     enforcementLevel: z.enum(['synchronous', 'hook_gated', 'advisory']).optional(),
   })
+  .strict()
   .readonly();
 export type AuditEvent = z.infer<typeof AuditEvent>;
+
+/**
+ * Producer-side audit event body: every semantic field minus the positional
+ * and hash fields that only the append authority may stamp under the audit
+ * write lock (auditFormatVersion, auditSequence, recordedAt,
+ * semanticEventDigest, prevHash, chainHash). Supplying any of them up front
+ * would let a producer forge chain position, sequence authority, or record
+ * time — so they are not part of the accepted input at all.
+ */
+export const AuditEventBodySchema = AuditEvent.unwrap()
+  .omit({
+    auditFormatVersion: true,
+    auditSequence: true,
+    recordedAt: true,
+    semanticEventDigest: true,
+    prevHash: true,
+    chainHash: true,
+  })
+  // Producers may pass pre-finalized events (e.g. the plugin path). Any
+  // producer-supplied positional/hash field is silently dropped here and
+  // re-stamped by the append authority — never trusted, never persisted.
+  .loose();
+
+/** Producer-side audit event body: semantic fields minus append-stamped authority fields. */
+export type AuditEventBody = Omit<
+  AuditEvent,
+  | 'auditFormatVersion'
+  | 'auditSequence'
+  | 'recordedAt'
+  | 'semanticEventDigest'
+  | 'prevHash'
+  | 'chainHash'
+>;

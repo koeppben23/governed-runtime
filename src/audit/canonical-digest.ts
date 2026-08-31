@@ -39,8 +39,10 @@ export { canonicalJsonStringify };
 
 const EXCLUDED_FIELDS = new Set([
   'chainHash',
+  'auditSequence',
+  'recordedAt',
   'timestampEvidence',
-  'canonicalEventDigest',
+  'semanticEventDigest',
   'prevHash',
 ]);
 

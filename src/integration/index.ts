@@ -16,6 +16,7 @@ export {
   decision,
   implement,
   review_implementation,
+  extend_implementation_review,
   resolve_implementation_challenge,
   run_check,
   review,
@@ -26,6 +27,7 @@ export {
   help,
   declare_contract,
   observe_repository,
+  reconcile_mutation_episode,
 } from './tools/index.js';
 
 export { FlowGuardAuditPlugin } from './plugin.js';

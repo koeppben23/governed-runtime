@@ -114,7 +114,7 @@ The system establishes workspace binding (OpenCode session to git worktree via r
 
 ### 2. Governed Command Surface
 
-Sixteen installed core FlowGuard commands cover workflow, diagnostics, and operations:
+Eighteen installed core FlowGuard commands cover workflow, diagnostics, and operations:
 
 | Command                             | Purpose                                                                                                             |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -130,6 +130,8 @@ Sixteen installed core FlowGuard commands cover workflow, diagnostics, and opera
 | `/review-decision`                  | Record human verdict at User Gates (approve / changes_requested / reject)                                           |
 | `/implement`                        | Execute implementation, record evidence, run review loop                                                            |
 | `/resolve-implementation-challenge` | Record advisory evidence addressing an implementation review challenge                                              |
+| `/extend-implementation-review`     | Authorize a finite additional implementation review budget after exhaustion                                          |
+| `/reconcile-mutation-episode`       | Resolve a host mutation episode whose outcome can never be observed; forces a fresh worktree recapture              |
 | `/validate`                         | Run validation checks (test quality, rollback safety)                                                               |
 | `/continue`                         | Universal routing — do the next appropriate action for the current phase                                            |
 | `/abort`                            | Emergency session termination                                                                                       |

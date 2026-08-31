@@ -54,10 +54,16 @@ function epochOf(value: string): number | null {
 }
 
 /**
- * Verify that audit event timestamps are monotonically non-decreasing,
- * comparing PARSED UTC instants — never lexical strings (offset formats such
- * as `+02:00` vs `Z` must not yield ordering artifacts). An unparseable
- * timestamp makes the trail invalid, not ignorable.
+ * Verify that audit event RECORD timestamps are monotonically
+ * non-decreasing, comparing PARSED UTC instants — never lexical strings
+ * (offset formats such as `+02:00` vs `Z` must not yield ordering artifacts).
+ * An unparseable timestamp makes the trail invalid, not ignorable.
+ *
+ * The chain-order authority is `recordedAt` (stamped by the append authority
+ * under the audit write lock), NOT `occurredAt`: the durable audit outbox
+ * reconciles older operations after newer direct appends, so an event whose
+ * `occurredAt` predates its successor's is a legitimate deferred record —
+ * only a RECORD order regression is a clock anomaly.
  *
  * @param events - Audit events in chronological order.
  */
@@ -65,27 +71,27 @@ export function verifyTimestampMonotonicity(
   events: readonly AuditEvent[],
 ): TimestampMonotonicityResult {
   for (let i = 1; i < events.length; i++) {
-    const current = epochOf(events[i]!.timestamp);
+    const current = epochOf(events[i]!.recordedAt);
     if (current === null) {
       return {
         valid: false,
         firstBreak: i,
-        message: `Timestamp at index ${i} is not a parseable UTC instant: "${events[i]!.timestamp}"`,
+        message: `Record timestamp at index ${i} is not a parseable UTC instant: "${events[i]!.recordedAt}"`,
       };
     }
-    const previous = epochOf(events[i - 1]!.timestamp);
+    const previous = epochOf(events[i - 1]!.recordedAt);
     if (previous === null) {
       return {
         valid: false,
         firstBreak: i - 1,
-        message: `Timestamp at index ${i - 1} is not a parseable UTC instant: "${events[i - 1]!.timestamp}"`,
+        message: `Record timestamp at index ${i - 1} is not a parseable UTC instant: "${events[i - 1]!.recordedAt}"`,
       };
     }
     if (current < previous) {
       return {
         valid: false,
         firstBreak: i,
-        message: `Timestamp non-monotonic at index ${i}: "${events[i]!.timestamp}" < "${events[i - 1]!.timestamp}"`,
+        message: `Record timestamp non-monotonic at index ${i}: "${events[i]!.recordedAt}" < "${events[i - 1]!.recordedAt}"`,
       };
     }
   }
@@ -133,8 +139,6 @@ function isDegradedStatus(status: string | undefined): boolean {
 export function verifyTsaMessageImprint(event: AuditEvent): TimestampEvidenceCheck {
   const evidence = (event as Record<string, unknown>).timestampEvidence as
     Record<string, unknown> | undefined;
-  const storedCanonicalDigest = (event as Record<string, unknown>).canonicalEventDigest as
-    string | undefined;
 
   if (!evidence) {
     return { valid: true, reason: null, needsTokenVerification: false, downgraded: false };
@@ -184,10 +188,12 @@ export function verifyTsaMessageImprint(event: AuditEvent): TimestampEvidenceChe
   const recomputedDigest = computeCanonicalEventDigest(event);
 
   // Covered by the stored-digest cross-check tests.
-  if (storedCanonicalDigest && storedCanonicalDigest !== recomputedDigest) {
+  const storedSemanticDigest = (event as Record<string, unknown>).semanticEventDigest as
+    string | undefined;
+  if (storedSemanticDigest && storedSemanticDigest !== recomputedDigest) {
     return {
       valid: false,
-      reason: 'stored canonicalEventDigest does not match recomputed canonical event digest',
+      reason: 'stored semanticEventDigest does not match recomputed canonical event digest',
       needsTokenVerification: false,
       downgraded: false,
     };

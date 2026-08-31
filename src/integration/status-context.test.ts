@@ -269,8 +269,8 @@ describe('context and readiness projections', () => {
             subagentEnabled: false,
             fallbackToSelf: true,
             strictEnforcement: false,
-          },
-        },
+          } as never,
+        } as typeof state.policySnapshot,
       };
     }
     const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
@@ -293,7 +293,7 @@ describe('context and readiness projections', () => {
             subagentEnabled: true,
             fallbackToSelf: false,
             strictEnforcement: true,
-          },
+          } as never,
         },
       };
     }
@@ -312,7 +312,7 @@ describe('context and readiness projections', () => {
             subagentEnabled: false,
             fallbackToSelf: false,
             strictEnforcement: true,
-          },
+          } as never,
         },
       };
     }
@@ -332,7 +332,7 @@ describe('context and readiness projections', () => {
             subagentEnabled: true,
             fallbackToSelf: true,
             strictEnforcement: true,
-          },
+          } as never,
         },
       };
     }
@@ -352,7 +352,7 @@ describe('context and readiness projections', () => {
             subagentEnabled: true,
             fallbackToSelf: false,
             strictEnforcement: false,
-          },
+          } as never,
         },
       };
     }
@@ -372,8 +372,8 @@ describe('context and readiness projections', () => {
             subagentEnabled: false,
             fallbackToSelf: true,
             strictEnforcement: false,
-          },
-        },
+          } as never,
+        } as typeof state.policySnapshot,
       };
     }
     const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));

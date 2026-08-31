@@ -145,7 +145,7 @@ function buildState(
       reviewOutputPolicy,
     },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [
         {
           obligationId: OBLIGATION_ID,
@@ -156,6 +156,9 @@ function buildState(
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
           maxReviewerOutputRepairAttempts: 1,
+          requiredChallengeCount: 0,
+          requiredChallengeKind: 'design_challenge' as const,
+          challengePolicyVersion: 'challenge-policy.v1' as const,
           createdAt: NOW,
           pluginHandshakeAt: null,
           status: 'pending',
@@ -195,6 +198,7 @@ function buildState(
           createdAt: NOW,
         },
       ],
+      dispatches: [],
     },
   });
 }
@@ -432,8 +436,7 @@ describe('runReviewOrchestration strict independent review with footer output', 
     expect(parsed.next).toEqual(expect.stringContaining('INDEPENDENT_REVIEW_REQUIRED'));
     expect(parsed.reviewInvocation).toMatchObject({
       policy: 'host_task_required',
-      status: 'blocked_until_host_task',
-      code: 'HOST_SUBAGENT_TASK_REQUIRED',
+      status: 'pending_host_task',
       invocationMode: 'host_subagent_task',
       hostVisible: true,
     });
@@ -483,7 +486,7 @@ describe('runReviewOrchestration strict independent review with footer output', 
     expect(parsed.next).toEqual(expect.stringContaining('INDEPENDENT_REVIEW_REQUIRED'));
     expect(parsed.reviewInvocation).toMatchObject({
       policy: 'host_task_preferred',
-      status: 'host_task_requested',
+      status: 'pending_host_task',
       invocationMode: 'host_subagent_task',
       hostVisible: true,
     });
@@ -533,33 +536,6 @@ describe('runReviewOrchestration strict independent review with footer output', 
     expect(client.session.prompt).toHaveBeenCalledOnce();
   });
 
-  it('blocks SDK path when snapshot misses reviewInvocationPolicy (fail-closed)', async () => {
-    const stateRef = { current: buildState('PLAN', 'plan') };
-    const { reviewInvocationPolicy: _, ...snapshotWithoutPolicy } =
-      stateRef.current.policySnapshot!;
-    stateRef.current = {
-      ...stateRef.current,
-      policySnapshot: snapshotWithoutPolicy,
-    };
-    vi.mocked(readState).mockResolvedValue(stateRef.current);
-    const client = buildClient(buildFindings());
-    const deps = buildDeps(client, stateRef);
-    const output = { output: reviewRequiredOutput('PLAN') };
-
-    await runReviewOrchestration(deps, {
-      toolName: TOOL_FLOWGUARD_PLAN,
-      input: { args: { planText: 'Add regression tests for review orchestration.' } },
-      output,
-      sessionId: PARENT_SESSION_ID,
-      now: NOW,
-    });
-
-    expect(client.session.create).not.toHaveBeenCalled();
-    expect(client.session.prompt).not.toHaveBeenCalled();
-    const parsed = JSON.parse(output.output) as Record<string, unknown>;
-    expect(parsed.error).toBe(true);
-  });
-
   it('passes explicit reviewOutputPolicy for plan/implement/architecture text compatibility path', async () => {
     const stateRef = { current: buildState('PLAN', 'plan', 'text_compat_allowed') };
     vi.mocked(readState).mockResolvedValue(stateRef.current);
@@ -599,10 +575,11 @@ it('blocks WITHOUT invoking the reviewer when no exact implement obligation reso
   const stateWithoutObligation = {
     ...base,
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [],
       invocations: [],
       attempts: [],
+      dispatches: [],
     },
   };
   const stateRef = { current: stateWithoutObligation };

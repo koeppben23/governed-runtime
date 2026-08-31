@@ -56,11 +56,11 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     code: 'HOST_TOOL_PHASE_DENIED',
     category: 'admissibility',
     messageTemplate:
-      "'{tool}' is not allowed in phase {phase}. Use read-only tools (read, glob, grep) for investigation.",
+      "'{tool}' is only allowed in phase IMPLEMENTATION, not {phase}. Use read-only tools (read, glob, grep) outside implementation.",
     recoverySteps: [
       'Check the current phase with flowguard_status',
-      'Use read-only tools (read, glob, grep) during investigation phases',
-      'Wait for the implementation phase to use mutating tools',
+      'Use read-only tools (read, glob, grep) outside implementation',
+      'Return to IMPLEMENTATION before using mutating host tools',
     ],
   },
 
@@ -303,6 +303,15 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       "When reviewVerdict is 'changes_requested', planText with the revised plan is required.",
     recoverySteps: ["Provide revised planText alongside reviewVerdict: 'changes_requested'"],
+  },
+  {
+    code: 'REVISED_PLAN_CLAIMS_REQUIRED',
+    category: 'input',
+    messageTemplate:
+      "When reviewVerdict is 'changes_requested', complete revised claims are required with planText.",
+    recoverySteps: [
+      "Provide complete claims alongside planText and reviewVerdict: 'changes_requested'",
+    ],
   },
 
   {

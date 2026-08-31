@@ -75,6 +75,7 @@ describe('renderReviewerTaskPrompt challenge contract', () => {
     expect(prompt).toContain('"obligationId":"11111111-1111-4111-8111-111111111111"');
     expect(prompt).toContain('"kind":"design_challenge"');
     expect(prompt).toContain('Omit challengeResolutionVerdicts');
+    expect(prompt).toContain('outcome. Select it yourself');
 
     const match = prompt.match(/Required challenge object shape: (.+)/);
     expect(match).not.toBeNull();
@@ -86,6 +87,7 @@ describe('renderReviewerTaskPrompt challenge contract', () => {
         scenario: 'Challenge the reviewed decision.',
         claim: 'The decision is supported by the cited section.',
         locations: ['ADR: Decision'],
+        outcome: 'supported',
       }).success,
     ).toBe(true);
   });
@@ -116,11 +118,13 @@ describe('renderReviewerTaskPrompt challenge contract', () => {
     for (const value of allowed) {
       expect(line).toContain(`"${value}"`);
     }
-    // The vocabulary is derived from the canonical schema, so the example value
-    // the prompt shows must itself be part of the declared set.
+    // The prompt must name the canonical vocabulary without anchoring the
+    // independent reviewer on one favorable default outcome.
     const match = prompt.match(/Required challenge object shape: (.+)/);
-    const rendered = JSON.parse(match![1]!) as { outcome: string };
-    expect(allowed).toContain(rendered.outcome);
+    const rendered = JSON.parse(match![1]!) as Record<string, unknown>;
+    expect(rendered).not.toHaveProperty('outcome');
+    expect(prompt).not.toContain('"outcome":"supported"');
+    expect(prompt).not.toContain('"outcome":"pass"');
   });
 });
 

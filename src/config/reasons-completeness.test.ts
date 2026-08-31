@@ -148,12 +148,13 @@ describe('SEED_REASONS completeness (F1 guard)', () => {
 
 // P10c: reason code split validation
 describe('P10c — reason code split', () => {
-  it('all 272 codes from split arrays are registered exactly once (no duplicates)', async () => {
+  it('all 288 codes from split arrays are registered exactly once (no duplicates)', async () => {
     const { PRECONDITION_REASONS } = await import('./reasons-precondition.js');
     const { ARCHITECTURE_REASONS } = await import('./reasons-architecture.js');
     const { VALIDATION_REASONS } = await import('./reasons-validation.js');
     const { INFRA_REASONS } = await import('./reasons-infra.js');
     const { PROOFGRAPH_REASONS } = await import('./reasons-proofgraph.js');
+    const { MUTATION_REASONS } = await import('./reasons-mutation.js');
 
     const allSplitCodes = [
       ...PRECONDITION_REASONS.map((r: { code: string }) => r.code),
@@ -161,21 +162,30 @@ describe('P10c — reason code split', () => {
       ...VALIDATION_REASONS.map((r: { code: string }) => r.code),
       ...INFRA_REASONS.map((r: { code: string }) => r.code),
       ...PROOFGRAPH_REASONS.map((r: { code: string }) => r.code),
+      ...MUTATION_REASONS.map((r: { code: string }) => r.code),
     ];
 
-    expect(allSplitCodes).toHaveLength(272);
+    expect(allSplitCodes).toHaveLength(291);
     // No duplicates across the 5 arrays
-    expect(new Set(allSplitCodes).size).toBe(272);
+    expect(new Set(allSplitCodes).size).toBe(291);
     // All split codes are registered in the default registry
     for (const code of allSplitCodes) {
       expect(defaultReasonRegistry.get(code)).toBeDefined();
     }
   });
 
-  it('PRECONDITION_REASONS has exactly 82 entries', async () => {
+  it('PRECONDITION_REASONS has exactly 85 entries', async () => {
     const { PRECONDITION_REASONS } = await import('./reasons-precondition.js');
-    expect(PRECONDITION_REASONS.length).toBe(82);
+    expect(PRECONDITION_REASONS.length).toBe(85);
     for (const r of PRECONDITION_REASONS) {
+      expect(r.category).toBe('precondition');
+    }
+  });
+
+  it('MUTATION_REASONS has exactly 12 entries', async () => {
+    const { MUTATION_REASONS } = await import('./reasons-mutation.js');
+    expect(MUTATION_REASONS.length).toBe(12);
+    for (const r of MUTATION_REASONS) {
       expect(r.category).toBe('precondition');
     }
   });
@@ -188,19 +198,19 @@ describe('P10c — reason code split', () => {
     }
   });
 
-  it('VALIDATION_REASONS has exactly 114 entries', async () => {
+  it('VALIDATION_REASONS has exactly 115 entries', async () => {
     const { VALIDATION_REASONS } = await import('./reasons-validation.js');
-    expect(VALIDATION_REASONS.length).toBe(114);
+    expect(VALIDATION_REASONS.length).toBe(115);
     const allowed = new Set(['input', 'state', 'config', 'admissibility']);
     for (const r of VALIDATION_REASONS) {
       expect(allowed.has(r.category)).toBe(true);
     }
   });
 
-  it('INFRA_REASONS has exactly 42 entries', async () => {
+  it('INFRA_REASONS has exactly 44 entries', async () => {
     const { INFRA_REASONS } = await import('./reasons-infra.js');
     const { PROOFGRAPH_REASONS } = await import('./reasons-proofgraph.js');
-    expect(INFRA_REASONS.length).toBe(42);
+    expect(INFRA_REASONS.length).toBe(44);
     const allowed = new Set(['adapter', 'identity']);
     for (const r of INFRA_REASONS) {
       expect(allowed.has(r.category)).toBe(true);

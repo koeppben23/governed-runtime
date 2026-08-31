@@ -998,7 +998,7 @@ describe('runAudit', () => {
     }
 
     function completeState(overrides: Partial<SessionState> = {}): SessionState {
-      return makeState('COMPLETE', {
+      const state = makeState('COMPLETE', {
         transition: {
           from: 'EVIDENCE_REVIEW',
           to: 'COMPLETE',
@@ -1007,6 +1007,18 @@ describe('runAudit', () => {
         },
         ...overrides,
       });
+      const transition = state.transition!;
+      const operation: Extract<PendingAuditOperation, { kind: 'transition' }> = {
+        kind: 'transition',
+        operationId: 'bbbbbbbb-0000-4000-8000-000000000001',
+        preStateDigest: 'a'.repeat(64),
+        mutationDigest: 'b'.repeat(64),
+        postStateDigest: 'c'.repeat(64),
+        auditEventDigest: 'd'.repeat(64),
+        status: 'reconciled',
+        transition: { ...transition, chainIndex: 0, autoAdvanced: false },
+      };
+      return { ...state, pendingAuditOperations: [...state.pendingAuditOperations, operation] };
     }
 
     it('emits session_completed lifecycle and archives in solo mode', async () => {
@@ -1155,7 +1167,7 @@ describe('runAudit', () => {
       resetChainSeq();
     });
 
-    it('counts only unreconciled outbox operations in tool_call transitionCount', async () => {
+    it('counts only transitions emitted by the current tool call', async () => {
       resetChainSeq();
       const unreconciledA = {
         kind: 'transition',
@@ -1174,17 +1186,8 @@ describe('runAudit', () => {
         },
         status: 'state_committed',
       } as const;
-      const unreconciledB = {
-        ...unreconciledA,
-        operationId: 'eeeeeeee-0000-4000-8000-000000000001',
-      } as const;
-      const reconciled = {
-        ...unreconciledA,
-        operationId: 'dddddddd-0000-4000-8000-000000000001',
-        status: 'reconciled',
-      } as const;
       const state = makeState('PLAN', {
-        pendingAuditOperations: [unreconciledA, unreconciledB, reconciled],
+        pendingAuditOperations: [unreconciledA],
       });
       const deps = makeDeps({
         resolveSessionPolicy: vi.fn().mockResolvedValue({
@@ -1202,7 +1205,10 @@ describe('runAudit', () => {
         deps,
         'flowguard_plan',
         { input: {} },
-        { phase: 'PLAN', error: false },
+        {
+          output: JSON.stringify({ phase: 'PLAN', error: false }),
+          metadata: { transitions: [unreconciledA.transition, unreconciledA.transition] },
+        },
         SESSION_ID,
       );
 
@@ -1322,7 +1328,8 @@ describe('runAudit', () => {
         const pending = await readState(sessDir);
         const operation = requireTransition(pending!.pendingAuditOperations[0]!);
         const body = buildTransitionBody(
-          SESSION_ID,
+          pending!.flowguardSessionId,
+          pending!.binding.hostSessionId,
           operation.transition.to,
           {
             operationId: operation.operationId,
@@ -1471,6 +1478,7 @@ describe('runAudit', () => {
         const operation = requireTransition(pending!.pendingAuditOperations[0]!);
         const body = buildTransitionBody(
           SESSION_ID,
+          undefined,
           operation.transition.to,
           {
             operationId: operation.operationId,
@@ -1573,6 +1581,7 @@ describe('runAudit', () => {
         await writeState(sessDir, legacy);
         const body = buildTransitionBody(
           SESSION_ID,
+          undefined,
           transition.to,
           {
             from: transition.from,
@@ -1627,6 +1636,7 @@ describe('runAudit', () => {
         // Same kind/from/event/at, different `to` — must NOT count as evidence.
         const decoy = buildTransitionBody(
           SESSION_ID,
+          undefined,
           'PLAN_REVIEW',
           {
             from: transition.from,
@@ -1641,7 +1651,7 @@ describe('runAudit', () => {
         await appendAuditEvent(sessDir, finalizeWithTimestampEvidence(decoy, 'genesis'));
         // Same transition fields but a different event kind — must NOT count.
         const decoyToolCall = buildToolCallBody({
-          sessionId: SESSION_ID,
+          flowguardSessionId: SESSION_ID,
           phase: 'PLAN',
           detail: {
             tool: 'flowguard_plan',
@@ -1649,7 +1659,7 @@ describe('runAudit', () => {
             success: true,
             transitionCount: 0,
           },
-          timestamp: transition.at,
+          occurredAt: transition.at,
           actor: 'machine',
           prevHash: 'genesis',
         });
@@ -1769,6 +1779,7 @@ describe('runAudit', () => {
         // Same id + operationId, different transition content.
         const divergent = buildTransitionBody(
           SESSION_ID,
+          undefined,
           'PLAN_REVIEW',
           {
             operationId: operation.operationId,

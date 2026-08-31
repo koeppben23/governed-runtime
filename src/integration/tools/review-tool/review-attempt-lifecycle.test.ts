@@ -103,11 +103,14 @@ describe('subject digest stability', () => {
     const obligationId = '33333333-1111-4111-8111-111111111111';
     const state = makeState('REVIEW', {
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [
           {
             obligationId,
             obligationType: 'review',
+            requiredChallengeCount: 0,
+            requiredChallengeKind: 'content_challenge',
+            challengePolicyVersion: 'challenge-policy.v1',
             iteration: 0,
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,
@@ -131,6 +134,7 @@ describe('subject digest stability', () => {
         ],
         invocations: [],
         attempts: [],
+        dispatches: [],
       },
     });
 

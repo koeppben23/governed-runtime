@@ -10,6 +10,9 @@ function makeObligation(overrides: Partial<ReviewObligation> = {}): ReviewObliga
   return {
     obligationId: FIXED_UUID,
     obligationType: 'plan',
+    requiredChallengeCount: 0,
+    requiredChallengeKind: 'design_challenge',
+    challengePolicyVersion: 'challenge-policy.v1',
     subjectDigest: 'test-subject-digest',
     iteration: 1,
     planVersion: 1,

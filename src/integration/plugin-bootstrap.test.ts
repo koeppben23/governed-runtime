@@ -2,7 +2,7 @@
  * @module integration/plugin-bootstrap.test
  * @description Fail-closed bootstrap tests for FlowGuardAuditPlugin.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import { FlowGuardAuditPlugin, isUsableWorktree } from './plugin.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
@@ -25,6 +25,18 @@ import {
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import { computeRecordDigest } from '../state/evidence-plan.js';
 import { fileURLToPath } from 'node:url';
+
+// The test workspace carries a fake `.git` marker (not a real repository), but
+// the git prerequisite gate for mutating host tools must treat it as a
+// repository. Risk-gate tests below init a REAL repo via initGitRepo; the
+// spread keeps their real changedFiles/remoteOriginUrl behavior intact.
+vi.mock('../adapters/git.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/git.js')>();
+  return {
+    ...original,
+    isGitRepoStrict: vi.fn().mockResolvedValue(true),
+  };
+});
 
 const execFileAsync = promisify(execFile);
 
@@ -84,6 +96,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
           lineageStatus: 'verified' as const,
         },
         history: [],
+        reviewCompletion: 'pending',
         reviewFindings: [],
       },
       selfReview: {
@@ -103,11 +116,14 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
         },
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [
           {
             obligationId,
             obligationType: 'plan',
+            requiredChallengeCount: 0,
+            requiredChallengeKind: 'design_challenge',
+            challengePolicyVersion: 'challenge-policy.v1',
             subjectDigest: 'test-subject-digest',
             iteration: 0,
             planVersion: 1,
@@ -139,6 +155,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
         ],
         invocations: [],
         attempts: [],
+        dispatches: [],
       },
     }),
   );
@@ -540,7 +557,12 @@ describe('plugin bootstrap fail-closed', () => {
 
         const persisted = await readState(sessDir);
         expect(persisted!.pendingAuditOperations[0]!.status).toBe('reconciled');
-        await expect(beforeHook(input, output)).resolves.toBeUndefined();
+        // A fresh host dispatch identity passes after reconciliation succeeds.
+        await expect(beforeHook({ ...input, callID: 'c2' }, output)).resolves.toBeUndefined();
+        // A replayed dispatch identity is blocked fail-closed (no second episode).
+        await expect(beforeHook(input, output)).rejects.toThrow('MUTATION_EPISODE_REPLAY_BLOCKED');
+        const afterRetry = await readState(sessDir);
+        expect(afterRetry!.mutationEpisodes).toHaveLength(2);
       } finally {
         await ws.cleanup();
       }
@@ -722,7 +744,7 @@ describe('plugin bootstrap fail-closed', () => {
 
         const input = { tool: 'bash', sessionID: crypto.randomUUID(), callID: 'c1' };
         const output = { args: { command: 'echo hello' } };
-        await expect(beforeHook(input, output)).rejects.toThrow('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+        await expect(beforeHook(input, output)).rejects.toThrow('SESSION_DIR_NOT_FOUND');
       } finally {
         await fs.rm(tmp, { recursive: true, force: true });
       }

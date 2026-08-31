@@ -30,16 +30,18 @@ state and audit-chain files listed above.
 FlowGuard fail-closes archive creation when `session-state.json` contains ticket/plan evidence but required derived artifacts under `artifacts/` are missing, malformed, or digest/hash-inconsistent with current ticket/plan evidence.
 
 Archive Layout v2 supports two distinct export purposes. The default is a
-redacted sharing archive (`basic`, `includeRaw=false`). It is intentionally
-`not_verifiable`: redaction excludes the canonical state and audit chain that
-full evidence verification requires. It remains suitable for controlled sharing,
-but is not an audit substitute.
+redacted sharing archive (`basic`, `includeRaw=false`). Its result reports
+`packagePurpose: sharing`, `integrityCapability: not_verifiable`, and
+`verificationStatus: not_run`: redaction excludes the canonical state and audit
+chain that full evidence verification requires. It remains suitable for
+controlled sharing, but is not an audit substitute.
 
 For complete auditor evidence, authorize raw export with
 `archive.redaction.allowRawExport=true` and explicitly export with
 `redactionMode=none, includeRaw=true`. That package contains unredacted evidence,
-is eligible for canonical verification, and must be stored and transferred as
-confidential material.
+reports `packagePurpose: auditor` and `integrityCapability: verifiable`, and
+reports `verificationStatus: passed` or `failed` after verification. It must be
+stored and transferred as confidential material.
 
 Regulated clean completion is a separate system-owned path: it always creates
 and verifies its mandatory local raw-evidence archive, regardless of the manual
@@ -166,12 +168,14 @@ session state tracks the immutable regulated-evidence lifecycle:
 `regulatedArchiveStatus !== 'verified'` (and no `error`) is NOT a clean regulated
 completion. Status/doctor tools should surface this as degraded.
 
-**Manual exports** record their own result independently in `lastExportStatus`
-(`verified`, `not_verifiable`, or `failed`) and `lastExportKind` (`raw` or
-`redacted`). They never change `regulatedArchiveStatus`. `archiveStatus` remains
-a deprecated compatibility mirror for the regulated lifecycle only. Solo sessions
-may use the audit plugin's fire-and-forget archive path. Team sessions never
-archive on completion: `/export` is the explicit archive action.
+**Manual exports** record their own semantics independently in
+`lastExportPackagePurpose` (`sharing` or `auditor`),
+`lastExportIntegrityCapability` (`verifiable` or `not_verifiable`), and
+`lastExportVerificationStatus` (`not_run`, `passed`, or `failed`). They never
+change `regulatedArchiveStatus`. `archiveStatus` remains a deprecated
+compatibility mirror for the regulated lifecycle only. Solo sessions may use the
+audit plugin's fire-and-forget archive path. Team sessions never archive on
+completion: `/export` is the explicit archive action.
 
 **Aborted sessions** (`error.code === 'ABORTED'`) do not trigger the regulated
 archive lifecycle. Abort is an emergency escape with no archive guarantee.
@@ -234,28 +238,28 @@ verifier recomputes both from the archived `audit.jsonl` and reports
 
 ### Audit Chain Format
 
-Current audit events use `auditFormatVersion: "audit-chain.v2"`.
-The v2 chain hash is `SHA-256(prevHash + canonicalJson(eventWithoutChainHash))`,
+All audit records use `auditFormatVersion: "audit-chain.v3"` (the Assurance
+epoch format). A v3 record carries a semantic content digest
+(`semanticEventDigest`) separate from the position-bound record digest:
+`chainHash = SHA-256("audit-chain.v3:" + prevHash + canonicalJson(recordWithoutChainHash))`,
 where canonical JSON sorts object keys recursively at every nesting depth while
-preserving array order. This binds nested audit content such as decision details,
-actor metadata, timestamp evidence, and enforcement metadata to the chain hash.
+preserving array order. `auditSequence` is the sequence authority (assigned by
+the append lock, never producer-supplied), `occurredAt` is the event occurrence
+time, and `recordedAt` is stamped by the append authority. This binds nested
+audit content such as decision details, actor metadata, timestamp evidence, and
+enforcement metadata to the chain hash.
 
-Pre-v2 chained audit events either omit `auditFormatVersion` or declare
-`audit-chain.v1`. These events are not verified under the v2 tamper-evidence
-guarantee because the historical chain serializer did not bind nested content.
-Current verification reports them as `audit_chain_legacy_format`, not as
-`audit_chain_invalid`, so operators can distinguish old-format evidence from a
-tampered v2 chain.
-
-Recovery for legacy/pre-v2 archives:
-
-1. Treat the archive as reduced-assurance legacy evidence until migration is complete.
-2. If operational policy allows it, re-verify with an explicit weak legacy verifier and re-seal under v2.
-3. Otherwise retain the archive with the `audit_chain_legacy_format` finding documented in the evidence record.
-
-Unknown audit chain formats are reported as `audit_chain_unsupported_format` and
-must be handled by a runtime that explicitly supports that format. The default
-verifier does not silently fall back to legacy hashing.
+Records that omit `auditFormatVersion` or declare a pre-v3 format are rejected
+with `LEGACY_ASSURANCE_FORMAT_UNSUPPORTED` at every persistence and
+verification boundary. Legacy assurance artifacts are never migrated,
+reinterpreted, or re-sealed: a trail containing them fails verification with
+the `audit_chain_legacy_format` finding, not `audit_chain_invalid`, so operators
+can distinguish unsupported epoch data from a tampered v3 chain. A time
+regression between `recordedAt` values is reported as `CLOCK_ANOMALY`.
+(Chain-order authority is the append-stamped `recordedAt`: the durable audit
+outbox reconciles older operations after newer direct appends, so an earlier
+`occurredAt` on a later-recorded event is a legitimate deferred record, not a
+clock anomaly.)
 
 ## Retention
 

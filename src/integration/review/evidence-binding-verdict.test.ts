@@ -166,7 +166,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
     // 4. Append evidence to assurance state
     const assurance = appendInvocationEvidence(
       ensureReviewAssurance({
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [
           {
             ...obligation,
@@ -178,6 +178,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
         ],
         invocations: [],
         attempts: [],
+        dispatches: [],
       }),
       bindResult.evidence!,
     );
@@ -255,7 +256,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
 
     const assurance = appendInvocationEvidence(
       ensureReviewAssurance({
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [
           {
             ...obligation,
@@ -267,6 +268,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
         ],
         invocations: [],
         attempts: [],
+        dispatches: [],
       }),
       bindResult.evidence!,
     );
@@ -336,7 +338,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
 
     const assurance = appendInvocationEvidence(
       ensureReviewAssurance({
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [
           {
             ...obligation,
@@ -348,6 +350,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
         ],
         invocations: [],
         attempts: [],
+        dispatches: [],
       }),
       bindResult.evidence!,
     );
@@ -455,7 +458,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
     // Build assurance with the evidence
     const assurance = appendInvocationEvidence(
       ensureReviewAssurance({
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [
           {
             ...obligation,
@@ -467,6 +470,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
         ],
         invocations: [],
         attempts: boundAttempts,
+        dispatches: [],
       }),
       bindResult.evidence!,
     );
@@ -520,7 +524,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
 
     const assurance = appendInvocationEvidence(
       ensureReviewAssurance({
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [
           {
             ...obligation,
@@ -532,6 +536,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
         ],
         invocations: [],
         attempts: boundAttempts,
+        dispatches: [],
       }),
       bindResult.evidence!,
     );
@@ -565,7 +570,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
 
     // Even if we somehow had an invocation, resolve would fail
     const assurance = ensureReviewAssurance({
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [
         {
           ...obligation,
@@ -577,6 +582,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
       ],
       invocations: [],
       attempts: [],
+      dispatches: [],
     });
     const resolved = resolveHostTaskFindings(assurance, obligation);
     expect(resolved.kind).toBe('not_found');
@@ -617,7 +623,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
 
     const assurance = appendInvocationEvidence(
       ensureReviewAssurance({
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [
           {
             ...obligation,
@@ -629,6 +635,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
         ],
         invocations: [],
         attempts: boundAttempts,
+        dispatches: [],
       }),
       bindResult.evidence!,
     );

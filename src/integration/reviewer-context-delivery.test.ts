@@ -99,6 +99,9 @@ function obligation(
     criteriaVersion: REVIEW_CRITERIA_VERSION,
     mandateDigest: REVIEW_MANDATE_DIGEST,
     maxReviewerOutputRepairAttempts: 1,
+    requiredChallengeCount: 0,
+    requiredChallengeKind: 'design_challenge' as const,
+    challengePolicyVersion: 'challenge-policy.v1' as const,
     createdAt: NOW,
     pluginHandshakeAt: null,
     status: 'pending',
@@ -167,10 +170,11 @@ function buildState(
       reviewOutputPolicy: 'structured_required',
     },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5' as const,
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [],
       invocations: [],
       attempts: [],
+      dispatches: [],
     },
     ...overrides,
   });

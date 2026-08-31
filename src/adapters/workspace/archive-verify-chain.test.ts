@@ -21,7 +21,7 @@ describe('timestampFindingCode', () => {
   });
 
   it('maps other timestamp failures to timestamp_unanchored', () => {
-    expect(timestampFindingCode('TIMESTAMP_NON_MONOTONIC')).toBe('timestamp_unanchored');
+    expect(timestampFindingCode('CLOCK_ANOMALY')).toBe('timestamp_unanchored');
     expect(timestampFindingCode('TIMESTAMP_EVIDENCE_MISSING')).toBe('timestamp_unanchored');
   });
 });

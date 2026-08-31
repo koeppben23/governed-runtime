@@ -29,7 +29,11 @@ import { hashCanonicalReviewContent, normalizeReviewContent } from '../../shared
 import { deriveRepositoryRevisionProvenance } from '../../state/evidence.js';
 import { indexMarkdownSections } from '../../shared/markdown-sections.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
-import { DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS } from '../../config/policy-types.js';
+import {
+  DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS,
+  CHALLENGE_POLICY_V1,
+  type ChallengePolicy,
+} from '../../config/policy-types.js';
 import type { TaskClass } from '../../state/schema.js';
 import type { ReviewSubjectScope } from '../../state/evidence-review.js';
 import type { RepositoryEvidenceFreeze } from '../../state/evidence-review-freeze.js';
@@ -149,6 +153,8 @@ export function createReviewObligation(input: {
    * rejected; no binding is possible without a proven subject identity.
    */
   subjectDigest: string;
+  /** Exact plan-claim declaration digest frozen before reviewer invocation. */
+  claimDeclarationsDigest?: string;
   /** Frozen standalone content/repository subject, when this is a standalone review. */
   reviewSubject?: FrozenReviewSubject;
   /** Exact normalized artifact bytes frozen for host-task delivery. */
@@ -161,14 +167,17 @@ export function createReviewObligation(input: {
   /** Provenance of the frozen profile. Defaults to 'policy_default'. */
   profileSource?: ReviewProfileSource;
   /**
-   * Frozen session policy; without its challenge policy, enforcement is
-   * disabled. The output-repair budget is frozen onto the obligation from the
-   * snapshot at creation — the reissue gate never re-reads live config.
+   * Frozen session policy. Hard Assurance Epoch: the persisted v6 obligation
+   * REQUIRES the frozen challenge authority, so the mint boundary requires
+   * `challengePolicy` whenever a snapshot is provided. The output-repair
+   * budget is frozen onto the obligation from the snapshot at creation — the
+   * reissue gate never re-reads live config.
    */
-  policySnapshot?: Pick<
-    PolicySnapshot,
-    'challengePolicy' | 'maxReviewerOutputRepairAttempts'
-  > | null;
+  policySnapshot?:
+    | (Pick<PolicySnapshot, 'maxReviewerOutputRepairAttempts'> & {
+        challengePolicy?: ChallengePolicy;
+      })
+    | null;
   /** Runtime paths classified by the canonical phase-tool gate. */
   changedFiles?: readonly string[];
   /**
@@ -198,7 +207,12 @@ export function createReviewObligation(input: {
   assertSubjectDigest(input.subjectDigest);
   assertRepositoryFreezeCoherence(input);
   requireArtifactSubjectScope(input.obligationType, input.reviewSubjectScope);
-  const challengePolicy = input.policySnapshot?.challengePolicy;
+  // Hard Assurance Epoch: the persisted v6 obligation REQUIRES the frozen
+  // challenge triple, so the mint always materializes it. A mint without a
+  // policy snapshot freezes the canonical TRIVIAL matrix — the obligation
+  // still carries the explicit authority, never an implicit no-policy state.
+  const challengePolicy = input.policySnapshot?.challengePolicy ?? CHALLENGE_POLICY_V1;
+  const resolvedChallengeRequirements = resolveChallengeRequirements(challengePolicy, input);
   const subjectDigest = resolveSubjectDigest(input);
   const reviewSubjectScope = resolveSubjectScope(
     subjectDigest,
@@ -226,8 +240,11 @@ export function createReviewObligation(input: {
     // supplied. The profile is fixed here, before the reviewer is invoked.
     reviewProfile: input.reviewProfile ?? 'core',
     profileSource: input.profileSource ?? 'policy_default',
-    ...resolveChallengeRequirements(challengePolicy, input),
+    ...resolvedChallengeRequirements,
     subjectDigest,
+    ...(input.claimDeclarationsDigest
+      ? { claimDeclarationsDigest: input.claimDeclarationsDigest }
+      : {}),
     ...(input.reviewMaterial ? { reviewMaterial: input.reviewMaterial } : {}),
     reviewSubject: input.reviewSubject,
     metadata: input.metadata,
@@ -271,7 +288,11 @@ export function resolveFrozenReviewProfile(
  */
 function resolveFrozenOutputRepairBudget(
   policySnapshot:
-    Pick<PolicySnapshot, 'challengePolicy' | 'maxReviewerOutputRepairAttempts'> | null | undefined,
+    | (Pick<PolicySnapshot, 'maxReviewerOutputRepairAttempts'> & {
+        challengePolicy?: ChallengePolicy;
+      })
+    | null
+    | undefined,
 ): number {
   return (
     policySnapshot?.maxReviewerOutputRepairAttempts ?? DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS

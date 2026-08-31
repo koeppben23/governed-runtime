@@ -167,9 +167,10 @@ describe('reviewer DTO strict boundary', () => {
           supersedesRecordDigest: null,
           originatingReviewObligationId: null,
           revisionReason: null,
-          lineageStatus: 'unavailable',
+          lineageStatus: 'verified',
         },
         history: [],
+        reviewCompletion: 'pending',
       },
     });
     const obligation = { ...planObligation(), obligationId: OBLIGATION_ID };

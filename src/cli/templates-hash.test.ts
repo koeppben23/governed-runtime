@@ -26,6 +26,7 @@ import {
   TOOL_FLOWGUARD_TICKET,
   TOOL_FLOWGUARD_PLAN,
   TOOL_FLOWGUARD_DECISION,
+  TOOL_FLOWGUARD_EXTEND_IMPLEMENTATION_REVIEW,
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
   TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
@@ -36,6 +37,7 @@ import {
   TOOL_FLOWGUARD_ARCHIVE,
   TOOL_FLOWGUARD_ARCHITECTURE,
   TOOL_FLOWGUARD_HELP,
+  TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE,
 } from '../integration/tool-names.js';
 
 function sha256(value: string): string {
@@ -45,7 +47,7 @@ function sha256(value: string): string {
 describe('TEMPLATE_HASH_STABILITY', () => {
   it('TOOL_WRAPPER matches compiled output hash', () => {
     expect(sha256(TOOL_WRAPPER)).toBe(
-      'e5a8c92750dc027482ce2e1180c1983bf0bcd4444f986f9fcc18bd5cb4c50fa8',
+      '2832703d740a9a77afeb0f81fa145ae48d9a8e4e55d6edaf31dc176d18dc5e29',
     );
   });
 
@@ -70,7 +72,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // role/identity sentence and enriched ## 12. Extended Guidance to name the
     // owning authorities (commands/profiles/reviewer) without duplicating them.
     expect(sha256(FLOWGUARD_MANDATES_BODY)).toBe(
-      'a51c4d18d7ec1f924cd33237b7a98fe5685c6baa25fecd61d321bb542315d68b',
+      'de261e4dcad912540982ce2911a6c9dbfd4f33b7544e3c43c0a12df8c37273bb',
     );
   });
 
@@ -94,8 +96,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // p41 -> p42: mandate semantics fixed (removed 'info' severity, corrected type names,
     //   evidenceLocations may be empty). Refreshed for reviewer-owned input DTO:
     // reviewer provenance is host-stamped after strict input validation.
+    // Refreshed for the untrusted-data compactness fix: merged the
+    // untrusted-data sentence onto a single line, keeping the reviewer prompt
+    // within its compactness budget.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      '5f0f74912c51e1fab914de853e705ab62fdd93c1370010c419dc274d5a3cc93a',
+      'd69f8bcf75c2d42bb32ac3838d9243d3baae61b90f4450d62e11c01b02a34c83',
     );
   });
 
@@ -248,13 +253,36 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // instruction no longer asks the agent to supply ADR/ticket text (the host
     // injects the canonical prompt); re-runs route to output repair or review
     // orchestration restart.
+    // Refreshed for auto-continuation review loops: shared-review-loop now
+    // instructs agents to CONTINUE AUTOMATICALLY between iterations instead of
+    // "Repeat from step X" and records the implement reviewer's negative verdict
+    // FIRST (changesRequestedVerdictFirst) before any edits. /implement documents
+    // that changes_requested is an INTERNAL continuation with no intermediate
+    // presentation card. /check branches the IMPL_REVIEW outcome (accept /
+    // changes_requested / blocked) and no longer treats a negative verdict as
+    // completion. Changes the command bodies and therefore the COMMANDS hash.
+    // Refreshed for the /check rework continuation: an active non-exhausted
+    // implementationRework marker now continues the repair → flowguard_implement
+    // → status → flowguard_run_check → challenge resolution loop until a terminal
+    // verdict, scoped to the verified rework case by the /check command scope
+    // (flowguard_resolve_implementation_challenge is referenced from /check).
+    // Refreshed again for the full loop: read/glob/grep are part of the repair
+    // surface, and the continuation is keyed to "this /check already recorded a
+    // changes_requested verdict" so a failing FRESH check after re-record still
+    // continues the loop instead of stopping for a manual /implement hand-off.
+    // Changes the /check body and therefore the COMMANDS hash.
+    // Refreshed for the same-digest invariant: the rework marker is RETAINED
+    // across re-records and only closed when the fresh revalidation fully passes
+    // into IMPL_REVIEW, so restoring an earlier rejected revision after a failing
+    // revalidation is blocked again. Changes the /check body and therefore the
+    // COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '7c84d8357f173a0d0006d59d8e6425426446e2c4f8fa790a1e4cbe946c83e615',
+      'a536cd338648acbdef7e9f2f98ecd2d1774bd48a10f99d330acda1c24fec7898',
     );
   });
 
-  it('all 24 commands present', () => {
+  it('all 26 commands present', () => {
     const expected = [
       'abort.md',
       'approve.md',
@@ -264,11 +292,13 @@ describe('TEMPLATE_HASH_STABILITY', () => {
       'commands.md',
       'continue.md',
       'export.md',
+      'extend-implementation-review.md',
       'finish.md',
       'help.md',
       'hydrate.md',
       'implement.md',
       'plan.md',
+      'reconcile-mutation-episode.md',
       'reject.md',
       'request-changes.md',
       'resolve-implementation-challenge.md',
@@ -298,6 +328,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
       TOOL_FLOWGUARD_TICKET,
       TOOL_FLOWGUARD_PLAN,
       TOOL_FLOWGUARD_DECISION,
+      TOOL_FLOWGUARD_EXTEND_IMPLEMENTATION_REVIEW,
       TOOL_FLOWGUARD_IMPLEMENT,
       TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
       TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
@@ -309,6 +340,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
       TOOL_FLOWGUARD_ARCHITECTURE,
       TOOL_FLOWGUARD_HELP,
       TOOL_FLOWGUARD_OBSERVE_REPOSITORY,
+      TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE,
     ];
 
     // Parse the actual export identifiers from TOOL_WRAPPER's export block.
@@ -342,6 +374,42 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     expect(
       stray,
       `TOOL_WRAPPER exports unexpected identifiers (not canonical tools): ${stray.join(', ')}`,
+    ).toEqual([]);
+  });
+
+  // Drift guard for the installed-package surface: the wrapper's import
+  // (`export { ... } from "@flowguard/core/integration"`) resolves against the
+  // integration barrel at install time. A wrapper export that is missing from
+  // src/integration/index.ts breaks the OpenCode tool scan with an import
+  // error (HTTP 500 on the tool-ids endpoint) — this must never regress.
+  it('every TOOL_WRAPPER export exists in the integration barrel (installed package surface)', async () => {
+    const exportBlock = TOOL_WRAPPER.match(/export\s*\{([^}]*)\}/);
+    expect(exportBlock, 'TOOL_WRAPPER must contain an export block').not.toBeNull();
+    const wrapperExports = exportBlock![1]!
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    const barrel = await fs.readFile(
+      path.join(process.cwd(), 'src', 'integration', 'index.ts'),
+      'utf-8',
+    );
+    const barrelExportBlock = barrel.match(/export\s*\{([\s\S]*?)\}\s*from '\.\/tools\/index\.js'/);
+    expect(barrelExportBlock, 'integration barrel must re-export the tools').not.toBeNull();
+    const barrelExports = new Set(
+      barrelExportBlock![1]!
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0),
+    );
+
+    const missing = wrapperExports.filter((id) => !barrelExports.has(id));
+    expect(
+      missing,
+      `@flowguard/core/integration is missing exports referenced by TOOL_WRAPPER: ${missing.join(', ')}. ` +
+        `Add them to src/integration/index.ts or the OpenCode tool scan fails.`,
     ).toEqual([]);
   });
 });

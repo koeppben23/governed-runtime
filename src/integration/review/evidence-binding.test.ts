@@ -626,10 +626,11 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
 
       const assurance = appendInvocationEvidence(
         ensureReviewAssurance({
-          assuranceSchemaVersion: 'review-assurance.v5' as const,
+          assuranceSchemaVersion: 'review-assurance.v6' as const,
           obligations: [obligation],
           invocations: [],
           attempts: boundAttempts,
+          dispatches: [],
         }),
         bind.evidence!,
       );
@@ -1238,10 +1239,11 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
     const invocations: ReviewInvocationEvidence[] = [];
     const resolveCorrupt = resolveHostTaskFindings(
       {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [obligation],
         invocations,
         attempts: [attemptCorrupt, attemptValid],
+        dispatches: [],
       },
       obligation,
     );
@@ -1275,10 +1277,11 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
     // skips the still-unparseable corrupt one, and returns the valid re-capture.
     const resolveValid = resolveHostTaskFindings(
       {
-        assuranceSchemaVersion: 'review-assurance.v5' as const,
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [obligation],
         invocations,
         attempts: [attemptCorrupt, { ...attemptValid, status: 'bound' as const }],
+        dispatches: [],
       },
       obligation,
     );

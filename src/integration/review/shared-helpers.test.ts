@@ -307,6 +307,9 @@ function implementPromptState(overrides: {
   const obligation = {
     obligationId: 'ob-1',
     obligationType: 'implement' as const,
+    requiredChallengeCount: 0,
+    requiredChallengeKind: 'implementation_challenge' as const,
+    challengePolicyVersion: 'challenge-policy.v1' as const,
     iteration: 1,
     planVersion: 1,
     criteriaVersion: 'p41-v1',
@@ -342,10 +345,11 @@ function implementPromptState(overrides: {
         }
       : null,
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5',
+      assuranceSchemaVersion: 'review-assurance.v6',
       obligations: [obligation],
       invocations: [],
       attempts: [],
+      dispatches: [],
     },
   });
   return {
@@ -421,10 +425,11 @@ it('fails closed when the orchestration context does not resolve an exact implem
   params.sessionState = {
     ...params.sessionState,
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5',
+      assuranceSchemaVersion: 'review-assurance.v6',
       obligations: [],
       invocations: [],
       attempts: [],
+      dispatches: [],
     },
   };
   expect(() => buildToolPrompt(params)).toThrowError(
@@ -437,6 +442,9 @@ it('fails closed when the resolved obligation is not an implement obligation', (
   const wrongType = {
     obligationId: 'ob-1',
     obligationType: 'plan' as const,
+    requiredChallengeCount: 0,
+    requiredChallengeKind: 'design_challenge' as const,
+    challengePolicyVersion: 'challenge-policy.v1' as const,
     iteration: 1,
     planVersion: 1,
     criteriaVersion: 'p41-v1',
@@ -464,10 +472,11 @@ it('fails closed when the resolved obligation is not an implement obligation', (
   params.sessionState = {
     ...params.sessionState,
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v5',
+      assuranceSchemaVersion: 'review-assurance.v6',
       obligations: [wrongType],
       invocations: [],
       attempts: [],
+      dispatches: [],
     },
   };
   expect(() => buildToolPrompt(params)).toThrowError(

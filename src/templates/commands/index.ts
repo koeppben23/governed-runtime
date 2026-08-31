@@ -18,7 +18,9 @@ import { TICKET_COMMAND } from './ticket.js';
 import { PLAN_COMMAND } from './plan.js';
 import { CONTINUE_COMMAND } from './continue.js';
 import { IMPLEMENT_COMMAND } from './implement.js';
+import { EXTEND_IMPLEMENTATION_REVIEW_COMMAND } from './extend-implementation-review.js';
 import { RESOLVE_IMPLEMENTATION_CHALLENGE_COMMAND } from './resolve-implementation-challenge.js';
+import { RECONCILE_MUTATION_EPISODE_COMMAND } from './reconcile-mutation-episode.js';
 import { VALIDATE_COMMAND } from './validate.js';
 import { REVIEW_DECISION_COMMAND } from './review-decision.js';
 import { REVIEW_COMMAND } from './review.js';
@@ -47,7 +49,9 @@ const COMMAND_BODIES: Record<string, string> = {
   'plan.md': PLAN_COMMAND,
   'continue.md': CONTINUE_COMMAND,
   'implement.md': IMPLEMENT_COMMAND,
+  'extend-implementation-review.md': EXTEND_IMPLEMENTATION_REVIEW_COMMAND,
   'resolve-implementation-challenge.md': RESOLVE_IMPLEMENTATION_CHALLENGE_COMMAND,
+  'reconcile-mutation-episode.md': RECONCILE_MUTATION_EPISODE_COMMAND,
   'validate.md': VALIDATE_COMMAND,
   'review-decision.md': REVIEW_DECISION_COMMAND,
   'review.md': REVIEW_COMMAND,

@@ -113,10 +113,10 @@ export function challengeKindForObligation(obligationType: string): ChallengeKin
 }
 
 /** Mandatory independent review configuration for FlowGuardPolicy. */
-export const DEFAULT_SELF_REVIEW_CONFIG: SelfReviewConfig = {
-  subagentEnabled: true,
-  fallbackToSelf: false,
-  strictEnforcement: true,
+export const DEFAULT_SELF_REVIEW_CONFIG = {
+  subagentEnabled: true as const,
+  fallbackToSelf: false as const,
+  strictEnforcement: true as const,
 };
 
 /**
@@ -234,12 +234,12 @@ export function defaultValidationEvidenceForMode(mode: PolicyMode): ValidationEv
 
 /**
  * Fail-closed challenge-policy default for a mode when a snapshot omits it.
- * `solo` stays legacy-tolerant (no enforcement); team/team-ci/regulated fail
- * closed to the canonical matrix so a stripped or legacy snapshot in an enforced
- * mode cannot silently disable challenge enforcement (finding A2).
+ * Hard Assurance Epoch: every preset carries the canonical matrix — the
+ * writer-side default is the matrix for ALL modes, and the persisted snapshot
+ * requires the field explicitly.
  */
-export function defaultChallengePolicyForMode(mode: PolicyMode): ChallengePolicy | undefined {
-  return mode === 'solo' ? undefined : CHALLENGE_POLICY_V1;
+export function defaultChallengePolicyForMode(_mode: PolicyMode): ChallengePolicy {
+  return CHALLENGE_POLICY_V1;
 }
 
 // ─── FlowGuard Policy ─────────────────────────────────────────────────────────
@@ -309,7 +309,7 @@ export interface FlowGuardPolicy {
   readonly reviewProfile: ReviewProfile;
 
   /** Versioned challenge coverage policy frozen into new session snapshots. */
-  readonly challengePolicy?: ChallengePolicy;
+  readonly challengePolicy: ChallengePolicy;
 
   /** Audit event emission controls. */
   readonly audit: AuditPolicy;

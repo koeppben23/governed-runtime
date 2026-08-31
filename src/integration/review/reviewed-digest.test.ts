@@ -32,6 +32,13 @@ const NOW = '2026-08-15T10:00:00.000Z';
 
 function planObligation(): ReviewObligation {
   return createReviewObligation({
+    policySnapshot: {
+      challengePolicy: {
+        version: 'challenge-policy.v1',
+        counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+      },
+      maxReviewerOutputRepairAttempts: 1,
+    },
     obligationType: 'plan',
     iteration: 0,
     planVersion: 1,
@@ -92,10 +99,11 @@ function hostInvocation(
 
 function assurance(obligations: ReviewObligation[], invocations: ReviewInvocationEvidence[]) {
   return {
-    assuranceSchemaVersion: 'review-assurance.v5' as const,
+    assuranceSchemaVersion: 'review-assurance.v6' as const,
     obligations,
     invocations,
     attempts: [],
+    dispatches: [],
   };
 }
 
@@ -131,6 +139,13 @@ describe('resolveReviewedArtifactIdentity', () => {
   it('BAD: invocation consumed by ANOTHER obligation is never provenance', () => {
     const obligation = planObligation();
     const other = createReviewObligation({
+      policySnapshot: {
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
+        maxReviewerOutputRepairAttempts: 1,
+      },
       obligationType: 'plan',
       iteration: 1,
       planVersion: 2,
@@ -153,6 +168,13 @@ describe('resolveReviewedArtifactIdentity', () => {
 
   it('BAD: attestation pointing at an obligation of a different type is rejected', () => {
     const implement = createReviewObligation({
+      policySnapshot: {
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
+        maxReviewerOutputRepairAttempts: 1,
+      },
       obligationType: 'implement',
       iteration: 0,
       planVersion: 1,

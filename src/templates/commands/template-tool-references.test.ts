@@ -13,6 +13,7 @@ import {
   TOOL_FLOWGUARD_TICKET,
   TOOL_FLOWGUARD_PLAN,
   TOOL_FLOWGUARD_DECISION,
+  TOOL_FLOWGUARD_EXTEND_IMPLEMENTATION_REVIEW,
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
   TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
@@ -23,6 +24,7 @@ import {
   TOOL_FLOWGUARD_ABORT,
   TOOL_FLOWGUARD_ARCHIVE,
   TOOL_FLOWGUARD_HELP,
+  TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE,
 } from '../../integration/tool-names.js';
 import { COMMANDS } from './index.js';
 import { TOOL_WRAPPER } from '../wrappers/index.js';
@@ -33,6 +35,7 @@ const REGISTERED_TOOLS: ReadonlySet<string> = new Set([
   TOOL_FLOWGUARD_TICKET,
   TOOL_FLOWGUARD_PLAN,
   TOOL_FLOWGUARD_DECISION,
+  TOOL_FLOWGUARD_EXTEND_IMPLEMENTATION_REVIEW,
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
   TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
@@ -43,6 +46,7 @@ const REGISTERED_TOOLS: ReadonlySet<string> = new Set([
   TOOL_FLOWGUARD_ABORT,
   TOOL_FLOWGUARD_ARCHIVE,
   TOOL_FLOWGUARD_HELP,
+  TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE,
 ]);
 
 const TOOL_REFERENCE_PATTERN = /flowguard_[a-z_]+/g;
@@ -259,6 +263,28 @@ describe('implement command: validation-gate contract', () => {
   it('does not skip empty-check gate into review loop', () => {
     const body = COMMANDS['implement.md'];
     expect(body).not.toContain('skip to Phase 5');
+  });
+
+  it('dispatches on the actual returned phase instead of an assumed sequence (#852)', () => {
+    const body = COMMANDS['implement.md'];
+    expect(body).toContain('Dispatch on the RETURNED `phase` field');
+    expect(body).toContain('never an assumed sequence');
+    // Zero-check: the machine may land in IMPL_REVIEW within the record call.
+    expect(body).toContain('Go DIRECTLY to Phase 5');
+    // Reduced ceremony: the machine may land in EVIDENCE_REVIEW within the call.
+    expect(body).toContain('No checks, no reviewer, no further steps');
+    // Terminal: a policy-permitted automatic approval may land in COMPLETE.
+    expect(body).toContain('`COMPLETE`: terminal');
+    // Shared review loop is policy-neutral about the convergence target.
+    expect(body).toContain("the policy's terminal gate");
+    // No invented phase transition.
+    expect(body).toContain('never invent the next phase');
+    expect(body).not.toContain('The session advances to IMPL_VALIDATION');
+  });
+
+  it('never claims the IMPL_REVIEW gate is unreachable without checks (#852)', () => {
+    const body = COMMANDS['implement.md'];
+    expect(body).not.toContain('cannot be reached');
   });
 
   it('requires a confirming runtime response before entering IMPL_REVIEW', () => {

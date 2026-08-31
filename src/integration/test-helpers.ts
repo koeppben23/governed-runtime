@@ -360,10 +360,11 @@ export async function fulfillStrictReviewObligation(
   const state = await readState(sessDir);
   if (!state) throw new Error('No test session state found');
   const assurance = state.reviewAssurance ?? {
-    assuranceSchemaVersion: 'review-assurance.v5' as const,
+    assuranceSchemaVersion: 'review-assurance.v6' as const,
     obligations: [],
     invocations: [],
     attempts: [],
+    dispatches: [],
   };
   const obligation = findLatestObligation(
     assurance.obligations,
@@ -452,7 +453,7 @@ export async function fulfillStrictReviewObligation(
     obligationType: input.obligationType,
     mandateDigest: obligation.mandateDigest,
     criteriaVersion: obligation.criteriaVersion,
-    parentSessionId: state.binding.sessionId,
+    parentSessionId: state.binding.hostSessionId,
     childSessionId: findings.reviewedBy.sessionId,
     invocationMode: isHostTask ? 'host_subagent_task' : 'sdk_session_prompt',
     hostVisible: isHostTask,

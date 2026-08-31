@@ -88,11 +88,17 @@ describe('state schemas', () => {
         digest: 'abc',
         sections: ['Plan'],
         createdAt: FIXED_TIME,
+        recordDigest: 'record',
+        planVersion: 1,
+        supersedesRecordDigest: null,
+        originatingReviewObligationId: null,
+        revisionReason: null,
+        lineageStatus: 'verified',
       };
       const parsed = PlanEvidence.parse(plan);
       expect(parsed.body).toBe(plan.body);
       expect(parsed.planVersion).toBe(1);
-      expect(parsed.lineageStatus).toBe('unavailable');
+      expect(parsed.lineageStatus).toBe('verified');
     });
 
     it('ValidationResult parses valid result', () => {
@@ -114,7 +120,7 @@ describe('state schemas', () => {
 
     it('BindingInfo accepts OpenCode-style session IDs', () => {
       const binding = {
-        sessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
+        hostSessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
         worktree: '/tmp/test',
         fingerprint: 'abcdef0123456789abcdef01',
         resolvedAt: FIXED_TIME,
@@ -133,16 +139,73 @@ describe('state schemas', () => {
       expect(() => SessionState.parse(state)).not.toThrow();
     });
 
-    it('SessionState defaults missing validationAttempts for legacy sessions', () => {
-      const legacy: Record<string, unknown> = { ...makeState('TICKET') };
-      delete legacy.validationAttempts;
-      expect(SessionState.parse(legacy).validationAttempts).toEqual([]);
+    it('SessionState rejects a state missing validationAttempts (no read-time defaulting)', () => {
+      const incomplete: Record<string, unknown> = { ...makeState('TICKET') };
+      delete incomplete.validationAttempts;
+      expect(() => SessionState.parse(incomplete)).toThrow();
     });
 
-    it('SessionState defaults missing challengeResolutions for legacy sessions', () => {
-      const legacy: Record<string, unknown> = { ...makeState('TICKET') };
-      delete legacy.challengeResolutions;
-      expect(SessionState.parse(legacy).challengeResolutions).toEqual([]);
+    it('SessionState rejects a state missing challengeResolutions (no read-time defaulting)', () => {
+      const incomplete: Record<string, unknown> = { ...makeState('TICKET') };
+      delete incomplete.challengeResolutions;
+      expect(() => SessionState.parse(incomplete)).toThrow();
+    });
+
+    it('SessionState rejects a state missing mutationEpisodes / mutationEpisodeResolutions / pendingAuditOperations', () => {
+      const withoutEpisodes: Record<string, unknown> = { ...makeState('TICKET') };
+      delete withoutEpisodes.mutationEpisodes;
+      expect(() => SessionState.parse(withoutEpisodes)).toThrow();
+
+      const withoutResolutions: Record<string, unknown> = { ...makeState('TICKET') };
+      delete withoutResolutions.mutationEpisodeResolutions;
+      expect(() => SessionState.parse(withoutResolutions)).toThrow();
+
+      const withoutOutbox: Record<string, unknown> = { ...makeState('TICKET') };
+      delete withoutOutbox.pendingAuditOperations;
+      expect(() => SessionState.parse(withoutOutbox)).toThrow();
+    });
+
+    it('SessionState rejects an implementationRework missing the exhausted authority flag', () => {
+      const state = makeState('TICKET');
+      expect(() =>
+        SessionState.parse({
+          ...state,
+          implementationRework: { rejectedDigest: 'rejected-implementation-digest' },
+        }),
+      ).toThrow();
+      expect(
+        SessionState.parse({
+          ...state,
+          implementationRework: {
+            rejectedDigest: 'rejected-implementation-digest',
+            exhausted: false,
+          },
+        }).implementationRework,
+      ).toEqual({ rejectedDigest: 'rejected-implementation-digest', exhausted: false });
+    });
+
+    it('rejects missing and preserves present implementation review extension evidence', () => {
+      const state = makeState('TICKET');
+      const incomplete: Record<string, unknown> = { ...state };
+      delete incomplete.implementationReviewExtensions;
+      expect(() => SessionState.parse(incomplete)).toThrow();
+      expect(
+        SessionState.parse({
+          ...state,
+          implementationReviewExtensions: [
+            {
+              additionalIterations: 1,
+              authorizedAt: '2025-01-01T00:00:00.000Z',
+              authorizedBy: {
+                actorId: 'reviewer-1',
+                actorEmail: null,
+                actorSource: 'oidc',
+                actorAssurance: 'idp_verified',
+              },
+            },
+          ],
+        }).implementationReviewExtensions,
+      ).toHaveLength(1);
     });
 
     it('SessionState parses legacy state without risk classification fields', () => {
@@ -177,10 +240,10 @@ describe('state schemas', () => {
       ]);
     });
 
-    it('SessionState normalizes legacy regulated/team-ci snapshots to risk enforcement on', () => {
+    it('SessionState rejects snapshots missing risk authority fields (no read-time defaulting)', () => {
       for (const mode of ['regulated', 'team-ci'] as const) {
         const state = makeState('TICKET');
-        const legacy = {
+        const incomplete = {
           ...state,
           policySnapshot: {
             ...state.policySnapshot,
@@ -188,26 +251,29 @@ describe('state schemas', () => {
             requestedMode: mode,
           },
         };
-        delete (legacy.policySnapshot as Record<string, unknown>).enforceRiskClassification;
-        delete (legacy.policySnapshot as Record<string, unknown>).allowRiskDowngradeOverride;
+        delete (incomplete.policySnapshot as Record<string, unknown>).enforceRiskClassification;
+        delete (incomplete.policySnapshot as Record<string, unknown>).allowRiskDowngradeOverride;
 
-        const parsed = SessionState.parse(legacy);
-        expect(parsed.policySnapshot.enforceRiskClassification).toBe(true);
-        expect(parsed.policySnapshot.allowRiskDowngradeOverride).toBe(false);
+        expect(() => SessionState.parse(incomplete)).toThrow();
       }
     });
 
     it('AuditEvent parses valid event with hash chain fields', () => {
       const event = {
         id: FIXED_UUID,
-        sessionId: FIXED_SESSION_UUID,
+        flowguardSessionId: FIXED_SESSION_UUID,
+        hostSessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
         phase: 'TICKET',
         event: 'lifecycle:session_created',
-        timestamp: FIXED_TIME,
+        occurredAt: FIXED_TIME,
+        auditFormatVersion: 'audit-chain.v3',
+        auditSequence: 1,
+        recordedAt: FIXED_TIME,
+        semanticEventDigest: 'a'.repeat(64),
+        prevHash: 'genesis',
+        chainHash: 'b'.repeat(64),
         actor: 'system',
         detail: {},
-        prevHash: 'genesis',
-        chainHash: 'abc123',
       };
       expect(() => AuditEvent.parse(event)).not.toThrow();
     });
@@ -215,10 +281,17 @@ describe('state schemas', () => {
     it('AuditEvent accepts OpenCode-style non-UUID session IDs', () => {
       const event = {
         id: FIXED_UUID,
-        sessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
+        flowguardSessionId: FIXED_SESSION_UUID,
+        hostSessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
         phase: 'READY',
         event: 'tool_call:flowguard_hydrate',
-        timestamp: FIXED_TIME,
+        occurredAt: FIXED_TIME,
+        auditFormatVersion: 'audit-chain.v3',
+        auditSequence: 1,
+        recordedAt: FIXED_TIME,
+        semanticEventDigest: 'a'.repeat(64),
+        prevHash: 'genesis',
+        chainHash: 'b'.repeat(64),
         actor: 'system',
         detail: {},
       };
@@ -250,7 +323,7 @@ describe('state schemas', () => {
     it('BindingInfo rejects unsafe session IDs', () => {
       expect(() =>
         BindingInfo.parse({
-          sessionId: '../etc/passwd',
+          hostSessionId: '../etc/passwd',
           worktree: '/tmp/test',
           fingerprint: 'abcdef0123456789abcdef01',
           resolvedAt: FIXED_TIME,
@@ -262,10 +335,16 @@ describe('state schemas', () => {
       expect(() =>
         AuditEvent.parse({
           id: FIXED_UUID,
-          sessionId: 'bad/session',
+          flowguardSessionId: 'bad/session',
           phase: 'READY',
           event: 'tool_call:flowguard_hydrate',
-          timestamp: FIXED_TIME,
+          occurredAt: FIXED_TIME,
+          auditFormatVersion: 'audit-chain.v3',
+          auditSequence: 1,
+          recordedAt: FIXED_TIME,
+          semanticEventDigest: 'a'.repeat(64),
+          prevHash: 'genesis',
+          chainHash: 'b'.repeat(64),
           actor: 'system',
           detail: {},
         }),
@@ -318,7 +397,7 @@ describe('state schemas', () => {
     });
 
     it('SessionState rejects invalid schemaVersion', () => {
-      const state = { ...makeState('TICKET'), schemaVersion: 'v2' };
+      const state = { ...makeState('TICKET'), schemaVersion: 'v1' };
       expect(() => SessionState.parse(state)).toThrow();
     });
 
@@ -396,8 +475,15 @@ describe('state schemas', () => {
           digest: 'abc',
           sections: [],
           createdAt: FIXED_TIME,
+          recordDigest: 'record',
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+          lineageStatus: 'verified',
         },
         history: [],
+        reviewCompletion: 'pending' as const,
       };
       expect(() => PlanRecord.parse(record)).not.toThrow();
     });
@@ -408,21 +494,28 @@ describe('state schemas', () => {
         digest: 'abc',
         sections: [],
         createdAt: FIXED_TIME,
+        recordDigest: 'record',
+        planVersion: 1,
+        supersedesRecordDigest: null,
+        originatingReviewObligationId: null,
+        revisionReason: null,
+        lineageStatus: 'verified',
       };
       expect(() => PlanEvidence.parse(plan)).not.toThrow();
     });
 
-    it('AuditEvent hash chain fields are optional (legacy compat)', () => {
+    it('AuditEvent rejects records without chain fields (legacy artifacts unsupported)', () => {
       const event = {
         id: FIXED_UUID,
-        sessionId: FIXED_SESSION_UUID,
+        flowguardSessionId: FIXED_SESSION_UUID,
+        hostSessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
         phase: 'TICKET',
         event: 'lifecycle:session_created',
-        timestamp: FIXED_TIME,
+        occurredAt: FIXED_TIME,
         actor: 'system',
         detail: {},
       };
-      expect(() => AuditEvent.parse(event)).not.toThrow();
+      expect(() => AuditEvent.parse(event)).toThrow();
     });
 
     it('validation array can be empty', () => {
@@ -520,12 +613,42 @@ describe('state schemas', () => {
         maxSelfReviewIterations: 3,
         maxImplReviewIterations: 3,
         allowSelfApproval: true,
+        minimumActorAssuranceForApproval: 'best_effort',
+        requireVerifiedActorsForApproval: false,
+        identityProviderMode: 'optional',
+        maxIncoherentReviewerCaptureRetries: 1,
+        maxReviewerOutputRepairAttempts: 1,
+        enforceRiskClassification: false,
+        allowRiskDowngradeOverride: false,
+        allowReducedCeremony: false,
+        discoveryHealth: { enforcement: 'off', onDegraded: 'allow', onDrift: 'allow' },
+        validationEvidence: { enforcement: 'off', allowNoCommands: false },
+        selfReview: {
+          subagentEnabled: true,
+          fallbackToSelf: false,
+          strictEnforcement: true,
+        },
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
         audit: {
           emitTransitions: true,
           emitToolCalls: true,
           enableChainHash: true,
+          timestampAssurance: {
+            enabled: false,
+            mode: 'local_only',
+            strict: false,
+            criticalEvents: ['decision', 'lifecycle'],
+            ntpServers: ['pool.ntp.org'],
+            ntpDriftThresholdMs: 30000,
+            tsaTimeoutMs: 10000,
+          },
         },
         reviewOutputPolicy: 'text_compat_allowed',
+        reviewInvocationPolicy: 'sdk_allowed',
+        reviewProfile: 'core',
         actorClassification: {
           flowguard_decision: 'human',
         },
@@ -547,7 +670,25 @@ describe('state schemas', () => {
         allowSelfApproval: true,
         minimumActorAssuranceForApproval: 'best_effort',
         requireVerifiedActorsForApproval: false,
+        enforceRiskClassification: false,
+        allowRiskDowngradeOverride: false,
+        allowReducedCeremony: false,
+        discoveryHealth: { enforcement: 'off', onDegraded: 'allow', onDrift: 'allow' },
+        validationEvidence: { enforcement: 'off', allowNoCommands: false },
+        maxIncoherentReviewerCaptureRetries: 1,
+        maxReviewerOutputRepairAttempts: 1,
         reviewOutputPolicy: 'text_compat_allowed',
+        reviewInvocationPolicy: 'sdk_allowed',
+        reviewProfile: 'core',
+        selfReview: {
+          subagentEnabled: true,
+          fallbackToSelf: false,
+          strictEnforcement: true,
+        },
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
         identityProvider: {
           mode: 'jwks',
           issuer: 'https://issuer.example.com',
@@ -560,6 +701,15 @@ describe('state schemas', () => {
           emitTransitions: true,
           emitToolCalls: true,
           enableChainHash: true,
+          timestampAssurance: {
+            enabled: false,
+            mode: 'local_only',
+            strict: false,
+            criticalEvents: ['decision', 'lifecycle'],
+            ntpServers: ['pool.ntp.org'],
+            ntpDriftThresholdMs: 30000,
+            tsaTimeoutMs: 10000,
+          },
         },
         actorClassification: {
           flowguard_decision: 'human',
@@ -620,12 +770,41 @@ describe('state schemas', () => {
         maxSelfReviewIterations: 3,
         maxImplReviewIterations: 3,
         allowSelfApproval: false,
+        minimumActorAssuranceForApproval: 'best_effort',
         requireVerifiedActorsForApproval: false,
+        identityProviderMode: 'optional',
+        maxIncoherentReviewerCaptureRetries: 1,
+        maxReviewerOutputRepairAttempts: 1,
+        enforceRiskClassification: true,
+        allowRiskDowngradeOverride: false,
+        allowReducedCeremony: false,
+        discoveryHealth: { enforcement: 'required', onDegraded: 'warn', onDrift: 'block' },
+        validationEvidence: { enforcement: 'required', allowNoCommands: false },
         reviewOutputPolicy: 'structured_required',
+        reviewInvocationPolicy: 'host_task_required',
+        reviewProfile: 'core',
+        selfReview: {
+          subagentEnabled: true,
+          fallbackToSelf: false,
+          strictEnforcement: true,
+        },
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
         audit: {
           emitTransitions: true,
           emitToolCalls: true,
           enableChainHash: true,
+          timestampAssurance: {
+            enabled: false,
+            mode: 'local_only',
+            strict: false,
+            criticalEvents: ['decision', 'lifecycle'],
+            ntpServers: ['pool.ntp.org'],
+            ntpDriftThresholdMs: 30000,
+            tsaTimeoutMs: 10000,
+          },
         },
         actorClassification: {
           flowguard_decision: 'human',

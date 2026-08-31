@@ -842,6 +842,7 @@ describe('audit completeness', () => {
             lineageStatus: 'verified' as const,
           },
           history: [],
+          reviewCompletion: 'pending',
         },
       });
       const report = evaluateCompleteness(state);

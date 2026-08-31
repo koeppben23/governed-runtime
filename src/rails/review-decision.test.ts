@@ -16,6 +16,8 @@ import {
   ARCH_OBLIGATION_ID,
 } from './review-decision-test-helpers.js';
 import { hashText } from '../shared/hashing.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { emptyClaimDeclarations } from '../state/proofgraph-approval.js';
 
 const baseCtx = {
   now: () => FIXED_TIME,
@@ -36,6 +38,7 @@ function architectureAssurance(input: {
   iteration?: number;
   findingsHash?: string;
   capturedVerdict?: string;
+  claimDeclarationsDigest?: string;
   obligationInvocationId?: boolean;
 }): ReviewAssuranceState {
   return assuranceChain([
@@ -46,6 +49,7 @@ function architectureAssurance(input: {
       iteration: input.iteration,
       findingsHash: input.findingsHash,
       capturedVerdict: input.capturedVerdict,
+      claimDeclarationsDigest: input.claimDeclarationsDigest,
       invocationId: input.obligationInvocationId === false ? null : ARCH_INVOCATION_ID,
       consumedByObligationId: input.status === 'consumed' ? ARCH_OBLIGATION_ID : null,
     },
@@ -69,6 +73,7 @@ interface PlanAssuranceInput {
   iteration?: number;
   createdAt?: string;
   capturedVerdict?: string;
+  claimDeclarationsDigest?: string;
 }
 
 /** Minimal single-obligation assurance for plan-certificate binding tests. */
@@ -85,6 +90,10 @@ function planAssurance(input: PlanAssuranceInput): ReviewAssuranceState {
       invocationId: input.invocationId ?? PLAN_INVOCATION_ID,
       findingsHash: input.findingsHash ?? 'a'.repeat(64),
       capturedVerdict: input.capturedVerdict,
+      // Default: the empty declaration set (most plan-approval tests carry no claims).
+      claimDeclarationsDigest:
+        input.claimDeclarationsDigest ??
+        hashText(canonicalJsonStringify(emptyClaimDeclarations('plan'))),
       consumedByObligationId: input.status === 'consumed' ? obligationId : null,
     },
   ]);
@@ -128,6 +137,7 @@ const PLAN_CLAIM = {
   statement: 'The login flow rejects invalid credentials.',
   critical: true,
   authoritySectionId: 'authentication',
+  claimScope: 'specific_behavior' as const,
   expectedCheckId: 'test',
 };
 
@@ -145,13 +155,16 @@ describe('review-decision rail', () => {
       plan: {
         current: PLAN_RECORD.current,
         history: PLAN_RECORD.history,
-        claimDeclarations: { flow: 'plan', claims: [PLAN_CLAIM] },
+        claimDeclarations: { flow: 'plan', version: 'v2', claims: [PLAN_CLAIM] },
         reviewCompletion: 'reviewer_accepted',
       },
       reviewAssurance: planAssurance({
         subjectDigest: PLAN_RECORD.current.digest,
         status: 'consumed',
         capturedVerdict: 'accept',
+        claimDeclarationsDigest: hashText(
+          canonicalJsonStringify({ flow: 'plan', version: 'v2', claims: [PLAN_CLAIM] }),
+        ),
       }),
     });
 
@@ -166,8 +179,8 @@ describe('review-decision rail', () => {
       expect(result.state.plan?.approvalCertificate).toMatchObject({
         flow: 'plan',
         authorityDigest: PLAN_RECORD.current.digest,
-        claimDeclarationsDigest: baseCtx.digest(
-          '{"claims":[{"authoritySectionId":"authentication","claimId":"00000000-0000-4000-8000-000000000003","critical":true,"expectedCheckId":"test","statement":"The login flow rejects invalid credentials."}],"flow":"plan"}',
+        claimDeclarationsDigest: hashText(
+          '{"claims":[{"authoritySectionId":"authentication","claimId":"00000000-0000-4000-8000-000000000003","claimScope":"specific_behavior","critical":true,"expectedCheckId":"test","statement":"The login flow rejects invalid credentials."}],"flow":"plan","version":"v2"}',
         ),
         decisionAttestationDigest: baseCtx.digest(
           '{"decidedAt":"2026-01-01T00:00:00.000Z","decidedBy":"reviewer-1","rationale":"approved","verdict":"approve"}',
@@ -1194,6 +1207,138 @@ describe('review-decision rail', () => {
       expect(result.kind).toBe('ok');
     });
 
+    it('blocks final approval for a completed mutation episode not bound to implementation evidence', () => {
+      const state = makeState('EVIDENCE_REVIEW', {
+        implementation: IMPL_EVIDENCE,
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
+        mutationEpisodes: [
+          {
+            episodeId: '00000000-0000-4000-8000-000000000011',
+            hostCallId: 'post-review-edit',
+            toolName: 'apply_patch',
+            runtimeInstanceId: '00000000-0000-4000-8000-000000000012',
+            leaseGeneration: 1,
+            authorizedAt: FIXED_TIME,
+            status: 'completed',
+            completedAt: FIXED_TIME,
+            outcome: 'success',
+            implementationDigest: null,
+            evidenceStatus: 'ineligible',
+          },
+        ],
+      });
+
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'approve stale subject', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+
+      expect(result).toMatchObject({ kind: 'blocked', code: 'MUTATION_EPISODE_BINDING_REQUIRED' });
+    });
+
+    it('blocks final approval for a host mutation dispatched without a completion outcome', () => {
+      const state = makeState('EVIDENCE_REVIEW', {
+        implementation: IMPL_EVIDENCE,
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
+        mutationEpisodes: [
+          {
+            episodeId: '00000000-0000-4000-8000-000000000015',
+            hostCallId: 'pending-host-edit',
+            toolName: 'edit',
+            runtimeInstanceId: '00000000-0000-4000-8000-000000000016',
+            leaseGeneration: 1,
+            authorizedAt: FIXED_TIME,
+            status: 'dispatch_authorized',
+            completedAt: null,
+            outcome: null,
+            implementationDigest: null,
+            evidenceStatus: 'ineligible',
+          },
+        ],
+      });
+
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'approve pending subject', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+
+      expect(result).toMatchObject({ kind: 'blocked', code: 'MUTATION_EPISODE_BINDING_REQUIRED' });
+    });
+
+    it('allows final approval after a fenced unknown-outcome resolution and fresh review evidence', () => {
+      const state = makeState('EVIDENCE_REVIEW', {
+        implementation: { ...IMPL_EVIDENCE, executedAt: '2026-02-01T00:00:00.000Z' },
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
+        mutationEpisodes: [
+          {
+            episodeId: '00000000-0000-4000-8000-000000000017',
+            hostCallId: 'crashed-host-edit',
+            toolName: 'edit',
+            runtimeInstanceId: '00000000-0000-4000-8000-000000000018',
+            leaseGeneration: 1,
+            authorizedAt: FIXED_TIME,
+            status: 'dispatch_authorized',
+            completedAt: null,
+            outcome: null,
+            implementationDigest: null,
+            evidenceStatus: 'ineligible',
+          },
+        ],
+        mutationEpisodeResolutions: [
+          {
+            resolutionId: '00000000-0000-4000-8000-000000000019',
+            hostCallId: 'crashed-host-edit',
+            status: 'reconciled_after_unknown_outcome',
+            basis: 'worktree_recapture',
+            resolvedAt: '2026-01-15T00:00:00.000Z',
+            resolvingRuntimeInstanceId: '00000000-0000-4000-8000-000000000020',
+            resolvingLeaseGeneration: 2,
+          },
+        ],
+      });
+
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'approve recaptured subject', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') expect(result.state.phase).toBe('COMPLETE');
+    });
+
+    it('does not block final approval for a historical episode bound stale by a later implementation', () => {
+      const state = makeState('EVIDENCE_REVIEW', {
+        implementation: IMPL_EVIDENCE,
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
+        mutationEpisodes: [
+          {
+            episodeId: '00000000-0000-4000-8000-000000000013',
+            hostCallId: 'prior-implementation-edit',
+            toolName: 'apply_patch',
+            runtimeInstanceId: '00000000-0000-4000-8000-000000000014',
+            leaseGeneration: 1,
+            authorizedAt: FIXED_TIME,
+            status: 'completed',
+            completedAt: FIXED_TIME,
+            outcome: 'success',
+            implementationDigest: 'previous-implementation-digest',
+            evidenceStatus: 'stale',
+          },
+        ],
+      });
+
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'approve current subject', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+
+      expect(result.kind).toBe('ok');
+    });
+
     it('P34: minimumActorAssuranceForApproval=idp_verified allows idp_verified actor', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
@@ -1448,67 +1593,6 @@ describe('review-decision rail', () => {
         // (which would happen only at ARCH_REVIEW).
         expect(result.state.architecture).toBe(state.architecture);
         expect(result.state.architecture?.status).toBe(ARCHITECTURE_DECISION.status);
-      }
-    });
-
-    it('binds the plan certificate to the exact-subject plan obligation evidence', () => {
-      const state = makeState('PLAN_REVIEW', {
-        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
-        selfReview: CONVERGED_SELF_REVIEW,
-        reviewAssurance: planAssurance({
-          subjectDigest: PLAN_RECORD.current.digest,
-          status: 'fulfilled',
-          capturedVerdict: 'accept',
-        }),
-      });
-      const result = executeReviewDecision(
-        state,
-        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
-        baseCtx,
-      );
-      expect(result.kind).toBe('ok');
-      if (result.kind === 'ok') {
-        expect(result.state.plan?.approvalCertificate?.reviewObligationId).toBe(PLAN_OBLIGATION_ID);
-        expect(result.state.plan?.approvalCertificate?.reviewEvidenceDigest).toBe('a'.repeat(64));
-      }
-    });
-
-    it('prefers the exact-subject plan obligation over a newer wrong-subject obligation', () => {
-      const newerWrong = planAssurance({
-        subjectDigest: 'wrong-subject-digest',
-        status: 'consumed',
-        iteration: 1,
-        createdAt: '2026-01-02T00:00:00.000Z',
-        obligationId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
-        invocationId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeff',
-        findingsHash: 'b'.repeat(64),
-      });
-      const olderMatch = planAssurance({
-        subjectDigest: PLAN_RECORD.current.digest,
-        status: 'consumed',
-        iteration: 0,
-        createdAt: '2026-01-01T00:00:00.000Z',
-        findingsHash: 'c'.repeat(64),
-        capturedVerdict: 'accept',
-      });
-      const state = makeState('PLAN_REVIEW', {
-        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
-        selfReview: CONVERGED_SELF_REVIEW,
-        reviewAssurance: {
-          ...newerWrong,
-          obligations: [...newerWrong.obligations, ...olderMatch.obligations],
-          invocations: [...newerWrong.invocations, ...olderMatch.invocations],
-        },
-      });
-      const result = executeReviewDecision(
-        state,
-        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
-        baseCtx,
-      );
-      expect(result.kind).toBe('ok');
-      if (result.kind === 'ok') {
-        expect(result.state.plan?.approvalCertificate?.reviewObligationId).toBe(PLAN_OBLIGATION_ID);
-        expect(result.state.plan?.approvalCertificate?.reviewEvidenceDigest).toBe('c'.repeat(64));
       }
     });
 

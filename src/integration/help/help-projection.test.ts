@@ -76,16 +76,29 @@ describe('buildHelpResult', () => {
       view: 'context',
     });
     expect(result.evidenceCompleteness.status).toBe('complete');
-    expect(result.archiveVerification.status).toBe('not_created');
+    expect(result.archiveVerification).toMatchObject({
+      packagePurpose: null,
+      integrityCapability: null,
+      verificationStatus: null,
+    });
   });
 
   it('surfaces a redacted archive as not verifiable rather than failed', () => {
     const result = buildHelpResult(
-      { ...makeProgressedState('COMPLETE'), archiveStatus: 'not_verifiable' },
+      {
+        ...makeProgressedState('COMPLETE'),
+        lastExportPackagePurpose: 'sharing',
+        lastExportIntegrityCapability: 'not_verifiable',
+        lastExportVerificationStatus: 'not_run',
+      },
       TEAM_POLICY,
       { view: 'context' },
     );
-    expect(result.archiveVerification.status).toBe('not_verifiable');
+    expect(result.archiveVerification).toMatchObject({
+      packagePurpose: 'sharing',
+      integrityCapability: 'not_verifiable',
+      verificationStatus: 'not_run',
+    });
     expect(result.archiveVerification.summary).toContain('intentionally excludes raw evidence');
   });
 
@@ -226,7 +239,7 @@ describe('buildHelpResult', () => {
     expect(result.reviewReportStatus).toBeDefined();
     expect(result.nextActionSummary).toBeDefined();
     expect(result.evidenceCompleteness.status).toBeDefined();
-    expect(result.archiveVerification.status).toBeDefined();
+    expect(result.archiveVerification).toHaveProperty('verificationStatus');
   });
 
   it('READY is orientation, not blocked', () => {
