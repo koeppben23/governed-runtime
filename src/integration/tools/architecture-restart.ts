@@ -277,7 +277,7 @@ async function mintRestartObligation(
   if (!subagentEnabled) return null;
   const classification = await resolvePreImplementationChallengeClassification(
     session.state,
-    session.wsDir,
+    session.worktree,
     subagentEnabled,
     args.targetPaths,
   );
@@ -287,7 +287,7 @@ async function mintRestartObligation(
   if (resolvedTargetPaths && resolvedTargetPaths.length > 0) {
     metadata.targetPaths = resolvedTargetPaths;
   }
-  const freeze = await freezeContextAuthorityAtHead(session.wsDir);
+  const freeze = await freezeContextAuthorityAtHead(session.worktree);
   return createReviewObligation({
     obligationType: 'architecture',
     iteration: cycle.iteration,

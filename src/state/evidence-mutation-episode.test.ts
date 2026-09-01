@@ -83,8 +83,9 @@ describe('mutation episode evidence', () => {
     });
     const episodes = second.kind === 'authorized' ? second.episodes : [];
     const completed = completeMutationEpisode(
-      completeMutationEpisode(episodes, 'call-1', TIME, 'failure'),
+      completeMutationEpisode(episodes, 'call-1', 'edit', TIME, 'failure'),
       'call-2',
+      'bash',
       TIME,
       'unknown',
     );
@@ -206,7 +207,7 @@ describe('mutation episode evidence', () => {
     expect(episodes[0]?.status).toBe('dispatch_authorized');
 
     // A resolved episode is never bound to implementation evidence.
-    const completed = completeMutationEpisode(episodes, 'call-1', TIME, 'unknown');
+    const completed = completeMutationEpisode(episodes, 'call-1', 'bash', TIME, 'unknown');
     const bound = reconcileMutationEpisodes(completed, resolutions, 'implementation-1');
     expect(bound[0]).toMatchObject({
       status: 'completed',
@@ -313,6 +314,7 @@ describe('enforceMutationEpisodeInvariants (schema boundary)', () => {
     const episode = completeMutationEpisode(
       [authorizedEpisode('call-1')],
       'call-1',
+      'bash',
       TIME,
       'unknown',
     );
@@ -327,6 +329,7 @@ describe('enforceMutationEpisodeInvariants (schema boundary)', () => {
     const episode = completeMutationEpisode(
       [authorizedEpisode('call-1')],
       'call-1',
+      'bash',
       TIME,
       'success',
     );

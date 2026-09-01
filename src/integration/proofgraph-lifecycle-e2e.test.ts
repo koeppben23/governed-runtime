@@ -26,9 +26,11 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 import { readState } from '../adapters/persistence.js';
-import { sessionDir } from '../adapters/workspace/index.js';
+import { sessionDir, workspaceDir } from '../adapters/workspace/index.js';
 import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
+import { writeDiscovery } from '../adapters/persistence-discovery.js';
 import { writeStateWithArtifacts, type ToolContext } from './tools/helpers.js';
+import { runRequiredDiscovery } from './tools/hydrate-discovery.js';
 import { plan } from './tools/plan.js';
 import { review } from './tools/review-tool/index.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
@@ -260,6 +262,14 @@ async function boot(label: string): Promise<Env> {
   const fp = await computeFingerprint(worktree);
   const sDir = sessionDir(fp.fingerprint, id);
   mkdirSync(sDir, { recursive: true });
+  const discovery = await runRequiredDiscovery(worktree, fp.fingerprint, {
+    files: [],
+    packageFiles: [],
+    configFiles: [],
+    packageFilePaths: [],
+    configFilePaths: [],
+  });
+  await writeDiscovery(workspaceDir(fp.fingerprint), discovery);
   return {
     rootDir,
     worktree,

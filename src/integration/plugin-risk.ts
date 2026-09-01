@@ -29,8 +29,9 @@ export function targetPathsForRisk(
   if ((toolName === 'write' || toolName === 'edit') && typeof args.filePath === 'string') {
     return [resolveRelativePath(args.filePath, getWorktreeRoot)];
   }
-  if (toolName === 'apply_patch' && typeof args.diff === 'string') {
-    return extractPathsFromPatch(args.diff);
+  if (toolName === 'apply_patch') {
+    const patch = typeof args.patchText === 'string' ? args.patchText : args.diff;
+    if (typeof patch === 'string') return extractPathsFromPatch(patch);
   }
   if (toolName === 'bash' && typeof args.command === 'string') {
     return extractPathsFromBashCommand(args.command);
@@ -81,6 +82,7 @@ export function extractPathsFromPatch(diff: string): string[] {
   collectPathsFromPattern(diff, /^(?:---|\+\+\+)[ \t]+(?:[ab]\/)?([^\n\r]+)$/gm, [1], paths);
   collectPathsFromPattern(diff, /^Binary files a\/(.+?) and b\/\1 differ$/gm, [1], paths);
   collectPathsFromPattern(diff, /^diff --git a\/(.+?) b\/(.+)$/gm, [1, 2], paths);
+  collectPathsFromPattern(diff, /^\*\*\* (?:Update|Add|Delete) File: (.+)$/gm, [1], paths);
   return [...paths];
 }
 

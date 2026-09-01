@@ -158,11 +158,14 @@ export function authorizeMutationEpisode(
 export function completeMutationEpisode(
   episodes: readonly MutationEpisode[],
   hostCallId: string,
+  toolName: string,
   completedAt: string,
   outcome: 'success' | 'failure' | 'unknown',
 ): MutationEpisode[] {
   return episodes.map((episode) =>
-    episode.hostCallId === hostCallId && episode.status === 'dispatch_authorized'
+    episode.hostCallId === hostCallId &&
+    episode.toolName === toolName &&
+    episode.status === 'dispatch_authorized'
       ? {
           ...episode,
           status: 'completed' as const,
