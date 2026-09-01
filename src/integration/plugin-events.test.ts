@@ -588,6 +588,61 @@ describe('integration/plugin-events', () => {
       expect(payload).not.toContain('abcdef0123456789');
     });
 
+    it('redacts secrets nested inside supplementary objects and arrays', async () => {
+      // detail is z.record(z.string(), z.unknown()), so host context reaches
+      // the raw trail with its structure intact. A shallow string-only pass
+      // would leave everything below the top level unredacted.
+      const payload = await auditPayload({
+        sessionID: 'S1',
+        error: 'boom',
+        request: { headers: { authorization: SECRETS[0] } },
+        attempts: [{ token: SECRETS[2] }, { note: SECRETS[1] }],
+        deep: { a: { b: { c: SECRETS[3] } } },
+      });
+      expect(payload).not.toContain('abcdef0123456789');
+      expect(payload).not.toContain('sk-proj-0123456789abcdef');
+      expect(payload).not.toContain('hunter2');
+      expect(payload).not.toContain('/Users/alice/private-project');
+    });
+
+    it('preserves supplementary structure while redacting', async () => {
+      const deps = createMockDeps();
+      await handleEvent(deps, {
+        type: 'session.error',
+        properties: {
+          sessionID: 'S1',
+          error: 'boom',
+          request: { headers: { authorization: SECRETS[0] }, retries: 2 },
+          attempts: [{ ok: false }],
+        },
+      });
+
+      const call = deps.calls.find((c) => c.method === 'emitSessionErrorAudit');
+      const supplementary = (call!.args[2] as Record<string, unknown>).supplementary as Record<
+        string,
+        unknown
+      >;
+      const request = supplementary.request as Record<string, unknown>;
+      // Shape survives: nesting, non-string values, and arrays are preserved.
+      expect(request.retries).toBe(2);
+      expect((request.headers as Record<string, unknown>).authorization).toBe('Bearer [redacted]');
+      expect(supplementary.attempts).toEqual([{ ok: false }]);
+    });
+
+    it('does not throw on cyclic supplementary context', async () => {
+      const cyclic: Record<string, unknown> = { name: 'ctx' };
+      cyclic.self = cyclic;
+      const deps = createMockDeps();
+
+      await expect(
+        handleEvent(deps, {
+          type: 'session.error',
+          properties: { sessionID: 'S1', error: 'boom', cyclic },
+        }),
+      ).resolves.not.toThrow();
+      expect(deps.calls.find((c) => c.method === 'emitSessionErrorAudit')).toBeDefined();
+    });
+
     it('preserves non-string supplementary values and the diagnostic shape', async () => {
       const deps = createMockDeps();
       await handleEvent(deps, {

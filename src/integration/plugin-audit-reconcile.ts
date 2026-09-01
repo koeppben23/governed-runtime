@@ -154,6 +154,19 @@ function buildOperationAuditBody(
   );
 }
 
+/**
+ * Drain the durable audit outbox.
+ *
+ * Every committed pending operation is authority: it was persisted inside the
+ * same state transaction as the mutation it binds, so it MUST be reconciled
+ * regardless of audit projection policy. Policy-filtering the drain would
+ * strand committed operations forever and leave the authority mutation with no
+ * audit evidence and no recovery path.
+ *
+ * `emitTransitions` therefore governs only which operations the producer
+ * creates (`audit-outbox.ts`) and the legacy transition-gap assertion below —
+ * never whether an already-committed operation gets drained.
+ */
 export async function emitTransitionAudits(input: {
   deps: AuditDeps;
   ctx: AuditContext;
@@ -161,12 +174,14 @@ export async function emitTransitionAudits(input: {
   timestampTracker: StrictTimestampTracker;
 }): Promise<void> {
   const { deps, ctx, sessionId, timestampTracker } = input;
-  if (!ctx.emitTransitions) return;
   const state = await readState(ctx.sessDir);
   const operations =
     state?.pendingAuditOperations.filter((operation) => operation.status !== 'reconciled') ?? [];
   if (operations.length === 0) {
-    await assertNoLegacyTransitionGap(ctx.sessDir, state);
+    // The legacy-gap check looks for a transition event. Under
+    // `emitTransitions: false` that event is intentionally never emitted, so
+    // asserting it would report a gap for evidence the policy suppressed.
+    if (ctx.emitTransitions) await assertNoLegacyTransitionGap(ctx.sessDir, state);
     return;
   }
   if (!state) {

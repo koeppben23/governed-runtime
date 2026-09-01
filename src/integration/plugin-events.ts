@@ -14,7 +14,7 @@
  */
 
 import { serializeError } from '../logging/error-serialize.js';
-import { sanitizeDiagnosticString } from '../logging/redact.js';
+import { redactExtra, sanitizeDiagnosticString } from '../logging/redact.js';
 
 /**
  * OpenCode Event shape (from @opencode-ai/sdk, used by plugin event hooks).
@@ -72,8 +72,11 @@ const HANDLED_EVENT_TYPES = new Set(['session.error', 'session.delete']);
 /**
  * Copy host-supplied properties that are not already modelled explicitly.
  *
- * Values are host-controlled and reach the raw audit trail, so string values
- * are redacted. Non-string values are passed through unchanged.
+ * Values are host-controlled and arbitrarily shaped — `detail` is
+ * `z.record(z.string(), z.unknown())`, so nested objects and arrays reach the
+ * raw audit trail intact. Redaction is delegated to `redactExtra()`, the
+ * existing deep-walking SSOT, which sanitizes every nested string while
+ * preserving structure and is cycle-, depth-, and throw-safe.
  */
 function collectSupplementaryContext(
   properties: Record<string, unknown> | undefined,
@@ -83,9 +86,9 @@ function collectSupplementaryContext(
   if (!properties) return supplementary;
   for (const [key, value] of Object.entries(properties)) {
     if (KNOWN_KEYS.has(key)) continue;
-    supplementary[key] = typeof value === 'string' ? sanitizeDiagnosticString(value) : value;
+    supplementary[key] = value;
   }
-  return supplementary;
+  return redactExtra(supplementary) ?? {};
 }
 
 function str(v: unknown): string {
