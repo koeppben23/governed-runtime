@@ -512,6 +512,42 @@ true })` returns the evaluated projection. Key invariants:
 
 ### Fixed
 
+- **`audit-chain.v3` contract defects in append, query, and diagnostics.** Six
+  bugs in the contract introduced by the hard Assurance epoch cutover (#852),
+  repaired without new events, outbox concepts, policy fields, or a format
+  version bump:
+  - **Exactly-once append was broken for raw producer bodies.** The writer
+    strips the producer `auditFormatVersion` and stamps
+    `CURRENT_AUDIT_FORMAT_VERSION`, but `computeCanonicalEventDigest()` does
+    not exclude that field, so a re-delivered raw body never digested equal to
+    its own persisted record. An honest retry after a crash between append and
+    acknowledgement failed closed as `duplicate id ... and different content`
+    instead of returning the persisted event. Both sides of the comparison are
+    now normalized to the same v3 commit body, which also owns the stamping
+    path. `EXCLUDED_FIELDS` is unchanged: no digest or chain-format change, and
+    no legacy interpretation of absent fields.
+  - **`byKind()` could not reach `state_write` or `enforcement_denied`.** It
+    matched a `${kind}:` prefix, but those factories emit `state_write` and
+    `enforcement:denied`. Both names are now shared constants in
+    `audit/types.ts`, so factory and consumer cannot drift.
+  - **`countByKind()` bucketed `enforcement:denied` as `enforcement`.** Free
+    namespaces such as `review:*` keep their own prefix.
+  - **`timeSpan()` read the first and last array element.** The trail is
+    ordered by `recordedAt`, and a reconciled outbox event may carry an older
+    `occurredAt`, so the reported span could be wrong or negative. Now min/max
+    over parsed instants.
+  - **`emitTransitions: false` disabled the durable state↔audit binding.** It
+    suppressed all state-write outbox generation rather than only the
+    transition projection, committing authority-state mutations with no pending
+    audit operation and no crash recovery. Latent — no shipped preset sets it
+    false.
+  - **Audit diagnostics bypassed redaction.** `tool_call.detail.errorMessage`,
+    `error.detail.message`, and `error:SESSION_ERROR` (message, stack, and
+    supplementary host context) reached the raw `audit.jsonl` unfiltered while
+    the operational log was redacted centrally. All now pass through the
+    existing `sanitizeDiagnosticString()`. Rationale, findings, and evidence
+    content are untouched.
+
 - **Duplicated standalone-review hypotheses (#762).** Review completion rebound
   evidence via a recomputed `taskDigest`. Because a branch subject only resolves
   to an immutable SHA after preparation, the digest legitimately changed, forking
