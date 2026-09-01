@@ -16,6 +16,7 @@
 
 import type { AuditEvent } from '../state/evidence.js';
 import type { AuditEventKind } from './types.js';
+import { ENFORCEMENT_DENIED_EVENT_NAME, STATE_WRITE_EVENT_NAME } from './types.js';
 
 /** Structured decision receipt derived from decision audit events. */
 export interface DecisionReceipt {
@@ -71,12 +72,26 @@ export function byActor(actor: string): AuditFilter {
 }
 
 /**
+ * Kinds whose audit-chain.v3 event name is not of the form `${kind}:...`.
+ * Every other kind uses the `${kind}:` prefix form.
+ */
+const EXACT_EVENT_NAME_BY_KIND: Partial<Record<AuditEventKind, string>> = {
+  state_write: STATE_WRITE_EVENT_NAME,
+  enforcement_denied: ENFORCEMENT_DENIED_EVENT_NAME,
+};
+
+/**
  * Filter events by event kind.
- * Matches against the `event` field prefix (e.g., "transition:" for kind "transition").
+ *
+ * The `event` field carries the kind discriminator, but the audit-chain.v3
+ * event names are not uniformly `${kind}:...`. Two current factories emit
+ * non-prefix names — `state_write` (no suffix) and `enforcement:denied`
+ * (whose kind is `enforcement_denied`) — so those are matched exactly.
  */
 export function byKind(kind: AuditEventKind): AuditFilter {
-  const prefix = `${kind}:`;
-  return (event) => event.event.startsWith(prefix);
+  const exact = EXACT_EVENT_NAME_BY_KIND[kind];
+  if (exact !== undefined) return (event) => event.event === exact;
+  return (event) => event.event.startsWith(`${kind}:`);
 }
 
 /**
@@ -135,7 +150,11 @@ export function filterEvents(events: AuditEvent[], filter: AuditFilter): AuditEv
 }
 
 /**
- * Get all events for a specific session, ordered chronologically.
+ * Get all events for a specific session, in trail (record) order.
+ *
+ * This preserves the order of the input trail, which under audit-chain.v3 is
+ * `recordedAt` order — the order the append authority committed the events.
+ * That is not necessarily `occurredAt` order: see {@link timeSpan}.
  */
 export function sessionEvents(events: AuditEvent[], sessionId: string): AuditEvent[] {
   return filterEvents(events, bySession(sessionId));
@@ -230,13 +249,26 @@ export function distinctSessions(events: AuditEvent[]): string[] {
 }
 
 /**
+ * Resolve the kind namespace of an event for counting.
+ *
+ * Unlike {@link byKind} this is not restricted to AuditEventKind: free
+ * namespaces such as `review:*` are counted under their own prefix. Only
+ * `enforcement:denied` needs an explicit mapping, because its prefix
+ * (`enforcement`) is not its kind (`enforcement_denied`).
+ */
+function eventKindName(event: AuditEvent): string {
+  if (event.event === ENFORCEMENT_DENIED_EVENT_NAME) return 'enforcement_denied';
+  const separator = event.event.indexOf(':');
+  return separator === -1 ? event.event : event.event.slice(0, separator);
+}
+
+/**
  * Count events by kind for a summary view.
  */
 export function countByKind(events: AuditEvent[]): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const event of events) {
-    // Extract kind from "kind:detail" format
-    const kind = event.event.split(':')[0] || 'unknown';
+    const kind = eventKindName(event) || 'unknown';
     counts[kind] = (counts[kind] || 0) + 1;
   }
   return counts;
@@ -254,15 +286,36 @@ export function countByPhase(events: AuditEvent[]): Record<string, number> {
 }
 
 /**
- * Get the first and last timestamp from a set of events.
+ * Get the earliest and latest occurrence time from a set of events.
+ *
+ * Computed as min/max over `occurredAt`, not as first/last element. Under
+ * audit-chain.v3 the trail is ordered by `recordedAt` (the writer's append
+ * authority), and a reconciled outbox event may legitimately carry an older
+ * `occurredAt` than the event recorded before it. Reading the endpoints
+ * positionally would therefore report a wrong — and possibly negative — span.
+ *
  * Returns null if the events array is empty.
  */
 export function timeSpan(
   events: AuditEvent[],
 ): { first: string; last: string; durationMs: number } | null {
   if (events.length === 0) return null;
-  const first = events[0]!.occurredAt;
-  const last = events[events.length - 1]!.occurredAt;
-  const durationMs = new Date(last).getTime() - new Date(first).getTime();
+  let first = events[0]!.occurredAt;
+  let last = first;
+  let firstMs = Date.parse(first);
+  let lastMs = firstMs;
+  for (const event of events) {
+    const ms = Date.parse(event.occurredAt);
+    if (Number.isNaN(ms)) continue;
+    if (Number.isNaN(firstMs) || ms < firstMs) {
+      first = event.occurredAt;
+      firstMs = ms;
+    }
+    if (Number.isNaN(lastMs) || ms > lastMs) {
+      last = event.occurredAt;
+      lastMs = ms;
+    }
+  }
+  const durationMs = lastMs - firstMs;
   return { first, last, durationMs };
 }

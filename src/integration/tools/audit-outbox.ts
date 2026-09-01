@@ -134,7 +134,6 @@ function addAuditOperations(
   next: SessionState,
   transitions: ReadonlyArray<{ from: string; to: string; event: string; at: string }>,
 ): SessionState {
-  if (!next.policySnapshot.audit.emitTransitions) return next;
   const preStateDigest = previous
     ? computeStateDigest(previous)
     : hashText('state-digest.v2:absent');
@@ -144,6 +143,13 @@ function addAuditOperations(
   // lifecycle/transition evidence when it creates a governed session.
   if (previous === null && transitions.length === 0) return next;
   if (transitions.length === 0) {
+    return addStateWriteOperation(previous, next, preStateDigest, postStateDigest);
+  }
+  // `emitTransitions` governs the transition projection only. It must never
+  // disable the durable state↔audit binding itself: a mutation of authority
+  // state that is committed without a pending audit operation is
+  // unrecoverable after a crash, whatever the audit projection policy says.
+  if (!next.policySnapshot.audit.emitTransitions) {
     return addStateWriteOperation(previous, next, preStateDigest, postStateDigest);
   }
   const mutationDigest = hashText(canonicalJsonStringify(transitions));

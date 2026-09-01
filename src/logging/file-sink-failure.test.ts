@@ -26,7 +26,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   return { ...actual, appendFile: mockAppendFile, rename: mockRename, stat: mockStat };
 });
 
-import { mkdir, rm, mkdtemp } from 'node:fs/promises';
+import { mkdir, rm, mkdtemp, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createFileSink } from './file-sink.js';
@@ -146,5 +146,46 @@ describe('file-sink write failure', () => {
     } finally {
       await rm(testDir, { recursive: true, force: true }).catch(() => {});
     }
+  });
+
+  // ─── log-directory setup failures ─────────────────────────────
+  // These paths drop every entry for the lifetime of the sink, so they are
+  // the most consequential failures the sink can hit — they must not resolve
+  // as if the write had succeeded.
+
+  it('a log-directory creation failure is surfaced via onFailure, not silent', async () => {
+    const testDir = await mkdtemp(join(tmpdir(), 'fg-fs-mkdir-fail-'));
+    const onFailure = vi.fn();
+    mockAppendFile.mockClear();
+    // .opencode is a file, so creating .opencode/logs cannot succeed.
+    await writeFile(join(testDir, '.opencode'), 'not a directory', 'utf8');
+
+    try {
+      const sink = createFileSink(testDir, { retentionDays: 1, onFailure });
+      await expect(
+        sink({ level: 'error', service: 'test', message: 'never lands on disk' }),
+      ).resolves.not.toThrow();
+
+      expect(onFailure).toHaveBeenCalledTimes(1);
+      expect(onFailure.mock.calls[0]![0]).toBeInstanceOf(Error);
+      // Total log loss must never look like a successful write.
+      expect(mockAppendFile).not.toHaveBeenCalled();
+    } finally {
+      await rm(testDir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+
+  it('a non-absolute workspace directory is surfaced via onFailure, not silent', async () => {
+    const onFailure = vi.fn();
+    mockAppendFile.mockClear();
+
+    const sink = createFileSink('relative/workspace', { retentionDays: 1, onFailure });
+    await expect(
+      sink({ level: 'error', service: 'test', message: 'never lands on disk' }),
+    ).resolves.not.toThrow();
+
+    expect(onFailure).toHaveBeenCalledTimes(1);
+    expect((onFailure.mock.calls[0]![0] as Error).message).toContain('absolute');
+    expect(mockAppendFile).not.toHaveBeenCalled();
   });
 });

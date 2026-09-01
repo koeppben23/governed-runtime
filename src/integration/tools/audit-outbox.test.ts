@@ -148,7 +148,7 @@ describe('prepareStateWithAuditOperations', () => {
     },
   );
 
-  it('CORNER: commits no operations when the policy does not emit transitions', async () => {
+  it('CORNER: suppresses the transition projection but still binds the authority write when the policy does not emit transitions', async () => {
     const previous = makeState('TICKET', { id: SESSION_ID });
     const base = makeState('PLAN', { id: SESSION_ID, transition: TICKET_TO_PLAN });
     const next = makeState('PLAN', {
@@ -161,7 +161,12 @@ describe('prepareStateWithAuditOperations', () => {
     });
 
     const prepared = await prepareStateWithAuditOperations(previous, next, undefined);
-    expect(prepared.pendingAuditOperations).toHaveLength(0);
+
+    // emitTransitions governs the transition projection only. Dropping the
+    // operation entirely would commit a mutation of authority state with no
+    // durable audit binding, which is unrecoverable after a crash.
+    expect(prepared.pendingAuditOperations).toHaveLength(1);
+    expect(prepared.pendingAuditOperations[0]!.kind).toBe('state_write');
   });
 
   it('CORNER: records a transition-less authority write', async () => {

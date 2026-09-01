@@ -85,6 +85,36 @@ export async function appendAuditEvent(
   }
 }
 
+/**
+ * Normalize any audit body or persisted record to the canonical
+ * `audit-chain.v3` commit body: semantic content plus the current format
+ * version, with every positional/authority field removed.
+ *
+ * This is the single normalization used both when stamping a new event and
+ * when comparing a re-delivered event against an already-persisted one, so
+ * the exactly-once comparison is performed on exactly the shape the writer
+ * commits. Without it, a raw producer body (which carries no
+ * `auditFormatVersion`) never digests equal to its own persisted record —
+ * which carries the writer-stamped version — and an honest retry would fail
+ * closed as a duplicate-id-with-different-content violation.
+ *
+ * This is not a legacy or migration path: producer-supplied positional values
+ * are dropped rather than interpreted, and the version is always forced to
+ * CURRENT_AUDIT_FORMAT_VERSION. Non-v3 records are rejected before this point.
+ */
+function normalizeCurrentAuditBody(event: AuditEventBody | AuditEvent): Record<string, unknown> {
+  const {
+    auditFormatVersion: _format,
+    auditSequence: _sequence,
+    recordedAt: _recordedAt,
+    semanticEventDigest: _semanticDigest,
+    prevHash: _prevHash,
+    chainHash: _chainHash,
+    ...semantic
+  } = event as Record<string, unknown>;
+  return { ...semantic, auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION };
+}
+
 async function appendAuditLineAtomically(
   sessionDir: string,
   event: AuditEventBody,
@@ -118,7 +148,10 @@ async function appendAuditLineAtomically(
     // fails closed.
     const sameId = existingTrail.events.find((candidate) => candidate.id === event.id);
     if (sameId) {
-      if (computeCanonicalEventDigest(sameId) === computeCanonicalEventDigest(event)) {
+      if (
+        computeCanonicalEventDigest(normalizeCurrentAuditBody(sameId)) ===
+        computeCanonicalEventDigest(normalizeCurrentAuditBody(event))
+      ) {
         return sameId;
       }
       throw new PersistenceError(
@@ -131,18 +164,8 @@ async function appendAuditLineAtomically(
     // chain position, sequence authority, or record time — any
     // producer-supplied positional/hash value is dropped before stamping so
     // it can never leak into a computed digest.
-    const {
-      auditFormatVersion: _producerFormat,
-      auditSequence: _producerSequence,
-      recordedAt: _producerRecordedAt,
-      semanticEventDigest: _producerSemanticDigest,
-      prevHash: _producerPrevHash,
-      chainHash: _producerChainHash,
-      ...semanticBody
-    } = event as AuditEventBody & Record<string, unknown>;
     const bodyWithPosition: Omit<ChainedAuditEvent, 'chainHash'> = {
-      ...semanticBody,
-      auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
+      ...normalizeCurrentAuditBody(event),
       auditSequence: existingTrail.events.length + 1,
       recordedAt: new Date().toISOString(),
       prevHash: getLastChainHash(existingTrail.events),
