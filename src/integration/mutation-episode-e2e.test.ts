@@ -84,6 +84,33 @@ function createMockInput(overrides: Record<string, unknown> = {}) {
   } as Parameters<typeof FlowGuardAuditPlugin>[0];
 }
 
+async function recordMutationOutcome(
+  tool: 'bash' | 'write' | 'edit' | 'apply_patch',
+  metadata: Record<string, unknown>,
+  output: string,
+): Promise<'success' | 'failure' | 'unknown' | null> {
+  const ws = await createTestWorkspace();
+  try {
+    const sessionID = crypto.randomUUID();
+    const fp = await computeFingerprint(ws.tmpDir);
+    const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+    await fs.mkdir(sessDir, { recursive: true });
+    await writeStateWithArtifacts(sessDir, makeProgressedState('IMPLEMENTATION'));
+    const hooks = await FlowGuardAuditPlugin(
+      createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+    );
+    const callID = crypto.randomUUID();
+    await hooks['tool.execute.before']!({ tool, sessionID, callID }, { args: {} });
+    await hooks['tool.execute.after']!(
+      { tool, sessionID, callID, args: {} },
+      { title: tool, output, metadata },
+    );
+    return (await readState(sessDir))!.mutationEpisodes[0]?.outcome ?? null;
+  } finally {
+    await ws.cleanup();
+  }
+}
+
 describe('mutation episode end-to-end (real plugin runtime)', () => {
   it('authorizes durably, binds the completed host mutation, and blocks replay', async () => {
     const ws = await createTestWorkspace();
@@ -187,6 +214,44 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       ).toMatchObject({ status: 'completed', outcome: 'success' });
     } finally {
       await ws.cleanup();
+    }
+  });
+
+  it('recognizes the exact OpenCode success contracts for every canonical mutator', async () => {
+    const cases = [
+      ['bash', { exit: 0 }, 'command output'],
+      [
+        'apply_patch',
+        { files: [], diff: '', diagnostics: [] },
+        'Success. Updated the following files:',
+      ],
+      [
+        'write',
+        { filepath: '/repo/example.ts', exists: false, diagnostics: [] },
+        'Wrote file successfully.',
+      ],
+      [
+        'edit',
+        { diff: '--- a/example.ts', filediff: 'example.ts', diagnostics: [] },
+        'Edit applied successfully.',
+      ],
+    ] as const;
+
+    for (const [tool, metadata, output] of cases) {
+      await expect(recordMutationOutcome(tool, metadata, output)).resolves.toBe('success');
+    }
+  });
+
+  it('keeps incomplete canonical-mutator payloads unknown', async () => {
+    const cases = [
+      ['bash', 'command output'],
+      ['apply_patch', 'Success. Updated the following files:'],
+      ['write', 'Wrote file successfully.'],
+      ['edit', 'Edit applied successfully.'],
+    ] as const;
+
+    for (const [tool, output] of cases) {
+      await expect(recordMutationOutcome(tool, {}, output)).resolves.toBe('unknown');
     }
   });
 

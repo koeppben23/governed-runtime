@@ -66,12 +66,34 @@ function mutationOutcome(
   if (parsed?.error === true) return 'failure';
   if (hookOutput.metadata.success === true || parsed?.success === true) return 'success';
   if (toolName === 'apply_patch' && Array.isArray(hookOutput.metadata.files)) return 'success';
+  if (isWriteSuccess(toolName, hookOutput.metadata)) return 'success';
+  if (isEditSuccess(toolName, hookOutput.metadata)) return 'success';
   return 'unknown';
 }
 
 function bashExitOutcome(toolName: string, exit: unknown): 'success' | 'failure' | null {
   if (toolName !== 'bash' || typeof exit !== 'number') return null;
   return exit === 0 ? 'success' : 'failure';
+}
+
+/** OpenCode WriteTool success contract: filepath, prior existence, and diagnostics. */
+function isWriteSuccess(toolName: string, metadata: Record<string, unknown>): boolean {
+  return (
+    toolName === 'write' &&
+    typeof metadata.filepath === 'string' &&
+    typeof metadata.exists === 'boolean' &&
+    Array.isArray(metadata.diagnostics)
+  );
+}
+
+/** OpenCode EditTool success contract: both diffs and diagnostics are emitted. */
+function isEditSuccess(toolName: string, metadata: Record<string, unknown>): boolean {
+  return (
+    toolName === 'edit' &&
+    typeof metadata.diff === 'string' &&
+    metadata.filediff !== undefined &&
+    Array.isArray(metadata.diagnostics)
+  );
 }
 
 function parseStructuredOutcome(output: string): Record<string, unknown> | null {
