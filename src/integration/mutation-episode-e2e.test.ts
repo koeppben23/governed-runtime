@@ -42,7 +42,6 @@ import {
   hasUnboundMutationEpisodes,
 } from '../state/evidence-mutation-episode.js';
 import { resetRuntimeInstanceIdForTest } from './runtime-instance.js';
-import { RUNTIME_LEASE_FILE } from './runtime-lease.js';
 import { recordUserDecisionIntent } from './user-decision-intent.js';
 import { computeGitControlPlaneMarker } from './git-control-plane.js';
 
@@ -61,11 +60,12 @@ vi.mock('../adapters/git.js', async (importOriginal) => {
 
 /** Simulate the death of the lease holder (a real dead process fails PID liveness). */
 async function killLeaseHolder(sessDir: string): Promise<void> {
-  const lease = JSON.parse(
-    await fs.readFile(path.join(sessDir, RUNTIME_LEASE_FILE), 'utf-8'),
-  ) as Record<string, unknown>;
-  lease.holderPid = 999999;
-  await fs.writeFile(path.join(sessDir, RUNTIME_LEASE_FILE), JSON.stringify(lease), 'utf-8');
+  const state = await readState(sessDir);
+  if (!state?.runtimeLease) throw new Error('no runtime lease recorded in session state');
+  await writeState(sessDir, {
+    ...state,
+    runtimeLease: { ...state.runtimeLease, holderPid: 999999 },
+  });
 }
 
 function createMockInput(overrides: Record<string, unknown> = {}) {

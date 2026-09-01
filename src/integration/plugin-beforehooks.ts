@@ -246,8 +246,8 @@ async function recordMutationDispatch(
     // Fenced dispatch: a host mutation may only be authorized under the
     // calling instance's live runtime lease. A live foreign lease blocks the
     // dispatch — two runtimes must never govern one session concurrently.
-    const leaseAcquisition = await acquireRuntimeLease({
-      sessDir,
+    const leaseAcquisition = acquireRuntimeLease({
+      current: state.runtimeLease,
       runtimeInstanceId: getRuntimeInstanceId(),
       pid: process.pid,
       now: new Date().toISOString(),
@@ -281,8 +281,11 @@ async function recordMutationDispatch(
         { hostCallId: callId, toolName, existingEpisodeId: result.existing.episodeId },
       );
     }
+    // One atomic write: the fencing generation and the episode that binds it
+    // become durable together or not at all.
     await writeStateWithAuditOperationsAlreadyLocked(sessDir, {
       ...state,
+      runtimeLease: leaseAcquisition.lease,
       mutationEpisodes: result.episodes,
     });
   });

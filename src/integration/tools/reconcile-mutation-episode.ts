@@ -70,8 +70,8 @@ export const reconcile_mutation_episode: ToolDefinition = {
         // Recovery Authority boundary: the resolving instance must hold the
         // session lease. A live foreign lease cannot be superseded; a dead or
         // stale holder yields a LATER generation — the fencing token.
-        const leaseAcquisition = await acquireRuntimeLease({
-          sessDir,
+        const leaseAcquisition = acquireRuntimeLease({
+          current: state.runtimeLease,
           runtimeInstanceId: getRuntimeInstanceId(),
           pid: process.pid,
           now: new Date().toISOString(),
@@ -92,6 +92,9 @@ export const reconcile_mutation_episode: ToolDefinition = {
         }
         const nextState: SessionState = {
           ...state,
+          // The lease that authorized this resolution becomes durable in the
+          // same write as the resolution itself.
+          runtimeLease: leaseAcquisition.lease,
           mutationEpisodeResolutions: resolveUnknownMutationOutcome(
             state.mutationEpisodeResolutions,
             {
