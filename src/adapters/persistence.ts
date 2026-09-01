@@ -222,9 +222,23 @@ export async function durableAtomicWrite(filePath: string, content: string): Pro
  * O_DIRECTORY on Windows yields EISDIR; fsync on special files that cannot be
  * synchronized yields EINVAL). Every other failure — EIO, ENOSPC, EACCES — is
  * a real I/O fault and must fail the durable commit closed.
+ *
+ * Windows has no directory-fsync primitive: `FlushFileBuffers` on a directory
+ * handle returns ERROR_ACCESS_DENIED, which libuv maps to EPERM. This is a
+ * platform capability gap, not an I/O fault, and it is unconditional — every
+ * directory fsync on win32 fails this way. Treating it as fatal made
+ * `durableAtomicWrite` — and therefore every state write and audit append —
+ * fail closed on Windows.
+ *
+ * The classification is deliberately platform-scoped: on POSIX an EPERM from a
+ * directory fsync is a genuine permission fault and must still fail closed.
+ *
+ * NOT_VERIFIED on win32: rename durability is not fsync-confirmed there. The
+ * commit relies on NTFS metadata journaling, which this process cannot observe.
  */
 function isDirectorySyncUnsupported(err: unknown): boolean {
   const code = (err as NodeJS.ErrnoException)?.code;
+  if (code === 'EPERM' && process.platform === 'win32') return true;
   return code === 'EISDIR' || code === 'EINVAL';
 }
 
