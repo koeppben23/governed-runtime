@@ -422,23 +422,38 @@ describe('persistence', () => {
       expect(existsSync(lockPath)).toBe(false);
     });
 
-    it('re-throws raw error and preserves existing trail on atomic rename failure', async () => {
+    it('fails closed with a typed PersistenceError and preserves the existing trail on atomic rename failure', async () => {
       await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() }));
       vi.mocked(fs.rename).mockRejectedValueOnce(
         Object.assign(new Error('disk full'), { code: 'ENOSPC' }),
       );
       try {
-        try {
-          await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() }));
-        } catch (err) {
-          expect(err).not.toBeInstanceOf(PersistenceError);
-          expect(err).toBeInstanceOf(Error);
-          expect((err as NodeJS.ErrnoException).code).toBe('ENOSPC');
-        }
+        // The append routes through the canonical durable writer, so a raw
+        // errno never escapes the persistence boundary (AGENTS.md: typed
+        // errors with a `code` field at persistence boundaries).
+        await expect(
+          appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() })),
+        ).rejects.toMatchObject({ code: 'WRITE_FAILED' });
         const { events } = await readAuditTrail(tmpDir);
         expect(events).toHaveLength(1);
       } finally {
         restoreRename();
+      }
+    });
+
+    it('fsyncs the audit directory so a committed append survives a crash after the rename', async () => {
+      // Regression: the append previously hand-rolled temp+fsync+rename and
+      // omitted the parent-directory fsync that durableAtomicWrite performs.
+      // A crash after the rename then reverted audit.jsonl to its pre-append
+      // content while session-state.json was already durable — a governed
+      // transition with no audit record, and the surviving prefix stays
+      // chain-valid, so verifyChain cannot detect the loss.
+      const openSpy = vi.spyOn(fs, 'open');
+      try {
+        await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() }));
+        expect(openSpy).toHaveBeenCalledWith(tmpDir, 'r', 0o600);
+      } finally {
+        openSpy.mockRestore();
       }
     });
 

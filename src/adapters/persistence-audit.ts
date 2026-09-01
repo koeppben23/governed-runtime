@@ -11,17 +11,15 @@
  */
 
 import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
-import * as crypto from 'node:crypto';
 import { AuditEvent, AuditEventBodySchema } from '../state/evidence.js';
 import type { AuditEventBody } from '../state/evidence.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import {
   auditPath,
+  durableAtomicWrite,
   ensureDir,
   PersistenceError,
   isEnoent,
-  renameWithRetry,
 } from './persistence.js';
 import { getLastChainHash } from '../audit/integrity.js';
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
@@ -122,9 +120,6 @@ async function appendAuditLineAtomically(
   return await withAuditWriteLock(sessionDir, async () => {
     await ensureDir(sessionDir);
     const filePath = auditPath(sessionDir);
-    const dir = path.dirname(filePath);
-    const base = path.basename(filePath);
-    const tempPath = path.join(dir, `.${base}.${crypto.randomUUID()}.tmp`);
     let existing = '';
 
     try {
@@ -188,24 +183,14 @@ async function appendAuditLineAtomically(
     }
     const line = JSON.stringify(chainedResult.data) + '\n';
 
-    try {
-      const handle = await fs.open(tempPath, 'wx', 0o600);
-      try {
-        await handle.writeFile(existing + line, 'utf-8');
-        await handle.sync();
-      } finally {
-        await handle.close();
-      }
-      await renameWithRetry(tempPath, filePath);
-      return chainedResult.data;
-    } catch (err) {
-      try {
-        await fs.unlink(tempPath);
-      } catch {
-        /* temp may not exist or may already have been renamed */
-      }
-      throw err;
-    }
+    // Durability is delegated to the canonical writer: it fsyncs the file AND
+    // the parent directory, so a crash after the rename cannot resurrect the
+    // pre-append trail. A hand-rolled temp+sync+rename here previously omitted
+    // the directory fsync, which silently dropped the whole batch of appends
+    // since the last directory sync while leaving a chain-valid prefix that
+    // verifyChain still reports as valid.
+    await durableAtomicWrite(filePath, existing + line);
+    return chainedResult.data;
   });
 }
 
