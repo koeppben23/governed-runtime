@@ -11,6 +11,9 @@ import { verifyRegulatedArchive } from './workspace/archive-verify-chain.js';
 import { writeState, readState } from './persistence.js';
 import { appendAuditEvent, readAuditTrail } from './persistence-audit.js';
 import * as persistenceAudit from './persistence-audit.js';
+import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
+import { computeChainHash, type ChainedAuditEvent } from '../audit/types.js';
+import { verifyChain } from '../audit/integrity.js';
 import { makeState, REGULATED_POLICY_SNAPSHOT } from '../fixtures.js';
 import { withTestEnv } from '../integration/test-helpers.js';
 
@@ -94,6 +97,36 @@ async function appendCompletionAuditEvent(sessDir: string, sessionId: string): P
     occurredAt: '2026-01-01T00:00:00.000Z',
     actor: 'machine',
     detail: { action: 'session_completed' },
+  });
+}
+
+function resealAuditTrailWithClockAnomaly(
+  events: readonly ChainedAuditEvent[],
+): ChainedAuditEvent[] {
+  let previousHash = 'genesis';
+  return events.map((event, index) => {
+    const { chainHash: _chainHash, semanticEventDigest: _semanticEventDigest, ...body } = event;
+    const recordedAt =
+      index === events.length - 2
+        ? '2026-01-02T00:00:00.000Z'
+        : index === events.length - 1
+          ? '2026-01-01T00:00:00.000Z'
+          : body.recordedAt;
+    const finalized = {
+      ...body,
+      recordedAt,
+      prevHash: previousHash,
+    };
+    const resealed = {
+      ...finalized,
+      semanticEventDigest: computeCanonicalEventDigest(finalized),
+    };
+    const chained = {
+      ...resealed,
+      chainHash: computeChainHash(previousHash, resealed),
+    } as ChainedAuditEvent;
+    previousHash = chained.chainHash;
+    return chained;
   });
 }
 
@@ -478,6 +511,30 @@ describe('Archive Layout v2', () => {
     expect(
       verification.findings.some((finding) => finding.code === 'archive_publication_unbound'),
     ).toBe(true);
+  });
+
+  it('rejects a non-regulated archive with a re-sealed clock anomaly', async () => {
+    const { fingerprint, sessionId, sessionDir } = await createArchive();
+    await appendCompletionAuditEvent(sessionDir, sessionId);
+    await appendCompletionAuditEvent(sessionDir, sessionId);
+    const events = (await readAuditTrail(sessionDir)).events;
+    const resealed = resealAuditTrailWithClockAnomaly(events);
+    await fs.writeFile(
+      path.join(sessionDir, 'audit.jsonl'),
+      `${resealed.map((event) => JSON.stringify(event)).join('\n')}\n`,
+      'utf8',
+    );
+    expect(verifyChain(resealed as unknown as Record<string, unknown>[]).reason).toBe(
+      'CLOCK_ANOMALY',
+    );
+
+    await archiveSession(fingerprint, sessionId, { redactionMode: 'none', includeRaw: true });
+    const verification = await verifyArchive(fingerprint, sessionId);
+
+    expect(verification.passed).toBe(false);
+    expect(verification.findings).toContainEqual(
+      expect.objectContaining({ code: 'audit_chain_invalid', severity: 'error' }),
+    );
   });
 
   it('retains a published-but-unbound archive after binding append failure and recovers on retry', async () => {

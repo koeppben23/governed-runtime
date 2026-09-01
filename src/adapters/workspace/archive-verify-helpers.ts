@@ -118,7 +118,7 @@ export function hasTimestampEvidence(event: Record<string, unknown>): boolean {
 }
 
 export function isCurrentChainIntegrityFailure(reason: ChainVerificationReason | null): boolean {
-  return reason === 'CHAIN_BREAK';
+  return reason === 'CHAIN_BREAK' || reason === 'CLOCK_ANOMALY';
 }
 
 export function isAuditFormatFailure(reason: ChainVerificationReason | null): boolean {

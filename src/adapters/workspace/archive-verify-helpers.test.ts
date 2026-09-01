@@ -195,8 +195,9 @@ describe('hasTimestampEvidence', () => {
 // ─── isCurrentChainIntegrityFailure ───────────────────────────────────────────
 
 describe('isCurrentChainIntegrityFailure', () => {
-  it('returns true for CHAIN_BREAK', () => {
+  it('returns true for current audit-chain integrity failures', () => {
     expect(isCurrentChainIntegrityFailure('CHAIN_BREAK')).toBe(true);
+    expect(isCurrentChainIntegrityFailure('CLOCK_ANOMALY')).toBe(true);
   });
 
   it('returns false for legacy/format reasons (they have their own finding class)', () => {
@@ -204,7 +205,7 @@ describe('isCurrentChainIntegrityFailure', () => {
   });
 
   it('returns false for other reasons', () => {
-    expect(isCurrentChainIntegrityFailure('CLOCK_ANOMALY')).toBe(false);
+    expect(isCurrentChainIntegrityFailure('TIMESTAMP_EVIDENCE_MISSING')).toBe(false);
   });
 
   it('returns false for null', () => {
