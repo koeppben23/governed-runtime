@@ -105,6 +105,7 @@ import {
   normalizeHostFindings,
   unknownOutcomeRevalidationBlock,
 } from './implement-shared.js';
+import { latestUnknownOutcomeResolvedAt } from '../../state/evidence-mutation-episode.js';
 import { handleUnableToReview } from './implement-unable-review.js';
 import type { CompactProofPresentation } from '../../presentation/proof-model.js';
 import { buildImplReviewChangesRequestedMarkdown } from './implement-review-presentation.js';
@@ -675,13 +676,22 @@ export function implValidationEvidenceGate(state: SessionState): string | null {
   // current implementation digest for EVERY active check. A missing current
   // implementation digest cannot satisfy any check.
   const currentDigest = state.implementation?.digest;
+  // An unknown-outcome resolution declares ALL prior evidence unreliable, not
+  // just the implementation recording. Check results are bound to the
+  // implementation digest alone, with no time component, so re-recording an
+  // identical worktree after a resolution reproduces the same digest and
+  // silently revives pre-resolution check results — precisely the evidence the
+  // resolution invalidated, and precisely what the reconcile tool instructs the
+  // agent to re-run. Only results produced after the latest resolution count.
+  const resolvedAt = latestUnknownOutcomeResolvedAt(state.mutationEpisodeResolutions);
   const passedForCurrentDigest = new Set<string>();
   if (currentDigest) {
     for (const attempt of state.validationAttempts) {
       if (
         attempt.scope === 'implementation' &&
         attempt.implementationDigest === currentDigest &&
-        attempt.result.passed
+        attempt.result.passed &&
+        (resolvedAt === null || attempt.result.executedAt > resolvedAt)
       ) {
         passedForCurrentDigest.add(attempt.result.checkId);
       }
