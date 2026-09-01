@@ -376,10 +376,15 @@ export type ResolveMutationEpisodeDecision =
  * inequality is a fencing token: the superseding lease acquisition proves
  * the authorizing epoch ended (dead or stale holder), never mere process
  * identity difference.
+ *
+ * The parameter is deliberately narrowed to the generation alone. It used to
+ * also require `holderRuntimeInstanceId`, which was never read — signalling a
+ * holder-identity check that does not exist and must not exist here, since a
+ * different process identity is precisely what does NOT establish authority.
  */
 export function canResolveMutationEpisode(
   episode: MutationEpisode,
-  currentLease: { readonly holderRuntimeInstanceId: string; readonly generation: number },
+  currentLease: { readonly generation: number },
 ): ResolveMutationEpisodeDecision {
   if (currentLease.generation <= episode.leaseGeneration) {
     return { kind: 'blocked', code: 'MUTATION_EPISODE_RUNTIME_EPOCH_ACTIVE' };
