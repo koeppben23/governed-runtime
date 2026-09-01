@@ -90,9 +90,17 @@ describe('verifyTimestampMonotonicity', () => {
     const events = [
       // 01:00+02:00 == 23:00Z the day before — lexically AFTER the next entry,
       // but temporally BEFORE it. Lexical comparison would flag this trail as
-      // non-monotonic; parsed instants order it correctly.
-      makeAuditEvent({ recordedAt: '2026-01-01T01:00:00.000+02:00' }),
-      makeAuditEvent({ recordedAt: '2026-01-01T00:01:00.000Z' }),
+      // non-monotonic; parsed instants order it correctly. `occurredAt` is set
+      // alongside so the fixture isolates record-order parsing and does not
+      // trip the occurrence-postdates-record check.
+      makeAuditEvent({
+        occurredAt: '2026-01-01T01:00:00.000+02:00',
+        recordedAt: '2026-01-01T01:00:00.000+02:00',
+      }),
+      makeAuditEvent({
+        occurredAt: '2026-01-01T00:01:00.000Z',
+        recordedAt: '2026-01-01T00:01:00.000Z',
+      }),
     ];
     const result = verifyTimestampMonotonicity(events);
     expect(result.valid).toBe(true);
@@ -106,6 +114,43 @@ describe('verifyTimestampMonotonicity', () => {
     const result = verifyTimestampMonotonicity(events);
     expect(result.valid).toBe(false);
     expect(result.firstBreak).toBe(1);
+    expect(result.message).toContain('not a parseable UTC instant');
+  });
+
+  it('A2: rejects a producer timestamp that postdates its host-stamped record', () => {
+    // `occurredAt` is producer-supplied, `recordedAt` is stamped by the append
+    // authority. An event cannot be recorded before it happened, so this
+    // direction is impossible and was never checked anywhere in production.
+    const events = [
+      makeAuditEvent({
+        occurredAt: '2026-01-01T00:05:00.000Z',
+        recordedAt: '2026-01-01T00:00:00.000Z',
+      }),
+    ];
+    const result = verifyTimestampMonotonicity(events);
+    expect(result.valid).toBe(false);
+    expect(result.firstBreak).toBe(0);
+    expect(result.message).toContain('postdates its record timestamp');
+  });
+
+  it('A2: still accepts a deferred record whose occurrence long predates it', () => {
+    // The legitimate direction: the durable outbox reconciles older operations
+    // after newer direct appends. Only the impossible direction is rejected.
+    const events = [
+      makeAuditEvent({
+        occurredAt: '2026-01-01T00:00:00.000Z',
+        recordedAt: '2026-01-01T06:00:00.000Z',
+      }),
+    ];
+    expect(verifyTimestampMonotonicity(events).valid).toBe(true);
+  });
+
+  it('A2: verifies the first event too, not only successors', () => {
+    // The loop started at index 1, so a single-event trail — and the first
+    // event of any trail — never had its timestamps parsed at all.
+    const result = verifyTimestampMonotonicity([makeAuditEvent({ recordedAt: 'not-a-date' })]);
+    expect(result.valid).toBe(false);
+    expect(result.firstBreak).toBe(0);
     expect(result.message).toContain('not a parseable UTC instant');
   });
 
