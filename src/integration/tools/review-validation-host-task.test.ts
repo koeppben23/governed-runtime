@@ -177,6 +177,89 @@ describe('resolveHostTaskFindings', () => {
     );
   });
 
+  // ── Presentation-only evidence identity at the host-task boundary ───────
+  function sectionRefCase(reviewerSectionRef: unknown, canonicalSectionRef: unknown) {
+    const rawFindings = {
+      ...validRawFindings,
+      challenges: [
+        {
+          challengeId: '44444444-4444-4444-8444-444444444444',
+          obligationId: OBLIGATION_ID,
+          scenario: 'Exercise the missing-resource update path.',
+          claim: 'The implementation returns the documented missing-resource response.',
+          locations: ['src/service.ts:10'],
+          kind: 'design_challenge',
+          evidenceRefs: [reviewerSectionRef],
+          outcome: 'supported',
+        },
+      ],
+    };
+    const obligation = makeObligation({
+      obligationType: 'implement',
+      requiredChallengeCount: 1,
+      requiredChallengeKind: 'design_challenge' as const,
+    });
+    const assurance = {
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      attempts: [makeBoundAttempt({ obligationType: 'implement' })],
+      obligations: [obligation],
+      invocations: [
+        makeHostTaskInvocation({
+          obligationType: 'implement',
+          capturedRawFindings: rawFindings,
+          findingsHash: hashFindings(rawFindings),
+        }),
+      ],
+      dispatches: [],
+    };
+    return resolveHostTaskFindings(assurance, obligation, undefined, [canonicalSectionRef]);
+  }
+
+  const CANONICAL_SECTION_REF = {
+    kind: 'plan_adr_section',
+    artifactKind: 'plan',
+    artifactDigest: 'plan-digest',
+    sectionPath: [{ headingDepth: 2, siblingIndex: 1, headingText: 'Use `Foo` here' }],
+    excerptDigest: 'excerpt-canonical',
+  };
+
+  it('accepts a captured challenge whose section ref differs only in presentation-only fields', () => {
+    // `sectionPath[].headingText` and `excerptDigest` add no locating power:
+    // `artifactDigest` plus heading depth and sibling index already identify
+    // the section. Comparing them exactly meant a heading reproduced without
+    // its backticks failed as `evidence_mismatch` and killed the session,
+    // although the reviewer cited exactly the right section.
+    const result = sectionRefCase(
+      {
+        ...CANONICAL_SECTION_REF,
+        sectionPath: [{ headingDepth: 2, siblingIndex: 1, headingText: 'Use Foo here' }],
+        excerptDigest: 'excerpt-reviewer',
+      },
+      CANONICAL_SECTION_REF,
+    );
+    expect(result.kind).toBe('resolved');
+  });
+
+  it('still rejects a captured challenge citing a section outside the contract (BAD)', () => {
+    // Only presentation-only divergence is forgiven. A different artifact, or
+    // a different section of the same artifact, is still unknown evidence.
+    expect(
+      sectionRefCase(
+        { ...CANONICAL_SECTION_REF, artifactDigest: 'a-different-plan' },
+        CANONICAL_SECTION_REF,
+      ).kind,
+    ).not.toBe('resolved');
+    expect(
+      sectionRefCase(
+        {
+          ...CANONICAL_SECTION_REF,
+          sectionPath: [{ headingDepth: 2, siblingIndex: 7, headingText: 'Use `Foo` here' }],
+        },
+        CANONICAL_SECTION_REF,
+      ).kind,
+    ).not.toBe('resolved');
+  });
+
   // ── F12: verdict/blocking-issues coherence at the host-task boundary ────
   // Reproduces the demo defect: host-captured findings with overallVerdict
   // 'accept' AND a non-empty blockingIssues array. Verdict-only submission in

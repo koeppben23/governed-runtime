@@ -28,6 +28,7 @@ import {
 import { validateChallengeConsistency } from '../review/enforcement/challenge-consistency.js';
 import { validateReviewFindingsConsistency } from '../review/enforcement/findings-consistency.js';
 import { hashFindings } from '../review/findings-hash.js';
+import { bindCanonicalEvidenceRefs } from '../review/enforcement/challenge-binding.js';
 
 /**
  * Result of resolving review findings from host-task invocation evidence.
@@ -208,11 +209,40 @@ export function resolveHostTaskFindings(
         };
         continue;
       }
+      // Host-authoritative evidence identity. This path validates the RAW
+      // reviewer submission (`capturedRawFindings`) against the frozen
+      // challenge contract by exact canonical JSON, unlike the review binding
+      // seam which first rebinds refs to the host's canonical copies. A
+      // `plan_adr_section` ref carries presentation-only fields —
+      // `sectionPath[].headingText` and `excerptDigest` — that add no locating
+      // power, because `artifactDigest` plus heading depth and sibling index
+      // already identify the section. Comparing them exactly meant a heading
+      // reproduced without its backticks failed as `evidence_mismatch` and
+      // killed the session. Rebind through the same canonical authority the
+      // binding seam uses. A ref genuinely outside the contract does not
+      // rebind; the raw refs are then kept so the unchanged exact check below
+      // still rejects it.
+      const challengesForConsistency = ((): typeof parsed.data.challenges => {
+        if (!allowedChallengeEvidenceRefs || !parsed.data.challenges) {
+          return parsed.data.challenges;
+        }
+        const rebound = bindCanonicalEvidenceRefs(
+          parsed.data.challenges,
+          allowedChallengeEvidenceRefs,
+          obligation.obligationId,
+          // Only used for a rejection diagnostic, which this path discards in
+          // favour of the unchanged consistency check below.
+          parentSessionId ?? '',
+        );
+        return 'bindOutcome' in rebound
+          ? parsed.data.challenges
+          : (rebound.challenges as typeof parsed.data.challenges);
+      })();
       const challengeConsistency = validateChallengeConsistency({
         overallVerdict: parsed.data.overallVerdict,
         requiredChallengeCount: obligation.requiredChallengeCount,
         requiredChallengeKind: obligation.requiredChallengeKind ?? 'implementation_challenge',
-        challenges: parsed.data.challenges,
+        challenges: challengesForConsistency,
         expectedObligationId: obligation.obligationId,
         allowedEvidenceRefs: allowedChallengeEvidenceRefs,
         resolutionVerdicts: parsed.data.challengeResolutionVerdicts,
