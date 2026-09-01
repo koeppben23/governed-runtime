@@ -13,7 +13,7 @@
  */
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const SRC = join(process.cwd(), 'src');
@@ -45,7 +45,10 @@ const ALLOWED_OBSERVATION_MINTERS = [
 describe('Guard 1: RepositoryObservation minting boundary', () => {
   const minters: string[] = [];
   for (const file of listSourceFiles(SRC)) {
-    const relative = file.slice(SRC.length + 1);
+    const relative = file
+      .slice(SRC.length + 1)
+      .split(sep)
+      .join('/');
     if (relative.endsWith('.test.ts')) continue;
     if (ALLOWED_OBSERVATION_MINTERS.includes(relative)) continue;
     // Minting an authoritative record means assigning its binding field.
@@ -107,7 +110,10 @@ describe('Guard 2: no mutable revision resolution in review-authority constructi
   it('mutable revision resolution is confined to sanctioned freeze points', () => {
     const offenders: string[] = [];
     for (const file of listSourceFiles(SRC)) {
-      const relative = file.slice(SRC.length + 1);
+      const relative = file
+        .slice(SRC.length + 1)
+        .split(sep)
+        .join('/');
       if (relative.endsWith('.test.ts')) continue;
       if (FREEZE_AUTHORITY_FILES.includes(relative)) continue;
       if (relative.startsWith('adapters/')) continue;
@@ -136,7 +142,10 @@ describe('Guard 3: evidence admissibility evaluates observations via the canonic
   it('only the sanctioned bind paths invoke the canonical evidence binder', () => {
     const callers: string[] = [];
     for (const file of listSourceFiles(SRC)) {
-      const relative = file.slice(SRC.length + 1);
+      const relative = file
+        .slice(SRC.length + 1)
+        .split(sep)
+        .join('/');
       if (relative === 'integration/review/observation-binding.ts') continue;
       const content = readFileSync(file, 'utf-8');
       if (/bindRepositoryEvidenceLocations\s*\(/.test(content)) {
