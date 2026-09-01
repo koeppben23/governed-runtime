@@ -295,7 +295,7 @@ describe('regulated-e2e critical path', () => {
       .split('\n')
       .filter((line) => line.trim().length > 0)
       .map((line) => JSON.parse(line) as Record<string, unknown>);
-    const result = verifyChain(events, { strict: true });
+    const result = verifyChain(events);
     expect(result.valid).toBe(false);
     expect(result.reason).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
   });

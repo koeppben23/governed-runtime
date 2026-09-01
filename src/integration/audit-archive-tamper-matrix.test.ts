@@ -328,7 +328,7 @@ describe('audit/archive tamper matrix', () => {
       ),
     );
 
-    expect(verifyChain(events, { strict: true }).valid).toBe(false);
+    expect(verifyChain(events).valid).toBe(false);
     const logs: Array<{
       level: string;
       service: string;
@@ -379,7 +379,7 @@ describe('audit/archive tamper matrix', () => {
       ),
     );
 
-    const chainResult = verifyChain(events, { strict: true });
+    const chainResult = verifyChain(events);
     expect(chainResult.valid).toBe(false);
     expect(chainResult.reason).toBe('CHAIN_BREAK');
     const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
@@ -442,7 +442,7 @@ describe('audit/archive tamper matrix', () => {
         ),
       );
 
-      const chainResult = verifyChain(events, { strict: true, strictTimestamps: true });
+      const chainResult = verifyChain(events, { strictTimestamps: true });
       expect(chainResult.valid).toBe(false);
       expect(chainResult.reason).toBe('TOKEN_VERIFICATION_REQUIRED');
       const logs: Array<{
@@ -542,7 +542,7 @@ describe('audit/archive tamper matrix', () => {
         ),
       );
 
-      const chainResult = verifyChain(events, { strict: true, strictTimestamps: true });
+      const chainResult = verifyChain(events, { strictTimestamps: true });
       expect(chainResult.valid).toBe(false);
       expect(chainResult.reason).toBe('TOKEN_VERIFICATION_REQUIRED');
     },
@@ -563,7 +563,7 @@ describe('audit/archive tamper matrix', () => {
       ),
     );
 
-    const chainResult = verifyChain(events, { strict: true });
+    const chainResult = verifyChain(events);
     expect(chainResult.valid).toBe(false);
     expect(chainResult.reason).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
     const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
@@ -587,7 +587,7 @@ describe('audit/archive tamper matrix', () => {
       ),
     );
 
-    expect(verifyChain(events, { strict: true }).valid).toBe(false);
+    expect(verifyChain(events).valid).toBe(false);
     const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
     expect(verification.passed).toBe(false);
     expect(verification.findings.some((f) => f.severity === 'error')).toBe(true);

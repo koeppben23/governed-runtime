@@ -325,7 +325,7 @@ describe('audit and archive integrity fail-closed behavior', () => {
     const first = chainedEvent('genesis', 'first');
     const { auditFormatVersion: _auditFormatVersion, ...legacy } = first;
 
-    const result = verifyChain([legacy], { strict: true });
+    const result = verifyChain([legacy]);
     expect(result.valid).toBe(false);
     expect(result.reason).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
   });

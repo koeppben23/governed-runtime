@@ -295,7 +295,7 @@ async function inspectSingleSessionMode(
     return 1;
   }
 
-  const chain = verifyChain(trailResult.events, { strict: true });
+  const chain = verifyChain(trailResult.events);
   const summary = generateComplianceSummary(
     trailResult.events,
     sessionId,

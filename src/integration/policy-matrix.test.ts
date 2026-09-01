@@ -297,7 +297,7 @@ async function scenarioLegacyAuditStrictness(mode: Mode): Promise<CellResult> {
     .split('\n')
     .filter((line) => line.trim().length > 0)
     .map((line) => JSON.parse(line) as Record<string, unknown>);
-  const result = verifyChain(events, { strict: true });
+  const result = verifyChain(events);
   return {
     allowed: result.valid,
     code: result.valid ? undefined : (result.reason ?? undefined),

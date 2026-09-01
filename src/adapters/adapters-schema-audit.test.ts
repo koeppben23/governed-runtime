@@ -471,7 +471,7 @@ describe('persistence', () => {
         const { events, skipped } = await readAuditTrail(tmpDir);
         expect(skipped).toBe(0);
         expect(events).toHaveLength(2);
-        expect(verifyChain(events, { strict: true }).valid).toBe(true);
+        expect(verifyChain(events).valid).toBe(true);
       } finally {
         restoreRename();
       }
@@ -487,7 +487,7 @@ describe('persistence', () => {
       expect(events).toHaveLength(1);
       expect(events[0]!.prevHash).toBe('genesis');
       expect(events[0]!.chainHash).not.toBe(CHAIN_HASH_64);
-      expect(verifyChain(events, { strict: true }).valid).toBe(true);
+      expect(verifyChain(events).valid).toBe(true);
     });
 
     it('serializes concurrent chained audit appends without lost updates or chain forks', async () => {
@@ -501,7 +501,7 @@ describe('persistence', () => {
       expect(skipped).toBe(0);
       expect(events).toHaveLength(inputs.length);
       expect(new Set(events.map((event) => event.id)).size).toBe(inputs.length);
-      expect(verifyChain(events, { strict: true }).valid).toBe(true);
+      expect(verifyChain(events).valid).toBe(true);
       for (let i = 1; i < events.length; i++) {
         expect(events[i]!.prevHash).toBe(events[i - 1]!.chainHash);
       }
@@ -541,8 +541,8 @@ describe('persistence', () => {
       const { events, skipped } = await readAuditTrail(tmpDir);
       expect(skipped).toBe(0);
       expect(events).toHaveLength(inputs.length);
-      expect(verifyChain(events, { strict: true }).valid).toBe(true);
-      const tsResult = verifyChain(events, { strict: true, strictTimestamps: true });
+      expect(verifyChain(events).valid).toBe(true);
+      const tsResult = verifyChain(events, { strictTimestamps: true });
       expect(tsResult.valid).toBe(false);
       expect(tsResult.reason).toBe('TOKEN_VERIFICATION_REQUIRED');
       for (let i = 1; i < events.length; i++) {
@@ -591,7 +591,7 @@ describe('persistence', () => {
       await appendAuditEvent(tmpDir, withTsa as unknown as AuditEvent);
       const { events } = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(1);
-      const result = verifyChain(events, { strict: true, strictTimestamps: true });
+      const result = verifyChain(events, { strictTimestamps: true });
       expect(result.valid).toBe(false);
       expect(result.reason).toBe('TOKEN_VERIFICATION_REQUIRED');
     });

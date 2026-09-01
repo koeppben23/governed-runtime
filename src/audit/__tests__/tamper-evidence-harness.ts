@@ -255,12 +255,12 @@ function asStampedSingleEventChain(event: ChainedAuditEvent): Record<string, unk
 /** P-A (C1): a single-event chain with one leaf mutated must fail verifyChain. */
 export function mutatedChainVerifies(event: ChainedAuditEvent, path: Path): boolean {
   const tampered = mutateLeaf(event, path);
-  return verifyChain([asStampedSingleEventChain(tampered)], { strict: true }).valid;
+  return verifyChain([asStampedSingleEventChain(tampered)]).valid;
 }
 
 /** Baseline: an untampered single-event chain must verify. */
 export function pristineChainVerifies(event: ChainedAuditEvent): boolean {
-  return verifyChain([asStampedSingleEventChain(event)], { strict: true }).valid;
+  return verifyChain([asStampedSingleEventChain(event)]).valid;
 }
 
 /** C2 digest of an event (the value a TSA stamps as messageImprint). */

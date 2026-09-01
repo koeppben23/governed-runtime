@@ -28,12 +28,49 @@ describe('strict timestamp verification branches', () => {
       2,
     );
     const result = verifyChain([{ ...first }, { ...second }], {
-      strict: true,
       strictTimestamps: true,
     });
     expect(result.reason).toBe('CLOCK_ANOMALY');
     expect(result.timestampMonotonicity?.valid).toBe(false);
     expect(result.timestampMonotonicity?.firstBreak).toBe(1);
+  });
+
+  it('detects non-monotonic record timestamps without opting into strict timestamps', () => {
+    // A1: clock monotonicity needs no TSA evidence and no timestamp policy, so
+    // it must be reported in the default mode too. It used to be gated behind
+    // `strictTimestamps`, which bundled it with the TSA evidence-presence
+    // requirement — so the only way to reach CLOCK_ANOMALY was to also demand
+    // TSA evidence from sessions that never enabled timestamp assurance. The
+    // CLI compliance report therefore never checked it at all.
+    const first = stampChainSequence(
+      createTransitionEvent(SESSION_ID, 'PLAN', transition, TS3, GENESIS_HASH),
+      1,
+    );
+    const second = stampChainSequence(
+      createTransitionEvent(SESSION_ID, 'IMPLEMENTATION', transition, TS2, first.chainHash),
+      2,
+    );
+    const result = verifyChain([{ ...first }, { ...second }]);
+    expect(result.reason).toBe('CLOCK_ANOMALY');
+    expect(result.timestampMonotonicity?.valid).toBe(false);
+  });
+
+  it('does not demand TSA evidence in the default mode', () => {
+    // The other half of the decoupling: a perfectly ordered trail from a
+    // session without timestamp assurance must stay clean. Enabling
+    // strictTimestamps at the CLI would have made every such session
+    // non-compliant via TIMESTAMP_EVIDENCE_MISSING.
+    const first = stampChainSequence(
+      createTransitionEvent(SESSION_ID, 'PLAN', transition, TS1, GENESIS_HASH),
+      1,
+    );
+    const second = stampChainSequence(
+      createTransitionEvent(SESSION_ID, 'IMPLEMENTATION', transition, TS2, first.chainHash),
+      2,
+    );
+    const result = verifyChain([{ ...first }, { ...second }]);
+    expect(result.reason).toBeNull();
+    expect(result.timestampMonotonicity?.valid).toBe(true);
   });
 
   it('a deferred outbox event with an earlier occurredAt is not a clock anomaly', () => {
@@ -60,7 +97,6 @@ describe('strict timestamp verification branches', () => {
       ),
     };
     const result = verifyChain([{ ...first }, { ...resealedSecond }], {
-      strict: true,
       strictTimestamps: true,
     });
     expect(result.reason).toBeNull();
@@ -92,7 +128,7 @@ describe('strict timestamp verification branches', () => {
         stampedBody as unknown as Omit<ChainedAuditEvent, 'chainHash'>,
       ),
     };
-    const result = verifyChain([stamped], { strict: true, strictTimestamps: true });
+    const result = verifyChain([stamped], { strictTimestamps: true });
     expect(result.reason).toBe('TSA_MESSAGE_IMPRINT_MISMATCH');
     expect(result.tsaImprintMismatches).toEqual([0]);
     expect(result.tokenVerificationRequired).toEqual([]);
@@ -116,7 +152,7 @@ describe('strict timestamp verification branches', () => {
       ...decisionBody,
       chainHash: computeChainHash(GENESIS_HASH, decisionBody),
     };
-    const result = verifyChain([decisionEvent], { strict: true, strictTimestamps: true });
+    const result = verifyChain([decisionEvent], { strictTimestamps: true });
     expect(result.reason).toBe('TIMESTAMP_EVIDENCE_MISSING');
     expect(result.missingTimestampEvidence).toEqual([0]);
   });

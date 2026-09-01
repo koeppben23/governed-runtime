@@ -391,7 +391,7 @@ async function verifyTimestampChain(
   const timestampPolicy = state?.policySnapshot.audit.timestampAssurance;
   const strictTimestamps = events.some(hasTimestampEvidence) || timestampPolicy?.enabled === true;
   const timestampFailuresAreFatal = strict || timestampPolicy?.strict === true;
-  const chainResult = verifyChain(events, { strict, strictTimestamps });
+  const chainResult = verifyChain(events, { strictTimestamps });
   logAuditChainVerificationFailure(chainResult);
   addAuditFormatFindings(chainResult, findings);
   addTimestampFindings(chainResult, timestampFailuresAreFatal, findings);
