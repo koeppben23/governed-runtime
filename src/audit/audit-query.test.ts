@@ -26,6 +26,7 @@ import {
 import type { AuditEvent } from '../state/evidence.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import { SESSION_ID, TS1, TS2, TS3, makeAuditEvent } from './audit-test-helpers.js';
+import type { AuditEventKind } from './types.js';
 describe('audit query', () => {
   // ─── Shared events for query tests ─────────────────────────
   const events: AuditEvent[] = [
@@ -307,6 +308,101 @@ describe('audit query', () => {
         10,
       );
       expect(p95Ms).toBeLessThan(PERF_BUDGETS.filterEvents10000Ms);
+    });
+  });
+
+  // ─── audit-chain.v3 event-name contract ─────────────────────
+  describe('kind discrimination follows the audit-chain.v3 event names', () => {
+    // Not every kind names its events `${kind}:...`. state_write and
+    // enforcement:denied are the two current exceptions, and byKind must
+    // reach them without dropping the prefix-named kinds.
+    const KIND_CASES: ReadonlyArray<{ event: string; kind: AuditEventKind }> = [
+      { event: 'transition:PLAN_READY', kind: 'transition' },
+      { event: 'state_write', kind: 'state_write' },
+      { event: 'enforcement:denied', kind: 'enforcement_denied' },
+      { event: 'tool_call:flowguard_plan', kind: 'tool_call' },
+      { event: 'error:SESSION_ERROR', kind: 'error' },
+      { event: 'lifecycle:session_created', kind: 'lifecycle' },
+      { event: 'decision:DEC-001', kind: 'decision' },
+    ];
+
+    for (const { event, kind } of KIND_CASES) {
+      it(`byKind('${kind}') matches "${event}"`, () => {
+        // No detail.kind: events appended through the generic review/audit
+        // append path carry caller-supplied detail, so the event name has to
+        // be sufficient on its own.
+        const trail = [makeAuditEvent({ id: 'k1', event, detail: {} })];
+        expect(filterEvents(trail, byKind(kind))).toHaveLength(1);
+      });
+    }
+
+    it('byKind does not confuse enforcement_denied with other enforcement events', () => {
+      const trail = [
+        makeAuditEvent({ id: 'k1', event: 'enforcement:denied', detail: {} }),
+        makeAuditEvent({ id: 'k2', event: 'enforcement:allowed', detail: {} }),
+      ];
+      const result = filterEvents(trail, byKind('enforcement_denied'));
+      expect(result).toHaveLength(1);
+      expect(result[0]!.event).toBe('enforcement:denied');
+    });
+
+    it('countByKind namespaces every current event-name form', () => {
+      const trail = [
+        makeAuditEvent({ id: 'c1', event: 'transition:PLAN_READY', detail: {} }),
+        makeAuditEvent({ id: 'c2', event: 'state_write', detail: {} }),
+        makeAuditEvent({ id: 'c3', event: 'enforcement:denied', detail: {} }),
+        makeAuditEvent({ id: 'c4', event: 'error:SESSION_ERROR', detail: {} }),
+        makeAuditEvent({ id: 'c5', event: 'review:obligation_created', detail: {} }),
+        makeAuditEvent({ id: 'c6', event: 'review:obligation_blocked', detail: {} }),
+      ];
+      expect(countByKind(trail)).toEqual({
+        transition: 1,
+        state_write: 1,
+        enforcement_denied: 1,
+        error: 1,
+        // review:* is not an AuditEventKind; it keeps its own namespace.
+        review: 2,
+      });
+    });
+  });
+
+  // ─── occurrence time vs. record order ───────────────────────
+  describe('timeSpan uses occurrence time, not trail position', () => {
+    it('reports the true span when a reconciled event occurred before its predecessor', () => {
+      // Legitimate under audit-chain.v3: the trail is ordered by recordedAt,
+      // and an outbox event reconciled later may carry an older occurredAt.
+      const trail = [
+        makeAuditEvent({ id: 't1', event: 'transition:PLAN_READY', occurredAt: TS2 }),
+        makeAuditEvent({ id: 't2', event: 'state_write', occurredAt: TS3 }),
+        makeAuditEvent({ id: 't3', event: 'tool_call:flowguard_plan', occurredAt: TS1 }),
+      ];
+      const span = timeSpan(trail);
+      expect(span).not.toBeNull();
+      expect(span!.first).toBe(TS1);
+      expect(span!.last).toBe(TS3);
+      expect(span!.durationMs).toBe(120000);
+    });
+
+    it('never reports a negative duration', () => {
+      const trail = [
+        makeAuditEvent({ id: 't1', event: 'state_write', occurredAt: TS3 }),
+        makeAuditEvent({ id: 't2', event: 'state_write', occurredAt: TS1 }),
+      ];
+      expect(timeSpan(trail)!.durationMs).toBeGreaterThanOrEqual(0);
+    });
+
+    it('is unaffected by input ordering', () => {
+      const trail = [
+        makeAuditEvent({ id: 't1', event: 'state_write', occurredAt: TS2 }),
+        makeAuditEvent({ id: 't2', event: 'state_write', occurredAt: TS1 }),
+        makeAuditEvent({ id: 't3', event: 'state_write', occurredAt: TS3 }),
+      ];
+      expect(timeSpan(trail)).toEqual(timeSpan([...trail].reverse()));
+    });
+
+    it('single event spans zero', () => {
+      const span = timeSpan([makeAuditEvent({ id: 't1', occurredAt: TS2 })]);
+      expect(span).toEqual({ first: TS2, last: TS2, durationMs: 0 });
     });
   });
 });

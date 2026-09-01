@@ -11,6 +11,7 @@
 
 import type { SessionState } from '../state/schema.js';
 import { parseToolResult } from './plugin-helpers.js';
+import { sanitizeDiagnosticString } from '../logging/redact.js';
 import { checkNtpClock, type NtpCheckResult } from '../audit/ntp-check.js';
 import type { TimestampAssurancePolicy } from '../config/policy-types.js';
 
@@ -137,15 +138,21 @@ function parseAuditOutput(
   output: unknown,
 ): Pick<AuditContext, 'success' | 'errorCode' | 'errorMessage' | 'parsed'> {
   const parsed = parseToolResult(extractToolOutputValue(output));
+  const rawMessage =
+    typeof parsed?.message === 'string'
+      ? parsed.message
+      : typeof parsed?.errorMessage === 'string'
+        ? parsed.errorMessage
+        : undefined;
   return {
     success: parsed?.error !== true,
     errorCode: typeof parsed?.code === 'string' ? parsed.code : undefined,
-    errorMessage:
-      typeof parsed?.message === 'string'
-        ? parsed.message
-        : typeof parsed?.errorMessage === 'string'
-          ? parsed.errorMessage
-          : undefined,
+    // Diagnostic text from a tool result is unstructured and may carry
+    // credentials or absolute paths. It reaches the raw audit trail via
+    // tool_call.detail.errorMessage and error.detail.message, so it is
+    // redacted here — once, at the point it enters the audit context —
+    // rather than at each consumer.
+    errorMessage: rawMessage === undefined ? undefined : sanitizeDiagnosticString(rawMessage),
     parsed,
   };
 }

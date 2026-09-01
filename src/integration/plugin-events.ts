@@ -14,6 +14,7 @@
  */
 
 import { serializeError } from '../logging/error-serialize.js';
+import { redactExtra, sanitizeDiagnosticString } from '../logging/redact.js';
 
 /**
  * OpenCode Event shape (from @opencode-ai/sdk, used by plugin event hooks).
@@ -69,9 +70,13 @@ export interface EventHandlerDeps {
 const HANDLED_EVENT_TYPES = new Set(['session.error', 'session.delete']);
 
 /**
- * Handle an OpenCode event.
+ * Copy host-supplied properties that are not already modelled explicitly.
  *
- * Fail-safe: never throws. All errors are caught and logged.
+ * Values are host-controlled and arbitrarily shaped — `detail` is
+ * `z.record(z.string(), z.unknown())`, so nested objects and arrays reach the
+ * raw audit trail intact. Redaction is delegated to `redactExtra()`, the
+ * existing deep-walking SSOT, which sanitizes every nested string while
+ * preserving structure and is cycle-, depth-, and throw-safe.
  */
 function collectSupplementaryContext(
   properties: Record<string, unknown> | undefined,
@@ -80,9 +85,10 @@ function collectSupplementaryContext(
   const supplementary: Record<string, unknown> = {};
   if (!properties) return supplementary;
   for (const [key, value] of Object.entries(properties)) {
-    if (!KNOWN_KEYS.has(key)) supplementary[key] = value;
+    if (KNOWN_KEYS.has(key)) continue;
+    supplementary[key] = value;
   }
-  return supplementary;
+  return redactExtra(supplementary) ?? {};
 }
 
 function str(v: unknown): string {
@@ -107,9 +113,11 @@ function buildSessionErrorDetails(event: PluginEvent): {
 } {
   const properties = event.properties;
   const sessionId = strOr(properties?.sessionID, 'unknown');
-  const errorMessage = strOr(
-    properties?.error,
-    strOr(properties?.message, 'unspecified session error'),
+  // Host-supplied error text is unstructured and reaches the raw audit trail
+  // via error:SESSION_ERROR. The logger redacts centrally before its sinks;
+  // the audit append does not, so redact at the source for both consumers.
+  const errorMessage = sanitizeDiagnosticString(
+    strOr(properties?.error, strOr(properties?.message, 'unspecified session error')),
   );
   const optionalDetails = buildOptionalErrorDetails(properties);
   return {
@@ -128,7 +136,7 @@ function buildOptionalErrorDetails(
   const errorStack = str(properties?.stack);
   const supplementary = collectSupplementaryContext(properties);
   if (errorCode) detail.errorCode = errorCode;
-  if (errorStack) detail.errorStack = errorStack;
+  if (errorStack) detail.errorStack = sanitizeDiagnosticString(errorStack);
   if (Object.keys(supplementary).length > 0) detail.supplementary = supplementary;
   return detail;
 }
@@ -142,6 +150,11 @@ async function handleSessionDelete(deps: EventHandlerDeps, event: PluginEvent): 
   }
 }
 
+/**
+ * Handle an OpenCode event.
+ *
+ * Fail-safe: never throws. All errors are caught and logged.
+ */
 export async function handleEvent(deps: EventHandlerDeps, event: PluginEvent): Promise<void> {
   if (!event || !event.type) return;
   if (!HANDLED_EVENT_TYPES.has(event.type)) return;

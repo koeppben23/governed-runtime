@@ -53,6 +53,16 @@ export const AUDIT_EVENT_KINDS = [
 
 export type AuditEventKind = (typeof AUDIT_EVENT_KINDS)[number];
 
+/**
+ * The two audit-chain.v3 event names that are not of the form `${kind}:...`.
+ *
+ * Every other kind names its events `${kind}:<suffix>`. These two do not, so
+ * the emitting factories and any consumer that maps an event name back to its
+ * kind must share one definition rather than re-encode the exception.
+ */
+export const STATE_WRITE_EVENT_NAME = 'state_write';
+export const ENFORCEMENT_DENIED_EVENT_NAME = 'enforcement:denied';
+
 export type AuditFormatVersion = 'audit-chain.v3';
 
 export const CURRENT_AUDIT_FORMAT_VERSION: AuditFormatVersion = 'audit-chain.v3';
@@ -358,7 +368,7 @@ export function buildStateWriteBody(
     flowguardSessionId,
     ...(hostSessionId ? { hostSessionId } : {}),
     phase,
-    event: 'state_write',
+    event: STATE_WRITE_EVENT_NAME,
     occurredAt,
     actor: 'machine',
     auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
@@ -382,7 +392,7 @@ export function buildEnforcementDeniedBody(
     flowguardSessionId,
     ...(hostSessionId ? { hostSessionId } : {}),
     phase,
-    event: 'enforcement:denied',
+    event: ENFORCEMENT_DENIED_EVENT_NAME,
     occurredAt,
     actor: 'machine',
     auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,

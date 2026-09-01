@@ -122,15 +122,29 @@ export function createFileSink(workspaceDir: string, options?: FileSinkOptions |
   let _initPromise: Promise<boolean> | null = null;
   let logDir: string;
 
+  /**
+   * Prepare the log directory.
+   *
+   * Both failure paths mean total, permanent log loss for this sink, so both
+   * are reported through onFailure. Returning a bare `false` would let the
+   * sink resolve as if the write had succeeded, leaving the caller with no
+   * signal at all while every entry is silently dropped.
+   */
   async function ensureDir(): Promise<boolean> {
     if (!isAbsolute(workspaceDir)) {
+      notifyFailure(
+        new Error(
+          `file sink requires an absolute workspace directory, received "${workspaceDir}" — file logging is disabled`,
+        ),
+      );
       return false;
     }
     logDir = join(workspaceDir, LOG_SUBDIR);
     try {
       await mkdir(logDir, { recursive: true });
       return true;
-    } catch {
+    } catch (err) {
+      notifyFailure(err);
       return false;
     }
   }

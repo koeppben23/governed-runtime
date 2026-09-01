@@ -645,4 +645,83 @@ describe('persistence', () => {
       expect(events[4]!.event).toBe('step_4');
     });
   });
+
+  describe('appendAuditEvent — exactly-once on re-delivery', () => {
+    const FORGED_CHAIN_HASH = 'a'.repeat(64);
+    const FORGED_PREV_HASH = 'b'.repeat(64);
+
+    // An event id is a commit identity. A crash between append and
+    // acknowledgement re-delivers the SAME raw producer body — which carries
+    // no positional fields and no auditFormatVersion. The writer must return
+    // the already-persisted record rather than fail the retry closed.
+
+    it('returns the persisted record when the identical raw body is re-delivered', async () => {
+      const body = makeValidAuditEvent();
+      const first = await appendAuditEvent(tmpDir, body);
+
+      const second = await appendAuditEvent(tmpDir, body);
+
+      expect(second).toEqual(first);
+      const { events, skipped } = await readAuditTrail(tmpDir);
+      expect(skipped).toBe(0);
+      expect(events).toHaveLength(1);
+      expect(events[0]!.auditSequence).toBe(1);
+    });
+
+    it('returns the persisted record when a re-delivery carries forged positional fields', async () => {
+      const body = makeValidAuditEvent();
+      const first = await appendAuditEvent(tmpDir, body);
+
+      // Producer-supplied positional/authority values are never accepted, so
+      // they must not influence the exactly-once comparison either.
+      const forged = {
+        ...body,
+        auditFormatVersion: 'audit-chain.v1',
+        auditSequence: 99,
+        recordedAt: '2020-01-01T00:00:00.000Z',
+        semanticEventDigest: 'f'.repeat(64),
+        prevHash: FORGED_PREV_HASH,
+        chainHash: FORGED_CHAIN_HASH,
+      } as unknown as AuditEventBody;
+
+      const second = await appendAuditEvent(tmpDir, forged);
+
+      expect(second).toEqual(first);
+      const { events } = await readAuditTrail(tmpDir);
+      expect(events).toHaveLength(1);
+      expect(events[0]!.auditSequence).toBe(1);
+    });
+
+    it('fails closed when the same id is re-delivered with different semantics', async () => {
+      const body = makeValidAuditEvent();
+      await appendAuditEvent(tmpDir, body);
+
+      let caught: unknown;
+      try {
+        await appendAuditEvent(tmpDir, { ...body, event: 'transition:IMPL_READY' });
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeInstanceOf(PersistenceError);
+      expect((caught as PersistenceError).code).toBe('SCHEMA_VALIDATION_FAILED');
+      const { events } = await readAuditTrail(tmpDir);
+      expect(events).toHaveLength(1);
+      expect(events[0]!.event).toBe('transition:PLAN_READY');
+    });
+
+    it('keeps the chain verifiable across a re-delivered append', async () => {
+      const body = makeValidAuditEvent();
+      await appendAuditEvent(tmpDir, body);
+      await appendAuditEvent(
+        tmpDir,
+        makeValidAuditEvent({ id: '00000000-0000-4000-8000-0000000000aa' }),
+      );
+      await appendAuditEvent(tmpDir, body);
+
+      const { events } = await readAuditTrail(tmpDir);
+      expect(events).toHaveLength(2);
+      expect(verifyChain(events).valid).toBe(true);
+    });
+  });
 });
