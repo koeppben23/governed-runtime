@@ -536,17 +536,23 @@ true })` returns the evaluated projection. Key invariants:
     ordered by `recordedAt`, and a reconciled outbox event may carry an older
     `occurredAt`, so the reported span could be wrong or negative. Now min/max
     over parsed instants.
-  - **`emitTransitions: false` disabled the durable state↔audit binding.** It
-    suppressed all state-write outbox generation rather than only the
-    transition projection, committing authority-state mutations with no pending
-    audit operation and no crash recovery. Latent — no shipped preset sets it
-    false.
+  - **`emitTransitions: false` disabled the durable state↔audit binding.** The
+    producer suppressed all state-write outbox generation rather than only the
+    transition projection, and the reconciler returned before reading any
+    pending operations at all — so a committed operation was never drained to
+    `audit.jsonl`. Both ends are fixed: `emitTransitions` now governs only which
+    operations the producer creates and the legacy transition-gap assertion; a
+    committed operation is authority and is always reconciled. Latent — no
+    shipped preset sets it false.
   - **Audit diagnostics bypassed redaction.** `tool_call.detail.errorMessage`,
     `error.detail.message`, and `error:SESSION_ERROR` (message, stack, and
     supplementary host context) reached the raw `audit.jsonl` unfiltered while
-    the operational log was redacted centrally. All now pass through the
-    existing `sanitizeDiagnosticString()`. Rationale, findings, and evidence
-    content are untouched.
+    the operational log was redacted centrally. Scalar diagnostics now pass
+    through the existing `sanitizeDiagnosticString()`; host-supplied
+    supplementary context — which is `z.record(z.string(), z.unknown())` and so
+    may nest objects and arrays — is deep-redacted through the existing
+    `redactExtra()` SSOT. Rationale, findings, and evidence content are
+    untouched.
 
 - **Duplicated standalone-review hypotheses (#762).** Review completion rebound
   evidence via a recomputed `taskDigest`. Because a branch subject only resolves
