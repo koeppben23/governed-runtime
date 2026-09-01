@@ -82,7 +82,7 @@ function isWriteSuccess(toolName: string, metadata: Record<string, unknown>): bo
     toolName === 'write' &&
     typeof metadata.filepath === 'string' &&
     typeof metadata.exists === 'boolean' &&
-    Array.isArray(metadata.diagnostics)
+    isRecord(metadata.diagnostics)
   );
 }
 
@@ -91,9 +91,23 @@ function isEditSuccess(toolName: string, metadata: Record<string, unknown>): boo
   return (
     toolName === 'edit' &&
     typeof metadata.diff === 'string' &&
-    metadata.filediff !== undefined &&
-    Array.isArray(metadata.diagnostics)
+    isFileDiff(metadata.filediff) &&
+    isRecord(metadata.diagnostics)
   );
+}
+
+function isFileDiff(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.file === 'string' &&
+    typeof value.patch === 'string' &&
+    typeof value.additions === 'number' &&
+    typeof value.deletions === 'number'
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function parseStructuredOutcome(output: string): Record<string, unknown> | null {

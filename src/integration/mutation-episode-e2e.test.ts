@@ -227,12 +227,21 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       ],
       [
         'write',
-        { filepath: '/repo/example.ts', exists: false, diagnostics: [] },
+        { filepath: '/repo/example.ts', exists: false, diagnostics: {} },
         'Wrote file successfully.',
       ],
       [
         'edit',
-        { diff: '--- a/example.ts', filediff: 'example.ts', diagnostics: [] },
+        {
+          diff: '--- a/example.ts',
+          filediff: {
+            file: '/repo/example.ts',
+            patch: '@@ -1 +1 @@',
+            additions: 1,
+            deletions: 1,
+          },
+          diagnostics: {},
+        },
         'Edit applied successfully.',
       ],
     ] as const;
@@ -253,6 +262,23 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
     for (const [tool, output] of cases) {
       await expect(recordMutationOutcome(tool, {}, output)).resolves.toBe('unknown');
     }
+  });
+
+  it('keeps malformed write and edit success metadata unknown', async () => {
+    await expect(
+      recordMutationOutcome(
+        'write',
+        { filepath: '/repo/example.ts', exists: false, diagnostics: [] },
+        'Wrote file successfully.',
+      ),
+    ).resolves.toBe('unknown');
+    await expect(
+      recordMutationOutcome(
+        'edit',
+        { diff: '--- a/example.ts', filediff: 'example.ts', diagnostics: {} },
+        'Edit applied successfully.',
+      ),
+    ).resolves.toBe('unknown');
   });
 
   it('does not complete an episode from a different mutating tool', async () => {
