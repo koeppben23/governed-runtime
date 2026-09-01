@@ -52,7 +52,11 @@ export const reconcile_mutation_episode: ToolDefinition = {
         if (!episode) {
           return formatBlocked('MUTATION_EPISODE_NOT_FOUND', { hostCallId: args.hostCallId });
         }
-        if (episode.status === 'completed') {
+        // An observed outcome (success or failure) is not reconcilable — only
+        // an unobservable one is. A `completed` episode whose outcome is
+        // `unknown` carries no normative host signal and is therefore just as
+        // unobservable as a dispatch whose After-hook never ran.
+        if (episode.status === 'completed' && episode.outcome !== 'unknown') {
           return formatBlocked('MUTATION_EPISODE_ALREADY_COMPLETED', {
             hostCallId: args.hostCallId,
             outcome: episode.outcome ?? 'unknown',

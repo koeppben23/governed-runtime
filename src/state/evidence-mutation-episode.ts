@@ -48,6 +48,24 @@ export const MutationEpisode = z
         message: 'completed mutation episodes require completion time and outcome',
       });
     }
+    // An unobservable outcome is not evidence. Binding it to an implementation
+    // digest would launder a missing host signal into `eligible` evidence that
+    // is indistinguishable from a confirmed success — the exact approximation
+    // the `unknown` classification exists to prevent. The state is made
+    // unrepresentable here so that EVERY write path fails closed, not just the
+    // binding path known today. Recovery is the append-only unknown-outcome
+    // resolution, which forces a fresh worktree recapture.
+    if (
+      episode.outcome === 'unknown' &&
+      (episode.implementationDigest !== null || episode.evidenceStatus !== 'ineligible')
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'a mutation episode with an unobservable outcome cannot carry bound or eligible ' +
+          'evidence; it requires an unknown-outcome resolution and a fresh worktree recapture',
+      });
+    }
     if (episode.implementationDigest === null && episode.evidenceStatus !== 'ineligible') {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -207,6 +225,11 @@ export function reconcileMutationEpisodes(
       return episode;
     }
     if (episode.implementationDigest === null) {
+      // An unobservable outcome never becomes eligible evidence by being
+      // bound: the host produced no normative signal, so there is nothing to
+      // bind. It stays blocking until an unknown-outcome resolution is
+      // appended, which in turn forces a fresh worktree recapture.
+      if (episode.outcome === 'unknown') return episode;
       return { ...episode, implementationDigest, evidenceStatus: 'eligible' as const };
     }
     if (
@@ -244,7 +267,9 @@ export function countUnboundMutationEpisodes(
   return episodes.filter(
     (episode) =>
       (episode.status === 'dispatch_authorized' && !resolvedCallIds.has(episode.hostCallId)) ||
-      (episode.status === 'completed' && episode.implementationDigest === null),
+      (episode.status === 'completed' &&
+        episode.implementationDigest === null &&
+        !resolvedCallIds.has(episode.hostCallId)),
   ).length;
 }
 
@@ -281,11 +306,20 @@ export function enforceMutationEpisodeInvariants(
   const seenResolutionCallIds = new Set<string>();
   for (const resolution of resolutions) {
     const episode = episodes.find((candidate) => candidate.hostCallId === resolution.hostCallId);
-    if (!episode || episode.status !== 'dispatch_authorized') {
+    // Resolvable episodes are those whose outcome cannot be established: the
+    // After-hook never ran (`dispatch_authorized`), or it ran without a
+    // normative host signal (`completed` with an `unknown` outcome). Both are
+    // unobservable outcomes and both must have a recovery path — otherwise the
+    // unobservable state would be terminal.
+    const resolvable =
+      episode !== undefined &&
+      (episode.status === 'dispatch_authorized' ||
+        (episode.status === 'completed' && episode.outcome === 'unknown'));
+    if (!resolvable) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['mutationEpisodeResolutions'],
-        message: `mutation episode resolution references missing or completed episode: ${resolution.hostCallId}`,
+        message: `mutation episode resolution references a missing or already-observed episode: ${resolution.hostCallId}`,
       });
       return true;
     }
