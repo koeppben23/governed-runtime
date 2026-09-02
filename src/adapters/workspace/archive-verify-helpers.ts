@@ -122,7 +122,7 @@ export function isCurrentChainIntegrityFailure(reason: ChainVerificationReason |
 }
 
 export function isAuditFormatFailure(reason: ChainVerificationReason | null): boolean {
-  return reason === 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED';
+  return reason === 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED' || reason === 'AUDIT_ENVELOPE_INVALID';
 }
 
 export function timestampFindingCode(reason: ChainVerificationReason | null): ArchiveFindingCode {

@@ -97,6 +97,9 @@ const actorMock = await import('../adapters/actor.js');
 
 const tarOk = await isTarAvailable();
 
+/** A well-formed but different FlowGuard session identity for rebinding tests. */
+const FOREIGN_SESSION_ID = 'bbbbbbbb-0000-4000-8000-000000000001';
+
 let ws: TestWorkspace;
 let ctx: TestToolContext;
 
@@ -386,6 +389,57 @@ describe('audit/archive tamper matrix', () => {
     expect(verification.passed).toBe(false);
     expect(verification.findings.some((f) => f.code === 'audit_chain_invalid')).toBe(true);
   });
+
+  it.skipIf(!tarOk)(
+    'validly re-sealed trail bound to a foreign session -> archive fails closed',
+    async () => {
+      // Re-bind EVERY audit event to session B and re-seal hash + semantic
+      // digest so the trail is internally valid (verifyChain alone passes).
+      // The archived session STATE still carries session A, so the
+      // state-bound chain verification must fail closed on the identity
+      // mismatch — not on any hash inconsistency.
+      const ids = await completeRegulatedSession();
+      const lines = await readAuditLines(ids.sessDir);
+      const events = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+      let rechainHead = 'genesis';
+      const resealed = events.map((raw) => {
+        const { chainHash: _chainHash, ...body } = raw as unknown as ChainedAuditEvent;
+        const rebind = {
+          ...body,
+          prevHash: rechainHead,
+          flowguardSessionId: FOREIGN_SESSION_ID,
+          semanticEventDigest: computeCanonicalEventDigest({
+            ...body,
+            prevHash: rechainHead,
+            flowguardSessionId: FOREIGN_SESSION_ID,
+          } as unknown as Record<string, unknown>),
+        };
+        const event = {
+          ...rebind,
+          chainHash: computeChainHash(
+            rebind.prevHash,
+            rebind as unknown as Omit<ChainedAuditEvent, 'chainHash'>,
+          ),
+        } as unknown as Record<string, unknown>;
+        rechainHead = event.chainHash as string;
+        return event;
+      });
+      await mutateArchive(ids, (root) =>
+        fs.writeFile(
+          path.join(root, 'audit', 'audit.jsonl'),
+          `${resealed.map((e) => JSON.stringify(e)).join('\n')}\n`,
+          'utf-8',
+        ),
+      );
+
+      // Internally consistent: without state binding the trail is valid.
+      expect(verifyChain(resealed).valid).toBe(true);
+
+      const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
+      expect(verification.passed).toBe(false);
+      expect(verification.findings.some((f) => f.code === 'audit_chain_invalid')).toBe(true);
+    },
+  );
 
   it.skipIf(!tarOk)(
     'regulated nested content tamper with re-sealed chain -> TSA verification failure',

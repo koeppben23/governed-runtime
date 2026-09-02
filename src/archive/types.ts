@@ -79,6 +79,8 @@ export type ManifestPolicyMode = z.infer<typeof ManifestPolicyModeSchema>;
  *   because the v2 chain was tampered, reordered, inserted, or deleted
  * - audit_chain_legacy_format: chained pre-v2 audit trail requires migration or
  *   explicit weak legacy verification and is not v2 tamper evidence
+ * - audit_chain_invalid_event: a record claims audit-chain.v3 but violates the
+ *   canonical AuditEvent envelope (schema-invalid current format)
  * - audit_chain_unsupported_format: audit trail declares an unknown chain format
  * - snapshot_missing: discovery or profile-resolution snapshot not found
  * - state_missing: session-state.json not found in archive
@@ -102,6 +104,7 @@ export const ArchiveFindingCodeSchema = z.enum([
   'archive_checksum_mismatch',
   'audit_chain_invalid',
   'audit_chain_legacy_format',
+  'audit_chain_invalid_event',
   'audit_chain_unsupported_format',
   'snapshot_missing',
   'state_missing',

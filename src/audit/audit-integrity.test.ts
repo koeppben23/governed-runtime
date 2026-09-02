@@ -108,8 +108,89 @@ describe('audit integrity', () => {
       const result = verifyChain([malformed]);
 
       expect(result.valid).toBe(false);
-      expect(result.reason).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
-      expect(result.firstBreak?.reason).toContain('valid audit-chain.v3 event envelope');
+      expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
+      expect(result.firstBreak?.reasonCode).toBe('AUDIT_ENVELOPE_INVALID');
+      expect(result.firstBreak?.reason).toContain('violates the canonical audit-chain.v3');
+    });
+
+    it('rejects a hash-shaped schema-invalid record without handing it to timestamp authorities', () => {
+      // Reviewer scenario: missing `event` plus VALID chainHash/prevHash and
+      // strictTimestamps:true. The envelope gate must fail closed
+      // deterministically and the invalid form must never reach the TSA
+      // imprint / evidence-presence sub-authorities.
+      const source = buildChain(1)[0]!;
+      const { chainHash: _chainHash, event: _event, ...withoutEvent } = source;
+      const resealed = {
+        ...withoutEvent,
+        semanticEventDigest: computeCanonicalEventDigest(withoutEvent),
+      };
+      const malformed = {
+        ...resealed,
+        chainHash: computeChainHash(
+          resealed.prevHash,
+          resealed as unknown as Omit<ChainedAuditEvent, 'chainHash'>,
+        ),
+      };
+
+      const result = verifyChain([malformed], { strictTimestamps: true });
+
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
+      expect(result.firstBreak?.reasonCode).toBe('AUDIT_ENVELOPE_INVALID');
+      expect(result.tsaImprintMismatches).toEqual([]);
+      expect(result.tokenVerificationRequired).toEqual([]);
+      expect(result.missingTimestampEvidence).toEqual([]);
+      expect(result.tsaEvidenceDowngraded).toEqual([]);
+    });
+
+    it('keeps original trail indices in timestamp diagnostics after an envelope-invalid record', () => {
+      const chain = buildChain(3);
+      // Envelope-invalid record in the middle: hash-shaped, internally
+      // consistent, but missing a required schema field.
+      const { chainHash: _middleHash, actor: _actor, ...middleBody } = chain[1]!;
+      const middleResealed = {
+        ...middleBody,
+        semanticEventDigest: computeCanonicalEventDigest(middleBody),
+      };
+      const invalidMiddle = {
+        ...middleResealed,
+        chainHash: computeChainHash(
+          middleResealed.prevHash,
+          middleResealed as unknown as Omit<ChainedAuditEvent, 'chainHash'>,
+        ),
+      };
+      // The third event must chain over the last VALID event (index 0) and
+      // its recordedAt regresses before it — a monotonicity violation at
+      // ORIGINAL index 2, not at compacted index 1.
+      const { chainHash: _lastHash, ...lastBody } = chain[2]!;
+      const lastResealed = {
+        ...lastBody,
+        prevHash: chain[0]!.chainHash,
+        recordedAt: '2025-12-31T23:59:00.000Z',
+        semanticEventDigest: computeCanonicalEventDigest({
+          ...lastBody,
+          prevHash: chain[0]!.chainHash,
+          recordedAt: '2025-12-31T23:59:00.000Z',
+        }),
+      };
+      const lastValid = {
+        ...lastResealed,
+        chainHash: computeChainHash(
+          lastResealed.prevHash,
+          lastResealed as unknown as Omit<ChainedAuditEvent, 'chainHash'>,
+        ),
+      };
+
+      const result = verifyChain([chain[0], invalidMiddle, lastValid] as unknown as Record<
+        string,
+        unknown
+      >[]);
+
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
+      expect(result.firstBreak?.index).toBe(1);
+      expect(result.timestampMonotonicity?.valid).toBe(false);
+      expect(result.timestampMonotonicity?.firstBreak).toBe(2);
     });
 
     it('rejects a hash-consistent trail with mixed FlowGuard session identities', () => {

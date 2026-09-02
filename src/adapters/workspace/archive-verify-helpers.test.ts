@@ -220,6 +220,10 @@ describe('isAuditFormatFailure', () => {
     expect(isAuditFormatFailure('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED')).toBe(true);
   });
 
+  it('returns true for AUDIT_ENVELOPE_INVALID', () => {
+    expect(isAuditFormatFailure('AUDIT_ENVELOPE_INVALID')).toBe(true);
+  });
+
   it('returns false for other reasons', () => {
     expect(isAuditFormatFailure('CHAIN_BREAK')).toBe(false);
     expect(isAuditFormatFailure('CLOCK_ANOMALY')).toBe(false);

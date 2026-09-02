@@ -15,8 +15,13 @@
  * 3. Assurance epoch: every record must be an audit-chain.v3 record.
  *    Legacy records are never skipped, migrated, or interpreted — they fail
  *    closed with LEGACY_ASSURANCE_FORMAT_UNSUPPORTED.
- * 4. Timestamp verification — monotonicity (CLOCK_ANOMALY) is always checked;
- *    optional strictTimestamps adds TSA imprint binding and evidence presence.
+ * 4. Envelope gate: every record is validated against the canonical
+ *    AuditEvent schema BEFORE any integrity or timestamp authority runs.
+ *    Schema-invalid records claiming the current format fail closed with
+ *    AUDIT_ENVELOPE_INVALID and never reach the timestamp sub-authorities.
+ * 5. Timestamp verification — monotonicity (CLOCK_ANOMALY) is always checked
+ *    over the canonical events; optional strictTimestamps adds TSA imprint
+ *    binding and evidence presence.
  *
  * Why this matters for DATEV/banks:
  * - Regulators require proof that audit trails have not been tampered with
@@ -86,6 +91,9 @@ export interface ChainVerifyOptions {
  * - `LEGACY_ASSURANCE_FORMAT_UNSUPPORTED`: record is not an audit-chain.v3
  *   record (missing/legacy format, or no chain fields). Legacy artifacts are
  *   never interpreted — they fail closed.
+ * - `AUDIT_ENVELOPE_INVALID`: record claims audit-chain.v3 but violates the
+ *   canonical AuditEvent envelope. Schema-invalid current-format records are
+ *   never handed to secondary assurance authorities — they fail closed here.
  * - `CLOCK_ANOMALY`: event timestamps are not strictly non-decreasing.
  * - `TIMESTAMP_EVIDENCE_MISSING`: critical event lacks required timestamp evidence.
  * - `TSA_MESSAGE_IMPRINT_MISMATCH`: TSA messageImprint does not match recomputed canonical content digest.
@@ -101,6 +109,7 @@ export interface ChainVerifyOptions {
 export type ChainVerificationReason =
   | 'CHAIN_BREAK'
   | 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED'
+  | 'AUDIT_ENVELOPE_INVALID'
   | 'CLOCK_ANOMALY'
   | 'TIMESTAMP_EVIDENCE_MISSING'
   | 'TSA_MESSAGE_IMPRINT_MISMATCH'
@@ -147,13 +156,16 @@ export interface ChainVerification {
    * - `CHAIN_BREAK`: hash mismatch detected (firstBreak has details).
    * - `LEGACY_ASSURANCE_FORMAT_UNSUPPORTED`: a record is not a chained
    *   audit-chain.v3 record. Legacy artifacts fail closed everywhere.
+   * - `AUDIT_ENVELOPE_INVALID`: a record claims audit-chain.v3 but violates
+   *   the canonical AuditEvent envelope.
    * - `CLOCK_ANOMALY`: timestamps decrease between events.
    * - `TIMESTAMP_EVIDENCE_MISSING`: critical events lack timestamp evidence.
    * - `TSA_MESSAGE_IMPRINT_MISMATCH`: TSA stamp does not match canonical digest.
    * - `TOKEN_VERIFICATION_REQUIRED`: TSA-stamped event has tokenDerBase64 that must be
    *   cryptographically verified before imprint can be trusted.
    *
-   * Priority: CHAIN_BREAK > legacy format > timestamp_*.
+   * Priority: CHAIN_BREAK > AUDIT_ENVELOPE_INVALID >
+   * LEGACY_ASSURANCE_FORMAT_UNSUPPORTED > timestamp_*.
    */
   readonly reason: ChainVerificationReason | null;
   /** Timestamp monotonicity result. Always present — never gated by options. */
@@ -284,6 +296,12 @@ export function verifyChain(
   const strictTimestamps = options?.strictTimestamps === true;
   const results: EventVerification[] = [];
   const failures: FirstVerificationFailures = {};
+  // Canonical events with their ORIGINAL trail positions. Secondary timestamp
+  // authorities (monotonicity, evidence presence, TSA imprint) only ever see
+  // schema-validated records — a hash-shaped but envelope-invalid record must
+  // never reach them — and diagnostics keep the original index even when an
+  // invalid record sits earlier in the trail.
+  const canonicalEvents: CanonicalIndexedEvent[] = [];
   let lastHash = GENESIS_HASH;
   let trailFlowguardSessionId = options?.expectedFlowguardSessionId;
 
@@ -292,12 +310,17 @@ export function verifyChain(
 
     const parsed = AuditEvent.safeParse(raw);
     if (!parsed.success) {
+      const claimsCurrentFormat = raw.auditFormatVersion === CURRENT_AUDIT_FORMAT_VERSION;
       const verification: EventVerification = {
         index: i,
         eventId: typeof raw.id === 'string' ? raw.id : 'unknown',
         valid: false,
-        reason: 'record is not a valid audit-chain.v3 event envelope',
-        reasonCode: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+        reason: claimsCurrentFormat
+          ? 'record claims audit-chain.v3 but violates the canonical audit-chain.v3 event envelope'
+          : 'record is not a chained audit-chain.v3 record',
+        reasonCode: claimsCurrentFormat
+          ? 'AUDIT_ENVELOPE_INVALID'
+          : 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
       };
       results.push(verification);
       trackVerificationFailure(failures, verification);
@@ -305,6 +328,7 @@ export function verifyChain(
     }
 
     const event = parsed.data as ChainedAuditEvent;
+    canonicalEvents.push({ event, index: i });
     const eventVerification = verifyEvent(event, lastHash, i);
     if (!trailFlowguardSessionId) trailFlowguardSessionId = event.flowguardSessionId;
     const verification =
@@ -324,7 +348,7 @@ export function verifyChain(
     lastHash = event.chainHash;
   }
 
-  const timestampChecks = verifyTimestampChecks(events, strictTimestamps);
+  const timestampChecks = verifyTimestampChecks(canonicalEvents, strictTimestamps);
   const reason = resolveChainReason(failures, strictTimestamps, timestampChecks);
 
   return {
@@ -347,6 +371,7 @@ interface FirstVerificationFailures {
   firstBreak?: EventVerification;
   firstChainBreak?: EventVerification;
   firstLegacyFormat?: EventVerification;
+  firstEnvelopeInvalid?: EventVerification;
 }
 
 interface TimestampChecks {
@@ -355,6 +380,12 @@ interface TimestampChecks {
   readonly tsaImprintMismatches: readonly number[];
   readonly tokenVerificationRequired: readonly number[];
   readonly tsaEvidenceDowngraded: readonly number[];
+}
+
+/** A canonically validated audit event plus its original trail position. */
+interface CanonicalIndexedEvent {
+  readonly index: number;
+  readonly event: AuditEvent;
 }
 
 function trackVerificationFailure(
@@ -368,23 +399,32 @@ function trackVerificationFailure(
   if (verification.reasonCode === 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED') {
     failures.firstLegacyFormat ??= verification;
   }
+  if (verification.reasonCode === 'AUDIT_ENVELOPE_INVALID') {
+    failures.firstEnvelopeInvalid ??= verification;
+  }
 }
 
 function verifyTimestampChecks(
-  events: Record<string, unknown>[],
+  indexedEvents: readonly CanonicalIndexedEvent[],
   strictTimestamps: boolean,
 ): TimestampChecks {
-  const chainedEvents = events.filter(isChainedEvent).map((e) => e as unknown as AuditEvent);
+  const chainedEvents = indexedEvents.map((entry) => entry.event);
   // Clock monotonicity is a property of the trail itself: it needs no TSA
   // evidence, no timestamp policy and no configuration, so it is ALWAYS
   // verified. Gating it behind `strictTimestamps` bundled it with the TSA
   // evidence-presence requirement and left callers only two bad options —
   // never detect a clock anomaly, or demand TSA evidence from sessions that
   // never enabled timestamp assurance and fail them all.
-  const monotonicityResult = verifyTimestampMonotonicity(chainedEvents);
+  //
+  // Only canonical events participate; their ORIGINAL trail indices are
+  // reported so diagnostics never shift after an envelope-invalid record.
+  const monotonicityResult = verifyTimestampMonotonicity(indexedEvents.map((entry) => entry.event));
   const timestampMonotonicity = {
     valid: monotonicityResult.valid,
-    firstBreak: monotonicityResult.firstBreak,
+    firstBreak:
+      monotonicityResult.firstBreak === null
+        ? null
+        : indexedEvents[monotonicityResult.firstBreak]!.index,
     message: monotonicityResult.message,
   };
 
@@ -401,7 +441,7 @@ function verifyTimestampChecks(
   const missingTimestampEvidence = verifyTimestampEvidencePresence(chainedEvents, [
     'decision',
     'lifecycle',
-  ]).missingCriticalEvents;
+  ]).missingCriticalEvents.map((position) => indexedEvents[position]!.index);
 
   const tsaImprintMismatches: number[] = [];
   const tokenVerificationRequired: number[] = [];
@@ -411,11 +451,11 @@ function verifyTimestampChecks(
     const check = verifyTsaMessageImprint(chainedEvents[i]!);
     if (check.valid) continue;
     if (check.downgraded) {
-      tsaEvidenceDowngraded.push(i);
+      tsaEvidenceDowngraded.push(indexedEvents[i]!.index);
     } else if (check.needsTokenVerification) {
-      tokenVerificationRequired.push(i);
+      tokenVerificationRequired.push(indexedEvents[i]!.index);
     } else {
-      tsaImprintMismatches.push(i);
+      tsaImprintMismatches.push(indexedEvents[i]!.index);
     }
   }
 
@@ -447,6 +487,7 @@ function resolveStructuralChainReason(
   failures: FirstVerificationFailures,
 ): ChainVerificationReason | null {
   if (failures.firstChainBreak) return 'CHAIN_BREAK';
+  if (failures.firstEnvelopeInvalid) return 'AUDIT_ENVELOPE_INVALID';
   if (failures.firstLegacyFormat) return 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED';
   return null;
 }

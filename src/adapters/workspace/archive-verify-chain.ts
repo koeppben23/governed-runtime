@@ -10,6 +10,7 @@ import { readState } from '../persistence.js';
 import { readAuditTrail } from '../persistence-audit.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import { verifyChain, getLastChainHash, type ChainVerification } from '../../audit/integrity.js';
+import { logAuditChainVerificationFailure } from './archive-verify-logging.js';
 import {
   type ArchiveManifest,
   type ArchiveVerification,
@@ -181,49 +182,6 @@ async function verifyArtifactBinding(
 
 // ─── Audit Chain Logging & Findings ───────────────────────────────────────────
 
-function logAuditChainVerificationFailure(chainResult: ChainVerification): void {
-  if (chainResult.valid) return;
-
-  if (chainResult.reason === 'TSA_MESSAGE_IMPRINT_MISMATCH') {
-    const mismatchIndex = chainResult.tsaImprintMismatches[0];
-    getAdapterLogger().error('archive', 'TSA timestamp verification failed', {
-      eventId:
-        typeof mismatchIndex === 'number' ? chainResult.results[mismatchIndex]?.eventId : null,
-      reason: 'tsa_imprint_mismatch',
-    });
-    return;
-  }
-
-  if (chainResult.reason === 'TOKEN_VERIFICATION_REQUIRED') {
-    const tokenIndex = chainResult.tokenVerificationRequired[0];
-    getAdapterLogger().error('archive', 'TSA token verification required', {
-      eventId: typeof tokenIndex === 'number' ? chainResult.results[tokenIndex]?.eventId : null,
-      reason: 'token_verification_required',
-    });
-    return;
-  }
-
-  if (!chainResult.firstBreak) return;
-
-  const logExtra: Record<string, unknown> = {
-    eventId: chainResult.firstBreak.eventId,
-    reason: chainResult.reason,
-  };
-  if (chainResult.firstBreak.expectedChainHash) {
-    logExtra.expectedChainHash = chainResult.firstBreak.expectedChainHash;
-  }
-  if (chainResult.firstBreak.actualChainHash) {
-    logExtra.actualChainHash = chainResult.firstBreak.actualChainHash;
-  }
-
-  const log = getAdapterLogger();
-  if (chainResult.reason === 'CHAIN_BREAK') {
-    log.error('archive', 'Audit chain verification failed', logExtra);
-    return;
-  }
-  log.error('archive', 'Audit chain contains unsupported legacy assurance records', logExtra);
-}
-
 function addAuditFormatFindings(chainResult: ChainVerification, findings: ArchiveFinding[]): void {
   if (chainResult.reason === 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED') {
     findings.push({
@@ -232,6 +190,18 @@ function addAuditFormatFindings(chainResult: ChainVerification, findings: Archiv
       message:
         'Audit chain contains records that are not audit-chain.v3 records. Legacy assurance ' +
         'artifacts are unsupported and cannot be treated as verifiable evidence.',
+      file: 'audit.jsonl',
+    });
+    return;
+  }
+  if (chainResult.reason === 'AUDIT_ENVELOPE_INVALID') {
+    findings.push({
+      code: 'audit_chain_invalid_event',
+      severity: 'error',
+      message:
+        'Audit chain contains records that claim audit-chain.v3 but violate the canonical ' +
+        'audit event envelope. Schema-invalid current-format records cannot be treated as ' +
+        'verifiable evidence.',
       file: 'audit.jsonl',
     });
   }

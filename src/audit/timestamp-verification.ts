@@ -146,12 +146,16 @@ function isDegradedStatus(status: string | undefined): boolean {
  * - AC2: the downgrade decision comes FIRST — a degraded status must never
  *   weaken assurance when STRONGER evidence payload exists, whether that is a
  *   token, an imprint, or both.
- * - When tokenDerBase64 is present with a coherent status: mutable
- *   timestampEvidence.tsa.messageImprint cannot be trusted. Returns
+ * - When tokenDerBase64 is present and non-empty with a coherent status:
+ *   mutable timestampEvidence.tsa.messageImprint cannot be trusted. Returns
  *   needsTokenVerification=true to signal that async cryptographic token
  *   verification is required.
- * - When tokenDerBase64 is absent (mock/internal TSA): messageImprint is the
- *   trusted internal imprint and is compared against the recomputed canonical digest.
+ * - When tokenDerBase64 is absent or the empty string (mock/internal TSA,
+ *   the canonical internal-imprint model): messageImprint is the trusted
+ *   internal imprint and is compared against the recomputed canonical digest.
+ *   A `tsa` payload that omits the tokenDerBase64 FIELD entirely is
+ *   schema-invalid and never reaches this function via verifyChain — the
+ *   canonical TsaEvidenceSchema requires the field.
  *
  * @param event - Audit event with optional timestampEvidence.
  */

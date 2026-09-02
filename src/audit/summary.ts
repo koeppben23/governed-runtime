@@ -299,11 +299,11 @@ function checkChainIntegrity(chainVerification: ChainVerification): ComplianceCh
   // Failure — use typed reason for explicit detail.
   const { reason, firstBreak } = chainVerification;
 
-  if (reason === 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED') {
+  if (reason === 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED' || reason === 'AUDIT_ENVELOPE_INVALID') {
     return {
       name: 'chain_integrity',
       passed: false,
-      detail: `${firstBreak?.reason ?? 'Legacy assurance records are unsupported'} at event #${firstBreak?.index ?? '?'}`,
+      detail: `${firstBreak?.reason ?? 'Unsupported or invalid audit records'} at event #${firstBreak?.index ?? '?'}`,
     };
   }
 
