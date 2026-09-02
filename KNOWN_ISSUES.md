@@ -26,8 +26,10 @@ redaction-composition assurance gap R14.
 The 2026-08-26 re-triage confirmed durable transition-audit reconciliation from
 #847 (MUT2) and external authority binding from #848 (M2).
 A 2026-09-02 static re-triage against `9b727902` (#864) confirmed that remote
-JWKS fetches follow redirects and materialize an unbounded response body; G27
-is therefore `Open`, not `Not Verified`.
+JWKS fetches followed redirects and materialized an unbounded response body;
+G27 was therefore `Open`, not `Not Verified`. PR #866 tracks redirect rejection
+and a bounded response body. DNS/private-IP validation and connection pinning
+remain separate, unverified transport boundaries.
 
 ## Status Legend
 
@@ -98,74 +100,74 @@ disproven, update the status and link the evidence."
 | B       | P1       | Fixed           | AC1, AC2, AC3, AC4, AC5, TSA1, TSA2, TSA3, TSA4 | Hash-chain, canonical digest, TSA, and NTP hardening. #832/#833 fix TSA1–TSA4 with a strict RFC 3161 verifier contract, including ESS signer-certificate binding.                         |
 | C       | P1       | Partially Fixed | AR1, AR2, AR3, AR4, AR5, AUD1, AUD2, AUD3, AUD4 | Archive integrity and audit write-lock recovery. AR1 and AUD2 fixed (#670); AR2 fixed by trusted-policy severity derivation; AR3/AR4/AUD1/AUD3/AUD4 fixed (#837); AR5 is tracked in #836. |
 | D       | P1       | Fixed           | R1, R2, R3, R4, R5, AC3                         | Secret-leak, redaction, logging, telemetry boundaries. R3, R5 fixed (#585); R1, R2, R4, AC3 fixed (redaction fail-closed).                                                                |
-| E       | P1       | Partially Fixed | H1, H2, H4, C1, C2, C3, C4, C5, M1, M2, M3, I4  | Hook, CLI, MCP, installer, and integration fail-closed hardening. H1, H2, H4, M1, M3 and C2–C5 fixed (#645, #646, #667); M2 fixed by #848; I4 is partially fixed; C1 remains open.           |
+| E       | P1       | Partially Fixed | H1, H2, H4, C1, C2, C3, C4, C5, M1, M2, M3, I4  | Hook, CLI, MCP, installer, and integration fail-closed hardening. H1, H2, H4, M1, M3 and C2–C5 fixed (#645, #646, #667); M2 fixed by #848; I4 is partially fixed; C1 remains open.        |
 | F       | P2       | Partially Fixed | G3, G7, G9, G15, AC6, AC7, G12, G13             | State-machine correctness and audit completeness. G3 and G9 are fixed pre-existing; G7 is fixed by #421 and AC7 by #678; G15, AC6, and G12–G13 remain open.                               |
 
 ## High-Priority Findings
 
-| ID   | Severity | Status    | Summary                                                                                                                                                                           |
-| ---- | -------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC2  | HIGH     | Fixed     | Timestamp verification must not trust downgraded status when stronger evidence is present — TSA_EVIDENCE_DOWNGRADED chain reason + tsa_evidence_downgraded finding.               |
-| AC3  | HIGH     | Fixed     | Audit argument summarization can expose scalar secrets and needs redaction hardening.                                                                                             |
-| AC4  | HIGH     | Fixed     | NTP offset/delay calculation is RFC-aligned and captures T1 immediately before send (#728).                                                                                       |
-| AC5  | HIGH     | Fixed     | NTP responses validate protocol fields, peer-bound origin timestamp, and non-null transmit timestamp (#728).                                                                      |
-| PD1  | HIGH     | Fixed     | Policy snapshot digests require `policy-digest.v2`; unversioned and unknown versions fail closed. #844 merged with 90.63% targeted mutation admission.                           |
-| H1   | HIGH     | Fixed     | HTTP governance routes require bearer authentication; non-loopback binds need explicit opt-in and token auth.                                                                     |
-| H2   | HIGH     | Fixed     | HTTP and command hooks both block mutating tools while review obligations remain unresolved.                                                                                      |
-| H3   | HIGH     | Fixed     | #844 rejects Windows reserved device names, their extension variants, and session IDs with leading/trailing whitespace or trailing dots.                                         |
-| M1   | HIGH     | Fixed     | MCP tool execution uses server-scoped response deadlines and admission limits (#645).                                                                                             |
-| M2   | HIGH     | Fixed     | #848 binds MCP roots to canonical Git worktrees; project/session environment hints can only select authorized roots and sessions.                                                |
-| M3   | HIGH     | Fixed     | MCP errors use trusted boundary codes and do not reflect arbitrary executor messages (#645).                                                                                      |
-| C1   | HIGH     | Open      | Non-OpenCode config install skip/error handling needs explicit surfacing.                                                                                                         |
-| C2   | HIGH     | Fixed     | Exclusive install lock, preflight, and existing-install protection implemented by #667.                                                                                           |
-| C3   | HIGH     | Fixed     | Install mutations use top-level rollback plus crash-recoverable dependency transactions in #667.                                                                                  |
-| C4   | HIGH     | Fixed     | Codex marketplace install and uninstall use locked atomic read-modify-write in #667.                                                                                              |
-| C5   | HIGH     | Fixed     | Snapshot and rollback paths reject symlinks and use TOCTOU-hardened operations in #667.                                                                                           |
-| I4   | HIGH     | Partially Fixed | #844 blocks mutating host tools when the authoritative session-directory mapping is missing. Audit-context resolution remains a separate open authority concern.               |
-| R1   | HIGH     | Fixed     | Export redaction uses a default-deny deep walk; #844 adds final sharing-archive byte coverage (R14).                                                                              |
-| R2   | HIGH     | Fixed     | Archive pipeline produces redacted files alongside raw, controlled by mandatory tool parameters; #844 verifies final sharing-archive composition (R14).                           |
-| R4   | HIGH     | Fixed     | Telemetry error/status export needs scrubbing.                                                                                                                                    |
-| AUD2 | HIGH     | Fixed     | Audit write lock safely recovers dead-process stale locks while failing closed for unsafe lock states (#670).                                                                     |
-| LK1  | LOW      | Mitigated | Stale-lock recovery re-verifies content before unlink to avoid deleting a foreign fresh lock; a residual sub-`unlink` OS race remains without an atomic primitive (#673).         |
+| ID   | Severity | Status          | Summary                                                                                                                                                                   |
+| ---- | -------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC2  | HIGH     | Fixed           | Timestamp verification must not trust downgraded status when stronger evidence is present — TSA_EVIDENCE_DOWNGRADED chain reason + tsa_evidence_downgraded finding.       |
+| AC3  | HIGH     | Fixed           | Audit argument summarization can expose scalar secrets and needs redaction hardening.                                                                                     |
+| AC4  | HIGH     | Fixed           | NTP offset/delay calculation is RFC-aligned and captures T1 immediately before send (#728).                                                                               |
+| AC5  | HIGH     | Fixed           | NTP responses validate protocol fields, peer-bound origin timestamp, and non-null transmit timestamp (#728).                                                              |
+| PD1  | HIGH     | Fixed           | Policy snapshot digests require `policy-digest.v2`; unversioned and unknown versions fail closed. #844 merged with 90.63% targeted mutation admission.                    |
+| H1   | HIGH     | Fixed           | HTTP governance routes require bearer authentication; non-loopback binds need explicit opt-in and token auth.                                                             |
+| H2   | HIGH     | Fixed           | HTTP and command hooks both block mutating tools while review obligations remain unresolved.                                                                              |
+| H3   | HIGH     | Fixed           | #844 rejects Windows reserved device names, their extension variants, and session IDs with leading/trailing whitespace or trailing dots.                                  |
+| M1   | HIGH     | Fixed           | MCP tool execution uses server-scoped response deadlines and admission limits (#645).                                                                                     |
+| M2   | HIGH     | Fixed           | #848 binds MCP roots to canonical Git worktrees; project/session environment hints can only select authorized roots and sessions.                                         |
+| M3   | HIGH     | Fixed           | MCP errors use trusted boundary codes and do not reflect arbitrary executor messages (#645).                                                                              |
+| C1   | HIGH     | Open            | Non-OpenCode config install skip/error handling needs explicit surfacing.                                                                                                 |
+| C2   | HIGH     | Fixed           | Exclusive install lock, preflight, and existing-install protection implemented by #667.                                                                                   |
+| C3   | HIGH     | Fixed           | Install mutations use top-level rollback plus crash-recoverable dependency transactions in #667.                                                                          |
+| C4   | HIGH     | Fixed           | Codex marketplace install and uninstall use locked atomic read-modify-write in #667.                                                                                      |
+| C5   | HIGH     | Fixed           | Snapshot and rollback paths reject symlinks and use TOCTOU-hardened operations in #667.                                                                                   |
+| I4   | HIGH     | Partially Fixed | #844 blocks mutating host tools when the authoritative session-directory mapping is missing. Audit-context resolution remains a separate open authority concern.          |
+| R1   | HIGH     | Fixed           | Export redaction uses a default-deny deep walk; #844 adds final sharing-archive byte coverage (R14).                                                                      |
+| R2   | HIGH     | Fixed           | Archive pipeline produces redacted files alongside raw, controlled by mandatory tool parameters; #844 verifies final sharing-archive composition (R14).                   |
+| R4   | HIGH     | Fixed           | Telemetry error/status export needs scrubbing.                                                                                                                            |
+| AUD2 | HIGH     | Fixed           | Audit write lock safely recovers dead-process stale locks while failing closed for unsafe lock states (#670).                                                             |
+| LK1  | LOW      | Mitigated       | Stale-lock recovery re-verifies content before unlink to avoid deleting a foreign fresh lock; a residual sub-`unlink` OS race remains without an atomic primitive (#673). |
 
 ## Medium-Priority Findings
 
-| ID   | Severity | Status          | Summary                                                                                                                                                     |
-| ---- | -------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC6  | MEDIUM   | Open            | Review-flow completeness can report complete mid-flow. `TESTED_BUG_BEHAVIOR`.                                                                               |
-| AC7  | MEDIUM   | Fixed           | Completeness summary totals are computed from flow-specific ticket, architecture, or review slots (#678).                                                   |
-| AC8  | MEDIUM   | Partially Fixed | Four-eyes reporting now uses structured identity; history handling remains open.                                                                            |
-| AC9  | MEDIUM   | Fixed           | Missing/malformed cached imprints are explicit findings; cached-vs-token imprint comparison is byte-wise constant-time.                                     |
-| AC10 | MEDIUM   | Not Verified    | Timestamp token verification should distinguish legacy format from tampering.                                                                               |
-| AC11 | MEDIUM   | Fixed           | Timestamp comparisons parse UTC instants (audit monotonicity + ProofGraph counterexample freshness); unparseable values are never sortable.                 |
-| G4   | MEDIUM   | Open            | `team-ci` degradation snapshot mode can remain inconsistent. `TESTED_BUG_BEHAVIOR`.                                                                         |
-| G6   | MEDIUM   | Open            | Command policy and terminal handling diverge for HYDRATE/ABORT. `TESTED_BUG_BEHAVIOR`.                                                                      |
-| G12  | MEDIUM   | Open            | ADR rejection is not represented in architecture state.                                                                                                     |
-| G13  | MEDIUM   | Open            | ADR section validation should use line-anchored matching.                                                                                                   |
-| G15  | MEDIUM   | Open            | Transition records lack actor identity.                                                                                                                     |
-| G22  | MEDIUM   | Open            | Hydrate risk-class recovery behavior and documentation diverge.                                                                                             |
-| G26  | MEDIUM   | Open            | IdP token subject/email persistence normalization remains open.                                                                                             |
-| G27  | MEDIUM   | Open            | Remote JWKS fetch follows redirects and has no response body-size limit.                                                                                     |
-| H5   | MEDIUM   | Open            | Stop hook should flush logger sinks before process exit.                                                                                                    |
-| H6   | MEDIUM   | Open            | Pre-tool fatal path exit-code behavior needs fail-closed coverage. `TESTED_BUG_BEHAVIOR`.                                                                   |
-| H7   | MEDIUM   | Open            | Command hook stdin needs a byte cap.                                                                                                                        |
-| H8   | MEDIUM   | Open            | Hook payload working-directory trust boundary needs validation.                                                                                             |
-| M4   | MEDIUM   | Open            | MCP schema conversion should not silently become free-form on missing args.                                                                                 |
-| M5   | MEDIUM   | Open            | MCP stdout guard JSON-RPC detection needs stricter framing.                                                                                                 |
-| C6   | MEDIUM   | Open            | Installer config-dir environment inputs need validation.                                                                                                    |
-| C8   | MEDIUM   | Open            | Claude Code plugin install hint should respect force/overwrite semantics.                                                                                   |
-| C11  | MEDIUM   | Open            | Serve port allocation has a TOCTOU gap.                                                                                                                     |
-| T1   | MEDIUM   | Open            | Mandate section extraction should tolerate heading drift or fail with clearer contract. `TESTED_BUG_BEHAVIOR`.                                              |
-| AR2  | MEDIUM   | Fixed           | Archive timestamp severity derives from the trusted `resolveStrictMode(state)` resolution; the manifest is never a severity authority.                      |
-| AR5  | MEDIUM   | Fixed           | Post-publication digest-bound event and verifier contract are implemented by #838, closing #836.                                                            |
-| R14  | MEDIUM   | Fixed           | #844 adds a default-sharing-export contract from real session/audit secret evidence through final archive members.                                                               |
-| TSA1 | MEDIUM   | Fixed           | RFC3161 verifier enforces exactly one critical, exclusive id-kp-timeStamping EKU (#643, #832).                                                              |
-| TSA2 | MEDIUM   | Fixed           | Independently allowlisted message-imprint and CMS hashes (SHA-256/384/512), CMS-internal coherence, validated RSASSA-PSS parameters (#643, #832).           |
-| S1   | MEDIUM   | Open            | State schema versioning needs forward-migration strategy.                                                                                                   |
-| S2   | MEDIUM   | Open            | Policy snapshot parse transforms can rewrite historical state.                                                                                              |
-| UP1  | MEDIUM-HIGH | Tracked      | Prerelease persisted-state compatibility was overstated: unversioned policy digests from `v1.2.0-tp.2` and earlier are intentionally incompatible with `policy-digest.v2`; upgrade recovery documentation is in this PR. |
-| MUT2 | MEDIUM   | Fixed           | #847 includes production `src/integration/plugin-helpers.ts` and its tests in the Stryker mutation scope and Vitest projection.             |
-| MUT3 | MEDIUM   | Tracked         | The release workflow makes mutation a required dependency of the tag-release publish job; status requires v-tag workflow execution evidence.                |
+| ID   | Severity    | Status          | Summary                                                                                                                                                                                                                  |
+| ---- | ----------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| AC6  | MEDIUM      | Open            | Review-flow completeness can report complete mid-flow. `TESTED_BUG_BEHAVIOR`.                                                                                                                                            |
+| AC7  | MEDIUM      | Fixed           | Completeness summary totals are computed from flow-specific ticket, architecture, or review slots (#678).                                                                                                                |
+| AC8  | MEDIUM      | Partially Fixed | Four-eyes reporting now uses structured identity; history handling remains open.                                                                                                                                         |
+| AC9  | MEDIUM      | Fixed           | Missing/malformed cached imprints are explicit findings; cached-vs-token imprint comparison is byte-wise constant-time.                                                                                                  |
+| AC10 | MEDIUM      | Not Verified    | Timestamp token verification should distinguish legacy format from tampering.                                                                                                                                            |
+| AC11 | MEDIUM      | Fixed           | Timestamp comparisons parse UTC instants (audit monotonicity + ProofGraph counterexample freshness); unparseable values are never sortable.                                                                              |
+| G4   | MEDIUM      | Open            | `team-ci` degradation snapshot mode can remain inconsistent. `TESTED_BUG_BEHAVIOR`.                                                                                                                                      |
+| G6   | MEDIUM      | Open            | Command policy and terminal handling diverge for HYDRATE/ABORT. `TESTED_BUG_BEHAVIOR`.                                                                                                                                   |
+| G12  | MEDIUM      | Open            | ADR rejection is not represented in architecture state.                                                                                                                                                                  |
+| G13  | MEDIUM      | Open            | ADR section validation should use line-anchored matching.                                                                                                                                                                |
+| G15  | MEDIUM      | Open            | Transition records lack actor identity.                                                                                                                                                                                  |
+| G22  | MEDIUM      | Open            | Hydrate risk-class recovery behavior and documentation diverge.                                                                                                                                                          |
+| G26  | MEDIUM      | Open            | IdP token subject/email persistence normalization remains open.                                                                                                                                                          |
+| G27  | MEDIUM      | Tracked         | #866 rejects remote-JWKS redirects and bounds response bodies; DNS/private-IP validation and connection pinning remain separately unverified.                                                                            |
+| H5   | MEDIUM      | Open            | Stop hook should flush logger sinks before process exit.                                                                                                                                                                 |
+| H6   | MEDIUM      | Open            | Pre-tool fatal path exit-code behavior needs fail-closed coverage. `TESTED_BUG_BEHAVIOR`.                                                                                                                                |
+| H7   | MEDIUM      | Open            | Command hook stdin needs a byte cap.                                                                                                                                                                                     |
+| H8   | MEDIUM      | Open            | Hook payload working-directory trust boundary needs validation.                                                                                                                                                          |
+| M4   | MEDIUM      | Open            | MCP schema conversion should not silently become free-form on missing args.                                                                                                                                              |
+| M5   | MEDIUM      | Open            | MCP stdout guard JSON-RPC detection needs stricter framing.                                                                                                                                                              |
+| C6   | MEDIUM      | Open            | Installer config-dir environment inputs need validation.                                                                                                                                                                 |
+| C8   | MEDIUM      | Open            | Claude Code plugin install hint should respect force/overwrite semantics.                                                                                                                                                |
+| C11  | MEDIUM      | Open            | Serve port allocation has a TOCTOU gap.                                                                                                                                                                                  |
+| T1   | MEDIUM      | Open            | Mandate section extraction should tolerate heading drift or fail with clearer contract. `TESTED_BUG_BEHAVIOR`.                                                                                                           |
+| AR2  | MEDIUM      | Fixed           | Archive timestamp severity derives from the trusted `resolveStrictMode(state)` resolution; the manifest is never a severity authority.                                                                                   |
+| AR5  | MEDIUM      | Fixed           | Post-publication digest-bound event and verifier contract are implemented by #838, closing #836.                                                                                                                         |
+| R14  | MEDIUM      | Fixed           | #844 adds a default-sharing-export contract from real session/audit secret evidence through final archive members.                                                                                                       |
+| TSA1 | MEDIUM      | Fixed           | RFC3161 verifier enforces exactly one critical, exclusive id-kp-timeStamping EKU (#643, #832).                                                                                                                           |
+| TSA2 | MEDIUM      | Fixed           | Independently allowlisted message-imprint and CMS hashes (SHA-256/384/512), CMS-internal coherence, validated RSASSA-PSS parameters (#643, #832).                                                                        |
+| S1   | MEDIUM      | Open            | State schema versioning needs forward-migration strategy.                                                                                                                                                                |
+| S2   | MEDIUM      | Open            | Policy snapshot parse transforms can rewrite historical state.                                                                                                                                                           |
+| UP1  | MEDIUM-HIGH | Tracked         | Prerelease persisted-state compatibility was overstated: unversioned policy digests from `v1.2.0-tp.2` and earlier are intentionally incompatible with `policy-digest.v2`; upgrade recovery documentation is in this PR. |
+| MUT2 | MEDIUM      | Fixed           | #847 includes production `src/integration/plugin-helpers.ts` and its tests in the Stryker mutation scope and Vitest projection.                                                                                          |
+| MUT3 | MEDIUM      | Tracked         | The release workflow makes mutation a required dependency of the tag-release publish job; status requires v-tag workflow execution evidence.                                                                             |
 
 ## Low-Priority And Hardening Findings
 
@@ -224,13 +226,13 @@ disproven, update the status and link the evidence."
 
 ## Cross-Cutting Risks
 
-| Theme                                | Status | Summary                                                                                                    |
-| ------------------------------------ | ------ | ---------------------------------------------------------------------------------------------------------- |
-| Command-hook vs HTTP-hook drift      | Open   | Transport paths must preserve equivalent enforcement semantics.                                            |
-| Silent success after caught failures | Open   | Error handling should surface audit/install/workspace failures explicitly.                                 |
-| Environment-variable trust boundary  | Open   | Runtime and installer environment inputs need validation/sandboxing review.                                |
-| Fail-open behavior                   | Open   | Hooks, MCP, plugin initialization, and audit persistence need fail-closed review.                          |
-| Assurance gate drift                 | Open   | Release publication is source-gated on mutation, pending workflow execution evidence for MUT3.                                      |
+| Theme                                | Status | Summary                                                                                        |
+| ------------------------------------ | ------ | ---------------------------------------------------------------------------------------------- |
+| Command-hook vs HTTP-hook drift      | Open   | Transport paths must preserve equivalent enforcement semantics.                                |
+| Silent success after caught failures | Open   | Error handling should surface audit/install/workspace failures explicitly.                     |
+| Environment-variable trust boundary  | Open   | Runtime and installer environment inputs need validation/sandboxing review.                    |
+| Fail-open behavior                   | Open   | Hooks, MCP, plugin initialization, and audit persistence need fail-closed review.              |
+| Assurance gate drift                 | Open   | Release publication is source-gated on mutation, pending workflow execution evidence for MUT3. |
 
 ## Test-Pinned Bug Behaviors
 

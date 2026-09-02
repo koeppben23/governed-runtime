@@ -325,36 +325,56 @@ describe('JwksRemoteKeyResolver', () => {
       });
     });
 
-    it('rejects an oversized declared response without reading its body', async () => {
-      const getReader = vi.fn();
+    it('cancels an oversized declared response without reading its body', async () => {
+      const cancel = vi.fn();
+      const body = new ReadableStream<Uint8Array>({ cancel });
       vi.stubGlobal(
         'fetch',
-        vi.fn().mockResolvedValue({
-          ok: true,
-          status: 200,
-          headers: new Headers({ 'content-length': String(MAX_JWKS_RESPONSE_BYTES + 1) }),
-          body: { getReader },
-        }),
+        vi.fn().mockResolvedValue(
+          new Response(body, {
+            headers: { 'content-length': String(MAX_JWKS_RESPONSE_BYTES + 1) },
+          }),
+        ),
       );
 
       await expect(JwksRemoteKeyResolver.fromUri(jwksUri, 300)).rejects.toThrow(
         `JWKS response exceeds the ${MAX_JWKS_RESPONSE_BYTES}-byte limit`,
       );
-      expect(getReader).not.toHaveBeenCalled();
+      expect(cancel).toHaveBeenCalledOnce();
     });
 
     it('rejects an oversized chunked response', async () => {
+      const cancel = vi.fn();
       const body = new ReadableStream<Uint8Array>({
         start(controller) {
           controller.enqueue(new Uint8Array(MAX_JWKS_RESPONSE_BYTES + 1));
-          controller.close();
         },
+        cancel,
       });
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body)));
 
       await expect(JwksRemoteKeyResolver.fromUri(jwksUri, 300)).rejects.toThrow(
         `JWKS response exceeds the ${MAX_JWKS_RESPONSE_BYTES}-byte limit`,
       );
+      expect(cancel).toHaveBeenCalledOnce();
+    });
+
+    it('suppresses cancellation rejection after an oversized chunk', async () => {
+      const body = new ReadableStream<Uint8Array>(
+        {
+          pull(controller) {
+            controller.enqueue(new Uint8Array(MAX_JWKS_RESPONSE_BYTES + 1));
+            controller.error(new Error('body failed after oversized chunk'));
+          },
+        },
+        { highWaterMark: 0 },
+      );
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body)));
+
+      await expect(JwksRemoteKeyResolver.fromUri(jwksUri, 300)).rejects.toMatchObject({
+        code: 'IDP_JWKS_FETCH_FAILED',
+      });
+      await new Promise((resolve) => setImmediate(resolve));
     });
   });
 

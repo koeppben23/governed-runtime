@@ -304,7 +304,7 @@ async function fetchJwksDocument(jwksUri: string): Promise<string> {
     );
   }
   try {
-    return await readJwksResponseBodyWithinLimit(response, MAX_JWKS_RESPONSE_BYTES);
+    return await readJwksResponseBodyWithinLimit(response, jwksUri, MAX_JWKS_RESPONSE_BYTES);
   } catch (err) {
     getAdapterLogger().error(
       'identity',
@@ -323,12 +323,14 @@ async function fetchJwksDocument(jwksUri: string): Promise<string> {
 
 async function readJwksResponseBodyWithinLimit(
   response: Response,
+  jwksUri: string,
   maxBytes: number,
 ): Promise<string> {
   const declaredLength = response.headers.get('content-length');
   if (declaredLength !== null) {
     const length = Number(declaredLength);
     if (Number.isSafeInteger(length) && length > maxBytes) {
+      await discardJwksResponseBody(response, jwksUri);
       throw new RangeError(`JWKS response exceeds the ${maxBytes}-byte limit`);
     }
   }
@@ -344,7 +346,7 @@ async function readJwksResponseBodyWithinLimit(
       if (done) break;
       total += value.byteLength;
       if (total > maxBytes) {
-        void reader.cancel();
+        await cancelJwksReader(reader, jwksUri);
         throw new RangeError(`JWKS response exceeds the ${maxBytes}-byte limit`);
       }
       chunks.push(value);
@@ -360,4 +362,39 @@ async function readJwksResponseBodyWithinLimit(
     offset += chunk.byteLength;
   }
   return new TextDecoder('utf-8', { fatal: true }).decode(body);
+}
+
+async function discardJwksResponseBody(response: Response, jwksUri: string): Promise<void> {
+  if (!response.body) return;
+  try {
+    await response.body.cancel();
+  } catch (err) {
+    getAdapterLogger().error(
+      'identity',
+      'JWKS response cleanup failed',
+      redactIdentityExtra({
+        jwksUri,
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    );
+  }
+}
+
+async function cancelJwksReader(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  jwksUri: string,
+): Promise<void> {
+  try {
+    await reader.cancel();
+  } catch (err) {
+    // Preserve the size violation while surfacing a secondary stream failure.
+    getAdapterLogger().error(
+      'identity',
+      'JWKS response cleanup failed',
+      redactIdentityExtra({
+        jwksUri,
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    );
+  }
 }
