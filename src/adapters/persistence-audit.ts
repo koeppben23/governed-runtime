@@ -21,7 +21,7 @@ import {
   PersistenceError,
   isEnoent,
 } from './persistence.js';
-import { getLastChainHash } from '../audit/integrity.js';
+import { getLastChainHash, classifyInvalidAuditRecord } from '../audit/integrity.js';
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import {
   computeChainHash,
@@ -30,13 +30,21 @@ import {
 } from '../audit/types.js';
 
 class AuditFormatError extends Error {
-  readonly code = 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED' as const;
+  readonly code: AuditFormatErrorCode;
 
-  constructor(message: string) {
+  constructor(message: string, code: AuditFormatErrorCode = 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED') {
     super(message);
     this.name = 'AuditFormatError';
+    this.code = code;
   }
 }
+
+/**
+ * Read-boundary classification for rejected audit records, shared with the
+ * verifier: a record claiming audit-chain.v3 that violates the canonical
+ * envelope is `AUDIT_ENVELOPE_INVALID`, not legacy.
+ */
+type AuditFormatErrorCode = 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED' | 'AUDIT_ENVELOPE_INVALID';
 import { acquireNamedWriteLock } from './persistence-lock.js';
 
 const AUDIT_LOCK_FILE = 'audit.jsonl.lock';
@@ -214,10 +222,20 @@ function parseAuditTrail(raw: string): { events: AuditEvent[]; skipped: number }
     const result = AuditEvent.safeParse(json);
     if (!result.success) {
       // Fail closed with an explicit epoch error: pre-v3 records must never
-      // be reinterpreted, migrated, or silently skipped.
+      // be reinterpreted, migrated, or silently skipped. Records that CLAIM
+      // audit-chain.v3 but violate the canonical envelope are classified
+      // separately from legacy artifacts (same authority as verifyChain).
+      const classification =
+        typeof json === 'object' && json !== null
+          ? classifyInvalidAuditRecord(json as Record<string, unknown>)
+          : 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED';
       throw new AuditFormatError(
-        'Audit trail contains a record that is not a valid audit-chain.v3 record. ' +
-          'Legacy assurance artifacts are unsupported.',
+        classification === 'AUDIT_ENVELOPE_INVALID'
+          ? 'Audit trail contains a record that claims audit-chain.v3 but violates the ' +
+              'canonical audit event envelope.'
+          : 'Audit trail contains a record that is not a valid audit-chain.v3 record. ' +
+              'Legacy assurance artifacts are unsupported.',
+        classification,
       );
     }
     events.push(result.data);

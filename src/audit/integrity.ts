@@ -187,6 +187,25 @@ export interface ChainVerification {
 // ─── Verification Functions ──────────────────────────────────────────────────
 
 /**
+ * Classification of a raw trail record that FAILED canonical AuditEvent
+ * validation. Shared by `verifyChain()` and the persistence read boundary so
+ * both authorities draw the same current-vs-legacy distinction.
+ */
+export type InvalidAuditRecordClass =
+  'AUDIT_ENVELOPE_INVALID' | 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED';
+
+/**
+ * Classify a raw record that failed canonical AuditEvent validation: a record
+ * that CLAIMS `audit-chain.v3` is schema-invalid current format; anything
+ * else (missing/unknown/legacy format) is unsupported legacy.
+ */
+export function classifyInvalidAuditRecord(raw: Record<string, unknown>): InvalidAuditRecordClass {
+  return raw.auditFormatVersion === CURRENT_AUDIT_FORMAT_VERSION
+    ? 'AUDIT_ENVELOPE_INVALID'
+    : 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED';
+}
+
+/**
  * Verify a single chained audit event against its expected prevHash.
  *
  * @param event - The event to verify.
@@ -310,17 +329,16 @@ export function verifyChain(
 
     const parsed = AuditEvent.safeParse(raw);
     if (!parsed.success) {
-      const claimsCurrentFormat = raw.auditFormatVersion === CURRENT_AUDIT_FORMAT_VERSION;
+      const classification = classifyInvalidAuditRecord(raw);
       const verification: EventVerification = {
         index: i,
         eventId: typeof raw.id === 'string' ? raw.id : 'unknown',
         valid: false,
-        reason: claimsCurrentFormat
-          ? 'record claims audit-chain.v3 but violates the canonical audit-chain.v3 event envelope'
-          : 'record is not a chained audit-chain.v3 record',
-        reasonCode: claimsCurrentFormat
-          ? 'AUDIT_ENVELOPE_INVALID'
-          : 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+        reason:
+          classification === 'AUDIT_ENVELOPE_INVALID'
+            ? 'record claims audit-chain.v3 but violates the canonical audit-chain.v3 event envelope'
+            : 'record is not a chained audit-chain.v3 record',
+        reasonCode: classification,
       };
       results.push(verification);
       trackVerificationFailure(failures, verification);

@@ -757,6 +757,19 @@ describe('persistence', () => {
       });
     });
 
+    it('classifies schema-invalid current-v3 records as envelope-invalid, not legacy', async () => {
+      await appendAuditEvent(tmpDir, makeValidAuditEvent());
+      const raw = await fs.readFile(auditPath(tmpDir), 'utf-8');
+      const valid = JSON.parse(raw.trim().split('\n')[0]!) as Record<string, unknown>;
+      // The record still CLAIMS audit-chain.v3 but violates the canonical
+      // envelope — the read boundary must classify it distinctly.
+      const { actor: _actor, ...envelopeInvalid } = valid;
+      await fs.writeFile(auditPath(tmpDir), raw + JSON.stringify(envelopeInvalid) + '\n', 'utf-8');
+      await expect(readAuditTrail(tmpDir)).rejects.toMatchObject({
+        code: 'AUDIT_ENVELOPE_INVALID',
+      });
+    });
+
     it('fails closed on valid JSON primitives (string, number, boolean)', async () => {
       await appendAuditEvent(tmpDir, makeValidAuditEvent());
       const raw = await fs.readFile(auditPath(tmpDir), 'utf-8');

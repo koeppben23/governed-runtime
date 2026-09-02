@@ -686,6 +686,30 @@ describe('audit/archive tamper matrix', () => {
     ).toBe(true);
   });
 
+  it.skipIf(!tarOk)(
+    'schema-invalid current-v3 record -> audit_chain_invalid_event archive finding',
+    async () => {
+      // A record that CLAIMS audit-chain.v3 but violates the canonical
+      // envelope must be classified distinctly from legacy artifacts all the
+      // way through the archive read boundary.
+      const ids = await completeRegulatedSession();
+      const lines = await readAuditLines(ids.sessDir);
+      const valid = JSON.parse(lines[0]!) as Record<string, unknown>;
+      const { actor: _actor, ...envelopeInvalid } = valid;
+      await mutateArchive(ids, (root) =>
+        fs.appendFile(
+          path.join(root, 'audit', 'audit.jsonl'),
+          `${JSON.stringify(envelopeInvalid)}\n`,
+          'utf-8',
+        ),
+      );
+
+      const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
+      expect(verification.passed).toBe(false);
+      expect(verification.findings.some((f) => f.code === 'audit_chain_invalid_event')).toBe(true);
+    },
+  );
+
   it.skipIf(!tarOk)('archive manifest digest tamper -> verify fail', async () => {
     const ids = await completeRegulatedSession();
     await mutateArchive(ids, async (root) => {

@@ -11,8 +11,14 @@ import { verifyTimestampTokensForEvents } from '../../audit/timestamp-token-veri
 
 function eventHasTsaEvidence(event: AuditEvent): boolean {
   const evidence = event.timestampEvidence as Record<string, unknown> | undefined;
+  const tsa = evidence?.tsa as Record<string, unknown> | undefined;
   // Covered by the tsa-null and no-tsa archive tests.
-  return typeof evidence?.tsa === 'object' && evidence.tsa !== null;
+  if (typeof tsa !== 'object' || tsa === null) return false;
+  // Sentinel contract (shared with the chain-level TSA authorities): only a
+  // NON-EMPTY token is external TSA evidence that requires trust anchors.
+  // The empty-string internal-imprint form was already verified against the
+  // canonical content digest by the chain verification.
+  return typeof tsa.tokenDerBase64 === 'string' && tsa.tokenDerBase64.length > 0;
 }
 
 export async function verifyArchiveTimestampTokens(input: {

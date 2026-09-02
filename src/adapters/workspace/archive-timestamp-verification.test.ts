@@ -229,4 +229,71 @@ describe('verifyArchiveTimestampTokens', () => {
 
     expect(findings).toEqual([]);
   });
+
+  it('internal-imprint events (empty token) are not external TSA evidence without anchors', async () => {
+    // Sentinel contract: an empty tokenDerBase64 is the internal-imprint
+    // model, not external TSA evidence. It must not trigger the
+    // "evidence present but no trust anchors" diagnostic.
+    const internalImprint = {
+      ...stampedEvent(),
+      timestampEvidence: {
+        ...stampedEvent().timestampEvidence,
+        tsa: { ...stampedEvent().timestampEvidence!.tsa!, tokenDerBase64: '' },
+      },
+    } as unknown as AuditEvent;
+    const findings: ArchiveFinding[] = [];
+
+    await verifyArchiveTimestampTokens({
+      events: [internalImprint],
+      state: makeState('COMPLETE'),
+      manifest: manifest('solo'),
+      findings,
+      strict: false,
+    });
+
+    expect(findings).toEqual([]);
+  });
+
+  it('internal-imprint events (empty token) are never sent to the RFC 3161 verifier', async () => {
+    // With trust anchors configured, the empty-token internal-imprint form
+    // must be skipped — it is not a cryptographic token and would otherwise
+    // be reported as an invalid RFC 3161 token.
+    const state = makeState('COMPLETE', {
+      policySnapshot: {
+        ...makeState('COMPLETE').policySnapshot,
+        audit: {
+          ...makeState('COMPLETE').policySnapshot.audit,
+          timestampAssurance: {
+            enabled: true,
+            mode: 'tsa_critical',
+            strict: true,
+            criticalEvents: ['decision', 'lifecycle'],
+            tsaUrl: 'https://tsa.example.test',
+            trustAnchors: ['not a pem certificate'],
+            ntpServers: ['pool.ntp.org'],
+            ntpDriftThresholdMs: 30000,
+            tsaTimeoutMs: 10000,
+          },
+        },
+      },
+    });
+    const internalImprint = {
+      ...stampedEvent(),
+      timestampEvidence: {
+        ...stampedEvent().timestampEvidence,
+        tsa: { ...stampedEvent().timestampEvidence!.tsa!, tokenDerBase64: '' },
+      },
+    } as unknown as AuditEvent;
+    const findings: ArchiveFinding[] = [];
+
+    await verifyArchiveTimestampTokens({
+      events: [internalImprint],
+      state,
+      manifest: manifest('regulated'),
+      findings,
+      strict: true,
+    });
+
+    expect(findings).toEqual([]);
+  });
 });

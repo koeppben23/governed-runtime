@@ -23,6 +23,7 @@ import {
   hasTimestampEvidence,
   isCurrentChainIntegrityFailure,
   isAuditFormatFailure,
+  auditReadFailureFindingCode,
   resolveArchiveStrictness,
   timestampFindingCode,
 } from './archive-verify-helpers.js';
@@ -402,12 +403,7 @@ async function verifyAuditChainIntegrity(
     // Fail closed in every mode: legacy or malformed audit records are never
     // silently tolerated just because verification is non-strict.
     findings.push({
-      code:
-        error instanceof Error &&
-        'code' in error &&
-        error.code === 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED'
-          ? 'audit_chain_legacy_format'
-          : 'audit_chain_invalid',
+      code: auditReadFailureFindingCode(error),
       severity: 'error',
       message: `Audit chain verification could not read audit.jsonl: ${
         error instanceof Error ? error.message : String(error)

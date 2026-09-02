@@ -14,6 +14,7 @@ import {
   hasTimestampEvidence,
   isCurrentChainIntegrityFailure,
   isAuditFormatFailure,
+  auditReadFailureFindingCode,
   resolveArchiveStrictness,
   resolveStrictMode,
   STRICT_WHEN_MODE_UNRESOLVED,
@@ -231,6 +232,28 @@ describe('isAuditFormatFailure', () => {
 
   it('returns false for null', () => {
     expect(isAuditFormatFailure(null)).toBe(false);
+  });
+});
+
+// ─── auditReadFailureFindingCode ──────────────────────────────────────────────
+
+describe('auditReadFailureFindingCode', () => {
+  it('maps the legacy read failure to audit_chain_legacy_format', () => {
+    expect(auditReadFailureFindingCode({ code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED' })).toBe(
+      'audit_chain_legacy_format',
+    );
+  });
+
+  it('maps the envelope-invalid read failure to audit_chain_invalid_event', () => {
+    expect(auditReadFailureFindingCode({ code: 'AUDIT_ENVELOPE_INVALID' })).toBe(
+      'audit_chain_invalid_event',
+    );
+  });
+
+  it('falls back to audit_chain_invalid for any other failure', () => {
+    expect(auditReadFailureFindingCode({ code: 'READ_FAILED' })).toBe('audit_chain_invalid');
+    expect(auditReadFailureFindingCode(new Error('boom'))).toBe('audit_chain_invalid');
+    expect(auditReadFailureFindingCode(null)).toBe('audit_chain_invalid');
   });
 });
 
