@@ -50,6 +50,29 @@ function stampedEvent(): AuditEvent {
   } as unknown as AuditEvent;
 }
 
+/** Trusted policy state with enabled tsa_critical timestamp assurance. */
+function tsaCriticalState(): ReturnType<typeof makeState> {
+  return makeState('COMPLETE', {
+    policySnapshot: {
+      ...makeState('COMPLETE').policySnapshot,
+      audit: {
+        ...makeState('COMPLETE').policySnapshot.audit,
+        timestampAssurance: {
+          enabled: true,
+          mode: 'tsa_critical',
+          strict: true,
+          criticalEvents: ['decision', 'lifecycle'],
+          tsaUrl: 'https://tsa.example.test',
+          trustAnchors: ['not a pem certificate'],
+          ntpServers: ['pool.ntp.org'],
+          ntpDriftThresholdMs: 30000,
+          tsaTimeoutMs: 10000,
+        },
+      },
+    },
+  });
+}
+
 describe('verifyArchiveTimestampTokens', () => {
   it('warns when TSA evidence is present but trust anchors are missing in non-strict mode', async () => {
     const findings: ArchiveFinding[] = [];
@@ -72,31 +95,11 @@ describe('verifyArchiveTimestampTokens', () => {
   });
 
   it('reports tsa_verification_failed when archived TSA token is invalid', async () => {
-    const state = makeState('COMPLETE', {
-      policySnapshot: {
-        ...makeState('COMPLETE').policySnapshot,
-        mode: 'regulated',
-        audit: {
-          ...makeState('COMPLETE').policySnapshot.audit,
-          timestampAssurance: {
-            enabled: true,
-            mode: 'tsa_critical',
-            strict: true,
-            criticalEvents: ['decision', 'lifecycle'],
-            tsaUrl: 'https://tsa.example.test',
-            trustAnchors: ['not a pem certificate'],
-            ntpServers: ['pool.ntp.org'],
-            ntpDriftThresholdMs: 30000,
-            tsaTimeoutMs: 10000,
-          },
-        },
-      },
-    });
     const findings: ArchiveFinding[] = [];
 
     await verifyArchiveTimestampTokens({
       events: [stampedEvent()],
-      state,
+      state: tsaCriticalState(),
       manifest: manifest('regulated'),
       findings,
       strict: true,
@@ -132,30 +135,11 @@ describe('verifyArchiveTimestampTokens', () => {
   });
 
   it('AR2: strict trusted policy drives error severity even with a non-regulated manifest', async () => {
-    const state = makeState('COMPLETE', {
-      policySnapshot: {
-        ...makeState('COMPLETE').policySnapshot,
-        audit: {
-          ...makeState('COMPLETE').policySnapshot.audit,
-          timestampAssurance: {
-            enabled: true,
-            mode: 'tsa_critical',
-            strict: true,
-            criticalEvents: ['decision', 'lifecycle'],
-            tsaUrl: 'https://tsa.example.test',
-            trustAnchors: ['not a pem certificate'],
-            ntpServers: ['pool.ntp.org'],
-            ntpDriftThresholdMs: 30000,
-            tsaTimeoutMs: 10000,
-          },
-        },
-      },
-    });
     const findings: ArchiveFinding[] = [];
 
     await verifyArchiveTimestampTokens({
       events: [stampedEvent()],
-      state,
+      state: tsaCriticalState(),
       manifest: manifest('solo'),
       findings,
       strict: true,
@@ -258,25 +242,6 @@ describe('verifyArchiveTimestampTokens', () => {
     // Policy authority: tsa_critical REQUIRES an external TSA token for
     // critical events. Internal-imprint evidence (empty token) must be
     // reported as a dedicated assurance downgrade, not silently accepted.
-    const state = makeState('COMPLETE', {
-      policySnapshot: {
-        ...makeState('COMPLETE').policySnapshot,
-        audit: {
-          ...makeState('COMPLETE').policySnapshot.audit,
-          timestampAssurance: {
-            enabled: true,
-            mode: 'tsa_critical',
-            strict: true,
-            criticalEvents: ['decision', 'lifecycle'],
-            tsaUrl: 'https://tsa.example.test',
-            trustAnchors: ['not a pem certificate'],
-            ntpServers: ['pool.ntp.org'],
-            ntpDriftThresholdMs: 30000,
-            tsaTimeoutMs: 10000,
-          },
-        },
-      },
-    });
     const internalImprint = {
       ...stampedEvent(),
       timestampEvidence: {
@@ -288,7 +253,62 @@ describe('verifyArchiveTimestampTokens', () => {
 
     await verifyArchiveTimestampTokens({
       events: [internalImprint],
-      state,
+      state: tsaCriticalState(),
+      manifest: manifest('regulated'),
+      findings,
+      strict: true,
+    });
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        code: 'tsa_token_required_by_policy',
+        severity: 'error',
+      }),
+    ]);
+  });
+
+  it('tsa_critical policy rejects a critical event without any timestamp evidence', async () => {
+    // The policy requirement is POSITIVE: no evidence at all is just as
+    // unsatisfied as internal-imprint evidence.
+    const withoutEvidence = {
+      ...stampedEvent(),
+      timestampEvidence: undefined,
+    } as unknown as AuditEvent;
+    const findings: ArchiveFinding[] = [];
+
+    await verifyArchiveTimestampTokens({
+      events: [withoutEvidence],
+      state: tsaCriticalState(),
+      manifest: manifest('regulated'),
+      findings,
+      strict: true,
+    });
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        code: 'tsa_token_required_by_policy',
+        severity: 'error',
+      }),
+    ]);
+  });
+
+  it('tsa_critical policy rejects ntp-only evidence on a critical event', async () => {
+    // ntp_checked evidence carries no external TSA token and must not
+    // satisfy the tsa_critical requirement.
+    const ntpOnly = {
+      ...stampedEvent(),
+      timestampEvidence: {
+        status: 'ntp_checked',
+        source: 'ntp',
+        resolvedAt: '2026-01-01T00:00:00.000Z',
+        ntp: { offsetMs: 10, server: 'pool.ntp.org', driftWarned: false },
+      },
+    } as unknown as AuditEvent;
+    const findings: ArchiveFinding[] = [];
+
+    await verifyArchiveTimestampTokens({
+      events: [ntpOnly],
+      state: tsaCriticalState(),
       manifest: manifest('regulated'),
       findings,
       strict: true,

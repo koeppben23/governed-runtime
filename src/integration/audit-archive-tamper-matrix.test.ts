@@ -444,90 +444,109 @@ describe('audit/archive tamper matrix', () => {
 
   it.skipIf(!tarOk)(
     'stripped TSA token on a critical event -> tsa_critical archive verification fails closed',
-    async () => {
-      // Adversarial scenario: under tsa_critical policy the external TSA token
-      // is the boundary a resealer cannot regenerate. Strip the token (empty
-      // string = internal imprint), recompute the local digests and chain
-      // hash so the trail is internally consistent, and prove that the
-      // archive verification still fails closed with a dedicated policy
-      // downgrade instead of accepting self-resealable imprint evidence.
-      const ids = await completeRegulatedSession();
-      const state = await readState(ids.sessDir);
-      expect(state).not.toBeNull();
-      const tsaCriticalState: SessionState = {
-        ...state!,
-        policySnapshot: {
-          ...state!.policySnapshot,
-          audit: {
-            ...state!.policySnapshot.audit,
-            timestampAssurance: {
-              enabled: true,
-              mode: 'tsa_critical',
-              strict: true,
-              criticalEvents: ['decision', 'lifecycle'],
-              tsaUrl: 'https://tsa.example.test',
-              trustAnchors: ['not a pem certificate'],
-              ntpServers: ['pool.ntp.org'],
-              ntpDriftThresholdMs: 30000,
-              tsaTimeoutMs: 10000,
-            },
-          },
-        },
-      };
-
-      const lines = (await readAuditLines(ids.sessDir)).filter(
-        (line) => JSON.parse(line).event !== 'archive:publication_bound',
-      );
-      const events = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
-      const last = events[events.length - 1] as unknown as ChainedAuditEvent;
-      const { chainHash: _originalChainHash, ...lastWithoutHash } = last;
-      const strippedBody = {
-        ...lastWithoutHash,
-        event: 'lifecycle:session_completed',
-      };
-      const imprint = computeCanonicalEventDigest(strippedBody);
-      const resealedBody: Omit<ChainedAuditEvent, 'chainHash'> = {
-        ...strippedBody,
-        semanticEventDigest: imprint,
-        timestampEvidence: {
-          status: 'tsa_stamped',
-          source: 'tsa',
-          resolvedAt: last.occurredAt,
-          tsa: {
-            tokenDerBase64: '',
-            receivedAt: last.occurredAt,
-            messageImprint: imprint,
-            digestAlgorithm: 'sha256',
-            verificationStatus: 'unchecked',
-          },
-        },
-      };
-      events[events.length - 1] = {
-        ...resealedBody,
-        chainHash: computeChainHash(last.prevHash, resealedBody),
-      } as unknown as Record<string, unknown>;
-      await mutateArchive(ids, async (root) => {
-        await fs.writeFile(
-          path.join(root, 'audit', 'audit.jsonl'),
-          `${events.map((e) => JSON.stringify(e)).join('\n')}\n`,
-          'utf-8',
-        );
-        await writeState(path.join(root, 'state'), tsaCriticalState);
-      });
-
-      // Internally consistent: the chain-level verification accepts the
-      // internal-imprint model — the policy boundary must still reject it.
-      expect(verifyChain(events).valid).toBe(true);
-
-      const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
-      expect(verification.passed).toBe(false);
-      expect(
-        verification.findings.some(
-          (f) => f.code === 'tsa_token_required_by_policy' && f.severity === 'error',
-        ),
-      ).toBe(true);
-    },
+    () => verifyTsaCriticalTokenDowngrade('internal_imprint'),
   );
+
+  it.skipIf(!tarOk)(
+    'removed TSA payload on a critical event -> tsa_critical archive verification fails closed',
+    () => verifyTsaCriticalTokenDowngrade('no_tsa'),
+  );
+
+  /**
+   * Adversarial scenario: under tsa_critical policy the external TSA token is
+   * the boundary a resealer cannot regenerate. Remove the external anchoring
+   * (`internal_imprint`: token stripped to the empty string, or `no_tsa`: the
+   * whole tsa payload removed), recompute the local digests and chain hash so
+   * the trail is internally consistent, and prove that the archive
+   * verification still fails closed with a dedicated policy downgrade
+   * instead of accepting self-resealable evidence.
+   */
+  async function verifyTsaCriticalTokenDowngrade(
+    variant: 'internal_imprint' | 'no_tsa',
+  ): Promise<void> {
+    const ids = await completeRegulatedSession();
+    const state = await readState(ids.sessDir);
+    expect(state).not.toBeNull();
+    const tsaCriticalState: SessionState = {
+      ...state!,
+      policySnapshot: {
+        ...state!.policySnapshot,
+        audit: {
+          ...state!.policySnapshot.audit,
+          timestampAssurance: {
+            enabled: true,
+            mode: 'tsa_critical',
+            strict: true,
+            criticalEvents: ['decision', 'lifecycle'],
+            tsaUrl: 'https://tsa.example.test',
+            trustAnchors: ['not a pem certificate'],
+            ntpServers: ['pool.ntp.org'],
+            ntpDriftThresholdMs: 30000,
+            tsaTimeoutMs: 10000,
+          },
+        },
+      },
+    };
+
+    const lines = (await readAuditLines(ids.sessDir)).filter(
+      (line) => JSON.parse(line).event !== 'archive:publication_bound',
+    );
+    const events = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+    const last = events[events.length - 1] as unknown as ChainedAuditEvent;
+    const { chainHash: _originalChainHash, ...lastWithoutHash } = last;
+    const strippedBody = {
+      ...lastWithoutHash,
+      event: 'lifecycle:session_completed',
+    };
+    const imprint = computeCanonicalEventDigest(strippedBody);
+    const resealedBody: Omit<ChainedAuditEvent, 'chainHash'> = {
+      ...strippedBody,
+      semanticEventDigest: imprint,
+      timestampEvidence:
+        variant === 'internal_imprint'
+          ? {
+              status: 'tsa_stamped',
+              source: 'tsa',
+              resolvedAt: last.occurredAt,
+              tsa: {
+                tokenDerBase64: '',
+                receivedAt: last.occurredAt,
+                messageImprint: imprint,
+                digestAlgorithm: 'sha256',
+                verificationStatus: 'unchecked',
+              },
+            }
+          : {
+              status: 'tsa_stamped',
+              source: 'tsa',
+              resolvedAt: last.occurredAt,
+            },
+    };
+    events[events.length - 1] = {
+      ...resealedBody,
+      chainHash: computeChainHash(last.prevHash, resealedBody),
+    } as unknown as Record<string, unknown>;
+    await mutateArchive(ids, async (root) => {
+      await fs.writeFile(
+        path.join(root, 'audit', 'audit.jsonl'),
+        `${events.map((e) => JSON.stringify(e)).join('\n')}\n`,
+        'utf-8',
+      );
+      await writeState(path.join(root, 'state'), tsaCriticalState);
+    });
+
+    // Internally consistent: the chain-level verification accepts the
+    // evidence-less/imprint-only model — the policy boundary must reject it.
+    expect(verifyChain(events).valid).toBe(true);
+
+    const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
+    expect(verification.passed).toBe(false);
+    expect(
+      verification.findings.some(
+        (f) => f.code === 'tsa_token_required_by_policy' && f.severity === 'error',
+      ),
+    ).toBe(true);
+  }
 
   it.skipIf(!tarOk)(
     'regulated nested content tamper with re-sealed chain -> TSA verification failure',

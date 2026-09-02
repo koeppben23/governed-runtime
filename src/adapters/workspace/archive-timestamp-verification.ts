@@ -24,10 +24,13 @@ function eventHasTsaEvidence(event: AuditEvent): boolean {
 
 /**
  * Policy authority (P2): `tsa_critical` REQUIRES an external TSA token for
- * critical events. Internal-imprint evidence (empty `tokenDerBase64`) does
- * not satisfy the policy — a resealer could replace cryptographic anchoring
- * with locally recomputable digests, so the archive verification must report
- * a dedicated assurance downgrade instead of silently accepting it.
+ * critical events. The requirement is POSITIVE: a critical event must carry a
+ * non-empty external token — internal-imprint evidence (empty
+ * `tokenDerBase64`), a missing `tsa` payload, or non-TSA evidence (local/ntp)
+ * do not satisfy the policy. A resealer could otherwise replace cryptographic
+ * anchoring with locally recomputable digests, so the archive verification
+ * must report a dedicated assurance downgrade instead of silently accepting
+ * it.
  */
 function reportPolicyTokenDowngrades(
   events: readonly AuditEvent[],
@@ -43,8 +46,7 @@ function reportPolicyTokenDowngrades(
     if (!timestampPolicy.criticalEvents.includes(extractEventKind(event.event))) continue;
     const evidence = event.timestampEvidence as Record<string, unknown> | undefined;
     const tsa = evidence?.tsa as Record<string, unknown> | undefined;
-    if (typeof tsa !== 'object' || tsa === null) continue;
-    const tokenDerBase64 = tsa.tokenDerBase64;
+    const tokenDerBase64 = tsa?.tokenDerBase64;
     if (typeof tokenDerBase64 === 'string' && tokenDerBase64.length > 0) continue;
 
     findings.push({
@@ -52,7 +54,7 @@ function reportPolicyTokenDowngrades(
       severity,
       message:
         `tsa_critical policy requires an external TSA token for critical event index ${i}; ` +
-        'internal-imprint evidence does not satisfy the policy',
+        'the recorded evidence does not satisfy the policy',
       file: 'audit.jsonl',
     });
   }
