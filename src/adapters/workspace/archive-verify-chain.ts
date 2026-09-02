@@ -64,7 +64,7 @@ const AUDIT_HEAD_LOG_PREFIX_LENGTH = 16;
  * 6. Archive .sha256 sidecar matches (if available)
  * 7. Discovery snapshots present (if state has discoveryDigest)
  * 8. Session state file present
- * 9. Audit chain integrity (strict in regulated mode, legacy-tolerant otherwise)
+ * 9. Audit chain integrity (strict in regulated mode, envelope-fail-closed otherwise)
  *
  * @param fingerprint - Workspace fingerprint.
  * @param sessionId - Session ID to verify.
@@ -184,28 +184,15 @@ async function verifyArtifactBinding(
 // ─── Audit Chain Logging & Findings ───────────────────────────────────────────
 
 function addAuditFormatFindings(chainResult: ChainVerification, findings: ArchiveFinding[]): void {
-  if (chainResult.reason === 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED') {
-    findings.push({
-      code: 'audit_chain_legacy_format',
-      severity: 'error',
-      message:
-        'Audit chain contains records that are not audit-chain.v3 records. Legacy assurance ' +
-        'artifacts are unsupported and cannot be treated as verifiable evidence.',
-      file: 'audit.jsonl',
-    });
-    return;
-  }
-  if (chainResult.reason === 'AUDIT_ENVELOPE_INVALID') {
-    findings.push({
-      code: 'audit_chain_invalid_event',
-      severity: 'error',
-      message:
-        'Audit chain contains records that claim audit-chain.v3 but violate the canonical ' +
-        'audit event envelope. Schema-invalid current-format records cannot be treated as ' +
-        'verifiable evidence.',
-      file: 'audit.jsonl',
-    });
-  }
+  if (chainResult.reason !== 'AUDIT_ENVELOPE_INVALID') return;
+  findings.push({
+    code: 'audit_chain_invalid_event',
+    severity: 'error',
+    message:
+      'Audit chain contains records that violate the canonical audit-chain.v3 event ' +
+      'envelope. Non-v3 assurance artifacts cannot be treated as verifiable evidence.',
+    file: 'audit.jsonl',
+  });
 }
 
 // ─── Policy Mode ──────────────────────────────────────────────────────────────
@@ -400,7 +387,7 @@ async function verifyAuditChainIntegrity(
       await verifyTimestampChain(events, state, manifest, findings, strict);
     }
   } catch (error) {
-    // Fail closed in every mode: legacy or malformed audit records are never
+    // Fail closed in every mode: malformed or non-v3 audit records are never
     // silently tolerated just because verification is non-strict.
     findings.push({
       code: auditReadFailureFindingCode(error),

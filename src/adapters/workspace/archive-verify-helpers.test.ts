@@ -201,8 +201,8 @@ describe('isCurrentChainIntegrityFailure', () => {
     expect(isCurrentChainIntegrityFailure('CLOCK_ANOMALY')).toBe(true);
   });
 
-  it('returns false for legacy/format reasons (they have their own finding class)', () => {
-    expect(isCurrentChainIntegrityFailure('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED')).toBe(false);
+  it('returns false for envelope-format reasons (they have their own finding class)', () => {
+    expect(isCurrentChainIntegrityFailure('AUDIT_ENVELOPE_INVALID')).toBe(false);
   });
 
   it('returns false for other reasons', () => {
@@ -217,8 +217,8 @@ describe('isCurrentChainIntegrityFailure', () => {
 // ─── isAuditFormatFailure ─────────────────────────────────────────────────────
 
 describe('isAuditFormatFailure', () => {
-  it('returns true for LEGACY_ASSURANCE_FORMAT_UNSUPPORTED', () => {
-    expect(isAuditFormatFailure('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED')).toBe(true);
+  it('returns true for AUDIT_ENVELOPE_INVALID', () => {
+    expect(isAuditFormatFailure('AUDIT_ENVELOPE_INVALID')).toBe(true);
   });
 
   it('returns true for AUDIT_ENVELOPE_INVALID', () => {
@@ -238,9 +238,9 @@ describe('isAuditFormatFailure', () => {
 // ─── auditReadFailureFindingCode ──────────────────────────────────────────────
 
 describe('auditReadFailureFindingCode', () => {
-  it('maps the legacy read failure to audit_chain_legacy_format', () => {
-    expect(auditReadFailureFindingCode({ code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED' })).toBe(
-      'audit_chain_legacy_format',
+  it('maps the envelope-invalid read failure to audit_chain_invalid_event', () => {
+    expect(auditReadFailureFindingCode({ code: 'AUDIT_ENVELOPE_INVALID' })).toBe(
+      'audit_chain_invalid_event',
     );
   });
 

@@ -239,7 +239,7 @@ describe('audit summary', () => {
   describe('STRICT CHAIN SUMMARY', () => {
     it('compliance summary with legacy-format failure reports the legacy detail', () => {
       const trail = buildSessionTrail();
-      const legacyFailure: ChainVerification = {
+      const invalidFailure: ChainVerification = {
         valid: false,
         totalEvents: 5,
         verifiedCount: 5,
@@ -249,17 +249,17 @@ describe('audit summary', () => {
           eventId: 'evt-legacy',
           valid: false,
           reason: 'legacy or unsupported audit chain format: audit-chain.v1',
-          reasonCode: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+          reasonCode: 'AUDIT_ENVELOPE_INVALID',
         },
         results: [],
-        reason: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+        reason: 'AUDIT_ENVELOPE_INVALID',
         timestampMonotonicity: null,
         missingTimestampEvidence: [],
         tsaImprintMismatches: [],
         tokenVerificationRequired: [],
         tsaEvidenceDowngraded: [],
       };
-      const summary = generateComplianceSummary(trail, SESSION_ID, legacyFailure, TS3);
+      const summary = generateComplianceSummary(trail, SESSION_ID, invalidFailure, TS3);
       const chainCheck = summary.checks.find((c) => c.name === 'chain_integrity');
       expect(chainCheck).toBeDefined();
       expect(chainCheck!.passed).toBe(false);

@@ -254,10 +254,10 @@ describe('verifyArchiveTimestampTokens', () => {
     expect(findings).toEqual([]);
   });
 
-  it('internal-imprint events (empty token) are never sent to the RFC 3161 verifier', async () => {
-    // With trust anchors configured, the empty-token internal-imprint form
-    // must be skipped — it is not a cryptographic token and would otherwise
-    // be reported as an invalid RFC 3161 token.
+  it('tsa_critical policy rejects internal-imprint evidence on a critical event', async () => {
+    // Policy authority: tsa_critical REQUIRES an external TSA token for
+    // critical events. Internal-imprint evidence (empty token) must be
+    // reported as a dedicated assurance downgrade, not silently accepted.
     const state = makeState('COMPLETE', {
       policySnapshot: {
         ...makeState('COMPLETE').policySnapshot,
@@ -266,6 +266,55 @@ describe('verifyArchiveTimestampTokens', () => {
           timestampAssurance: {
             enabled: true,
             mode: 'tsa_critical',
+            strict: true,
+            criticalEvents: ['decision', 'lifecycle'],
+            tsaUrl: 'https://tsa.example.test',
+            trustAnchors: ['not a pem certificate'],
+            ntpServers: ['pool.ntp.org'],
+            ntpDriftThresholdMs: 30000,
+            tsaTimeoutMs: 10000,
+          },
+        },
+      },
+    });
+    const internalImprint = {
+      ...stampedEvent(),
+      timestampEvidence: {
+        ...stampedEvent().timestampEvidence,
+        tsa: { ...stampedEvent().timestampEvidence!.tsa!, tokenDerBase64: '' },
+      },
+    } as unknown as AuditEvent;
+    const findings: ArchiveFinding[] = [];
+
+    await verifyArchiveTimestampTokens({
+      events: [internalImprint],
+      state,
+      manifest: manifest('regulated'),
+      findings,
+      strict: true,
+    });
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        code: 'tsa_token_required_by_policy',
+        severity: 'error',
+      }),
+    ]);
+  });
+
+  it('internal-imprint events (empty token) are never sent to the RFC 3161 verifier under a permissive policy', async () => {
+    // Positive sentinel test: a policy that does NOT require external tokens
+    // (ntp_check) treats the empty-token internal-imprint form as already
+    // verified chain content — it is skipped, not sent to the verifier as a
+    // broken RFC 3161 token.
+    const state = makeState('COMPLETE', {
+      policySnapshot: {
+        ...makeState('COMPLETE').policySnapshot,
+        audit: {
+          ...makeState('COMPLETE').policySnapshot.audit,
+          timestampAssurance: {
+            enabled: true,
+            mode: 'ntp_check',
             strict: true,
             criticalEvents: ['decision', 'lifecycle'],
             tsaUrl: 'https://tsa.example.test',

@@ -12,13 +12,14 @@
  * Verification modes:
  * 1. Full chain verification — walks entire trail, reports first break
  * 2. Single event verification — checks one event against its predecessor
- * 3. Assurance epoch: every record must be an audit-chain.v3 record.
- *    Legacy records are never skipped, migrated, or interpreted — they fail
- *    closed with LEGACY_ASSURANCE_FORMAT_UNSUPPORTED.
+ * 3. Assurance epoch: the ONLY admissible persisted audit envelope is
+ *    `audit-chain.v3`. Any record that does not satisfy the canonical
+ *    AuditEvent schema fails closed with AUDIT_ENVELOPE_INVALID — the
+ *    boundary never identifies, accepts, or migrates older formats.
  * 4. Envelope gate: every record is validated against the canonical
  *    AuditEvent schema BEFORE any integrity or timestamp authority runs.
- *    Schema-invalid records claiming the current format fail closed with
- *    AUDIT_ENVELOPE_INVALID and never reach the timestamp sub-authorities.
+ *    Schema-invalid records fail closed with AUDIT_ENVELOPE_INVALID and
+ *    never reach the timestamp sub-authorities.
  * 5. Timestamp verification — monotonicity (CLOCK_ANOMALY) is always checked
  *    over the canonical events; optional strictTimestamps adds TSA imprint
  *    binding and evidence presence.
@@ -64,11 +65,11 @@ function safeHashEqual(a: string, b: string): boolean {
 /**
  * Options for chain verification.
  *
- * There is deliberately no `strict` flag. Legacy tolerance was removed for the
- * Assurance epoch — every non-v3 record is an integrity failure in every mode —
- * so a `strict` option could only ever be a no-op that reads like a hardening
- * switch. It was one, and two production call sites passed `{ strict: true }`
- * believing they had enabled something.
+ * There is deliberately no `strict` flag. Non-v3 tolerance was removed for the
+ * Assurance epoch — every record that violates the audit-chain.v3 envelope is
+ * an integrity failure in every mode — so a `strict` option could only ever be
+ * a no-op that reads like a hardening switch. It was one, and two production
+ * call sites passed `{ strict: true }` believing they had enabled something.
  *
  * - `strictTimestamps: false` (default): TSA timestamp evidence is not checked.
  *   Clock monotonicity is still verified — it needs no evidence and no policy,
@@ -88,12 +89,10 @@ export interface ChainVerifyOptions {
  * Typed failure reason for chain verification.
  *
  * - `CHAIN_BREAK`: hash chain integrity failure (tampered, inserted, or deleted event).
- * - `LEGACY_ASSURANCE_FORMAT_UNSUPPORTED`: record is not an audit-chain.v3
- *   record (missing/legacy format, or no chain fields). Legacy artifacts are
- *   never interpreted — they fail closed.
- * - `AUDIT_ENVELOPE_INVALID`: record claims audit-chain.v3 but violates the
- *   canonical AuditEvent envelope. Schema-invalid current-format records are
- *   never handed to secondary assurance authorities — they fail closed here.
+ * - `AUDIT_ENVELOPE_INVALID`: record violates the canonical audit-chain.v3
+ *   event envelope. The trust boundary does not distinguish legacy formats —
+ *   anything that is not a valid v3 record fails closed here and is never
+ *   handed to secondary assurance authorities.
  * - `CLOCK_ANOMALY`: event timestamps are not strictly non-decreasing.
  * - `TIMESTAMP_EVIDENCE_MISSING`: critical event lacks required timestamp evidence.
  * - `TSA_MESSAGE_IMPRINT_MISMATCH`: TSA messageImprint does not match recomputed canonical content digest.
@@ -108,7 +107,6 @@ export interface ChainVerifyOptions {
  */
 export type ChainVerificationReason =
   | 'CHAIN_BREAK'
-  | 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED'
   | 'AUDIT_ENVELOPE_INVALID'
   | 'CLOCK_ANOMALY'
   | 'TIMESTAMP_EVIDENCE_MISSING'
@@ -154,18 +152,16 @@ export interface ChainVerification {
    * Top-level failure classification. Null when chain is valid.
    *
    * - `CHAIN_BREAK`: hash mismatch detected (firstBreak has details).
-   * - `LEGACY_ASSURANCE_FORMAT_UNSUPPORTED`: a record is not a chained
-   *   audit-chain.v3 record. Legacy artifacts fail closed everywhere.
-   * - `AUDIT_ENVELOPE_INVALID`: a record claims audit-chain.v3 but violates
-   *   the canonical AuditEvent envelope.
+   * - `AUDIT_ENVELOPE_INVALID`: a record violates the canonical
+   *   audit-chain.v3 event envelope. The boundary never classifies legacy
+   *   formats — anything that is not a valid v3 record fails closed here.
    * - `CLOCK_ANOMALY`: timestamps decrease between events.
    * - `TIMESTAMP_EVIDENCE_MISSING`: critical events lack timestamp evidence.
    * - `TSA_MESSAGE_IMPRINT_MISMATCH`: TSA stamp does not match canonical digest.
    * - `TOKEN_VERIFICATION_REQUIRED`: TSA-stamped event has tokenDerBase64 that must be
    *   cryptographically verified before imprint can be trusted.
    *
-   * Priority: CHAIN_BREAK > AUDIT_ENVELOPE_INVALID >
-   * LEGACY_ASSURANCE_FORMAT_UNSUPPORTED > timestamp_*.
+   * Priority: CHAIN_BREAK > AUDIT_ENVELOPE_INVALID > timestamp_*.
    */
   readonly reason: ChainVerificationReason | null;
   /** Timestamp monotonicity result. Always present — never gated by options. */
@@ -187,25 +183,6 @@ export interface ChainVerification {
 // ─── Verification Functions ──────────────────────────────────────────────────
 
 /**
- * Classification of a raw trail record that FAILED canonical AuditEvent
- * validation. Shared by `verifyChain()` and the persistence read boundary so
- * both authorities draw the same current-vs-legacy distinction.
- */
-export type InvalidAuditRecordClass =
-  'AUDIT_ENVELOPE_INVALID' | 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED';
-
-/**
- * Classify a raw record that failed canonical AuditEvent validation: a record
- * that CLAIMS `audit-chain.v3` is schema-invalid current format; anything
- * else (missing/unknown/legacy format) is unsupported legacy.
- */
-export function classifyInvalidAuditRecord(raw: Record<string, unknown>): InvalidAuditRecordClass {
-  return raw.auditFormatVersion === CURRENT_AUDIT_FORMAT_VERSION
-    ? 'AUDIT_ENVELOPE_INVALID'
-    : 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED';
-}
-
-/**
  * Verify a single chained audit event against its expected prevHash.
  *
  * @param event - The event to verify.
@@ -223,8 +200,8 @@ export function verifyEvent(
       index,
       eventId: event.id,
       valid: false,
-      reason: `legacy or unsupported audit chain format: ${String(formatVersion)}`,
-      reasonCode: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+      reason: `record violates the canonical audit-chain.v3 event envelope: auditFormatVersion "${String(formatVersion)}"`,
+      reasonCode: 'AUDIT_ENVELOPE_INVALID',
     };
   }
 
@@ -300,9 +277,9 @@ export function verifyEvent(
  * 2. Each subsequent event has prevHash === previous event's chainHash
  * 3. Each event's chainHash matches recomputation
  *
- * Every record must be an audit-chain.v3 record. Records without chain
- * fields or with a legacy format fail closed with
- * LEGACY_ASSURANCE_FORMAT_UNSUPPORTED — no skipping, no migration.
+ * Every record must satisfy the canonical audit-chain.v3 envelope. Records
+ * that violate it fail closed with AUDIT_ENVELOPE_INVALID — the boundary
+ * never identifies, accepts, or migrates older formats.
  *
  * @param events - The audit trail events in chronological order.
  * @param options - Verification options (strictTimestamps).
@@ -329,16 +306,12 @@ export function verifyChain(
 
     const parsed = AuditEvent.safeParse(raw);
     if (!parsed.success) {
-      const classification = classifyInvalidAuditRecord(raw);
       const verification: EventVerification = {
         index: i,
         eventId: typeof raw.id === 'string' ? raw.id : 'unknown',
         valid: false,
-        reason:
-          classification === 'AUDIT_ENVELOPE_INVALID'
-            ? 'record claims audit-chain.v3 but violates the canonical audit-chain.v3 event envelope'
-            : 'record is not a chained audit-chain.v3 record',
-        reasonCode: classification,
+        reason: 'record violates the canonical audit-chain.v3 event envelope',
+        reasonCode: 'AUDIT_ENVELOPE_INVALID',
       };
       results.push(verification);
       trackVerificationFailure(failures, verification);
@@ -388,7 +361,6 @@ export function verifyChain(
 interface FirstVerificationFailures {
   firstBreak?: EventVerification;
   firstChainBreak?: EventVerification;
-  firstLegacyFormat?: EventVerification;
   firstEnvelopeInvalid?: EventVerification;
 }
 
@@ -414,9 +386,6 @@ function trackVerificationFailure(
 
   failures.firstBreak ??= verification;
   if (verification.reasonCode === 'CHAIN_BREAK') failures.firstChainBreak ??= verification;
-  if (verification.reasonCode === 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED') {
-    failures.firstLegacyFormat ??= verification;
-  }
   if (verification.reasonCode === 'AUDIT_ENVELOPE_INVALID') {
     failures.firstEnvelopeInvalid ??= verification;
   }
@@ -506,7 +475,6 @@ function resolveStructuralChainReason(
 ): ChainVerificationReason | null {
   if (failures.firstChainBreak) return 'CHAIN_BREAK';
   if (failures.firstEnvelopeInvalid) return 'AUDIT_ENVELOPE_INVALID';
-  if (failures.firstLegacyFormat) return 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED';
   return null;
 }
 

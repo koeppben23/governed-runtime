@@ -276,7 +276,7 @@ async function scenarioMissingValidationEvidence(mode: Mode): Promise<CellResult
   return callResult(run_check, { kind: 'security' }, ctx);
 }
 
-async function scenarioLegacyAuditStrictness(mode: Mode): Promise<CellResult> {
+async function scenarioInvalidAuditStrictness(mode: Mode): Promise<CellResult> {
   const ctx = contextFor(mode);
   await hydrateMode(mode, ctx);
   const dir = await sessionDir(ctx);
@@ -284,14 +284,14 @@ async function scenarioLegacyAuditStrictness(mode: Mode): Promise<CellResult> {
     id: crypto.randomUUID(),
     sessionId: ctx.sessionID,
     phase: 'READY',
-    event: 'legacy_event',
+    event: 'non_v3_event',
     occurredAt: new Date().toISOString(),
     actor: 'legacy',
     detail: { source: 'policy-matrix' },
   };
   await fs.appendFile(path.join(dir, 'audit.jsonl'), `${JSON.stringify(legacyEvent)}\n`, 'utf-8');
-  // Read the raw trail (the epoch reader itself rejects legacy records with
-  // LEGACY_ASSURANCE_FORMAT_UNSUPPORTED) and verify the chain over raw lines.
+  // Read the raw trail (the epoch reader itself rejects non-v3 records with
+  // AUDIT_ENVELOPE_INVALID) and verify the chain over raw lines.
   const raw = await fs.readFile(path.join(dir, 'audit.jsonl'), 'utf-8');
   const events = raw
     .split('\n')
@@ -351,13 +351,13 @@ const MATRIX: Array<{
     },
   },
   {
-    scenario: 'legacy_audit_strictness',
-    run: scenarioLegacyAuditStrictness,
+    scenario: 'invalid_audit_strictness',
+    run: scenarioInvalidAuditStrictness,
     expected: {
-      solo: { allowed: false, code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED', phase: 'READY' },
-      team: { allowed: false, code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED', phase: 'READY' },
-      'team-ci': { allowed: false, code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED', phase: 'READY' },
-      regulated: { allowed: false, code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED', phase: 'READY' },
+      solo: { allowed: false, code: 'AUDIT_ENVELOPE_INVALID', phase: 'READY' },
+      team: { allowed: false, code: 'AUDIT_ENVELOPE_INVALID', phase: 'READY' },
+      'team-ci': { allowed: false, code: 'AUDIT_ENVELOPE_INVALID', phase: 'READY' },
+      regulated: { allowed: false, code: 'AUDIT_ENVELOPE_INVALID', phase: 'READY' },
     },
   },
 ];

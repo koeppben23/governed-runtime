@@ -3,9 +3,9 @@
  * @description Append-only JSONL audit trail operations (audit-chain.v3 only).
  *
  * Audit events are appended as single-line JSON with trailing newline.
- * Records that are not valid audit-chain.v3 records are rejected with
- * LEGACY_ASSURANCE_FORMAT_UNSUPPORTED — legacy artifacts are never
- * reinterpreted, migrated, or silently skipped.
+ * Records that do not satisfy the canonical audit-chain.v3 envelope are
+ * rejected with AUDIT_ENVELOPE_INVALID — the boundary never identifies,
+ * accepts, or migrates older formats.
  *
  * @version v3
  */
@@ -21,7 +21,7 @@ import {
   PersistenceError,
   isEnoent,
 } from './persistence.js';
-import { getLastChainHash, classifyInvalidAuditRecord } from '../audit/integrity.js';
+import { getLastChainHash } from '../audit/integrity.js';
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import {
   computeChainHash,
@@ -30,21 +30,14 @@ import {
 } from '../audit/types.js';
 
 class AuditFormatError extends Error {
-  readonly code: AuditFormatErrorCode;
+  readonly code = 'AUDIT_ENVELOPE_INVALID' as const;
 
-  constructor(message: string, code: AuditFormatErrorCode = 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED') {
+  constructor(message: string) {
     super(message);
     this.name = 'AuditFormatError';
-    this.code = code;
   }
 }
 
-/**
- * Read-boundary classification for rejected audit records, shared with the
- * verifier: a record claiming audit-chain.v3 that violates the canonical
- * envelope is `AUDIT_ENVELOPE_INVALID`, not legacy.
- */
-type AuditFormatErrorCode = 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED' | 'AUDIT_ENVELOPE_INVALID';
 import { acquireNamedWriteLock } from './persistence-lock.js';
 
 const AUDIT_LOCK_FILE = 'audit.jsonl.lock';
@@ -140,7 +133,7 @@ async function appendAuditLineAtomically(
     if (existingTrail.skipped > 0) {
       throw new AuditFormatError(
         `Refusing to append: existing audit trail contains ${existingTrail.skipped} record(s) ` +
-          'that are not valid audit-chain.v3 records. Legacy audit artifacts are unsupported.',
+          'that violate the canonical audit-chain.v3 envelope. Non-v3 assurance artifacts are unsupported.',
       );
     }
 
@@ -215,27 +208,18 @@ function parseAuditTrail(raw: string): { events: AuditEvent[]; skipped: number }
       json = JSON.parse(trimmed);
     } catch {
       throw new AuditFormatError(
-        'Audit trail contains a record that is not valid JSONL. Legacy or malformed ' +
-          'assurance artifacts are unsupported.',
+        'Audit trail contains a record that is not valid JSONL. Malformed audit ' +
+          'records are unsupported and cannot be treated as verifiable evidence.',
       );
     }
     const result = AuditEvent.safeParse(json);
     if (!result.success) {
-      // Fail closed with an explicit epoch error: pre-v3 records must never
-      // be reinterpreted, migrated, or silently skipped. Records that CLAIM
-      // audit-chain.v3 but violate the canonical envelope are classified
-      // separately from legacy artifacts (same authority as verifyChain).
-      const classification =
-        typeof json === 'object' && json !== null
-          ? classifyInvalidAuditRecord(json as Record<string, unknown>)
-          : 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED';
+      // Fail closed with an explicit envelope error: any record that does not
+      // satisfy the canonical audit-chain.v3 schema is rejected here — the
+      // boundary never identifies, accepts, or migrates older formats.
       throw new AuditFormatError(
-        classification === 'AUDIT_ENVELOPE_INVALID'
-          ? 'Audit trail contains a record that claims audit-chain.v3 but violates the ' +
-              'canonical audit event envelope.'
-          : 'Audit trail contains a record that is not a valid audit-chain.v3 record. ' +
-              'Legacy assurance artifacts are unsupported.',
-        classification,
+        'Audit trail contains a record that violates the canonical audit-chain.v3 event ' +
+          'envelope. Non-v3 assurance artifacts are unsupported.',
       );
     }
     events.push(result.data);
@@ -267,9 +251,9 @@ async function acquireAuditWriteLock(sessionDir: string): Promise<() => Promise<
  * Read all audit events from the JSONL trail.
  *
  * Returns empty array if no audit file exists.
- * Fails closed with LEGACY_ASSURANCE_FORMAT_UNSUPPORTED on any record that
- * is not a valid audit-chain.v3 record — legacy or malformed records are
- * never reinterpreted or skipped.
+ * Fails closed with AUDIT_ENVELOPE_INVALID on any record that does not
+ * satisfy the canonical audit-chain.v3 schema — malformed or non-v3 records
+ * are never reinterpreted, migrated, or skipped.
  *
  * @param sessionDir - Absolute path to the session directory.
  * @returns Object with events array and skipped count (always 0 — rejects instead).

@@ -11,13 +11,14 @@ audit-chain.v3, hard rejection of legacy artifacts).
 > `z.literal('v3')`, persisted audit records are strictly `audit-chain.v3`,
 > and any pre-v3 STATE is rejected with `SESSION_STATE_INCOMPATIBLE` at the
 > `readState` contract preflight (`src/adapters/persistence.ts`) while any
-> pre-v3 AUDIT record is rejected with `LEGACY_ASSURANCE_FORMAT_UNSUPPORTED`
-> at every audit persistence and verification boundary
-> (`src/adapters/persistence-audit.ts`, `src/audit/integrity.ts`). Legacy
-> artifacts are never migrated, reinterpreted, or re-sealed. This document is
-> retained for historical context only; the migration pipeline it proposes
-> (`src/state/migration.ts`, `SESSION_MIGRATIONS`, `migrateToCurrent()`) does
-> not exist and is not planned.
+> AUDIT record that violates the canonical audit-chain.v3 envelope is
+> rejected with `AUDIT_ENVELOPE_INVALID` at every audit persistence and
+> verification boundary (`src/adapters/persistence-audit.ts`,
+> `src/audit/integrity.ts`). The trust boundary never classifies legacy
+> formats: non-v3 artifacts are never migrated, reinterpreted, or re-sealed.
+> This document is retained for historical context only; the migration
+> pipeline it proposes (`src/state/migration.ts`, `SESSION_MIGRATIONS`,
+> `migrateToCurrent()`) does not exist and is not planned.
 
 ## 1. Problem Statement
 

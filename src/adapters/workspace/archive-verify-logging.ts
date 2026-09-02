@@ -35,7 +35,7 @@ export function logAuditChainVerificationFailure(chainResult: ChainVerification)
       ? 'Audit chain verification failed'
       : chainResult.reason === 'AUDIT_ENVELOPE_INVALID'
         ? 'Audit chain contains schema-invalid audit-chain.v3 records'
-        : 'Audit chain contains unsupported legacy assurance records';
+        : 'Audit chain verification failed';
   getAdapterLogger().error('archive', message, logExtra);
 }
 

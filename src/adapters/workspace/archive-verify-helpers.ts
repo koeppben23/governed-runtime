@@ -122,19 +122,18 @@ export function isCurrentChainIntegrityFailure(reason: ChainVerificationReason |
 }
 
 export function isAuditFormatFailure(reason: ChainVerificationReason | null): boolean {
-  return reason === 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED' || reason === 'AUDIT_ENVELOPE_INVALID';
+  return reason === 'AUDIT_ENVELOPE_INVALID';
 }
 
 /**
  * Map a `readAuditTrail()` failure to its archive finding code. The read
- * boundary classifies schema-invalid current-format records as
- * `AUDIT_ENVELOPE_INVALID` and legacy artifacts as
- * `LEGACY_ASSURANCE_FORMAT_UNSUPPORTED` (same authority as verifyChain);
- * every other read failure falls back to the generic chain-invalid bucket.
+ * boundary rejects every record that violates the canonical audit-chain.v3
+ * envelope as `AUDIT_ENVELOPE_INVALID` — no legacy classification exists at
+ * the trust boundary. Every other read failure falls back to the generic
+ * chain-invalid bucket.
  */
 export function auditReadFailureFindingCode(error: unknown): ArchiveFindingCode {
   const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : null;
-  if (code === 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED') return 'audit_chain_legacy_format';
   if (code === 'AUDIT_ENVELOPE_INVALID') return 'audit_chain_invalid_event';
   return 'audit_chain_invalid';
 }

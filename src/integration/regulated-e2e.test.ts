@@ -270,23 +270,23 @@ describe('regulated-e2e critical path', () => {
     expect(await phase()).toBe('VALIDATION');
   });
 
-  it('audit verification rejects legacy unchained records in every mode', async () => {
+  it('audit verification rejects non-v3 unchained records in every mode', async () => {
     await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
     const dir = await sessDir();
     const legacyEvent = {
       id: crypto.randomUUID(),
       sessionId: ctx.sessionID,
       phase: 'READY',
-      event: 'legacy_event',
+      event: 'non_v3_event',
       occurredAt: new Date().toISOString(),
       actor: 'legacy',
       detail: { source: 'test' },
     };
     await fs.appendFile(path.join(dir, 'audit.jsonl'), `${JSON.stringify(legacyEvent)}\n`, 'utf-8');
 
-    // The epoch reader itself rejects the legacy record.
+    // The epoch reader itself rejects the non-v3 record.
     await expect(readAuditTrail(dir)).rejects.toMatchObject({
-      code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+      code: 'AUDIT_ENVELOPE_INVALID',
     });
 
     // Verification over raw lines also fails closed.
@@ -297,6 +297,6 @@ describe('regulated-e2e critical path', () => {
       .map((line) => JSON.parse(line) as Record<string, unknown>);
     const result = verifyChain(events);
     expect(result.valid).toBe(false);
-    expect(result.reason).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
+    expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
   });
 });

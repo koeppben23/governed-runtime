@@ -276,7 +276,7 @@ export function verifyTimestampEvidencePresence(
   };
 }
 
-function extractEventKind(eventString: string): string {
+export function extractEventKind(eventString: string): string {
   // Covered by the presence tests across decision/lifecycle/other kinds.
   if (eventString.startsWith('decision:')) return 'decision';
   if (eventString.startsWith('lifecycle:')) return 'lifecycle';

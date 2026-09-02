@@ -89,11 +89,11 @@ upgrade before managed artifacts are written.
 FlowGuard is a prerelease product. The persisted session-state schema is
 `schemaVersion: 'v3'` and audit records are strictly `audit-chain.v3`. Pre-v3
 state is **hard-rejected** with `SESSION_STATE_INCOMPATIBLE` at the `readState`
-preflight, and pre-v3 audit
-records are rejected with `LEGACY_ASSURANCE_FORMAT_UNSUPPORTED` at every
-audit persistence and verification boundary — legacy artifacts are never
-migrated, reinterpreted, or re-sealed. Archive or complete active sessions
-before crossing the epoch boundary. See
+preflight, and audit records that violate the canonical audit-chain.v3
+envelope are rejected with `AUDIT_ENVELOPE_INVALID` at every audit persistence
+and verification boundary — the trust boundary never classifies legacy
+formats, and non-v3 artifacts are never migrated, reinterpreted, or re-sealed.
+Archive or complete active sessions before crossing the epoch boundary. See
 [`docs/architecture/schema-migration.md`](./architecture/schema-migration.md)
 for the superseded migration proposal.
 
@@ -101,7 +101,7 @@ for the superseded migration proposal.
 | ------------------------------------------------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Any prerelease                                                      | Later prerelease                          | No forward-compatibility guarantee. Archive or complete active sessions before upgrading.                                                                                                 |
 | State `schemaVersion: v2`/earlier, including sessions with audit v3 | Current state contract (`v3`)             | Incompatible by design. State is rejected with `SESSION_STATE_INCOMPATIBLE`; no migration path exists. Archive or complete the session with its old artifact, then start a fresh session. |
-| Audit trail `audit-chain.v2`/earlier, regardless of state schema    | Current audit contract (`audit-chain.v3`) | Incompatible by design. Records are rejected with `LEGACY_ASSURANCE_FORMAT_UNSUPPORTED`; no migration or re-seal path exists.                                                             |
+| Audit trail `audit-chain.v2`/earlier, regardless of state schema    | Current audit contract (`audit-chain.v3`) | Incompatible by design. Records are rejected with `AUDIT_ENVELOPE_INVALID`; no migration or re-seal path exists.                                                                          |
 | `v1.2.0-tp.2` and earlier unversioned policy digests                | A release requiring `policy-digest.v2`    | Incompatible by design. The old digest did not bind nested policy fields; archive or complete the session with the old artifact, then start a new session.                                |
 
 **FlowGuard validates state on read.** A release that requires an incompatible
