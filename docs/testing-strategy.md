@@ -154,7 +154,7 @@ gated.
 
 ## Mutation Testing
 
-FlowGuard uses [StrykerJS](https://stryker-mutator.io/) (v9.6.1) for mutation testing
+FlowGuard uses [StrykerJS](https://stryker-mutator.io/) (v10) for mutation testing
 on security-critical code paths. Mutation testing validates that tests actually
 detect semantic errors, not just that code is executed (coverage alone cannot prove this).
 
@@ -170,7 +170,9 @@ it is not a separate Stryker configuration or a lower per-area threshold.
 
 `StringLiteral`, `ArrayDeclaration`, and `Regex` mutators are excluded globally
 because they produce low-signal literal churn in governance template and schema
-code; they are not a per-area carve-out.
+code. Focused boundary profiles may enable a globally excluded mutator where it
+protects a security-relevant literal: `stryker.identity-jwks.conf.json` enables
+`StringLiteral` for the remote-JWKS redirect policy.
 
 ### Scope
 
@@ -225,3 +227,10 @@ npm run mutation    # Runs scripts/stryker-patch.js pre-flight + stryker run
 
 The pre-flight script patches `@stryker-mutator/vitest-runner` to use `pool=forks`
 (for `process.chdir()` compatibility). This is scoped exclusively to mutation testing.
+
+The remote-JWKS profile runs on pull requests that change its source, tests, or
+configuration:
+
+```bash
+node scripts/stryker-patch.js && npx stryker run stryker.identity-jwks.conf.json
+```
