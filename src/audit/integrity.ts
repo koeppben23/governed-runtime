@@ -40,7 +40,7 @@ import {
   verifyTsaMessageImprint,
   verifyTimestampEvidencePresence,
 } from './timestamp-verification.js';
-import type { AuditEvent } from '../state/evidence.js';
+import { AuditEvent } from '../state/evidence.js';
 
 /**
  * Constant-time string comparison for security-sensitive hash validation.
@@ -75,6 +75,8 @@ function safeHashEqual(a: string, b: string): boolean {
  */
 export interface ChainVerifyOptions {
   readonly strictTimestamps?: boolean;
+  /** Expected state-owned FlowGuard session identity, when available. */
+  readonly expectedFlowguardSessionId?: string;
 }
 
 /**
@@ -283,18 +285,18 @@ export function verifyChain(
   const results: EventVerification[] = [];
   const failures: FirstVerificationFailures = {};
   let lastHash = GENESIS_HASH;
+  let trailFlowguardSessionId = options?.expectedFlowguardSessionId;
 
   for (let i = 0; i < events.length; i++) {
     const raw = events[i]!;
 
-    // Legacy-tolerant skipping is gone: any record that is not a chained
-    // audit-chain.v3 record is a verification failure.
-    if (!isChainedEvent(raw)) {
+    const parsed = AuditEvent.safeParse(raw);
+    if (!parsed.success) {
       const verification: EventVerification = {
         index: i,
         eventId: typeof raw.id === 'string' ? raw.id : 'unknown',
         valid: false,
-        reason: 'record is not a chained audit-chain.v3 record',
+        reason: 'record is not a valid audit-chain.v3 event envelope',
         reasonCode: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
       };
       results.push(verification);
@@ -302,8 +304,19 @@ export function verifyChain(
       continue;
     }
 
-    const event = raw as unknown as ChainedAuditEvent;
-    const verification = verifyEvent(event, lastHash, i);
+    const event = parsed.data as ChainedAuditEvent;
+    const eventVerification = verifyEvent(event, lastHash, i);
+    if (!trailFlowguardSessionId) trailFlowguardSessionId = event.flowguardSessionId;
+    const verification =
+      event.flowguardSessionId === trailFlowguardSessionId
+        ? eventVerification
+        : {
+            index: i,
+            eventId: event.id,
+            valid: false,
+            reason: `flowguardSessionId mismatch: expected "${trailFlowguardSessionId}", got "${event.flowguardSessionId}"`,
+            reasonCode: 'CHAIN_BREAK' as const,
+          };
     results.push(verification);
     trackVerificationFailure(failures, verification);
 

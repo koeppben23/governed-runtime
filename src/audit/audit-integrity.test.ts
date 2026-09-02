@@ -90,6 +90,61 @@ describe('audit integrity', () => {
 
   // ─── BAD ────────────────────────────────────────────────────
   describe('BAD', () => {
+    it('rejects a hash-consistent record that omits a required audit envelope field', () => {
+      const event = buildChain(1)[0]!;
+      const { chainHash: _chainHash, actor: _actor, ...withoutActor } = event;
+      const resealed = {
+        ...withoutActor,
+        semanticEventDigest: computeCanonicalEventDigest(withoutActor),
+      };
+      const malformed = {
+        ...resealed,
+        chainHash: computeChainHash(
+          resealed.prevHash,
+          resealed as unknown as Omit<ChainedAuditEvent, 'chainHash'>,
+        ),
+      };
+
+      const result = verifyChain([malformed]);
+
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
+      expect(result.firstBreak?.reason).toContain('valid audit-chain.v3 event envelope');
+    });
+
+    it('rejects a hash-consistent trail with mixed FlowGuard session identities', () => {
+      const [first, second] = buildChain(2);
+      const { chainHash: _chainHash, ...secondBody } = second!;
+      const changedIdentity = {
+        ...secondBody,
+        flowguardSessionId: '00000000-0000-4000-8000-000000000001',
+      };
+      const resealed = {
+        ...changedIdentity,
+        semanticEventDigest: computeCanonicalEventDigest(changedIdentity),
+      };
+      const mixedTrail = [
+        first!,
+        { ...resealed, chainHash: computeChainHash(resealed.prevHash, resealed) },
+      ];
+
+      const result = verifyChain(mixedTrail as unknown as Record<string, unknown>[]);
+
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('CHAIN_BREAK');
+      expect(result.firstBreak?.reason).toContain('flowguardSessionId mismatch');
+    });
+
+    it('rejects a trail that is not bound to the expected FlowGuard session', () => {
+      const result = verifyChain(buildChain(1) as unknown as Record<string, unknown>[], {
+        expectedFlowguardSessionId: '00000000-0000-4000-8000-000000000001',
+      });
+
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('CHAIN_BREAK');
+      expect(result.firstBreak?.reason).toContain('flowguardSessionId mismatch');
+    });
+
     it('verifyEvent fails on prevHash mismatch', () => {
       const event = createTransitionEvent(
         SESSION_ID,

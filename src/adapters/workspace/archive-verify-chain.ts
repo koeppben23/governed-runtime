@@ -391,7 +391,10 @@ async function verifyTimestampChain(
   const timestampPolicy = state?.policySnapshot.audit.timestampAssurance;
   const strictTimestamps = events.some(hasTimestampEvidence) || timestampPolicy?.enabled === true;
   const timestampFailuresAreFatal = strict || timestampPolicy?.strict === true;
-  const chainResult = verifyChain(events, { strictTimestamps });
+  const chainResult = verifyChain(events, {
+    strictTimestamps,
+    ...(state ? { expectedFlowguardSessionId: state.flowguardSessionId } : {}),
+  });
   logAuditChainVerificationFailure(chainResult);
   addAuditFormatFindings(chainResult, findings);
   addTimestampFindings(chainResult, timestampFailuresAreFatal, findings);
