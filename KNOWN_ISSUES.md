@@ -25,6 +25,9 @@ RFC 3161 TSA hardening from #832/#833 (TSA1–TSA4) and the separate archive
 redaction-composition assurance gap R14.
 The 2026-08-26 re-triage confirmed durable transition-audit reconciliation from
 #847 (MUT2) and external authority binding from #848 (M2).
+A 2026-09-02 static re-triage against `9b727902` (#864) confirmed that remote
+JWKS fetches follow redirects and materialize an unbounded response body; G27
+is therefore `Open`, not `Not Verified`.
 
 ## Status Legend
 
@@ -142,7 +145,7 @@ disproven, update the status and link the evidence."
 | G15  | MEDIUM   | Open            | Transition records lack actor identity.                                                                                                                     |
 | G22  | MEDIUM   | Open            | Hydrate risk-class recovery behavior and documentation diverge.                                                                                             |
 | G26  | MEDIUM   | Open            | IdP token subject/email persistence normalization remains open.                                                                                             |
-| G27  | MEDIUM   | Not Verified    | JWKS fetch needs body-size and redirect-boundary review.                                                                                                    |
+| G27  | MEDIUM   | Open            | Remote JWKS fetch follows redirects and has no response body-size limit.                                                                                     |
 | H5   | MEDIUM   | Open            | Stop hook should flush logger sinks before process exit.                                                                                                    |
 | H6   | MEDIUM   | Open            | Pre-tool fatal path exit-code behavior needs fail-closed coverage. `TESTED_BUG_BEHAVIOR`.                                                                   |
 | H7   | MEDIUM   | Open            | Command hook stdin needs a byte cap.                                                                                                                        |
