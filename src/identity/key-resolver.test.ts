@@ -11,12 +11,17 @@
  * @test-policy HAPPY, BAD, CORNER, EDGE
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { StaticKeyResolver, JwksFileKeyResolver, JwksRemoteKeyResolver } from './key-resolver.js';
+import {
+  MAX_JWKS_RESPONSE_BYTES,
+  StaticKeyResolver,
+  JwksFileKeyResolver,
+  JwksRemoteKeyResolver,
+} from './key-resolver.js';
 import { IdpError } from './errors.js';
 import type { SigningKey, JwksDocument } from './types.js';
 
@@ -40,6 +45,17 @@ const RSA_JWK = RSA_PUBLIC_KEY_OBJ.export({ format: 'jwk' }) as Record<string, s
 
 const EC_PUBLIC_KEY_OBJ = crypto.createPublicKey(EC_KEY_PAIR.publicKey);
 const EC_JWK = EC_PUBLIC_KEY_OBJ.export({ format: 'jwk' }) as Record<string, string>;
+
+const REMOTE_JWKS = {
+  keys: [
+    {
+      kid: 'remote-rsa-1',
+      kty: 'RSA' as const,
+      n: RSA_JWK.n!,
+      e: RSA_JWK.e!,
+    },
+  ],
+};
 
 // ─── StaticKeyResolver Tests ────────────────────────────────────────────────
 
@@ -270,6 +286,16 @@ describe('JwksFileKeyResolver', () => {
 // ─── JwksRemoteKeyResolver Tests ────────────────────────────────────────────
 
 describe('JwksRemoteKeyResolver', () => {
+  const jwksUri = 'https://idp.example.com/.well-known/jwks.json';
+
+  beforeEach(() => {
+    JwksRemoteKeyResolver.clearCacheForTests();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   describe('BAD: invalid URI', () => {
     it('rejects non-https URI', async () => {
       await expect(
@@ -289,6 +315,88 @@ describe('JwksRemoteKeyResolver', () => {
       await expect(JwksRemoteKeyResolver.fromUri('not-a-url', 300)).rejects.toMatchObject({
         code: 'IDP_JWKS_URI_INVALID',
       });
+    });
+
+    it('rejects a fetch failure caused by a redirect', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('unexpected redirect')));
+
+      await expect(JwksRemoteKeyResolver.fromUri(jwksUri, 300)).rejects.toMatchObject({
+        code: 'IDP_JWKS_FETCH_FAILED',
+      });
+    });
+
+    it('rejects an oversized declared response without reading its body', async () => {
+      const getReader = vi.fn();
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-length': String(MAX_JWKS_RESPONSE_BYTES + 1) }),
+          body: { getReader },
+        }),
+      );
+
+      await expect(JwksRemoteKeyResolver.fromUri(jwksUri, 300)).rejects.toThrow(
+        `JWKS response exceeds the ${MAX_JWKS_RESPONSE_BYTES}-byte limit`,
+      );
+      expect(getReader).not.toHaveBeenCalled();
+    });
+
+    it('rejects an oversized chunked response', async () => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array(MAX_JWKS_RESPONSE_BYTES + 1));
+          controller.close();
+        },
+      });
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body)));
+
+      await expect(JwksRemoteKeyResolver.fromUri(jwksUri, 300)).rejects.toThrow(
+        `JWKS response exceeds the ${MAX_JWKS_RESPONSE_BYTES}-byte limit`,
+      );
+    });
+  });
+
+  describe('HAPPY: bounded HTTPS retrieval', () => {
+    it('uses the configured URI without following redirects', async () => {
+      const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify(REMOTE_JWKS)));
+      vi.stubGlobal('fetch', fetchSpy);
+
+      const resolver = await JwksRemoteKeyResolver.fromUri(jwksUri, 300);
+
+      expect(resolver.resolveKey('remote-rsa-1').kid).toBe('remote-rsa-1');
+      expect(fetchSpy).toHaveBeenCalledOnce();
+      expect(fetchSpy.mock.calls[0]).toMatchObject([
+        jwksUri,
+        {
+          method: 'GET',
+          headers: { accept: 'application/json' },
+          redirect: 'error',
+        },
+      ]);
+    });
+
+    it('accepts a valid response exactly at the byte limit', async () => {
+      const baseKey = { ...REMOTE_JWKS.keys[0]!, kid: '' };
+      const withoutPadding = JSON.stringify({ keys: [baseKey] });
+      const paddingLength =
+        MAX_JWKS_RESPONSE_BYTES - new TextEncoder().encode(withoutPadding).byteLength;
+      const paddedKid = 'x'.repeat(paddingLength);
+      const body = JSON.stringify({ keys: [{ ...baseKey, kid: paddedKid }] });
+      expect(new TextEncoder().encode(body).byteLength).toBe(MAX_JWKS_RESPONSE_BYTES);
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(
+          new Response(body, {
+            headers: { 'content-length': String(MAX_JWKS_RESPONSE_BYTES) },
+          }),
+        ),
+      );
+
+      const resolver = await JwksRemoteKeyResolver.fromUri(jwksUri, 300);
+
+      expect(resolver.resolveKey(paddedKid).kid).toBe(paddedKid);
     });
   });
 });

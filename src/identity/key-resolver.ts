@@ -203,6 +203,9 @@ interface RemoteCacheEntry {
 
 const remoteJwksCache: Map<string, RemoteCacheEntry> = new Map();
 
+/** Maximum remote JWKS response size accepted before JSON parsing. */
+export const MAX_JWKS_RESPONSE_BYTES = 1_048_576;
+
 export class JwksRemoteKeyResolver {
   static async fromUri(jwksUri: string, cacheTtlSeconds: number): Promise<JwksFileKeyResolver> {
     const normalizedUri = normalizeJwksHttpsUri(jwksUri);
@@ -267,6 +270,9 @@ async function fetchJwksDocument(jwksUri: string): Promise<string> {
     response = await fetch(jwksUri, {
       method: 'GET',
       headers: { accept: 'application/json' },
+      // The configured HTTPS URI is the authority. Do not silently fetch a
+      // redirect target that has not passed URI validation.
+      redirect: 'error',
       signal: AbortSignal.timeout(5000),
     });
   } catch (err) {
@@ -297,5 +303,61 @@ async function fetchJwksDocument(jwksUri: string): Promise<string> {
       `JWKS fetch returned HTTP ${response.status} for '${jwksUri}'`,
     );
   }
-  return response.text();
+  try {
+    return await readJwksResponseBodyWithinLimit(response, MAX_JWKS_RESPONSE_BYTES);
+  } catch (err) {
+    getAdapterLogger().error(
+      'identity',
+      'JWKS remote response read failed',
+      redactIdentityExtra({
+        jwksUri,
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    );
+    throw new IdpError(
+      'IDP_JWKS_FETCH_FAILED',
+      `JWKS response read failed for '${jwksUri}': ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
+async function readJwksResponseBodyWithinLimit(
+  response: Response,
+  maxBytes: number,
+): Promise<string> {
+  const declaredLength = response.headers.get('content-length');
+  if (declaredLength !== null) {
+    const length = Number(declaredLength);
+    if (Number.isSafeInteger(length) && length > maxBytes) {
+      throw new RangeError(`JWKS response exceeds the ${maxBytes}-byte limit`);
+    }
+  }
+
+  if (!response.body) return '';
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        void reader.cancel();
+        throw new RangeError(`JWKS response exceeds the ${maxBytes}-byte limit`);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder('utf-8', { fatal: true }).decode(body);
 }

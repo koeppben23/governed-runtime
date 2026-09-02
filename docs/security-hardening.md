@@ -146,7 +146,9 @@ must each be disabled (or explicitly pinned) for true offline operation:
 
 - `/review url=...` — HTTPS content loading when invoked.
 - `policy.identityProvider.mode = 'jwks'` with `jwksUri` — HTTPS JWKS refresh
-  (`IDP_JWKS_FETCH_FAILED` is fail-closed under `identityProviderMode: required`).
+  from the configured URI. Redirects are rejected and the response body is
+  limited to 1 MiB (`IDP_JWKS_FETCH_FAILED` is fail-closed under
+  `identityProviderMode: required`).
 - Claude Code HTTP hook mode (`flowguard-hook-server`) — starts a localhost
   listener bound to `127.0.0.1` by default.
 - `policy.audit.timestampAssurance.mode = 'tsa_critical'` with `tsaUrl` — RFC
