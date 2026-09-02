@@ -395,7 +395,7 @@ export async function persistNonConvergedPlanReview(
   ];
   const classification = await resolvePreImplementationChallengeClassification(
     finalState,
-    scope.wsDir,
+    scope.worktree,
     scope.reviewPolicy.subagentEnabled,
     targetPaths,
   );
@@ -452,7 +452,7 @@ async function mintPlanRevisionAttempt(input: {
 > {
   const { scope, finalState, revision, iteration, nextPlanVersion, resolvedTargetPaths, metadata } =
     input;
-  const freeze = await freezeContextAuthorityAtHead(scope.wsDir);
+  const freeze = await freezeContextAuthorityAtHead(scope.worktree);
   const authority = frozenAuthorityOrUndefined(freeze);
   const discovery = await resolveAttemptDiscoveryOrBlock({
     state: finalState,

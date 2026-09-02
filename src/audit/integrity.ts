@@ -15,8 +15,8 @@
  * 3. Assurance epoch: every record must be an audit-chain.v3 record.
  *    Legacy records are never skipped, migrated, or interpreted — they fail
  *    closed with LEGACY_ASSURANCE_FORMAT_UNSUPPORTED.
- * 4. Timestamp verification — optional strictTimestamps checks monotonicity
- *    (CLOCK_ANOMALY), TSA imprint binding, and required evidence presence.
+ * 4. Timestamp verification — monotonicity (CLOCK_ANOMALY) is always checked;
+ *    optional strictTimestamps adds TSA imprint binding and evidence presence.
  *
  * Why this matters for DATEV/banks:
  * - Regulators require proof that audit trails have not been tampered with
@@ -59,21 +59,21 @@ function safeHashEqual(a: string, b: string): boolean {
 /**
  * Options for chain verification.
  *
- * - `strict`: retained for API compatibility. Legacy tolerance has been
- *   removed for the Assurance epoch — every non-v3 record is an integrity
- *   failure in every mode, so this flag no longer changes verification
- *   behavior.
+ * There is deliberately no `strict` flag. Legacy tolerance was removed for the
+ * Assurance epoch — every non-v3 record is an integrity failure in every mode —
+ * so a `strict` option could only ever be a no-op that reads like a hardening
+ * switch. It was one, and two production call sites passed `{ strict: true }`
+ * believing they had enabled something.
  *
- * - `strictTimestamps: false` (default): timestamp evidence is not checked.
- *   Timestamp monotonicity, TSA message imprint matching, and required evidence
- *   presence are only verified when this is enabled.
+ * - `strictTimestamps: false` (default): TSA timestamp evidence is not checked.
+ *   Clock monotonicity is still verified — it needs no evidence and no policy,
+ *   so CLOCK_ANOMALY is reportable in every mode.
  *
- * - `strictTimestamps: true`: enables timestamp monotonicity checks, TSA message
+ * - `strictTimestamps: true`: additionally enables TSA message
  *   imprint verification against recomputed canonical event content digest, and required evidence
  *   presence for critical events. Additional reasons may be reported.
  */
 export interface ChainVerifyOptions {
-  readonly strict?: boolean;
   readonly strictTimestamps?: boolean;
 }
 
@@ -154,7 +154,7 @@ export interface ChainVerification {
    * Priority: CHAIN_BREAK > legacy format > timestamp_*.
    */
   readonly reason: ChainVerificationReason | null;
-  /** Timestamp monotonicity result (null if strictTimestamps not enabled). */
+  /** Timestamp monotonicity result. Always present — never gated by options. */
   readonly timestampMonotonicity: {
     readonly valid: boolean;
     readonly firstBreak: number | null;
@@ -361,9 +361,23 @@ function verifyTimestampChecks(
   events: Record<string, unknown>[],
   strictTimestamps: boolean,
 ): TimestampChecks {
+  const chainedEvents = events.filter(isChainedEvent).map((e) => e as unknown as AuditEvent);
+  // Clock monotonicity is a property of the trail itself: it needs no TSA
+  // evidence, no timestamp policy and no configuration, so it is ALWAYS
+  // verified. Gating it behind `strictTimestamps` bundled it with the TSA
+  // evidence-presence requirement and left callers only two bad options —
+  // never detect a clock anomaly, or demand TSA evidence from sessions that
+  // never enabled timestamp assurance and fail them all.
+  const monotonicityResult = verifyTimestampMonotonicity(chainedEvents);
+  const timestampMonotonicity = {
+    valid: monotonicityResult.valid,
+    firstBreak: monotonicityResult.firstBreak,
+    message: monotonicityResult.message,
+  };
+
   if (!strictTimestamps) {
     return {
-      timestampMonotonicity: null,
+      timestampMonotonicity,
       missingTimestampEvidence: [],
       tsaImprintMismatches: [],
       tokenVerificationRequired: [],
@@ -371,8 +385,6 @@ function verifyTimestampChecks(
     };
   }
 
-  const chainedEvents = events.filter(isChainedEvent).map((e) => e as unknown as AuditEvent);
-  const monotonicityResult = verifyTimestampMonotonicity(chainedEvents);
   const missingTimestampEvidence = verifyTimestampEvidencePresence(chainedEvents, [
     'decision',
     'lifecycle',
@@ -395,11 +407,7 @@ function verifyTimestampChecks(
   }
 
   return {
-    timestampMonotonicity: {
-      valid: monotonicityResult.valid,
-      firstBreak: monotonicityResult.firstBreak,
-      message: monotonicityResult.message,
-    },
+    timestampMonotonicity,
     missingTimestampEvidence,
     tsaImprintMismatches,
     tokenVerificationRequired,
@@ -414,6 +422,9 @@ function resolveChainReason(
 ): ChainVerificationReason | null {
   const structuralReason = resolveStructuralChainReason(failures);
   if (structuralReason) return structuralReason;
+  // Always authoritative: a non-monotonic trail is an integrity failure
+  // regardless of whether TSA timestamp assurance was ever enabled.
+  if (timestampChecks.timestampMonotonicity?.valid === false) return 'CLOCK_ANOMALY';
   if (!strictTimestamps) return null;
 
   return resolveTimestampReason(timestampChecks);

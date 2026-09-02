@@ -498,6 +498,7 @@ export function makeState(
     schemaVersion: CURRENT_SESSION_STATE_SCHEMA_VERSION,
     assuranceEpoch: CURRENT_ASSURANCE_EPOCH,
     stateDigestFormat: CURRENT_STATE_DIGEST_FORMAT,
+    runtimeLease: null,
     auditChainFormat: CURRENT_AUDIT_CHAIN_FORMAT,
     phase,
     binding: BINDING,

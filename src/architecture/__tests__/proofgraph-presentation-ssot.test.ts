@@ -16,7 +16,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, resolve, relative } from 'node:path';
+import { join, resolve, relative, sep } from 'node:path';
 
 const SRC = resolve(join(import.meta.dirname, '..', '..'));
 const CANONICAL_MODULE = 'presentation/proof-summary.ts';
@@ -63,7 +63,7 @@ describe('ProofGraph presentation SSOT', () => {
     const violations: string[] = [];
 
     for (const abs of files) {
-      const rel = relative(SRC, abs);
+      const rel = relative(SRC, abs).split(sep).join('/');
       // The canonical module is the owner — it may import itself.
       if (rel === CANONICAL_MODULE) continue;
       // Skip test files and test helpers.
@@ -100,7 +100,7 @@ describe('ProofGraph presentation SSOT', () => {
 
   it('reserves ProofGraph Markdown rendering for the shared renderer', () => {
     const violations = collectSourceFiles().flatMap((abs) => {
-      const rel = relative(SRC, abs);
+      const rel = relative(SRC, abs).split(sep).join('/');
       if (rel === 'presentation/markdown.ts' || rel === CANONICAL_MODULE) return [];
       const content = readFileSync(abs, 'utf-8');
       return /\bimport\b[^;]*renderProofGraphMarkdown[^;]*from/.test(content)

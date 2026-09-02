@@ -56,7 +56,7 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
 > {
   const classification = await resolvePreImplementationChallengeClassification(
     ctx.state,
-    ctx.wsDir,
+    ctx.worktree,
     ctx.subagentEnabled,
     ctx.targetPaths,
   );
@@ -119,7 +119,7 @@ async function mintArchSubmissionObligation(
   if (!ctx.subagentEnabled) return null;
   const digest = ctx.state.architecture?.digest ?? `arch-submit-${ctx.archPlanVersion}`;
   const adrText = ctx.state.architecture?.adrText ?? '';
-  const freeze = await freezeContextAuthorityAtHead(ctx.wsDir);
+  const freeze = await freezeContextAuthorityAtHead(ctx.worktree);
   return createReviewObligation({
     obligationType: 'architecture',
     iteration: 0,

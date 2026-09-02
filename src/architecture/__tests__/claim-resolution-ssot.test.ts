@@ -20,7 +20,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, resolve, relative } from 'node:path';
+import { join, resolve, relative, sep } from 'node:path';
 
 const SRC = resolve(join(import.meta.dirname, '..', '..'));
 
@@ -159,7 +159,7 @@ function hasLocalBindingDiagnosticMap(content: string): boolean {
 
 describe('Claim Resolution SSOT', () => {
   const files = collectSourceFiles().map((abs) => ({
-    rel: relative(SRC, abs).split('/').join('/'),
+    rel: relative(SRC, abs).split(sep).join('/'),
     content: readFileSync(abs, 'utf-8'),
   }));
 

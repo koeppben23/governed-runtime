@@ -8,7 +8,7 @@
  * parameter must not become a public backdoor.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const SRC = join(process.cwd(), 'src');
@@ -38,7 +38,12 @@ function listSourceFiles(dir: string): string[] {
 function filesCallingCreateAttempt(): string[] {
   return listSourceFiles(SRC)
     .filter((p) => /\bcreateAttemptForExistingObligation\s*\(/.test(readFileSync(p, 'utf8')))
-    .map((p) => p.slice(SRC.length + 1));
+    .map((p) =>
+      p
+        .slice(SRC.length + 1)
+        .split(sep)
+        .join('/'),
+    );
 }
 
 describe('createAttemptForExistingObligation call-site whitelist', () => {

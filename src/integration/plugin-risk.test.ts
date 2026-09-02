@@ -174,6 +174,12 @@ describe('targetPathsForRisk', () => {
   });
 
   describe('apply_patch', () => {
+    it('extracts target paths from the OpenCode patchText argument', () => {
+      const patchText = '*** Begin Patch\n*** Update File: src/example.ts\n*** End Patch';
+      const result = targetPathsForRisk('apply_patch', { patchText }, () => '/repo');
+      expect(result).toEqual(['src/example.ts']);
+    });
+
     it('extracts paths from unified diff headers', () => {
       const diff = `--- a/src/old.ts
 +++ b/src/old.ts

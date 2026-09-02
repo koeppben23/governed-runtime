@@ -156,8 +156,12 @@ export function validateImplRecordPrerequisites(input: ImplementRuntime): string
   }
   if (!input.state.ticket) return formatBlocked('TICKET_REQUIRED', { action: 'implementation' });
   if (!input.state.plan) return formatBlocked('PLAN_REQUIRED', { action: 'implementation' });
+  const resolvedCallIds = new Set(
+    input.state.mutationEpisodeResolutions.map((resolution) => resolution.hostCallId),
+  );
   const unresolvedEpisodes = input.state.mutationEpisodes.filter(
-    (episode) => episode.status === 'dispatch_authorized',
+    (episode) =>
+      episode.status === 'dispatch_authorized' && !resolvedCallIds.has(episode.hostCallId),
   );
   if (
     hasUnresolvedMutationEpisodes(

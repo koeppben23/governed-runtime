@@ -141,9 +141,7 @@ describe('audit chain fuzz', () => {
     fc.assert(
       fc.property(fc.integer({ min: 1, max: 50 }), (length) => {
         const chain = buildChain(length);
-        const result = verifyChain(chain as unknown as Record<string, unknown>[], {
-          strict: true,
-        });
+        const result = verifyChain(chain as unknown as Record<string, unknown>[]);
         expect(result.valid).toBe(true);
         expect(result.verifiedCount).toBe(length);
         expect(result.firstBreak).toBeNull();
@@ -173,9 +171,7 @@ describe('audit chain fuzz', () => {
           const op: TamperOp = { kind: opKind, index: rawIdx };
           const tampered = applyTamper(chain, op);
 
-          const result = verifyChain(tampered as unknown as Record<string, unknown>[], {
-            strict: true,
-          });
+          const result = verifyChain(tampered as unknown as Record<string, unknown>[]);
 
           expect(result.valid).toBe(false);
           // The generated data is explicitly v3 and the current epoch removed
@@ -202,9 +198,7 @@ describe('audit chain fuzz', () => {
           const idx = rawIdx % (chainLength - 1); // 0 .. chainLength-2
           const tampered = applyTamper(chain, { kind: 'delete', index: idx });
 
-          const result = verifyChain(tampered as unknown as Record<string, unknown>[], {
-            strict: true,
-          });
+          const result = verifyChain(tampered as unknown as Record<string, unknown>[]);
 
           expect(result.valid).toBe(false);
           expect(result.reason).toBe('CHAIN_BREAK');
@@ -237,9 +231,7 @@ describe('audit chain fuzz', () => {
             index: reorderIdx % (tampered.length - 1 || 1),
           });
 
-          const result = verifyChain(tampered as unknown as Record<string, unknown>[], {
-            strict: true,
-          });
+          const result = verifyChain(tampered as unknown as Record<string, unknown>[]);
 
           expect(result.valid).toBe(false);
           // The generated data is explicitly v3 and the current epoch removed
@@ -266,9 +258,7 @@ describe('audit chain fuzz', () => {
           const mutateIdx = rawIdx % chainLength;
           const tampered = applyTamper(chain, { kind: 'mutate', index: mutateIdx });
 
-          const result = verifyChain(tampered as unknown as Record<string, unknown>[], {
-            strict: true,
-          });
+          const result = verifyChain(tampered as unknown as Record<string, unknown>[]);
 
           expect(result.valid).toBe(false);
           expect(result.reason).toBe('CHAIN_BREAK');

@@ -28,12 +28,11 @@ export async function verifyExternalPublicationBinding(
     });
     return;
   }
-  if (externalAudit.skipped > 0 || !verifyChain(externalAudit.events, { strict: true }).valid) {
+  if (externalAudit.skipped > 0 || !verifyChain(externalAudit.events).valid) {
     findings.push({
       code: 'archive_publication_binding_invalid',
       severity: 'error',
-      message:
-        'External publication binding audit trail is incomplete or fails strict chain verification',
+      message: 'External publication binding audit trail is incomplete or fails chain verification',
       file: 'audit.jsonl',
     });
     return;

@@ -65,35 +65,54 @@ function epochOf(value: string): number | null {
  * `occurredAt` predates its successor's is a legitimate deferred record —
  * only a RECORD order regression is a clock anomaly.
  *
+ * Additionally verifies, per event, that the producer-supplied `occurredAt`
+ * does not postdate the host-stamped `recordedAt`. An event cannot be recorded
+ * before it happened, so a producer timestamp from the future is a clock
+ * anomaly. Only this direction is constrained; the opposite gap is the
+ * legitimate deferred-outbox case described above.
+ *
+ * Every event is checked, including the first: a single-event trail must not
+ * escape timestamp verification.
+ *
  * @param events - Audit events in chronological order.
  */
 export function verifyTimestampMonotonicity(
   events: readonly AuditEvent[],
 ): TimestampMonotonicityResult {
-  for (let i = 1; i < events.length; i++) {
-    const current = epochOf(events[i]!.recordedAt);
-    if (current === null) {
+  let previous: number | null = null;
+  for (let i = 0; i < events.length; i++) {
+    const event = events[i]!;
+    const recorded = epochOf(event.recordedAt);
+    if (recorded === null) {
       return {
         valid: false,
         firstBreak: i,
-        message: `Record timestamp at index ${i} is not a parseable UTC instant: "${events[i]!.recordedAt}"`,
+        message: `Record timestamp at index ${i} is not a parseable UTC instant: "${event.recordedAt}"`,
       };
     }
-    const previous = epochOf(events[i - 1]!.recordedAt);
-    if (previous === null) {
-      return {
-        valid: false,
-        firstBreak: i - 1,
-        message: `Record timestamp at index ${i - 1} is not a parseable UTC instant: "${events[i - 1]!.recordedAt}"`,
-      };
-    }
-    if (current < previous) {
+    const occurred = epochOf(event.occurredAt);
+    if (occurred === null) {
       return {
         valid: false,
         firstBreak: i,
-        message: `Record timestamp non-monotonic at index ${i}: "${events[i]!.recordedAt}" < "${events[i - 1]!.recordedAt}"`,
+        message: `Occurrence timestamp at index ${i} is not a parseable UTC instant: "${event.occurredAt}"`,
       };
     }
+    if (occurred > recorded) {
+      return {
+        valid: false,
+        firstBreak: i,
+        message: `Occurrence timestamp at index ${i} postdates its record timestamp: "${event.occurredAt}" > "${event.recordedAt}"`,
+      };
+    }
+    if (previous !== null && recorded < previous) {
+      return {
+        valid: false,
+        firstBreak: i,
+        message: `Record timestamp non-monotonic at index ${i}: "${event.recordedAt}" < "${events[i - 1]!.recordedAt}"`,
+      };
+    }
+    previous = recorded;
   }
   return { valid: true, firstBreak: null, message: null };
 }

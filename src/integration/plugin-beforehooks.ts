@@ -219,13 +219,14 @@ async function enforceBeforeRules(
       freshState,
       toolName,
     );
-    await recordMutationDispatch(runtime, hostResolution.sessDir, callId, toolName);
+    await recordMutationDispatch(runtime, hostResolution.sessDir, sessionId, callId, toolName);
   }
 }
 
 async function recordMutationDispatch(
   runtime: FlowGuardPluginRuntime,
   sessDir: string,
+  sessionId: string,
   callId: string,
   toolName: string,
 ): Promise<void> {
@@ -243,11 +244,15 @@ async function recordMutationDispatch(
         'FlowGuard session state disappeared before mutation dispatch authorization.',
       );
     }
+    // The earlier phase check runs before reconciliation and risk gates. Check
+    // again under the dispatch lock so a concurrent phase transition cannot
+    // authorize a host mutation after IMPLEMENTATION has ended.
+    enforceHostToolPhase(runtime, toolName, sessionId, state);
     // Fenced dispatch: a host mutation may only be authorized under the
     // calling instance's live runtime lease. A live foreign lease blocks the
     // dispatch — two runtimes must never govern one session concurrently.
-    const leaseAcquisition = await acquireRuntimeLease({
-      sessDir,
+    const leaseAcquisition = acquireRuntimeLease({
+      current: state.runtimeLease,
       runtimeInstanceId: getRuntimeInstanceId(),
       pid: process.pid,
       now: new Date().toISOString(),
@@ -281,8 +286,11 @@ async function recordMutationDispatch(
         { hostCallId: callId, toolName, existingEpisodeId: result.existing.episodeId },
       );
     }
+    // One atomic write: the fencing generation and the episode that binds it
+    // become durable together or not at all.
     await writeStateWithAuditOperationsAlreadyLocked(sessDir, {
       ...state,
+      runtimeLease: leaseAcquisition.lease,
       mutationEpisodes: result.episodes,
     });
   });

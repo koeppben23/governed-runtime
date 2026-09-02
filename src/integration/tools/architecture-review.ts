@@ -581,13 +581,13 @@ async function persistAndFormatNonConvergedReview(
   const targetPaths = [...new Set([...(priorTargetPaths ?? []), ...(args.targetPaths ?? [])])];
   const classification = await resolvePreImplementationChallengeClassification(
     advanced.state,
-    session.wsDir,
+    session.worktree,
     review.subagentEnabled,
     targetPaths,
   );
   const resolvedTargetPaths =
     classification.kind === 'available' ? [...classification.changedFiles] : undefined;
-  const freeze = await freezeContextAuthorityAtHead(session.wsDir);
+  const freeze = await freezeContextAuthorityAtHead(session.worktree);
   const nextObligation = createNextArchitectureReviewObligation({
     state: advanced.state,
     session,

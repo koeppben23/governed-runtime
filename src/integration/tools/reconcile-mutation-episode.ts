@@ -52,7 +52,11 @@ export const reconcile_mutation_episode: ToolDefinition = {
         if (!episode) {
           return formatBlocked('MUTATION_EPISODE_NOT_FOUND', { hostCallId: args.hostCallId });
         }
-        if (episode.status === 'completed') {
+        // An observed outcome (success or failure) is not reconcilable — only
+        // an unobservable one is. A `completed` episode whose outcome is
+        // `unknown` carries no normative host signal and is therefore just as
+        // unobservable as a dispatch whose After-hook never ran.
+        if (episode.status === 'completed' && episode.outcome !== 'unknown') {
           return formatBlocked('MUTATION_EPISODE_ALREADY_COMPLETED', {
             hostCallId: args.hostCallId,
             outcome: episode.outcome ?? 'unknown',
@@ -66,8 +70,8 @@ export const reconcile_mutation_episode: ToolDefinition = {
         // Recovery Authority boundary: the resolving instance must hold the
         // session lease. A live foreign lease cannot be superseded; a dead or
         // stale holder yields a LATER generation — the fencing token.
-        const leaseAcquisition = await acquireRuntimeLease({
-          sessDir,
+        const leaseAcquisition = acquireRuntimeLease({
+          current: state.runtimeLease,
           runtimeInstanceId: getRuntimeInstanceId(),
           pid: process.pid,
           now: new Date().toISOString(),
@@ -88,6 +92,9 @@ export const reconcile_mutation_episode: ToolDefinition = {
         }
         const nextState: SessionState = {
           ...state,
+          // The lease that authorized this resolution becomes durable in the
+          // same write as the resolution itself.
+          runtimeLease: leaseAcquisition.lease,
           mutationEpisodeResolutions: resolveUnknownMutationOutcome(
             state.mutationEpisodeResolutions,
             {

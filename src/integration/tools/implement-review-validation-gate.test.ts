@@ -13,12 +13,23 @@ import type { ValidationAttempt } from '../../state/evidence-validation.js';
 
 const CURRENT_DIGEST = IMPL_EVIDENCE.digest;
 
-function attempt(checkId: string, passed: boolean, digest = CURRENT_DIGEST): ValidationAttempt {
+function attempt(
+  checkId: string,
+  passed: boolean,
+  digest = CURRENT_DIGEST,
+  executedAt?: string,
+): ValidationAttempt {
+  const base = VALIDATION_PASSED[checkId === 'test' ? 0 : 1]!;
   return {
     attemptId: `00000000-0000-4000-8000-0000000000${checkId === 'test' ? '01' : '02'}`,
     scope: 'implementation',
     implementationDigest: digest,
-    result: { ...VALIDATION_PASSED[checkId === 'test' ? 0 : 1]!, checkId, passed },
+    result: {
+      ...base,
+      checkId,
+      passed,
+      ...(executedAt ? { executedAt } : {}),
+    },
   } as ValidationAttempt;
 }
 
@@ -32,6 +43,60 @@ describe('implValidationEvidenceGate', () => {
     const state = makeState('IMPL_REVIEW', {
       implementation: IMPL_EVIDENCE,
       validationAttempts: [attempt('test', true), attempt('lint', true)],
+    });
+    expect(implValidationEvidenceGate(state)).toBeNull();
+  });
+
+  it('ignores check results produced before an unknown-outcome resolution (A4)', () => {
+    // The resolution declares ALL prior evidence unreliable and the reconcile
+    // tool tells the agent to re-run the checks. Because attempts are bound to
+    // the implementation digest alone, re-recording an identical worktree
+    // reproduces the same digest and used to revive the pre-resolution results.
+    const resolvedAt = '2026-02-01T12:00:00.000Z';
+    const before = '2026-02-01T11:00:00.000Z';
+    const state = makeState('IMPL_REVIEW', {
+      implementation: IMPL_EVIDENCE,
+      validationAttempts: [
+        attempt('test', true, CURRENT_DIGEST, before),
+        attempt('lint', true, CURRENT_DIGEST, before),
+      ],
+      mutationEpisodeResolutions: [
+        {
+          resolutionId: '00000000-0000-4000-8000-0000000000aa',
+          hostCallId: 'call-1',
+          status: 'reconciled_after_unknown_outcome',
+          basis: 'worktree_recapture',
+          resolvedAt,
+          resolvingRuntimeInstanceId: '00000000-0000-4000-8000-0000000000bb',
+          resolvingLeaseGeneration: 2,
+        },
+      ],
+    });
+    const result = implValidationEvidenceGate(state);
+    expect(result).not.toBeNull();
+    expect(parseCode(result!)).toBe('IMPL_VALIDATION_EVIDENCE_REQUIRED');
+  });
+
+  it('accepts check results produced after an unknown-outcome resolution (A4)', () => {
+    const resolvedAt = '2026-02-01T12:00:00.000Z';
+    const after = '2026-02-01T13:00:00.000Z';
+    const state = makeState('IMPL_REVIEW', {
+      implementation: IMPL_EVIDENCE,
+      validationAttempts: [
+        attempt('test', true, CURRENT_DIGEST, after),
+        attempt('lint', true, CURRENT_DIGEST, after),
+      ],
+      mutationEpisodeResolutions: [
+        {
+          resolutionId: '00000000-0000-4000-8000-0000000000aa',
+          hostCallId: 'call-1',
+          status: 'reconciled_after_unknown_outcome',
+          basis: 'worktree_recapture',
+          resolvedAt,
+          resolvingRuntimeInstanceId: '00000000-0000-4000-8000-0000000000bb',
+          resolvingLeaseGeneration: 2,
+        },
+      ],
     });
     expect(implValidationEvidenceGate(state)).toBeNull();
   });

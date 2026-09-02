@@ -28,7 +28,10 @@ describe('hydrate rail', () => {
         expect(result.state.phase).toBe('READY');
         expect(result.state.binding.hostSessionId).toBe(FIXED_SESSION_UUID);
         expect(result.state.binding.worktree).toBe('/tmp/test');
-        expect(result.state.schemaVersion).toBe('v2');
+        expect(result.state.schemaVersion).toBe('v3');
+        // No runtime instance governs the session until the first host
+        // mutation dispatch acquires the fencing lease.
+        expect(result.state.runtimeLease).toBeNull();
         expect(result.transitions.length).toBe(0);
         // Discovery fields initialize as null in new sessions
         expect(result.state.discoveryDigest).toBeNull();

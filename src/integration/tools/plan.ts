@@ -238,7 +238,7 @@ async function createPlanReviewAttempt(
   | { kind: 'blocked'; message: string }
 > {
   if (!scope.reviewPolicy.subagentEnabled) return { kind: 'ok', attemptResult: null };
-  const freeze = await freezeContextAuthorityAtHead(scope.wsDir);
+  const freeze = await freezeContextAuthorityAtHead(scope.worktree);
   const authority = frozenAuthorityOrUndefined(freeze);
   // Repository-governed attempts are minted WITH their host-owned Discovery
   // snapshot (persistence coherence); a structural projection failure blocks
@@ -533,7 +533,7 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
   const reviewFindings = scope.args.reviewFindings ?? null;
   const classification = await resolvePreImplementationChallengeClassification(
     scope.state,
-    scope.wsDir,
+    scope.worktree,
     scope.reviewPolicy.subagentEnabled,
     scope.args.targetPaths,
   );

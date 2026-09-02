@@ -340,6 +340,7 @@ describe('implement: empty evidence guard (P8a.1)', () => {
         ],
       },
       mutationEpisodes: [],
+      mutationEpisodeResolutions: [],
     };
     mocks.isCommandAllowed.mockReturnValue(true);
     mocks.changedFilesResult = [];

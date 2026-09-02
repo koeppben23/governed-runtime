@@ -42,7 +42,6 @@ import {
   hasUnboundMutationEpisodes,
 } from '../state/evidence-mutation-episode.js';
 import { resetRuntimeInstanceIdForTest } from './runtime-instance.js';
-import { RUNTIME_LEASE_FILE } from './runtime-lease.js';
 import { recordUserDecisionIntent } from './user-decision-intent.js';
 import { computeGitControlPlaneMarker } from './git-control-plane.js';
 
@@ -61,11 +60,12 @@ vi.mock('../adapters/git.js', async (importOriginal) => {
 
 /** Simulate the death of the lease holder (a real dead process fails PID liveness). */
 async function killLeaseHolder(sessDir: string): Promise<void> {
-  const lease = JSON.parse(
-    await fs.readFile(path.join(sessDir, RUNTIME_LEASE_FILE), 'utf-8'),
-  ) as Record<string, unknown>;
-  lease.holderPid = 999999;
-  await fs.writeFile(path.join(sessDir, RUNTIME_LEASE_FILE), JSON.stringify(lease), 'utf-8');
+  const state = await readState(sessDir);
+  if (!state?.runtimeLease) throw new Error('no runtime lease recorded in session state');
+  await writeState(sessDir, {
+    ...state,
+    runtimeLease: { ...state.runtimeLease, holderPid: 999999 },
+  });
 }
 
 function createMockInput(overrides: Record<string, unknown> = {}) {
@@ -82,6 +82,33 @@ function createMockInput(overrides: Record<string, unknown> = {}) {
     serverUrl: new URL('http://localhost:3000'),
     ...overrides,
   } as Parameters<typeof FlowGuardAuditPlugin>[0];
+}
+
+async function recordMutationOutcome(
+  tool: 'bash' | 'write' | 'edit' | 'apply_patch',
+  metadata: Record<string, unknown>,
+  output: string,
+): Promise<'success' | 'failure' | 'unknown' | null> {
+  const ws = await createTestWorkspace();
+  try {
+    const sessionID = crypto.randomUUID();
+    const fp = await computeFingerprint(ws.tmpDir);
+    const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+    await fs.mkdir(sessDir, { recursive: true });
+    await writeStateWithArtifacts(sessDir, makeProgressedState('IMPLEMENTATION'));
+    const hooks = await FlowGuardAuditPlugin(
+      createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+    );
+    const callID = crypto.randomUUID();
+    await hooks['tool.execute.before']!({ tool, sessionID, callID }, { args: {} });
+    await hooks['tool.execute.after']!(
+      { tool, sessionID, callID, args: {} },
+      { title: tool, output, metadata },
+    );
+    return (await readState(sessDir))!.mutationEpisodes[0]?.outcome ?? null;
+  } finally {
+    await ws.cleanup();
+  }
 }
 
 describe('mutation episode end-to-end (real plugin runtime)', () => {
@@ -132,7 +159,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       // The After-hook completes the episode with the observed outcome.
       await afterHook(
         { tool: 'bash', sessionID, callID, args: { command: 'echo host-mutation' } },
-        { title: 'bash', output: '{}', metadata: { success: true } },
+        { title: 'bash', output: 'host-mutation', metadata: { exit: 0 } },
       );
       const completed = await readState(sessDir);
       expect(
@@ -141,6 +168,146 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         status: 'completed',
         outcome: 'success',
       });
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('recognizes the real apply_patch success payload', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessionID = crypto.randomUUID();
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+      await fs.mkdir(sessDir, { recursive: true });
+      await writeStateWithArtifacts(sessDir, makeProgressedState('IMPLEMENTATION'));
+
+      const hooks = await FlowGuardAuditPlugin(
+        createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+      );
+      const beforeHook = hooks['tool.execute.before']!;
+      const afterHook = hooks['tool.execute.after']!;
+      const callID = crypto.randomUUID();
+
+      await beforeHook(
+        { tool: 'apply_patch', sessionID, callID },
+        { args: { patchText: '*** Begin Patch\n*** End Patch' } },
+      );
+      await afterHook(
+        {
+          tool: 'apply_patch',
+          sessionID,
+          callID,
+          args: { patchText: '*** Begin Patch\n*** End Patch' },
+        },
+        {
+          title: 'Success. Updated the following files:\nM example.ts',
+          output: 'Success. Updated the following files:\nM example.ts',
+          metadata: { files: [{ filePath: '/repo/example.ts', relativePath: 'example.ts' }] },
+        },
+      );
+
+      expect(
+        (await readState(sessDir))!.mutationEpisodes.find(
+          (episode) => episode.hostCallId === callID,
+        ),
+      ).toMatchObject({ status: 'completed', outcome: 'success' });
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('recognizes the exact OpenCode success contracts for every canonical mutator', async () => {
+    const cases = [
+      ['bash', { exit: 0 }, 'command output'],
+      [
+        'apply_patch',
+        { files: [], diff: '', diagnostics: [] },
+        'Success. Updated the following files:',
+      ],
+      [
+        'write',
+        { filepath: '/repo/example.ts', exists: false, diagnostics: {} },
+        'Wrote file successfully.',
+      ],
+      [
+        'edit',
+        {
+          diff: '--- a/example.ts',
+          filediff: {
+            file: '/repo/example.ts',
+            patch: '@@ -1 +1 @@',
+            additions: 1,
+            deletions: 1,
+          },
+          diagnostics: {},
+        },
+        'Edit applied successfully.',
+      ],
+    ] as const;
+
+    for (const [tool, metadata, output] of cases) {
+      await expect(recordMutationOutcome(tool, metadata, output)).resolves.toBe('success');
+    }
+  });
+
+  it('keeps incomplete canonical-mutator payloads unknown', async () => {
+    const cases = [
+      ['bash', 'command output'],
+      ['apply_patch', 'Success. Updated the following files:'],
+      ['write', 'Wrote file successfully.'],
+      ['edit', 'Edit applied successfully.'],
+    ] as const;
+
+    for (const [tool, output] of cases) {
+      await expect(recordMutationOutcome(tool, {}, output)).resolves.toBe('unknown');
+    }
+  });
+
+  it('keeps malformed write and edit success metadata unknown', async () => {
+    await expect(
+      recordMutationOutcome(
+        'write',
+        { filepath: '/repo/example.ts', exists: false, diagnostics: [] },
+        'Wrote file successfully.',
+      ),
+    ).resolves.toBe('unknown');
+    await expect(
+      recordMutationOutcome(
+        'edit',
+        { diff: '--- a/example.ts', filediff: 'example.ts', diagnostics: {} },
+        'Edit applied successfully.',
+      ),
+    ).resolves.toBe('unknown');
+  });
+
+  it('does not complete an episode from a different mutating tool', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessionID = crypto.randomUUID();
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+      await fs.mkdir(sessDir, { recursive: true });
+      await writeStateWithArtifacts(sessDir, makeProgressedState('IMPLEMENTATION'));
+
+      const hooks = await FlowGuardAuditPlugin(
+        createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+      );
+      const beforeHook = hooks['tool.execute.before']!;
+      const afterHook = hooks['tool.execute.after']!;
+      const callID = crypto.randomUUID();
+
+      await beforeHook({ tool: 'bash', sessionID, callID }, { args: { command: 'echo governed' } });
+      await afterHook(
+        { tool: 'apply_patch', sessionID, callID, args: { patchText: '*** Begin Patch' } },
+        { title: 'Success', output: 'Success', metadata: { files: [] } },
+      );
+
+      expect(
+        (await readState(sessDir))!.mutationEpisodes.find(
+          (episode) => episode.hostCallId === callID,
+        ),
+      ).toMatchObject({ status: 'dispatch_authorized', outcome: null });
     } finally {
       await ws.cleanup();
     }
@@ -232,7 +399,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       );
       await afterHook(
         { tool: 'bash', sessionID, callID, args: { command: 'git config' } },
-        { title: 'bash', output: '{}', metadata: { success: true } },
+        { title: 'bash', output: 'git config', metadata: { exit: 0 } },
       );
 
       // Recording must fail closed: the control-plane mutation cannot be part
@@ -306,6 +473,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
       );
       const beforeHook = hooks['tool.execute.before']!;
+      const afterHook = hooks['tool.execute.after']!;
 
       const crashedCallID = crypto.randomUUID();
       await beforeHook(
@@ -370,6 +538,18 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       // resolution makes it non-blocking.
       expect(
         resolved!.mutationEpisodes.find((episode) => episode.hostCallId === crashedCallID)?.status,
+      ).toBe('dispatch_authorized');
+
+      // Delayed host delivery is historical after fenced recovery. It cannot
+      // rewrite the episode and invalidate the append-only resolution.
+      await afterHook(
+        { tool: 'apply_patch', sessionID, callID: crashedCallID, args: { patch: 'x' } },
+        { title: 'Success', output: 'Success', metadata: { files: [] } },
+      );
+      expect(
+        (await readState(sessDir))!.mutationEpisodes.find(
+          (episode) => episode.hostCallId === crashedCallID,
+        )?.status,
       ).toBe('dispatch_authorized');
       expect(
         hasUnresolvedMutationEpisodes(

@@ -318,6 +318,9 @@ function buildNewHydrateState(
     stateDigestFormat: CURRENT_STATE_DIGEST_FORMAT,
     auditChainFormat: CURRENT_AUDIT_CHAIN_FORMAT,
     phase: 'READY',
+    // No runtime instance governs the session until the first host mutation
+    // dispatch acquires the fencing lease.
+    runtimeLease: null,
     implementationRework: null,
     implementationReviewExtensions: [],
     ...(s.claimedTaskClass ? { claimedTaskClass: s.claimedTaskClass } : {}),

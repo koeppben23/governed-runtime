@@ -40,6 +40,8 @@ import {
 } from './evidence.js';
 import { MutationEpisode, MutationEpisodeResolution } from './evidence-mutation-episode.js';
 import { enforceMutationEpisodeInvariants } from './evidence-mutation-episode.js';
+import { RuntimeLease } from './runtime-lease.js';
+import { DiscoveryHealthGate } from './discovery-schemas.js';
 import {
   DiscoverySummarySchema,
   DetectedStackSchema,
@@ -55,7 +57,7 @@ import {
 
 /** Immutable compatibility contract for executable session authority. */
 export const CURRENT_ASSURANCE_EPOCH = 'assurance-epoch.v2' as const;
-export const CURRENT_SESSION_STATE_SCHEMA_VERSION = 'v2' as const;
+export const CURRENT_SESSION_STATE_SCHEMA_VERSION = 'v3' as const;
 export const CURRENT_STATE_DIGEST_FORMAT = 'state-digest.v2' as const;
 export const CURRENT_AUDIT_CHAIN_FORMAT = 'audit-chain.v3' as const;
 
@@ -181,52 +183,15 @@ export const RiskGate = z.discriminatedUnion('status', [
 export type RiskGate = z.infer<typeof RiskGate>;
 
 /**
- * Cached drift verdict (#399). Drift is assessed only at /hydrate to bound cost;
- * per-tool enforcement reads this cached value rather than re-running drift.
- * Any non-'clean' value is fail-closed-eligible under onDrift policy.
+ * Discovery health gate vocabulary. Canonically owned by discovery-schemas.ts
+ * (discovery-derived data embedded in SessionState); re-exported here because
+ * SessionState is the surface consumers import it from.
  */
-export const DiscoveryDriftAssessment = z.enum([
-  'clean',
-  'drifted',
-  'missing_discovery',
-  'unavailable',
-  'timeout',
-  'not_checked',
-]);
-export type DiscoveryDriftAssessment = z.infer<typeof DiscoveryDriftAssessment>;
-
-/** Discovery health gate reason codes (#399). */
-export const DiscoveryHealthGateCode = z.enum([
-  'DISCOVERY_HEALTH_UNAVAILABLE',
-  'DISCOVERY_HEALTH_DEGRADED',
-  'DISCOVERY_DRIFT_BLOCKED',
-]);
-export type DiscoveryHealthGateCode = z.infer<typeof DiscoveryHealthGateCode>;
-
-/**
- * Persistent Discovery health gate (#399).
- *
- * Separates the gate DECISION (`status`) from cached drift EVIDENCE
- * (`lastDriftAssessment`); a blocked gate stops the next mutating tool.
- * The gate is cleared ONLY by reconcileDiscoveryHealthGate at /hydrate with
- * fresh healthy Discovery and bounded drift — never by /status or by a
- * subsequent unavailable re-read at the tool seam.
- */
-export const DiscoveryHealthGate = z.discriminatedUnion('status', [
-  z.object({
-    status: z.literal('clear'),
-    clearedAt: z.string().datetime().optional(),
-    lastDriftAssessment: DiscoveryDriftAssessment.optional(),
-  }),
-  z.object({
-    status: z.literal('blocked'),
-    code: DiscoveryHealthGateCode,
-    message: z.string().min(1),
-    blockedAt: z.string().datetime(),
-    lastDriftAssessment: DiscoveryDriftAssessment.optional(),
-  }),
-]);
-export type DiscoveryHealthGate = z.infer<typeof DiscoveryHealthGate>;
+export {
+  DiscoveryDriftAssessment,
+  DiscoveryHealthGateCode,
+  DiscoveryHealthGate,
+} from './discovery-schemas.js';
 
 // ─── Event ────────────────────────────────────────────────────────────────────
 
@@ -425,6 +390,14 @@ export const SessionState = z
 
     /** Append-only unknown-outcome resolution authority for host mutation episodes. */
     mutationEpisodeResolutions: z.array(MutationEpisodeResolution),
+
+    /**
+     * Fencing lease naming the single runtime instance governing this session.
+     * Held here, not in a file of its own, so the generation advances in the
+     * same atomic write as the episode that binds it. Null before any host
+     * mutation has been authorized.
+     */
+    runtimeLease: RuntimeLease.nullable(),
 
     /** Advisory challenge-resolution evidence; defaults for legacy sessions. */
     challengeResolutions: z.array(ChallengeResolution),

@@ -4,8 +4,7 @@ import { completeMutationEpisode } from '../state/evidence-mutation-episode.js';
 import type { ToolHookAfterInput, ToolHookAfterOutput } from './types.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import { writeStateWithAuditOperationsAlreadyLocked } from './tools/audit-outbox.js';
-
-const MUTATING_HOST_TOOLS = new Set(['bash', 'write', 'edit', 'apply_patch']);
+import { MUTATING_HOST_TOOLS } from './phase-tool-gate.js';
 
 export async function recordMutationCompletion(input: {
   readonly runtime: FlowGuardPluginRuntime;
@@ -20,14 +19,27 @@ export async function recordMutationCompletion(input: {
   if (!sessDir) return;
   await withSessionWriteLock(sessDir, async () => {
     const state = await readState(sessDir);
-    if (!state?.mutationEpisodes.some((episode) => episode.hostCallId === hookInput.callID)) return;
+    const episode = state?.mutationEpisodes.find(
+      (candidate) =>
+        candidate.hostCallId === hookInput.callID && candidate.toolName === hookInput.tool,
+    );
+    if (!state || !episode) return;
+    // A fenced recovery makes a prior host outcome permanently unobservable.
+    // Ignore a delayed After hook instead of invalidating the append-only resolution.
+    if (
+      state.mutationEpisodeResolutions.some(
+        (resolution) => resolution.hostCallId === episode.hostCallId,
+      )
+    )
+      return;
     await writeStateWithAuditOperationsAlreadyLocked(sessDir, {
       ...state,
       mutationEpisodes: completeMutationEpisode(
         state.mutationEpisodes,
         hookInput.callID,
+        hookInput.tool,
         now,
-        mutationOutcome(hookOutput),
+        mutationOutcome(hookInput.tool, hookOutput),
       ),
     });
   });
@@ -43,15 +55,65 @@ export async function recordMutationCompletion(input: {
  * bound by the reconciliation — a host call that failed may still have
  * mutated files, so binding never depends on this classification.
  */
-function mutationOutcome(hookOutput: ToolHookAfterOutput): 'success' | 'failure' | 'unknown' {
+function mutationOutcome(
+  toolName: string,
+  hookOutput: ToolHookAfterOutput,
+): 'success' | 'failure' | 'unknown' {
   if (hookOutput.metadata.error === true) return 'failure';
-  let parsed: Record<string, unknown> | null = null;
-  try {
-    parsed = JSON.parse(hookOutput.output) as Record<string, unknown>;
-  } catch {
-    parsed = null;
-  }
+  const bashOutcome = bashExitOutcome(toolName, hookOutput.metadata.exit);
+  if (bashOutcome) return bashOutcome;
+  const parsed = parseStructuredOutcome(hookOutput.output);
   if (parsed?.error === true) return 'failure';
   if (hookOutput.metadata.success === true || parsed?.success === true) return 'success';
+  if (toolName === 'apply_patch' && Array.isArray(hookOutput.metadata.files)) return 'success';
+  if (isWriteSuccess(toolName, hookOutput.metadata)) return 'success';
+  if (isEditSuccess(toolName, hookOutput.metadata)) return 'success';
   return 'unknown';
+}
+
+function bashExitOutcome(toolName: string, exit: unknown): 'success' | 'failure' | null {
+  if (toolName !== 'bash' || typeof exit !== 'number') return null;
+  return exit === 0 ? 'success' : 'failure';
+}
+
+/** OpenCode WriteTool success contract: filepath, prior existence, and diagnostics. */
+function isWriteSuccess(toolName: string, metadata: Record<string, unknown>): boolean {
+  return (
+    toolName === 'write' &&
+    typeof metadata.filepath === 'string' &&
+    typeof metadata.exists === 'boolean' &&
+    isRecord(metadata.diagnostics)
+  );
+}
+
+/** OpenCode EditTool success contract: both diffs and diagnostics are emitted. */
+function isEditSuccess(toolName: string, metadata: Record<string, unknown>): boolean {
+  return (
+    toolName === 'edit' &&
+    typeof metadata.diff === 'string' &&
+    isFileDiff(metadata.filediff) &&
+    isRecord(metadata.diagnostics)
+  );
+}
+
+function isFileDiff(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.file === 'string' &&
+    typeof value.patch === 'string' &&
+    typeof value.additions === 'number' &&
+    typeof value.deletions === 'number'
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseStructuredOutcome(output: string): Record<string, unknown> | null {
+  try {
+    return JSON.parse(output) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 }

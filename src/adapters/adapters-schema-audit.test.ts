@@ -422,23 +422,38 @@ describe('persistence', () => {
       expect(existsSync(lockPath)).toBe(false);
     });
 
-    it('re-throws raw error and preserves existing trail on atomic rename failure', async () => {
+    it('fails closed with a typed PersistenceError and preserves the existing trail on atomic rename failure', async () => {
       await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() }));
       vi.mocked(fs.rename).mockRejectedValueOnce(
         Object.assign(new Error('disk full'), { code: 'ENOSPC' }),
       );
       try {
-        try {
-          await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() }));
-        } catch (err) {
-          expect(err).not.toBeInstanceOf(PersistenceError);
-          expect(err).toBeInstanceOf(Error);
-          expect((err as NodeJS.ErrnoException).code).toBe('ENOSPC');
-        }
+        // The append routes through the canonical durable writer, so a raw
+        // errno never escapes the persistence boundary (AGENTS.md: typed
+        // errors with a `code` field at persistence boundaries).
+        await expect(
+          appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() })),
+        ).rejects.toMatchObject({ code: 'WRITE_FAILED' });
         const { events } = await readAuditTrail(tmpDir);
         expect(events).toHaveLength(1);
       } finally {
         restoreRename();
+      }
+    });
+
+    it('fsyncs the audit directory so a committed append survives a crash after the rename', async () => {
+      // Regression: the append previously hand-rolled temp+fsync+rename and
+      // omitted the parent-directory fsync that durableAtomicWrite performs.
+      // A crash after the rename then reverted audit.jsonl to its pre-append
+      // content while session-state.json was already durable — a governed
+      // transition with no audit record, and the surviving prefix stays
+      // chain-valid, so verifyChain cannot detect the loss.
+      const openSpy = vi.spyOn(fs, 'open');
+      try {
+        await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() }));
+        expect(openSpy).toHaveBeenCalledWith(tmpDir, 'r', 0o600);
+      } finally {
+        openSpy.mockRestore();
       }
     });
 
@@ -456,7 +471,7 @@ describe('persistence', () => {
         const { events, skipped } = await readAuditTrail(tmpDir);
         expect(skipped).toBe(0);
         expect(events).toHaveLength(2);
-        expect(verifyChain(events, { strict: true }).valid).toBe(true);
+        expect(verifyChain(events).valid).toBe(true);
       } finally {
         restoreRename();
       }
@@ -472,7 +487,7 @@ describe('persistence', () => {
       expect(events).toHaveLength(1);
       expect(events[0]!.prevHash).toBe('genesis');
       expect(events[0]!.chainHash).not.toBe(CHAIN_HASH_64);
-      expect(verifyChain(events, { strict: true }).valid).toBe(true);
+      expect(verifyChain(events).valid).toBe(true);
     });
 
     it('serializes concurrent chained audit appends without lost updates or chain forks', async () => {
@@ -486,7 +501,7 @@ describe('persistence', () => {
       expect(skipped).toBe(0);
       expect(events).toHaveLength(inputs.length);
       expect(new Set(events.map((event) => event.id)).size).toBe(inputs.length);
-      expect(verifyChain(events, { strict: true }).valid).toBe(true);
+      expect(verifyChain(events).valid).toBe(true);
       for (let i = 1; i < events.length; i++) {
         expect(events[i]!.prevHash).toBe(events[i - 1]!.chainHash);
       }
@@ -526,8 +541,8 @@ describe('persistence', () => {
       const { events, skipped } = await readAuditTrail(tmpDir);
       expect(skipped).toBe(0);
       expect(events).toHaveLength(inputs.length);
-      expect(verifyChain(events, { strict: true }).valid).toBe(true);
-      const tsResult = verifyChain(events, { strict: true, strictTimestamps: true });
+      expect(verifyChain(events).valid).toBe(true);
+      const tsResult = verifyChain(events, { strictTimestamps: true });
       expect(tsResult.valid).toBe(false);
       expect(tsResult.reason).toBe('TOKEN_VERIFICATION_REQUIRED');
       for (let i = 1; i < events.length; i++) {
@@ -576,7 +591,7 @@ describe('persistence', () => {
       await appendAuditEvent(tmpDir, withTsa as unknown as AuditEvent);
       const { events } = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(1);
-      const result = verifyChain(events, { strict: true, strictTimestamps: true });
+      const result = verifyChain(events, { strictTimestamps: true });
       expect(result.valid).toBe(false);
       expect(result.reason).toBe('TOKEN_VERIFICATION_REQUIRED');
     });

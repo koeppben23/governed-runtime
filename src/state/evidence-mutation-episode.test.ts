@@ -10,7 +10,7 @@ import {
   latestUnknownOutcomeResolvedAt,
   reconcileMutationEpisodes,
   resolveUnknownMutationOutcome,
-  type MutationEpisode,
+  MutationEpisode,
   type MutationEpisodeResolution,
 } from './evidence-mutation-episode.js';
 
@@ -64,7 +64,7 @@ describe('mutation episode evidence', () => {
     }
   });
 
-  it('binds completed success, failure, and unknown outcomes and stales historical evidence', () => {
+  it('binds observed outcomes but never an unobservable one', () => {
     const first = authorizeMutationEpisode([], {
       episodeId: ID,
       hostCallId: 'call-1',
@@ -83,8 +83,9 @@ describe('mutation episode evidence', () => {
     });
     const episodes = second.kind === 'authorized' ? second.episodes : [];
     const completed = completeMutationEpisode(
-      completeMutationEpisode(episodes, 'call-1', TIME, 'failure'),
+      completeMutationEpisode(episodes, 'call-1', 'edit', TIME, 'failure'),
       'call-2',
+      'bash',
       TIME,
       'unknown',
     );
@@ -97,18 +98,76 @@ describe('mutation episode evidence', () => {
           implementationDigest: 'implementation-1',
           evidenceStatus: 'eligible',
         }),
+        // An unobservable outcome carries no host signal to bind. It stays
+        // unbound and ineligible instead of being laundered into evidence
+        // that looks identical to a confirmed success.
         expect.objectContaining({
           status: 'completed',
           outcome: 'unknown',
-          implementationDigest: 'implementation-1',
-          evidenceStatus: 'eligible',
+          implementationDigest: null,
+          evidenceStatus: 'ineligible',
         }),
       ]),
     );
 
     const reconciled = reconcileMutationEpisodes(bound, [], 'implementation-2');
     expect(reconciled[0]?.evidenceStatus).toBe('stale');
-    expect(hasUnboundMutationEpisodes(bound)).toBe(false);
+    // The unknown-outcome episode keeps blocking until it is resolved.
+    expect(hasUnboundMutationEpisodes(bound)).toBe(true);
+  });
+
+  it('makes eligible evidence from an unobservable outcome unrepresentable (BAD)', () => {
+    // The defect this guards: a `completed` episode with outcome `unknown`
+    // bound to a digest and marked `eligible` is byte-for-byte
+    // indistinguishable from a confirmed success, so every downstream gate
+    // treats a missing host signal as proof of success. The schema rejects the
+    // shape itself, so no present or future write path can construct it.
+    const base = {
+      episodeId: '00000000-0000-4000-8000-000000000001',
+      hostCallId: 'call-1',
+      toolName: 'bash',
+      runtimeInstanceId: RUNTIME_A,
+      leaseGeneration: 17,
+      authorizedAt: TIME,
+      status: 'completed' as const,
+      completedAt: TIME,
+      outcome: 'unknown' as const,
+    };
+    expect(
+      MutationEpisode.safeParse({
+        ...base,
+        implementationDigest: 'implementation-1',
+        evidenceStatus: 'eligible',
+      }).success,
+    ).toBe(false);
+    expect(
+      MutationEpisode.safeParse({ ...base, implementationDigest: null, evidenceStatus: 'eligible' })
+        .success,
+    ).toBe(false);
+    expect(
+      MutationEpisode.safeParse({
+        ...base,
+        implementationDigest: 'implementation-1',
+        evidenceStatus: 'stale',
+      }).success,
+    ).toBe(false);
+    // The only admissible shape for an unobservable outcome.
+    expect(
+      MutationEpisode.safeParse({
+        ...base,
+        implementationDigest: null,
+        evidenceStatus: 'ineligible',
+      }).success,
+    ).toBe(true);
+    // An observed outcome is unaffected.
+    expect(
+      MutationEpisode.safeParse({
+        ...base,
+        outcome: 'success',
+        implementationDigest: 'implementation-1',
+        evidenceStatus: 'eligible',
+      }).success,
+    ).toBe(true);
   });
 
   it('resolved unknown-outcome episodes never bind and stay append-only', () => {
@@ -148,7 +207,7 @@ describe('mutation episode evidence', () => {
     expect(episodes[0]?.status).toBe('dispatch_authorized');
 
     // A resolved episode is never bound to implementation evidence.
-    const completed = completeMutationEpisode(episodes, 'call-1', TIME, 'unknown');
+    const completed = completeMutationEpisode(episodes, 'call-1', 'bash', TIME, 'unknown');
     const bound = reconcileMutationEpisodes(completed, resolutions, 'implementation-1');
     expect(bound[0]).toMatchObject({
       status: 'completed',
@@ -241,11 +300,44 @@ describe('enforceMutationEpisodeInvariants (schema boundary)', () => {
     expect(issues[0]).toContain('duplicate mutation episode hostCallId');
   });
 
-  it('rejects a resolution without a matching dispatch_authorized episode (BAD)', () => {
+  it('rejects a resolution without a matching episode (BAD)', () => {
     const resolution = resolutionFor('ghost-call', 18);
     const { ctx, issues } = makeContext();
     expect(enforceMutationEpisodeInvariants([], [resolution], ctx)).toBe(true);
-    expect(issues[0]).toContain('missing or completed episode');
+    expect(issues[0]).toContain('missing or already-observed episode');
+  });
+
+  it('accepts a resolution for a completed episode with an unobservable outcome (HAPPY)', () => {
+    // The After-hook ran but the host returned no normative signal. That is
+    // just as unobservable as a dispatch that never reported back, so it must
+    // have the same recovery path — otherwise the state would be terminal.
+    const episode = completeMutationEpisode(
+      [authorizedEpisode('call-1')],
+      'call-1',
+      'bash',
+      TIME,
+      'unknown',
+    );
+    const { ctx, issues } = makeContext();
+    expect(enforceMutationEpisodeInvariants(episode, [resolutionFor('call-1', 18)], ctx)).toBe(
+      false,
+    );
+    expect(issues).toEqual([]);
+  });
+
+  it('rejects a resolution for an episode whose outcome was actually observed (BAD)', () => {
+    const episode = completeMutationEpisode(
+      [authorizedEpisode('call-1')],
+      'call-1',
+      'bash',
+      TIME,
+      'success',
+    );
+    const { ctx, issues } = makeContext();
+    expect(enforceMutationEpisodeInvariants(episode, [resolutionFor('call-1', 18)], ctx)).toBe(
+      true,
+    );
+    expect(issues[0]).toContain('missing or already-observed episode');
   });
 
   it('rejects duplicate resolutions for one episode (BAD)', () => {
