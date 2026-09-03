@@ -101,7 +101,10 @@ export default defineConfig({
       'src/integration/plugin-risk.test.ts',
       'src/integration/plugin-task-evidence.test.ts',
       'src/integration/plugin-workspace.test.ts',
+      'src/integration/plugin-workspace-composition.test.ts',
       'src/integration/plugin-workspace-semantic-outbox.test.ts',
+      'src/integration/plugin-audit-session-authority.test.ts',
+      'src/architecture/__tests__/workspace-factory-parity.test.ts',
       // Added with the trust-boundary scope extension: these suites are the
       // covering tests for newly mutated authorities and must run, otherwise
       // those files would be mutated without any test able to kill a mutant.

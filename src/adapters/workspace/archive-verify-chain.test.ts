@@ -129,6 +129,29 @@ describe('addTimestampFindings', () => {
     ]);
   });
 
+  it('projects a fatal TSA evidence downgrade ahead of pending token verification', () => {
+    const findings: ArchiveFinding[] = [];
+
+    addTimestampFindings(
+      chainVerification({
+        reason: 'TSA_EVIDENCE_DOWNGRADED',
+        tokenVerificationRequired: [0],
+        tsaEvidenceDowngraded: [1],
+      }),
+      true,
+      findings,
+    );
+
+    expect(findings).toEqual([
+      {
+        code: 'tsa_evidence_downgraded',
+        severity: 'error',
+        message: 'Timestamp verification failed (TSA_EVIDENCE_DOWNGRADED): 3 total, 3 verified',
+        file: 'audit.jsonl',
+      },
+    ]);
+  });
+
   it('keeps deferred token verification out of append-only findings', () => {
     const findings: ArchiveFinding[] = [];
 

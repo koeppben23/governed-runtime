@@ -383,6 +383,69 @@ describe('audit integrity', () => {
       expect(result.tsaEvidenceDowngraded).toEqual([0]);
     });
 
+    it('prioritizes downgraded TSA evidence over a deferred external token verification', () => {
+      const first = buildNestedDecisionEvent(GENESIS_HASH);
+      const firstDigest = computeCanonicalEventDigest({ ...first });
+      const { chainHash: _firstChainHash, ...firstBody } = first;
+      const externalTokenBody: Omit<ChainedAuditEvent, 'chainHash'> = {
+        ...firstBody,
+        semanticEventDigest: firstDigest,
+        timestampEvidence: {
+          status: 'tsa_stamped',
+          source: 'tsa',
+          resolvedAt: TS1,
+          tsa: {
+            tokenDerBase64: 'external-token',
+            receivedAt: TS1,
+            messageImprint: firstDigest,
+            digestAlgorithm: 'sha256',
+            verificationStatus: 'unchecked',
+          },
+        },
+      };
+      const externalToken = {
+        ...externalTokenBody,
+        chainHash: computeChainHash(GENESIS_HASH, externalTokenBody),
+      };
+
+      const second = buildNestedDecisionEvent(externalToken.chainHash);
+      const { chainHash: _secondChainHash, ...secondBody } = second;
+      const secondWithSequence = {
+        ...secondBody,
+        auditSequence: 2,
+        occurredAt: TS2,
+        recordedAt: TS2,
+      };
+      const secondDigest = computeCanonicalEventDigest(secondWithSequence);
+      const downgradedBody: Omit<ChainedAuditEvent, 'chainHash'> = {
+        ...secondWithSequence,
+        semanticEventDigest: secondDigest,
+        timestampEvidence: {
+          status: 'local',
+          source: 'local_clock',
+          resolvedAt: TS2,
+          tsa: {
+            tokenDerBase64: '',
+            receivedAt: TS2,
+            messageImprint: secondDigest,
+            digestAlgorithm: 'sha256',
+            verificationStatus: 'unchecked',
+          },
+        },
+      };
+      const downgraded = {
+        ...downgradedBody,
+        chainHash: computeChainHash(externalToken.chainHash, downgradedBody),
+      };
+
+      const result = verifyChain([externalToken, downgraded], { strictTimestamps: true });
+
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('TSA_EVIDENCE_DOWNGRADED');
+      expect(result.tokenVerificationRequired).toEqual([0]);
+      expect(result.tsaEvidenceDowngraded).toEqual([1]);
+    });
+
     // ── Constant-time comparison tests for safeHashEqual ────────
 
     it('verifyEvent fails on equal-length prevHash mismatch', () => {
