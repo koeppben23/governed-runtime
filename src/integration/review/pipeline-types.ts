@@ -13,6 +13,7 @@ import type { OrchestratorClient } from './orchestrator.js';
 import { extractReviewContext } from './orchestrator.js';
 import type { SessionState } from '../../state/schema.js';
 import type { HostAdapter } from '../../adapters/host-adapter.js';
+import type { SemanticAuditIntent } from '../tools/audit-outbox.js';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -43,6 +44,7 @@ export interface OrchestratorDeps {
   updateReviewAssurance(
     sessDir: string,
     update: (state: SessionState, now: string) => SessionState,
+    semanticIntents?: (state: SessionState, now: string) => readonly SemanticAuditIntent[],
   ): Promise<void>;
   blockReviewOutcome(
     ctx: ReviewSessionContext,

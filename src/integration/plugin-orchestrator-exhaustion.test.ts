@@ -296,20 +296,18 @@ describe('BUG-07: obligation blocked after total invocation failure', () => {
       expect(obligation!.blockedCode).toBe('REVIEWER_INVOCATION_EXHAUSTED');
     });
 
-    it('audit event emitted for non-strict exhaustion', async () => {
-      await runExhaustion(false);
-
-      const auditCalls = vi.mocked(appendReviewAuditEvent).mock.calls;
-      const exhaustionEvents = auditCalls.filter(
-        (call) =>
-          call[3] === 'review:obligation_blocked' &&
-          (call[4] as Record<string, unknown>).code === 'REVIEWER_INVOCATION_EXHAUSTED',
-      );
-      expect(exhaustionEvents.length).toBe(1);
-      expect(exhaustionEvents[0]![4]).toEqual({
-        obligationId: OBLIGATION_ID,
-        code: 'REVIEWER_INVOCATION_EXHAUSTED',
-      });
+    it('commits a durable audit intent for non-strict exhaustion', async () => {
+      const { state, updateReviewAssurance } = await runExhaustion(false);
+      const intentFactory = updateReviewAssurance.mock.calls[1]![2] as (
+        state: SessionState,
+        now: string,
+      ) => readonly unknown[];
+      expect(intentFactory(state, NOW)).toEqual([
+        expect.objectContaining({
+          event: 'review:obligation_blocked',
+          detail: { obligationId: OBLIGATION_ID, code: 'REVIEWER_INVOCATION_EXHAUSTED' },
+        }),
+      ]);
     });
 
     it('strict mode still calls blockReviewOutcome (regression guard)', async () => {
@@ -403,29 +401,14 @@ describe('BUG-07: obligation blocked after total invocation failure', () => {
       expect(obligation!.blockedCode).toBe('REVIEWER_INVOCATION_EXHAUSTED');
     });
 
-    it('multiple sequential failures create distinct audit events', async () => {
+    it('multiple sequential failures create distinct durable audit intents', async () => {
       // First failure
-      await runExhaustion(false);
-      const firstCallCount = vi
-        .mocked(appendReviewAuditEvent)
-        .mock.calls.filter(
-          (call) =>
-            call[3] === 'review:obligation_blocked' &&
-            (call[4] as Record<string, unknown>).code === 'REVIEWER_INVOCATION_EXHAUSTED',
-        ).length;
-      expect(firstCallCount).toBe(1);
+      const first = await runExhaustion(false);
+      expect(first.updateReviewAssurance.mock.calls[1]![2]).toBeDefined();
 
       // Second failure (fresh run)
-      vi.mocked(appendReviewAuditEvent).mockClear();
-      await runExhaustion(false);
-      const secondCallCount = vi
-        .mocked(appendReviewAuditEvent)
-        .mock.calls.filter(
-          (call) =>
-            call[3] === 'review:obligation_blocked' &&
-            (call[4] as Record<string, unknown>).code === 'REVIEWER_INVOCATION_EXHAUSTED',
-        ).length;
-      expect(secondCallCount).toBe(1);
+      const second = await runExhaustion(false);
+      expect(second.updateReviewAssurance.mock.calls[1]![2]).toBeDefined();
     });
   });
 

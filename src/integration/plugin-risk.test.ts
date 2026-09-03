@@ -557,7 +557,7 @@ describe('persistRiskDecisionBlock', () => {
   };
 
   describe('GOOD', () => {
-    it('persists state with riskGate blocked and appends audit', async () => {
+    it('commits the risk audit intent with the blocked state', async () => {
       await persistRiskDecisionBlock('/tmp/sess', state, decision, 'RISK_X', 'reason text');
 
       expect(mockWriteState).toHaveBeenCalledTimes(1);
@@ -570,8 +570,16 @@ describe('persistRiskDecisionBlock', () => {
         lastDecisionId: 'd-1',
       });
 
-      expect(mockAppendReviewAuditEvent).toHaveBeenCalledTimes(1);
-      expect(mockAppendReviewAuditEvent.mock.calls[0]![0]).toBe('/tmp/sess');
+      expect(mockAppendReviewAuditEvent).not.toHaveBeenCalled();
+      expect(
+        writtenState.pendingAuditOperations.find((item) => item.kind === 'semantic'),
+      ).toMatchObject({
+        kind: 'semantic',
+        semantic: {
+          event: 'risk:classification_checked',
+          detail: expect.objectContaining({ decisionId: 'd-1', decision: 'blocked' }),
+        },
+      });
     });
   });
 

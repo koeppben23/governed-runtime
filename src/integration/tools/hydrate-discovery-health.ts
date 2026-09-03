@@ -5,13 +5,19 @@ import type { DiscoveryDriftAssessment } from '../../state/schema.js';
 import { loadDiscoveryHealthContext } from '../../discovery/discovery-health.js';
 import { buildDiscoveryDriftStatus } from '../discovery-drift-status.js';
 import { reconcileDiscoveryHealthGate } from '../discovery-health-gate.js';
-import { auditDiscoveryHealthGateTransition } from '../discovery-health-audit.js';
+import { buildDiscoveryHealthGateTransitionDetail } from '../discovery-health-audit.js';
+import type { SemanticAuditIntent } from './audit-outbox.js';
 export interface ReconcileGateContext {
   readonly sessDir: string;
   readonly workspaceDir: string;
   readonly worktree: string;
   readonly fingerprint: string;
   readonly now: string;
+}
+
+export interface ReconciledDiscoveryHealthGate {
+  readonly result: RailResult;
+  readonly semanticIntents: readonly SemanticAuditIntent[];
 }
 
 /**
@@ -31,8 +37,8 @@ export interface ReconcileGateContext {
 export async function reconcileHydrateDiscoveryHealthGate(
   result: RailResult,
   ctx: ReconcileGateContext,
-): Promise<RailResult> {
-  if (result.kind !== 'ok') return result;
+): Promise<ReconciledDiscoveryHealthGate> {
+  if (result.kind !== 'ok') return { result, semanticIntents: [] };
 
   const previousGate = result.state.discoveryHealthGate;
   const policy = result.state.policySnapshot.discoveryHealth;
@@ -56,13 +62,22 @@ export async function reconcileHydrateDiscoveryHealthGate(
   });
 
   const nextState = { ...result.state, discoveryHealthGate };
-  // Audit block/clear transitions (no-op when status is unchanged).
-  await auditDiscoveryHealthGateTransition(
-    ctx.sessDir,
+  const detail = buildDiscoveryHealthGateTransitionDetail(
     nextState,
     previousGate,
     discoveryHealthGate,
   );
-
-  return { ...result, state: nextState };
+  return {
+    result: { ...result, state: nextState },
+    semanticIntents: detail
+      ? [
+          {
+            phase: nextState.phase,
+            event: 'discovery_health:gate_changed',
+            occurredAt: ctx.now,
+            detail,
+          },
+        ]
+      : [],
+  };
 }

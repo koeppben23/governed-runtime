@@ -10,10 +10,9 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockLoadContext, mockBuildDrift, mockAudit } = vi.hoisted(() => ({
+const { mockLoadContext, mockBuildDrift } = vi.hoisted(() => ({
   mockLoadContext: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
   mockBuildDrift: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
-  mockAudit: vi.fn<(...args: unknown[]) => Promise<void>>(),
 }));
 
 vi.mock('../../discovery/discovery-health.js', async () => {
@@ -25,10 +24,6 @@ vi.mock('../../discovery/discovery-health.js', async () => {
 
 vi.mock('../discovery-drift-status.js', () => ({
   buildDiscoveryDriftStatus: mockBuildDrift,
-}));
-
-vi.mock('../discovery-health-audit.js', () => ({
-  auditDiscoveryHealthGateTransition: mockAudit,
 }));
 
 import { reconcileHydrateDiscoveryHealthGate } from './hydrate-discovery-health.js';
@@ -76,14 +71,14 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockLoadContext.mockResolvedValue({ discoveryHealth: healthyProjection() });
   mockBuildDrift.mockResolvedValue({ status: 'clean' });
-  mockAudit.mockResolvedValue(undefined);
 });
 
 describe('reconcileHydrateDiscoveryHealthGate', () => {
   it('passes blocked rail results through unchanged (no IO)', async () => {
     const blocked: RailResult = { kind: 'blocked', code: 'X', reason: 'nope' };
     const out = await reconcileHydrateDiscoveryHealthGate(blocked, ctx);
-    expect(out).toBe(blocked);
+    expect(out.result).toBe(blocked);
+    expect(out.semanticIntents).toEqual([]);
     expect(mockLoadContext).not.toHaveBeenCalled();
     expect(mockBuildDrift).not.toHaveBeenCalled();
   });
@@ -92,16 +87,17 @@ describe('reconcileHydrateDiscoveryHealthGate', () => {
     const result = okResult({ enforcement: 'off', onDegraded: 'allow', onDrift: 'allow' });
     const out = await reconcileHydrateDiscoveryHealthGate(result, ctx);
     expect(mockBuildDrift).not.toHaveBeenCalled();
-    if (out.kind === 'ok') expect(out.state.discoveryHealthGate?.status).toBe('clear');
+    if (out.result.kind === 'ok')
+      expect(out.result.state.discoveryHealthGate?.status).toBe('clear');
   });
 
   it('runs the drift check and clears the gate when required + healthy + clean', async () => {
     const result = okResult({ enforcement: 'required', onDegraded: 'warn', onDrift: 'block' });
     const out = await reconcileHydrateDiscoveryHealthGate(result, ctx);
     expect(mockBuildDrift).toHaveBeenCalledTimes(1);
-    if (out.kind === 'ok') {
-      expect(out.state.discoveryHealthGate?.status).toBe('clear');
-      expect(out.state.discoveryHealthGate?.lastDriftAssessment).toBe('clean');
+    if (out.result.kind === 'ok') {
+      expect(out.result.state.discoveryHealthGate?.status).toBe('clear');
+      expect(out.result.state.discoveryHealthGate?.lastDriftAssessment).toBe('clean');
     }
   });
 
@@ -110,9 +106,9 @@ describe('reconcileHydrateDiscoveryHealthGate', () => {
     mockBuildDrift.mockResolvedValue({ status: 'unavailable' });
     const result = okResult({ enforcement: 'required', onDegraded: 'warn', onDrift: 'block' });
     const out = await reconcileHydrateDiscoveryHealthGate(result, ctx);
-    expect(out.kind).toBe('ok');
-    if (out.kind === 'ok') {
-      expect(out.state.discoveryHealthGate?.status).toBe('blocked');
+    expect(out.result.kind).toBe('ok');
+    if (out.result.kind === 'ok') {
+      expect(out.result.state.discoveryHealthGate?.status).toBe('blocked');
     }
   });
 
@@ -120,13 +116,13 @@ describe('reconcileHydrateDiscoveryHealthGate', () => {
     mockBuildDrift.mockResolvedValue({ status: 'drifted' });
     const result = okResult({ enforcement: 'required', onDegraded: 'warn', onDrift: 'block' });
     const out = await reconcileHydrateDiscoveryHealthGate(result, ctx);
-    if (out.kind === 'ok') {
-      expect(out.state.discoveryHealthGate?.status).toBe('blocked');
-      expect(out.state.discoveryHealthGate?.lastDriftAssessment).toBe('drifted');
+    if (out.result.kind === 'ok') {
+      expect(out.result.state.discoveryHealthGate?.status).toBe('blocked');
+      expect(out.result.state.discoveryHealthGate?.lastDriftAssessment).toBe('drifted');
     }
   });
 
-  it('emits a transition audit with the persisted previous gate and computed next gate', async () => {
+  it('returns an audit intent with the persisted previous gate and computed next gate', async () => {
     const previous: SessionState['discoveryHealthGate'] = {
       status: 'blocked',
       code: 'DISCOVERY_HEALTH_UNAVAILABLE',
@@ -138,13 +134,12 @@ describe('reconcileHydrateDiscoveryHealthGate', () => {
       { discoveryHealthGate: previous },
     );
     const out = await reconcileHydrateDiscoveryHealthGate(result, ctx);
-    expect(mockAudit).toHaveBeenCalledTimes(1);
-    const [sessDir, auditedState, prevArg, nextArg] = mockAudit.mock.calls[0]!;
-    expect(sessDir).toBe('/tmp/sess');
-    expect(prevArg).toEqual(previous);
-    expect((nextArg as { status: string }).status).toBe('clear');
-    // The audited state must carry the freshly computed gate (not the stale one).
-    expect((auditedState as SessionState).discoveryHealthGate?.status).toBe('clear');
-    if (out.kind === 'ok') expect(out.state.discoveryHealthGate?.status).toBe('clear');
+    expect(out.semanticIntents).toHaveLength(1);
+    expect(out.semanticIntents[0]).toMatchObject({
+      event: 'discovery_health:gate_changed',
+      detail: { previousGateStatus: 'blocked', decision: 'cleared' },
+    });
+    if (out.result.kind === 'ok')
+      expect(out.result.state.discoveryHealthGate?.status).toBe('clear');
   });
 });

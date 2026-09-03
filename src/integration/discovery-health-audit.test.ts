@@ -4,22 +4,12 @@
  *
  * For a HIGH-RISK fail-closed gate, both blocking AND recovery must be auditable.
  * These tests assert the no-op contract (no audit on `none` transitions) and the
- * deterministic detail shape emitted for block and clear (recovery) transitions.
- * The underlying `appendReviewAuditEvent` IO is mocked so the detail payload can
- * be asserted directly.
+ * deterministic detail shape for block and clear (recovery) transitions.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
-const { mockAppend } = vi.hoisted(() => ({
-  mockAppend: vi.fn<(...args: unknown[]) => Promise<void>>(),
-}));
-
-vi.mock('./review/audit-events.js', () => ({
-  appendReviewAuditEvent: mockAppend,
-}));
-
-import { auditDiscoveryHealthGateTransition } from './discovery-health-audit.js';
+import { buildDiscoveryHealthGateTransitionDetail } from './discovery-health-audit.js';
 import type { SessionState, DiscoveryHealthGate } from '../state/schema.js';
 import { makeState } from '../fixtures.js';
 
@@ -49,28 +39,19 @@ const clear: DiscoveryHealthGate = {
   lastDriftAssessment: 'clean',
 };
 
-beforeEach(() => {
-  vi.clearAllMocks();
-  mockAppend.mockResolvedValue(undefined);
-});
-
-describe('auditDiscoveryHealthGateTransition', () => {
-  it('does NOT emit when there is no auditable transition (clear -> clear)', async () => {
-    await auditDiscoveryHealthGateTransition('/tmp/sess', requiredState(), clear, clear);
-    expect(mockAppend).not.toHaveBeenCalled();
+describe('buildDiscoveryHealthGateTransitionDetail', () => {
+  it('returns nothing when there is no auditable transition (clear -> clear)', () => {
+    expect(buildDiscoveryHealthGateTransitionDetail(requiredState(), clear, clear)).toBeUndefined();
   });
 
-  it('does NOT emit on a repeated identical block (blocked -> blocked, same reason)', async () => {
-    await auditDiscoveryHealthGateTransition('/tmp/sess', requiredState(), blocked, blocked);
-    expect(mockAppend).not.toHaveBeenCalled();
+  it('returns nothing on a repeated identical block', () => {
+    expect(
+      buildDiscoveryHealthGateTransitionDetail(requiredState(), blocked, blocked),
+    ).toBeUndefined();
   });
 
-  it('emits a blocked transition with the deterministic detail shape', async () => {
-    await auditDiscoveryHealthGateTransition('/tmp/sess', requiredState(), undefined, blocked);
-    expect(mockAppend).toHaveBeenCalledTimes(1);
-    const [sessDir, , , event, detail] = mockAppend.mock.calls[0]!;
-    expect(sessDir).toBe('/tmp/sess');
-    expect(event).toBe('discovery_health:gate_changed');
+  it('builds a blocked transition with the deterministic detail shape', () => {
+    const detail = buildDiscoveryHealthGateTransitionDetail(requiredState(), undefined, blocked);
     expect(detail).toMatchObject({
       transition: 'to_blocked',
       decision: 'blocked',
@@ -83,10 +64,8 @@ describe('auditDiscoveryHealthGateTransition', () => {
     });
   });
 
-  it('emits a clear (recovery) transition so unblocks are auditable', async () => {
-    await auditDiscoveryHealthGateTransition('/tmp/sess', requiredState(), blocked, clear);
-    expect(mockAppend).toHaveBeenCalledTimes(1);
-    const detail = mockAppend.mock.calls[0]![4] as Record<string, unknown>;
+  it('builds a clear (recovery) transition so unblocks are auditable', () => {
+    const detail = buildDiscoveryHealthGateTransitionDetail(requiredState(), blocked, clear);
     expect(detail).toMatchObject({
       transition: 'to_clear',
       decision: 'cleared',
@@ -98,7 +77,7 @@ describe('auditDiscoveryHealthGateTransition', () => {
     });
   });
 
-  it('emits when a blocked reason changes (block_reason_changed)', async () => {
+  it('builds an event when a blocked reason changes', () => {
     const reblocked: DiscoveryHealthGate = {
       status: 'blocked',
       code: 'DISCOVERY_DRIFT_BLOCKED',
@@ -106,9 +85,7 @@ describe('auditDiscoveryHealthGateTransition', () => {
       blockedAt: NOW,
       lastDriftAssessment: 'drifted',
     };
-    await auditDiscoveryHealthGateTransition('/tmp/sess', requiredState(), blocked, reblocked);
-    expect(mockAppend).toHaveBeenCalledTimes(1);
-    const detail = mockAppend.mock.calls[0]![4] as Record<string, unknown>;
+    const detail = buildDiscoveryHealthGateTransitionDetail(requiredState(), blocked, reblocked);
     expect(detail).toMatchObject({
       transition: 'block_reason_changed',
       decision: 'blocked',

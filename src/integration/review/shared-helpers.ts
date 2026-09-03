@@ -9,6 +9,7 @@
  */
 
 import type { SessionState } from '../../state/schema.js';
+import type { SemanticAuditIntent } from '../tools/audit-outbox.js';
 import type {
   ReviewInvocationPolicy,
   ReviewOutputPolicy,
@@ -203,46 +204,58 @@ export async function recordEvidenceOrBlockReuse(
       | 'findings'
     >;
     currentAssuranceInvocations: unknown[];
+    semanticIntents?: (
+      result: EvidenceRecordResult,
+      state: SessionState,
+      now: string,
+    ) => readonly SemanticAuditIntent[];
   },
 ): Promise<EvidenceRecordResult> {
   let reused = false;
   let missing = false;
-  await deps.updateReviewAssurance(sessDir, (s, now2) => {
-    const assurance = ensureReviewAssurance(s.reviewAssurance);
-    const obligation = assurance.obligations.find(
-      (item) => item.obligationId === params.obligationId,
-    );
-    if (!obligation) {
-      // Defense-in-depth: evidence must never report fulfillment for an
-      // obligation that does not exist. The pipeline entry gate normally
-      // blocks earlier; this keeps the helper fail-closed on its own.
-      missing = true;
-      return s;
-    }
-    if (hasEvidenceReuse(assurance.invocations, params.childSessionId, params.findingsHash)) {
-      reused = true;
-      return updateObligation(s, params.obligationId, (item) => ({
-        ...item,
-        status: 'blocked',
-        blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
-      }));
-    }
+  await deps.updateReviewAssurance(
+    sessDir,
+    (s, now2) => {
+      const assurance = ensureReviewAssurance(s.reviewAssurance);
+      const obligation = assurance.obligations.find(
+        (item) => item.obligationId === params.obligationId,
+      );
+      if (!obligation) {
+        // Defense-in-depth: evidence must never report fulfillment for an
+        // obligation that does not exist. The pipeline entry gate normally
+        // blocks earlier; this keeps the helper fail-closed on its own.
+        missing = true;
+        return s;
+      }
+      if (hasEvidenceReuse(assurance.invocations, params.childSessionId, params.findingsHash)) {
+        reused = true;
+        return updateObligation(s, params.obligationId, (item) => ({
+          ...item,
+          status: 'blocked',
+          blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
+        }));
+      }
 
-    const invocation = buildSdkSessionInvocation(params, obligation, now2);
-    const withInvocation = {
-      ...s,
-      reviewAssurance: appendInvocationEvidence(
-        ensureReviewAssurance(s.reviewAssurance),
-        invocation,
-      ),
-    };
-    return updateObligation(withInvocation, params.obligationId, (item) => ({
-      ...item,
-      status: 'fulfilled',
-      invocationId: invocation.invocationId,
-      fulfilledAt: now2,
-    }));
-  });
+      const invocation = buildSdkSessionInvocation(params, obligation, now2);
+      const withInvocation = {
+        ...s,
+        reviewAssurance: appendInvocationEvidence(
+          ensureReviewAssurance(s.reviewAssurance),
+          invocation,
+        ),
+      };
+      return updateObligation(withInvocation, params.obligationId, (item) => ({
+        ...item,
+        status: 'fulfilled',
+        invocationId: invocation.invocationId,
+        fulfilledAt: now2,
+      }));
+    },
+    (state, now) =>
+      missing || !params.semanticIntents
+        ? []
+        : params.semanticIntents(reused ? 'reused' : 'fulfilled', state, now),
+  );
   return missing ? 'missing' : reused ? 'reused' : 'fulfilled';
 }
 
@@ -628,69 +641,34 @@ export interface AssuranceAuditDeps {
   updateReviewAssurance(
     sessDir: string,
     update: (state: SessionState, now: string) => SessionState,
+    semanticIntents?: (state: SessionState, now: string) => readonly SemanticAuditIntent[],
   ): Promise<void>;
-  appendReviewAuditEvent(
-    sessDir: string,
-    sessionId: string,
-    phase: string,
-    event: string,
-    detail: Record<string, unknown>,
-  ): Promise<void>;
-  logError(message: string, err: unknown): void;
 }
 
 /**
  * Record a review assurance state mutation together with its audit event.
  *
- * State is committed first (under the session-state write lock). If the
- * audit event fails to persist, the failure is surfaced based on
- * {@code auditFailureBehavior}:
- *
- * - {@code 'block'} — returns a blocked result with code
- *   {@code AUDIT_PERSISTENCE_FAILED}. The state was committed; the
- *   corresponding audit event is missing from the trail.
- * - {@code 'warn'} — logs the error and returns {@code auditOk: false}
- *   without blocking. State was committed; audit event is missing.
- *
- * This helper does NOT make policy decisions. The {@code auditFailureBehavior}
- * parameter must be derived from the active policy by the caller.
+ * The semantic event intent is committed in the same state transaction as the
+ * mutation. The durable audit reconciler appends it idempotently after a crash;
+ * callers never perform a second post-state audit write.
  */
 export async function recordAssuranceWithAudit(
   deps: AssuranceAuditDeps,
   opts: {
     sessDir: string;
-    sessionId: string;
-    phase: string;
     stateMutation: (state: SessionState, now: string) => SessionState;
     auditEventName: string;
     auditDetail: Record<string, unknown>;
-    auditFailureBehavior: 'block' | 'warn';
   },
 ): Promise<{ auditOk: boolean; block?: boolean; code?: string; reason?: string }> {
-  const {
-    sessDir,
-    sessionId,
-    phase,
-    stateMutation,
-    auditEventName,
-    auditDetail,
-    auditFailureBehavior,
-  } = opts;
-  await deps.updateReviewAssurance(sessDir, stateMutation);
-
-  try {
-    await deps.appendReviewAuditEvent(sessDir, sessionId, phase, auditEventName, auditDetail);
-    return { auditOk: true };
-  } catch (err) {
-    deps.logError('Proof persistence failure: audit write failed', err);
-    if (auditFailureBehavior === 'block') {
-      return {
-        auditOk: false,
-        block: true,
-        code: 'AUDIT_PERSISTENCE_FAILED',
-        reason: err instanceof Error ? err.message : String(err),
-      };
-    }
-    return { auditOk: false };
-  }
+  const { sessDir, stateMutation, auditEventName, auditDetail } = opts;
+  await deps.updateReviewAssurance(sessDir, stateMutation, (state, now) => [
+    {
+      phase: state.phase,
+      event: auditEventName,
+      occurredAt: now,
+      detail: auditDetail,
+    },
+  ]);
+  return { auditOk: true };
 }

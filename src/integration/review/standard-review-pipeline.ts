@@ -9,6 +9,7 @@
 
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 import type { ReviewObligationType } from '../../state/evidence.js';
+import type { SessionState } from '../../state/schema.js';
 import type { CapturedFindings } from './enforcement/types.js';
 import { recordPluginReview } from './enforcement/enforcement.js';
 import { prepareReviewerFindingsForValidation } from './enforcement/prepare-findings.js';
@@ -24,8 +25,8 @@ import { getToolArgs, strictBlockedOutput } from '../plugin-helpers.js';
 import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_ARCHITECTURE } from '../tool-names.js';
 import { obligationTypeForTool } from './obligation-tools.js';
 import { updateObligation } from './obligation-state.js';
-import { appendReviewAuditEvent } from './audit-events.js';
 import { recordAssuranceWithAudit } from './shared-helpers.js';
+import type { SemanticAuditIntent } from '../tools/audit-outbox.js';
 import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
 import { REASON_HOST_SUBAGENT_TASK_REQUIRED } from '../../shared/flowguard-identifiers.js';
 import type { PipelineContext } from './pipeline-types.js';
@@ -102,20 +103,16 @@ export async function runStandardReviewPipeline(
 async function recordObligationHandshake(
   ctx: PipelineContext,
   obligationType: ReviewObligationType,
-  strictEnforcement: boolean,
+  _strictEnforcement: boolean,
 ): ReturnType<typeof recordAssuranceWithAudit> {
-  const { deps, sessionState, sessDir, reviewCtx, sessionId } = ctx;
+  const { deps, sessionState, sessDir, reviewCtx } = ctx;
   return recordAssuranceWithAudit(
     {
-      updateReviewAssurance: (sessDir, update) => deps.updateReviewAssurance(sessDir, update),
-      appendReviewAuditEvent: (sessDir, sessionId, phase, event, detail) =>
-        appendReviewAuditEvent(sessDir, sessionId, phase, event, detail),
-      logError: (msg, err) => deps.log.warn('orchestrator', msg, { error: String(err) }),
+      updateReviewAssurance: (sessDir, update, semanticIntents) =>
+        deps.updateReviewAssurance(sessDir, update, semanticIntents),
     },
     {
       sessDir,
-      sessionId,
-      phase: String(ctx.parsedOutput.phase ?? sessionState.phase),
       stateMutation: (s, now2) =>
         updateObligation(s, reviewCtx.obligationId, (item) => ({
           ...item,
@@ -134,7 +131,6 @@ async function recordObligationHandshake(
         reviewProfile: getReviewerPolicies(sessionState).reviewProfile,
         profileSource: 'policy_default',
       },
-      auditFailureBehavior: strictEnforcement ? 'block' : 'warn',
     },
   );
 }
@@ -414,25 +410,18 @@ async function enforceStandardStrictGate(
     findingsHash,
     reviewerResult,
     currentAssuranceInvocations: sessionState.reviewAssurance?.invocations ?? [],
+    semanticIntents: (result, state, occurredAt) =>
+      buildStandardEvidenceAuditIntents({
+        ctx,
+        result,
+        obligationType,
+        promptHash,
+        findingsHash,
+        reviewerResult,
+        state,
+        occurredAt,
+      }),
   });
-
-  try {
-    await emitStandardEvidenceAudit(ctx, {
-      result,
-      obligationType,
-      promptHash,
-      findingsHash,
-      reviewerResult,
-    });
-  } catch (err) {
-    deps.log.warn('orchestrator', 'Proof persistence failure: audit write failed', {
-      error: String(err),
-    });
-    output.output = strictBlockedOutput('AUDIT_PERSISTENCE_FAILED', {
-      reason: err instanceof Error ? err.message : String(err),
-    });
-    return true;
-  }
 
   if (result === 'reused') {
     output.output = strictBlockedOutput('SUBAGENT_EVIDENCE_REUSED', {
@@ -450,7 +439,8 @@ async function enforceStandardStrictGate(
   return false;
 }
 
-interface EvidenceAuditOpts {
+function buildStandardEvidenceAuditIntents(input: {
+  ctx: PipelineContext;
   result: EvidenceRecordResult;
   obligationType: string;
   promptHash: string;
@@ -464,26 +454,23 @@ interface EvidenceAuditOpts {
     | 'extractionMethod'
     | 'modelCapabilityError'
   >;
-}
-
-async function emitStandardEvidenceAudit(
-  ctx: PipelineContext,
-  opts: EvidenceAuditOpts,
-): Promise<void> {
-  const { result, obligationType, promptHash, findingsHash, reviewerResult } = opts;
-  const { sessDir, sessionId, parsedOutput, sessionState, reviewCtx } = ctx;
-  const phase = String(parsedOutput.phase ?? sessionState.phase);
-
-  await appendReviewAuditEvent(
-    sessDir,
-    sessionId,
-    phase,
-    result === 'reused' ? 'review:obligation_blocked' : 'review:subagent_invoked',
+  state: SessionState;
+  occurredAt: string;
+}): readonly SemanticAuditIntent[] {
+  const {
+    ctx,
+    result,
+    obligationType,
+    promptHash,
+    findingsHash,
+    reviewerResult,
+    state,
+    occurredAt,
+  } = input;
+  const { sessionId, reviewCtx } = ctx;
+  const detail =
     result === 'reused'
-      ? {
-          obligationId: reviewCtx.obligationId,
-          code: 'SUBAGENT_EVIDENCE_REUSED',
-        }
+      ? { obligationId: reviewCtx.obligationId, code: 'SUBAGENT_EVIDENCE_REUSED' }
       : {
           obligationId: reviewCtx.obligationId,
           obligationType,
@@ -497,22 +484,34 @@ async function emitStandardEvidenceAudit(
           reviewOutputMode: reviewerResult.reviewOutputMode,
           structuredOutputUsed: reviewerResult.structuredOutputUsed,
           reviewAssuranceLevel: reviewerResult.reviewAssuranceLevel,
-          reviewProfile: getReviewerPolicies(sessionState).reviewProfile,
+          reviewProfile: getReviewerPolicies(state).reviewProfile,
           ...(reviewerResult.extractionMethod
             ? { extractionMethod: reviewerResult.extractionMethod }
             : {}),
           ...(reviewerResult.modelCapabilityError
             ? { modelCapabilityError: reviewerResult.modelCapabilityError }
             : {}),
+        };
+  const first: SemanticAuditIntent = {
+    phase: state.phase,
+    event: result === 'reused' ? 'review:obligation_blocked' : 'review:subagent_invoked',
+    occurredAt,
+    detail,
+  };
+  return result === 'fulfilled'
+    ? [
+        first,
+        {
+          phase: state.phase,
+          event: 'review:obligation_fulfilled',
+          occurredAt,
+          detail: {
+            obligationId: reviewCtx.obligationId,
+            childSessionId: reviewerResult.sessionId,
+          },
         },
-  );
-
-  if (result === 'fulfilled') {
-    await appendReviewAuditEvent(sessDir, sessionId, phase, 'review:obligation_fulfilled', {
-      obligationId: reviewCtx.obligationId,
-      childSessionId: reviewerResult.sessionId,
-    });
-  }
+      ]
+    : [first];
 }
 
 interface FinalizeOutputOpts {
@@ -583,15 +582,11 @@ async function handleReviewerFailure(
     // Non-strict: block the obligation to prevent infinite re-invocation.
     await recordAssuranceWithAudit(
       {
-        updateReviewAssurance: (sessDir, update) => deps.updateReviewAssurance(sessDir, update),
-        appendReviewAuditEvent: (sessDir, sessionId, phase, event, detail) =>
-          appendReviewAuditEvent(sessDir, sessionId, phase, event, detail),
-        logError: (msg, err) => deps.log.warn('orchestrator', msg, { error: String(err) }),
+        updateReviewAssurance: (sessDir, update, semanticIntents) =>
+          deps.updateReviewAssurance(sessDir, update, semanticIntents),
       },
       {
         sessDir,
-        sessionId,
-        phase,
         stateMutation: (s) =>
           updateObligation(s, reviewCtx.obligationId, (item) => ({
             ...item,
@@ -603,7 +598,6 @@ async function handleReviewerFailure(
           obligationId: reviewCtx.obligationId,
           code: 'REVIEWER_INVOCATION_EXHAUSTED',
         },
-        auditFailureBehavior: 'warn',
       },
     );
   }

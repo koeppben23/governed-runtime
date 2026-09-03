@@ -127,23 +127,21 @@ async function runHydrate(args: HydrateArgs, context: ToolContext): Promise<Tool
     );
     // Sole Discovery-health clear authority (#399): reconcile the persisted gate
     // from fresh persisted Discovery + a bounded drift assessment at hydrate time.
-    const result = await reconcileHydrateDiscoveryHealthGate(rawResult, {
+    const reconciled = await reconcileHydrateDiscoveryHealthGate(rawResult, {
       sessDir: workspace.sessionDir,
       workspaceDir: workspace.workspaceDir,
       worktree,
       fingerprint: workspace.fingerprint,
       now: policyContext.ctx.now(),
     });
+    const { result, semanticIntents } = reconciled;
     writeSessionPointer(workspace.fingerprint, context.sessionID, workspace.sessionDir).catch(
       () => {},
     );
-    const formatted = await formatHydrateResult(
-      workspace.sessionDir,
-      existing,
-      result,
-      discovery,
-      policyContext.policyResolution,
-    );
+    const formatted = await formatHydrateResult(workspace.sessionDir, existing, result, discovery, {
+      policyResolution: policyContext.policyResolution,
+      semanticIntents,
+    });
     if (result.kind === 'ok') {
       getAdapterLogger().info('machine', 'session_hydrated', {
         sessionId: context.sessionID,

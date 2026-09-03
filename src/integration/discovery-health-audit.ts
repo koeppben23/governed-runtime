@@ -10,7 +10,6 @@
  */
 
 import type { SessionState, DiscoveryHealthGate } from '../state/schema.js';
-import { appendReviewAuditEvent } from './review/audit-events.js';
 import { classifyGateTransition } from './discovery-health-gate.js';
 
 /**
@@ -20,33 +19,25 @@ import { classifyGateTransition } from './discovery-health-gate.js';
  * identical reason, or a clear->clear reconciliation. Callers MUST pass the
  * persisted previous gate and the freshly computed next gate.
  */
-export async function auditDiscoveryHealthGateTransition(
-  sessDir: string,
+export function buildDiscoveryHealthGateTransitionDetail(
   state: SessionState,
   previous: DiscoveryHealthGate | undefined,
   next: DiscoveryHealthGate,
-): Promise<void> {
+): Record<string, unknown> | undefined {
   const transition = classifyGateTransition(previous, next);
-  if (transition === 'none') return;
-
+  if (transition === 'none') return undefined;
   const ph = state.policySnapshot.discoveryHealth;
-  await appendReviewAuditEvent(
-    sessDir,
-    state.binding.hostSessionId,
-    state.phase,
-    'discovery_health:gate_changed',
-    {
-      transition,
-      decision: next.status === 'blocked' ? 'blocked' : 'cleared',
-      reasonCode: next.status === 'blocked' ? next.code : null,
-      message: next.status === 'blocked' ? next.message : null,
-      driftStatus: next.lastDriftAssessment ?? null,
-      previousGateStatus: previous?.status ?? 'none',
-      previousReasonCode: previous?.status === 'blocked' ? previous.code : null,
-      policyMode: state.policySnapshot.mode,
-      enforcement: ph.enforcement,
-      onDegraded: ph.onDegraded,
-      onDrift: ph.onDrift,
-    },
-  );
+  return {
+    transition,
+    decision: next.status === 'blocked' ? 'blocked' : 'cleared',
+    reasonCode: next.status === 'blocked' ? next.code : null,
+    message: next.status === 'blocked' ? next.message : null,
+    driftStatus: next.lastDriftAssessment ?? null,
+    previousGateStatus: previous?.status ?? 'none',
+    previousReasonCode: previous?.status === 'blocked' ? previous.code : null,
+    policyMode: state.policySnapshot.mode,
+    enforcement: ph.enforcement,
+    onDegraded: ph.onDegraded,
+    onDrift: ph.onDrift,
+  };
 }

@@ -23,6 +23,7 @@ import {
   finalizeWithTimestampEvidence,
   type EventBody,
 } from '../audit/types.js';
+import { buildSemanticAuditBody } from '../audit/semantic-event.js';
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import { resolveTimestampEvidence } from '../audit/timestamp-resolution.js';
 import type { TimestampAssurancePolicy } from '../config/policy-types.js';
@@ -133,6 +134,21 @@ function buildOperationAuditBody(
       prevHash,
     );
   }
+  if (operation.kind === 'semantic') {
+    return buildSemanticAuditBody({
+      flowguardSessionId: state.flowguardSessionId,
+      hostSessionId: state.binding.hostSessionId,
+      phase: operation.semantic.phase,
+      detail: operation.semantic.detail,
+      event: operation.semantic.event,
+      occurredAt: operation.semantic.occurredAt,
+      prevHash,
+      operationId: operation.operationId,
+      preStateDigest: operation.preStateDigest,
+      mutationDigest: operation.mutationDigest,
+      postStateDigest: operation.postStateDigest,
+    });
+  }
   const t = operation.transition;
   return buildTransitionBody(
     state.flowguardSessionId,
@@ -221,7 +237,11 @@ export async function emitTransitionAudits(input: {
       body,
       eventKind: operation.kind,
       localTimestamp:
-        operation.kind === 'transition' ? operation.transition.at : operation.stateWrite.at,
+        operation.kind === 'transition'
+          ? operation.transition.at
+          : operation.kind === 'state_write'
+            ? operation.stateWrite.at
+            : operation.semantic.occurredAt,
       timestampTracker,
     });
     await acknowledgeAuditOperation(ctx.sessDir, operation.operationId, 'audit_committed');

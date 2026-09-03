@@ -1,18 +1,3 @@
-/**
- * @module integration/tools/helpers
- * @description Shared helpers for FlowGuard tool definitions.
- *
- * Contains:
- * - ToolContext / ToolDefinition interfaces (OpenCode contract)
- * - Formatting helpers (formatEval, formatRailResult, formatBlocked, formatError)
- * - Workspace resolution (getWorktree, resolveWorkspacePaths)
- * - State helpers (requireState, resolvePolicyFromState, createPolicyContext)
- * - Persistence helper (persistAndFormat)
- * - Plan parsing (extractSections)
- *
- * @version v3
- */
-
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { z } from 'zod';
 // State & Machine
@@ -27,7 +12,7 @@ import { AUTO_ADVANCE_OVERFLOW_CODE } from '../../rails/auto-advance-overflow.js
 // Adapters
 import { readState, writeStateAlreadyLocked } from '../../adapters/persistence.js';
 import { finalizeImplementationEntry } from '../../adapters/implementation-base-authority.js';
-import { prepareStateWithAuditOperations } from './audit-outbox.js';
+import { prepareStateWithAuditOperations, type SemanticAuditIntent } from './audit-outbox.js';
 import { acquireSessionWriteLock, withSessionWriteLock } from '../../adapters/persistence-lock.js';
 import { createRailContext } from '../../adapters/context.js';
 // Workspace
@@ -464,9 +449,15 @@ export async function writeStateWithArtifactsAndAuditOperations(
   sessDir: string,
   nextState: SessionState,
   transitions?: ReadonlyArray<{ from: string; to: string; event: string; at: string }>,
+  semanticIntents: readonly SemanticAuditIntent[] = [],
 ): Promise<SessionState> {
   const persist = (): Promise<SessionState> =>
-    writeStateWithArtifactsAndAuditOperationsAlreadyLocked(sessDir, nextState, transitions);
+    writeStateWithArtifactsAndAuditOperationsAlreadyLocked(
+      sessDir,
+      nextState,
+      transitions,
+      semanticIntents,
+    );
 
   if (lockedSessionDir.getStore() === sessDir) {
     return persist();
@@ -479,12 +470,14 @@ export async function writeStateWithArtifactsAndAuditOperationsAlreadyLocked(
   sessDir: string,
   nextState: SessionState,
   transitions?: ReadonlyArray<{ from: string; to: string; event: string; at: string }>,
+  semanticIntents: readonly SemanticAuditIntent[] = [],
 ): Promise<SessionState> {
   const previous = await readState(sessDir);
   const stateWithOperations = await prepareStateWithAuditOperations(
     previous,
     nextState,
     transitions,
+    semanticIntents,
   );
   return writeStateWithArtifactsAlreadyLocked(sessDir, stateWithOperations);
 }

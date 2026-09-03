@@ -8,6 +8,7 @@ import {
 import { hashText } from '../../shared/hashing.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { buildStateWriteBody, buildTransitionBody } from '../../audit/types.js';
+import { buildSemanticAuditBody } from '../../audit/semantic-event.js';
 import { computeCanonicalEventDigest } from '../../audit/canonical-digest.js';
 import {
   PersistenceError,
@@ -16,6 +17,8 @@ import {
 } from '../../adapters/persistence.js';
 import { withSessionWriteLock } from '../../adapters/persistence-lock.js';
 import { refreshProofGraph } from '../proofgraph/refresh.js';
+
+export type SemanticAuditIntent = Extract<PendingAuditOperation, { kind: 'semantic' }>['semantic'];
 
 /**
  * Prepare the next state together with its durable authority-write operations.
@@ -31,9 +34,10 @@ export async function prepareStateWithAuditOperations(
   previous: SessionState | null,
   nextState: SessionState,
   transitions: ReadonlyArray<{ from: string; to: string; event: string; at: string }> | undefined,
+  semanticIntents: readonly SemanticAuditIntent[] = [],
 ): Promise<SessionState> {
   const prepared = await prepareState(nextState);
-  return prepareAuditOperations(previous, prepared, transitions);
+  return prepareAuditOperations(previous, prepared, transitions, semanticIntents);
 }
 
 /** Add durable audit operations without changing evidence artifacts or state. */
@@ -41,6 +45,7 @@ export function prepareAuditOperations(
   previous: SessionState | null,
   nextState: SessionState,
   transitions: ReadonlyArray<{ from: string; to: string; event: string; at: string }> | undefined,
+  semanticIntents: readonly SemanticAuditIntent[] = [],
 ): SessionState {
   const result = SessionState.safeParse(nextState);
   if (!result.success) {
@@ -51,15 +56,21 @@ export function prepareAuditOperations(
   }
   const prepared = result.data;
   const exactTransitions = transitions ?? inferTransition(previous, prepared);
-  return addAuditOperations(previous, prepared, exactTransitions);
+  return addAuditOperations(previous, prepared, exactTransitions, semanticIntents);
 }
 
 export async function writeStateWithAuditOperationsAlreadyLocked(
   sessDir: string,
   nextState: SessionState,
+  semanticIntents: readonly SemanticAuditIntent[] = [],
 ): Promise<SessionState> {
   const previous = await readState(sessDir);
-  const stateWithOperations = prepareAuditOperations(previous, nextState, undefined);
+  const stateWithOperations = prepareAuditOperations(
+    previous,
+    nextState,
+    undefined,
+    semanticIntents,
+  );
   await writeStateAlreadyLocked(sessDir, stateWithOperations);
   return stateWithOperations;
 }
@@ -67,9 +78,10 @@ export async function writeStateWithAuditOperationsAlreadyLocked(
 export async function writeStateWithAuditOperations(
   sessDir: string,
   nextState: SessionState,
+  semanticIntents: readonly SemanticAuditIntent[] = [],
 ): Promise<SessionState> {
   return withSessionWriteLock(sessDir, () =>
-    writeStateWithAuditOperationsAlreadyLocked(sessDir, nextState),
+    writeStateWithAuditOperationsAlreadyLocked(sessDir, nextState, semanticIntents),
   );
 }
 
@@ -133,25 +145,56 @@ function addAuditOperations(
   previous: SessionState | null,
   next: SessionState,
   transitions: ReadonlyArray<{ from: string; to: string; event: string; at: string }>,
+  semanticIntents: readonly SemanticAuditIntent[],
 ): SessionState {
   const preStateDigest = previous
     ? computeStateDigest(previous)
     : hashText('state-digest.v2:absent');
   const postStateDigest = computeStateDigest(next);
-  if (preStateDigest === postStateDigest) return next;
+  if (preStateDigest === postStateDigest) {
+    if (semanticIntents.length > 0) {
+      throw new PersistenceError(
+        'SCHEMA_VALIDATION_FAILED',
+        'Cannot commit semantic audit intent without an authority state mutation',
+      );
+    }
+    return next;
+  }
   // Session bootstrap has no prior authority to bind; hydrate owns its
   // lifecycle/transition evidence when it creates a governed session.
-  if (previous === null && transitions.length === 0) return next;
+  if (previous === null && transitions.length === 0 && semanticIntents.length === 0) return next;
+  let withOperations: SessionState;
   if (transitions.length === 0) {
-    return addStateWriteOperation(previous, next, preStateDigest, postStateDigest);
+    withOperations = addStateWriteOperation(previous, next, preStateDigest, postStateDigest);
+  } else if (!next.policySnapshot.audit.emitTransitions) {
+    // `emitTransitions` governs the transition projection only. It must never
+    // disable the durable state↔audit binding itself.
+    withOperations = addStateWriteOperation(previous, next, preStateDigest, postStateDigest);
+  } else {
+    withOperations = addTransitionOperations(
+      previous,
+      next,
+      preStateDigest,
+      postStateDigest,
+      transitions,
+    );
   }
-  // `emitTransitions` governs the transition projection only. It must never
-  // disable the durable state↔audit binding itself: a mutation of authority
-  // state that is committed without a pending audit operation is
-  // unrecoverable after a crash, whatever the audit projection policy says.
-  if (!next.policySnapshot.audit.emitTransitions) {
-    return addStateWriteOperation(previous, next, preStateDigest, postStateDigest);
-  }
+  return addSemanticOperations(
+    previous,
+    withOperations,
+    preStateDigest,
+    postStateDigest,
+    semanticIntents,
+  );
+}
+
+function addTransitionOperations(
+  previous: SessionState | null,
+  next: SessionState,
+  preStateDigest: string,
+  postStateDigest: string,
+  transitions: ReadonlyArray<{ from: string; to: string; event: string; at: string }>,
+): SessionState {
   const mutationDigest = hashText(canonicalJsonStringify(transitions));
   const operations: PendingAuditOperation[] = transitions.map((transition, chainIndex) => {
     const operationId = crypto.randomUUID();
@@ -196,6 +239,52 @@ function addAuditOperations(
     };
   });
   return { ...next, pendingAuditOperations: [...next.pendingAuditOperations, ...operations] };
+}
+
+function addSemanticOperations(
+  previous: SessionState | null,
+  next: SessionState,
+  preStateDigest: string,
+  postStateDigest: string,
+  intents: readonly SemanticAuditIntent[],
+): SessionState {
+  const operations: PendingAuditOperation[] = intents.map((semantic) => {
+    const operationId = crypto.randomUUID();
+    const mutationDigest = hashText(
+      canonicalJsonStringify({
+        kind: 'semantic',
+        before: previous ? authorityState(previous) : null,
+        after: authorityState(next),
+        semantic,
+      }),
+    );
+    const body = buildSemanticAuditBody({
+      flowguardSessionId: next.flowguardSessionId,
+      hostSessionId: next.binding.hostSessionId,
+      phase: semantic.phase,
+      detail: semantic.detail,
+      event: semantic.event,
+      occurredAt: semantic.occurredAt,
+      prevHash: 'genesis',
+      operationId,
+      preStateDigest,
+      mutationDigest,
+      postStateDigest,
+    });
+    return {
+      kind: 'semantic',
+      operationId,
+      preStateDigest,
+      mutationDigest,
+      postStateDigest,
+      auditEventDigest: computeCanonicalEventDigest(body),
+      semantic,
+      status: 'state_committed',
+    };
+  });
+  return operations.length === 0
+    ? next
+    : { ...next, pendingAuditOperations: [...next.pendingAuditOperations, ...operations] };
 }
 
 function addStateWriteOperation(

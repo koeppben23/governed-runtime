@@ -1078,10 +1078,16 @@ describe('plugin bootstrap fail-closed', () => {
         expect(state?.riskGate?.status === 'blocked' && state.riskGate.code).toBe(
           'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
         );
-        const audit = await readAuditTrail(sessDir);
-        expect(audit.events.some((event) => event.event === 'risk:classification_checked')).toBe(
-          true,
-        );
+        // The throwing before-hook has no after-hook to drain the outbox. The
+        // semantic event is therefore durably recoverable on the next governed
+        // operation instead of being appended after the state mutation.
+        expect(
+          state?.pendingAuditOperations.some(
+            (operation) =>
+              operation.kind === 'semantic' &&
+              operation.semantic.event === 'risk:classification_checked',
+          ),
+        ).toBe(true);
       } finally {
         await ws.cleanup();
       }

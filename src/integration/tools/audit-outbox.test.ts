@@ -14,9 +14,14 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { makeState } from '../../fixtures.js';
 import { SessionState, type PendingAuditOperation } from '../../state/schema.js';
-import { computeStateDigest, prepareStateWithAuditOperations } from './audit-outbox.js';
+import {
+  computeStateDigest,
+  prepareAuditOperations,
+  prepareStateWithAuditOperations,
+} from './audit-outbox.js';
 import { computeCanonicalEventDigest } from '../../audit/canonical-digest.js';
 import { buildStateWriteBody, buildTransitionBody } from '../../audit/types.js';
+import { buildSemanticAuditBody } from '../../audit/semantic-event.js';
 import { hashText } from '../../shared/hashing.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 
@@ -192,6 +197,37 @@ describe('prepareStateWithAuditOperations', () => {
       'genesis',
     );
     expect(operation.preStateDigest).toBe(computeStateDigest(previous));
+    expect(operation.postStateDigest).toBe(computeStateDigest(prepared));
+    expect(computeCanonicalEventDigest(body)).toBe(operation.auditEventDigest);
+  });
+
+  it('commits semantic review intent with the same state authority binding', () => {
+    const previous = makeState('PLAN', { id: SESSION_ID });
+    const next = makeState('PLAN', { id: SESSION_ID, activeChecks: ['review-complete'] });
+    const prepared = prepareAuditOperations(previous, next, undefined, [
+      {
+        phase: 'PLAN',
+        event: 'review:obligation_fulfilled',
+        occurredAt: FIXED_AT,
+        detail: { obligationId: 'obl-1', childSessionId: 'child-1' },
+      },
+    ]);
+    const operation = prepared.pendingAuditOperations.find((item) => item.kind === 'semantic');
+    if (!operation || operation.kind !== 'semantic') throw new Error('expected semantic operation');
+
+    const body = buildSemanticAuditBody({
+      flowguardSessionId: prepared.flowguardSessionId,
+      hostSessionId: prepared.binding.hostSessionId,
+      phase: operation.semantic.phase,
+      detail: operation.semantic.detail,
+      event: operation.semantic.event,
+      occurredAt: operation.semantic.occurredAt,
+      prevHash: 'genesis',
+      operationId: operation.operationId,
+      preStateDigest: operation.preStateDigest,
+      mutationDigest: operation.mutationDigest,
+      postStateDigest: operation.postStateDigest,
+    });
     expect(operation.postStateDigest).toBe(computeStateDigest(prepared));
     expect(computeCanonicalEventDigest(body)).toBe(operation.auditEventDigest);
   });

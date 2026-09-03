@@ -9,7 +9,13 @@ import { resolveActor } from '../../adapters/actor.js';
 import type { HydrateInput, HydratePolicyInput, HydrateProfileInput } from '../../rails/hydrate.js';
 import { executeHydrate } from '../../rails/hydrate.js';
 import type { ToolResult } from './helpers.js';
-import { persistAndFormat, appendNextAction } from './helpers.js';
+import {
+  persistAndFormat,
+  appendNextAction,
+  formatRailResult,
+  writeStateWithArtifactsAndAuditOperations,
+} from './helpers.js';
+import type { SemanticAuditIntent } from './audit-outbox.js';
 import { LOCK_CONTENDED_OUTPUT_FIELD } from '../../shared/flowguard-identifiers.js';
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
 import { renderMarkdown } from '../../presentation/markdown.js';
@@ -260,9 +266,10 @@ export async function formatNewSessionResponse(
   result: Extract<ReturnType<typeof executeHydrate>, { kind: 'ok' }>,
   discovery: DiscoveryHydration,
   policyResolution: HydratePolicyResolution,
+  semanticIntents: readonly SemanticAuditIntent[] = [],
 ): Promise<ToolResult> {
   const state = result.state;
-  const formattedResult = await persistAndFormat(sessDir, result);
+  const formattedResult = await persistHydrateResult(sessDir, result, semanticIntents);
   const outputStr = extractOutputStr(formattedResult);
   const formatted = JSON.parse(outputStr) as Record<string, unknown>;
   const gateNoticeText = buildGateNotice(
@@ -317,12 +324,16 @@ export async function formatHydrateResult(
   existing: ExistingHydrateState,
   result: ReturnType<typeof executeHydrate>,
   discovery: DiscoveryHydration,
-  policyResolution: HydratePolicyResolution,
+  options: {
+    readonly policyResolution: HydratePolicyResolution;
+    readonly semanticIntents?: readonly SemanticAuditIntent[];
+  },
 ): Promise<ToolResult> {
+  const { policyResolution, semanticIntents = [] } = options;
   if (result.kind === 'ok' && !existing) {
-    return formatNewSessionResponse(sessDir, result, discovery, policyResolution);
+    return formatNewSessionResponse(sessDir, result, discovery, policyResolution, semanticIntents);
   }
-  const formatted = await persistAndFormat(sessDir, result);
+  const formatted = await persistHydrateResult(sessDir, result, semanticIntents);
   if (result.kind !== 'ok') return formatted;
   // Existing-session reload: surface the auto-approve notice from the persisted
   // snapshot so a reloaded solo/team-ci session is just as visible as a new one.
@@ -331,6 +342,31 @@ export async function formatHydrateResult(
     result.state.policySnapshot.mode,
   );
   return withGateNotice(formatted, notice);
+}
+
+async function persistHydrateWithSemanticAuditIntents(
+  sessDir: string,
+  result: Extract<ReturnType<typeof executeHydrate>, { kind: 'ok' }>,
+  semanticIntents: readonly SemanticAuditIntent[],
+): Promise<ToolResult> {
+  await writeStateWithArtifactsAndAuditOperations(
+    sessDir,
+    result.state,
+    result.transitions,
+    semanticIntents,
+  );
+  return formatRailResult(result);
+}
+
+async function persistHydrateResult(
+  sessDir: string,
+  result: ReturnType<typeof executeHydrate>,
+  semanticIntents: readonly SemanticAuditIntent[],
+): Promise<ToolResult> {
+  if (result.kind === 'ok' && semanticIntents.length > 0) {
+    return persistHydrateWithSemanticAuditIntents(sessDir, result, semanticIntents);
+  }
+  return persistAndFormat(sessDir, result);
 }
 
 // ─── Lock Contention Annotations ──────────────────────────────────────────
