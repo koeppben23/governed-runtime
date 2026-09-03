@@ -66,15 +66,16 @@ export async function verifyArchiveTimestampTokens(input: {
   readonly manifest: ArchiveManifest;
   readonly findings: ArchiveFinding[];
   /**
-   * Trusted strictness authority (AR2): the caller's `resolveStrictMode(state)`
-   * resolution, shared with the chain verification. The archive manifest is
-   * cross-checked elsewhere and is NEVER a severity authority.
+   * Fatality authority for timestamp findings, computed ONCE by the caller
+   * as `archiveStrictness || timestampAssurancePolicy.strict` — the archive
+   * mode alone is never a severity authority here. The archive manifest is
+   * cross-checked elsewhere and is NEVER a severity authority either.
    */
-  readonly strict: boolean;
+  readonly fatal: boolean;
 }): Promise<void> {
   const timestampPolicy = input.state?.policySnapshot.audit.timestampAssurance;
   const trustAnchors = timestampPolicy?.trustAnchors ?? [];
-  const severity: 'error' | 'warning' = input.strict ? 'error' : 'warning';
+  const severity: 'error' | 'warning' = input.fatal ? 'error' : 'warning';
 
   // The policy gate runs before the trust-anchor gate: internal-imprint
   // evidence on a critical event under tsa_critical is a policy violation

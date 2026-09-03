@@ -82,7 +82,7 @@ describe('verifyArchiveTimestampTokens', () => {
       state: makeState('COMPLETE'),
       manifest: manifest('solo'),
       findings,
-      strict: false,
+      fatal: false,
     });
 
     expect(findings).toEqual([
@@ -102,7 +102,7 @@ describe('verifyArchiveTimestampTokens', () => {
       state: tsaCriticalState(),
       manifest: manifest('regulated'),
       findings,
-      strict: true,
+      fatal: true,
     });
 
     expect(findings).toEqual([
@@ -123,7 +123,7 @@ describe('verifyArchiveTimestampTokens', () => {
       state: makeState('COMPLETE'),
       manifest: manifest('regulated'),
       findings,
-      strict: false,
+      fatal: false,
     });
 
     expect(findings).toEqual([
@@ -142,7 +142,7 @@ describe('verifyArchiveTimestampTokens', () => {
       state: tsaCriticalState(),
       manifest: manifest('solo'),
       findings,
-      strict: true,
+      fatal: true,
     });
 
     expect(findings).toEqual([
@@ -165,7 +165,7 @@ describe('verifyArchiveTimestampTokens', () => {
       state: makeState('COMPLETE'),
       manifest: manifest('solo'),
       findings,
-      strict: false,
+      fatal: false,
     });
 
     expect(findings).toEqual([]);
@@ -185,7 +185,7 @@ describe('verifyArchiveTimestampTokens', () => {
       state: plain,
       manifest: manifest('solo'),
       findings,
-      strict: false,
+      fatal: false,
     });
 
     expect(findings).toEqual([
@@ -208,7 +208,7 @@ describe('verifyArchiveTimestampTokens', () => {
       state: makeState('COMPLETE'),
       manifest: manifest('solo'),
       findings,
-      strict: false,
+      fatal: false,
     });
 
     expect(findings).toEqual([]);
@@ -232,7 +232,7 @@ describe('verifyArchiveTimestampTokens', () => {
       state: makeState('COMPLETE'),
       manifest: manifest('solo'),
       findings,
-      strict: false,
+      fatal: false,
     });
 
     expect(findings).toEqual([]);
@@ -256,7 +256,7 @@ describe('verifyArchiveTimestampTokens', () => {
       state: tsaCriticalState(),
       manifest: manifest('regulated'),
       findings,
-      strict: true,
+      fatal: true,
     });
 
     expect(findings).toEqual([
@@ -281,7 +281,7 @@ describe('verifyArchiveTimestampTokens', () => {
       state: tsaCriticalState(),
       manifest: manifest('regulated'),
       findings,
-      strict: true,
+      fatal: true,
     });
 
     expect(findings).toEqual([
@@ -311,7 +311,7 @@ describe('verifyArchiveTimestampTokens', () => {
       state: tsaCriticalState(),
       manifest: manifest('regulated'),
       findings,
-      strict: true,
+      fatal: true,
     });
 
     expect(findings).toEqual([
@@ -360,7 +360,7 @@ describe('verifyArchiveTimestampTokens', () => {
       state,
       manifest: manifest('regulated'),
       findings,
-      strict: true,
+      fatal: true,
     });
 
     expect(findings).toEqual([]);

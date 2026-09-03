@@ -15,6 +15,7 @@ import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import { computeChainHash, type ChainedAuditEvent } from '../audit/types.js';
 import { verifyChain } from '../audit/integrity.js';
 import { makeState, REGULATED_POLICY_SNAPSHOT } from '../fixtures.js';
+import type { SessionState } from '../state/schema.js';
 import { withTestEnv } from '../integration/test-helpers.js';
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -522,7 +523,7 @@ describe('Archive Layout v2', () => {
     await fs.writeFile(
       path.join(sessionDir, 'audit.jsonl'),
       `${resealed.map((event) => JSON.stringify(event)).join('\n')}\n`,
-      'utf8',
+      'utf-8',
     );
     expect(verifyChain(resealed as unknown as Record<string, unknown>[]).reason).toBe(
       'CLOCK_ANOMALY',
@@ -535,6 +536,50 @@ describe('Archive Layout v2', () => {
     expect(verification.findings).toContainEqual(
       expect.objectContaining({ code: 'audit_chain_invalid', severity: 'error' }),
     );
+  });
+
+  it('fails closed when a non-regulated tsa_critical+strict policy is violated', async () => {
+    // Production plumbing: the archive mode (team) resolves to NON-strict,
+    // but the explicit timestampAssurance.strict policy must still make the
+    // token-layer findings fatal — a tsa_critical violation may never pass
+    // with a mere warning.
+    const { fingerprint, sessionId, sessionDir } = await createArchive();
+    const state = await readState(sessionDir);
+    const strictTsaState: SessionState = {
+      ...state!,
+      policySnapshot: {
+        ...state!.policySnapshot,
+        mode: 'team',
+        audit: {
+          ...state!.policySnapshot.audit,
+          timestampAssurance: {
+            enabled: true,
+            mode: 'tsa_critical',
+            strict: true,
+            criticalEvents: ['decision', 'lifecycle'],
+            tsaUrl: 'https://tsa.example.test',
+            trustAnchors: ['not a pem certificate'],
+            ntpServers: ['pool.ntp.org'],
+            ntpDriftThresholdMs: 30000,
+            tsaTimeoutMs: 10000,
+          },
+        },
+      },
+    };
+    await writeState(sessionDir, strictTsaState);
+    // A critical lifecycle event WITHOUT any external TSA token.
+    await appendCompletionAuditEvent(sessionDir, sessionId);
+
+    await archiveSession(fingerprint, sessionId, { redactionMode: 'none', includeRaw: true });
+    const verification = await verifyArchive(fingerprint, sessionId);
+
+    expect(verification.passed).toBe(false);
+    expect(
+      verification.findings.some(
+        (finding) =>
+          finding.code === 'tsa_token_required_by_policy' && finding.severity === 'error',
+      ),
+    ).toBe(true);
   });
 
   it('retains a published-but-unbound archive after binding append failure and recovers on retry', async () => {

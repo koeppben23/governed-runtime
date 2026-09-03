@@ -358,7 +358,16 @@ async function verifyTimestampChain(
   addTimestampFindings(chainResult, timestampFailuresAreFatal, findings);
 
   const { verifyArchiveTimestampTokens } = await import('./archive-timestamp-verification.js');
-  await verifyArchiveTimestampTokens({ events, state, manifest, findings, strict });
+  // Single fatality authority: archive-mode strictness OR the explicit
+  // timestamp assurance policy — the token layer must not re-derive
+  // strictness from the archive mode alone.
+  await verifyArchiveTimestampTokens({
+    events,
+    state,
+    manifest,
+    findings,
+    fatal: timestampFailuresAreFatal,
+  });
 }
 
 async function verifyAuditChainIntegrity(
