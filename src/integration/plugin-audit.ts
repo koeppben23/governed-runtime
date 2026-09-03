@@ -43,6 +43,7 @@ import {
   emitAuditBodyWithEvidence,
   emitTransitionAudits,
   finalizeStrictTimestampFailure,
+  resolveBootstrapStateExistence,
   type AuditDeps,
   type StrictTimestampTracker,
 } from './plugin-audit-reconcile.js';
@@ -99,7 +100,21 @@ export async function auditEnforcementDenied(input: {
 }): Promise<void> {
   try {
     const resolved = await resolveAuditContext(input.deps, input.tool, {}, input.sessionId);
-    if (!resolved) return;
+    if (!resolved) {
+      // This path has no channel to block — the tool call is already denied —
+      // so the audit record cannot be made mandatory here. It must still not
+      // vanish without trace: a missing mapping for a session that exists (or
+      // whose existence cannot be established) is an audit gap, not a
+      // non-event. Only positively proven absence is silent.
+      const existence = await resolveBootstrapStateExistence(input.deps, input.sessionId);
+      if (existence !== 'absent') {
+        input.deps.logError(
+          'Enforcement denial could not be audited: no authoritative audit session mapping',
+          { sessionId: input.sessionId, tool: input.tool, existence },
+        );
+      }
+      return;
+    }
     const { ctx, policy, state } = resolved;
     const identity = auditIdentity(state);
     if (!identity) return;
@@ -585,7 +600,26 @@ export async function runAudit(
   let effectiveMode: string = deps.mode;
   try {
     const resolved = await resolveAuditContext(deps, toolName, output, sessionId);
-    if (!resolved) return undefined;
+    if (!resolved) {
+      // Authority symmetry with reconcilePendingAuditOperations: a missing
+      // session mapping is NOT proof that the session is absent. The mapping
+      // resolves through the cached fingerprint, so a cold process or a
+      // transient fingerprint failure yields null for a fully governed
+      // session. Returning silently there skips the audit for a governed tool
+      // call while reporting success. Only positively proven absence — a tool
+      // call outside any session, or a resolved but unhydrated one — may pass.
+      const existence = await resolveBootstrapStateExistence(deps, sessionId);
+      if (existence === 'absent') return undefined;
+      return {
+        auditOk: false,
+        block: true,
+        code: 'AUDIT_SESSION_AUTHORITY_UNAVAILABLE',
+        reason:
+          'FlowGuard cannot audit this tool call because no authoritative ' +
+          'audit session mapping exists. Re-run /hydrate or restore the ' +
+          'session workspace before continuing.',
+      };
+    }
     policyResolved = resolved.policyResolved;
     effectiveMode = resolved.effectiveMode;
     const { ctx, policy, state } = resolved;
