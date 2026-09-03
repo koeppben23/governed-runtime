@@ -23,6 +23,7 @@ import {
   hasTimestampEvidence,
   isCurrentChainIntegrityFailure,
   isAuditFormatFailure,
+  isDeferredTimestampReason,
   auditReadFailureFindingCode,
   resolveArchiveStrictness,
   timestampFindingCode,
@@ -277,7 +278,11 @@ function addTimestampMismatchFindings(
   if (
     !chainResult.valid &&
     !isCurrentChainIntegrityFailure(chainResult.reason) &&
-    !isAuditFormatFailure(chainResult.reason)
+    !isAuditFormatFailure(chainResult.reason) &&
+    // Pending cryptographic verification is not a failure. The asynchronous
+    // token verifier below is the single authority for the verdict, and
+    // findings are append-only — emitting here would be unretractable.
+    !isDeferredTimestampReason(chainResult.reason)
   ) {
     const code = timestampFindingCode(chainResult.reason);
     findings.push({
@@ -320,7 +325,15 @@ function addEvidenceGapFindings(
   }
 }
 
-function addTimestampFindings(
+/**
+ * Project a chain verification result into archive findings.
+ *
+ * Exported for direct testing: this projection is where a DEFERRED
+ * cryptographic verification must not become a terminal failure, and archive
+ * findings are append-only, so a mistake here cannot be corrected by the
+ * asynchronous verifier that runs afterwards.
+ */
+export function addTimestampFindings(
   chainResult: ReturnType<typeof verifyChain>,
   timestampFailuresAreFatal: boolean,
   findings: ArchiveFinding[],
