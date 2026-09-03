@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { archiveSession, initWorkspace, verifyArchive } from './workspace/index.js';
-import { archiveRegulatedEvidence } from './workspace/archive.js';
+import { archiveFileName, archiveRegulatedEvidence } from './workspace/archive.js';
 import { verifyRegulatedArchive } from './workspace/archive-verify-chain.js';
 import { writeState, readState } from './persistence.js';
 import { appendAuditEvent, readAuditTrail } from './persistence-audit.js';
@@ -87,6 +87,16 @@ async function extract(archivePath: string): Promise<string> {
   return destination;
 }
 
+async function repack(archivePath: string, root: string, sessionId: string): Promise<void> {
+  const manifest = JSON.parse(
+    await fs.readFile(path.join(root, sessionId, 'archive-manifest.json'), 'utf8'),
+  ) as { includedFiles: string[] };
+  const members = [...manifest.includedFiles, 'archive-manifest.json'].map(
+    (file) => `${sessionId}/${file}`,
+  );
+  await promisify(execFile)('tar', ['--format=ustar', '-czf', archivePath, '-C', root, ...members]);
+}
+
 async function appendCompletionAuditEvent(sessDir: string, sessionId: string): Promise<void> {
   const state = await readState(sessDir);
   await appendAuditEvent(sessDir, {
@@ -132,6 +142,33 @@ function resealAuditTrailWithClockAnomaly(
 }
 
 describe('Archive Layout v2', () => {
+  it('uses a distinct filename for mandatory regulated evidence', () => {
+    const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+
+    expect(archiveFileName(sessionId)).toBe(`${sessionId}.tar.gz`);
+    expect(archiveFileName(sessionId, true)).toBe(`regulated-${sessionId}.tar.gz`);
+  });
+
+  it('fails closed when the session directory disappears during archive setup', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
+    });
+    const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    await writeConfigForTest(configDir, 'none', true);
+    await fs.rm(initialized.sessionDir, { recursive: true, force: true });
+
+    await expect(
+      archiveSession(initialized.fingerprint, sessionId, {
+        redactionMode: 'none',
+        includeRaw: true,
+      }),
+    ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
+  });
+
   it('exports complete canonical evidence into the structured archive tree', async () => {
     const { archivePath, sessionId } = await createArchive();
     const root = path.join(await extract(archivePath), sessionId);
@@ -293,6 +330,52 @@ describe('Archive Layout v2', () => {
     ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
   });
 
+  it('fails closed for an unparseable audit-trail record', async () => {
+    const { fingerprint, sessionId, sessionDir } = await createArchive();
+    await fs.writeFile(path.join(sessionDir, 'audit.jsonl'), 'not valid json\n', 'utf8');
+
+    await expect(
+      archiveSession(fingerprint, sessionId, { redactionMode: 'none', includeRaw: true }),
+    ).rejects.toMatchObject({
+      code: 'AUDIT_ENVELOPE_INVALID',
+    });
+  });
+
+  it('allows a redacted archive at the configured audit-event limit', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
+    });
+    const config = JSON.stringify({
+      schemaVersion: 'v1',
+      archive: {
+        redaction: { allowedModes: ['basic'], allowRawExport: false, maxAuditEvents: 1 },
+      },
+    });
+    await fs.writeFile(path.join(configDir, 'flowguard.json'), config, 'utf8');
+    const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    await writeState(initialized.sessionDir, makeState('COMPLETE'));
+    await appendCompletionAuditEvent(initialized.sessionDir, sessionId);
+
+    await expect(
+      archiveSession(initialized.fingerprint, sessionId, {
+        redactionMode: 'basic',
+        includeRaw: false,
+      }),
+    ).resolves.toBeDefined();
+    await appendCompletionAuditEvent(initialized.sessionDir, sessionId);
+
+    await expect(
+      archiveSession(initialized.fingerprint, sessionId, {
+        redactionMode: 'basic',
+        includeRaw: false,
+      }),
+    ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
+  });
+
   it('rejects sharing exports outside the configured redaction and raw-export policy', async () => {
     const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
     const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
@@ -335,6 +418,17 @@ describe('Archive Layout v2', () => {
       initialized.sessionDir,
       makeState('COMPLETE', { policySnapshot: REGULATED_POLICY_SNAPSHOT }),
     );
+    const state = await readState(initialized.sessionDir);
+    await appendAuditEvent(initialized.sessionDir, {
+      id: crypto.randomUUID(),
+      flowguardSessionId: state!.flowguardSessionId,
+      hostSessionId: sessionId,
+      phase: 'COMPLETE',
+      event: 'lifecycle:session_completed',
+      occurredAt: '2026-01-01T00:00:00.000Z',
+      actor: 'machine',
+      detail: { action: 'preparation_completed' },
+    });
     await appendCompletionAuditEvent(initialized.sessionDir, sessionId);
 
     await expect(
@@ -382,6 +476,7 @@ describe('Archive Layout v2', () => {
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
     const initialized = await initWorkspace(path.resolve('.'), sessionId);
     await writeState(initialized.sessionDir, makeState('COMPLETE'));
+    await appendCompletionAuditEvent(initialized.sessionDir, sessionId);
 
     await expect(
       archiveRegulatedEvidence(initialized.fingerprint, sessionId),
@@ -503,6 +598,34 @@ describe('Archive Layout v2', () => {
     });
   });
 
+  it('rebinds artifacts when their bytes change without changing their count', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
+    });
+    await writeConfigForTest(configDir, 'none', true);
+    const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    await writeState(initialized.sessionDir, makeState('COMPLETE'));
+    const proofPath = path.join(initialized.sessionDir, 'artifacts', 'proof.json');
+    await fs.mkdir(path.dirname(proofPath), { recursive: true });
+    await fs.writeFile(proofPath, '{"version":1}', 'utf8');
+    await fs.writeFile(path.join(path.dirname(proofPath), 'report.txt'), 'unchanged', 'utf8');
+    const options = { redactionMode: 'none' as const, includeRaw: true };
+    await archiveSession(initialized.fingerprint, sessionId, options);
+    await fs.writeFile(proofPath, '{"version":2}', 'utf8');
+
+    await archiveSession(initialized.fingerprint, sessionId, options);
+
+    const bindings = (await readAuditTrail(initialized.sessionDir)).events.filter(
+      (event) => event.event === 'archive:artifacts_bound',
+    );
+    expect(bindings).toHaveLength(2);
+    expect(bindings[1]?.detail).toMatchObject({ artifactCount: 2 });
+  });
+
   it('fails closed when a published archive has no external publication binding', async () => {
     const { fingerprint, sessionId, sessionDir } = await createArchive();
     await fs.writeFile(path.join(sessionDir, 'audit.jsonl'), '', 'utf8');
@@ -512,6 +635,217 @@ describe('Archive Layout v2', () => {
     expect(
       verification.findings.some((finding) => finding.code === 'archive_publication_unbound'),
     ).toBe(true);
+  });
+
+  it('detects a valid but truncated audit-chain prefix in a tampered archive', async () => {
+    const { archivePath, fingerprint, sessionId, sessionDir } = await createArchive();
+    await appendCompletionAuditEvent(sessionDir, sessionId);
+    await appendCompletionAuditEvent(sessionDir, sessionId);
+    await archiveSession(fingerprint, sessionId, { redactionMode: 'none', includeRaw: true });
+    const extracted = await extract(archivePath);
+    const auditPath = path.join(extracted, sessionId, 'audit', 'audit.jsonl');
+    const events = (await fs.readFile(auditPath, 'utf8')).trim().split('\n');
+    expect(events.length).toBeGreaterThan(1);
+    await fs.writeFile(auditPath, `${events.slice(0, -1).join('\n')}\n`, 'utf8');
+    await repack(archivePath, extracted, sessionId);
+
+    const verification = await verifyArchive(fingerprint, sessionId);
+
+    expect(verification.passed).toBe(false);
+    expect(
+      verification.findings.slice(0, 2).map(({ code, severity, file }) => ({
+        code,
+        severity,
+        file,
+      })),
+    ).toEqual([
+      { code: 'file_digest_mismatch', severity: 'error', file: 'audit/audit.jsonl' },
+      { code: 'audit_chain_truncated', severity: 'error', file: 'audit.jsonl' },
+    ]);
+    expect(verification.findings[1]).toEqual({
+      code: 'audit_chain_truncated',
+      severity: 'error',
+      message: `Audit trail does not match manifest anchor: expected ${events.length} event(s), found ${events.length - 1}`,
+      file: 'audit.jsonl',
+    });
+  });
+
+  it('fails closed when the manifest policy mode differs from governed state', async () => {
+    const { archivePath, fingerprint, sessionId } = await createArchive();
+    const extracted = await extract(archivePath);
+    const manifestPath = path.join(extracted, sessionId, 'archive-manifest.json');
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8')) as Record<string, unknown>;
+    await fs.writeFile(
+      manifestPath,
+      JSON.stringify({ ...manifest, policyMode: 'regulated' }),
+      'utf8',
+    );
+    await repack(archivePath, extracted, sessionId);
+
+    const verification = await verifyArchive(fingerprint, sessionId);
+
+    expect(verification.passed).toBe(false);
+    expect(verification.findings[0]).toEqual({
+      code: 'manifest_policy_mode_mismatch',
+      severity: 'error',
+      message: "Manifest policyMode 'regulated' does not match governed state mode 'team'",
+      file: 'archive-manifest.json',
+    });
+  });
+
+  it('reports a missing checksum sidecar even when publication binding cannot be evaluated', async () => {
+    const { archivePath, fingerprint, sessionId } = await createArchive();
+    await fs.rm(`${archivePath}.sha256`);
+
+    const verification = await verifyArchive(fingerprint, sessionId);
+
+    expect(verification.passed).toBe(false);
+    expect(verification.findings).toEqual([
+      {
+        code: 'archive_checksum_missing',
+        severity: 'warning',
+        message: 'Archive checksum sidecar (.sha256) not found',
+        file: undefined,
+      },
+      {
+        code: 'archive_publication_binding_invalid',
+        severity: 'error',
+        message: expect.stringMatching(
+          /^Published archive binding could not be evaluated: ENOENT: .*\.tar\.gz\.sha256'$/,
+        ),
+        file: undefined,
+      },
+    ]);
+  });
+
+  it('rejects a checksum sidecar with multiple digest tokens', async () => {
+    const { archivePath, fingerprint, sessionId } = await createArchive();
+    const checksum = await fs.readFile(`${archivePath}.sha256`, 'utf8');
+    await fs.writeFile(`${archivePath}.sha256`, `${checksum.trim()} ${'a'.repeat(64)}\n`, 'utf8');
+
+    const verification = await verifyArchive(fingerprint, sessionId);
+
+    expect(verification.passed).toBe(false);
+    expect(verification.findings).toContainEqual(
+      expect.objectContaining({ code: 'archive_checksum_mismatch', severity: 'error' }),
+    );
+  });
+
+  it('rejects a validly formatted checksum that does not match the archive bytes', async () => {
+    const { archivePath, fingerprint, sessionId } = await createArchive();
+    await fs.writeFile(`${archivePath}.sha256`, `${'a'.repeat(64)}  archive.tar.gz\n`, 'utf8');
+
+    const verification = await verifyArchive(fingerprint, sessionId);
+
+    expect(verification.passed).toBe(false);
+    expect(verification.findings).toContainEqual(
+      expect.objectContaining({ code: 'archive_checksum_mismatch', severity: 'error' }),
+    );
+  });
+
+  it('rejects an archive whose audit event count matches but head does not', async () => {
+    const { archivePath, fingerprint, sessionId, sessionDir } = await createArchive();
+    await appendCompletionAuditEvent(sessionDir, sessionId);
+    await archiveSession(fingerprint, sessionId, { redactionMode: 'none', includeRaw: true });
+    const extracted = await extract(archivePath);
+    const manifestPath = path.join(extracted, sessionId, 'archive-manifest.json');
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8')) as Record<string, unknown>;
+    await fs.writeFile(
+      manifestPath,
+      JSON.stringify({ ...manifest, auditChainHead: '0'.repeat(64) }),
+      'utf8',
+    );
+    await repack(archivePath, extracted, sessionId);
+
+    const verification = await verifyArchive(fingerprint, sessionId);
+
+    expect(verification.passed).toBe(false);
+    expect(verification.findings).toContainEqual(
+      expect.objectContaining({ code: 'audit_chain_truncated', severity: 'error' }),
+    );
+  });
+
+  it('reports both artifact bytes and manifest digests that disagree with the audit binding', async () => {
+    const { archivePath, fingerprint, sessionId, sessionDir } = await createArchive();
+    await fs.mkdir(path.join(sessionDir, 'artifacts'), { recursive: true });
+    await fs.writeFile(path.join(sessionDir, 'artifacts', 'proof.json'), '{"valid":true}', 'utf8');
+    await archiveSession(fingerprint, sessionId, { redactionMode: 'none', includeRaw: true });
+    const extracted = await extract(archivePath);
+    const root = path.join(extracted, sessionId);
+    const manifestPath = path.join(root, 'archive-manifest.json');
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8')) as {
+      fileDigests: Record<string, string>;
+    };
+    const artifact = Object.keys(manifest.fileDigests).find((file) =>
+      file.startsWith('artifacts/'),
+    );
+    expect(artifact).toBeDefined();
+    await fs.writeFile(path.join(root, artifact!), '{"valid":false}', 'utf8');
+    await fs.writeFile(
+      manifestPath,
+      JSON.stringify({
+        ...manifest,
+        fileDigests: { ...manifest.fileDigests, [artifact!]: 'b'.repeat(64) },
+      }),
+      'utf8',
+    );
+    await repack(archivePath, extracted, sessionId);
+
+    const verification = await verifyArchive(fingerprint, sessionId);
+
+    expect(verification.passed).toBe(false);
+    expect(
+      verification.findings.filter((finding) => finding.code === 'artifact_binding_mismatch'),
+    ).toHaveLength(2);
+  });
+
+  it('fails closed for an unreadable archive before attempting extraction', async () => {
+    const { archivePath, fingerprint, sessionId } = await createArchive();
+    await fs.writeFile(archivePath, 'not a gzip archive', 'utf8');
+
+    const verification = await verifyArchive(fingerprint, sessionId);
+
+    expect(verification.passed).toBe(false);
+    expect(verification.manifest).toBeNull();
+    expect(verification.findings).toContainEqual(
+      expect.objectContaining({ code: 'unexpected_file', severity: 'error' }),
+    );
+  });
+
+  it('surfaces missing state and discovery snapshots before payload integrity findings', async () => {
+    const { archivePath, fingerprint, sessionId } = await createArchive();
+    const extracted = await extract(archivePath);
+    const manifestPath = path.join(extracted, sessionId, 'archive-manifest.json');
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8')) as {
+      includedFiles: string[];
+      fileDigests: Record<string, string>;
+    };
+    await fs.rm(path.join(extracted, sessionId, 'state', 'session-state.json'));
+    const { 'state/session-state.json': _stateDigest, ...fileDigests } = manifest.fileDigests;
+    await fs.writeFile(
+      manifestPath,
+      JSON.stringify({
+        ...manifest,
+        includedFiles: manifest.includedFiles.filter((file) => file !== 'state/session-state.json'),
+        fileDigests,
+        discoveryDigest: 'a'.repeat(64),
+      }),
+      'utf8',
+    );
+    await repack(archivePath, extracted, sessionId);
+
+    const verification = await verifyArchive(fingerprint, sessionId);
+
+    expect(verification.passed).toBe(false);
+    expect(verification.findings.slice(0, 3)).toMatchObject([
+      { code: 'state_missing', severity: 'error' },
+      { code: 'snapshot_missing', file: 'context/discovery-snapshot.json', severity: 'warning' },
+      {
+        code: 'snapshot_missing',
+        file: 'context/profile-resolution-snapshot.json',
+        severity: 'warning',
+      },
+    ]);
   });
 
   it('rejects a non-regulated archive with a re-sealed clock anomaly', async () => {

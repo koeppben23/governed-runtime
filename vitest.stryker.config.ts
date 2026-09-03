@@ -118,6 +118,9 @@ export default defineConfig({
       // is executed. It covers `adapters/gh-cli.ts`, which is not in the
       // mutation scope, so excluding it costs no mutation coverage.
       'src/adapters/gh-cli-branch-base.test.ts',
+      // This invokes compiled dist hooks, not the mutated source modules. A
+      // fresh production build is outside the Stryker workspace lifecycle.
+      'src/hooks/command-hooks-smoke.test.ts',
       'src/__fixtures__.ts',
       'src/integration/test-helpers.ts',
       'src/audit/audit-test-helpers.ts',

@@ -43,8 +43,8 @@ function makeCtx(
   };
 }
 
-function parseBlocked(result: string): { code: string; error: boolean } {
-  return JSON.parse(result) as { code: string; error: boolean };
+function parseBlocked(result: string): { code: string; error: boolean; message: string } {
+  return JSON.parse(result) as { code: string; error: boolean; message: string };
 }
 
 function findingRelation() {
@@ -259,6 +259,31 @@ describe('validateReviewFindings', () => {
       expect(parseBlocked(result!).code).toBe('REVIEW_SUBJECT_SCOPE_UNAVAILABLE');
     });
 
+    it('identifies the out-of-scope finding and active obligation in the block message', () => {
+      const outOfScopeRisk = {
+        ...majorIssue,
+        relation: {
+          subjectAnchors: [
+            {
+              kind: 'repository_location' as const,
+              location: { path: 'src/outside.ts', revision: 'head' as const, line: 1 },
+            },
+          ],
+          evidenceLocations: [],
+        },
+      };
+      const result = validateReviewFindings(
+        makeFindings({ overallVerdict: 'accept', majorRisks: [outOfScopeRisk] }),
+        makeCtx({ assurance: strictAssuranceFixture(), obligationType: 'plan' }),
+      );
+
+      expect(result).not.toBeNull();
+      const blocked = parseBlocked(result!);
+      expect(blocked.code).toBe('REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE');
+      expect(blocked.message).toContain('finding 0');
+      expect(blocked.message).toContain('11111111-1111-4111-8111-111111111111');
+    });
+
     it('reports unable_to_review via its own SSOT path, not the coherence rule', () => {
       const result = validateReviewFindings(
         makeFindings({ overallVerdict: 'unable_to_review', blockingIssues: [] }),
@@ -271,6 +296,16 @@ describe('validateReviewFindings', () => {
   // ── Rule 1: mandatory subagent mode ────────────────────────────────────
 
   describe('Rule 1: mandatory subagent mode', () => {
+    it('rejects self-review findings with the independent-review recovery message', () => {
+      const result = validateReviewFindings(makeFindings({ reviewMode: 'self' }), makeCtx());
+
+      expect(result).not.toBeNull();
+      const blocked = parseBlocked(result!);
+      expect(blocked).toMatchObject({ code: 'REVIEW_MODE_SELF_NOT_ALLOWED', error: true });
+      expect(blocked.message).toContain('independent reviewer subagent');
+      expect(blocked.message).toContain('reviewMode=self');
+    });
+
     it('accepts subagent mode even when legacy subagentEnabled=false is supplied', () => {
       const result = validateReviewFindings(
         makeFindings({ reviewMode: 'subagent' }),
@@ -416,6 +451,18 @@ describe('validateReviewFindings', () => {
   });
 
   describe('strict assurance', () => {
+    it('reports unavailable plugin enforcement when the strict assurance state is absent', () => {
+      const result = validateReviewFindings(
+        strictFindings(),
+        makeCtx({ strictEnforcement: true, obligationType: 'plan' }),
+      );
+
+      expect(result).not.toBeNull();
+      const blocked = parseBlocked(result!);
+      expect(blocked).toMatchObject({ code: 'PLUGIN_ENFORCEMENT_UNAVAILABLE', error: true });
+      expect(blocked.message).toContain('plugin enforcement hooks are not active');
+    });
+
     it('accepts when strict evidence and attestation match', () => {
       const findings = strictFindings();
       const result = validateReviewFindings(
@@ -773,8 +820,9 @@ describe('requireReviewFindings', () => {
 
   it('returns structured JSON with error=true', () => {
     const result = requireReviewFindings(false);
-    const parsed = JSON.parse(result!);
-    expect(parsed.error).toBe(true);
-    expect(parsed.recovery).toBeTruthy();
+    const blocked = parseBlocked(result!);
+    expect(blocked.error).toBe(true);
+    expect(blocked.message).toContain('required for all review verdicts');
+    expect(JSON.parse(result!).recovery).toBeTruthy();
   });
 });

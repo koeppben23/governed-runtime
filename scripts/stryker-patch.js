@@ -53,9 +53,9 @@ if (!original.includes(SEARCH)) {
 }
 
 try {
-  writeFileSync(TARGET, original.replace(SEARCH, REPLACE), 'utf-8');
+  writeFileSync(TARGET, original.replaceAll(SEARCH, REPLACE), 'utf-8');
 } catch (err) {
   console.error(`[stryker-patch] ERROR: Cannot write ${TARGET}: ${err?.message ?? err}`);
   process.exit(1);
 }
-console.log('[stryker-patch] Patched Stryker vitest-runner: pool=threads → pool=forks');
+console.log('[stryker-patch] Patched Stryker vitest-runner: pool=threads -> pool=forks');

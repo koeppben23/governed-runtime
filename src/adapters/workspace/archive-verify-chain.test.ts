@@ -4,6 +4,9 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { isDeferredTimestampReason, timestampFindingCode } from './archive-verify-helpers.js';
 import { snapshotArchive } from './archive-files.js';
+import { addTimestampFindings } from './archive-verify-chain.js';
+import type { ChainVerification } from '../../audit/integrity.js';
+import type { ArchiveFinding } from '../../archive/types.js';
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -47,6 +50,145 @@ describe('timestampFindingCode', () => {
   it('maps other timestamp failures to timestamp_unanchored', () => {
     expect(timestampFindingCode('CLOCK_ANOMALY')).toBe('timestamp_unanchored');
     expect(timestampFindingCode('TIMESTAMP_EVIDENCE_MISSING')).toBe('timestamp_unanchored');
+  });
+});
+
+function chainVerification(overrides: Partial<ChainVerification> = {}): ChainVerification {
+  return {
+    valid: false,
+    totalEvents: 3,
+    verifiedCount: 3,
+    skippedCount: 0,
+    firstBreak: null,
+    results: [],
+    reason: null,
+    timestampMonotonicity: { valid: true, firstBreak: null, message: null },
+    missingTimestampEvidence: [],
+    tsaImprintMismatches: [],
+    tokenVerificationRequired: [],
+    tsaEvidenceDowngraded: [],
+    ...overrides,
+  };
+}
+
+describe('addTimestampFindings', () => {
+  it('reports a chain break as an integrity error', () => {
+    const findings: ArchiveFinding[] = [];
+
+    addTimestampFindings(chainVerification({ reason: 'CHAIN_BREAK' }), false, findings);
+
+    expect(findings).toEqual([
+      {
+        code: 'audit_chain_invalid',
+        severity: 'error',
+        message: 'Audit chain verification failed (CHAIN_BREAK): 3 total, 3 verified, 0 skipped',
+        file: 'audit.jsonl',
+      },
+    ]);
+  });
+
+  it('preserves every fatal timestamp assurance failure', () => {
+    const findings: ArchiveFinding[] = [];
+
+    addTimestampFindings(
+      chainVerification({
+        reason: 'TSA_EVIDENCE_DOWNGRADED',
+        timestampMonotonicity: { valid: false, firstBreak: 2, message: 'clock moved backwards' },
+        missingTimestampEvidence: [0],
+        tsaImprintMismatches: [1],
+      }),
+      true,
+      findings,
+    );
+
+    expect(findings).toEqual([
+      {
+        code: 'tsa_evidence_downgraded',
+        severity: 'error',
+        message: 'Timestamp verification failed (TSA_EVIDENCE_DOWNGRADED): 3 total, 3 verified',
+        file: 'audit.jsonl',
+      },
+      {
+        code: 'timestamp_unanchored',
+        severity: 'error',
+        message: 'Timestamp monotonicity violation: clock moved backwards',
+        file: 'audit.jsonl',
+      },
+      {
+        code: 'timestamp_unanchored',
+        severity: 'error',
+        message: '1 critical event(s) lack timestamp assurance evidence (indices: 0)',
+        file: 'audit.jsonl',
+      },
+      {
+        code: 'tsa_verification_failed',
+        severity: 'error',
+        message: '1 event(s) have TSA messageImprint mismatch (indices: 1)',
+        file: 'audit.jsonl',
+      },
+    ]);
+  });
+
+  it('keeps deferred token verification out of append-only findings', () => {
+    const findings: ArchiveFinding[] = [];
+
+    addTimestampFindings(
+      chainVerification({ reason: 'TOKEN_VERIFICATION_REQUIRED' }),
+      true,
+      findings,
+    );
+
+    expect(findings).toEqual([]);
+  });
+
+  it('projects non-fatal timestamp failures and evidence gaps as ordered warnings', () => {
+    const findings: ArchiveFinding[] = [];
+
+    addTimestampFindings(
+      chainVerification({
+        reason: 'TIMESTAMP_EVIDENCE_MISSING',
+        timestampMonotonicity: { valid: false, firstBreak: 2, message: 'clock moved backwards' },
+        missingTimestampEvidence: [0, 2],
+        tsaImprintMismatches: [1],
+      }),
+      false,
+      findings,
+    );
+
+    expect(findings).toEqual([
+      {
+        code: 'timestamp_unanchored',
+        severity: 'warning',
+        message: 'Timestamp verification failed (TIMESTAMP_EVIDENCE_MISSING): 3 total, 3 verified',
+        file: 'audit.jsonl',
+      },
+      {
+        code: 'timestamp_unanchored',
+        severity: 'warning',
+        message: 'Timestamp monotonicity violation: clock moved backwards',
+        file: 'audit.jsonl',
+      },
+      {
+        code: 'timestamp_unanchored',
+        severity: 'warning',
+        message: '2 critical event(s) lack timestamp assurance evidence (indices: 0, 2)',
+        file: 'audit.jsonl',
+      },
+      {
+        code: 'tsa_verification_failed',
+        severity: 'warning',
+        message: '1 event(s) have TSA messageImprint mismatch (indices: 1)',
+        file: 'audit.jsonl',
+      },
+    ]);
+  });
+
+  it('does not duplicate the generic timestamp finding for an audit envelope failure', () => {
+    const findings: ArchiveFinding[] = [];
+
+    addTimestampFindings(chainVerification({ reason: 'AUDIT_ENVELOPE_INVALID' }), true, findings);
+
+    expect(findings).toEqual([]);
   });
 });
 

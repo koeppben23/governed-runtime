@@ -58,6 +58,12 @@ describe('parseIPv4', () => {
     expect(parseIPv4('-1.0.0.0')).toBeNull();
     expect(parseIPv4('1.2.3.999')).toBeNull();
   });
+
+  it('rejects decimal-looking octets with whitespace or signs', () => {
+    expect(parseIPv4('1.2.3.4 ')).toBeNull();
+    expect(parseIPv4(' 1.2.3.4')).toBeNull();
+    expect(parseIPv4('+1.2.3.4')).toBeNull();
+  });
 });
 
 // ─── isPrivateIPv4 ────────────────────────────────────────────────────────────
@@ -158,6 +164,12 @@ describe('isIPv6Address / HAPPY', () => {
   it('accepts trailing :: with 7 explicit hextets', () => {
     expect(isIPv6Address('1:2:3:4:5:6:7::')).toBe(true);
   });
+
+  it('rejects compressed addresses without a hextet left to compress', () => {
+    expect(isIPv6Address('::1:2:3:4:5:6:7:8')).toBe(false);
+    expect(isIPv6Address('1:2:3:4:5:6:7:8::')).toBe(false);
+    expect(isIPv6Address('1:2:3:4::5:6:7:8')).toBe(false);
+  });
 });
 
 // ─── isIPv6Address: BAD ───────────────────────────────────────────────────────
@@ -177,6 +189,10 @@ describe('isIPv6Address / BAD', () => {
 
   it('rejects invalid hex digit', () => {
     expect(isIPv6Address('gggg::1')).toBe(false);
+  });
+
+  it('rejects invalid hex digits in an otherwise full address', () => {
+    expect(isIPv6Address('1:2:3:4:5:6:7:gggg')).toBe(false);
   });
 
   it('rejects 5-char hextet', () => {
@@ -228,6 +244,15 @@ describe('isIPv6Address / CORNER', () => {
     expect(isIPv6Address('::ffff:999.999.999.999')).toBe(false);
   });
 
+  it('rejects malformed dotted tails rather than treating them as hextets', () => {
+    expect(isIPv6Address('1:2:3:4:5:6:999.999.999.999')).toBe(false);
+    expect(isIPv6Address('1:2:3:4:5:6::192.0.2.1')).toBe(false);
+  });
+
+  it('accepts an uncompressed six-hextet prefix with a dotted tail', () => {
+    expect(isIPv6Address('1:2:3:4:5:6:192.0.2.1')).toBe(true);
+  });
+
   it('rejects single colon (not IPv6)', () => {
     expect(isIPv6Address(':')).toBe(false);
   });
@@ -252,6 +277,15 @@ describe('isPrivateIPv6', () => {
     expect(isPrivateIPv6('fe80::1')).toBe(true);
   });
 
+  it('detects every link-local high-byte prefix and excludes adjacent ranges', () => {
+    expect(isPrivateIPv6('fe80::1')).toBe(true);
+    expect(isPrivateIPv6('fe9f::1')).toBe(true);
+    expect(isPrivateIPv6('feaf::1')).toBe(true);
+    expect(isPrivateIPv6('febf::1')).toBe(true);
+    expect(isPrivateIPv6('fe7f::1')).toBe(false);
+    expect(isPrivateIPv6('fec0::1')).toBe(false);
+  });
+
   it('detects ULA as private', () => {
     expect(isPrivateIPv6('fc00::1')).toBe(true);
     expect(isPrivateIPv6('fd00::1')).toBe(true);
@@ -259,6 +293,12 @@ describe('isPrivateIPv6', () => {
 
   it('detects multicast as private', () => {
     expect(isPrivateIPv6('ff02::1')).toBe(true);
+  });
+
+  it('normalizes uppercase reserved prefixes before classification', () => {
+    expect(isPrivateIPv6('FC00::1')).toBe(true);
+    expect(isPrivateIPv6('FD00::1')).toBe(true);
+    expect(isPrivateIPv6('FF02::1')).toBe(true);
   });
 
   it('detects private IPv4-compatible and IPv4-mapped forms', () => {
@@ -271,6 +311,12 @@ describe('isPrivateIPv6', () => {
   it('allows public embedded IPv4 addresses', () => {
     expect(isPrivateIPv6('::8.8.8.8')).toBe(false);
     expect(isPrivateIPv6('::ffff:8.8.8.8')).toBe(false);
+  });
+
+  it('does not classify near-compatible or near-mapped forms by their IPv4 tail', () => {
+    expect(isPrivateIPv6('0:0:0:0:0:1:7f00:1')).toBe(false);
+    expect(isPrivateIPv6('0:0:0:0:1:ffff:7f00:1')).toBe(false);
+    expect(isPrivateIPv6('0:0:0:0:0:fffe:7f00:1')).toBe(false);
   });
 
   it('allows global unicast', () => {

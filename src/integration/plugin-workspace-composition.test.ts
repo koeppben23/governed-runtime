@@ -20,6 +20,8 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { readState, writeState } from '../adapters/persistence.js';
+import { appendAuditEvent } from '../adapters/persistence-audit.js';
+import { createDecisionEvent, GENESIS_HASH } from '../audit/types.js';
 import { makeState } from '../fixtures.js';
 import { createWorkspace } from './plugin-workspace.js';
 import { freezeReviewMaterial } from './review/assurance.js';
@@ -28,6 +30,8 @@ import type { SessionState } from '../state/schema.js';
 
 const NOW = '2026-05-15T12:00:00.000Z';
 const OBLIGATION_ID = '33333333-3333-4333-8333-333333333333';
+const FLOWGUARD_SESSION_ID = '44444444-4444-4444-8444-444444444444';
+const OTHER_SESSION_ID = '55555555-5555-4555-8555-555555555555';
 
 function stateWithBlockedCode(blockedCode: string): SessionState {
   const base = makeState('PLAN');
@@ -81,6 +85,33 @@ function semanticIntents(state: SessionState) {
       detail: { obligationId: OBLIGATION_ID, code: 'REVIEWER_INVOCATION_EXHAUSTED' },
     },
   ];
+}
+
+function decisionReceipt(
+  flowguardSessionId: string,
+  hostSessionId: string | undefined,
+  decisionSequence: number,
+) {
+  return createDecisionEvent({
+    flowguardSessionId,
+    hostSessionId,
+    gatePhase: 'PLAN_REVIEW',
+    detail: {
+      decisionId: `DEC-${decisionSequence}`,
+      decisionSequence,
+      verdict: 'approve',
+      rationale: 'reviewed',
+      decidedBy: 'reviewer',
+      decidedAt: NOW,
+      fromPhase: 'PLAN_REVIEW',
+      toPhase: 'VALIDATION',
+      transitionEvent: 'APPROVE',
+      policyMode: 'strict',
+    },
+    occurredAt: NOW,
+    actor: 'human',
+    prevHash: GENESIS_HASH,
+  });
 }
 
 async function withSessionDir<T>(fn: (sessDir: string) => Promise<T>): Promise<T> {
@@ -153,6 +184,21 @@ describe('createWorkspace composition contract', () => {
       const persisted = await readState(sessDir);
       const kinds = persisted!.pendingAuditOperations.map((operation) => operation.kind);
       expect(kinds).not.toContain('semantic');
+    });
+  });
+
+  it('allocates decision sequences from receipts bound to either session identity', async () => {
+    await withSessionDir(async (sessDir) => {
+      await appendAuditEvent(sessDir, decisionReceipt(FLOWGUARD_SESSION_ID, undefined, 3));
+      await appendAuditEvent(sessDir, decisionReceipt(OTHER_SESSION_ID, FLOWGUARD_SESSION_ID, 8));
+      await appendAuditEvent(sessDir, decisionReceipt(OTHER_SESSION_ID, 'other-host', 99));
+
+      const ws = createWorkspace({ auditWorktree: undefined });
+      expect(await ws.nextDecisionSequence(sessDir, FLOWGUARD_SESSION_ID)).toBe(9);
+      // Once allocated, the value belongs to this session even if the durable
+      // trail contains receipts for a different identity with higher numbers.
+      await appendAuditEvent(sessDir, decisionReceipt(OTHER_SESSION_ID, 'different-host', 100));
+      expect(await ws.nextDecisionSequence(sessDir, FLOWGUARD_SESSION_ID)).toBe(10);
     });
   });
 });
