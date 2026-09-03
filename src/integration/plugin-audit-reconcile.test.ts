@@ -168,7 +168,9 @@ describe('reconcilePendingAuditOperations', () => {
       const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-semantic-reconcile-'));
       try {
         const previous = makeState('PLAN', { id: SESSION_ID });
-        const next = makeState('PLAN', { id: SESSION_ID, activeChecks: ['review-complete'] });
+        // A repeated blocked-review failure is auditworthy despite its idempotent
+        // authority projection. The semantic operation must still drain safely.
+        const next = previous;
         const committed = prepareAuditOperations(previous, next, undefined, [
           {
             phase: 'PLAN',

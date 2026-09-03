@@ -30,6 +30,7 @@ export function buildSemanticAuditBody(input: {
       preStateDigest: input.preStateDigest,
       mutationDigest: input.mutationDigest,
       postStateDigest: input.postStateDigest,
+      stateChanged: input.preStateDigest !== input.postStateDigest,
     },
     prevHash: input.prevHash,
   };

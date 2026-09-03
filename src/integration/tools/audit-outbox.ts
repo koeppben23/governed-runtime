@@ -152,13 +152,10 @@ function addAuditOperations(
     : hashText('state-digest.v2:absent');
   const postStateDigest = computeStateDigest(next);
   if (preStateDigest === postStateDigest) {
-    if (semanticIntents.length > 0) {
-      throw new PersistenceError(
-        'SCHEMA_VALIDATION_FAILED',
-        'Cannot commit semantic audit intent without an authority state mutation',
-      );
-    }
-    return next;
+    // A repeated external failure can be auditworthy even when its idempotent
+    // state projection is unchanged. Persist only the semantic occurrence;
+    // never invent a state_write operation for this case.
+    return addSemanticOperations(previous, next, preStateDigest, postStateDigest, semanticIntents);
   }
   // Session bootstrap has no prior authority to bind; hydrate owns its
   // lifecycle/transition evidence when it creates a governed session.

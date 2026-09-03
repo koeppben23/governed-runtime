@@ -232,6 +232,24 @@ describe('prepareStateWithAuditOperations', () => {
     expect(computeCanonicalEventDigest(body)).toBe(operation.auditEventDigest);
   });
 
+  it('CORNER: commits a semantic-only occurrence for an idempotent authority update', () => {
+    const previous = makeState('PLAN', { id: SESSION_ID });
+    const prepared = prepareAuditOperations(previous, previous, undefined, [
+      {
+        phase: 'PLAN',
+        event: 'review:obligation_blocked',
+        occurredAt: FIXED_AT,
+        detail: { obligationId: 'obl-1', code: 'REVIEWER_INVOCATION_EXHAUSTED' },
+      },
+    ]);
+
+    expect(prepared.pendingAuditOperations).toHaveLength(1);
+    const operation = prepared.pendingAuditOperations[0]!;
+    expect(operation.kind).toBe('semantic');
+    expect(operation.preStateDigest).toBe(operation.postStateDigest);
+    expect(prepared.pendingAuditOperations.some((item) => item.kind === 'state_write')).toBe(false);
+  });
+
   it('CORNER: a chain of transitions carries chainIndex and autoAdvanced markers', async () => {
     const previous = makeState('TICKET', { id: SESSION_ID });
     const next = makeState('PLAN_REVIEW', {
