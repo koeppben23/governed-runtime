@@ -101,10 +101,23 @@ export default defineConfig({
       'src/integration/plugin-risk.test.ts',
       'src/integration/plugin-task-evidence.test.ts',
       'src/integration/plugin-workspace.test.ts',
+      'src/integration/plugin-workspace-semantic-outbox.test.ts',
+      // Added with the trust-boundary scope extension: these suites are the
+      // covering tests for newly mutated authorities and must run, otherwise
+      // those files would be mutated without any test able to kill a mutant.
+      'src/integration/runtime-lease.test.ts',
+      'src/integration/review/enforcement/challenge-binding.test.ts',
+      'src/state/evidence-mutation-episode.test.ts',
     ],
     exclude: [
       'src/security/actions-pinning.test.ts',
       'src/architecture/__tests__/dependency-rules.test.ts',
+      // Stryker executes vitest in worker threads, where Node does not
+      // implement `process.chdir()`. This suite changes the working directory
+      // per case and therefore aborts the whole mutation run before any mutant
+      // is executed. It covers `adapters/gh-cli.ts`, which is not in the
+      // mutation scope, so excluding it costs no mutation coverage.
+      'src/adapters/gh-cli-branch-base.test.ts',
       'src/__fixtures__.ts',
       'src/integration/test-helpers.ts',
       'src/audit/audit-test-helpers.ts',
