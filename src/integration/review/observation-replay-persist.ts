@@ -12,6 +12,7 @@
  */
 
 import type { SessionState } from '../../state/schema.js';
+import type { SemanticAuditIntent } from '../tools/audit-outbox.js';
 import { ensureReviewAssurance } from './assurance.js';
 import { replayObservationCaptures, type ObservationReplayResult } from './observation-replay.js';
 
@@ -20,6 +21,7 @@ export interface ReplayPersistDeps {
   updateReviewAssurance(
     sessDir: string,
     update: (state: SessionState, now: string) => SessionState,
+    semanticIntents?: (state: SessionState, now: string) => readonly SemanticAuditIntent[],
   ): Promise<void>;
   log: {
     info(service: string, message: string, extra?: Record<string, unknown>): void;
