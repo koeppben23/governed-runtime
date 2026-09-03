@@ -142,7 +142,7 @@ describe('enforceDiscoveryHealthBefore', () => {
     expect(arg.health.status).toBe('unavailable');
   });
 
-  it('persists a blocked gate + audit and throws on first block transition', async () => {
+  it('commits the blocked gate and its semantic audit intent', async () => {
     mockIsAllowed.mockReturnValue({
       allowed: false,
       code: 'DISCOVERY_HEALTH_UNAVAILABLE',
@@ -159,8 +159,11 @@ describe('enforceDiscoveryHealthBefore', () => {
       status: 'blocked',
       code: 'DISCOVERY_HEALTH_UNAVAILABLE',
     });
-    expect(mockAppendReviewAuditEvent).toHaveBeenCalledTimes(1);
-    expect(mockAppendReviewAuditEvent.mock.calls[0]![3]).toBe('discovery_health:gate_changed');
+    expect(mockAppendReviewAuditEvent).not.toHaveBeenCalled();
+    expect(written.pendingAuditOperations.find((item) => item.kind === 'semantic')).toMatchObject({
+      kind: 'semantic',
+      semantic: { event: 'discovery_health:gate_changed' },
+    });
   });
 
   it('does NOT re-persist when the gate is already blocked (idempotent)', async () => {

@@ -23,7 +23,7 @@ import {
   type DiscoveryHealthProjection,
 } from '../discovery/discovery-health.js';
 import { isDiscoveryHealthAllowed, type DiscoveryHealthDecision } from './discovery-health-gate.js';
-import { auditDiscoveryHealthGateTransition } from './discovery-health-audit.js';
+import { buildDiscoveryHealthGateTransitionDetail } from './discovery-health-audit.js';
 import { writeStateWithAuditOperations } from './tools/audit-outbox.js';
 
 export interface DiscoveryHealthEnforcementDeps {
@@ -65,9 +65,25 @@ async function persistDiscoveryHealthBlock(
     lastDriftAssessment: decision.driftStatus ?? state.discoveryHealthGate?.lastDriftAssessment,
   };
   const nextState: SessionState = { ...state, discoveryHealthGate: blockedGate };
-  await writeStateWithAuditOperations(sessDir, nextState);
-  // Persist-then-audit, via the single gate-transition audit authority.
-  await auditDiscoveryHealthGateTransition(sessDir, state, state.discoveryHealthGate, blockedGate);
+  const detail = buildDiscoveryHealthGateTransitionDetail(
+    nextState,
+    state.discoveryHealthGate,
+    blockedGate,
+  );
+  await writeStateWithAuditOperations(
+    sessDir,
+    nextState,
+    detail
+      ? [
+          {
+            phase: nextState.phase,
+            event: 'discovery_health:gate_changed',
+            occurredAt: blockedAt,
+            detail,
+          },
+        ]
+      : [],
+  );
 }
 
 /**

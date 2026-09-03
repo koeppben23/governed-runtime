@@ -18,7 +18,6 @@ import {
   staleObligationAttempts,
   updateAttemptStatus,
 } from './review/assurance.js';
-import { appendReviewAuditEvent } from './review/audit-events.js';
 import { strictBlockedOutput } from './plugin-helpers.js';
 import { settleReviewObligationAfterAttempt } from './review/obligation-settlement.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
@@ -197,53 +196,54 @@ async function persistHostTaskEvidence(
     childSessionId: evidence.childSessionId,
     findingsHash: evidence.findingsHash,
   });
-  await deps.ws.updateReviewAssurance(sessDir, (s: SessionState) => {
-    const assurance = ensureReviewAssurance(s.reviewAssurance);
-    const at = evidence.fulfilledAt ?? evidence.invokedAt ?? now;
-
-    const withInvocation = appendInvocationEvidence(assurance, evidence);
-    const fulfilled = fulfillObligation(
-      withInvocation,
-      evidence.obligationId,
-      evidence.invocationId,
-      at,
-    );
-
-    if (!bindResult.attempt) {
-      return { ...s, reviewAssurance: fulfilled };
-    }
-
-    // The evidence timestamps are the authoritative completion time; `now` is
-    // the injected host clock, used only when the evidence carries neither.
-    // Update the existing attempt record in-place — never append a duplicate.
-    const marked = updateAttemptStatus(fulfilled, bindResult.attempt.attemptId, 'bound', at);
-    // Stale any OTHER non-bound attempts for the same obligation.
-    const deduped = staleObligationAttempts(
-      marked,
-      evidence.obligationId,
-      bindResult.attempt.attemptId,
-      at,
-    );
-    return { ...s, reviewAssurance: deduped };
-  });
-  const updated = await readState(sessDir);
-  await appendReviewAuditEvent(
+  await deps.ws.updateReviewAssurance(
     sessDir,
-    sessionId,
-    updated?.phase ?? 'unknown',
-    'review:invocation_captured',
-    {
-      obligationId: evidence.obligationId,
-      invocationId: evidence.invocationId,
-      childSessionId: evidence.childSessionId,
-      findingsHash: evidence.findingsHash,
-      hostTaskCallId: evidence.hostTaskCallId,
-      canonicalPromptDigest: evidence.canonicalPromptDigest,
-      modelPromptDigest: evidence.modelPromptDigest,
-      capturedVerdict: evidence.capturedVerdict,
-      bindOutcome: bindResult.bindOutcome,
-      callId: evidence.hostTaskCallId,
+    (s: SessionState) => {
+      const assurance = ensureReviewAssurance(s.reviewAssurance);
+      const at = evidence.fulfilledAt ?? evidence.invokedAt ?? now;
+
+      const withInvocation = appendInvocationEvidence(assurance, evidence);
+      const fulfilled = fulfillObligation(
+        withInvocation,
+        evidence.obligationId,
+        evidence.invocationId,
+        at,
+      );
+
+      if (!bindResult.attempt) {
+        return { ...s, reviewAssurance: fulfilled };
+      }
+
+      // The evidence timestamps are the authoritative completion time; `now` is
+      // the injected host clock, used only when the evidence carries neither.
+      const marked = updateAttemptStatus(fulfilled, bindResult.attempt.attemptId, 'bound', at);
+      const deduped = staleObligationAttempts(
+        marked,
+        evidence.obligationId,
+        bindResult.attempt.attemptId,
+        at,
+      );
+      return { ...s, reviewAssurance: deduped };
     },
+    (state, occurredAt) => [
+      {
+        phase: state.phase,
+        event: 'review:invocation_captured',
+        occurredAt,
+        detail: {
+          obligationId: evidence.obligationId,
+          invocationId: evidence.invocationId,
+          childSessionId: evidence.childSessionId,
+          findingsHash: evidence.findingsHash,
+          hostTaskCallId: evidence.hostTaskCallId,
+          canonicalPromptDigest: evidence.canonicalPromptDigest,
+          modelPromptDigest: evidence.modelPromptDigest,
+          capturedVerdict: evidence.capturedVerdict,
+          bindOutcome: bindResult.bindOutcome,
+          callId: evidence.hostTaskCallId,
+        },
+      },
+    ],
   );
 }
 

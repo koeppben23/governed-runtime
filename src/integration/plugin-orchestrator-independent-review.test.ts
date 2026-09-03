@@ -331,50 +331,48 @@ describe('runReviewOrchestration strict independent review with footer output', 
       });
       expect(invocation?.invocationId).toBe(obligation?.invocationId);
 
-      expect(appendReviewAuditEvent).toHaveBeenCalledWith(
-        SESS_DIR,
-        PARENT_SESSION_ID,
-        testCase.phase,
-        'review:obligation_created',
+      expect(appendReviewAuditEvent).not.toHaveBeenCalled();
+      const handshakeIntent = vi.mocked(deps.updateReviewAssurance).mock.calls[0]![2]!(state, NOW);
+      expect(handshakeIntent).toEqual([
         expect.objectContaining({
-          obligationId: OBLIGATION_ID,
-          obligationType: testCase.obligationType,
-          iteration: 1,
-          planVersion: 1,
-          criteriaVersion: REVIEW_CRITERIA_VERSION,
-          mandateDigest: REVIEW_MANDATE_DIGEST,
+          event: 'review:obligation_created',
+          detail: expect.objectContaining({
+            obligationId: OBLIGATION_ID,
+            obligationType: testCase.obligationType,
+            iteration: 1,
+            planVersion: 1,
+            criteriaVersion: REVIEW_CRITERIA_VERSION,
+            mandateDigest: REVIEW_MANDATE_DIGEST,
+          }),
         }),
-      );
-      expect(appendReviewAuditEvent).toHaveBeenCalledWith(
-        SESS_DIR,
-        PARENT_SESSION_ID,
-        testCase.phase,
-        'review:subagent_invoked',
+      ]);
+      const evidenceIntents = vi.mocked(deps.updateReviewAssurance).mock.calls[1]![2]!(state, NOW);
+      expect(evidenceIntents).toEqual([
         expect.objectContaining({
-          obligationId: OBLIGATION_ID,
-          obligationType: testCase.obligationType,
-          parentSessionId: PARENT_SESSION_ID,
-          childSessionId: CHILD_SESSION_ID,
-          agentType: 'flowguard-reviewer',
-          promptHash: invocation?.promptHash,
-          findingsHash: invocation?.findingsHash,
-          mandateDigest: REVIEW_MANDATE_DIGEST,
-          criteriaVersion: REVIEW_CRITERIA_VERSION,
-          reviewOutputMode: 'structured_output',
-          structuredOutputUsed: true,
-          reviewAssuranceLevel: 'structured_high',
+          event: 'review:subagent_invoked',
+          detail: expect.objectContaining({
+            obligationId: OBLIGATION_ID,
+            obligationType: testCase.obligationType,
+            parentSessionId: PARENT_SESSION_ID,
+            childSessionId: CHILD_SESSION_ID,
+            agentType: 'flowguard-reviewer',
+            promptHash: invocation?.promptHash,
+            findingsHash: invocation?.findingsHash,
+            mandateDigest: REVIEW_MANDATE_DIGEST,
+            criteriaVersion: REVIEW_CRITERIA_VERSION,
+            reviewOutputMode: 'structured_output',
+            structuredOutputUsed: true,
+            reviewAssuranceLevel: 'structured_high',
+          }),
         }),
-      );
-      expect(appendReviewAuditEvent).toHaveBeenCalledWith(
-        SESS_DIR,
-        PARENT_SESSION_ID,
-        testCase.phase,
-        'review:obligation_fulfilled',
         expect.objectContaining({
-          obligationId: OBLIGATION_ID,
-          childSessionId: CHILD_SESSION_ID,
+          event: 'review:obligation_fulfilled',
+          detail: expect.objectContaining({
+            obligationId: OBLIGATION_ID,
+            childSessionId: CHILD_SESSION_ID,
+          }),
         }),
-      );
+      ]);
 
       const pendingReview = deps
         .getEnforcementState(PARENT_SESSION_ID)

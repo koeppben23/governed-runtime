@@ -215,8 +215,14 @@ export async function persistRiskDecisionBlock(
       lastDecisionId: decision.decisionId,
     },
   };
-  await writeStateWithAuditOperations(sessDir, nextState);
-  await appendRiskDecisionAudit(sessDir, state, decision, 'blocked', code);
+  await writeStateWithAuditOperations(sessDir, nextState, [
+    {
+      phase: nextState.phase,
+      event: 'risk:classification_checked',
+      occurredAt: blockedAt,
+      detail: riskDecisionAuditDetail(nextState, decision, 'blocked', code),
+    },
+  ]);
 }
 
 export async function appendRiskDecisionAudit(
@@ -231,20 +237,29 @@ export async function appendRiskDecisionAudit(
     state.binding.hostSessionId,
     state.phase,
     'risk:classification_checked',
-    {
-      decisionId: decision.decisionId,
-      decision: result,
-      reasonCode,
-      claimedTaskClass: decision.claimedTaskClass ?? null,
-      minimumTaskClass: decision.minimumTaskClass,
-      touchedSurfaces: decision.touchedSurfaces,
-      changedFilesSummary: decision.changedFiles,
-      policyMode: state.policySnapshot.mode,
-      enforceRiskClassification: state.policySnapshot.enforceRiskClassification,
-      allowRiskDowngradeOverride: state.policySnapshot.allowRiskDowngradeOverride,
-      riskGateStatus: result === 'blocked' ? 'blocked' : (state.riskGate?.status ?? 'clear'),
-    },
+    riskDecisionAuditDetail(state, decision, result, reasonCode),
   );
+}
+
+function riskDecisionAuditDetail(
+  state: SessionState,
+  decision: RiskClassificationDecision,
+  result: 'allowed' | 'blocked',
+  reasonCode: string,
+): Record<string, unknown> {
+  return {
+    decisionId: decision.decisionId,
+    decision: result,
+    reasonCode,
+    claimedTaskClass: decision.claimedTaskClass ?? null,
+    minimumTaskClass: decision.minimumTaskClass,
+    touchedSurfaces: decision.touchedSurfaces,
+    changedFilesSummary: decision.changedFiles,
+    policyMode: state.policySnapshot.mode,
+    enforceRiskClassification: state.policySnapshot.enforceRiskClassification,
+    allowRiskDowngradeOverride: state.policySnapshot.allowRiskDowngradeOverride,
+    riskGateStatus: result === 'blocked' ? 'blocked' : (state.riskGate?.status ?? 'clear'),
+  };
 }
 
 function throwRiskBlocked(

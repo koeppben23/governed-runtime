@@ -293,8 +293,23 @@ const PendingStateWriteAuditOperation = PendingAuditOperationBase.extend({
   }),
 });
 
+/** A semantic event committed atomically with the authority state it describes. */
+const PendingSemanticAuditOperation = PendingAuditOperationBase.extend({
+  kind: z.literal('semantic'),
+  semantic: z.object({
+    phase: Phase,
+    event: z.string().min(1),
+    occurredAt: z.string().datetime(),
+    detail: z.record(z.string(), z.unknown()),
+  }),
+});
+
 export const PendingAuditOperation = z
-  .union([PendingTransitionAuditOperation, PendingStateWriteAuditOperation])
+  .union([
+    PendingTransitionAuditOperation,
+    PendingStateWriteAuditOperation,
+    PendingSemanticAuditOperation,
+  ])
   .readonly();
 export type PendingAuditOperation = z.infer<typeof PendingAuditOperation>;
 

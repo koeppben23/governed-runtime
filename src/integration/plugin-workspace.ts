@@ -22,16 +22,17 @@ import {
 import { GENESIS_HASH, type ChainedAuditEvent } from '../audit/types.js';
 import { decisionReceipts } from '../audit/query.js';
 import { getLastChainHash } from '../audit/integrity.js';
-import { appendReviewAuditEvent } from './review/audit-events.js';
 import { blockObligation } from './review/obligation-state.js';
-import { getAdapterLogger } from '../logging/adapter-logger.js';
 import type { SessionState } from '../state/schema.js';
 import { strictBlockedOutput } from './plugin-helpers.js';
 import { createSessionState as createEnforcementState } from './review/enforcement/enforcement.js';
 import type { SessionEnforcementState } from './review/enforcement/types.js';
 import type { ReviewSessionContext } from './review/pipeline-types.js';
 import { recordAssuranceWithAudit } from './review/shared-helpers.js';
-import { writeStateWithAuditOperationsAlreadyLocked } from './tools/audit-outbox.js';
+import {
+  type SemanticAuditIntent,
+  writeStateWithAuditOperationsAlreadyLocked,
+} from './tools/audit-outbox.js';
 
 /** Mutable per-session chain state. */
 export type MutableChainState = {
@@ -69,6 +70,7 @@ export interface PluginWorkspace {
   updateReviewAssurance(
     sessDir: string,
     update: (state: SessionState, now: string) => SessionState,
+    semanticIntents?: (state: SessionState, now: string) => readonly SemanticAuditIntent[],
   ): Promise<void>;
   blockReviewOutcome(
     ctx: ReviewSessionContext,
@@ -190,13 +192,14 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
   async updateReviewAssurance(
     sessDir: string,
     update: (state: SessionState, now: string) => SessionState,
+    semanticIntents?: (state: SessionState, now: string) => readonly SemanticAuditIntent[],
   ): Promise<void> {
     await withSessionWriteLock(sessDir, async () => {
       const current = await readState(sessDir);
       if (!current) return;
       const now = new Date().toISOString();
       const next = update(current, now);
-      await writeStateWithAuditOperationsAlreadyLocked(sessDir, next);
+      await writeStateWithAuditOperationsAlreadyLocked(sessDir, next, semanticIntents?.(next, now));
     });
   }
 
@@ -209,19 +212,14 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
   ): Promise<void> {
     const result = await recordAssuranceWithAudit(
       {
-        updateReviewAssurance: (sessDir, update) => this.updateReviewAssurance(sessDir, update),
-        appendReviewAuditEvent: (sessDir, sessionId, phase, event, detail2) =>
-          appendReviewAuditEvent(sessDir, sessionId, phase, event, detail2),
-        logError: (msg, err) => getAdapterLogger().error('workspace', msg, { error: String(err) }),
+        updateReviewAssurance: (sessDir, update, semanticIntents) =>
+          this.updateReviewAssurance(sessDir, update, semanticIntents),
       },
       {
         sessDir: ctx.sessDir,
-        sessionId: ctx.sessionId,
-        phase: ctx.phase,
         stateMutation: (s) => blockObligation(s, obligationId, code),
         auditEventName: 'review:obligation_blocked',
         auditDetail: { obligationId, code },
-        auditFailureBehavior: 'block',
       },
     );
 

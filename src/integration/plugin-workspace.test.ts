@@ -180,73 +180,34 @@ describe('integration/plugin-workspace', () => {
 function mockAssuranceDeps(overrides?: Partial<AssuranceAuditDeps>): AssuranceAuditDeps {
   return {
     updateReviewAssurance: vi.fn(),
-    appendReviewAuditEvent: vi.fn(),
-    logError: vi.fn(),
     ...overrides,
   };
 }
 
 describe('recordAssuranceWithAudit', () => {
-  it('HAPPY: state and audit both succeed', async () => {
+  it('commits the semantic audit intent with the state mutation', async () => {
     const updateReviewAssurance = vi.fn();
-    const appendReviewAuditEvent = vi.fn();
-    const deps = mockAssuranceDeps({ updateReviewAssurance, appendReviewAuditEvent });
+    const deps = mockAssuranceDeps({ updateReviewAssurance });
     const result = await recordAssuranceWithAudit(deps, {
       sessDir: '/tmp/sess',
-      sessionId: 's1',
-      phase: 'PLAN',
       stateMutation: () => ({ phase: 'PLAN' }) as never,
       auditEventName: 'review:obligation_blocked',
       auditDetail: { code: 'X' },
-      auditFailureBehavior: 'block',
     });
     expect(result.auditOk).toBe(true);
     expect(updateReviewAssurance).toHaveBeenCalled();
-    expect(appendReviewAuditEvent).toHaveBeenCalled();
-    // State is committed first, then audit is appended
-    expect(updateReviewAssurance.mock.invocationCallOrder[0]!).toBeLessThan(
-      appendReviewAuditEvent.mock.invocationCallOrder[0]!,
-    );
-  });
-
-  it('BAD: audit failure blocks with auditFailureBehavior: block', async () => {
-    const deps = mockAssuranceDeps({
-      appendReviewAuditEvent: vi.fn().mockRejectedValue(new Error('ENOSPC')),
-    });
-    const result = await recordAssuranceWithAudit(deps, {
-      sessDir: '/tmp/sess',
-      sessionId: 's1',
-      phase: 'PLAN',
-      stateMutation: () => ({ phase: 'PLAN' }) as never,
-      auditEventName: 'review:obligation_blocked',
-      auditDetail: { code: 'X' },
-      auditFailureBehavior: 'block',
-    });
-    expect(result.auditOk).toBe(false);
-    expect(result.block).toBe(true);
-    expect(result.code).toBe('AUDIT_PERSISTENCE_FAILED');
-    expect(deps.logError).toHaveBeenCalled();
-    // State was committed despite audit failure
-    expect(deps.updateReviewAssurance).toHaveBeenCalled();
-  });
-
-  it('BAD: audit failure warns with auditFailureBehavior: warn', async () => {
-    const deps = mockAssuranceDeps({
-      appendReviewAuditEvent: vi.fn().mockRejectedValue(new Error('ENOSPC')),
-    });
-    const result = await recordAssuranceWithAudit(deps, {
-      sessDir: '/tmp/sess',
-      sessionId: 's1',
-      phase: 'PLAN',
-      stateMutation: () => ({ phase: 'PLAN' }) as never,
-      auditEventName: 'review:obligation_blocked',
-      auditDetail: { code: 'X' },
-      auditFailureBehavior: 'warn',
-    });
-    expect(result.auditOk).toBe(false);
-    expect(result.block).toBeUndefined();
-    expect(deps.logError).toHaveBeenCalled();
-    expect(deps.updateReviewAssurance).toHaveBeenCalled();
+    const intentFactory = updateReviewAssurance.mock.calls[0]![2] as (
+      state: { phase: string },
+      now: string,
+    ) => unknown[];
+    expect(intentFactory({ phase: 'PLAN' }, '2026-01-01T00:00:00.000Z')).toEqual([
+      {
+        phase: 'PLAN',
+        event: 'review:obligation_blocked',
+        occurredAt: '2026-01-01T00:00:00.000Z',
+        detail: { code: 'X' },
+      },
+    ]);
   });
 
   it('BAD: state failure propagates and prevents audit write', async () => {
@@ -256,26 +217,19 @@ describe('recordAssuranceWithAudit', () => {
     await expect(
       recordAssuranceWithAudit(deps, {
         sessDir: '/tmp/sess',
-        sessionId: 's1',
-        phase: 'PLAN',
         stateMutation: () => ({ phase: 'PLAN' }) as never,
         auditEventName: 'review:obligation_blocked',
         auditDetail: { code: 'X' },
-        auditFailureBehavior: 'block',
       }),
     ).rejects.toThrow('LOCK_TIMEOUT');
-    // Audit must NOT be called when state fails
-    expect(deps.appendReviewAuditEvent).not.toHaveBeenCalled();
   });
 
-  it('CALL-SITE: blockReviewOutcome produces AUDIT_PERSISTENCE_FAILED when audit write fails', async () => {
-    // Setup mocks: state reads work, lock runs callback, audit throws
+  it('CALL-SITE: blockReviewOutcome commits a recoverable semantic intent', async () => {
     const mockState = makeState('PLAN');
     mockReadState.mockResolvedValue(mockState);
     mockWithSessionWriteLock.mockImplementation(async (_dir: string, fn: () => Promise<void>) =>
       fn(),
     );
-    mockAppendReviewAudit.mockRejectedValue(new Error('ENOSPC'));
 
     const ws = new PluginWorkspaceImpl({ auditWorktree: '/tmp' } as WorkspaceDeps);
     const output: { output: string } = { output: '' };
@@ -288,8 +242,8 @@ describe('recordAssuranceWithAudit', () => {
       output,
     );
 
-    expect(output.output).toContain('AUDIT_PERSISTENCE_FAILED');
-    expect(output.output).not.toContain('SUBAGENT_REVIEW_NOT_INVOKED');
+    expect(output.output).toContain('SUBAGENT_REVIEW_NOT_INVOKED');
+    expect(mockReadState).toHaveBeenCalled();
   });
 
   it('REGISTRY: AUDIT_PERSISTENCE_FAILED is centrally registered with recovery', async () => {

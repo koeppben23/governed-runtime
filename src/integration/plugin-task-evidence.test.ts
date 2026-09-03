@@ -152,13 +152,17 @@ describe('handleHostTaskEvidence', () => {
 
       expect(mockBuildHostTaskEvidence).toHaveBeenCalledTimes(1);
       expect(ws.updateReviewAssurance).toHaveBeenCalledTimes(1);
-      expect(mockAppendReviewAuditEvent).toHaveBeenCalledWith(
-        '/tmp/sess',
-        SESSION_ID,
-        'IMPLEMENTATION',
-        'review:invocation_captured',
-        expect.objectContaining({ childSessionId: 'child-1', obligationId: 'obl-1' }),
-      );
+      expect(mockAppendReviewAuditEvent).not.toHaveBeenCalled();
+      const intentFactory = vi.mocked(ws.updateReviewAssurance).mock.calls[0]![2] as (
+        state: { phase: string },
+        now: string,
+      ) => unknown[];
+      expect(intentFactory({ phase: 'IMPLEMENTATION' }, now)).toEqual([
+        expect.objectContaining({
+          event: 'review:invocation_captured',
+          detail: expect.objectContaining({ childSessionId: 'child-1', obligationId: 'obl-1' }),
+        }),
+      ]);
       expect(hookOutput.output).toBeUndefined();
     });
 
