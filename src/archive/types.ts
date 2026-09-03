@@ -77,8 +77,8 @@ export type ManifestPolicyMode = z.infer<typeof ManifestPolicyModeSchema>;
  * - archive_checksum_mismatch: archive file hash doesn't match sidecar
  * - audit_chain_invalid: current-format audit trail hash-chain verification failed
  *   because the v2 chain was tampered, reordered, inserted, or deleted
- * - audit_chain_legacy_format: chained pre-v2 audit trail requires migration or
- *   explicit weak legacy verification and is not v2 tamper evidence
+ * - audit_chain_invalid_event: a record violates the canonical audit-chain.v3
+ *   event envelope (the trust boundary never classifies legacy formats)
  * - audit_chain_unsupported_format: audit trail declares an unknown chain format
  * - snapshot_missing: discovery or profile-resolution snapshot not found
  * - state_missing: session-state.json not found in archive
@@ -88,6 +88,12 @@ export type ManifestPolicyMode = z.infer<typeof ManifestPolicyModeSchema>;
  * - archive_inventory_inconclusive: archive payload inventory could not be read completely
  * - archive_publication_unbound: published archive has no exact external audit binding
  * - archive_publication_binding_invalid: external binding audit trail is unreadable or invalid
+ * - timestamp_unanchored: critical events lack timestamp assurance evidence
+ * - tsa_verification_failed: TSA token verification failed
+ * - tsa_evidence_downgraded: stronger TSA evidence payload exists but the
+ *   recorded status was downgraded (AC2)
+ * - tsa_token_required_by_policy: tsa_critical policy requires an external TSA
+ *   token for a critical event; internal-imprint evidence does not satisfy it
  */
 export const ArchiveFindingCodeSchema = z.enum([
   'missing_manifest',
@@ -101,7 +107,7 @@ export const ArchiveFindingCodeSchema = z.enum([
   'archive_checksum_missing',
   'archive_checksum_mismatch',
   'audit_chain_invalid',
-  'audit_chain_legacy_format',
+  'audit_chain_invalid_event',
   'audit_chain_unsupported_format',
   'snapshot_missing',
   'state_missing',
@@ -114,6 +120,7 @@ export const ArchiveFindingCodeSchema = z.enum([
   'timestamp_unanchored',
   'tsa_verification_failed',
   'tsa_evidence_downgraded',
+  'tsa_token_required_by_policy',
   'artifact_binding_missing',
   'artifact_binding_mismatch',
 ]);

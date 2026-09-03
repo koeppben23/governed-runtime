@@ -321,13 +321,13 @@ describe('audit and archive integrity fail-closed behavior', () => {
     expect(result.reason).toBe('CHAIN_BREAK');
   });
 
-  it('classifies pre-v3 audit records as unsupported legacy, not chain tamper', () => {
+  it('classifies pre-v3 audit records as envelope-invalid, not chain tamper', () => {
     const first = chainedEvent('genesis', 'first');
     const { auditFormatVersion: _auditFormatVersion, ...legacy } = first;
 
     const result = verifyChain([legacy]);
     expect(result.valid).toBe(false);
-    expect(result.reason).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
+    expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
   });
 
   it.skipIf(!tarOk)('regulated archive verification flags malformed audit lines', async () => {

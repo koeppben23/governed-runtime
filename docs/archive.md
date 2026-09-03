@@ -127,8 +127,8 @@ FlowGuard provides `verifyArchive()` to validate archive integrity.
 | `audit_chain_truncated`          | Actual audit head/count disagrees with the manifest completeness anchor (tail truncation)           |
 | `archive_checksum_missing`       | SHA256 sidecar not found                                                                            |
 | `archive_checksum_mismatch`      | Archive hash doesn't match                                                                          |
-| `audit_chain_invalid`            | Current-format v2 audit trail chain verification failed                                             |
-| `audit_chain_legacy_format`      | Pre-v2 audit chain requires migration or explicit weak legacy verification                          |
+| `audit_chain_invalid`            | Current-format v3 audit trail chain verification failed                                             |
+| `audit_chain_invalid_event`      | A record violates the canonical audit-chain.v3 event envelope (no legacy classification exists)     |
 | `audit_chain_unsupported_format` | Audit trail declares an unsupported audit chain format                                              |
 | `state_missing`                  | Session state missing                                                                               |
 | `snapshot_missing`               | Discovery snapshot missing                                                                          |
@@ -249,12 +249,13 @@ time, and `recordedAt` is stamped by the append authority. This binds nested
 audit content such as decision details, actor metadata, timestamp evidence, and
 enforcement metadata to the chain hash.
 
-Records that omit `auditFormatVersion` or declare a pre-v3 format are rejected
-with `LEGACY_ASSURANCE_FORMAT_UNSUPPORTED` at every persistence and
-verification boundary. Legacy assurance artifacts are never migrated,
-reinterpreted, or re-sealed: a trail containing them fails verification with
-the `audit_chain_legacy_format` finding, not `audit_chain_invalid`, so operators
-can distinguish unsupported epoch data from a tampered v3 chain. A time
+Records that violate the canonical audit-chain.v3 envelope — whether they
+omit `auditFormatVersion`, declare a pre-v3 format, or fail any schema field —
+are rejected with `AUDIT_ENVELOPE_INVALID` at every persistence and
+verification boundary. The trust boundary never identifies, accepts, migrates,
+or re-seals older formats: a trail containing them fails verification with the
+`audit_chain_invalid_event` finding, not `audit_chain_invalid`, so operators
+can distinguish an envelope violation from a tampered v3 chain. A time
 regression between `recordedAt` values is reported as `CLOCK_ANOMALY`.
 (Chain-order authority is the append-stamped `recordedAt`: the durable audit
 outbox reconciles older operations after newer direct appends, so an earlier

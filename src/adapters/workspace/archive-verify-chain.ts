@@ -10,6 +10,7 @@ import { readState } from '../persistence.js';
 import { readAuditTrail } from '../persistence-audit.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import { verifyChain, getLastChainHash, type ChainVerification } from '../../audit/integrity.js';
+import { logAuditChainVerificationFailure } from './archive-verify-logging.js';
 import {
   type ArchiveManifest,
   type ArchiveVerification,
@@ -22,6 +23,7 @@ import {
   hasTimestampEvidence,
   isCurrentChainIntegrityFailure,
   isAuditFormatFailure,
+  auditReadFailureFindingCode,
   resolveArchiveStrictness,
   timestampFindingCode,
 } from './archive-verify-helpers.js';
@@ -62,7 +64,7 @@ const AUDIT_HEAD_LOG_PREFIX_LENGTH = 16;
  * 6. Archive .sha256 sidecar matches (if available)
  * 7. Discovery snapshots present (if state has discoveryDigest)
  * 8. Session state file present
- * 9. Audit chain integrity (strict in regulated mode, legacy-tolerant otherwise)
+ * 9. Audit chain integrity (strict in regulated mode, envelope-fail-closed otherwise)
  *
  * @param fingerprint - Workspace fingerprint.
  * @param sessionId - Session ID to verify.
@@ -181,60 +183,16 @@ async function verifyArtifactBinding(
 
 // ─── Audit Chain Logging & Findings ───────────────────────────────────────────
 
-function logAuditChainVerificationFailure(chainResult: ChainVerification): void {
-  if (chainResult.valid) return;
-
-  if (chainResult.reason === 'TSA_MESSAGE_IMPRINT_MISMATCH') {
-    const mismatchIndex = chainResult.tsaImprintMismatches[0];
-    getAdapterLogger().error('archive', 'TSA timestamp verification failed', {
-      eventId:
-        typeof mismatchIndex === 'number' ? chainResult.results[mismatchIndex]?.eventId : null,
-      reason: 'tsa_imprint_mismatch',
-    });
-    return;
-  }
-
-  if (chainResult.reason === 'TOKEN_VERIFICATION_REQUIRED') {
-    const tokenIndex = chainResult.tokenVerificationRequired[0];
-    getAdapterLogger().error('archive', 'TSA token verification required', {
-      eventId: typeof tokenIndex === 'number' ? chainResult.results[tokenIndex]?.eventId : null,
-      reason: 'token_verification_required',
-    });
-    return;
-  }
-
-  if (!chainResult.firstBreak) return;
-
-  const logExtra: Record<string, unknown> = {
-    eventId: chainResult.firstBreak.eventId,
-    reason: chainResult.reason,
-  };
-  if (chainResult.firstBreak.expectedChainHash) {
-    logExtra.expectedChainHash = chainResult.firstBreak.expectedChainHash;
-  }
-  if (chainResult.firstBreak.actualChainHash) {
-    logExtra.actualChainHash = chainResult.firstBreak.actualChainHash;
-  }
-
-  const log = getAdapterLogger();
-  if (chainResult.reason === 'CHAIN_BREAK') {
-    log.error('archive', 'Audit chain verification failed', logExtra);
-    return;
-  }
-  log.error('archive', 'Audit chain contains unsupported legacy assurance records', logExtra);
-}
-
 function addAuditFormatFindings(chainResult: ChainVerification, findings: ArchiveFinding[]): void {
-  if (chainResult.reason === 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED') {
-    findings.push({
-      code: 'audit_chain_legacy_format',
-      severity: 'error',
-      message:
-        'Audit chain contains records that are not audit-chain.v3 records. Legacy assurance ' +
-        'artifacts are unsupported and cannot be treated as verifiable evidence.',
-      file: 'audit.jsonl',
-    });
-  }
+  if (chainResult.reason !== 'AUDIT_ENVELOPE_INVALID') return;
+  findings.push({
+    code: 'audit_chain_invalid_event',
+    severity: 'error',
+    message:
+      'Audit chain contains records that violate the canonical audit-chain.v3 event ' +
+      'envelope. Non-v3 assurance artifacts cannot be treated as verifiable evidence.',
+    file: 'audit.jsonl',
+  });
 }
 
 // ─── Policy Mode ──────────────────────────────────────────────────────────────
@@ -391,13 +349,25 @@ async function verifyTimestampChain(
   const timestampPolicy = state?.policySnapshot.audit.timestampAssurance;
   const strictTimestamps = events.some(hasTimestampEvidence) || timestampPolicy?.enabled === true;
   const timestampFailuresAreFatal = strict || timestampPolicy?.strict === true;
-  const chainResult = verifyChain(events, { strictTimestamps });
+  const chainResult = verifyChain(events, {
+    strictTimestamps,
+    ...(state ? { expectedFlowguardSessionId: state.flowguardSessionId } : {}),
+  });
   logAuditChainVerificationFailure(chainResult);
   addAuditFormatFindings(chainResult, findings);
   addTimestampFindings(chainResult, timestampFailuresAreFatal, findings);
 
   const { verifyArchiveTimestampTokens } = await import('./archive-timestamp-verification.js');
-  await verifyArchiveTimestampTokens({ events, state, manifest, findings, strict });
+  // Single fatality authority: archive-mode strictness OR the explicit
+  // timestamp assurance policy — the token layer must not re-derive
+  // strictness from the archive mode alone.
+  await verifyArchiveTimestampTokens({
+    events,
+    state,
+    manifest,
+    findings,
+    fatal: timestampFailuresAreFatal,
+  });
 }
 
 async function verifyAuditChainIntegrity(
@@ -426,15 +396,10 @@ async function verifyAuditChainIntegrity(
       await verifyTimestampChain(events, state, manifest, findings, strict);
     }
   } catch (error) {
-    // Fail closed in every mode: legacy or malformed audit records are never
+    // Fail closed in every mode: malformed or non-v3 audit records are never
     // silently tolerated just because verification is non-strict.
     findings.push({
-      code:
-        error instanceof Error &&
-        'code' in error &&
-        error.code === 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED'
-          ? 'audit_chain_legacy_format'
-          : 'audit_chain_invalid',
+      code: auditReadFailureFindingCode(error),
       severity: 'error',
       message: `Audit chain verification could not read audit.jsonl: ${
         error instanceof Error ? error.message : String(error)

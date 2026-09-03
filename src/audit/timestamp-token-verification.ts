@@ -40,6 +40,13 @@ export async function verifyTimestampTokensForEvents(input: {
  * cached imprint must be present, well-formed, and byte-identical
  * (constant-time) to the token-derived imprint — a missing or malformed cache
  * is a structural anomaly, never a silent pass.
+ *
+ * Sentinel contract (shared with verifyTsaMessageImprint and the canonical
+ * TsaEvidenceSchema): an EMPTY `tokenDerBase64` string is the internal-imprint
+ * model — no external TSA token exists, and the chain-level imprint
+ * comparison is the verification authority. Only a NON-EMPTY token is
+ * cryptographic material for the RFC 3161 verifier; an empty string is never
+ * handed to it as a broken token.
  */
 async function verifyTokenForEvent(
   event: AuditEvent,
@@ -52,7 +59,7 @@ async function verifyTokenForEvent(
   const tokenDerBase64 = tsa?.tokenDerBase64;
   const cachedMessageImprint = tsa?.messageImprint;
 
-  if (typeof tokenDerBase64 !== 'string') return null;
+  if (typeof tokenDerBase64 !== 'string' || tokenDerBase64.length === 0) return null;
 
   const result = await verifier.verifyToken({
     tokenDerBase64,
@@ -71,6 +78,19 @@ async function verifyTokenForEvent(
     };
   }
 
+  return cachedImprintMismatch(cachedMessageImprint, result.messageImprintHex);
+}
+
+/**
+ * AC9 cache cross-check: the cached messageImprint must be present,
+ * well-formed, and byte-identical (constant-time) to the token-derived
+ * imprint — a missing or malformed cache is a structural anomaly, never a
+ * silent pass.
+ */
+function cachedImprintMismatch(
+  cachedMessageImprint: unknown,
+  tokenImprintHex: string | undefined,
+): Pick<TimestampTokenFinding, 'reason'> | null {
   if (typeof cachedMessageImprint !== 'string') {
     return { reason: 'missing_cached_message_imprint' };
   }
@@ -81,8 +101,8 @@ async function verifyTokenForEvent(
     return { reason: 'malformed_cached_message_imprint' };
   }
   if (
-    typeof result.messageImprintHex === 'string' &&
-    !constantTimeBytesEqual(cachedBytes, canonicalDigestToUint8Array(result.messageImprintHex))
+    typeof tokenImprintHex === 'string' &&
+    !constantTimeBytesEqual(cachedBytes, canonicalDigestToUint8Array(tokenImprintHex))
   ) {
     return { reason: 'cached_message_imprint_mismatch' };
   }

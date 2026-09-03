@@ -565,12 +565,12 @@ describe('persistence', () => {
 
   // ─── CORNER ─────────────────────────────────────────────────
   describe('CORNER', () => {
-    it('readAuditTrail fails closed on malformed or legacy lines', async () => {
+    it('readAuditTrail fails closed on malformed or non-v3 lines', async () => {
       await fs.mkdir(tmpDir, { recursive: true });
       const content = ['this is not json', ''].join('\n');
       await fs.writeFile(auditPath(tmpDir), content, 'utf-8');
       await expect(readAuditTrail(tmpDir)).rejects.toMatchObject({
-        code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+        code: 'AUDIT_ENVELOPE_INVALID',
       });
     });
 
@@ -578,7 +578,7 @@ describe('persistence', () => {
       await fs.mkdir(tmpDir, { recursive: true });
       await fs.writeFile(auditPath(tmpDir), JSON.stringify({ invalid: 'schema' }) + '\n', 'utf-8');
       await expect(readAuditTrail(tmpDir)).rejects.toMatchObject({
-        code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+        code: 'AUDIT_ENVELOPE_INVALID',
       });
     });
 
@@ -704,7 +704,7 @@ describe('persistence', () => {
       const content = raw + '{"id":"00000000-0000-4000-8000'; // truncated, no closing brace
       await fs.writeFile(auditPath(tmpDir), content, 'utf-8');
       await expect(readAuditTrail(tmpDir)).rejects.toMatchObject({
-        code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+        code: 'AUDIT_ENVELOPE_INVALID',
       });
     });
 
@@ -753,7 +753,20 @@ describe('persistence', () => {
       const raw = await fs.readFile(auditPath(tmpDir), 'utf-8');
       await fs.writeFile(auditPath(tmpDir), raw + '[1,2,3]\n', 'utf-8');
       await expect(readAuditTrail(tmpDir)).rejects.toMatchObject({
-        code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+        code: 'AUDIT_ENVELOPE_INVALID',
+      });
+    });
+
+    it('classifies schema-invalid records as envelope-invalid', async () => {
+      await appendAuditEvent(tmpDir, makeValidAuditEvent());
+      const raw = await fs.readFile(auditPath(tmpDir), 'utf-8');
+      const valid = JSON.parse(raw.trim().split('\n')[0]!) as Record<string, unknown>;
+      // The record still CLAIMS audit-chain.v3 but violates the canonical
+      // envelope — the read boundary must classify it distinctly.
+      const { actor: _actor, ...envelopeInvalid } = valid;
+      await fs.writeFile(auditPath(tmpDir), raw + JSON.stringify(envelopeInvalid) + '\n', 'utf-8');
+      await expect(readAuditTrail(tmpDir)).rejects.toMatchObject({
+        code: 'AUDIT_ENVELOPE_INVALID',
       });
     });
 
@@ -762,7 +775,7 @@ describe('persistence', () => {
       const raw = await fs.readFile(auditPath(tmpDir), 'utf-8');
       await fs.writeFile(auditPath(tmpDir), '"just a string"\n' + raw + '42\ntrue\n', 'utf-8');
       await expect(readAuditTrail(tmpDir)).rejects.toMatchObject({
-        code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+        code: 'AUDIT_ENVELOPE_INVALID',
       });
     });
 
@@ -784,13 +797,18 @@ describe('persistence', () => {
       const content = raw + 'not json\n{"invalid":"schema"}\n{truncated\n';
       await fs.writeFile(auditPath(tmpDir), content, 'utf-8');
       await expect(readAuditTrail(tmpDir)).rejects.toMatchObject({
-        code: 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED',
+        code: 'AUDIT_ENVELOPE_INVALID',
       });
     });
 
     // ── PERF ─────────────────────────────────────────────────
 
-    it('handles large audit trail (500 events) correctly', async () => {
+    // Sequential appends re-read and rewrite the whole trail under the audit
+    // write lock (durability-first design; O(n²) append storage is a known,
+    // separately tracked redesign). 500 appends take ~8s locally and can
+    // exceed the default 15s unit timeout on slower CI runners, so this
+    // correctness test gets an explicit budget.
+    it('handles large audit trail (500 events) correctly', { timeout: 60_000 }, async () => {
       for (let i = 0; i < 500; i++) {
         const idSuffix = String(i).padStart(12, '0');
         await appendAuditEvent(

@@ -292,18 +292,18 @@ function checkChainIntegrity(chainVerification: ChainVerification): ComplianceCh
     return {
       name: 'chain_integrity',
       passed: true,
-      detail: `Chain verified: ${chainVerification.verifiedCount} events, ${chainVerification.skippedCount} legacy`,
+      detail: `Chain verified: ${chainVerification.verifiedCount} events, ${chainVerification.skippedCount} skipped`,
     };
   }
 
   // Failure — use typed reason for explicit detail.
   const { reason, firstBreak } = chainVerification;
 
-  if (reason === 'LEGACY_ASSURANCE_FORMAT_UNSUPPORTED') {
+  if (reason === 'AUDIT_ENVELOPE_INVALID') {
     return {
       name: 'chain_integrity',
       passed: false,
-      detail: `${firstBreak?.reason ?? 'Legacy assurance records are unsupported'} at event #${firstBreak?.index ?? '?'}`,
+      detail: `${firstBreak?.reason ?? 'Audit envelope violations are unsupported'} at event #${firstBreak?.index ?? '?'}`,
     };
   }
 

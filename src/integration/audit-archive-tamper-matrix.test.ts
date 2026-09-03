@@ -26,7 +26,8 @@ import {
   review_implementation,
   status,
 } from './tools/index.js';
-import { readState } from '../adapters/persistence.js';
+import { readState, writeState } from '../adapters/persistence.js';
+import type { SessionState } from '../state/schema.js';
 import { computeFingerprint, sessionDir } from '../adapters/workspace/index.js';
 import { verifyRegulatedArchive } from '../adapters/workspace/archive-verify-chain.js';
 import { verifyChain } from '../audit/integrity.js';
@@ -96,6 +97,9 @@ vi.mock('../verification/executor', () => ({
 const actorMock = await import('../adapters/actor.js');
 
 const tarOk = await isTarAvailable();
+
+/** A well-formed but different FlowGuard session identity for rebinding tests. */
+const FOREIGN_SESSION_ID = 'bbbbbbbb-0000-4000-8000-000000000001';
 
 let ws: TestWorkspace;
 let ctx: TestToolContext;
@@ -388,6 +392,163 @@ describe('audit/archive tamper matrix', () => {
   });
 
   it.skipIf(!tarOk)(
+    'validly re-sealed trail bound to a foreign session -> archive fails closed',
+    async () => {
+      // Re-bind EVERY audit event to session B and re-seal hash + semantic
+      // digest so the trail is internally valid (verifyChain alone passes).
+      // The archived session STATE still carries session A, so the
+      // state-bound chain verification must fail closed on the identity
+      // mismatch — not on any hash inconsistency.
+      const ids = await completeRegulatedSession();
+      const lines = await readAuditLines(ids.sessDir);
+      const events = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+      let rechainHead = 'genesis';
+      const resealed = events.map((raw) => {
+        const { chainHash: _chainHash, ...body } = raw as unknown as ChainedAuditEvent;
+        const rebind = {
+          ...body,
+          prevHash: rechainHead,
+          flowguardSessionId: FOREIGN_SESSION_ID,
+          semanticEventDigest: computeCanonicalEventDigest({
+            ...body,
+            prevHash: rechainHead,
+            flowguardSessionId: FOREIGN_SESSION_ID,
+          } as unknown as Record<string, unknown>),
+        };
+        const event = {
+          ...rebind,
+          chainHash: computeChainHash(
+            rebind.prevHash,
+            rebind as unknown as Omit<ChainedAuditEvent, 'chainHash'>,
+          ),
+        } as unknown as Record<string, unknown>;
+        rechainHead = event.chainHash as string;
+        return event;
+      });
+      await mutateArchive(ids, (root) =>
+        fs.writeFile(
+          path.join(root, 'audit', 'audit.jsonl'),
+          `${resealed.map((e) => JSON.stringify(e)).join('\n')}\n`,
+          'utf-8',
+        ),
+      );
+
+      // Internally consistent: without state binding the trail is valid.
+      expect(verifyChain(resealed).valid).toBe(true);
+
+      const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
+      expect(verification.passed).toBe(false);
+      expect(verification.findings.some((f) => f.code === 'audit_chain_invalid')).toBe(true);
+    },
+  );
+
+  it.skipIf(!tarOk)(
+    'stripped TSA token on a critical event -> tsa_critical archive verification fails closed',
+    () => verifyTsaCriticalTokenDowngrade('internal_imprint'),
+  );
+
+  it.skipIf(!tarOk)(
+    'removed TSA payload on a critical event -> tsa_critical archive verification fails closed',
+    () => verifyTsaCriticalTokenDowngrade('no_tsa'),
+  );
+
+  /**
+   * Adversarial scenario: under tsa_critical policy the external TSA token is
+   * the boundary a resealer cannot regenerate. Remove the external anchoring
+   * (`internal_imprint`: token stripped to the empty string, or `no_tsa`: the
+   * whole tsa payload removed), recompute the local digests and chain hash so
+   * the trail is internally consistent, and prove that the archive
+   * verification still fails closed with a dedicated policy downgrade
+   * instead of accepting self-resealable evidence.
+   */
+  async function verifyTsaCriticalTokenDowngrade(
+    variant: 'internal_imprint' | 'no_tsa',
+  ): Promise<void> {
+    const ids = await completeRegulatedSession();
+    const state = await readState(ids.sessDir);
+    expect(state).not.toBeNull();
+    const tsaCriticalState: SessionState = {
+      ...state!,
+      policySnapshot: {
+        ...state!.policySnapshot,
+        audit: {
+          ...state!.policySnapshot.audit,
+          timestampAssurance: {
+            enabled: true,
+            mode: 'tsa_critical',
+            strict: true,
+            criticalEvents: ['decision', 'lifecycle'],
+            tsaUrl: 'https://tsa.example.test',
+            trustAnchors: ['not a pem certificate'],
+            ntpServers: ['pool.ntp.org'],
+            ntpDriftThresholdMs: 30000,
+            tsaTimeoutMs: 10000,
+          },
+        },
+      },
+    };
+
+    const lines = (await readAuditLines(ids.sessDir)).filter(
+      (line) => JSON.parse(line).event !== 'archive:publication_bound',
+    );
+    const events = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+    const last = events[events.length - 1] as unknown as ChainedAuditEvent;
+    const { chainHash: _originalChainHash, ...lastWithoutHash } = last;
+    const strippedBody = {
+      ...lastWithoutHash,
+      event: 'lifecycle:session_completed',
+    };
+    const imprint = computeCanonicalEventDigest(strippedBody);
+    const resealedBody: Omit<ChainedAuditEvent, 'chainHash'> = {
+      ...strippedBody,
+      semanticEventDigest: imprint,
+      timestampEvidence:
+        variant === 'internal_imprint'
+          ? {
+              status: 'tsa_stamped',
+              source: 'tsa',
+              resolvedAt: last.occurredAt,
+              tsa: {
+                tokenDerBase64: '',
+                receivedAt: last.occurredAt,
+                messageImprint: imprint,
+                digestAlgorithm: 'sha256',
+                verificationStatus: 'unchecked',
+              },
+            }
+          : {
+              status: 'tsa_stamped',
+              source: 'tsa',
+              resolvedAt: last.occurredAt,
+            },
+    };
+    events[events.length - 1] = {
+      ...resealedBody,
+      chainHash: computeChainHash(last.prevHash, resealedBody),
+    } as unknown as Record<string, unknown>;
+    await mutateArchive(ids, async (root) => {
+      await fs.writeFile(
+        path.join(root, 'audit', 'audit.jsonl'),
+        `${events.map((e) => JSON.stringify(e)).join('\n')}\n`,
+        'utf-8',
+      );
+      await writeState(path.join(root, 'state'), tsaCriticalState);
+    });
+
+    // Internally consistent: the chain-level verification accepts the
+    // evidence-less/imprint-only model — the policy boundary must reject it.
+    expect(verifyChain(events).valid).toBe(true);
+
+    const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
+    expect(verification.passed).toBe(false);
+    expect(
+      verification.findings.some(
+        (f) => f.code === 'tsa_token_required_by_policy' && f.severity === 'error',
+      ),
+    ).toBe(true);
+  }
+
+  it.skipIf(!tarOk)(
     'regulated nested content tamper with re-sealed chain -> TSA verification failure',
     async () => {
       const ids = await completeRegulatedSession();
@@ -548,7 +709,7 @@ describe('audit/archive tamper matrix', () => {
     },
   );
 
-  it.skipIf(!tarOk)('pre-v3 audit record -> explicit legacy archive finding', async () => {
+  it.skipIf(!tarOk)('pre-v3 audit record -> envelope-invalid archive finding', async () => {
     const ids = await completeRegulatedSession();
     const lines = await readAuditLines(ids.sessDir);
     const events = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
@@ -565,10 +726,10 @@ describe('audit/archive tamper matrix', () => {
 
     const chainResult = verifyChain(events);
     expect(chainResult.valid).toBe(false);
-    expect(chainResult.reason).toBe('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED');
+    expect(chainResult.reason).toBe('AUDIT_ENVELOPE_INVALID');
     const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
     expect(verification.passed).toBe(false);
-    expect(verification.findings.some((f) => f.code === 'audit_chain_legacy_format')).toBe(true);
+    expect(verification.findings.some((f) => f.code === 'audit_chain_invalid_event')).toBe(true);
   });
 
   it.skipIf(!tarOk)('prevHash tamper -> integrity failure', async () => {
@@ -593,7 +754,7 @@ describe('audit/archive tamper matrix', () => {
     expect(verification.findings.some((f) => f.severity === 'error')).toBe(true);
   });
 
-  it.skipIf(!tarOk)('legacy unchained event inserted -> strict regulated fail', async () => {
+  it.skipIf(!tarOk)('unchained non-v3 event inserted -> strict regulated fail', async () => {
     const ids = await completeRegulatedSession();
     const legacyEvent = {
       id: crypto.randomUUID(),
@@ -627,10 +788,34 @@ describe('audit/archive tamper matrix', () => {
     expect(verification.passed).toBe(false);
     expect(
       verification.findings.some(
-        (f) => f.code === 'audit_chain_legacy_format' || f.code === 'audit_chain_invalid',
+        (f) => f.code === 'audit_chain_invalid_event' || f.code === 'audit_chain_invalid',
       ),
     ).toBe(true);
   });
+
+  it.skipIf(!tarOk)(
+    'schema-invalid current-v3 record -> audit_chain_invalid_event archive finding',
+    async () => {
+      // A record that violates the canonical audit-chain.v3 envelope must be
+      // classified as envelope-invalid all the way through the archive read
+      // boundary.
+      const ids = await completeRegulatedSession();
+      const lines = await readAuditLines(ids.sessDir);
+      const valid = JSON.parse(lines[0]!) as Record<string, unknown>;
+      const { actor: _actor, ...envelopeInvalid } = valid;
+      await mutateArchive(ids, (root) =>
+        fs.appendFile(
+          path.join(root, 'audit', 'audit.jsonl'),
+          `${JSON.stringify(envelopeInvalid)}\n`,
+          'utf-8',
+        ),
+      );
+
+      const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
+      expect(verification.passed).toBe(false);
+      expect(verification.findings.some((f) => f.code === 'audit_chain_invalid_event')).toBe(true);
+    },
+  );
 
   it.skipIf(!tarOk)('archive manifest digest tamper -> verify fail', async () => {
     const ids = await completeRegulatedSession();

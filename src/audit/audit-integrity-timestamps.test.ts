@@ -103,6 +103,11 @@ describe('strict timestamp verification branches', () => {
   });
 
   it('detects a TSA imprint mismatch without token verification', () => {
+    // Internal-imprint model: no external TSA token exists. The canonical
+    // envelope requires the tokenDerBase64 FIELD (TsaEvidenceSchema), so the
+    // token-less form is persisted as the empty string — which
+    // verifyTsaMessageImprint treats as "no token" and compares the stored
+    // imprint against the recomputed canonical digest.
     const raw = stampChainSequence(
       createTransitionEvent(SESSION_ID, 'PLAN', transition, TS1, GENESIS_HASH),
       1,
@@ -115,9 +120,11 @@ describe('strict timestamp verification branches', () => {
         source: 'tsa',
         resolvedAt: TS2,
         tsa: {
+          tokenDerBase64: '',
+          receivedAt: TS2,
+          verificationStatus: 'unchecked',
           messageImprint: '0'.repeat(64),
           digestAlgorithm: 'sha256',
-          receivedAt: TS2,
         },
       },
     };
@@ -132,6 +139,44 @@ describe('strict timestamp verification branches', () => {
     expect(result.reason).toBe('TSA_MESSAGE_IMPRINT_MISMATCH');
     expect(result.tsaImprintMismatches).toEqual([0]);
     expect(result.tokenVerificationRequired).toEqual([]);
+  });
+
+  it('rejects a token-less TSA payload as envelope-invalid before timestamp verification', () => {
+    // A tsa payload that omits the tokenDerBase64 FIELD is schema-invalid per
+    // the canonical TsaEvidenceSchema. Even though the record is hash-shaped
+    // and internally consistent, the envelope gate must fail closed and the
+    // invalid record must never reach the timestamp sub-authorities.
+    const raw = stampChainSequence(
+      createTransitionEvent(SESSION_ID, 'PLAN', transition, TS1, GENESIS_HASH),
+      1,
+    );
+    const { chainHash: _chainHash, ...body } = raw;
+    const stampedBody = {
+      ...body,
+      timestampEvidence: {
+        status: 'tsa_stamped',
+        source: 'tsa',
+        resolvedAt: TS2,
+        tsa: {
+          messageImprint: '0'.repeat(64),
+          digestAlgorithm: 'sha256',
+        },
+      },
+    };
+    const stamped = {
+      ...stampedBody,
+      chainHash: computeChainHash(
+        GENESIS_HASH,
+        stampedBody as unknown as Omit<ChainedAuditEvent, 'chainHash'>,
+      ),
+    };
+    const result = verifyChain([stamped], { strictTimestamps: true });
+    expect(result.valid).toBe(false);
+    expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
+    expect(result.firstBreak?.reasonCode).toBe('AUDIT_ENVELOPE_INVALID');
+    expect(result.tsaImprintMismatches).toEqual([]);
+    expect(result.tokenVerificationRequired).toEqual([]);
+    expect(result.missingTimestampEvidence).toEqual([]);
   });
 
   it('detects missing decision timestamp evidence', () => {

@@ -14,6 +14,7 @@ import {
   hasTimestampEvidence,
   isCurrentChainIntegrityFailure,
   isAuditFormatFailure,
+  auditReadFailureFindingCode,
   resolveArchiveStrictness,
   resolveStrictMode,
   STRICT_WHEN_MODE_UNRESOLVED,
@@ -200,8 +201,8 @@ describe('isCurrentChainIntegrityFailure', () => {
     expect(isCurrentChainIntegrityFailure('CLOCK_ANOMALY')).toBe(true);
   });
 
-  it('returns false for legacy/format reasons (they have their own finding class)', () => {
-    expect(isCurrentChainIntegrityFailure('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED')).toBe(false);
+  it('returns false for envelope-format reasons (they have their own finding class)', () => {
+    expect(isCurrentChainIntegrityFailure('AUDIT_ENVELOPE_INVALID')).toBe(false);
   });
 
   it('returns false for other reasons', () => {
@@ -216,8 +217,12 @@ describe('isCurrentChainIntegrityFailure', () => {
 // ─── isAuditFormatFailure ─────────────────────────────────────────────────────
 
 describe('isAuditFormatFailure', () => {
-  it('returns true for LEGACY_ASSURANCE_FORMAT_UNSUPPORTED', () => {
-    expect(isAuditFormatFailure('LEGACY_ASSURANCE_FORMAT_UNSUPPORTED')).toBe(true);
+  it('returns true for AUDIT_ENVELOPE_INVALID', () => {
+    expect(isAuditFormatFailure('AUDIT_ENVELOPE_INVALID')).toBe(true);
+  });
+
+  it('returns true for AUDIT_ENVELOPE_INVALID', () => {
+    expect(isAuditFormatFailure('AUDIT_ENVELOPE_INVALID')).toBe(true);
   });
 
   it('returns false for other reasons', () => {
@@ -227,6 +232,28 @@ describe('isAuditFormatFailure', () => {
 
   it('returns false for null', () => {
     expect(isAuditFormatFailure(null)).toBe(false);
+  });
+});
+
+// ─── auditReadFailureFindingCode ──────────────────────────────────────────────
+
+describe('auditReadFailureFindingCode', () => {
+  it('maps the envelope-invalid read failure to audit_chain_invalid_event', () => {
+    expect(auditReadFailureFindingCode({ code: 'AUDIT_ENVELOPE_INVALID' })).toBe(
+      'audit_chain_invalid_event',
+    );
+  });
+
+  it('maps the envelope-invalid read failure to audit_chain_invalid_event', () => {
+    expect(auditReadFailureFindingCode({ code: 'AUDIT_ENVELOPE_INVALID' })).toBe(
+      'audit_chain_invalid_event',
+    );
+  });
+
+  it('falls back to audit_chain_invalid for any other failure', () => {
+    expect(auditReadFailureFindingCode({ code: 'READ_FAILED' })).toBe('audit_chain_invalid');
+    expect(auditReadFailureFindingCode(new Error('boom'))).toBe('audit_chain_invalid');
+    expect(auditReadFailureFindingCode(null)).toBe('audit_chain_invalid');
   });
 });
 
