@@ -10,18 +10,21 @@
  */
 
 import type { SessionState } from '../../state/schema.js';
-import { appendAuditEvent, readAuditTrail } from '../../adapters/persistence-audit.js';
 import { archiveRegulatedEvidence } from '../../adapters/workspace/archive.js';
 import { verifyRegulatedArchive } from '../../adapters/workspace/archive-verify-chain.js';
-import { createLifecycleEvent } from '../../audit/types.js';
+import { readState, PersistenceError } from '../../adapters/persistence.js';
+import { appendAuditEvent, readAuditTrail } from '../../adapters/persistence-audit.js';
 import { getLastChainHash } from '../../audit/integrity.js';
-import { writeStateWithArtifacts } from '../tools/helpers.js';
+import { writeStateWithArtifactsAndAuditOperations } from '../tools/helpers.js';
+import type { SemanticAuditIntent } from '../tools/audit-outbox.js';
+import { reconcilePendingAuditOperations, type AuditDeps } from '../plugin-audit.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import { serializeError } from '../../logging/error-serialize.js';
 import { isTerminalPhase } from '../../machine/topology.js';
 
 /**
- * Execute the P26 regulated completion chain: audit emit → archive → verify.
+ * Execute the P26 regulated completion chain: durable authority commit →
+ * reconciliation → archive → verify.
  *
  * Pre-conditions (caller must verify before calling):
  * - Rail result kind === 'ok'
@@ -55,52 +58,51 @@ export async function executeRegulatedCompletion(
       archiveStatus: 'failed' as const,
     };
   }
-  const pendingState = {
-    ...resultState,
-    regulatedArchiveStatus: 'pending' as const,
-    archiveStatus: 'pending' as const,
-  };
-  await writeStateWithArtifacts(sessDir, pendingState);
-
   getAdapterLogger().info('services', 'Starting regulated completion chain', {
     sessionID,
     fingerprint,
   });
 
+  let current = resultState;
   let finalState: SessionState;
   try {
-    // 1. Emit session_completed audit event BEFORE archive.
-    //    Reads the trail to get correct prevHash (independent of plugin cache).
-    //    Failure here is fatal — no archive without terminal audit event.
-    const { events } = await readAuditTrail(sessDir);
-    const prevHash = getLastChainHash(events);
-    const completionEvt = createLifecycleEvent({
-      flowguardSessionId: resultState.flowguardSessionId,
-      hostSessionId: sessionID,
-      detail: { action: 'session_completed', finalPhase: 'COMPLETE' as const },
-      occurredAt: new Date().toISOString(),
-      actor: 'machine',
-      prevHash,
-      actorInfo: resultState.actorInfo,
-    });
-    await appendAuditEvent(sessDir, completionEvt);
+    // Commit the terminal transition and its human authorization together.
+    // Both are state-owned operations before any archive side effect occurs.
+    current = await writeStateWithArtifactsAndAuditOperations(sessDir, resultState, undefined, [
+      decisionIntent(resultState),
+    ]);
+    current = await reconcileCompletionAuditOperations(sessDir, sessionID, current);
 
-    // 2. Archive session (synchronous, not fire-and-forget).
+    // The lifecycle assertion is a separate durable operation so its chain
+    // position is necessarily after the reconciled transition and decision.
+    current = await writeStateWithArtifactsAndAuditOperations(
+      sessDir,
+      {
+        ...current,
+        regulatedArchiveStatus: 'pending' as const,
+        archiveStatus: 'pending' as const,
+      },
+      undefined,
+      [lifecycleIntent()],
+    );
+    current = await reconcileCompletionAuditOperations(sessDir, sessionID, current);
+
+    // The snapshot now contains complete, reconciled completion evidence.
     await archiveRegulatedEvidence(fingerprint, sessionID);
-    const createdState = {
-      ...resultState,
+    current = await writeStateWithArtifactsAndAuditOperations(sessDir, {
+      ...current,
       regulatedArchiveStatus: 'created' as const,
       archiveStatus: 'created' as const,
-    };
-    await writeStateWithArtifacts(sessDir, createdState);
+    });
 
-    // 3. Verify archive integrity.
+    // Archive status is a live projection and intentionally post-dates the
+    // immutable archive snapshot it describes.
     const verification = await verifyRegulatedArchive(fingerprint, sessionID);
-    finalState = {
-      ...resultState,
+    finalState = await writeStateWithArtifactsAndAuditOperations(sessDir, {
+      ...current,
       regulatedArchiveStatus: verification.passed ? ('verified' as const) : ('failed' as const),
       archiveStatus: verification.passed ? ('verified' as const) : ('failed' as const),
-    };
+    });
     getAdapterLogger().info('services', 'Regulated completion chain finished', {
       sessionID,
       archiveStatus: finalState.regulatedArchiveStatus,
@@ -113,11 +115,112 @@ export async function executeRegulatedCompletion(
       error: serializeError(err),
     });
     finalState = {
-      ...resultState,
+      ...current,
       regulatedArchiveStatus: 'failed' as const,
       archiveStatus: 'failed' as const,
     };
+    try {
+      finalState = await writeStateWithArtifactsAndAuditOperations(sessDir, finalState);
+    } catch (persistError) {
+      getAdapterLogger().error('services', 'Could not persist regulated completion failure', {
+        sessionID,
+        error: serializeError(persistError),
+      });
+    }
   }
 
   return finalState;
+}
+
+function decisionIntent(state: SessionState): SemanticAuditIntent {
+  const transition = state.transition;
+  const decision = state.reviewDecision;
+  if (!transition || !decision || transition.from !== 'EVIDENCE_REVIEW') {
+    throw new PersistenceError(
+      'SCHEMA_VALIDATION_FAILED',
+      'Regulated completion requires terminal transition and decision authority',
+    );
+  }
+  const decisionId = `DEC-${transition.at.replace(/[^0-9]/g, '')}`;
+  return {
+    phase: transition.from,
+    event: `decision:${decisionId}`,
+    occurredAt: decision.decidedAt,
+    detail: {
+      kind: 'decision',
+      gatePhase: transition.from,
+      decisionId,
+      decisionSequence: 0,
+      verdict: decision.verdict,
+      rationale: decision.rationale,
+      decidedBy: decision.decidedBy,
+      decidedAt: decision.decidedAt,
+      fromPhase: transition.from,
+      toPhase: transition.to,
+      transitionEvent: transition.event,
+      policyMode: state.policySnapshot.mode,
+    },
+  };
+}
+
+function lifecycleIntent(): SemanticAuditIntent {
+  return {
+    phase: 'COMPLETE',
+    event: 'lifecycle:session_completed',
+    occurredAt: new Date().toISOString(),
+    detail: { kind: 'lifecycle', action: 'session_completed', finalPhase: 'COMPLETE' },
+  };
+}
+
+async function reconcileCompletionAuditOperations(
+  sessDir: string,
+  sessionID: string,
+  state: SessionState,
+): Promise<SessionState> {
+  const deps: AuditDeps = {
+    resolveFingerprint: async () => 'regulated-completion',
+    getSessionDir: (candidate) => (candidate === sessionID ? sessDir : null),
+    resolveSessionPolicy: async () => ({
+      policy: state.policySnapshot,
+      state: await readState(sessDir),
+    }),
+    initChain: async () => getLastChainHash((await readAuditTrail(sessDir)).events),
+    invalidateChainState: () => undefined,
+    appendAndTrack: async (event) => {
+      const {
+        auditFormatVersion: _format,
+        auditSequence: _sequence,
+        recordedAt: _recordedAt,
+        semanticEventDigest: _semanticDigest,
+        prevHash: _previous,
+        chainHash: _chainHash,
+        ...body
+      } = event as Record<string, unknown>;
+      const appended = await appendAuditEvent(
+        sessDir,
+        body as import('../../state/evidence.js').AuditEventBody,
+      );
+      event.chainHash = appended.chainHash;
+    },
+    nextDecisionSequence: async () => 0,
+    log: { debug: () => undefined, info: () => undefined, warn: () => undefined },
+    logError: () => undefined,
+    cachedFingerprint: 'regulated-completion',
+    mode: 'regulated',
+  };
+  const outcome = await reconcilePendingAuditOperations(deps, sessionID, 'flowguard_decision');
+  if (outcome?.auditOk === false) {
+    throw new PersistenceError('WRITE_FAILED', outcome.reason ?? 'Audit reconciliation failed');
+  }
+  const reconciled = await readState(sessDir);
+  if (
+    !reconciled ||
+    reconciled.pendingAuditOperations.some((item) => item.status !== 'reconciled')
+  ) {
+    throw new PersistenceError(
+      'WRITE_FAILED',
+      'Regulated completion audit operations remain unreconciled',
+    );
+  }
+  return reconciled;
 }

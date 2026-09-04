@@ -123,6 +123,11 @@ export const ArchiveFindingCodeSchema = z.enum([
   'tsa_token_required_by_policy',
   'artifact_binding_missing',
   'artifact_binding_mismatch',
+  'regulated_audit_outbox_unreconciled',
+  'regulated_terminal_transition_missing',
+  'regulated_terminal_decision_invalid',
+  'regulated_completion_lifecycle_invalid',
+  'regulated_completion_order_invalid',
 ]);
 export type ArchiveFindingCode = z.infer<typeof ArchiveFindingCodeSchema>;
 

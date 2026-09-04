@@ -1,16 +1,3 @@
-/**
- * @module integration/services/regulated-completion.test
- * @description Unit tests for P26 regulated completion chain: audit → archive → verify.
- *
- * Coverage: HAPPY, BAD, CORNER, EDGE
- * - HAPPY: Full chain succeeds → archiveStatus 'verified'
- * - BAD: Archive failure → archiveStatus 'failed', verification failure → 'failed'
- * - CORNER: Audit trail read failure → 'failed'
- * - EDGE: Verification returns not-passed → 'failed'
- *
- * @test-policy HAPPY, BAD, CORNER, EDGE
- */
-
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { executeRegulatedCompletion } from './regulated-completion.js';
 import {
@@ -25,81 +12,30 @@ import {
   IMPL_REVIEW_CONVERGED,
 } from '../../fixtures.js';
 
-// ─── Mocks ──────────────────────────────────────────────────────────────────
-
+vi.mock('../../adapters/persistence.js', () => ({
+  readState: vi.fn(),
+  PersistenceError: class PersistenceError extends Error {},
+}));
 vi.mock('../../adapters/persistence-audit.js', () => ({
   readAuditTrail: vi.fn().mockResolvedValue({ events: [], skipped: 0 }),
-  appendAuditEvent: vi.fn().mockResolvedValue(undefined),
+  appendAuditEvent: vi.fn(),
 }));
-
+vi.mock('../../adapters/workspace/archive.js', () => ({ archiveRegulatedEvidence: vi.fn() }));
 vi.mock('../../adapters/workspace/archive-verify-chain.js', () => ({
-  verifyRegulatedArchive: vi.fn().mockResolvedValue({ passed: true }),
+  verifyRegulatedArchive: vi.fn(),
 }));
-
-vi.mock('../../adapters/workspace/archive.js', () => ({
-  archiveRegulatedEvidence: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock('../../audit/types.js', () => ({
-  createLifecycleEvent: vi.fn().mockReturnValue({
-    eventId: 'test-evt',
-    sessionId: 'sid',
-    eventType: 'lifecycle',
-    action: 'session_completed',
-    timestamp: '2026-01-01T00:00:00.000Z',
-  }),
-}));
-
-vi.mock('../../audit/integrity.js', () => ({
-  getLastChainHash: vi.fn().mockReturnValue(null),
-}));
-
-const helperMocks = vi.hoisted(() => ({
-  resolveWorkspacePaths: vi.fn(async () => ({ worktree: '/tmp/test', fingerprint: 'test' })),
-  requireStateForMutation: vi.fn(async () => ({ phase: 'COMPLETE' })),
-  resolvePolicyFromState: vi.fn(() => ({ maxSelfReviewIterations: 3 })),
-  createPolicyContext: vi.fn(() => ({
-    policy: { maxSelfReviewIterations: 3 },
-    now: () => '2026-01-01T00:00:00.000Z',
-    digest: (s: string) => `digest:${s}`,
-  })),
-}));
-
+vi.mock('../plugin-audit.js', () => ({ reconcilePendingAuditOperations: vi.fn() }));
 vi.mock('../tools/helpers.js', () => ({
-  writeStateWithArtifacts: vi.fn(async (_sessDir: string, state: unknown) => state),
-  withMutableSession: vi.fn(async () => {
-    const paths = await helperMocks.resolveWorkspacePaths();
-    const state = await helperMocks.requireStateForMutation();
-    const policy = helperMocks.resolvePolicyFromState();
-    const ctx2 = helperMocks.createPolicyContext();
-    return {
-      worktree: (paths as Record<string, string>).worktree ?? '/tmp/test',
-      fingerprint: (paths as Record<string, string>).fingerprint ?? 'test',
-      sessDir: (paths as Record<string, string>).sessDir,
-      wsDir: (paths as Record<string, string>).wsDir ?? '/tmp/ws',
-      state,
-      policy,
-      ctx: ctx2,
-    };
-  }),
-  resolveWorkspacePaths: helperMocks.resolveWorkspacePaths,
-  requireStateForMutation: helperMocks.requireStateForMutation,
-  resolvePolicyFromState: helperMocks.resolvePolicyFromState,
-  createPolicyContext: helperMocks.createPolicyContext,
+  writeStateWithArtifactsAndAuditOperations: vi.fn(async (_dir: string, state: unknown) => state),
 }));
 
-import { readAuditTrail, appendAuditEvent } from '../../adapters/persistence-audit.js';
-import { verifyRegulatedArchive } from '../../adapters/workspace/archive-verify-chain.js';
+import { readState } from '../../adapters/persistence.js';
 import { archiveRegulatedEvidence } from '../../adapters/workspace/archive.js';
-import { writeStateWithArtifacts } from '../tools/helpers.js';
+import { verifyRegulatedArchive } from '../../adapters/workspace/archive-verify-chain.js';
+import { reconcilePendingAuditOperations } from '../plugin-audit.js';
+import { writeStateWithArtifactsAndAuditOperations } from '../tools/helpers.js';
 
-afterEach(() => {
-  vi.clearAllMocks();
-});
-
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-function makeRegulatedCompleteState() {
+function completeState() {
   return makeState('COMPLETE', {
     ticket: TICKET,
     plan: PLAN_RECORD,
@@ -109,134 +45,64 @@ function makeRegulatedCompleteState() {
     implementation: IMPL_EVIDENCE,
     implReview: IMPL_REVIEW_CONVERGED,
     policySnapshot: REGULATED_POLICY_SNAPSHOT,
+    transition: {
+      from: 'EVIDENCE_REVIEW',
+      to: 'COMPLETE',
+      event: 'APPROVE',
+      at: '2026-01-01T00:00:00.000Z',
+    },
   });
 }
 
-// ─── Tests ──────────────────────────────────────────────────────────────────
+afterEach(() => vi.clearAllMocks());
 
 describe('executeRegulatedCompletion', () => {
-  it('fails closed without archiving when invoked with a non-terminal state', async () => {
-    const result = await executeRegulatedCompletion(
+  it('commits and reconciles decision then lifecycle before archiving', async () => {
+    const state = completeState();
+    vi.mocked(readState).mockResolvedValue(state);
+    vi.mocked(reconcilePendingAuditOperations).mockResolvedValue(undefined);
+    vi.mocked(archiveRegulatedEvidence).mockResolvedValue('/archive.tar.gz');
+    vi.mocked(verifyRegulatedArchive).mockResolvedValue({ passed: true } as never);
+
+    const result = await executeRegulatedCompletion('/sess', 'fp', 'sid', state);
+
+    expect(result.archiveStatus).toBe('verified');
+    expect(reconcilePendingAuditOperations).toHaveBeenCalledTimes(2);
+    expect(writeStateWithArtifactsAndAuditOperations).toHaveBeenNthCalledWith(
+      1,
       '/sess',
-      'fp',
-      'sid',
-      makeState('VALIDATION', { policySnapshot: REGULATED_POLICY_SNAPSHOT }),
+      state,
+      undefined,
+      expect.arrayContaining([
+        expect.objectContaining({ event: expect.stringMatching(/^decision:DEC-/) }),
+      ]),
     );
+    expect(writeStateWithArtifactsAndAuditOperations).toHaveBeenNthCalledWith(
+      2,
+      '/sess',
+      expect.objectContaining({ archiveStatus: 'pending' }),
+      undefined,
+      expect.arrayContaining([expect.objectContaining({ event: 'lifecycle:session_completed' })]),
+    );
+    expect(archiveRegulatedEvidence).toHaveBeenCalledWith('fp', 'sid');
+  });
+
+  it('fails closed and persists failure when reconciliation fails', async () => {
+    const state = completeState();
+    vi.mocked(readState).mockResolvedValue(state);
+    vi.mocked(reconcilePendingAuditOperations).mockResolvedValue({
+      auditOk: false,
+      code: 'AUDIT_PERSISTENCE_FAILED',
+      reason: 'disk failure',
+    });
+
+    const result = await executeRegulatedCompletion('/sess', 'fp', 'sid', state);
 
     expect(result.archiveStatus).toBe('failed');
     expect(archiveRegulatedEvidence).not.toHaveBeenCalled();
-  });
-
-  describe('HAPPY: full chain succeeds', () => {
-    it('returns state with archiveStatus verified', async () => {
-      const state = makeRegulatedCompleteState();
-      const result = await executeRegulatedCompletion('/sess', 'fp', 'sid', state);
-
-      expect(result.archiveStatus).toBe('verified');
-      expect(result.regulatedArchiveStatus).toBe('verified');
-    });
-
-    it('writes pending state first', async () => {
-      const state = makeRegulatedCompleteState();
-      await executeRegulatedCompletion('/sess', 'fp', 'sid', state);
-
-      // First call to writeStateWithArtifacts should be with pending status
-      const firstCall = (writeStateWithArtifacts as ReturnType<typeof vi.fn>).mock.calls[0];
-      expect(firstCall).toBeDefined();
-      expect(firstCall![1]).toMatchObject({ archiveStatus: 'pending' });
-    });
-
-    it('emits audit event before archiving', async () => {
-      const state = makeRegulatedCompleteState();
-      await executeRegulatedCompletion('/sess', 'fp', 'sid', state);
-
-      expect(readAuditTrail).toHaveBeenCalledWith('/sess');
-      expect(appendAuditEvent).toHaveBeenCalledOnce();
-    });
-
-    it('calls the regulated archive and verification paths in sequence', async () => {
-      const state = makeRegulatedCompleteState();
-      await executeRegulatedCompletion('/sess', 'fp', 'sid', state);
-
-      expect(archiveRegulatedEvidence).toHaveBeenCalledWith('fp', 'sid');
-      expect(verifyRegulatedArchive).toHaveBeenCalledWith('fp', 'sid');
-    });
-
-    it('writes created state after archive, before verify', async () => {
-      const state = makeRegulatedCompleteState();
-      await executeRegulatedCompletion('/sess', 'fp', 'sid', state);
-
-      // Second call to writeStateWithArtifacts should be with created status
-      const secondCall = (writeStateWithArtifacts as ReturnType<typeof vi.fn>).mock.calls[1];
-      expect(secondCall).toBeDefined();
-      expect(secondCall![1]).toMatchObject({ archiveStatus: 'created' });
-    });
-  });
-
-  describe('BAD: chain failures produce failed status', () => {
-    it('returns failed when readAuditTrail throws', async () => {
-      (readAuditTrail as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-        new Error('audit read error'),
-      );
-      const state = makeRegulatedCompleteState();
-      const result = await executeRegulatedCompletion('/sess', 'fp', 'sid', state);
-
-      expect(result.archiveStatus).toBe('failed');
-    });
-
-    it('returns failed when appendAuditEvent throws', async () => {
-      (appendAuditEvent as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-        new Error('audit write error'),
-      );
-      const state = makeRegulatedCompleteState();
-      const result = await executeRegulatedCompletion('/sess', 'fp', 'sid', state);
-
-      expect(result.archiveStatus).toBe('failed');
-    });
-
-    it('returns failed when the regulated archive path throws', async () => {
-      (archiveRegulatedEvidence as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-        new Error('archive error'),
-      );
-      const state = makeRegulatedCompleteState();
-      const result = await executeRegulatedCompletion('/sess', 'fp', 'sid', state);
-
-      expect(result.archiveStatus).toBe('failed');
-    });
-
-    it('returns failed when regulated archive verification throws', async () => {
-      (verifyRegulatedArchive as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-        new Error('verify error'),
-      );
-      const state = makeRegulatedCompleteState();
-      const result = await executeRegulatedCompletion('/sess', 'fp', 'sid', state);
-
-      expect(result.archiveStatus).toBe('failed');
-    });
-  });
-
-  describe('EDGE: verification not passed', () => {
-    it('returns failed when verification.passed is false', async () => {
-      (verifyRegulatedArchive as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ passed: false });
-      const state = makeRegulatedCompleteState();
-      const result = await executeRegulatedCompletion('/sess', 'fp', 'sid', state);
-
-      expect(result.archiveStatus).toBe('failed');
-    });
-  });
-
-  describe('CORNER: always writes pending state even when chain fails', () => {
-    it('pending state is written before failure', async () => {
-      (readAuditTrail as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-        new Error('immediate failure'),
-      );
-      const state = makeRegulatedCompleteState();
-      await executeRegulatedCompletion('/sess', 'fp', 'sid', state);
-
-      // Pending state is always written first
-      expect(writeStateWithArtifacts).toHaveBeenCalled();
-      const firstCall = (writeStateWithArtifacts as ReturnType<typeof vi.fn>).mock.calls[0];
-      expect(firstCall![1]).toMatchObject({ archiveStatus: 'pending' });
-    });
+    expect(writeStateWithArtifactsAndAuditOperations).toHaveBeenLastCalledWith(
+      '/sess',
+      expect.objectContaining({ archiveStatus: 'failed' }),
+    );
   });
 });

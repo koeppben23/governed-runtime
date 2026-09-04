@@ -11,6 +11,7 @@ import { readAuditTrail } from '../persistence-audit.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import { verifyChain, getLastChainHash, type ChainVerification } from '../../audit/integrity.js';
 import { logAuditChainVerificationFailure } from './archive-verify-logging.js';
+import { verifyRegulatedCompletionCompleteness } from './archive-verify-regulated.js';
 import {
   type ArchiveManifest,
   type ArchiveVerification,
@@ -393,6 +394,7 @@ async function verifyAuditChainIntegrity(
   try {
     const { events, skipped } = await readAuditTrail(path.join(archiveRoot, 'audit'));
     verifyAuditCompleteness(manifest, events, findings);
+    verifyRegulatedCompletionCompleteness(state, events, findings);
 
     if (skipped > 0) {
       findings.push({

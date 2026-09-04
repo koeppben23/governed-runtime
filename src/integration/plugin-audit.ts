@@ -13,6 +13,7 @@
  */
 
 import { readState } from '../adapters/persistence.js';
+import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { archiveSession } from '../adapters/workspace/index.js';
 import { serializeError } from '../logging/error-serialize.js';
 import type {
@@ -168,6 +169,18 @@ async function emitDecisionReceipt(params: DecisionReceiptParams): Promise<strin
   const firstTransition = transition;
   const inferredVerdict = inferDecisionVerdict(firstTransition.event);
   if (inferredVerdict === null) return prevHash;
+  const existingDecision = (await readAuditTrail(ctx.sessDir)).events.some(
+    (event) =>
+      event.detail.kind === 'decision' &&
+      event.detail.fromPhase === firstTransition.from &&
+      event.detail.toPhase === firstTransition.to &&
+      event.detail.transitionEvent === firstTransition.event &&
+      event.detail.verdict === inferredVerdict,
+  );
+  // Regulated completion commits its terminal decision as a state-owned
+  // semantic operation before archival. The after-hook must not project it a
+  // second time.
+  if (policyMode === 'regulated' && state?.archiveStatus && existingDecision) return prevHash;
 
   const sequence = await deps.nextDecisionSequence(ctx.sessDir, sessionId);
   const decisionId = `DEC-${String(sequence).padStart(3, '0')}`;
