@@ -13,6 +13,7 @@ import type { SessionState } from '../../state/schema.js';
 import { archiveRegulatedEvidence } from '../../adapters/workspace/archive.js';
 import { verifyRegulatedArchive } from '../../adapters/workspace/archive-verify-chain.js';
 import { readState, PersistenceError } from '../../adapters/persistence.js';
+import { acquireNamedWriteLock } from '../../adapters/persistence-lock.js';
 import { appendAuditEvent, readAuditTrail } from '../../adapters/persistence-audit.js';
 import { getLastChainHash } from '../../audit/integrity.js';
 import { HttpTimestampAuthorityProvider } from '../../audit/rfc-3161-http-provider.js';
@@ -195,6 +196,29 @@ export async function executeRegulatedCompletion(
   return finalState;
 }
 
+/**
+ * Archive publication and verification are the last external side-effect
+ * boundary of the chain. They are serialized with their own session-scoped
+ * lock (NOT the non-reentrant state write lock) so a concurrent recovery
+ * re-reads the freshly persisted status on entry and returns immediately once
+ * verified — never re-publishing bytes that were already bound to a verified
+ * state, and never verifying bytes that a later publisher could replace.
+ */
+const REGULATED_COMPLETION_LOCK = 'regulated-completion.lock';
+
+async function withRegulatedCompletionLock<T>(sessDir: string, fn: () => Promise<T>): Promise<T> {
+  const lock = await acquireNamedWriteLock(
+    sessDir,
+    REGULATED_COMPLETION_LOCK,
+    'regulated completion',
+  );
+  try {
+    return await fn();
+  } finally {
+    await lock.release();
+  }
+}
+
 async function archiveAndVerify(
   sessDir: string,
   fingerprint: string,
@@ -202,22 +226,32 @@ async function archiveAndVerify(
   state: SessionState,
   auditDeps: AuditDeps,
 ): Promise<SessionState> {
-  let current = state;
-  if (current.archiveStatus !== 'created' && current.archiveStatus !== 'verified') {
-    await archiveRegulatedEvidence(fingerprint, sessionID);
-    current = await writeStateWithArtifactsAndAuditOperations(sessDir, {
+  return withRegulatedCompletionLock(sessDir, async () => {
+    // A concurrent recovery may have finished the chain while this caller was
+    // progressing toward the archive phase. The verified status is the
+    // durable exactly-once authority: return it without touching the
+    // published artifacts.
+    const fresh = await readState(sessDir);
+    if (fresh?.archiveStatus === 'verified') {
+      return fresh;
+    }
+    let current = fresh ?? state;
+    if (current.archiveStatus !== 'created' && current.archiveStatus !== 'verified') {
+      await archiveRegulatedEvidence(fingerprint, sessionID);
+      current = await writeStateWithArtifactsAndAuditOperations(sessDir, {
+        ...current,
+        regulatedArchiveStatus: 'created' as const,
+        archiveStatus: 'created' as const,
+      });
+    }
+    const verification = await verifyRegulatedArchive(fingerprint, sessionID);
+    const finalState = await writeStateWithArtifactsAndAuditOperations(sessDir, {
       ...current,
-      regulatedArchiveStatus: 'created' as const,
-      archiveStatus: 'created' as const,
+      regulatedArchiveStatus: verification.passed ? ('verified' as const) : ('failed' as const),
+      archiveStatus: verification.passed ? ('verified' as const) : ('failed' as const),
     });
-  }
-  const verification = await verifyRegulatedArchive(fingerprint, sessionID);
-  const finalState = await writeStateWithArtifactsAndAuditOperations(sessDir, {
-    ...current,
-    regulatedArchiveStatus: verification.passed ? ('verified' as const) : ('failed' as const),
-    archiveStatus: verification.passed ? ('verified' as const) : ('failed' as const),
+    return reconcileCompletionAuditOperations(sessDir, sessionID, finalState, auditDeps);
   });
-  return reconcileCompletionAuditOperations(sessDir, sessionID, finalState, auditDeps);
 }
 
 export async function resumeRegulatedCompletion(

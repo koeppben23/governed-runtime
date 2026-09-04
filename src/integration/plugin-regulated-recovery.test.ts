@@ -46,6 +46,7 @@ vi.mock('../adapters/workspace/archive.js', () => archiveMock);
 vi.mock('../adapters/workspace/archive-verify-chain.js', () => verificationMock);
 
 import { archiveRegulatedEvidence } from '../adapters/workspace/archive.js';
+import { verifyRegulatedArchive } from '../adapters/workspace/archive-verify-chain.js';
 
 const SESSION_ID = '550e8400-e29b-41d4-a716-446655440000';
 const AT = '2026-01-01T00:00:00.000Z';
@@ -277,5 +278,42 @@ describe('recoverRegulatedCompletion', () => {
     const events = await auditEvents(sessDir);
     expect(events.filter((event) => event.detail.kind === 'decision')).toHaveLength(1);
     expect(events.filter((event) => event.event === 'lifecycle:session_completed')).toHaveLength(1);
+    expect(archiveRegulatedEvidence).toHaveBeenCalledTimes(1);
+    expect(verifyRegulatedArchive).toHaveBeenCalledTimes(1);
+    expect((await readState(sessDir))?.archiveStatus).toBe('verified');
+  });
+
+  it('a late concurrent recovery never re-publishes archive bytes that were already verified', async () => {
+    const { fingerprint, sessDir } = await seedSession(reviewState('EVIDENCE_REVIEW'));
+    await writeStateWithArtifactsAndAuditOperations(sessDir, reviewState('COMPLETE'), undefined, [
+      terminalDecisionIntent(),
+    ]);
+    const state = await readState(sessDir);
+
+    // Barrier-controlled interleaving: recovery A blocks inside the archive
+    // step; recovery B enters while A still holds the completion lock.
+    let releaseArchive!: () => void;
+    archiveMock.archiveRegulatedEvidence.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          releaseArchive = () => resolve('/a.tar.gz');
+        }),
+    );
+    const runtime = () => recoveryRuntime(sessDir, fingerprint, state!);
+
+    const first = recoverRegulatedCompletion(runtime(), SESSION_ID);
+    while (archiveMock.archiveRegulatedEvidence.mock.calls.length === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    const second = recoverRegulatedCompletion(runtime(), SESSION_ID);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    releaseArchive();
+    await Promise.all([first, second]);
+
+    expect(archiveRegulatedEvidence).toHaveBeenCalledTimes(1);
+    expect(verifyRegulatedArchive).toHaveBeenCalledTimes(1);
+    const finalState = await readState(sessDir);
+    expect(finalState?.archiveStatus).toBe('verified');
+    expect(finalState?.pendingAuditOperations.every((op) => op.status === 'reconciled')).toBe(true);
   });
 });

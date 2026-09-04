@@ -19,6 +19,12 @@ vi.mock('../../adapters/persistence.js', () => ({
   readState: vi.fn(),
   PersistenceError: class PersistenceError extends Error {},
 }));
+vi.mock('../../adapters/persistence-lock.js', () => ({
+  acquireNamedWriteLock: vi.fn(async () => ({
+    release: vi.fn(async () => undefined),
+    waited: false,
+  })),
+}));
 vi.mock('../../adapters/persistence-audit.js', () => ({
   readAuditTrail: vi.fn().mockResolvedValue({ events: [], skipped: 0 }),
   appendAuditEvent: vi.fn(),
