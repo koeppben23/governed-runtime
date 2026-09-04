@@ -432,14 +432,24 @@ export async function reconcilePendingAuditOperations(
   }
 }
 
-type BootstrapStateExistence = 'exists' | 'absent' | 'unavailable';
+export type BootstrapStateExistence = 'exists' | 'absent' | 'unavailable';
 
 /**
  * Three-state bootstrap authority: only a POSITIVELY PROVEN absent session
  * may open the first-hydrate path. An unavailable resolution authority must
  * fail closed — unavailable is never treated as absent.
  */
-async function resolveBootstrapStateExistence(
+/**
+ * Positively establish whether a governed session exists, independent of the
+ * cached fingerprint mapping.
+ *
+ * `getSessionDir` resolves through a CACHED fingerprint, so a cold process or a
+ * transient fingerprint failure yields null — which is indistinguishable from
+ * a session that does not exist. Only this function may decide absence, and
+ * it reports `unavailable` when it cannot: an unavailable resolution
+ * authority must never be treated as proof of absence.
+ */
+export async function resolveBootstrapStateExistence(
   deps: AuditDeps,
   sessionId: string,
 ): Promise<BootstrapStateExistence> {

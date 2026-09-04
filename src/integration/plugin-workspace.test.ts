@@ -69,10 +69,14 @@ describe('integration/plugin-workspace', () => {
 
       it('invalidateChainState removes session state', () => {
         const ws = new PluginWorkspaceImpl(fakeDeps());
-        ws.getChainState('session-1');
+        const beforeInvalidate = ws.getChainState('session-1');
+        beforeInvalidate.initialized = true;
+        beforeInvalidate.lastHash = 'old-chain-hash';
         ws.invalidateChainState('session-1');
         const afterInvalidate = ws.getChainState('session-1');
+        expect(afterInvalidate).not.toBe(beforeInvalidate);
         expect(afterInvalidate.initialized).toBe(false);
+        expect(afterInvalidate.lastHash).toBeNull();
       });
 
       it('resolveFingerprint returns null when no auditWorktree', async () => {
@@ -136,6 +140,11 @@ describe('integration/plugin-workspace', () => {
 
         await Promise.all([p1, p2]);
         expect(order).toEqual([1, 2]);
+        expect(
+          (ws as unknown as { _sessionQueues: Map<string, Promise<void>> })._sessionQueues.has(
+            's1',
+          ),
+        ).toBe(false);
       });
 
       it('different sessions run in parallel', async () => {
@@ -161,8 +170,7 @@ describe('integration/plugin-workspace', () => {
       it('initChain uses GENESIS_HASH when sessDir is null', async () => {
         const ws = new PluginWorkspaceImpl(fakeDeps());
         const hash = await ws.initChain(null, 's1');
-        expect(hash).toBeTruthy();
-        expect(typeof hash).toBe('string');
+        expect(hash).toBe('genesis');
       });
 
       it('initChain returns same hash when called twice with same session', async () => {

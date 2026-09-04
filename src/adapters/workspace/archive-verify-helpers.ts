@@ -126,6 +126,29 @@ export function isAuditFormatFailure(reason: ChainVerificationReason | null): bo
 }
 
 /**
+ * A chain reason that reports PENDING cryptographic verification, not a
+ * verification failure.
+ *
+ * The synchronous verifier cannot validate an RFC3161 token: it deliberately
+ * refuses to trust the mutable cached `messageImprint` when a non-empty
+ * `tokenDerBase64` is present, and defers to the asynchronous
+ * `PkijsTimestampVerifier`. Projecting that deferral into a terminal
+ * `tsa_verification_failed` finding made a valid, correctly signed token fail
+ * the archive verification, because archive findings are append-only — a later
+ * successful cryptographic verification cannot retract an earlier finding.
+ *
+ * Deferring is safe rather than fail-open: every event that produces this
+ * reason carries a non-empty token, which is exactly the set
+ * `verifyArchiveTimestampTokens` covers. With trust anchors configured it
+ * verifies each token cryptographically; with none configured it reports
+ * `tsa_verification_failed` for the presence of unverifiable TSA evidence. The
+ * async layer is therefore the single authority for the verdict.
+ */
+export function isDeferredTimestampReason(reason: ChainVerificationReason | null): boolean {
+  return reason === 'TOKEN_VERIFICATION_REQUIRED';
+}
+
+/**
  * Map a `readAuditTrail()` failure to its archive finding code. The read
  * boundary rejects every record that violates the canonical audit-chain.v3
  * envelope as `AUDIT_ENVELOPE_INVALID` — no legacy classification exists at
@@ -138,10 +161,16 @@ export function auditReadFailureFindingCode(error: unknown): ArchiveFindingCode 
   return 'audit_chain_invalid';
 }
 
+/**
+ * Map a TERMINAL timestamp verification reason to its archive finding code.
+ *
+ * Never call this for a deferred reason — see `isDeferredTimestampReason`.
+ * `TOKEN_VERIFICATION_REQUIRED` is deliberately absent: it states that
+ * cryptographic verification has not run yet, and mapping it here is what
+ * turned pending verification into a permanent failure.
+ */
 export function timestampFindingCode(reason: ChainVerificationReason | null): ArchiveFindingCode {
-  if (reason === 'TSA_MESSAGE_IMPRINT_MISMATCH' || reason === 'TOKEN_VERIFICATION_REQUIRED') {
-    return 'tsa_verification_failed';
-  }
+  if (reason === 'TSA_MESSAGE_IMPRINT_MISMATCH') return 'tsa_verification_failed';
   if (reason === 'TSA_EVIDENCE_DOWNGRADED') return 'tsa_evidence_downgraded';
   return 'timestamp_unanchored';
 }

@@ -286,7 +286,8 @@ export function createWorkspace(deps: WorkspaceDeps): PluginWorkspace {
     invalidateChainState: (sid) => impl.invalidateChainState(sid),
     initChain: (sd, sid) => impl.initChain(sd, sid),
     appendAndTrack: (e, sd, tc, sid) => impl.appendAndTrack(e, sd, tc, sid),
-    updateReviewAssurance: (sd, u) => impl.updateReviewAssurance(sd, u),
+    updateReviewAssurance: (sd, u, semanticIntents) =>
+      impl.updateReviewAssurance(sd, u, semanticIntents),
     blockReviewOutcome: (ctx, oid, code, detail, out) =>
       impl.blockReviewOutcome(ctx, oid, code, detail, out),
     nextDecisionSequence: (sd, sid) => impl.nextDecisionSequence(sd, sid),

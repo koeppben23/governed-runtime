@@ -4,6 +4,7 @@ import {
   authorizeMutationEpisode,
   canResolveMutationEpisode,
   completeMutationEpisode,
+  countUnboundMutationEpisodes,
   enforceMutationEpisodeInvariants,
   hasUnboundMutationEpisodes,
   hasUnresolvedMutationEpisodes,
@@ -13,6 +14,8 @@ import {
   MutationEpisode,
   type MutationEpisodeResolution,
 } from './evidence-mutation-episode.js';
+import { makeProgressedState } from '../fixtures.js';
+import { SessionState } from './schema.js';
 
 const ID = '00000000-0000-4000-8000-000000000001';
 const SECOND_ID = '00000000-0000-4000-8000-000000000002';
@@ -242,6 +245,93 @@ describe('mutation episode evidence', () => {
       kind: 'blocked',
       code: 'MUTATION_EPISODE_RUNTIME_EPOCH_ACTIVE',
     });
+    expect(canResolveMutationEpisode(episode, { generation: 16 })).toEqual({
+      kind: 'blocked',
+      code: 'MUTATION_EPISODE_RUNTIME_EPOCH_ACTIVE',
+    });
+    expect(canResolveMutationEpisode(episode, LEASE_18)).toEqual({ kind: 'allow' });
+  });
+
+  it('only completes the matching authorized dispatch', () => {
+    const authorized = [authorizedEpisode('call-1'), authorizedEpisode('call-2')];
+    const completed = completeMutationEpisode(authorized, 'call-1', 'bash', TIME, 'success');
+    const unchanged = completeMutationEpisode(completed, 'call-1', 'bash', TIME, 'failure');
+
+    expect(completed[0]).toMatchObject({ status: 'completed', outcome: 'success' });
+    expect(completed[1]).toBe(authorized[1]);
+    expect(completeMutationEpisode(authorized, 'call-1', 'edit', TIME, 'success')).toEqual(
+      authorized,
+    );
+    expect(completeMutationEpisode(authorized, 'missing', 'bash', TIME, 'success')).toEqual(
+      authorized,
+    );
+    expect(unchanged).toEqual(completed);
+  });
+
+  it('distinguishes every reconciliation evidence state', () => {
+    const authorized = authorizedEpisode('authorized');
+    const unknown = completeMutationEpisode(
+      [authorizedEpisode('unknown')],
+      'unknown',
+      'bash',
+      TIME,
+      'unknown',
+    )[0]!;
+    const unbound = completeMutationEpisode(
+      [authorizedEpisode('unbound')],
+      'unbound',
+      'bash',
+      TIME,
+      'success',
+    )[0]!;
+    const eligible = {
+      ...unbound,
+      implementationDigest: 'old',
+      evidenceStatus: 'eligible' as const,
+    };
+    const stale = { ...unbound, implementationDigest: 'old', evidenceStatus: 'stale' as const };
+    const resolved = { ...eligible, hostCallId: 'resolved' };
+    const result = reconcileMutationEpisodes(
+      [authorized, unknown, unbound, eligible, stale, resolved],
+      [resolutionFor('resolved', 18)],
+      'new',
+    );
+
+    expect(result[0]).toBe(authorized);
+    expect(result[1]).toBe(unknown);
+    expect(result[2]).toMatchObject({ implementationDigest: 'new', evidenceStatus: 'eligible' });
+    expect(result[3]).toMatchObject({ implementationDigest: 'old', evidenceStatus: 'stale' });
+    expect(result[4]).toBe(stale);
+    expect(result[5]).toMatchObject({ implementationDigest: 'old', evidenceStatus: 'stale' });
+    expect(reconcileMutationEpisodes([resolved], [resolutionFor('resolved', 18)], 'old')[0]).toBe(
+      resolved,
+    );
+  });
+
+  it('counts and resolves blocking episodes independently of non-blocking evidence', () => {
+    const authorized = authorizedEpisode('authorized');
+    const unbound = completeMutationEpisode(
+      [authorizedEpisode('unbound')],
+      'unbound',
+      'bash',
+      TIME,
+      'failure',
+    )[0]!;
+    const bound = reconcileMutationEpisodes([unbound], [], 'digest')[0]!;
+    const resolutions = [resolutionFor('authorized', 18)];
+
+    expect(countUnboundMutationEpisodes([authorized, unbound, bound])).toBe(2);
+    expect(countUnboundMutationEpisodes([authorized, unbound, bound], resolutions)).toBe(1);
+    expect(hasUnresolvedMutationEpisodes([authorized, unbound, bound], resolutions)).toBe(false);
+    expect(hasUnboundMutationEpisodes([authorized, unbound, bound], resolutions)).toBe(true);
+    expect(latestUnknownOutcomeResolvedAt([])).toBeNull();
+    expect(
+      latestUnknownOutcomeResolvedAt([
+        { ...resolutionFor('first', 18), resolvedAt: '2026-01-01T00:00:00.000Z' },
+        { ...resolutionFor('last', 18), resolvedAt: '2026-02-01T00:00:00.000Z' },
+        { ...resolutionFor('middle', 18), resolvedAt: '2026-01-15T00:00:00.000Z' },
+      ]),
+    ).toBe('2026-02-01T00:00:00.000Z');
   });
 });
 
@@ -360,5 +450,141 @@ describe('enforceMutationEpisodeInvariants (schema boundary)', () => {
       true,
     );
     expect(issues[0]).toContain('does not supersede');
+  });
+
+  it.each([
+    [
+      'duplicate episode identity',
+      () => {
+        const episode = authorizedEpisode('duplicate');
+        return [episode, episode];
+      },
+      [],
+    ],
+    ['missing episode', () => [], [resolutionFor('missing', 18)]],
+    [
+      'observed outcome',
+      () =>
+        completeMutationEpisode(
+          [authorizedEpisode('observed')],
+          'observed',
+          'bash',
+          TIME,
+          'failure',
+        ),
+      [resolutionFor('observed', 18)],
+    ],
+    [
+      'duplicate resolution identity',
+      () => [authorizedEpisode('duplicate-resolution')],
+      [resolutionFor('duplicate-resolution', 18), resolutionFor('duplicate-resolution', 19)],
+    ],
+    [
+      'equal fencing generation',
+      () => [authorizedEpisode('equal', 17)],
+      [resolutionFor('equal', 17)],
+    ],
+    [
+      'older fencing generation',
+      () => [authorizedEpisode('older', 17)],
+      [resolutionFor('older', 16)],
+    ],
+  ] as const)(
+    'rejects %s through the SessionState schema boundary',
+    (_name, episodes, resolutions) => {
+      const base = makeProgressedState('IMPLEMENTATION');
+      expect(
+        SessionState.safeParse({
+          ...base,
+          mutationEpisodes: episodes(),
+          mutationEpisodeResolutions: resolutions,
+        }).success,
+      ).toBe(false);
+    },
+  );
+
+  it.each([
+    [
+      'completion timestamp',
+      {
+        completedAt: null,
+        outcome: null,
+        implementationDigest: null,
+        evidenceStatus: 'ineligible',
+      },
+    ],
+    [
+      'completion outcome',
+      {
+        completedAt: TIME,
+        outcome: null,
+        implementationDigest: null,
+        evidenceStatus: 'ineligible',
+      },
+    ],
+    [
+      'unbound eligible evidence',
+      {
+        completedAt: TIME,
+        outcome: 'success',
+        implementationDigest: null,
+        evidenceStatus: 'eligible',
+      },
+    ],
+    [
+      'bound ineligible evidence',
+      {
+        completedAt: TIME,
+        outcome: 'success',
+        implementationDigest: 'digest',
+        evidenceStatus: 'ineligible',
+      },
+    ],
+  ] as const)('rejects completed episodes missing %s', (_name, fields) => {
+    expect(
+      MutationEpisode.safeParse({
+        ...authorizedEpisode('completed'),
+        status: 'completed',
+        ...fields,
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each([
+    [
+      'completion timestamp',
+      {
+        completedAt: TIME,
+        outcome: null,
+        implementationDigest: null,
+        evidenceStatus: 'ineligible',
+      },
+    ],
+    [
+      'outcome',
+      {
+        completedAt: null,
+        outcome: 'success',
+        implementationDigest: null,
+        evidenceStatus: 'ineligible',
+      },
+    ],
+    [
+      'implementation digest',
+      {
+        completedAt: null,
+        outcome: null,
+        implementationDigest: 'digest',
+        evidenceStatus: 'ineligible',
+      },
+    ],
+    [
+      'eligible evidence',
+      { completedAt: null, outcome: null, implementationDigest: null, evidenceStatus: 'eligible' },
+    ],
+  ] as const)('rejects dispatch authorization carrying %s', (_name, fields) => {
+    expect(MutationEpisode.safeParse({ ...authorizedEpisode('dispatch'), ...fields }).success).toBe(
+      false,
+    );
   });
 });

@@ -987,6 +987,91 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     expect(parseBlocked(result!).code).toBe('REVIEW_FINDINGS_SESSION_MISMATCH');
   });
 
+  it('selects the matching invocation when no invocationId is recorded on the obligation', () => {
+    const findings = strictFindings();
+    const assurance = strictAssuranceFixture(findings);
+    assurance.obligations[0] = {
+      ...assurance.obligations[0]!,
+      invocationId: null,
+    };
+    assurance.invocations = [
+      {
+        ...assurance.invocations[0]!,
+        invocationId: '33333333-3333-4333-8333-333333333333',
+        childSessionId: 'ses_decoy',
+        findingsHash: 'decoy-hash',
+      },
+      assurance.invocations[0]!,
+    ];
+
+    const result = validateReviewFindings(
+      findings,
+      makeCtx({ strictEnforcement: true, assurance, obligationType: 'plan' }),
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it('does not consume pending host-task evidence under an SDK policy', () => {
+    const findings = strictFindings();
+    const assurance = strictAssuranceFixture(findings);
+    assurance.obligations[0] = {
+      ...assurance.obligations[0]!,
+      status: 'pending',
+      invocationId: null,
+      fulfilledAt: null,
+    };
+    assurance.invocations[0] = {
+      ...assurance.invocations[0]!,
+      invocationMode: 'host_subagent_task',
+      hostVisible: true,
+      capturedVerdict: 'accept',
+    };
+
+    const result = validateReviewFindings(
+      findings,
+      makeCtx({
+        strictEnforcement: true,
+        assurance,
+        obligationType: 'plan',
+        reviewInvocationPolicy: 'sdk_allowed',
+      }),
+    );
+
+    expect(parseBlocked(result!).code).toBe('SUBAGENT_EVIDENCE_MISSING');
+  });
+
+  it('does not consume pending host-task evidence bound to another obligation', () => {
+    const findings = strictFindings();
+    const assurance = strictAssuranceFixture(findings);
+    assurance.obligations[0] = {
+      ...assurance.obligations[0]!,
+      status: 'pending',
+      invocationId: '22222222-2222-4222-8222-222222222222',
+      fulfilledAt: null,
+    };
+    assurance.invocations[0] = {
+      ...assurance.invocations[0]!,
+      obligationId: '33333333-3333-4333-8333-333333333333',
+      invocationMode: 'host_subagent_task',
+      hostVisible: true,
+      capturedVerdict: 'accept',
+    };
+
+    const result = validateReviewFindings(
+      findings,
+      makeCtx({
+        strictEnforcement: true,
+        assurance,
+        obligationType: 'plan',
+        reviewInvocationPolicy: 'host_task_required',
+        reviewParentSessionId: 'ses_parent',
+      }),
+    );
+
+    expect(parseBlocked(result!).code).toBe('SUBAGENT_EVIDENCE_MISSING');
+  });
+
   it('task-tool after evidence is available before the next FlowGuard verdict submit validates findings', () => {
     const now = new Date().toISOString();
     const findings = strictFindings();

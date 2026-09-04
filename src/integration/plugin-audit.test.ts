@@ -102,8 +102,18 @@ function requireTransition(
 
 describe('runAudit', () => {
   describe('HAPPY', () => {
-    it('returns undefined when no session dir exists', async () => {
-      const deps = makeDeps({ getSessionDir: vi.fn().mockReturnValue(null) });
+    it('returns undefined when the session is positively proven absent', async () => {
+      // A missing mapping alone is not proof of absence — it is also what a
+      // cold or failed fingerprint resolution looks like. Absence must come
+      // from the canonical authority, which here resolves to a directory
+      // holding no state. The unavailable case is covered in
+      // plugin-audit-session-authority.test.ts.
+      const deps = makeDeps({
+        getSessionDir: vi.fn().mockReturnValue(null),
+        resolveCanonicalSessionDir: vi
+          .fn()
+          .mockResolvedValue({ status: 'resolved', sessDir: os.tmpdir() }),
+      } as Partial<AuditDeps>);
 
       const result = await runAudit(deps, 'flowguard_plan', {}, {}, SESSION_ID);
 

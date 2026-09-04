@@ -62,7 +62,7 @@ export const PRODUCT_INVENTORY = {
   archiveFindingCodes: 27,
   archiveVerifyJsdocChecks: 9,
   cliBins: 7,
-  mutationFiles: 80,
+  mutationFiles: 88,
 } as const;
 
 export type ProductInventory = typeof PRODUCT_INVENTORY;

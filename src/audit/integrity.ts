@@ -482,9 +482,6 @@ function resolveTimestampReason(timestampChecks: TimestampChecks): ChainVerifica
   if (timestampChecks.timestampMonotonicity?.valid === false) {
     return 'CLOCK_ANOMALY';
   }
-  if (timestampChecks.tokenVerificationRequired.length > 0) {
-    return 'TOKEN_VERIFICATION_REQUIRED';
-  }
   if (timestampChecks.tsaEvidenceDowngraded.length > 0) {
     return 'TSA_EVIDENCE_DOWNGRADED';
   }
@@ -493,6 +490,9 @@ function resolveTimestampReason(timestampChecks: TimestampChecks): ChainVerifica
   }
   if (timestampChecks.missingTimestampEvidence.length > 0) {
     return 'TIMESTAMP_EVIDENCE_MISSING';
+  }
+  if (timestampChecks.tokenVerificationRequired.length > 0) {
+    return 'TOKEN_VERIFICATION_REQUIRED';
   }
   return null;
 }

@@ -358,7 +358,8 @@ async function handleTaskAfter(
       await persistObservations(
         {
           getSessionDir: (sid) => runtime.ws.getSessionDir(sid),
-          updateReviewAssurance: (sd, update) => runtime.ws.updateReviewAssurance(sd, update),
+          updateReviewAssurance: (sd, update, semanticIntents) =>
+            runtime.ws.updateReviewAssurance(sd, update, semanticIntents),
           log: runtime.log,
           logError: runtime.logError,
         },

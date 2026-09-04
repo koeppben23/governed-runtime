@@ -549,7 +549,7 @@ describe('audit/archive tamper matrix', () => {
   }
 
   it.skipIf(!tarOk)(
-    'regulated nested content tamper with re-sealed chain -> TSA verification failure',
+    'regulated nested content tamper with re-sealed chain -> missing timestamp evidence wins over deferred verification',
     async () => {
       const ids = await completeRegulatedSession();
       const lines = (await readAuditLines(ids.sessDir)).filter(
@@ -605,7 +605,7 @@ describe('audit/archive tamper matrix', () => {
 
       const chainResult = verifyChain(events, { strictTimestamps: true });
       expect(chainResult.valid).toBe(false);
-      expect(chainResult.reason).toBe('TOKEN_VERIFICATION_REQUIRED');
+      expect(chainResult.reason).toBe('TIMESTAMP_EVIDENCE_MISSING');
       const logs: Array<{
         level: string;
         service: string;
@@ -638,12 +638,12 @@ describe('audit/archive tamper matrix', () => {
             !('tokenDerBase64' in entry.extra) &&
             !('messageImprint' in entry.extra),
         ),
-      ).toBe(true);
+      ).toBe(false);
     },
   );
 
   it.skipIf(!tarOk)(
-    'regulated nested content tamper with coordinated imprint edit -> still TOKEN_VERIFICATION_REQUIRED',
+    'regulated nested content tamper with coordinated imprint edit -> missing timestamp evidence wins over deferred verification',
     async () => {
       const ids = await completeRegulatedSession();
       const lines = await readAuditLines(ids.sessDir);
@@ -705,7 +705,7 @@ describe('audit/archive tamper matrix', () => {
 
       const chainResult = verifyChain(events, { strictTimestamps: true });
       expect(chainResult.valid).toBe(false);
-      expect(chainResult.reason).toBe('TOKEN_VERIFICATION_REQUIRED');
+      expect(chainResult.reason).toBe('TIMESTAMP_EVIDENCE_MISSING');
     },
   );
 
