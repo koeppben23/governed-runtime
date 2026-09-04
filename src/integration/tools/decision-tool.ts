@@ -37,7 +37,10 @@ import { ActorIdentityError } from '../../adapters/actor.js';
 
 // Finalization service
 import { finalizeDecision } from '../services/decision-finalization.js';
-import { executeRegulatedCompletion } from '../services/regulated-completion.js';
+import {
+  createSessionCompletionAuditDeps,
+  executeRegulatedCompletion,
+} from '../services/regulated-completion.js';
 import { consumeUserDecisionIntent, peekUserDecisionIntent } from '../user-decision-intent.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -145,7 +148,18 @@ export const decision: ToolDefinition = {
           // Regulated completion reconciles its own outbox and must run after
           // this transaction releases the session lock.
           if (regulatedCompletion) {
-            return { kind: 'regulated_completion' as const, fingerprint, sessDir, result };
+            return {
+              kind: 'regulated_completion' as const,
+              fingerprint,
+              sessDir,
+              result,
+              auditDeps: createSessionCompletionAuditDeps({
+                sessDir,
+                sessionID: context.sessionID,
+                fingerprint,
+                state: result.state,
+              }),
+            };
           }
 
           // Delegate non-regulated post-rail finalization (MADR).
@@ -156,6 +170,12 @@ export const decision: ToolDefinition = {
             priorPhase: state.phase,
             verdict: args.verdict,
             result,
+            auditDeps: createSessionCompletionAuditDeps({
+              sessDir,
+              sessionID: context.sessionID,
+              fingerprint,
+              state,
+            }),
           });
 
           const persisted = await persistAndFormat(sessDir, finalResult, {
@@ -175,6 +195,7 @@ export const decision: ToolDefinition = {
           settled.fingerprint,
           context.sessionID,
           settled.result.state,
+          settled.auditDeps,
         );
         finalResult = { ...settled.result, state: finalState };
         output = formatRailResult(finalResult, { evidenceApprovalCompletion: true });

@@ -25,16 +25,72 @@ export function verifyRegulatedCompletionCompleteness(
     });
   }
   const transition = state.transition;
-  if (!transition || transition.from !== 'EVIDENCE_REVIEW' || !isTerminalPhase(transition.to)) {
+  const isExactCompletionTransition =
+    !!transition &&
+    transition.from === 'EVIDENCE_REVIEW' &&
+    isTerminalPhase(transition.to) &&
+    transition.event === 'APPROVE';
+  if (!isExactCompletionTransition) {
     findings.push({
       code: 'regulated_terminal_transition_missing',
       severity: 'error',
       message:
-        'Regulated completion archive lacks the authoritative EVIDENCE_REVIEW to COMPLETE transition',
+        'Regulated completion archive lacks the authoritative EVIDENCE_REVIEW APPROVE to COMPLETE transition',
       file: 'state/session-state.json',
     });
     return;
   }
+  const decision = state.reviewDecision;
+  if (!decision || decision.verdict !== 'approve') {
+    findings.push({
+      code: 'regulated_terminal_decision_invalid',
+      severity: 'error',
+      message:
+        'Regulated completion archive lacks the bound approval decision authority in reviewDecision',
+      file: 'state/session-state.json',
+    });
+    return;
+  }
+  const transitionIndex = locateCompletionEvidence(events, transition);
+  addCompletenessFindings(
+    findings,
+    transitionIndex.transitionIndex,
+    transitionIndex.decisions.length,
+    transitionIndex.lifecycle.length,
+  );
+  const { decisions, lifecycle } = transitionIndex;
+  if (
+    transitionIndex.transitionIndex >= 0 &&
+    decisions.length === 1 &&
+    lifecycle.length === 1 &&
+    !(
+      transitionIndex.transitionIndex < decisions[0]!.index &&
+      decisions[0]!.index < lifecycle[0]!.index
+    )
+  ) {
+    findings.push({
+      code: 'regulated_completion_order_invalid',
+      severity: 'error',
+      message:
+        'Regulated completion evidence must order transition, decision, then session_completed',
+      file: 'audit/audit.jsonl',
+    });
+  }
+  if (decisions.length === 1) {
+    addDecisionBindingFindings(findings, decisions[0]!.event, decision);
+  }
+}
+
+interface CompletionEvidence {
+  readonly transitionIndex: number;
+  readonly decisions: ReadonlyArray<{ event: ChainedAuditEvent; index: number }>;
+  readonly lifecycle: ReadonlyArray<{ event: ChainedAuditEvent; index: number }>;
+}
+
+function locateCompletionEvidence(
+  events: readonly ChainedAuditEvent[],
+  transition: NonNullable<SessionState['transition']>,
+): CompletionEvidence {
   const transitionIndex = events.findIndex(
     (event) =>
       event.detail.kind === 'transition' &&
@@ -50,8 +106,7 @@ export function verifyRegulatedCompletionCompleteness(
         event.detail.kind === 'decision' &&
         event.detail.fromPhase === transition.from &&
         event.detail.toPhase === transition.to &&
-        event.detail.transitionEvent === transition.event &&
-        event.detail.verdict === 'approve',
+        event.detail.transitionEvent === transition.event,
     );
   const lifecycle = events
     .map((event, index) => ({ event, index }))
@@ -60,18 +115,46 @@ export function verifyRegulatedCompletionCompleteness(
         event.event === 'lifecycle:session_completed' &&
         event.detail.action === 'session_completed',
     );
-  addCompletenessFindings(findings, transitionIndex, decisions.length, lifecycle.length);
+  return { transitionIndex, decisions, lifecycle };
+}
+
+function addDecisionBindingFindings(
+  findings: ArchiveFinding[],
+  event: ChainedAuditEvent,
+  decision: NonNullable<SessionState['reviewDecision']>,
+): void {
+  const { detail } = event;
   if (
-    transitionIndex >= 0 &&
-    decisions.length === 1 &&
-    lifecycle.length === 1 &&
-    !(transitionIndex < decisions[0]!.index && decisions[0]!.index < lifecycle[0]!.index)
+    detail.verdict !== decision.verdict ||
+    detail.rationale !== decision.rationale ||
+    detail.decidedBy !== decision.decidedBy ||
+    detail.decidedAt !== decision.decidedAt
   ) {
     findings.push({
-      code: 'regulated_completion_order_invalid',
+      code: 'regulated_terminal_decision_invalid',
       severity: 'error',
       message:
-        'Regulated completion evidence must order transition, decision, then session_completed',
+        'Regulated completion decision receipt does not bind the persisted reviewDecision authority',
+      file: 'audit/audit.jsonl',
+    });
+  }
+  if (decision.decisionIdentity) {
+    const eventIdentity = detail.decisionIdentity as { actorId?: unknown } | undefined;
+    if (eventIdentity?.actorId !== decision.decisionIdentity.actorId) {
+      findings.push({
+        code: 'regulated_terminal_decision_invalid',
+        severity: 'error',
+        message:
+          'Regulated completion decision receipt decisionIdentity does not match the persisted decision identity',
+        file: 'audit/audit.jsonl',
+      });
+    }
+  }
+  if (event.actor !== (decision.decisionIdentity?.actorId ?? decision.decidedBy)) {
+    findings.push({
+      code: 'regulated_terminal_decision_invalid',
+      severity: 'error',
+      message: 'Regulated completion decision receipt actor does not match the deciding authority',
       file: 'audit/audit.jsonl',
     });
   }

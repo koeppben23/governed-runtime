@@ -147,6 +147,8 @@ function buildOperationAuditBody(
       preStateDigest: operation.preStateDigest,
       mutationDigest: operation.mutationDigest,
       postStateDigest: operation.postStateDigest,
+      actor: operation.semantic.actor,
+      actorInfo: operation.semantic.actorInfo,
     });
   }
   const t = operation.transition;

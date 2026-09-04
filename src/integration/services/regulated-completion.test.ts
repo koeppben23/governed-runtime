@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { executeRegulatedCompletion } from './regulated-completion.js';
+import { executeRegulatedCompletion, resumeRegulatedCompletion } from './regulated-completion.js';
+import type { SessionState } from '../../state/schema.js';
 import {
   makeState,
   REGULATED_POLICY_SNAPSHOT,
@@ -11,6 +12,7 @@ import {
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
 } from '../../fixtures.js';
+import type { AuditDeps } from '../plugin-audit.js';
 
 vi.mock('../../adapters/persistence.js', () => ({
   readState: vi.fn(),
@@ -30,6 +32,7 @@ vi.mock('../tools/helpers.js', () => ({
 }));
 
 import { readState } from '../../adapters/persistence.js';
+import { readAuditTrail } from '../../adapters/persistence-audit.js';
 import { archiveRegulatedEvidence } from '../../adapters/workspace/archive.js';
 import { verifyRegulatedArchive } from '../../adapters/workspace/archive-verify-chain.js';
 import { reconcilePendingAuditOperations } from '../plugin-audit.js';
@@ -54,20 +57,50 @@ function completeState() {
   });
 }
 
+function completionDeps(): AuditDeps {
+  return {
+    resolveFingerprint: async () => 'fp',
+    getSessionDir: (candidate: string) => (candidate === 'sid' ? '/sess' : null),
+    resolveSessionPolicy: vi.fn(),
+    initChain: vi.fn(async () => 'genesis'),
+    invalidateChainState: vi.fn(),
+    appendAndTrack: vi.fn(async (event) => {
+      event.chainHash = 'c'.repeat(64);
+    }),
+    nextDecisionSequence: vi.fn(async () => 1),
+    log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
+    logError: vi.fn(),
+    cachedFingerprint: 'fp',
+    mode: 'regulated',
+  } as unknown as AuditDeps;
+}
+
 afterEach(() => vi.clearAllMocks());
+
+/** Simulate persisted state advancing with every write, as the real adapter does. */
+function trackPersistedState(initial: SessionState): void {
+  let latest: SessionState | null = initial;
+  vi.mocked(writeStateWithArtifactsAndAuditOperations).mockImplementation(
+    async (_dir: string, state: unknown) => {
+      latest = state as SessionState;
+      return state as SessionState;
+    },
+  );
+  vi.mocked(readState).mockImplementation(async () => latest);
+}
 
 describe('executeRegulatedCompletion', () => {
   it('commits and reconciles decision then lifecycle before archiving', async () => {
     const state = completeState();
-    vi.mocked(readState).mockResolvedValue(state);
+    trackPersistedState(state);
     vi.mocked(reconcilePendingAuditOperations).mockResolvedValue(undefined);
     vi.mocked(archiveRegulatedEvidence).mockResolvedValue('/archive.tar.gz');
     vi.mocked(verifyRegulatedArchive).mockResolvedValue({ passed: true } as never);
 
-    const result = await executeRegulatedCompletion('/sess', 'fp', 'sid', state);
+    const result = await executeRegulatedCompletion('/sess', 'fp', 'sid', state, completionDeps());
 
     expect(result.archiveStatus).toBe('verified');
-    expect(reconcilePendingAuditOperations).toHaveBeenCalledTimes(2);
+    expect(reconcilePendingAuditOperations).toHaveBeenCalledTimes(3);
     expect(writeStateWithArtifactsAndAuditOperations).toHaveBeenNthCalledWith(
       1,
       '/sess',
@@ -96,7 +129,7 @@ describe('executeRegulatedCompletion', () => {
       reason: 'disk failure',
     });
 
-    const result = await executeRegulatedCompletion('/sess', 'fp', 'sid', state);
+    const result = await executeRegulatedCompletion('/sess', 'fp', 'sid', state, completionDeps());
 
     expect(result.archiveStatus).toBe('failed');
     expect(archiveRegulatedEvidence).not.toHaveBeenCalled();
@@ -104,5 +137,45 @@ describe('executeRegulatedCompletion', () => {
       '/sess',
       expect.objectContaining({ archiveStatus: 'failed' }),
     );
+  });
+
+  it('resumes from a durable decision checkpoint without emitting a second decision', async () => {
+    const state = completeState();
+    trackPersistedState(state);
+    vi.mocked(readAuditTrail).mockResolvedValue({
+      events: [{ detail: { kind: 'decision' } }],
+      skipped: 0,
+    } as never);
+    vi.mocked(reconcilePendingAuditOperations).mockResolvedValue(undefined);
+    vi.mocked(archiveRegulatedEvidence).mockResolvedValue('/archive.tar.gz');
+    vi.mocked(verifyRegulatedArchive).mockResolvedValue({ passed: true } as never);
+
+    const result = await executeRegulatedCompletion('/sess', 'fp', 'sid', state, completionDeps());
+
+    expect(result.archiveStatus).toBe('verified');
+    const decisionWrites = vi
+      .mocked(writeStateWithArtifactsAndAuditOperations)
+      .mock.calls.filter((call) => JSON.stringify(call[3] ?? []).includes('decision:DEC-'));
+    expect(decisionWrites).toHaveLength(0);
+    expect(archiveRegulatedEvidence).toHaveBeenCalledOnce();
+  });
+
+  it('resumes only for incomplete regulated COMPLETE checkpoints', async () => {
+    vi.mocked(readState).mockResolvedValue({
+      ...completeState(),
+      archiveStatus: 'pending',
+    });
+
+    await expect(
+      resumeRegulatedCompletion('/sess', 'fp', 'sid', completionDeps()),
+    ).resolves.not.toBeNull();
+
+    vi.mocked(readState).mockResolvedValue({
+      ...completeState(),
+      archiveStatus: 'verified',
+    });
+    await expect(
+      resumeRegulatedCompletion('/sess', 'fp', 'sid', completionDeps()),
+    ).resolves.toBeNull();
   });
 });
