@@ -17,7 +17,14 @@ import type { AuditDeps } from '../plugin-audit.js';
 
 vi.mock('../../adapters/persistence.js', () => ({
   readState: vi.fn(),
-  PersistenceError: class PersistenceError extends Error {},
+  PersistenceError: class PersistenceError extends Error {
+    constructor(
+      public readonly code: string,
+      message?: string,
+    ) {
+      super(message ?? code);
+    }
+  },
 }));
 vi.mock('../../adapters/persistence-lock.js', () => ({
   acquireNamedWriteLock: vi.fn(async () => ({
@@ -41,7 +48,8 @@ vi.mock('../tools/helpers.js', () => ({
   ),
 }));
 
-import { readState } from '../../adapters/persistence.js';
+import { PersistenceError, readState } from '../../adapters/persistence.js';
+import { acquireNamedWriteLock } from '../../adapters/persistence-lock.js';
 import { readAuditTrail } from '../../adapters/persistence-audit.js';
 import { archiveRegulatedEvidence } from '../../adapters/workspace/archive.js';
 import { verifyRegulatedArchive } from '../../adapters/workspace/archive-verify-chain.js';
@@ -364,4 +372,60 @@ describe('executeRegulatedCompletion', () => {
       expect(reconcilePendingAuditOperations).not.toHaveBeenCalled();
     },
   );
+
+  it('never persists a stale failure when completion-lock contention occurs', async () => {
+    const { persisted, complete } = reviewEntryPath();
+    trackPersistedState(persisted);
+    vi.mocked(reconcilePendingAuditOperations).mockResolvedValue(undefined);
+    vi.mocked(archiveRegulatedEvidence).mockResolvedValue('/archive.tar.gz');
+    vi.mocked(verifyRegulatedArchive).mockResolvedValue({ passed: true } as never);
+    vi.mocked(acquireNamedWriteLock).mockRejectedValueOnce(
+      new PersistenceError(
+        'LOCK_TIMEOUT',
+        'Could not acquire regulated completion lock within 60000ms.',
+      ),
+    );
+
+    await expect(
+      executeRegulatedCompletion('/sess', 'fp', 'sid', complete, completionDeps()),
+    ).rejects.toMatchObject({ code: 'REGULATED_COMPLETION_LOCK_CONTENTION' });
+
+    expect(archiveRegulatedEvidence).not.toHaveBeenCalled();
+    expect(verifyRegulatedArchive).not.toHaveBeenCalled();
+    const failedWrites = vi
+      .mocked(writeStateWithArtifactsAndAuditOperations)
+      .mock.calls.filter(
+        (call) => (call[1] as { archiveStatus?: string }).archiveStatus === 'failed',
+      );
+    expect(failedWrites).toHaveLength(0);
+  });
+
+  it('returns the verified state when contention resolves against an already verified session', async () => {
+    const verified = {
+      ...reviewState('COMPLETE'),
+      archiveStatus: 'verified' as const,
+      regulatedArchiveStatus: 'verified' as const,
+    };
+    trackPersistedState(verified);
+    vi.mocked(readAuditTrail).mockResolvedValue({
+      events: [decisionEvent(), sessionCompletedEvent()],
+      skipped: 0,
+    } as never);
+    vi.mocked(reconcilePendingAuditOperations).mockResolvedValue(undefined);
+    vi.mocked(acquireNamedWriteLock).mockRejectedValue(
+      new PersistenceError('LOCK_TIMEOUT', 'completion lock contention'),
+    );
+
+    const result = await executeRegulatedCompletion(
+      '/sess',
+      'fp',
+      'sid',
+      verified,
+      completionDeps(),
+    );
+
+    expect(result).toBe(verified);
+    expect(archiveRegulatedEvidence).not.toHaveBeenCalled();
+    expect(verifyRegulatedArchive).not.toHaveBeenCalled();
+  });
 });

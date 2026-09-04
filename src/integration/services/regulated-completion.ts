@@ -173,6 +173,17 @@ export async function executeRegulatedCompletion(
       archivePassed: finalState.regulatedArchiveStatus === 'verified',
     });
   } catch (err) {
+    // Completion-lock contention is not a domain failure: another recovery is
+    // legitimately working. Never persist a stale failed status over it — if
+    // that recovery already verified, return its state; otherwise surface the
+    // contention so the caller can retry.
+    if (err instanceof RegulatedCompletionLockContentionError) {
+      const fresh = await readState(sessDir);
+      if (fresh?.archiveStatus === 'verified') {
+        return fresh;
+      }
+      throw err;
+    }
     getAdapterLogger().error('services', 'Regulated completion chain failed', {
       sessionID,
       fingerprint,
@@ -206,12 +217,43 @@ export async function executeRegulatedCompletion(
  */
 const REGULATED_COMPLETION_LOCK = 'regulated-completion.lock';
 
+/**
+ * Archive creation, publication, and verification can legitimately outlast
+ * the default 10s session-lock budget (tar alone is bounded at 30s). The
+ * completion lock therefore gets a distinctly longer timeout so routine
+ * contention does not trip it.
+ */
+const REGULATED_COMPLETION_LOCK_TIMEOUT_MS = 60_000;
+
+/**
+ * Contention on the completion lock is NOT a domain completion failure: a
+ * concurrent recovery is legitimately working. The completion chain must
+ * never persist a stale `failed` status over that work.
+ */
+class RegulatedCompletionLockContentionError extends Error {
+  readonly code = 'REGULATED_COMPLETION_LOCK_CONTENTION' as const;
+
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = 'RegulatedCompletionLockContentionError';
+  }
+}
+
 async function withRegulatedCompletionLock<T>(sessDir: string, fn: () => Promise<T>): Promise<T> {
-  const lock = await acquireNamedWriteLock(
-    sessDir,
-    REGULATED_COMPLETION_LOCK,
-    'regulated completion',
-  );
+  let lock: Awaited<ReturnType<typeof acquireNamedWriteLock>>;
+  try {
+    lock = await acquireNamedWriteLock(
+      sessDir,
+      REGULATED_COMPLETION_LOCK,
+      'regulated completion',
+      REGULATED_COMPLETION_LOCK_TIMEOUT_MS,
+    );
+  } catch (err) {
+    if (err instanceof PersistenceError && err.code === 'LOCK_TIMEOUT') {
+      throw new RegulatedCompletionLockContentionError(err);
+    }
+    throw err;
+  }
   try {
     return await fn();
   } finally {
@@ -435,19 +477,29 @@ async function reconcileCompletionAuditOperations(
   state: SessionState,
   deps: AuditDeps,
 ): Promise<SessionState> {
-  const outcome = await reconcilePendingAuditOperations(deps, sessionID, 'flowguard_decision');
-  if (outcome?.auditOk === false) {
-    throw new PersistenceError('WRITE_FAILED', outcome.reason ?? 'Audit reconciliation failed');
+  // A concurrent recovery may commit its own outbox operations between this
+  // chain's drain and the strict post-check. The drain and the acknowledges
+  // are idempotent, so a bounded retry loop converges instead of treating
+  // legitimate concurrency as a completion failure.
+  let reconciled: SessionState | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const outcome = await reconcilePendingAuditOperations(deps, sessionID, 'flowguard_decision');
+    if (outcome?.auditOk === false) {
+      throw new PersistenceError('WRITE_FAILED', outcome.reason ?? 'Audit reconciliation failed');
+    }
+    reconciled = await readState(sessDir);
+    if (!reconciled) {
+      throw new PersistenceError(
+        'WRITE_FAILED',
+        'Regulated completion audit operations cannot be verified: state unavailable',
+      );
+    }
+    if (reconciled.pendingAuditOperations.every((item) => item.status === 'reconciled')) {
+      return reconciled;
+    }
   }
-  const reconciled = await readState(sessDir);
-  if (
-    !reconciled ||
-    reconciled.pendingAuditOperations.some((item) => item.status !== 'reconciled')
-  ) {
-    throw new PersistenceError(
-      'WRITE_FAILED',
-      'Regulated completion audit operations remain unreconciled',
-    );
-  }
-  return reconciled;
+  throw new PersistenceError(
+    'WRITE_FAILED',
+    'Regulated completion audit operations remain unreconciled',
+  );
 }

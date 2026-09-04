@@ -263,16 +263,11 @@ describe('recoverRegulatedCompletion', () => {
     await writeStateWithArtifactsAndAuditOperations(sessDir, reviewState('COMPLETE'), undefined, [
       terminalDecisionIntent(),
     ]);
+    const seedState = await readState(sessDir);
 
     await Promise.all([
-      recoverRegulatedCompletion(
-        recoveryRuntime(sessDir, fingerprint, (await readState(sessDir))!),
-        SESSION_ID,
-      ),
-      recoverRegulatedCompletion(
-        recoveryRuntime(sessDir, fingerprint, (await readState(sessDir))!),
-        SESSION_ID,
-      ),
+      recoverRegulatedCompletion(recoveryRuntime(sessDir, fingerprint, seedState!), SESSION_ID),
+      recoverRegulatedCompletion(recoveryRuntime(sessDir, fingerprint, seedState!), SESSION_ID),
     ]);
 
     const events = await auditEvents(sessDir);
