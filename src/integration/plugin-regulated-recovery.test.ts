@@ -233,4 +233,49 @@ describe('recoverRegulatedCompletion', () => {
 
     expect(archiveRegulatedEvidence).not.toHaveBeenCalled();
   });
+
+  it.each(['ARCH_COMPLETE', 'REVIEW_COMPLETE'] as const)(
+    'leaves a regulated %s session byte-semantically unchanged',
+    async (phase) => {
+      const { fingerprint, sessDir } = await seedSession(
+        makeState(phase, {
+          policySnapshot: REGULATED_POLICY_SNAPSHOT,
+          reviewDecision: REVIEW_APPROVE,
+          transition: { from: 'ARCH_REVIEW', to: phase, event: 'APPROVE', at: AT },
+        }),
+      );
+      const before = JSON.stringify(await readState(sessDir));
+
+      await recoverRegulatedCompletion(
+        recoveryRuntime(sessDir, fingerprint, (await readState(sessDir))!),
+        SESSION_ID,
+      );
+
+      expect(archiveRegulatedEvidence).not.toHaveBeenCalled();
+      expect(JSON.stringify(await readState(sessDir))).toBe(before);
+      expect((await auditEvents(sessDir)).length).toBe(0);
+    },
+  );
+
+  it('concurrent recovery commits exactly one terminal decision and lifecycle', async () => {
+    const { fingerprint, sessDir } = await seedSession(reviewState('EVIDENCE_REVIEW'));
+    await writeStateWithArtifactsAndAuditOperations(sessDir, reviewState('COMPLETE'), undefined, [
+      terminalDecisionIntent(),
+    ]);
+
+    await Promise.all([
+      recoverRegulatedCompletion(
+        recoveryRuntime(sessDir, fingerprint, (await readState(sessDir))!),
+        SESSION_ID,
+      ),
+      recoverRegulatedCompletion(
+        recoveryRuntime(sessDir, fingerprint, (await readState(sessDir))!),
+        SESSION_ID,
+      ),
+    ]);
+
+    const events = await auditEvents(sessDir);
+    expect(events.filter((event) => event.detail.kind === 'decision')).toHaveLength(1);
+    expect(events.filter((event) => event.event === 'lifecycle:session_completed')).toHaveLength(1);
+  });
 });

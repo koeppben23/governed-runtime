@@ -4,8 +4,13 @@
  *
  * A durable COMPLETE checkpoint with an unfinished regulated archive is not a
  * completed governed session. This module resumes the completion chain before
- * every subsequent tool side effect, using the plugin runtime's production
- * audit dependencies.
+ * subsequent tool side effects, using the plugin runtime's production audit
+ * dependencies.
+ *
+ * Scope: recovery applies ONLY to the exact P26 ticket-flow completion
+ * contract (EVIDENCE_REVIEW + APPROVE -> COMPLETE in regulated mode). Regulated
+ * ARCH_COMPLETE and REVIEW_COMPLETE sessions belong to other flows and must
+ * never be touched by the ticket-flow recovery chain.
  *
  * Lock discipline: the completion chain itself (state writes and audit
  * reconciliation) acquires the non-reentrant session write lock per step.
@@ -17,9 +22,11 @@
 
 import { PersistenceError, readState } from '../adapters/persistence.js';
 import { withSessionWriteLock } from '../adapters/persistence-lock.js';
-import { isTerminalPhase } from '../machine/topology.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
-import { resumeRegulatedCompletion } from './services/regulated-completion.js';
+import {
+  isRegulatedTicketCompletion,
+  resumeRegulatedCompletion,
+} from './services/regulated-completion.js';
 
 export async function recoverRegulatedCompletion(
   runtime: FlowGuardPluginRuntime,
@@ -40,12 +47,7 @@ export async function recoverRegulatedCompletion(
     });
     return;
   }
-  if (
-    !state ||
-    !isTerminalPhase(state.phase) ||
-    state.policySnapshot.mode !== 'regulated' ||
-    state.archiveStatus === 'verified'
-  ) {
+  if (!state || !isRegulatedTicketCompletion(state) || state.archiveStatus === 'verified') {
     return;
   }
   const fingerprint = await runtime.auditDeps.resolveFingerprint();
@@ -60,10 +62,7 @@ export async function recoverRegulatedCompletion(
   const needsResume = await withSessionWriteLock(sessDir, async () => {
     const fresh = await readState(sessDir);
     return (
-      !!fresh &&
-      isTerminalPhase(fresh.phase) &&
-      fresh.policySnapshot.mode === 'regulated' &&
-      fresh.archiveStatus !== 'verified'
+      fresh !== null && isRegulatedTicketCompletion(fresh) && fresh.archiveStatus !== 'verified'
     );
   });
   if (!needsResume) return;

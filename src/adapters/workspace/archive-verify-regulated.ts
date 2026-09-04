@@ -120,7 +120,8 @@ function locateCompletionEvidence(
     .filter(
       ({ event }) =>
         event.event === 'lifecycle:session_completed' &&
-        event.detail.action === 'session_completed',
+        event.detail.action === 'session_completed' &&
+        event.detail.finalPhase === transition.to,
     );
   return { transitionIndex, decisions, lifecycle };
 }

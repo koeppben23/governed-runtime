@@ -30,6 +30,9 @@ vi.mock('../../adapters/workspace/archive-verify-chain.js', () => ({
 vi.mock('../plugin-audit.js', () => ({ reconcilePendingAuditOperations: vi.fn() }));
 vi.mock('../tools/helpers.js', () => ({
   writeStateWithArtifactsAndAuditOperations: vi.fn(async (_dir: string, state: unknown) => state),
+  withSessionWriteTransaction: vi.fn(
+    async (_dir: string, fn: (tx: { waited: boolean }) => Promise<void>) => fn({ waited: false }),
+  ),
 }));
 
 import { readState } from '../../adapters/persistence.js';
@@ -327,4 +330,32 @@ describe('executeRegulatedCompletion', () => {
       resumeRegulatedCompletion('/sess', 'fp', 'sid', completionDeps()),
     ).resolves.toBeNull();
   });
+
+  it.each(['ARCH_COMPLETE', 'REVIEW_COMPLETE'] as const)(
+    'never touches a regulated %s session',
+    async (phase) => {
+      const foreign = makeState(phase, {
+        policySnapshot: REGULATED_POLICY_SNAPSHOT,
+        reviewDecision: REVIEW_APPROVE,
+        transition: { from: 'ARCH_REVIEW', to: phase, event: 'APPROVE', at: AT },
+      });
+      vi.mocked(readState).mockResolvedValue(foreign);
+      vi.mocked(reconcilePendingAuditOperations).mockResolvedValue(undefined);
+      vi.mocked(archiveRegulatedEvidence).mockResolvedValue('/archive.tar.gz');
+      vi.mocked(verifyRegulatedArchive).mockResolvedValue({ passed: true } as never);
+
+      const result = await executeRegulatedCompletion(
+        '/sess',
+        'fp',
+        'sid',
+        foreign,
+        completionDeps(),
+      );
+
+      expect(result).toBe(foreign);
+      expect(writeStateWithArtifactsAndAuditOperations).not.toHaveBeenCalled();
+      expect(archiveRegulatedEvidence).not.toHaveBeenCalled();
+      expect(reconcilePendingAuditOperations).not.toHaveBeenCalled();
+    },
+  );
 });

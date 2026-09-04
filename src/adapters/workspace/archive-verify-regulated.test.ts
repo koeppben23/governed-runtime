@@ -271,4 +271,14 @@ describe('verifyRegulatedCompletionCompleteness', () => {
     ]);
     expect(codes).toContain('regulated_terminal_decision_invalid');
   });
+
+  it('binds the lifecycle finalPhase exactly to the completion transition target', () => {
+    const events = [transitionEvent(), decisionEvent(), lifecycleEvent()];
+    events[2] = {
+      ...events[2]!,
+      detail: { kind: 'lifecycle', action: 'session_completed', finalPhase: 'ARCH_COMPLETE' },
+    };
+    const { codes } = run(regulatedCompleteState(), events);
+    expect(codes).toContain('regulated_completion_lifecycle_invalid');
+  });
 });

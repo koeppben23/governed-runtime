@@ -85,6 +85,12 @@ const SINGLE_PHASE_ALLOWLIST: readonly SinglePhaseAllowance[] = [
     reason:
       'flow-specific completion contract: only the ticket-flow COMPLETE terminal is a valid regulated evidence-review completion (ARCH_COMPLETE/REVIEW_COMPLETE are out of scope)',
   },
+  {
+    file: 'integration/services/regulated-completion.ts',
+    max: 2,
+    reason:
+      'flow-specific completion contract: recovery/resume must select only the ticket-flow COMPLETE terminal (phase AND transition target) and never touch regulated ARCH/REVIEW completions',
+  },
 ];
 
 /** Quoted terminal literal adjacent to an equality operator (a comparison). */

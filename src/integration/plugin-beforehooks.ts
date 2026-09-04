@@ -91,7 +91,12 @@ export async function toolBefore(
     const traceId = getToolTraceId(runtime, input, 'before');
     return runWithLogContextAsync({ traceId, sessionId }, async () => {
       runtime.setCurrentSessionId(sessionId);
-      await recoverRegulatedCompletion(runtime, sessionId);
+      // Read-only host tools cannot extend an interrupted completion and must
+      // not pay the recovery resolution cost. FlowGuard tools and mutating
+      // host tools resume before their first side effect.
+      if (toolName.startsWith(FG_PREFIX) || isMutatingHostTool(toolName)) {
+        await recoverRegulatedCompletion(runtime, sessionId);
+      }
       const args = (output as ToolHookBeforeOutput)?.args ?? {};
       // Stryker disable next-line ObjectLiteral — diagnostic-only payload.
       runtime.log.info('hook', 'tool.execute.before', {
