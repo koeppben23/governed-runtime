@@ -127,19 +127,25 @@ export async function executeRegulatedCompletion(
     sessionID,
     fingerprint,
   });
-
   // A prior attempt may have committed terminal authority before crashing.
-  // Resume from that durable checkpoint rather than emitting a second decision.
+  // The durable outbox checkpoint is the recovery authority: reconcile it
+  // FIRST, then decide from exact terminal audit evidence whether a new
+  // intent is required. Kind-only trail inspection would treat earlier
+  // PLAN_REVIEW decisions or session_created lifecycles as terminal evidence.
   const persisted = await readState(sessDir);
-  let current =
-    persisted && isTerminalPhase(persisted.phase) && persisted.policySnapshot.mode === 'regulated'
-      ? persisted
-      : resultState;
+  const resuming =
+    persisted !== null &&
+    isTerminalPhase(persisted.phase) &&
+    persisted.policySnapshot.mode === 'regulated';
+  let current = resuming ? persisted : resultState;
   let finalState: SessionState;
   try {
+    if (resuming) {
+      current = await reconcileCompletionAuditOperations(sessDir, sessionID, current, auditDeps);
+    }
     // Commit the terminal transition and its human authorization together.
     // Both are state-owned operations before any archive side effect occurs.
-    if (!(await hasAuditIntent(sessDir, 'decision'))) {
+    if (!(await hasTerminalDecisionEvidence(sessDir, current))) {
       current = await writeStateWithArtifactsAndAuditOperations(sessDir, current, undefined, [
         await decisionIntent(sessDir, current, auditDeps, sessionID),
       ]);
@@ -148,7 +154,7 @@ export async function executeRegulatedCompletion(
 
     // The lifecycle assertion is a separate durable operation so its chain
     // position is necessarily after the reconciled transition and decision.
-    if (!(await hasAuditIntent(sessDir, 'lifecycle'))) {
+    if (!(await hasTerminalLifecycleEvidence(sessDir))) {
       current = await writeStateWithArtifactsAndAuditOperations(
         sessDir,
         {
@@ -161,7 +167,6 @@ export async function executeRegulatedCompletion(
       );
     }
     current = await reconcileCompletionAuditOperations(sessDir, sessionID, current, auditDeps);
-
     finalState = await archiveAndVerify(sessDir, fingerprint, sessionID, current, auditDeps);
     getAdapterLogger().info('services', 'Regulated completion chain finished', {
       sessionID,
@@ -235,8 +240,31 @@ export async function resumeRegulatedCompletion(
   return executeRegulatedCompletion(sessDir, fingerprint, sessionID, state, auditDeps);
 }
 
-async function hasAuditIntent(sessDir: string, kind: 'decision' | 'lifecycle'): Promise<boolean> {
-  return (await readAuditTrail(sessDir)).events.some((event) => event.detail.kind === kind);
+async function hasTerminalDecisionEvidence(sessDir: string, state: SessionState): Promise<boolean> {
+  const transition = state.transition;
+  const decision = state.reviewDecision;
+  if (!transition || !decision || transition.from !== 'EVIDENCE_REVIEW') return false;
+  return (await readAuditTrail(sessDir)).events.some(
+    (event) =>
+      event.detail.kind === 'decision' &&
+      event.detail.fromPhase === transition.from &&
+      event.detail.toPhase === transition.to &&
+      event.detail.transitionEvent === transition.event &&
+      event.detail.verdict === decision.verdict &&
+      event.detail.rationale === decision.rationale &&
+      event.detail.decidedBy === decision.decidedBy &&
+      event.detail.decidedAt === decision.decidedAt,
+  );
+}
+
+async function hasTerminalLifecycleEvidence(sessDir: string): Promise<boolean> {
+  return (await readAuditTrail(sessDir)).events.some(
+    (event) =>
+      event.event === 'lifecycle:session_completed' &&
+      event.detail.action === 'session_completed' &&
+      typeof event.detail.finalPhase === 'string' &&
+      isTerminalPhase(event.detail.finalPhase),
+  );
 }
 
 async function decisionIntent(

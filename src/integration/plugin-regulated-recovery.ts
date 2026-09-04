@@ -6,6 +6,13 @@
  * completed governed session. This module resumes the completion chain before
  * every subsequent tool side effect, using the plugin runtime's production
  * audit dependencies.
+ *
+ * Lock discipline: the completion chain itself (state writes and audit
+ * reconciliation) acquires the non-reentrant session write lock per step.
+ * Recovery therefore performs only a tiny locked re-check here and runs the
+ * resume OUTSIDE the lock — holding the lock across
+ * `resumeRegulatedCompletion` would deadlock on the lock's own O_EXCL
+ * acquisition inside every write and reconcile step.
  */
 
 import { PersistenceError, readState } from '../adapters/persistence.js';
@@ -41,14 +48,24 @@ export async function recoverRegulatedCompletion(
   ) {
     return;
   }
-  await withSessionWriteLock(sessDir, async () => {
-    const fingerprint = await runtime.auditDeps.resolveFingerprint();
-    if (!fingerprint) {
-      throw new PersistenceError(
-        'WRITE_FAILED',
-        'Cannot resume regulated completion without a workspace fingerprint',
-      );
-    }
-    await resumeRegulatedCompletion(sessDir, fingerprint, sessionId, runtime.auditDeps);
+  const fingerprint = await runtime.auditDeps.resolveFingerprint();
+  if (!fingerprint) {
+    throw new PersistenceError(
+      'WRITE_FAILED',
+      'Cannot resume regulated completion without a workspace fingerprint',
+    );
+  }
+  // Re-check under the lock so a concurrent completion finishing in between
+  // does not re-run the chain. The resume itself runs outside the lock.
+  const needsResume = await withSessionWriteLock(sessDir, async () => {
+    const fresh = await readState(sessDir);
+    return (
+      !!fresh &&
+      isTerminalPhase(fresh.phase) &&
+      fresh.policySnapshot.mode === 'regulated' &&
+      fresh.archiveStatus !== 'verified'
+    );
   });
+  if (!needsResume) return;
+  await resumeRegulatedCompletion(sessDir, fingerprint, sessionId, runtime.auditDeps);
 }

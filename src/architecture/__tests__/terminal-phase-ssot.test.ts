@@ -79,6 +79,12 @@ const SINGLE_PHASE_ALLOWLIST: readonly SinglePhaseAllowance[] = [
     max: 4,
     reason: 'flow-specific decision-slot topology invariants (COMPLETE vs ARCH_COMPLETE)',
   },
+  {
+    file: 'adapters/workspace/archive-verify-regulated.ts',
+    max: 1,
+    reason:
+      'flow-specific completion contract: only the ticket-flow COMPLETE terminal is a valid regulated evidence-review completion (ARCH_COMPLETE/REVIEW_COMPLETE are out of scope)',
+  },
 ];
 
 /** Quoted terminal literal adjacent to an equality operator (a comparison). */

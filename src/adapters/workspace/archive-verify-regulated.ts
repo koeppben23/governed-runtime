@@ -2,6 +2,7 @@ import { isTerminalPhase } from '../../machine/topology.js';
 import type { ArchiveFinding } from '../../archive/types.js';
 import type { ChainedAuditEvent } from '../../audit/types.js';
 import type { SessionState } from '../../state/schema.js';
+import type { DecisionIdentity } from '../../state/evidence-identity.js';
 
 // eslint-disable-next-line complexity -- each branch maps a distinct regulated archive finding.
 export function verifyRegulatedCompletionCompleteness(
@@ -9,13 +10,19 @@ export function verifyRegulatedCompletionCompleteness(
   events: readonly ChainedAuditEvent[],
   findings: ArchiveFinding[],
 ): void {
-  if (
-    state?.policySnapshot.mode !== 'regulated' ||
-    !isTerminalPhase(state.phase) ||
-    state.error ||
-    !state.regulatedArchiveStatus
-  )
+  if (!state || state.policySnapshot.mode !== 'regulated' || !state.regulatedArchiveStatus) return;
+  // A regulated completion archive must never contain a non-terminal or
+  // failed snapshot. Fail closed here — skipping would let an incomplete
+  // archive pass every other integrity check.
+  if (!isTerminalPhase(state.phase) || state.error) {
+    findings.push({
+      code: 'regulated_terminal_transition_missing',
+      severity: 'error',
+      message: 'Regulated completion archive lacks terminal completion authority',
+      file: 'state/session-state.json',
+    });
     return;
+  }
   if (state.pendingAuditOperations.some((operation) => operation.status !== 'reconciled')) {
     findings.push({
       code: 'regulated_audit_outbox_unreconciled',
@@ -28,7 +35,7 @@ export function verifyRegulatedCompletionCompleteness(
   const isExactCompletionTransition =
     !!transition &&
     transition.from === 'EVIDENCE_REVIEW' &&
-    isTerminalPhase(transition.to) &&
+    transition.to === 'COMPLETE' &&
     transition.event === 'APPROVE';
   if (!isExactCompletionTransition) {
     findings.push({
@@ -139,22 +146,37 @@ function addDecisionBindingFindings(
     });
   }
   if (decision.decisionIdentity) {
-    const eventIdentity = detail.decisionIdentity as { actorId?: unknown } | undefined;
-    if (eventIdentity?.actorId !== decision.decisionIdentity.actorId) {
-      findings.push({
-        code: 'regulated_terminal_decision_invalid',
-        severity: 'error',
-        message:
-          'Regulated completion decision receipt decisionIdentity does not match the persisted decision identity',
-        file: 'audit/audit.jsonl',
-      });
-    }
+    addDecisionIdentityBindingFindings(findings, detail, decision.decisionIdentity);
   }
   if (event.actor !== (decision.decisionIdentity?.actorId ?? decision.decidedBy)) {
     findings.push({
       code: 'regulated_terminal_decision_invalid',
       severity: 'error',
       message: 'Regulated completion decision receipt actor does not match the deciding authority',
+      file: 'audit/audit.jsonl',
+    });
+  }
+}
+
+function addDecisionIdentityBindingFindings(
+  findings: ArchiveFinding[],
+  detail: Readonly<Record<string, unknown>>,
+  identity: DecisionIdentity,
+): void {
+  const eventIdentity = detail.decisionIdentity as Partial<DecisionIdentity> | undefined;
+  if (
+    !eventIdentity ||
+    eventIdentity.actorId !== identity.actorId ||
+    eventIdentity.actorEmail !== identity.actorEmail ||
+    eventIdentity.actorSource !== identity.actorSource ||
+    eventIdentity.actorAssurance !== identity.actorAssurance ||
+    (eventIdentity.actorDisplayName ?? null) !== (identity.actorDisplayName ?? null)
+  ) {
+    findings.push({
+      code: 'regulated_terminal_decision_invalid',
+      severity: 'error',
+      message:
+        'Regulated completion decision receipt decisionIdentity does not match the persisted decision identity',
       file: 'audit/audit.jsonl',
     });
   }

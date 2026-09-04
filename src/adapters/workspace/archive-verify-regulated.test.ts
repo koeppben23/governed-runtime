@@ -123,6 +123,22 @@ describe('verifyRegulatedCompletionCompleteness', () => {
     expect(codes).toEqual([]);
   });
 
+  it('fails closed on a regulated archive whose snapshot is not terminal', () => {
+    const state = makeState('EVIDENCE_REVIEW', {
+      policySnapshot: REGULATED_POLICY_SNAPSHOT,
+      reviewDecision: REVIEW_APPROVE,
+      regulatedArchiveStatus: 'pending',
+      transition: {
+        from: 'EVIDENCE_REVIEW',
+        to: 'COMPLETE',
+        event: 'APPROVE',
+        at: AT,
+      },
+    });
+    const { codes } = run(state, [transitionEvent(), decisionEvent(), lifecycleEvent()]);
+    expect(codes).toContain('regulated_terminal_transition_missing');
+  });
+
   it('rejects a terminal transition that is not EVIDENCE_REVIEW APPROVE to COMPLETE', () => {
     const state = makeState('COMPLETE', {
       policySnapshot: REGULATED_POLICY_SNAPSHOT,
@@ -202,6 +218,37 @@ describe('verifyRegulatedCompletionCompleteness', () => {
       expect.objectContaining({
         code: 'regulated_terminal_decision_invalid',
         message: expect.stringContaining('actor'),
+      }),
+    );
+  });
+
+  it('binds every decisionIdentity field to the persisted identity', () => {
+    const state = regulatedCompleteState({
+      ...REVIEW_APPROVE,
+      decisionIdentity: {
+        actorId: 'reviewer-1',
+        actorEmail: 'reviewer-1@regulated.dev',
+        actorDisplayName: 'Regulated Reviewer',
+        actorSource: 'env' as const,
+        actorAssurance: 'claim_validated' as const,
+      },
+    });
+    const { findings } = run(state, [
+      transitionEvent(),
+      decisionEvent({
+        decisionIdentity: {
+          actorId: 'reviewer-1',
+          actorEmail: 'reviewer-2@regulated.dev',
+          actorSource: 'env',
+          actorAssurance: 'claim_validated',
+        },
+      }),
+      lifecycleEvent(),
+    ]);
+    expect(findings).toContainEqual(
+      expect.objectContaining({
+        code: 'regulated_terminal_decision_invalid',
+        message: expect.stringContaining('decisionIdentity'),
       }),
     );
   });
