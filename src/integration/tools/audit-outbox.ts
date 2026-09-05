@@ -267,6 +267,8 @@ function addSemanticOperations(
       preStateDigest,
       mutationDigest,
       postStateDigest,
+      actor: semantic.actor,
+      actorInfo: semantic.actorInfo,
     });
     return {
       kind: 'semantic',

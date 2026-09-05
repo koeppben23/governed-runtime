@@ -38,6 +38,7 @@ import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
+import { verifyRegulatedArchive } from '../adapters/workspace/archive-verify-chain.js';
 import { verifyChain } from '../audit/integrity.js';
 import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
 import type { ToolDefinition } from './tools/helpers.js';
@@ -224,6 +225,29 @@ describe('regulated-e2e critical path', () => {
     expect(state?.phase).toBe('COMPLETE');
     expect(state?.policySnapshot.mode).toBe('regulated');
     expect(state?.archiveStatus).toBeDefined();
+    const events = (await readAuditTrail(await sessDir())).events;
+    const transitionIndex = events.findIndex(
+      (event) =>
+        event.detail.kind === 'transition' &&
+        event.detail.from === 'EVIDENCE_REVIEW' &&
+        event.detail.to === 'COMPLETE',
+    );
+    const decisionIndex = events.findIndex(
+      (event) =>
+        event.detail.kind === 'decision' &&
+        event.detail.fromPhase === 'EVIDENCE_REVIEW' &&
+        event.detail.toPhase === 'COMPLETE',
+    );
+    const lifecycleIndex = events.findIndex(
+      (event) => event.event === 'lifecycle:session_completed',
+    );
+    expect(transitionIndex).toBeGreaterThanOrEqual(0);
+    expect(decisionIndex).toBeGreaterThan(transitionIndex);
+    expect(lifecycleIndex).toBeGreaterThan(decisionIndex);
+    const fingerprint = await computeFingerprint(ctx.worktree);
+    expect((await verifyRegulatedArchive(fingerprint.fingerprint, ctx.sessionID)).passed).toBe(
+      true,
+    );
   });
 
   it('blocks same actor approval with FOUR_EYES_ACTOR_MATCH', async () => {

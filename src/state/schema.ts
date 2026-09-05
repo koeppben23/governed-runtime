@@ -300,6 +300,8 @@ const PendingSemanticAuditOperation = PendingAuditOperationBase.extend({
     phase: Phase,
     event: z.string().min(1),
     occurredAt: z.string().datetime(),
+    actor: z.string().min(1).optional(),
+    actorInfo: ActorInfoSchema.optional(),
     detail: z.record(z.string(), z.unknown()),
   }),
 });

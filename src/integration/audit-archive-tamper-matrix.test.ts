@@ -204,6 +204,28 @@ async function readAuditLines(sessDir: string): Promise<string[]> {
     .filter((line) => line.length > 0);
 }
 
+/**
+ * The self-contained audit snapshot inside the published archive — the exact
+ * trail the archive verification evaluates. Post-archive live projections
+ * (publication bindings, reconciled archive-status writes) are intentionally
+ * absent here, so tamper targets must come from the archive itself.
+ */
+async function readArchivedAuditEvents(ids: {
+  archiveSidecar: string;
+}): Promise<Record<string, unknown>[]> {
+  const archivePath = ids.archiveSidecar.slice(0, -'.sha256'.length);
+  const { stdout } = await promisify(execFile)('tar', [
+    'xOf',
+    archivePath,
+    `${ctx.sessionID}/audit/audit.jsonl`,
+  ]);
+  return stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
 async function mutateArchive(
   ids: { archiveSidecar: string },
   mutate: (root: string) => Promise<void>,
@@ -488,10 +510,7 @@ describe('audit/archive tamper matrix', () => {
       },
     };
 
-    const lines = (await readAuditLines(ids.sessDir)).filter(
-      (line) => JSON.parse(line).event !== 'archive:publication_bound',
-    );
-    const events = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+    const events = await readArchivedAuditEvents(ids);
     const last = events[events.length - 1] as unknown as ChainedAuditEvent;
     const { chainHash: _originalChainHash, ...lastWithoutHash } = last;
     const strippedBody = {
@@ -552,10 +571,7 @@ describe('audit/archive tamper matrix', () => {
     'regulated nested content tamper with re-sealed chain -> missing timestamp evidence wins over deferred verification',
     async () => {
       const ids = await completeRegulatedSession();
-      const lines = (await readAuditLines(ids.sessDir)).filter(
-        (line) => JSON.parse(line).event !== 'archive:publication_bound',
-      );
-      const events = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+      const events = await readArchivedAuditEvents(ids);
       const last = events[events.length - 1]! as unknown as ChainedAuditEvent;
       const originalDigest = computeCanonicalEventDigest(Object.fromEntries(Object.entries(last)));
       const { chainHash: _originalChainHash, ...lastWithoutHash } = last;

@@ -21,9 +21,11 @@ import {
   withMutableSession,
   withMutableSessionTransaction,
   formatBlocked,
+  formatRailResult,
   persistAndFormat,
 } from './helpers.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
+import { isTerminalPhase } from '../../machine/topology.js';
 import type { ReviewVerdict } from '../../state/evidence.js';
 
 // Rails
@@ -35,6 +37,10 @@ import { ActorIdentityError } from '../../adapters/actor.js';
 
 // Finalization service
 import { finalizeDecision } from '../services/decision-finalization.js';
+import {
+  createSessionCompletionAuditDeps,
+  executeRegulatedCompletion,
+} from '../services/regulated-completion.js';
 import { consumeUserDecisionIntent, peekUserDecisionIntent } from '../user-decision-intent.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -78,6 +84,7 @@ export const decision: ToolDefinition = {
       ),
     rationale: z.string().default('').describe('Reason for the decision. Recorded in audit trail.'),
   },
+  // eslint-disable-next-line max-lines-per-function -- regulated completion must release the transaction lock before synchronous reconciliation.
   async execute(args, context) {
     try {
       const probe = await withMutableSession(context);
@@ -101,7 +108,7 @@ export const decision: ToolDefinition = {
         probe.policy,
       );
 
-      return await withMutableSessionTransaction(
+      const settled = await withMutableSessionTransaction(
         context,
         async ({ fingerprint, sessDir, state, ctx }) => {
           // P30/P34: Build structured decision identity directly from resolved actor info
@@ -131,7 +138,31 @@ export const decision: ToolDefinition = {
             ctx,
           );
 
-          // Delegate post-rail finalization (MADR + P26 regulated completion)
+          const regulatedCompletion =
+            result.kind === 'ok' &&
+            state.phase === 'EVIDENCE_REVIEW' &&
+            args.verdict === 'approve' &&
+            isTerminalPhase(result.state.phase) &&
+            result.state.policySnapshot.mode === 'regulated' &&
+            !result.state.error;
+          // Regulated completion reconciles its own outbox and must run after
+          // this transaction releases the session lock.
+          if (regulatedCompletion) {
+            return {
+              kind: 'regulated_completion' as const,
+              fingerprint,
+              sessDir,
+              result,
+              auditDeps: createSessionCompletionAuditDeps({
+                sessDir,
+                sessionID: context.sessionID,
+                fingerprint,
+                state: result.state,
+              }),
+            };
+          }
+
+          // Delegate non-regulated post-rail finalization (MADR).
           const finalResult = await finalizeDecision({
             sessDir,
             fingerprint,
@@ -139,6 +170,12 @@ export const decision: ToolDefinition = {
             priorPhase: state.phase,
             verdict: args.verdict,
             result,
+            auditDeps: createSessionCompletionAuditDeps({
+              sessDir,
+              sessionID: context.sessionID,
+              fingerprint,
+              state,
+            }),
           });
 
           const persisted = await persistAndFormat(sessDir, finalResult, {
@@ -146,30 +183,49 @@ export const decision: ToolDefinition = {
               state.phase === 'EVIDENCE_REVIEW' && args.verdict === 'approve',
           });
 
-          // Consume the user-decision intent ONLY on a fully successful decision,
-          // and only in human-gated mode. Placing this after finalizeDecision (and
-          // after persistAndFormat) guarantees that any failure which produces a
-          // non-ok result or throws before this point — schema validation, actor
-          // assurance, missing evidence artifacts — leaves the intent intact for
-          // retry. A successful decision still burns it exactly once, preserving
-          // anti-replay. The consume is in-memory and cannot fail.
-          if (requireHumanGates && finalResult.kind === 'ok') {
-            consumeUserDecisionIntent({
-              sessionId: context.sessionID,
-              verdict: args.verdict,
-            });
-          }
-
-          if (finalResult.kind === 'ok') {
-            getAdapterLogger().info('tool', 'decision_persisted', {
-              sessionId: context.sessionID,
-              verdict: args.verdict,
-              ...getLogTraceFields(),
-            });
-          }
-          return persisted;
+          return { kind: 'formatted' as const, output: persisted, finalResult };
         },
       );
+
+      let finalResult;
+      let output;
+      if (settled.kind === 'regulated_completion') {
+        const finalState = await executeRegulatedCompletion(
+          settled.sessDir,
+          settled.fingerprint,
+          context.sessionID,
+          settled.result.state,
+          settled.auditDeps,
+        );
+        finalResult = { ...settled.result, state: finalState };
+        output = formatRailResult(finalResult, { evidenceApprovalCompletion: true });
+      } else {
+        finalResult = settled.finalResult;
+        output = settled.output;
+      }
+
+      // Consume the user-decision intent ONLY on a fully successful decision,
+      // and only in human-gated mode. Placing this after finalizeDecision (and
+      // after persistAndFormat) guarantees that any failure which produces a
+      // non-ok result or throws before this point — schema validation, actor
+      // assurance, missing evidence artifacts — leaves the intent intact for
+      // retry. A successful decision still burns it exactly once, preserving
+      // anti-replay. The consume is in-memory and cannot fail.
+      if (requireHumanGates && finalResult.kind === 'ok') {
+        consumeUserDecisionIntent({
+          sessionId: context.sessionID,
+          verdict: args.verdict,
+        });
+      }
+
+      if (finalResult.kind === 'ok') {
+        getAdapterLogger().info('tool', 'decision_persisted', {
+          sessionId: context.sessionID,
+          verdict: args.verdict,
+          ...getLogTraceFields(),
+        });
+      }
+      return output;
     } catch (err) {
       if (err instanceof ActorIdentityError) {
         return formatBlocked(err.code, { reason: err.message });

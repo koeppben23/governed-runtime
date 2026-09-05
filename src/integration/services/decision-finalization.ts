@@ -17,6 +17,7 @@ import { writeMadrArtifact } from '../artifacts/madr-writer.js';
 import { materializeApprovedArchitectureContractResult } from '../proofgraph/materialize-architecture.js';
 import { executeRegulatedCompletion } from './regulated-completion.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
+import type { AuditDeps } from '../plugin-audit.js';
 
 /**
  * Finalize a decision rail result: write MADR artifact if needed,
@@ -29,6 +30,7 @@ export interface FinalizeDecisionInput {
   readonly priorPhase: string;
   readonly verdict: string;
   readonly result: RailResult;
+  readonly auditDeps: AuditDeps;
 }
 
 /**
@@ -36,7 +38,7 @@ export interface FinalizeDecisionInput {
  * @returns The (potentially modified) RailResult — caller must persist via persistAndFormat
  */
 export async function finalizeDecision(input: FinalizeDecisionInput): Promise<RailResult> {
-  const { sessDir, fingerprint, sessionID, priorPhase, verdict, result } = input;
+  const { sessDir, fingerprint, sessionID, priorPhase, verdict, result, auditDeps } = input;
   // ── Architecture completion: MADR artifact + ProofGraph contract ──
   // Both are architecture-flow finalization for the same transition, so they
   // share one phase check rather than duplicating terminal-phase intent.
@@ -76,6 +78,7 @@ export async function finalizeDecision(input: FinalizeDecisionInput): Promise<Ra
       fingerprint,
       sessionID,
       result.state,
+      auditDeps,
     );
     return { ...result, state: finalState };
   }

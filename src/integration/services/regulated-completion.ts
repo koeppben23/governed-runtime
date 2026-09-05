@@ -10,18 +10,105 @@
  */
 
 import type { SessionState } from '../../state/schema.js';
-import { appendAuditEvent, readAuditTrail } from '../../adapters/persistence-audit.js';
 import { archiveRegulatedEvidence } from '../../adapters/workspace/archive.js';
 import { verifyRegulatedArchive } from '../../adapters/workspace/archive-verify-chain.js';
-import { createLifecycleEvent } from '../../audit/types.js';
+import { readState, PersistenceError } from '../../adapters/persistence.js';
+import { acquireNamedWriteLock } from '../../adapters/persistence-lock.js';
+import { appendAuditEvent, readAuditTrail } from '../../adapters/persistence-audit.js';
 import { getLastChainHash } from '../../audit/integrity.js';
-import { writeStateWithArtifacts } from '../tools/helpers.js';
+import { HttpTimestampAuthorityProvider } from '../../audit/rfc-3161-http-provider.js';
+import { PkijsTimestampVerifier } from '../../audit/rfc-3161-pkijs-verifier.js';
+import {
+  writeStateWithArtifactsAndAuditOperations,
+  withSessionWriteTransaction,
+} from '../tools/helpers.js';
+import type { SemanticAuditIntent } from '../tools/audit-outbox.js';
+import { reconcilePendingAuditOperations, type AuditDeps } from '../plugin-audit.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import { serializeError } from '../../logging/error-serialize.js';
-import { isTerminalPhase } from '../../machine/topology.js';
 
 /**
- * Execute the P26 regulated completion chain: audit emit → archive → verify.
+ * Session-scoped audit dependencies for completion paths that run outside the
+ * plugin runtime (standalone tools, MCP server). Built from the same canonical
+ * primitives as the plugin composition root: real RFC 3161 TSA dependencies,
+ * the persisted audit trail, and the resolved workspace fingerprint. Never a
+ * registry substitute for the plugin runtime's own `AuditDeps`.
+ */
+export function createSessionCompletionAuditDeps(input: {
+  readonly sessDir: string;
+  readonly sessionID: string;
+  readonly fingerprint: string;
+  readonly state: SessionState;
+}): AuditDeps {
+  const { sessDir, sessionID, fingerprint, state } = input;
+  return {
+    resolveFingerprint: async () => fingerprint,
+    getSessionDir: (candidate) => (candidate === sessionID ? sessDir : null),
+    resolveCanonicalSessionDir: async () => ({ status: 'resolved', sessDir }),
+    resolveSessionPolicy: async () => ({
+      policy: state.policySnapshot,
+      state: await readState(sessDir),
+    }),
+    initChain: async () => getLastChainHash((await readAuditTrail(sessDir)).events),
+    invalidateChainState: () => undefined,
+    appendAndTrack: async (event) => {
+      const {
+        auditFormatVersion: _format,
+        auditSequence: _sequence,
+        recordedAt: _recordedAt,
+        semanticEventDigest: _semanticDigest,
+        prevHash: _previous,
+        chainHash: _chainHash,
+        ...body
+      } = event as Record<string, unknown>;
+      const appended = await appendAuditEvent(
+        sessDir,
+        body as import('../../state/evidence.js').AuditEventBody,
+      );
+      event.chainHash = appended.chainHash;
+    },
+    nextDecisionSequence: async () =>
+      (await readAuditTrail(sessDir)).events.reduce((max, event) => {
+        const sequence =
+          event.detail.kind === 'decision' && typeof event.detail.decisionSequence === 'number'
+            ? event.detail.decisionSequence
+            : 0;
+        return Math.max(max, sequence);
+      }, 0) + 1,
+    log: {
+      debug: () => undefined,
+      info: (service, message, extra) => getAdapterLogger().info(service, message, extra),
+      warn: (service, message, extra) => getAdapterLogger().warn(service, message, extra),
+    },
+    logError: (message, err) =>
+      getAdapterLogger().error('services', message, { error: serializeError(err) }),
+    cachedFingerprint: fingerprint,
+    mode: state.policySnapshot.mode,
+    tsaProvider: new HttpTimestampAuthorityProvider(),
+    timestampVerifier: new PkijsTimestampVerifier(),
+  };
+}
+
+/**
+ * The exact P26 regulated ticket-completion contract. Recovery, resume, and
+ * the completion chain itself must never touch other terminal flows: a
+ * regulated ARCH_COMPLETE or REVIEW_COMPLETE session is not a ticket-flow
+ * completion and its state must remain byte-semantically untouched.
+ */
+export function isRegulatedTicketCompletion(state: SessionState): boolean {
+  return (
+    state.phase === 'COMPLETE' &&
+    state.transition?.to === 'COMPLETE' &&
+    state.policySnapshot.mode === 'regulated' &&
+    !state.error &&
+    state.transition?.from === 'EVIDENCE_REVIEW' &&
+    state.transition?.event === 'APPROVE'
+  );
+}
+
+/**
+ * Execute the P26 regulated completion chain: durable authority commit →
+ * reconciliation → archive → verify.
  *
  * Pre-conditions (caller must verify before calling):
  * - Rail result kind === 'ok'
@@ -47,77 +134,372 @@ export async function executeRegulatedCompletion(
   fingerprint: string,
   sessionID: string,
   resultState: SessionState,
+  auditDeps: AuditDeps,
 ): Promise<SessionState> {
-  if (!isTerminalPhase(resultState.phase) || resultState.error) {
-    return {
-      ...resultState,
-      regulatedArchiveStatus: 'failed' as const,
-      archiveStatus: 'failed' as const,
-    };
+  if (!isRegulatedTicketCompletion(resultState)) {
+    return resultState;
   }
-  const pendingState = {
-    ...resultState,
-    regulatedArchiveStatus: 'pending' as const,
-    archiveStatus: 'pending' as const,
-  };
-  await writeStateWithArtifacts(sessDir, pendingState);
-
   getAdapterLogger().info('services', 'Starting regulated completion chain', {
     sessionID,
     fingerprint,
   });
-
+  // A prior attempt may have committed terminal authority before crashing.
+  // The durable outbox checkpoint is the recovery authority: reconcile it
+  // FIRST, then decide from exact terminal audit evidence whether a new
+  // intent is required. Kind-only trail inspection would treat earlier
+  // PLAN_REVIEW decisions or session_created lifecycles as terminal evidence.
+  const persisted = await readState(sessDir);
+  const resuming = persisted !== null && isRegulatedTicketCompletion(persisted);
+  let current = resuming ? persisted : resultState;
   let finalState: SessionState;
   try {
-    // 1. Emit session_completed audit event BEFORE archive.
-    //    Reads the trail to get correct prevHash (independent of plugin cache).
-    //    Failure here is fatal — no archive without terminal audit event.
-    const { events } = await readAuditTrail(sessDir);
-    const prevHash = getLastChainHash(events);
-    const completionEvt = createLifecycleEvent({
-      flowguardSessionId: resultState.flowguardSessionId,
-      hostSessionId: sessionID,
-      detail: { action: 'session_completed', finalPhase: 'COMPLETE' as const },
-      occurredAt: new Date().toISOString(),
-      actor: 'machine',
-      prevHash,
-      actorInfo: resultState.actorInfo,
-    });
-    await appendAuditEvent(sessDir, completionEvt);
+    if (resuming) {
+      current = await reconcileCompletionAuditOperations(sessDir, sessionID, current, auditDeps);
+    }
+    // The terminal decision check and its state-owned commit are one atomic
+    // locked transaction: a concurrent recovery must not both observe the
+    // evidence gap and each create a second terminal intent.
+    current = await commitTerminalDecision(sessDir, sessionID, current, auditDeps);
+    current = await reconcileCompletionAuditOperations(sessDir, sessionID, current, auditDeps);
 
-    // 2. Archive session (synchronous, not fire-and-forget).
-    await archiveRegulatedEvidence(fingerprint, sessionID);
-    const createdState = {
-      ...resultState,
-      regulatedArchiveStatus: 'created' as const,
-      archiveStatus: 'created' as const,
-    };
-    await writeStateWithArtifacts(sessDir, createdState);
-
-    // 3. Verify archive integrity.
-    const verification = await verifyRegulatedArchive(fingerprint, sessionID);
-    finalState = {
-      ...resultState,
-      regulatedArchiveStatus: verification.passed ? ('verified' as const) : ('failed' as const),
-      archiveStatus: verification.passed ? ('verified' as const) : ('failed' as const),
-    };
+    // The lifecycle assertion is a separate durable operation so its chain
+    // position is necessarily after the reconciled transition and decision.
+    current = await commitCompletionLifecycle(sessDir, current);
+    current = await reconcileCompletionAuditOperations(sessDir, sessionID, current, auditDeps);
+    finalState = await archiveAndVerify(sessDir, fingerprint, sessionID, current, auditDeps);
     getAdapterLogger().info('services', 'Regulated completion chain finished', {
       sessionID,
       archiveStatus: finalState.regulatedArchiveStatus,
-      archivePassed: verification.passed,
+      archivePassed: finalState.regulatedArchiveStatus === 'verified',
     });
   } catch (err) {
+    // Completion-lock contention is not a domain failure: another recovery is
+    // legitimately working. Never persist a stale failed status over it — if
+    // that recovery already verified, return its state; otherwise surface the
+    // contention so the caller can retry.
+    if (err instanceof RegulatedCompletionLockContentionError) {
+      const fresh = await readState(sessDir);
+      if (fresh?.archiveStatus === 'verified') {
+        return fresh;
+      }
+      throw err;
+    }
     getAdapterLogger().error('services', 'Regulated completion chain failed', {
       sessionID,
       fingerprint,
       error: serializeError(err),
     });
     finalState = {
-      ...resultState,
+      ...current,
       regulatedArchiveStatus: 'failed' as const,
       archiveStatus: 'failed' as const,
     };
+    try {
+      finalState = await writeStateWithArtifactsAndAuditOperations(sessDir, finalState);
+    } catch (persistError) {
+      getAdapterLogger().error('services', 'Could not persist regulated completion failure', {
+        sessionID,
+        error: serializeError(persistError),
+      });
+    }
   }
 
   return finalState;
+}
+
+/**
+ * Archive publication and verification are the last external side-effect
+ * boundary of the chain. They are serialized with their own session-scoped
+ * lock (NOT the non-reentrant state write lock) so a concurrent recovery
+ * re-reads the freshly persisted status on entry and returns immediately once
+ * verified — never re-publishing bytes that were already bound to a verified
+ * state, and never verifying bytes that a later publisher could replace.
+ */
+const REGULATED_COMPLETION_LOCK = 'regulated-completion.lock';
+
+/**
+ * Archive creation, publication, and verification can legitimately outlast
+ * the default 10s session-lock budget (tar alone is bounded at 30s). The
+ * completion lock therefore gets a distinctly longer timeout so routine
+ * contention does not trip it.
+ */
+const REGULATED_COMPLETION_LOCK_TIMEOUT_MS = 60_000;
+
+/**
+ * Contention on the completion lock is NOT a domain completion failure: a
+ * concurrent recovery is legitimately working. The completion chain must
+ * never persist a stale `failed` status over that work.
+ */
+class RegulatedCompletionLockContentionError extends Error {
+  readonly code = 'REGULATED_COMPLETION_LOCK_CONTENTION' as const;
+
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = 'RegulatedCompletionLockContentionError';
+  }
+}
+
+async function withRegulatedCompletionLock<T>(sessDir: string, fn: () => Promise<T>): Promise<T> {
+  let lock: Awaited<ReturnType<typeof acquireNamedWriteLock>>;
+  try {
+    lock = await acquireNamedWriteLock(
+      sessDir,
+      REGULATED_COMPLETION_LOCK,
+      'regulated completion',
+      REGULATED_COMPLETION_LOCK_TIMEOUT_MS,
+    );
+  } catch (err) {
+    if (err instanceof PersistenceError && err.code === 'LOCK_TIMEOUT') {
+      throw new RegulatedCompletionLockContentionError(err);
+    }
+    throw err;
+  }
+  try {
+    return await fn();
+  } finally {
+    await lock.release();
+  }
+}
+
+async function archiveAndVerify(
+  sessDir: string,
+  fingerprint: string,
+  sessionID: string,
+  state: SessionState,
+  auditDeps: AuditDeps,
+): Promise<SessionState> {
+  return withRegulatedCompletionLock(sessDir, async () => {
+    // A concurrent recovery may have finished the chain while this caller was
+    // progressing toward the archive phase. The verified status is the
+    // durable exactly-once authority: return it without touching the
+    // published artifacts.
+    const fresh = await readState(sessDir);
+    if (fresh?.archiveStatus === 'verified') {
+      return fresh;
+    }
+    let current = fresh ?? state;
+    if (current.archiveStatus !== 'created' && current.archiveStatus !== 'verified') {
+      await archiveRegulatedEvidence(fingerprint, sessionID);
+      current = await writeStateWithArtifactsAndAuditOperations(sessDir, {
+        ...current,
+        regulatedArchiveStatus: 'created' as const,
+        archiveStatus: 'created' as const,
+      });
+    }
+    const verification = await verifyRegulatedArchive(fingerprint, sessionID);
+    const finalState = await writeStateWithArtifactsAndAuditOperations(sessDir, {
+      ...current,
+      regulatedArchiveStatus: verification.passed ? ('verified' as const) : ('failed' as const),
+      archiveStatus: verification.passed ? ('verified' as const) : ('failed' as const),
+    });
+    return reconcileCompletionAuditOperations(sessDir, sessionID, finalState, auditDeps);
+  });
+}
+
+export async function resumeRegulatedCompletion(
+  sessDir: string,
+  fingerprint: string,
+  sessionID: string,
+  auditDeps: AuditDeps,
+): Promise<SessionState | null> {
+  const state = await readState(sessDir);
+  if (!state || !isRegulatedTicketCompletion(state) || state.archiveStatus === 'verified') {
+    return null;
+  }
+  return executeRegulatedCompletion(sessDir, fingerprint, sessionID, state, auditDeps);
+}
+
+function isTerminalDecisionDetail(detail: Record<string, unknown>, state: SessionState): boolean {
+  const transition = state.transition;
+  const decision = state.reviewDecision;
+  if (!transition || !decision || transition.from !== 'EVIDENCE_REVIEW') return false;
+  return (
+    detail.kind === 'decision' &&
+    detail.fromPhase === transition.from &&
+    detail.toPhase === transition.to &&
+    detail.transitionEvent === transition.event &&
+    detail.verdict === decision.verdict &&
+    detail.rationale === decision.rationale &&
+    detail.decidedBy === decision.decidedBy &&
+    detail.decidedAt === decision.decidedAt
+  );
+}
+
+async function hasTerminalDecisionEvidence(sessDir: string, state: SessionState): Promise<boolean> {
+  return (await readAuditTrail(sessDir)).events.some((event) =>
+    isTerminalDecisionDetail(event.detail, state),
+  );
+}
+
+function hasPendingTerminalDecision(state: SessionState): boolean {
+  return state.pendingAuditOperations.some(
+    (operation) =>
+      operation.kind === 'semantic' &&
+      operation.status !== 'reconciled' &&
+      isTerminalDecisionDetail(operation.semantic.detail, state),
+  );
+}
+
+async function hasTerminalDecisionAuthority(
+  sessDir: string,
+  state: SessionState,
+): Promise<boolean> {
+  return (await hasTerminalDecisionEvidence(sessDir, state)) || hasPendingTerminalDecision(state);
+}
+
+/** Atomic check-and-commit: exactly one terminal decision intent, even under concurrent recovery. */
+async function commitTerminalDecision(
+  sessDir: string,
+  sessionID: string,
+  state: SessionState,
+  auditDeps: AuditDeps,
+): Promise<SessionState> {
+  await withSessionWriteTransaction(sessDir, async () => {
+    const fresh = await readState(sessDir);
+    const authority = fresh && isRegulatedTicketCompletion(fresh) ? fresh : state;
+    if (await hasTerminalDecisionAuthority(sessDir, authority)) return;
+    await writeStateWithArtifactsAndAuditOperations(sessDir, authority, undefined, [
+      await decisionIntent(sessDir, authority, auditDeps, sessionID),
+    ]);
+  });
+  return (await readState(sessDir)) ?? state;
+}
+
+function isTerminalLifecycleDetail(detail: Record<string, unknown>, state: SessionState): boolean {
+  return (
+    detail.action === 'session_completed' &&
+    detail.kind === 'lifecycle' &&
+    detail.finalPhase === state.phase
+  );
+}
+
+async function hasTerminalLifecycleEvidence(
+  sessDir: string,
+  state: SessionState,
+): Promise<boolean> {
+  return (await readAuditTrail(sessDir)).events.some(
+    (event) =>
+      event.event === 'lifecycle:session_completed' &&
+      isTerminalLifecycleDetail(event.detail, state),
+  );
+}
+
+function hasPendingTerminalLifecycle(state: SessionState): boolean {
+  return state.pendingAuditOperations.some(
+    (operation) =>
+      operation.kind === 'semantic' &&
+      operation.status !== 'reconciled' &&
+      operation.semantic.event === 'lifecycle:session_completed' &&
+      isTerminalLifecycleDetail(operation.semantic.detail, state),
+  );
+}
+
+/** Atomic check-and-commit: exactly one session_completed intent, even under concurrent recovery. */
+async function commitCompletionLifecycle(
+  sessDir: string,
+  state: SessionState,
+): Promise<SessionState> {
+  await withSessionWriteTransaction(sessDir, async () => {
+    const fresh = await readState(sessDir);
+    const authority = fresh ?? state;
+    if (
+      (await hasTerminalLifecycleEvidence(sessDir, authority)) ||
+      hasPendingTerminalLifecycle(authority)
+    ) {
+      return;
+    }
+    await writeStateWithArtifactsAndAuditOperations(
+      sessDir,
+      {
+        ...authority,
+        regulatedArchiveStatus: 'pending' as const,
+        archiveStatus: 'pending' as const,
+      },
+      undefined,
+      [lifecycleIntent()],
+    );
+  });
+  return (await readState(sessDir)) ?? state;
+}
+
+async function decisionIntent(
+  sessDir: string,
+  state: SessionState,
+  auditDeps: AuditDeps,
+  sessionID: string,
+): Promise<SemanticAuditIntent> {
+  const transition = state.transition;
+  const decision = state.reviewDecision;
+  if (!transition || !decision || transition.from !== 'EVIDENCE_REVIEW') {
+    throw new PersistenceError(
+      'SCHEMA_VALIDATION_FAILED',
+      'Regulated completion requires terminal transition and decision authority',
+    );
+  }
+  const decisionSequence = await auditDeps.nextDecisionSequence(sessDir, sessionID);
+  const decisionId = `DEC-${String(decisionSequence).padStart(3, '0')}`;
+  return {
+    phase: transition.from,
+    event: `decision:${decisionId}`,
+    occurredAt: decision.decidedAt,
+    detail: {
+      kind: 'decision',
+      gatePhase: transition.from,
+      decisionId,
+      decisionSequence,
+      verdict: decision.verdict,
+      rationale: decision.rationale,
+      decidedBy: decision.decidedBy,
+      decidedAt: decision.decidedAt,
+      fromPhase: transition.from,
+      toPhase: transition.to,
+      transitionEvent: transition.event,
+      policyMode: state.policySnapshot.mode,
+      decisionIdentity: decision.decisionIdentity,
+    },
+    actor: decision.decisionIdentity?.actorId ?? decision.decidedBy,
+    ...(state.actorInfo ? { actorInfo: state.actorInfo } : {}),
+  };
+}
+
+function lifecycleIntent(): SemanticAuditIntent {
+  return {
+    phase: 'COMPLETE',
+    event: 'lifecycle:session_completed',
+    occurredAt: new Date().toISOString(),
+    detail: { kind: 'lifecycle', action: 'session_completed', finalPhase: 'COMPLETE' },
+  };
+}
+
+async function reconcileCompletionAuditOperations(
+  sessDir: string,
+  sessionID: string,
+  state: SessionState,
+  deps: AuditDeps,
+): Promise<SessionState> {
+  // A concurrent recovery may commit its own outbox operations between this
+  // chain's drain and the strict post-check. The drain and the acknowledges
+  // are idempotent, so a bounded retry loop converges instead of treating
+  // legitimate concurrency as a completion failure.
+  let reconciled: SessionState | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const outcome = await reconcilePendingAuditOperations(deps, sessionID, 'flowguard_decision');
+    if (outcome?.auditOk === false) {
+      throw new PersistenceError('WRITE_FAILED', outcome.reason ?? 'Audit reconciliation failed');
+    }
+    reconciled = await readState(sessDir);
+    if (!reconciled) {
+      throw new PersistenceError(
+        'WRITE_FAILED',
+        'Regulated completion audit operations cannot be verified: state unavailable',
+      );
+    }
+    if (reconciled.pendingAuditOperations.every((item) => item.status === 'reconciled')) {
+      return reconciled;
+    }
+  }
+  throw new PersistenceError(
+    'WRITE_FAILED',
+    'Regulated completion audit operations remain unreconciled',
+  );
 }

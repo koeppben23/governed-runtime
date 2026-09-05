@@ -36,6 +36,7 @@ import { resolveAttemptByCapability } from './review/observation-resolution.js';
 import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
 import { auditEnforcementDenied } from './plugin-audit.js';
 import { withSessionWriteLock } from '../adapters/persistence-lock.js';
+import { recoverRegulatedCompletion } from './plugin-regulated-recovery.js';
 import { writeStateWithAuditOperationsAlreadyLocked } from './tools/audit-outbox.js';
 import { authorizeMutationEpisode } from '../state/evidence-mutation-episode.js';
 import { persistAuthorizedDispatch, rearmInterruptedReviewerDispatch } from './durable-dispatch.js';
@@ -90,6 +91,12 @@ export async function toolBefore(
     const traceId = getToolTraceId(runtime, input, 'before');
     return runWithLogContextAsync({ traceId, sessionId }, async () => {
       runtime.setCurrentSessionId(sessionId);
+      // Read-only host tools cannot extend an interrupted completion and must
+      // not pay the recovery resolution cost. FlowGuard tools and mutating
+      // host tools resume before their first side effect.
+      if (toolName.startsWith(FG_PREFIX) || isMutatingHostTool(toolName)) {
+        await recoverRegulatedCompletion(runtime, sessionId);
+      }
       const args = (output as ToolHookBeforeOutput)?.args ?? {};
       // Stryker disable next-line ObjectLiteral — diagnostic-only payload.
       runtime.log.info('hook', 'tool.execute.before', {
