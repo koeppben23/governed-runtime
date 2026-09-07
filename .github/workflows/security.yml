@@ -74,3 +74,4 @@ jobs:
         uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # github/codeql-action v4.37.9
         with:
           category: '/language:typescript'
+          upload: never
