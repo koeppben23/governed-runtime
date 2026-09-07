@@ -1,7 +1,7 @@
 {
   "platform": "opencode",
-  "updated": "2026-08-31T14:57:46.525Z",
-  "version": "1.18.25",
+  "updated": "2026-09-07T13:24:02.924Z",
+  "version": "1.18.29",
   "files": [
     {
       "label": "plugin/dist/index.d.ts",
