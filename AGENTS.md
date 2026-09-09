@@ -67,6 +67,43 @@ an instruction-only rule.
   blocker.
 - Lockfile discipline: use `npm install` (not `npm audit fix` alone) for dependency changes.
 
+### No Legacy Compatibility in FlowGuard Source
+
+This is a repository-development rule for FlowGuard's own codebase. It applies
+only while implementing, reviewing, or refactoring FlowGuard-owned source,
+tests, configuration, repository-local tooling, schemas, and internal/public
+FlowGuard APIs in this repository.
+
+It MUST NOT be propagated into installed FlowGuard mandates, generated prompts,
+generated code, governed downstream repositories, or runtime instructions given
+to users' coding agents. FlowGuard MUST NOT start rejecting, rewriting, or
+removing legacy patterns in a user's project merely because this repository rule
+exists.
+
+- FlowGuard source MUST implement only the current canonical contract. Do not
+  introduce or preserve compatibility shims, deprecated aliases, legacy
+  fallbacks, dual-read/dual-write paths, obsolete-format adapters, read-time
+  synthesis/normalization for superseded FlowGuard shapes, or migration layers
+  whose only purpose is to keep obsolete FlowGuard behavior alive.
+- When a current contract replaces an older FlowGuard contract, remove the old
+  implementation path rather than keeping both. Unsupported old inputs or
+  formats must fail explicitly at the current validation/trust boundary instead
+  of being silently migrated or normalized.
+- If an AI coder encounters legacy/backward-compatibility code in a FlowGuard
+  file or execution path it is already changing or reviewing, removal is part
+  of that same change: delete the compatibility path and update affected call
+  sites, tests, schemas, and documentation to the current canonical authority.
+  Do not leave it in place merely because it predates the task.
+- Keep that cleanup bounded to the touched or directly dependent FlowGuard
+  surface. Do not turn an unrelated task into an unbounded repository-wide
+  rewrite unless correctness requires the wider removal.
+- Tests and fixtures MAY represent obsolete inputs when their purpose is to
+  prove that the current FlowGuard boundary rejects them. Historical
+  documentation MAY describe removed behavior. Neither is a production
+  compatibility path.
+- Reviewers MUST treat newly introduced or knowingly retained production
+  compatibility code on the touched FlowGuard surface as a review blocker.
+
 ### Assumptions and Evidence
 
 Use these markers in contributor output:
