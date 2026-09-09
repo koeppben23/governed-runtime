@@ -177,8 +177,9 @@ describe('file-sink failure propagation', () => {
     try {
       const log = createLogger('debug', [createFileSink(testDir)]);
       expect(() => log.info('test', 'health probe')).not.toThrow();
-      await new Promise((resolve) => setTimeout(resolve, 20));
-      expect((log as HealthAwareLogger).getHealth().sinkFailuresTotal).toBe(1);
+      await vi.waitFor(() => {
+        expect((log as HealthAwareLogger).getHealth().sinkFailuresTotal).toBe(1);
+      });
     } finally {
       await rm(testDir, { recursive: true, force: true }).catch(() => {});
     }
