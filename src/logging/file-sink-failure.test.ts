@@ -1,13 +1,13 @@
 /**
  * @module logging/file-sink-failure.test
- * @description Tests for file-sink write failure handling (ENOSPC, EACCES).
+ * @description Tests for file-sink failure handling and central health propagation.
  *
- * Uses vi.mock to intercept node:fs/promises.appendFile while preserving
- * all other fs functions. This tests the "logging errors never fail the flow"
- * contract when the underlying filesystem fails.
+ * Uses vi.mock to intercept node:fs/promises operations while preserving
+ * all other fs functions. Direct sink calls reject on delivery/rotation failure;
+ * createLogger remains non-blocking and accounts those rejections in health.
  *
  * @test-policy BAD
- * @version v2
+ * @version v3
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -20,7 +20,6 @@ const { mockAppendFile, mockRename, mockStat } = vi.hoisted(() => ({
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
-  // Default to the real implementations; individual tests opt in to failures.
   mockRename.mockImplementation(actual.rename);
   mockStat.mockImplementation(actual.stat);
   return { ...actual, appendFile: mockAppendFile, rename: mockRename, stat: mockStat };
@@ -30,9 +29,12 @@ import { mkdir, rm, mkdtemp, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createFileSink } from './file-sink.js';
+import { createLogger, type HealthAwareLogger } from './logger.js';
 
-describe('file-sink write failure', () => {
-  it('ENOSPC write failure does not crash sink', async () => {
+const ENTRY = { level: 'info' as const, service: 'test', message: 'message' };
+
+describe('file-sink failure propagation', () => {
+  it('ENOSPC write failure rejects the sink and a later write can recover', async () => {
     const testDir = await mkdtemp(join(tmpdir(), 'fg-fs-enospc-'));
     const logDir = join(testDir, '.opencode', 'logs');
     await mkdir(logDir, { recursive: true });
@@ -42,24 +44,18 @@ describe('file-sink write failure', () => {
 
     try {
       const sink = createFileSink(testDir, 1);
-      // First write fails with ENOSPC — swallowed, no throw
-      await expect(
-        sink({ level: 'info', service: 'test', message: 'disk full' }),
-      ).resolves.not.toThrow();
+      await expect(sink({ ...ENTRY, message: 'disk full' })).rejects.toBe(err);
       expect(mockAppendFile).toHaveBeenCalledTimes(1);
 
-      // Second write succeeds — sink recovery after ENOSPC
       mockAppendFile.mockResolvedValueOnce(undefined);
-      await expect(
-        sink({ level: 'info', service: 'test', message: 'recovered' }),
-      ).resolves.not.toThrow();
+      await expect(sink({ ...ENTRY, message: 'recovered' })).resolves.not.toThrow();
       expect(mockAppendFile).toHaveBeenCalledTimes(2);
     } finally {
       await rm(testDir, { recursive: true, force: true }).catch(() => {});
     }
   });
 
-  it('invokes onFailure with the error on a write failure (observable, not silent)', async () => {
+  it('invokes onFailure with the original error and rejects that same error', async () => {
     const testDir = await mkdtemp(join(tmpdir(), 'fg-fs-onfail-'));
     await mkdir(join(testDir, '.opencode', 'logs'), { recursive: true });
     const onFailure = vi.fn();
@@ -68,9 +64,7 @@ describe('file-sink write failure', () => {
 
     try {
       const sink = createFileSink(testDir, { retentionDays: 1, onFailure });
-      await expect(
-        sink({ level: 'error', service: 'test', message: 'cannot write' }),
-      ).resolves.not.toThrow();
+      await expect(sink({ ...ENTRY, level: 'error', message: 'cannot write' })).rejects.toBe(err);
       expect(onFailure).toHaveBeenCalledTimes(1);
       expect(onFailure.mock.calls[0]![0]).toBe(err);
     } finally {
@@ -78,30 +72,29 @@ describe('file-sink write failure', () => {
     }
   });
 
-  it('a throwing onFailure never propagates out of the sink', async () => {
+  it('a throwing onFailure never replaces the original sink failure', async () => {
     const testDir = await mkdtemp(join(tmpdir(), 'fg-fs-onfail-throw-'));
     await mkdir(join(testDir, '.opencode', 'logs'), { recursive: true });
     const onFailure = vi.fn(() => {
       throw new Error('onFailure boom');
     });
-    mockAppendFile.mockRejectedValueOnce(new Error('disk error'));
+    const diskError = new Error('disk error');
+    mockAppendFile.mockRejectedValueOnce(diskError);
 
     try {
       const sink = createFileSink(testDir, { retentionDays: 1, onFailure });
-      await expect(sink({ level: 'error', service: 'test', message: 'x' })).resolves.not.toThrow();
+      await expect(sink({ ...ENTRY, level: 'error' })).rejects.toBe(diskError);
       expect(onFailure).toHaveBeenCalledTimes(1);
     } finally {
       await rm(testDir, { recursive: true, force: true }).catch(() => {});
     }
   });
 
-  it('a persistent rename (rotation) failure is surfaced via onFailure, not silent', async () => {
+  it('a persistent rename failure rejects and is surfaced via onFailure', async () => {
     const testDir = await mkdtemp(join(tmpdir(), 'fg-fs-rotate-fail-'));
     await mkdir(join(testDir, '.opencode', 'logs'), { recursive: true });
     const onFailure = vi.fn();
 
-    // Write "succeeds" (mocked), stat reports over-size to trigger rotation,
-    // rename fails — the live file stays in place and would grow unbounded.
     mockAppendFile.mockResolvedValueOnce(undefined);
     mockStat.mockResolvedValueOnce({ size: 10 * 1024 * 1024 } as unknown as Awaited<
       ReturnType<typeof import('node:fs/promises').stat>
@@ -110,15 +103,12 @@ describe('file-sink write failure', () => {
     mockRename.mockRejectedValueOnce(renameErr);
 
     try {
-      // maxSizeBytes = 1 MiB so the faked 10 MiB stat exceeds it.
       const sink = createFileSink(testDir, {
         retentionDays: 1,
         maxSizeBytes: 1024 * 1024,
         onFailure,
       });
-      await expect(
-        sink({ level: 'info', service: 'test', message: 'rotate me' }),
-      ).resolves.not.toThrow();
+      await expect(sink({ ...ENTRY, message: 'rotate me' })).rejects.toBe(renameErr);
       expect(mockRename).toHaveBeenCalledTimes(1);
       expect(onFailure).toHaveBeenCalledTimes(1);
       expect(onFailure.mock.calls[0]![0]).toBe(renameErr);
@@ -127,7 +117,7 @@ describe('file-sink write failure', () => {
     }
   });
 
-  it('a stat failure during rotation check is surfaced via onFailure, not silent', async () => {
+  it('a stat failure during rotation check rejects and is surfaced via onFailure', async () => {
     const testDir = await mkdtemp(join(tmpdir(), 'fg-fs-stat-fail-'));
     await mkdir(join(testDir, '.opencode', 'logs'), { recursive: true });
     const onFailure = vi.fn();
@@ -138,9 +128,7 @@ describe('file-sink write failure', () => {
 
     try {
       const sink = createFileSink(testDir, { retentionDays: 1, onFailure });
-      await expect(
-        sink({ level: 'info', service: 'test', message: 'stat boom' }),
-      ).resolves.not.toThrow();
+      await expect(sink({ ...ENTRY, message: 'stat boom' })).rejects.toBe(statErr);
       expect(onFailure).toHaveBeenCalledTimes(1);
       expect(onFailure.mock.calls[0]![0]).toBe(statErr);
     } finally {
@@ -148,44 +136,51 @@ describe('file-sink write failure', () => {
     }
   });
 
-  // ─── log-directory setup failures ─────────────────────────────
-  // These paths drop every entry for the lifetime of the sink, so they are
-  // the most consequential failures the sink can hit — they must not resolve
-  // as if the write had succeeded.
-
-  it('a log-directory creation failure is surfaced via onFailure, not silent', async () => {
+  it('a log-directory creation failure rejects instead of looking successful', async () => {
     const testDir = await mkdtemp(join(tmpdir(), 'fg-fs-mkdir-fail-'));
     const onFailure = vi.fn();
     mockAppendFile.mockClear();
-    // .opencode is a file, so creating .opencode/logs cannot succeed.
     await writeFile(join(testDir, '.opencode'), 'not a directory', 'utf8');
 
     try {
       const sink = createFileSink(testDir, { retentionDays: 1, onFailure });
       await expect(
-        sink({ level: 'error', service: 'test', message: 'never lands on disk' }),
-      ).resolves.not.toThrow();
-
+        sink({ ...ENTRY, level: 'error', message: 'never lands on disk' }),
+      ).rejects.toBeInstanceOf(Error);
       expect(onFailure).toHaveBeenCalledTimes(1);
       expect(onFailure.mock.calls[0]![0]).toBeInstanceOf(Error);
-      // Total log loss must never look like a successful write.
       expect(mockAppendFile).not.toHaveBeenCalled();
     } finally {
       await rm(testDir, { recursive: true, force: true }).catch(() => {});
     }
   });
 
-  it('a non-absolute workspace directory is surfaced via onFailure, not silent', async () => {
+  it('a non-absolute workspace directory rejects and is surfaced via onFailure', async () => {
     const onFailure = vi.fn();
     mockAppendFile.mockClear();
 
     const sink = createFileSink('relative/workspace', { retentionDays: 1, onFailure });
     await expect(
-      sink({ level: 'error', service: 'test', message: 'never lands on disk' }),
-    ).resolves.not.toThrow();
-
+      sink({ ...ENTRY, level: 'error', message: 'never lands on disk' }),
+    ).rejects.toThrow('absolute');
     expect(onFailure).toHaveBeenCalledTimes(1);
     expect((onFailure.mock.calls[0]![0] as Error).message).toContain('absolute');
     expect(mockAppendFile).not.toHaveBeenCalled();
+  });
+
+  it('createLogger counts a file-sink rejection while keeping logging non-blocking', async () => {
+    const testDir = await mkdtemp(join(tmpdir(), 'fg-fs-health-'));
+    await mkdir(join(testDir, '.opencode', 'logs'), { recursive: true });
+    const err = Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+    mockAppendFile.mockRejectedValueOnce(err);
+
+    try {
+      const log = createLogger('debug', [createFileSink(testDir)]);
+      expect(() => log.info('test', 'health probe')).not.toThrow();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect((log as HealthAwareLogger).getHealth().sinkFailuresTotal).toBe(1);
+    } finally {
+      await rm(testDir, { recursive: true, force: true }).catch(() => {});
+    }
   });
 });
