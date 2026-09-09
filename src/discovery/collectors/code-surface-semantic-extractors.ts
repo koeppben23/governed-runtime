@@ -222,6 +222,11 @@ interface JavaSourcePosition {
   readonly columnIndex: number;
 }
 
+interface JavaMappingScanResult {
+  readonly annotationColumn: number | null;
+  readonly inBlockComment: boolean;
+}
+
 /**
  * A mapping annotation represents a route only when its next declaration is a
  * method. Class-level RequestMapping annotations supply a path prefix instead.
@@ -234,15 +239,13 @@ function extractJavaSpringRouteHandlers(content: string, relPath: string): CodeS
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
     const line = lines[lineIndex] ?? '';
-    const commentState = isCommentOnlyLine(line, inBlockComment);
-    inBlockComment = commentState.inBlockComment;
-    if (commentState.skip) continue;
-    const annotationColumn = findJavaMappingAnnotation(line);
-    if (annotationColumn === null) continue;
+    const mappingScan = scanJavaLineForMapping(line, inBlockComment);
+    inBlockComment = mappingScan.inBlockComment;
+    if (mappingScan.annotationColumn === null) continue;
 
     const annotationEnd = consumeJavaAnnotation(lines, {
       lineIndex,
-      columnIndex: annotationColumn,
+      columnIndex: mappingScan.annotationColumn,
     });
     if (annotationEnd === null) continue;
 
@@ -263,9 +266,13 @@ function extractJavaSpringRouteHandlers(content: string, relPath: string): CodeS
   return endpoints;
 }
 
-function findJavaMappingAnnotation(line: string): number | null {
+function scanJavaLineForMapping(
+  line: string,
+  alreadyInBlockComment: boolean,
+): JavaMappingScanResult {
   let quote: '"' | "'" | null = null;
-  let inBlockComment = false;
+  let inBlockComment = alreadyInBlockComment;
+  let annotationColumn: number | null = null;
 
   for (let index = 0; index < line.length; index++) {
     const character = line[index] ?? '';
@@ -294,9 +301,16 @@ function findJavaMappingAnnotation(line: string): number | null {
       index++;
       continue;
     }
-    if (character === '@' && JAVA_MAPPING_ANNOTATION.test(line.slice(index))) return index;
+    if (
+      annotationColumn === null &&
+      character === '@' &&
+      JAVA_MAPPING_ANNOTATION.test(line.slice(index))
+    ) {
+      annotationColumn = index;
+    }
   }
-  return null;
+
+  return { annotationColumn, inBlockComment };
 }
 
 function consumeJavaAnnotation(
@@ -339,44 +353,78 @@ function consumeJavaAnnotation(
   return null;
 }
 
+function skipJavaWhitespaceAndComments(
+  lines: readonly string[],
+  start: JavaSourcePosition,
+): JavaSourcePosition | null {
+  let lineIndex = start.lineIndex;
+  let columnIndex = start.columnIndex;
+
+  while (lineIndex < lines.length) {
+    const line = lines[lineIndex] ?? '';
+    while (columnIndex < line.length && /\s/.test(line[columnIndex] ?? '')) columnIndex++;
+
+    if (columnIndex >= line.length) {
+      lineIndex++;
+      columnIndex = 0;
+      continue;
+    }
+
+    if (line[columnIndex] === '/' && line[columnIndex + 1] === '/') {
+      lineIndex++;
+      columnIndex = 0;
+      continue;
+    }
+
+    if (line[columnIndex] === '/' && line[columnIndex + 1] === '*') {
+      columnIndex += 2;
+      let closed = false;
+      while (lineIndex < lines.length) {
+        const currentLine = lines[lineIndex] ?? '';
+        const commentEnd = currentLine.indexOf('*/', columnIndex);
+        if (commentEnd >= 0) {
+          columnIndex = commentEnd + 2;
+          closed = true;
+          break;
+        }
+        lineIndex++;
+        columnIndex = 0;
+      }
+      if (!closed) return null;
+      continue;
+    }
+
+    return { lineIndex, columnIndex };
+  }
+
+  return null;
+}
+
 function findJavaAnnotatedDeclaration(
   lines: readonly string[],
   start: JavaSourcePosition,
 ): number | null {
-  let inBlockComment = false;
+  let position: JavaSourcePosition | null = start;
 
-  for (let position = start; position.lineIndex < lines.length;) {
-    const line = lines[position.lineIndex] ?? '';
-    const remainder = line.slice(position.columnIndex);
-    const trimmed = remainder.trim();
-    if (inBlockComment) {
-      if (trimmed.includes('*/')) inBlockComment = false;
-      position = { lineIndex: position.lineIndex + 1, columnIndex: 0 };
-      continue;
-    }
-    if (trimmed.startsWith('/*')) {
-      inBlockComment = !trimmed.includes('*/');
-      position = { lineIndex: position.lineIndex + 1, columnIndex: 0 };
-      continue;
-    }
-    if (trimmed.length === 0 || trimmed.startsWith('//') || trimmed.startsWith('*')) {
-      position = { lineIndex: position.lineIndex + 1, columnIndex: 0 };
-      continue;
-    }
-    if (trimmed.startsWith('@')) {
-      const annotationEnd = consumeJavaAnnotation(lines, {
-        lineIndex: position.lineIndex,
-        columnIndex: position.columnIndex + remainder.indexOf(trimmed),
-      });
+  while (position !== null) {
+    const codeStart = skipJavaWhitespaceAndComments(lines, position);
+    if (codeStart === null) return null;
+
+    const line = lines[codeStart.lineIndex] ?? '';
+    const remainder = line.slice(codeStart.columnIndex);
+    if (remainder.startsWith('@')) {
+      const annotationEnd = consumeJavaAnnotation(lines, codeStart);
       if (annotationEnd === null) return null;
       position = annotationEnd;
       continue;
     }
-    if (JAVA_TYPE_DECLARATION.test(trimmed)) return null;
-    if (JAVA_METHOD_DECLARATION.test(trimmed)) return position.lineIndex;
-    if (trimmed.includes(';') || trimmed.includes('{')) return null;
-    position = { lineIndex: position.lineIndex + 1, columnIndex: 0 };
+
+    if (JAVA_TYPE_DECLARATION.test(remainder)) return null;
+    if (JAVA_METHOD_DECLARATION.test(remainder)) return codeStart.lineIndex;
+    if (remainder.includes(';') || remainder.includes('{')) return null;
+    position = { lineIndex: codeStart.lineIndex + 1, columnIndex: 0 };
   }
+
   return null;
 }
 
