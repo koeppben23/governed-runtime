@@ -108,6 +108,7 @@ export function createFileSink(workspaceDir: string, options?: FileSinkOptions |
   const effectiveMaxSize = normalized.maxSizeBytes;
   const onRotate = normalized.onRotate;
   const onFailure = normalized.onFailure;
+  const logDir = join(workspaceDir, LOG_SUBDIR);
 
   // Diagnostic callback failures are deliberately isolated from the original
   // sink failure. The sink rejection itself is the canonical health signal.
@@ -121,7 +122,6 @@ export function createFileSink(workspaceDir: string, options?: FileSinkOptions |
 
   let initialized = false;
   let _initPromise: Promise<void> | null = null;
-  let logDir: string;
 
   async function ensureDir(): Promise<void> {
     if (!isAbsolute(workspaceDir)) {
@@ -129,12 +129,10 @@ export function createFileSink(workspaceDir: string, options?: FileSinkOptions |
         `file sink requires an absolute workspace directory, received "${workspaceDir}" — file logging is disabled`,
       );
     }
-    logDir = join(workspaceDir, LOG_SUBDIR);
     await mkdir(logDir, { recursive: true });
   }
 
   async function cleanupOldLogs(): Promise<void> {
-    if (!logDir) return;
     try {
       const entries = await readdir(logDir);
       const cutoffMs = effectiveRetention * 24 * 60 * 60 * 1000;
