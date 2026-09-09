@@ -48,6 +48,9 @@ describe('file-sink failure propagation', () => {
       expect(mockAppendFile).toHaveBeenCalledTimes(1);
 
       mockAppendFile.mockResolvedValueOnce(undefined);
+      mockStat.mockResolvedValueOnce({ size: 0 } as unknown as Awaited<
+        ReturnType<typeof import('node:fs/promises').stat>
+      >);
       await expect(sink({ ...ENTRY, message: 'recovered' })).resolves.not.toThrow();
       expect(mockAppendFile).toHaveBeenCalledTimes(2);
     } finally {
