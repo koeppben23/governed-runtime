@@ -49,7 +49,7 @@ export interface FileSinkOptions {
   /** Called when a log file is rotated due to size. */
   onRotate?: (event: { oldPath: string; newPath: string; reason: 'size' }) => void;
   /**
-   * Called when a write, directory setup, rotation, or stat operation fails.
+   * Called when a log file write, directory setup, rotation, or stat operation fails.
    * The callback is best-effort diagnostic notification; the sink itself also
    * rejects so the owning logger can account for the failure centrally.
    */
@@ -98,6 +98,12 @@ function normalizeFileSinkOptions(options?: FileSinkOptions | number): {
 /**
  * Create a file-based logging sink.
  *
+ * Empty or non-absolute workspace paths represent an unavailable workspace and
+ * preserve the historical disabled-sink contract: the sink performs no I/O and
+ * resolves successfully. Once an absolute workspace is available, real
+ * filesystem delivery/setup/rotation failures reject through LogSink so the
+ * owning logger can account for them.
+ *
  * @param workspaceDir - Absolute path to workspace directory.
  * @param options - File sink options or retention days (number, backward-compat).
  * @returns LogSink function.
@@ -108,7 +114,8 @@ export function createFileSink(workspaceDir: string, options?: FileSinkOptions |
   const effectiveMaxSize = normalized.maxSizeBytes;
   const onRotate = normalized.onRotate;
   const onFailure = normalized.onFailure;
-  const logDir = join(workspaceDir, LOG_SUBDIR);
+  const enabled = isAbsolute(workspaceDir);
+  const logDir = enabled ? join(workspaceDir, LOG_SUBDIR) : '';
 
   // Diagnostic callback failures are deliberately isolated from the original
   // sink failure. The sink rejection itself is the canonical health signal.
@@ -124,11 +131,6 @@ export function createFileSink(workspaceDir: string, options?: FileSinkOptions |
   let _initPromise: Promise<void> | null = null;
 
   async function ensureDir(): Promise<void> {
-    if (!isAbsolute(workspaceDir)) {
-      throw new Error(
-        `file sink requires an absolute workspace directory, received "${workspaceDir}" — file logging is disabled`,
-      );
-    }
     await mkdir(logDir, { recursive: true });
   }
 
@@ -161,6 +163,8 @@ export function createFileSink(workspaceDir: string, options?: FileSinkOptions |
   }
 
   return async (entry: LogEntry): Promise<void> => {
+    if (!enabled) return;
+
     try {
       if (!initialized) {
         if (!_initPromise) {
