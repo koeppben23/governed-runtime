@@ -223,7 +223,10 @@ function isSlotFailed(state: SessionState, slot: string): boolean {
   return false;
 }
 
-const SLOT_DETAIL_FNS: Record<string, (state: SessionState, phaseOrd: number) => string | undefined> = {
+const SLOT_DETAIL_FNS: Record<
+  string,
+  (state: SessionState, phaseOrd: number) => string | undefined
+> = {
   ticket: (s) =>
     s.ticket ? `source: ${s.ticket.source}, digest: ${s.ticket.digest.slice(0, 12)}...` : undefined,
   architecture: (s) =>
@@ -409,8 +412,7 @@ export function evaluateCompleteness(state: SessionState): CompletenessReport {
   const missing = slots.filter((s) => s.status === 'missing').length;
   const notYetRequired = slots.filter((s) => s.status === 'not_yet_required').length;
   const failed = slots.filter((s) => s.status === 'failed').length;
-  const terminalEnough =
-    state.phase !== 'READY' && (!isReviewFlow || isTerminalPhase(state.phase));
+  const terminalEnough = state.phase !== 'READY' && (!isReviewFlow || isTerminalPhase(state.phase));
   const overallComplete = missing === 0 && failed === 0 && fourEyes.satisfied && terminalEnough;
 
   return {
