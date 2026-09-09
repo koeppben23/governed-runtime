@@ -35,5 +35,5 @@ ${GOVERNANCE_RULES}
 - Task recorded via flowguard_ticket.
 - Phase and next action reported.
 - If \`presentation.markdown\` is present, render it verbatim and do not append a separate \`Next action:\` line.
-- Otherwise, derive exactly one fallback action from \`productNextAction\`.
+- Otherwise, render \`productNextAction.text\` as the single fallback conclusion.
 `;

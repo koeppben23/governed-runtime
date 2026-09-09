@@ -43,5 +43,5 @@ ${GOVERNANCE_RULES}
 - When checks advance to \`IMPLEMENTATION\`: a fresh /check without a prior \`changes_requested\` verdict was reported and stopped without implementation work; an /check already inside the repair-recheck continuation was continued automatically through repair-recheck until the review loop's terminal response.
 - Results and next action reported.
 - If \`presentation.markdown\` is present, render it verbatim and do not append a separate \`Next action:\` line.
-- Otherwise, derive exactly one fallback action from \`productNextAction\`.
+- Otherwise, render \`productNextAction.text\` as the single fallback conclusion.
 `;

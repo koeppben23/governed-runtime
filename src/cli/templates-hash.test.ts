@@ -278,10 +278,10 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // COMMANDS hash.
     // Refreshed for presentation fallback consistency: task, ticket, check,
     // validate, abort, archive, and export now render presentation.markdown
-    // verbatim or derive exactly one productNextAction fallback, never both.
+    // verbatim or render productNextAction.text as one fallback, never both.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'cba29bd5a2b97adfb36d1b4c080315d58b65501038ebb6e090715607f660f667',
+      'cdcabcd6bd3e5e38e2e01bebf412d0d7de5f4d9cfd8cb1848ecaae4fe84b497f',
     );
   });
 

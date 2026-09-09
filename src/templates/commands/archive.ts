@@ -44,5 +44,5 @@ ${GOVERNANCE_RULES}
 - Session archive created as tar.gz.
 - Redaction parameters, guidance, and archive semantic fields reported to the user.
 - If \`presentation.markdown\` is present, render it verbatim and do not append a separate \`Next action:\` line.
-- Otherwise, derive exactly one fallback action from \`productNextAction\`.
+- Otherwise, render \`productNextAction.text\` as the single fallback conclusion.
 `;

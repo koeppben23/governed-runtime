@@ -213,6 +213,14 @@ function makeJavaSpringExtractor(): SemanticCodeSurfaceExtractor {
 const JAVA_MAPPING_ANNOTATION =
   /@(?:RequestMapping|GetMapping|PostMapping|PutMapping|PatchMapping|DeleteMapping)\b/;
 const JAVA_TYPE_DECLARATION = /\b(?:class|interface|enum|record)\b/;
+const JAVA_ANNOTATION = /^@[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*/;
+const JAVA_METHOD_DECLARATION =
+  /^(?:(?:public|protected|private|static|final|abstract|synchronized|native|default|strictfp)\s+)*(?:<[^{}()]+>\s*)?(?:[A-Za-z_$][\w$.]*(?:\s*<[^{}()]+>)?(?:\s*\[\])?\s+)+[A-Za-z_$][\w$]*\s*\(/;
+
+interface JavaSourcePosition {
+  readonly lineIndex: number;
+  readonly columnIndex: number;
+}
 
 /**
  * A mapping annotation represents a route only when its next declaration is a
@@ -228,10 +236,17 @@ function extractJavaSpringRouteHandlers(content: string, relPath: string): CodeS
     const line = lines[lineIndex] ?? '';
     const commentState = isCommentOnlyLine(line, inBlockComment);
     inBlockComment = commentState.inBlockComment;
-    if (commentState.skip || isPlainStringAssignment(line)) continue;
-    if (!JAVA_MAPPING_ANNOTATION.test(line)) continue;
+    if (commentState.skip) continue;
+    const annotationColumn = findJavaMappingAnnotation(line);
+    if (annotationColumn === null) continue;
 
-    const declaration = findJavaAnnotatedDeclaration(lines, lineIndex + 1);
+    const annotationEnd = consumeJavaAnnotation(lines, {
+      lineIndex,
+      columnIndex: annotationColumn,
+    });
+    if (annotationEnd === null) continue;
+
+    const declaration = findJavaAnnotatedDeclaration(lines, annotationEnd);
     if (declaration === null || mappedDeclarations.has(declaration)) continue;
     mappedDeclarations.add(declaration);
 
@@ -248,11 +263,79 @@ function extractJavaSpringRouteHandlers(content: string, relPath: string): CodeS
   return endpoints;
 }
 
-function findJavaAnnotatedDeclaration(lines: readonly string[], startIndex: number): number | null {
+function findJavaMappingAnnotation(line: string): number | null {
+  let quote: '"' | "'" | null = null;
+
+  for (let index = 0; index < line.length; index++) {
+    const character = line[index] ?? '';
+    if (quote !== null) {
+      if (character === '\\') {
+        index++;
+      } else if (character === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      continue;
+    }
+    if (character === '/' && line[index + 1] === '/') break;
+    if (character === '@' && JAVA_MAPPING_ANNOTATION.test(line.slice(index))) return index;
+  }
+  return null;
+}
+
+function consumeJavaAnnotation(
+  lines: readonly string[],
+  start: JavaSourcePosition,
+): JavaSourcePosition | null {
+  const line = lines[start.lineIndex] ?? '';
+  const annotation = JAVA_ANNOTATION.exec(line.slice(start.columnIndex));
+  if (annotation === null) return null;
+
+  let lineIndex = start.lineIndex;
+  let columnIndex = start.columnIndex + annotation[0].length;
+  while (/\s/.test((lines[lineIndex] ?? '')[columnIndex] ?? '')) columnIndex++;
+  if ((lines[lineIndex] ?? '')[columnIndex] !== '(') return { lineIndex, columnIndex };
+
+  let depth = 0;
+  let quote: '"' | "'" | null = null;
+  for (; lineIndex < lines.length; lineIndex++) {
+    const currentLine = lines[lineIndex] ?? '';
+    for (; columnIndex < currentLine.length; columnIndex++) {
+      const character = currentLine[columnIndex] ?? '';
+      if (quote !== null) {
+        if (character === '\\') {
+          columnIndex++;
+        } else if (character === quote) {
+          quote = null;
+        }
+        continue;
+      }
+      if (character === '"' || character === "'") {
+        quote = character;
+      } else if (character === '(') {
+        depth++;
+      } else if (character === ')' && --depth === 0) {
+        return { lineIndex, columnIndex: columnIndex + 1 };
+      }
+    }
+    columnIndex = 0;
+  }
+  return null;
+}
+
+function findJavaAnnotatedDeclaration(
+  lines: readonly string[],
+  start: JavaSourcePosition,
+): number | null {
   let inBlockComment = false;
 
-  for (let index = startIndex; index < lines.length; index++) {
-    const trimmed = (lines[index] ?? '').trim();
+  for (let index = start.lineIndex; index < lines.length; index++) {
+    let trimmed = (lines[index] ?? '')
+      .slice(index === start.lineIndex ? start.columnIndex : 0)
+      .trim();
     if (inBlockComment) {
       if (trimmed.includes('*/')) inBlockComment = false;
       continue;
@@ -261,16 +344,20 @@ function findJavaAnnotatedDeclaration(lines: readonly string[], startIndex: numb
       inBlockComment = !trimmed.includes('*/');
       continue;
     }
-    if (
-      trimmed.length === 0 ||
-      trimmed.startsWith('//') ||
-      trimmed.startsWith('*') ||
-      trimmed.startsWith('@')
-    ) {
+    if (trimmed.length === 0 || trimmed.startsWith('//') || trimmed.startsWith('*')) {
       continue;
     }
+    while (trimmed.startsWith('@')) {
+      const annotationEnd = consumeJavaAnnotation(lines, {
+        lineIndex: index,
+        columnIndex: (lines[index] ?? '').indexOf(trimmed),
+      });
+      if (annotationEnd === null || annotationEnd.lineIndex !== index) break;
+      trimmed = (lines[index] ?? '').slice(annotationEnd.columnIndex).trim();
+    }
+    if (trimmed.length === 0) continue;
     if (JAVA_TYPE_DECLARATION.test(trimmed)) return null;
-    if (trimmed.includes('(')) return index;
+    if (JAVA_METHOD_DECLARATION.test(trimmed)) return index;
     if (trimmed.includes(';') || trimmed.includes('{')) return null;
   }
   return null;

@@ -44,8 +44,8 @@ describe('installed command catalogue', () => {
       expect(body, `${templateFile} must defer to rendered presentation`).toContain(
         'If `presentation.markdown` is present, render it verbatim and do not append a separate `Next action:` line.',
       );
-      expect(body, `${templateFile} must have a product fallback`).toContain(
-        'Otherwise, derive exactly one fallback action from `productNextAction`.',
+      expect(body, `${templateFile} must have a deterministic product fallback`).toContain(
+        'Otherwise, render `productNextAction.text` as the single fallback conclusion.',
       );
       expect(body, `${templateFile} must not require an unconditional conclusion`).not.toContain(
         'Response ends with `Next action:',

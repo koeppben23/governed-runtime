@@ -38,5 +38,5 @@ ${GOVERNANCE_RULES}
 - User informed of consequences.
 - Session terminated via flowguard_abort_session.
 - If \`presentation.markdown\` is present, render it verbatim and do not append a separate \`Next action:\` line.
-- Otherwise, derive exactly one fallback action from \`productNextAction\`.
+- Otherwise, render \`productNextAction.text\` as the single fallback conclusion.
 `;

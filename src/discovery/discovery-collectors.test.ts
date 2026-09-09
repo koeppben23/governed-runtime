@@ -554,6 +554,78 @@ describe('discovery/collectors/code-surface-analysis', () => {
         },
       );
     });
+
+    it('extracts a Java Spring route when its annotation and method share a line', async () => {
+      await withTempProject(
+        {
+          'src/main/java/com/acme/InlineController.java': `
+            class InlineController {
+              @GetMapping("/x") String x() { return "x"; }
+            }
+          `,
+        },
+        async (input) => {
+          const result = await collectCodeSurfaces(input);
+          expect(result.data.endpoints).toEqual([
+            expect.objectContaining({ id: 'semantic-java-spring-controller' }),
+          ]);
+        },
+      );
+    });
+
+    it('does not treat a same-line Java Spring class mapping as a method route', async () => {
+      await withTempProject(
+        {
+          'src/main/java/com/acme/InlineClassMapping.java': `
+            @RequestMapping("/users") class InlineClassMapping {
+              String helper() { return "ok"; }
+            }
+          `,
+        },
+        async (input) => {
+          const result = await collectCodeSurfaces(input);
+          expect(result.data.endpoints).toHaveLength(0);
+        },
+      );
+    });
+
+    it('ignores Java Spring mapping text in string literals', async () => {
+      await withTempProject(
+        {
+          'src/main/java/com/acme/StringLiteral.java': `
+            class StringLiteral {
+              String docs = "@GetMapping(\\"/fake\\")";
+              String helper() { return docs; }
+            }
+          `,
+        },
+        async (input) => {
+          const result = await collectCodeSurfaces(input);
+          expect(result.data.endpoints).toHaveLength(0);
+        },
+      );
+    });
+
+    it('consumes multiline Java Spring annotation arguments before finding the method', async () => {
+      await withTempProject(
+        {
+          'src/main/java/com/acme/MultilineController.java': `
+            class MultilineController {
+              @GetMapping(
+                path = resolvePath("/users")
+              )
+              String users() { return "users"; }
+            }
+          `,
+        },
+        async (input) => {
+          const result = await collectCodeSurfaces(input);
+          expect(result.data.endpoints).toEqual([
+            expect.objectContaining({ id: 'semantic-java-spring-controller' }),
+          ]);
+        },
+      );
+    });
   });
 
   describe('PRIORITY', () => {
