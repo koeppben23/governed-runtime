@@ -73,5 +73,6 @@ ${GOVERNANCE_RULES}
 
 - Ticket text recorded via flowguard_ticket.
 - External references captured with full audit provenance.
-- Response ends with \`Next action: run /plan to generate an implementation plan.\`
+- If \`presentation.markdown\` is present, render it verbatim and do not append a separate \`Next action:\` line.
+- Otherwise, derive exactly one fallback action from \`productNextAction\`.
 `;

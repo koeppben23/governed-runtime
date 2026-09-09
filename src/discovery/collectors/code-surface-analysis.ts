@@ -167,10 +167,7 @@ const ENDPOINT_RULES: readonly Rule[] = [
     label: 'HTTP route handler',
     confidence: 0.85,
     classification: 'derived_signal',
-    patterns: [
-      /\b(?:app|router|fastify)\.(?:get|post|put|patch|delete|route)\s*\(/,
-      /@(Get|Post|Put|Patch|Delete|Request)Mapping\b/,
-    ],
+    patterns: [/\b(?:app|router|fastify)\.(?:get|post|put|patch|delete|route)\s*\(/],
   },
   {
     id: 'graphql-endpoint',

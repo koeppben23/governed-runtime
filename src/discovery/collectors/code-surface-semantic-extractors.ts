@@ -86,16 +86,6 @@ const TS_JS_RULES: readonly SemanticRule[] = [
 
 const JAVA_RULES: readonly SemanticRule[] = [
   {
-    id: 'semantic-java-spring-controller',
-    label: 'Semantic Java Spring controller route',
-    bucket: 'endpoints',
-    confidence: 0.9,
-    patterns: [
-      /@(?:RestController|Controller)\b/,
-      /@(?:RequestMapping|GetMapping|PostMapping|PutMapping|PatchMapping|DeleteMapping)\s*\(/,
-    ],
-  },
-  {
     id: 'semantic-java-auth-boundary',
     label: 'Semantic Java authorization boundary',
     bucket: 'authBoundaries',
@@ -123,7 +113,7 @@ const JAVA_RULES: readonly SemanticRule[] = [
 
 const EXTRACTORS: readonly SemanticCodeSurfaceExtractor[] = [
   makeLineRuleExtractor('typescript-javascript-frameworks', TS_JS_EXTENSIONS, TS_JS_RULES),
-  makeLineRuleExtractor('java-spring-frameworks', JAVA_EXTENSIONS, JAVA_RULES),
+  makeJavaSpringExtractor(),
 ];
 
 export function extractSemanticCodeSurfaces(
@@ -200,6 +190,90 @@ function makeLineRuleExtractor(
       return result;
     },
   };
+}
+
+function makeJavaSpringExtractor(): SemanticCodeSurfaceExtractor {
+  const nonEndpointExtractor = makeLineRuleExtractor(
+    'java-spring-non-endpoint-signals',
+    JAVA_EXTENSIONS,
+    JAVA_RULES,
+  );
+
+  return {
+    id: 'java-spring-frameworks',
+    supportedExtensions: JAVA_EXTENSIONS,
+    extract(content, relPath) {
+      const result = nonEndpointExtractor.extract(content, relPath);
+      result.endpoints.push(...extractJavaSpringRouteHandlers(content, relPath));
+      return result;
+    },
+  };
+}
+
+const JAVA_MAPPING_ANNOTATION =
+  /@(?:RequestMapping|GetMapping|PostMapping|PutMapping|PatchMapping|DeleteMapping)\b/;
+const JAVA_TYPE_DECLARATION = /\b(?:class|interface|enum|record)\b/;
+
+/**
+ * A mapping annotation represents a route only when its next declaration is a
+ * method. Class-level RequestMapping annotations supply a path prefix instead.
+ */
+function extractJavaSpringRouteHandlers(content: string, relPath: string): CodeSurfaceSignal[] {
+  const lines = content.split('\n');
+  const endpoints: CodeSurfaceSignal[] = [];
+  const mappedDeclarations = new Set<number>();
+  let inBlockComment = false;
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const line = lines[lineIndex] ?? '';
+    const commentState = isCommentOnlyLine(line, inBlockComment);
+    inBlockComment = commentState.inBlockComment;
+    if (commentState.skip || isPlainStringAssignment(line)) continue;
+    if (!JAVA_MAPPING_ANNOTATION.test(line)) continue;
+
+    const declaration = findJavaAnnotatedDeclaration(lines, lineIndex + 1);
+    if (declaration === null || mappedDeclarations.has(declaration)) continue;
+    mappedDeclarations.add(declaration);
+
+    endpoints.push({
+      id: 'semantic-java-spring-controller',
+      label: 'Semantic Java Spring route handler',
+      confidence: 0.9,
+      classification: 'derived_signal',
+      evidence: [line.trim().slice(0, 140)],
+      location: `${relPath}:${lineIndex + 1}`,
+    });
+  }
+
+  return endpoints;
+}
+
+function findJavaAnnotatedDeclaration(lines: readonly string[], startIndex: number): number | null {
+  let inBlockComment = false;
+
+  for (let index = startIndex; index < lines.length; index++) {
+    const trimmed = (lines[index] ?? '').trim();
+    if (inBlockComment) {
+      if (trimmed.includes('*/')) inBlockComment = false;
+      continue;
+    }
+    if (trimmed.startsWith('/*')) {
+      inBlockComment = !trimmed.includes('*/');
+      continue;
+    }
+    if (
+      trimmed.length === 0 ||
+      trimmed.startsWith('//') ||
+      trimmed.startsWith('*') ||
+      trimmed.startsWith('@')
+    ) {
+      continue;
+    }
+    if (JAVA_TYPE_DECLARATION.test(trimmed)) return null;
+    if (trimmed.includes('(')) return index;
+    if (trimmed.includes(';') || trimmed.includes('{')) return null;
+  }
+  return null;
 }
 
 function emptyResult(): SemanticExtractionResult {

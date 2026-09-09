@@ -225,7 +225,7 @@ function buildHydrateStatusSection(params: HydrateCardParams): KeyValueSection {
   if (params.profileDetected) {
     profileParts.push('auto-detected');
     if (params.endpointCount !== undefined && params.endpointCount > 0) {
-      profileParts.push(`${params.endpointCount} API endpoints discovered`);
+      profileParts.push(`${params.endpointCount} API endpoint signals discovered`);
     }
   }
 

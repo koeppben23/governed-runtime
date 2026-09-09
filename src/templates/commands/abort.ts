@@ -37,5 +37,6 @@ ${GOVERNANCE_RULES}
 
 - User informed of consequences.
 - Session terminated via flowguard_abort_session.
-- Response ends with \`Next action: run /hydrate to start a new session, or /review to inspect the aborted session.\`
+- If \`presentation.markdown\` is present, render it verbatim and do not append a separate \`Next action:\` line.
+- Otherwise, derive exactly one fallback action from \`productNextAction\`.
 `;

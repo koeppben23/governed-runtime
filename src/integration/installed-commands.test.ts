@@ -28,6 +28,31 @@ describe('installed command catalogue', () => {
     }
   });
 
+  it('uses one presentation-or-product fallback conclusion in affected templates', () => {
+    const affectedTemplates = [
+      'task.md',
+      'ticket.md',
+      'check.md',
+      'validate.md',
+      'abort.md',
+      'archive.md',
+      'export.md',
+    ];
+
+    for (const templateFile of affectedTemplates) {
+      const body = COMMANDS[templateFile]!;
+      expect(body, `${templateFile} must defer to rendered presentation`).toContain(
+        'If `presentation.markdown` is present, render it verbatim and do not append a separate `Next action:` line.',
+      );
+      expect(body, `${templateFile} must have a product fallback`).toContain(
+        'Otherwise, derive exactly one fallback action from `productNextAction`.',
+      );
+      expect(body, `${templateFile} must not require an unconditional conclusion`).not.toContain(
+        'Response ends with `Next action:',
+      );
+    }
+  });
+
   it('derives /export preference from the canonical alias authority', () => {
     const exportDefinition = INSTALLED_COMMANDS.find((command) => command.id === 'alias.export');
     expect(COMMAND_ALIASES.export?.kind).toBe('preferred_name');
