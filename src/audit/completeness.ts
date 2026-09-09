@@ -216,8 +216,10 @@ function isSlotPresent(state: SessionState, slot: string): boolean {
 }
 
 function isSlotFailed(state: SessionState, slot: string): boolean {
-  if (slot === 'validation') return state.validation.length > 0 && state.validation.some((v) => !v.passed);
-  if (slot === 'implValidation') return state.implValidation.length > 0 && state.implValidation.some((v) => !v.passed);
+  if (slot === 'validation')
+    return state.validation.length > 0 && state.validation.some((v) => !v.passed);
+  if (slot === 'implValidation')
+    return state.implValidation.length > 0 && state.implValidation.some((v) => !v.passed);
   return false;
 }
 
@@ -407,7 +409,8 @@ export function evaluateCompleteness(state: SessionState): CompletenessReport {
   const missing = slots.filter((s) => s.status === 'missing').length;
   const notYetRequired = slots.filter((s) => s.status === 'not_yet_required').length;
   const failed = slots.filter((s) => s.status === 'failed').length;
-  const terminalEnough = state.phase !== 'READY' && (!isReviewFlow || isTerminalPhase(state.phase));
+  const terminalEnough =
+    state.phase !== 'READY' && (!isReviewFlow || isTerminalPhase(state.phase));
   const overallComplete = missing === 0 && failed === 0 && fourEyes.satisfied && terminalEnough;
 
   return {
