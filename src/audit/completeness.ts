@@ -35,6 +35,7 @@
  *
  * Review flow:
  * No evidence slots required — the review report is a standalone artifact.
+ * Completeness is nevertheless false until the flow reaches REVIEW_COMPLETE.
  *
  * @version v2
  */
@@ -180,18 +181,17 @@ const PHASE_ORDER: Readonly<Record<Phase, number>> = {
  * Below this ordinal, the slot is "not_yet_required".
  */
 const SLOT_REQUIRED_FROM: Readonly<Record<string, number>> = {
-  ticket: 0, // TICKET (always required)
-  plan: 1, // PLAN
-  selfReview: 2, // PLAN_REVIEW
-  planReviewDecision: 3, // VALIDATION
-  validation: 4, // IMPLEMENTATION
-  implementation: 5, // IMPL_VALIDATION
-  implValidation: 6, // IMPL_REVIEW
-  implReview: 7, // EVIDENCE_REVIEW
-  evidenceReviewDecision: 8, // COMPLETE
+  ticket: 0,
+  plan: 1,
+  selfReview: 2,
+  planReviewDecision: 3,
+  validation: 4,
+  implementation: 5,
+  implValidation: 6,
+  implReview: 7,
+  evidenceReviewDecision: 8,
 };
 
-/** All evidence slots in evidence-chain order. */
 const ALL_SLOTS = [
   'ticket',
   'plan',
@@ -204,7 +204,6 @@ const ALL_SLOTS = [
   'evidenceReviewDecision',
 ] as const;
 
-/** Human-readable labels for each slot. */
 const SLOT_LABELS: Readonly<Record<string, string>> = {
   ticket: 'Ticket Evidence',
   plan: 'Plan Evidence',
@@ -217,7 +216,6 @@ const SLOT_LABELS: Readonly<Record<string, string>> = {
   evidenceReviewDecision: 'Evidence Review Decision',
 };
 
-/** Canonical artifact kind mapping per slot (single authority for projections). */
 const SLOT_ARTIFACT_KIND: Readonly<Record<string, string>> = {
   ticket: 'ticket_evidence',
   plan: 'plan_record',
@@ -232,15 +230,6 @@ const SLOT_ARTIFACT_KIND: Readonly<Record<string, string>> = {
   archReviewDecision: 'review_decision',
 };
 
-// ─── Slot Evaluation ──────────────────────────────────────────────────────────
-
-/**
- * Whether validation-like evidence is complete for a set of results.
- *
- * For zero active checks, the validation-evidence authority decides whether
- * vacuous advancement is admissible. This keeps audit completeness aligned
- * with machine guards without reimplementing policy semantics.
- */
 function checksComplete(
   state: SessionState,
   results: ReadonlyArray<{ checkId: string; passed: boolean }>,
@@ -251,15 +240,6 @@ function checksComplete(
   return state.activeChecks.every((id) => results.some((v) => v.checkId === id && v.passed));
 }
 
-/**
- * Check if an evidence slot has valid data present in state.
- *
- * Special cases:
- * - planReviewDecision: verified by topology invariant (phase >= VALIDATION)
- * - validation: checksComplete - policy-admissible zero checks, or all active checks passed
- * - implValidation: checksComplete - same semantics, separate post-implementation slot
- * - evidenceReviewDecision: COMPLETE phase with no error
- */
 const SLOT_PRESENT_CHECKS: Record<string, (state: SessionState, phaseOrd: number) => boolean> = {
   ticket: (s) => s.ticket !== null,
   architecture: (s) => s.architecture !== null,
@@ -280,10 +260,6 @@ function isSlotPresent(state: SessionState, slot: string): boolean {
   return fn ? fn(state, phaseOrd) : false;
 }
 
-/**
- * Check if an evidence slot has failed (present but invalid).
- * Currently only applies to validation (some checks failed).
- */
 function isSlotFailed(state: SessionState, slot: string): boolean {
   if (slot === 'validation') {
     return state.validation.length > 0 && state.validation.some((v) => !v.passed);
@@ -353,39 +329,32 @@ const SLOT_DETAIL_FNS: Record<
       : undefined,
 };
 
-/** Get a human-readable detail string for a slot. */
 function getSlotDetail(state: SessionState, slot: string): string | undefined {
   const phaseOrd = PHASE_ORDER[state.phase];
   const fn = SLOT_DETAIL_FNS[slot];
   return fn ? fn(state, phaseOrd) : undefined;
 }
 
-// ─── Flow Detection ───────────────────────────────────────────────────────────
-
-/** Architecture flow phases. */
 const ARCHITECTURE_FLOW_PHASES: ReadonlySet<Phase> = new Set<Phase>([
   'ARCHITECTURE',
   'ARCH_REVIEW',
   'ARCH_COMPLETE',
 ]);
 
-/** Review flow phases. */
 const REVIEW_FLOW_PHASES: ReadonlySet<Phase> = new Set<Phase>(['REVIEW', 'REVIEW_COMPLETE']);
 
-/** Architecture flow ordinals (independent from ticket flow). */
 const ARCH_PHASE_ORDER: Readonly<Record<string, number>> = {
   ARCHITECTURE: 0,
   ARCH_REVIEW: 1,
   ARCH_COMPLETE: 2,
 };
 
-/** Architecture flow evidence slots. */
 const ARCH_SLOTS = ['architecture', 'selfReview', 'archReviewDecision'] as const;
 
 const ARCH_SLOT_REQUIRED_FROM: Readonly<Record<string, number>> = {
-  architecture: 0, // ARCHITECTURE
-  selfReview: 1, // ARCH_REVIEW
-  archReviewDecision: 2, // ARCH_COMPLETE
+  architecture: 0,
+  selfReview: 1,
+  archReviewDecision: 2,
 };
 
 const ARCH_SLOT_LABELS: Readonly<Record<string, string>> = {
@@ -394,23 +363,6 @@ const ARCH_SLOT_LABELS: Readonly<Record<string, string>> = {
   archReviewDecision: 'Architecture Review Decision',
 };
 
-// ─── Evaluator ────────────────────────────────────────────────────────────────
-
-/**
- * Evaluate evidence completeness for a FlowGuard session.
- *
- * Returns a structured report showing:
- * - Per-slot status (complete / missing / not_yet_required / failed)
- * - Four-eyes principle compliance
- * - Overall completeness assessment
- * - Summary counts
- *
- * Flow-aware: evaluates different slots depending on the active flow
- * (ticket, architecture, or review).
- *
- * @param state - Current session state.
- * @returns Structured completeness report.
- */
 function determineSlotStatus(
   isRequired: boolean,
   failed: boolean,
@@ -513,8 +465,8 @@ export function evaluateCompleteness(state: SessionState): CompletenessReport {
   const missing = slots.filter((s) => s.status === 'missing').length;
   const notYetRequired = slots.filter((s) => s.status === 'not_yet_required').length;
   const failed = slots.filter((s) => s.status === 'failed').length;
-  const overallComplete =
-    missing === 0 && failed === 0 && fourEyes.satisfied && state.phase !== 'READY';
+  const terminalEnough = state.phase !== 'READY' && (!isReviewFlow || state.phase === 'REVIEW_COMPLETE');
+  const overallComplete = missing === 0 && failed === 0 && fourEyes.satisfied && terminalEnough;
 
   return {
     sessionId: state.id,
