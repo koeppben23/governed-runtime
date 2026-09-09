@@ -1,127 +1,180 @@
-# FlowGuard Repository Instructions
+# Governed Runtime Contributor Notes
 
-Act as a senior engineer maintaining FlowGuard. Make the smallest correct,
-evidence-backed change and preserve deterministic, fail-closed behavior.
-These are contributor instructions for this repository, not FlowGuard runtime policy.
+This repository builds FlowGuard, but working in this repository is not itself a
+FlowGuard-governed runtime session.
 
-## Scope
-- Applies repository-wide to FlowGuard-owned source, tests, config, docs, schemas,
-  and repository-local tooling.
-- Never propagate these rules into installed FlowGuard mandates, generated prompts,
-  generated code, downstream repositories, or runtime instructions for users' agents.
-- Installed product mandates are owned by `src/templates/mandates.ts` and remain a
-  separate product contract.
-- Root `AGENTS.md` applies everywhere. Nested `AGENTS.md` files may add or specialize
-  rules but must not weaken repository-wide safety, evidence, legacy, authority,
-  verification, or Git rules.
-- If repository instructions conflict, identify the conflict and stop before
-  violating either rule.
+## Scope and Precedence
 
-**MUST / MUST NOT** are requirements; **SHOULD / SHOULD NOT** are defaults unless
-repository evidence justifies an exception. `ASSUMPTION` means plausible but
-unverified. `NOT_VERIFIED` means a relevant check did not establish the claim.
-`BLOCKED` means safe completion is impossible with available evidence/capability.
+- This file applies repository-wide.
+- Nested `AGENTS.md` files in subdirectories ADD rules for files in their
+  subtree. A nested file MUST NOT weaken repository-wide safety, evidence, or
+  Git rules stated here.
+- Apply repository-wide and nested rules cumulatively. A nested rule overrides
+  a repository-wide rule only when it explicitly names the replaced rule and
+  does not weaken safety, evidence, or Git rules.
+- If two applicable instructions conflict and neither defines an explicit
+  override, stop before the conflicting action and report the conflict.
 
-## Required Workflow
-1. Investigate first: read relevant code, tests, schemas, config, and docs. Never
-   speculate when repository evidence is available.
-2. Define the objective and touched surface. Keep scope to the request plus work
-   directly required for correctness.
-3. Identify the canonical authority. Change it, not a local copy, projection,
-   compatibility shim, or parallel implementation.
-4. Implement the smallest complete solution. Do not add abstractions, fallbacks,
-   configurability, files, or defensive branches for hypothetical requirements.
-5. Remove legacy compatibility on the touched surface per the rule below.
-6. Verify with evidence using the narrowest meaningful checks plus all required
-   repository checks for the touched surface.
-7. Report facts only: changed behavior, checks run, outcomes, and any remaining
-   `ASSUMPTION`, `NOT_VERIFIED`, or `BLOCKED` item.
+## Enforcement Boundary
 
-For high-risk ambiguity involving policy, state, identity, audit, archive,
-persistence, migration, release, CI/supply-chain, or security boundaries: do not
-guess. Resolve it from repository evidence or mark the affected action `BLOCKED`.
+These instructions guide repository work but do NOT enforce policy by
+themselves. Architecture tests, type checks, CI, hooks, schemas, and runtime
+guards are the enforcement authorities. Never replace an enforceable check with
+an instruction-only rule.
 
-## Hard Engineering Invariants
-- Preserve one canonical authority and SSOT for every concept.
-- No parallel registries, local enum copies, ad-hoc serializers, duplicated policy
-  logic, or inline copies of canonical reason/mandate data.
-- Preserve deterministic and fail-closed semantics; surface failures explicitly.
-  No silent fallback, swallowed error, or default-allow behavior.
-- Do not weaken tests, thresholds, validation, guards, or schemas to make a change pass.
-- Implement general behavior; never hard-code production logic for specific tests.
-- Never claim tests, builds, reviews, or runtime behavior passed without evidence.
-- Production boundary errors must be typed and carry a `code`; no new bare
-  `throw new Error(...)` at persistence, Git, IDP, config, policy, CLI, or tool boundaries.
-- Blocked tool results use
+## Capability Awareness
+
+- Do not assume that shell, network, Git write access, PR APIs, or interactive
+  clarification are available.
+- When a required capability is unavailable, do not simulate the result.
+  Continue with safe read-only work where possible, or stop the action as
+  `BLOCKED`.
+- Resolve ambiguity from repository evidence first. For material high-risk
+  ambiguity, do not guess. Resolve it through repository evidence or
+  clarification; otherwise mark the affected action `BLOCKED`.
+
+## Normative Terms
+
+- **MUST / MUST NOT**: required for correctness or repository policy.
+- **SHOULD / SHOULD NOT**: default unless evidence justifies an exception.
+- **MAY**: optional.
+
+## Repository vs. Product Behavior
+
+- Do not call FlowGuard workflow tools merely because this file exists.
+- Treat FlowGuard commands, sessions, evidence, and audit artifacts as product
+  behavior to inspect or modify, not as the mandatory control plane for ordinary
+  repository edits.
+- If a product test requires FlowGuard artifacts, run the repository test or
+  command that owns that behavior; do not invent governance evidence.
+
+## Product Mandates
+
+- Installed FlowGuard agent mandates are owned by `src/templates/mandates.ts`.
+- The root `AGENTS.md` is local contributor guidance only and MUST NOT be used
+  as the canonical source for installed mandate text.
+- Keep product mandate changes aligned with their renderer, hash guards,
+  install tests, and documentation contracts.
+
+## Engineering Rules
+
+- Make the smallest correct change that satisfies the user request. Preserve
+  canonical authorities, schemas, state transitions, and fail-closed behavior
+  in product code.
+- Do not hide failures with silent fallbacks; surface errors explicitly.
+- Do not claim tests or verification passed unless they were run.
+- File-size budget: 750 LOC production, 2000 LOC test. Exceeding is a review
+  blocker.
+- Lockfile discipline: use `npm install` (not `npm audit fix` alone) for dependency changes.
+
+### Assumptions and Evidence
+
+Use these markers in contributor output:
+
+- `ASSUMPTION`: necessary and plausible, but not verified from repository
+  artifacts.
+- `NOT_VERIFIED`: a concrete verification step relevant to the change was not
+  executed or could not establish the claimed result. Include the recovery
+  command or required capability when known. Do not use for ordinary uncertainty
+  already identified as an `ASSUMPTION`.
+- `BLOCKED`: safe implementation cannot continue with the available evidence.
+
+- Do not present assumptions as established facts.
+- Verify assumptions before implementation when reasonably available.
+- Do not implement behavior that depends on an unresolved high-risk assumption.
+- Do not encode unverified assumptions into contracts, schemas, state
+  transitions, migrations, policy, security boundaries, or externally
+  observable behavior.
+
+### Error Conventions
+
+- In production code, do not introduce bare `throw new Error(...)` at
+  boundaries. Use typed errors with a `code` field (`PersistenceError`,
+  `GitError`, `IdpError`).
+- For blocked tool results, use the discriminated union pattern:
   `{ kind: 'blocked', code: string, reason: string, recovery?: string }`.
-- Production files >750 LOC and test files >2000 LOC are merge blockers.
-- For dependency changes use `npm install`; do not use `npm audit fix` alone.
 
-## No Legacy Compatibility in FlowGuard Source
-FlowGuard source implements the current canonical contract only.
-Legacy compatibility code is production behavior whose purpose is to keep an
-obsolete FlowGuard API, schema, field, format, state shape, import path, or runtime
-behavior working after a canonical replacement exists. This includes compatibility
-shims, deprecated aliases, legacy fallbacks, old-format adapters, dual-read/write
-paths, read-time normalization of obsolete shapes, and migration layers that
-preserve obsolete behavior.
+### No Legacy Compatibility in FlowGuard Source
 
-- MUST NOT introduce new legacy compatibility code.
-- MUST NOT preserve an old implementation beside its canonical replacement.
-- Unsupported obsolete inputs or persisted formats must fail explicitly at the
-  current validation/trust boundary instead of being silently migrated or accepted.
-- If legacy compatibility code is encountered in a FlowGuard file or execution path
-  being changed or reviewed, remove it in the same change and update directly
-  affected callers, schemas, tests, fixtures, and docs to the current authority.
-- Do not leave discovered legacy code because it predates the task. If safe removal
-  cannot be completed, the change is `BLOCKED` or `changes_requested`, not merge-ready.
-- Keep cleanup bounded to the touched/directly dependent FlowGuard surface; widen
-  scope only when correct removal requires it.
-- Tests/fixtures may contain obsolete inputs only to prove current boundaries reject
-  them. Historical docs may describe removed behavior.
+This is a repository-development rule for FlowGuard's own codebase. It applies
+only while implementing, reviewing, or refactoring FlowGuard-owned source,
+tests, configuration, repository-local tooling, schemas, and FlowGuard APIs in
+this repository. It MUST NOT be propagated into installed FlowGuard mandates,
+generated prompts, generated code, governed downstream repositories, or runtime
+instructions for users' coding agents. FlowGuard MUST NOT reject, rewrite, or
+remove legacy patterns in a user's project merely because this repository rule
+exists.
 
-Forbidden examples: forwarding aliases kept for obsolete callers; branches that
-normalize retired fields. Allowed example: a fixture asserting rejection of an
-obsolete schema version. Reviewers MUST treat newly introduced or knowingly retained
-legacy compatibility on the touched FlowGuard production surface as a blocker.
+FlowGuard source MUST implement only the current canonical contract. Do not
+introduce or preserve compatibility shims, deprecated aliases, legacy fallbacks,
+dual-read/dual-write paths, obsolete-format adapters, read-time synthesis or
+normalization for superseded FlowGuard shapes, or migration layers whose only
+purpose is to keep obsolete FlowGuard behavior alive.
+
+When a current contract replaces an old FlowGuard contract, remove the old
+implementation rather than maintaining both. Unsupported old inputs or formats
+must fail explicitly at the current validation or trust boundary instead of
+being silently migrated or normalized.
+
+If an AI coder encounters legacy or backward-compatibility code in a FlowGuard
+file or execution path it is already changing or reviewing, removal is part of
+the same change. Delete the compatibility path and update directly affected call
+sites, tests, schemas, and docs to the current canonical authority. Do not retain
+such code merely because it predates the task. Keep cleanup bounded to the
+touched and directly dependent FlowGuard surface unless correctness requires a
+wider removal.
+
+Tests and fixtures MAY represent obsolete inputs when their purpose is to prove
+that the current boundary rejects them. Historical documentation MAY describe
+removed behavior. Reviewers MUST treat newly introduced or knowingly retained
+production compatibility code on the touched FlowGuard surface as a review
+blocker.
 
 ## Canonical Authorities
+
+Before implementing a change, identify the canonical authority. Change the authority, not a local duplicate.
+
 - State transitions: `src/machine/`
-- Canonical serialization/digests: `src/shared/canonical-json.ts`
+- Canonical serialization and digests: `src/shared/canonical-json.ts`
 - Reason codes: `src/config/reasons.ts`
-- Installed FlowGuard mandates: `src/templates/mandates.ts`
+- Installed mandates: `src/templates/mandates.ts`
 - Runtime config schema: `src/config/flowguard-config.ts`
-Do not treat generated, rendered, persisted, or compatibility projections as SSOT.
+
+Do not introduce parallel registries, local enum copies, ad-hoc serializers,
+or inline reason or mandate definitions.
 
 ## Verification
-1. Narrowest test exercising changed behavior.
-2. `npm run check:format` for every change.
-3. `npm run check` for TypeScript changes.
-4. `npm run lint:strict` for TypeScript changes.
-5. `npm run test:architecture` for import/export, placement, canonical ownership,
-   or layer-boundary changes.
-6. Additional checks required by applicable nested `AGENTS.md` files.
-7. `npm run build` for distribution changes.
-8. `npm run check:unused-dependencies` for dependency/module-surface changes.
-9. For high-risk authority, transition, guard, policy, persistence, audit, or
-   security-boundary changes: meaningful negative-path verification and
-   `npm run mutation`.
-Run checks after the final relevant change. Do not repeat broad passing checks
-without reason. If required verification cannot run, report `NOT_VERIFIED` with
-missing capability or recovery command when known.
+1. Run the narrowest test that exercises the changed behavior.
+2. Run `npm run check:format` for every change.
+3. Run `npm run check` for TypeScript changes.
+4. Run `npm run lint:strict` for TypeScript changes.
+5. Run `npm run test:architecture` when imports, exports, file placement,
+   canonical ownership, or layer boundaries change.
+6. Apply additional verification from every applicable nested `AGENTS.md`.
+7. Mark every relevant check not run as `NOT_VERIFIED`; include the recovery
+   command or missing capability when known.
+Also run `npm run build` for distribution changes and
+`npm run check:unused-dependencies` for dependency or module-surface changes.
+For high-risk authority, transition, guard, policy, or security-boundary
+changes, run `npm run mutation` and meaningful negative-path verification.
+At completion, report changed behavior, changed files, executed checks and
+outcomes, relevant `NOT_VERIFIED` checks, and remaining assumptions or
+blockers. Omit empty categories.
 
-## Review and Git
-Review falsification-first: unhappy paths, trust boundaries, SSOT drift, silent
-fallbacks, retained legacy compatibility, negative coverage, unsupported claims.
-A known merge blocker requires `changes_requested`, not approval with caveats.
+## Git Conventions
+
 - Branches: `fix/<name>`, `feat/<name>`, `chore/<name>`.
-- Commit types: `feat`, `fix`, `docs`, `test`, `refactor`, `chore`, `perf`, `ci`.
-- Never commit unless explicitly asked.
-- Never force-push without explicit instruction; if required use
-  `--force-with-lease`, never `--force`.
+- Commits: conventional commit format (`feat`, `fix`, `docs`, `test`, `refactor`, `chore`, `perf`, `ci`).
+- Never commit unless explicitly asked. Never force-push without explicit
+  instruction. Use `--force-with-lease`, never `--force`.
 
 ## Scoped Instructions
-- `src/machine/AGENTS.md` — transitions, guard ordering, invariants.
-- `src/config/AGENTS.md` — reason codes, policy types, config schema.
-- `src/integration/AGENTS.md` — plugin lifecycle, tools, review pipeline.
-- `CONTRIBUTING.md` — PR metadata, commands, module boundaries, naming.
+
+For layer-specific rules, follow the nearest applicable `AGENTS.md`:
+
+- `src/machine/AGENTS.md` — state transitions, guard ordering, invariants
+- `src/config/AGENTS.md` — reason code registry, policy types, config schema
+- `src/integration/AGENTS.md` — plugin lifecycle, tool authoring, review pipeline
+
+For PR metadata, commands, module boundaries, and naming conventions, see
+`CONTRIBUTING.md`.
