@@ -626,6 +626,45 @@ describe('discovery/collectors/code-surface-analysis', () => {
         },
       );
     });
+
+    it('skips multiline annotations between a Java Spring mapping and its method', async () => {
+      await withTempProject(
+        {
+          'src/main/java/com/acme/DocumentedController.java': `
+            class DocumentedController {
+              @GetMapping("/users")
+              @ApiResponses({
+                @ApiResponse(responseCode = "200")
+              })
+              public ResponseEntity<List<User>> users() { return null; }
+            }
+          `,
+        },
+        async (input) => {
+          const result = await collectCodeSurfaces(input);
+          expect(result.data.endpoints).toEqual([
+            expect.objectContaining({ id: 'semantic-java-spring-controller' }),
+          ]);
+        },
+      );
+    });
+
+    it('ignores Java Spring mappings in inline block comments', async () => {
+      await withTempProject(
+        {
+          'src/main/java/com/acme/InlineComment.java': `
+            class InlineComment {
+              String docs; /* @GetMapping("/fake") */
+              String helper() { return docs; }
+            }
+          `,
+        },
+        async (input) => {
+          const result = await collectCodeSurfaces(input);
+          expect(result.data.endpoints).toHaveLength(0);
+        },
+      );
+    });
   });
 
   describe('PRIORITY', () => {

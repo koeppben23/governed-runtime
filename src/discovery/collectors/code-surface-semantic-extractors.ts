@@ -265,9 +265,17 @@ function extractJavaSpringRouteHandlers(content: string, relPath: string): CodeS
 
 function findJavaMappingAnnotation(line: string): number | null {
   let quote: '"' | "'" | null = null;
+  let inBlockComment = false;
 
   for (let index = 0; index < line.length; index++) {
     const character = line[index] ?? '';
+    if (inBlockComment) {
+      if (character === '*' && line[index + 1] === '/') {
+        inBlockComment = false;
+        index++;
+      }
+      continue;
+    }
     if (quote !== null) {
       if (character === '\\') {
         index++;
@@ -281,6 +289,11 @@ function findJavaMappingAnnotation(line: string): number | null {
       continue;
     }
     if (character === '/' && line[index + 1] === '/') break;
+    if (character === '/' && line[index + 1] === '*') {
+      inBlockComment = true;
+      index++;
+      continue;
+    }
     if (character === '@' && JAVA_MAPPING_ANNOTATION.test(line.slice(index))) return index;
   }
   return null;
@@ -332,33 +345,37 @@ function findJavaAnnotatedDeclaration(
 ): number | null {
   let inBlockComment = false;
 
-  for (let index = start.lineIndex; index < lines.length; index++) {
-    let trimmed = (lines[index] ?? '')
-      .slice(index === start.lineIndex ? start.columnIndex : 0)
-      .trim();
+  for (let position = start; position.lineIndex < lines.length;) {
+    const line = lines[position.lineIndex] ?? '';
+    const remainder = line.slice(position.columnIndex);
+    const trimmed = remainder.trim();
     if (inBlockComment) {
       if (trimmed.includes('*/')) inBlockComment = false;
+      position = { lineIndex: position.lineIndex + 1, columnIndex: 0 };
       continue;
     }
     if (trimmed.startsWith('/*')) {
       inBlockComment = !trimmed.includes('*/');
+      position = { lineIndex: position.lineIndex + 1, columnIndex: 0 };
       continue;
     }
     if (trimmed.length === 0 || trimmed.startsWith('//') || trimmed.startsWith('*')) {
+      position = { lineIndex: position.lineIndex + 1, columnIndex: 0 };
       continue;
     }
-    while (trimmed.startsWith('@')) {
+    if (trimmed.startsWith('@')) {
       const annotationEnd = consumeJavaAnnotation(lines, {
-        lineIndex: index,
-        columnIndex: (lines[index] ?? '').indexOf(trimmed),
+        lineIndex: position.lineIndex,
+        columnIndex: position.columnIndex + remainder.indexOf(trimmed),
       });
-      if (annotationEnd === null || annotationEnd.lineIndex !== index) break;
-      trimmed = (lines[index] ?? '').slice(annotationEnd.columnIndex).trim();
+      if (annotationEnd === null) return null;
+      position = annotationEnd;
+      continue;
     }
-    if (trimmed.length === 0) continue;
     if (JAVA_TYPE_DECLARATION.test(trimmed)) return null;
-    if (JAVA_METHOD_DECLARATION.test(trimmed)) return index;
+    if (JAVA_METHOD_DECLARATION.test(trimmed)) return position.lineIndex;
     if (trimmed.includes(';') || trimmed.includes('{')) return null;
+    position = { lineIndex: position.lineIndex + 1, columnIndex: 0 };
   }
   return null;
 }
