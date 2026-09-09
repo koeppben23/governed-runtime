@@ -43,10 +43,9 @@
 import { z } from 'zod';
 import { compareActorIdentity } from '../identity/actor-info.js';
 import type { ActorIdentityComparison } from '../identity/actor-info.js';
+import { isTerminalPhase } from '../machine/topology.js';
 import { evaluateValidationEvidence } from '../machine/validation-evidence.js';
 import type { SessionState, Phase } from '../state/schema.js';
-
-// ─── Zod Schemas for ReviewReport ────────────────────────────────────
 
 export const EvidenceSlotStatusSchema = z.object({
   slot: z.string(),
@@ -84,41 +83,24 @@ export const CompletenessReportSchema = z.object({
   summary: CompletenessSummarySchema,
 });
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-/** Status of a single evidence slot. */
 export interface EvidenceSlotStatus {
-  /** Slot identifier (e.g., "ticket", "plan", "validation"). */
   readonly slot: string;
-  /** Human-readable label. */
   readonly label: string;
-  /** Whether this slot is required at the current phase. */
   readonly required: boolean;
-  /** Whether evidence is present in the state. */
   readonly present: boolean;
-  /** Evaluated status. */
   readonly status: 'complete' | 'missing' | 'not_yet_required' | 'failed';
-  /** Optional detail (digest, iteration count, etc.). */
   readonly detail?: string;
-  /** Canonical artifact kind for this slot, when applicable. */
   readonly artifactKind?: string;
 }
 
-/** Four-eyes principle compliance status. */
 export interface FourEyesStatus {
-  /** Whether four-eyes is required by the session's policy. */
   readonly required: boolean;
-  /** Whether four-eyes is satisfied (initiator ≠ reviewer). */
   readonly satisfied: boolean;
-  /** Identity of the session initiator (author). */
   readonly initiatedBy: string;
-  /** Identity of the reviewer, if a review decision exists. */
   readonly decidedBy: string | null;
-  /** Human-readable explanation. */
   readonly detail: string;
 }
 
-/** Summary counts for the completeness report. */
 export interface CompletenessSummary {
   readonly total: number;
   readonly complete: number;
@@ -127,36 +109,16 @@ export interface CompletenessSummary {
   readonly failed: number;
 }
 
-/** Full evidence completeness report. */
 export interface CompletenessReport {
   readonly sessionId: string;
   readonly phase: Phase;
   readonly policyMode: string;
-  /**
-   * Overall completeness: true only if all required slots are complete,
-   * no slots have failed, and four-eyes is satisfied (if required).
-   */
   readonly overallComplete: boolean;
   readonly slots: EvidenceSlotStatus[];
   readonly fourEyes: FourEyesStatus;
   readonly summary: CompletenessSummary;
 }
 
-// ─── Phase Ordering ───────────────────────────────────────────────────────────
-
-/**
- * Ordinal position of each phase within its flow.
- * Used to determine which evidence slots are required at a given phase.
- *
- * Three flows with independent ordinal sequences:
- * - Ticket flow: READY(0) → TICKET(1) → PLAN(2) → ... → COMPLETE(9)
- * - Architecture flow: READY(0) → ARCHITECTURE(1) → ARCH_REVIEW(2) → ARCH_COMPLETE(3)
- * - Review flow: READY(0) → REVIEW(1) → REVIEW_COMPLETE(2)
- *
- * Ticket flow ordinals are used as the primary sequence (backward-compatible).
- * Architecture and review flow phases use negative ordinals (-1) for ticket-flow
- * slot requirements — they are never "required" for those flows.
- */
 const PHASE_ORDER: Readonly<Record<Phase, number>> = {
   READY: -1,
   TICKET: 0,
@@ -175,11 +137,6 @@ const PHASE_ORDER: Readonly<Record<Phase, number>> = {
   REVIEW_COMPLETE: -1,
 };
 
-/**
- * Phase ordinal at which each evidence slot becomes required.
- * A slot is "required" if the current phase ordinal >= this value.
- * Below this ordinal, the slot is "not_yet_required".
- */
 const SLOT_REQUIRED_FROM: Readonly<Record<string, number>> = {
   ticket: 0,
   plan: 1,
@@ -234,9 +191,7 @@ function checksComplete(
   state: SessionState,
   results: ReadonlyArray<{ checkId: string; passed: boolean }>,
 ): boolean {
-  if (state.activeChecks.length === 0) {
-    return !evaluateValidationEvidence(state).blocked;
-  }
+  if (state.activeChecks.length === 0) return !evaluateValidationEvidence(state).blocked;
   return state.activeChecks.every((id) => results.some((v) => v.checkId === id && v.passed));
 }
 
@@ -261,19 +216,12 @@ function isSlotPresent(state: SessionState, slot: string): boolean {
 }
 
 function isSlotFailed(state: SessionState, slot: string): boolean {
-  if (slot === 'validation') {
-    return state.validation.length > 0 && state.validation.some((v) => !v.passed);
-  }
-  if (slot === 'implValidation') {
-    return state.implValidation.length > 0 && state.implValidation.some((v) => !v.passed);
-  }
+  if (slot === 'validation') return state.validation.length > 0 && state.validation.some((v) => !v.passed);
+  if (slot === 'implValidation') return state.implValidation.length > 0 && state.implValidation.some((v) => !v.passed);
   return false;
 }
 
-const SLOT_DETAIL_FNS: Record<
-  string,
-  (state: SessionState, phaseOrd: number) => string | undefined
-> = {
+const SLOT_DETAIL_FNS: Record<string, (state: SessionState, phaseOrd: number) => string | undefined> = {
   ticket: (s) =>
     s.ticket ? `source: ${s.ticket.source}, digest: ${s.ticket.digest.slice(0, 12)}...` : undefined,
   architecture: (s) =>
@@ -340,23 +288,18 @@ const ARCHITECTURE_FLOW_PHASES: ReadonlySet<Phase> = new Set<Phase>([
   'ARCH_REVIEW',
   'ARCH_COMPLETE',
 ]);
-
 const REVIEW_FLOW_PHASES: ReadonlySet<Phase> = new Set<Phase>(['REVIEW', 'REVIEW_COMPLETE']);
-
 const ARCH_PHASE_ORDER: Readonly<Record<string, number>> = {
   ARCHITECTURE: 0,
   ARCH_REVIEW: 1,
   ARCH_COMPLETE: 2,
 };
-
 const ARCH_SLOTS = ['architecture', 'selfReview', 'archReviewDecision'] as const;
-
 const ARCH_SLOT_REQUIRED_FROM: Readonly<Record<string, number>> = {
   architecture: 0,
   selfReview: 1,
   archReviewDecision: 2,
 };
-
 const ARCH_SLOT_LABELS: Readonly<Record<string, string>> = {
   architecture: 'Architecture Decision Record',
   selfReview: 'ADR Self-Review',
@@ -421,10 +364,9 @@ function evaluateFourEyes(state: SessionState): FourEyesStatus {
   const fourEyesRequired = state.policySnapshot?.allowSelfApproval === false;
   const decidedBy = state.reviewDecision?.decidedBy ?? null;
   const actorComparison = compareReviewActors(state, decidedBy);
-  const fourEyesSatisfied = !fourEyesRequired || actorComparison === 'different';
   return {
     required: fourEyesRequired,
-    satisfied: fourEyesSatisfied,
+    satisfied: !fourEyesRequired || actorComparison === 'different',
     initiatedBy: state.initiatedBy,
     decidedBy,
     detail: getFourEyesDetail(state, decidedBy, actorComparison, fourEyesRequired),
@@ -465,7 +407,7 @@ export function evaluateCompleteness(state: SessionState): CompletenessReport {
   const missing = slots.filter((s) => s.status === 'missing').length;
   const notYetRequired = slots.filter((s) => s.status === 'not_yet_required').length;
   const failed = slots.filter((s) => s.status === 'failed').length;
-  const terminalEnough = state.phase !== 'READY' && (!isReviewFlow || state.phase === 'REVIEW_COMPLETE');
+  const terminalEnough = state.phase !== 'READY' && (!isReviewFlow || isTerminalPhase(state.phase));
   const overallComplete = missing === 0 && failed === 0 && fourEyes.satisfied && terminalEnough;
 
   return {
