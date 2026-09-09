@@ -155,16 +155,15 @@ describe('file-sink failure propagation', () => {
     }
   });
 
-  it('a non-absolute workspace directory rejects and is surfaced via onFailure', async () => {
+  it('a non-absolute workspace directory keeps the disabled-sink noop contract', async () => {
     const onFailure = vi.fn();
     mockAppendFile.mockClear();
 
     const sink = createFileSink('relative/workspace', { retentionDays: 1, onFailure });
     await expect(
       sink({ ...ENTRY, level: 'error', message: 'never lands on disk' }),
-    ).rejects.toThrow('absolute');
-    expect(onFailure).toHaveBeenCalledTimes(1);
-    expect((onFailure.mock.calls[0]![0] as Error).message).toContain('absolute');
+    ).resolves.not.toThrow();
+    expect(onFailure).not.toHaveBeenCalled();
     expect(mockAppendFile).not.toHaveBeenCalled();
   });
 
