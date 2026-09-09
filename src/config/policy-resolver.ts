@@ -19,7 +19,7 @@ import type {
 import { PolicyConfigurationError } from './policy-errors.js';
 import { detectCiContext } from './policy-ci.js';
 import { loadCentralPolicyEvidence, modeStrength } from './policy-central.js';
-import { getPolicyPreset, TEAM_CI_POLICY } from './policy-presets.js';
+import { getPolicyPreset, TEAM_POLICY } from './policy-presets.js';
 import { normalizePolicyMode } from './policy-presets.js';
 
 /** Detailed policy resolution result (requested vs effective). */
@@ -262,16 +262,12 @@ export function resolvePolicyWithContext(
   const requestedMode = normalizePolicyMode(mode);
   if (requestedMode === 'team-ci' && !ciContext) {
     getAdapterLogger().warn('policy', 'team-ci mode degraded to team — no CI context detected');
-    const degradedPolicy: FlowGuardPolicy = {
-      ...TEAM_CI_POLICY,
-      requireHumanGates: true,
-    };
     return {
       requestedMode,
       effectiveMode: 'team',
       effectiveGateBehavior: 'human_gated',
       degradedReason: 'ci_context_missing',
-      policy: degradedPolicy,
+      policy: TEAM_POLICY,
     };
   }
 
