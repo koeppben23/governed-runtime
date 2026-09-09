@@ -33,19 +33,16 @@ describe('config/policy', () => {
       expect(getPolicyPreset('regulated')).toBe(REGULATED_POLICY);
     });
 
-    it('getPolicyPreset returns correct preset for each mode', () => {
-      expect(getPolicyPreset('solo')).toBe(SOLO_POLICY);
-      expect(getPolicyPreset('team')).toBe(TEAM_POLICY);
-      expect(getPolicyPreset('team-ci')).toBe(TEAM_CI_POLICY);
-      expect(getPolicyPreset('regulated')).toBe(REGULATED_POLICY);
-    });
-
-    it('getPolicyPreset vs resolvePolicyWithContext — team-ci authority is in WithContext', () => {
+    it('resolvePolicyWithContext uses canonical team authority when team-ci degrades', () => {
       expect(getPolicyPreset('team-ci')).toBe(TEAM_CI_POLICY);
       const withContext = resolvePolicyWithContext('team-ci', false);
-      expect(withContext.policy.mode).toBe('team-ci');
+      expect(withContext.policy).toBe(TEAM_POLICY);
+      expect(withContext.policy.mode).toBe('team');
       expect(withContext.effectiveMode).toBe('team');
+      expect(withContext.effectiveGateBehavior).toBe('human_gated');
       expect(withContext.degradedReason).toBe('ci_context_missing');
+      expect(withContext.policy.validationEvidence).toEqual(TEAM_POLICY.validationEvidence);
+      expect(withContext.policy.enforceRiskClassification).toBe(TEAM_POLICY.enforceRiskClassification);
     });
 
     it('resolvePolicyWithContext keeps team-ci when CI context exists', () => {
@@ -57,9 +54,10 @@ describe('config/policy', () => {
       expect(result.degradedReason).toBeUndefined();
     });
 
-    it('resolvePolicyWithContext degrades team-ci to team without CI context', () => {
+    it('resolvePolicyWithContext preserves requested team-ci provenance while degrading to team', () => {
       const result = resolvePolicyWithContext('team-ci', false);
-      expect(result.policy.mode).toBe('team-ci');
+      expect(result.policy).toBe(TEAM_POLICY);
+      expect(result.policy.mode).toBe('team');
       expect(result.requestedMode).toBe('team-ci');
       expect(result.effectiveMode).toBe('team');
       expect(result.effectiveGateBehavior).toBe('human_gated');
@@ -105,9 +103,6 @@ describe('config/policy', () => {
     });
 
     it('resolvePolicyForHydrate threads configValidationEvidence into the frozen snapshot (#400)', async () => {
-      // Falsification of the config→resolver→snapshot path: a team base defaults to
-      // validationEvidence off; an explicit config override must survive resolution
-      // AND land in the frozen policy snapshot operators actually run under.
       const result = await resolvePolicyForHydrate({
         repoMode: 'team',
         defaultMode: 'solo',
@@ -116,13 +111,11 @@ describe('config/policy', () => {
         configValidationEvidence: { enforcement: 'required', allowNoCommands: true },
       });
 
-      // Override reflected in the resolved policy.
       expect(result.policy.validationEvidence).toEqual({
         enforcement: 'required',
         allowNoCommands: true,
       });
 
-      // And preserved through snapshot freezing.
       const snap = createPolicySnapshot(result.policy, '2026-01-01T00:00:00.000Z', hashText);
       expect(snap.validationEvidence).toEqual({
         enforcement: 'required',
@@ -131,8 +124,6 @@ describe('config/policy', () => {
     });
 
     it('resolvePolicyForHydrate partial configValidationEvidence merges onto preset default (#400)', async () => {
-      // Only enforcement overridden; allowNoCommands must fall back to the preset
-      // default (false), preserving the fail-closed posture.
       const result = await resolvePolicyForHydrate({
         explicitMode: 'regulated',
         defaultMode: 'solo',
@@ -224,9 +215,8 @@ describe('config/policy', () => {
     });
 
     it('createPolicySnapshot produces deterministic hash', () => {
-      const digest = hashText;
-      const snap1 = createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', digest);
-      const snap2 = createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', digest);
+      const snap1 = createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', hashText);
+      const snap2 = createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', hashText);
       expect(snap1.hash).toBe(snap2.hash);
     });
 
@@ -321,16 +311,14 @@ describe('config/policy', () => {
       expect(() => getPolicyPreset('enterprise')).toThrow(/Unsupported policy mode/);
     });
 
-    it('getPolicyPreset throws PolicyConfigurationError for unknown mode', () => {
+    it('getPolicyPreset throws PolicyConfigurationError for invalid mode', () => {
       expect(() => getPolicyPreset('invalid')).toThrow(PolicyConfigurationError);
       expect(() => getPolicyPreset('invalid')).toThrow(/Unsupported policy mode/);
     });
 
     it('resolvePolicyWithContext throws PolicyConfigurationError for unknown mode', () => {
       expect(() => resolvePolicyWithContext('enterprise', false)).toThrow(PolicyConfigurationError);
-      expect(() => resolvePolicyWithContext('enterprise', false)).toThrow(
-        /Unsupported policy mode/,
-      );
+      expect(() => resolvePolicyWithContext('enterprise', false)).toThrow(/Unsupported policy mode/);
     });
 
     it('PolicyConfigurationError carries code and message', () => {
@@ -392,7 +380,7 @@ describe('config/policy', () => {
         configMaxSelfReviewIterations: 5,
       });
       expect(result.policy.maxSelfReviewIterations).toBe(5);
-      expect(result.policy.maxImplReviewIterations).toBe(1); // preset unchanged
+      expect(result.policy.maxImplReviewIterations).toBe(1);
     });
 
     it('resolvePolicyForHydrate applies config maxImplReviewIterations override', async () => {
@@ -402,7 +390,7 @@ describe('config/policy', () => {
         digestFn: (s) => `sha256:${s.length}`,
         configMaxImplReviewIterations: 10,
       });
-      expect(result.policy.maxSelfReviewIterations).toBe(3); // preset unchanged
+      expect(result.policy.maxSelfReviewIterations).toBe(3);
       expect(result.policy.maxImplReviewIterations).toBe(10);
     });
 
@@ -434,8 +422,8 @@ describe('config/policy', () => {
         ciContext: false,
         digestFn: (s) => `sha256:${s.length}`,
       });
-      expect(result.policy.maxSelfReviewIterations).toBe(2); // SOLO preset
-      expect(result.policy.maxImplReviewIterations).toBe(1); // SOLO preset
+      expect(result.policy.maxSelfReviewIterations).toBe(2);
+      expect(result.policy.maxImplReviewIterations).toBe(1);
     });
 
     it('resolvePolicyForHydrate applies config overrides with central policy', async () => {
@@ -486,8 +474,7 @@ describe('config/policy', () => {
 
   describe('CORNER', () => {
     it('snapshot preserves all FlowGuard-critical fields', () => {
-      const digest = hashText;
-      const snap = createPolicySnapshot(REGULATED_POLICY, '2026-01-01T00:00:00.000Z', digest);
+      const snap = createPolicySnapshot(REGULATED_POLICY, '2026-01-01T00:00:00.000Z', hashText);
       expect(snap.mode).toBe('regulated');
       expect(snap.requireHumanGates).toBe(true);
       expect(snap.maxSelfReviewIterations).toBe(3);
@@ -499,9 +486,8 @@ describe('config/policy', () => {
     });
 
     it('resolvePolicyFromSnapshot restores typed jwks identityProvider from snapshot only', () => {
-      const digest = hashText;
       const snap = {
-        ...createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', digest),
+        ...createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', hashText),
         identityProvider: {
           mode: 'jwks' as const,
           issuer: 'https://issuer.example.com',
@@ -519,39 +505,34 @@ describe('config/policy', () => {
     });
 
     it('different policies produce different hashes', () => {
-      const digest = hashText;
-      const solo = createPolicySnapshot(SOLO_POLICY, '2026-01-01T00:00:00.000Z', digest);
-      const team = createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', digest);
+      const solo = createPolicySnapshot(SOLO_POLICY, '2026-01-01T00:00:00.000Z', hashText);
+      const team = createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', hashText);
       expect(solo.hash).not.toBe(team.hash);
     });
 
     it('resolvePolicyFromSnapshot reconstructs actorClassification from snapshot only', () => {
-      const digest = hashText;
-      const snap = createPolicySnapshot(REGULATED_POLICY, '2026-01-01T00:00:00.000Z', digest);
+      const snap = createPolicySnapshot(REGULATED_POLICY, '2026-01-01T00:00:00.000Z', hashText);
       const reconstructed = resolvePolicyFromSnapshot(snap);
       expect(reconstructed.actorClassification).toEqual(REGULATED_POLICY.actorClassification);
       expect(reconstructed.actorClassification).toEqual(snap.actorClassification);
     });
 
     it('resolvePolicyFromSnapshot uses snapshot fields exclusively — no preset leak', () => {
-      const digest = hashText;
-      // Create a snapshot with modified actorClassification
       const snap = {
-        ...createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', digest),
+        ...createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', hashText),
         actorClassification: { custom_tool: 'auditor' },
       };
       const reconstructed = resolvePolicyFromSnapshot(snap);
-      // Must use snapshot value, not preset
       expect(reconstructed.actorClassification).toEqual({ custom_tool: 'auditor' });
     });
 
     it('snapshot includes requestedMode and effectiveGateBehavior', () => {
-      const digest = hashText;
-      const snap = createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', digest, {
+      const snap = createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', hashText, {
         requestedMode: 'team-ci',
         effectiveGateBehavior: 'human_gated',
         degradedReason: 'ci_context_missing',
       });
+      expect(snap.mode).toBe('team');
       expect(snap.requestedMode).toBe('team-ci');
       expect(snap.effectiveGateBehavior).toBe('human_gated');
       expect(snap.degradedReason).toBe('ci_context_missing');
@@ -635,9 +616,14 @@ describe('config/policy', () => {
       expect(r.policy.actorClassification).toEqual({ flowguard_decision: 'human' });
     });
 
-    it('team-ci preset: actorClassification decision is system', () => {
+    it('team-ci preset: actorClassification decision is system in CI', () => {
       const r = resolvePolicyWithContext('team-ci', true);
       expect(r.policy.actorClassification).toEqual({ flowguard_decision: 'system' });
+    });
+
+    it('team-ci degradation uses team actor classification outside CI', () => {
+      const r = resolvePolicyWithContext('team-ci', false);
+      expect(r.policy.actorClassification).toEqual(TEAM_POLICY.actorClassification);
     });
 
     it('regulated preset: actorClassification includes abort_session as human', () => {
@@ -673,6 +659,11 @@ describe('config/policy', () => {
       });
     });
 
+    it('team-ci degradation uses team validation evidence outside CI', () => {
+      const r = resolvePolicyWithContext('team-ci', false);
+      expect(r.policy.validationEvidence).toEqual(TEAM_POLICY.validationEvidence);
+    });
+
     it('regulated preset: validationEvidence required, fail-closed (#400)', () => {
       const r = resolvePolicyWithContext('regulated', false);
       expect(r.policy.validationEvidence).toEqual({
@@ -694,6 +685,28 @@ describe('config/policy', () => {
     it('regulated identityProvider is undefined', () => {
       const r = resolvePolicyWithContext('regulated', false);
       expect(r.policy.identityProvider).toBeUndefined();
+    });
+  });
+
+  describe('central policy evidence', () => {
+    it('loadCentralPolicyEvidence parses and hashes a central policy bundle', async () => {
+      const evidence = await loadCentralPolicyEvidence(POLICY_PATH, hashText, async () =>
+        JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team', version: '2026.09' }),
+      );
+      expect(evidence.minimumMode).toBe('team');
+      expect(evidence.version).toBe('2026.09');
+      expect(evidence.digest).toMatch(/^[a-f0-9]{64}$/);
+    });
+
+    it('validateExistingPolicyAgainstCentral rejects weaker existing policy', () => {
+      expect(() => validateExistingPolicyAgainstCentral('solo', 'team')).toThrow(
+        PolicyConfigurationError,
+      );
+    });
+
+    it('validateExistingPolicyAgainstCentral accepts equal or stronger existing policy', () => {
+      expect(() => validateExistingPolicyAgainstCentral('team', 'team')).not.toThrow();
+      expect(() => validateExistingPolicyAgainstCentral('regulated', 'team')).not.toThrow();
     });
   });
 });
