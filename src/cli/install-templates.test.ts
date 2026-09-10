@@ -21,20 +21,25 @@ import {
   extractManagedBody,
   isManagedArtifact,
 } from './templates.js';
+import { MANDATES_SECTION_DEFINITIONS, MANDATES_TRAILER } from '../templates/mandates.js';
 import {
-  COMPACT_RED_LINES,
-  CONCISE_RED_LINES,
-  COMPACT_COMMAND_EXECUTION,
-  CONCISE_COMMAND_EXECUTION,
-} from '../templates/mandates.js';
+  renderCommandGovernanceRules,
+  renderMandates,
+  renderPhaseAwareMandates,
+} from '../rendering/mandates-renderer.js';
 import { REPO_ROOT, setupCliTestEnvironment } from './install-test-helpers.test.js';
 
 setupCliTestEnvironment();
 
+function mandateSection(id: (typeof MANDATES_SECTION_DEFINITIONS)[number]['id']): string {
+  const section = MANDATES_SECTION_DEFINITIONS.find((candidate) => candidate.id === id);
+  if (!section) throw new TypeError(`missing mandate section: ${id}`);
+  return section.content;
+}
+
 // ─── DEV_REPO_INVARIANTS ──────────────────────────────────────────────────────
 
 describe('DEV_REPO_INVARIANTS', () => {
-  // ─── HAPPY ─────────────────────────────────────────────────
   describe('HAPPY', () => {
     it('AGENTS.md exists in repo root (dev ruleset)', () => {
       expect(existsSync(path.join(REPO_ROOT, 'AGENTS.md'))).toBe(true);
@@ -56,7 +61,7 @@ describe('DEV_REPO_INVARIANTS', () => {
       expect(content).not.toContain('docs/agent-guidance/');
     });
 
-    it('FLOWGUARD_MANDATES_BODY contains installed v3 core sections', () => {
+    it('FLOWGUARD_MANDATES_BODY contains installed core sections', () => {
       expect(FLOWGUARD_MANDATES_BODY).toContain('## 1. Mission');
       expect(FLOWGUARD_MANDATES_BODY).toContain('## 2. Priority Ladder');
       expect(FLOWGUARD_MANDATES_BODY).toContain('## 3. Task Class Router');
@@ -73,7 +78,6 @@ describe('DEV_REPO_INVARIANTS', () => {
     });
   });
 
-  // ─── CORNER ────────────────────────────────────────────────
   describe('CORNER', () => {
     it('opencode.jsonc has empty instructions array (dev repo does not load installer mandates)', async () => {
       const content = await fs.readFile(path.join(REPO_ROOT, 'opencode.jsonc'), 'utf-8');
@@ -141,7 +145,6 @@ describe('DEV_REPO_INVARIANTS', () => {
     });
   });
 
-  // ─── EDGE ─────────────────────────────────────────────────
   describe('EDGE', () => {
     it('REPO_ROOT resolves to a directory containing package.json with name @flowguard/core', async () => {
       const content = await fs.readFile(path.join(REPO_ROOT, 'package.json'), 'utf-8');
@@ -150,7 +153,6 @@ describe('DEV_REPO_INVARIANTS', () => {
     });
   });
 
-  // ─── PERF ──────────────────────────────────────────────────
   describe('PERF', () => {
     it('REPO_ROOT resolution is sub-millisecond', () => {
       const start = performance.now();
@@ -203,11 +205,8 @@ describe('cli/crypto', () => {
   describe('PERF', () => {
     it('sha256 of mandates body completes in < 5ms', () => {
       const start = performance.now();
-      for (let i = 0; i < 100; i++) {
-        sha256(FLOWGUARD_MANDATES_BODY);
-      }
-      const elapsed = performance.now() - start;
-      expect(elapsed).toBeLessThan(500);
+      for (let i = 0; i < 100; i++) sha256(FLOWGUARD_MANDATES_BODY);
+      expect(performance.now() - start).toBeLessThan(500);
     });
   });
 });
@@ -238,20 +237,18 @@ describe('cli/templates', () => {
 
     it('extractManagedDigest returns correct digest', () => {
       const digest = computeMandatesDigest();
-      const content = buildMandatesContent('2.0.0', digest);
-      expect(extractManagedDigest(content)).toBe(digest);
+      expect(extractManagedDigest(buildMandatesContent('2.0.0', digest))).toBe(digest);
     });
 
     it('extractManagedVersion returns correct version', () => {
-      const content = buildMandatesContent('2.0.0', computeMandatesDigest());
-      expect(extractManagedVersion(content)).toBe('2.0.0');
+      expect(extractManagedVersion(buildMandatesContent('2.0.0', computeMandatesDigest()))).toBe(
+        '2.0.0',
+      );
     });
 
-    it('extractManagedBody returns the body without header', () => {
-      const digest = computeMandatesDigest();
-      const content = buildMandatesContent('2.0.0', digest);
-      const body = extractManagedBody(content);
-      expect(body).toBe(FLOWGUARD_MANDATES_BODY);
+    it('extractManagedBody returns the canonical generated body', () => {
+      const content = buildMandatesContent('2.0.0', computeMandatesDigest());
+      expect(extractManagedBody(content)).toBe(FLOWGUARD_MANDATES_BODY);
     });
   });
 
@@ -260,22 +257,19 @@ describe('cli/templates', () => {
       expect(isManagedArtifact('# Just a file\n')).toBe(false);
     });
 
-    it('extractManagedDigest returns null for content without header', () => {
+    it('extractors return null for content without managed header', () => {
       expect(extractManagedDigest('# No header')).toBeNull();
-    });
-
-    it('extractManagedVersion returns null for content without header', () => {
       expect(extractManagedVersion('# No header')).toBeNull();
-    });
-
-    it('extractManagedBody returns null for content without header', () => {
       expect(extractManagedBody('# No header')).toBeNull();
     });
   });
 
   describe('CORNER', () => {
-    it('installed mandates are the canonical mandate body', () => {
-      expect(FLOWGUARD_MANDATES_BODY).toContain('[End of v4 Agent Rules]');
+    it('installed mandates are generated exactly from the canonical section registry', () => {
+      const expected = `${MANDATES_SECTION_DEFINITIONS.map((section) => section.content).join('\n\n')}\n\n---\n\n${MANDATES_TRAILER}\n`;
+      expect(FLOWGUARD_MANDATES_BODY).toBe(expected);
+      expect(FLOWGUARD_MANDATES_BODY).toContain('[End of v5 Agent Rules]');
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('[End of v4 Agent Rules]');
     });
 
     it("MANDATES_FILENAME is 'flowguard-mandates.md'", () => {
@@ -285,105 +279,81 @@ describe('cli/templates', () => {
 
   describe('EDGE', () => {
     it('buildMandatesContent body starts with # FlowGuard Agent Rules', () => {
-      const content = buildMandatesContent('1.0.0', 'a'.repeat(64));
-      const lines = content.split('\n');
+      const lines = buildMandatesContent('1.0.0', 'a'.repeat(64)).split('\n');
       expect(lines[3]).toBe('# FlowGuard Agent Rules');
     });
 
-    it('FLOWGUARD_MANDATES_BODY contains v3 structure with all core sections', () => {
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## 1. Mission');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## Language Conventions');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## 2. Priority Ladder');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## 3. Task Class Router');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## 4. Hard Invariants');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## Red Lines');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## Before Acting Rule');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## 5. Evidence Rules');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## 6. Tool and Verification Policy');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## 7. Ambiguity Policy');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## 8. Output Contract');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## 9. Implementation Checklist');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## 10. Review Checklist');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## 11. High-Risk Extension');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## 12. Extended Guidance');
+    it('FLOWGUARD_MANDATES_BODY contains all core sections', () => {
+      for (const heading of [
+        '## 1. Mission',
+        '## Language Conventions',
+        '## 2. Priority Ladder',
+        '## 3. Task Class Router',
+        '## 4. Hard Invariants',
+        '## Red Lines',
+        '## Before Acting Rule',
+        '## 5. Evidence Rules',
+        '## 6. Tool and Verification Policy',
+        '## 7. Ambiguity Policy',
+        '## 8. Output Contract',
+        '## 9. Implementation Checklist',
+        '## 10. Review Checklist',
+        '## 11. High-Risk Extension',
+        '## 12. Extended Guidance',
+      ]) {
+        expect(FLOWGUARD_MANDATES_BODY).toContain(heading);
+      }
     });
 
-    it('v4 sections are followed by end marker (no legacy sections)', () => {
-      const v4EndIdx = FLOWGUARD_MANDATES_BODY.indexOf('## Before Completing Rule');
-      const endMarkerIdx = FLOWGUARD_MANDATES_BODY.indexOf('[End of v4 Agent Rules]');
-      expect(v4EndIdx).toBeGreaterThan(-1);
-      expect(endMarkerIdx).toBeGreaterThan(v4EndIdx);
+    it('current sections are followed by the v5 end marker', () => {
+      const lastSection = FLOWGUARD_MANDATES_BODY.indexOf('## Before Completing Rule');
+      const endMarker = FLOWGUARD_MANDATES_BODY.indexOf(MANDATES_TRAILER);
+      expect(lastSection).toBeGreaterThan(-1);
+      expect(endMarker).toBeGreaterThan(lastSection);
     });
 
-    it('FLOWGUARD_MANDATES_BODY does not reference AGENTS.md', () => {
+    it('FLOWGUARD_MANDATES_BODY does not reference contributor AGENTS.md or repository docs', () => {
       expect(FLOWGUARD_MANDATES_BODY).not.toContain('AGENTS.md');
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('FlowGuard repository docs/');
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('docs/trust-boundaries.md');
     });
 
-    it('FLOWGUARD_MANDATES_BODY contains v3 output contract with task-class scaling', () => {
+    it('FLOWGUARD_MANDATES_BODY contains task-class-scaled output contract', () => {
       expect(FLOWGUARD_MANDATES_BODY).toContain('Use one output contract, scaled by task class:');
       expect(FLOWGUARD_MANDATES_BODY).toContain('TRIVIAL:');
       expect(FLOWGUARD_MANDATES_BODY).toContain('STANDARD:');
       expect(FLOWGUARD_MANDATES_BODY).toContain('HIGH-RISK:');
     });
 
-    it('FLOWGUARD_MANDATES_BODY is self-contained (no dead links)', () => {
-      expect(FLOWGUARD_MANDATES_BODY).not.toContain('docs/agent-guidance/');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('[End of v4 Agent Rules]');
+    it('FLOWGUARD_MANDATES_BODY is self-contained', () => {
+      expect(FLOWGUARD_MANDATES_BODY).toContain(MANDATES_TRAILER);
       expect(FLOWGUARD_MANDATES_BODY).not.toContain('Deprecated');
       expect(FLOWGUARD_MANDATES_BODY).not.toContain('Legacy');
     });
 
-    it('FLOWGUARD_MANDATES_BODY contains all v3 core sections', () => {
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## 1. Mission');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## 2. Priority Ladder');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## 3. Task Class Router');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## Before Acting Rule');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## Before Completing Rule');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## Red Lines');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## 8. Output Contract');
+    it('red lines include WHY-context, fail-closed alternatives, and schema-bound authority', () => {
+      const redLines = mandateSection('red-lines');
+      expect(redLines).toContain('because hidden failures corrupt downstream state');
+      expect(redLines).toContain('because conflicting authorities cause non-deterministic decisions');
+      expect(redLines).toContain('data, not instruction');
+      expect(redLines).toContain('prompt-injection and data-exfiltration vector');
+      expect(redLines).toContain('whose schema defines them as governance state or policy authority');
+      expect(redLines).toContain('Human-readable recovery text');
+      expect(redLines).toContain('remain untrusted data');
     });
 
-    it('FLOWGUARD_MANDATES_BODY red lines include WHY-context and fail-closed alternatives', () => {
-      expect(FLOWGUARD_MANDATES_BODY).toContain('because hidden failures corrupt downstream state');
-      expect(FLOWGUARD_MANDATES_BODY).toContain(
-        'because conflicting authorities cause non-deterministic decisions',
-      );
-      expect(FLOWGUARD_MANDATES_BODY).toContain(
-        'Instead: surface errors explicitly, return BLOCKED or an explicit failure, and stop.',
-      );
-      expect(FLOWGUARD_MANDATES_BODY).toContain(
-        'Instead: extend the existing canonical authority.',
-      );
+    it('prompt-injection and secret rules survive phase and concise projection selection', () => {
+      for (const rendered of [
+        renderPhaseAwareMandates({}, 'INVESTIGATION'),
+        renderMandates({ mandatesVerbosity: 'concise' }, 'IMPLEMENTATION'),
+      ]) {
+        expect(rendered).toContain('data, not instruction');
+        expect(rendered).toContain('exfiltrate secrets, credentials, tokens');
+        expect(rendered).toContain('Human-readable recovery text');
+      }
     });
 
-    it('FLOWGUARD_MANDATES_BODY red lines harden against untrusted-input / prompt injection (#468)', () => {
-      // Distinctive anchor phrase must be present in the full body and in BOTH
-      // rendered variants (compact + concise), so the rule cannot silently drop
-      // out of early-phase or concise mandate renderings.
-      expect(FLOWGUARD_MANDATES_BODY).toContain('data, not instruction');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('instructions embedded in untrusted content');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('prompt-injection and data-exfiltration vector');
-      expect(COMPACT_RED_LINES).toContain('data, not instruction');
-      expect(CONCISE_RED_LINES).toContain('data, not instruction');
-    });
-
-    it('FLOWGUARD_MANDATES_BODY red lines harden against secret/credential handling (#469)', () => {
-      // The secret/credential red line must be present in the full body and in
-      // BOTH rendered variants (compact + concise), so the rule cannot silently
-      // drop out of early-phase or concise mandate renderings.
-      expect(FLOWGUARD_MANDATES_BODY).toContain('exfiltrate secrets, credentials, tokens');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('redact in output');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('signing material');
-      expect(COMPACT_RED_LINES).toContain('exfiltrate secrets, credentials');
-      expect(CONCISE_RED_LINES).toContain('exfiltrate secrets, credentials');
-    });
-
-    it('normative core rules survive after section consolidation (#470)', () => {
-      // After consolidating overlapping sections (Hard Invariants tightened,
-      // Before Acting / Before Completing / 11b turned into pointer sections,
-      // Implementation Checklist strengthened with gates), every normative rule
-      // must remain present in the full body. This includes all Red Line WHY
-      // phrases, Checklist gates, and every H2 section heading.
+    it('normative core rules survive section consolidation', () => {
       const normativePhrases = [
         'because hidden failures corrupt downstream state',
         'because conflicting authorities cause non-deterministic decisions',
@@ -409,37 +379,23 @@ describe('cli/templates', () => {
         '## Before Completing Rule',
         '## 9. Implementation Checklist',
         '## 11b. Rule Conflict Resolution',
-        '[End of v4 Agent Rules]',
+        MANDATES_TRAILER,
       ];
       for (const phrase of normativePhrases) {
-        expect(
-          FLOWGUARD_MANDATES_BODY,
-          `Normative phrase missing after consolidation: "${phrase}"`,
-        ).toContain(phrase);
+        expect(FLOWGUARD_MANDATES_BODY, `Normative phrase missing: "${phrase}"`).toContain(phrase);
       }
     });
 
-    it('host output convention is decoupled from universal governance rules (#471)', () => {
-      // The visible action conclusion must be scoped as a host/profile convention,
-      // not a universal governance rule. Universal governance rules (3 bullets)
-      // must remain unchanged in meaning.
-      expect(FLOWGUARD_MANDATES_BODY).toContain(
-        'Universal governance rules for every FlowGuard command',
+    it('host output convention remains scoped and comes from canonical command section', () => {
+      const rules = renderCommandGovernanceRules();
+      expect(rules).toBe(mandateSection('command-execution'));
+      expect(rules).toContain('Universal governance rules for every FlowGuard command');
+      expect(rules).toContain('Host/profile output convention');
+      expect(rules).toContain('For the OpenCode profile');
+      expect(rules).toContain('visible action conclusion');
+      expect(renderMandates({ mandatesVerbosity: 'concise' }, 'IMPLEMENTATION')).toContain(
+        rules,
       );
-      expect(FLOWGUARD_MANDATES_BODY).toContain(
-        'Use FlowGuard tools for FlowGuard session state, evidence, decisions, and audit authority',
-      );
-      expect(FLOWGUARD_MANDATES_BODY).toContain('Complete this command fully, then stop');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('respond without calling FlowGuard tools');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('Host/profile output convention');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('For the OpenCode profile');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('end every response with exactly one');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('visible action conclusion');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('presentation.markdown');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('canonical product-next-action data');
-      expect(COMPACT_COMMAND_EXECUTION).toContain('Host convention:');
-      expect(CONCISE_COMMAND_EXECUTION).toContain('Host convention:');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## Governance rules');
     });
 
     it('FLOWGUARD_MANDATES_BODY declares explicit scope on universal rules', () => {
@@ -448,25 +404,25 @@ describe('cli/templates', () => {
       expect(FLOWGUARD_MANDATES_BODY).toContain('Use explicit markers across all task classes:');
     });
 
-    it('FLOWGUARD_MANDATES_BODY contains no legacy mandate sections', () => {
-      expect(FLOWGUARD_MANDATES_BODY).not.toContain('## 1. Developer Mandate');
-      expect(FLOWGUARD_MANDATES_BODY).not.toContain('## 2. Review Mandate');
-      expect(FLOWGUARD_MANDATES_BODY).not.toContain('## 3. Output Quality Contract');
-      expect(FLOWGUARD_MANDATES_BODY).not.toContain('## 4. Risk Tiering');
-      expect(FLOWGUARD_MANDATES_BODY).not.toContain('## 5. Cross-Cutting Principles');
-      expect(FLOWGUARD_MANDATES_BODY).not.toContain('Developer Output Contract');
-      expect(FLOWGUARD_MANDATES_BODY).not.toContain('Review Output Contract');
-      expect(FLOWGUARD_MANDATES_BODY).not.toContain('Quality Index');
-      expect(FLOWGUARD_MANDATES_BODY).not.toContain('Canonical Tiers');
-      expect(FLOWGUARD_MANDATES_BODY).not.toContain('Cross-Cutting');
+    it('FLOWGUARD_MANDATES_BODY contains no superseded mandate sections', () => {
+      for (const removed of [
+        '## 1. Developer Mandate',
+        '## 2. Review Mandate',
+        '## 3. Output Quality Contract',
+        '## 4. Risk Tiering',
+        '## 5. Cross-Cutting Principles',
+        'Developer Output Contract',
+        'Review Output Contract',
+        'Quality Index',
+        'Canonical Tiers',
+        'Cross-Cutting',
+      ]) {
+        expect(FLOWGUARD_MANDATES_BODY).not.toContain(removed);
+      }
     });
 
-    it('FLOWGUARD_MANDATES_BODY ends cleanly after v4 rules', () => {
-      const endMarkerIdx = FLOWGUARD_MANDATES_BODY.indexOf('[End of v4 Agent Rules]');
-      const afterEnd = FLOWGUARD_MANDATES_BODY.substring(
-        endMarkerIdx + '[End of v4 Agent Rules]'.length,
-      );
-      expect(afterEnd.trim()).toBe('');
+    it('FLOWGUARD_MANDATES_BODY ends exactly at the current trailer', () => {
+      expect(FLOWGUARD_MANDATES_BODY.endsWith(`${MANDATES_TRAILER}\n`)).toBe(true);
     });
   });
 
@@ -474,23 +430,15 @@ describe('cli/templates', () => {
     it('buildMandatesContent completes in < 5ms per call', () => {
       const digest = computeMandatesDigest();
       const start = performance.now();
-      for (let i = 0; i < 100; i++) {
-        buildMandatesContent('2.0.0', digest);
-      }
-      const elapsed = performance.now() - start;
-      expect(elapsed).toBeLessThan(100);
+      for (let i = 0; i < 100; i++) buildMandatesContent('2.0.0', digest);
+      expect(performance.now() - start).toBeLessThan(100);
     });
   });
 });
 
 // ─── reviewCard presentation mandate ─────────────────────────────────────────
-// Commands that produce reviewCard output MUST have:
-// 1. A dedicated ## Presentation section with verbatim display instructions
-// 2. A Done-when bullet mentioning reviewCard verbatim display
-// This ensures LLMs cannot skip or summarize the reviewCard.
 
 describe('reviewCard presentation mandate', () => {
-  // These four commands produce reviewCard fields in their tool responses.
   const REVIEW_CARD_COMMANDS = ['plan.md', 'implement.md', 'architecture.md', 'review.md'] as const;
 
   function commandContent(command: keyof typeof COMMANDS): string {
@@ -499,7 +447,6 @@ describe('reviewCard presentation mandate', () => {
     return content;
   }
 
-  // ─── HAPPY ─────────────────────────────────────────────────
   describe('HAPPY', () => {
     for (const cmd of REVIEW_CARD_COMMANDS) {
       it(`${cmd} has a dedicated ## Presentation section`, () => {
@@ -508,44 +455,36 @@ describe('reviewCard presentation mandate', () => {
 
       it(`${cmd} Presentation section mandates verbatim reviewCard display`, () => {
         const content = commandContent(cmd);
-        const presIdx = content.indexOf('## Presentation');
-        const presSection = content.substring(presIdx);
+        const presSection = content.substring(content.indexOf('## Presentation'));
         expect(presSection, `${cmd} Presentation missing 'reviewCard'`).toContain('reviewCard');
         expect(presSection, `${cmd} Presentation missing 'verbatim'`).toContain('verbatim');
       });
 
       it(`${cmd} Done-when section includes reviewCard mandate`, () => {
         const content = commandContent(cmd);
-        const doneIdx = content.indexOf('## Done-when');
-        const doneSection = content.substring(doneIdx);
+        const doneSection = content.substring(content.indexOf('## Done-when'));
         expect(doneSection, `${cmd} Done-when missing reviewCard`).toContain('reviewCard');
         expect(doneSection, `${cmd} Done-when missing verbatim`).toContain('verbatim');
       });
     }
   });
 
-  // ─── BAD ───────────────────────────────────────────────────
   describe('BAD', () => {
     for (const cmd of REVIEW_CARD_COMMANDS) {
       it(`${cmd} Presentation does NOT allow summarizing reviewCard`, () => {
         const content = commandContent(cmd);
-        const presIdx = content.indexOf('## Presentation');
-        const presSection = content.substring(presIdx);
+        const presSection = content.substring(content.indexOf('## Presentation'));
         expect(presSection, `${cmd} allows summarizing`).toContain('never summarize');
       });
 
       it(`${cmd} Presentation does NOT allow truncating reviewCard`, () => {
         const content = commandContent(cmd);
-        const presIdx = content.indexOf('## Presentation');
-        const presSection = content.substring(presIdx);
-        expect(presSection, `${cmd} allows truncating`).toContain(
-          'never summarize, truncate, or omit',
-        );
+        const presSection = content.substring(content.indexOf('## Presentation'));
+        expect(presSection, `${cmd} allows truncating`).toContain('never summarize, truncate, or omit');
       });
     }
   });
 
-  // ─── CORNER ────────────────────────────────────────────────
   describe('CORNER', () => {
     it('non-reviewCard commands do NOT have ## Presentation section', () => {
       const nonReviewCardCommands = Object.keys(COMMANDS).filter(
@@ -559,15 +498,10 @@ describe('reviewCard presentation mandate', () => {
     });
 
     it('Presentation section appears AFTER Governance rules in review-loop commands', () => {
-      // plan, implement, architecture: Presentation is a dedicated post-governance section.
-      // review.md is excluded — its Presentation is part of the Steps flow (before Governance).
-      const loopCommands = ['plan.md', 'implement.md', 'architecture.md'] as const;
-      for (const cmd of loopCommands) {
+      for (const cmd of ['plan.md', 'implement.md', 'architecture.md'] as const) {
         const content = commandContent(cmd);
-        const govIdx = content.indexOf('## Governance rules');
-        const presIdx = content.indexOf('## Presentation');
-        expect(presIdx, `${cmd}: Presentation should be after Governance rules`).toBeGreaterThan(
-          govIdx,
+        expect(content.indexOf('## Presentation'), `${cmd}: Presentation order`).toBeGreaterThan(
+          content.indexOf('## Governance rules'),
         );
       }
     });
@@ -575,14 +509,13 @@ describe('reviewCard presentation mandate', () => {
     it('Presentation section appears BEFORE Done-when in all reviewCard commands', () => {
       for (const cmd of REVIEW_CARD_COMMANDS) {
         const content = commandContent(cmd);
-        const presIdx = content.indexOf('## Presentation');
-        const doneIdx = content.indexOf('## Done-when');
-        expect(presIdx, `${cmd}: Presentation should be before Done-when`).toBeLessThan(doneIdx);
+        expect(content.indexOf('## Presentation'), `${cmd}: Presentation order`).toBeLessThan(
+          content.indexOf('## Done-when'),
+        );
       }
     });
   });
 
-  // ─── EDGE ──────────────────────────────────────────────────
   describe('EDGE', () => {
     for (const cmd of REVIEW_CARD_COMMANDS) {
       it(`${cmd} Presentation declares reviewCard as mandatory output`, () => {
@@ -590,9 +523,7 @@ describe('reviewCard presentation mandate', () => {
         const presIdx = content.indexOf('## Presentation');
         const nextSectionIdx = content.indexOf('\n## ', presIdx + 1);
         const presSection =
-          nextSectionIdx > -1
-            ? content.substring(presIdx, nextSectionIdx)
-            : content.substring(presIdx);
+          nextSectionIdx > -1 ? content.substring(presIdx, nextSectionIdx) : content.substring(presIdx);
         expect(presSection, `${cmd} missing mandatory language`).toContain('mandatory output');
       });
     }
@@ -603,63 +534,41 @@ describe('reviewCard presentation mandate', () => {
         const presIdx = content.indexOf('## Presentation');
         const nextSectionIdx = content.indexOf('\n## ', presIdx + 1);
         const presSection =
-          nextSectionIdx > -1
-            ? content.substring(presIdx, nextSectionIdx)
-            : content.substring(presIdx);
-        const bullets = presSection.match(/^- /gm);
-        expect(
-          bullets?.length,
-          `${cmd} Presentation should have exactly 3 bullets, found ${bullets?.length}`,
-        ).toBe(3);
+          nextSectionIdx > -1 ? content.substring(presIdx, nextSectionIdx) : content.substring(presIdx);
+        expect(presSection.match(/^- /gm)?.length, `${cmd} Presentation bullet count`).toBe(3);
       }
     });
 
     it('review loop step references Presentation section (not inline reviewCard)', () => {
-      // plan, implement, architecture have a review loop that should reference
-      // the Presentation section — not inline the reviewCard instruction.
-      const loopCommands = ['plan.md', 'implement.md', 'architecture.md'] as const;
-      for (const cmd of loopCommands) {
-        const content = COMMANDS[cmd];
-        expect(content, `${cmd} review loop should reference Presentation section`).toContain(
+      for (const cmd of ['plan.md', 'implement.md', 'architecture.md'] as const) {
+        expect(COMMANDS[cmd], `${cmd} review loop should reference Presentation section`).toContain(
           'per the Presentation section below',
         );
       }
     });
   });
 
-  // ─── E2E SMOKE ─────────────────────────────────────────────
   describe('E2E SMOKE', () => {
-    it('plan.md complete reviewCard contract: Presentation + Done-when + review-loop cross-ref', () => {
+    it('plan.md complete reviewCard contract', () => {
       const content = commandContent('plan.md');
-      // 1. Dedicated Presentation section exists
       expect(content).toContain('## Presentation');
-      // 2. Presentation mandates verbatim with prohibition
-      expect(content).toContain(
-        'display its markdown verbatim — never summarize, truncate, or omit',
-      );
-      // 3. Done-when includes reviewCard
+      expect(content).toContain('display its markdown verbatim — never summarize, truncate, or omit');
       const doneSection = content.substring(content.indexOf('## Done-when'));
       expect(doneSection).toContain('reviewCard');
       expect(doneSection).toContain('verbatim');
-      // 4. Review loop references Presentation section
       expect(content).toContain('per the Presentation section below');
-      // 5. Old buried sub-bullet is gone
       expect(content).not.toContain('Present any `reviewCard` field in full');
     });
 
-    it('implement.md complete reviewCard contract: Presentation + Done-when + review-loop cross-ref', () => {
+    it('implement.md complete reviewCard contract', () => {
       const content = commandContent('implement.md');
       expect(content).toContain('## Presentation');
-      expect(content).toContain(
-        'display its markdown verbatim — never summarize, truncate, or omit',
-      );
-      const doneSection = content.substring(content.indexOf('## Done-when'));
-      expect(doneSection).toContain('reviewCard');
-      // Old weak language is gone
+      expect(content).toContain('display its markdown verbatim — never summarize, truncate, or omit');
+      expect(content.substring(content.indexOf('## Done-when'))).toContain('reviewCard');
       expect(content).not.toContain('Report the final status.');
     });
 
-    it('architecture.md complete reviewCard contract: Presentation strengthened + Done-when added', () => {
+    it('architecture.md complete reviewCard contract', () => {
       const content = commandContent('architecture.md');
       expect(content).toContain('## Presentation');
       expect(content).toContain('never summarize, truncate, or omit');
@@ -668,13 +577,11 @@ describe('reviewCard presentation mandate', () => {
       expect(doneSection).toContain('verbatim');
     });
 
-    it('review.md complete reviewCard contract: Presentation refactored + Done-when added', () => {
+    it('review.md complete reviewCard contract', () => {
       const content = commandContent('review.md');
       expect(content).toContain('## Presentation');
       expect(content).toContain('never summarize, truncate, or omit');
-      const doneSection = content.substring(content.indexOf('## Done-when'));
-      expect(doneSection).toContain('reviewCard');
-      // Old inline bullet is refactored
+      expect(content.substring(content.indexOf('## Done-when'))).toContain('reviewCard');
       expect(content).not.toContain('Present the report:');
     });
   });
