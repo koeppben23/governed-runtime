@@ -6,15 +6,18 @@ surfaces. `repository_contributor` covers repository-local guidance such as
 for customer hosts. Results retain the surface and must not be compared across it.
 
 Every case declares `instructionSurface` explicitly. Product cases additionally
-declare `instructionHost`; the harness currently supports `opencode` only and
-fails closed when product host metadata is absent or unsupported. Claude Code and
-Codex product transport behavior remains `NOT_VERIFIED` until dedicated host
-materializers exist.
+declare `instructionHost`; the harness supports `opencode`, `claude-code`, and
+`codex` and fails closed when product host metadata is absent or unsupported.
+Host materialization is coupled to production code: OpenCode uses the managed
+mandate renderer and production JSON merge path, while Claude Code and Codex use
+their production plugin-template generators. Live model behavior is a separate
+assurance dimension and remains `NOT_VERIFIED` until a real host/provider runner
+is executed.
 
 ## Structure
 
 ```
-cases/              — YAML case definitions (12 cases: 8 contributor, 4 product)
+cases/              — YAML case definitions (20 cases: 8 contributor, 12 product)
 schema.ts           — Zod schemas for cases, runner config, and results
 load-cases.ts       — YAML parser → typed EvalCase[]
 assertions.ts       — Pure assertion evaluation functions
@@ -34,11 +37,14 @@ __tests__/          — Unit tests for all modules
 | Workspace | `workspace` | Full mini-repository with fixture. Evaluates real file changes. |
 | Output-only | `output-only` | Evaluates stdout/stderr output. No filesystem interaction. |
 
-For `flowguard_product` + `opencode`, the runner materializes the managed mandate
-through the production renderer, digest, managed artifact builder, and the
-production `mergeOpencodeJson` path before invoking the configured host. Existing
+For `flowguard_product`, the runner materializes the selected host transport
+before invoking the configured process. OpenCode uses the production renderer,
+digest, managed artifact builder, and `mergeOpencodeJson` path. Claude Code uses
+`claudeCodePluginFiles`; Codex uses `codexPluginFiles` plus an isolated repo-scope
+marketplace registration matching the production registration contract. Existing
 customer OpenCode configuration and non-FlowGuard instruction entries are
-preserved rather than overwritten.
+preserved rather than overwritten. Runner arguments may use `{workspaceRoot}`
+when a real host CLI needs an explicit path to the isolated product transport.
 
 ## Running
 
@@ -81,8 +87,13 @@ spawn local processes. Never place secret values in `staticEnv`.
 ### Automated (with the fake agent)
 
 ```sh
-npx vitest run --project scripts evals/
+npx vitest run --project evals
 ```
+
+The deterministic suite verifies case parsing, isolation, transport
+materialization, assertion/scoring behavior, provenance persistence, and report
+redaction. It does **not** establish that a named external model followed the
+instructions; only a real host/provider run can establish that evidence.
 
 ## Scoring
 
