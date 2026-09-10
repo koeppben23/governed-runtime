@@ -8,7 +8,7 @@ import { runProcess } from './runners/process-runner.js';
 import { evaluateAllAssertions, type AssertionContext } from './assertions.js';
 import { scoreCase, summarizeResults } from './score.js';
 import { redactSecrets } from './redact.js';
-import type { RunnerConfig, ExecutedEvalCase, EvalCaseResult } from './schema.js';
+import type { RunnerConfig, ExecutedEvalCase } from './schema.js';
 
 // ── Environment resolution ──────────────────────────────────────────
 
@@ -109,6 +109,7 @@ export async function runEval(
       repoRoot,
       env.childEnv,
       evalCase.instructionSurface,
+      evalCase.instructionHost,
     );
 
     if (cleanupTemp) {
@@ -122,6 +123,8 @@ export async function runEval(
         [],
         Date.now() - startMs,
         outcome.message,
+        undefined,
+        evalCase.instructionHost,
       );
       results.push({ evalCase, result: er, outcome });
       continue;
@@ -164,6 +167,7 @@ export async function runEval(
       Date.now() - startMs,
       undefined,
       snapshotSummary,
+      evalCase.instructionHost,
     );
 
     results.push({ evalCase, result, outcome });
@@ -180,9 +184,7 @@ export function writeReports(
   opts?: { redactionValues?: string[]; runId?: string },
 ): string {
   const redactionValues = opts?.redactionValues ?? [];
-  const ordered = [...executed].sort((a, b) =>
-    a.evalCase.id.localeCompare(b.evalCase.id),
-  );
+  const ordered = [...executed].sort((a, b) => a.evalCase.id.localeCompare(b.evalCase.id));
   const id = opts?.runId ?? `run-${Date.now()}`;
   const runDir = join(RESULTS_DIR, id);
   const casesDir = join(runDir, 'cases');
@@ -216,11 +218,17 @@ export function writeReports(
             status: 'completed' as const,
             exitCode: e.outcome.exitCode,
             durationMs: e.outcome.durationMs,
+            instructionSurface: e.outcome.instructionSurface,
+            ...(e.outcome.instructionHost ? { instructionHost: e.outcome.instructionHost } : {}),
           }
         : {
             status: 'runner_error' as const,
             errorKind: e.outcome.errorKind,
             message: e.outcome.message,
+            ...(e.outcome.instructionSurface
+              ? { instructionSurface: e.outcome.instructionSurface }
+              : {}),
+            ...(e.outcome.instructionHost ? { instructionHost: e.outcome.instructionHost } : {}),
           };
 
     writeFileSync(
@@ -251,7 +259,10 @@ export function writeReports(
         `| ${surface} | ${counts.passed} | ${counts.failed} | ${counts.runnerErrors} |`,
     ),
     '',
-    ...summary.cases.map((c) => `- **${c.caseId}** (${c.instructionSurface}): ${c.verdict}`),
+    ...summary.cases.map(
+      (c) =>
+        `- **${c.caseId}** (${c.instructionSurface}${c.instructionHost ? `/${c.instructionHost}` : ''}): ${c.verdict}`,
+    ),
   ];
   writeFileSync(join(runDir, 'summary.md'), redactSecrets(mdLines.join('\n') + '\n', redactionValues));
 
