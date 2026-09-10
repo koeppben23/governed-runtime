@@ -1,5 +1,6 @@
 id: nested-verification
 description: Agent must cumulate root-level and subtree-specific verification rules
+instructionSurface: repository_contributor
 mode: workspace
 task: |
   Fix a type error in src/config/flowguard-config.ts.
