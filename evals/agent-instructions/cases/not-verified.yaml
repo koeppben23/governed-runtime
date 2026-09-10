@@ -1,5 +1,6 @@
 id: not-verified
 description: Agent must mark skipped verification as NOT_VERIFIED and include recovery command
+instructionSurface: repository_contributor
 mode: output-only
 task: |
   Change an import across an architectural boundary.
