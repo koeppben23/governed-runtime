@@ -9,6 +9,7 @@ import type { RunnerOutcome } from '../runners/process-runner.js';
 const BASE_CASE: EvalCase = {
   id: 'test-case',
   description: '',
+  instructionSurface: 'repository_contributor',
   task: 'do something',
   mode: 'output-only',
   assertions: [
@@ -21,10 +22,10 @@ const BASE_CASE: EvalCase = {
   ],
 };
 
-function completedOutcome() {
+function completedOutcome(): RunnerOutcome {
   const snap = new Map();
   return {
-    status: 'completed' as const,
+    status: 'completed',
     exitCode: 0,
     stdout: 'hello stdout',
     stderr: 'hello stderr',
@@ -33,16 +34,18 @@ function completedOutcome() {
     afterSnapshot: snap,
     beforeContent: new Map(),
     afterContent: new Map(),
+    instructionSurface: 'repository_contributor',
   };
 }
 
 function runnerErrorOutcome(): RunnerOutcome {
   return {
     status: 'runner_error',
-    errorKind: 'timeout' as const,
+    errorKind: 'timeout',
     message: 'timed out',
     stdout: 'partial stdout',
     stderr: '',
+    instructionSurface: 'repository_contributor',
   };
 }
 
@@ -60,7 +63,7 @@ describe('writeReports', () => {
       outcome: completedOutcome(),
     };
 
-    const d = writeReports('fake-host', [c], 'test-run-1');
+    const d = writeReports('fake-host', [c], { runId: 'test-run-1' });
     const s = JSON.parse(readFileSync(join(d, 'summary.json'), 'utf-8'));
     expect(s.schemaVersion).toBe(1);
     expect(s.runner).toBe('fake-host');
@@ -86,7 +89,7 @@ describe('writeReports', () => {
       outcome: completedOutcome(),
     };
 
-    const d = writeReports('fake-host', [c], 'test-run-2');
+    const d = writeReports('fake-host', [c], { runId: 'test-run-2' });
     const md = readFileSync(join(d, 'summary.md'), 'utf-8');
     expect(md).toContain('Eval Run: fake-host');
     expect(md).toContain('FAIL');
@@ -95,7 +98,7 @@ describe('writeReports', () => {
     rmSync(d, { recursive: true, force: true });
   });
 
-  it('persists raw artifacts per case', () => {
+  it('persists raw artifacts per case with instruction provenance', () => {
     const c: ExecutedEvalCase = {
       evalCase: { ...BASE_CASE, id: 'c1', task: 'fix the bug' },
       result: {
@@ -108,7 +111,7 @@ describe('writeReports', () => {
       outcome: completedOutcome(),
     };
 
-    const d = writeReports('fake-host', [c], 'test-run-3');
+    const d = writeReports('fake-host', [c], { runId: 'test-run-3' });
     const caseDir = join(d, 'cases', 'c1');
 
     const prompt = readFileSync(join(caseDir, 'prompt.txt'), 'utf-8');
@@ -129,6 +132,7 @@ describe('writeReports', () => {
       status: 'completed',
       exitCode: 0,
       durationMs: 100,
+      instructionSurface: 'repository_contributor',
     });
 
     rmSync(d, { recursive: true, force: true });
@@ -148,7 +152,7 @@ describe('writeReports', () => {
       outcome: runnerErrorOutcome(),
     };
 
-    const d = writeReports('fake-host', [c], 'test-run-4');
+    const d = writeReports('fake-host', [c], { runId: 'test-run-4' });
     const stdout = readFileSync(join(d, 'cases', 'c1', 'stdout.txt'), 'utf-8');
     expect(stdout).toContain('partial stdout');
 
@@ -157,6 +161,7 @@ describe('writeReports', () => {
       status: 'runner_error',
       errorKind: 'timeout',
       message: 'timed out',
+      instructionSurface: 'repository_contributor',
     });
 
     rmSync(d, { recursive: true, force: true });
@@ -196,7 +201,7 @@ describe('writeReports', () => {
       outcome: completedOutcome(),
     };
 
-    const d = writeReports('fake-host', [c], 'test-run-6');
+    const d = writeReports('fake-host', [c], { runId: 'test-run-6' });
     const s = readFileSync(join(d, 'summary.json'), 'utf-8');
     expect(s).not.toContain(tmpdir());
 
@@ -223,6 +228,7 @@ describe('writeReports', () => {
         afterSnapshot: new Map(),
         beforeContent: new Map(),
         afterContent: new Map(),
+        instructionSurface: 'repository_contributor',
       },
     };
 
@@ -237,9 +243,7 @@ describe('writeReports', () => {
       const content = readFileSync(join(caseDir, f), 'utf-8');
       expect(content).not.toContain('my-secret-key-is-long-enough');
     }
-    // The secret appeared in stdout — verify it was redacted
     expect(readFileSync(join(caseDir, 'stdout.txt'), 'utf-8')).toContain('***REDACTED***');
-    // summary files are also passed through redactSecrets
     expect(readFileSync(join(d, 'summary.json'), 'utf-8')).not.toContain('my-secret-key-is-long-enough');
     expect(readFileSync(join(d, 'summary.md'), 'utf-8')).not.toContain('my-secret-key-is-long-enough');
 
