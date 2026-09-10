@@ -70,28 +70,6 @@ export const MANDATES_ANCHOR_CATALOG = {
   VERIFICATION_POLICY: ['verification'],
 } as const;
 
-function extractMandatesSection(heading: string | null): string {
-  if (heading === null) {
-    const firstHeading = FLOWGUARD_MANDATES_BODY.search(/^## /m);
-    return FLOWGUARD_MANDATES_BODY.slice(0, firstHeading).trim();
-  }
-  const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = FLOWGUARD_MANDATES_BODY.match(new RegExp(`^${escaped}\\s*$`, 'm'));
-  if (!match || match.index === undefined) {
-    throw new MandatesRenderError(
-      'MANDATES_SECTION_NOT_FOUND',
-      `Mandates section not found: ${heading}`,
-    );
-  }
-  const start = match.index;
-  const afterHeading = FLOWGUARD_MANDATES_BODY.slice(start + match[0].length);
-  const nextHeading = afterHeading.match(/^## /m);
-  const end = nextHeading
-    ? start + match[0].length + nextHeading.index!
-    : FLOWGUARD_MANDATES_BODY.length;
-  return FLOWGUARD_MANDATES_BODY.slice(start, end).trim();
-}
-
 function includesPhase(
   phases: readonly MandatesProjectionPhase[] | 'all',
   phase: MandatesProjectionPhase,
@@ -105,6 +83,22 @@ function selectMandatesSections(
   return MANDATES_SECTION_DEFINITIONS.filter((section) =>
     includesPhase(section.phases, phase),
   ).sort((a, b) => a.priority - b.priority);
+}
+
+function selectProjectionSections(
+  phase: MandatesProjectionPhase,
+  verbosity: MandatesVerbosity,
+): readonly MandatesSectionDefinition[] {
+  const sections = selectMandatesSections(phase);
+  if (verbosity === 'concise') {
+    return sections.filter((section) => section.safetyCritical === true || section.concise === true);
+  }
+  if (phase === 'PRE_SESSION' || phase === 'INVESTIGATION') {
+    return sections.filter(
+      (section) => section.safetyCritical === true || section.earlyPhase === true,
+    );
+  }
+  return sections;
 }
 
 export function resolveMandatesVerbosity(
@@ -200,18 +194,8 @@ function applyHostHarmonization(content: string, ctx: MandatesRenderContext): st
   return next;
 }
 
-function compactSectionForEarlyPhase(
-  section: MandatesSectionDefinition,
-  phase: MandatesProjectionPhase,
-): string {
-  if (phase !== 'PRE_SESSION' && phase !== 'INVESTIGATION') {
-    return extractMandatesSection(section.heading);
-  }
-  return section.compact ?? extractMandatesSection(section.heading);
-}
-
-function conciseSectionForPhase(section: MandatesSectionDefinition): string {
-  return section.concise ?? extractMandatesSection(section.heading);
+function renderSections(sections: readonly MandatesSectionDefinition[]): string {
+  return sections.map((section) => section.content).join('\n\n');
 }
 
 export function renderPhaseAwareMandates(
@@ -224,22 +208,11 @@ export function renderPhaseAwareMandates(
     return FLOWGUARD_MANDATES_BODY;
   }
 
-  const renderPhase = normalized.phase;
-  const sections = selectMandatesSections(renderPhase);
-  const rendered = sections
-    .map((section) =>
-      verbosity === 'concise'
-        ? conciseSectionForPhase(section)
-        : compactSectionForEarlyPhase(section, renderPhase),
-    )
-    .join('\n\n');
-
-  const harmonized = applyHostHarmonization(rendered, ctx);
+  const sections = selectProjectionSections(normalized.phase, verbosity);
+  const harmonized = applyHostHarmonization(renderSections(sections), ctx);
   assertSafetyCriticalSections(harmonized, sections);
-  if (verbosity === 'concise') {
-    const selectedIds = new Set(sections.map((s) => s.id));
-    assertMandatesAnchors(harmonized, 'productive', selectedIds);
-  }
+  const selectedIds = new Set(sections.map((section) => section.id));
+  assertMandatesAnchors(harmonized, 'productive', selectedIds);
   return harmonized;
 }
 
@@ -251,7 +224,16 @@ export function renderMandates(
 }
 
 export function renderCommandGovernanceRules(): string {
-  return extractMandatesSection('## Governance rules');
+  const section = MANDATES_SECTION_DEFINITIONS.find(
+    (candidate) => candidate.id === 'command-execution',
+  );
+  if (!section) {
+    throw new MandatesRenderError(
+      'MANDATES_SECTION_NOT_FOUND',
+      'Mandates section not found: command-execution',
+    );
+  }
+  return section.content;
 }
 
 export function renderCompactionMandatesSummary(
@@ -261,14 +243,12 @@ export function renderCompactionMandatesSummary(
   if (normalized.fallback || normalized.phase === 'ALL_PHASES') {
     return renderPhaseAwareMandates({}, phase);
   }
-  const renderPhase = normalized.phase;
-  const sections = selectMandatesSections(renderPhase).filter(
+  const sections = selectMandatesSections(normalized.phase).filter(
     (section) => section.safetyCritical === true,
   );
-  const summary = sections
-    .map((section) => compactSectionForEarlyPhase(section, renderPhase))
-    .join('\n\n');
+  const summary = renderSections(sections);
   assertSafetyCriticalSections(summary, sections);
+  assertMandatesAnchors(summary, 'recovery', new Set(sections.map((section) => section.id)));
   return summary;
 }
 
