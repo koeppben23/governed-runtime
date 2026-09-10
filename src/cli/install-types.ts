@@ -76,7 +76,6 @@ export type DoctorStatus =
   | 'unmanaged'
   | 'version_mismatch'
   | 'instruction_missing'
-  | 'instruction_stale'
   | 'error'
   | 'warn'
   | 'info';
