@@ -34,7 +34,7 @@ export const InstructionSurfaceSchema = z.enum([
 export type InstructionSurface = z.infer<typeof InstructionSurfaceSchema>;
 
 /** Host transport used to materialize FlowGuard product instructions. */
-export const InstructionHostSchema = z.enum(['opencode']);
+export const InstructionHostSchema = z.enum(['opencode', 'claude-code', 'codex']);
 export type InstructionHost = z.infer<typeof InstructionHostSchema>;
 
 // ── Stream channel ────────────────────────────────────────────────────
@@ -160,12 +160,12 @@ export const EvalCaseSchema = z
   .superRefine((evalCase, ctx) => {
     if (
       evalCase.instructionSurface === 'flowguard_product' &&
-      evalCase.instructionHost !== 'opencode'
+      evalCase.instructionHost === undefined
     ) {
       ctx.addIssue({
         code: 'custom',
         path: ['instructionHost'],
-        message: 'flowguard_product cases require an explicit supported instructionHost',
+        message: 'flowguard_product cases require an explicit instructionHost',
       });
     }
     if (
