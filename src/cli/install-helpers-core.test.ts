@@ -426,7 +426,8 @@ describe('install-helpers', () => {
       const backupPath = await findBackupFor(filePath);
       expect(backupPath).not.toBeNull();
       await expect(fs.readFile(backupPath!, 'utf-8')).resolves.toBe(malformed);
-      expect(() => JSON.parse(await fs.readFile(filePath, 'utf-8'))).not.toThrow();
+      const repairedConfig = await fs.readFile(filePath, 'utf-8');
+      expect(() => JSON.parse(repairedConfig)).not.toThrow();
     });
 
     it('blocks malformed config replacement when backup creation fails', async () => {
