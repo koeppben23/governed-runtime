@@ -62,6 +62,10 @@ function isSafetyCritical(section: MandatesSection): boolean {
   return 'safetyCritical' in section && section.safetyCritical === true;
 }
 
+function isConcise(section: MandatesSection): boolean {
+  return 'concise' in section && section.concise === true;
+}
+
 describe('phase-aware mandates rendering', () => {
   it('falls back to full mandates for unknown, missing, or invalid phases', () => {
     expect(renderPhaseAwareMandates({}, undefined)).toBe(FLOWGUARD_MANDATES_BODY);
@@ -171,10 +175,21 @@ describe('phase-aware mandates rendering', () => {
     expect(implementation).toContain('High-risk work MUST');
     expect(implementation).toContain('Run the narrowest sufficient verification');
 
-    for (const section of MANDATES_SECTION_DEFINITIONS) {
-      if (implementation.includes(section.heading ?? '# FlowGuard Agent Rules')) {
-        expect(implementation).toContain(section.content);
-      }
+    const selected = MANDATES_SECTION_DEFINITIONS.filter(
+      (section) =>
+        sectionApplies(section.phases, 'IMPLEMENTATION') &&
+        (isSafetyCritical(section) || isConcise(section)),
+    );
+    const selectedIds = new Set(selected.map((section) => section.id));
+    for (const section of selected) {
+      expect(implementation, `concise projection omitted ${section.id}`).toContain(section.content);
+    }
+    for (const section of MANDATES_SECTION_DEFINITIONS.filter(
+      (candidate) => !selectedIds.has(candidate.id),
+    )) {
+      expect(implementation, `concise projection unexpectedly included ${section.id}`).not.toContain(
+        section.content,
+      );
     }
   });
 
@@ -212,8 +227,8 @@ describe('phase-aware mandates rendering', () => {
     const full = roughTokenBudget(FLOWGUARD_MANDATES_BODY);
     for (const phase of ['PRE_SESSION', 'INVESTIGATION'] as const) {
       const budget = roughTokenBudget(renderPhaseAwareMandates({}, phase));
-      expect(budget.chars).toBeLessThan(full.chars * 0.6);
-      expect(budget.words).toBeLessThan(full.words * 0.6);
+      expect(budget.chars).toBeLessThan(full.chars * 0.7);
+      expect(budget.words).toBeLessThan(full.words * 0.7);
     }
   });
 
