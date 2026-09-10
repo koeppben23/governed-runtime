@@ -12,6 +12,19 @@ on:
         required: false
         default: '10'
         type: string
+      runner_config:
+        description: 'Repository-relative runner config path'
+        required: false
+        default: 'evals/agent-instructions/runner-configs/fake-ci.json'
+        type: string
+      execution_mode:
+        description: 'Synthetic plumbing smoke or strict live provider evaluation'
+        required: false
+        default: 'synthetic-advisory'
+        type: choice
+        options:
+          - synthetic-advisory
+          - live-strict
 
 permissions:
   contents: read
@@ -38,7 +51,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Validate timeout input
+      - name: Validate inputs
         run: |
           T="${{ inputs.timeout_minutes }}"
           case "$T" in
@@ -48,15 +61,32 @@ jobs:
             echo "timeout_minutes must be between 1 and 30"
             exit 2
           fi
+          CONFIG="${{ inputs.runner_config }}"
+          case "$CONFIG" in
+            /*|../*|*/../*|*/..) echo "runner_config must be repository-relative without traversal"; exit 2 ;;
+          esac
+          if [ ! -f "$CONFIG" ]; then
+            echo "runner_config does not exist: $CONFIG"
+            exit 2
+          fi
+          if [ "${{ inputs.execution_mode }}" = 'live-strict' ] && [ "$CONFIG" = 'evals/agent-instructions/runner-configs/fake-ci.json' ]; then
+            echo 'live-strict requires a real provider runner config; fake-ci cannot establish product assurance'
+            exit 2
+          fi
           echo "TIMEOUT_MS=$((T * 60000))" >> "$GITHUB_ENV"
 
-      - name: Run advisory eval smoke
+      - name: Run agent instruction evals
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           ARGS=(
-            --config evals/agent-instructions/runner-configs/fake-ci.json
-            --advisory
+            --config "${{ inputs.runner_config }}"
             --timeout-ms "$TIMEOUT_MS"
           )
+          if [ "${{ inputs.execution_mode }}" = 'synthetic-advisory' ]; then
+            ARGS+=(--advisory)
+          fi
           if [ -n "${{ inputs.case }}" ]; then
             ARGS+=(--case "${{ inputs.case }}")
           fi
