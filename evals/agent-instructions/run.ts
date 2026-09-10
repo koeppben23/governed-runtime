@@ -17,10 +17,31 @@ export interface ResolvedEnv {
   redactionValues: string[];
 }
 
+const CHILD_RUNTIME_ENV_ALLOWLIST = [
+  'PATH',
+  'HOME',
+  'USERPROFILE',
+  'TMPDIR',
+  'TMP',
+  'TEMP',
+  'SystemRoot',
+  'COMSPEC',
+  'PATHEXT',
+] as const;
+
+function allowedRuntimeEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const name of CHILD_RUNTIME_ENV_ALLOWLIST) {
+    const value = process.env[name];
+    if (value !== undefined) env[name] = value;
+  }
+  return env;
+}
+
 export function resolveRunnerEnv(config: RunnerConfig): ResolvedEnv {
   const redactionValues: string[] = [];
   const childEnv: NodeJS.ProcessEnv = {
-    ...process.env,
+    ...allowedRuntimeEnv(),
     ...(config.staticEnv ?? {}),
   };
 
@@ -47,6 +68,7 @@ export function resolveRunnerEnv(config: RunnerConfig): ResolvedEnv {
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const CASES_DIR = join(dirname(fileURLToPath(import.meta.url)), 'cases');
 const RESULTS_DIR = join(ROOT, 'eval-results');
+const RUN_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 
 function makeEmptyDir(): { dir: string; cleanup: () => void } {
   const dir = mkdtempSync(join(tmpdir(), 'eval-empty-'));
@@ -186,6 +208,9 @@ export function writeReports(
   const redactionValues = opts?.redactionValues ?? [];
   const ordered = [...executed].sort((a, b) => a.evalCase.id.localeCompare(b.evalCase.id));
   const id = opts?.runId ?? `run-${Date.now()}`;
+  if (!RUN_ID_PATTERN.test(id)) {
+    throw new Error(`Invalid eval run ID: ${id}`);
+  }
   const runDir = join(RESULTS_DIR, id);
   const casesDir = join(runDir, 'cases');
   mkdirSync(casesDir, { recursive: true });
