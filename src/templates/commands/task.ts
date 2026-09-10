@@ -34,5 +34,6 @@ ${GOVERNANCE_RULES}
 
 - Task recorded via flowguard_ticket.
 - Phase and next action reported.
-- Response ends with \`Next action: run /plan to generate an implementation plan.\`
+- If \`presentation.markdown\` is present, render it verbatim and do not append a separate \`Next action:\` line.
+- Otherwise, render \`productNextAction.text\` as the single fallback conclusion.
 `;

@@ -276,9 +276,12 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // into IMPL_REVIEW, so restoring an earlier rejected revision after a failing
     // revalidation is blocked again. Changes the /check body and therefore the
     // COMMANDS hash.
+    // Refreshed for presentation fallback consistency: task, ticket, check,
+    // validate, abort, archive, and export now render presentation.markdown
+    // verbatim or render productNextAction.text as one fallback, never both.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'a536cd338648acbdef7e9f2f98ecd2d1774bd48a10f99d330acda1c24fec7898',
+      'cdcabcd6bd3e5e38e2e01bebf412d0d7de5f4d9cfd8cb1848ecaae4fe84b497f',
     );
   });
 

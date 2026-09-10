@@ -31,6 +31,21 @@ G27 was therefore `Open`, not `Not Verified`. PR #866 tracks redirect rejection
 and a bounded response body. DNS/private-IP validation and connection pinning
 remain separate, unverified transport boundaries.
 
+A 2026-09-09 correctness audit against `develop@3f9e89a9` re-verified the
+OpenCode runtime and closed two test-pinned correctness findings in the carrying
+PR: G4 now degrades `team-ci` without CI context to the canonical `TEAM_POLICY`
+while retaining requested-mode provenance, and AC6 now requires
+`REVIEW_COMPLETE` before standalone-review completeness can be true. The review
+completion boundary also recomputes completeness from the terminal state before
+persisting the report. The same audit confirmed a logging-health defect (LOG1):
+file-sink delivery/setup/rotation failures notified `onFailure` but resolved the
+`LogSink` promise, so central `sinkFailuresTotal` could remain zero during real
+file-log loss. File-sink failures now reject through the existing sink contract;
+`createLogger()` still absorbs them from governance execution while counting the
+failure. H5 remains separately open: this change does not add a logger `flush()`
+contract. G27 also remains unchanged; `/review` URL pinning and remote-JWKS
+transport are distinct trust boundaries.
+
 ## Status Legend
 
 | Status                 | Meaning                                                   |
@@ -74,6 +89,9 @@ remain separate, unverified transport boundaries.
 | AC4  | HIGH        | Fixed  | #728       | NTP requests timestamp T1 at send and use RFC 5905 four-timestamp offset and delay calculations.                   |
 | AC5  | HIGH        | Fixed  | #728       | NTP responses require a bound origin timestamp, valid protocol fields, and a non-null transmit timestamp.          |
 | AC7  | MEDIUM      | Fixed  | #678       | Completeness selects ticket, architecture, or review slots before calculating summary totals.                      |
+| G4   | MEDIUM      | Fixed  | (this PR)  | `team-ci` without CI context now resolves to canonical `TEAM_POLICY`; requested `team-ci` provenance is retained.   |
+| AC6  | MEDIUM      | Fixed  | (this PR)  | Review-flow completeness cannot be true before `REVIEW_COMPLETE`; terminal report completeness is recomputed.      |
+| LOG1 | MEDIUM      | Fixed  | (this PR)  | File-sink failures propagate through `LogSink` so central `sinkFailuresTotal` reflects actual file-log loss.        |
 
 ## Re-Triaged (2026-06-24, 2026-07-10, 2026-07-23)
 
@@ -94,14 +112,14 @@ disproven, update the status and link the evidence."
 
 ## Priority Work Packages
 
-| Package | Priority | Status          | Findings                                        | Summary                                                                                                                                                                                   |
-| ------- | -------- | --------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A       | P1       | Partially Fixed | G1, G2, G24, G25, G26                           | Four-eyes and identity normalization/reporting. G1/G2/G24/G25 fixed; G26 remains open.                                                                                                    |
-| B       | P1       | Fixed           | AC1, AC2, AC3, AC4, AC5, TSA1, TSA2, TSA3, TSA4 | Hash-chain, canonical digest, TSA, and NTP hardening. #832/#833 fix TSA1–TSA4 with a strict RFC 3161 verifier contract, including ESS signer-certificate binding.                         |
-| C       | P1       | Partially Fixed | AR1, AR2, AR3, AR4, AR5, AUD1, AUD2, AUD3, AUD4 | Archive integrity and audit write-lock recovery. AR1 and AUD2 fixed (#670); AR2 fixed by trusted-policy severity derivation; AR3/AR4/AUD1/AUD3/AUD4 fixed (#837); AR5 is tracked in #836. |
-| D       | P1       | Fixed           | R1, R2, R3, R4, R5, AC3                         | Secret-leak, redaction, logging, telemetry boundaries. R3, R5 fixed (#585); R1, R2, R4, AC3 fixed (redaction fail-closed).                                                                |
-| E       | P1       | Partially Fixed | H1, H2, H4, C1, C2, C3, C4, C5, M1, M2, M3, I4  | Hook, CLI, MCP, installer, and integration fail-closed hardening. H1, H2, H4, M1, M3 and C2–C5 fixed (#645, #646, #667); M2 fixed by #848; I4 is partially fixed; C1 remains open.        |
-| F       | P2       | Partially Fixed | G3, G7, G9, G15, AC6, AC7, G12, G13             | State-machine correctness and audit completeness. G3 and G9 are fixed pre-existing; G7 is fixed by #421 and AC7 by #678; G15, AC6, and G12–G13 remain open.                               |
+| Package | Priority | Status          | Findings                                            | Summary                                                                                                                                                                                   |
+| ------- | -------- | --------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A       | P1       | Partially Fixed | G1, G2, G24, G25, G26                               | Four-eyes and identity normalization/reporting. G1/G2/G24/G25 fixed; G26 remains open.                                                                                                    |
+| B       | P1       | Fixed           | AC1, AC2, AC3, AC4, AC5, TSA1, TSA2, TSA3, TSA4     | Hash-chain, canonical digest, TSA, and NTP hardening. #832/#833 fix TSA1–TSA4 with a strict RFC 3161 verifier contract, including ESS signer-certificate binding.                         |
+| C       | P1       | Partially Fixed | AR1, AR2, AR3, AR4, AR5, AUD1, AUD2, AUD3, AUD4     | Archive integrity and audit write-lock recovery. AR1 and AUD2 fixed (#670); AR2 fixed by trusted-policy severity derivation; AR3/AR4/AUD1/AUD3/AUD4 fixed (#837); AR5 is tracked in #836. |
+| D       | P1       | Fixed           | R1, R2, R3, R4, R5, AC3                             | Secret-leak, redaction, logging, telemetry boundaries. R3, R5 fixed (#585); R1, R2, R4, AC3 fixed (redaction fail-closed).                                                                |
+| E       | P1       | Partially Fixed | H1, H2, H4, C1, C2, C3, C4, C5, M1, M2, M3, I4      | Hook, CLI, MCP, installer, and integration fail-closed hardening. H1, H2, H4, M1, M3 and C2–C5 fixed (#645, #646, #667); M2 fixed by #848; I4 is partially fixed; C1 remains open.        |
+| F       | P2       | Partially Fixed | G3, G4, G7, G9, G15, AC6, AC7, G12, G13             | State-machine correctness and audit completeness. G3/G9 pre-existing, G7 #421, AC7 #678; G4/AC6 fixed in this PR; G15 and G12–G13 remain open.                                           |
 
 ## High-Priority Findings
 
@@ -134,13 +152,14 @@ disproven, update the status and link the evidence."
 
 | ID   | Severity    | Status          | Summary                                                                                                                                                                                                                  |
 | ---- | ----------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AC6  | MEDIUM      | Open            | Review-flow completeness can report complete mid-flow. `TESTED_BUG_BEHAVIOR`.                                                                                                                                            |
+| AC6  | MEDIUM      | Fixed           | Review-flow completeness requires `REVIEW_COMPLETE`; final report completeness is recomputed after terminal auto-advance.                                                                                                |
 | AC7  | MEDIUM      | Fixed           | Completeness summary totals are computed from flow-specific ticket, architecture, or review slots (#678).                                                                                                                |
 | AC8  | MEDIUM      | Partially Fixed | Four-eyes reporting now uses structured identity; history handling remains open.                                                                                                                                         |
 | AC9  | MEDIUM      | Fixed           | Missing/malformed cached imprints are explicit findings; cached-vs-token imprint comparison is byte-wise constant-time.                                                                                                  |
 | AC10 | MEDIUM      | Not Verified    | Timestamp token verification should distinguish legacy format from tampering.                                                                                                                                            |
 | AC11 | MEDIUM      | Fixed           | Timestamp comparisons parse UTC instants (audit monotonicity + ProofGraph counterexample freshness); unparseable values are never sortable.                                                                              |
-| G4   | MEDIUM      | Open            | `team-ci` degradation snapshot mode can remain inconsistent. `TESTED_BUG_BEHAVIOR`.                                                                                                                                      |
+| G4   | MEDIUM      | Fixed           | `team-ci` degradation uses canonical Team semantics while preserving `requestedMode=team-ci` and `degradedReason=ci_context_missing`.                                                                                    |
+| LOG1 | MEDIUM      | Fixed           | File-sink delivery/setup/rotation failures now reject through `LogSink`; logger health counts them without making operational logging governance-blocking.                                                               |
 | G6   | MEDIUM      | Open            | Command policy and terminal handling diverge for HYDRATE/ABORT. `TESTED_BUG_BEHAVIOR`.                                                                                                                                   |
 | G12  | MEDIUM      | Open            | ADR rejection is not represented in architecture state.                                                                                                                                                                  |
 | G13  | MEDIUM      | Open            | ADR section validation should use line-anchored matching.                                                                                                                                                                |
@@ -241,9 +260,9 @@ behavior:
 
 | ID  | Status | Test Area                              |
 | --- | ------ | -------------------------------------- |
-| G4  | Open   | `src/config/policy.test.ts`            |
-| AC6 | Open   | `src/audit/audit-completeness.test.ts` |
-| AC7 | Open   | `src/audit/audit-completeness.test.ts` |
+| G4  | Fixed  | `src/config/policy-presets.test.ts`    |
+| AC6 | Fixed  | `src/audit/audit-completeness.test.ts` |
+| AC7 | Fixed  | `src/audit/audit-completeness.test.ts` |
 | G6  | Open   | `src/machine/commands.test.ts`         |
 | H6  | Open   | `src/hooks/pre-tool-use-fatal.test.ts` |
 | T1  | Open   | `src/templates/mandate-drift.test.ts`  |
@@ -479,7 +498,8 @@ this inventory's status contract.
 ## Maintenance Rules
 
 - Keep this file aligned with #487 and child issues.
-- Mark items `Fixed` only after the relevant PR is merged.
+- Mark items `Fixed` only in the same change that carries the fix or after the
+  relevant PR is merged; do not mark source-only proposals as fixed.
 - Preserve finding IDs in child issue titles or descriptions.
 - Do not add exploit procedures or sensitive operational detail to this file.
 - If a static finding is disproven, update the status and link the evidence.

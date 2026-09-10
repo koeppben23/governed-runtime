@@ -130,6 +130,19 @@ describe('discovery/collectors/topology', () => {
       expect(result.data.kind).toBe('single-project');
     });
 
+    it.each(['package.json', 'pom.xml'])(
+      'detects a root %s without config files as a single project',
+      async (manifest) => {
+        const result = await collectTopology({
+          ...EMPTY_INPUT,
+          allFiles: [manifest],
+          packageFiles: [manifest],
+        });
+
+        expect(result.data.kind).toBe('single-project');
+      },
+    );
+
     it('detects monorepo topology with nx.json', async () => {
       const result = await collectTopology(MONOREPO_INPUT);
       expect(result.status).toBe('complete');
@@ -162,6 +175,16 @@ describe('discovery/collectors/topology', () => {
       expect(result.data.modules).toHaveLength(0);
     });
 
+    it('does not treat a nested manifest as root project evidence', async () => {
+      const result = await collectTopology({
+        ...EMPTY_INPUT,
+        allFiles: ['packages/api/package.json'],
+        packageFiles: ['package.json'],
+      });
+
+      expect(result.data.kind).toBe('unknown');
+    });
+
     it('detects root-level config files', async () => {
       const result = await collectTopology(TS_PROJECT_INPUT);
       expect(result.data.rootConfigs).toContain('tsconfig.json');
@@ -176,6 +199,26 @@ describe('discovery/collectors/surface-detection', () => {
       const result = await collectSurfaces(TS_PROJECT_INPUT);
       expect(result.status).toBe('complete');
       expect(result.data.api.length).toBeGreaterThan(0);
+      expect(result.data.api).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: 'route-controller-convention' })]),
+      );
+    });
+
+    it('labels Java controller paths as a framework-neutral convention', async () => {
+      const result = await collectSurfaces({
+        ...EMPTY_INPUT,
+        allFiles: ['src/main/java/com/acme/controller/UserController.java'],
+      });
+
+      expect(result.data.api).toEqual([
+        expect.objectContaining({
+          id: 'route-controller-convention',
+          label: 'Route/controller convention',
+        }),
+      ]);
+      expect(result.data.api).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: 'express-routes' })]),
+      );
     });
 
     it('detects persistence surface from prisma', async () => {
@@ -352,15 +395,19 @@ describe('discovery/collectors/code-surface-analysis', () => {
       );
     });
 
-    it('extracts conservative Java Spring route, auth, and data-access signals', async () => {
+    it('extracts only method-level Java Spring route handlers', async () => {
       await withTempProject(
         {
           'src/main/java/com/acme/UserController.java': `
             @RestController
+            @RequestMapping("/users")
             class UserController {
-              @GetMapping("/users")
+              @GetMapping
               @PreAuthorize("hasRole('ADMIN')")
               List<User> users(UserRepository repo) { return repo.findAll(); }
+
+              @PostMapping("/users")
+              User create(User user) { return user; }
             }
           `,
           'src/main/java/com/acme/UserRepository.java':
@@ -373,10 +420,19 @@ describe('discovery/collectors/code-surface-analysis', () => {
           expect(result.data.semanticExtraction?.appliedExtractors).toContain(
             'java-spring-frameworks',
           );
-          expect(result.data.endpoints).toEqual(
-            expect.arrayContaining([
-              expect.objectContaining({ id: 'semantic-java-spring-controller' }),
-            ]),
+          expect(result.data.endpoints).toEqual([
+            expect.objectContaining({
+              id: 'semantic-java-spring-controller',
+              label: 'Semantic Java Spring route handler',
+              evidence: ['@GetMapping'],
+            }),
+            expect.objectContaining({
+              id: 'semantic-java-spring-controller',
+              evidence: ['@PostMapping("/users")'],
+            }),
+          ]);
+          expect(result.data.endpoints).not.toEqual(
+            expect.arrayContaining([expect.objectContaining({ id: 'http-endpoint' })]),
           );
           expect(result.data.authBoundaries).toEqual(
             expect.arrayContaining([
@@ -477,6 +533,135 @@ describe('discovery/collectors/code-surface-analysis', () => {
           expect(semanticIds).not.toContain('semantic-ts-route-handler');
           expect(semanticIds).not.toContain('semantic-ts-auth-boundary');
           expect(semanticIds).not.toContain('semantic-ts-data-access');
+        },
+      );
+    });
+
+    it('ignores commented Java Spring mapping annotations', async () => {
+      await withTempProject(
+        {
+          'src/main/java/com/acme/CommentedController.java': `
+            // @GetMapping("/commented")
+            /*
+             * @PostMapping("/also-commented")
+             */
+            class CommentedController {}
+          `,
+        },
+        async (input) => {
+          const result = await collectCodeSurfaces(input);
+          expect(result.data.endpoints).toHaveLength(0);
+        },
+      );
+    });
+
+    it('extracts a Java Spring route when its annotation and method share a line', async () => {
+      await withTempProject(
+        {
+          'src/main/java/com/acme/InlineController.java': `
+            class InlineController {
+              @GetMapping("/x") String x() { return "x"; }
+            }
+          `,
+        },
+        async (input) => {
+          const result = await collectCodeSurfaces(input);
+          expect(result.data.endpoints).toEqual([
+            expect.objectContaining({ id: 'semantic-java-spring-controller' }),
+          ]);
+        },
+      );
+    });
+
+    it('does not treat a same-line Java Spring class mapping as a method route', async () => {
+      await withTempProject(
+        {
+          'src/main/java/com/acme/InlineClassMapping.java': `
+            @RequestMapping("/users") class InlineClassMapping {
+              String helper() { return "ok"; }
+            }
+          `,
+        },
+        async (input) => {
+          const result = await collectCodeSurfaces(input);
+          expect(result.data.endpoints).toHaveLength(0);
+        },
+      );
+    });
+
+    it('ignores Java Spring mapping text in string literals', async () => {
+      await withTempProject(
+        {
+          'src/main/java/com/acme/StringLiteral.java': `
+            class StringLiteral {
+              String docs = "@GetMapping(\\"/fake\\")";
+              String helper() { return docs; }
+            }
+          `,
+        },
+        async (input) => {
+          const result = await collectCodeSurfaces(input);
+          expect(result.data.endpoints).toHaveLength(0);
+        },
+      );
+    });
+
+    it('consumes multiline Java Spring annotation arguments before finding the method', async () => {
+      await withTempProject(
+        {
+          'src/main/java/com/acme/MultilineController.java': `
+            class MultilineController {
+              @GetMapping(
+                path = resolvePath("/users")
+              )
+              String users() { return "users"; }
+            }
+          `,
+        },
+        async (input) => {
+          const result = await collectCodeSurfaces(input);
+          expect(result.data.endpoints).toEqual([
+            expect.objectContaining({ id: 'semantic-java-spring-controller' }),
+          ]);
+        },
+      );
+    });
+
+    it('skips multiline annotations between a Java Spring mapping and its method', async () => {
+      await withTempProject(
+        {
+          'src/main/java/com/acme/DocumentedController.java': `
+            class DocumentedController {
+              @GetMapping("/users")
+              @ApiResponses({
+                @ApiResponse(responseCode = "200")
+              })
+              public ResponseEntity<List<User>> users() { return null; }
+            }
+          `,
+        },
+        async (input) => {
+          const result = await collectCodeSurfaces(input);
+          expect(result.data.endpoints).toEqual([
+            expect.objectContaining({ id: 'semantic-java-spring-controller' }),
+          ]);
+        },
+      );
+    });
+
+    it('ignores Java Spring mappings in inline block comments', async () => {
+      await withTempProject(
+        {
+          'src/main/java/com/acme/InlineComment.java': `
+            class InlineComment {
+              String docs; /* @GetMapping("/fake") */
+              String helper() { return docs; }
+            }
+          `,
+        },
+        async (input) => {
+          const result = await collectCodeSurfaces(input);
+          expect(result.data.endpoints).toHaveLength(0);
         },
       );
     });

@@ -22,5 +22,6 @@ ${GOVERNANCE_RULES}
 
 - Audit package created via flowguard_archive.
 - Verification result and location reported.
-- Response ends with \`Next action: run /start to begin a new governed session.\`
+- If \`presentation.markdown\` is present, render it verbatim and do not append a separate \`Next action:\` line.
+- Otherwise, render \`productNextAction.text\` as the single fallback conclusion.
 `;

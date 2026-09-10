@@ -94,6 +94,42 @@ Use these markers in contributor output:
 - For blocked tool results, use the discriminated union pattern:
   `{ kind: 'blocked', code: string, reason: string, recovery?: string }`.
 
+### No Legacy Compatibility in FlowGuard Source
+
+This is a repository-development rule for FlowGuard's own codebase. It applies
+only while implementing, reviewing, or refactoring FlowGuard-owned source,
+tests, configuration, repository-local tooling, schemas, and FlowGuard APIs in
+this repository. It MUST NOT be propagated into installed FlowGuard mandates,
+generated prompts, generated code, governed downstream repositories, or runtime
+instructions for users' coding agents. FlowGuard MUST NOT reject, rewrite, or
+remove legacy patterns in a user's project merely because this repository rule
+exists.
+
+FlowGuard source MUST implement only the current canonical contract. Do not
+introduce or preserve compatibility shims, deprecated aliases, legacy fallbacks,
+dual-read/dual-write paths, obsolete-format adapters, read-time synthesis or
+normalization for superseded FlowGuard shapes, or migration layers whose only
+purpose is to keep obsolete FlowGuard behavior alive.
+
+When a current contract replaces an old FlowGuard contract, remove the old
+implementation rather than maintaining both. Unsupported old inputs or formats
+must fail explicitly at the current validation or trust boundary instead of
+being silently migrated or normalized.
+
+If an AI coder encounters legacy or backward-compatibility code in a FlowGuard
+file or execution path it is already changing or reviewing, removal is part of
+the same change. Delete the compatibility path and update directly affected call
+sites, tests, schemas, and docs to the current canonical authority. Do not retain
+such code merely because it predates the task. Keep cleanup bounded to the
+touched and directly dependent FlowGuard surface unless correctness requires a
+wider removal.
+
+Tests and fixtures MAY represent obsolete inputs when their purpose is to prove
+that the current boundary rejects them. Historical documentation MAY describe
+removed behavior. Reviewers MUST treat newly introduced or knowingly retained
+production compatibility code on the touched FlowGuard surface as a review
+blocker.
+
 ## Canonical Authorities
 
 Before implementing a change, identify the canonical authority. Change the authority, not a local duplicate.

@@ -40,10 +40,10 @@ describe('config/policy', () => {
       expect(getPolicyPreset('regulated')).toBe(REGULATED_POLICY);
     });
 
-    it('getPolicyPreset vs resolvePolicyWithContext — team-ci authority is in WithContext', () => {
+    it('getPolicyPreset vs resolvePolicyWithContext — runtime authority degrades to canonical team', () => {
       expect(getPolicyPreset('team-ci')).toBe(TEAM_CI_POLICY);
       const withContext = resolvePolicyWithContext('team-ci', false);
-      expect(withContext.policy.mode).toBe('team-ci');
+      expect(withContext.policy).toBe(TEAM_POLICY);
       expect(withContext.effectiveMode).toBe('team');
       expect(withContext.degradedReason).toBe('ci_context_missing');
     });
@@ -59,7 +59,7 @@ describe('config/policy', () => {
 
     it('resolvePolicyWithContext degrades team-ci to team without CI context', () => {
       const result = resolvePolicyWithContext('team-ci', false);
-      expect(result.policy.mode).toBe('team-ci');
+      expect(result.policy).toBe(TEAM_POLICY);
       expect(result.requestedMode).toBe('team-ci');
       expect(result.effectiveMode).toBe('team');
       expect(result.effectiveGateBehavior).toBe('human_gated');
@@ -105,9 +105,6 @@ describe('config/policy', () => {
     });
 
     it('resolvePolicyForHydrate threads configValidationEvidence into the frozen snapshot (#400)', async () => {
-      // Falsification of the config→resolver→snapshot path: a team base defaults to
-      // validationEvidence off; an explicit config override must survive resolution
-      // AND land in the frozen policy snapshot operators actually run under.
       const result = await resolvePolicyForHydrate({
         repoMode: 'team',
         defaultMode: 'solo',
@@ -116,13 +113,11 @@ describe('config/policy', () => {
         configValidationEvidence: { enforcement: 'required', allowNoCommands: true },
       });
 
-      // Override reflected in the resolved policy.
       expect(result.policy.validationEvidence).toEqual({
         enforcement: 'required',
         allowNoCommands: true,
       });
 
-      // And preserved through snapshot freezing.
       const snap = createPolicySnapshot(result.policy, '2026-01-01T00:00:00.000Z', hashText);
       expect(snap.validationEvidence).toEqual({
         enforcement: 'required',
@@ -131,8 +126,6 @@ describe('config/policy', () => {
     });
 
     it('resolvePolicyForHydrate partial configValidationEvidence merges onto preset default (#400)', async () => {
-      // Only enforcement overridden; allowNoCommands must fall back to the preset
-      // default (false), preserving the fail-closed posture.
       const result = await resolvePolicyForHydrate({
         explicitMode: 'regulated',
         defaultMode: 'solo',
@@ -392,7 +385,7 @@ describe('config/policy', () => {
         configMaxSelfReviewIterations: 5,
       });
       expect(result.policy.maxSelfReviewIterations).toBe(5);
-      expect(result.policy.maxImplReviewIterations).toBe(1); // preset unchanged
+      expect(result.policy.maxImplReviewIterations).toBe(1);
     });
 
     it('resolvePolicyForHydrate applies config maxImplReviewIterations override', async () => {
@@ -402,7 +395,7 @@ describe('config/policy', () => {
         digestFn: (s) => `sha256:${s.length}`,
         configMaxImplReviewIterations: 10,
       });
-      expect(result.policy.maxSelfReviewIterations).toBe(3); // preset unchanged
+      expect(result.policy.maxSelfReviewIterations).toBe(3);
       expect(result.policy.maxImplReviewIterations).toBe(10);
     });
 
@@ -434,8 +427,8 @@ describe('config/policy', () => {
         ciContext: false,
         digestFn: (s) => `sha256:${s.length}`,
       });
-      expect(result.policy.maxSelfReviewIterations).toBe(2); // SOLO preset
-      expect(result.policy.maxImplReviewIterations).toBe(1); // SOLO preset
+      expect(result.policy.maxSelfReviewIterations).toBe(2);
+      expect(result.policy.maxImplReviewIterations).toBe(1);
     });
 
     it('resolvePolicyForHydrate applies config overrides with central policy', async () => {
@@ -535,13 +528,11 @@ describe('config/policy', () => {
 
     it('resolvePolicyFromSnapshot uses snapshot fields exclusively — no preset leak', () => {
       const digest = hashText;
-      // Create a snapshot with modified actorClassification
       const snap = {
         ...createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', digest),
         actorClassification: { custom_tool: 'auditor' },
       };
       const reconstructed = resolvePolicyFromSnapshot(snap);
-      // Must use snapshot value, not preset
       expect(reconstructed.actorClassification).toEqual({ custom_tool: 'auditor' });
     });
 

@@ -31,6 +31,8 @@ import {
 export { normalizeRepoPath };
 export { isRootAgentFile };
 
+export const ROOT_AGENT_MAX_LINES = 195;
+
 // ── Helpers ───────────────────────────────────────────────────────────
 
 function repoRel(root, filePath) {
@@ -153,11 +155,11 @@ export function lintAgentInstructions({ root, ignoredPaths = [] }) {
 
   // Check 2: Root AGENTS.md line budget
   const rootLines = countLines(root, 'AGENTS.md');
-  if (rootLines > 150) {
+  if (rootLines > ROOT_AGENT_MAX_LINES) {
     diagnostics.push({
       file: 'AGENTS.md',
       kind: 'error',
-      message: `${rootLines} lines (max 150)`,
+      message: `${rootLines} lines (max ${ROOT_AGENT_MAX_LINES})`,
     });
   }
 

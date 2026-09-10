@@ -10,7 +10,8 @@
  * - JSONL format (one JSON object per line)
  * - Retention: auto-delete files older than retentionDays by filename date
  * - Size rotation: when maxSizeBytes is exceeded, rotates to .N.log files
- * - Non-blocking: errors are swallowed; logging never affects governance flow
+ * - Sink failures reject through the LogSink contract so createLogger can count them;
+ *   the logger boundary remains non-blocking and never lets diagnostic logging fail governance.
  *
  * FlowGuard operational logs are diagnostic only. They are not audit evidence
  * and are not part of the governance SSOT.
@@ -48,13 +49,13 @@ export interface FileSinkOptions {
   /** Called when a log file is rotated due to size. */
   onRotate?: (event: { oldPath: string; newPath: string; reason: 'size' }) => void;
   /**
-   * Called when a write, rotation, or stat operation fails. Gives the file sink
-   * a failure signal (parity with the OTLP sink) so silent log loss is
-   * observable. Non-blocking — invoked best-effort and its own errors are
-   * swallowed.
+   * Called when a log file write, directory setup, rotation, or stat operation fails.
+   * The callback is best-effort diagnostic notification; the sink itself also
+   * rejects so the owning logger can account for the failure centrally.
    */
   onFailure?: (error: unknown) => void;
 }
+
 async function pathExists(p: string): Promise<boolean> {
   try {
     await access(p);
@@ -97,6 +98,12 @@ function normalizeFileSinkOptions(options?: FileSinkOptions | number): {
 /**
  * Create a file-based logging sink.
  *
+ * Empty or non-absolute workspace paths represent an unavailable workspace and
+ * preserve the historical disabled-sink contract: the sink performs no I/O and
+ * resolves successfully. Once an absolute workspace is available, real
+ * filesystem delivery/setup/rotation failures reject through LogSink so the
+ * owning logger can account for them.
+ *
  * @param workspaceDir - Absolute path to workspace directory.
  * @param options - File sink options or retention days (number, backward-compat).
  * @returns LogSink function.
@@ -107,50 +114,27 @@ export function createFileSink(workspaceDir: string, options?: FileSinkOptions |
   const effectiveMaxSize = normalized.maxSizeBytes;
   const onRotate = normalized.onRotate;
   const onFailure = normalized.onFailure;
+  const enabled = isAbsolute(workspaceDir);
+  const logDir = enabled ? join(workspaceDir, LOG_SUBDIR) : '';
 
-  // Safe one-shot notifier: surfaces a sink failure without ever throwing back
-  // into the logging path (an onFailure that itself throws is swallowed).
+  // Diagnostic callback failures are deliberately isolated from the original
+  // sink failure. The sink rejection itself is the canonical health signal.
   const notifyFailure = (error: unknown): void => {
     try {
       onFailure?.(error);
     } catch {
-      // onFailure errors are swallowed — logging must never fail the flow.
+      // Never replace the original sink failure with an observer failure.
     }
   };
 
   let initialized = false;
-  let _initPromise: Promise<boolean> | null = null;
-  let logDir: string;
+  let _initPromise: Promise<void> | null = null;
 
-  /**
-   * Prepare the log directory.
-   *
-   * Both failure paths mean total, permanent log loss for this sink, so both
-   * are reported through onFailure. Returning a bare `false` would let the
-   * sink resolve as if the write had succeeded, leaving the caller with no
-   * signal at all while every entry is silently dropped.
-   */
-  async function ensureDir(): Promise<boolean> {
-    if (!isAbsolute(workspaceDir)) {
-      notifyFailure(
-        new Error(
-          `file sink requires an absolute workspace directory, received "${workspaceDir}" — file logging is disabled`,
-        ),
-      );
-      return false;
-    }
-    logDir = join(workspaceDir, LOG_SUBDIR);
-    try {
-      await mkdir(logDir, { recursive: true });
-      return true;
-    } catch (err) {
-      notifyFailure(err);
-      return false;
-    }
+  async function ensureDir(): Promise<void> {
+    await mkdir(logDir, { recursive: true });
   }
 
   async function cleanupOldLogs(): Promise<void> {
-    if (!logDir) return;
     try {
       const entries = await readdir(logDir);
       const cutoffMs = effectiveRetention * 24 * 60 * 60 * 1000;
@@ -169,34 +153,30 @@ export function createFileSink(workspaceDir: string, options?: FileSinkOptions |
           try {
             await unlink(filePath);
           } catch {
-            // Ignore cleanup errors
+            // Retention cleanup is housekeeping, not delivery of the current entry.
           }
         }
       }
     } catch {
-      // Non-blocking — cleanup errors never fail the flow
+      // Retention cleanup is best-effort and does not imply loss of the current entry.
     }
   }
 
   return async (entry: LogEntry): Promise<void> => {
+    if (!enabled) return;
+
     try {
       if (!initialized) {
         if (!_initPromise) {
           _initPromise = ensureDir()
-            .then(async (dirOk) => {
-              if (dirOk) await cleanupOldLogs();
-              return dirOk;
-            })
+            .then(cleanupOldLogs)
             .finally(() => {
               _initPromise = null;
             });
         }
-        const dirOk = await _initPromise;
-        if (!dirOk) return;
+        await _initPromise;
         initialized = true;
       }
-
-      if (!logDir) return;
 
       const date = new Date().toISOString().slice(0, 10);
       const logFile = join(logDir, `${LOG_PREFIX}${date}${LOG_EXT}`);
@@ -210,50 +190,31 @@ export function createFileSink(workspaceDir: string, options?: FileSinkOptions |
       };
       if (entry.traceId) logEntry.traceId = entry.traceId;
       if (entry.sessionId) logEntry.sessionId = entry.sessionId;
-      if (entry.extra) {
-        logEntry.fields = entry.extra;
-      }
+      if (entry.extra) logEntry.fields = entry.extra;
 
-      const line = JSON.stringify(logEntry) + '\n';
-
-      await appendFile(logFile, line, 'utf8');
+      await appendFile(logFile, JSON.stringify(logEntry) + '\n', 'utf8');
 
       // Post-write rotation: check size after writing, rotate if needed.
       // This avoids the stat→appendFile TOCTOU that CodeQL flags.
-      try {
-        const st = await stat(logFile);
-        if (st.size > effectiveMaxSize) {
-          let n = 1;
-          let rotatedPath: string;
-          do {
-            rotatedPath = join(logDir, `${LOG_PREFIX}${date}.${n}${LOG_EXT}`);
-            n++;
-          } while (await pathExists(rotatedPath));
+      const st = await stat(logFile);
+      if (st.size > effectiveMaxSize) {
+        let n = 1;
+        let rotatedPath: string;
+        do {
+          rotatedPath = join(logDir, `${LOG_PREFIX}${date}.${n}${LOG_EXT}`);
+          n++;
+        } while (await pathExists(rotatedPath));
 
-          try {
-            await rename(logFile, rotatedPath);
-            try {
-              onRotate?.({ oldPath: logFile, newPath: rotatedPath, reason: 'size' });
-            } catch {
-              // onRotate errors are non-blocking
-            }
-          } catch (rotateErr) {
-            // Rotation is non-blocking, but a persistent rename failure leaves the
-            // live file in place — subsequent writes keep appending to the SAME
-            // file, so it grows past maxSizeBytes unbounded. Surface it via
-            // onFailure so a stuck rotation is observable instead of silent.
-            notifyFailure(rotateErr);
-          }
+        await rename(logFile, rotatedPath);
+        try {
+          onRotate?.({ oldPath: logFile, newPath: rotatedPath, reason: 'size' });
+        } catch {
+          // onRotate is an observer; rotation itself already succeeded.
         }
-      } catch (statErr) {
-        // A stat failure means rotation can't be evaluated; signal it so a stuck
-        // rotation (and unbounded growth) is observable rather than silent.
-        notifyFailure(statErr);
       }
     } catch (err) {
-      // Non-blocking — logging errors never fail the flow. Surface via onFailure
-      // so a failing write (ENOSPC/EACCES) is observable instead of silent.
       notifyFailure(err);
+      throw err;
     }
   };
 }

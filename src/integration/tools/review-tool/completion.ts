@@ -17,6 +17,7 @@ import type {
 } from '../../../state/evidence.js';
 import type { ReviewExecutors } from '../../../rails/review.js';
 import { ReviewReport } from '../../../state/evidence.js';
+import { evaluateCompleteness } from '../../../audit/completeness.js';
 import { autoAdvance, createPolicyEvalFn } from '../../../rails/types.js';
 import type { AutoAdvanceOverflow } from '../../../rails/types.js';
 import {
@@ -41,8 +42,6 @@ import type {
   ReviewReportResult,
 } from './types.js';
 
-// ─── Severity mapping ────────────────────────────────────────────────────────
-
 const reviewSeverityMap: Record<string, 'info' | 'warning' | 'error'> = {
   critical: 'error',
   major: 'error',
@@ -52,17 +51,6 @@ const reviewSeverityMap: Record<string, 'info' | 'warning' | 'error'> = {
   warning: 'warning',
 };
 
-// ─── Challenge projection ────────────────────────────────────────────────────
-
-/**
- * Severity of a challenge outcome, from the author's point of view.
- *
- * `contradicted` / `fail` mean the reviewer's falsification attempt SUCCEEDED:
- * the claim under test did not hold. That is the most actionable result a review
- * produces. `not_verified` means the attempt could not be carried out, which is
- * an open risk rather than a confirmed defect. `supported` / `pass` record that
- * the claim withstood the attempt.
- */
 const CHALLENGE_OUTCOME_SEVERITY: Record<string, 'info' | 'warning' | 'error'> = {
   contradicted: 'error',
   fail: 'error',
@@ -71,15 +59,6 @@ const CHALLENGE_OUTCOME_SEVERITY: Record<string, 'info' | 'warning' | 'error'> =
   pass: 'info',
 };
 
-/**
- * Project reviewer challenges into report findings.
- *
- * Challenges are the most substantive artifact a review produces - an
- * evidence-bound falsification attempt with a concrete scenario and at least one
- * location (`ReviewChallenge.locations` is `.min(1)`, so unlike a plain finding
- * they are always located). They were dropped entirely from the report, so the
- * author never saw them.
- */
 function challengeFindings(
   reviewFindings: Pick<ReviewFindings, 'challenges'>,
 ): ReviewReportFinding[] {
@@ -88,7 +67,6 @@ function challengeFindings(
   return challenges.flatMap((entry) => challengeFinding(entry));
 }
 
-/** Project one challenge, or nothing when it lacks the fields a reader needs. */
 function challengeFinding(entry: unknown): ReviewReportFinding[] {
   if (typeof entry !== 'object' || entry === null) return [];
   const challenge = entry as Record<string, unknown>;
@@ -116,8 +94,6 @@ function challengeLocation(value: unknown): string {
   if (!Array.isArray(value)) return '';
   return value.filter((entry): entry is string => typeof entry === 'string').join(', ');
 }
-
-// ─── Report building ─────────────────────────────────────────────────────────
 
 export function mapReviewFindingsToReport(reviewFindings: ReviewFindings): ReviewReportFinding[] {
   const materialFindings = [...reviewFindings.blockingIssues, ...reviewFindings.majorRisks].map(
@@ -164,8 +140,6 @@ export function buildReviewExecutors(
   };
 }
 
-// ─── Blocked report formatting ───────────────────────────────────────────────
-
 export function formatBlockedReviewReport(report: unknown): string {
   const blockedReport = report as {
     code: string;
@@ -181,8 +155,6 @@ export function formatBlockedReviewReport(report: unknown): string {
     quickFix: blockedReport.quickFix,
   });
 }
-
-// ─── Persistence ─────────────────────────────────────────────────────────────
 
 export async function persistReviewCompletion(
   sessDir: string,
@@ -200,8 +172,6 @@ export async function persistReviewCompletion(
 > {
   const stateWithReportPath = { ...result.state, reviewReportPath: reportPath(sessDir) };
   const advanced = autoAdvance(stateWithReportPath, createPolicyEvalFn(ctx), ctx);
-  // #428: fail closed on overflow BEFORE any persistence — do not write the
-  // report artifact or the state, so no partially-advanced session is created.
   if (advanced.kind === 'overflow') {
     return { kind: 'overflow', overflow: advanced };
   }
@@ -209,7 +179,7 @@ export async function persistReviewCompletion(
   const finalReport = ReviewReport.parse({
     ...report,
     phase: finalState.phase,
-    completeness: { ...report.completeness, phase: finalState.phase },
+    completeness: evaluateCompleteness(finalState),
   });
   await writeReport(sessDir, finalReport);
   await writeStateWithArtifacts(sessDir, finalState);
@@ -220,8 +190,6 @@ export async function persistReviewCompletion(
     allTransitions: [...result.transitions, ...advanceTransitions],
   };
 }
-
-// ─── Review card construction ────────────────────────────────────────────────
 
 function findBoundReviewInvocation(
   result: StartedReviewResult,
@@ -341,8 +309,6 @@ async function materializeStandaloneReviewCard(input: {
     )) ?? undefined
   );
 }
-
-// ─── Response formatting ─────────────────────────────────────────────────────
 
 function formatReviewCompletionResponse(input: {
   result: StartedReviewResult;
