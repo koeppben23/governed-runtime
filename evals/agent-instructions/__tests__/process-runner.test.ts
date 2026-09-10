@@ -118,7 +118,7 @@ describe('process-runner', () => {
     }
   });
 
-  it('materializes product mandates only for an explicit supported host', async () => {
+  it('materializes product mandates for OpenCode through the production merge path', async () => {
     const outcome = await runProcess(
       config(['pass']),
       FIXTURE,
@@ -140,6 +140,72 @@ describe('process-runner', () => {
         '.opencode/flowguard-mandates.md',
       );
     }
+  });
+
+  it('materializes the production Claude Code plugin transport', async () => {
+    const outcome = await runProcess(
+      config(['pass']),
+      FIXTURE,
+      'test prompt',
+      true,
+      process.cwd(),
+      {},
+      'flowguard_product',
+      'claude-code',
+    );
+    expect(outcome.status).toBe('completed');
+    if (outcome.status === 'completed') {
+      expect(outcome.instructionHost).toBe('claude-code');
+      expect(outcome.afterContent.get('flowguard-plugin/.claude-plugin/plugin.json')).toContain(
+        'FlowGuard Governance',
+      );
+      expect(outcome.afterContent.get('flowguard-plugin/skills/start/SKILL.md')).toContain(
+        '# FlowGuard Start',
+      );
+      expect(outcome.afterContent.get('flowguard-plugin/.mcp.json')).toContain(
+        'FLOWGUARD_HOST_PLATFORM',
+      );
+    }
+  });
+
+  it('materializes the production Codex plugin transport and registration', async () => {
+    const outcome = await runProcess(
+      config(['pass']),
+      FIXTURE,
+      'test prompt',
+      true,
+      process.cwd(),
+      {},
+      'flowguard_product',
+      'codex',
+    );
+    expect(outcome.status).toBe('completed');
+    if (outcome.status === 'completed') {
+      expect(outcome.instructionHost).toBe('codex');
+      expect(outcome.afterContent.get('plugins/flowguard/AGENTS.md')).toContain(
+        '# FlowGuard Codex Plugin',
+      );
+      const marketplace = JSON.parse(
+        outcome.afterContent.get('.agents/plugins/marketplace.json') ?? '{}',
+      ) as { plugins?: Array<{ source?: { path?: string } }> };
+      expect(marketplace.plugins?.[0]?.source?.path).toBe('./plugins/flowguard');
+    }
+  });
+
+  it('resolves workspaceRoot runner argument placeholders against the isolated workspace', async () => {
+    const c = config(['pass']);
+    c.args = [FAKE_AGENT, 'pass', '{workspaceRoot}'];
+    const outcome = await runProcess(
+      c,
+      FIXTURE,
+      'test prompt',
+      true,
+      process.cwd(),
+      {},
+      'flowguard_product',
+      'claude-code',
+    );
+    expect(outcome.status).toBe('completed');
   });
 
   it('fails closed when a product evaluation omits its host', async () => {
