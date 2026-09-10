@@ -436,11 +436,7 @@ export type MandatesSectionId =
   | 'before-completing';
 
 export type MandatesProjectionPhase =
-  | 'PRE_SESSION'
-  | 'INVESTIGATION'
-  | 'PLAN'
-  | 'IMPLEMENTATION'
-  | 'REVIEW';
+  'PRE_SESSION' | 'INVESTIGATION' | 'PLAN' | 'IMPLEMENTATION' | 'REVIEW';
 
 export interface MandatesSectionDefinition {
   readonly id: MandatesSectionId;
