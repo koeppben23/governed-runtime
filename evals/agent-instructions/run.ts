@@ -90,6 +90,7 @@ export async function runEval(
   caseIds?: string[],
 ): Promise<{ executed: ExecutedEvalCase[]; redactionValues: string[] }> {
   const env = resolveRunnerEnv(config);
+  const redactionValues = new Set(env.redactionValues);
 
   let cases = loadCases(CASES_DIR).sort((a, b) => a.id.localeCompare(b.id));
 
@@ -111,6 +112,13 @@ export async function runEval(
   for (const evalCase of cases) {
     const startMs = Date.now();
     const forceCopy = evalCase.mode === 'workspace';
+    const caseEnv: NodeJS.ProcessEnv = {
+      ...env.childEnv,
+      ...evalCase.syntheticSecrets,
+    };
+    for (const value of Object.values(evalCase.syntheticSecrets)) {
+      redactionValues.add(value);
+    }
 
     let fixtureRoot: string;
     let cleanupTemp: (() => void) | undefined;
@@ -129,14 +137,12 @@ export async function runEval(
       evalCase.task,
       forceCopy,
       repoRoot,
-      env.childEnv,
+      caseEnv,
       evalCase.instructionSurface,
       evalCase.instructionHost,
     );
 
-    if (cleanupTemp) {
-      cleanupTemp();
-    }
+    if (cleanupTemp) cleanupTemp();
 
     if (outcome.status === 'runner_error') {
       const er = scoreCase(
@@ -195,7 +201,7 @@ export async function runEval(
     results.push({ evalCase, result, outcome });
   }
 
-  return { executed: results, redactionValues: env.redactionValues };
+  return { executed: results, redactionValues: [...redactionValues] };
 }
 
 // ── Report persistence ────────────────────────────────────────────────
