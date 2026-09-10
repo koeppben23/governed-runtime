@@ -5,10 +5,16 @@ surfaces. `repository_contributor` covers repository-local guidance such as
 `AGENTS.md`; `flowguard_product` covers the managed mandates FlowGuard installs
 for customer hosts. Results retain the surface and must not be compared across it.
 
+Every case declares `instructionSurface` explicitly. Product cases additionally
+declare `instructionHost`; the harness currently supports `opencode` only and
+fails closed when product host metadata is absent or unsupported. Claude Code and
+Codex product transport behavior remains `NOT_VERIFIED` until dedicated host
+materializers exist.
+
 ## Structure
 
 ```
-cases/              — YAML case definitions (8 cases)
+cases/              — YAML case definitions (12 cases: 8 contributor, 4 product)
 schema.ts           — Zod schemas for cases, runner config, and results
 load-cases.ts       — YAML parser → typed EvalCase[]
 assertions.ts       — Pure assertion evaluation functions
@@ -28,9 +34,11 @@ __tests__/          — Unit tests for all modules
 | Workspace | `workspace` | Full mini-repository with fixture. Evaluates real file changes. |
 | Output-only | `output-only` | Evaluates stdout/stderr output. No filesystem interaction. |
 
-For `flowguard_product`, the runner materializes the managed mandate through the
-production renderer, digest, managed artifact builder, and OpenCode instruction
-entry before invoking the configured host.
+For `flowguard_product` + `opencode`, the runner materializes the managed mandate
+through the production renderer, digest, managed artifact builder, and the
+production `mergeOpencodeJson` path before invoking the configured host. Existing
+customer OpenCode configuration and non-FlowGuard instruction entries are
+preserved rather than overwritten.
 
 ## Running
 
