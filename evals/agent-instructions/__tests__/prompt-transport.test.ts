@@ -1,10 +1,18 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { RunnerConfigSchema } from '../schema.js';
+
+const REQUIRED_RUNNER_PROVENANCE = {
+  provider: 'test-provider',
+  model: 'test-model',
+  modelVersion: '1',
+  runnerVersion: '1',
+} as const;
 
 describe('RunnerConfigSchema — prompt transport', () => {
   it('accepts stdin transport', () => {
     const r = RunnerConfigSchema.safeParse({
       name: 'test',
+      ...REQUIRED_RUNNER_PROVENANCE,
       command: 'node',
       promptTransport: 'stdin',
       args: [],
@@ -15,6 +23,7 @@ describe('RunnerConfigSchema — prompt transport', () => {
   it('accepts argument transport with exactly one {prompt}', () => {
     const r = RunnerConfigSchema.safeParse({
       name: 'test',
+      ...REQUIRED_RUNNER_PROVENANCE,
       command: 'node',
       promptTransport: 'argument',
       args: ['run', '--prompt', '{prompt}'],
@@ -25,6 +34,7 @@ describe('RunnerConfigSchema — prompt transport', () => {
   it('rejects argument transport with zero {prompt}', () => {
     const r = RunnerConfigSchema.safeParse({
       name: 'test',
+      ...REQUIRED_RUNNER_PROVENANCE,
       command: 'node',
       promptTransport: 'argument',
       args: ['run'],
@@ -35,6 +45,7 @@ describe('RunnerConfigSchema — prompt transport', () => {
   it('rejects argument transport with multiple {prompt}', () => {
     const r = RunnerConfigSchema.safeParse({
       name: 'test',
+      ...REQUIRED_RUNNER_PROVENANCE,
       command: 'node',
       promptTransport: 'argument',
       args: ['{prompt}', '{prompt}'],
@@ -45,6 +56,7 @@ describe('RunnerConfigSchema — prompt transport', () => {
   it('defaults staticEnv and secretEnvNames', () => {
     const r = RunnerConfigSchema.safeParse({
       name: 'test',
+      ...REQUIRED_RUNNER_PROVENANCE,
       command: 'echo',
       promptTransport: 'stdin',
     });
@@ -55,9 +67,20 @@ describe('RunnerConfigSchema — prompt transport', () => {
     }
   });
 
+  it('rejects runner configs without reproducibility metadata', () => {
+    const r = RunnerConfigSchema.safeParse({
+      name: 'test',
+      command: 'node',
+      promptTransport: 'stdin',
+      args: [],
+    });
+    expect(r.success).toBe(false);
+  });
+
   it('rejects invalid secretEnvNames', () => {
     const r = RunnerConfigSchema.safeParse({
       name: 'test',
+      ...REQUIRED_RUNNER_PROVENANCE,
       command: 'echo',
       promptTransport: 'stdin',
       secretEnvNames: ['bad name', '123'],
