@@ -99,7 +99,6 @@ export async function mergePackageJson(filePath: string, version: string): Promi
   const deps = (parsed['dependencies'] ?? {}) as Record<string, string>;
   deps['@flowguard/core'] = vendorDependency(version);
   if (!deps['zod']) deps['zod'] = '^4.0.0';
-  delete deps['@opencode-ai/plugin'];
   parsed['dependencies'] = deps;
   await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
   return { path: filePath, action: 'merged' };
@@ -112,15 +111,19 @@ function ensureNested(parent: Record<string, unknown>, key: string): Record<stri
   return parent[key] as Record<string, unknown>;
 }
 
+/**
+ * Add FlowGuard's reviewer permission without deleting foreign task permissions.
+ * Explicit customer wildcard policy is preserved; FlowGuard supplies the deny-all
+ * default only when the task map has no wildcard of its own.
+ */
 export function mergeReviewerTaskPermission(parsed: Record<string, unknown>): void {
   const agent = ensureNested(parsed, 'agent');
   const build = ensureNested(agent, 'build');
   const permission = ensureNested(build, 'permission');
+  const task = ensureNested(permission, 'task');
 
-  permission['task'] = {
-    '*': 'deny',
-    [REVIEWER_SUBAGENT_TYPE]: 'allow',
-  };
+  if (task['*'] === undefined) task['*'] = 'deny';
+  task[REVIEWER_SUBAGENT_TYPE] = 'allow';
 }
 
 export async function mergeOpencodeJson(filePath: string, scope: InstallScope): Promise<FileOp> {
@@ -155,20 +158,19 @@ export async function mergeOpencodeJson(filePath: string, scope: InstallScope): 
   const existingInstructions = Array.isArray(parsed['instructions'])
     ? (parsed['instructions'] as string[])
     : [];
-  const hasDesktopInstructions = hasNonFlowGuardInstructions(existingInstructions);
+  const hasCustomerInstructions = hasNonFlowGuardInstructions(existingInstructions);
 
-  if (hasPluginField || hasDesktopInstructions) {
+  if (hasPluginField || hasCustomerInstructions) {
     const instructions = [...existingInstructions];
     if (!instructions.includes(entry)) {
       instructions.push(entry);
     }
     parsed['instructions'] = instructions;
-    mergeReviewerTaskPermission(parsed);
     await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
     return {
       path: filePath,
       action: 'merged',
-      reason: 'desktop-owned config: merged with task permission',
+      reason: 'customer-owned config: preserved task permissions and merged FlowGuard instruction',
     };
   }
 
@@ -248,7 +250,7 @@ async function removeFlowGuardOnly(
   return { removed: removedInstruction || removedTaskHardening };
 }
 
-async function removeFromDesktopOwned(
+async function removeFromCustomerOwned(
   parsed: Record<string, unknown>,
   instructions: string[],
   scope: InstallScope,
@@ -276,11 +278,15 @@ export async function removeFromOpencodeJson(
       : [];
 
     if (hasNonFlowGuardInstructions(instructions) || 'plugin' in parsed) {
-      const result = await removeFromDesktopOwned(parsed, instructions, scope);
+      const result = await removeFromCustomerOwned(parsed, instructions, scope);
       if (!result.removed)
         return { path: filePath, action: 'skipped', reason: 'no FlowGuard entries found' };
       await writeFile(filePath, JSON.stringify(result.parsed, null, 2) + '\n', 'utf-8');
-      return { path: filePath, action: 'merged', reason: 'removed FlowGuard entries' };
+      return {
+        path: filePath,
+        action: 'merged',
+        reason: 'removed FlowGuard instruction; preserved customer task permissions',
+      };
     }
 
     const { removed } = await removeFlowGuardOnly(parsed, scope);
