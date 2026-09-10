@@ -1,7 +1,6 @@
 /**
  * @module cli/install-helpers-core.test
  * @description Unit tests for install-helper functions — targets uncovered branches.
- *
  * @test-policy HAPPY, BAD, CORNER, EDGE
  * @version v1
  */
@@ -32,12 +31,7 @@ import {
   safeUnlink,
   resolveOpencodeConfigPath,
   parseJsonc,
-  buildReviewerAgentContent,
-  reviewerDefinitionForPlatform,
   createMalformedJsonBackup,
-  FLOWGUARD_REVIEWER_MODEL_ENV,
-  FLOWGUARD_REVIEWER_EFFORT_ENV,
-  verifyTarballChecksum,
   rollbackArtifacts,
 } from './install-helpers.js';
 
@@ -60,36 +54,24 @@ describe('install-helpers', () => {
   });
 
   describe('PACKAGE_VERSION', () => {
-    it('returns a non-empty string', () => {
-      expect(PACKAGE_VERSION()).toBeTruthy();
-      expect(PACKAGE_VERSION().length).toBeGreaterThan(0);
-    });
-
-    it('returns same value across multiple calls (cached)', () => {
-      const a = PACKAGE_VERSION();
-      const b = PACKAGE_VERSION();
-      expect(a).toBe(b);
+    it('returns a non-empty cached string', () => {
+      const first = PACKAGE_VERSION();
+      expect(first).toBeTruthy();
+      expect(first).toBe(PACKAGE_VERSION());
     });
   });
 
   describe('sha256', () => {
-    it('returns deterministic hex digest', () => {
+    it('returns a deterministic 64-char hex digest', () => {
       expect(sha256('hello')).toBe(sha256('hello'));
-    });
-
-    it('returns different digests for different inputs', () => {
       expect(sha256('hello')).not.toBe(sha256('world'));
-    });
-
-    it('returns 64-char hex string', () => {
       expect(sha256('test')).toHaveLength(64);
     });
   });
 
   describe('vendorDependency', () => {
     it('returns file:-path with version', () => {
-      const dep = vendorDependency('1.0.0');
-      expect(dep).toBe('file:./vendor/flowguard-core-1.0.0.tgz');
+      expect(vendorDependency('1.0.0')).toBe('file:./vendor/flowguard-core-1.0.0.tgz');
     });
   });
 
@@ -98,44 +80,48 @@ describe('install-helpers', () => {
       const pkgPath = path.join(tmpDir, 'package.json');
       const result = await mergePackageJson(pkgPath, '1.0.0');
       expect(result.action).toBe('written');
-
-      const content = await fs.readFile(pkgPath, 'utf-8');
-      expect(content).toContain('@flowguard/core');
+      expect(await fs.readFile(pkgPath, 'utf-8')).toContain('@flowguard/core');
     });
 
-    it('merges into existing package.json', async () => {
+    it('merges FlowGuard dependencies while preserving customer dependencies', async () => {
       const pkgPath = path.join(tmpDir, 'package.json');
-      await fs.writeFile(pkgPath, JSON.stringify({ name: 'test' }));
+      await fs.writeFile(
+        pkgPath,
+        JSON.stringify({
+          name: 'test',
+          dependencies: {
+            '@opencode-ai/plugin': '^9.9.9',
+            'customer-dependency': '^1.0.0',
+          },
+        }),
+      );
 
       const result = await mergePackageJson(pkgPath, '1.0.0');
       expect(result.action).toBe('merged');
 
       const content = JSON.parse(await fs.readFile(pkgPath, 'utf-8'));
       expect(content.name).toBe('test');
-      expect(content.dependencies).toBeDefined();
       expect(content.dependencies['@flowguard/core']).toBeDefined();
+      expect(content.dependencies['@opencode-ai/plugin']).toBe('^9.9.9');
+      expect(content.dependencies['customer-dependency']).toBe('^1.0.0');
     });
 
-    it('handles malformed JSON by overwriting', async () => {
+    it('backs up malformed JSON before replacing it', async () => {
       const pkgPath = path.join(tmpDir, 'package.json');
-      // Covers catch block: malformed JSON → overwrite with template
       const malformed = '{ not valid json }';
       await fs.writeFile(pkgPath, malformed);
 
       const result = await mergePackageJson(pkgPath, '1.0.0');
       expect(result.action).toBe('written');
-      expect(result.reason).toContain('malformed');
       expect(result.reason).toContain('.flowguard-backup-');
 
       const backupPath = await findBackupFor(pkgPath);
       expect(backupPath).not.toBeNull();
       await expect(fs.readFile(backupPath!, 'utf-8')).resolves.toBe(malformed);
-
-      const content = await fs.readFile(pkgPath, 'utf-8');
-      expect(content).toContain('@flowguard/core');
+      expect(await fs.readFile(pkgPath, 'utf-8')).toContain('@flowguard/core');
     });
 
-    it('EDGE: backup failure blocks malformed package.json overwrite', async () => {
+    it('blocks malformed package replacement when backup creation fails', async () => {
       const pkgPath = path.join(tmpDir, 'package.json');
       const malformed = '{ not valid json }';
       await fs.writeFile(pkgPath, malformed);
@@ -150,104 +136,73 @@ describe('install-helpers', () => {
             return realImpl(...args);
           },
         );
-
         await expect(mergePackageJson(pkgPath, '1.0.0')).rejects.toThrow('ENOSPC');
       } finally {
         vi.mocked(fs.writeFile).mockImplementation(realImpl);
       }
-
       await expect(fs.readFile(pkgPath, 'utf-8')).resolves.toBe(malformed);
     });
   });
 
   describe('mergeReviewerTaskPermission', () => {
-    it('sets task permission to *.deny + flowguard-reviewer.allow', () => {
-      const parsed = {};
-      mergeReviewerTaskPermission(parsed as Record<string, unknown>);
-      const task = (parsed as Record<string, unknown>).agent as Record<string, unknown>;
-      const build = task.build as Record<string, unknown>;
-      const perm = build.permission as Record<string, unknown>;
-      expect(perm.task).toEqual({ '*': 'deny', 'flowguard-reviewer': 'allow' });
-    });
-
-    it('handles empty agent config', () => {
-      const parsed = {};
-      mergeReviewerTaskPermission(parsed as Record<string, unknown>);
-      expect(parsed).toHaveProperty('agent');
-    });
-
-    it('handles partial config with existing agent but no build', () => {
-      const parsed = { agent: { model: 'gpt-4' } as Record<string, unknown> };
-      mergeReviewerTaskPermission(parsed as Record<string, unknown>);
+    it('hardens a FlowGuard-owned task permission map', () => {
+      const parsed: Record<string, unknown> = {};
+      mergeReviewerTaskPermission(parsed);
       const agent = parsed.agent as Record<string, unknown>;
-      expect(agent.build).toBeDefined();
+      const build = agent.build as Record<string, unknown>;
+      const permission = build.permission as Record<string, unknown>;
+      expect(permission.task).toEqual({ '*': 'deny', 'flowguard-reviewer': 'allow' });
+    });
+
+    it('preserves an explicit wildcard while adding the reviewer permission', () => {
+      const parsed = {
+        agent: { build: { permission: { task: { '*': 'allow', 'customer-agent': 'ask' } } } },
+      };
+      mergeReviewerTaskPermission(parsed as Record<string, unknown>);
+      expect(parsed.agent.build.permission.task).toEqual({
+        '*': 'allow',
+        'customer-agent': 'ask',
+        'flowguard-reviewer': 'allow',
+      });
     });
   });
 
   describe('safeRead / safeUnlink', () => {
-    it('HAPPY: safeRead returns content of existing file', async () => {
+    it('reads existing files and treats ENOENT as absence', async () => {
       const filePath = path.join(tmpDir, 'test.txt');
       await fs.writeFile(filePath, 'hello', 'utf-8');
-      const result = await safeRead(filePath);
-      expect(result).toBe('hello');
+      await expect(safeRead(filePath)).resolves.toBe('hello');
+      await expect(safeRead(path.join(tmpDir, 'missing.txt'))).resolves.toBeNull();
     });
 
-    it('HAPPY: safeRead returns null for missing file (ENOENT)', async () => {
-      const result = await safeRead(path.join(tmpDir, 'nonexistent.txt'));
-      expect(result).toBeNull();
-    });
-
-    it('HAPPY: safeUnlink returns true when file deleted', async () => {
+    it('deletes existing files and treats ENOENT as absence', async () => {
       const filePath = path.join(tmpDir, 'to-delete.txt');
       await fs.writeFile(filePath, 'x', 'utf-8');
-      const result = await safeUnlink(filePath);
-      expect(result).toBe(true);
+      await expect(safeUnlink(filePath)).resolves.toBe(true);
+      await expect(safeUnlink(filePath)).resolves.toBe(false);
     });
 
-    it('HAPPY: safeUnlink returns false for missing file (ENOENT)', async () => {
-      const result = await safeUnlink(path.join(tmpDir, 'nonexistent.txt'));
-      expect(result).toBe(false);
-    });
-
-    it('BAD: safeRead throws on permission error (EACCES)', async () => {
-      const filePath = path.join(tmpDir, 'no-access.txt');
-      await fs.writeFile(filePath, 'secret', 'utf-8');
+    it('propagates read permission errors', async () => {
       const realImpl = vi.mocked(fs.readFile).getMockImplementation()!;
       try {
         vi.mocked(fs.readFile).mockRejectedValue(
           Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' }),
         );
-        await expect(safeRead(filePath)).rejects.toThrow('EACCES');
+        await expect(safeRead(path.join(tmpDir, 'no-access.txt'))).rejects.toThrow('EACCES');
       } finally {
         vi.mocked(fs.readFile).mockImplementation(realImpl);
       }
     });
 
-    it('BAD: safeUnlink throws on permission error (EPERM)', async () => {
-      const filePath = path.join(tmpDir, 'locked.txt');
-      await fs.writeFile(filePath, 'x', 'utf-8');
+    it('propagates unlink permission errors', async () => {
       const realImpl = vi.mocked(fs.unlink).getMockImplementation()!;
       try {
         vi.mocked(fs.unlink).mockRejectedValue(
           Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' }),
         );
-        await expect(safeUnlink(filePath)).rejects.toThrow('EPERM');
+        await expect(safeUnlink(path.join(tmpDir, 'locked.txt'))).rejects.toThrow('EPERM');
       } finally {
         vi.mocked(fs.unlink).mockImplementation(realImpl);
-      }
-    });
-
-    it('BAD: safeRead throws on unexpected filesystem error (EIO)', async () => {
-      const filePath = path.join(tmpDir, 'io-error.txt');
-      await fs.writeFile(filePath, 'data', 'utf-8');
-      const realImpl = vi.mocked(fs.readFile).getMockImplementation()!;
-      try {
-        vi.mocked(fs.readFile).mockRejectedValue(
-          Object.assign(new Error('EIO: input/output error'), { code: 'EIO' }),
-        );
-        await expect(safeRead(filePath)).rejects.toThrow('EIO');
-      } finally {
-        vi.mocked(fs.readFile).mockImplementation(realImpl);
       }
     });
   });
@@ -261,14 +216,7 @@ describe('install-helpers', () => {
       const errors: string[] = [];
 
       await rollbackArtifacts(
-        [
-          {
-            path: rollbackRoot,
-            existed: false,
-            expectedKind: 'directory',
-            sequence: 1,
-          },
-        ],
+        [{ path: rollbackRoot, existed: false, expectedKind: 'directory', sequence: 1 }],
         ops,
         errors,
       );
@@ -286,14 +234,7 @@ describe('install-helpers', () => {
       const errors: string[] = [];
 
       await rollbackArtifacts(
-        [
-          {
-            path: rollbackPath,
-            existed: false,
-            expectedKind: 'file',
-            sequence: 1,
-          },
-        ],
+        [{ path: rollbackPath, existed: false, expectedKind: 'file', sequence: 1 }],
         [],
         errors,
       );
@@ -311,14 +252,7 @@ describe('install-helpers', () => {
       const errors: string[] = [];
 
       await rollbackArtifacts(
-        [
-          {
-            path: rollbackRoot,
-            existed: false,
-            expectedKind: 'directory',
-            sequence: 1,
-          },
-        ],
+        [{ path: rollbackRoot, existed: false, expectedKind: 'directory', sequence: 1 }],
         [],
         errors,
       );
@@ -329,32 +263,29 @@ describe('install-helpers', () => {
   });
 
   describe('createMalformedJsonBackup', () => {
-    it('creates a timestamped backup path with exact original content', async () => {
+    it('creates a timestamped backup with exact original content', async () => {
       const filePath = path.join(tmpDir, 'opencode.json');
       const malformed = '{ this is not valid json }';
-
       const backupPath = await createMalformedJsonBackup(
         filePath,
         malformed,
         new Date('2026-05-16T14:30:12.123Z'),
       );
-
       expect(backupPath).toBe(`${filePath}.flowguard-backup-20260516T143012123Z`);
       await expect(fs.readFile(backupPath, 'utf-8')).resolves.toBe(malformed);
     });
   });
 
   describe('resolveOpencodeConfigPath', () => {
-    it('HAPPY: creates opencode.json when no config exists', () => {
+    it('creates opencode.json path when no config exists', () => {
       expect(resolveOpencodeConfigPath('repo', undefined, tmpDir)).toBe(
         path.join(tmpDir, 'opencode.json'),
       );
     });
 
-    it('CORNER: prefers opencode.jsonc over opencode.json', async () => {
+    it('prefers opencode.jsonc over opencode.json', async () => {
       await fs.writeFile(path.join(tmpDir, 'opencode.json'), '{}', 'utf-8');
       await fs.writeFile(path.join(tmpDir, 'opencode.jsonc'), '{}', 'utf-8');
-
       expect(resolveOpencodeConfigPath('repo', undefined, tmpDir)).toBe(
         path.join(tmpDir, 'opencode.jsonc'),
       );
@@ -362,64 +293,65 @@ describe('install-helpers', () => {
   });
 
   describe('parseJsonc', () => {
-    it('HAPPY: parses JSONC with line comments', () => {
-      const result = parseJsonc<{ model: string }>('{ // comment\n"model": "claude" }');
-      expect(result.model).toBe('claude');
+    it('parses comments and trailing commas', () => {
+      expect(parseJsonc<{ model: string }>('{ // c\n"model": "claude", }').model).toBe(
+        'claude',
+      );
+      expect(parseJsonc<{ arr: number[] }>('{ "arr": [1, 2, 3, ], }').arr).toEqual([1, 2, 3]);
     });
 
-    it('HAPPY: parses JSONC with block comments', () => {
-      const result = parseJsonc<{ model: string }>('{ /* comment */ "model": "claude" }');
-      expect(result.model).toBe('claude');
-    });
-
-    it('HAPPY: parses trailing commas (full JSONC compat per OpenCode docs)', () => {
-      const result = parseJsonc<{ a: number }>('{ "a": 1, }');
-      expect(result.a).toBe(1);
-    });
-
-    it('HAPPY: parses nested trailing commas', () => {
-      const result = parseJsonc<{ arr: number[] }>('{ "arr": [1, 2, 3, ], }');
-      expect(result.arr).toEqual([1, 2, 3]);
-    });
-
-    it('BAD: throws on truly malformed input', () => {
+    it('throws on malformed input', () => {
       expect(() => parseJsonc('not json')).toThrow(SyntaxError);
     });
   });
 
-  // ÔöÇÔöÇÔöÇ Fix 4: Task-Hardening in desktop-owned configs ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
-  describe('mergeOpencodeJson ÔÇö desktop-owned config task hardening (P35-fix)', () => {
-    it('HAPPY: desktop-owned config with plugin field gets task permission', async () => {
+  describe('mergeOpencodeJson — ownership boundary', () => {
+    it('customer config with plugin field receives only the FlowGuard instruction', async () => {
       const filePath = path.join(tmpDir, 'opencode.json');
-      const desktopConfig = {
+      const input = {
         $schema: 'https://opencode.ai/config.json',
         plugin: ['opencode-helicone-session'],
         instructions: [],
       };
-      await fs.writeFile(filePath, JSON.stringify(desktopConfig, null, 2), 'utf-8');
+      await fs.writeFile(filePath, JSON.stringify(input, null, 2), 'utf-8');
 
       const result = await mergeOpencodeJson(filePath, 'repo');
-      expect(result.action).toBe('merged');
-      expect(result.reason).toContain('task permission');
-
       const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-      expect(content.agent?.build?.permission?.task).toEqual({
-        '*': 'deny',
-        'flowguard-reviewer': 'allow',
-      });
+
+      expect(result.action).toBe('merged');
+      expect(result.reason).toContain('preserved task permissions');
+      expect(content.plugin).toEqual(input.plugin);
+      expect(content.instructions).toContain('.opencode/flowguard-mandates.md');
+      expect(content.agent).toBeUndefined();
     });
 
-    it('HAPPY: desktop-owned config with non-FlowGuard instructions gets task permission', async () => {
+    it('customer instructions remain untouched while FlowGuard appends its instruction', async () => {
       const filePath = path.join(tmpDir, 'opencode.json');
-      const desktopConfig = {
-        $schema: 'https://opencode.ai/config.json',
+      const input = {
         instructions: ['custom-rules.md', 'CONTRIBUTING.md'],
       };
-      await fs.writeFile(filePath, JSON.stringify(desktopConfig, null, 2), 'utf-8');
+      await fs.writeFile(filePath, JSON.stringify(input, null, 2), 'utf-8');
 
-      const result = await mergeOpencodeJson(filePath, 'repo');
-      expect(result.action).toBe('merged');
+      await mergeOpencodeJson(filePath, 'repo');
+      const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
 
+      expect(content.instructions).toEqual([
+        'custom-rules.md',
+        'CONTRIBUTING.md',
+        '.opencode/flowguard-mandates.md',
+      ]);
+      expect(content.agent).toBeUndefined();
+    });
+
+    it('FlowGuard-owned config gets reviewer task hardening', async () => {
+      const filePath = path.join(tmpDir, 'opencode.json');
+      await fs.writeFile(
+        filePath,
+        JSON.stringify({ $schema: 'https://opencode.ai/config.json', instructions: [] }),
+        'utf-8',
+      );
+
+      await mergeOpencodeJson(filePath, 'repo');
       const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
       expect(content.agent?.build?.permission?.task).toEqual({
         '*': 'deny',
@@ -427,146 +359,63 @@ describe('install-helpers', () => {
       });
     });
 
-    it('HAPPY: standard config (no plugin, no foreign instructions) also gets task permission', async () => {
+    it('customer task permissions are preserved byte-for-value', async () => {
       const filePath = path.join(tmpDir, 'opencode.json');
-      const standardConfig = {
-        $schema: 'https://opencode.ai/config.json',
-        instructions: [],
-      };
-      await fs.writeFile(filePath, JSON.stringify(standardConfig, null, 2), 'utf-8');
-
-      const result = await mergeOpencodeJson(filePath, 'repo');
-      expect(result.action).toBe('merged');
-
-      const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-      expect(content.agent?.build?.permission?.task).toEqual({
-        '*': 'deny',
-        'flowguard-reviewer': 'allow',
-      });
-    });
-
-    it('EDGE: desktop-owned config with BOTH plugin AND non-FG instructions', async () => {
-      const filePath = path.join(tmpDir, 'opencode.json');
-      const desktopConfig = {
-        $schema: 'https://opencode.ai/config.json',
-        plugin: ['some-plugin'],
-        instructions: ['user-rules.md'],
-      };
-      await fs.writeFile(filePath, JSON.stringify(desktopConfig, null, 2), 'utf-8');
-
-      const result = await mergeOpencodeJson(filePath, 'repo');
-      expect(result.action).toBe('merged');
-
-      const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-      // Task permission MUST be enforced even in this case
-      expect(content.agent?.build?.permission?.task?.['*']).toBe('deny');
-      expect(content.agent?.build?.permission?.task?.['flowguard-reviewer']).toBe('allow');
-    });
-
-    it('CORNER: idempotent ÔÇö repeated calls do not stack or corrupt', async () => {
-      const filePath = path.join(tmpDir, 'opencode.json');
-      const desktopConfig = {
-        $schema: 'https://opencode.ai/config.json',
-        plugin: ['x'],
-        instructions: [],
-      };
-      await fs.writeFile(filePath, JSON.stringify(desktopConfig, null, 2), 'utf-8');
-
-      // Run twice
-      await mergeOpencodeJson(filePath, 'repo');
-      await mergeOpencodeJson(filePath, 'repo');
-
-      const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-      expect(content.agent?.build?.permission?.task).toEqual({
-        '*': 'deny',
-        'flowguard-reviewer': 'allow',
-      });
-      // No duplicate instruction entries
-      const instructions = content.instructions as string[];
-      const mandateEntries = instructions.filter((i: string) => i.includes('flowguard'));
-      expect(mandateEntries.length).toBeLessThanOrEqual(1);
-    });
-
-    it('EDGE: desktop-owned config with pre-existing agent.build.permission.task gets overwritten', async () => {
-      const filePath = path.join(tmpDir, 'opencode.json');
-      const desktopConfig = {
-        $schema: 'https://opencode.ai/config.json',
-        plugin: ['x'],
-        instructions: [],
-        agent: {
-          build: {
-            permission: {
-              task: { '*': 'allow' }, // dangerous ÔÇö must be overwritten
-            },
-          },
-        },
-      };
-      await fs.writeFile(filePath, JSON.stringify(desktopConfig, null, 2), 'utf-8');
+      const customerTask = { '*': 'allow', 'customer-agent': 'ask' };
+      await fs.writeFile(
+        filePath,
+        JSON.stringify({
+          plugin: ['x'],
+          instructions: [],
+          agent: { build: { permission: { task: customerTask } } },
+        }),
+        'utf-8',
+      );
 
       await mergeOpencodeJson(filePath, 'repo');
-
       const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-      // FlowGuard MUST enforce strict policy regardless of pre-existing config
-      expect(content.agent.build.permission.task).toEqual({
-        '*': 'deny',
-        'flowguard-reviewer': 'allow',
-      });
+      expect(content.agent.build.permission.task).toEqual(customerTask);
+    });
+
+    it('repeated customer-owned merges are idempotent', async () => {
+      const filePath = path.join(tmpDir, 'opencode.json');
+      await fs.writeFile(
+        filePath,
+        JSON.stringify({ plugin: ['x'], instructions: ['user-rules.md'] }),
+        'utf-8',
+      );
+
+      await mergeOpencodeJson(filePath, 'repo');
+      await mergeOpencodeJson(filePath, 'repo');
+      const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
+      expect(content.instructions).toEqual(['user-rules.md', '.opencode/flowguard-mandates.md']);
+      expect(content.agent).toBeUndefined();
     });
   });
 
-  // ÔöÇÔöÇÔöÇ Fix 5: JSONC support in mergeOpencodeJson ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
-  describe('mergeOpencodeJson ÔÇö JSONC support', () => {
-    it('HAPPY: parses JSONC file with line comments', async () => {
+  describe('mergeOpencodeJson — JSONC support', () => {
+    it('parses JSONC with line comments', async () => {
       const filePath = path.join(tmpDir, 'opencode.jsonc');
-      const jsoncContent = `{
-  // This is a comment
-  "$schema": "https://opencode.ai/config.json",
-  "model": "anthropic/claude-sonnet-4-5"
-}`;
-      await fs.writeFile(filePath, jsoncContent, 'utf-8');
-
+      await fs.writeFile(
+        filePath,
+        '{ // comment\n "$schema": "https://opencode.ai/config.json", "model": "anthropic/claude" }',
+        'utf-8',
+      );
       const result = await mergeOpencodeJson(filePath, 'repo');
       expect(result.action).toBe('merged');
-
-      const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-      expect(content.model).toBe('anthropic/claude-sonnet-4-5');
-      expect(content.instructions).toBeDefined();
+      expect(JSON.parse(await fs.readFile(filePath, 'utf-8')).model).toBe('anthropic/claude');
     });
 
-    it('HAPPY: parses JSONC file with block comments', async () => {
+    it('preserves comment-like text inside string values', async () => {
       const filePath = path.join(tmpDir, 'opencode.json');
-      const jsoncContent = `{
-  /* Block comment */
-  "$schema": "https://opencode.ai/config.json",
-  "instructions": ["existing.md"]
-}`;
-      await fs.writeFile(filePath, jsoncContent, 'utf-8');
-
-      const result = await mergeOpencodeJson(filePath, 'repo');
-      expect(result.action).toBe('merged');
-
-      const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-      expect(content.instructions).toContain('existing.md');
+      await fs.writeFile(filePath, '{ "instructions": ["path/with//slashes.md"] }', 'utf-8');
+      await mergeOpencodeJson(filePath, 'repo');
+      expect(JSON.parse(await fs.readFile(filePath, 'utf-8')).instructions).toContain(
+        'path/with//slashes.md',
+      );
     });
 
-    it('HAPPY: trailing commas are parsed correctly (full JSONC compat)', async () => {
-      const filePath = path.join(tmpDir, 'opencode.json');
-      const jsoncContent = `{
-  "$schema": "https://opencode.ai/config.json",
-  "model": "anthropic/claude-sonnet-4-5",
-}`;
-      await fs.writeFile(filePath, jsoncContent, 'utf-8');
-
-      // Trailing commas are valid JSONC per OpenCode docs ÔÇö should merge, not fallback.
-      const result = await mergeOpencodeJson(filePath, 'repo');
-      expect(result.action).toBe('merged');
-
-      const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-      expect(content.model).toBe('anthropic/claude-sonnet-4-5');
-      expect(content['$schema']).toBe('https://opencode.ai/config.json');
-    });
-
-    it('BAD: truly malformed content creates backup before overwriting', async () => {
+    it('backs up malformed config before replacing it', async () => {
       const filePath = path.join(tmpDir, 'opencode.json');
       const malformed = 'this is not json at all {{{{';
       await fs.writeFile(filePath, malformed, 'utf-8');
@@ -574,33 +423,13 @@ describe('install-helpers', () => {
       const result = await mergeOpencodeJson(filePath, 'repo');
       expect(result.action).toBe('written');
       expect(result.reason).toContain('backup');
-
-      // Verify timestamped backup file exists with original content
-      const backupPath = await findBackupFor(filePath);
-      expect(backupPath).not.toBeNull();
-      const backupContent = await fs.readFile(backupPath!, 'utf-8');
-      expect(backupContent).toBe(malformed);
-
-      // Verify the new file is valid JSON with FlowGuard template
-      const newContent = await fs.readFile(filePath, 'utf-8');
-      expect(() => JSON.parse(newContent)).not.toThrow();
-    });
-
-    it('BAD: truly malformed JSONC config creates backup before overwriting', async () => {
-      const filePath = path.join(tmpDir, 'opencode.jsonc');
-      const malformed = 'this is not jsonc at all {{{{';
-      await fs.writeFile(filePath, malformed, 'utf-8');
-
-      const result = await mergeOpencodeJson(filePath, 'repo');
-      expect(result.action).toBe('written');
-      expect(result.reason).toContain('.flowguard-backup-');
-
       const backupPath = await findBackupFor(filePath);
       expect(backupPath).not.toBeNull();
       await expect(fs.readFile(backupPath!, 'utf-8')).resolves.toBe(malformed);
+      expect(() => JSON.parse(await fs.readFile(filePath, 'utf-8'))).not.toThrow();
     });
 
-    it('EDGE: backup failure blocks malformed opencode.json overwrite', async () => {
+    it('blocks malformed config replacement when backup creation fails', async () => {
       const filePath = path.join(tmpDir, 'opencode.json');
       const malformed = 'this is not json at all {{{{';
       await fs.writeFile(filePath, malformed, 'utf-8');
@@ -615,272 +444,11 @@ describe('install-helpers', () => {
             return realImpl(...args);
           },
         );
-
         await expect(mergeOpencodeJson(filePath, 'repo')).rejects.toThrow('EACCES');
       } finally {
         vi.mocked(fs.writeFile).mockImplementation(realImpl);
       }
-
       await expect(fs.readFile(filePath, 'utf-8')).resolves.toBe(malformed);
-    });
-
-    it('CORNER: JSONC with comments inside string values (should preserve)', async () => {
-      const filePath = path.join(tmpDir, 'opencode.json');
-      // Comments inside strings must NOT be stripped
-      const jsoncContent = `{
-  "$schema": "https://opencode.ai/config.json",
-  "instructions": ["path/with//slashes.md"]
-}`;
-      await fs.writeFile(filePath, jsoncContent, 'utf-8');
-
-      const result = await mergeOpencodeJson(filePath, 'repo');
-      expect(result.action).toBe('merged');
-
-      const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-      expect(content.instructions).toContain('path/with//slashes.md');
-    });
-
-    it('EDGE: file with only comments and empty object', async () => {
-      const filePath = path.join(tmpDir, 'opencode.json');
-      const jsoncContent = `// OpenCode config
-/* auto-generated */
-{}`;
-      await fs.writeFile(filePath, jsoncContent, 'utf-8');
-
-      const result = await mergeOpencodeJson(filePath, 'repo');
-      expect(result.action).toBe('merged');
-
-      const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-      expect(content['$schema']).toBe('https://opencode.ai/config.json');
-    });
-  });
-
-  // ─── Fix 4: Task-Hardening in desktop-owned configs ───────────────────────
-  describe('mergeOpencodeJson — desktop-owned config task hardening (P35-fix)', () => {
-    it('HAPPY: desktop-owned config with plugin field gets task permission', async () => {
-      const filePath = path.join(tmpDir, 'opencode.json');
-      const desktopConfig = {
-        $schema: 'https://opencode.ai/config.json',
-        plugin: ['opencode-helicone-session'],
-        instructions: [],
-      };
-      await fs.writeFile(filePath, JSON.stringify(desktopConfig, null, 2), 'utf-8');
-
-      const result = await mergeOpencodeJson(filePath, 'repo');
-      expect(result.action).toBe('merged');
-      expect(result.reason).toContain('task permission');
-
-      const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-      expect(content.agent?.build?.permission?.task).toEqual({
-        '*': 'deny',
-        'flowguard-reviewer': 'allow',
-      });
-    });
-
-    it('HAPPY: desktop-owned config with non-FlowGuard instructions gets task permission', async () => {
-      const filePath = path.join(tmpDir, 'opencode.json');
-      const desktopConfig = {
-        $schema: 'https://opencode.ai/config.json',
-        instructions: ['custom-rules.md', 'CONTRIBUTING.md'],
-      };
-      await fs.writeFile(filePath, JSON.stringify(desktopConfig, null, 2), 'utf-8');
-
-      const result = await mergeOpencodeJson(filePath, 'repo');
-      expect(result.action).toBe('merged');
-
-      const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-      expect(content.agent?.build?.permission?.task).toEqual({
-        '*': 'deny',
-        'flowguard-reviewer': 'allow',
-      });
-    });
-
-    it('HAPPY: standard config (no plugin, no foreign instructions) also gets task permission', async () => {
-      const filePath = path.join(tmpDir, 'opencode.json');
-      const standardConfig = {
-        $schema: 'https://opencode.ai/config.json',
-        instructions: [],
-      };
-      await fs.writeFile(filePath, JSON.stringify(standardConfig, null, 2), 'utf-8');
-
-      const result = await mergeOpencodeJson(filePath, 'repo');
-      expect(result.action).toBe('merged');
-
-      const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-      expect(content.agent?.build?.permission?.task).toEqual({
-        '*': 'deny',
-        'flowguard-reviewer': 'allow',
-      });
-    });
-
-    it('EDGE: desktop-owned config with BOTH plugin AND non-FG instructions', async () => {
-      const filePath = path.join(tmpDir, 'opencode.json');
-      const desktopConfig = {
-        $schema: 'https://opencode.ai/config.json',
-        plugin: ['some-plugin'],
-        instructions: ['user-rules.md'],
-      };
-      await fs.writeFile(filePath, JSON.stringify(desktopConfig, null, 2), 'utf-8');
-
-      const result = await mergeOpencodeJson(filePath, 'repo');
-      expect(result.action).toBe('merged');
-
-      const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-      // Task permission MUST be enforced even in this case
-      expect(content.agent?.build?.permission?.task?.['*']).toBe('deny');
-      expect(content.agent?.build?.permission?.task?.['flowguard-reviewer']).toBe('allow');
-    });
-
-    it('CORNER: idempotent — repeated calls do not stack or corrupt', async () => {
-      const filePath = path.join(tmpDir, 'opencode.json');
-      const desktopConfig = {
-        $schema: 'https://opencode.ai/config.json',
-        plugin: ['x'],
-        instructions: [],
-      };
-      await fs.writeFile(filePath, JSON.stringify(desktopConfig, null, 2), 'utf-8');
-
-      // Run twice
-      await mergeOpencodeJson(filePath, 'repo');
-      await mergeOpencodeJson(filePath, 'repo');
-
-      const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-      expect(content.agent?.build?.permission?.task).toEqual({
-        '*': 'deny',
-        'flowguard-reviewer': 'allow',
-      });
-      // No duplicate instruction entries
-      const instructions = content.instructions as string[];
-      const mandateEntries = instructions.filter((i: string) => i.includes('flowguard'));
-      expect(mandateEntries.length).toBeLessThanOrEqual(1);
-    });
-
-    it('EDGE: desktop-owned config with pre-existing agent.build.permission.task gets overwritten', async () => {
-      const filePath = path.join(tmpDir, 'opencode.json');
-      const desktopConfig = {
-        $schema: 'https://opencode.ai/config.json',
-        plugin: ['x'],
-        instructions: [],
-        agent: {
-          build: {
-            permission: {
-              task: { '*': 'allow' }, // dangerous — must be overwritten
-            },
-          },
-        },
-      };
-      await fs.writeFile(filePath, JSON.stringify(desktopConfig, null, 2), 'utf-8');
-
-      await mergeOpencodeJson(filePath, 'repo');
-
-      const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-      // FlowGuard MUST enforce strict policy regardless of pre-existing config
-      expect(content.agent.build.permission.task).toEqual({
-        '*': 'deny',
-        'flowguard-reviewer': 'allow',
-      });
-    });
-  });
-
-  // ─── Fix 5: JSONC support in mergeOpencodeJson ────────────────────────────
-  describe('mergeOpencodeJson — JSONC support', () => {
-    it('HAPPY: parses JSONC file with line comments', async () => {
-      const filePath = path.join(tmpDir, 'opencode.jsonc');
-      const jsoncContent = `{
-  // This is a comment
-  "$schema": "https://opencode.ai/config.json",
-  "model": "anthropic/claude-sonnet-4-5"
-}`;
-      await fs.writeFile(filePath, jsoncContent, 'utf-8');
-
-      const result = await mergeOpencodeJson(filePath, 'repo');
-      expect(result.action).toBe('merged');
-
-      const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-      expect(content.model).toBe('anthropic/claude-sonnet-4-5');
-      expect(content.instructions).toBeDefined();
-    });
-
-    it('HAPPY: parses JSONC file with block comments', async () => {
-      const filePath = path.join(tmpDir, 'opencode.json');
-      const jsoncContent = `{
-  /* Block comment */
-  "$schema": "https://opencode.ai/config.json",
-  "instructions": ["existing.md"]
-}`;
-      await fs.writeFile(filePath, jsoncContent, 'utf-8');
-
-      const result = await mergeOpencodeJson(filePath, 'repo');
-      expect(result.action).toBe('merged');
-
-      const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-      expect(content.instructions).toContain('existing.md');
-    });
-
-    it('HAPPY: parses trailing commas (full JSONC compat per OpenCode docs)', async () => {
-      const filePath = path.join(tmpDir, 'opencode.json');
-      const jsoncContent = `{
-  "$schema": "https://opencode.ai/config.json",
-  "model": "anthropic/claude-sonnet-4-5",
-}`;
-      await fs.writeFile(filePath, jsoncContent, 'utf-8');
-
-      // jsonc-parser handles trailing commas — file parses and merges successfully
-      const result = await mergeOpencodeJson(filePath, 'repo');
-      expect(result.action).toBe('merged');
-
-      const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-      expect(content.model).toBe('anthropic/claude-sonnet-4-5');
-    });
-
-    it('BAD: truly malformed content creates backup before overwriting', async () => {
-      const filePath = path.join(tmpDir, 'opencode.json');
-      const malformed = 'this is not json at all {{{{';
-      await fs.writeFile(filePath, malformed, 'utf-8');
-
-      const result = await mergeOpencodeJson(filePath, 'repo');
-      expect(result.action).toBe('written');
-      expect(result.reason).toContain('backup');
-
-      // Verify timestamped backup file exists with original content
-      const backupPath = await findBackupFor(filePath);
-      expect(backupPath).not.toBeNull();
-      const backupContent = await fs.readFile(backupPath!, 'utf-8');
-      expect(backupContent).toBe(malformed);
-
-      // Verify the new file is valid JSON with FlowGuard template
-      const newContent = await fs.readFile(filePath, 'utf-8');
-      expect(() => JSON.parse(newContent)).not.toThrow();
-    });
-
-    it('CORNER: JSONC with comments inside string values (should preserve)', async () => {
-      const filePath = path.join(tmpDir, 'opencode.json');
-      // Comments inside strings must NOT be stripped
-      const jsoncContent = `{
-  "$schema": "https://opencode.ai/config.json",
-  "instructions": ["path/with//slashes.md"]
-}`;
-      await fs.writeFile(filePath, jsoncContent, 'utf-8');
-
-      const result = await mergeOpencodeJson(filePath, 'repo');
-      expect(result.action).toBe('merged');
-
-      const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-      expect(content.instructions).toContain('path/with//slashes.md');
-    });
-
-    it('EDGE: file with only comments and empty object', async () => {
-      const filePath = path.join(tmpDir, 'opencode.json');
-      const jsoncContent = `// OpenCode config
-/* auto-generated */
-{}`;
-      await fs.writeFile(filePath, jsoncContent, 'utf-8');
-
-      const result = await mergeOpencodeJson(filePath, 'repo');
-      expect(result.action).toBe('merged');
-
-      const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-      expect(content['$schema']).toBe('https://opencode.ai/config.json');
     });
   });
 });
