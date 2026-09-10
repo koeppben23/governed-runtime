@@ -24,9 +24,26 @@ function sha256File(p: string): string {
   return createHash('sha256').update(readFileSync(p)).digest('hex');
 }
 
+function runContributor(
+  runnerConfig: RunnerConfig,
+  fixtureRoot: string,
+  prompt = 'test prompt',
+  forceCopy = true,
+) {
+  return runProcess(
+    runnerConfig,
+    fixtureRoot,
+    prompt,
+    forceCopy,
+    process.cwd(),
+    {},
+    'repository_contributor',
+  );
+}
+
 describe('process-runner', () => {
   it('captures stdout from a passing process', async () => {
-    const outcome = await runProcess(config(['pass']), FIXTURE, 'test prompt', true, process.cwd(), {});
+    const outcome = await runContributor(config(['pass']), FIXTURE);
     expect(outcome.status).toBe('completed');
     if (outcome.status === 'completed') {
       expect(outcome.stdout).toContain('All checks passed');
@@ -35,7 +52,7 @@ describe('process-runner', () => {
   });
 
   it('captures stderr', async () => {
-    const outcome = await runProcess(config(['exit-1']), FIXTURE, 'test prompt', true, process.cwd(), {});
+    const outcome = await runContributor(config(['exit-1']), FIXTURE);
     expect(outcome.status).toBe('completed');
     if (outcome.status === 'completed') {
       expect(outcome.stderr).toContain('something went wrong');
@@ -46,27 +63,23 @@ describe('process-runner', () => {
   it('detects timeout', async () => {
     const c = config(['timeout']);
     c.timeoutMs = 2000;
-    const outcome = await runProcess(c, FIXTURE, 'test prompt', true, process.cwd(), {});
+    const outcome = await runContributor(c, FIXTURE);
     expect(outcome.status).toBe('runner_error');
-    expect(outcome).toMatchObject({
-      status: 'runner_error',
-      errorKind: 'timeout',
-    });
+    expect(outcome).toMatchObject({ status: 'runner_error', errorKind: 'timeout' });
   });
 
   it('detects process crash (exit code != 0)', async () => {
-    const outcome = await runProcess(config(['crash']), FIXTURE, 'test prompt', true, process.cwd(), {});
+    const outcome = await runContributor(config(['crash']), FIXTURE);
     expect(outcome.status).toBe('completed');
-    if (outcome.status === 'completed') {
-      expect(outcome.exitCode).toBe(137);
-    }
+    if (outcome.status === 'completed') expect(outcome.exitCode).toBe(137);
   });
 
   it('detects file creation in workspace', async () => {
-    const outcome = await runProcess(config(['workspace-write']), FIXTURE, 'test prompt', true, process.cwd(), {});
+    const outcome = await runContributor(config(['workspace-write']), FIXTURE);
     expect(outcome.status).toBe('completed');
     if (outcome.status === 'completed') {
-      const hasNewFile = outcome.afterSnapshot.has('new-file.txt') ||
+      const hasNewFile =
+        outcome.afterSnapshot.has('new-file.txt') ||
         Array.from(outcome.afterSnapshot.keys()).some((k) => k.endsWith('new-file.txt'));
       expect(hasNewFile).toBe(true);
     }
@@ -80,23 +93,44 @@ describe('process-runner', () => {
       args: [],
       timeoutMs: 5000,
     };
-    const outcome = await runProcess(c, FIXTURE, 'test prompt', true, process.cwd(), {});
+    const outcome = await runContributor(c, FIXTURE);
     expect(outcome.status).toBe('runner_error');
-    expect(outcome).toMatchObject({
-      status: 'runner_error',
-      errorKind: 'spawn',
-    });
+    expect(outcome).toMatchObject({ status: 'runner_error', errorKind: 'spawn' });
   });
 
   it('passes the prompt to the process via stdin', async () => {
-    const outcome = await runProcess(config(['echo-stdin']), FIXTURE, 'Hello from eval', true, process.cwd(), {});
+    const outcome = await runContributor(config(['echo-stdin']), FIXTURE, 'Hello from eval');
     expect(outcome.status).toBe('completed');
     if (outcome.status === 'completed') {
       expect(outcome.stdout).toContain('Hello from eval');
     }
   });
 
-  it('materializes the managed product mandates and host instruction entry', async () => {
+  it('materializes product mandates only for an explicit supported host', async () => {
+    const outcome = await runProcess(
+      config(['pass']),
+      FIXTURE,
+      'test prompt',
+      true,
+      process.cwd(),
+      {},
+      'flowguard_product',
+      'opencode',
+    );
+    expect(outcome.status).toBe('completed');
+    if (outcome.status === 'completed') {
+      expect(outcome.instructionSurface).toBe('flowguard_product');
+      expect(outcome.instructionHost).toBe('opencode');
+      expect(outcome.afterContent.get('.opencode/flowguard-mandates.md')).toContain(
+        '# FlowGuard Agent Rules',
+      );
+      expect(outcome.afterContent.get('opencode.json')).toContain(
+        '.opencode/flowguard-mandates.md',
+      );
+    }
+  });
+
+  it('fails closed when a product evaluation omits its host', async () => {
     const outcome = await runProcess(
       config(['pass']),
       FIXTURE,
@@ -106,16 +140,47 @@ describe('process-runner', () => {
       {},
       'flowguard_product',
     );
+    expect(outcome).toMatchObject({
+      status: 'runner_error',
+      errorKind: 'workspace',
+      instructionSurface: 'flowguard_product',
+    });
+  });
+
+  it('merges product instructions into existing OpenCode config', async () => {
+    const fixtureDir = mkdtempSync(join(tmpdir(), 'eval-opencode-merge-'));
+    writeFileSync(
+      join(fixtureDir, 'opencode.json'),
+      JSON.stringify({
+        $schema: 'https://opencode.ai/config.json',
+        model: 'example/provider-model',
+        instructions: ['CUSTOM.md'],
+      }),
+    );
+
+    const outcome = await runProcess(
+      config(['pass']),
+      fixtureDir,
+      'test prompt',
+      true,
+      process.cwd(),
+      {},
+      'flowguard_product',
+      'opencode',
+    );
+
     expect(outcome.status).toBe('completed');
     if (outcome.status === 'completed') {
-      expect(outcome.instructionSurface).toBe('flowguard_product');
-      expect(outcome.afterContent.get('.opencode/flowguard-mandates.md')).toContain(
-        '# FlowGuard Agent Rules',
-      );
-      expect(outcome.afterContent.get('opencode.json')).toContain(
-        '.opencode/flowguard-mandates.md',
-      );
+      const parsed = JSON.parse(outcome.afterContent.get('opencode.json') ?? '{}') as {
+        model?: string;
+        instructions?: string[];
+      };
+      expect(parsed.model).toBe('example/provider-model');
+      expect(parsed.instructions).toContain('CUSTOM.md');
+      expect(parsed.instructions).toContain('.opencode/flowguard-mandates.md');
     }
+
+    rmSync(fixtureDir, { recursive: true, force: true });
   });
 
   it('does not modify original fixture after workspace-copy run', async () => {
@@ -131,7 +196,7 @@ describe('process-runner', () => {
       timeoutMs: 10_000,
     };
 
-    await runProcess(c, fixtureDir, 'test prompt', true, process.cwd(), {});
+    await runContributor(c, fixtureDir);
     const hashAfter = sha256File(join(fixtureDir, 'data.txt'));
 
     expect(hashBefore).toBe(hashAfter);
@@ -158,7 +223,6 @@ describe('process-runner', () => {
     const paths = Array.from(entries.keys());
 
     expect(paths).toContain('real.txt');
-    // Directory symlink must not be traversed — secret.txt is unreachable
     expect(paths.some((p) => p.includes('secret.txt'))).toBe(false);
 
     rmSync(fixtureDir, { recursive: true, force: true });
