@@ -1,14 +1,22 @@
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, writeFileSync, rmSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { loadCases } from './load-cases.js';
-import { runProcess } from './runners/process-runner.js';
+import { computeMandatesDigest } from '../../src/cli/install-helpers.js';
+import { PACKAGE_VERSION } from '../../src/shared/package-version.js';
 import { evaluateAllAssertions, type AssertionContext } from './assertions.js';
-import { scoreCase, summarizeResults } from './score.js';
+import { loadCases } from './load-cases.js';
 import { redactSecrets } from './redact.js';
-import type { RunnerConfig, ExecutedEvalCase } from './schema.js';
+import { runProcess } from './runners/process-runner.js';
+import { scoreCase, summarizeResults } from './score.js';
+import { EvalSummarySchema } from './schema.js';
+import type {
+  EvalRunnerProvenance,
+  ExecutedEvalCase,
+  RepositoryProvenance,
+  RunnerConfig,
+} from './schema.js';
 
 // ── Environment resolution ──────────────────────────────────────────
 
@@ -206,10 +214,45 @@ export async function runEval(
 
 // ── Report persistence ────────────────────────────────────────────────
 
+function toRunnerProvenance(config: RunnerConfig): EvalRunnerProvenance {
+  return {
+    name: config.name,
+    command: config.command,
+    args: [...config.args],
+    promptTransport: config.promptTransport,
+    provider: config.provider,
+    model: config.model,
+    modelVersion: config.modelVersion,
+    runnerVersion: config.runnerVersion,
+    secretEnvNames: [...config.secretEnvNames],
+  };
+}
+
+function resolveRepositoryProvenance(repoRoot: string): RepositoryProvenance {
+  let gitCommit: string;
+  try {
+    gitCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: repoRoot,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    throw new Error('Unable to resolve git commit for eval provenance');
+  }
+  if (!/^[0-9a-f]{40}$/.test(gitCommit)) {
+    throw new Error(`Invalid git commit for eval provenance: ${gitCommit}`);
+  }
+  return {
+    gitCommit,
+    flowguardVersion: PACKAGE_VERSION(),
+    mandateDigest: computeMandatesDigest(),
+  };
+}
+
 export function writeReports(
-  runnerName: string,
+  config: RunnerConfig,
   executed: ExecutedEvalCase[],
-  opts?: { redactionValues?: string[]; runId?: string },
+  opts?: { redactionValues?: string[]; runId?: string; repoRoot?: string },
 ): string {
   const redactionValues = opts?.redactionValues ?? [];
   const ordered = [...executed].sort((a, b) => a.evalCase.id.localeCompare(b.evalCase.id));
@@ -222,7 +265,13 @@ export function writeReports(
   mkdirSync(casesDir, { recursive: true });
 
   const caseResults = ordered.map((e) => e.result);
-  const summary = summarizeResults(runnerName, caseResults);
+  const summary = EvalSummarySchema.parse(
+    summarizeResults(
+      toRunnerProvenance(config),
+      resolveRepositoryProvenance(opts?.repoRoot ?? ROOT),
+      caseResults,
+    ),
+  );
   const redactedSummary = redactSecrets(JSON.stringify(summary, null, 2), redactionValues);
   writeFileSync(join(runDir, 'summary.json'), redactedSummary + '\n');
 
@@ -230,7 +279,10 @@ export function writeReports(
     const caseDir = join(casesDir, e.evalCase.id);
     mkdirSync(caseDir, { recursive: true });
 
-    writeFileSync(join(caseDir, 'prompt.txt'), redactSecrets(e.evalCase.task + '\n', redactionValues));
+    writeFileSync(
+      join(caseDir, 'prompt.txt'),
+      redactSecrets(e.evalCase.task + '\n', redactionValues),
+    );
 
     if (e.outcome.status === 'completed' || e.outcome.status === 'runner_error') {
       writeFileSync(
@@ -273,13 +325,13 @@ export function writeReports(
   }
 
   const mdLines = [
-    `# Eval Run: ${runnerName}`,
+    `# Eval Run: ${summary.runner.name}`,
     '',
-    `| Verdict | Count |`,
-    `| --- | --- |`,
-    `| PASS | ${summary.passed} |`,
-    `| FAIL | ${summary.failed} |`,
-    `| RUNNER_ERROR | ${summary.runnerErrors} |`,
+    `- Provider/model: ${summary.runner.provider}/${summary.runner.model} (${summary.runner.modelVersion})`,
+    `- Runner version: ${summary.runner.runnerVersion}`,
+    `- Git commit: ${summary.repository.gitCommit}`,
+    `- FlowGuard version: ${summary.repository.flowguardVersion}`,
+    `- Mandate digest: ${summary.repository.mandateDigest}`,
     '',
     '## By Instruction Surface',
     '',
@@ -295,7 +347,10 @@ export function writeReports(
         `- **${c.caseId}** (${c.instructionSurface}${c.instructionHost ? `/${c.instructionHost}` : ''}): ${c.verdict}`,
     ),
   ];
-  writeFileSync(join(runDir, 'summary.md'), redactSecrets(mdLines.join('\n') + '\n', redactionValues));
+  writeFileSync(
+    join(runDir, 'summary.md'),
+    redactSecrets(mdLines.join('\n') + '\n', redactionValues),
+  );
 
   return runDir;
 }
