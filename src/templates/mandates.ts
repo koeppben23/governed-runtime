@@ -435,21 +435,34 @@ export type MandatesSectionId =
   | 'before-acting'
   | 'before-completing';
 
+export type MandatesProjectionPhase =
+  | 'PRE_SESSION'
+  | 'INVESTIGATION'
+  | 'PLAN'
+  | 'IMPLEMENTATION'
+  | 'REVIEW';
+
 export interface MandatesSectionDefinition {
   readonly id: MandatesSectionId;
   readonly heading: string | null;
-  readonly phases: readonly string[] | 'all';
+  readonly phases: readonly MandatesProjectionPhase[] | 'all';
   readonly priority: number;
   readonly safetyCritical?: boolean;
   readonly compact?: string;
   readonly concise?: string;
 }
 
-const ALL_PHASES = ['PRE_SESSION', 'INVESTIGATION', 'PLAN', 'IMPLEMENTATION', 'REVIEW'] as const;
+const ALL_PHASES = [
+  'PRE_SESSION',
+  'INVESTIGATION',
+  'PLAN',
+  'IMPLEMENTATION',
+  'REVIEW',
+] as const satisfies readonly MandatesProjectionPhase[];
 const TOOL_ACTIVE_PHASES = ALL_PHASES;
 
 /** Canonical mandate section registry for installed and phase-aware projections. */
-export const MANDATES_SECTION_DEFINITIONS: readonly MandatesSectionDefinition[] = [
+export const MANDATES_SECTION_DEFINITIONS = [
   {
     id: 'grounding',
     heading: null,
@@ -604,7 +617,7 @@ export const MANDATES_SECTION_DEFINITIONS: readonly MandatesSectionDefinition[] 
     priority: 190,
     concise: CONCISE_BEFORE_COMPLETING,
   },
-];
+] as const satisfies readonly MandatesSectionDefinition[];
 
 // ---------------------------------------------------------------------------
 // Reviewer criteria (content SSOT for reviewer prompts)
