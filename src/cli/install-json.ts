@@ -112,18 +112,19 @@ function ensureNested(parent: Record<string, unknown>, key: string): Record<stri
 }
 
 /**
- * Add FlowGuard's reviewer permission without deleting foreign task permissions.
- * Explicit customer wildcard policy is preserved; FlowGuard supplies the deny-all
- * default only when the task map has no wildcard of its own.
+ * Harden a FlowGuard-owned build-agent task map.
+ * Customer-owned OpenCode configs are detected by mergeOpencodeJson and never
+ * pass through this destructive helper.
  */
 export function mergeReviewerTaskPermission(parsed: Record<string, unknown>): void {
   const agent = ensureNested(parsed, 'agent');
   const build = ensureNested(agent, 'build');
   const permission = ensureNested(build, 'permission');
-  const task = ensureNested(permission, 'task');
 
-  if (task['*'] === undefined) task['*'] = 'deny';
-  task[REVIEWER_SUBAGENT_TYPE] = 'allow';
+  permission['task'] = {
+    '*': 'deny',
+    [REVIEWER_SUBAGENT_TYPE]: 'allow',
+  };
 }
 
 export async function mergeOpencodeJson(filePath: string, scope: InstallScope): Promise<FileOp> {
