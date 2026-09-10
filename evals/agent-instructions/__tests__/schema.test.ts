@@ -2,13 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { EvalCaseSchema } from '../schema.js';
 
 describe('EvalCaseSchema', () => {
-  it('accepts a valid workspace case', () => {
+  it('accepts a valid workspace contributor case', () => {
     const result = EvalCaseSchema.safeParse({
       id: 'test-case',
       description: 'A test case',
+      instructionSurface: 'repository_contributor',
       task: 'Do something',
       mode: 'workspace',
-      workspace: { mode: 'fixture', fixture: 'my-fixture' },
+      workspace: { mode: 'fixture' },
       assertions: [
         {
           type: 'output_contains',
@@ -20,10 +21,11 @@ describe('EvalCaseSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('accepts a valid output-only case', () => {
+  it('accepts a valid output-only contributor case', () => {
     const result = EvalCaseSchema.safeParse({
       id: 'test-case',
       description: 'A test case',
+      instructionSurface: 'repository_contributor',
       task: 'Do something',
       mode: 'output-only',
       assertions: [
@@ -37,19 +39,14 @@ describe('EvalCaseSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('rejects workspace case without fixture', () => {
+  it('rejects workspace case without fixture mode', () => {
     const result = EvalCaseSchema.safeParse({
       id: 'test-case',
       description: 'A test case',
+      instructionSurface: 'repository_contributor',
       task: 'Do something',
       mode: 'workspace',
-      assertions: [
-        {
-          type: 'exit_code',
-          value: 0,
-          description: 'exit 0',
-        },
-      ],
+      assertions: [{ type: 'exit_code', value: 0, description: 'exit 0' }],
     });
     expect(result.success).toBe(false);
   });
@@ -58,24 +55,20 @@ describe('EvalCaseSchema', () => {
     const result = EvalCaseSchema.safeParse({
       id: 'test-case',
       description: 'A test case',
+      instructionSurface: 'repository_contributor',
       task: 'Do something',
       mode: 'output-only',
-      workspace: { mode: 'fixture', fixture: 'x' },
-      assertions: [
-        {
-          type: 'exit_code',
-          value: 0,
-          description: 'exit 0',
-        },
-      ],
+      workspace: { mode: 'fixture' },
+      assertions: [{ type: 'exit_code', value: 0, description: 'exit 0' }],
     });
     expect(result.success).toBe(false);
   });
 
-  it('defaults severity to hard', () => {
+  it('defaults assertion severity to hard without defaulting instruction authority', () => {
     const result = EvalCaseSchema.safeParse({
       id: 'test-case',
       description: 'A test case',
+      instructionSurface: 'repository_contributor',
       task: 'Do something',
       mode: 'output-only',
       assertions: [
@@ -93,7 +86,31 @@ describe('EvalCaseSchema', () => {
     }
   });
 
-  it('accepts the FlowGuard product instruction surface', () => {
+  it('rejects a case with no explicit instruction surface', () => {
+    const result = EvalCaseSchema.safeParse({
+      id: 'test-case',
+      description: 'A test case',
+      task: 'Do something',
+      mode: 'output-only',
+      assertions: [{ type: 'exit_code', value: 0, description: 'exit 0' }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts a FlowGuard product case only with an explicit supported host', () => {
+    const result = EvalCaseSchema.safeParse({
+      id: 'product-case',
+      description: 'A customer runtime mandate case',
+      instructionSurface: 'flowguard_product',
+      instructionHost: 'opencode',
+      task: 'Do something',
+      mode: 'output-only',
+      assertions: [{ type: 'exit_code', value: 0, description: 'exit 0' }],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a FlowGuard product case without an instruction host', () => {
     const result = EvalCaseSchema.safeParse({
       id: 'product-case',
       description: 'A customer runtime mandate case',
@@ -102,13 +119,27 @@ describe('EvalCaseSchema', () => {
       mode: 'output-only',
       assertions: [{ type: 'exit_code', value: 0, description: 'exit 0' }],
     });
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects product host metadata on contributor cases', () => {
+    const result = EvalCaseSchema.safeParse({
+      id: 'contributor-case',
+      description: 'A repository contributor case',
+      instructionSurface: 'repository_contributor',
+      instructionHost: 'opencode',
+      task: 'Do something',
+      mode: 'output-only',
+      assertions: [{ type: 'exit_code', value: 0, description: 'exit 0' }],
+    });
+    expect(result.success).toBe(false);
   });
 
   it('accepts advisory severity', () => {
     const result = EvalCaseSchema.safeParse({
       id: 'test-case',
       description: 'A test case',
+      instructionSurface: 'repository_contributor',
       task: 'Do something',
       mode: 'output-only',
       assertions: [
@@ -127,6 +158,7 @@ describe('EvalCaseSchema', () => {
     const result = EvalCaseSchema.safeParse({
       id: 'test-case',
       description: 'A test case',
+      instructionSurface: 'repository_contributor',
       task: 'Do something',
       mode: 'output-only',
       assertions: [],
@@ -138,9 +170,10 @@ describe('EvalCaseSchema', () => {
     const result = EvalCaseSchema.safeParse({
       id: 'test-case',
       description: 'A test case',
+      instructionSurface: 'repository_contributor',
       task: 'Do something',
       mode: 'workspace',
-      workspace: { mode: 'fixture', fixture: 'ok-fixture' },
+      workspace: { mode: 'fixture' },
       assertions: [
         {
           type: 'file_changed',
