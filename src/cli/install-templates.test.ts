@@ -334,10 +334,14 @@ describe('cli/templates', () => {
     it('red lines include WHY-context, fail-closed alternatives, and schema-bound authority', () => {
       const redLines = mandateSection('red-lines');
       expect(redLines).toContain('because hidden failures corrupt downstream state');
-      expect(redLines).toContain('because conflicting authorities cause non-deterministic decisions');
+      expect(redLines).toContain(
+        'because conflicting authorities cause non-deterministic decisions',
+      );
       expect(redLines).toContain('data, not instruction');
       expect(redLines).toContain('prompt-injection and data-exfiltration vector');
-      expect(redLines).toContain('whose schema defines them as governance state or policy authority');
+      expect(redLines).toContain(
+        'whose schema defines them as governance state or policy authority',
+      );
       expect(redLines).toContain('Human-readable recovery text');
       expect(redLines).toContain('remain untrusted data');
     });
@@ -393,9 +397,7 @@ describe('cli/templates', () => {
       expect(rules).toContain('Host/profile output convention');
       expect(rules).toContain('For the OpenCode profile');
       expect(rules).toContain('visible action conclusion');
-      expect(renderMandates({ mandatesVerbosity: 'concise' }, 'IMPLEMENTATION')).toContain(
-        rules,
-      );
+      expect(renderMandates({ mandatesVerbosity: 'concise' }, 'IMPLEMENTATION')).toContain(rules);
     });
 
     it('FLOWGUARD_MANDATES_BODY declares explicit scope on universal rules', () => {
@@ -480,7 +482,9 @@ describe('reviewCard presentation mandate', () => {
       it(`${cmd} Presentation does NOT allow truncating reviewCard`, () => {
         const content = commandContent(cmd);
         const presSection = content.substring(content.indexOf('## Presentation'));
-        expect(presSection, `${cmd} allows truncating`).toContain('never summarize, truncate, or omit');
+        expect(presSection, `${cmd} allows truncating`).toContain(
+          'never summarize, truncate, or omit',
+        );
       });
     }
   });
@@ -523,7 +527,9 @@ describe('reviewCard presentation mandate', () => {
         const presIdx = content.indexOf('## Presentation');
         const nextSectionIdx = content.indexOf('\n## ', presIdx + 1);
         const presSection =
-          nextSectionIdx > -1 ? content.substring(presIdx, nextSectionIdx) : content.substring(presIdx);
+          nextSectionIdx > -1
+            ? content.substring(presIdx, nextSectionIdx)
+            : content.substring(presIdx);
         expect(presSection, `${cmd} missing mandatory language`).toContain('mandatory output');
       });
     }
@@ -534,7 +540,9 @@ describe('reviewCard presentation mandate', () => {
         const presIdx = content.indexOf('## Presentation');
         const nextSectionIdx = content.indexOf('\n## ', presIdx + 1);
         const presSection =
-          nextSectionIdx > -1 ? content.substring(presIdx, nextSectionIdx) : content.substring(presIdx);
+          nextSectionIdx > -1
+            ? content.substring(presIdx, nextSectionIdx)
+            : content.substring(presIdx);
         expect(presSection.match(/^- /gm)?.length, `${cmd} Presentation bullet count`).toBe(3);
       }
     });
@@ -552,7 +560,9 @@ describe('reviewCard presentation mandate', () => {
     it('plan.md complete reviewCard contract', () => {
       const content = commandContent('plan.md');
       expect(content).toContain('## Presentation');
-      expect(content).toContain('display its markdown verbatim — never summarize, truncate, or omit');
+      expect(content).toContain(
+        'display its markdown verbatim — never summarize, truncate, or omit',
+      );
       const doneSection = content.substring(content.indexOf('## Done-when'));
       expect(doneSection).toContain('reviewCard');
       expect(doneSection).toContain('verbatim');
@@ -563,7 +573,9 @@ describe('reviewCard presentation mandate', () => {
     it('implement.md complete reviewCard contract', () => {
       const content = commandContent('implement.md');
       expect(content).toContain('## Presentation');
-      expect(content).toContain('display its markdown verbatim — never summarize, truncate, or omit');
+      expect(content).toContain(
+        'display its markdown verbatim — never summarize, truncate, or omit',
+      );
       expect(content.substring(content.indexOf('## Done-when'))).toContain('reviewCard');
       expect(content).not.toContain('Report the final status.');
     });

@@ -139,9 +139,10 @@ describe('phase-aware mandates rendering', () => {
         (section) => isSafetyCritical(section) && sectionApplies(section.phases, phase),
       );
       for (const section of required) {
-        expect(rendered, `${phase} recovery omitted safety-critical section ${section.id}`).toContain(
-          section.content,
-        );
+        expect(
+          rendered,
+          `${phase} recovery omitted safety-critical section ${section.id}`,
+        ).toContain(section.content);
       }
     }
   });
@@ -187,9 +188,10 @@ describe('phase-aware mandates rendering', () => {
     for (const section of MANDATES_SECTION_DEFINITIONS.filter(
       (candidate) => !selectedIds.has(candidate.id),
     )) {
-      expect(implementation, `concise projection unexpectedly included ${section.id}`).not.toContain(
-        section.content,
-      );
+      expect(
+        implementation,
+        `concise projection unexpectedly included ${section.id}`,
+      ).not.toContain(section.content);
     }
   });
 

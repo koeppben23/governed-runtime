@@ -94,7 +94,9 @@ function selectProjectionSections(
 ): readonly MandatesSectionDefinition[] {
   const sections = selectMandatesSections(phase);
   if (verbosity === 'concise') {
-    return sections.filter((section) => section.safetyCritical === true || section.concise === true);
+    return sections.filter(
+      (section) => section.safetyCritical === true || section.concise === true,
+    );
   }
   if (phase === 'PRE_SESSION' || phase === 'INVESTIGATION') {
     return sections.filter(

@@ -158,9 +158,7 @@ export function deriveReviewSubjectScope(subject: FrozenReviewSubject): ReviewSu
 export interface ReviewerChallengePromptContract {
   readonly requiredChallengeCount: number;
   readonly requiredChallengeKind?:
-    | 'design_challenge'
-    | 'implementation_challenge'
-    | 'content_challenge';
+    'design_challenge' | 'implementation_challenge' | 'content_challenge';
   /** Canonical evidence objects the reviewer may copy into a challenge. */
   readonly evidenceRefs?: readonly Record<string, unknown>[];
 }

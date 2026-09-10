@@ -294,9 +294,7 @@ describe('install-helpers', () => {
 
   describe('parseJsonc', () => {
     it('parses comments and trailing commas', () => {
-      expect(parseJsonc<{ model: string }>('{ // c\n"model": "claude", }').model).toBe(
-        'claude',
-      );
+      expect(parseJsonc<{ model: string }>('{ // c\n"model": "claude", }').model).toBe('claude');
       expect(parseJsonc<{ arr: number[] }>('{ "arr": [1, 2, 3, ], }').arr).toEqual([1, 2, 3]);
     });
 
