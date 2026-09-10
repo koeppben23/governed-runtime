@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { renderGitHubSummary } from '../github-summary.js';
 import type { ExecutedEvalCase } from '../schema.js';
 
@@ -51,17 +51,17 @@ function ec(
 }
 
 describe('renderGitHubSummary', () => {
-  it('renders a table with all verdicts', () => {
+  it('renders surface identity with all verdicts', () => {
     const s = renderGitHubSummary('fake-host', [
       ec('PASS'),
       ec('FAIL', 2, 1),
       ec('RUNNER_ERROR'),
     ]);
     expect(s).toContain('Eval: fake-host');
-    expect(s).toContain('| Case | Verdict | Hard Failures | Advisory Failures |');
-    expect(s).toContain('| case-PASS | PASS | 0 | 0 |');
-    expect(s).toContain('| case-FAIL | FAIL | 2 | 1 |');
-    expect(s).toContain('| case-RUNNER_ERROR | RUNNER_ERROR | 0 | 0 |');
+    expect(s).toContain('| Surface | Case | Verdict | Hard Failures | Advisory Failures |');
+    expect(s).toContain('| repository_contributor | case-PASS | PASS | 0 | 0 |');
+    expect(s).toContain('| repository_contributor | case-FAIL | FAIL | 2 | 1 |');
+    expect(s).toContain('| repository_contributor | case-RUNNER_ERROR | RUNNER_ERROR | 0 | 0 |');
   });
 
   it('does not contain raw output', () => {
