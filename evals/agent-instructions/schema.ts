@@ -13,6 +13,10 @@ const pathSchema = z
     { message: 'must be a repository-relative path without traversal' },
   );
 
+const idSchema = z
+  .string()
+  .regex(/^[a-z0-9][a-z0-9-]*$/, 'must be a lowercase slug without path separators');
+
 // ── Severity ──────────────────────────────────────────────────────────
 
 const SeveritySchema = z.enum(['hard', 'advisory']);
@@ -121,7 +125,7 @@ export type FileAssertion = z.infer<typeof FileAssertionSchema>;
 // ── Case schemas ──────────────────────────────────────────────────────
 
 const CaseBase = {
-  id: z.string().min(1),
+  id: idSchema,
   description: z.string().min(1),
   instructionSurface: InstructionSurfaceSchema,
   instructionHost: InstructionHostSchema.optional(),
@@ -227,7 +231,7 @@ export const AssertionResultSchema = z.object({
 export type AssertionResult = z.infer<typeof AssertionResultSchema>;
 
 export const EvalCaseResultSchema = z.object({
-  caseId: z.string(),
+  caseId: idSchema,
   instructionSurface: InstructionSurfaceSchema,
   instructionHost: InstructionHostSchema.optional(),
   verdict: z.enum(['PASS', 'FAIL', 'RUNNER_ERROR']),
