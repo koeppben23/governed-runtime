@@ -97,17 +97,33 @@ describe('EvalCaseSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('accepts a FlowGuard product case only with an explicit supported host', () => {
+  it.each(['opencode', 'claude-code', 'codex'] as const)(
+    'accepts a FlowGuard product case for supported host %s',
+    (instructionHost) => {
+      const result = EvalCaseSchema.safeParse({
+        id: `product-${instructionHost}`,
+        description: 'A customer runtime mandate case',
+        instructionSurface: 'flowguard_product',
+        instructionHost,
+        task: 'Do something',
+        mode: 'output-only',
+        assertions: [{ type: 'exit_code', value: 0, description: 'exit 0' }],
+      });
+      expect(result.success).toBe(true);
+    },
+  );
+
+  it('rejects an unsupported product host', () => {
     const result = EvalCaseSchema.safeParse({
       id: 'product-case',
       description: 'A customer runtime mandate case',
       instructionSurface: 'flowguard_product',
-      instructionHost: 'opencode',
+      instructionHost: 'unknown-host',
       task: 'Do something',
       mode: 'output-only',
       assertions: [{ type: 'exit_code', value: 0, description: 'exit 0' }],
     });
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
   });
 
   it('rejects a FlowGuard product case without an instruction host', () => {
