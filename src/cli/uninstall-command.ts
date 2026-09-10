@@ -75,7 +75,7 @@ async function mayRemoveMandate(fullPath: string, warnings: string[]): Promise<b
   const content = await safeRead(fullPath);
   if (content === null) return true;
   if (!isManagedArtifact(content)) {
-    warnings.push(`${MANDATES_FILENAME} has no FlowGuard managed header — preserved`);
+    warnings.push(`${MANDATES_FILENAME} has no managed header — preserved`);
     return false;
   }
 
