@@ -8,11 +8,24 @@
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync, lstatSync, cpSync, rmSync, mkdtempSync } from 'node:fs';
+import {
+  readFileSync,
+  readdirSync,
+  lstatSync,
+  cpSync,
+  rmSync,
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+} from 'node:fs';
 import { join, sep, basename } from 'node:path';
 import { tmpdir } from 'node:os';
-import type { RunnerConfig } from '../schema.js';
+import type { RunnerConfig, InstructionSurface } from '../schema.js';
 import type { WorkspaceSnapshot } from '../assertions.js';
+import { buildMandatesContent } from '../../../src/rendering/mandates-renderer.js';
+import { computeMandatesDigest } from '../../../src/cli/install-helpers.js';
+import { OPENCODE_JSON_TEMPLATE, mandatesInstructionEntry } from '../../../src/templates/mandates.js';
+import { PACKAGE_VERSION } from '../../../src/shared/package-version.js';
 
 // ── Outcome types ─────────────────────────────────────────────────────
 
@@ -26,6 +39,7 @@ export interface CompletedOutcome {
   afterSnapshot: WorkspaceSnapshot;
   beforeContent: Map<string, string>;
   afterContent: Map<string, string>;
+  instructionSurface: InstructionSurface;
 }
 
 export interface RunnerErrorOutcome {
@@ -34,6 +48,7 @@ export interface RunnerErrorOutcome {
   message: string;
   stdout: string;
   stderr: string;
+  instructionSurface?: InstructionSurface;
 }
 
 export type RunnerOutcome = CompletedOutcome | RunnerErrorOutcome;
@@ -156,11 +171,37 @@ export async function runProcess(
   forceCopy: boolean,
   repoRoot: string,
   childEnv: NodeJS.ProcessEnv,
+  instructionSurface: InstructionSurface = 'repository_contributor',
 ): Promise<RunnerOutcome> {
   const ws = setupWorkspace(fixtureRoot, forceCopy);
   if ('status' in ws) return ws;
 
   const { workspaceRoot, cleanup } = ws;
+
+  if (instructionSurface === 'flowguard_product') {
+    try {
+      const mandatesDir = join(workspaceRoot, '.opencode');
+      mkdirSync(mandatesDir, { recursive: true });
+      writeFileSync(
+        join(mandatesDir, 'flowguard-mandates.md'),
+        buildMandatesContent(PACKAGE_VERSION(), computeMandatesDigest()),
+      );
+      writeFileSync(
+        join(workspaceRoot, 'opencode.json'),
+        OPENCODE_JSON_TEMPLATE(mandatesInstructionEntry('repo')),
+      );
+    } catch (err) {
+      cleanup();
+      return {
+        status: 'runner_error',
+        errorKind: 'workspace',
+        message: `Failed to install FlowGuard product mandates: ${(err as Error).message}`,
+        stdout: '',
+        stderr: '',
+        instructionSurface,
+      };
+    }
+  }
 
   const before = snapshotWorkspace(workspaceRoot);
 
@@ -267,6 +308,7 @@ export async function runProcess(
         afterSnapshot: after.entries,
         beforeContent: before.contents,
         afterContent: after.contents,
+        instructionSurface,
       });
     });
 

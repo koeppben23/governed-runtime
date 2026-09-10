@@ -96,6 +96,28 @@ describe('process-runner', () => {
     }
   });
 
+  it('materializes the managed product mandates and host instruction entry', async () => {
+    const outcome = await runProcess(
+      config(['pass']),
+      FIXTURE,
+      'test prompt',
+      true,
+      process.cwd(),
+      {},
+      'flowguard_product',
+    );
+    expect(outcome.status).toBe('completed');
+    if (outcome.status === 'completed') {
+      expect(outcome.instructionSurface).toBe('flowguard_product');
+      expect(outcome.afterContent.get('.opencode/flowguard-mandates.md')).toContain(
+        '## Universal Governance',
+      );
+      expect(outcome.afterContent.get('opencode.json')).toContain(
+        '.opencode/flowguard-mandates.md',
+      );
+    }
+  });
+
   it('does not modify original fixture after workspace-copy run', async () => {
     const fixtureDir = mkdtempSync(join(tmpdir(), 'eval-fixture-test-'));
     writeFileSync(join(fixtureDir, 'data.txt'), 'original');

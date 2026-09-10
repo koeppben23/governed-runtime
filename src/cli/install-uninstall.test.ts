@@ -16,7 +16,6 @@ import {
   COMMANDS,
   MANDATES_FILENAME,
   mandatesInstructionEntry,
-  LEGACY_INSTRUCTION_ENTRY,
   extractManagedDigest,
   isManagedArtifact,
 } from './templates.js';

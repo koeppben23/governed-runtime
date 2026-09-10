@@ -17,12 +17,7 @@ import {
 } from './install.js';
 import { checkPluginActivation } from './doctor-plugin.js';
 import { checkLastSessionHandshake } from './doctor-handshake.js';
-import {
-  COMMANDS,
-  MANDATES_FILENAME,
-  mandatesInstructionEntry,
-  LEGACY_INSTRUCTION_ENTRY,
-} from './templates.js';
+import { COMMANDS, MANDATES_FILENAME, mandatesInstructionEntry } from './templates.js';
 import { measureAsync } from '../test-policy.js';
 import { SHIPPED_EXECUTABLE_CHECK } from './install-helpers.js';
 import { checkShippedExecutables } from './doctor-executables.js';
@@ -544,20 +539,19 @@ describe('cli/doctor', () => {
       ).toBe(false);
     });
 
-    it('detects instruction_stale (legacy AGENTS.md entry)', async () => {
+    it('does not classify customer AGENTS.md as a FlowGuard instruction', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       const ocPath = path.join(tmpDir, 'opencode.json');
       const content = JSON.parse(await fs.readFile(ocPath, 'utf-8'));
-      content.instructions.push(LEGACY_INSTRUCTION_ENTRY);
+      content.instructions.push('AGENTS.md');
       await fs.writeFile(ocPath, JSON.stringify(content, null, 2), 'utf-8');
 
       const checks = await doctor(repoArgs({ action: 'doctor' }));
       const staleCheck = checks.find(
         (c) => c.file.includes('opencode.json') && c.status === 'instruction_stale',
       );
-      expect(staleCheck).toBeDefined();
-      expect(staleCheck?.detail).toContain('AGENTS.md');
+      expect(staleCheck).toBeUndefined();
     });
 
     it('reports missing config as error', async () => {
@@ -884,17 +878,17 @@ describe('cli/hasNonFlowGuardInstructions', () => {
     expect(hasNonFlowGuardInstructions([])).toBe(false);
   });
 
-  it('returns false for FlowGuard-only entries', () => {
+  it('distinguishes FlowGuard-owned entries from customer instructions', () => {
     expect(hasNonFlowGuardInstructions(['flowguard-mandates.md'])).toBe(false);
     expect(hasNonFlowGuardInstructions(['.opencode/flowguard-mandates.md'])).toBe(false);
-    expect(hasNonFlowGuardInstructions(['AGENTS.md'])).toBe(false);
+    expect(hasNonFlowGuardInstructions(['AGENTS.md'])).toBe(true);
     expect(
       hasNonFlowGuardInstructions([
         'flowguard-mandates.md',
         '.opencode/flowguard-mandates.md',
         'AGENTS.md',
       ]),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('returns true for non-FlowGuard entries', () => {
@@ -916,7 +910,7 @@ describe('cli/hasNonFlowGuardInstructions', () => {
   it('FLOWGUARD_INSTRUCTION_ENTRIES contains exactly the known entries', () => {
     expect(FLOWGUARD_INSTRUCTION_ENTRIES).toContain('flowguard-mandates.md');
     expect(FLOWGUARD_INSTRUCTION_ENTRIES).toContain('.opencode/flowguard-mandates.md');
-    expect(FLOWGUARD_INSTRUCTION_ENTRIES).toContain('AGENTS.md');
-    expect(FLOWGUARD_INSTRUCTION_ENTRIES).toHaveLength(3);
+    expect(FLOWGUARD_INSTRUCTION_ENTRIES).not.toContain('AGENTS.md');
+    expect(FLOWGUARD_INSTRUCTION_ENTRIES).toHaveLength(2);
   });
 });

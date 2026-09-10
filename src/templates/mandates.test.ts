@@ -13,12 +13,12 @@
 import { describe, it, expect } from 'vitest';
 import {
   FLOWGUARD_MANDATES_BODY,
+  FLOWGUARD_MANDATES_KERNEL,
   REVIEWER_AGENT,
   CLAUDE_REVIEWER_AGENT,
   CODEX_REVIEWER_SUBAGENT,
   mandatesInstructionEntry,
   MANDATES_FILENAME,
-  LEGACY_INSTRUCTION_ENTRY,
 } from './mandates.js';
 
 describe('mandates — contract anchors', () => {
@@ -58,8 +58,10 @@ describe('mandates — contract anchors', () => {
     expect(global).toContain(MANDATES_FILENAME);
   });
 
-  it('MANDATES_FILENAME and LEGACY_INSTRUCTION_ENTRY are stable', () => {
+  it('keeps the installed kernel separate from phase-aware runtime mandates', () => {
     expect(MANDATES_FILENAME).toBe('flowguard-mandates.md');
-    expect(LEGACY_INSTRUCTION_ENTRY).toBe('AGENTS.md');
+    expect(FLOWGUARD_MANDATES_KERNEL).toContain('## Universal Governance');
+    expect(FLOWGUARD_MANDATES_KERNEL).toContain('[End of v5 Agent Rules]');
+    expect(FLOWGUARD_MANDATES_KERNEL.length).toBeLessThan(FLOWGUARD_MANDATES_BODY.length);
   });
 });

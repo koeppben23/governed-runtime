@@ -5,12 +5,7 @@
  * @version v1
  */
 
-import {
-  COMMANDS,
-  MANDATES_FILENAME,
-  REVIEWER_AGENT_FILENAME,
-  LEGACY_INSTRUCTION_ENTRY,
-} from './templates.js';
+import { COMMANDS, MANDATES_FILENAME, REVIEWER_AGENT_FILENAME } from './templates.js';
 
 // ---- re-export canonical PolicyMode ----
 export type { PolicyMode } from '../config/policy-types.js';
@@ -123,7 +118,6 @@ export const FLOWGUARD_TARBALL_PATTERN =
 export const FLOWGUARD_INSTRUCTION_ENTRIES: readonly string[] = [
   MANDATES_FILENAME,
   `.opencode/${MANDATES_FILENAME}`,
-  LEGACY_INSTRUCTION_ENTRY,
 ];
 
 export function hasNonFlowGuardInstructions(instructions: string[]): boolean {

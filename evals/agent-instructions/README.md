@@ -1,7 +1,9 @@
 # Agent Instruction Eval Suite
 
-Deterministic, provider-neutral conformance corpus for the FlowGuard instruction
-architecture (root `AGENTS.md` + nested instruction files).
+Deterministic, provider-neutral conformance corpus with separate instruction
+surfaces. `repository_contributor` covers repository-local guidance such as
+`AGENTS.md`; `flowguard_product` covers the managed mandates FlowGuard installs
+for customer hosts. Results retain the surface and must not be compared across it.
 
 ## Structure
 
@@ -25,6 +27,10 @@ __tests__/          — Unit tests for all modules
 |-------|--------|-------------|
 | Workspace | `workspace` | Full mini-repository with fixture. Evaluates real file changes. |
 | Output-only | `output-only` | Evaluates stdout/stderr output. No filesystem interaction. |
+
+For `flowguard_product`, the runner materializes the managed mandate through the
+production renderer, digest, managed artifact builder, and OpenCode instruction
+entry before invoking the configured host.
 
 ## Running
 

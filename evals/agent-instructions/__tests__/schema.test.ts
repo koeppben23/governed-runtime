@@ -89,7 +89,20 @@ describe('EvalCaseSchema', () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.assertions[0].severity).toBe('hard');
+      expect(result.data.instructionSurface).toBe('repository_contributor');
     }
+  });
+
+  it('accepts the FlowGuard product instruction surface', () => {
+    const result = EvalCaseSchema.safeParse({
+      id: 'product-case',
+      description: 'A customer runtime mandate case',
+      instructionSurface: 'flowguard_product',
+      task: 'Do something',
+      mode: 'output-only',
+      assertions: [{ type: 'exit_code', value: 0, description: 'exit 0' }],
+    });
+    expect(result.success).toBe(true);
   });
 
   it('accepts advisory severity', () => {

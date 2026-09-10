@@ -1,9 +1,10 @@
-import type { AssertionResult, EvalCaseResult } from './schema.js';
+import type { AssertionResult, EvalCaseResult, InstructionSurface } from './schema.js';
 
 export type Verdict = 'PASS' | 'FAIL' | 'RUNNER_ERROR';
 
 export function scoreCase(
   caseId: string,
+  instructionSurface: InstructionSurface,
   assertionResults: AssertionResult[],
   durationMs: number,
   runnerError?: string,
@@ -12,6 +13,7 @@ export function scoreCase(
   if (runnerError) {
     return {
       caseId,
+      instructionSurface,
       verdict: 'RUNNER_ERROR',
       durationMs,
       assertionResults,
@@ -25,6 +27,7 @@ export function scoreCase(
 
   return {
     caseId,
+    instructionSurface,
     verdict: hardFailures.length > 0 ? 'FAIL' : 'PASS',
     durationMs,
     assertionResults,

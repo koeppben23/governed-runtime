@@ -17,6 +17,13 @@ const pathSchema = z
 
 const SeveritySchema = z.enum(['hard', 'advisory']);
 
+/** Keeps customer product prompt evaluation separate from contributor guidance. */
+export const InstructionSurfaceSchema = z.enum([
+  'repository_contributor',
+  'flowguard_product',
+]);
+export type InstructionSurface = z.infer<typeof InstructionSurfaceSchema>;
+
 // ── Stream channel ────────────────────────────────────────────────────
 
 const StreamSchema = z.enum(['stdout', 'stderr', 'combined']);
@@ -116,6 +123,7 @@ export const EvalCaseSchema = z.discriminatedUnion('mode', [
   z.object({
     id: z.string().min(1),
     description: z.string().min(1),
+    instructionSurface: InstructionSurfaceSchema.default('repository_contributor'),
     task: z.string().min(1),
     mode: z.literal('workspace'),
     workspace: z.object({
@@ -126,6 +134,7 @@ export const EvalCaseSchema = z.discriminatedUnion('mode', [
   z.object({
     id: z.string().min(1),
     description: z.string().min(1),
+    instructionSurface: InstructionSurfaceSchema.default('repository_contributor'),
     task: z.string().min(1),
     mode: z.literal('output-only'),
     workspace: z
@@ -207,6 +216,7 @@ export type AssertionResult = z.infer<typeof AssertionResultSchema>;
 
 export const EvalCaseResultSchema = z.object({
   caseId: z.string(),
+  instructionSurface: InstructionSurfaceSchema,
   verdict: z.enum(['PASS', 'FAIL', 'RUNNER_ERROR']),
   durationMs: z.number(),
   assertionResults: AssertionResultSchema.array(),

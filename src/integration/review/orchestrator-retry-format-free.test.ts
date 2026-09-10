@@ -732,7 +732,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       expect(promptFn.mock.calls[1]![0].path.id).toBe('retry-session-1');
     });
 
-    it('T26: format-free retry uses same prompt text as original call', async () => {
+    it('T26: format-free retry adds its own serialization contract', async () => {
       const client = makeSequentialClient({});
       await invokeReviewer(client, SHARED_PROMPT, 'parent-1', {
         maxRetries: 0,
@@ -745,7 +745,8 @@ describe('invokeReviewer — format-free retry fallback', () => {
       const firstParts = promptFn.mock.calls[0]![0].body.parts;
       const secondParts = promptFn.mock.calls[1]![0].body.parts;
       expect(firstParts[0].text).toBe(SHARED_PROMPT);
-      expect(secondParts[0].text).toBe(SHARED_PROMPT);
+      expect(secondParts[0].text).toContain(SHARED_PROMPT);
+      expect(secondParts[0].text).toContain('## Text Compatibility Output Contract');
     });
   });
 

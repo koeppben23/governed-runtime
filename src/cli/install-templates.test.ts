@@ -13,9 +13,9 @@ import { sha256, computeMandatesDigest } from './install.js';
 import {
   COMMANDS,
   FLOWGUARD_MANDATES_BODY,
+  FLOWGUARD_MANDATES_KERNEL,
   MANDATES_FILENAME,
   mandatesInstructionEntry,
-  LEGACY_INSTRUCTION_ENTRY,
   buildMandatesContent,
   extractManagedDigest,
   extractManagedVersion,
@@ -190,8 +190,8 @@ describe('cli/crypto', () => {
   });
 
   describe('CORNER', () => {
-    it('computeMandatesDigest matches sha256 of FLOWGUARD_MANDATES_BODY', () => {
-      expect(computeMandatesDigest()).toBe(sha256(FLOWGUARD_MANDATES_BODY));
+    it('computeMandatesDigest matches sha256 of the installed kernel', () => {
+      expect(computeMandatesDigest()).toBe(sha256(FLOWGUARD_MANDATES_KERNEL));
     });
   });
 
@@ -252,7 +252,7 @@ describe('cli/templates', () => {
       const digest = computeMandatesDigest();
       const content = buildMandatesContent('2.0.0', digest);
       const body = extractManagedBody(content);
-      expect(body).toBe(FLOWGUARD_MANDATES_BODY);
+      expect(body).toBe(FLOWGUARD_MANDATES_KERNEL);
     });
   });
 
@@ -275,8 +275,9 @@ describe('cli/templates', () => {
   });
 
   describe('CORNER', () => {
-    it("LEGACY_INSTRUCTION_ENTRY is 'AGENTS.md'", () => {
-      expect(LEGACY_INSTRUCTION_ENTRY).toBe('AGENTS.md');
+    it('installed mandates are the v5 kernel, not the phase-aware body', () => {
+      expect(FLOWGUARD_MANDATES_KERNEL).toContain('[End of v5 Agent Rules]');
+      expect(FLOWGUARD_MANDATES_KERNEL).not.toBe(FLOWGUARD_MANDATES_BODY);
     });
 
     it("MANDATES_FILENAME is 'flowguard-mandates.md'", () => {

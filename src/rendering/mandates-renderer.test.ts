@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { FLOWGUARD_MANDATES_BODY } from '../templates/mandates.js';
+import { FLOWGUARD_MANDATES_KERNEL } from '../templates/mandates.js';
 import {
   buildMandatesContent,
   extractManagedDigest,
@@ -40,9 +40,9 @@ describe('buildMandatesContent', () => {
     expect(content).toContain(`<!-- content-digest: sha256:${VALID_DIGEST} -->`);
   });
 
-  it('contains FLOWGUARD_MANDATES_BODY after the headers', () => {
+  it('contains FLOWGUARD_MANDATES_KERNEL after the headers', () => {
     const content = managedArtifact();
-    expect(content).toContain(FLOWGUARD_MANDATES_BODY);
+    expect(content).toContain(FLOWGUARD_MANDATES_KERNEL);
   });
 });
 
@@ -87,7 +87,7 @@ describe('isManagedArtifact', () => {
 
 describe('extractManagedBody', () => {
   it('returns the body without headers (roundtrip)', () => {
-    expect(extractManagedBody(managedArtifact())).toBe(FLOWGUARD_MANDATES_BODY);
+    expect(extractManagedBody(managedArtifact())).toBe(FLOWGUARD_MANDATES_KERNEL);
   });
 
   it('returns null for non-managed content', () => {

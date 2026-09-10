@@ -1,6 +1,7 @@
 import { Phase as PhaseSchema, type Phase } from '../state/schema.js';
 import {
   FLOWGUARD_MANDATES_BODY,
+  FLOWGUARD_MANDATES_KERNEL,
   COMPACT_RED_LINES,
   COMPACT_HARD_INVARIANTS,
   COMPACT_EVIDENCE,
@@ -486,7 +487,7 @@ export function renderCompactionMandatesSummary(
 // ---------------------------------------------------------------------------
 
 export function buildMandatesContent(version: string, digest: string): string {
-  return `<!-- @flowguard/core v${version} | managed artifact — do not edit manually -->\n<!-- content-digest: sha256:${digest} -->\n\n${FLOWGUARD_MANDATES_BODY}`;
+  return `<!-- @flowguard/core v${version} | managed artifact — do not edit manually -->\n<!-- content-digest: sha256:${digest} -->\n\n${FLOWGUARD_MANDATES_KERNEL}`;
 }
 
 export function extractManagedDigest(content: string): string | null {

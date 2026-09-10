@@ -18,7 +18,6 @@ import {
   COMMANDS,
   MANDATES_FILENAME,
   mandatesInstructionEntry,
-  LEGACY_INSTRUCTION_ENTRY,
   extractManagedDigest,
   isManagedArtifact,
 } from './templates.js';
@@ -516,12 +515,17 @@ describe('cli/install', () => {
       expect(existsSync(path.join(tmpDir, 'AGENTS.md'))).toBe(false);
     });
 
-    it('opencode.json does NOT contain legacy AGENTS.md entry', async () => {
+    it('preserves customer AGENTS.md instructions', async () => {
       const tarball = await createMockTarball();
+      await fs.writeFile(
+        path.join(tmpDir, 'opencode.json'),
+        JSON.stringify({ instructions: ['AGENTS.md'] }),
+      );
       await install(repoArgs({ coreTarball: tarball }));
       const content = await fs.readFile(path.join(tmpDir, 'opencode.json'), 'utf-8');
       const parsed = JSON.parse(content);
-      expect(parsed.instructions).not.toContain(LEGACY_INSTRUCTION_ENTRY);
+      expect(parsed.instructions).toContain('AGENTS.md');
+      expect(parsed.instructions).toContain(mandatesInstructionEntry('repo'));
     });
   });
 
@@ -1553,7 +1557,7 @@ describe('cli/install', () => {
       expect(content.model).toBe('claude');
     });
 
-    it('legacy migration: removes AGENTS.md from opencode.json instructions', async () => {
+    it('preserves AGENTS.md from opencode.json instructions', async () => {
       const tarball = await createMockTarball();
       await fs.writeFile(
         path.join(tmpDir, 'opencode.json'),
@@ -1563,7 +1567,7 @@ describe('cli/install', () => {
       await install(repoArgs({ coreTarball: tarball }));
       const content = await fs.readFile(path.join(tmpDir, 'opencode.json'), 'utf-8');
       const parsed = JSON.parse(content);
-      expect(parsed.instructions).not.toContain('AGENTS.md');
+      expect(parsed.instructions).toContain('AGENTS.md');
       expect(parsed.instructions).toContain('other-instructions.md');
       expect(parsed.instructions).toContain(mandatesInstructionEntry('repo'));
     });

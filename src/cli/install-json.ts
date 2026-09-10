@@ -16,7 +16,6 @@ import { getAdapterLogger } from '../logging/adapter-logger.js';
 import {
   OPENCODE_JSON_TEMPLATE,
   PACKAGE_JSON_TEMPLATE,
-  LEGACY_INSTRUCTION_ENTRY,
   mandatesInstructionEntry,
 } from './templates.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
@@ -159,7 +158,7 @@ export async function mergeOpencodeJson(filePath: string, scope: InstallScope): 
   const hasDesktopInstructions = hasNonFlowGuardInstructions(existingInstructions);
 
   if (hasPluginField || hasDesktopInstructions) {
-    const instructions = existingInstructions.filter((i) => i !== LEGACY_INSTRUCTION_ENTRY);
+    const instructions = [...existingInstructions];
     if (!instructions.includes(entry)) {
       instructions.push(entry);
     }
@@ -177,7 +176,6 @@ export async function mergeOpencodeJson(filePath: string, scope: InstallScope): 
     ? (parsed['instructions'] as string[])
     : [];
 
-  instructions = instructions.filter((i) => i !== LEGACY_INSTRUCTION_ENTRY);
   instructions = instructions.filter((i) => i !== entry);
   instructions.push(entry);
   parsed['instructions'] = instructions;
@@ -240,7 +238,7 @@ async function removeFlowGuardOnly(
   const entry = mandatesInstructionEntry(scope);
   const hasInstructions = Array.isArray(parsed['instructions']);
   const before = hasInstructions ? (parsed['instructions'] as string[]) : [];
-  const after = before.filter((i) => i !== entry && i !== LEGACY_INSTRUCTION_ENTRY);
+  const after = before.filter((i) => i !== entry);
   const removedInstruction = after.length !== before.length;
   const removedTaskHardening = removeTaskHardening(parsed);
 
@@ -256,7 +254,7 @@ async function removeFromDesktopOwned(
   scope: InstallScope,
 ): Promise<{ removed: true; parsed: Record<string, unknown> } | { removed: false }> {
   const entry = mandatesInstructionEntry(scope);
-  const after = instructions.filter((i) => i !== entry && i !== LEGACY_INSTRUCTION_ENTRY);
+  const after = instructions.filter((i) => i !== entry);
   if (after.length === instructions.length) return { removed: false };
   if (Array.isArray(parsed['instructions']) || after.length > 0) {
     parsed['instructions'] = after;

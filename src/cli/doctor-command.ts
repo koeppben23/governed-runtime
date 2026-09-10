@@ -12,7 +12,6 @@ import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import type { HostId } from '../shared/hosts.js';
 import {
   COMMANDS,
-  LEGACY_INSTRUCTION_ENTRY,
   MANDATES_FILENAME,
   PLUGIN_WRAPPER,
   REVIEWER_AGENT_FILENAME,
@@ -247,18 +246,8 @@ async function checkOpencodeInstructions(
         detail: `instructions array does not contain "${entry}"`,
       });
     }
-    if (instructions.includes(LEGACY_INSTRUCTION_ENTRY)) {
-      checks.push({
-        file: opencodeJsonPath,
-        status: 'instruction_stale',
-        detail: `legacy "${LEGACY_INSTRUCTION_ENTRY}" entry still in instructions — run install to migrate`,
-      });
-    }
-
     const hasIssue = checks.some(
-      (c) =>
-        c.file === opencodeJsonPath &&
-        (c.status === 'instruction_missing' || c.status === 'instruction_stale'),
+      (c) => c.file === opencodeJsonPath && c.status === 'instruction_missing',
     );
     if (!hasIssue) {
       checks.push({ file: opencodeJsonPath, status: 'ok' });

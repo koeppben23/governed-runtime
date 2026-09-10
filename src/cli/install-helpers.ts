@@ -23,7 +23,7 @@ import {
   CODEX_REVIEWER_SUBAGENT,
   REVIEWER_AGENT_FILENAME,
   REVIEWER_AGENT,
-  FLOWGUARD_MANDATES_BODY,
+  FLOWGUARD_MANDATES_KERNEL,
   MANDATES_FILENAME,
 } from './templates.js';
 
@@ -131,7 +131,7 @@ export function reviewerDefinitionForPlatform(platform: InstallPlatform): {
 }
 
 export function computeMandatesDigest(): string {
-  return hashText(FLOWGUARD_MANDATES_BODY);
+  return hashText(FLOWGUARD_MANDATES_KERNEL);
 }
 
 // ---- Tarball Integrity Verification ----

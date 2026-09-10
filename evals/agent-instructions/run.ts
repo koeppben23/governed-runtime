@@ -101,14 +101,28 @@ export async function runEval(
       cleanupTemp = empty.cleanup;
     }
 
-    const outcome = await runProcess(config, fixtureRoot, evalCase.task, forceCopy, repoRoot, env.childEnv);
+    const outcome = await runProcess(
+      config,
+      fixtureRoot,
+      evalCase.task,
+      forceCopy,
+      repoRoot,
+      env.childEnv,
+      evalCase.instructionSurface,
+    );
 
     if (cleanupTemp) {
       cleanupTemp();
     }
 
     if (outcome.status === 'runner_error') {
-      const er = scoreCase(evalCase.id, [], Date.now() - startMs, outcome.message);
+      const er = scoreCase(
+        evalCase.id,
+        evalCase.instructionSurface,
+        [],
+        Date.now() - startMs,
+        outcome.message,
+      );
       results.push({ evalCase, result: er, outcome });
       continue;
     }
@@ -145,6 +159,7 @@ export async function runEval(
 
     const result = scoreCase(
       evalCase.id,
+      evalCase.instructionSurface,
       assertionResults,
       Date.now() - startMs,
       undefined,
@@ -227,7 +242,7 @@ export function writeReports(
     `| FAIL | ${summary.failed} |`,
     `| RUNNER_ERROR | ${summary.runnerErrors} |`,
     '',
-    ...summary.cases.map((c) => `- **${c.caseId}**: ${c.verdict}`),
+    ...summary.cases.map((c) => `- **${c.caseId}** (${c.instructionSurface}): ${c.verdict}`),
   ];
   writeFileSync(join(runDir, 'summary.md'), redactSecrets(mdLines.join('\n') + '\n', redactionValues));
 
