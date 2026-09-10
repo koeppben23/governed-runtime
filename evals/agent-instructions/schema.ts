@@ -140,9 +140,7 @@ const CaseBase = {
    * Values are automatically added to report redaction. This is intentionally
    * separate from provider credentials supplied through RunnerConfig.
    */
-  syntheticSecrets: z
-    .record(SyntheticSecretNameSchema, z.string().min(16))
-    .default({}),
+  syntheticSecrets: z.record(SyntheticSecretNameSchema, z.string().min(16)).default({}),
   assertions: AssertionSchema.array().min(1),
 };
 
@@ -189,6 +187,10 @@ export type EvalCase = z.infer<typeof EvalCaseSchema>;
 const RunnerBase = {
   name: z.string().min(1),
   command: z.string().min(1),
+  provider: z.string().min(1),
+  model: z.string().min(1),
+  modelVersion: z.string().min(1),
+  runnerVersion: z.string().min(1),
   staticEnv: z.record(z.string(), z.string()).default({}),
   secretEnvNames: z.array(z.string().regex(/^[A-Z_][A-Z0-9_]*$/)).default([]),
   timeoutMs: z.number().int().positive().default(600_000),
@@ -262,12 +264,32 @@ export const EvalCaseResultSchema = z.object({
 
 export type EvalCaseResult = z.infer<typeof EvalCaseResultSchema>;
 
+export const EvalRunnerProvenanceSchema = z.object({
+  name: z.string().min(1),
+  command: z.string().min(1),
+  args: z.array(z.string()),
+  promptTransport: z.enum(['stdin', 'argument']),
+  provider: z.string().min(1),
+  model: z.string().min(1),
+  modelVersion: z.string().min(1),
+  runnerVersion: z.string().min(1),
+  secretEnvNames: z.array(z.string()),
+});
+
+export type EvalRunnerProvenance = z.infer<typeof EvalRunnerProvenanceSchema>;
+
+export const RepositoryProvenanceSchema = z.object({
+  gitCommit: z.string().regex(/^[0-9a-f]{40}$/),
+  flowguardVersion: z.string().min(1),
+  mandateDigest: z.string().regex(/^[0-9a-f]{64}$/),
+});
+
+export type RepositoryProvenance = z.infer<typeof RepositoryProvenanceSchema>;
+
 export const EvalSummarySchema = z.object({
-  schemaVersion: z.literal(1),
-  runner: z.string(),
-  passed: z.number(),
-  failed: z.number(),
-  runnerErrors: z.number(),
+  schemaVersion: z.literal(2),
+  runner: EvalRunnerProvenanceSchema,
+  repository: RepositoryProvenanceSchema,
   byInstructionSurface: z.object({
     repository_contributor: z.object({
       passed: z.number(),
