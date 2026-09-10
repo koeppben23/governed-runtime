@@ -18,7 +18,7 @@ const REPO_ROOT = join(__dirname, '..', '..');
 
 const AGENTS_MD = readFileSync(join(REPO_ROOT, 'AGENTS.md'), 'utf-8').replace(/\r\n/g, '\n');
 
-const VERSION_FOOTER = '\n\n---\n\n[End of v4 Agent Rules]';
+const VERSION_FOOTER = '\n\n---\n\n[End of v5 Agent Rules]';
 const MANDATES_BASE = FLOWGUARD_MANDATES_BODY.replace(VERSION_FOOTER, '');
 
 const MANDATE_SECTIONS: readonly string[] = [
@@ -57,7 +57,7 @@ describe('mandate authority guard', () => {
   it('keeps installed mandates in FLOWGUARD_MANDATES_BODY', () => {
     expect(FLOWGUARD_MANDATES_BODY).toContain('# FlowGuard Agent Rules');
     expect(FLOWGUARD_MANDATES_BODY).toContain('You are operating under FlowGuard governance.');
-    expect(FLOWGUARD_MANDATES_BODY).toContain('[End of v4 Agent Rules]');
+    expect(FLOWGUARD_MANDATES_BODY).toContain('[End of v5 Agent Rules]');
   });
 
   it('keeps all installed mandate sections ordered in FLOWGUARD_MANDATES_BODY', () => {
@@ -85,7 +85,7 @@ describe('mandate authority guard', () => {
     expect(AGENTS_MD).toContain('root `AGENTS.md` is local contributor guidance only');
     expect(AGENTS_MD).not.toContain('You are operating under FlowGuard governance.');
     expect(AGENTS_MD).not.toContain('Use only FlowGuard tools for state changes');
-    expect(AGENTS_MD).not.toContain('[End of v4 Agent Rules]');
+    expect(AGENTS_MD).not.toContain('[End of v5 Agent Rules]');
   });
 
   it('keeps reviewer-only sections out of root AGENTS.md and installed mandates', () => {
