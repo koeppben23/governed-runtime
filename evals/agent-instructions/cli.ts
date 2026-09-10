@@ -12,6 +12,10 @@
  *   {
  *     "name": "example-host",
  *     "command": "agent-command",
+ *     "provider": "provider-id",
+ *     "model": "model-id",
+ *     "modelVersion": "provider-model-version",
+ *     "runnerVersion": "runner-cli-version",
  *     "promptTransport": "stdin",
  *     "args": ["run"],
  *     "timeoutMs": 600000,
@@ -25,20 +29,16 @@
  *   2 — framework error or RUNNER_ERROR
  */
 
-import { readFileSync, appendFileSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { appendFileSync, readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { RunnerConfigSchema } from './schema.js';
-import { runEval, writeReports } from './run.js';
 import { determineExitCode } from './exit-code.js';
 import { renderGitHubSummary } from './github-summary.js';
+import { runEval, writeReports } from './run.js';
+import { RunnerConfigSchema } from './schema.js';
 
-const REPO_ROOT = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  '..',
-  '..',
-);
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 async function main(): Promise<void> {
   const { values } = parseArgs({
@@ -53,7 +53,9 @@ async function main(): Promise<void> {
   });
 
   if (!values.config) {
-    console.error('Usage: npx tsx evals/agent-instructions/cli.ts --config <runner.json> [--advisory] [--case id] [--timeout-ms N]');
+    console.error(
+      'Usage: npx tsx evals/agent-instructions/cli.ts --config <runner.json> [--advisory] [--case id] [--timeout-ms N]',
+    );
     process.exit(2);
   }
 
@@ -76,7 +78,6 @@ async function main(): Promise<void> {
 
   const config = parsed.data;
 
-  // Apply timeout override
   if (values['timeout-ms']) {
     const ms = Number(values['timeout-ms']);
     if (!Number.isInteger(ms) || ms < 1) {
@@ -87,9 +88,8 @@ async function main(): Promise<void> {
   }
 
   const { executed, redactionValues } = await runEval(config, REPO_ROOT, values.case);
-  const runDir = writeReports(config.name, executed, { redactionValues });
+  const runDir = writeReports(config, executed, { redactionValues, repoRoot: REPO_ROOT });
 
-  // GitHub Step Summary
   if (process.env.GITHUB_STEP_SUMMARY) {
     appendFileSync(
       process.env.GITHUB_STEP_SUMMARY,
