@@ -31,6 +31,8 @@ const PROJECTION_PHASES = [
   'REVIEW',
 ] as const satisfies readonly MandatesProjectionPhase[];
 
+type MandatesSection = (typeof MANDATES_SECTION_DEFINITIONS)[number];
+
 function roughTokenBudget(text: string): { chars: number; words: number; lines: number } {
   return {
     chars: text.length,
@@ -50,10 +52,14 @@ function expectAnchors(rendered: string, skipKeys?: readonly string[]): void {
 }
 
 function sectionApplies(
-  phases: (typeof MANDATES_SECTION_DEFINITIONS)[number]['phases'],
+  phases: 'all' | readonly MandatesProjectionPhase[],
   phase: MandatesProjectionPhase,
 ): boolean {
   return phases === 'all' || phases.includes(phase);
+}
+
+function isSafetyCritical(section: MandatesSection): boolean {
+  return 'safetyCritical' in section && section.safetyCritical === true;
 }
 
 describe('phase-aware mandates rendering', () => {
@@ -111,7 +117,7 @@ describe('phase-aware mandates rendering', () => {
     for (const phase of PROJECTION_PHASES) {
       const rendered = renderPhaseAwareMandates({}, phase);
       const required = MANDATES_SECTION_DEFINITIONS.filter(
-        (section) => section.safetyCritical === true && sectionApplies(section.phases, phase),
+        (section) => isSafetyCritical(section) && sectionApplies(section.phases, phase),
       );
       expect(required.length).toBeGreaterThan(0);
       for (const section of required) {
@@ -126,7 +132,7 @@ describe('phase-aware mandates rendering', () => {
     for (const phase of PROJECTION_PHASES) {
       const rendered = renderCompactionMandatesSummary(phase);
       const required = MANDATES_SECTION_DEFINITIONS.filter(
-        (section) => section.safetyCritical === true && sectionApplies(section.phases, phase),
+        (section) => isSafetyCritical(section) && sectionApplies(section.phases, phase),
       );
       for (const section of required) {
         expect(rendered, `${phase} recovery omitted safety-critical section ${section.id}`).toContain(
@@ -189,7 +195,7 @@ describe('phase-aware mandates rendering', () => {
         phase,
       );
       for (const section of MANDATES_SECTION_DEFINITIONS.filter(
-        (candidate) => candidate.safetyCritical === true && sectionApplies(candidate.phases, phase),
+        (candidate) => isSafetyCritical(candidate) && sectionApplies(candidate.phases, phase),
       )) {
         expect(rendered).toContain(section.heading ?? '# FlowGuard Agent Rules');
       }
