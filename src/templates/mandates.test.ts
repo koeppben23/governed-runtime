@@ -59,6 +59,6 @@ describe('mandates — contract anchors', () => {
 
   it('keeps the installed mandate body canonical', () => {
     expect(MANDATES_FILENAME).toBe('flowguard-mandates.md');
-    expect(FLOWGUARD_MANDATES_BODY).toContain('[End of v4 Agent Rules]');
+    expect(FLOWGUARD_MANDATES_BODY).toContain('[End of v5 Agent Rules]');
   });
 });
