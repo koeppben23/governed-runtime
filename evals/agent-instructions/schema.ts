@@ -24,6 +24,10 @@ export const InstructionSurfaceSchema = z.enum([
 ]);
 export type InstructionSurface = z.infer<typeof InstructionSurfaceSchema>;
 
+/** Host transport used to materialize FlowGuard product instructions. */
+export const InstructionHostSchema = z.enum(['opencode']);
+export type InstructionHost = z.infer<typeof InstructionHostSchema>;
+
 // ── Stream channel ────────────────────────────────────────────────────
 
 const StreamSchema = z.enum(['stdout', 'stderr', 'combined']);
@@ -108,10 +112,7 @@ const FileAssertionSchema = z.discriminatedUnion('type', [
 
 // ── Combined assertions ───────────────────────────────────────────────
 
-export const AssertionSchema = z.union([
-  OutputAssertionSchema,
-  FileAssertionSchema,
-]);
+export const AssertionSchema = z.union([OutputAssertionSchema, FileAssertionSchema]);
 
 export type Assertion = z.infer<typeof AssertionSchema>;
 export type OutputAssertion = z.infer<typeof OutputAssertionSchema>;
@@ -119,32 +120,50 @@ export type FileAssertion = z.infer<typeof FileAssertionSchema>;
 
 // ── Case schemas ──────────────────────────────────────────────────────
 
-export const EvalCaseSchema = z.discriminatedUnion('mode', [
-  z.object({
-    id: z.string().min(1),
-    description: z.string().min(1),
-    instructionSurface: InstructionSurfaceSchema.default('repository_contributor'),
-    task: z.string().min(1),
-    mode: z.literal('workspace'),
-    workspace: z.object({
-      mode: z.literal('fixture'),
+const CaseBase = {
+  id: z.string().min(1),
+  description: z.string().min(1),
+  instructionSurface: InstructionSurfaceSchema,
+  instructionHost: InstructionHostSchema.optional(),
+  task: z.string().min(1),
+  assertions: AssertionSchema.array().min(1),
+};
+
+export const EvalCaseSchema = z
+  .discriminatedUnion('mode', [
+    z.object({
+      ...CaseBase,
+      mode: z.literal('workspace'),
+      workspace: z.object({ mode: z.literal('fixture') }),
     }),
-    assertions: AssertionSchema.array().min(1),
-  }),
-  z.object({
-    id: z.string().min(1),
-    description: z.string().min(1),
-    instructionSurface: InstructionSurfaceSchema.default('repository_contributor'),
-    task: z.string().min(1),
-    mode: z.literal('output-only'),
-    workspace: z
-      .object({
-        mode: z.literal('empty'),
-      })
-      .default({ mode: 'empty' }),
-    assertions: AssertionSchema.array().min(1),
-  }),
-]);
+    z.object({
+      ...CaseBase,
+      mode: z.literal('output-only'),
+      workspace: z.object({ mode: z.literal('empty') }).default({ mode: 'empty' }),
+    }),
+  ])
+  .superRefine((evalCase, ctx) => {
+    if (
+      evalCase.instructionSurface === 'flowguard_product' &&
+      evalCase.instructionHost !== 'opencode'
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['instructionHost'],
+        message: 'flowguard_product cases require an explicit supported instructionHost',
+      });
+    }
+    if (
+      evalCase.instructionSurface === 'repository_contributor' &&
+      evalCase.instructionHost !== undefined
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['instructionHost'],
+        message: 'repository_contributor cases must not declare a product instructionHost',
+      });
+    }
+  });
 
 export type EvalCase = z.infer<typeof EvalCaseSchema>;
 
@@ -154,9 +173,7 @@ const RunnerBase = {
   name: z.string().min(1),
   command: z.string().min(1),
   staticEnv: z.record(z.string(), z.string()).default({}),
-  secretEnvNames: z
-    .array(z.string().regex(/^[A-Z_][A-Z0-9_]*$/))
-    .default([]),
+  secretEnvNames: z.array(z.string().regex(/^[A-Z_][A-Z0-9_]*$/)).default([]),
   timeoutMs: z.number().int().positive().default(600_000),
 };
 
@@ -166,32 +183,27 @@ const InnerRunnerConfigSchema = z.discriminatedUnion('promptTransport', [
     promptTransport: z.literal('stdin'),
     args: z.array(z.string()).default([]),
   }),
-  z.object({
-    ...RunnerBase,
-    promptTransport: z.literal('argument'),
-    args: z.array(z.string()).default([]),
-  }).superRefine((c, ctx) => {
-    const count = c.args.reduce(
-      (t, a) => t + a.split('{prompt}').length - 1,
-      0,
-    );
-    if (count !== 1) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['args'],
-        message: 'exactly one {prompt} placeholder required',
-      });
-    }
-  }),
+  z
+    .object({
+      ...RunnerBase,
+      promptTransport: z.literal('argument'),
+      args: z.array(z.string()).default([]),
+    })
+    .superRefine((c, ctx) => {
+      const count = c.args.reduce((t, a) => t + a.split('{prompt}').length - 1, 0);
+      if (count !== 1) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['args'],
+          message: 'exactly one {prompt} placeholder required',
+        });
+      }
+    }),
 ]);
 
 export const RunnerConfigSchema = z.preprocess(
   (input) => {
-    if (
-      typeof input === 'object' &&
-      input !== null &&
-      !('promptTransport' in input)
-    ) {
+    if (typeof input === 'object' && input !== null && !('promptTransport' in input)) {
       return { ...(input as Record<string, unknown>), promptTransport: 'stdin' };
     }
     return input;
@@ -217,6 +229,7 @@ export type AssertionResult = z.infer<typeof AssertionResultSchema>;
 export const EvalCaseResultSchema = z.object({
   caseId: z.string(),
   instructionSurface: InstructionSurfaceSchema,
+  instructionHost: InstructionHostSchema.optional(),
   verdict: z.enum(['PASS', 'FAIL', 'RUNNER_ERROR']),
   durationMs: z.number(),
   assertionResults: AssertionResultSchema.array(),
@@ -239,8 +252,16 @@ export const EvalSummarySchema = z.object({
   failed: z.number(),
   runnerErrors: z.number(),
   byInstructionSurface: z.object({
-    repository_contributor: z.object({ passed: z.number(), failed: z.number(), runnerErrors: z.number() }),
-    flowguard_product: z.object({ passed: z.number(), failed: z.number(), runnerErrors: z.number() }),
+    repository_contributor: z.object({
+      passed: z.number(),
+      failed: z.number(),
+      runnerErrors: z.number(),
+    }),
+    flowguard_product: z.object({
+      passed: z.number(),
+      failed: z.number(),
+      runnerErrors: z.number(),
+    }),
   }),
   cases: EvalCaseResultSchema.array(),
 });
