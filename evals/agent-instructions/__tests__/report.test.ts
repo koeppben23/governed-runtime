@@ -1,10 +1,24 @@
-import { describe, it, expect } from 'vitest';
 import { readFileSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
 import { writeReports } from '../run.js';
-import type { ExecutedEvalCase, EvalCase } from '../schema.js';
+import type { EvalCase, ExecutedEvalCase, RunnerConfig } from '../schema.js';
 import type { RunnerOutcome } from '../runners/process-runner.js';
+
+const RUNNER_CONFIG: RunnerConfig = {
+  name: 'fake-host',
+  command: 'node',
+  provider: 'synthetic',
+  model: 'fake-agent',
+  modelVersion: '1',
+  runnerVersion: '1',
+  promptTransport: 'stdin',
+  args: [],
+  staticEnv: {},
+  secretEnvNames: [],
+  timeoutMs: 1_000,
+};
 
 const BASE_CASE: EvalCase = {
   id: 'test-case',
@@ -50,7 +64,7 @@ function runnerErrorOutcome(): RunnerOutcome {
 }
 
 describe('writeReports', () => {
-  it('writes summary.json with schemaVersion 1', () => {
+  it('writes schemaVersion 2 with runner and repository provenance', () => {
     const c: ExecutedEvalCase = {
       evalCase: { ...BASE_CASE, id: 'c1' },
       result: {
@@ -63,20 +77,29 @@ describe('writeReports', () => {
       outcome: completedOutcome(),
     };
 
-    const d = writeReports('fake-host', [c], { runId: 'test-run-1' });
+    const d = writeReports(RUNNER_CONFIG, [c], { runId: 'test-run-1' });
     const s = JSON.parse(readFileSync(join(d, 'summary.json'), 'utf-8'));
-    expect(s.schemaVersion).toBe(1);
-    expect(s.runner).toBe('fake-host');
-    expect(s.passed).toBe(1);
-    expect(s.failed).toBe(0);
-    expect(s.runnerErrors).toBe(0);
+    expect(s.schemaVersion).toBe(2);
+    expect(s.runner).toMatchObject({
+      name: 'fake-host',
+      provider: 'synthetic',
+      model: 'fake-agent',
+      modelVersion: '1',
+      runnerVersion: '1',
+    });
+    expect(s.repository.gitCommit).toMatch(/^[0-9a-f]{40}$/);
+    expect(s.repository.flowguardVersion).toBeTruthy();
+    expect(s.repository.mandateDigest).toMatch(/^[0-9a-f]{64}$/);
+    expect(s).not.toHaveProperty('passed');
+    expect(s).not.toHaveProperty('failed');
+    expect(s).not.toHaveProperty('runnerErrors');
     expect(s.byInstructionSurface.repository_contributor.passed).toBe(1);
     expect(s.byInstructionSurface.flowguard_product.passed).toBe(0);
 
     rmSync(d, { recursive: true, force: true });
   });
 
-  it('writes summary.md', () => {
+  it('writes summary.md with provenance and surface-scoped totals', () => {
     const c: ExecutedEvalCase = {
       evalCase: { ...BASE_CASE, id: 'c1' },
       result: {
@@ -89,9 +112,11 @@ describe('writeReports', () => {
       outcome: completedOutcome(),
     };
 
-    const d = writeReports('fake-host', [c], { runId: 'test-run-2' });
+    const d = writeReports(RUNNER_CONFIG, [c], { runId: 'test-run-2' });
     const md = readFileSync(join(d, 'summary.md'), 'utf-8');
     expect(md).toContain('Eval Run: fake-host');
+    expect(md).toContain('Provider/model: synthetic/fake-agent (1)');
+    expect(md).toContain('By Instruction Surface');
     expect(md).toContain('FAIL');
     expect(md).toContain('c1');
 
@@ -111,17 +136,12 @@ describe('writeReports', () => {
       outcome: completedOutcome(),
     };
 
-    const d = writeReports('fake-host', [c], { runId: 'test-run-3' });
+    const d = writeReports(RUNNER_CONFIG, [c], { runId: 'test-run-3' });
     const caseDir = join(d, 'cases', 'c1');
 
-    const prompt = readFileSync(join(caseDir, 'prompt.txt'), 'utf-8');
-    expect(prompt.trim()).toBe('fix the bug');
-
-    const stdout = readFileSync(join(caseDir, 'stdout.txt'), 'utf-8');
-    expect(stdout).toContain('hello stdout');
-
-    const stderr = readFileSync(join(caseDir, 'stderr.txt'), 'utf-8');
-    expect(stderr).toContain('hello stderr');
+    expect(readFileSync(join(caseDir, 'prompt.txt'), 'utf-8').trim()).toBe('fix the bug');
+    expect(readFileSync(join(caseDir, 'stdout.txt'), 'utf-8')).toContain('hello stdout');
+    expect(readFileSync(join(caseDir, 'stderr.txt'), 'utf-8')).toContain('hello stderr');
 
     const result = JSON.parse(readFileSync(join(caseDir, 'result.json'), 'utf-8'));
     expect(result.caseId).toBe('c1');
@@ -152,9 +172,10 @@ describe('writeReports', () => {
       outcome: runnerErrorOutcome(),
     };
 
-    const d = writeReports('fake-host', [c], { runId: 'test-run-4' });
-    const stdout = readFileSync(join(d, 'cases', 'c1', 'stdout.txt'), 'utf-8');
-    expect(stdout).toContain('partial stdout');
+    const d = writeReports(RUNNER_CONFIG, [c], { runId: 'test-run-4' });
+    expect(readFileSync(join(d, 'cases', 'c1', 'stdout.txt'), 'utf-8')).toContain(
+      'partial stdout',
+    );
 
     const outcome = JSON.parse(readFileSync(join(d, 'cases', 'c1', 'outcome.json'), 'utf-8'));
     expect(outcome).toEqual({
@@ -180,7 +201,7 @@ describe('writeReports', () => {
       outcome: completedOutcome(),
     }));
 
-    const d = writeReports('fake-host', cases, { runId: 'test-run-5' });
+    const d = writeReports(RUNNER_CONFIG, cases, { runId: 'test-run-5' });
     const s = JSON.parse(readFileSync(join(d, 'summary.json'), 'utf-8'));
     expect(s.cases[0].caseId).toBe('a');
     expect(s.cases[1].caseId).toBe('b');
@@ -201,7 +222,7 @@ describe('writeReports', () => {
       outcome: completedOutcome(),
     };
 
-    const d = writeReports('fake-host', [c], { runId: 'test-run-6' });
+    const d = writeReports(RUNNER_CONFIG, [c], { runId: 'test-run-6' });
     const s = readFileSync(join(d, 'summary.json'), 'utf-8');
     expect(s).not.toContain(tmpdir());
 
@@ -232,20 +253,23 @@ describe('writeReports', () => {
       },
     };
 
-    const d = writeReports('fake-host', [c], {
+    const d = writeReports(RUNNER_CONFIG, [c], {
       runId: 'test-run-redact',
       redactionValues: ['my-secret-key-is-long-enough'],
     });
 
     const caseDir = join(d, 'cases', 'c1');
-    const allFiles = ['stdout.txt', 'stderr.txt', 'result.json', 'outcome.json'];
-    for (const f of allFiles) {
+    for (const f of ['stdout.txt', 'stderr.txt', 'result.json', 'outcome.json']) {
       const content = readFileSync(join(caseDir, f), 'utf-8');
       expect(content).not.toContain('my-secret-key-is-long-enough');
     }
     expect(readFileSync(join(caseDir, 'stdout.txt'), 'utf-8')).toContain('***REDACTED***');
-    expect(readFileSync(join(d, 'summary.json'), 'utf-8')).not.toContain('my-secret-key-is-long-enough');
-    expect(readFileSync(join(d, 'summary.md'), 'utf-8')).not.toContain('my-secret-key-is-long-enough');
+    expect(readFileSync(join(d, 'summary.json'), 'utf-8')).not.toContain(
+      'my-secret-key-is-long-enough',
+    );
+    expect(readFileSync(join(d, 'summary.md'), 'utf-8')).not.toContain(
+      'my-secret-key-is-long-enough',
+    );
 
     rmSync(d, { recursive: true, force: true });
   });
