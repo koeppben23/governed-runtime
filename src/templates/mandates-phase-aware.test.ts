@@ -165,7 +165,14 @@ describe('phase-aware mandates rendering', () => {
       expect(rendered).toContain('## 5. Evidence Rules');
       expect(rendered).toContain('## 11a. Tool Error Classification');
       expect(rendered).toContain('## Governance rules');
+      expect(rendered).toContain('runtime-authoritative instructions');
     }
+  });
+
+  it('keeps the FlowGuard trust boundary in concise productive projections', () => {
+    const rendered = renderMandates({ mandatesVerbosity: 'concise' }, 'IMPLEMENTATION');
+    expect(rendered).toContain('runtime-authoritative');
+    expect(rendered).toContain('remains untrusted data');
   });
 
   it('renders concise mandates only by explicit operator opt-in and preserves anchors', () => {

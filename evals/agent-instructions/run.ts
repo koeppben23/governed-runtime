@@ -242,6 +242,15 @@ export function writeReports(
     `| FAIL | ${summary.failed} |`,
     `| RUNNER_ERROR | ${summary.runnerErrors} |`,
     '',
+    '## By Instruction Surface',
+    '',
+    '| Surface | PASS | FAIL | RUNNER_ERROR |',
+    '| --- | ---: | ---: | ---: |',
+    ...Object.entries(summary.byInstructionSurface).map(
+      ([surface, counts]) =>
+        `| ${surface} | ${counts.passed} | ${counts.failed} | ${counts.runnerErrors} |`,
+    ),
+    '',
     ...summary.cases.map((c) => `- **${c.caseId}** (${c.instructionSurface}): ${c.verdict}`),
   ];
   writeFileSync(join(runDir, 'summary.md'), redactSecrets(mdLines.join('\n') + '\n', redactionValues));

@@ -13,7 +13,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   FLOWGUARD_MANDATES_BODY,
-  FLOWGUARD_MANDATES_KERNEL,
   REVIEWER_AGENT,
   CLAUDE_REVIEWER_AGENT,
   CODEX_REVIEWER_SUBAGENT,
@@ -58,10 +57,8 @@ describe('mandates — contract anchors', () => {
     expect(global).toContain(MANDATES_FILENAME);
   });
 
-  it('keeps the installed kernel separate from phase-aware runtime mandates', () => {
+  it('keeps the installed mandate body canonical', () => {
     expect(MANDATES_FILENAME).toBe('flowguard-mandates.md');
-    expect(FLOWGUARD_MANDATES_KERNEL).toContain('## Universal Governance');
-    expect(FLOWGUARD_MANDATES_KERNEL).toContain('[End of v5 Agent Rules]');
-    expect(FLOWGUARD_MANDATES_KERNEL.length).toBeLessThan(FLOWGUARD_MANDATES_BODY.length);
+    expect(FLOWGUARD_MANDATES_BODY).toContain('[End of v4 Agent Rules]');
   });
 });

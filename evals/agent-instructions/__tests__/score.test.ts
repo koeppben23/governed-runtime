@@ -46,6 +46,16 @@ describe('summarizeResults', () => {
     expect(summary.passed).toBe(2);
     expect(summary.failed).toBe(1);
     expect(summary.runnerErrors).toBe(1);
+    expect(summary.byInstructionSurface.repository_contributor).toEqual({
+      passed: 1,
+      failed: 1,
+      runnerErrors: 0,
+    });
+    expect(summary.byInstructionSurface.flowguard_product).toEqual({
+      passed: 1,
+      failed: 0,
+      runnerErrors: 1,
+    });
   });
 
   it('sorts cases by insertion order', () => {

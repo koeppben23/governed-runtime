@@ -37,6 +37,7 @@ import {
   REVIEWER_AGENT_FALLBACK,
   REVIEWER_SYSTEM_DIRECTIVE,
 } from './agent-resolution.js';
+import { buildTextCompatReviewerPrompt } from './prompt-builders.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -158,15 +159,6 @@ interface ExecuteFormatFreePromptInput {
     error?: unknown;
     details?: Record<string, unknown>;
   }) => void;
-}
-
-/**
- * The structured transport owns JSON shape validation. A format-free retry must
- * carry its own serialization contract instead of reusing the lean prompt that
- * relies on native schema enforcement.
- */
-export function buildTextCompatReviewerPrompt(structuredPrompt: string): string {
-  return `${structuredPrompt}\n\n## Text Compatibility Output Contract\n\nNative structured output is unavailable for this invocation. Return exactly one valid JSON object and no prose or markdown fences. The object MUST include iteration, reviewMode, overallVerdict, blockingIssues, majorRisks, missingVerification, scopeCreep, unknowns, and attestation with toolObligationId. Use only the exact values and bindings supplied above. Example shape: {"iteration": 1, "reviewMode": "subagent", "overallVerdict": "accept", "blockingIssues": [], "majorRisks": [], "missingVerification": [], "scopeCreep": [], "unknowns": [], "attestation": {"toolObligationId": "<provided above>"}}.`;
 }
 
 /**

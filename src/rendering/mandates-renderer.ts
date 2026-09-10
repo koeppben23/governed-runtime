@@ -1,33 +1,8 @@
 import { Phase as PhaseSchema, type Phase } from '../state/schema.js';
 import {
   FLOWGUARD_MANDATES_BODY,
-  FLOWGUARD_MANDATES_KERNEL,
-  COMPACT_RED_LINES,
-  COMPACT_HARD_INVARIANTS,
-  COMPACT_EVIDENCE,
-  COMPACT_TOOL_ERROR,
-  COMPACT_RULE_CONFLICT,
-  COMPACT_COMMAND_EXECUTION,
-  CONCISE_GROUNDING,
-  CONCISE_MISSION,
-  CONCISE_RED_LINES,
-  CONCISE_PRIORITY,
-  CONCISE_LANGUAGE,
-  CONCISE_TASK_ROUTER,
-  CONCISE_HARD_INVARIANTS,
-  CONCISE_EVIDENCE,
-  CONCISE_TOOL_VERIFICATION,
-  CONCISE_AMBIGUITY,
-  CONCISE_OUTPUT_CONTRACT,
-  CONCISE_IMPLEMENTATION_CHECKLIST,
-  CONCISE_REVIEW_CHECKLIST,
-  CONCISE_HIGH_RISK,
-  CONCISE_TOOL_ERROR,
-  CONCISE_RULE_CONFLICT,
-  CONCISE_COMMAND_EXECUTION,
-  CONCISE_EXTENDED_GUIDANCE,
-  CONCISE_BEFORE_ACTING,
-  CONCISE_BEFORE_COMPLETING,
+  MANDATES_SECTION_DEFINITIONS,
+  type MandatesSectionDefinition,
 } from '../templates/mandates.js';
 
 export type MandatesRenderErrorCode =
@@ -56,22 +31,6 @@ export interface MandatesRenderContext {
   mandatesVerbosity?: MandatesVerbosity | string;
   modelId?: string;
 }
-
-interface MandatesSectionDefinition {
-  id: string;
-  heading: string | null;
-  phases: ReadonlySet<MandatesRenderPhase> | 'all';
-  priority: number;
-  safetyCritical?: boolean;
-}
-
-const ALL_RENDER_PHASES: ReadonlySet<MandatesRenderPhase> = new Set([
-  'PRE_SESSION',
-  'INVESTIGATION',
-  'PLAN',
-  'IMPLEMENTATION',
-  'REVIEW',
-]);
 
 const TOOL_ACTIVE_PHASES: ReadonlySet<MandatesRenderPhase> = new Set([
   'PRE_SESSION',
@@ -119,116 +78,6 @@ export const MANDATES_ANCHOR_CATALOG = {
   VERIFICATION_POLICY: ['verification'],
 } as const;
 
-const MANDATES_SECTION_DEFINITIONS: readonly MandatesSectionDefinition[] = [
-  { id: 'grounding', heading: null, phases: 'all', priority: 0, safetyCritical: true },
-  { id: 'mission', heading: '## 1. Mission', phases: ALL_RENDER_PHASES, priority: 10 },
-  {
-    id: 'red-lines',
-    heading: '## Red Lines',
-    phases: TOOL_ACTIVE_PHASES,
-    priority: 20,
-    safetyCritical: true,
-  },
-  { id: 'priority', heading: '## 2. Priority Ladder', phases: ALL_RENDER_PHASES, priority: 30 },
-  { id: 'language', heading: '## Language Conventions', phases: ALL_RENDER_PHASES, priority: 40 },
-  {
-    id: 'task-router',
-    heading: '## 3. Task Class Router',
-    phases: new Set(['PRE_SESSION', 'INVESTIGATION', 'PLAN', 'IMPLEMENTATION', 'REVIEW']),
-    priority: 50,
-  },
-  {
-    id: 'hard-invariants',
-    heading: '## 4. Hard Invariants',
-    phases: ALL_RENDER_PHASES,
-    priority: 60,
-    safetyCritical: true,
-  },
-  {
-    id: 'evidence',
-    heading: '## 5. Evidence Rules',
-    phases: TOOL_ACTIVE_PHASES,
-    priority: 70,
-    safetyCritical: true,
-  },
-  {
-    id: 'tool-verification',
-    heading: '## 6. Tool and Verification Policy',
-    phases: new Set(['IMPLEMENTATION', 'REVIEW']),
-    priority: 80,
-    safetyCritical: true,
-  },
-  {
-    id: 'ambiguity',
-    heading: '## 7. Ambiguity Policy',
-    phases: new Set(['PRE_SESSION', 'INVESTIGATION', 'PLAN', 'IMPLEMENTATION', 'REVIEW']),
-    priority: 90,
-  },
-  {
-    id: 'output-contract',
-    heading: '## 8. Output Contract',
-    phases: new Set(['PLAN', 'IMPLEMENTATION', 'REVIEW']),
-    priority: 100,
-  },
-  {
-    id: 'implementation-checklist',
-    heading: '## 9. Implementation Checklist',
-    phases: new Set(['PLAN', 'IMPLEMENTATION']),
-    priority: 110,
-  },
-  {
-    id: 'review-checklist',
-    heading: '## 10. Review Checklist',
-    phases: new Set(['REVIEW']),
-    priority: 120,
-  },
-  {
-    id: 'high-risk',
-    heading: '## 11. High-Risk Extension',
-    phases: new Set(['PLAN', 'IMPLEMENTATION', 'REVIEW']),
-    priority: 130,
-  },
-  {
-    id: 'tool-error',
-    heading: '## 11a. Tool Error Classification',
-    phases: TOOL_ACTIVE_PHASES,
-    priority: 140,
-    safetyCritical: true,
-  },
-  {
-    id: 'rule-conflict',
-    heading: '## 11b. Rule Conflict Resolution',
-    phases: TOOL_ACTIVE_PHASES,
-    priority: 150,
-    safetyCritical: true,
-  },
-  {
-    id: 'command-execution',
-    heading: '## Governance rules',
-    phases: TOOL_ACTIVE_PHASES,
-    priority: 160,
-    safetyCritical: true,
-  },
-  {
-    id: 'extended-guidance',
-    heading: '## 12. Extended Guidance',
-    phases: ALL_RENDER_PHASES,
-    priority: 170,
-  },
-  {
-    id: 'before-acting',
-    heading: '## Before Acting Rule',
-    phases: ALL_RENDER_PHASES,
-    priority: 180,
-  },
-  {
-    id: 'before-completing',
-    heading: '## Before Completing Rule',
-    phases: new Set(['PLAN', 'IMPLEMENTATION', 'REVIEW']),
-    priority: 190,
-  },
-];
-
 function extractMandatesSection(heading: string | null): string {
   if (heading === null) {
     const firstHeading = FLOWGUARD_MANDATES_BODY.search(/^## /m);
@@ -251,11 +100,8 @@ function extractMandatesSection(heading: string | null): string {
   return FLOWGUARD_MANDATES_BODY.slice(start, end).trim();
 }
 
-function includesPhase(
-  phases: ReadonlySet<MandatesRenderPhase> | 'all',
-  phase: MandatesRenderPhase,
-): boolean {
-  return phases === 'all' || phases.has(phase);
+function includesPhase(phases: readonly string[] | 'all', phase: MandatesRenderPhase): boolean {
+  return phases === 'all' || phases.includes(phase);
 }
 
 function selectMandatesSections(phase: MandatesRenderPhase): readonly MandatesSectionDefinition[] {
@@ -362,69 +208,11 @@ function compactSectionForEarlyPhase(
   if (phase !== 'PRE_SESSION' && phase !== 'INVESTIGATION') {
     return extractMandatesSection(section.heading);
   }
-  switch (section.id) {
-    case 'red-lines':
-      return COMPACT_RED_LINES;
-    case 'hard-invariants':
-      return COMPACT_HARD_INVARIANTS;
-    case 'evidence':
-      return COMPACT_EVIDENCE;
-    case 'tool-error':
-      return COMPACT_TOOL_ERROR;
-    case 'rule-conflict':
-      return COMPACT_RULE_CONFLICT;
-    case 'command-execution':
-      return COMPACT_COMMAND_EXECUTION;
-    default:
-      return extractMandatesSection(section.heading);
-  }
+  return section.compact ?? extractMandatesSection(section.heading);
 }
 
 function conciseSectionForPhase(section: MandatesSectionDefinition): string {
-  switch (section.id) {
-    case 'grounding':
-      return CONCISE_GROUNDING;
-    case 'mission':
-      return CONCISE_MISSION;
-    case 'red-lines':
-      return CONCISE_RED_LINES;
-    case 'priority':
-      return CONCISE_PRIORITY;
-    case 'language':
-      return CONCISE_LANGUAGE;
-    case 'task-router':
-      return CONCISE_TASK_ROUTER;
-    case 'hard-invariants':
-      return CONCISE_HARD_INVARIANTS;
-    case 'evidence':
-      return CONCISE_EVIDENCE;
-    case 'tool-verification':
-      return CONCISE_TOOL_VERIFICATION;
-    case 'ambiguity':
-      return CONCISE_AMBIGUITY;
-    case 'output-contract':
-      return CONCISE_OUTPUT_CONTRACT;
-    case 'implementation-checklist':
-      return CONCISE_IMPLEMENTATION_CHECKLIST;
-    case 'review-checklist':
-      return CONCISE_REVIEW_CHECKLIST;
-    case 'high-risk':
-      return CONCISE_HIGH_RISK;
-    case 'tool-error':
-      return CONCISE_TOOL_ERROR;
-    case 'rule-conflict':
-      return CONCISE_RULE_CONFLICT;
-    case 'command-execution':
-      return CONCISE_COMMAND_EXECUTION;
-    case 'extended-guidance':
-      return CONCISE_EXTENDED_GUIDANCE;
-    case 'before-acting':
-      return CONCISE_BEFORE_ACTING;
-    case 'before-completing':
-      return CONCISE_BEFORE_COMPLETING;
-    default:
-      return extractMandatesSection(section.heading);
-  }
+  return section.concise ?? extractMandatesSection(section.heading);
 }
 
 export function renderPhaseAwareMandates(
@@ -487,7 +275,7 @@ export function renderCompactionMandatesSummary(
 // ---------------------------------------------------------------------------
 
 export function buildMandatesContent(version: string, digest: string): string {
-  return `<!-- @flowguard/core v${version} | managed artifact — do not edit manually -->\n<!-- content-digest: sha256:${digest} -->\n\n${FLOWGUARD_MANDATES_KERNEL}`;
+  return `<!-- @flowguard/core v${version} | managed artifact — do not edit manually -->\n<!-- content-digest: sha256:${digest} -->\n\n${FLOWGUARD_MANDATES_BODY}`;
 }
 
 export function extractManagedDigest(content: string): string | null {

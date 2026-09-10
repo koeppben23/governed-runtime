@@ -7,7 +7,9 @@ import {
   buildReviewContentPrompt,
   renderFrozenReviewSubjectEnvelope,
   renderReviewerTaskPrompt,
+  buildTextCompatReviewerPrompt,
 } from './prompt-builders.js';
+import { REVIEW_FINDINGS_JSON_SCHEMA } from './findings-schema.js';
 import { renderPersistedProofGraphContext } from './proof-context.js';
 import type { FrozenReviewerContext } from './frozen-reviewer-context.js';
 
@@ -254,5 +256,15 @@ describe('repository observation and reviewer-provenance rules', () => {
     const prompt = renderReviewerTaskPrompt({ ...BASE_INPUT });
     expect(prompt).toContain('Do NOT output reviewedBy or reviewedAt anywhere');
     expect(prompt).toContain('ReviewerFindingsInput');
+  });
+});
+
+describe('text compatibility reviewer contract', () => {
+  it('derives every required field from the native JSON schema', () => {
+    const prompt = buildTextCompatReviewerPrompt('review prompt');
+
+    for (const field of REVIEW_FINDINGS_JSON_SCHEMA.required) {
+      expect(prompt).toContain(field);
+    }
   });
 });

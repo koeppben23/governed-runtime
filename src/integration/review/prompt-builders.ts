@@ -31,6 +31,7 @@ import {
 } from './prompt-sections.js';
 import type { FrozenReviewerContext } from './frozen-reviewer-context.js';
 import type { RepositoryDiscoverySnapshot } from '../../state/evidence.js';
+import { REVIEW_FINDINGS_JSON_SCHEMA } from './findings-schema.js';
 
 // ─── Canonical Review Context Serializer ─────────────────────────────────────
 
@@ -49,6 +50,16 @@ export {
   type ReviewVerificationEvidenceItem,
 } from './impl-review-prompt.js';
 import { renderReviewContext } from './prompt-sections.js';
+
+/**
+ * Serialization fallback for transports without native schema enforcement.
+ * Semantic review requirements remain in the structured task prompt; this only
+ * restores the JSON shape the native transport otherwise enforces.
+ */
+export function buildTextCompatReviewerPrompt(structuredPrompt: string): string {
+  const requiredFields = REVIEW_FINDINGS_JSON_SCHEMA.required.join(', ');
+  return `${structuredPrompt}\n\n## Text Compatibility Output Contract\n\nNative structured output is unavailable for this invocation. Return exactly one valid JSON object and no prose or markdown fences. The object MUST include every required ReviewFindings field: ${requiredFields}. Use only the exact values and bindings supplied above. The attestation object MUST include toolObligationId.`;
+}
 
 /** Serialize the integrity-verified review subject identically for every transport. */
 export function renderFrozenReviewSubjectEnvelope(context: FrozenReviewerContext): string[] {

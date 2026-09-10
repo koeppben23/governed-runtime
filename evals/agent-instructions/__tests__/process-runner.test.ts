@@ -110,7 +110,7 @@ describe('process-runner', () => {
     if (outcome.status === 'completed') {
       expect(outcome.instructionSurface).toBe('flowguard_product');
       expect(outcome.afterContent.get('.opencode/flowguard-mandates.md')).toContain(
-        '## Universal Governance',
+        '# FlowGuard Agent Rules',
       );
       expect(outcome.afterContent.get('opencode.json')).toContain(
         '.opencode/flowguard-mandates.md',

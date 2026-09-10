@@ -13,7 +13,6 @@ import { sha256, computeMandatesDigest } from './install.js';
 import {
   COMMANDS,
   FLOWGUARD_MANDATES_BODY,
-  FLOWGUARD_MANDATES_KERNEL,
   MANDATES_FILENAME,
   mandatesInstructionEntry,
   buildMandatesContent,
@@ -190,8 +189,8 @@ describe('cli/crypto', () => {
   });
 
   describe('CORNER', () => {
-    it('computeMandatesDigest matches sha256 of the installed kernel', () => {
-      expect(computeMandatesDigest()).toBe(sha256(FLOWGUARD_MANDATES_KERNEL));
+    it('computeMandatesDigest matches sha256 of FLOWGUARD_MANDATES_BODY', () => {
+      expect(computeMandatesDigest()).toBe(sha256(FLOWGUARD_MANDATES_BODY));
     });
   });
 
@@ -252,7 +251,7 @@ describe('cli/templates', () => {
       const digest = computeMandatesDigest();
       const content = buildMandatesContent('2.0.0', digest);
       const body = extractManagedBody(content);
-      expect(body).toBe(FLOWGUARD_MANDATES_KERNEL);
+      expect(body).toBe(FLOWGUARD_MANDATES_BODY);
     });
   });
 
@@ -275,9 +274,8 @@ describe('cli/templates', () => {
   });
 
   describe('CORNER', () => {
-    it('installed mandates are the v5 kernel, not the phase-aware body', () => {
-      expect(FLOWGUARD_MANDATES_KERNEL).toContain('[End of v5 Agent Rules]');
-      expect(FLOWGUARD_MANDATES_KERNEL).not.toBe(FLOWGUARD_MANDATES_BODY);
+    it('installed mandates are the canonical mandate body', () => {
+      expect(FLOWGUARD_MANDATES_BODY).toContain('[End of v4 Agent Rules]');
     });
 
     it("MANDATES_FILENAME is 'flowguard-mandates.md'", () => {

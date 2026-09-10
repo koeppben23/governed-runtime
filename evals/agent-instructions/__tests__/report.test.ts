@@ -52,6 +52,7 @@ describe('writeReports', () => {
       evalCase: { ...BASE_CASE, id: 'c1' },
       result: {
         caseId: 'c1',
+        instructionSurface: 'repository_contributor',
         verdict: 'PASS',
         durationMs: 100,
         assertionResults: [],
@@ -66,6 +67,8 @@ describe('writeReports', () => {
     expect(s.passed).toBe(1);
     expect(s.failed).toBe(0);
     expect(s.runnerErrors).toBe(0);
+    expect(s.byInstructionSurface.repository_contributor.passed).toBe(1);
+    expect(s.byInstructionSurface.flowguard_product.passed).toBe(0);
 
     rmSync(d, { recursive: true, force: true });
   });
@@ -75,6 +78,7 @@ describe('writeReports', () => {
       evalCase: { ...BASE_CASE, id: 'c1' },
       result: {
         caseId: 'c1',
+        instructionSurface: 'repository_contributor',
         verdict: 'FAIL',
         durationMs: 100,
         assertionResults: [],
@@ -96,6 +100,7 @@ describe('writeReports', () => {
       evalCase: { ...BASE_CASE, id: 'c1', task: 'fix the bug' },
       result: {
         caseId: 'c1',
+        instructionSurface: 'repository_contributor',
         verdict: 'PASS',
         durationMs: 50,
         assertionResults: [],
@@ -134,6 +139,7 @@ describe('writeReports', () => {
       evalCase: { ...BASE_CASE, id: 'c1' },
       result: {
         caseId: 'c1',
+        instructionSurface: 'repository_contributor',
         verdict: 'RUNNER_ERROR',
         durationMs: 10,
         assertionResults: [],
@@ -161,6 +167,7 @@ describe('writeReports', () => {
       evalCase: { ...BASE_CASE, id },
       result: {
         caseId: id,
+        instructionSurface: 'repository_contributor',
         verdict: 'PASS' as const,
         durationMs: 10,
         assertionResults: [],
@@ -181,6 +188,7 @@ describe('writeReports', () => {
       evalCase: BASE_CASE,
       result: {
         caseId: BASE_CASE.id,
+        instructionSurface: 'repository_contributor',
         verdict: 'PASS',
         durationMs: 10,
         assertionResults: [],
@@ -200,6 +208,7 @@ describe('writeReports', () => {
       evalCase: { ...BASE_CASE, id: 'c1' },
       result: {
         caseId: 'c1',
+        instructionSurface: 'repository_contributor',
         verdict: 'PASS',
         durationMs: 50,
         assertionResults: [],

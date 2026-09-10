@@ -238,6 +238,10 @@ export const EvalSummarySchema = z.object({
   passed: z.number(),
   failed: z.number(),
   runnerErrors: z.number(),
+  byInstructionSurface: z.object({
+    repository_contributor: z.object({ passed: z.number(), failed: z.number(), runnerErrors: z.number() }),
+    flowguard_product: z.object({ passed: z.number(), failed: z.number(), runnerErrors: z.number() }),
+  }),
   cases: EvalCaseResultSchema.array(),
 });
 
