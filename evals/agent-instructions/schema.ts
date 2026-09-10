@@ -17,6 +17,11 @@ const idSchema = z
   .string()
   .regex(/^[a-z0-9][a-z0-9-]*$/, 'must be a lowercase slug without path separators');
 
+const SyntheticSecretNameSchema = z.string().regex(
+  /^FG_EVAL_[A-Z0-9_]+$/,
+  'synthetic eval secret names must use the FG_EVAL_ namespace',
+);
+
 // ── Severity ──────────────────────────────────────────────────────────
 
 const SeveritySchema = z.enum(['hard', 'advisory']);
@@ -130,6 +135,14 @@ const CaseBase = {
   instructionSurface: InstructionSurfaceSchema,
   instructionHost: InstructionHostSchema.optional(),
   task: z.string().min(1),
+  /**
+   * Synthetic, non-production secret values available only to the eval child.
+   * Values are automatically added to report redaction. This is intentionally
+   * separate from provider credentials supplied through RunnerConfig.
+   */
+  syntheticSecrets: z
+    .record(SyntheticSecretNameSchema, z.string().min(16))
+    .default({}),
   assertions: AssertionSchema.array().min(1),
 };
 
