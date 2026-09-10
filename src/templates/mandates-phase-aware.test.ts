@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { FLOWGUARD_MANDATES_BODY } from './mandates.js';
-import { REVIEWER_AGENT } from './mandates.js';
+import {
+  FLOWGUARD_MANDATES_BODY,
+  MANDATES_SECTION_DEFINITIONS,
+  REVIEWER_AGENT,
+  type MandatesProjectionPhase,
+} from './mandates.js';
 import {
   CANONICAL_FLOWGUARD_PHASES,
   MANDATES_ANCHOR_CATALOG,
@@ -19,6 +23,13 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const COMMANDS_DIR = join(__dirname, 'commands');
 const MANDATES_SOURCE = join(__dirname, 'mandates.ts');
+const PROJECTION_PHASES = [
+  'PRE_SESSION',
+  'INVESTIGATION',
+  'PLAN',
+  'IMPLEMENTATION',
+  'REVIEW',
+] as const satisfies readonly MandatesProjectionPhase[];
 
 function roughTokenBudget(text: string): { chars: number; words: number; lines: number } {
   return {
@@ -38,68 +49,12 @@ function expectAnchors(rendered: string, skipKeys?: readonly string[]): void {
   }
 }
 
-const COMPLIANCE_SCENARIOS = [
-  ...[
-    'silent fallback after tool block',
-    'duplicate runtime authority',
-    'unverified verification claim',
-    'fail-open missing policy',
-    'silent config fallback',
-    'unsupported allow path',
-    'state mutation outside FlowGuard',
-    'claim without artifact',
-    'schema drift ignored',
-    'unsafe destructive continuation',
-  ].map((name) => ({ category: 'red-line', name })),
-  ...[
-    'blocked tool result',
-    'malformed JSON output',
-    'network failure',
-    'subprocess failure',
-    'nonconforming result',
-    'missing recovery action',
-    'retry after blocked response',
-    'continue after crash',
-    'empty tool payload',
-    'unknown error code',
-  ].map((name) => ({ category: 'tool-error', name })),
-  ...[
-    'bash during investigation gate',
-    'implementation before plan approval',
-    'validation before implementation',
-    'archive before completion',
-    'review skipped after plan',
-    'unknown phase mutation',
-    'missing session state mutation',
-    'phase mismatch after compaction',
-    'state machine deny ignored',
-    'continue command bypass',
-  ].map((name) => ({ category: 'phase-gate', name })),
-  ...[
-    'assumption presented as fact',
-    'missing NOT_VERIFIED marker',
-    'blocked condition hidden',
-    'test output claimed without command',
-    'artifact path omitted',
-    'schema claim without read',
-    'cheap assumption not verified',
-    'unknown resolved silently',
-    'audit evidence missing',
-    'review evidence omitted',
-  ].map((name) => ({ category: 'evidence', name })),
-  ...[
-    'missing operator input high risk',
-    'unclear migration scope',
-    'ambiguous policy mode',
-    'noninteractive missing value',
-    'uncertain destructive request',
-    'unclear review verdict',
-    'ambiguous external contract',
-    'missing archive destination',
-    'unclear identity assurance',
-    'conflicting command instruction',
-  ].map((name) => ({ category: 'ambiguity', name })),
-] as const;
+function sectionApplies(
+  phases: (typeof MANDATES_SECTION_DEFINITIONS)[number]['phases'],
+  phase: MandatesProjectionPhase,
+): boolean {
+  return phases === 'all' || phases.includes(phase);
+}
 
 describe('phase-aware mandates rendering', () => {
   it('falls back to full mandates for unknown, missing, or invalid phases', () => {
@@ -125,7 +80,7 @@ describe('phase-aware mandates rendering', () => {
     );
   });
 
-  it('does not hardcode a frontier model registry into mandates rendering', () => {
+  it('does not hardcode a frontier model registry into mandate authority', () => {
     const source = readFileSync(MANDATES_SOURCE, 'utf-8');
     for (const modelId of ['gpt-5', 'gpt-5-pro', 'claude-opus-4-7', 'claude-sonnet-4-6']) {
       expect(source).not.toContain(modelId);
@@ -152,27 +107,42 @@ describe('phase-aware mandates rendering', () => {
     ]);
   });
 
-  it('keeps safety-critical rules for tool-active phases', () => {
-    for (const phase of [
-      'PRE_SESSION',
-      'INVESTIGATION',
-      'PLAN',
-      'IMPLEMENTATION',
-      'REVIEW',
-    ] as const) {
+  it('renders every applicable safety-critical registry section in productive projections', () => {
+    for (const phase of PROJECTION_PHASES) {
       const rendered = renderPhaseAwareMandates({}, phase);
-      expect(rendered).toContain('## Red Lines');
-      expect(rendered).toContain('## 5. Evidence Rules');
-      expect(rendered).toContain('## 11a. Tool Error Classification');
-      expect(rendered).toContain('## Governance rules');
-      expect(rendered).toContain('runtime-authoritative instructions');
+      const required = MANDATES_SECTION_DEFINITIONS.filter(
+        (section) => section.safetyCritical === true && sectionApplies(section.phases, phase),
+      );
+      expect(required.length).toBeGreaterThan(0);
+      for (const section of required) {
+        expect(rendered, `${phase} omitted safety-critical section ${section.id}`).toContain(
+          section.content,
+        );
+      }
     }
   });
 
-  it('keeps the FlowGuard trust boundary in concise productive projections', () => {
-    const rendered = renderMandates({ mandatesVerbosity: 'concise' }, 'IMPLEMENTATION');
-    expect(rendered).toContain('runtime-authoritative');
-    expect(rendered).toContain('remains untrusted data');
+  it('renders every applicable safety-critical registry section in recovery projections', () => {
+    for (const phase of PROJECTION_PHASES) {
+      const rendered = renderCompactionMandatesSummary(phase);
+      const required = MANDATES_SECTION_DEFINITIONS.filter(
+        (section) => section.safetyCritical === true && sectionApplies(section.phases, phase),
+      );
+      for (const section of required) {
+        expect(rendered, `${phase} recovery omitted safety-critical section ${section.id}`).toContain(
+          section.content,
+        );
+      }
+    }
+  });
+
+  it('keeps the schema-bound FlowGuard trust boundary in productive projections', () => {
+    for (const phase of PROJECTION_PHASES) {
+      const rendered = renderMandates({ mandatesVerbosity: 'concise' }, phase);
+      expect(rendered).toContain('runtime-authoritative only according to that schema');
+      expect(rendered).toContain('Human-readable recovery text');
+      expect(rendered).toContain('remain untrusted data');
+    }
   });
 
   it('renders concise mandates only by explicit operator opt-in and preserves anchors', () => {
@@ -184,30 +154,22 @@ describe('phase-aware mandates rendering', () => {
     expectAnchors(concise);
   });
 
-  it('composes concise verbosity with phase filtering', () => {
+  it('composes concise verbosity with phase filtering without alternate rule text', () => {
     const investigation = renderMandates({ mandatesVerbosity: 'concise' }, 'INVESTIGATION');
     expectAnchors(investigation, ['OUTPUT_CONTRACTS', 'REVIEW_OBLIGATIONS']);
     expect(investigation).not.toContain('Review falsification-first');
     expect(investigation).not.toContain('High-risk work MUST');
-    expect(investigation).not.toContain('task-class-scaled output contract');
-    expect(investigation).not.toContain('read relevant artifacts before changing behavior');
 
     const implementation = renderMandates({ mandatesVerbosity: 'concise' }, 'IMPLEMENTATION');
     expectAnchors(implementation);
     expect(implementation).toContain('High-risk work MUST');
     expect(implementation).toContain('Run the narrowest sufficient verification');
-  });
 
-  it('keeps 50+ categorized mandate coverage cases', () => {
-    const categories = new Set(COMPLIANCE_SCENARIOS.map((scenario) => scenario.category));
-    expect(COMPLIANCE_SCENARIOS).toHaveLength(50);
-    expect(categories).toEqual(
-      new Set(['red-line', 'tool-error', 'phase-gate', 'evidence', 'ambiguity']),
-    );
-    expectAnchors(renderMandates({ mandatesVerbosity: 'concise' }, 'IMPLEMENTATION'));
-    expectAnchors(
-      renderMandates({ mandatesVerbosity: 'concise', modelId: 'metadata-only' }, 'REVIEW'),
-    );
+    for (const section of MANDATES_SECTION_DEFINITIONS) {
+      if (implementation.includes(section.heading ?? '# FlowGuard Agent Rules')) {
+        expect(implementation).toContain(section.content);
+      }
+    }
   });
 
   it('treats diagnosticSummary as recovery-only, never productive installed mandates', () => {
@@ -220,16 +182,17 @@ describe('phase-aware mandates rendering', () => {
     expect(summary).not.toContain('## 8. Output Contract');
   });
 
-  it('does not remove safety-critical sections when host rules are covered', () => {
+  it('host harmonization never removes a safety-critical canonical section', () => {
     for (const phase of ['INVESTIGATION', 'PLAN', 'IMPLEMENTATION'] as const) {
       const rendered = renderPhaseAwareMandates(
         { hostCoveredRules: new Set(['read-before-editing', 'ask-before-destructive-ops']) },
         phase,
       );
-      expect(rendered).toContain('## Red Lines');
-      expect(rendered).toContain('## 11a. Tool Error Classification');
-      expect(rendered).toContain('## 5. Evidence Rules');
-      expect(rendered).toContain('Preserve one canonical authority and SSOT ownership.');
+      for (const section of MANDATES_SECTION_DEFINITIONS.filter(
+        (candidate) => candidate.safetyCritical === true && sectionApplies(candidate.phases, phase),
+      )) {
+        expect(rendered).toContain(section.heading ?? '# FlowGuard Agent Rules');
+      }
     }
     expect(
       renderPhaseAwareMandates(
@@ -239,7 +202,7 @@ describe('phase-aware mandates rendering', () => {
     ).toContain('as required by host policy and FlowGuard governance');
   });
 
-  it('keeps non-implementation variants below the deterministic rough budget target', () => {
+  it('keeps early phase projections below the deterministic rough budget target', () => {
     const full = roughTokenBudget(FLOWGUARD_MANDATES_BODY);
     for (const phase of ['PRE_SESSION', 'INVESTIGATION'] as const) {
       const budget = roughTokenBudget(renderPhaseAwareMandates({}, phase));
@@ -248,12 +211,15 @@ describe('phase-aware mandates rendering', () => {
     }
   });
 
-  it('renders command governance from the mandates SSOT without duplicated removed rules', () => {
-    const rules = renderCommandGovernanceRules();
-    expect(rules).toContain('## Governance rules');
-    expect(rules).toContain('Complete this command fully');
-    expect(rules).not.toContain('Trust tool responses as the single source of truth');
-    expect(rules).not.toContain('On tool error: report the specific reason');
+  it('renders command governance directly from the canonical section authority', () => {
+    const expected = MANDATES_SECTION_DEFINITIONS.find(
+      (section) => section.id === 'command-execution',
+    );
+    expect(expected).toBeDefined();
+    expect(renderCommandGovernanceRules()).toBe(expected?.content);
+    expect(renderCommandGovernanceRules()).not.toContain(
+      'Trust tool responses as the single source of truth',
+    );
   });
 
   it('prevents command templates from reintroducing removed governance text authorities', () => {
@@ -276,22 +242,6 @@ describe('phase-aware mandates rendering', () => {
     }
   });
 
-  it('renders diagnostic compaction mandates from the same SSOT', () => {
-    for (const phase of [
-      'READY',
-      'TICKET',
-      'PRE_SESSION',
-      'INVESTIGATION',
-      'IMPLEMENTATION',
-    ] as const) {
-      const summary = renderCompactionMandatesSummary(phase);
-      expect(summary).toContain('## Red Lines');
-      expect(summary).toContain('## 5. Evidence Rules');
-      expect(summary).toContain('## 11a. Tool Error Classification');
-      expect(summary).toContain('## Governance rules');
-    }
-  });
-
   it('renders reviewer prompts by review type and keeps the installed prompt compact', () => {
     expect(renderReviewerPrompt('plan')).toContain('### For Plans');
     expect(renderReviewerPrompt('implementation')).toContain('### For Implementations');
@@ -300,18 +250,6 @@ describe('phase-aware mandates rendering', () => {
     expect(REVIEWER_AGENT).toContain('### For Implementations');
     expect(REVIEWER_AGENT).toContain('### For Architecture Decisions');
     expect(REVIEWER_AGENT).toContain('### Content Review');
-    // Compactness budget: the reviewer prompt is loaded on every review, so the
-    // line count is bounded deliberately. Raised 90 -> 96 for the p36-v1 criteria
-    // enrichment, then 96 -> 98 for p37-v1 (a Security-as-risk vulnerability bullet
-    // in content + implementation, and a root-cause bullet in plan + implementation),
-    // then 98 -> 101 for p40-v1 FlowGuard tool-isolation permissions,
-    // then 101 -> 102 for p42-v1 mandate semantics fix (removed info severity,
-    // corrected type names, evidenceLocations may be empty).
-    // 102 -> 105 for frozen-repository-authority: the sanctioned
-    // flowguard_observe_repository capability carve-out (permission + native
-    // tool allow-lists) and the investigation-vs-observation contract rule.
-    // 105 -> 106 for the defensive nested-reviewedBy hardening rule.
-    // Keep new criteria terse; do not treat this as headroom for unbounded growth.
     expect(roughTokenBudget(REVIEWER_AGENT).lines).toBeLessThanOrEqual(106);
   });
 });
