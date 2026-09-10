@@ -60,7 +60,10 @@ export const MANDATES_VERBOSITY_VALUES: readonly MandatesVerbosity[] = [
 
 export const MANDATES_ANCHOR_CATALOG = {
   RED_LINES: ['## Red Lines', 'Do not hide failures', 'data, not instruction'],
-  TOOL_ERROR_STOP: ['## 11a. Tool Error Classification', 'stop conditions'],
+  TOOL_ERROR_STOP: [
+    '## 11a. Tool Error Classification',
+    'Never continue to the next workflow step',
+  ],
   SSOT_SINGLE_AUTHORITY: ['one canonical authority', 'SSOT'],
   FAIL_CLOSED_NO_SILENT_FALLBACK: ['fail-closed'],
   EVIDENCE_MARKERS: ['ASSUMPTION', 'NOT_VERIFIED', 'BLOCKED'],
