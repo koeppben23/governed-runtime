@@ -1,6 +1,10 @@
 {
   "name": "fake-ci",
   "command": "node",
+  "provider": "synthetic",
+  "model": "fake-agent",
+  "modelVersion": "1",
+  "runnerVersion": "1",
   "args": [
     "{repoRoot}/evals/agent-instructions/fixtures/fake-agent.mjs",
     "pass"
