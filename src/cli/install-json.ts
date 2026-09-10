@@ -111,22 +111,6 @@ function ensureNested(parent: Record<string, unknown>, key: string): Record<stri
   return parent[key] as Record<string, unknown>;
 }
 
-/**
- * Harden a FlowGuard-owned build-agent task map.
- * Customer-owned OpenCode configs are detected by mergeOpencodeJson and never
- * pass through this destructive helper.
- */
-export function mergeReviewerTaskPermission(parsed: Record<string, unknown>): void {
-  const agent = ensureNested(parsed, 'agent');
-  const build = ensureNested(agent, 'build');
-  const permission = ensureNested(build, 'permission');
-
-  permission['task'] = {
-    '*': 'deny',
-    [REVIEWER_SUBAGENT_TYPE]: 'allow',
-  };
-}
-
 function getTaskPermissions(parsed: Record<string, unknown>): Record<string, unknown> | null {
   if (!parsed['agent'] || typeof parsed['agent'] !== 'object') return null;
   const build = (parsed['agent'] as Record<string, unknown>)['build'];
@@ -136,6 +120,28 @@ function getTaskPermissions(parsed: Record<string, unknown>): Record<string, unk
   const task = (permission as Record<string, unknown>)['task'];
   if (!task || typeof task !== 'object') return null;
   return task as Record<string, unknown>;
+}
+
+/**
+ * Add the FlowGuard reviewer permission without destroying an existing task map.
+ * A missing wildcard is hardened to deny; an explicit customer wildcard and
+ * all foreign task entries remain authoritative and are preserved.
+ */
+export function mergeReviewerTaskPermission(parsed: Record<string, unknown>): void {
+  const existingTask = getTaskPermissions(parsed);
+  if (existingTask) {
+    if (!('*' in existingTask)) existingTask['*'] = 'deny';
+    existingTask[REVIEWER_SUBAGENT_TYPE] = 'allow';
+    return;
+  }
+
+  const agent = ensureNested(parsed, 'agent');
+  const build = ensureNested(agent, 'build');
+  const permission = ensureNested(build, 'permission');
+  permission['task'] = {
+    '*': 'deny',
+    [REVIEWER_SUBAGENT_TYPE]: 'allow',
+  };
 }
 
 function hasCustomerTaskPermissions(parsed: Record<string, unknown>): boolean {
