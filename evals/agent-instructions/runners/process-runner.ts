@@ -20,11 +20,11 @@ import {
 } from 'node:fs';
 import { join, sep, basename } from 'node:path';
 import { tmpdir } from 'node:os';
-import type { RunnerConfig, InstructionSurface } from '../schema.js';
+import type { InstructionHost, InstructionSurface, RunnerConfig } from '../schema.js';
 import type { WorkspaceSnapshot } from '../assertions.js';
 import { buildMandatesContent } from '../../../src/rendering/mandates-renderer.js';
 import { computeMandatesDigest } from '../../../src/cli/install-helpers.js';
-import { OPENCODE_JSON_TEMPLATE, mandatesInstructionEntry } from '../../../src/templates/mandates.js';
+import { mergeOpencodeJson } from '../../../src/cli/install-json.js';
 import { PACKAGE_VERSION } from '../../../src/shared/package-version.js';
 
 // ── Outcome types ─────────────────────────────────────────────────────
@@ -40,6 +40,7 @@ export interface CompletedOutcome {
   beforeContent: Map<string, string>;
   afterContent: Map<string, string>;
   instructionSurface: InstructionSurface;
+  instructionHost?: InstructionHost;
 }
 
 export interface RunnerErrorOutcome {
@@ -49,6 +50,7 @@ export interface RunnerErrorOutcome {
   stdout: string;
   stderr: string;
   instructionSurface?: InstructionSurface;
+  instructionHost?: InstructionHost;
 }
 
 export type RunnerOutcome = CompletedOutcome | RunnerErrorOutcome;
@@ -162,6 +164,41 @@ function setupWorkspace(
   };
 }
 
+function outcomeMetadata(
+  instructionSurface: InstructionSurface,
+  instructionHost: InstructionHost | undefined,
+): { instructionSurface: InstructionSurface; instructionHost?: InstructionHost } {
+  return {
+    instructionSurface,
+    ...(instructionHost ? { instructionHost } : {}),
+  };
+}
+
+async function materializeInstructionSurface(
+  workspaceRoot: string,
+  instructionSurface: InstructionSurface,
+  instructionHost: InstructionHost | undefined,
+): Promise<string | null> {
+  if (instructionSurface === 'repository_contributor') {
+    return instructionHost === undefined
+      ? null
+      : 'repository_contributor evaluations must not declare a product instruction host';
+  }
+
+  if (instructionHost !== 'opencode') {
+    return 'flowguard_product evaluations require an explicit supported instruction host: opencode';
+  }
+
+  const mandatesDir = join(workspaceRoot, '.opencode');
+  mkdirSync(mandatesDir, { recursive: true });
+  writeFileSync(
+    join(mandatesDir, 'flowguard-mandates.md'),
+    buildMandatesContent(PACKAGE_VERSION(), computeMandatesDigest()),
+  );
+  await mergeOpencodeJson(join(workspaceRoot, 'opencode.json'), 'repo');
+  return null;
+}
+
 // ── Process execution ─────────────────────────────────────────────────
 
 export async function runProcess(
@@ -171,44 +208,48 @@ export async function runProcess(
   forceCopy: boolean,
   repoRoot: string,
   childEnv: NodeJS.ProcessEnv,
-  instructionSurface: InstructionSurface = 'repository_contributor',
+  instructionSurface: InstructionSurface,
+  instructionHost?: InstructionHost,
 ): Promise<RunnerOutcome> {
+  const metadata = outcomeMetadata(instructionSurface, instructionHost);
   const ws = setupWorkspace(fixtureRoot, forceCopy);
-  if ('status' in ws) return ws;
+  if ('status' in ws) return { ...ws, ...metadata };
 
   const { workspaceRoot, cleanup } = ws;
 
-  if (instructionSurface === 'flowguard_product') {
-    try {
-      const mandatesDir = join(workspaceRoot, '.opencode');
-      mkdirSync(mandatesDir, { recursive: true });
-      writeFileSync(
-        join(mandatesDir, 'flowguard-mandates.md'),
-        buildMandatesContent(PACKAGE_VERSION(), computeMandatesDigest()),
-      );
-      writeFileSync(
-        join(workspaceRoot, 'opencode.json'),
-        OPENCODE_JSON_TEMPLATE(mandatesInstructionEntry('repo')),
-      );
-    } catch (err) {
+  try {
+    const surfaceError = await materializeInstructionSurface(
+      workspaceRoot,
+      instructionSurface,
+      instructionHost,
+    );
+    if (surfaceError) {
       cleanup();
       return {
         status: 'runner_error',
         errorKind: 'workspace',
-        message: `Failed to install FlowGuard product mandates: ${(err as Error).message}`,
+        message: surfaceError,
         stdout: '',
         stderr: '',
-        instructionSurface,
+        ...metadata,
       };
     }
+  } catch (err) {
+    cleanup();
+    return {
+      status: 'runner_error',
+      errorKind: 'workspace',
+      message: `Failed to install FlowGuard product mandates: ${(err as Error).message}`,
+      stdout: '',
+      stderr: '',
+      ...metadata,
+    };
   }
 
   const before = snapshotWorkspace(workspaceRoot);
 
   // Resolve args with {repoRoot} and {prompt}
-  const resolvedArgs = config.args.map((a) =>
-    a.replace('{repoRoot}', repoRoot),
-  );
+  const resolvedArgs = config.args.map((a) => a.replace('{repoRoot}', repoRoot));
   const useStdin = config.promptTransport === 'stdin';
   if (!useStdin) {
     for (let i = 0; i < resolvedArgs.length; i++) {
@@ -235,6 +276,7 @@ export async function runProcess(
         message: `Failed to spawn "${config.command}": ${(err as Error).message}`,
         stdout: '',
         stderr: '',
+        ...metadata,
       });
       return;
     }
@@ -265,6 +307,7 @@ export async function runProcess(
         message: `Process timed out after ${config.timeoutMs}ms`,
         stdout,
         stderr: stderrOut,
+        ...metadata,
       });
     }, config.timeoutMs);
 
@@ -276,6 +319,7 @@ export async function runProcess(
         message: `Process error: ${err.message}`,
         stdout,
         stderr: stderrOut,
+        ...metadata,
       });
     });
 
@@ -289,6 +333,7 @@ export async function runProcess(
           message: `Process terminated by signal ${signal}`,
           stdout,
           stderr: stderrOut,
+          ...metadata,
         });
         return;
       }
@@ -308,7 +353,7 @@ export async function runProcess(
         afterSnapshot: after.entries,
         beforeContent: before.contents,
         afterContent: after.contents,
-        instructionSurface,
+        ...metadata,
       });
     });
 
