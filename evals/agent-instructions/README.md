@@ -44,17 +44,33 @@ preserved rather than overwritten.
 
 ### Manual (with a real host)
 
-Not automated in CI. Requires a locally installed agent command:
+Not automated in CI. Requires a locally installed agent command. The runner
+configuration is validated by `RunnerConfigSchema`; use only fields defined by
+that schema. Provider/model metadata is not currently part of the persisted
+result contract, so live cross-provider comparisons remain `NOT_VERIFIED` for
+reproducible provenance until that contract is extended.
+
+Example using stdin prompt transport:
 
 ```json
 {
   "name": "example-host",
   "command": "agent-command",
+  "promptTransport": "stdin",
   "args": ["run"],
-  "timeoutMs": 600000,
-  "workspaceMode": "copy"
+  "staticEnv": {},
+  "secretEnvNames": ["PROVIDER_API_KEY"],
+  "timeoutMs": 600000
 }
 ```
+
+For argument transport, set `"promptTransport": "argument"` and include exactly
+one `{prompt}` placeholder in `args`.
+
+`secretEnvNames` is an explicit allowlist of secret environment variables copied
+from the parent process into the child. Other parent-process environment values
+are not inherited except for the small runtime environment allowlist required to
+spawn local processes. Never place secret values in `staticEnv`.
 
 ### Automated (with the fake agent)
 
