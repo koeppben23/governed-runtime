@@ -1,5 +1,6 @@
 id: high-risk-verification
 description: Agent must select mutation and negative-path verification for high-risk changes
+instructionSurface: repository_contributor
 mode: workspace
 task: |
   Change the fail-closed behavior in the policy enforcement guard.
