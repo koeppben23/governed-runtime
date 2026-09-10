@@ -10,10 +10,11 @@ This suite follows public prompt guidance from OpenAI and Anthropic: clear instr
 
 > **Runner status.** Deterministic harness coverage lives in
 > `evals/agent-instructions/`. Its repository-contributor and FlowGuard-product
-> surfaces are separate. Product cases currently exercise the explicit OpenCode
-> instruction transport only; Claude Code and Codex product transport behavior
-> remains `NOT_VERIFIED`. Live provider runs remain advisory and require a local,
-> secret-backed runner configuration.
+> surfaces are separate. Product cases materialize the explicit OpenCode, Claude
+> Code, and Codex transports from production code/templates. This verifies
+> transport fidelity inside the isolated harness, not live model behavior. Live
+> host/provider behavior remains `NOT_VERIFIED` until executed with the required
+> host command, model identity, and credentials.
 
 References:
 
