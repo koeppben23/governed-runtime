@@ -2,6 +2,7 @@ import { Phase as PhaseSchema, type Phase } from '../state/schema.js';
 import {
   FLOWGUARD_MANDATES_BODY,
   MANDATES_SECTION_DEFINITIONS,
+  type MandatesProjectionPhase,
   type MandatesSectionDefinition,
 } from '../templates/mandates.js';
 
@@ -18,8 +19,7 @@ export class MandatesRenderError extends Error {
   }
 }
 
-export type MandatesRenderPhase =
-  'PRE_SESSION' | 'INVESTIGATION' | 'PLAN' | 'IMPLEMENTATION' | 'REVIEW' | 'ALL_PHASES';
+export type MandatesRenderPhase = MandatesProjectionPhase | 'ALL_PHASES';
 
 export type MandatesVerbosity = 'explicit' | 'concise' | 'diagnosticSummary';
 
@@ -32,7 +32,7 @@ export interface MandatesRenderContext {
   modelId?: string;
 }
 
-const TOOL_ACTIVE_PHASES: ReadonlySet<MandatesRenderPhase> = new Set([
+const TOOL_ACTIVE_PHASES: ReadonlySet<MandatesProjectionPhase> = new Set([
   'PRE_SESSION',
   'INVESTIGATION',
   'PLAN',
@@ -56,7 +56,7 @@ const PHASE_TO_RENDER_PHASE = {
   ARCH_COMPLETE: 'REVIEW',
   REVIEW: 'REVIEW',
   REVIEW_COMPLETE: 'REVIEW',
-} as const satisfies Record<Phase, MandatesRenderPhase>;
+} as const satisfies Record<Phase, MandatesProjectionPhase>;
 
 export const CANONICAL_FLOWGUARD_PHASES = PhaseSchema.options;
 
@@ -100,11 +100,16 @@ function extractMandatesSection(heading: string | null): string {
   return FLOWGUARD_MANDATES_BODY.slice(start, end).trim();
 }
 
-function includesPhase(phases: readonly string[] | 'all', phase: MandatesRenderPhase): boolean {
+function includesPhase(
+  phases: readonly MandatesProjectionPhase[] | 'all',
+  phase: MandatesProjectionPhase,
+): boolean {
   return phases === 'all' || phases.includes(phase);
 }
 
-function selectMandatesSections(phase: MandatesRenderPhase): readonly MandatesSectionDefinition[] {
+function selectMandatesSections(
+  phase: MandatesProjectionPhase,
+): readonly MandatesSectionDefinition[] {
   return MANDATES_SECTION_DEFINITIONS.filter((section) =>
     includesPhase(section.phases, phase),
   ).sort((a, b) => a.priority - b.priority);
@@ -139,7 +144,7 @@ function normalizeRenderPhase(phase: Phase | MandatesRenderPhase | string | null
   return { phase: PHASE_TO_RENDER_PHASE[parsed.data], fallback: false };
 }
 
-function assertSafetyCriticalSections(rendered: string, phase: MandatesRenderPhase): void {
+function assertSafetyCriticalSections(rendered: string, phase: MandatesProjectionPhase): void {
   if (!TOOL_ACTIVE_PHASES.has(phase)) return;
   for (const heading of [
     '## Red Lines',
@@ -203,7 +208,7 @@ function applyHostHarmonization(content: string, ctx: MandatesRenderContext): st
 
 function compactSectionForEarlyPhase(
   section: MandatesSectionDefinition,
-  phase: MandatesRenderPhase,
+  phase: MandatesProjectionPhase,
 ): string {
   if (phase !== 'PRE_SESSION' && phase !== 'INVESTIGATION') {
     return extractMandatesSection(section.heading);
@@ -225,17 +230,18 @@ export function renderPhaseAwareMandates(
     return FLOWGUARD_MANDATES_BODY;
   }
 
-  const sections = selectMandatesSections(normalized.phase);
+  const renderPhase = normalized.phase;
+  const sections = selectMandatesSections(renderPhase);
   const rendered = sections
     .map((section) =>
       verbosity === 'concise'
         ? conciseSectionForPhase(section)
-        : compactSectionForEarlyPhase(section, normalized.phase),
+        : compactSectionForEarlyPhase(section, renderPhase),
     )
     .join('\n\n');
 
   const harmonized = applyHostHarmonization(rendered, ctx);
-  assertSafetyCriticalSections(harmonized, normalized.phase);
+  assertSafetyCriticalSections(harmonized, renderPhase);
   if (verbosity === 'concise') {
     const selectedIds = new Set(sections.map((s) => s.id));
     assertMandatesAnchors(harmonized, 'productive', selectedIds);
@@ -261,12 +267,13 @@ export function renderCompactionMandatesSummary(
   if (normalized.fallback || normalized.phase === 'ALL_PHASES') {
     return renderPhaseAwareMandates({}, phase);
   }
+  const renderPhase = normalized.phase;
   const keepIds = new Set(['red-lines', 'evidence', 'tool-error', 'command-execution']);
-  const summary = selectMandatesSections(normalized.phase)
+  const summary = selectMandatesSections(renderPhase)
     .filter((section) => keepIds.has(section.id))
-    .map((section) => compactSectionForEarlyPhase(section, normalized.phase))
+    .map((section) => compactSectionForEarlyPhase(section, renderPhase))
     .join('\n\n');
-  assertSafetyCriticalSections(summary, normalized.phase);
+  assertSafetyCriticalSections(summary, renderPhase);
   return summary;
 }
 
