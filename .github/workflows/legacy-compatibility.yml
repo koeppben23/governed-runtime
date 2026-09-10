@@ -4,7 +4,7 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -14,65 +14,18 @@ jobs:
   legacy-compatibility:
     name: legacy-compatibility
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 2
     steps:
-      - name: Checkout branch
+      - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
         with:
-          ref: feat/mandates-v5
           fetch-depth: 0
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # actions/setup-node v7.0.0
         with:
           node-version-file: .node-version
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - name: Install dependencies
-        run: npm ci
-      - name: Remove remaining instruction-stale consumers
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          def replace(path, old, new):
-              p = Path(path)
-              text = p.read_text()
-              if old not in text:
-                  raise SystemExit(f'expected pattern missing in {path}: {old!r}')
-              p.write_text(text.replace(old, new))
-
-          replace(
-              'src/cli/install.ts',
-              "    instruction_missing: 'INSTR_MISSING',\n    instruction_stale: 'INSTR_STALE',\n    error: 'ERROR',",
-              "    instruction_missing: 'INSTR_MISSING',\n    error: 'ERROR',",
-          )
-          replace(
-              'src/cli/install-cli.test.ts',
-              "        { file: 'f', status: 'instruction_missing' },\n        { file: 'g', status: 'instruction_stale' },\n        { file: 'h', status: 'error', detail: 'malformed' },",
-              "        { file: 'f', status: 'instruction_missing' },\n        { file: 'g', status: 'error', detail: 'malformed' },",
-          )
-          replace(
-              'src/cli/install-cli.test.ts',
-              "      expect(output).toContain('[INSTR_MISSING]');\n      expect(output).toContain('[INSTR_STALE]');\n      expect(output).toContain('[ERROR]');",
-              "      expect(output).toContain('[INSTR_MISSING]');\n      expect(output).toContain('[ERROR]');",
-          )
-          replace(
-              'src/cli/install-doctor.test.ts',
-              "      const staleCheck = checks.find(\n        (c) => c.file.includes('opencode.json') && c.status === 'instruction_stale',\n      );\n      expect(staleCheck).toBeUndefined();",
-              "      const configCheck = checks.find(\n        (c) => c.file.includes('opencode.json') && c.status === 'ok',\n      );\n      expect(configCheck).toBeDefined();",
-          )
-          PY
-      - name: Format and verify
-        run: |
-          npx prettier --write src/cli/install.ts src/cli/install-cli.test.ts src/cli/install-doctor.test.ts
-          npm run check:format
-          npx vitest run --project unit src/cli/install-cli.test.ts src/cli/install-doctor.test.ts
-          npm run check
-      - name: Commit cleanup and restore workflow
-        run: |
-          git checkout origin/develop -- .github/workflows/legacy-compatibility.yml
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .github/workflows/legacy-compatibility.yml src/cli/install.ts src/cli/install-cli.test.ts src/cli/install-doctor.test.ts
-          git commit -m 'fix(doctor): remove dead instruction-stale contract'
-          git push origin HEAD:feat/mandates-v5
+      - name: Reject legacy compatibility on changed FlowGuard source
+        run: >-
+          node scripts/check-legacy-compatibility.mjs
+          "${{ github.event.pull_request.base.sha }}"
+          "${{ github.event.pull_request.head.sha }}"

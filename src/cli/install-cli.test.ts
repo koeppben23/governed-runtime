@@ -136,8 +136,7 @@ describe('cli/formatResult', () => {
         { file: 'd', status: 'unmanaged' },
         { file: 'e', status: 'version_mismatch', detail: 'v1 != v2' },
         { file: 'f', status: 'instruction_missing' },
-        { file: 'g', status: 'instruction_stale' },
-        { file: 'h', status: 'error', detail: 'malformed' },
+        { file: 'g', status: 'error', detail: 'malformed' },
       ];
       const output = formatDoctor(checks, 'opencode');
       expect(output).toContain('[ok]');
@@ -146,7 +145,6 @@ describe('cli/formatResult', () => {
       expect(output).toContain('[UNMANAGED]');
       expect(output).toContain('[VERSION]');
       expect(output).toContain('[INSTR_MISSING]');
-      expect(output).toContain('[INSTR_STALE]');
       expect(output).toContain('[ERROR]');
     });
 

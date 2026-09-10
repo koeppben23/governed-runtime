@@ -548,10 +548,8 @@ describe('cli/doctor', () => {
       await fs.writeFile(ocPath, JSON.stringify(content, null, 2), 'utf-8');
 
       const checks = await doctor(repoArgs({ action: 'doctor' }));
-      const staleCheck = checks.find(
-        (c) => c.file.includes('opencode.json') && c.status === 'instruction_stale',
-      );
-      expect(staleCheck).toBeUndefined();
+      const configCheck = checks.find((c) => c.file.includes('opencode.json') && c.status === 'ok');
+      expect(configCheck).toBeDefined();
     });
 
     it('reports missing config as error', async () => {
