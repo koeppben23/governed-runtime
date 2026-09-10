@@ -127,6 +127,22 @@ export function mergeReviewerTaskPermission(parsed: Record<string, unknown>): vo
   };
 }
 
+function getTaskPermissions(parsed: Record<string, unknown>): Record<string, unknown> | null {
+  if (!parsed['agent'] || typeof parsed['agent'] !== 'object') return null;
+  const build = (parsed['agent'] as Record<string, unknown>)['build'];
+  if (!build || typeof build !== 'object') return null;
+  const permission = (build as Record<string, unknown>)['permission'];
+  if (!permission || typeof permission !== 'object') return null;
+  const task = (permission as Record<string, unknown>)['task'];
+  if (!task || typeof task !== 'object') return null;
+  return task as Record<string, unknown>;
+}
+
+function hasCustomerTaskPermissions(parsed: Record<string, unknown>): boolean {
+  const task = getTaskPermissions(parsed);
+  return task !== null && Object.keys(task).length > 0;
+}
+
 export async function mergeOpencodeJson(filePath: string, scope: InstallScope): Promise<FileOp> {
   const entry = mandatesInstructionEntry(scope);
   const existing = await safeRead(filePath);
@@ -160,8 +176,9 @@ export async function mergeOpencodeJson(filePath: string, scope: InstallScope): 
     ? (parsed['instructions'] as string[])
     : [];
   const hasCustomerInstructions = hasNonFlowGuardInstructions(existingInstructions);
+  const hasCustomerTaskConfig = hasCustomerTaskPermissions(parsed);
 
-  if (hasPluginField || hasCustomerInstructions) {
+  if (hasPluginField || hasCustomerInstructions || hasCustomerTaskConfig) {
     const instructions = [...existingInstructions];
     if (!instructions.includes(entry)) {
       instructions.push(entry);
@@ -191,17 +208,6 @@ export async function mergeOpencodeJson(filePath: string, scope: InstallScope): 
   return { path: filePath, action: 'merged' };
 }
 
-function getTaskPermissions(parsed: Record<string, unknown>): Record<string, unknown> | null {
-  if (!parsed['agent'] || typeof parsed['agent'] !== 'object') return null;
-  const build = (parsed['agent'] as Record<string, unknown>)['build'];
-  if (!build || typeof build !== 'object') return null;
-  const permission = (build as Record<string, unknown>)['permission'];
-  if (!permission || typeof permission !== 'object') return null;
-  const task = (permission as Record<string, unknown>)['task'];
-  if (!task || typeof task !== 'object') return null;
-  return task as Record<string, unknown>;
-}
-
 function cleanupEmptyParents(
   parsed: Record<string, unknown>,
   agent: Record<string, unknown>,
@@ -220,18 +226,16 @@ function removeTaskHardening(parsed: Record<string, unknown>): boolean {
   const build = agent['build'] as Record<string, unknown>;
   const permission = build['permission'] as Record<string, unknown>;
 
-  let removed = false;
-  if (task[REVIEWER_SUBAGENT_TYPE] === 'allow') {
-    delete task[REVIEWER_SUBAGENT_TYPE];
-    removed = true;
-  }
-  if (task['*'] === 'deny' && Object.keys(task).filter((k) => k !== '*').length === 0) {
+  const flowGuardOwnedTaskHardening = task[REVIEWER_SUBAGENT_TYPE] === 'allow';
+  if (!flowGuardOwnedTaskHardening) return false;
+
+  delete task[REVIEWER_SUBAGENT_TYPE];
+  if (task['*'] === 'deny') {
     delete task['*'];
-    removed = true;
   }
   if (Object.keys(task).length === 0) delete permission['task'];
   cleanupEmptyParents(parsed, agent, build, permission);
-  return removed;
+  return true;
 }
 
 async function removeFlowGuardOnly(
