@@ -1,4 +1,9 @@
-import type { AssertionResult, EvalCaseResult, InstructionSurface } from './schema.js';
+import type {
+  AssertionResult,
+  EvalCaseResult,
+  InstructionHost,
+  InstructionSurface,
+} from './schema.js';
 
 export type Verdict = 'PASS' | 'FAIL' | 'RUNNER_ERROR';
 
@@ -9,11 +14,16 @@ export function scoreCase(
   durationMs: number,
   runnerError?: string,
   snapshotSummary?: EvalCaseResult['snapshotSummary'],
+  instructionHost?: InstructionHost,
 ): EvalCaseResult {
+  const provenance = {
+    caseId,
+    instructionSurface,
+    ...(instructionHost ? { instructionHost } : {}),
+  };
   if (runnerError) {
     return {
-      caseId,
-      instructionSurface,
+      ...provenance,
       verdict: 'RUNNER_ERROR',
       durationMs,
       assertionResults,
@@ -21,13 +31,10 @@ export function scoreCase(
     };
   }
 
-  const hardFailures = assertionResults.filter(
-    (r) => r.severity === 'hard' && !r.passed,
-  );
+  const hardFailures = assertionResults.filter((r) => r.severity === 'hard' && !r.passed);
 
   return {
-    caseId,
-    instructionSurface,
+    ...provenance,
     verdict: hardFailures.length > 0 ? 'FAIL' : 'PASS',
     durationMs,
     assertionResults,
