@@ -1,22 +1,31 @@
-import { describe, it, expect } from 'vitest';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
 import { runProcess, snapshotWorkspace } from '../runners/process-runner.js';
 import type { RunnerConfig } from '../schema.js';
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures');
 const FAKE_AGENT = join(FIXTURE, 'fake-agent.mjs');
+const REQUIRED_RUNNER_PROVENANCE = {
+  provider: 'synthetic',
+  model: 'fake-agent',
+  modelVersion: '1',
+  runnerVersion: '1',
+} as const;
 
 function config(args: string[]): RunnerConfig {
   return {
     name: 'fake',
+    ...REQUIRED_RUNNER_PROVENANCE,
     command: process.execPath,
     promptTransport: 'stdin' as const,
     args: [FAKE_AGENT, ...args],
     timeoutMs: 15_000,
+    staticEnv: {},
+    secretEnvNames: [],
   };
 }
 
@@ -88,10 +97,13 @@ describe('process-runner', () => {
   it('handles spawn error for missing command', async () => {
     const c: RunnerConfig = {
       name: 'nonexistent',
+      ...REQUIRED_RUNNER_PROVENANCE,
       command: '/this/command/does/not/exist',
       promptTransport: 'stdin' as const,
       args: [],
       timeoutMs: 5000,
+      staticEnv: {},
+      secretEnvNames: [],
     };
     const outcome = await runContributor(c, FIXTURE);
     expect(outcome.status).toBe('runner_error');
@@ -190,10 +202,13 @@ describe('process-runner', () => {
 
     const c: RunnerConfig = {
       name: 'write-test',
+      ...REQUIRED_RUNNER_PROVENANCE,
       command: process.execPath,
       promptTransport: 'stdin' as const,
       args: [FAKE_AGENT, 'workspace-write'],
       timeoutMs: 10_000,
+      staticEnv: {},
+      secretEnvNames: [],
     };
 
     await runContributor(c, fixtureDir);
