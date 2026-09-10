@@ -405,7 +405,7 @@ describe('cli/uninstall', () => {
       expect(json.instructions).toEqual(['json.md']);
     });
 
-    it('uninstall removes legacy @opencode-ai/plugin from package.json', async () => {
+    it('uninstall preserves customer-owned @opencode-ai/plugin in package.json', async () => {
       const tarball = await createMockTarball();
       const pkgDir = path.join(tmpDir, '.opencode');
       await fs.mkdir(pkgDir, { recursive: true });
@@ -428,7 +428,7 @@ describe('cli/uninstall', () => {
       const content = await fs.readFile(path.join(pkgDir, 'package.json'), 'utf-8');
       const parsed = JSON.parse(content);
       expect(parsed.dependencies['@flowguard/core']).toBeUndefined();
-      expect(parsed.dependencies['@opencode-ai/plugin']).toBeUndefined();
+      expect(parsed.dependencies['@opencode-ai/plugin']).toBe('^1.0.0');
       expect(parsed.dependencies.lodash).toBe('^4.0.0');
     });
   });
@@ -598,7 +598,7 @@ describe('cli/uninstall', () => {
       expect(parsed.dependencies['@flowguard/core']).toBeUndefined();
     });
 
-    it('uninstall preserves foreign task permissions and *:deny when foreign entries exist', async () => {
+    it('uninstall removes FlowGuard task hardening and preserves foreign task permissions', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       // Inject a foreign task permission entry alongside FlowGuard's
@@ -615,9 +615,8 @@ describe('cli/uninstall', () => {
       const afterContent = JSON.parse(await fs.readFile(ocPath, 'utf-8'));
       // Foreign task permission preserved
       expect(afterContent.agent.build.permission.task['custom-reviewer']).toBe('allow');
-      // *:deny preserved because foreign entries still exist
-      expect(afterContent.agent.build.permission.task['*']).toBe('deny');
-      // FlowGuard-owned entry removed
+      // FlowGuard-owned hardening removed
+      expect(afterContent.agent.build.permission.task['*']).toBeUndefined();
       expect(afterContent.agent?.build?.permission?.task?.['flowguard-reviewer']).toBeUndefined();
     });
 
