@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { EvalCaseSchema, type RunnerConfig } from '../schema.js';
 import { resolveRunnerEnv, writeReports } from '../run.js';
+import { EvalCaseSchema, type RunnerConfig } from '../schema.js';
 
 const touchedEnv = new Map<string, string | undefined>();
 
@@ -21,6 +21,10 @@ function runner(overrides: Partial<RunnerConfig> = {}): RunnerConfig {
   return {
     name: 'security-test',
     command: process.execPath,
+    provider: 'synthetic',
+    model: 'fake-agent',
+    modelVersion: '1',
+    runnerVersion: '1',
     promptTransport: 'stdin',
     args: [],
     staticEnv: {},
@@ -71,7 +75,7 @@ describe('eval runner trust boundaries', () => {
   });
 
   it('rejects traversal-capable report run identifiers before writing', () => {
-    expect(() => writeReports('security-test', [], { runId: '../escape' })).toThrow(
+    expect(() => writeReports(runner(), [], { runId: '../escape' })).toThrow(
       'Invalid eval run ID',
     );
   });
