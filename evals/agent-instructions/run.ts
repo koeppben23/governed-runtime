@@ -73,7 +73,7 @@ export function resolveRunnerEnv(config: RunnerConfig): ResolvedEnv {
   return { childEnv, redactionValues };
 }
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const CASES_DIR = join(dirname(fileURLToPath(import.meta.url)), 'cases');
 const RESULTS_DIR = join(ROOT, 'eval-results');
 const RUN_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
