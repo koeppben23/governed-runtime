@@ -1,5 +1,6 @@
 id: completion-report
 description: Agent must produce a complete completion report with required fields
+instructionSurface: repository_contributor
 mode: output-only
 task: |
   Fix a formatting issue in src/util.ts.
