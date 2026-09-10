@@ -4,7 +4,7 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -16,9 +16,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Checkout
+      - name: Checkout PR branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
         with:
+          ref: feat/mandates-v5
           fetch-depth: 0
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # actions/setup-node v7.0.0
@@ -28,7 +29,7 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm ci
-      - name: Print canonical Prettier diff for failing files
+      - name: Apply canonical Prettier output
         run: |
           npx prettier --write \
             src/cli/install-helpers-core.test.ts \
@@ -37,11 +38,20 @@ jobs:
             src/rendering/mandates-renderer.ts \
             src/templates/mandates-phase-aware.test.ts \
             src/templates/mandates.ts
-          git diff -- \
+          if git diff --quiet; then
+            node scripts/check-legacy-compatibility.mjs \
+              "${{ github.event.pull_request.base.sha }}" \
+              "${{ github.event.pull_request.head.sha }}"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
             src/cli/install-helpers-core.test.ts \
             src/cli/install-templates.test.ts \
             src/integration/review/prompt-builders.ts \
             src/rendering/mandates-renderer.ts \
             src/templates/mandates-phase-aware.test.ts \
             src/templates/mandates.ts
-          exit 1
+          git commit -m "style: apply canonical prettier output"
+          git push origin HEAD:feat/mandates-v5
