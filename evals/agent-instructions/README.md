@@ -44,11 +44,13 @@ preserved rather than overwritten.
 
 ### Manual (with a real host)
 
-Not automated in CI. Requires a locally installed agent command. The runner
+Live provider runs require a locally installed agent command and are not treated
+as verified merely because the deterministic harness passes. The runner
 configuration is validated by `RunnerConfigSchema`; use only fields defined by
-that schema. Provider/model metadata is not currently part of the persisted
-result contract, so live cross-provider comparisons remain `NOT_VERIFIED` for
-reproducible provenance until that contract is extended.
+that schema. Provider, model, provider model version, runner version, command,
+arguments, checked-out Git commit, FlowGuard version, and mandate digest are
+persisted in `summary.json`. Missing runner/model identity is rejected before a
+run starts so live results cannot silently lose reproducibility provenance.
 
 Example using stdin prompt transport:
 
@@ -56,6 +58,10 @@ Example using stdin prompt transport:
 {
   "name": "example-host",
   "command": "agent-command",
+  "provider": "provider-id",
+  "model": "model-id",
+  "modelVersion": "provider-model-version",
+  "runnerVersion": "runner-cli-version",
   "promptTransport": "stdin",
   "args": ["run"],
   "staticEnv": {},
@@ -84,4 +90,6 @@ npx vitest run --project scripts evals/
 - `FAIL`: any hard assertion violated
 - `RUNNER_ERROR`: spawn failed, timeout, signal, or internal runner failure
 
-Advisory assertion failures produce warnings but do not cause `FAIL`.
+Advisory assertion failures produce warnings but do not cause `FAIL`. Persisted
+and rendered quality totals are grouped only by `instructionSurface`; contributor
+and FlowGuard-product results are never collapsed into one assurance number.
