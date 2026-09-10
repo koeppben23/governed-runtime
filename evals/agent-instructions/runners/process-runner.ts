@@ -18,13 +18,19 @@ import {
   mkdirSync,
   writeFileSync,
 } from 'node:fs';
-import { join, sep, basename } from 'node:path';
+import { join, sep, basename, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { InstructionHost, InstructionSurface, RunnerConfig } from '../schema.js';
 import type { WorkspaceSnapshot } from '../assertions.js';
 import { buildMandatesContent } from '../../../src/rendering/mandates-renderer.js';
 import { computeMandatesDigest } from '../../../src/cli/install-helpers.js';
 import { mergeOpencodeJson } from '../../../src/cli/install-json.js';
+import {
+  CLAUDE_CODE_PLUGIN_DIR,
+  claudeCodePluginFiles,
+  CODEX_PLUGIN_NAME,
+  codexPluginFiles,
+} from '../../../src/cli/templates.js';
 import { PACKAGE_VERSION } from '../../../src/shared/package-version.js';
 
 // ── Outcome types ─────────────────────────────────────────────────────
@@ -174,6 +180,14 @@ function outcomeMetadata(
   };
 }
 
+function writeTemplateTree(root: string, files: Readonly<Record<string, string>>): void {
+  for (const [relativePath, content] of Object.entries(files)) {
+    const filePath = join(root, relativePath);
+    mkdirSync(dirname(filePath), { recursive: true });
+    writeFileSync(filePath, content, 'utf-8');
+  }
+}
+
 async function materializeInstructionSurface(
   workspaceRoot: string,
   instructionSurface: InstructionSurface,
@@ -185,17 +199,51 @@ async function materializeInstructionSurface(
       : 'repository_contributor evaluations must not declare a product instruction host';
   }
 
-  if (instructionHost !== 'opencode') {
-    return 'flowguard_product evaluations require an explicit supported instruction host: opencode';
+  if (instructionHost === undefined) {
+    return 'flowguard_product evaluations require an explicit instruction host';
   }
 
-  const mandatesDir = join(workspaceRoot, '.opencode');
-  mkdirSync(mandatesDir, { recursive: true });
+  if (instructionHost === 'opencode') {
+    const mandatesDir = join(workspaceRoot, '.opencode');
+    mkdirSync(mandatesDir, { recursive: true });
+    writeFileSync(
+      join(mandatesDir, 'flowguard-mandates.md'),
+      buildMandatesContent(PACKAGE_VERSION(), computeMandatesDigest()),
+      'utf-8',
+    );
+    await mergeOpencodeJson(join(workspaceRoot, 'opencode.json'), 'repo');
+    return null;
+  }
+
+  if (instructionHost === 'claude-code') {
+    const pluginRoot = join(workspaceRoot, CLAUDE_CODE_PLUGIN_DIR);
+    writeTemplateTree(pluginRoot, claudeCodePluginFiles(PACKAGE_VERSION()));
+    return null;
+  }
+
+  const pluginRoot = join(workspaceRoot, 'plugins', CODEX_PLUGIN_NAME);
+  writeTemplateTree(pluginRoot, codexPluginFiles(PACKAGE_VERSION()));
+  const marketplaceDir = join(workspaceRoot, '.agents', 'plugins');
+  mkdirSync(marketplaceDir, { recursive: true });
   writeFileSync(
-    join(mandatesDir, 'flowguard-mandates.md'),
-    buildMandatesContent(PACKAGE_VERSION(), computeMandatesDigest()),
+    join(marketplaceDir, 'marketplace.json'),
+    JSON.stringify(
+      {
+        name: CODEX_PLUGIN_NAME,
+        plugins: [
+          {
+            name: CODEX_PLUGIN_NAME,
+            source: { source: 'local', path: `./plugins/${CODEX_PLUGIN_NAME}` },
+            policy: { installation: 'AVAILABLE', authentication: 'ON_INSTALL' },
+            category: 'Productivity',
+          },
+        ],
+      },
+      null,
+      2,
+    ) + '\n',
+    'utf-8',
   );
-  await mergeOpencodeJson(join(workspaceRoot, 'opencode.json'), 'repo');
   return null;
 }
 
@@ -248,8 +296,10 @@ export async function runProcess(
 
   const before = snapshotWorkspace(workspaceRoot);
 
-  // Resolve args with {repoRoot} and {prompt}
-  const resolvedArgs = config.args.map((a) => a.replace('{repoRoot}', repoRoot));
+  // Resolve runner path placeholders before prompt transport.
+  const resolvedArgs = config.args.map((a) =>
+    a.replaceAll('{repoRoot}', repoRoot).replaceAll('{workspaceRoot}', workspaceRoot),
+  );
   const useStdin = config.promptTransport === 'stdin';
   if (!useStdin) {
     for (let i = 0; i < resolvedArgs.length; i++) {
