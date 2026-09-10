@@ -32,14 +32,6 @@ export interface MandatesRenderContext {
   modelId?: string;
 }
 
-const TOOL_ACTIVE_PHASES: ReadonlySet<MandatesProjectionPhase> = new Set([
-  'PRE_SESSION',
-  'INVESTIGATION',
-  'PLAN',
-  'IMPLEMENTATION',
-  'REVIEW',
-]);
-
 const PHASE_TO_RENDER_PHASE = {
   READY: 'INVESTIGATION',
   TICKET: 'INVESTIGATION',
@@ -144,18 +136,20 @@ function normalizeRenderPhase(phase: Phase | MandatesRenderPhase | string | null
   return { phase: PHASE_TO_RENDER_PHASE[parsed.data], fallback: false };
 }
 
-function assertSafetyCriticalSections(rendered: string, phase: MandatesProjectionPhase): void {
-  if (!TOOL_ACTIVE_PHASES.has(phase)) return;
-  for (const heading of [
-    '## Red Lines',
-    '## 5. Evidence Rules',
-    '## 11a. Tool Error Classification',
-    '## Governance rules',
-  ]) {
-    if (!rendered.includes(heading)) {
+function sectionRenderAnchor(section: MandatesSectionDefinition): string {
+  return section.heading ?? '# FlowGuard Agent Rules';
+}
+
+function assertSafetyCriticalSections(
+  rendered: string,
+  selectedSections: readonly MandatesSectionDefinition[],
+): void {
+  for (const section of selectedSections.filter((candidate) => candidate.safetyCritical === true)) {
+    const anchor = sectionRenderAnchor(section);
+    if (!rendered.includes(anchor)) {
       throw new MandatesRenderError(
         'MANDATES_SAFETY_CRITICAL_OMITTED',
-        `Phase-aware mandates omitted safety-critical section: ${heading}`,
+        `Mandates rendering omitted safety-critical section ${section.id}: ${anchor}`,
       );
     }
   }
@@ -241,7 +235,7 @@ export function renderPhaseAwareMandates(
     .join('\n\n');
 
   const harmonized = applyHostHarmonization(rendered, ctx);
-  assertSafetyCriticalSections(harmonized, renderPhase);
+  assertSafetyCriticalSections(harmonized, sections);
   if (verbosity === 'concise') {
     const selectedIds = new Set(sections.map((s) => s.id));
     assertMandatesAnchors(harmonized, 'productive', selectedIds);
@@ -268,12 +262,13 @@ export function renderCompactionMandatesSummary(
     return renderPhaseAwareMandates({}, phase);
   }
   const renderPhase = normalized.phase;
-  const keepIds = new Set(['red-lines', 'evidence', 'tool-error', 'command-execution']);
-  const summary = selectMandatesSections(renderPhase)
-    .filter((section) => keepIds.has(section.id))
+  const sections = selectMandatesSections(renderPhase).filter(
+    (section) => section.safetyCritical === true,
+  );
+  const summary = sections
     .map((section) => compactSectionForEarlyPhase(section, renderPhase))
     .join('\n\n');
-  assertSafetyCriticalSections(summary, renderPhase);
+  assertSafetyCriticalSections(summary, sections);
   return summary;
 }
 
