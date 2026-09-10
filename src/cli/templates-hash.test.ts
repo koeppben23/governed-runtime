@@ -75,7 +75,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // are runtime-authoritative instructions while content carried in those fields
     // remains untrusted data. This intentionally changes the canonical mandate bytes.
     expect(sha256(FLOWGUARD_MANDATES_BODY)).toBe(
-      'c118e52faf846f759a5653629f4819a4bd58b9e9690127d4e566bfaacccf83d2',
+      'ad6c2782dabdea93c2371a02e13cf8c7da2105dd7291256fbf73aaa64c9ede2f',
     );
   });
 
@@ -320,13 +320,6 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     expect(Object.keys(COMMANDS).sort()).toEqual(expected);
   });
 
-  // Drift guard (issue #565 regression): the OpenCode tool surface is built
-  // verbatim from TOOL_WRAPPER. OpenCode derives the callable tool name as
-  // `flowguard_<exportname>`, so TOOL_WRAPPER MUST re-export every canonical
-  // FlowGuard tool. The #565 split added flowguard_review_implementation to the
-  // barrel and the MCP registry but NOT to TOOL_WRAPPER, making the verdict tool
-  // uncallable on OpenCode. This test cross-checks TOOL_WRAPPER against the
-  // canonical tool-name SSOT so that omission can never silently recur.
   it('TOOL_WRAPPER re-exports every canonical FlowGuard tool (OpenCode surface completeness)', () => {
     const canonicalToolNames = [
       TOOL_FLOWGUARD_STATUS,
@@ -349,7 +342,6 @@ describe('TEMPLATE_HASH_STABILITY', () => {
       TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE,
     ];
 
-    // Parse the actual export identifiers from TOOL_WRAPPER's export block.
     const exportBlock = TOOL_WRAPPER.match(/export\s*\{([^}]*)\}/);
     expect(exportBlock, 'TOOL_WRAPPER must contain an export block').not.toBeNull();
     const exportedIdentifiers = new Set(
@@ -359,9 +351,6 @@ describe('TEMPLATE_HASH_STABILITY', () => {
         .filter((s) => s.length > 0),
     );
 
-    // OpenCode tool name `flowguard_<exportname>` -> the export identifier is the
-    // canonical name with the `flowguard_` prefix stripped. abort_session maps to
-    // the `abort_session` export even though its tool name is flowguard_abort_session.
     const missing = canonicalToolNames
       .map((toolName) => toolName.replace(/^flowguard_/, ''))
       .filter((exportName) => !exportedIdentifiers.has(exportName));
@@ -372,7 +361,6 @@ describe('TEMPLATE_HASH_STABILITY', () => {
         `Add them to src/templates/wrappers/index.ts or OpenCode cannot call these tools.`,
     ).toEqual([]);
 
-    // Symmetry: no stray exports beyond the canonical tool set.
     const canonicalExportNames = new Set(
       canonicalToolNames.map((t) => t.replace(/^flowguard_/, '')),
     );
@@ -383,11 +371,6 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     ).toEqual([]);
   });
 
-  // Drift guard for the installed-package surface: the wrapper's import
-  // (`export { ... } from "@flowguard/core/integration"`) resolves against the
-  // integration barrel at install time. A wrapper export that is missing from
-  // src/integration/index.ts breaks the OpenCode tool scan with an import
-  // error (HTTP 500 on the tool-ids endpoint) — this must never regress.
   it('every TOOL_WRAPPER export exists in the integration barrel (installed package surface)', async () => {
     const exportBlock = TOOL_WRAPPER.match(/export\s*\{([^}]*)\}/);
     expect(exportBlock, 'TOOL_WRAPPER must contain an export block').not.toBeNull();
