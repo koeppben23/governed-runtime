@@ -66,20 +66,27 @@ async function cleanupVendorDir(fullPath: string): Promise<FileOp[]> {
   return ops;
 }
 
-async function removeMandateIfModified(fullPath: string, warnings: string[]): Promise<void> {
+/**
+ * Verify ownership before deleting the managed mandates path.
+ * A matching FlowGuard managed header establishes ownership even when the body
+ * was locally modified. A same-named unmanaged customer file is never deleted.
+ */
+async function mayRemoveMandate(fullPath: string, warnings: string[]): Promise<boolean> {
   const content = await safeRead(fullPath);
-  if (content === null) return;
-  if (isManagedArtifact(content)) {
-    const fileDigest = extractManagedDigest(content);
-    const expectedDigest = computeMandatesDigest();
-    const fileBody = extractManagedBody(content);
-    const bodyModified = fileBody !== null && sha256(fileBody) !== expectedDigest;
-    if ((fileDigest && fileDigest !== expectedDigest) || bodyModified) {
-      warnings.push(`${MANDATES_FILENAME} was locally modified — removed anyway`);
-    }
-  } else {
-    warnings.push(`${MANDATES_FILENAME} has no managed header — removed anyway`);
+  if (content === null) return true;
+  if (!isManagedArtifact(content)) {
+    warnings.push(`${MANDATES_FILENAME} has no FlowGuard managed header — preserved`);
+    return false;
   }
+
+  const fileDigest = extractManagedDigest(content);
+  const expectedDigest = computeMandatesDigest();
+  const fileBody = extractManagedBody(content);
+  const bodyModified = fileBody !== null && sha256(fileBody) !== expectedDigest;
+  if ((fileDigest && fileDigest !== expectedDigest) || bodyModified) {
+    warnings.push(`${MANDATES_FILENAME} was locally modified — removing FlowGuard-owned artifact`);
+  }
+  return true;
 }
 
 async function removeManagedFiles(
@@ -90,8 +97,13 @@ async function removeManagedFiles(
   for (const relPath of FLOWGUARD_OWNED_FILES) {
     const fullPath = join(target, relPath);
 
-    if (relPath === MANDATES_FILENAME) {
-      await removeMandateIfModified(fullPath, warnings);
+    if (relPath === MANDATES_FILENAME && !(await mayRemoveMandate(fullPath, warnings))) {
+      ops.push({
+        path: fullPath,
+        action: 'skipped',
+        reason: 'same-named file is not a FlowGuard managed artifact',
+      });
+      continue;
     }
 
     if (relPath === 'vendor') {
@@ -112,7 +124,6 @@ async function cleanupPackageJson(target: string): Promise<FileOp[]> {
     const parsed = JSON.parse(pkgContent) as Record<string, unknown>;
     const deps = (parsed['dependencies'] ?? {}) as Record<string, string>;
     delete deps['@flowguard/core'];
-    delete deps['@opencode-ai/plugin'];
 
     const hasScripts = parsed['scripts'] != null && Object.keys(parsed['scripts']).length > 0;
     const hasDevDeps =
@@ -161,10 +172,10 @@ async function cleanupOpencodeConfig(args: CliArgs, target: string): Promise<Fil
 /**
  * Uninstall FlowGuard from the target directory.
  *
- * Removes all FlowGuard-owned files including flowguard-mandates.md.
- * Reports warnings for modified managed artifacts.
- * Cleans FlowGuard instruction entries from opencode.json.
- * Never touches AGENTS.md.
+ * Removes FlowGuard-owned files including managed flowguard-mandates.md.
+ * Preserves same-named files that do not carry FlowGuard's managed-artifact header.
+ * Cleans only FlowGuard-owned instruction entries and dependencies.
+ * Never touches customer AGENTS.md or foreign package dependencies.
  *
  * @param args - Parsed CLI arguments.
  * @returns Result with file operations, warnings, and any errors.
