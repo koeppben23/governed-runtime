@@ -17,20 +17,16 @@ const idSchema = z
   .string()
   .regex(/^[a-z0-9][a-z0-9-]*$/, 'must be a lowercase slug without path separators');
 
-const SyntheticSecretNameSchema = z.string().regex(
-  /^FG_EVAL_[A-Z0-9_]+$/,
-  'synthetic eval secret names must use the FG_EVAL_ namespace',
-);
+const SyntheticSecretNameSchema = z
+  .string()
+  .regex(/^FG_EVAL_[A-Z0-9_]+$/, 'synthetic eval secret names must use the FG_EVAL_ namespace');
 
 // ── Severity ──────────────────────────────────────────────────────────
 
 const SeveritySchema = z.enum(['hard', 'advisory']);
 
 /** Keeps customer product prompt evaluation separate from contributor guidance. */
-export const InstructionSurfaceSchema = z.enum([
-  'repository_contributor',
-  'flowguard_product',
-]);
+export const InstructionSurfaceSchema = z.enum(['repository_contributor', 'flowguard_product']);
 export type InstructionSurface = z.infer<typeof InstructionSurfaceSchema>;
 
 /** Host transport used to materialize FlowGuard product instructions. */
@@ -220,15 +216,12 @@ const InnerRunnerConfigSchema = z.discriminatedUnion('promptTransport', [
     }),
 ]);
 
-export const RunnerConfigSchema = z.preprocess(
-  (input) => {
-    if (typeof input === 'object' && input !== null && !('promptTransport' in input)) {
-      return { ...(input as Record<string, unknown>), promptTransport: 'stdin' };
-    }
-    return input;
-  },
-  InnerRunnerConfigSchema,
-);
+export const RunnerConfigSchema = z.preprocess((input) => {
+  if (typeof input === 'object' && input !== null && !('promptTransport' in input)) {
+    return { ...(input as Record<string, unknown>), promptTransport: 'stdin' };
+  }
+  return input;
+}, InnerRunnerConfigSchema);
 
 export type RunnerConfig = z.infer<typeof InnerRunnerConfigSchema>;
 

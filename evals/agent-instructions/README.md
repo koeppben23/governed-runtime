@@ -32,10 +32,10 @@ __tests__/          — Unit tests for all modules
 
 ## Case classes
 
-| Class | `mode` | Description |
-|-------|--------|-------------|
-| Workspace | `workspace` | Full mini-repository with fixture. Evaluates real file changes. |
-| Output-only | `output-only` | Evaluates stdout/stderr output. No filesystem interaction. |
+| Class       | `mode`        | Description                                                     |
+| ----------- | ------------- | --------------------------------------------------------------- |
+| Workspace   | `workspace`   | Full mini-repository with fixture. Evaluates real file changes. |
+| Output-only | `output-only` | Evaluates stdout/stderr output. No filesystem interaction.      |
 
 For `flowguard_product`, the runner materializes the selected host transport
 before invoking the configured process. OpenCode uses the production renderer,

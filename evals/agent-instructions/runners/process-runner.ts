@@ -79,9 +79,10 @@ function sha256(buf: Buffer): string {
   return createHash('sha256').update(buf).digest('hex');
 }
 
-export function snapshotWorkspace(
-  root: string,
-): { entries: WorkspaceSnapshot; contents: Map<string, string> } {
+export function snapshotWorkspace(root: string): {
+  entries: WorkspaceSnapshot;
+  contents: Map<string, string>;
+} {
   const entries: WorkspaceSnapshot = new Map();
   const contents = new Map<string, string>();
   walk(root, '', entries, contents);
