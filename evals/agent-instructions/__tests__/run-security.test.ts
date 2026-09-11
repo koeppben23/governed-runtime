@@ -44,6 +44,12 @@ describe('eval runner trust boundaries', () => {
     expect(resolved.childEnv.CI).toBe('true');
   });
 
+  it('passes deterministic seed explicitly to the child runner', () => {
+    const resolved = resolveRunnerEnv(runner({ seed: 'seed-42' }));
+
+    expect(resolved.childEnv.FLOWGUARD_EVAL_SEED).toBe('seed-42');
+  });
+
   it('passes only explicitly declared secrets and registers them for redaction', () => {
     setEnv('FG_REQUIRED_SECRET', 'synthetic-secret-value');
 
