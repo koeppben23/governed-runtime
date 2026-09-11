@@ -389,12 +389,12 @@ describe('MUTATION_KILL: buildReviewContentPrompt with stack section', () => {
 
   it('includes ticket context when ticketText is provided', () => {
     const prompt = buildReviewContentPrompt(baseOpts);
-    expect(prompt).toContain('Ticket context: Fix bug #123');
+    expect(prompt).toContain('### Ticket\nFix bug #123');
   });
 
   it('omits ticket context when ticketText is empty', () => {
     const prompt = buildReviewContentPrompt({ ...baseOpts, ticketText: '' });
-    expect(prompt).not.toContain('Ticket context:');
+    expect(prompt).not.toContain('### Ticket');
   });
 });
 

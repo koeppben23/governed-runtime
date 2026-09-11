@@ -364,8 +364,8 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     expect(next).toContain('do not construct reviewer attestation fields');
     const reviewerTaskPrompt = String(parsed.reviewerTaskPrompt);
     expect(reviewerTaskPrompt).toContain('persisted diff content');
-    expect(reviewerTaskPrompt).toContain('## Frozen Review Subject');
-    expect(reviewerTaskPrompt).toContain('## Review Subject Scope (frozen obligation scope)');
+    expect(reviewerTaskPrompt).toContain('## Frozen Untrusted Subject');
+    expect(reviewerTaskPrompt).toContain('## Subject Scope (frozen obligation scope)');
     expect(reviewerTaskPrompt).toContain(
       JSON.stringify({ kind: 'content', subjectDigest: SUBJECT_DIGEST, lineCount: 1 }),
     );

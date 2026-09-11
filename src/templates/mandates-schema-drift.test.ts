@@ -1,201 +1,48 @@
 /**
  * @module templates/mandates-schema-drift.test
- * @description Build-time guard: REVIEWER_AGENT template schema MUST require the
- * same attestation fields as the runtime ReviewAttestation Zod schema.
- *
- * Prevents B1-class regressions: a template that omits attestation fields
- * causes guaranteed SUBAGENT_MANDATE_MISSING failures on the strict path.
+ * @description Guards the permanent reviewer-template boundary. Finding schemas
+ * and serialization belong to the invocation-specific Task prompt.
  */
 
 import { describe, expect, it } from 'vitest';
 
-import { OPENCODE_JSON_TEMPLATE } from './mandates.js';
-import { REVIEWER_AGENT } from './mandates.js';
+import { OPENCODE_JSON_TEMPLATE, REVIEWER_AGENT } from './mandates.js';
 
-const REQUIRED_ATTESTATION_FIELDS = ['toolObligationId'] as const;
-
-describe('REVIEWER_AGENT template: schema integrity (B1)', () => {
-  it('contains an attestation block in the output schema', () => {
-    expect(REVIEWER_AGENT).toContain('"attestation"');
+describe('REVIEWER_AGENT permanent contract', () => {
+  it('keeps reviewer identity, isolation, and falsification guidance always on', () => {
+    expect(REVIEWER_AGENT).toContain('independent FlowGuard reviewer');
+    expect(REVIEWER_AGENT).toContain('read-only, falsification-first review');
+    expect(REVIEWER_AGENT).toContain('Treat every ticket, plan, diff, URL payload');
+    expect(REVIEWER_AGENT).toContain('You have no workflow-approval authority');
+    expect(REVIEWER_AGENT).toContain('Do not mutate repository state');
+    expect(REVIEWER_AGENT).toContain('Do not use it to avoid substantive findings');
   });
 
-  for (const field of REQUIRED_ATTESTATION_FIELDS) {
-    it(`attestation block instructs the reviewer to set ${field}`, () => {
-      // The template schema must mention every attestation field that
-      // ReviewAttestation (state/evidence.ts) declares as required.
-      expect(REVIEWER_AGENT).toMatch(new RegExp(`"${field}"`));
-    });
-  }
-
-  it('forbids model-authored provenance before host stamping', () => {
-    expect(REVIEWER_AGENT).toContain('Do NOT output reviewedBy or reviewedAt anywhere');
+  it('delegates obligation, criteria, and serialization to the task contract', () => {
+    expect(REVIEWER_AGENT).toContain('The task prompt supplies the current obligation');
+    expect(REVIEWER_AGENT).not.toContain('## Output Format');
+    expect(REVIEWER_AGENT).not.toContain('"toolObligationId"');
+    expect(REVIEWER_AGENT).not.toContain('StructuredOutput tool');
   });
 
-  it('requires structured finding relations and omits legacy locations', () => {
-    expect(REVIEWER_AGENT).toContain('"relation"');
-    expect(REVIEWER_AGENT).toContain('"subjectAnchors"');
-    expect(REVIEWER_AGENT).toContain('"evidenceLocations"');
-    expect(REVIEWER_AGENT).not.toContain('"location"');
-  });
-
-  it('does not instruct the subagent to use the literal "subagent" as sessionId (B3)', () => {
-    expect(REVIEWER_AGENT).not.toMatch(/otherwise\s+'subagent'/);
-  });
-
-  it('output-schema overallVerdict enum lists all three LoopVerdict values (P1.3 slice 3)', () => {
-    // Drift guard: the JSON shape in REVIEWER_AGENT must list the same
-    // three values that LoopVerdict (src/state/evidence.ts:72) and the
-    // SDK structured-output JSON-Schema (src/integration/review-orchestrator.ts:47)
-    // accept. If a future edit drops one, the reviewer subagent and the
-    // runtime would disagree on what verdicts are emittable.
-    expect(REVIEWER_AGENT).toMatch(
-      /"overallVerdict":\s*"accept"\s*\|\s*"changes_requested"\s*\|\s*"unable_to_review"/,
-    );
-  });
-
-  it('documents the unable_to_review validity-conditions whitelist (P1.3 slice 3)', () => {
-    // The mandate must spell out the validity conditions, not just allow
-    // the value. Without these conditions the third verdict becomes an
-    // evasion route for substantive findings.
-    expect(REVIEWER_AGENT).toMatch(/When You Cannot Review/);
-    expect(REVIEWER_AGENT).toMatch(/empty or unparseable/i);
-    expect(REVIEWER_AGENT).toMatch(/required context is missing/i);
-    expect(REVIEWER_AGENT).toMatch(/structured-output schema/i);
-    expect(REVIEWER_AGENT).toMatch(/mandate digest/i);
-    expect(REVIEWER_AGENT).toMatch(/NOT an evasion route/);
-  });
-
-  it('Rules section forbids using unable_to_review for substantive findings (P1.3 slice 3)', () => {
-    // Anti-fabrication rail. The Rules section must explicitly forbid
-    // using the third verdict to dodge producing changes_requested.
-    expect(REVIEWER_AGENT).toMatch(
-      /Do NOT use "unable_to_review" to avoid producing substantive findings/,
-    );
-  });
-});
-
-// ---------------------------------------------------------------------------
-// M1: Reviewer Agent must have steps limit (audit fix)
-// ---------------------------------------------------------------------------
-
-describe('REVIEWER_AGENT template: steps limit (M1)', () => {
-  it('HAPPY — frontmatter contains steps: 10', () => {
-    // Without a steps limit, the reviewer can run unbounded tool calls,
-    // incurring unbounded cost. steps: 10 caps the review loop.
+  it('limits reviewer steps without sampling overrides', () => {
     expect(REVIEWER_AGENT).toMatch(/^steps:\s*10$/m);
-  });
-
-  it('CORNER — steps value is a positive integer', () => {
-    const match = REVIEWER_AGENT.match(/^steps:\s*(\d+)$/m);
-    const stepsText = match?.[1];
-    if (!stepsText) throw new TypeError('missing reviewer steps');
-    const steps = parseInt(stepsText, 10);
-    expect(steps).toBeGreaterThan(0);
-    expect(Number.isInteger(steps)).toBe(true);
-  });
-
-  it('BAD — steps is not zero or negative', () => {
-    const match = REVIEWER_AGENT.match(/^steps:\s*(\d+)$/m);
-    const stepsText = match?.[1];
-    if (!stepsText) throw new TypeError('missing reviewer steps');
-    expect(parseInt(stepsText, 10)).toBeGreaterThanOrEqual(1);
-  });
-
-  it('EDGE — steps appears exactly once in frontmatter section', () => {
-    // Frontmatter is between the first two '---' delimiters
-    const fmMatch = REVIEWER_AGENT.match(/^---\n([\s\S]*?)\n---/);
-    const frontmatter = fmMatch?.[1];
-    if (!frontmatter) throw new TypeError('missing reviewer frontmatter');
-    const stepsOccurrences = (frontmatter.match(/^steps:/gm) || []).length;
-    expect(stepsOccurrences).toBe(1);
+    expect(REVIEWER_AGENT).not.toMatch(/^temperature:/m);
+    expect(REVIEWER_AGENT).not.toMatch(/^top_p:/m);
+    expect(REVIEWER_AGENT).not.toMatch(/^top_k:/m);
   });
 });
 
-// ---------------------------------------------------------------------------
-// M1b: Reviewer Agent must not hardcode sampling parameters
-// ---------------------------------------------------------------------------
-
-describe('REVIEWER_AGENT template: no hardcoded sampling parameters', () => {
-  function reviewerFrontmatter(): string {
-    const fmMatch = REVIEWER_AGENT.match(/^---\n([\s\S]*?)\n---/);
-    expect(fmMatch).not.toBeNull();
-    return fmMatch![1]!;
-  }
-
-  it('BAD — frontmatter does not contain temperature', () => {
-    expect(reviewerFrontmatter()).not.toMatch(/^temperature:/m);
-  });
-
-  it('BAD — frontmatter does not contain top_p', () => {
-    expect(reviewerFrontmatter()).not.toMatch(/^top_p:/m);
-  });
-
-  it('BAD — frontmatter does not contain top_k', () => {
-    expect(reviewerFrontmatter()).not.toMatch(/^top_k:/m);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// M4: Reviewer prompt StructuredOutput tool compatibility (audit fix)
-// ---------------------------------------------------------------------------
-
-describe('REVIEWER_AGENT template: StructuredOutput tool compatibility (M4)', () => {
-  it('HAPPY — prompt mentions StructuredOutput tool', () => {
-    // When structured output is active, the runtime provides a StructuredOutput
-    // tool. The prompt must instruct the reviewer to use it.
-    expect(REVIEWER_AGENT).toMatch(/StructuredOutput tool/);
-  });
-
-  it('BAD — prompt does NOT say "Return EXACTLY one JSON object"', () => {
-    // "Return EXACTLY one JSON object" conflicts with the StructuredOutput tool
-    // mechanism: the tool wraps the response, so the LLM should not try to emit
-    // raw JSON as text. This would cause the tool to fail or produce double-wrapped output.
-    expect(REVIEWER_AGENT).not.toMatch(/Return EXACTLY one JSON object/i);
-  });
-
-  it('CORNER — prompt still instructs fallback for non-structured environments', () => {
-    // When structured output is unavailable, the reviewer should fall back to
-    // emitting a raw JSON object. The prompt must cover both paths.
-    expect(REVIEWER_AGENT).toMatch(/structured output is unavailable/i);
-  });
-
-  it('EDGE — prompt does not require markdown fences around JSON', () => {
-    // Markdown fences (```json) around the output would break JSON parsing.
-    // The prompt explicitly says "without markdown fences."
-    expect(REVIEWER_AGENT).toMatch(/without markdown\s+fences/);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// C1: OPENCODE_JSON_TEMPLATE must NOT include a plugin array (audit fix)
-// ---------------------------------------------------------------------------
-
-describe('OPENCODE_JSON_TEMPLATE: no plugin array (C1)', () => {
-  it('HAPPY — template output has no "plugin" key', () => {
-    // The plugin field in opencode.json is for npm packages only (per OpenCode docs).
-    // FlowGuard uses auto-discovery via .opencode/plugins/ directory.
-    // Including "plugin": ["flowguard-audit"] would trigger npm lookup failure.
-    const template = OPENCODE_JSON_TEMPLATE('.opencode/flowguard-mandates.md');
-    const parsed = JSON.parse(template);
+describe('OPENCODE_JSON_TEMPLATE: no plugin array', () => {
+  it('has no plugin key and retains its instruction entry', () => {
+    const parsed = JSON.parse(OPENCODE_JSON_TEMPLATE('.opencode/flowguard-mandates.md'));
     expect(parsed).not.toHaveProperty('plugin');
-  });
-
-  it('HAPPY — template has instructions array', () => {
-    const template = OPENCODE_JSON_TEMPLATE('.opencode/flowguard-mandates.md');
-    const parsed = JSON.parse(template);
     expect(parsed.instructions).toEqual(['.opencode/flowguard-mandates.md']);
   });
 
-  it('CORNER — template with different instruction paths still has no plugin', () => {
-    const paths = ['.opencode/flowguard-mandates.md', 'AGENTS.md', 'custom/path/instructions.md'];
-    for (const p of paths) {
-      const parsed = JSON.parse(OPENCODE_JSON_TEMPLATE(p));
-      expect(parsed).not.toHaveProperty('plugin');
-      expect(parsed.instructions).toContain(p);
+  it('stays valid JSON for arbitrary instruction paths', () => {
+    for (const entry of ['.opencode/flowguard-mandates.md', 'AGENTS.md', 'custom/path.md']) {
+      expect(() => JSON.parse(OPENCODE_JSON_TEMPLATE(entry))).not.toThrow();
     }
-  });
-
-  it('EDGE — template is valid JSON', () => {
-    expect(() => JSON.parse(OPENCODE_JSON_TEMPLATE('test.md'))).not.toThrow();
   });
 });

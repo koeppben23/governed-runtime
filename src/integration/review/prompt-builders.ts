@@ -189,7 +189,7 @@ function renderChallengeContract(
     '- Omit challengeResolutionVerdicts unless the Task prompt explicitly supplies prior challenge IDs to resolve.',
     '- Required field: outcome. Select it yourself only after completing the falsification attempt; there is no default outcome.',
     ...(outcomeVocabulary ? [outcomeVocabulary] : []),
-    `- Required challenge semantic shape: ${JSON.stringify(challenge)}`,
+    `- Required challenge object shape: ${JSON.stringify(challenge)}`,
     ...(evidenceRefs.length === 0
       ? ['- No usable evidence reference was supplied; return unable_to_review.']
       : []),

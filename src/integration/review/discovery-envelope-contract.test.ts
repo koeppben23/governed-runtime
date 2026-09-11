@@ -114,13 +114,13 @@ describe('repository Discovery envelope (both transports)', () => {
 
   it('host prompt carries the repository-scoped Discovery rules only for repository reviews', () => {
     const prompt = hostPrompt(snapshot());
-    expect(prompt).toContain('Check the supplied Discovery health and drift status');
+    expect(prompt).toContain('Check supplied Discovery health/drift before repo-dependent claims');
   });
 
   it('repair prompt keeps the envelope before the material marker', () => {
     const prompt = hostPrompt(snapshot(), ['severity: invalid literal value']);
     expect(prompt).toContain('## Prior Output Rejected — Schema Validation Errors');
-    expect(prompt).toContain('Return a fresh complete ReviewerFindingsInput object');
+    expect(prompt).toContain('Return a fresh complete result.');
     expect(prompt).not.toContain('Return a fresh complete ReviewFindings object');
     expect(prompt).toContain('## Repository Discovery Contract');
     expect(prompt.indexOf('## Repository Discovery Context')).toBeLessThan(

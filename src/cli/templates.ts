@@ -12,6 +12,7 @@ export {
   COMMANDS,
   MANDATES_FILENAME,
   mandatesInstructionEntry,
+  FLOWGUARD_MANDATES_FULL_BODY,
   FLOWGUARD_MANDATES_KERNEL,
   buildMandatesContent,
   extractManagedDigest,

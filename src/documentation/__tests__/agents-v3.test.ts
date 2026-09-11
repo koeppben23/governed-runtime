@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { FLOWGUARD_MANDATES_BODY } from '../../templates/index.js';
+import { FLOWGUARD_MANDATES_KERNEL } from '../../templates/index.js';
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../..');
 const AGENTS_PATH = path.join(PROJECT_ROOT, 'AGENTS.md');
@@ -77,8 +77,8 @@ describe('repository AGENTS guidance', () => {
       expect(unwrapped).toContain(
         'MUST NOT be used as the canonical source for installed mandate text',
       );
-      expect(FLOWGUARD_MANDATES_BODY).toContain('# FlowGuard Agent Rules');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('You are operating under FlowGuard governance.');
+      expect(FLOWGUARD_MANDATES_KERNEL).toContain('# FlowGuard Agent Rules');
+      expect(FLOWGUARD_MANDATES_KERNEL).toContain('You are operating under FlowGuard governance.');
     });
 
     it('keeps local engineering guidance explicit without product workflow gates', async () => {

@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { sha256, computeMandatesDigest } from './install.js';
 import {
   COMMANDS,
-  FLOWGUARD_MANDATES_BODY,
+  FLOWGUARD_MANDATES_KERNEL,
   MANDATES_FILENAME,
   mandatesInstructionEntry,
   buildMandatesContent,
@@ -21,7 +21,11 @@ import {
   extractManagedBody,
   isManagedArtifact,
 } from './templates.js';
-import { MANDATES_SECTION_DEFINITIONS, MANDATES_TRAILER } from '../templates/mandates.js';
+import {
+  FLOWGUARD_MANDATES_FULL_BODY,
+  MANDATES_SECTION_DEFINITIONS,
+  MANDATES_TRAILER,
+} from '../templates/mandates.js';
 import {
   renderCommandGovernanceRules,
   renderMandates,
@@ -61,13 +65,13 @@ describe('DEV_REPO_INVARIANTS', () => {
       expect(content).not.toContain('docs/agent-guidance/');
     });
 
-    it('FLOWGUARD_MANDATES_BODY contains installed core sections', () => {
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## 1. Mission');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## 2. Priority Ladder');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## 3. Task Class Router');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## Red Lines');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## 8. Output Contract');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## 12. Extended Guidance');
+    it('FLOWGUARD_MANDATES_KERNEL contains only universal installed core sections', () => {
+      expect(FLOWGUARD_MANDATES_KERNEL).toContain('## 2. Priority Ladder');
+      expect(FLOWGUARD_MANDATES_KERNEL).toContain('## Red Lines');
+      expect(FLOWGUARD_MANDATES_KERNEL).toContain('## 4. Hard Invariants');
+      expect(FLOWGUARD_MANDATES_KERNEL).toContain('## 5. Evidence Rules');
+      expect(FLOWGUARD_MANDATES_KERNEL).toContain('## 11a. Tool Error Classification');
+      expect(FLOWGUARD_MANDATES_KERNEL).not.toContain('## 8. Output Contract');
     });
 
     it('AGENTS.md documents local-only contributor scope', async () => {
@@ -191,8 +195,8 @@ describe('cli/crypto', () => {
   });
 
   describe('CORNER', () => {
-    it('computeMandatesDigest matches sha256 of FLOWGUARD_MANDATES_BODY', () => {
-      expect(computeMandatesDigest()).toBe(sha256(FLOWGUARD_MANDATES_BODY));
+    it('computeMandatesDigest matches sha256 of FLOWGUARD_MANDATES_KERNEL', () => {
+      expect(computeMandatesDigest()).toBe(sha256(FLOWGUARD_MANDATES_KERNEL));
     });
   });
 
@@ -205,7 +209,7 @@ describe('cli/crypto', () => {
   describe('PERF', () => {
     it('sha256 of mandates body completes in < 5ms', () => {
       const start = performance.now();
-      for (let i = 0; i < 100; i++) sha256(FLOWGUARD_MANDATES_BODY);
+      for (let i = 0; i < 100; i++) sha256(FLOWGUARD_MANDATES_KERNEL);
       expect(performance.now() - start).toBeLessThan(500);
     });
   });
@@ -248,7 +252,7 @@ describe('cli/templates', () => {
 
     it('extractManagedBody returns the canonical generated body', () => {
       const content = buildMandatesContent('2.0.0', computeMandatesDigest());
-      expect(extractManagedBody(content)).toBe(FLOWGUARD_MANDATES_BODY);
+      expect(extractManagedBody(content)).toBe(FLOWGUARD_MANDATES_KERNEL);
     });
   });
 
@@ -266,10 +270,14 @@ describe('cli/templates', () => {
 
   describe('CORNER', () => {
     it('installed mandates are generated exactly from the canonical section registry', () => {
-      const expected = `${MANDATES_SECTION_DEFINITIONS.map((section) => section.content).join('\n\n')}\n\n---\n\n${MANDATES_TRAILER}\n`;
-      expect(FLOWGUARD_MANDATES_BODY).toBe(expected);
-      expect(FLOWGUARD_MANDATES_BODY).toContain('[End of v5 Agent Rules]');
-      expect(FLOWGUARD_MANDATES_BODY).not.toContain('[End of v4 Agent Rules]');
+      const expected = `${MANDATES_SECTION_DEFINITIONS.filter(
+        (section) => 'kernel' in section && section.kernel === true,
+      )
+        .map((section) => section.content)
+        .join('\n\n')}\n\n---\n\n${MANDATES_TRAILER}\n`;
+      expect(FLOWGUARD_MANDATES_KERNEL).toBe(expected);
+      expect(FLOWGUARD_MANDATES_KERNEL).toContain('[End of v5 Agent Rules]');
+      expect(FLOWGUARD_MANDATES_KERNEL).not.toContain('[End of v4 Agent Rules]');
     });
 
     it("MANDATES_FILENAME is 'flowguard-mandates.md'", () => {
@@ -283,7 +291,7 @@ describe('cli/templates', () => {
       expect(lines[3]).toBe('# FlowGuard Agent Rules');
     });
 
-    it('FLOWGUARD_MANDATES_BODY contains all core sections', () => {
+    it('FLOWGUARD_MANDATES_FULL_BODY contains all semantic sections', () => {
       for (const heading of [
         '## 1. Mission',
         '## Language Conventions',
@@ -301,34 +309,36 @@ describe('cli/templates', () => {
         '## 11. High-Risk Extension',
         '## 12. Extended Guidance',
       ]) {
-        expect(FLOWGUARD_MANDATES_BODY).toContain(heading);
+        expect(FLOWGUARD_MANDATES_FULL_BODY).toContain(heading);
       }
     });
 
     it('current sections are followed by the v5 end marker', () => {
-      const lastSection = FLOWGUARD_MANDATES_BODY.indexOf('## Before Completing Rule');
-      const endMarker = FLOWGUARD_MANDATES_BODY.indexOf(MANDATES_TRAILER);
+      const lastSection = FLOWGUARD_MANDATES_FULL_BODY.indexOf('## Before Completing Rule');
+      const endMarker = FLOWGUARD_MANDATES_FULL_BODY.indexOf(MANDATES_TRAILER);
       expect(lastSection).toBeGreaterThan(-1);
       expect(endMarker).toBeGreaterThan(lastSection);
     });
 
-    it('FLOWGUARD_MANDATES_BODY does not reference contributor AGENTS.md or repository docs', () => {
-      expect(FLOWGUARD_MANDATES_BODY).not.toContain('AGENTS.md');
-      expect(FLOWGUARD_MANDATES_BODY).not.toContain('FlowGuard repository docs/');
-      expect(FLOWGUARD_MANDATES_BODY).not.toContain('docs/trust-boundaries.md');
+    it('FLOWGUARD_MANDATES_KERNEL does not reference contributor AGENTS.md or repository docs', () => {
+      expect(FLOWGUARD_MANDATES_KERNEL).not.toContain('AGENTS.md');
+      expect(FLOWGUARD_MANDATES_KERNEL).not.toContain('FlowGuard repository docs/');
+      expect(FLOWGUARD_MANDATES_KERNEL).not.toContain('docs/trust-boundaries.md');
     });
 
-    it('FLOWGUARD_MANDATES_BODY contains task-class-scaled output contract', () => {
-      expect(FLOWGUARD_MANDATES_BODY).toContain('Use one output contract, scaled by task class:');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('TRIVIAL:');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('STANDARD:');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('HIGH-RISK:');
+    it('FLOWGUARD_MANDATES_FULL_BODY contains task-class-scaled output contract', () => {
+      expect(FLOWGUARD_MANDATES_FULL_BODY).toContain(
+        'Use one output contract, scaled by task class:',
+      );
+      expect(FLOWGUARD_MANDATES_FULL_BODY).toContain('TRIVIAL:');
+      expect(FLOWGUARD_MANDATES_FULL_BODY).toContain('STANDARD:');
+      expect(FLOWGUARD_MANDATES_FULL_BODY).toContain('HIGH-RISK:');
     });
 
-    it('FLOWGUARD_MANDATES_BODY is self-contained', () => {
-      expect(FLOWGUARD_MANDATES_BODY).toContain(MANDATES_TRAILER);
-      expect(FLOWGUARD_MANDATES_BODY).not.toContain('Deprecated');
-      expect(FLOWGUARD_MANDATES_BODY).not.toContain('Legacy');
+    it('FLOWGUARD_MANDATES_KERNEL is self-contained', () => {
+      expect(FLOWGUARD_MANDATES_KERNEL).toContain(MANDATES_TRAILER);
+      expect(FLOWGUARD_MANDATES_KERNEL).not.toContain('Deprecated');
+      expect(FLOWGUARD_MANDATES_KERNEL).not.toContain('Legacy');
     });
 
     it('red lines include WHY-context, fail-closed alternatives, and schema-bound authority', () => {
@@ -386,7 +396,9 @@ describe('cli/templates', () => {
         MANDATES_TRAILER,
       ];
       for (const phrase of normativePhrases) {
-        expect(FLOWGUARD_MANDATES_BODY, `Normative phrase missing: "${phrase}"`).toContain(phrase);
+        expect(FLOWGUARD_MANDATES_FULL_BODY, `Normative phrase missing: "${phrase}"`).toContain(
+          phrase,
+        );
       }
     });
 
@@ -394,19 +406,17 @@ describe('cli/templates', () => {
       const rules = renderCommandGovernanceRules();
       expect(rules).toBe(mandateSection('command-execution'));
       expect(rules).toContain('Universal governance rules for every FlowGuard command');
-      expect(rules).toContain('Host/profile output convention');
-      expect(rules).toContain('For the OpenCode profile');
-      expect(rules).toContain('visible action conclusion');
+      expect(rules).toContain('Complete this command fully, then stop');
       expect(renderMandates({ mandatesVerbosity: 'concise' }, 'IMPLEMENTATION')).toContain(rules);
     });
 
-    it('FLOWGUARD_MANDATES_BODY declares explicit scope on universal rules', () => {
-      expect(FLOWGUARD_MANDATES_BODY).toContain('These apply across all task classes:');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('These are prohibited across all task classes:');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('Use explicit markers across all task classes:');
+    it('FLOWGUARD_MANDATES_KERNEL declares explicit scope on universal rules', () => {
+      expect(FLOWGUARD_MANDATES_KERNEL).toContain('These apply across all task classes:');
+      expect(FLOWGUARD_MANDATES_KERNEL).toContain('These are prohibited across all task classes:');
+      expect(FLOWGUARD_MANDATES_KERNEL).toContain('Use explicit markers across all task classes:');
     });
 
-    it('FLOWGUARD_MANDATES_BODY contains no superseded mandate sections', () => {
+    it('FLOWGUARD_MANDATES_KERNEL contains no superseded mandate sections', () => {
       for (const removed of [
         '## 1. Developer Mandate',
         '## 2. Review Mandate',
@@ -419,12 +429,12 @@ describe('cli/templates', () => {
         'Canonical Tiers',
         'Cross-Cutting',
       ]) {
-        expect(FLOWGUARD_MANDATES_BODY).not.toContain(removed);
+        expect(FLOWGUARD_MANDATES_KERNEL).not.toContain(removed);
       }
     });
 
-    it('FLOWGUARD_MANDATES_BODY ends exactly at the current trailer', () => {
-      expect(FLOWGUARD_MANDATES_BODY.endsWith(`${MANDATES_TRAILER}\n`)).toBe(true);
+    it('FLOWGUARD_MANDATES_KERNEL ends exactly at the current trailer', () => {
+      expect(FLOWGUARD_MANDATES_KERNEL.endsWith(`${MANDATES_TRAILER}\n`)).toBe(true);
     });
   });
 

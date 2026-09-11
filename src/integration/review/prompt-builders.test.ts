@@ -34,9 +34,9 @@ describe('renderReviewerTaskPrompt challenge contract', () => {
       planVersion: 7,
     });
 
-    expect(prompt).toContain('iteration: 4');
-    expect(prompt).toContain('planVersion: 7');
-    expect(prompt).toContain('reviewMode: "subagent"');
+    expect(prompt).toContain('Bind iteration exactly to 4.');
+    expect(prompt).toContain('Bind planVersion exactly to 7.');
+    expect(prompt).toContain('Bind reviewMode exactly to "subagent".');
   });
 
   it('requires omitting optional challenges when the frozen count is zero', () => {
@@ -254,7 +254,7 @@ describe('ProofGraph prompt context', () => {
 describe('repository observation and reviewer-provenance rules', () => {
   it('forbids reviewer-authored provenance before host stamping', () => {
     const prompt = renderReviewerTaskPrompt({ ...BASE_INPUT });
-    expect(prompt).toContain('Do NOT output reviewedBy or reviewedAt anywhere');
+    expect(prompt).toContain('Do NOT output reviewedBy or reviewedAt.');
     expect(prompt).toContain('ReviewerFindingsInput');
   });
 });

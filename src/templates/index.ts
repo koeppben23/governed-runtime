@@ -3,6 +3,7 @@ export { COMMANDS } from './commands/index.js';
 export {
   MANDATES_FILENAME,
   mandatesInstructionEntry,
+  FLOWGUARD_MANDATES_FULL_BODY,
   FLOWGUARD_MANDATES_KERNEL,
   OPENCODE_JSON_TEMPLATE,
   PACKAGE_JSON_TEMPLATE,

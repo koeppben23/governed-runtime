@@ -184,8 +184,8 @@ describe('buildPlanReviewPrompt', () => {
     expect(prompt).toContain('planVersion=1');
     expect(prompt).toContain('Build feature X');
     expect(prompt).toContain('Implement feature X');
-    expect(prompt).toContain('## Ticket');
-    expect(prompt).toContain('## Plan to Review');
+    expect(prompt).toContain('### Ticket');
+    expect(prompt).toContain('### Plan to Review');
     expect(prompt).toContain('## Instructions');
   });
 
@@ -199,7 +199,7 @@ describe('buildPlanReviewPrompt', () => {
   // EDGE: empty plan text still produces a prompt (reviewer will flag it)
   it('handles empty plan text', () => {
     const prompt = buildPlanReviewPrompt({ ...baseOpts, planText: '' });
-    expect(prompt).toContain('## Plan to Review');
+    expect(prompt).toContain('### Plan to Review');
     expect(prompt).toContain('iteration=0');
   });
 
@@ -231,21 +231,19 @@ describe('buildPlanReviewPrompt', () => {
       criteriaVersion: 'CRIT-v9',
       mandateDigest: 'MD-deadbeef',
     });
-    expect(prompt).toContain('You are reviewing a plan for iteration=5, planVersion=7.');
-    expect(prompt).toContain('## Ticket');
-    expect(prompt).toContain('## Plan to Review');
+    expect(prompt).toContain(
+      'Review the plan against the ticket requirements and falsify its technical claims before accepting.',
+    );
+    expect(prompt).toContain('### Ticket');
+    expect(prompt).toContain('### Plan to Review');
     expect(prompt).toContain('## Instructions');
     expect(prompt).toContain(
-      'Review this plan against the ticket requirements. Follow your review criteria',
+      'Return one ReviewerFindingsInput result using the active output transport.',
     );
-    expect(prompt).toContain(
-      'for plans. Return your findings as a single ReviewerFindingsInput JSON object.',
-    );
-    expect(prompt).toContain('Set iteration=5 and planVersion=7 in your response.');
-    expect(prompt).toContain('Set attestation.toolObligationId=OBL-42.');
-    expect(prompt).toContain(
-      'Do not output reviewedBy, reviewedAt, mandateDigest, criteriaVersion',
-    );
+    expect(prompt).toContain('iteration=5, planVersion=7');
+    expect(prompt).toContain('obligationId=OBL-42');
+    expect(prompt).toContain('mandateDigest=MD-deadbeef');
+    expect(prompt).toContain('criteriaVersion=CRIT-v9');
   });
 
   it('joins prompt lines with "\\n" (kills join-char string mutant)', () => {
@@ -253,13 +251,13 @@ describe('buildPlanReviewPrompt', () => {
     const lines = prompt.split('\n');
     // Empty join would collapse to 1 line; canonical prompt has many.
     expect(lines.length).toBeGreaterThan(15);
-    // First line must be the canonical opening.
-    expect(lines[0]).toBe('You are reviewing a plan for iteration=0, planVersion=1.');
-    // Section headings must appear on their own lines surrounded by blanks.
-    const ticketIdx = lines.indexOf('## Ticket');
+    // First line must be the canonical instructions section.
+    expect(lines[0]).toBe('## Instructions');
+    // Subject headings must remain newline-delimited from their parent section and content.
+    const ticketIdx = lines.indexOf('### Ticket');
     expect(ticketIdx).toBeGreaterThan(-1);
-    expect(lines[ticketIdx - 1]).toBe('');
-    expect(lines[ticketIdx + 1]).toBe('');
+    expect(lines[ticketIdx - 1]).toBe('## Frozen Untrusted Subject');
+    expect(lines[ticketIdx + 1]).toBe(baseOpts.ticketText);
   });
 
   // P9c: stack profile injection
@@ -290,7 +288,7 @@ describe('buildPlanReviewPrompt', () => {
       expect(prompt).toContain('JUnit 5');
     });
 
-    it('profile section appears before Instructions', () => {
+    it('profile section appears in trusted runtime context after Instructions', () => {
       const prompt = buildPlanReviewPrompt({
         ...baseOpts,
         profileName: 'ts-node',
@@ -298,7 +296,7 @@ describe('buildPlanReviewPrompt', () => {
       });
       const profileIdx = prompt.indexOf('## Active Stack Profile');
       const instructionsIdx = prompt.indexOf('## Instructions');
-      expect(profileIdx).toBeLessThan(instructionsIdx);
+      expect(profileIdx).toBeGreaterThan(instructionsIdx);
     });
   });
 });
@@ -425,7 +423,9 @@ describe('buildImplReviewPrompt', () => {
       ],
     });
     expect(prompt).toContain('## Advisory Challenge Resolutions (NOT_VERIFIED)');
-    expect(prompt).toContain('independently verify it');
+    expect(prompt).toContain(
+      'Treat challenge resolutions as advisory NOT_VERIFIED evidence; inspect them independently.',
+    );
     expect(prompt).toContain('11111111-1111-4111-8111-111111111111');
   });
 
@@ -456,22 +456,23 @@ describe('buildImplReviewPrompt', () => {
       criteriaVersion: 'CRIT-impl-v3',
       mandateDigest: 'MD-cafebabe',
     });
-    expect(prompt).toContain('You are reviewing an implementation for iteration=4, planVersion=6.');
-    expect(prompt).toContain('## Ticket');
+    expect(prompt).toContain(
+      'Review the implementation against the approved contract, not against incidental step-by-step mechanics.',
+    );
+    expect(prompt).toContain('### Ticket');
     expect(prompt).toContain('## Approved Plan');
     expect(prompt).toContain('## Changed Files');
     expect(prompt).toContain('## Instructions');
-    expect(prompt).toContain('Review this implementation against the approved plan and ticket.');
     expect(prompt).toContain(
-      'Read the changed files using the read/glob/grep tools to verify correctness.',
+      'Falsify correctness, scope, authority, negative paths, test integrity, and verification claims before accepting.',
     );
-    expect(prompt).toContain('Follow your review criteria for implementations.');
-    expect(prompt).toContain('Return your findings as a single ReviewerFindingsInput JSON object.');
-    expect(prompt).toContain('Set iteration=4 and planVersion=6 in your response.');
-    expect(prompt).toContain('Set attestation.toolObligationId=OBL-99.');
     expect(prompt).toContain(
-      'Do not output reviewedBy, reviewedAt, mandateDigest, criteriaVersion',
+      'Return one ReviewerFindingsInput result using the active output transport.',
     );
+    expect(prompt).toContain('iteration=4, planVersion=6');
+    expect(prompt).toContain('obligationId=OBL-99');
+    expect(prompt).toContain('mandateDigest=MD-cafebabe');
+    expect(prompt).toContain('criteriaVersion=CRIT-impl-v3');
   });
 
   it('joins changed files with "\\n" using "- " bullet prefix', () => {
@@ -539,25 +540,22 @@ describe('buildArchitectureReviewPrompt', () => {
       planVersion: 3,
     });
     expect(prompt).toContain('iteration=2, planVersion=3');
-    expect(prompt).toContain('Set iteration=2 and planVersion=3');
+    expect(prompt).toContain('iteration=2, planVersion=3');
     expect(prompt).toContain(
-      'Do not output reviewedBy, reviewedAt, mandateDigest, criteriaVersion',
+      'Use repository observation only under the supplied observation contract.',
     );
   });
 
   it('embeds obligationId, criteriaVersion, and mandateDigest in attestation block', () => {
     const prompt = buildArchitectureReviewPrompt(baseOpts);
-    expect(prompt).toContain(
-      'Set attestation.toolObligationId=11111111-1111-4111-8111-111111111111.',
-    );
-    expect(prompt).toContain(
-      'Do not output reviewedBy, reviewedAt, mandateDigest, criteriaVersion',
-    );
+    expect(prompt).toContain('obligationId=11111111-1111-4111-8111-111111111111');
+    expect(prompt).toContain('mandateDigest=test-mandate-digest');
+    expect(prompt).toContain('criteriaVersion=p37-v1');
   });
 
   it('includes the ticket text for scope-creep verification', () => {
     const prompt = buildArchitectureReviewPrompt(baseOpts);
-    expect(prompt).toContain('## Ticket');
+    expect(prompt).toContain('### Ticket');
     expect(prompt).toContain('Pick X or Y for the auth flow');
   });
 
@@ -565,10 +563,12 @@ describe('buildArchitectureReviewPrompt', () => {
     const prompt = buildArchitectureReviewPrompt(baseOpts);
     // Anchors the prompt to the REVIEWER_AGENT body section added in F13 slice 4.
     expect(prompt).toContain('Architecture');
-    expect(prompt).toContain('problem framing');
-    expect(prompt).toContain('alternatives considered');
-    expect(prompt).toContain('reversibility');
-    expect(prompt).toContain('out-of-scope clarity');
+    expect(prompt).toContain('Problem framing: constraints and forces are explicit.');
+    expect(prompt).toContain('Alternatives: at least two realistic options with trade-offs.');
+    expect(prompt).toContain('Consequences: positive and negative impacts are specific.');
+    expect(prompt).toContain(
+      'Review the ADR against the ticket. Falsify problem framing, alternatives, rationale, consequences, reversibility, compatibility, scope, and verification claims.',
+    );
   });
 
   it('does NOT include a Changed Files section (ADR is a self-contained document)', () => {
@@ -578,7 +578,7 @@ describe('buildArchitectureReviewPrompt', () => {
 
   it('handles empty ticket text without throwing', () => {
     const prompt = buildArchitectureReviewPrompt({ ...baseOpts, ticketText: '' });
-    expect(prompt).toContain('## Ticket');
+    expect(prompt).toContain('### Ticket');
     expect(prompt).toContain('## ADR to Review:');
   });
 

@@ -746,7 +746,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       const secondParts = promptFn.mock.calls[1]![0].body.parts;
       expect(firstParts[0].text).toBe(SHARED_PROMPT);
       expect(secondParts[0].text).toContain(SHARED_PROMPT);
-      expect(secondParts[0].text).toContain('## Text Compatibility Output Contract');
+      expect(secondParts[0].text).toContain('## Text Compatibility Serialization Contract');
     });
   });
 

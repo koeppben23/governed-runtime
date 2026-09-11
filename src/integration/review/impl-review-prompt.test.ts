@@ -56,9 +56,9 @@ describe('buildImplReviewPrompt — implementation subject anchor contract', () 
     expect(prompt).not.toContain('evidenceLocations MUST be []');
   });
 
-  it('derives the evidence rule from the observation capability: absent ⇒ evidenceLocations MUST be []', () => {
+  it('derives the evidence rule from the observation capability: absent ⇒ no repository evidence', () => {
     const prompt = buildImplReviewPrompt({ ...BASE, implementationDigest: 'impl-digest' });
     expect(prompt).toContain('evidenceLocations MUST be []');
-    expect(prompt).toContain('Do not convert working-tree reads into repository evidence');
+    expect(prompt).toContain('This review attempt has NO frozen repository observation authority.');
   });
 });

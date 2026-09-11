@@ -14,7 +14,7 @@ import {
   TOOL_WRAPPER,
   PLUGIN_WRAPPER,
   COMMANDS,
-  FLOWGUARD_MANDATES_BODY,
+  FLOWGUARD_MANDATES_KERNEL,
   REVIEWER_AGENT,
   OPENCODE_JSON_TEMPLATE,
   PACKAGE_JSON_TEMPLATE,
@@ -62,7 +62,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     );
   });
 
-  it('FLOWGUARD_MANDATES_BODY matches compiled output hash', () => {
+  it('FLOWGUARD_MANDATES_KERNEL matches compiled output hash', () => {
     // Refreshed for #471: decoupled host-specific output rules (Next action: line)
     // from universal governance rules — scoped as OpenCode host/profile convention.
     // Refreshed for review-verdict disambiguation: the reviewer verdict token was
@@ -74,8 +74,8 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for PR #879 trust-boundary hardening: FlowGuard contract fields
     // are runtime-authoritative instructions while content carried in those fields
     // remains untrusted data. This intentionally changes the canonical mandate bytes.
-    expect(sha256(FLOWGUARD_MANDATES_BODY)).toBe(
-      'ad6c2782dabdea93c2371a02e13cf8c7da2105dd7291256fbf73aaa64c9ede2f',
+    expect(sha256(FLOWGUARD_MANDATES_KERNEL)).toBe(
+      '4b5e4e51780bae8bd3c895cc5f22c240a978089b52e95371317a4ddbf5e5dd35',
     );
   });
 
@@ -103,7 +103,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // untrusted-data sentence onto a single line, keeping the reviewer prompt
     // within its compactness budget.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      'd69f8bcf75c2d42bb32ac3838d9243d3baae61b90f4450d62e11c01b02a34c83',
+      'af7c0e89331017abd4604364c38f4979920d6c71940388f14ebb389b3f7e27d7',
     );
   });
 
@@ -284,7 +284,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // verbatim or render productNextAction.text as one fallback, never both.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'cdcabcd6bd3e5e38e2e01bebf412d0d7de5f4d9cfd8cb1848ecaae4fe84b497f',
+      '196889745d2476dd71edfb0acedf648e692cc48cde9aa6075657271ec57923d3',
     );
   });
 

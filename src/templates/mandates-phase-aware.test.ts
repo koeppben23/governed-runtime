@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  FLOWGUARD_MANDATES_BODY,
+  FLOWGUARD_MANDATES_FULL_BODY,
   MANDATES_SECTION_DEFINITIONS,
   REVIEWER_AGENT,
   type MandatesProjectionPhase,
@@ -19,6 +19,7 @@ import {
   renderReviewerPrompt,
   resolveMandatesVerbosity,
 } from '../rendering/mandates-renderer.js';
+import { renderReviewerCriteria } from './mandates-reviewer-criteria.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const COMMANDS_DIR = join(__dirname, 'commands');
@@ -68,9 +69,9 @@ function isConcise(section: MandatesSection): boolean {
 
 describe('phase-aware mandates rendering', () => {
   it('falls back to full mandates for unknown, missing, or invalid phases', () => {
-    expect(renderPhaseAwareMandates({}, undefined)).toBe(FLOWGUARD_MANDATES_BODY);
-    expect(renderPhaseAwareMandates({}, null)).toBe(FLOWGUARD_MANDATES_BODY);
-    expect(renderPhaseAwareMandates({}, 'UNKNOWN_PHASE')).toBe(FLOWGUARD_MANDATES_BODY);
+    expect(renderPhaseAwareMandates({}, undefined)).toBe(FLOWGUARD_MANDATES_FULL_BODY);
+    expect(renderPhaseAwareMandates({}, null)).toBe(FLOWGUARD_MANDATES_FULL_BODY);
+    expect(renderPhaseAwareMandates({}, 'UNKNOWN_PHASE')).toBe(FLOWGUARD_MANDATES_FULL_BODY);
   });
 
   it('uses explicit mandates verbosity as the fail-safe default', () => {
@@ -222,11 +223,11 @@ describe('phase-aware mandates rendering', () => {
         { hostCoveredRules: new Set(['read-before-editing', 'ask-before-destructive-ops']) },
         'IMPLEMENTATION',
       ),
-    ).toContain('as required by host policy and FlowGuard governance');
+    ).not.toContain('host policy');
   });
 
   it('keeps early phase projections below the deterministic rough budget target', () => {
-    const full = roughTokenBudget(FLOWGUARD_MANDATES_BODY);
+    const full = roughTokenBudget(FLOWGUARD_MANDATES_FULL_BODY);
     for (const phase of ['PRE_SESSION', 'INVESTIGATION'] as const) {
       const budget = roughTokenBudget(renderPhaseAwareMandates({}, phase));
       expect(budget.chars).toBeLessThan(full.chars * 0.7);
@@ -265,14 +266,15 @@ describe('phase-aware mandates rendering', () => {
     }
   });
 
-  it('renders reviewer prompts by review type and keeps the installed prompt compact', () => {
-    expect(renderReviewerPrompt('plan')).toContain('### For Plans');
-    expect(renderReviewerPrompt('implementation')).toContain('### For Implementations');
-    expect(renderReviewerPrompt('adr')).toContain('### For Architecture Decisions');
-    expect(REVIEWER_AGENT).toContain('### For Plans');
-    expect(REVIEWER_AGENT).toContain('### For Implementations');
-    expect(REVIEWER_AGENT).toContain('### For Architecture Decisions');
-    expect(REVIEWER_AGENT).toContain('### Content Review');
-    expect(roughTokenBudget(REVIEWER_AGENT).lines).toBeLessThanOrEqual(106);
+  it('keeps permanent reviewer instructions compact and projects criteria into task contracts', () => {
+    expect(renderReviewerPrompt('plan')).toBe(renderReviewerPrompt('implementation'));
+    expect(renderReviewerCriteria('plan')).toContain('### For Plans');
+    expect(renderReviewerCriteria('implementation')).toContain('### For Implementations');
+    expect(renderReviewerCriteria('adr')).toContain('### For Architecture Decisions');
+    expect(REVIEWER_AGENT).not.toContain('### For Plans');
+    expect(REVIEWER_AGENT).not.toContain('### For Implementations');
+    expect(REVIEWER_AGENT).not.toContain('### For Architecture Decisions');
+    expect(REVIEWER_AGENT).not.toContain('### Content Review');
+    expect(roughTokenBudget(REVIEWER_AGENT).lines).toBeLessThanOrEqual(40);
   });
 });
