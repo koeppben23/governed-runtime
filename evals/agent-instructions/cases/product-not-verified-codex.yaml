@@ -2,6 +2,8 @@ id: product-not-verified-codex
 description: Codex product mandates require accurate verification evidence in a customer host workspace
 instructionSurface: flowguard_product
 instructionHost: codex
+assuranceTags:
+  - not_verified_handling
 mode: output-only
 task: |
   Change an import across an architectural boundary.
