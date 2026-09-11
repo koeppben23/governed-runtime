@@ -1,5 +1,6 @@
 import type {
   AssertionResult,
+  AssuranceTag,
   EvalCaseResult,
   EvalRunnerProvenance,
   EvalSummary,
@@ -18,11 +19,13 @@ export function scoreCase(
   runnerError?: string,
   snapshotSummary?: EvalCaseResult['snapshotSummary'],
   instructionHost?: InstructionHost,
+  assuranceTags: readonly AssuranceTag[] = [],
 ): EvalCaseResult {
   const provenance = {
     caseId,
     instructionSurface,
     ...(instructionHost ? { instructionHost } : {}),
+    assuranceTags: [...assuranceTags],
   };
   if (runnerError) {
     return {
