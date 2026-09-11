@@ -5,7 +5,7 @@
  * Drives the real `tool.execute.after` hook exposed by FlowGuardAuditPlugin for
  * a flowguard-reviewer Task. Locks the live-runtime symptom observed in the
  * demo implement-run: a reviewer Task whose output has no extractable findings
- * emits a fail-closed `HOST_SUBAGENT_TASK_REQUIRED` block with
+ * emits a fail-closed `ENVELOPE_PAYLOAD_NOT_FOUND` block with
  * `bindOutcome: extraction_invalid`; a SEQUENTIAL re-invocation with valid
  * findings then binds and persists the invocation evidence (`bindOutcome: bound`).
  *
@@ -329,8 +329,9 @@ describe('reviewer host-task after-hook: extraction_invalid → sequential re-in
         firstOutput,
       );
 
-      // Fail-closed: host_task_required blocks with no bindable evidence.
-      expect(firstOutput.output).toContain('HOST_SUBAGENT_TASK_REQUIRED');
+      // Fail-closed: the Task executed, but its payload was not extractable.
+      expect(firstOutput.output).toContain('ENVELOPE_PAYLOAD_NOT_FOUND');
+      expect(firstOutput.output).not.toContain('HOST_SUBAGENT_TASK_REQUIRED');
       expect(firstOutput.output).toContain('extraction_invalid');
 
       // No invocation evidence persisted yet.
