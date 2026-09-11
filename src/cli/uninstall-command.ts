@@ -5,11 +5,14 @@
 
 import { existsSync } from 'node:fs';
 import { readdir, rm, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { globalConfigPath } from '../adapters/persistence.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import {
+  COMMANDS,
   MANDATES_FILENAME,
+  PLUGIN_WRAPPER,
+  TOOL_WRAPPER,
   extractManagedBody,
   extractManagedDigest,
   isManagedArtifact,
@@ -18,6 +21,7 @@ import {
   type CliArgs,
   type CliResult,
   type FileOp,
+  type InstallPlatform,
   FLOWGUARD_OWNED_FILES,
   FLOWGUARD_TARBALL_PATTERN,
   computeMandatesDigest,
@@ -25,14 +29,19 @@ import {
   removeFromOpencodeJson,
   resolveOpencodeConfigPath,
   resolveTarget,
+  reviewerDefinitionForPlatform,
   safeRead,
   safeUnlink,
   sha256,
   toCliError,
 } from './install-helpers.js';
+import {
+  ownershipManifestPath,
+  readInstallOwnershipManifest,
+  type InstallOwnershipManifest,
+} from './install-ownership.js';
 import { uninstallClaudeCodePlugin, uninstallCodexPlugin } from './platform-uninstall.js';
 
-/** True if a vendor entry is a FlowGuard-owned tarball with a valid semver/pre-release version. */
 function isFlowGuardVendorArtifact(entry: string): boolean {
   return FLOWGUARD_TARBALL_PATTERN.test(entry);
 }
@@ -40,25 +49,21 @@ function isFlowGuardVendorArtifact(entry: string): boolean {
 async function cleanupVendorDir(fullPath: string): Promise<FileOp[]> {
   const ops: FileOp[] = [];
   try {
-    if (existsSync(fullPath)) {
-      const entries = await readdir(fullPath);
-      let removedCount = 0;
-      for (const entry of entries) {
-        if (isFlowGuardVendorArtifact(entry)) {
-          await safeUnlink(join(fullPath, entry));
-          removedCount++;
-          ops.push({ path: join(fullPath, entry), action: 'removed' });
-        }
-      }
-      const remaining = await readdir(fullPath);
-      if (remaining.length === 0) {
-        await rm(fullPath, { recursive: true, force: true });
-        ops.push({ path: fullPath, action: 'removed', reason: 'empty vendor directory' });
-      } else if (removedCount === 0) {
-        ops.push({ path: fullPath, action: 'skipped', reason: 'no FlowGuard tarballs in vendor' });
-      }
-    } else {
-      ops.push({ path: fullPath, action: 'not_found' });
+    if (!existsSync(fullPath)) return [{ path: fullPath, action: 'not_found' }];
+    const entries = await readdir(fullPath);
+    let removedCount = 0;
+    for (const entry of entries) {
+      if (!isFlowGuardVendorArtifact(entry)) continue;
+      await safeUnlink(join(fullPath, entry));
+      removedCount++;
+      ops.push({ path: join(fullPath, entry), action: 'removed' });
+    }
+    const remaining = await readdir(fullPath);
+    if (remaining.length === 0) {
+      await rm(fullPath, { recursive: true, force: true });
+      ops.push({ path: fullPath, action: 'removed', reason: 'empty vendor directory' });
+    } else if (removedCount === 0) {
+      ops.push({ path: fullPath, action: 'skipped', reason: 'no FlowGuard tarballs in vendor' });
     }
   } catch {
     ops.push({ path: fullPath, action: 'not_found' });
@@ -66,11 +71,6 @@ async function cleanupVendorDir(fullPath: string): Promise<FileOp[]> {
   return ops;
 }
 
-/**
- * Verify ownership before deleting the managed mandates path.
- * A matching FlowGuard managed header establishes ownership even when the body
- * was locally modified. A same-named unmanaged customer file is never deleted.
- */
 async function mayRemoveMandate(fullPath: string, warnings: string[]): Promise<boolean> {
   const content = await safeRead(fullPath);
   if (content === null) return true;
@@ -89,20 +89,50 @@ async function mayRemoveMandate(fullPath: string, warnings: string[]): Promise<b
   return true;
 }
 
+function expectedOpenCodeFile(relPath: string): string | null {
+  if (relPath === 'tools/flowguard.ts') return TOOL_WRAPPER;
+  if (relPath === 'plugins/flowguard-audit.ts') return PLUGIN_WRAPPER;
+  const reviewer = reviewerDefinitionForPlatform('opencode');
+  if (relPath === reviewer.relativePath) return reviewer.content;
+  if (relPath.startsWith('commands/')) return COMMANDS[basename(relPath)] ?? null;
+  return null;
+}
+
+async function removeExactManagedFile(
+  fullPath: string,
+  expectedContent: string,
+  warnings: string[],
+): Promise<FileOp> {
+  const content = await safeRead(fullPath);
+  if (content === null) return { path: fullPath, action: 'not_found' };
+  if (content !== expectedContent) {
+    warnings.push(`${fullPath} differs from the FlowGuard-managed template — preserved`);
+    return { path: fullPath, action: 'skipped', reason: 'ownership/content mismatch' };
+  }
+  await safeUnlink(fullPath);
+  return { path: fullPath, action: 'removed' };
+}
+
 async function removeManagedFiles(
   target: string,
+  platform: InstallPlatform,
   ops: FileOp[],
   warnings: string[],
 ): Promise<void> {
   for (const relPath of FLOWGUARD_OWNED_FILES) {
     const fullPath = join(target, relPath);
 
-    if (relPath === MANDATES_FILENAME && !(await mayRemoveMandate(fullPath, warnings))) {
-      ops.push({
-        path: fullPath,
-        action: 'skipped',
-        reason: 'same-named file is not a FlowGuard managed artifact',
-      });
+    if (relPath === MANDATES_FILENAME) {
+      if (!(await mayRemoveMandate(fullPath, warnings))) {
+        ops.push({
+          path: fullPath,
+          action: 'skipped',
+          reason: 'same-named file is not a FlowGuard managed artifact',
+        });
+      } else {
+        const removed = await safeUnlink(fullPath);
+        ops.push({ path: fullPath, action: removed ? 'removed' : 'not_found' });
+      }
       continue;
     }
 
@@ -111,75 +141,99 @@ async function removeManagedFiles(
       continue;
     }
 
-    const removed = await safeUnlink(fullPath);
-    ops.push({ path: fullPath, action: removed ? 'removed' : 'not_found' });
+    if (platform !== 'opencode') continue;
+    const expected = expectedOpenCodeFile(relPath);
+    if (expected === null) {
+      if (existsSync(fullPath)) {
+        warnings.push(`${fullPath} has no provable OpenCode FlowGuard template ownership — preserved`);
+        ops.push({ path: fullPath, action: 'skipped', reason: 'ownership not proven' });
+      }
+      continue;
+    }
+    ops.push(await removeExactManagedFile(fullPath, expected, warnings));
   }
 }
 
-async function cleanupPackageJson(target: string): Promise<FileOp[]> {
+function isGeneratedPackageShell(parsed: Record<string, unknown>): boolean {
+  const allowed = new Set(['name', 'version', 'private', 'dependencies']);
+  return (
+    parsed['name'] === '@flowguard/opencode-runtime' &&
+    parsed['private'] === true &&
+    Object.keys(parsed).every((key) => allowed.has(key))
+  );
+}
+
+async function cleanupPackageJson(
+  target: string,
+  ownership: InstallOwnershipManifest | null,
+  warnings: string[],
+): Promise<FileOp[]> {
   const pkgPath = join(target, 'package.json');
   const pkgContent = await safeRead(pkgPath);
   if (!pkgContent) return [];
+
   try {
     const parsed = JSON.parse(pkgContent) as Record<string, unknown>;
-    const deps = (parsed['dependencies'] ?? {}) as Record<string, string>;
-    delete deps['@flowguard/core'];
+    const deps = { ...((parsed['dependencies'] ?? {}) as Record<string, string>) };
+    const packageOwnership = ownership?.packageJson;
 
-    const hasScripts = parsed['scripts'] != null && Object.keys(parsed['scripts']).length > 0;
-    const hasDevDeps =
-      parsed['devDependencies'] != null && Object.keys(parsed['devDependencies']).length > 0;
-    const depsWithoutZod = Object.keys(deps).filter((k) => k !== 'zod');
-    const knownMetaKeys = new Set([
-      'name',
-      'version',
-      'private',
-      'type',
-      'dependencies',
-      'description',
-    ]);
-    const hasForeignFields = Object.keys(parsed).some((k) => !knownMetaKeys.has(k));
-
-    if (!hasScripts && !hasDevDeps && depsWithoutZod.length === 0 && !hasForeignFields) {
-      await safeUnlink(pkgPath);
-      return [{ path: pkgPath, action: 'removed', reason: 'no non-FlowGuard content' }];
+    if (packageOwnership?.previousCoreDependency !== undefined) {
+      if (packageOwnership.previousCoreDependency === null) delete deps['@flowguard/core'];
+      else deps['@flowguard/core'] = packageOwnership.previousCoreDependency;
+    } else if (typeof deps['@flowguard/core'] === 'string') {
+      warnings.push(
+        `${pkgPath}: @flowguard/core ownership predates installer provenance — preserved rather than guessed`,
+      );
     }
-    parsed['dependencies'] = deps;
+
+    if (packageOwnership?.zodAdded === true && deps['zod'] === '^4.0.0') delete deps['zod'];
+
     if (Object.keys(deps).length === 0) delete parsed['dependencies'];
+    else parsed['dependencies'] = deps;
+
+    if (packageOwnership?.created === true && isGeneratedPackageShell(parsed) && !parsed['dependencies']) {
+      await safeUnlink(pkgPath);
+      return [{ path: pkgPath, action: 'removed', reason: 'installer-created package restored to absent pre-state' }];
+    }
+
     await writeFile(pkgPath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
-    return [{ path: pkgPath, action: 'merged', reason: 'removed FlowGuard dependencies' }];
+    return [
+      {
+        path: pkgPath,
+        action: 'merged',
+        reason: packageOwnership
+          ? 'restored installer-owned dependency changes from provenance'
+          : 'preserved package because dependency ownership is not provable',
+      },
+    ];
   } catch {
     return [{ path: pkgPath, action: 'skipped', reason: 'malformed JSON' }];
   }
 }
 
-async function cleanupOpencodeConfig(args: CliArgs, target: string): Promise<FileOp[]> {
+async function cleanupOpencodeConfig(
+  args: CliArgs,
+  target: string,
+  ownership: InstallOwnershipManifest | null,
+): Promise<FileOp[]> {
   const installPlatform = args.installPlatform ?? 'opencode';
   if (installPlatform === 'opencode') {
     const opencodeJsonPath = resolveOpencodeConfigPath(args.installScope, target);
-    const ops = [await removeFromOpencodeJson(opencodeJsonPath, args.installScope)];
+    const ops = [
+      await removeFromOpencodeJson(opencodeJsonPath, args.installScope, {
+        removeManagedTaskHardening: ownership?.opencode?.taskHardeningAdded === true,
+      }),
+    ];
     const parallelConfig = findParallelOpencodeConfig(opencodeJsonPath);
     if (parallelConfig) {
       ops.push(await removeFromOpencodeJson(parallelConfig, args.installScope));
     }
     return ops;
   }
-  if (installPlatform === 'claude-code') {
-    return uninstallClaudeCodePlugin(target);
-  }
+  if (installPlatform === 'claude-code') return uninstallClaudeCodePlugin(target);
   return uninstallCodexPlugin(args.installScope);
 }
 
-/**
- * Uninstall FlowGuard from the target directory.
- *
- * Removes FlowGuard-owned files including managed flowguard-mandates.md.
- * Preserves same-named files that do not carry FlowGuard's managed-artifact header.
- * Cleans only FlowGuard-owned instruction entries and dependencies.
- * Never touches customer AGENTS.md or foreign package dependencies.
- *
- * @param args - Parsed CLI arguments.
- * @returns Result with file operations, warnings, and any errors.
- */
 export async function uninstall(args: CliArgs): Promise<CliResult> {
   const installPlatform = args.installPlatform ?? 'opencode';
   const target = resolveTarget(args.installScope, installPlatform);
@@ -188,9 +242,10 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
   const warnings: string[] = [];
 
   try {
-    await removeManagedFiles(target, ops, warnings);
-    ops.push(...(await cleanupPackageJson(target)));
-    ops.push(...(await cleanupOpencodeConfig(args, target)));
+    const ownership = await readInstallOwnershipManifest(target);
+    await removeManagedFiles(target, installPlatform, ops, warnings);
+    ops.push(...(await cleanupPackageJson(target, ownership, warnings)));
+    ops.push(...(await cleanupOpencodeConfig(args, target, ownership)));
 
     const cfgPath =
       installPlatform !== 'opencode'
@@ -200,6 +255,10 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
           : join(resolve('.'), '.opencode', 'flowguard.json');
     const removedCfg = await safeUnlink(cfgPath);
     ops.push({ path: cfgPath, action: removedCfg ? 'removed' : 'not_found' });
+
+    const manifestPath = ownershipManifestPath(target);
+    const removedManifest = await safeUnlink(manifestPath);
+    ops.push({ path: manifestPath, action: removedManifest ? 'removed' : 'not_found' });
   } catch (err) {
     getAdapterLogger().error('cli', 'uninstall command failed', {
       error: err instanceof Error ? err.message : String(err),
