@@ -152,14 +152,20 @@ export function deriveInstallOwnershipManifest(input: {
   });
 }
 
-async function parseExistingManifest(target: string): Promise<InstallOwnershipManifest | null> {
+async function readExistingManifestState(
+  target: string,
+): Promise<{ kind: 'absent' } | { kind: 'valid'; manifest: InstallOwnershipManifest } | { kind: 'invalid' }> {
   try {
     const raw = await readFile(ownershipManifestPath(target), 'utf-8');
-    const parsed = InstallOwnershipManifestSchema.safeParse(JSON.parse(raw));
-    return parsed.success ? parsed.data : null;
+    try {
+      const parsed = InstallOwnershipManifestSchema.safeParse(JSON.parse(raw));
+      return parsed.success ? { kind: 'valid', manifest: parsed.data } : { kind: 'invalid' };
+    } catch {
+      return { kind: 'invalid' };
+    }
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null;
-    return null;
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return { kind: 'absent' };
+    return { kind: 'invalid' };
   }
 }
 
@@ -168,11 +174,17 @@ export async function writeInstallOwnershipManifest(
   manifest: InstallOwnershipManifest,
 ): Promise<string> {
   const path = ownershipManifestPath(target);
-  const existing = await parseExistingManifest(target);
-  const effective =
-    existing && existing.platform === manifest.platform && existing.scope === manifest.scope
-      ? existing
-      : manifest;
+  const existing = await readExistingManifestState(target);
+  if (existing.kind === 'invalid') {
+    throw new Error(`${INSTALL_OWNERSHIP_FILENAME} exists but is not a valid FlowGuard ownership manifest; preserving it`);
+  }
+  if (
+    existing.kind === 'valid' &&
+    (existing.manifest.platform !== manifest.platform || existing.manifest.scope !== manifest.scope)
+  ) {
+    throw new Error(`${INSTALL_OWNERSHIP_FILENAME} belongs to a different FlowGuard host/scope; preserving it`);
+  }
+  const effective = existing.kind === 'valid' ? existing.manifest : manifest;
   const tmp = `${path}.tmp.${process.pid}.${randomUUID()}`;
   try {
     await writeFile(tmp, JSON.stringify(effective, null, 2) + '\n', {
@@ -194,5 +206,6 @@ export async function writeInstallOwnershipManifest(
 export async function readInstallOwnershipManifest(
   target: string,
 ): Promise<InstallOwnershipManifest | null> {
-  return parseExistingManifest(target);
+  const state = await readExistingManifestState(target);
+  return state.kind === 'valid' ? state.manifest : null;
 }
