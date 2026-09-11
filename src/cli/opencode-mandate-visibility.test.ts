@@ -18,7 +18,8 @@ afterAll(async () => {
 
 async function readBody(request: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
-  for await (const chunk of request) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  for await (const chunk of request)
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   return Buffer.concat(chunks).toString('utf8');
 }
 
@@ -31,7 +32,9 @@ function writeChatCompletion(response: ServerResponse, streaming: boolean): void
         object: 'chat.completion',
         created: 1,
         model: 'visibility',
-        choices: [{ index: 0, message: { role: 'assistant', content: 'OK' }, finish_reason: 'stop' }],
+        choices: [
+          { index: 0, message: { role: 'assistant', content: 'OK' }, finish_reason: 'stop' },
+        ],
         usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
       }),
     );
@@ -69,13 +72,18 @@ function writeChatCompletion(response: ServerResponse, streaming: boolean): void
   response.end('data: [DONE]\n\n');
 }
 
-async function runOpenCode(port: number): Promise<{ requestBody: Record<string, unknown>; output: string }> {
+async function runOpenCode(
+  port: number,
+): Promise<{ requestBody: Record<string, unknown>; output: string }> {
   let captured: Record<string, unknown> | null = null;
   const server = createServer(async (request, response) => {
     if (request.method === 'GET' && request.url?.endsWith('/models')) {
       response.writeHead(200, { 'content-type': 'application/json' });
       response.end(
-        JSON.stringify({ object: 'list', data: [{ id: 'visibility', object: 'model', owned_by: 'flowguard' }] }),
+        JSON.stringify({
+          object: 'list',
+          data: [{ id: 'visibility', object: 'model', owned_by: 'flowguard' }],
+        }),
       );
       return;
     }
@@ -126,7 +134,8 @@ async function runOpenCode(port: number): Promise<{ requestBody: Record<string, 
       child.once('close', (code) => {
         clearTimeout(timeout);
         if (code === 0) resolve(combined);
-        else reject(new Error(`OpenCode model-visibility probe exited ${code}. Output:\n${combined}`));
+        else
+          reject(new Error(`OpenCode model-visibility probe exited ${code}. Output:\n${combined}`));
       });
     });
     if (!captured) throw new Error(`OpenCode did not dispatch a model request. Output:\n${output}`);
@@ -157,7 +166,8 @@ describe('OpenCode installed mandate model visibility', () => {
         server.listen(0, '127.0.0.1', resolve);
       });
       const address = server.address();
-      if (!address || typeof address === 'string') throw new Error('Unable to allocate capture port');
+      if (!address || typeof address === 'string')
+        throw new Error('Unable to allocate capture port');
       const port = address.port;
       await new Promise<void>((resolve) => server.close(() => resolve()));
 

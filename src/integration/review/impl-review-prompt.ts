@@ -133,10 +133,7 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     ...(discoverySection ? [discoverySection] : []),
     ...renderPersistedProofGraphContext(proofGraph),
     ...(challengeResolutions.length > 0
-      ? [
-          '### Advisory Challenge Resolutions (NOT_VERIFIED)',
-          JSON.stringify(challengeResolutions),
-        ]
+      ? ['### Advisory Challenge Resolutions (NOT_VERIFIED)', JSON.stringify(challengeResolutions)]
       : []),
     ...renderVerificationEvidence(verificationEvidence),
     ...renderImplementationAnchorContract(implementationDigest, observationCapability),

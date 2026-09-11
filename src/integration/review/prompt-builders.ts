@@ -9,11 +9,13 @@
  * @version v2
  */
 
-import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
 import type { FrozenReviewSubject, ReviewSubjectScope } from '../../state/evidence.js';
 import { REVIEW_CHALLENGE_OUTCOMES } from '../../state/evidence.js';
-import { renderReviewerCriteria, type ReviewerPromptType } from '../../templates/mandates-reviewer-criteria.js';
+import {
+  renderReviewerCriteria,
+  type ReviewerPromptType,
+} from '../../templates/mandates-reviewer-criteria.js';
 import { renderPersistedProofGraphContext } from './proof-context.js';
 import { renderFindingRelationGrammar } from './finding-relation-grammar.js';
 import { renderRepositoryObservationContract } from './observation-contract-prompt.js';
@@ -143,9 +145,7 @@ export function deriveReviewSubjectScope(subject: FrozenReviewSubject): ReviewSu
 export interface ReviewerChallengePromptContract {
   readonly requiredChallengeCount: number;
   readonly requiredChallengeKind?:
-    | 'design_challenge'
-    | 'implementation_challenge'
-    | 'content_challenge';
+    'design_challenge' | 'implementation_challenge' | 'content_challenge';
   readonly evidenceRefs?: readonly Record<string, unknown>[];
 }
 

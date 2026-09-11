@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { hashText } from '../shared/hashing.js';
-import {
-  FLOWGUARD_MANDATES_FULL_BODY,
-  FLOWGUARD_MANDATES_KERNEL,
-} from '../templates/mandates.js';
+import { FLOWGUARD_MANDATES_FULL_BODY, FLOWGUARD_MANDATES_KERNEL } from '../templates/mandates.js';
 import { computeMandatesDigest } from './install-helpers.js';
 import { buildMandatesContent, extractManagedBody, extractManagedDigest } from './templates.js';
 

@@ -17,7 +17,7 @@ function assertCriticalContract(contract: CriticalContract, candidate: string): 
 }
 
 function removeAnchor(source: string, anchor: string): string {
-  return source.replace(anchor, '');
+  return source.split(anchor).join('');
 }
 
 const reviewerTask = renderReviewerTaskPrompt({
@@ -76,9 +76,9 @@ describe('critical mandate contract mutation guards', () => {
     it(`rejects deletion of each ${contract.name} semantic anchor`, () => {
       assertCriticalContract(contract, contract.source);
       for (const anchor of contract.required) {
-        expect(() => assertCriticalContract(contract, removeAnchor(contract.source, anchor))).toThrow(
-          /missing critical semantic anchor/,
-        );
+        expect(() =>
+          assertCriticalContract(contract, removeAnchor(contract.source, anchor)),
+        ).toThrow(/missing critical semantic anchor/);
       }
     });
   }
