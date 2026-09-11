@@ -1,32 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * cli.ts
- *
  * CLI entry point for the agent instruction eval runner.
- *
- * Usage:
- *   npx tsx evals/agent-instructions/cli.ts --config runner.json [--advisory] [--case case-id] [--timeout-ms N]
- *
- * Runner config (JSON):
- *   {
- *     "name": "example-host",
- *     "command": "agent-command",
- *     "provider": "provider-id",
- *     "model": "model-id",
- *     "modelVersion": "provider-model-version",
- *     "runnerVersion": "runner-cli-version",
- *     "promptTransport": "stdin",
- *     "args": ["run"],
- *     "timeoutMs": 600000,
- *     "staticEnv": { "CI": "true" },
- *     "secretEnvNames": ["OPENAI_API_KEY"]
- *   }
- *
- * Exit codes:
- *   0 — all PASS (or FAIL in advisory mode)
- *   1 — at least one FAIL (normal mode only)
- *   2 — framework error or RUNNER_ERROR
  */
 
 import { appendFileSync, readFileSync } from 'node:fs';
@@ -47,6 +22,7 @@ async function main(): Promise<void> {
       advisory: { type: 'boolean', default: false },
       case: { type: 'string', multiple: true },
       'timeout-ms': { type: 'string' },
+      'require-live-host': { type: 'boolean', default: false },
     },
     strict: true,
     allowPositionals: false,
@@ -54,7 +30,7 @@ async function main(): Promise<void> {
 
   if (!values.config) {
     console.error(
-      'Usage: npx tsx evals/agent-instructions/cli.ts --config <runner.json> [--advisory] [--case id] [--timeout-ms N]',
+      'Usage: npx tsx evals/agent-instructions/cli.ts --config <runner.json> [--advisory] [--case id] [--timeout-ms N] [--require-live-host]',
     );
     process.exit(2);
   }
@@ -87,14 +63,29 @@ async function main(): Promise<void> {
     config.timeoutMs = ms;
   }
 
-  const { executed, redactionValues } = await runEval(config, REPO_ROOT, values.case);
+  const requireLiveHost = values['require-live-host'] === true;
+  if (requireLiveHost) {
+    if (config.runnerKind !== 'live-host') {
+      console.error('--require-live-host requires runnerKind="live-host" in the runner config');
+      process.exit(2);
+    }
+    if (!config.instructionHost) {
+      console.error('--require-live-host requires an explicit instructionHost in the runner config');
+      process.exit(2);
+    }
+    if (config.provider.toLowerCase() === 'synthetic') {
+      console.error('--require-live-host rejects synthetic providers');
+      process.exit(2);
+    }
+  }
+
+  const { executed, redactionValues } = await runEval(config, REPO_ROOT, values.case, {
+    requireLiveHost,
+  });
   const runDir = writeReports(config, executed, { redactionValues, repoRoot: REPO_ROOT });
 
   if (process.env.GITHUB_STEP_SUMMARY) {
-    appendFileSync(
-      process.env.GITHUB_STEP_SUMMARY,
-      renderGitHubSummary(config.name, executed),
-    );
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY, renderGitHubSummary(config.name, executed));
   }
 
   console.log(`Results written to: ${runDir}`);
