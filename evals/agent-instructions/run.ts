@@ -393,7 +393,7 @@ export function writeReports(
 
   const caseResults = ordered.map((e) => ({
     ...e.result,
-    assuranceTags: [...e.evalCase.assuranceTags],
+    assuranceTags: [...(e.evalCase.assuranceTags ?? [])],
   }));
   const summary = EvalSummarySchema.parse(
     summarizeResults(
@@ -444,7 +444,7 @@ export function writeReports(
     writeFileSync(
       join(caseDir, 'result.json'),
       redactSecrets(
-        JSON.stringify({ ...e.result, assuranceTags: [...e.evalCase.assuranceTags] }, null, 2),
+        JSON.stringify({ ...e.result, assuranceTags: [...(e.evalCase.assuranceTags ?? [])] }, null, 2),
         redactionValues,
       ) + '\n',
     );
