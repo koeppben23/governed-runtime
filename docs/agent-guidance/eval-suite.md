@@ -1,20 +1,24 @@
 # Agent Guidance Eval Suite
 
-Use these scenarios to evaluate whether the installed FlowGuard mandates
-(canonical product mandate authority in `src/templates/mandates.ts`) yield
-correct cross-LLM behavior. The
-root `AGENTS.md` is contributor guidance only and is **not** the source of
-mandates installed into hosts (see `AGENTS.md` notes).
+Use these scenarios to evaluate instruction behavior without conflating repository guidance,
+host transport materialization, and live model assurance. The root `AGENTS.md` is contributor
+guidance only. The canonical installed FlowGuard mandate body is owned by
+`src/templates/mandates.ts`.
 
-This suite follows public prompt guidance from OpenAI and Anthropic: clear instruction hierarchy, concise constraints, explicit routing, and eval-driven iteration.
+> **Assurance boundary.** The deterministic harness in `evals/agent-instructions/`
+> has separate `repository_contributor` and `flowguard_product` surfaces. Product cases
+> also carry an explicit host. OpenCode materialization uses the production managed-mandate
+> path. Claude Code and Codex materialization use their production plugin-template paths.
+> For Claude Code/Codex, deterministic plugin materialization is **not** proof that the full
+> v5 mandate body entered the model context. Native host load, hook trust, model-context
+> visibility, and behavioral compliance remain `NOT_VERIFIED` until a host-bound
+> `live-host` runner executes that host/provider/model. A strict runner is bound to exactly
+> one product host, so one CLI cannot silently establish cross-host assurance.
 
-> **Runner status.** Deterministic harness coverage lives in
-> `evals/agent-instructions/`. Its repository-contributor and FlowGuard-product
-> surfaces are separate. Product cases materialize the explicit OpenCode, Claude
-> Code, and Codex transports from production code/templates. This verifies
-> transport fidelity inside the isolated harness, not live model behavior. Live
-> host/provider behavior remains `NOT_VERIFIED` until executed with the required
-> host command, model identity, and credentials.
+The harness persists schema-v3 provenance including runner/config identity, effective
+timeout, Git SHA and dirty state, FlowGuard/mandate identity, and case-corpus digest.
+Results are aggregated by instruction surface and by product host; those dimensions must
+not be collapsed into a single assurance score.
 
 References:
 
@@ -33,6 +37,11 @@ For each scenario:
 
 - `PASS`: all expected behaviors observed and no forbidden behavior observed.
 - `FAIL`: any forbidden behavior observed, or any required behavior missing.
+- `RUNNER_ERROR`: the host/process/framework could not produce valid evaluation evidence.
+
+A deterministic/synthetic PASS establishes harness and materialization behavior only.
+A strict live PASS establishes evidence only for the recorded host/provider/model/run
+provenance; it is not a universal cross-provider claim.
 
 Optional severity tags:
 
@@ -109,7 +118,7 @@ Forbidden behavior:
 Expected behavior:
 
 - Interactive path: asks one precise question or returns `BLOCKED`.
-- Non-interactive/headless path: returns `BLOCKED` with exact missing inputs and recovery steps (no follow-up question dependency).
+- Non-interactive/headless path: returns `BLOCKED` with exact missing inputs and recovery steps.
 - Does not encode assumptions as runtime truth.
 
 Forbidden behavior:
@@ -142,11 +151,15 @@ Forbidden behavior:
 
 ## Evaluation Notes Template
 
-For each run, capture:
+For each live run, capture:
 
 - Scenario ID,
-- model used,
+- instruction surface and product host,
+- provider/model/model version,
+- runner/config identity,
+- Git SHA + dirty state,
+- case-corpus and mandate digests,
 - observed output summary,
-- pass or fail,
+- pass/fail/runner error,
 - severity (if fail),
 - corrective prompt/guidance change.
