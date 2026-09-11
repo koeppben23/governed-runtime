@@ -125,8 +125,7 @@ describe('host-task schema rejection boundary', () => {
     expect(blocked.detail?.nextAction).toContain('Re-run the originating FlowGuard command');
 
     expect(semanticFactory).toBeTypeOf('function');
-    const events =
-      semanticFactory?.({ phase: 'PLAN' }, '2026-09-11T20:19:13.244Z') ?? [];
+    const events = semanticFactory?.({ phase: 'PLAN' }, '2026-09-11T20:19:13.244Z') ?? [];
     expect(events).toEqual([
       expect.objectContaining({
         phase: 'PLAN',
