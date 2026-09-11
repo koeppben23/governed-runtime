@@ -1,0 +1,46 @@
+name: Mandates Semantic Mutation
+
+on:
+  pull_request:
+    paths:
+      - 'src/templates/mandates.ts'
+      - 'src/templates/commands/plan.ts'
+      - 'src/templates/commands/implement.ts'
+      - 'src/integration/review/**'
+      - 'src/rendering/mandates-renderer.ts'
+      - 'src/cli/install-ownership.ts'
+      - 'src/cli/install-command.ts'
+      - 'stryker.mandates.conf.json'
+      - 'scripts/stryker-patch.js'
+      - '.github/workflows/mandates-semantic-mutation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mandates-semantic-mutation:
+    name: mandates-semantic-mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # actions/setup-node v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Patch Stryker/Vitest per-test selection
+        run: node scripts/stryker-patch.js
+      - name: Run semantic mandate mutation gate
+        run: npx stryker run stryker.mandates.conf.json
+        env:
+          FORCE_COLOR: '0'
