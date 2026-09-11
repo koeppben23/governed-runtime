@@ -11,7 +11,12 @@ import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
-import type { CliArgs, CliResult, FileOp, RollbackEntry } from './install-helpers.js';
+import type {
+  CliArgs,
+  CliResult,
+  FileOp,
+  RollbackEntry as InstallRollbackEntry,
+} from './install-helpers.js';
 import type { InstallContext, SnapshotResult } from './install-steps.js';
 import {
   initInstallContext,
@@ -22,12 +27,13 @@ import {
   emitPostInstallWarnings,
   resolveConfigTargetDir,
 } from './install-steps.js';
-import { mergeOpencodeJson, rollbackArtifacts, toCliError } from './install-helpers.js';
+import { rollbackArtifacts, toCliError } from './install-helpers.js';
 import { detectOpenCodeRuntimeEvidence } from './opencode-runtime-detect.js';
 import { classifyOpenCodeRuntime } from './opencode-runtime-compat.js';
 import { defaultReasonRegistry } from '../config/reasons.js';
 import {
   assertManagedMandatesOwnership,
+  assertNoAmbiguousLegacyInstruction,
   deriveInstallOwnershipManifest,
   writeInstallOwnershipManifest,
 } from './install-ownership.js';
@@ -181,7 +187,7 @@ async function rollbackSnap(
   }
 }
 
-function snapshotEntry(snapshot: SnapshotResult, path: string): RollbackEntry {
+function snapshotEntry(snapshot: SnapshotResult, path: string): InstallRollbackEntry {
   const entry = snapshot.preStateEntries.find((candidate) => candidate.path === path);
   if (!entry) throw new Error(`Missing pre-install ownership snapshot: ${path}`);
   return entry;
@@ -308,15 +314,14 @@ async function doInstall(args: CliArgs): Promise<CliResult> {
       : null;
     const verifiedReinstall = args.force && configPreState.existed;
 
+    assertNoAmbiguousLegacyInstruction({
+      platform: ctx.installPlatform,
+      verifiedReinstall,
+      opencodeOriginalContent: opencodePreState?.originalContent,
+    });
+
     await writeArtifacts(ctx, tarball, snapshot);
     await writeConfigFiles(ctx, snapshot);
-
-    if (snapshot.opencodeJsonPath && verifiedReinstall) {
-      const migrationOp = await mergeOpencodeJson(snapshot.opencodeJsonPath, args.installScope, {
-        migrateLegacyFlowguardInstruction: true,
-      });
-      ctx.ops.push(migrationOp);
-    }
 
     const ownership = deriveInstallOwnershipManifest({
       platform: ctx.installPlatform,
@@ -327,7 +332,6 @@ async function doInstall(args: CliArgs): Promise<CliResult> {
       opencodeCurrentContent: snapshot.opencodeJsonPath
         ? readFileSync(snapshot.opencodeJsonPath, 'utf-8')
         : null,
-      verifiedReinstall,
     });
 
     tx = await createDependencyTransaction(snapshot, snapshot.vendorTarballPath);
