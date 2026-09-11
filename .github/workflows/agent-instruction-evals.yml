@@ -52,8 +52,11 @@ jobs:
         run: npm ci
 
       - name: Validate inputs
+        env:
+          INPUT_TIMEOUT_MINUTES: ${{ inputs.timeout_minutes }}
+          INPUT_RUNNER_CONFIG: ${{ inputs.runner_config }}
         run: |
-          T="${{ inputs.timeout_minutes }}"
+          T="$INPUT_TIMEOUT_MINUTES"
           case "$T" in
             ''|*[!0-9]*) echo "timeout_minutes must be an integer"; exit 2 ;;
           esac
@@ -61,7 +64,7 @@ jobs:
             echo "timeout_minutes must be between 1 and 30"
             exit 2
           fi
-          CONFIG="${{ inputs.runner_config }}"
+          CONFIG="$INPUT_RUNNER_CONFIG"
           case "$CONFIG" in
             /*|../*|*/../*|*/..) echo "runner_config must be repository-relative without traversal"; exit 2 ;;
           esac
@@ -69,26 +72,27 @@ jobs:
             echo "runner_config does not exist: $CONFIG"
             exit 2
           fi
-          if [ "${{ inputs.execution_mode }}" = 'live-strict' ] && [ "$CONFIG" = 'evals/agent-instructions/runner-configs/fake-ci.json' ]; then
-            echo 'live-strict requires a real provider runner config; fake-ci cannot establish product assurance'
-            exit 2
-          fi
           echo "TIMEOUT_MS=$((T * 60000))" >> "$GITHUB_ENV"
 
       - name: Run agent instruction evals
         env:
+          EVAL_RUNNER_CONFIG: ${{ inputs.runner_config }}
+          EVAL_CASE: ${{ inputs.case }}
+          EVAL_EXECUTION_MODE: ${{ inputs.execution_mode }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           ARGS=(
-            --config "${{ inputs.runner_config }}"
+            --config "$EVAL_RUNNER_CONFIG"
             --timeout-ms "$TIMEOUT_MS"
           )
-          if [ "${{ inputs.execution_mode }}" = 'synthetic-advisory' ]; then
+          if [ "$EVAL_EXECUTION_MODE" = 'synthetic-advisory' ]; then
             ARGS+=(--advisory)
+          else
+            ARGS+=(--require-live-host)
           fi
-          if [ -n "${{ inputs.case }}" ]; then
-            ARGS+=(--case "${{ inputs.case }}")
+          if [ -n "$EVAL_CASE" ]; then
+            ARGS+=(--case "$EVAL_CASE")
           fi
           npx tsx evals/agent-instructions/cli.ts "${ARGS[@]}"
 
