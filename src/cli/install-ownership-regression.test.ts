@@ -14,7 +14,7 @@ import {
 } from './install-ownership.js';
 import { removeFromOpencodeJson } from './install-json.js';
 
-describe.sequential('installer ownership regressions', () => {
+describe('installer ownership regressions', () => {
   it('blocks ambiguous historical AGENTS.md authority only for verified reinstalls', () => {
     const previous = Buffer.from(JSON.stringify({ instructions: ['AGENTS.md'] }));
     expect(() =>
