@@ -31,7 +31,7 @@ body was injected into a model context. Native load and behavioral compliance re
 ## Structure
 
 ```
-cases/              — YAML case definitions (20 cases: 8 contributor, 12 product)
+cases/              — versioned YAML case corpus; case count is derived from the corpus, not documentation
 schema.ts           — Zod schemas for cases, runner config, and result provenance
 load-cases.ts       — YAML parser → typed EvalCase[]; rejects duplicate IDs
 assertions.ts       — Pure assertion evaluation functions
@@ -77,7 +77,7 @@ A strict runner is explicitly one host. It must declare:
 - exactly one `instructionHost`
 - non-synthetic provider/model identity
 - the real host command and its runner version
-- a deterministic `seed` when the run participates in required non-inferiority comparison
+- a requested `seed` when the run participates in required non-inferiority comparison
 - provider secrets only through `secretEnvNames`
 
 Example:
@@ -107,11 +107,23 @@ produce OpenCode or Codex product assurance. Repository-contributor cases remain
 separate surface.
 
 `--require-non-inferiority` is stronger: it requires a baseline summary and implicitly
-requires a host-bound `live-host` runner, a non-synthetic provider, and a deterministic
-`seed`. The seed is passed to the child process as `FLOWGUARD_EVAL_SEED`, persisted in
-run provenance, and included in the runner-config digest. Baseline and candidate runs
-must have compatible provider/model/runner/host/config provenance and the same seed;
-dirty worktrees make the comparison `NOT_VERIFIED`.
+requires a host-bound `live-host` runner and a non-synthetic provider. The requested seed
+is passed to the child process as `FLOWGUARD_EVAL_SEED`, persisted in run provenance, and
+included in the runner-config digest. This records the request; it does **not** prove that
+the provider honored or supports that seed. Assurance-grade comparison therefore remains
+`NOT_VERIFIED` unless a trusted host/provider observer confirms effective seeding for both
+baseline and candidate runs. If a provider cannot expose effective seeding, use a
+statistical repeated-run protocol rather than representing the configured seed as
+deterministic sampling evidence.
+
+Likewise, the generic metrics envelope emitted by a child runner is explicitly
+`runner_self_reported`. It cannot satisfy assurance-grade non-inferiority by itself.
+Precision/recall and resource/latency metrics must come from a trusted observer or an
+independent labeled evaluation path before the comparison can become `PASS`.
+
+Baseline and candidate runs must also have compatible provider/model/runner/host/config
+provenance and the same case-corpus digest; dirty worktrees or a different corpus make the
+comparison `NOT_VERIFIED` rather than a measured regression.
 
 For argument prompt transport, set `"promptTransport": "argument"` and include exactly
 one `{prompt}` placeholder in `args`.
@@ -126,7 +138,7 @@ child process.
 `summary.json` schema v3 persists enough run identity to distinguish materially
 different evaluations without persisting secret values:
 
-- provider, model, model version, runner version, and optional deterministic seed
+- provider, model, model version, runner version, and optional requested seed
 - runner kind and bound host when declared
 - command, arguments, prompt transport, effective timeout
 - runner-config digest and secret environment **names**
@@ -148,4 +160,5 @@ Advisory assertion failures produce warnings but do not cause `FAIL`. Synthetic/
 runs never establish live product assurance. A strict live PASS is evidence only for the
 specific host/provider/model/run provenance captured in that report; it is not a global
 cross-provider claim. Required non-inferiority additionally refuses incomparable
-provenance or dirty-worktree evidence rather than silently treating it as equivalent.
+provenance, self-reported assurance metrics, unconfirmed effective seeds, or dirty-worktree
+evidence rather than silently treating them as equivalent.
