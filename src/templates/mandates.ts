@@ -503,7 +503,7 @@ export const FLOWGUARD_MANDATES_FULL_BODY = renderMandateDocument(MANDATES_SECTI
  * and verification matrices are supplied by their owning runtime/command layer.
  */
 export const FLOWGUARD_MANDATES_KERNEL = renderMandateDocument(
-  MANDATES_SECTION_DEFINITIONS.filter((section) => section.kernel === true),
+  MANDATES_SECTION_DEFINITIONS.filter((section) => 'kernel' in section && section.kernel === true),
 );
 
 /** @deprecated Prefer FLOWGUARD_MANDATES_KERNEL for installed/persistent mandates. */
@@ -577,4 +577,4 @@ export const REVIEWER_AGENT_FILENAME = `${REVIEWER_SUBAGENT_TYPE}.md`;
 
 export const CLAUDE_REVIEWER_AGENT_PATH = `agents/${REVIEWER_AGENT_FILENAME}`;
 
-export const CODEX_REVIEWER_SUBAGENT_PATH = `subagents/${REVIEWER_AGENT_FILENAME}`;
+export const CODEX_REVIEWER_SUBAGENT_PATH = `subagents/${REVIEWER_AGENT_FILENAME`;
