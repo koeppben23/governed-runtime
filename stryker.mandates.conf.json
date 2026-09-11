@@ -17,7 +17,9 @@
   "concurrency": 2,
   "checkers": ["typescript"],
   "tsconfigFile": "tsconfig.json",
-  "excludedMutations": ["Regex"],
+  "mutator": {
+    "excludedMutations": ["Regex"]
+  },
   "thresholds": {
     "high": 90,
     "low": 80,
