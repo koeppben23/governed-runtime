@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync, rmSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -18,8 +19,6 @@ import type {
   RunnerConfig,
 } from './schema.js';
 
-// ── Environment resolution ──────────────────────────────────────────
-
 export interface ResolvedEnv {
   childEnv: NodeJS.ProcessEnv;
   redactionValues: string[];
@@ -36,6 +35,10 @@ const CHILD_RUNTIME_ENV_ALLOWLIST = [
   'COMSPEC',
   'PATHEXT',
 ] as const;
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
 
 function allowedRuntimeEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
@@ -96,6 +99,7 @@ export async function runEval(
   config: RunnerConfig,
   repoRoot: string,
   caseIds?: string[],
+  opts?: { requireLiveHost?: boolean },
 ): Promise<{ executed: ExecutedEvalCase[]; redactionValues: string[] }> {
   const env = resolveRunnerEnv(config);
   const redactionValues = new Set(env.redactionValues);
@@ -106,12 +110,22 @@ export async function runEval(
     const requestedIds = [...new Set(caseIds)];
     const idSet = new Set(requestedIds);
     const unknown = requestedIds.filter((id) => !cases.some((c) => c.id === id));
-    if (unknown.length > 0) {
-      throw new Error(`Unknown case ID(s): ${unknown.join(', ')}`);
-    }
+    if (unknown.length > 0) throw new Error(`Unknown case ID(s): ${unknown.join(', ')}`);
     cases = cases.filter((c) => idSet.has(c.id));
+    if (cases.length === 0) throw new Error('No matching cases found');
+  }
+
+  if (opts?.requireLiveHost) {
+    if (config.runnerKind !== 'live-host' || !config.instructionHost) {
+      throw new Error('Strict live evaluation requires a host-bound live-host runner');
+    }
+    cases = cases.filter(
+      (evalCase) =>
+        evalCase.instructionSurface === 'repository_contributor' ||
+        evalCase.instructionHost === config.instructionHost,
+    );
     if (cases.length === 0) {
-      throw new Error('No matching cases found');
+      throw new Error(`No eval cases match live host ${config.instructionHost}`);
     }
   }
 
@@ -124,9 +138,7 @@ export async function runEval(
       ...env.childEnv,
       ...evalCase.syntheticSecrets,
     };
-    for (const value of Object.values(evalCase.syntheticSecrets)) {
-      redactionValues.add(value);
-    }
+    for (const value of Object.values(evalCase.syntheticSecrets)) redactionValues.add(value);
 
     let fixtureRoot: string;
     let cleanupTemp: (() => void) | undefined;
@@ -150,7 +162,7 @@ export async function runEval(
       evalCase.instructionHost,
     );
 
-    if (cleanupTemp) cleanupTemp();
+    cleanupTemp?.();
 
     if (outcome.status === 'runner_error') {
       const er = scoreCase(
@@ -212,9 +224,22 @@ export async function runEval(
   return { executed: results, redactionValues: [...redactionValues] };
 }
 
-// ── Report persistence ────────────────────────────────────────────────
-
 function toRunnerProvenance(config: RunnerConfig): EvalRunnerProvenance {
+  const safeConfig = {
+    name: config.name,
+    command: config.command,
+    args: config.args,
+    promptTransport: config.promptTransport,
+    provider: config.provider,
+    model: config.model,
+    modelVersion: config.modelVersion,
+    runnerVersion: config.runnerVersion,
+    runnerKind: config.runnerKind,
+    instructionHost: config.instructionHost,
+    staticEnv: config.staticEnv,
+    secretEnvNames: config.secretEnvNames,
+    timeoutMs: config.timeoutMs,
+  };
   return {
     name: config.name,
     command: config.command,
@@ -224,28 +249,45 @@ function toRunnerProvenance(config: RunnerConfig): EvalRunnerProvenance {
     model: config.model,
     modelVersion: config.modelVersion,
     runnerVersion: config.runnerVersion,
+    ...(config.runnerKind ? { runnerKind: config.runnerKind } : {}),
+    ...(config.instructionHost ? { instructionHost: config.instructionHost } : {}),
+    timeoutMs: config.timeoutMs,
+    configDigest: sha256(JSON.stringify(safeConfig)),
     secretEnvNames: [...config.secretEnvNames],
   };
 }
 
 function resolveRepositoryProvenance(repoRoot: string): RepositoryProvenance {
   let gitCommit: string;
+  let gitDirty: boolean;
   try {
     gitCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
       cwd: repoRoot,
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();
+    gitDirty =
+      execFileSync('git', ['status', '--porcelain'], {
+        cwd: repoRoot,
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim().length > 0;
   } catch {
-    throw new Error('Unable to resolve git commit for eval provenance');
+    throw new Error('Unable to resolve git repository provenance');
   }
   if (!/^[0-9a-f]{40}$/.test(gitCommit)) {
     throw new Error(`Invalid git commit for eval provenance: ${gitCommit}`);
   }
+  const corpus = loadCases(CASES_DIR)
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map((evalCase) => JSON.stringify(evalCase))
+    .join('\n');
   return {
     gitCommit,
+    gitDirty,
     flowguardVersion: PACKAGE_VERSION(),
     mandateDigest: computeMandatesDigest(),
+    caseCorpusDigest: sha256(corpus),
   };
 }
 
@@ -257,9 +299,7 @@ export function writeReports(
   const redactionValues = opts?.redactionValues ?? [];
   const ordered = [...executed].sort((a, b) => a.evalCase.id.localeCompare(b.evalCase.id));
   const id = opts?.runId ?? `run-${Date.now()}`;
-  if (!RUN_ID_PATTERN.test(id)) {
-    throw new Error(`Invalid eval run ID: ${id}`);
-  }
+  if (!RUN_ID_PATTERN.test(id)) throw new Error(`Invalid eval run ID: ${id}`);
   const runDir = join(RESULTS_DIR, id);
   const casesDir = join(runDir, 'cases');
   mkdirSync(casesDir, { recursive: true });
@@ -278,22 +318,9 @@ export function writeReports(
   for (const e of ordered) {
     const caseDir = join(casesDir, e.evalCase.id);
     mkdirSync(caseDir, { recursive: true });
-
-    writeFileSync(
-      join(caseDir, 'prompt.txt'),
-      redactSecrets(e.evalCase.task + '\n', redactionValues),
-    );
-
-    if (e.outcome.status === 'completed' || e.outcome.status === 'runner_error') {
-      writeFileSync(
-        join(caseDir, 'stdout.txt'),
-        redactSecrets(e.outcome.stdout || '', redactionValues),
-      );
-      writeFileSync(
-        join(caseDir, 'stderr.txt'),
-        redactSecrets(e.outcome.stderr || '', redactionValues),
-      );
-    }
+    writeFileSync(join(caseDir, 'prompt.txt'), redactSecrets(e.evalCase.task + '\n', redactionValues));
+    writeFileSync(join(caseDir, 'stdout.txt'), redactSecrets(e.outcome.stdout || '', redactionValues));
+    writeFileSync(join(caseDir, 'stderr.txt'), redactSecrets(e.outcome.stderr || '', redactionValues));
 
     const outcomeSummary =
       e.outcome.status === 'completed'
@@ -308,9 +335,7 @@ export function writeReports(
             status: 'runner_error' as const,
             errorKind: e.outcome.errorKind,
             message: e.outcome.message,
-            ...(e.outcome.instructionSurface
-              ? { instructionSurface: e.outcome.instructionSurface }
-              : {}),
+            ...(e.outcome.instructionSurface ? { instructionSurface: e.outcome.instructionSurface } : {}),
             ...(e.outcome.instructionHost ? { instructionHost: e.outcome.instructionHost } : {}),
           };
 
@@ -329,9 +354,14 @@ export function writeReports(
     '',
     `- Provider/model: ${summary.runner.provider}/${summary.runner.model} (${summary.runner.modelVersion})`,
     `- Runner version: ${summary.runner.runnerVersion}`,
+    `- Runner kind/host: ${summary.runner.runnerKind ?? 'unspecified'}/${summary.runner.instructionHost ?? 'unbound'}`,
+    `- Effective timeout: ${summary.runner.timeoutMs} ms`,
+    `- Runner config digest: ${summary.runner.configDigest}`,
     `- Git commit: ${summary.repository.gitCommit}`,
+    `- Git dirty: ${summary.repository.gitDirty}`,
     `- FlowGuard version: ${summary.repository.flowguardVersion}`,
     `- Mandate digest: ${summary.repository.mandateDigest}`,
+    `- Case corpus digest: ${summary.repository.caseCorpusDigest}`,
     '',
     '## By Instruction Surface',
     '',
@@ -342,15 +372,20 @@ export function writeReports(
         `| ${surface} | ${counts.passed} | ${counts.failed} | ${counts.runnerErrors} |`,
     ),
     '',
+    '## By Product Host',
+    '',
+    '| Host | PASS | FAIL | RUNNER_ERROR |',
+    '| --- | ---: | ---: | ---: |',
+    ...Object.entries(summary.byInstructionHost).map(
+      ([host, counts]) => `| ${host} | ${counts.passed} | ${counts.failed} | ${counts.runnerErrors} |`,
+    ),
+    '',
     ...summary.cases.map(
       (c) =>
         `- **${c.caseId}** (${c.instructionSurface}${c.instructionHost ? `/${c.instructionHost}` : ''}): ${c.verdict}`,
     ),
   ];
-  writeFileSync(
-    join(runDir, 'summary.md'),
-    redactSecrets(mdLines.join('\n') + '\n', redactionValues),
-  );
+  writeFileSync(join(runDir, 'summary.md'), redactSecrets(mdLines.join('\n') + '\n', redactionValues));
 
   return runDir;
 }
