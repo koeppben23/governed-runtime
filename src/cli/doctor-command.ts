@@ -299,7 +299,7 @@ function checkDesktopTaskHardening(
       file: path,
       status: 'warn',
       detail:
-        'customer-owned OpenCode task permissions do not explicitly allow flowguard-reviewer; FlowGuard preserves customer permissions, so independent reviewer execution may be blocked',
+        'FlowGuard task hardening is incomplete: customer-owned OpenCode task permissions do not explicitly allow flowguard-reviewer; FlowGuard preserves customer permissions, so independent reviewer execution may be blocked',
     });
     return;
   }
@@ -311,7 +311,7 @@ function checkDesktopTaskHardening(
       file: path,
       status: 'warn',
       detail:
-        'customer-owned OpenCode config is not FlowGuard task-hardened; installer intentionally preserves customer task permissions',
+        'FlowGuard task hardening is not active for this customer-owned OpenCode config; installer intentionally preserves customer task permissions',
     });
   }
 }
