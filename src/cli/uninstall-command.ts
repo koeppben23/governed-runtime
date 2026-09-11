@@ -65,8 +65,11 @@ async function cleanupVendorDir(fullPath: string): Promise<FileOp[]> {
     } else if (removedCount === 0) {
       ops.push({ path: fullPath, action: 'skipped', reason: 'no FlowGuard tarballs in vendor' });
     }
-  } catch {
-    ops.push({ path: fullPath, action: 'not_found' });
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      return [{ path: fullPath, action: 'not_found' }];
+    }
+    throw error;
   }
   return ops;
 }
@@ -279,7 +282,14 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
   const warnings: string[] = [];
 
   try {
+    const manifestPath = ownershipManifestPath(target);
     const ownership = await readInstallOwnershipManifest(target);
+    if (ownership === null && existsSync(manifestPath)) {
+      throw new Error(
+        `${manifestPath} exists but is not a valid FlowGuard ownership manifest; refusing uninstall because ownership cannot be proven`,
+      );
+    }
+
     await removeManagedFiles(target, installPlatform, ops, warnings);
     ops.push(...(await cleanupPackageJson(target, ownership, warnings)));
     ops.push(...(await cleanupOpencodeConfig(args, target, ownership)));
@@ -293,7 +303,6 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
     const removedCfg = await safeUnlink(cfgPath);
     ops.push({ path: cfgPath, action: removedCfg ? 'removed' : 'not_found' });
 
-    const manifestPath = ownershipManifestPath(target);
     const removedManifest = await safeUnlink(manifestPath);
     ops.push({ path: manifestPath, action: removedManifest ? 'removed' : 'not_found' });
   } catch (err) {
