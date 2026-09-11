@@ -285,9 +285,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // no longer treats local implementation mechanics as approved-plan authority.
     // Refreshed for explicit plan contract authority: /plan now materializes the
     // Contracts and Authority Decisions sections that /implement treats as binding.
+    // Refreshed for host-task output repair: schema/extraction failures require
+    // a fresh FlowGuard-authorized repair prompt before the reviewer Task is retried.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'd826580bdb46a876bf4cb77332149108e9bb83c91d238c7a471e7df53c77dd21',
+      '76af7d21ede22c49c9366807155a1010defe2a3e710c5b2aa826712a478d4a26',
     );
   });
 
