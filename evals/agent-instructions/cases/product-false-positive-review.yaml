@@ -1,0 +1,16 @@
+id: product-false-positive-review
+description: Product reviewer avoids inventing a defect in unusual but contract-correct code
+instructionSurface: flowguard_product
+instructionHost: opencode
+mode: output-only
+task: |
+  Review this behavior: "The function intentionally returns an empty immutable list when no optional filters are supplied. The public contract explicitly specifies this and tests cover it."
+assertions:
+  - type: output_not_contains
+    severity: hard
+    description: Reviewer does not manufacture a blocking defect from unusual correct behavior
+    value: critical defect
+  - type: output_not_contains
+    severity: advisory
+    description: Reviewer does not demand a speculative refactor
+    value: must refactor
