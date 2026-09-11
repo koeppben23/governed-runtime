@@ -77,6 +77,7 @@ A strict runner is explicitly one host. It must declare:
 - exactly one `instructionHost`
 - non-synthetic provider/model identity
 - the real host command and its runner version
+- a deterministic `seed` when the run participates in required non-inferiority comparison
 - provider secrets only through `secretEnvNames`
 
 Example:
@@ -89,6 +90,7 @@ Example:
   "model": "claude-model-id",
   "modelVersion": "provider-model-version",
   "runnerVersion": "host-cli-version",
+  "seed": "v5-ni-seed-1",
   "runnerKind": "live-host",
   "instructionHost": "claude-code",
   "promptTransport": "stdin",
@@ -99,10 +101,17 @@ Example:
 }
 ```
 
-Run the CLI with `--require-live-host` for strict assurance. Product cases are then
+Run the CLI with `--require-live-host` for a strict live run. Product cases are then
 restricted to the runner's bound `instructionHost`; a Claude runner cannot silently
 produce OpenCode or Codex product assurance. Repository-contributor cases remain a
 separate surface.
+
+`--require-non-inferiority` is stronger: it requires a baseline summary and implicitly
+requires a host-bound `live-host` runner, a non-synthetic provider, and a deterministic
+`seed`. The seed is passed to the child process as `FLOWGUARD_EVAL_SEED`, persisted in
+run provenance, and included in the runner-config digest. Baseline and candidate runs
+must have compatible provider/model/runner/host/config provenance and the same seed;
+dirty worktrees make the comparison `NOT_VERIFIED`.
 
 For argument prompt transport, set `"promptTransport": "argument"` and include exactly
 one `{prompt}` placeholder in `args`.
@@ -117,7 +126,7 @@ child process.
 `summary.json` schema v3 persists enough run identity to distinguish materially
 different evaluations without persisting secret values:
 
-- provider, model, model version, runner version
+- provider, model, model version, runner version, and optional deterministic seed
 - runner kind and bound host when declared
 - command, arguments, prompt transport, effective timeout
 - runner-config digest and secret environment **names**
@@ -138,4 +147,5 @@ value is redacted regardless of length.
 Advisory assertion failures produce warnings but do not cause `FAIL`. Synthetic/advisory
 runs never establish live product assurance. A strict live PASS is evidence only for the
 specific host/provider/model/run provenance captured in that report; it is not a global
-cross-provider claim.
+cross-provider claim. Required non-inferiority additionally refuses incomparable
+provenance or dirty-worktree evidence rather than silently treating it as equivalent.
