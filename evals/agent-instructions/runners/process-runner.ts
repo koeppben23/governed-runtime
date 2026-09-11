@@ -2,8 +2,6 @@
  * process-runner.ts
  *
  * Generic shell-free process runner for eval case execution.
- * Spawns a configured command, passes the prompt via stdin, captures
- * stdout/stderr, enforces timeout, and returns a typed RunnerOutcome.
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -33,8 +31,6 @@ import {
 } from '../../../src/cli/templates.js';
 import { PACKAGE_VERSION } from '../../../src/shared/package-version.js';
 
-// ── Outcome types ─────────────────────────────────────────────────────
-
 export interface CompletedOutcome {
   status: 'completed';
   exitCode: number;
@@ -61,10 +57,9 @@ export interface RunnerErrorOutcome {
 
 export type RunnerOutcome = CompletedOutcome | RunnerErrorOutcome;
 
-// ── Ignored paths ─────────────────────────────────────────────────────
-
 const IGNORED_PREFIXES = ['.git', 'node_modules', 'eval-results', 'tmp'];
 const IGNORED_NAMES = new Set(['.DS_Store', 'Thumbs.db']);
+const MAX_CAPTURE_CHARS = 1_000_000;
 
 function isIgnored(relPath: string): boolean {
   if (IGNORED_NAMES.has(basename(relPath))) return true;
@@ -72,8 +67,6 @@ function isIgnored(relPath: string): boolean {
     (p) => relPath === p || relPath.startsWith(p + '/') || relPath.startsWith(p + '\\'),
   );
 }
-
-// ── Snapshot ──────────────────────────────────────────────────────────
 
 function sha256(buf: Buffer): string {
   return createHash('sha256').update(buf).digest('hex');
@@ -102,49 +95,41 @@ function walk(
   } catch {
     return;
   }
+
   for (const name of dirents) {
     const relPath = relDir ? join(relDir, name) : name;
     if (isIgnored(relPath)) continue;
     const fullPath = join(root, relPath);
 
-    // Try reading first — no TOCTOU. If it's a regular file (or a symlink
-    // to one), we get its content. If it's a directory or broken symlink,
-    // readFileSync throws and we check lstat for recursion.
+    let stat;
+    try {
+      stat = lstatSync(fullPath);
+    } catch {
+      continue;
+    }
+    if (stat.isSymbolicLink()) continue;
+    if (stat.isDirectory()) {
+      walk(root, relPath, entries, contents);
+      continue;
+    }
+    if (!stat.isFile()) continue;
+
     try {
       const buf = readFileSync(fullPath);
       const snapshotPath = relPath.split(sep).join('/');
       entries.set(snapshotPath, { sha256: sha256(buf), bytes: buf.length });
       contents.set(snapshotPath, buf.toString('utf-8'));
-      continue;
     } catch {
-      // Not a readable regular file — check type
-    }
-
-    let st;
-    try {
-      st = lstatSync(fullPath);
-    } catch {
-      continue;
-    }
-    if (st.isSymbolicLink()) continue;
-    if (st.isDirectory()) {
-      walk(root, relPath, entries, contents);
+      // Snapshotting is best-effort for unreadable files; assertions cannot rely on absent content.
     }
   }
 }
-
-// ── Workspace setup ───────────────────────────────────────────────────
 
 function setupWorkspace(
   fixtureRoot: string,
   forceCopy: boolean,
 ): { workspaceRoot: string; cleanup: () => void } | RunnerErrorOutcome {
-  if (!forceCopy) {
-    return {
-      workspaceRoot: fixtureRoot,
-      cleanup: () => {},
-    };
-  }
+  if (!forceCopy) return { workspaceRoot: fixtureRoot, cleanup: () => {} };
 
   const wsRoot = mkdtempSync(join(tmpdir(), 'eval-ws-'));
   try {
@@ -199,7 +184,6 @@ async function materializeInstructionSurface(
       ? null
       : 'repository_contributor evaluations must not declare a product instruction host';
   }
-
   if (instructionHost === undefined) {
     return 'flowguard_product evaluations require an explicit instruction host';
   }
@@ -248,7 +232,25 @@ async function materializeInstructionSurface(
   return null;
 }
 
-// ── Process execution ─────────────────────────────────────────────────
+function appendBounded(current: string, chunk: Buffer): string {
+  if (current.length >= MAX_CAPTURE_CHARS) return current;
+  const text = chunk.toString('utf-8');
+  const remaining = MAX_CAPTURE_CHARS - current.length;
+  if (text.length <= remaining) return current + text;
+  return current + text.slice(0, Math.max(0, remaining - 16)) + '\n[TRUNCATED]\n';
+}
+
+function killProcessTree(child: ChildProcess): void {
+  if (process.platform !== 'win32' && child.pid) {
+    try {
+      process.kill(-child.pid, 'SIGKILL');
+      return;
+    } catch {
+      // Fall back to the direct child if the process group is already gone.
+    }
+  }
+  child.kill('SIGKILL');
+}
 
 export async function runProcess(
   config: RunnerConfig,
@@ -296,15 +298,13 @@ export async function runProcess(
   }
 
   const before = snapshotWorkspace(workspaceRoot);
-
-  // Resolve runner path placeholders before prompt transport.
-  const resolvedArgs = config.args.map((a) =>
-    a.replaceAll('{repoRoot}', repoRoot).replaceAll('{workspaceRoot}', workspaceRoot),
+  const resolvedArgs = config.args.map((arg) =>
+    arg.replaceAll('{repoRoot}', repoRoot).replaceAll('{workspaceRoot}', workspaceRoot),
   );
   const useStdin = config.promptTransport === 'stdin';
   if (!useStdin) {
-    for (let i = 0; i < resolvedArgs.length; i++) {
-      resolvedArgs[i] = resolvedArgs[i].replace('{prompt}', prompt);
+    for (let index = 0; index < resolvedArgs.length; index++) {
+      resolvedArgs[index] = resolvedArgs[index].replace('{prompt}', prompt);
     }
   }
 
@@ -318,6 +318,7 @@ export async function runProcess(
         shell: false,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: childEnv,
+        detached: process.platform !== 'win32',
       });
     } catch (err) {
       cleanup();
@@ -344,14 +345,14 @@ export async function runProcess(
     };
 
     child.stdout?.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString('utf-8');
+      stdout = appendBounded(stdout, chunk);
     });
     child.stderr?.on('data', (chunk: Buffer) => {
-      stderrOut += chunk.toString('utf-8');
+      stderrOut = appendBounded(stderrOut, chunk);
     });
 
     const timer = setTimeout(() => {
-      child.kill('SIGKILL');
+      killProcessTree(child);
       finish({
         status: 'runner_error',
         errorKind: 'timeout',
@@ -376,7 +377,6 @@ export async function runProcess(
 
     child.on('close', (code, signal) => {
       clearTimeout(timer);
-
       if (signal) {
         finish({
           status: 'runner_error',
@@ -389,17 +389,13 @@ export async function runProcess(
         return;
       }
 
-      const durationMs = Date.now() - startMs;
-      const exitCode = code ?? -1;
-
       const after = snapshotWorkspace(workspaceRoot);
-
       finish({
         status: 'completed',
-        exitCode,
+        exitCode: code ?? -1,
         stdout,
         stderr: stderrOut,
-        durationMs,
+        durationMs: Date.now() - startMs,
         beforeSnapshot: before.entries,
         afterSnapshot: after.entries,
         beforeContent: before.contents,
@@ -408,10 +404,6 @@ export async function runProcess(
       });
     });
 
-    if (useStdin) {
-      child.stdin?.end(prompt);
-    } else {
-      child.stdin?.end();
-    }
+    child.stdin?.end(useStdin ? prompt : undefined);
   });
 }
