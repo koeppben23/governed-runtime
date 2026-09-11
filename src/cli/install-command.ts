@@ -284,10 +284,7 @@ function assertLegacyBoundary(ctx: InstallContext, snapshot: SnapshotResult): vo
   });
 }
 
-function deriveOwnership(
-  ctx: InstallContext,
-  snapshot: SnapshotResult,
-): InstallOwnershipManifest {
+function deriveOwnership(ctx: InstallContext, snapshot: SnapshotResult): InstallOwnershipManifest {
   const packagePreState = snapshotEntry(snapshot, snapshot.pkgPath);
   const opencodePreState = snapshot.opencodeJsonPath
     ? snapshotEntry(snapshot, snapshot.opencodeJsonPath)

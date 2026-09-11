@@ -145,7 +145,9 @@ async function removeManagedFiles(
     const expected = expectedOpenCodeFile(relPath);
     if (expected === null) {
       if (existsSync(fullPath)) {
-        warnings.push(`${fullPath} has no provable OpenCode FlowGuard template ownership — preserved`);
+        warnings.push(
+          `${fullPath} has no provable OpenCode FlowGuard template ownership — preserved`,
+        );
         ops.push({ path: fullPath, action: 'skipped', reason: 'ownership not proven' });
       }
       continue;

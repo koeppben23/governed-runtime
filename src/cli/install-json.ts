@@ -15,7 +15,11 @@ import { ensureDir } from '../adapters/persistence.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { hasNonFlowGuardInstructions, type FileOp, type InstallScope } from './install-types.js';
-import { OPENCODE_JSON_TEMPLATE, PACKAGE_JSON_TEMPLATE, mandatesInstructionEntry } from './templates.js';
+import {
+  OPENCODE_JSON_TEMPLATE,
+  PACKAGE_JSON_TEMPLATE,
+  mandatesInstructionEntry,
+} from './templates.js';
 
 const LEGACY_FLOWGUARD_INSTRUCTION_ENTRY = 'AGENTS.md';
 
@@ -95,7 +99,9 @@ function ensureNested(parent: Record<string, unknown>, key: string): Record<stri
   return parent[key] as Record<string, unknown>;
 }
 
-export function getTaskPermissions(parsed: Record<string, unknown>): Record<string, unknown> | null {
+export function getTaskPermissions(
+  parsed: Record<string, unknown>,
+): Record<string, unknown> | null {
   if (!parsed['agent'] || typeof parsed['agent'] !== 'object') return null;
   const build = (parsed['agent'] as Record<string, unknown>)['build'];
   if (!build || typeof build !== 'object') return null;
@@ -147,10 +153,7 @@ function normalizedInstructions(
     : [...instructions];
 }
 
-function isCustomerOwnedConfig(
-  parsed: Record<string, unknown>,
-  instructions: string[],
-): boolean {
+function isCustomerOwnedConfig(parsed: Record<string, unknown>, instructions: string[]): boolean {
   return (
     'plugin' in parsed ||
     hasNonFlowGuardInstructions(instructions) ||
@@ -298,7 +301,11 @@ async function removeFromCustomerOwned(
   const removedInstruction = removeFlowGuardInstruction(parsed, instructions, scope);
   const removedTaskHardening = removeManagedTaskHardening ? removeTaskHardening(parsed) : false;
   if (!removedInstruction && !removedTaskHardening) {
-    return { path: filePath, action: 'skipped', reason: 'no provably FlowGuard-owned entries found' };
+    return {
+      path: filePath,
+      action: 'skipped',
+      reason: 'no provably FlowGuard-owned entries found',
+    };
   }
   await writeJson(filePath, parsed);
   return {
@@ -318,7 +325,11 @@ async function removeFromManagedConfig(
 ): Promise<FileOp> {
   const removed = await removeFlowGuardOnly(parsed, scope, removeManagedTaskHardening);
   if (!removed) {
-    return { path: filePath, action: 'skipped', reason: 'no provably FlowGuard-owned entries found' };
+    return {
+      path: filePath,
+      action: 'skipped',
+      reason: 'no provably FlowGuard-owned entries found',
+    };
   }
   await writeJson(filePath, parsed);
   return { path: filePath, action: 'merged', reason: 'removed FlowGuard instruction entries' };

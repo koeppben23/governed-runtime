@@ -12,7 +12,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { withTestEnv } from '../integration/test-helpers.js';
 import { measureAsync } from '../test-policy.js';
 import { resolveCodexMarketplaceRoot } from './codex-plugin-install.js';
-import { computeMandatesDigest, install, mergeReviewerTaskPermission, uninstall } from './install.js';
+import {
+  computeMandatesDigest,
+  install,
+  mergeReviewerTaskPermission,
+  uninstall,
+} from './install.js';
 import {
   VERSION,
   createMockTarball,

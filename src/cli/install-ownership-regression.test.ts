@@ -94,11 +94,15 @@ describe('installer ownership regressions', () => {
         platform: 'opencode',
         scope: 'repo',
         packageJsonExisted: true,
-        packageJsonOriginalContent: Buffer.from(JSON.stringify({ dependencies: { zod: '^3.22.0' } })),
+        packageJsonOriginalContent: Buffer.from(
+          JSON.stringify({ dependencies: { zod: '^3.22.0' } }),
+        ),
         opencodeOriginalContent: Buffer.from(JSON.stringify({ instructions: [] })),
         opencodeCurrentContent: JSON.stringify({
           instructions: ['.opencode/flowguard-mandates.md'],
-          agent: { build: { permission: { task: { '*': 'deny', 'flowguard-reviewer': 'allow' } } } },
+          agent: {
+            build: { permission: { task: { '*': 'deny', 'flowguard-reviewer': 'allow' } } },
+          },
         }),
       });
       await writeInstallOwnershipManifest(dir, first);
@@ -108,12 +112,16 @@ describe('installer ownership regressions', () => {
         scope: 'repo',
         packageJsonExisted: true,
         packageJsonOriginalContent: Buffer.from(
-          JSON.stringify({ dependencies: { '@flowguard/core': 'file:./vendor/flowguard.tgz', zod: '^4.0.0' } }),
+          JSON.stringify({
+            dependencies: { '@flowguard/core': 'file:./vendor/flowguard.tgz', zod: '^4.0.0' },
+          }),
         ),
         opencodeOriginalContent: Buffer.from(
           JSON.stringify({
             instructions: ['.opencode/flowguard-mandates.md'],
-            agent: { build: { permission: { task: { '*': 'deny', 'flowguard-reviewer': 'allow' } } } },
+            agent: {
+              build: { permission: { task: { '*': 'deny', 'flowguard-reviewer': 'allow' } } },
+            },
           }),
         ),
         opencodeCurrentContent: JSON.stringify({}),

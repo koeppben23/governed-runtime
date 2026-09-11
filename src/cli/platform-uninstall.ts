@@ -10,11 +10,7 @@ import { dirname, join, relative } from 'node:path';
 import type { FileOp, InstallScope } from './install-helpers.js';
 import { resolveClaudeCodePluginRoot } from './claude-code-plugin-install.js';
 import { resolveCodexMarketplacePath, resolveCodexPluginRoot } from './codex-plugin-install.js';
-import {
-  CODEX_PLUGIN_NAME,
-  claudeCodePluginFiles,
-  codexPluginFiles,
-} from './templates.js';
+import { CODEX_PLUGIN_NAME, claudeCodePluginFiles, codexPluginFiles } from './templates.js';
 import { ensureDir } from '../adapters/persistence.js';
 
 interface CodexMarketplaceEntry {
@@ -59,10 +55,7 @@ async function collectFiles(root: string, current = root): Promise<string[]> {
   return files.sort();
 }
 
-async function pluginTreeMatches(
-  root: string,
-  expected: Record<string, string>,
-): Promise<boolean> {
+async function pluginTreeMatches(root: string, expected: Record<string, string>): Promise<boolean> {
   const actualFiles = await collectFiles(root);
   const expectedFiles = Object.keys(expected).sort();
   if (actualFiles.length !== expectedFiles.length) return false;
@@ -166,7 +159,9 @@ async function removeCodexMarketplaceEntry(scope: InstallScope): Promise<FileOp>
       return { path: marketplacePath, action: 'skipped', reason: 'no plugins array' };
     }
 
-    const matching = marketplace.plugins.filter((entry) => isFlowGuardMarketplaceEntry(entry, scope));
+    const matching = marketplace.plugins.filter((entry) =>
+      isFlowGuardMarketplaceEntry(entry, scope),
+    );
     if (matching.length === 0) {
       return {
         path: marketplacePath,
@@ -206,7 +201,11 @@ async function removeCodexMarketplaceEntry(scope: InstallScope): Promise<FileOp>
       throw err;
     }
 
-    return { path: marketplacePath, action: 'merged', reason: 'removed exact FlowGuard Codex entry' };
+    return {
+      path: marketplacePath,
+      action: 'merged',
+      reason: 'removed exact FlowGuard Codex entry',
+    };
   } catch (err) {
     if (isErrno(err, 'ENOENT')) return { path: marketplacePath, action: 'not_found' };
     throw err;

@@ -78,7 +78,11 @@ async function checkMandatesDigest(target: string, checks: DoctorCheck[]): Promi
   const fileBody = extractManagedBody(mandatesContent);
 
   if (!fileDigest) {
-    checks.push({ file: mandatesPath, status: 'error', detail: 'managed header found but no digest' });
+    checks.push({
+      file: mandatesPath,
+      status: 'error',
+      detail: 'managed header found but no digest',
+    });
   } else if (fileDigest !== expectedDigest) {
     checks.push({
       file: mandatesPath,
@@ -285,35 +289,46 @@ function checkDesktopTaskHardening(
   path: string,
   checks: DoctorCheck[],
 ): void {
-  const hasPluginField = Object.prototype.hasOwnProperty.call(parsed, 'plugin');
-  const hasDesktopInstructions = hasNonFlowGuardInstructions(instructions);
+  const taskPerms = resolveDesktopTaskPermissions(parsed);
+  if (!requiresDesktopTaskHardeningCheck(parsed, instructions, taskPerms)) return;
+
+  const detail = desktopTaskHardeningWarning(taskPerms);
+  if (detail) checks.push({ file: path, status: 'warn', detail });
+}
+
+function resolveDesktopTaskPermissions(
+  parsed: Record<string, unknown>,
+): Record<string, unknown> | undefined {
   const agent = parsed['agent'] as Record<string, unknown> | undefined;
   const buildPerms = (agent?.['build'] as Record<string, unknown> | undefined)?.['permission'] as
     Record<string, unknown> | undefined;
-  const taskPerms = buildPerms?.['task'] as Record<string, unknown> | undefined;
-  const hasTaskConfig = taskPerms !== undefined && Object.keys(taskPerms).length > 0;
-  if (!hasPluginField && !hasDesktopInstructions && !hasTaskConfig) return;
+  return buildPerms?.['task'] as Record<string, unknown> | undefined;
+}
 
-  if (hasTaskConfig && taskPerms?.[REVIEWER_SUBAGENT_TYPE] !== 'allow') {
-    checks.push({
-      file: path,
-      status: 'warn',
-      detail:
-        'FlowGuard task hardening is incomplete: customer-owned OpenCode task permissions do not explicitly allow flowguard-reviewer; FlowGuard preserves customer permissions, so independent reviewer execution may be blocked',
-    });
-    return;
+function requiresDesktopTaskHardeningCheck(
+  parsed: Record<string, unknown>,
+  instructions: string[],
+  taskPerms: Record<string, unknown> | undefined,
+): boolean {
+  const hasPluginField = Object.prototype.hasOwnProperty.call(parsed, 'plugin');
+  const hasDesktopInstructions = hasNonFlowGuardInstructions(instructions);
+  const hasTaskConfig = taskPerms !== undefined && Object.keys(taskPerms).length > 0;
+  return hasPluginField || hasDesktopInstructions || hasTaskConfig;
+}
+
+function desktopTaskHardeningWarning(
+  taskPerms: Record<string, unknown> | undefined,
+): string | null {
+  const hasTaskConfig = taskPerms !== undefined && Object.keys(taskPerms).length > 0;
+  if (hasTaskConfig && taskPerms[REVIEWER_SUBAGENT_TYPE] !== 'allow') {
+    return 'FlowGuard task hardening is incomplete: customer-owned OpenCode task permissions do not explicitly allow flowguard-reviewer; FlowGuard preserves customer permissions, so independent reviewer execution may be blocked';
   }
 
   const hasTaskHardening =
     taskPerms?.['*'] === 'deny' && taskPerms?.[REVIEWER_SUBAGENT_TYPE] === 'allow';
-  if (!hasTaskHardening) {
-    checks.push({
-      file: path,
-      status: 'warn',
-      detail:
-        'FlowGuard task hardening is not active for this customer-owned OpenCode config; installer intentionally preserves customer task permissions',
-    });
-  }
+  return hasTaskHardening
+    ? null
+    : 'FlowGuard task hardening is not active for this customer-owned OpenCode config; installer intentionally preserves customer task permissions';
 }
 
 async function checkWorkspaceConfig(
@@ -450,7 +465,9 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
   if (installPlatform === 'opencode') {
     checks.push(...(await checkManagedArtifacts(target)));
   } else {
-    checks.push(...(await checkPlatformPluginArtifacts(installPlatform, args.installScope, target)));
+    checks.push(
+      ...(await checkPlatformPluginArtifacts(installPlatform, args.installScope, target)),
+    );
   }
   checks.push(...(await checkDependencies(target)));
   if (installPlatform === 'opencode') {
@@ -476,7 +493,9 @@ async function checkPlatformPluginArtifacts(
 ): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
   const pluginRoot =
-    platform === 'claude-code' ? resolveClaudeCodePluginRoot(target) : resolveCodexPluginRoot(scope);
+    platform === 'claude-code'
+      ? resolveClaudeCodePluginRoot(target)
+      : resolveCodexPluginRoot(scope);
   const requiredFiles =
     platform === 'claude-code'
       ? [

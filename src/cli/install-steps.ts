@@ -394,7 +394,8 @@ export async function writeArtifacts(
     }
     const revOp = await writeIfAbsent(reviewerPath, reviewerDefinition.content, args.force);
     ctx.ops.push(revOp);
-    if (revOp.action !== 'skipped') journal.record(findPreState(snapshot.preStateEntries, reviewerPath));
+    if (revOp.action !== 'skipped')
+      journal.record(findPreState(snapshot.preStateEntries, reviewerPath));
   }
 }
 

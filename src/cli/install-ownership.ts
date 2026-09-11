@@ -36,9 +36,7 @@ const InstallOwnershipManifestSchema = z
 export type InstallOwnershipManifest = z.infer<typeof InstallOwnershipManifestSchema>;
 
 type ExistingManifestState =
-  | { kind: 'absent' }
-  | { kind: 'valid'; manifest: InstallOwnershipManifest }
-  | { kind: 'invalid' };
+  { kind: 'absent' } | { kind: 'valid'; manifest: InstallOwnershipManifest } | { kind: 'invalid' };
 
 interface DeriveOwnershipInput {
   platform: InstallPlatform;
@@ -103,7 +101,9 @@ function taskPermissions(parsed: Record<string, unknown> | null): Record<string,
 
 function instructions(parsed: Record<string, unknown> | null): string[] {
   const value = parsed?.['instructions'];
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
 }
 
 /**
@@ -125,7 +125,9 @@ export function assertNoAmbiguousLegacyInstruction(input: {
   );
 }
 
-function derivePackageOwnership(input: DeriveOwnershipInput): InstallOwnershipManifest['packageJson'] {
+function derivePackageOwnership(
+  input: DeriveOwnershipInput,
+): InstallOwnershipManifest['packageJson'] {
   const previousDeps = parsedDependencies(input.packageJsonOriginalContent);
   const created = !input.packageJsonExisted;
   const zodAdded = created || previousDeps === null || !('zod' in previousDeps);

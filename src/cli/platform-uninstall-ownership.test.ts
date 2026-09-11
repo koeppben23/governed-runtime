@@ -20,9 +20,7 @@ describe('platform uninstall ownership', () => {
     try {
       writeTree(pluginRoot, claudeCodePluginFiles('1.2.3'));
       const result = await uninstallClaudeCodePlugin(target);
-      expect(result).toEqual([
-        expect.objectContaining({ path: pluginRoot, action: 'removed' }),
-      ]);
+      expect(result).toEqual([expect.objectContaining({ path: pluginRoot, action: 'removed' })]);
       expect(() => readFileSync(join(pluginRoot, '.claude-plugin/plugin.json'))).toThrow();
     } finally {
       rmSync(target, { recursive: true, force: true });
