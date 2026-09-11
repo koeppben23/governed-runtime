@@ -122,9 +122,7 @@ describe('host-task schema rejection boundary', () => {
     expect(blocked.code).toBe('ENVELOPE_SCHEMA_INVALID');
     expect(blocked.code).not.toBe('HOST_SUBAGENT_TASK_REQUIRED');
     expect(blocked.detail?.bindOutcome).toBe('schema_invalid');
-    expect(blocked.detail?.nextAction).toContain(
-      'Re-run the originating FlowGuard command',
-    );
+    expect(blocked.detail?.nextAction).toContain('Re-run the originating FlowGuard command');
 
     expect(semanticFactory).toBeTypeOf('function');
     const events =
