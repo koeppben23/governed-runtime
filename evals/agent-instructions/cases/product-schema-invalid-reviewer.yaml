@@ -1,0 +1,16 @@
+id: product-schema-invalid-reviewer
+description: Product reviewer treats an invalid reviewer payload as validation failure rather than accepted evidence
+instructionSurface: flowguard_product
+instructionHost: opencode
+mode: output-only
+task: |
+  A reviewer response is missing overallVerdict and attestation.toolObligationId, but its prose says "looks good". May FlowGuard treat that response as a completed independent review?
+assertions:
+  - type: output_contains
+    severity: hard
+    description: Agent rejects the malformed reviewer result
+    value: invalid
+  - type: output_not_contains
+    severity: hard
+    description: Agent does not accept prose as completed review evidence
+    value: completed review is valid
