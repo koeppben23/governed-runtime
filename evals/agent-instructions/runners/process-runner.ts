@@ -72,14 +72,24 @@ function sha256(buf: Buffer): string {
   return createHash('sha256').update(buf).digest('hex');
 }
 
-export function snapshotWorkspace(root: string): {
+export interface WorkspaceObservation {
   entries: WorkspaceSnapshot;
   contents: Map<string, string>;
-} {
+  errors: string[];
+}
+
+export function snapshotWorkspace(root: string): WorkspaceObservation {
   const entries: WorkspaceSnapshot = new Map();
   const contents = new Map<string, string>();
-  walk(root, '', entries, contents);
-  return { entries, contents };
+  const errors: string[] = [];
+  walk(root, '', entries, contents, errors);
+  return { entries, contents, errors };
+}
+
+function observeError(errors: string[], operation: string, relPath: string, error: unknown): void {
+  errors.push(
+    `${operation} ${relPath || '.'}: ${error instanceof Error ? error.message : String(error)}`,
+  );
 }
 
 function walk(
@@ -87,12 +97,14 @@ function walk(
   relDir: string,
   entries: WorkspaceSnapshot,
   contents: Map<string, string>,
+  errors: string[],
 ): void {
   const fullDir = join(root, relDir);
   let dirents: ReturnType<typeof readdirSync>;
   try {
     dirents = readdirSync(fullDir);
-  } catch {
+  } catch (error) {
+    observeError(errors, 'readdir', relDir, error);
     return;
   }
 
@@ -104,12 +116,13 @@ function walk(
     let stat;
     try {
       stat = lstatSync(fullPath);
-    } catch {
+    } catch (error) {
+      observeError(errors, 'lstat', relPath, error);
       continue;
     }
     if (stat.isSymbolicLink()) continue;
     if (stat.isDirectory()) {
-      walk(root, relPath, entries, contents);
+      walk(root, relPath, entries, contents, errors);
       continue;
     }
     if (!stat.isFile()) continue;
@@ -119,8 +132,8 @@ function walk(
       const snapshotPath = relPath.split(sep).join('/');
       entries.set(snapshotPath, { sha256: sha256(buf), bytes: buf.length });
       contents.set(snapshotPath, buf.toString('utf-8'));
-    } catch {
-      // Snapshotting is best-effort for unreadable files; assertions cannot rely on absent content.
+    } catch (error) {
+      observeError(errors, 'read', relPath, error);
     }
   }
 }
@@ -163,6 +176,23 @@ function outcomeMetadata(
   return {
     instructionSurface,
     ...(instructionHost ? { instructionHost } : {}),
+  };
+}
+
+function observationFailure(
+  phase: 'before' | 'after',
+  errors: readonly string[],
+  metadata: ReturnType<typeof outcomeMetadata>,
+  stdout = '',
+  stderr = '',
+): RunnerErrorOutcome {
+  return {
+    status: 'runner_error',
+    errorKind: 'workspace',
+    message: `Workspace ${phase}-snapshot could not be observed completely: ${errors.join('; ')}`,
+    stdout,
+    stderr,
+    ...metadata,
   };
 }
 
@@ -298,6 +328,11 @@ export async function runProcess(
   }
 
   const before = snapshotWorkspace(workspaceRoot);
+  if (before.errors.length > 0) {
+    cleanup();
+    return observationFailure('before', before.errors, metadata);
+  }
+
   const resolvedArgs = config.args.map((arg) =>
     arg.replaceAll('{repoRoot}', repoRoot).replaceAll('{workspaceRoot}', workspaceRoot),
   );
@@ -390,6 +425,10 @@ export async function runProcess(
       }
 
       const after = snapshotWorkspace(workspaceRoot);
+      if (after.errors.length > 0) {
+        finish(observationFailure('after', after.errors, metadata, stdout, stderrOut));
+        return;
+      }
       finish({
         status: 'completed',
         exitCode: code ?? -1,
