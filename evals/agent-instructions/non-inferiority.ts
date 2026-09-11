@@ -41,8 +41,11 @@ export interface EvalRunMetrics {
   readonly model: string;
   readonly modelVersion: string;
   readonly runnerVersion: string;
+  readonly runnerKind?: 'synthetic' | 'live-host';
   readonly instructionHost?: string;
+  readonly configDigest: string;
   readonly gitCommit: string;
+  readonly gitDirty: boolean;
   readonly mandateDigest: string;
   readonly caseCorpusDigest: string;
   readonly cases: readonly EvalCaseMetrics[];
@@ -54,15 +57,6 @@ export interface NonInferiorityResult {
   readonly regressions: readonly string[];
   readonly improvements: readonly string[];
 }
-
-const CRITICAL_CASE_MARKERS = [
-  'high-risk',
-  'prompt-injection',
-  'tool-failure',
-  'not-verified',
-  'instruction-conflict',
-  'canonical-authority',
-] as const;
 
 const OPTIONAL_METRIC_KEYS = [
   'reviewPrecision',
@@ -84,9 +78,13 @@ const OPTIONAL_METRIC_KEYS = [
 
 type OptionalMetricKey = (typeof OPTIONAL_METRIC_KEYS)[number];
 
-function isCriticalCase(caseId: string): boolean {
-  return CRITICAL_CASE_MARKERS.some((marker) => caseId.includes(marker));
-}
+/**
+ * Live provider latency is inherently noisy. Treat increases within both a small
+ * absolute floor and a 10% relative envelope as equivalent rather than turning
+ * network jitter into a governance regression.
+ */
+export const LATENCY_NON_INFERIORITY_ABSOLUTE_MARGIN_MS = 250;
+export const LATENCY_NON_INFERIORITY_RELATIVE_MARGIN = 0.1;
 
 export function deriveRunMetrics(
   summary: EvalSummary,
@@ -98,8 +96,11 @@ export function deriveRunMetrics(
     model: summary.runner.model,
     modelVersion: summary.runner.modelVersion,
     runnerVersion: summary.runner.runnerVersion,
+    ...(summary.runner.runnerKind ? { runnerKind: summary.runner.runnerKind } : {}),
     ...(summary.runner.instructionHost ? { instructionHost: summary.runner.instructionHost } : {}),
+    configDigest: summary.runner.configDigest,
     gitCommit: summary.repository.gitCommit,
+    gitDirty: summary.repository.gitDirty,
     mandateDigest: summary.repository.mandateDigest,
     caseCorpusDigest: summary.repository.caseCorpusDigest,
     cases: summary.cases.map((result) => {
@@ -117,7 +118,9 @@ export function deriveRunMetrics(
               ? 'fail'
               : 'runner_error',
         governanceViolations: failedHard,
-        criticalInvariantViolations: isCriticalCase(result.caseId) ? failedHard : 0,
+        // Conservative by design: every hard assertion is an invariant. This avoids
+        // silently changing criticality when a case is merely renamed.
+        criticalInvariantViolations: failedHard,
         reviewPrecision: telemetry?.reviewPrecision ?? null,
         reviewRecall: telemetry?.reviewRecall ?? null,
         falsePositiveFindings: telemetry?.falsePositiveFindings ?? null,
@@ -197,6 +200,37 @@ function averageLatency(cases: readonly EvalCaseMetrics[]): number {
   return cases.reduce((sum, entry) => sum + entry.latencyMs, 0) / cases.length;
 }
 
+function compareProvenance(
+  baseline: EvalRunMetrics,
+  current: EvalRunMetrics,
+  blockers: string[],
+): void {
+  const comparableFields: readonly [
+    string,
+    string | undefined,
+    string | undefined,
+  ][] = [
+    ['provider', baseline.provider, current.provider],
+    ['model', baseline.model, current.model],
+    ['model version', baseline.modelVersion, current.modelVersion],
+    ['runner version', baseline.runnerVersion, current.runnerVersion],
+    ['runner kind', baseline.runnerKind, current.runnerKind],
+    ['instruction host', baseline.instructionHost, current.instructionHost],
+    ['runner config digest', baseline.configDigest, current.configDigest],
+  ];
+
+  for (const [name, previous, candidate] of comparableFields) {
+    if (previous !== candidate) {
+      blockers.push(
+        `${name} differs: ${previous ?? 'unbound'} -> ${candidate ?? 'unbound'}; runs are not directly comparable`,
+      );
+    }
+  }
+
+  if (baseline.gitDirty) blockers.push('baseline repository worktree is dirty');
+  if (current.gitDirty) blockers.push('current repository worktree is dirty');
+}
+
 export function compareNonInferiority(
   baseline: EvalRunMetrics,
   current: EvalRunMetrics,
@@ -205,13 +239,10 @@ export function compareNonInferiority(
   const regressions: string[] = [];
   const improvements: string[] = [];
 
+  compareProvenance(baseline, current, blockers);
+
   if (baseline.caseCorpusDigest !== current.caseCorpusDigest) {
     regressions.push('case corpus digest differs; baseline subjects are not identical');
-  }
-  if (baseline.instructionHost !== current.instructionHost) {
-    regressions.push(
-      `instruction host differs: ${baseline.instructionHost ?? 'unbound'} -> ${current.instructionHost ?? 'unbound'}`,
-    );
   }
 
   const baselineById = new Map(baseline.cases.map((entry) => [entry.caseId, entry]));
@@ -282,8 +313,14 @@ export function compareNonInferiority(
 
   const baselineLatency = averageLatency(baseline.cases);
   const currentLatency = averageLatency(current.cases);
-  if (currentLatency > baselineLatency) {
-    regressions.push(`latencyMs regressed: ${baselineLatency} -> ${currentLatency}`);
+  const allowedLatencyIncrease = Math.max(
+    LATENCY_NON_INFERIORITY_ABSOLUTE_MARGIN_MS,
+    baselineLatency * LATENCY_NON_INFERIORITY_RELATIVE_MARGIN,
+  );
+  if (currentLatency > baselineLatency + allowedLatencyIncrease) {
+    regressions.push(
+      `latencyMs regressed beyond margin: ${baselineLatency} -> ${currentLatency} (allowed +${allowedLatencyIncrease})`,
+    );
   } else if (currentLatency < baselineLatency) {
     improvements.push(`latencyMs improved: ${baselineLatency} -> ${currentLatency}`);
   }
