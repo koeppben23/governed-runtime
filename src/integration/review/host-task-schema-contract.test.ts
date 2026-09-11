@@ -43,7 +43,9 @@ describe('host-task reviewer serialization contract', () => {
     });
 
     expect(prompt).toContain('challenges belong in the top-level challenges array');
-    expect(prompt).toContain('never invent wrapper objects such as nonBlockingIssues or designChallenges');
+    expect(prompt).toContain(
+      'never invent wrapper objects such as nonBlockingIssues or designChallenges',
+    );
     expect(REVIEW_FINDINGS_JSON_SCHEMA.properties).toHaveProperty('challenges');
     expect(REVIEW_FINDINGS_JSON_SCHEMA.properties).not.toHaveProperty('nonBlockingIssues');
   });
