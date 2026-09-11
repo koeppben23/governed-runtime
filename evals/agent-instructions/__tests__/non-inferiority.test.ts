@@ -51,6 +51,7 @@ function summary(verdict: 'PASS' | 'FAIL' = 'PASS'): EvalSummary {
         caseId: 'product-not-verified',
         instructionSurface: 'flowguard_product',
         instructionHost: 'opencode',
+        assuranceTags: ['not_verified_handling'],
         verdict,
         durationMs: 10,
         assertionResults: [
@@ -86,6 +87,11 @@ function completeTelemetry(): RunnerCaseMetrics {
   };
 }
 
+const TRUSTED = {
+  telemetryTrust: 'trusted_observer' as const,
+  seedAssurance: 'provider_confirmed' as const,
+};
+
 describe('non-inferiority gate', () => {
   it('fails when a previously passing critical case regresses', () => {
     const result = compareNonInferiority(
@@ -95,6 +101,7 @@ describe('non-inferiority gate', () => {
     expect(result.verdict).toBe('FAIL');
     expect(result.regressions.join('\n')).toContain('correctness regressed');
     expect(result.regressions.join('\n')).toContain('critical invariant violations increased');
+    expect(result.regressions.join('\n')).toContain('NOT_VERIFIED handling regressed');
   });
 
   it('does not claim PASS when provider-dependent metrics are unavailable', () => {
@@ -107,10 +114,22 @@ describe('non-inferiority gate', () => {
     expect(result.blockers).toContain('inputTokens comparison is unavailable');
   });
 
-  it('passes when all required telemetry is measured with identical coverage and no regressions', () => {
+  it('does not trust runner self-reported telemetry or requested-only seeds', () => {
     const telemetry = new Map([['product-not-verified', completeTelemetry()]]);
     const baseline = deriveRunMetrics(summary('PASS'), telemetry);
     const current = deriveRunMetrics(summary('PASS'), telemetry);
+    const result = compareNonInferiority(baseline, current);
+    expect(result.verdict).toBe('NOT_VERIFIED');
+    expect(result.blockers).toContain(
+      'optional metrics are runner self-reports rather than trusted host/provider observations',
+    );
+    expect(result.blockers.join('\n')).toContain('effective provider seed is not independently confirmed');
+  });
+
+  it('passes only when telemetry and effective seed are independently trusted', () => {
+    const telemetry = new Map([['product-not-verified', completeTelemetry()]]);
+    const baseline = deriveRunMetrics(summary('PASS'), telemetry, TRUSTED);
+    const current = deriveRunMetrics(summary('PASS'), telemetry, TRUSTED);
     const result = compareNonInferiority(baseline, current);
     expect(result).toEqual({ verdict: 'PASS', blockers: [], regressions: [], improvements: [] });
   });
@@ -119,31 +138,31 @@ describe('non-inferiority gate', () => {
     const baseline = deriveRunMetrics(
       summary('PASS'),
       new Map([['product-not-verified', completeTelemetry()]]),
+      TRUSTED,
     );
-    const current = deriveRunMetrics(summary('PASS'));
+    const current = deriveRunMetrics(summary('PASS'), new Map(), TRUSTED);
     const result = compareNonInferiority(baseline, current);
     expect(result.verdict).toBe('NOT_VERIFIED');
     expect(result.blockers).toContain('reviewPrecision comparison is unavailable');
   });
 
-  it('fails comparison when subjects/corpus differ', () => {
+  it('treats different subjects/corpus as incomparable rather than a regression', () => {
     const baseline = deriveRunMetrics(summary('PASS'));
     const current = {
       ...deriveRunMetrics(summary('PASS')),
       caseCorpusDigest: 'e'.repeat(64),
     };
     const result = compareNonInferiority(baseline, current);
-    expect(result.verdict).toBe('FAIL');
-    expect(result.regressions).toContain(
-      'case corpus digest differs; baseline subjects are not identical',
-    );
+    expect(result.verdict).toBe('NOT_VERIFIED');
+    expect(result.regressions).toEqual([]);
+    expect(result.blockers).toContain('case corpus digest differs; baseline subjects are not identical');
   });
 
   it('blocks comparison when provider/model/runner provenance differs', () => {
     const telemetry = new Map([['product-not-verified', completeTelemetry()]]);
-    const baseline = deriveRunMetrics(summary('PASS'), telemetry);
+    const baseline = deriveRunMetrics(summary('PASS'), telemetry, TRUSTED);
     const current = {
-      ...deriveRunMetrics(summary('PASS'), telemetry),
+      ...deriveRunMetrics(summary('PASS'), telemetry, TRUSTED),
       modelVersion: '2',
     };
     const result = compareNonInferiority(baseline, current);
@@ -153,8 +172,8 @@ describe('non-inferiority gate', () => {
 
   it('blocks comparison when deterministic seeds differ or are absent', () => {
     const telemetry = new Map([['product-not-verified', completeTelemetry()]]);
-    const baseline = deriveRunMetrics(summary('PASS'), telemetry);
-    const current = { ...deriveRunMetrics(summary('PASS'), telemetry), seed: 'seed-99' };
+    const baseline = deriveRunMetrics(summary('PASS'), telemetry, TRUSTED);
+    const current = { ...deriveRunMetrics(summary('PASS'), telemetry, TRUSTED), seed: 'seed-99' };
     const mismatch = compareNonInferiority(baseline, current);
     expect(mismatch.verdict).toBe('NOT_VERIFIED');
     expect(mismatch.blockers.join('\n')).toContain('seed differs');
@@ -169,8 +188,8 @@ describe('non-inferiority gate', () => {
 
   it('blocks assurance comparison when either repository worktree is dirty', () => {
     const telemetry = new Map([['product-not-verified', completeTelemetry()]]);
-    const baseline = deriveRunMetrics(summary('PASS'), telemetry);
-    const current = { ...deriveRunMetrics(summary('PASS'), telemetry), gitDirty: true };
+    const baseline = deriveRunMetrics(summary('PASS'), telemetry, TRUSTED);
+    const current = { ...deriveRunMetrics(summary('PASS'), telemetry, TRUSTED), gitDirty: true };
     const result = compareNonInferiority(baseline, current);
     expect(result.verdict).toBe('NOT_VERIFIED');
     expect(result.blockers).toContain('current repository worktree is dirty');
@@ -178,22 +197,17 @@ describe('non-inferiority gate', () => {
 
   it('tolerates small latency jitter but fails material latency regression', () => {
     const telemetry = new Map([['product-not-verified', completeTelemetry()]]);
-    const baseline = deriveRunMetrics(summary('PASS'), telemetry);
+    const baseline = deriveRunMetrics(summary('PASS'), telemetry, TRUSTED);
+    const currentMetrics = deriveRunMetrics(summary('PASS'), telemetry, TRUSTED);
     const withinMargin = {
-      ...deriveRunMetrics(summary('PASS'), telemetry),
-      cases: deriveRunMetrics(summary('PASS'), telemetry).cases.map((entry) => ({
-        ...entry,
-        latencyMs: 200,
-      })),
+      ...currentMetrics,
+      cases: currentMetrics.cases.map((entry) => ({ ...entry, latencyMs: 200 })),
     };
     expect(compareNonInferiority(baseline, withinMargin).verdict).toBe('PASS');
 
     const beyondMargin = {
-      ...deriveRunMetrics(summary('PASS'), telemetry),
-      cases: deriveRunMetrics(summary('PASS'), telemetry).cases.map((entry) => ({
-        ...entry,
-        latencyMs: 400,
-      })),
+      ...currentMetrics,
+      cases: currentMetrics.cases.map((entry) => ({ ...entry, latencyMs: 400 })),
     };
     const result = compareNonInferiority(baseline, beyondMargin);
     expect(result.verdict).toBe('FAIL');
