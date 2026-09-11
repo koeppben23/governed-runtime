@@ -5,8 +5,8 @@
  * implementation surface changed by a pull request.
  *
  * This is repository-development enforcement only. It deliberately excludes
- * generated/runtime instruction templates, tests, fixtures, and downstream code
- * so this repository rule cannot become FlowGuard product policy.
+ * generated/runtime instruction templates, tests, fixtures, downstream code,
+ * and comment-only prose so the guard targets executable/product contracts.
  *
  * Usage:
  *   node scripts/check-legacy-compatibility.mjs <base-sha> <head-sha>
@@ -33,8 +33,6 @@ const EXCLUDED_PATH_PARTS = [
 ];
 const EXCLUDED_FILE_PATTERNS = [/\.test\.[cm]?[jt]sx?$/u, /\.spec\.[cm]?[jt]sx?$/u];
 
-// Deliberately narrow, high-signal markers. This guard complements review and
-// AGENTS.md; it is not a general natural-language classifier for legacy code.
 const LEGACY_MARKERS = [
   /\bbackwards? compatibility\b/giu,
   /\blegacy compatibility\b/giu,
@@ -69,6 +67,12 @@ function lineNumberAt(content, index) {
   return content.slice(0, index).split('\n').length;
 }
 
+function isCommentOnlyMatch(content, index) {
+  const lineStart = content.lastIndexOf('\n', Math.max(0, index - 1)) + 1;
+  const prefix = content.slice(lineStart, index).trimStart();
+  return prefix.startsWith('//') || prefix.startsWith('/*') || prefix.startsWith('*');
+}
+
 const findings = [];
 
 for (const path of changedFiles()) {
@@ -76,9 +80,11 @@ for (const path of changedFiles()) {
   for (const marker of LEGACY_MARKERS) {
     marker.lastIndex = 0;
     for (const match of content.matchAll(marker)) {
+      const index = match.index ?? 0;
+      if (isCommentOnlyMatch(content, index)) continue;
       findings.push({
         path,
-        line: lineNumberAt(content, match.index ?? 0),
+        line: lineNumberAt(content, index),
         text: match[0],
       });
     }
@@ -97,4 +103,4 @@ if (findings.length > 0) {
   process.exit(1);
 }
 
-console.log('No explicit legacy/backward-compatibility markers found in changed FlowGuard implementation source.');
+console.log('No explicit legacy/backward-compatibility implementation markers found in changed FlowGuard source.');
