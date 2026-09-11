@@ -1,5 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const SCHEMA_ERROR =
+  'nonBlockingIssues.designChallenges: Unrecognized keys: "nonBlockingIssues", "designChallenges"';
+const SCHEMA_FINGERPRINT = 'f'.repeat(64);
+
+type SemanticFactory = (
+  state: { phase: string },
+  occurredAt: string,
+) => readonly Record<string, unknown>[];
+
 const mocks = vi.hoisted(() => ({
   readState: vi.fn(),
   buildHostTaskEvidence: vi.fn(),
@@ -34,7 +43,7 @@ vi.mock('./review/enforcement/rejection-policy.js', () => ({
     outcome === 'schema_invalid' ? 'schema_invalid' : null,
 }));
 vi.mock('./review/schema-error-fingerprint.js', () => ({
-  schemaErrorFingerprintOf: () => 'f'.repeat(64),
+  schemaErrorFingerprintOf: () => SCHEMA_FINGERPRINT,
 }));
 
 import { handleHostTaskEvidence } from './plugin-task-evidence.js';
@@ -69,14 +78,12 @@ describe('host-task schema rejection boundary', () => {
       bindOutcome: 'schema_invalid',
       diagnostic: {
         message: 'Reviewer output failed schema validation before binding',
-        schemaErrors: [
-          'nonBlockingIssues.designChallenges: Unrecognized keys: "nonBlockingIssues", "designChallenges"',
-        ],
+        schemaErrors: [SCHEMA_ERROR],
         schemaIssueKeys: [
           {
             path: 'nonBlockingIssues.designChallenges',
             code: 'unrecognized_keys',
-            message: 'Unrecognized keys: "nonBlockingIssues", "designChallenges"',
+            message: SCHEMA_ERROR,
           },
         ],
       },
@@ -84,9 +91,7 @@ describe('host-task schema rejection boundary', () => {
   });
 
   it('classifies schema-invalid reviewer output and audits the rejection', async () => {
-    let semanticFactory:
-      | ((state: { phase: string }, occurredAt: string) => readonly Record<string, unknown>[])
-      | undefined;
+    let semanticFactory: SemanticFactory | undefined;
     const ws = {
       getSessionDir: () => '/session',
       getEnforcementState: () => ({}),
@@ -94,7 +99,7 @@ describe('host-task schema rejection boundary', () => {
         async (
           _dir: string,
           update: (state: Record<string, unknown>) => Record<string, unknown>,
-          semantic?: typeof semanticFactory,
+          semantic?: SemanticFactory,
         ) => {
           update({ phase: 'PLAN', reviewAssurance: assuranceState() });
           semanticFactory = semantic;
@@ -135,10 +140,9 @@ describe('host-task schema rejection boundary', () => {
           attemptId: ATTEMPT.attemptId,
           bindOutcome: 'schema_invalid',
           rejectionReason: 'schema_invalid',
-          schemaErrorFingerprint: 'f'.repeat(64),
+          schemaErrorFingerprint: SCHEMA_FINGERPRINT,
         }),
       }),
     ]);
   });
 });
-
