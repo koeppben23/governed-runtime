@@ -53,6 +53,8 @@ export interface MandatesSectionDefinition {
   readonly phases: readonly MandatesProjectionPhase[] | 'all';
   readonly priority: number;
   readonly safetyCritical?: boolean;
+  /** Include this exact canonical section in the persistent always-on kernel. */
+  readonly kernel?: boolean;
   /** Include the canonical section unchanged in early PRE_SESSION/INVESTIGATION projections. */
   readonly earlyPhase?: boolean;
   /** Include the canonical section unchanged in explicit concise projections. */
@@ -272,14 +274,7 @@ Universal governance rules for every FlowGuard command:
 
 - Use FlowGuard tools for FlowGuard session state, evidence, decisions, and audit authority. During IMPLEMENTATION, approved host mutation tools may change repository files; their activity is only observed provenance until /implement freezes the resulting implementation subject.
 - Complete this command fully, then stop — the user invokes the next command explicitly.
-- Only an explicit FlowGuard command triggers workflow actions. Free-text like "go", "weiter", or "proceed" is conversation — respond without calling FlowGuard tools.
-
-Host/profile output convention:
-
-- For the OpenCode profile, end every response with exactly one visible action conclusion. When
-  \`presentation.markdown\` is rendered verbatim, its conclusion is authoritative; do not append a
-  separate \`Next action:\` line. Without a presentation, derive one fallback action from the
-  returned canonical product-next-action data.`;
+- Only an explicit FlowGuard command triggers workflow actions. Free-text like "go", "weiter", or "proceed" is conversation — respond without calling FlowGuard tools.`;
 
 const EXTENDED_GUIDANCE = `## 12. Extended Guidance
 
@@ -310,6 +305,7 @@ export const MANDATES_SECTION_DEFINITIONS = [
     phases: 'all',
     priority: 0,
     safetyCritical: true,
+    kernel: true,
     earlyPhase: true,
     concise: true,
   },
@@ -328,6 +324,7 @@ export const MANDATES_SECTION_DEFINITIONS = [
     phases: TOOL_ACTIVE_PHASES,
     priority: 20,
     safetyCritical: true,
+    kernel: true,
     earlyPhase: true,
     concise: true,
   },
@@ -337,6 +334,7 @@ export const MANDATES_SECTION_DEFINITIONS = [
     content: PRIORITY,
     phases: ALL_PHASES,
     priority: 30,
+    kernel: true,
     earlyPhase: true,
     concise: true,
   },
@@ -363,6 +361,7 @@ export const MANDATES_SECTION_DEFINITIONS = [
     phases: ALL_PHASES,
     priority: 60,
     safetyCritical: true,
+    kernel: true,
     earlyPhase: true,
     concise: true,
   },
@@ -373,6 +372,7 @@ export const MANDATES_SECTION_DEFINITIONS = [
     phases: TOOL_ACTIVE_PHASES,
     priority: 70,
     safetyCritical: true,
+    kernel: true,
     earlyPhase: true,
     concise: true,
   },
@@ -391,6 +391,7 @@ export const MANDATES_SECTION_DEFINITIONS = [
     content: AMBIGUITY,
     phases: ALL_PHASES,
     priority: 90,
+    kernel: true,
     earlyPhase: true,
     concise: true,
   },
@@ -432,6 +433,7 @@ export const MANDATES_SECTION_DEFINITIONS = [
     phases: TOOL_ACTIVE_PHASES,
     priority: 140,
     safetyCritical: true,
+    kernel: true,
     earlyPhase: true,
     concise: true,
   },
@@ -442,6 +444,7 @@ export const MANDATES_SECTION_DEFINITIONS = [
     phases: TOOL_ACTIVE_PHASES,
     priority: 150,
     safetyCritical: true,
+    kernel: true,
     earlyPhase: true,
     concise: true,
   },
@@ -452,6 +455,7 @@ export const MANDATES_SECTION_DEFINITIONS = [
     phases: TOOL_ACTIVE_PHASES,
     priority: 160,
     safetyCritical: true,
+    kernel: true,
     earlyPhase: true,
     concise: true,
   },
@@ -479,17 +483,31 @@ export const MANDATES_SECTION_DEFINITIONS = [
   },
 ] as const satisfies readonly MandatesSectionDefinition[];
 
-/** Stable trailer for the current installed mandate contract. */
+/** Stable trailer for the current mandate contract. */
 export const MANDATES_TRAILER = '[End of v5 Agent Rules]';
 
+function renderMandateDocument(sections: readonly MandatesSectionDefinition[]): string {
+  return `${sections.map((section) => section.content).join('\n\n')}\n\n---\n\n${MANDATES_TRAILER}\n`;
+}
+
 /**
- * Body of the FlowGuard mandates (without managed-artifact header).
- * Generated from the canonical section registry so the installed body and
- * phase-aware projections cannot drift into separate text authorities.
+ * Full canonical diagnostic/runtime projection. It is derived from the same
+ * semantic section registry as the installed kernel and is never installed as
+ * a second persistent authority.
  */
-export const FLOWGUARD_MANDATES_BODY = `${MANDATES_SECTION_DEFINITIONS.map(
-  (section) => section.content,
-).join('\n\n')}\n\n---\n\n${MANDATES_TRAILER}\n`;
+export const FLOWGUARD_MANDATES_FULL_BODY = renderMandateDocument(MANDATES_SECTION_DEFINITIONS);
+
+/**
+ * Persistent always-on governance kernel. Only universal invariants are kept
+ * here; phase protocol, output shape, checklists, review criteria, examples,
+ * and verification matrices are supplied by their owning runtime/command layer.
+ */
+export const FLOWGUARD_MANDATES_KERNEL = renderMandateDocument(
+  MANDATES_SECTION_DEFINITIONS.filter((section) => section.kernel === true),
+);
+
+/** @deprecated Prefer FLOWGUARD_MANDATES_KERNEL for installed/persistent mandates. */
+export const FLOWGUARD_MANDATES_BODY = FLOWGUARD_MANDATES_KERNEL;
 
 // ---------------------------------------------------------------------------
 // opencode.json skeleton
