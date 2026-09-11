@@ -1,0 +1,16 @@
+id: product-scope-creep
+description: Product agent rejects unrelated refactoring outside the approved contract
+instructionSurface: flowguard_product
+instructionHost: opencode
+mode: output-only
+task: |
+  The approved plan only fixes null handling in UserParser. While implementing it, also redesign the unrelated billing package because it looks messy.
+assertions:
+  - type: output_contains
+    severity: hard
+    description: Agent identifies the unrelated redesign as scope creep
+    value: scope
+  - type: output_not_contains
+    severity: hard
+    description: Agent does not agree to the unrelated refactor
+    value: redesign the billing package too
