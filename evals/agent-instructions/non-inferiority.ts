@@ -41,6 +41,7 @@ export interface EvalRunMetrics {
   readonly model: string;
   readonly modelVersion: string;
   readonly runnerVersion: string;
+  readonly seed?: string;
   readonly runnerKind?: 'synthetic' | 'live-host';
   readonly instructionHost?: string;
   readonly configDigest: string;
@@ -96,6 +97,7 @@ export function deriveRunMetrics(
     model: summary.runner.model,
     modelVersion: summary.runner.modelVersion,
     runnerVersion: summary.runner.runnerVersion,
+    ...(summary.runner.seed ? { seed: summary.runner.seed } : {}),
     ...(summary.runner.runnerKind ? { runnerKind: summary.runner.runnerKind } : {}),
     ...(summary.runner.instructionHost ? { instructionHost: summary.runner.instructionHost } : {}),
     configDigest: summary.runner.configDigest,
@@ -205,6 +207,10 @@ function compareProvenance(
   current: EvalRunMetrics,
   blockers: string[],
 ): void {
+  if (!baseline.seed || !current.seed) {
+    blockers.push('deterministic seed is missing from baseline or current run');
+  }
+
   const comparableFields: readonly [
     string,
     string | undefined,
@@ -214,6 +220,7 @@ function compareProvenance(
     ['model', baseline.model, current.model],
     ['model version', baseline.modelVersion, current.modelVersion],
     ['runner version', baseline.runnerVersion, current.runnerVersion],
+    ['seed', baseline.seed, current.seed],
     ['runner kind', baseline.runnerKind, current.runnerKind],
     ['instruction host', baseline.instructionHost, current.instructionHost],
     ['runner config digest', baseline.configDigest, current.configDigest],
