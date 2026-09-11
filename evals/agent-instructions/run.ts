@@ -136,6 +136,7 @@ export function resolveRunnerEnv(config: RunnerConfig): ResolvedEnv {
   const childEnv: NodeJS.ProcessEnv = {
     ...allowedRuntimeEnv(),
     ...(config.staticEnv ?? {}),
+    ...(config.seed ? { FLOWGUARD_EVAL_SEED: config.seed } : {}),
   };
 
   const missing: string[] = [];
@@ -316,6 +317,7 @@ function toRunnerProvenance(config: RunnerConfig): EvalRunnerProvenance {
     model: config.model,
     modelVersion: config.modelVersion,
     runnerVersion: config.runnerVersion,
+    seed: config.seed,
     runnerKind: config.runnerKind,
     instructionHost: config.instructionHost,
     staticEnv: config.staticEnv,
@@ -331,6 +333,7 @@ function toRunnerProvenance(config: RunnerConfig): EvalRunnerProvenance {
     model: config.model,
     modelVersion: config.modelVersion,
     runnerVersion: config.runnerVersion,
+    ...(config.seed ? { seed: config.seed } : {}),
     ...(config.runnerKind ? { runnerKind: config.runnerKind } : {}),
     ...(config.instructionHost ? { instructionHost: config.instructionHost } : {}),
     timeoutMs: config.timeoutMs,
@@ -444,6 +447,7 @@ export function writeReports(
     '',
     `- Provider/model: ${summary.runner.provider}/${summary.runner.model} (${summary.runner.modelVersion})`,
     `- Runner version: ${summary.runner.runnerVersion}`,
+    `- Seed: ${summary.runner.seed ?? 'unspecified'}`,
     `- Runner kind/host: ${summary.runner.runnerKind ?? 'unspecified'}/${summary.runner.instructionHost ?? 'unbound'}`,
     `- Effective timeout: ${summary.runner.timeoutMs} ms`,
     `- Runner config digest: ${summary.runner.configDigest}`,
