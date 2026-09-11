@@ -9,15 +9,6 @@ import { basename, join, resolve } from 'node:path';
 import { globalConfigPath } from '../adapters/persistence.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import {
-  COMMANDS,
-  MANDATES_FILENAME,
-  PLUGIN_WRAPPER,
-  TOOL_WRAPPER,
-  extractManagedBody,
-  extractManagedDigest,
-  isManagedArtifact,
-} from './templates.js';
-import {
   type CliArgs,
   type CliResult,
   type FileOp,
@@ -41,6 +32,15 @@ import {
   type InstallOwnershipManifest,
 } from './install-ownership.js';
 import { uninstallClaudeCodePlugin, uninstallCodexPlugin } from './platform-uninstall.js';
+import {
+  COMMANDS,
+  MANDATES_FILENAME,
+  PLUGIN_WRAPPER,
+  TOOL_WRAPPER,
+  extractManagedBody,
+  extractManagedDigest,
+  isManagedArtifact,
+} from './templates.js';
 
 function isFlowGuardVendorArtifact(entry: string): boolean {
   return FLOWGUARD_TARBALL_PATTERN.test(entry);
@@ -163,6 +163,49 @@ function isGeneratedPackageShell(parsed: Record<string, unknown>): boolean {
   );
 }
 
+function restoreCoreDependency(
+  deps: Record<string, string>,
+  pkgPath: string,
+  ownership: InstallOwnershipManifest['packageJson'] | undefined,
+  warnings: string[],
+): void {
+  const previous = ownership?.previousCoreDependency;
+  if (previous === null) {
+    delete deps['@flowguard/core'];
+    return;
+  }
+  if (typeof previous === 'string') {
+    deps['@flowguard/core'] = previous;
+    return;
+  }
+  if (typeof deps['@flowguard/core'] === 'string') {
+    warnings.push(
+      `${pkgPath}: @flowguard/core ownership predates installer provenance — preserved rather than guessed`,
+    );
+  }
+}
+
+function restorePackageDependencies(
+  parsed: Record<string, unknown>,
+  pkgPath: string,
+  ownership: InstallOwnershipManifest['packageJson'] | undefined,
+  warnings: string[],
+): void {
+  const deps = { ...((parsed['dependencies'] ?? {}) as Record<string, string>) };
+  restoreCoreDependency(deps, pkgPath, ownership, warnings);
+  if (ownership?.zodAdded === true && deps['zod'] === '^4.0.0') delete deps['zod'];
+  if (Object.keys(deps).length === 0) delete parsed['dependencies'];
+  else parsed['dependencies'] = deps;
+}
+
+function packageCleanupReason(
+  ownership: InstallOwnershipManifest['packageJson'] | undefined,
+): string {
+  return ownership
+    ? 'restored installer-owned dependency changes from provenance'
+    : 'preserved package because dependency ownership is not provable';
+}
+
 async function cleanupPackageJson(
   target: string,
   ownership: InstallOwnershipManifest | null,
@@ -174,26 +217,22 @@ async function cleanupPackageJson(
 
   try {
     const parsed = JSON.parse(pkgContent) as Record<string, unknown>;
-    const deps = { ...((parsed['dependencies'] ?? {}) as Record<string, string>) };
     const packageOwnership = ownership?.packageJson;
+    restorePackageDependencies(parsed, pkgPath, packageOwnership, warnings);
 
-    if (packageOwnership?.previousCoreDependency !== undefined) {
-      if (packageOwnership.previousCoreDependency === null) delete deps['@flowguard/core'];
-      else deps['@flowguard/core'] = packageOwnership.previousCoreDependency;
-    } else if (typeof deps['@flowguard/core'] === 'string') {
-      warnings.push(
-        `${pkgPath}: @flowguard/core ownership predates installer provenance — preserved rather than guessed`,
-      );
-    }
-
-    if (packageOwnership?.zodAdded === true && deps['zod'] === '^4.0.0') delete deps['zod'];
-
-    if (Object.keys(deps).length === 0) delete parsed['dependencies'];
-    else parsed['dependencies'] = deps;
-
-    if (packageOwnership?.created === true && isGeneratedPackageShell(parsed) && !parsed['dependencies']) {
+    const restoreAbsent =
+      packageOwnership?.created === true &&
+      isGeneratedPackageShell(parsed) &&
+      !parsed['dependencies'];
+    if (restoreAbsent) {
       await safeUnlink(pkgPath);
-      return [{ path: pkgPath, action: 'removed', reason: 'installer-created package restored to absent pre-state' }];
+      return [
+        {
+          path: pkgPath,
+          action: 'removed',
+          reason: 'installer-created package restored to absent pre-state',
+        },
+      ];
     }
 
     await writeFile(pkgPath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
@@ -201,9 +240,7 @@ async function cleanupPackageJson(
       {
         path: pkgPath,
         action: 'merged',
-        reason: packageOwnership
-          ? 'restored installer-owned dependency changes from provenance'
-          : 'preserved package because dependency ownership is not provable',
+        reason: packageCleanupReason(packageOwnership),
       },
     ];
   } catch {
@@ -225,9 +262,7 @@ async function cleanupOpencodeConfig(
       }),
     ];
     const parallelConfig = findParallelOpencodeConfig(opencodeJsonPath);
-    if (parallelConfig) {
-      ops.push(await removeFromOpencodeJson(parallelConfig, args.installScope));
-    }
+    if (parallelConfig) ops.push(await removeFromOpencodeJson(parallelConfig, args.installScope));
     return ops;
   }
   if (installPlatform === 'claude-code') return uninstallClaudeCodePlugin(target);
