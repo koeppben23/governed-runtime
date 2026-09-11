@@ -10,13 +10,17 @@ const RUNNER_PROVENANCE = {
   model: 'fake-agent',
   modelVersion: '1',
   runnerVersion: '1',
+  timeoutMs: 10_000,
+  configDigest: 'c'.repeat(64),
   secretEnvNames: [],
 };
 
 const REPOSITORY_PROVENANCE = {
   gitCommit: 'a'.repeat(40),
+  gitDirty: false,
   flowguardVersion: 'test-version',
   mandateDigest: 'b'.repeat(64),
+  caseCorpusDigest: 'd'.repeat(64),
 };
 
 describe('scoreCase', () => {
@@ -67,7 +71,7 @@ describe('scoreCase', () => {
 });
 
 describe('summarizeResults', () => {
-  it('counts verdicts only within each instruction surface', () => {
+  it('counts verdicts by instruction surface and product host', () => {
     const results = [
       scoreCase(
         'a',
@@ -81,16 +85,19 @@ describe('summarizeResults', () => {
         [{ description: 'x', type: 'exit_code', severity: 'hard', passed: false }],
         10,
       ),
-      scoreCase('c', 'flowguard_product', [], 10, 'timeout'),
+      scoreCase('c', 'flowguard_product', [], 10, 'timeout', undefined, 'claude-code'),
       scoreCase(
         'd',
         'flowguard_product',
         [{ description: 'x', type: 'exit_code', severity: 'hard', passed: true }],
         10,
+        undefined,
+        undefined,
+        'opencode',
       ),
     ];
     const summary = summarizeResults(RUNNER_PROVENANCE, REPOSITORY_PROVENANCE, results);
-    expect(summary.schemaVersion).toBe(2);
+    expect(summary.schemaVersion).toBe(3);
     expect(summary.runner).toEqual(RUNNER_PROVENANCE);
     expect(summary.repository).toEqual(REPOSITORY_PROVENANCE);
     expect(summary).not.toHaveProperty('passed');
@@ -105,6 +112,21 @@ describe('summarizeResults', () => {
       passed: 1,
       failed: 0,
       runnerErrors: 1,
+    });
+    expect(summary.byInstructionHost.opencode).toEqual({
+      passed: 1,
+      failed: 0,
+      runnerErrors: 0,
+    });
+    expect(summary.byInstructionHost['claude-code']).toEqual({
+      passed: 0,
+      failed: 0,
+      runnerErrors: 1,
+    });
+    expect(summary.byInstructionHost.codex).toEqual({
+      passed: 0,
+      failed: 0,
+      runnerErrors: 0,
     });
   });
 
@@ -121,6 +143,9 @@ describe('summarizeResults', () => {
         'flowguard_product',
         [{ description: 'x', type: 'exit_code', severity: 'hard', passed: true }],
         10,
+        undefined,
+        undefined,
+        'codex',
       ),
     ];
     const summary = summarizeResults(RUNNER_PROVENANCE, REPOSITORY_PROVENANCE, results);
