@@ -337,9 +337,9 @@ function bindDetail(bindResult: HostTaskBindResult): string | undefined {
 }
 
 function blockCodeFor(bindResult: HostTaskBindResult): string {
-  return bindResult.bindOutcome === 'schema_invalid'
-    ? 'ENVELOPE_SCHEMA_INVALID'
-    : 'HOST_SUBAGENT_TASK_REQUIRED';
+  if (bindResult.bindOutcome === 'schema_invalid') return 'ENVELOPE_SCHEMA_INVALID';
+  if (bindResult.bindOutcome === 'extraction_invalid') return 'ENVELOPE_PAYLOAD_NOT_FOUND';
+  return 'HOST_SUBAGENT_TASK_REQUIRED';
 }
 
 function blockRequiredHostTaskEvidence(
@@ -358,11 +358,21 @@ function blockRequiredHostTaskEvidence(
   const detail = bindDetail(bindResult);
   const code = blockCodeFor(bindResult);
   const schemaInvalid = bindResult.bindOutcome === 'schema_invalid';
+  const extractionInvalid = bindResult.bindOutcome === 'extraction_invalid';
+  const outputInvalid = schemaInvalid || extractionInvalid;
   hookOutput.output = strictBlockedOutput(code, {
     reason: schemaInvalid
       ? `${REVIEWER_SUBAGENT_TYPE} Task completed, but its ReviewFindings output failed canonical schema validation`
-      : `${REVIEWER_SUBAGENT_TYPE} Task call did not produce bindable host-task evidence`,
-    message: detail ?? (schemaInvalid ? 'Reviewer output failed schema validation before binding' : ''),
+      : extractionInvalid
+        ? `${REVIEWER_SUBAGENT_TYPE} Task completed, but its output did not contain extractable ReviewFindings JSON`
+        : `${REVIEWER_SUBAGENT_TYPE} Task call did not produce bindable host-task evidence`,
+    message:
+      detail ??
+      (schemaInvalid
+        ? 'Reviewer output failed schema validation before binding'
+        : extractionInvalid
+          ? 'Reviewer output could not be extracted as ReviewFindings before binding'
+          : ''),
     policy,
     policyMode: policy,
     bindOutcome: bindResult.bindOutcome,
@@ -371,7 +381,7 @@ function blockRequiredHostTaskEvidence(
     ...(schemaInvalid && bindResult.diagnostic?.schemaErrors
       ? { schemaErrors: (bindResult.diagnostic.schemaErrors as string[]).join('; ') }
       : {}),
-    ...(schemaInvalid || bindResult.bindOutcome === 'extraction_invalid'
+    ...(outputInvalid
       ? {
           nextAction:
             'Re-run the originating FlowGuard command to authorize a fresh output-repair attempt and issue a new canonical reviewer prompt before invoking the reviewer Task again.',
