@@ -282,9 +282,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for presentation fallback consistency: task, ticket, check,
     // validate, abort, archive, and export now render presentation.markdown
     // verbatim or render productNextAction.text as one fallback, never both.
+    // Refreshed for outcome-/contract-first implementation guidance: /implement
+    // no longer treats local implementation mechanics as approved-plan authority.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '196889745d2476dd71edfb0acedf648e692cc48cde9aa6075657271ec57923d3',
+      '2e17dd7d5f0954151fbde634f4a332f764a959b66db41656320d509fad02bed8',
     );
   });
 
