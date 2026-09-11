@@ -228,8 +228,13 @@ Survivor analysis remains part of normal security-critical test maintenance.
 npm run mutation    # Runs scripts/stryker-patch.js pre-flight + stryker run
 ```
 
-The pre-flight script patches `@stryker-mutator/vitest-runner` to use `pool=forks`
-(for `process.chdir()` compatibility). This is scoped exclusively to mutation testing.
+The pre-flight script applies version-guarded workarounds for
+`@stryker-mutator/vitest-runner@10.0.0`: `pool=forks` for `process.chdir()`
+compatibility and Vitest 5's `" > "` nested-test separator so Stryker's per-test
+filter selects the intended tests. This is scoped exclusively to mutation testing.
+It fails if the installed runner, Vitest major, or runner artifact shape is not
+recognized; remove the workaround when upgrading to a Stryker release with the
+upstream Vitest 5 fix.
 
 The remote-JWKS profile runs on pull requests that change its source, tests, or
 configuration:

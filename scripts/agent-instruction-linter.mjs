@@ -124,6 +124,7 @@ function lineNumber(content, index) {
 
 /** Paths excluded when linting the real repository root. */
 export const DEFAULT_IGNORED_PATHS = [
+  '.stryker-tmp',
   'scripts/__tests__/fixtures',
   'evals/agent-instructions/cases',
 ];
