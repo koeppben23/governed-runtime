@@ -18,11 +18,12 @@ import type {
   FileOp,
   RollbackEntry as InstallRollbackEntry,
 } from './install-helpers.js';
-import { rollbackArtifacts, toCliError } from './install-helpers.js';
+import { rollbackArtifacts, snapshotForRollback, toCliError } from './install-helpers.js';
 import {
   assertManagedMandatesOwnership,
   assertNoAmbiguousLegacyInstruction,
   deriveInstallOwnershipManifest,
+  ownershipManifestPath,
   type InstallOwnershipManifest,
   writeInstallOwnershipManifest,
 } from './install-ownership.js';
@@ -303,15 +304,18 @@ function deriveOwnership(ctx: InstallContext, snapshot: SnapshotResult): Install
 
 async function persistOwnership(
   ctx: InstallContext,
+  snapshot: SnapshotResult,
   ownership: InstallOwnershipManifest,
 ): Promise<void> {
-  try {
-    await writeInstallOwnershipManifest(ctx.target, ownership);
-  } catch (error) {
-    ctx.warnings.push(
-      `Install completed, but ownership provenance could not be persisted; uninstall will preserve ambiguous customer-owned settings (${error instanceof Error ? error.message : String(error)}).`,
-    );
-  }
+  const path = ownershipManifestPath(ctx.target);
+  const preState = await snapshotForRollback(path, 'file');
+  await writeInstallOwnershipManifest(ctx.target, ownership);
+  snapshot.mutationJournal.record(preState);
+  ctx.ops.push({
+    path,
+    action: preState.existed ? 'merged' : 'written',
+    reason: 'persisted installer ownership provenance before dependency commit',
+  });
 }
 
 async function doInstall(args: CliArgs): Promise<CliResult> {
@@ -341,8 +345,8 @@ async function doInstall(args: CliArgs): Promise<CliResult> {
 
     tx = await createDependencyTransaction(snapshot, snapshot.vendorTarballPath);
     await executeDependencyTransaction(tx);
+    await persistOwnership(ctx, snapshot, ownership);
     await commitDependencyTransaction(tx, ctx);
-    await persistOwnership(ctx, ownership);
 
     emitPostInstallWarnings(ctx);
     return resultFromContext(ctx);
