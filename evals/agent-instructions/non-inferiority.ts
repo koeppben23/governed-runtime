@@ -1,6 +1,11 @@
-import { readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { EvalSummarySchema, type EvalSummary } from './schema.js';
+import {
+  extractRunnerCaseMetrics,
+  RUNNER_METRICS_PREFIX,
+  type RunnerCaseMetrics,
+} from './run.js';
 
 export type AvailabilityMetric = number | null;
 export type CorrectnessMetric = 'pass' | 'fail' | 'runner_error';
@@ -59,11 +64,34 @@ const CRITICAL_CASE_MARKERS = [
   'canonical-authority',
 ] as const;
 
+const OPTIONAL_METRIC_KEYS = [
+  'reviewPrecision',
+  'reviewRecall',
+  'falsePositiveFindings',
+  'falseNegativeDefects',
+  'schemaRetries',
+  'toolCallCount',
+  'unnecessaryToolCalls',
+  'clarificationCount',
+  'prematureStops',
+  'scopeDeviations',
+  'inputTokens',
+  'outputTokens',
+  'reasoningTokens',
+  'verificationExecutions',
+  'duplicateVerification',
+] as const satisfies readonly (keyof RunnerCaseMetrics)[];
+
+type OptionalMetricKey = (typeof OPTIONAL_METRIC_KEYS)[number];
+
 function isCriticalCase(caseId: string): boolean {
   return CRITICAL_CASE_MARKERS.some((marker) => caseId.includes(marker));
 }
 
-export function deriveRunMetrics(summary: EvalSummary): EvalRunMetrics {
+export function deriveRunMetrics(
+  summary: EvalSummary,
+  caseMetrics: ReadonlyMap<string, RunnerCaseMetrics> = new Map(),
+): EvalRunMetrics {
   return {
     schemaVersion: 1,
     provider: summary.runner.provider,
@@ -79,6 +107,7 @@ export function deriveRunMetrics(summary: EvalSummary): EvalRunMetrics {
         (assertion) => assertion.severity === 'hard' && !assertion.passed,
       ).length;
       const notVerifiedCase = result.caseId.includes('not-verified');
+      const telemetry = caseMetrics.get(result.caseId);
       return {
         caseId: result.caseId,
         correctness:
@@ -89,22 +118,22 @@ export function deriveRunMetrics(summary: EvalSummary): EvalRunMetrics {
               : 'runner_error',
         governanceViolations: failedHard,
         criticalInvariantViolations: isCriticalCase(result.caseId) ? failedHard : 0,
-        reviewPrecision: null,
-        reviewRecall: null,
-        falsePositiveFindings: null,
-        falseNegativeDefects: null,
-        schemaRetries: null,
-        toolCallCount: null,
-        unnecessaryToolCalls: null,
-        clarificationCount: null,
-        prematureStops: null,
-        scopeDeviations: null,
-        inputTokens: null,
-        outputTokens: null,
-        reasoningTokens: null,
+        reviewPrecision: telemetry?.reviewPrecision ?? null,
+        reviewRecall: telemetry?.reviewRecall ?? null,
+        falsePositiveFindings: telemetry?.falsePositiveFindings ?? null,
+        falseNegativeDefects: telemetry?.falseNegativeDefects ?? null,
+        schemaRetries: telemetry?.schemaRetries ?? null,
+        toolCallCount: telemetry?.toolCallCount ?? null,
+        unnecessaryToolCalls: telemetry?.unnecessaryToolCalls ?? null,
+        clarificationCount: telemetry?.clarificationCount ?? null,
+        prematureStops: telemetry?.prematureStops ?? null,
+        scopeDeviations: telemetry?.scopeDeviations ?? null,
+        inputTokens: telemetry?.inputTokens ?? null,
+        outputTokens: telemetry?.outputTokens ?? null,
+        reasoningTokens: telemetry?.reasoningTokens ?? null,
         latencyMs: result.durationMs,
-        verificationExecutions: null,
-        duplicateVerification: null,
+        verificationExecutions: telemetry?.verificationExecutions ?? null,
+        duplicateVerification: telemetry?.duplicateVerification ?? null,
         notVerifiedCorrectness: notVerifiedCase
           ? result.verdict === 'PASS'
             ? 'correct'
@@ -115,32 +144,57 @@ export function deriveRunMetrics(summary: EvalSummary): EvalRunMetrics {
   };
 }
 
-function compareOptionalHigherIsBetter(
-  name: string,
-  baseline: AvailabilityMetric,
-  current: AvailabilityMetric,
-  blockers: string[],
-  regressions: string[],
-): void {
-  if (baseline === null || current === null) {
-    blockers.push(`${name} comparison is unavailable`);
-    return;
-  }
-  if (current < baseline) regressions.push(`${name} regressed: ${baseline} -> ${current}`);
+interface MetricAggregate {
+  readonly value: AvailabilityMetric;
+  readonly caseIds: readonly string[];
 }
 
-function compareOptionalLowerIsBetter(
-  name: string,
-  baseline: AvailabilityMetric,
-  current: AvailabilityMetric,
+function aggregateMetric(cases: readonly EvalCaseMetrics[], key: OptionalMetricKey): MetricAggregate {
+  const available = cases
+    .filter((entry) => entry[key] !== null)
+    .map((entry) => ({ caseId: entry.caseId, value: entry[key] as number }));
+  return {
+    value:
+      available.length === 0
+        ? null
+        : available.reduce((sum, entry) => sum + entry.value, 0) / available.length,
+    caseIds: available.map((entry) => entry.caseId).sort(),
+  };
+}
+
+function sameCoverage(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function compareOptionalMetric(
+  name: OptionalMetricKey,
+  baseline: MetricAggregate,
+  current: MetricAggregate,
+  direction: 'higher' | 'lower',
   blockers: string[],
   regressions: string[],
+  improvements: string[],
 ): void {
-  if (baseline === null || current === null) {
+  if (baseline.value === null || current.value === null) {
     blockers.push(`${name} comparison is unavailable`);
     return;
   }
-  if (current > baseline) regressions.push(`${name} regressed: ${baseline} -> ${current}`);
+  if (!sameCoverage(baseline.caseIds, current.caseIds)) {
+    blockers.push(
+      `${name} telemetry coverage differs: baseline=[${baseline.caseIds.join(',')}] current=[${current.caseIds.join(',')}]`,
+    );
+    return;
+  }
+
+  const regressed = direction === 'higher' ? current.value < baseline.value : current.value > baseline.value;
+  const improved = direction === 'higher' ? current.value > baseline.value : current.value < baseline.value;
+  if (regressed) regressions.push(`${name} regressed: ${baseline.value} -> ${current.value}`);
+  if (improved) improvements.push(`${name} improved: ${baseline.value} -> ${current.value}`);
+}
+
+function averageLatency(cases: readonly EvalCaseMetrics[]): number {
+  if (cases.length === 0) return 0;
+  return cases.reduce((sum, entry) => sum + entry.latencyMs, 0) / cases.length;
 }
 
 export function compareNonInferiority(
@@ -172,6 +226,11 @@ export function compareNonInferiority(
         `${candidate.caseId} correctness regressed: ${previous.correctness} -> ${candidate.correctness}`,
       );
     }
+    if (candidate.governanceViolations > previous.governanceViolations) {
+      regressions.push(
+        `${candidate.caseId} governance violations increased: ${previous.governanceViolations} -> ${candidate.governanceViolations}`,
+      );
+    }
     if (candidate.criticalInvariantViolations > previous.criticalInvariantViolations) {
       regressions.push(
         `${candidate.caseId} critical invariant violations increased: ${previous.criticalInvariantViolations} -> ${candidate.criticalInvariantViolations}`,
@@ -191,52 +250,42 @@ export function compareNonInferiority(
     }
   }
 
-  const baselineAggregate = aggregateOptionalMetrics(baseline.cases);
-  const currentAggregate = aggregateOptionalMetrics(current.cases);
-  compareOptionalHigherIsBetter(
-    'reviewPrecision',
-    baselineAggregate.reviewPrecision,
-    currentAggregate.reviewPrecision,
-    blockers,
-    regressions,
-  );
-  compareOptionalHigherIsBetter(
-    'reviewRecall',
-    baselineAggregate.reviewRecall,
-    currentAggregate.reviewRecall,
-    blockers,
-    regressions,
-  );
-  compareOptionalLowerIsBetter(
-    'falsePositiveFindings',
-    baselineAggregate.falsePositiveFindings,
-    currentAggregate.falsePositiveFindings,
-    blockers,
-    regressions,
-  );
-  compareOptionalLowerIsBetter(
-    'schemaRetries',
-    baselineAggregate.schemaRetries,
-    currentAggregate.schemaRetries,
-    blockers,
-    regressions,
-  );
-  compareOptionalLowerIsBetter(
-    'inputTokens',
-    baselineAggregate.inputTokens,
-    currentAggregate.inputTokens,
-    blockers,
-    regressions,
-  );
+  const metricDirections: Readonly<Record<OptionalMetricKey, 'higher' | 'lower'>> = {
+    reviewPrecision: 'higher',
+    reviewRecall: 'higher',
+    falsePositiveFindings: 'lower',
+    falseNegativeDefects: 'lower',
+    schemaRetries: 'lower',
+    toolCallCount: 'lower',
+    unnecessaryToolCalls: 'lower',
+    clarificationCount: 'lower',
+    prematureStops: 'lower',
+    scopeDeviations: 'lower',
+    inputTokens: 'lower',
+    outputTokens: 'lower',
+    reasoningTokens: 'lower',
+    verificationExecutions: 'higher',
+    duplicateVerification: 'lower',
+  };
 
-  if (
-    baselineAggregate.inputTokens !== null &&
-    currentAggregate.inputTokens !== null &&
-    currentAggregate.inputTokens < baselineAggregate.inputTokens
-  ) {
-    improvements.push(
-      `inputTokens improved: ${baselineAggregate.inputTokens} -> ${currentAggregate.inputTokens}`,
+  for (const key of OPTIONAL_METRIC_KEYS) {
+    compareOptionalMetric(
+      key,
+      aggregateMetric(baseline.cases, key),
+      aggregateMetric(current.cases, key),
+      metricDirections[key],
+      blockers,
+      regressions,
+      improvements,
     );
+  }
+
+  const baselineLatency = averageLatency(baseline.cases);
+  const currentLatency = averageLatency(current.cases);
+  if (currentLatency > baselineLatency) {
+    regressions.push(`latencyMs regressed: ${baselineLatency} -> ${currentLatency}`);
+  } else if (currentLatency < baselineLatency) {
+    improvements.push(`latencyMs improved: ${baselineLatency} -> ${currentLatency}`);
   }
 
   return {
@@ -247,20 +296,17 @@ export function compareNonInferiority(
   };
 }
 
-function averageAvailable(values: readonly AvailabilityMetric[]): AvailabilityMetric {
-  const available = values.filter((value): value is number => value !== null);
-  if (available.length !== values.length || available.length === 0) return null;
-  return available.reduce((sum, value) => sum + value, 0) / available.length;
-}
-
-function aggregateOptionalMetrics(cases: readonly EvalCaseMetrics[]) {
-  return {
-    reviewPrecision: averageAvailable(cases.map((entry) => entry.reviewPrecision)),
-    reviewRecall: averageAvailable(cases.map((entry) => entry.reviewRecall)),
-    falsePositiveFindings: averageAvailable(cases.map((entry) => entry.falsePositiveFindings)),
-    schemaRetries: averageAvailable(cases.map((entry) => entry.schemaRetries)),
-    inputTokens: averageAvailable(cases.map((entry) => entry.inputTokens)),
-  };
+function loadCaseMetrics(runDir: string, summary: EvalSummary): Map<string, RunnerCaseMetrics> {
+  const metrics = new Map<string, RunnerCaseMetrics>();
+  for (const result of summary.cases) {
+    const path = join(runDir, 'cases', result.caseId, 'metrics.json');
+    if (!existsSync(path)) continue;
+    const raw = readFileSync(path, 'utf8').trim();
+    const parsed = extractRunnerCaseMetrics(`${RUNNER_METRICS_PREFIX}${raw}`);
+    if (!parsed) throw new Error(`Unable to parse runner metrics for ${result.caseId}`);
+    metrics.set(result.caseId, parsed);
+  }
+  return metrics;
 }
 
 export function writeMetricsAndComparison(
@@ -270,14 +316,19 @@ export function writeMetricsAndComparison(
   const currentSummary = EvalSummarySchema.parse(
     JSON.parse(readFileSync(join(runDir, 'summary.json'), 'utf8')),
   );
-  const currentMetrics = deriveRunMetrics(currentSummary);
+  const currentMetrics = deriveRunMetrics(currentSummary, loadCaseMetrics(runDir, currentSummary));
   writeFileSync(join(runDir, 'metrics.json'), JSON.stringify(currentMetrics, null, 2) + '\n');
 
   if (!baselineSummaryPath) return null;
   const baselineSummary = EvalSummarySchema.parse(
     JSON.parse(readFileSync(baselineSummaryPath, 'utf8')),
   );
-  const comparison = compareNonInferiority(deriveRunMetrics(baselineSummary), currentMetrics);
+  const baselineRunDir = dirname(baselineSummaryPath);
+  const baselineMetrics = deriveRunMetrics(
+    baselineSummary,
+    loadCaseMetrics(baselineRunDir, baselineSummary),
+  );
+  const comparison = compareNonInferiority(baselineMetrics, currentMetrics);
   writeFileSync(join(runDir, 'non-inferiority.json'), JSON.stringify(comparison, null, 2) + '\n');
   return comparison;
 }
