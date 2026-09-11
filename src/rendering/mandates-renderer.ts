@@ -27,6 +27,7 @@ export type MandatesVerbosity = 'explicit' | 'concise' | 'diagnosticSummary';
 export type MandatesUsage = 'productive' | 'recovery';
 
 export interface MandatesRenderContext {
+  /** Host coverage is transport metadata only; it must never rewrite canonical mandate semantics. */
   hostCoveredRules?: ReadonlySet<string>;
   progressive?: boolean;
   mandatesVerbosity?: MandatesVerbosity | string;
@@ -180,26 +181,6 @@ function assertMandatesAnchors(
   }
 }
 
-function applyHostHarmonization(content: string, ctx: MandatesRenderContext): string {
-  const covered = ctx.hostCoveredRules;
-  if (!covered || covered.size === 0) return content;
-
-  let next = content;
-  if (covered.has('read-before-editing')) {
-    next = next.replace(
-      '- Read relevant code, tests, and docs before changing behavior.',
-      '- Read relevant code, tests, and docs before changing behavior, as required by host policy and FlowGuard governance.',
-    );
-  }
-  if (covered.has('destructive-ops') || covered.has('ask-before-destructive-ops')) {
-    next = next.replace(
-      'Safety and security.',
-      'Safety and security, including host-enforced destructive-operation policy.',
-    );
-  }
-  return next;
-}
-
 function renderSections(sections: readonly MandatesSectionDefinition[]): string {
   return sections.map((section) => section.content).join('\n\n');
 }
@@ -215,11 +196,11 @@ export function renderPhaseAwareMandates(
   }
 
   const sections = selectProjectionSections(normalized.phase, verbosity);
-  const harmonized = applyHostHarmonization(renderSections(sections), ctx);
-  assertSafetyCriticalSections(harmonized, sections);
+  const rendered = renderSections(sections);
+  assertSafetyCriticalSections(rendered, sections);
   const selectedIds = new Set(sections.map((section) => section.id));
-  assertMandatesAnchors(harmonized, 'productive', selectedIds);
-  return harmonized;
+  assertMandatesAnchors(rendered, 'productive', selectedIds);
+  return rendered;
 }
 
 export function renderMandates(
