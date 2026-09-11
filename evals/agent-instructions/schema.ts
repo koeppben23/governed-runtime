@@ -8,7 +8,7 @@ const pathSchema = z
   .refine(
     (p) => {
       const normalized = p.replace(/\\/g, '/');
-      return !normalized.startsWith('/') && !normalized.split('/').includes('..');
+      return !normalized.startsWith('/') && !/^[A-Za-z]:\//u.test(normalized) && !normalized.split('/').includes('..');
     },
     { message: 'must be a repository-relative path without traversal' },
   );
@@ -203,6 +203,8 @@ const RunnerBase = {
   model: z.string().min(1),
   modelVersion: z.string().min(1),
   runnerVersion: z.string().min(1),
+  /** Deterministic sampling seed. Required by assurance-grade non-inferiority runs. */
+  seed: z.string().min(1).optional(),
   runnerKind: RunnerKindSchema.optional(),
   instructionHost: InstructionHostSchema.optional(),
   staticEnv: z.record(z.string(), z.string()).default({}),
@@ -304,6 +306,7 @@ export const EvalRunnerProvenanceSchema = z.object({
   model: z.string().min(1),
   modelVersion: z.string().min(1),
   runnerVersion: z.string().min(1),
+  seed: z.string().min(1).optional(),
   runnerKind: RunnerKindSchema.optional(),
   instructionHost: InstructionHostSchema.optional(),
   timeoutMs: z.number().int().positive(),
