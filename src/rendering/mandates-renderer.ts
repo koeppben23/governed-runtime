@@ -1,6 +1,7 @@
 import { Phase as PhaseSchema, type Phase } from '../state/schema.js';
 import {
-  FLOWGUARD_MANDATES_BODY,
+  FLOWGUARD_MANDATES_FULL_BODY,
+  FLOWGUARD_MANDATES_KERNEL,
   MANDATES_SECTION_DEFINITIONS,
   type MandatesProjectionPhase,
   type MandatesSectionDefinition,
@@ -210,7 +211,7 @@ export function renderPhaseAwareMandates(
   const normalized = normalizeRenderPhase(phase);
   const verbosity = resolveMandatesVerbosity(ctx.mandatesVerbosity, 'productive');
   if (ctx.progressive === false || normalized.fallback || normalized.phase === 'ALL_PHASES') {
-    return FLOWGUARD_MANDATES_BODY;
+    return FLOWGUARD_MANDATES_FULL_BODY;
   }
 
   const sections = selectProjectionSections(normalized.phase, verbosity);
@@ -246,7 +247,7 @@ export function renderCompactionMandatesSummary(
 ): string {
   const normalized = normalizeRenderPhase(phase);
   if (normalized.fallback || normalized.phase === 'ALL_PHASES') {
-    return renderPhaseAwareMandates({}, phase);
+    return FLOWGUARD_MANDATES_KERNEL;
   }
   const sections = selectMandatesSections(normalized.phase).filter(
     (section) => section.safetyCritical === true,
@@ -262,7 +263,7 @@ export function renderCompactionMandatesSummary(
 // ---------------------------------------------------------------------------
 
 export function buildMandatesContent(version: string, digest: string): string {
-  return `<!-- @flowguard/core v${version} | managed artifact — do not edit manually -->\n<!-- content-digest: sha256:${digest} -->\n\n${FLOWGUARD_MANDATES_BODY}`;
+  return `<!-- @flowguard/core v${version} | managed artifact — do not edit manually -->\n<!-- content-digest: sha256:${digest} -->\n\n${FLOWGUARD_MANDATES_KERNEL}`;
 }
 
 export function extractManagedDigest(content: string): string | null {
