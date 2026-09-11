@@ -134,6 +134,7 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
         maxRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
