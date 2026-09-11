@@ -1,16 +1,20 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hashText } from '../shared/hashing.js';
 import { FLOWGUARD_MANDATES_KERNEL } from '../templates/mandates.js';
 import { buildMandatesContent } from './templates.js';
 
 const EXEC_TIMEOUT_MS = 60_000;
+const ROOT = join(fileURLToPath(new URL('../..', import.meta.url)));
 
 let tmpRoot: string;
+let hostPackage: string;
+let hostVersion: string;
 
 afterAll(async () => {
   if (tmpRoot) await rm(tmpRoot, { recursive: true, force: true });
@@ -105,8 +109,18 @@ async function runOpenCode(
   try {
     const output = await new Promise<string>((resolve, reject) => {
       const child = spawn(
-        'opencode',
-        ['run', '--model', 'flowguard-capture/visibility', 'Reply with exactly OK.'],
+        'npm',
+        [
+          'exec',
+          '--yes',
+          `--package=${hostPackage}@${hostVersion}`,
+          '--',
+          'opencode',
+          'run',
+          '--model',
+          'flowguard-capture/visibility',
+          'Reply with exactly OK.',
+        ],
         {
           cwd: tmpRoot,
           env: {
@@ -147,6 +161,11 @@ async function runOpenCode(
 
 describe('OpenCode installed mandate model visibility', () => {
   beforeAll(async () => {
+    const hostBaseline = JSON.parse(
+      await readFile(join(ROOT, '.sdk-baselines', 'opencode', 'host-version.json'), 'utf8'),
+    ) as { package: string; version: string };
+    hostPackage = hostBaseline.package;
+    hostVersion = hostBaseline.version;
     tmpRoot = await mkdtemp(join(tmpdir(), 'fg-opencode-visibility-'));
     await mkdir(join(tmpRoot, '.opencode'), { recursive: true });
     const digest = hashText(FLOWGUARD_MANDATES_KERNEL);
