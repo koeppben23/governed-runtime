@@ -256,6 +256,7 @@ export async function runEval(
         outcome.message,
         undefined,
         evalCase.instructionHost,
+        evalCase.assuranceTags,
       );
       results.push({ evalCase, result: er, outcome });
       continue;
@@ -299,6 +300,7 @@ export async function runEval(
       undefined,
       snapshotSummary,
       evalCase.instructionHost,
+      evalCase.assuranceTags,
     );
 
     results.push({ evalCase, result, outcome });
@@ -389,7 +391,10 @@ export function writeReports(
   const casesDir = join(runDir, 'cases');
   mkdirSync(casesDir, { recursive: true });
 
-  const caseResults = ordered.map((e) => e.result);
+  const caseResults = ordered.map((e) => ({
+    ...e.result,
+    assuranceTags: [...e.evalCase.assuranceTags],
+  }));
   const summary = EvalSummarySchema.parse(
     summarizeResults(
       toRunnerProvenance(config),
@@ -438,7 +443,10 @@ export function writeReports(
     );
     writeFileSync(
       join(caseDir, 'result.json'),
-      redactSecrets(JSON.stringify(e.result, null, 2), redactionValues) + '\n',
+      redactSecrets(
+        JSON.stringify({ ...e.result, assuranceTags: [...e.evalCase.assuranceTags] }, null, 2),
+        redactionValues,
+      ) + '\n',
     );
   }
 
@@ -447,7 +455,7 @@ export function writeReports(
     '',
     `- Provider/model: ${summary.runner.provider}/${summary.runner.model} (${summary.runner.modelVersion})`,
     `- Runner version: ${summary.runner.runnerVersion}`,
-    `- Seed: ${summary.runner.seed ?? 'unspecified'}`,
+    `- Requested seed: ${summary.runner.seed ?? 'unspecified'} (provider-effective seeding requires independent confirmation)`,
     `- Runner kind/host: ${summary.runner.runnerKind ?? 'unspecified'}/${summary.runner.instructionHost ?? 'unbound'}`,
     `- Effective timeout: ${summary.runner.timeoutMs} ms`,
     `- Runner config digest: ${summary.runner.configDigest}`,
