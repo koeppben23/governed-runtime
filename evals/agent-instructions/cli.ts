@@ -10,6 +10,7 @@ import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { determineExitCode } from './exit-code.js';
 import { renderGitHubSummary } from './github-summary.js';
+import { writeMetricsAndComparison } from './non-inferiority.js';
 import { runEval, writeReports } from './run.js';
 import { RunnerConfigSchema } from './schema.js';
 
@@ -23,6 +24,8 @@ async function main(): Promise<void> {
       case: { type: 'string', multiple: true },
       'timeout-ms': { type: 'string' },
       'require-live-host': { type: 'boolean', default: false },
+      'baseline-summary': { type: 'string' },
+      'require-non-inferiority': { type: 'boolean', default: false },
     },
     strict: true,
     allowPositionals: false,
@@ -30,8 +33,13 @@ async function main(): Promise<void> {
 
   if (!values.config) {
     console.error(
-      'Usage: npx tsx evals/agent-instructions/cli.ts --config <runner.json> [--advisory] [--case id] [--timeout-ms N] [--require-live-host]',
+      'Usage: npx tsx evals/agent-instructions/cli.ts --config <runner.json> [--advisory] [--case id] [--timeout-ms N] [--require-live-host] [--baseline-summary summary.json] [--require-non-inferiority]',
     );
+    process.exit(2);
+  }
+
+  if (values['require-non-inferiority'] && !values['baseline-summary']) {
+    console.error('--require-non-inferiority requires --baseline-summary <summary.json>');
     process.exit(2);
   }
 
@@ -83,6 +91,10 @@ async function main(): Promise<void> {
     requireLiveHost,
   });
   const runDir = writeReports(config, executed, { redactionValues, repoRoot: REPO_ROOT });
+  const comparison = writeMetricsAndComparison(
+    runDir,
+    values['baseline-summary'] ? resolve(values['baseline-summary']) : undefined,
+  );
 
   if (process.env.GITHUB_STEP_SUMMARY) {
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, renderGitHubSummary(config.name, executed));
@@ -92,8 +104,15 @@ async function main(): Promise<void> {
   for (const e of executed) {
     console.log(`  ${e.evalCase.id}: ${e.result.verdict}`);
   }
+  if (comparison) {
+    console.log(`Non-inferiority: ${comparison.verdict}`);
+    for (const regression of comparison.regressions) console.log(`  regression: ${regression}`);
+    for (const blocker of comparison.blockers) console.log(`  NOT_VERIFIED: ${blocker}`);
+  }
 
-  process.exit(determineExitCode(executed, values.advisory));
+  let exitCode = determineExitCode(executed, values.advisory);
+  if (values['require-non-inferiority'] && comparison?.verdict !== 'PASS') exitCode = 1;
+  process.exit(exitCode);
 }
 
 main().catch((err) => {
