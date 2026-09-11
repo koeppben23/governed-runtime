@@ -23,11 +23,11 @@ const InstallOwnershipManifestSchema = z
     packageJson: z.object({
       created: z.boolean(),
       zodAdded: z.boolean(),
+      previousCoreDependency: z.string().nullable(),
     }),
     opencode: z
       .object({
         taskHardeningAdded: z.boolean(),
-        legacyInstructionMigrated: z.boolean(),
       })
       .optional(),
   })
@@ -92,6 +92,25 @@ function instructions(parsed: Record<string, unknown> | null): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
 
+/**
+ * Historical FlowGuard versions referenced AGENTS.md but did not own/create that file.
+ * Therefore a reinstall cannot safely infer whether the entry is legacy FlowGuard or
+ * customer authority. Fail before any mutation instead of deleting ambiguous content.
+ */
+export function assertNoAmbiguousLegacyInstruction(input: {
+  platform: InstallPlatform;
+  verifiedReinstall: boolean;
+  opencodeOriginalContent?: Buffer;
+}): void {
+  if (input.platform !== 'opencode' || !input.verifiedReinstall) return;
+  const previous = parsedOpencode(input.opencodeOriginalContent);
+  if (!instructions(previous).includes('AGENTS.md')) return;
+  throw new InstallError(
+    'LEGACY_INSTRUCTION_AMBIGUOUS',
+    'LEGACY_INSTRUCTION_AMBIGUOUS: existing OpenCode instructions include AGENTS.md from a historical FlowGuard-era configuration, but FlowGuard cannot prove ownership of that file. Remove only the obsolete FlowGuard reference after confirming AGENTS.md is not customer authority, then rerun install.',
+  );
+}
+
 export function deriveInstallOwnershipManifest(input: {
   platform: InstallPlatform;
   scope: InstallScope;
@@ -99,11 +118,14 @@ export function deriveInstallOwnershipManifest(input: {
   packageJsonOriginalContent?: Buffer;
   opencodeOriginalContent?: Buffer;
   opencodeCurrentContent?: string | null;
-  verifiedReinstall: boolean;
 }): InstallOwnershipManifest {
   const previousDeps = parsedDependencies(input.packageJsonOriginalContent);
   const packageJsonCreated = !input.packageJsonExisted;
   const zodAdded = packageJsonCreated || previousDeps === null || !('zod' in previousDeps);
+  const previousCoreDependency =
+    previousDeps && typeof previousDeps['@flowguard/core'] === 'string'
+      ? (previousDeps['@flowguard/core'] as string)
+      : null;
 
   const previousOpencode = parsedOpencode(input.opencodeOriginalContent);
   const currentOpencode = input.opencodeCurrentContent
@@ -116,11 +138,6 @@ export function deriveInstallOwnershipManifest(input: {
     previousTask === null &&
     currentTask?.['*'] === 'deny' &&
     currentTask?.[REVIEWER_SUBAGENT_TYPE] === 'allow';
-  const legacyInstructionMigrated =
-    input.platform === 'opencode' &&
-    input.verifiedReinstall &&
-    instructions(previousOpencode).includes('AGENTS.md') &&
-    !instructions(currentOpencode).includes('AGENTS.md');
 
   return InstallOwnershipManifestSchema.parse({
     schemaVersion: 1,
@@ -129,10 +146,9 @@ export function deriveInstallOwnershipManifest(input: {
     packageJson: {
       created: packageJsonCreated,
       zodAdded,
+      previousCoreDependency,
     },
-    ...(input.platform === 'opencode'
-      ? { opencode: { taskHardeningAdded, legacyInstructionMigrated } }
-      : {}),
+    ...(input.platform === 'opencode' ? { opencode: { taskHardeningAdded } } : {}),
   });
 }
 
