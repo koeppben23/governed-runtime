@@ -33,9 +33,7 @@ describe('host-task reviewer serialization contract', () => {
             kind: 'plan_adr_section',
             artifactKind: 'plan',
             artifactDigest: 'a'.repeat(64),
-            sectionPath: [
-              { headingDepth: 1, siblingIndex: 1, headingText: 'Implementation Plan' },
-            ],
+            sectionPath: [{ headingDepth: 1, siblingIndex: 1, headingText: 'Implementation Plan' }],
             excerptDigest: 'b'.repeat(64),
           },
         ],
