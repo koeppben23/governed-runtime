@@ -12,21 +12,10 @@ import { execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { copyFile, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
-import { InstallError, pushError } from './install-helpers.js';
-import { ensureDirTracked, MutationJournal } from './install-transaction.js';
-import type { InstallMutationSink } from './install-mutation-types.js';
 import { globalConfigPath } from '../adapters/persistence.js';
 import { readConfig, writeGlobalConfig, writeRepoConfig } from '../adapters/persistence-config.js';
 import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
-import {
-  COMMANDS,
-  MANDATES_FILENAME,
-  PLUGIN_WRAPPER,
-  TOOL_WRAPPER,
-  buildMandatesContent,
-  isManagedArtifact,
-} from './templates.js';
 import {
   claudeCodePluginSnapshotPaths,
   installClaudeCodePlugin,
@@ -39,6 +28,7 @@ import {
   resolveCodexMarketplacePath,
   resolveCodexPluginRoot,
 } from './codex-plugin-install.js';
+import { InstallError, pushError } from './install-helpers.js';
 import {
   type CliArgs,
   type FileOp,
@@ -60,6 +50,16 @@ import {
   verifyTarballChecksum,
   writeIfAbsent,
 } from './install-helpers.js';
+import type { InstallMutationSink } from './install-mutation-types.js';
+import { assertManagedMandatesOwnership } from './install-ownership.js';
+import { ensureDirTracked, MutationJournal } from './install-transaction.js';
+import {
+  COMMANDS,
+  MANDATES_FILENAME,
+  PLUGIN_WRAPPER,
+  TOOL_WRAPPER,
+  buildMandatesContent,
+} from './templates.js';
 
 const DEPENDENCY_INSTALL_TIMEOUT_MS = 300_000;
 
@@ -303,22 +303,6 @@ export async function buildRollbackSnapshot(
   };
 }
 
-async function assertMandatesPathOwned(mandatesPath: string): Promise<void> {
-  let existing: string;
-  try {
-    existing = await readFile(mandatesPath, 'utf-8');
-  } catch (err) {
-    if (err instanceof Error && 'code' in err && err.code === 'ENOENT') return;
-    throw err;
-  }
-  if (!isManagedArtifact(existing)) {
-    throw new InstallError(
-      'ALREADY_INSTALLED',
-      `MANAGED_ARTIFACT_CONFLICT: ${mandatesPath} exists but is not a FlowGuard-managed artifact; refusing to overwrite customer-owned content`,
-    );
-  }
-}
-
 // ─── Step: Write artifacts (tarball + mandates + platform plugins) ────────────
 
 // eslint-disable-next-line max-lines-per-function
@@ -330,9 +314,9 @@ export async function writeArtifacts(
   const { target, installPlatform, args } = ctx;
   const journal = snapshot.mutationJournal;
 
-  // Ownership is checked before the first mutation so --force can never claim a
-  // same-named customer file merely because FlowGuard reserves this filename.
-  await assertMandatesPathOwned(snapshot.mandatesPath);
+  // Re-check immediately before the first mutation to close the TOCTOU window.
+  // This is the same ownership authority used by the install preflight.
+  await assertManagedMandatesOwnership(snapshot.mandatesPath);
 
   if (installPlatform !== 'claude-code' && installPlatform !== 'codex') {
     await ensureDirTracked(join(target, 'tools'), journal);
@@ -396,20 +380,21 @@ export async function writeArtifacts(
       args.force,
     );
     ctx.ops.push(pluginOp);
-    if (pluginOp.action !== 'skipped')
+    if (pluginOp.action !== 'skipped') {
       journal.record(
         findPreState(snapshot.preStateEntries, join(target, 'plugins', 'flowguard-audit.ts')),
       );
+    }
     for (const [name, content] of Object.entries(COMMANDS)) {
       const cmdOp = await writeIfAbsent(join(target, 'commands', name), content, args.force);
       ctx.ops.push(cmdOp);
-      if (cmdOp.action !== 'skipped')
+      if (cmdOp.action !== 'skipped') {
         journal.record(findPreState(snapshot.preStateEntries, join(target, 'commands', name)));
+      }
     }
     const revOp = await writeIfAbsent(reviewerPath, reviewerDefinition.content, args.force);
     ctx.ops.push(revOp);
-    if (revOp.action !== 'skipped')
-      journal.record(findPreState(snapshot.preStateEntries, reviewerPath));
+    if (revOp.action !== 'skipped') journal.record(findPreState(snapshot.preStateEntries, reviewerPath));
   }
 }
 
@@ -424,14 +409,16 @@ export async function writeConfigFiles(
 
   const pkgOp = await mergePackageJson(snapshot.pkgPath, PACKAGE_VERSION());
   ctx.ops.push(pkgOp);
-  if (pkgOp.action !== 'skipped')
+  if (pkgOp.action !== 'skipped') {
     journal.record(findPreState(snapshot.preStateEntries, snapshot.pkgPath));
+  }
 
   if (snapshot.opencodeJsonPath) {
     const ocOp = await mergeOpencodeJson(snapshot.opencodeJsonPath, args.installScope);
     ctx.ops.push(ocOp);
-    if (ocOp.action !== 'skipped')
+    if (ocOp.action !== 'skipped') {
       journal.record(findPreState(snapshot.preStateEntries, snapshot.opencodeJsonPath));
+    }
   }
 
   if (installPlatform !== 'opencode') {
