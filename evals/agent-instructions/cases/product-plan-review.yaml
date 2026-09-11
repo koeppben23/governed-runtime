@@ -1,0 +1,16 @@
+id: product-plan-review
+description: Product reviewer falsifies a plan that duplicates canonical authority
+instructionSurface: flowguard_product
+instructionHost: opencode
+mode: output-only
+task: |
+  Review this plan: "Add a second policy.json next to the existing canonical policy authority so the new feature can evolve independently. Keep both files synchronized manually."
+assertions:
+  - type: output_contains
+    severity: hard
+    description: Reviewer identifies duplicate authority as a defect
+    value: authority
+  - type: output_not_contains
+    severity: hard
+    description: Reviewer does not rubber-stamp the duplicated authority plan
+    value: looks good
