@@ -10,8 +10,12 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../adapters/persistence.js', () => ({ readState: mocks.readState }));
-vi.mock('./review/host-task-policy.js', () => ({ buildHostTaskChallengeContract: () => undefined }));
-vi.mock('./review/evidence-binding.js', () => ({ buildHostTaskEvidence: mocks.buildHostTaskEvidence }));
+vi.mock('./review/host-task-policy.js', () => ({
+  buildHostTaskChallengeContract: () => undefined,
+}));
+vi.mock('./review/evidence-binding.js', () => ({
+  buildHostTaskEvidence: mocks.buildHostTaskEvidence,
+}));
 vi.mock('./review/assurance.js', () => ({
   appendInvocationEvidence: (state: unknown) => state,
   ensureReviewAssurance: (state: unknown) => state,
@@ -22,7 +26,9 @@ vi.mock('./review/assurance.js', () => ({
 vi.mock('./review/obligation-settlement.js', () => ({
   settleReviewObligationAfterAttempt: (state: unknown) => state,
 }));
-vi.mock('./plugin-helpers.js', () => ({ strictBlockedOutput: mocks.strictBlockedOutput }));
+vi.mock('./plugin-helpers.js', () => ({
+  strictBlockedOutput: mocks.strictBlockedOutput,
+}));
 vi.mock('./review/enforcement/rejection-policy.js', () => ({
   bindOutcomeToRejectionReason: (outcome: string) =>
     outcome === 'schema_invalid' ? 'schema_invalid' : null,
@@ -119,7 +125,8 @@ describe('host-task schema rejection boundary', () => {
     expect(blocked.detail?.nextAction).toContain('Re-run the originating FlowGuard command');
 
     expect(semanticFactory).toBeTypeOf('function');
-    const events = semanticFactory?.({ phase: 'PLAN' }, '2026-09-11T20:19:13.244Z') ?? [];
+    const events =
+      semanticFactory?.({ phase: 'PLAN' }, '2026-09-11T20:19:13.244Z') ?? [];
     expect(events).toEqual([
       expect.objectContaining({
         phase: 'PLAN',
