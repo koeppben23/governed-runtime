@@ -2,14 +2,11 @@
  * @module rendering/mandates-renderer.test
  * @description Contract tests for the public API surface of mandates-renderer.
  *
- * Covers 7 of 9 publicly exported functions. Internal helpers and static
- * phase mappings are NOT tested in isolation — they are covered by the
- * integration-level install/doctor/status tool tests.
- *
  * @test-policy HAPPY, BAD, CORNER
  */
 
-import { describe, it, expect } from 'vitest';
+import { createHash } from 'node:crypto';
+import { describe, expect, it } from 'vitest';
 import { FLOWGUARD_MANDATES_KERNEL } from '../templates/mandates.js';
 import {
   buildMandatesContent,
@@ -21,7 +18,9 @@ import {
   renderCommandGovernanceRules,
 } from './mandates-renderer.js';
 
-const VALID_DIGEST = '0000000000000000000000000000000000000000000000000000000000000000';
+const VALID_DIGEST = createHash('sha256')
+  .update(FLOWGUARD_MANDATES_KERNEL, 'utf-8')
+  .digest('hex');
 const VALID_VERSION = '1.2.0-tp.1';
 
 function managedArtifact(version = VALID_VERSION, digest = VALID_DIGEST): string {
@@ -47,7 +46,7 @@ describe('buildMandatesContent', () => {
 });
 
 describe('extractManagedDigest', () => {
-  it('extracts the 64-char hex digest from a managed artifact', () => {
+  it('extracts the 64-char hex digest from a complete managed envelope', () => {
     expect(extractManagedDigest(managedArtifact())).toBe(VALID_DIGEST);
   });
 
@@ -76,12 +75,29 @@ describe('extractManagedVersion', () => {
 });
 
 describe('isManagedArtifact', () => {
-  it('returns true for a managed artifact', () => {
+  it('returns true only for a complete envelope whose body matches its digest', () => {
     expect(isManagedArtifact(managedArtifact())).toBe(true);
   });
 
   it('returns false for plain text', () => {
     expect(isManagedArtifact('# Hello')).toBe(false);
+  });
+
+  it('rejects a look-alike managed header with a forged digest', () => {
+    expect(isManagedArtifact(managedArtifact(VALID_VERSION, '0'.repeat(64)))).toBe(false);
+  });
+
+  it('rejects a valid managed artifact after its body is modified', () => {
+    const modified = managedArtifact().replace(
+      '# FlowGuard Agent Rules',
+      '# FlowGuard Agent Rules\ncustomer mutation',
+    );
+    expect(isManagedArtifact(modified)).toBe(false);
+    expect(extractManagedBody(modified)).toBeNull();
+  });
+
+  it('rejects extra bytes before the managed envelope', () => {
+    expect(isManagedArtifact(`customer prefix\n${managedArtifact()}`)).toBe(false);
   });
 });
 
