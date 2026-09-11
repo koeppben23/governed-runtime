@@ -15,8 +15,11 @@ guidance only. The canonical installed FlowGuard mandate body is owned by
 > `live-host` runner executes that host/provider/model. A strict runner is bound to exactly
 > one product host, so one CLI cannot silently establish cross-host assurance.
 
-The harness persists schema-v3 provenance including runner/config identity, effective
-timeout, Git SHA and dirty state, FlowGuard/mandate identity, and case-corpus digest.
+The harness persists schema-v3 provenance including runner/config identity, optional
+deterministic seed, effective timeout, Git SHA and dirty state, FlowGuard/mandate
+identity, and case-corpus digest. Required non-inferiority comparison requires a live,
+host-bound, non-synthetic runner with a seed, compares compatible provider/model/runner
+provenance, requires the same seed, and treats dirty-worktree evidence as `NOT_VERIFIED`.
 Results are aggregated by instruction surface and by product host; those dimensions must
 not be collapsed into a single assurance score.
 
@@ -41,7 +44,9 @@ For each scenario:
 
 A deterministic/synthetic PASS establishes harness and materialization behavior only.
 A strict live PASS establishes evidence only for the recorded host/provider/model/run
-provenance; it is not a universal cross-provider claim.
+provenance; it is not a universal cross-provider claim. A required non-inferiority PASS
+additionally requires comparable clean-worktree provenance and an identical deterministic
+seed across baseline and candidate.
 
 Optional severity tags:
 
@@ -156,7 +161,7 @@ For each live run, capture:
 - Scenario ID,
 - instruction surface and product host,
 - provider/model/model version,
-- runner/config identity,
+- runner/config identity and deterministic seed when used,
 - Git SHA + dirty state,
 - case-corpus and mandate digests,
 - observed output summary,
