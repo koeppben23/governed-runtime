@@ -13,6 +13,7 @@ const RUNNER_CONFIG: RunnerConfig = {
   model: 'fake-agent',
   modelVersion: '1',
   runnerVersion: '1',
+  runnerKind: 'synthetic',
   promptTransport: 'stdin',
   args: [],
   staticEnv: {},
@@ -22,10 +23,12 @@ const RUNNER_CONFIG: RunnerConfig = {
 
 const BASE_CASE: EvalCase = {
   id: 'test-case',
-  description: '',
+  description: 'test case',
   instructionSurface: 'repository_contributor',
   task: 'do something',
   mode: 'output-only',
+  workspace: { mode: 'empty' },
+  syntheticSecrets: {},
   assertions: [
     {
       type: 'exit_code',
@@ -64,7 +67,7 @@ function runnerErrorOutcome(): RunnerOutcome {
 }
 
 describe('writeReports', () => {
-  it('writes schemaVersion 2 with runner and repository provenance', () => {
+  it('writes schemaVersion 3 with reproducible runner and repository provenance', () => {
     const c: ExecutedEvalCase = {
       evalCase: { ...BASE_CASE, id: 'c1' },
       result: {
@@ -79,27 +82,29 @@ describe('writeReports', () => {
 
     const d = writeReports(RUNNER_CONFIG, [c], { runId: 'test-run-1' });
     const s = JSON.parse(readFileSync(join(d, 'summary.json'), 'utf-8'));
-    expect(s.schemaVersion).toBe(2);
+    expect(s.schemaVersion).toBe(3);
     expect(s.runner).toMatchObject({
       name: 'fake-host',
       provider: 'synthetic',
       model: 'fake-agent',
       modelVersion: '1',
       runnerVersion: '1',
+      runnerKind: 'synthetic',
+      timeoutMs: 1_000,
     });
+    expect(s.runner.configDigest).toMatch(/^[0-9a-f]{64}$/);
     expect(s.repository.gitCommit).toMatch(/^[0-9a-f]{40}$/);
+    expect(typeof s.repository.gitDirty).toBe('boolean');
     expect(s.repository.flowguardVersion).toBeTruthy();
     expect(s.repository.mandateDigest).toMatch(/^[0-9a-f]{64}$/);
-    expect(s).not.toHaveProperty('passed');
-    expect(s).not.toHaveProperty('failed');
-    expect(s).not.toHaveProperty('runnerErrors');
+    expect(s.repository.caseCorpusDigest).toMatch(/^[0-9a-f]{64}$/);
     expect(s.byInstructionSurface.repository_contributor.passed).toBe(1);
-    expect(s.byInstructionSurface.flowguard_product.passed).toBe(0);
+    expect(s.byInstructionHost.opencode).toEqual({ passed: 0, failed: 0, runnerErrors: 0 });
 
     rmSync(d, { recursive: true, force: true });
   });
 
-  it('writes summary.md with provenance and surface-scoped totals', () => {
+  it('writes summary.md with provenance, surface totals, and host totals', () => {
     const c: ExecutedEvalCase = {
       evalCase: { ...BASE_CASE, id: 'c1' },
       result: {
@@ -117,6 +122,9 @@ describe('writeReports', () => {
     expect(md).toContain('Eval Run: fake-host');
     expect(md).toContain('Provider/model: synthetic/fake-agent (1)');
     expect(md).toContain('By Instruction Surface');
+    expect(md).toContain('By Product Host');
+    expect(md).toContain('Runner config digest:');
+    expect(md).toContain('Case corpus digest:');
     expect(md).toContain('FAIL');
     expect(md).toContain('c1');
 
