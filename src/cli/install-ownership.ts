@@ -118,13 +118,7 @@ export function deriveInstallOwnershipManifest(input: {
   packageJsonOriginalContent?: Buffer;
   opencodeOriginalContent?: Buffer;
   opencodeCurrentContent?: string | null;
-  previousManifest?: InstallOwnershipManifest | null;
 }): InstallOwnershipManifest {
-  const prior = input.previousManifest;
-  if (prior && prior.platform === input.platform && prior.scope === input.scope) {
-    return InstallOwnershipManifestSchema.parse(prior);
-  }
-
   const previousDeps = parsedDependencies(input.packageJsonOriginalContent);
   const packageJsonCreated = !input.packageJsonExisted;
   const zodAdded = packageJsonCreated || previousDeps === null || !('zod' in previousDeps);
@@ -158,14 +152,33 @@ export function deriveInstallOwnershipManifest(input: {
   });
 }
 
+async function parseExistingManifest(target: string): Promise<InstallOwnershipManifest | null> {
+  try {
+    const raw = await readFile(ownershipManifestPath(target), 'utf-8');
+    const parsed = InstallOwnershipManifestSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : null;
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null;
+    return null;
+  }
+}
+
 export async function writeInstallOwnershipManifest(
   target: string,
   manifest: InstallOwnershipManifest,
 ): Promise<string> {
   const path = ownershipManifestPath(target);
+  const existing = await parseExistingManifest(target);
+  const effective =
+    existing && existing.platform === manifest.platform && existing.scope === manifest.scope
+      ? existing
+      : manifest;
   const tmp = `${path}.tmp.${process.pid}.${randomUUID()}`;
   try {
-    await writeFile(tmp, JSON.stringify(manifest, null, 2) + '\n', { encoding: 'utf-8', flag: 'wx' });
+    await writeFile(tmp, JSON.stringify(effective, null, 2) + '\n', {
+      encoding: 'utf-8',
+      flag: 'wx',
+    });
     await rename(tmp, path);
   } catch (error) {
     try {
@@ -181,12 +194,5 @@ export async function writeInstallOwnershipManifest(
 export async function readInstallOwnershipManifest(
   target: string,
 ): Promise<InstallOwnershipManifest | null> {
-  try {
-    const raw = await readFile(ownershipManifestPath(target), 'utf-8');
-    const parsed = InstallOwnershipManifestSchema.safeParse(JSON.parse(raw));
-    return parsed.success ? parsed.data : null;
-  } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null;
-    return null;
-  }
+  return parseExistingManifest(target);
 }
