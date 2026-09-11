@@ -156,7 +156,7 @@ function hostSubagentTaskRequired(detail: DiagnosticDetail): RuntimeDiagnostics 
       optionalField(detail.reason) ??
       'Policy requires host-visible reviewer Task evidence, but no bindable evidence was found.',
     observed: clean([
-      obligationId ? `obligationId=${obligationId}` : undefined,
+      obligationId ? `obligationId=${detail.obligationId}` : undefined,
       optionalField(detail.bindOutcome) ? `bindOutcome=${detail.bindOutcome}` : undefined,
       optionalField(detail.reviewerSubagentType)
         ? `reviewerSubagentType=${detail.reviewerSubagentType}`
@@ -178,6 +178,38 @@ function hostSubagentTaskRequired(detail: DiagnosticDetail): RuntimeDiagnostics 
   };
 }
 
+function hostTaskSchemaInvalid(detail: DiagnosticDetail): RuntimeDiagnostics {
+  return {
+    diagnosticCode: 'REVIEW_HOST_TASK_FINDINGS_SCHEMA_INVALID',
+    severity: 'error',
+    phase: optionalField(detail.phase),
+    policyMode: optionalField(detail.policyMode) ?? 'host_task_required',
+    rootCause:
+      optionalField(detail.reason) ??
+      optionalField(detail.message) ??
+      'The host-visible reviewer Task completed, but its ReviewFindings output failed canonical schema validation.',
+    observed: clean([
+      optionalField(detail.obligationId) ? `obligationId=${detail.obligationId}` : undefined,
+      optionalField(detail.bindOutcome) ? `bindOutcome=${detail.bindOutcome}` : undefined,
+      optionalField(detail.schemaErrors) ? `schemaErrors=${detail.schemaErrors}` : undefined,
+      optionalField(detail.reviewerSubagentType)
+        ? `reviewerSubagentType=${detail.reviewerSubagentType}`
+        : undefined,
+    ]),
+    required: [
+      'one schema-valid canonical ReviewFindings object from the completed reviewer Task',
+      'ReviewFindings bound to the active review obligation',
+      'matching mandateDigest and criteriaVersion',
+    ],
+    missingEvidence: ['schema_valid_review_findings'],
+    safeNextActions: [
+      'Re-run the originating FlowGuard command to authorize a fresh output-repair attempt and emit a new canonical reviewerTaskPrompt.',
+      'Only then invoke the FlowGuard reviewer Task again using the newly issued prompt.',
+      'Do NOT hand-edit, copy, or submit the rejected reviewFindings.',
+    ],
+  };
+}
+
 function subagentEvidenceMissing(detail: DiagnosticDetail): RuntimeDiagnostics {
   const obligationId = optionalField(detail.obligationId);
   return {
@@ -189,7 +221,7 @@ function subagentEvidenceMissing(detail: DiagnosticDetail): RuntimeDiagnostics {
       optionalField(detail.reason) ??
       'Review findings could not be bound to trusted reviewer invocation evidence.',
     observed: clean([
-      obligationId ? `obligationId=${obligationId}` : undefined,
+      obligationId ? `obligationId=${detail.obligationId}` : undefined,
       optionalField(detail.invocationId) ? `invocationId=${detail.invocationId}` : undefined,
     ]),
     required: [
@@ -270,6 +302,8 @@ export function buildBlockedDiagnostics(
       return riskClassificationBlocked(detail);
     case 'HOST_SUBAGENT_TASK_REQUIRED':
       return hostSubagentTaskRequired(detail);
+    case 'ENVELOPE_SCHEMA_INVALID':
+      return hostTaskSchemaInvalid(detail);
     case 'SUBAGENT_EVIDENCE_MISSING':
       return subagentEvidenceMissing(detail);
     case 'SUBAGENT_EVIDENCE_REUSED':
