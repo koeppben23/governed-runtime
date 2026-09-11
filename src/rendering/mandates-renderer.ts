@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Phase as PhaseSchema, type Phase } from '../state/schema.js';
 import {
   FLOWGUARD_MANDATES_FULL_BODY,
@@ -240,37 +241,50 @@ export function renderCompactionMandatesSummary(
 }
 
 // ---------------------------------------------------------------------------
-// Managed-artifact header functions
+// Managed-artifact envelope functions
 // ---------------------------------------------------------------------------
 
 export function buildMandatesContent(version: string, digest: string): string {
   return `<!-- @flowguard/core v${version} | managed artifact — do not edit manually -->\n<!-- content-digest: sha256:${digest} -->\n\n${FLOWGUARD_MANDATES_KERNEL}`;
 }
 
+interface ManagedArtifactEnvelope {
+  readonly version: string;
+  readonly digest: string;
+  readonly body: string;
+}
+
+function parseManagedArtifactEnvelope(content: string): ManagedArtifactEnvelope | null {
+  const match = content.match(
+    /^<!-- @flowguard\/core v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?) \| managed artifact — do not edit manually -->\n<!-- content-digest: sha256:([a-f0-9]{64}) -->\n\n([\s\S]*)$/,
+  );
+  if (!match?.[1] || !match[2] || match[3] === undefined) return null;
+  return { version: match[1], digest: match[2], body: match[3] };
+}
+
 export function extractManagedDigest(content: string): string | null {
-  const match = content.match(/^<!-- content-digest: sha256:([a-f0-9]{64}) -->$/m);
-  return match?.[1] ?? null;
+  return parseManagedArtifactEnvelope(content)?.digest ?? null;
 }
 
 export function extractManagedVersion(content: string): string | null {
-  const match = content.match(
-    /^<!-- @flowguard\/core v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?) \| managed artifact/m,
-  );
-  return match?.[1] ?? null;
+  return parseManagedArtifactEnvelope(content)?.version ?? null;
 }
 
+/**
+ * Managed ownership requires a complete canonical envelope and a body whose
+ * SHA-256 matches the declared digest. A look-alike prefix is never ownership.
+ */
 export function isManagedArtifact(content: string): boolean {
-  return /^<!-- @flowguard\/core v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)? \| managed artifact/.test(
-    content,
-  );
+  const envelope = parseManagedArtifactEnvelope(content);
+  if (!envelope) return false;
+  const actualDigest = createHash('sha256').update(envelope.body, 'utf-8').digest('hex');
+  return actualDigest === envelope.digest;
 }
 
 export function extractManagedBody(content: string): string | null {
-  if (!isManagedArtifact(content)) return null;
-  const match = content.match(
-    /^<!-- @flowguard\/core[^\n]*\n<!-- content-digest:[^\n]*\n\n([\s\S]*)$/,
-  );
-  return match?.[1] ?? null;
+  const envelope = parseManagedArtifactEnvelope(content);
+  if (!envelope || !isManagedArtifact(content)) return null;
+  return envelope.body;
 }
 
 export {
