@@ -39,7 +39,8 @@ ${DISCOVERY_REVIEW_CAPTURE}
    \`flowguard_help({ view: "context", includeArtifactContent: true })\` to retrieve the complete
    canonical plan content. Use ONLY the returned content — do not reconstruct or infer plan
    details from metadata alone.)
-3. Complete every approved plan obligation while preserving dependencies and validation boundaries:
+3. Satisfy every approved outcome, contract, authority decision, scope boundary, and acceptance
+   criterion while preserving dependencies and validation boundaries:
    - FIRST confirm this is a git repository (e.g. \`git rev-parse --is-inside-work-tree\` in the
      worktree). Implementation evidence is git-derived: the runtime blocks every mutating host tool
      with \`NOT_GIT_REPO\` in a non-Git worktree, and \`flowguard_implement\` cannot record evidence
@@ -52,7 +53,8 @@ ${DISCOVERY_REVIEW_CAPTURE}
    - Use \`write\` or \`edit\` to create or modify files.
    - Use \`bash\` for commands (install dependencies, run formatters, etc.).
    - Do not add behavior, authority, scope, or acceptance criteria beyond the approved plan.
- 4. After completing ALL approved plan obligations, call \`flowguard_implement({})\` with no arguments.
+  4. After satisfying all approved outcomes, contracts, authority decisions, scope boundaries, and
+     acceptance criteria, call \`flowguard_implement({})\` with no arguments.
     - The tool records evidence and auto-advances the state machine. It can cross MULTIPLE
       phases in one call — e.g. straight past IMPL_VALIDATION into IMPL_REVIEW (a
       policy-permitted zero-check transition) or into EVIDENCE_REVIEW (reduced ceremony).
@@ -133,7 +135,7 @@ ${SHARED_REVIEW_LOOP({
 ## Rules
 
 - The approved plan's scope, acceptance criteria, contracts, authority decisions, and required outcomes are binding; implementation mechanics may adapt locally inside those boundaries.
-- Make only changes the plan requires or that are clearly necessary to satisfy its approved outcomes: no speculative flexibility, no defensive handling for scenarios that cannot occur, no unrequested refactors of untouched code (see AP-B11 Over-Engineering).
+- Make only changes necessary to satisfy the approved scope, outcomes, contracts, authority decisions, and acceptance criteria: no speculative flexibility, no defensive handling for scenarios that cannot occur, no unrequested refactors of untouched code (see AP-B11 Over-Engineering).
 - If a materially different solution is required for correctness, stop and return to /plan rather than silently changing approved scope or behavior.
 - Solve the problem generally; never special-case test inputs or hardcode values to make checks pass (see AP-B12 Test-Fitting). If a test looks wrong, surface it instead of fitting to it.
 - Use the standard project tools; do not build helper-script workarounds to shortcut a task. Remove any temporary files or scaffolding created for iteration before finishing.
@@ -151,7 +153,7 @@ ${SHARED_REVIEW_LOOP({
 
 Happy path (checks exist):
 1. \`flowguard_status\` → phase: IMPLEMENTATION, plan approved
-2. (complete approved obligations using the smallest correct implementation mechanics)
+2. (satisfy approved outcomes, contracts, authority decisions, scope, and acceptance criteria using the smallest correct implementation mechanics)
 3. \`flowguard_implement({})\` → returns phase: IMPL_VALIDATION
 4. \`flowguard_status\` (unfocused) → read \`activeChecks\`
 5. \`flowguard_run_check({ kind: "<kind>" })\` for each active check → passes, advances to IMPL_REVIEW
@@ -183,7 +185,7 @@ ${GOVERNANCE_RULES}
 
 ## Done-when
 
-- Every approved plan obligation is satisfied without material scope, behavior, authority, or acceptance-criteria drift.
+- Every approved outcome, contract, authority decision, scope boundary, and acceptance criterion is satisfied without material drift.
 - Verification Evidence distinguishes Planned from Executed checks.
 - Implementation evidence is recorded via flowguard_implement.
 - Independent review loop has converged.

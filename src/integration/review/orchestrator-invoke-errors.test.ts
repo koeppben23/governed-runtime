@@ -145,7 +145,7 @@ describe('invokeReviewer — error handling', () => {
       _resetAgentResolutionCache();
     });
 
-    it('T5: returns null with model_capability_incompatible when tool_choice not supported', async () => {
+    it('T5: returns a typed blocker when tool_choice is not supported', async () => {
       const diagnostics: Array<Record<string, unknown>> = [];
       const client = makeClient({
         agents: [{ id: 'flowguard-reviewer' }],
@@ -168,7 +168,11 @@ describe('invokeReviewer — error handling', () => {
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
-      expect(result).toBeNull();
+      expect(result).toMatchObject({
+        blocked: true,
+        code: 'REVIEWER_INVOCATION_EXHAUSTED',
+        reviewInvocation: { status: 'blocked_capability_mismatch' },
+      });
     });
 
     it('T6: model_capability_incompatible includes diagnostic details', async () => {
@@ -286,7 +290,11 @@ describe('invokeReviewer — error handling', () => {
           _sleepFn: NO_SLEEP,
           _onAttemptFailed: (info) => diagnostics.push(info),
         });
-        expect(result).toBeNull();
+        expect(result).toMatchObject({
+          blocked: true,
+          code: 'REVIEWER_INVOCATION_EXHAUSTED',
+          reviewInvocation: { status: 'blocked_capability_mismatch' },
+        });
         const incompatible = diagnostics.find((d) => d.step === 'model_capability_incompatible');
         expect(incompatible).toBeDefined();
       }
@@ -314,7 +322,11 @@ describe('invokeReviewer — error handling', () => {
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
-      expect(result).toBeNull();
+      expect(result).toMatchObject({
+        blocked: true,
+        code: 'REVIEWER_INVOCATION_EXHAUSTED',
+        reviewInvocation: { status: 'blocked_capability_mismatch' },
+      });
       const incompatible = diagnostics.find((d) => d.step === 'model_capability_incompatible');
       expect(incompatible).toBeDefined();
       expect((incompatible!.details as Record<string, unknown>).detectedPattern).toContain(
@@ -389,7 +401,11 @@ describe('invokeReviewer — error handling', () => {
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
-      expect(result).toBeNull();
+      expect(result).toMatchObject({
+        blocked: true,
+        code: 'REVIEWER_INVOCATION_EXHAUSTED',
+        reviewInvocation: { status: 'blocked_capability_mismatch' },
+      });
       const incompatible = diagnostics.find((d) => d.step === 'model_capability_incompatible');
       expect(incompatible).toBeDefined();
     });

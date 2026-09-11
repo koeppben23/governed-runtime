@@ -47,17 +47,27 @@ export type { OrchestratorClient } from './types.js';
 
 export interface ReviewerBlockedResult {
   readonly blocked: true;
-  readonly code: typeof REASON_HOST_SUBAGENT_TASK_REQUIRED;
+  readonly code: typeof REASON_HOST_SUBAGENT_TASK_REQUIRED | 'REVIEWER_INVOCATION_EXHAUSTED';
   readonly reason: string;
-  readonly reviewInvocation: {
-    readonly policy: 'host_task_required';
-    readonly status: 'blocked_until_host_task';
-    readonly code: typeof REASON_HOST_SUBAGENT_TASK_REQUIRED;
-    readonly reviewerSubagentType: typeof REVIEWER_SUBAGENT_TYPE;
-    readonly invocationMode: 'host_subagent_task';
-    readonly hostVisible: true;
-    readonly recovery: readonly [typeof RECOVERY_HOST_SUBAGENT_TASK];
-  };
+  readonly reviewInvocation:
+    | {
+        readonly policy: 'host_task_required';
+        readonly status: 'blocked_until_host_task';
+        readonly code: typeof REASON_HOST_SUBAGENT_TASK_REQUIRED;
+        readonly reviewerSubagentType: typeof REVIEWER_SUBAGENT_TYPE;
+        readonly invocationMode: 'host_subagent_task';
+        readonly hostVisible: true;
+        readonly recovery: readonly [typeof RECOVERY_HOST_SUBAGENT_TASK];
+      }
+    | {
+        readonly policy: 'host_task_required' | 'sdk_allowed' | 'host_task_preferred';
+        readonly status: 'blocked_capability_mismatch';
+        readonly code: 'REVIEWER_INVOCATION_EXHAUSTED';
+        readonly reviewerSubagentType: typeof REVIEWER_SUBAGENT_TYPE;
+        readonly invocationMode: 'sdk_session';
+        readonly hostVisible: false;
+        readonly recovery: readonly [string];
+      };
 }
 
 /** Result of a reviewer invocation that reached review transport. */
@@ -533,7 +543,25 @@ function textCompatBlocked(input: InvokeAttemptInput, error: unknown): InvokeAtt
       recovery: `Configure the ${REVIEWER_SUBAGENT_TYPE} agent to use a structured-output-capable model.`,
     },
   });
-  return { kind: 'done', result: null };
+  return {
+    kind: 'done',
+    result: {
+      blocked: true,
+      code: 'REVIEWER_INVOCATION_EXHAUSTED',
+      reason:
+        'The configured reviewer model does not support required structured output. ' +
+        `Configure ${REVIEWER_SUBAGENT_TYPE} to use a structured-output-capable model.`,
+      reviewInvocation: {
+        policy: input.options.reviewInvocationPolicy,
+        status: 'blocked_capability_mismatch',
+        code: 'REVIEWER_INVOCATION_EXHAUSTED',
+        reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
+        invocationMode: 'sdk_session',
+        hostVisible: false,
+        recovery: [`Configure ${REVIEWER_SUBAGENT_TYPE} to use a structured-output-capable model.`],
+      },
+    },
+  };
 }
 
 async function showTextCompatToast(client: OrchestratorClient): Promise<void> {

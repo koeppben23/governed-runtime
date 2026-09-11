@@ -303,4 +303,13 @@ describe('implement command: validation-gate contract', () => {
     expect(body).toContain('retry');
     expect(body).not.toContain('retry in place');
   });
+
+  it('treats approved outcomes and contracts, not implementation mechanics, as binding', () => {
+    const body = COMMANDS['implement.md'];
+    expect(body).toContain('Local implementation mechanics are not independently authoritative');
+    expect(body).toContain('implementation mechanics may adapt locally');
+    expect(body).toContain('approved outcomes, contracts, authority decisions, scope');
+    expect(body).not.toContain('Complete every approved plan obligation');
+    expect(body).not.toContain('changes the plan requires');
+  });
 });
