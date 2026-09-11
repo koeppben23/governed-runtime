@@ -78,7 +78,7 @@ async function mayRemoveMandate(fullPath: string, warnings: string[]): Promise<b
   const content = await safeRead(fullPath);
   if (content === null) return true;
   if (!isManagedArtifact(content)) {
-    warnings.push(`${MANDATES_FILENAME} has no managed header — preserved`);
+    warnings.push(`${MANDATES_FILENAME} has no valid managed envelope — preserved`);
     return false;
   }
 
@@ -87,7 +87,7 @@ async function mayRemoveMandate(fullPath: string, warnings: string[]): Promise<b
   const fileBody = extractManagedBody(content);
   const bodyModified = fileBody !== null && sha256(fileBody) !== expectedDigest;
   if ((fileDigest && fileDigest !== expectedDigest) || bodyModified) {
-    warnings.push(`${MANDATES_FILENAME} was locally modified — removing FlowGuard-owned artifact`);
+    warnings.push(`${MANDATES_FILENAME} is FlowGuard-owned but from a different canonical mandate revision`);
   }
   return true;
 }
@@ -130,7 +130,7 @@ async function removeManagedFiles(
         ops.push({
           path: fullPath,
           action: 'skipped',
-          reason: 'same-named file is not a FlowGuard managed artifact',
+          reason: 'same-named file is not a cryptographically valid FlowGuard managed artifact',
         });
       } else {
         const removed = await safeUnlink(fullPath);
@@ -170,45 +170,25 @@ function isGeneratedPackageShell(parsed: Record<string, unknown>): boolean {
 
 function restoreCoreDependency(
   deps: Record<string, string>,
-  pkgPath: string,
-  ownership: InstallOwnershipManifest['packageJson'] | undefined,
-  warnings: string[],
+  ownership: InstallOwnershipManifest['packageJson'],
 ): void {
-  const previous = ownership?.previousCoreDependency;
+  const previous = ownership.previousCoreDependency;
   if (previous === null) {
     delete deps['@flowguard/core'];
     return;
   }
-  if (typeof previous === 'string') {
-    deps['@flowguard/core'] = previous;
-    return;
-  }
-  if (typeof deps['@flowguard/core'] === 'string') {
-    warnings.push(
-      `${pkgPath}: @flowguard/core ownership predates installer provenance — preserved rather than guessed`,
-    );
-  }
+  deps['@flowguard/core'] = previous;
 }
 
 function restorePackageDependencies(
   parsed: Record<string, unknown>,
-  pkgPath: string,
-  ownership: InstallOwnershipManifest['packageJson'] | undefined,
-  warnings: string[],
+  ownership: InstallOwnershipManifest['packageJson'],
 ): void {
   const deps = { ...((parsed['dependencies'] ?? {}) as Record<string, string>) };
-  restoreCoreDependency(deps, pkgPath, ownership, warnings);
-  if (ownership?.zodAdded === true && deps['zod'] === '^4.0.0') delete deps['zod'];
+  restoreCoreDependency(deps, ownership);
+  if (ownership.zodAdded === true && deps['zod'] === '^4.0.0') delete deps['zod'];
   if (Object.keys(deps).length === 0) delete parsed['dependencies'];
   else parsed['dependencies'] = deps;
-}
-
-function packageCleanupReason(
-  ownership: InstallOwnershipManifest['packageJson'] | undefined,
-): string {
-  return ownership
-    ? 'restored installer-owned dependency changes from provenance'
-    : 'preserved package because dependency ownership is not provable';
 }
 
 async function cleanupPackageJson(
@@ -220,15 +200,20 @@ async function cleanupPackageJson(
   const pkgContent = await safeRead(pkgPath);
   if (!pkgContent) return [];
 
+  if (ownership === null) {
+    warnings.push(
+      `${pkgPath}: dependency ownership is not provable — preserving package.json byte-for-byte`,
+    );
+    return [{ path: pkgPath, action: 'skipped', reason: 'ownership not proven; no mutation performed' }];
+  }
+
   try {
     const parsed = JSON.parse(pkgContent) as Record<string, unknown>;
-    const packageOwnership = ownership?.packageJson;
-    restorePackageDependencies(parsed, pkgPath, packageOwnership, warnings);
+    const packageOwnership = ownership.packageJson;
+    restorePackageDependencies(parsed, packageOwnership);
 
     const restoreAbsent =
-      packageOwnership?.created === true &&
-      isGeneratedPackageShell(parsed) &&
-      !parsed['dependencies'];
+      packageOwnership.created === true && isGeneratedPackageShell(parsed) && !parsed['dependencies'];
     if (restoreAbsent) {
       await safeUnlink(pkgPath);
       return [
@@ -240,12 +225,16 @@ async function cleanupPackageJson(
       ];
     }
 
-    await writeFile(pkgPath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
+    const updated = JSON.stringify(parsed, null, 2) + '\n';
+    if (updated === pkgContent) {
+      return [{ path: pkgPath, action: 'skipped', reason: 'owned dependency state already restored' }];
+    }
+    await writeFile(pkgPath, updated, 'utf-8');
     return [
       {
         path: pkgPath,
         action: 'merged',
-        reason: packageCleanupReason(packageOwnership),
+        reason: 'restored installer-owned dependency changes from provenance',
       },
     ];
   } catch {
