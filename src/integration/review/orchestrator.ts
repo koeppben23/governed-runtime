@@ -32,17 +32,11 @@ import type { OrchestratorClient } from './types.js';
 import { REVIEW_FINDINGS_JSON_SCHEMA } from './findings-schema.js';
 import { extractStructuredOutputToolPart } from './structured-output-tool-part.js';
 import { extractJsonFromTextWithMethod } from './text-extraction.js';
-import {
-  resolveReviewerAgent,
-  REVIEWER_AGENT_FALLBACK,
-  REVIEWER_SYSTEM_DIRECTIVE,
-} from './agent-resolution.js';
+import { resolveReviewerAgent } from './agent-resolution.js';
 import { buildTextCompatReviewerPrompt } from './prompt-builders.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-// OrchestratorClient lives in ./types.ts to break the circular type-only
-// dependency between orchestrator.ts and agent-resolution.ts.
 export type { OrchestratorClient } from './types.js';
 
 export interface ReviewerBlockedResult {
@@ -70,7 +64,6 @@ export interface ReviewerBlockedResult {
       };
 }
 
-/** Result of a reviewer invocation that reached review transport. */
 export interface ReviewerSuccessResult {
   readonly blocked?: false;
   readonly sessionId: string;
@@ -85,7 +78,6 @@ export interface ReviewerSuccessResult {
 
 export type ReviewerResult = ReviewerSuccessResult | ReviewerBlockedResult;
 
-/** Result of the full orchestration (including output mutation). */
 export interface OrchestrationResult {
   readonly success: boolean;
   readonly reviewerResult: ReviewerResult | null;
@@ -93,12 +85,8 @@ export interface OrchestrationResult {
   readonly error: string | null;
 }
 
-/** Title for the reviewer child session. */
 const REVIEWER_SESSION_TITLE = 'FlowGuard Independent Review';
 
-// ─── SDK Invocation ──────────────────────────────────────────────────────────
-
-/** Options for controlling retry behavior of reviewer invocation. */
 export interface InvokeReviewerOptions {
   readonly reviewOutputPolicy?: 'structured_required' | 'text_compat_allowed';
   readonly reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed';
@@ -123,11 +111,6 @@ export interface InvokeReviewerOptions {
     error?: unknown;
     details?: Record<string, unknown>;
   }) => void;
-  /**
-   * Success-path diagnostic callback, symmetric to _onAttemptFailed. Invoked
-   * when a reviewer child session is created and/or a prompt completes, carrying
-   * parent/child correlation and step timing for observability (diagnostic only).
-   */
   readonly _onAttemptSucceeded?: (info: {
     attempt: number;
     step: 'session_create' | 'session_prompt';
@@ -137,15 +120,10 @@ export interface InvokeReviewerOptions {
   }) => void;
 }
 
-/**
- * Sleep utility for retry backoff. Exported for testability.
- * @internal
- */
 export function retrySleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Default retry configuration. */
 const DEFAULT_INVOKE_OPTIONS: Required<InvokeReviewerOptions> = {
   reviewOutputPolicy: 'structured_required',
   reviewInvocationPolicy: 'host_task_required',
@@ -171,30 +149,16 @@ interface ExecuteFormatFreePromptInput {
   }) => void;
 }
 
-/**
- * Execute a format-free prompt on a child session and extract JSON findings.
- * @internal
- */
 async function executeFormatFreePrompt(
   input: ExecuteFormatFreePromptInput,
 ): Promise<ReviewerResult | null> {
   const { client, agent, prompt, sessionId, attempt, modelCapabilityError, onFailed } = input;
-  const formatFreeBody: {
-    agent: string;
-    parts: Array<{ type: 'text'; text: string }>;
-    system?: string;
-  } = {
-    agent,
-    parts: [{ type: 'text' as const, text: prompt }],
-  };
-
-  if (agent === REVIEWER_AGENT_FALLBACK) {
-    formatFreeBody.system = REVIEWER_SYSTEM_DIRECTIVE;
-  }
-
   const formatFreeResult = await client.session.prompt({
     path: { id: sessionId },
-    body: formatFreeBody,
+    body: {
+      agent,
+      parts: [{ type: 'text' as const, text: prompt }],
+    },
   });
 
   if (formatFreeResult.error || !formatFreeResult.data) {
@@ -241,12 +205,11 @@ async function executeFormatFreePrompt(
     });
     return null;
   }
-  const extractedFindings = extraction.value;
 
   return {
     sessionId,
-    rawResponse: JSON.stringify(extractedFindings),
-    findings: extractedFindings,
+    rawResponse: JSON.stringify(extraction.value),
+    findings: extraction.value,
     reviewOutputMode: 'text_compat',
     structuredOutputUsed: false,
     reviewAssuranceLevel: 'text_compat_lower',
@@ -265,9 +228,23 @@ export async function invokeReviewer(
   if (invokeOptions.reviewInvocationPolicy === 'host_task_required')
     return hostTaskRequiredBlockedResult();
 
-  const maxAttempts = invokeOptions.maxRetries + 1;
-  const agent = await resolveReviewerAgent(client);
+  let agent: string;
+  try {
+    agent = await resolveReviewerAgent(client);
+  } catch (error) {
+    invokeOptions._onAttemptFailed({
+      attempt: 0,
+      step: 'agent_probe',
+      error,
+      details: {
+        reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
+        reviewInvocationPolicy: invokeOptions.reviewInvocationPolicy,
+      },
+    });
+    return reviewerIsolationUnavailableBlockedResult(invokeOptions.reviewInvocationPolicy, error);
+  }
 
+  const maxAttempts = invokeOptions.maxRetries + 1;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     if (attempt > 1)
       await invokeOptions._sleepFn(invokeOptions.baseDelayMs * Math.pow(2, attempt - 2));
@@ -285,6 +262,28 @@ export async function invokeReviewer(
   }
 
   return null;
+}
+
+function reviewerIsolationUnavailableBlockedResult(
+  policy: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed',
+  error: unknown,
+): ReviewerBlockedResult {
+  const detail = error instanceof Error ? error.message : String(error);
+  const recovery = `Install/register ${REVIEWER_SUBAGENT_TYPE} with its read-only host capability restrictions, then restart the host.`;
+  return {
+    blocked: true,
+    code: 'REVIEWER_INVOCATION_EXHAUSTED',
+    reason: `Independent review is blocked because isolated reviewer capability is unavailable: ${detail}`,
+    reviewInvocation: {
+      policy,
+      status: 'blocked_capability_mismatch',
+      code: 'REVIEWER_INVOCATION_EXHAUSTED',
+      reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
+      invocationMode: 'sdk_session',
+      hostVisible: false,
+      recovery: [recovery],
+    },
+  };
 }
 
 function hostTaskRequiredBlockedResult(): ReviewerBlockedResult {
@@ -374,9 +373,6 @@ async function promptReviewerSession(
   const capabilityResult = await handleInfoError(input, info?.error);
   if (capabilityResult) return capabilityResult;
 
-  // Prefer the top-level structured field; fall back to a host that delivers
-  // structured output as a completed, validated `StructuredOutput` tool part.
-  // Both are structured-high; a plain text part is never accepted here.
   const findings =
     extractStructuredFindings(info) ?? extractStructuredOutputToolPart(promptResult.data.parts);
   if (!findings) return handleNoStructuredFindings(input, promptResult.data.parts, info);
@@ -391,14 +387,11 @@ async function promptReviewerSession(
 }
 
 function buildStructuredPromptBody(agent: string, prompt: string) {
-  const body = {
+  return {
     agent,
     parts: [{ type: 'text' as const, text: prompt }],
     format: { type: 'json_schema' as const, schema: REVIEW_FINDINGS_JSON_SCHEMA, retryCount: 1 },
   };
-  if (agent === REVIEWER_AGENT_FALLBACK)
-    (body as { system?: string }).system = REVIEWER_SYSTEM_DIRECTIVE;
-  return body;
 }
 
 function handlePromptTransportFailure(
@@ -492,12 +485,6 @@ async function handleStructuredCapabilityError(
     modelCapabilityError: capabilityError,
     onFailed: input.options._onAttemptFailed,
   });
-  // Symmetric success observability: the text-compat path returns a valid
-  // ReviewerSuccessResult without emitting the session_prompt success event that
-  // the structured path emits. Emit it here for the text-compat retry session so
-  // a successful review always carries parent→child correlation and timing. (A
-  // separate session_create event for the retry session is intentionally not
-  // emitted, keeping this to the review-completion signal.)
   if (result && result.blocked !== true) {
     input.options._onAttemptSucceeded({
       attempt: input.attempt,
