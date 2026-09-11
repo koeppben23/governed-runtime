@@ -45,26 +45,45 @@ export function scoreCase(
   };
 }
 
+function emptyCounts(): { passed: number; failed: number; runnerErrors: number } {
+  return { passed: 0, failed: 0, runnerErrors: 0 };
+}
+
+function addVerdict(
+  counts: { passed: number; failed: number; runnerErrors: number },
+  verdict: EvalCaseResult['verdict'],
+): void {
+  if (verdict === 'PASS') counts.passed++;
+  else if (verdict === 'FAIL') counts.failed++;
+  else counts.runnerErrors++;
+}
+
 export function summarizeResults(
   runner: EvalRunnerProvenance,
   repository: RepositoryProvenance,
   caseResults: EvalCaseResult[],
 ): EvalSummary {
   const byInstructionSurface = {
-    repository_contributor: { passed: 0, failed: 0, runnerErrors: 0 },
-    flowguard_product: { passed: 0, failed: 0, runnerErrors: 0 },
+    repository_contributor: emptyCounts(),
+    flowguard_product: emptyCounts(),
   };
+  const byInstructionHost = {
+    opencode: emptyCounts(),
+    'claude-code': emptyCounts(),
+    codex: emptyCounts(),
+  };
+
   for (const result of caseResults) {
-    const summary = byInstructionSurface[result.instructionSurface];
-    if (result.verdict === 'PASS') summary.passed++;
-    else if (result.verdict === 'FAIL') summary.failed++;
-    else summary.runnerErrors++;
+    addVerdict(byInstructionSurface[result.instructionSurface], result.verdict);
+    if (result.instructionHost) addVerdict(byInstructionHost[result.instructionHost], result.verdict);
   }
+
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     runner,
     repository,
     byInstructionSurface,
+    byInstructionHost,
     cases: caseResults,
   };
 }
