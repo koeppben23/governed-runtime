@@ -156,7 +156,7 @@ function buildAlreadyBlockedState(): SessionState {
 /** Client that always fails — invokeReviewer will return null */
 function buildFailingClient(): OrchestratorClient {
   return {
-    app: { agents: vi.fn().mockResolvedValue({ data: [] }) },
+    app: { agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }) },
     session: {
       create: vi
         .fn()
@@ -169,7 +169,7 @@ function buildFailingClient(): OrchestratorClient {
 /** Client that returns blocked response */
 function buildBlockedClient(): OrchestratorClient {
   return {
-    app: { agents: vi.fn().mockResolvedValue({ data: [] }) },
+    app: { agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }) },
     session: {
       create: vi.fn().mockResolvedValue({ data: { id: 'child-blocked-1' }, error: undefined }),
       prompt: vi.fn().mockResolvedValue({
@@ -183,7 +183,7 @@ function buildBlockedClient(): OrchestratorClient {
 /** Client returning findings without structured_output (unparseable) */
 function buildUnparseableClient(): OrchestratorClient {
   return {
-    app: { agents: vi.fn().mockResolvedValue({ data: [] }) },
+    app: { agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }) },
     session: {
       create: vi.fn().mockResolvedValue({ data: { id: 'child-unparse-1' }, error: undefined }),
       prompt: vi.fn().mockResolvedValue({

@@ -18,9 +18,7 @@ import {
   renderCommandGovernanceRules,
 } from './mandates-renderer.js';
 
-const VALID_DIGEST = createHash('sha256')
-  .update(FLOWGUARD_MANDATES_KERNEL, 'utf-8')
-  .digest('hex');
+const VALID_DIGEST = createHash('sha256').update(FLOWGUARD_MANDATES_KERNEL, 'utf-8').digest('hex');
 const VALID_VERSION = '1.2.0-tp.1';
 
 function managedArtifact(version = VALID_VERSION, digest = VALID_DIGEST): string {

@@ -84,7 +84,7 @@ function buildFindings(overrides: Record<string, unknown> = {}): Record<string, 
 
 function buildClient(findings: Record<string, unknown> | null): OrchestratorClient {
   return {
-    app: { agents: vi.fn().mockResolvedValue({ data: [] }) },
+    app: { agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }) },
     session: {
       create: vi.fn().mockResolvedValue({ data: { id: CHILD_SESSION_ID }, error: undefined }),
       prompt: vi
@@ -100,7 +100,7 @@ function buildClient(findings: Record<string, unknown> | null): OrchestratorClie
 
 function buildTextCompatClient(findings: Record<string, unknown>): OrchestratorClient {
   return {
-    app: { agents: vi.fn().mockResolvedValue({ data: [] }) },
+    app: { agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }) },
     session: {
       create: vi.fn().mockResolvedValue({ data: { id: CHILD_SESSION_ID }, error: undefined }),
       prompt: vi

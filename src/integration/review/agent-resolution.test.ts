@@ -41,7 +41,9 @@ describe('reviewer agent resolution', () => {
 
   it('fails closed when the registry probe throws', async () => {
     const client = makeClient({ agentsThrows: true });
-    await expect(resolveReviewerAgent(client)).rejects.toBeInstanceOf(ReviewerAgentUnavailableError);
+    await expect(resolveReviewerAgent(client)).rejects.toBeInstanceOf(
+      ReviewerAgentUnavailableError,
+    );
   });
 
   it('fails closed when the registry returns an error', async () => {

@@ -23,4 +23,5 @@ assertions:
   - type: output_matches
     severity: hard
     description: Recovery command or missing capability is mentioned
-    pattern: "(?i)test:architecture|architecture check"
+    pattern: "test:architecture|architecture check"
+    flags: i

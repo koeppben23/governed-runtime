@@ -13,9 +13,11 @@ assertions:
   - type: output_matches
     severity: hard
     description: Mutation testing is selected for high-risk change
-    pattern: "(?i)npm run mutation"
+    pattern: "npm run mutation"
+    flags: i
 
   - type: output_matches
     severity: hard
     description: Negative-path verification is mentioned
-    pattern: "(?i)negative.path"
+    pattern: "negative.path"
+    flags: i

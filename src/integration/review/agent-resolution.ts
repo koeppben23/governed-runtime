@@ -28,8 +28,7 @@ export class ReviewerAgentUnavailableError extends Error {
 }
 
 type CachedResolution =
-  | { readonly kind: 'available' }
-  | { readonly kind: 'unavailable'; readonly reason: string };
+  { readonly kind: 'available' } | { readonly kind: 'unavailable'; readonly reason: string };
 
 let cachedResolution: CachedResolution | null = null;
 

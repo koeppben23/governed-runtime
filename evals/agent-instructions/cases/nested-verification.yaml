@@ -22,4 +22,5 @@ assertions:
   - type: output_matches
     severity: hard
     description: Additional verification from nested AGENTS.md is referenced
-    pattern: "(?i)npx vitest run"
+    pattern: "npx vitest run"
+    flags: i

@@ -176,6 +176,10 @@ async function handleStandardReviewerResult(
 ): Promise<void> {
   const { reviewerResult, obligationType, strictEnforcement } = opts;
   if (reviewerResult?.blocked) {
+    if (strictEnforcement && reviewerResult.code === 'REVIEWER_INVOCATION_EXHAUSTED') {
+      await handleReviewerFailure(ctx, obligationType, strictEnforcement);
+      return;
+    }
     ctx.output.output = strictBlockedOutput(
       reviewerResult.code ?? REASON_HOST_SUBAGENT_TASK_REQUIRED,
       {

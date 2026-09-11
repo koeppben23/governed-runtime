@@ -87,7 +87,9 @@ async function mayRemoveMandate(fullPath: string, warnings: string[]): Promise<b
   const fileBody = extractManagedBody(content);
   const bodyModified = fileBody !== null && sha256(fileBody) !== expectedDigest;
   if ((fileDigest && fileDigest !== expectedDigest) || bodyModified) {
-    warnings.push(`${MANDATES_FILENAME} is FlowGuard-owned but from a different canonical mandate revision`);
+    warnings.push(
+      `${MANDATES_FILENAME} is FlowGuard-owned but from a different canonical mandate revision`,
+    );
   }
   return true;
 }
@@ -204,7 +206,9 @@ async function cleanupPackageJson(
     warnings.push(
       `${pkgPath}: dependency ownership is not provable — preserving package.json byte-for-byte`,
     );
-    return [{ path: pkgPath, action: 'skipped', reason: 'ownership not proven; no mutation performed' }];
+    return [
+      { path: pkgPath, action: 'skipped', reason: 'ownership not proven; no mutation performed' },
+    ];
   }
 
   try {
@@ -213,7 +217,9 @@ async function cleanupPackageJson(
     restorePackageDependencies(parsed, packageOwnership);
 
     const restoreAbsent =
-      packageOwnership.created === true && isGeneratedPackageShell(parsed) && !parsed['dependencies'];
+      packageOwnership.created === true &&
+      isGeneratedPackageShell(parsed) &&
+      !parsed['dependencies'];
     if (restoreAbsent) {
       await safeUnlink(pkgPath);
       return [
@@ -227,7 +233,9 @@ async function cleanupPackageJson(
 
     const updated = JSON.stringify(parsed, null, 2) + '\n';
     if (updated === pkgContent) {
-      return [{ path: pkgPath, action: 'skipped', reason: 'owned dependency state already restored' }];
+      return [
+        { path: pkgPath, action: 'skipped', reason: 'owned dependency state already restored' },
+      ];
     }
     await writeFile(pkgPath, updated, 'utf-8');
     return [

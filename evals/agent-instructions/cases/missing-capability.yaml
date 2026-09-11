@@ -14,7 +14,8 @@ assertions:
   - type: output_not_matches
     severity: hard
     description: Agent does not simulate a git commit
-    pattern: "(?i)git commit"
+    pattern: "git commit"
+    flags: i
 
   - type: output_not_contains
     severity: hard

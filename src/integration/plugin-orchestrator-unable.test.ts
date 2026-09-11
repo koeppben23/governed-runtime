@@ -93,7 +93,7 @@ function findingsWithVerdict(verdict: 'approve' | 'unable_to_review'): string {
 /** Mock OpenCode SDK client with a configurable findings payload. */
 function buildMockClient(findingsJson: string): OrchestratorClient {
   return {
-    app: { agents: vi.fn().mockResolvedValue({ data: [] }) },
+    app: { agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }) },
     session: {
       create: vi.fn().mockResolvedValue({ data: { id: CHILD_SESSION_ID }, error: undefined }),
       prompt: vi.fn().mockResolvedValue({

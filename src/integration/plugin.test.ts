@@ -974,7 +974,10 @@ describe('integration/plugin', () => {
             worktree: ws.tmpDir,
             directory: ws.tmpDir,
             client: {
-              app: { log: async () => {} },
+              app: {
+                log: async () => {},
+                agents: async () => ({ data: [{ id: 'flowguard-reviewer' }] }),
+              },
               session: {
                 create: async () => ({ error: { message: 'boom' } }),
                 prompt: async () => ({ error: { message: 'unused' } }),
@@ -1026,7 +1029,10 @@ describe('integration/plugin', () => {
             worktree: ws.tmpDir,
             directory: ws.tmpDir,
             client: {
-              app: { log: async () => {} },
+              app: {
+                log: async () => {},
+                agents: async () => ({ data: [{ id: 'flowguard-reviewer' }] }),
+              },
               session: {
                 create: async () => ({ data: { id: 'child-session-1' } }),
                 prompt: async () => ({
@@ -1085,7 +1091,10 @@ describe('integration/plugin', () => {
             worktree: ws.tmpDir,
             directory: ws.tmpDir,
             client: {
-              app: { log: async () => {} },
+              app: {
+                log: async () => {},
+                agents: async () => ({ data: [{ id: 'flowguard-reviewer' }] }),
+              },
               session: {
                 create: async () => ({ data: { id: 'child-session-1' } }),
                 prompt: async () => ({
@@ -1108,9 +1117,6 @@ describe('integration/plugin', () => {
 
         const blocked = JSON.parse(String(output.output)) as Record<string, unknown>;
         expect(blocked.error).toBe(true);
-        // BUG-19: reviewMode:'self' now parses through schema (enum extended)
-        // but is blocked by mandate check (reviewMode !== 'subagent') with
-        // the more specific SUBAGENT_MANDATE_MISMATCH code.
         expect(blocked.code).toBe('SUBAGENT_MANDATE_MISMATCH');
 
         const state = await readState(sessDir);
@@ -1144,7 +1150,10 @@ describe('integration/plugin', () => {
             worktree: ws.tmpDir,
             directory: ws.tmpDir,
             client: {
-              app: { log: async () => {} },
+              app: {
+                log: async () => {},
+                agents: async () => ({ data: [{ id: 'flowguard-reviewer' }] }),
+              },
               session: {
                 create: async () => ({ data: { id: 'child-session-1' } }),
                 prompt: async () => ({ data: { info: { structured_output: findings } } }),
@@ -1201,7 +1210,10 @@ describe('integration/plugin', () => {
             worktree: ws.tmpDir,
             directory: ws.tmpDir,
             client: {
-              app: { log: async () => {} },
+              app: {
+                log: async () => {},
+                agents: async () => ({ data: [{ id: 'flowguard-reviewer' }] }),
+              },
               session: {
                 create: async () => ({ data: { id: 'child-session-1' } }),
                 prompt: async () => ({

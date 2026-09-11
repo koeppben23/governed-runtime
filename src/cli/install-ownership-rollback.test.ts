@@ -50,9 +50,7 @@ describe('install ownership transaction boundary', () => {
     expect(existsSync(path.join(target, 'package.json'))).toBe(false);
     expect(existsSync(path.join(target, 'node_modules'))).toBe(false);
     expect(result.ops).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ action: 'rolled_back' }),
-      ]),
+      expect.arrayContaining([expect.objectContaining({ action: 'rolled_back' })]),
     );
   });
 });
