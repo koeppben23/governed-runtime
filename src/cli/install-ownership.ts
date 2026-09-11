@@ -118,7 +118,13 @@ export function deriveInstallOwnershipManifest(input: {
   packageJsonOriginalContent?: Buffer;
   opencodeOriginalContent?: Buffer;
   opencodeCurrentContent?: string | null;
+  previousManifest?: InstallOwnershipManifest | null;
 }): InstallOwnershipManifest {
+  const prior = input.previousManifest;
+  if (prior && prior.platform === input.platform && prior.scope === input.scope) {
+    return InstallOwnershipManifestSchema.parse(prior);
+  }
+
   const previousDeps = parsedDependencies(input.packageJsonOriginalContent);
   const packageJsonCreated = !input.packageJsonExisted;
   const zodAdded = packageJsonCreated || previousDeps === null || !('zod' in previousDeps);
