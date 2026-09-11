@@ -1,15 +1,13 @@
 import { readFileSync, readdirSync } from 'node:fs';
-import { join, extname, basename } from 'node:path';
+import { join, extname } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { EvalCaseSchema, type EvalCase } from './schema.js';
 
 export function loadCases(casesDir: string): EvalCase[] {
   const entries = readdirSync(casesDir);
-  const yamlFiles = entries.filter(
-    (f) => extname(f) === '.yaml' || extname(f) === '.yml',
-  );
+  const yamlFiles = entries.filter((f) => extname(f) === '.yaml' || extname(f) === '.yml');
 
-  return yamlFiles.map((file) => {
+  const cases = yamlFiles.map((file) => {
     const raw = readFileSync(join(casesDir, file), 'utf-8');
     const parsed = parseYaml(raw);
     const result = EvalCaseSchema.safeParse(parsed);
@@ -18,11 +16,19 @@ export function loadCases(casesDir: string): EvalCase[] {
       const issues = result.error.issues
         .map((i) => `  ${i.path.join('.')}: ${i.message}`)
         .join('\n');
-      throw new Error(
-        `Invalid eval case "${file}":\n${issues}`,
-      );
+      throw new Error(`Invalid eval case "${file}":\n${issues}`);
     }
 
     return result.data;
   });
+
+  const seen = new Set<string>();
+  for (const evalCase of cases) {
+    if (seen.has(evalCase.id)) {
+      throw new Error(`Duplicate eval case ID: ${evalCase.id}`);
+    }
+    seen.add(evalCase.id);
+  }
+
+  return cases;
 }
