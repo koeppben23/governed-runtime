@@ -1,33 +1,47 @@
 # Agent Instruction Eval Suite
 
-Deterministic, provider-neutral conformance corpus with separate instruction
-surfaces. `repository_contributor` covers repository-local guidance such as
-`AGENTS.md`; `flowguard_product` covers the managed mandates FlowGuard installs
-for customer hosts. Results retain the surface and must not be compared across it.
+Deterministic eval harness with separate instruction surfaces. `repository_contributor`
+covers repository-local guidance such as `AGENTS.md`; `flowguard_product` covers a
+host-specific FlowGuard product transport. Results retain the surface and product host;
+they are never collapsed into one cross-surface or cross-host assurance claim.
 
-Every case declares `instructionSurface` explicitly. Product cases additionally
-declare `instructionHost`; the harness supports `opencode`, `claude-code`, and
-`codex` and fails closed when product host metadata is absent or unsupported.
-Host materialization is coupled to production code: OpenCode uses the managed
-mandate renderer and production JSON merge path, while Claude Code and Codex use
-their production plugin-template generators. Live model behavior is a separate
-assurance dimension and remains `NOT_VERIFIED` until a real host/provider runner
-is executed.
+Every case declares `instructionSurface` explicitly. Product cases also declare
+`instructionHost`; supported hosts are `opencode`, `claude-code`, and `codex`.
+Missing or unsupported host metadata fails closed.
+
+## Assurance boundary
+
+Materialization and live behavior are separate assurance dimensions:
+
+- **OpenCode** materialization uses the production managed-mandate renderer, digest,
+  managed artifact builder, and production `mergeOpencodeJson` path.
+- **Claude Code** materialization uses the production Claude plugin-template generator.
+- **Codex** materialization uses the production Codex plugin-template generator plus an
+  isolated marketplace registration matching the production registration contract.
+
+The deterministic harness proves that those host-specific files are materialized from
+production code and that the runner/reporting machinery behaves correctly. It does **not**
+prove native host load, model-context visibility, hook trust, or model compliance.
+In particular, the full installed `flowguard-mandates.md` is wired as an OpenCode
+instruction source; Claude Code and Codex use their own plugin adapter surfaces. Their
+plugin materialization must therefore not be cited as evidence that the full v5 mandate
+body was injected into a model context. Native load and behavioral compliance remain
+`NOT_VERIFIED` until observed with the matching real host/provider.
 
 ## Structure
 
 ```
 cases/              — YAML case definitions (20 cases: 8 contributor, 12 product)
-schema.ts           — Zod schemas for cases, runner config, and results
-load-cases.ts       — YAML parser → typed EvalCase[]
+schema.ts           — Zod schemas for cases, runner config, and result provenance
+load-cases.ts       — YAML parser → typed EvalCase[]; rejects duplicate IDs
 assertions.ts       — Pure assertion evaluation functions
-score.ts            — PASS / FAIL / RUNNER_ERROR scoring
+score.ts            — PASS / FAIL / RUNNER_ERROR scoring by surface and product host
 run.ts              — Orchestration: load → spawn → assert → score → report
 runners/
-  process-runner.ts — Generic shell-free process runner
+  process-runner.ts — Shell-free, bounded, isolated process runner
 fixtures/
-  fake-agent.mjs    — Deterministic fake CLI for testing the runner itself
-__tests__/          — Unit tests for all modules
+  fake-agent.mjs    — Deterministic fake CLI for runner plumbing tests
+__tests__/          — Unit/regression tests for framework contracts
 ```
 
 ## Case classes
@@ -35,72 +49,93 @@ __tests__/          — Unit tests for all modules
 | Class       | `mode`        | Description                                                     |
 | ----------- | ------------- | --------------------------------------------------------------- |
 | Workspace   | `workspace`   | Full mini-repository with fixture. Evaluates real file changes. |
-| Output-only | `output-only` | Evaluates stdout/stderr output. No filesystem interaction.      |
+| Output-only | `output-only` | Evaluates stdout/stderr output. No fixture content required.    |
 
-For `flowguard_product`, the runner materializes the selected host transport
-before invoking the configured process. OpenCode uses the production renderer,
-digest, managed artifact builder, and `mergeOpencodeJson` path. Claude Code uses
-`claudeCodePluginFiles`; Codex uses `codexPluginFiles` plus an isolated repo-scope
-marketplace registration matching the production registration contract. Existing
-customer OpenCode configuration and non-FlowGuard instruction entries are
-preserved rather than overwritten. Runner arguments may use `{workspaceRoot}`
-when a real host CLI needs an explicit path to the isolated product transport.
+For `flowguard_product`, the selected host transport is materialized before the
+configured process starts. Existing customer OpenCode config and non-FlowGuard
+instruction entries are preserved rather than overwritten. Runner arguments may use
+`{workspaceRoot}` when a real host CLI needs the isolated workspace explicitly.
 
 ## Running
 
-### Manual (with a real host)
-
-Live provider runs require a locally installed agent command and are not treated
-as verified merely because the deterministic harness passes. The runner
-configuration is validated by `RunnerConfigSchema`; use only fields defined by
-that schema. Provider, model, provider model version, runner version, command,
-arguments, checked-out Git commit, FlowGuard version, and mandate digest are
-persisted in `summary.json`. Missing runner/model identity is rejected before a
-run starts so live results cannot silently lose reproducibility provenance.
-
-Example using stdin prompt transport:
-
-```json
-{
-  "name": "example-host",
-  "command": "agent-command",
-  "provider": "provider-id",
-  "model": "model-id",
-  "modelVersion": "provider-model-version",
-  "runnerVersion": "runner-cli-version",
-  "promptTransport": "stdin",
-  "args": ["run"],
-  "staticEnv": {},
-  "secretEnvNames": ["PROVIDER_API_KEY"],
-  "timeoutMs": 600000
-}
-```
-
-For argument transport, set `"promptTransport": "argument"` and include exactly
-one `{prompt}` placeholder in `args`.
-
-`secretEnvNames` is an explicit allowlist of secret environment variables copied
-from the parent process into the child. Other parent-process environment values
-are not inherited except for the small runtime environment allowlist required to
-spawn local processes. Never place secret values in `staticEnv`.
-
-### Automated (with the fake agent)
+### Automated deterministic suite
 
 ```sh
 npx vitest run --project evals
 ```
 
-The deterministic suite verifies case parsing, isolation, transport
-materialization, assertion/scoring behavior, provenance persistence, and report
-redaction. It does **not** establish that a named external model followed the
-instructions; only a real host/provider run can establish that evidence.
+This verifies case parsing, duplicate-ID rejection, regex validation, environment
+isolation, symlink-safe snapshots, host transport materialization, assertion/scoring,
+provenance persistence, output bounds, and report redaction. A PASS here is harness and
+transport-template evidence, **not** external-model behavior evidence.
+
+### Manual strict run with a real host
+
+A strict runner is explicitly one host. It must declare:
+
+- `runnerKind: "live-host"`
+- exactly one `instructionHost`
+- non-synthetic provider/model identity
+- the real host command and its runner version
+- provider secrets only through `secretEnvNames`
+
+Example:
+
+```json
+{
+  "name": "claude-code-live",
+  "command": "claude",
+  "provider": "anthropic",
+  "model": "claude-model-id",
+  "modelVersion": "provider-model-version",
+  "runnerVersion": "host-cli-version",
+  "runnerKind": "live-host",
+  "instructionHost": "claude-code",
+  "promptTransport": "stdin",
+  "args": ["--plugin-dir", "{workspaceRoot}/flowguard-plugin"],
+  "staticEnv": {},
+  "secretEnvNames": ["ANTHROPIC_API_KEY"],
+  "timeoutMs": 600000
+}
+```
+
+Run the CLI with `--require-live-host` for strict assurance. Product cases are then
+restricted to the runner's bound `instructionHost`; a Claude runner cannot silently
+produce OpenCode or Codex product assurance. Repository-contributor cases remain a
+separate surface.
+
+For argument prompt transport, set `"promptTransport": "argument"` and include exactly
+one `{prompt}` placeholder in `args`.
+
+`staticEnv` is for non-secret static configuration only. Secret-like environment keys
+are rejected there; credentials must be named in `secretEnvNames`. Only the explicit
+secret allowlist plus a small process-runtime environment allowlist is inherited by the
+child process.
+
+## Provenance
+
+`summary.json` schema v3 persists enough run identity to distinguish materially
+different evaluations without persisting secret values:
+
+- provider, model, model version, runner version
+- runner kind and bound host when declared
+- command, arguments, prompt transport, effective timeout
+- runner-config digest and secret environment **names**
+- checked-out Git commit and dirty-worktree state
+- FlowGuard version and installed mandate digest
+- canonical parsed case-corpus digest
+
+Reports are grouped by both `instructionSurface` and product `instructionHost`.
+Provider credential values are never persisted and every explicitly declared secret
+value is redacted regardless of length.
 
 ## Scoring
 
 - `PASS`: all hard assertions satisfied
 - `FAIL`: any hard assertion violated
-- `RUNNER_ERROR`: spawn failed, timeout, signal, or internal runner failure
+- `RUNNER_ERROR`: spawn, timeout, signal, workspace, or framework failure
 
-Advisory assertion failures produce warnings but do not cause `FAIL`. Persisted
-and rendered quality totals are grouped only by `instructionSurface`; contributor
-and FlowGuard-product results are never collapsed into one assurance number.
+Advisory assertion failures produce warnings but do not cause `FAIL`. Synthetic/advisory
+runs never establish live product assurance. A strict live PASS is evidence only for the
+specific host/provider/model/run provenance captured in that report; it is not a global
+cross-provider claim.
