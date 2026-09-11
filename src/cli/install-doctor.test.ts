@@ -5,6 +5,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
@@ -457,7 +458,17 @@ describe('cli/doctor', () => {
       await install(repoArgs({ coreTarball: tarball }));
       const mandatesPath = path.join(tmpDir, '.opencode', MANDATES_FILENAME);
       const original = await fs.readFile(mandatesPath, 'utf-8');
-      await fs.writeFile(mandatesPath, original + '\n# Extra section\n', 'utf-8');
+      const modified = original.replace(
+        'You are a senior software engineering agent.',
+        'You are a modified agent.',
+      );
+      const body = modified.split('\n\n').slice(1).join('\n\n');
+      const digest = createHash('sha256').update(body, 'utf-8').digest('hex');
+      await fs.writeFile(
+        mandatesPath,
+        modified.replace(/sha256:[a-f0-9]{64}/, `sha256:${digest}`),
+        'utf-8',
+      );
 
       const checks = await doctor(repoArgs({ action: 'doctor' }));
       const mandatesCheck = checks.find((c) => c.file.includes(MANDATES_FILENAME));

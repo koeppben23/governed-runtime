@@ -366,10 +366,20 @@ describe('cli/uninstall', () => {
       await install(repoArgs({ coreTarball: tarball }));
       const mandatesPath = path.join(tmpDir, '.opencode', MANDATES_FILENAME);
       const original = await fs.readFile(mandatesPath, 'utf-8');
-      await fs.writeFile(mandatesPath, original + '\n# Extra stuff\n', 'utf-8');
+      const modified = original.replace(
+        'You are a senior software engineering agent.',
+        'You are a modified agent.',
+      );
+      const body = modified.split('\n\n').slice(1).join('\n\n');
+      const digest = createHash('sha256').update(body, 'utf-8').digest('hex');
+      await fs.writeFile(
+        mandatesPath,
+        modified.replace(/sha256:[a-f0-9]{64}/, `sha256:${digest}`),
+        'utf-8',
+      );
       const result = await uninstall(repoArgs({ action: 'uninstall' }));
       expect(result.warnings.length).toBeGreaterThan(0);
-      expect(result.warnings[0]).toContain('modified');
+      expect(result.warnings[0]).toContain('different canonical mandate revision');
     });
 
     it('warns when flowguard-mandates.md has no managed header', async () => {
@@ -379,7 +389,7 @@ describe('cli/uninstall', () => {
       await fs.writeFile(mandatesPath, '# Just a plain file\n', 'utf-8');
       const result = await uninstall(repoArgs({ action: 'uninstall' }));
       expect(result.warnings.length).toBeGreaterThan(0);
-      expect(result.warnings[0]).toContain('no managed header');
+      expect(result.warnings[0]).toContain('no valid managed envelope');
     });
 
     it('CORNER: opencode.jsonc wins when both OpenCode config files exist', async () => {

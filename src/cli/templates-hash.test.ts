@@ -71,11 +71,10 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for agent-role + Extended Guidance: prepended a senior-engineer
     // role/identity sentence and enriched ## 12. Extended Guidance to name the
     // owning authorities (commands/profiles/reviewer) without duplicating them.
-    // Refreshed for PR #879 trust-boundary hardening: FlowGuard contract fields
-    // are runtime-authoritative instructions while content carried in those fields
-    // remains untrusted data. This intentionally changes the canonical mandate bytes.
+    // Refreshed for mandate v5: canonical managed projections carry an explicit
+    // versioned trailer and reject obsolete v4 envelopes.
     expect(sha256(FLOWGUARD_MANDATES_KERNEL)).toBe(
-      '4b5e4e51780bae8bd3c895cc5f22c240a978089b52e95371317a4ddbf5e5dd35',
+      'e2ba50d1d8728a88896afdb7d67d622e7a2827dd009c54dbc67b4906255aa3f3',
     );
   });
 
