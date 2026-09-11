@@ -24,6 +24,88 @@ export interface ResolvedEnv {
   redactionValues: string[];
 }
 
+export interface RunnerCaseMetrics {
+  readonly reviewPrecision?: number;
+  readonly reviewRecall?: number;
+  readonly falsePositiveFindings?: number;
+  readonly falseNegativeDefects?: number;
+  readonly schemaRetries?: number;
+  readonly toolCallCount?: number;
+  readonly unnecessaryToolCalls?: number;
+  readonly clarificationCount?: number;
+  readonly prematureStops?: number;
+  readonly scopeDeviations?: number;
+  readonly inputTokens?: number;
+  readonly outputTokens?: number;
+  readonly reasoningTokens?: number;
+  readonly verificationExecutions?: number;
+  readonly duplicateVerification?: number;
+}
+
+export const RUNNER_METRICS_PREFIX = 'FLOWGUARD_EVAL_METRICS_JSON=';
+
+const RUNNER_METRIC_KEYS = new Set<keyof RunnerCaseMetrics>([
+  'reviewPrecision',
+  'reviewRecall',
+  'falsePositiveFindings',
+  'falseNegativeDefects',
+  'schemaRetries',
+  'toolCallCount',
+  'unnecessaryToolCalls',
+  'clarificationCount',
+  'prematureStops',
+  'scopeDeviations',
+  'inputTokens',
+  'outputTokens',
+  'reasoningTokens',
+  'verificationExecutions',
+  'duplicateVerification',
+]);
+
+const FRACTION_METRICS = new Set<keyof RunnerCaseMetrics>(['reviewPrecision', 'reviewRecall']);
+
+export function extractRunnerCaseMetrics(stderr: string): RunnerCaseMetrics | null {
+  const payloads = stderr
+    .split(/\r?\n/u)
+    .filter((line) => line.startsWith(RUNNER_METRICS_PREFIX))
+    .map((line) => line.slice(RUNNER_METRICS_PREFIX.length));
+
+  if (payloads.length === 0) return null;
+  if (payloads.length > 1) {
+    throw new Error(`Runner emitted ${payloads.length} metrics envelopes; exactly one is allowed`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payloads[0]!);
+  } catch (error) {
+    throw new Error(
+      `Runner metrics envelope is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('Runner metrics envelope must be a JSON object');
+  }
+
+  const entries = Object.entries(parsed as Record<string, unknown>);
+  if (entries.length === 0) throw new Error('Runner metrics envelope must contain at least one metric');
+
+  const metrics: Record<string, number> = {};
+  for (const [key, value] of entries) {
+    if (!RUNNER_METRIC_KEYS.has(key as keyof RunnerCaseMetrics)) {
+      throw new Error(`Runner metrics envelope contains unsupported metric: ${key}`);
+    }
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+      throw new Error(`Runner metric ${key} must be a finite non-negative number`);
+    }
+    if (FRACTION_METRICS.has(key as keyof RunnerCaseMetrics) && value > 1) {
+      throw new Error(`Runner metric ${key} must be between 0 and 1`);
+    }
+    metrics[key] = value;
+  }
+  return metrics as RunnerCaseMetrics;
+}
+
 const CHILD_RUNTIME_ENV_ALLOWLIST = [
   'PATH',
   'HOME',
@@ -321,6 +403,14 @@ export function writeReports(
     writeFileSync(join(caseDir, 'prompt.txt'), redactSecrets(e.evalCase.task + '\n', redactionValues));
     writeFileSync(join(caseDir, 'stdout.txt'), redactSecrets(e.outcome.stdout || '', redactionValues));
     writeFileSync(join(caseDir, 'stderr.txt'), redactSecrets(e.outcome.stderr || '', redactionValues));
+
+    const runnerMetrics = extractRunnerCaseMetrics(e.outcome.stderr || '');
+    if (runnerMetrics) {
+      writeFileSync(
+        join(caseDir, 'metrics.json'),
+        redactSecrets(JSON.stringify(runnerMetrics, null, 2), redactionValues) + '\n',
+      );
+    }
 
     const outcomeSummary =
       e.outcome.status === 'completed'
