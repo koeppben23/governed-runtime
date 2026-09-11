@@ -166,7 +166,11 @@ describe('invokeReviewer — format-free retry fallback', () => {
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
 
-      expect(result).toBeNull();
+      expect(result).toMatchObject({
+        blocked: true,
+        code: 'REVIEWER_INVOCATION_EXHAUSTED',
+        reviewInvocation: { status: 'blocked_capability_mismatch' },
+      });
       expect(diagnostics.some((d) => d.step === 'model_capability_incompatible')).toBe(true);
       expect(diagnostics.some((d) => d.step === 'text_compat_blocked_by_policy')).toBe(true);
       expect(client.session.prompt).toHaveBeenCalledTimes(1);
@@ -181,7 +185,11 @@ describe('invokeReviewer — format-free retry fallback', () => {
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
 
-      expect(result).toBeNull();
+      expect(result).toMatchObject({
+        blocked: true,
+        code: 'REVIEWER_INVOCATION_EXHAUSTED',
+        reviewInvocation: { status: 'blocked_capability_mismatch' },
+      });
       expect(diagnostics.some((d) => d.step === 'model_capability_incompatible')).toBe(true);
       expect(diagnostics.some((d) => d.step === 'text_compat_blocked_by_policy')).toBe(true);
       expect(client.session.create).toHaveBeenCalledTimes(1);
