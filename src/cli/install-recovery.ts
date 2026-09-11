@@ -40,6 +40,8 @@ const RECOVERY_MAP: Record<
   ALREADY_INSTALLED: 'Add --force to overwrite, or run uninstall first',
   MANAGED_ARTIFACT_CONFLICT:
     'Move or rename the customer-owned conflicting file, then retry. --force will not overwrite unowned content.',
+  LEGACY_INSTRUCTION_AMBIGUOUS:
+    'Inspect the existing OpenCode instructions. Remove AGENTS.md only if it is the obsolete FlowGuard reference; otherwise keep it and resolve the authority conflict explicitly before reinstalling.',
   DEPENDENCY_INSTALL_FAILED: 'Run npm install or bun install manually in the target directory',
   INSTALL_LOCK_CONFLICT: (detail) => {
     if (!detail.recoveryContext?.path)
