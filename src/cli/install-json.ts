@@ -8,15 +8,14 @@
  * @version v1
  */
 
-import { writeFile, readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { ensureDir } from '../adapters/persistence.js';
 import { parse as jsoncParse, type ParseError } from 'jsonc-parser';
+import { ensureDir } from '../adapters/persistence.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
-import { OPENCODE_JSON_TEMPLATE, PACKAGE_JSON_TEMPLATE, mandatesInstructionEntry } from './templates.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
-import type { InstallScope, FileOp } from './install-types.js';
-import { hasNonFlowGuardInstructions } from './install-types.js';
+import { hasNonFlowGuardInstructions, type FileOp, type InstallScope } from './install-types.js';
+import { OPENCODE_JSON_TEMPLATE, PACKAGE_JSON_TEMPLATE, mandatesInstructionEntry } from './templates.js';
 
 const LEGACY_FLOWGUARD_INSTRUCTION_ENTRY = 'AGENTS.md';
 
@@ -60,7 +59,6 @@ export function vendorDependency(version: string): string {
 
 export async function mergePackageJson(filePath: string, version: string): Promise<FileOp> {
   const existing = await safeRead(filePath);
-
   if (!existing) {
     await ensureDir(dirname(filePath));
     await writeFile(filePath, PACKAGE_JSON_TEMPLATE(version), 'utf-8');
@@ -88,7 +86,7 @@ export async function mergePackageJson(filePath: string, version: string): Promi
   deps['@flowguard/core'] = vendorDependency(version);
   if (!deps['zod']) deps['zod'] = '^4.0.0';
   parsed['dependencies'] = deps;
-  await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
+  await writeJson(filePath, parsed);
   return { path: filePath, action: 'merged' };
 }
 
@@ -119,10 +117,7 @@ export function mergeReviewerTaskPermission(parsed: Record<string, unknown>): vo
   const agent = ensureNested(parsed, 'agent');
   const build = ensureNested(agent, 'build');
   const permission = ensureNested(build, 'permission');
-  permission['task'] = {
-    '*': 'deny',
-    [REVIEWER_SUBAGENT_TYPE]: 'allow',
-  };
+  permission['task'] = { '*': 'deny', [REVIEWER_SUBAGENT_TYPE]: 'allow' };
 }
 
 function hasCustomerTaskPermissions(parsed: Record<string, unknown>): boolean {
@@ -130,13 +125,87 @@ function hasCustomerTaskPermissions(parsed: Record<string, unknown>): boolean {
   return task !== null && Object.keys(task).length > 0;
 }
 
+function instructionsFrom(parsed: Record<string, unknown>): string[] {
+  return Array.isArray(parsed['instructions']) ? (parsed['instructions'] as string[]) : [];
+}
+
+async function writeJson(filePath: string, parsed: Record<string, unknown>): Promise<void> {
+  await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
+}
+
 export interface MergeOpencodeOptions {
-  /**
-   * Migrate the historical FlowGuard `AGENTS.md` instruction only when the caller
-   * has independently established that this is a FlowGuard reinstall/upgrade.
-   * First installs must preserve a customer's AGENTS.md entry.
-   */
   migrateLegacyFlowguardInstruction?: boolean;
+}
+
+function normalizedInstructions(
+  parsed: Record<string, unknown>,
+  migrateLegacyFlowguardInstruction: boolean,
+): string[] {
+  const instructions = instructionsFrom(parsed);
+  return migrateLegacyFlowguardInstruction
+    ? instructions.filter((instruction) => instruction !== LEGACY_FLOWGUARD_INSTRUCTION_ENTRY)
+    : [...instructions];
+}
+
+function isCustomerOwnedConfig(
+  parsed: Record<string, unknown>,
+  instructions: string[],
+): boolean {
+  return (
+    'plugin' in parsed ||
+    hasNonFlowGuardInstructions(instructions) ||
+    hasCustomerTaskPermissions(parsed)
+  );
+}
+
+async function mergeCustomerOwnedConfig(
+  filePath: string,
+  parsed: Record<string, unknown>,
+  instructions: string[],
+  entry: string,
+  migratedLegacy: boolean,
+): Promise<FileOp> {
+  if (!instructions.includes(entry)) instructions.push(entry);
+  parsed['instructions'] = instructions;
+  await writeJson(filePath, parsed);
+  return {
+    path: filePath,
+    action: 'merged',
+    reason: migratedLegacy
+      ? 'customer-owned config preserved; migrated verified legacy FlowGuard instruction'
+      : 'customer-owned config: preserved task permissions and merged FlowGuard instruction',
+  };
+}
+
+async function mergeManagedConfig(
+  filePath: string,
+  parsed: Record<string, unknown>,
+  instructions: string[],
+  entry: string,
+): Promise<FileOp> {
+  parsed['instructions'] = [...instructions.filter((instruction) => instruction !== entry), entry];
+  mergeReviewerTaskPermission(parsed);
+  if (!parsed['$schema']) parsed['$schema'] = 'https://opencode.ai/config.json';
+  await writeJson(filePath, parsed);
+  return { path: filePath, action: 'merged' };
+}
+
+async function overwriteMalformedOpencode(
+  filePath: string,
+  existing: string,
+  entry: string,
+): Promise<FileOp> {
+  const backupPath = await createMalformedJsonBackup(filePath, existing);
+  getAdapterLogger().warn('cli', 'Opencode.json malformed, creating backup and overwriting', {
+    filePath,
+    backupPath,
+  });
+  await writeFile(filePath, OPENCODE_JSON_TEMPLATE(entry), 'utf-8');
+  return {
+    path: filePath,
+    action: 'written',
+    reason: `existing file was malformed JSON/JSONC (backup: ${backupPath})`,
+  };
 }
 
 export async function mergeOpencodeJson(
@@ -146,10 +215,8 @@ export async function mergeOpencodeJson(
 ): Promise<FileOp> {
   const entry = mandatesInstructionEntry(scope);
   const existing = await safeRead(filePath);
-
   if (!existing) {
-    const dir = dirname(filePath);
-    if (dir) await ensureDir(dir);
+    await ensureDir(dirname(filePath));
     await writeFile(filePath, OPENCODE_JSON_TEMPLATE(entry), 'utf-8');
     return { path: filePath, action: 'written' };
   }
@@ -158,51 +225,14 @@ export async function mergeOpencodeJson(
   try {
     parsed = parseJsonc(existing);
   } catch {
-    const backupPath = await createMalformedJsonBackup(filePath, existing);
-    getAdapterLogger().warn('cli', 'Opencode.json malformed, creating backup and overwriting', {
-      filePath,
-      backupPath,
-    });
-    await writeFile(filePath, OPENCODE_JSON_TEMPLATE(entry), 'utf-8');
-    return {
-      path: filePath,
-      action: 'written',
-      reason: `existing file was malformed JSON/JSONC (backup: ${backupPath})`,
-    };
+    return overwriteMalformedOpencode(filePath, existing, entry);
   }
 
-  const hasPluginField = 'plugin' in parsed;
-  const rawInstructions = Array.isArray(parsed['instructions'])
-    ? (parsed['instructions'] as string[])
-    : [];
-  const existingInstructions = options.migrateLegacyFlowguardInstruction
-    ? rawInstructions.filter((instruction) => instruction !== LEGACY_FLOWGUARD_INSTRUCTION_ENTRY)
-    : [...rawInstructions];
-  const hasCustomerInstructions = hasNonFlowGuardInstructions(existingInstructions);
-  const hasCustomerTaskConfig = hasCustomerTaskPermissions(parsed);
-
-  if (hasPluginField || hasCustomerInstructions || hasCustomerTaskConfig) {
-    const instructions = [...existingInstructions];
-    if (!instructions.includes(entry)) instructions.push(entry);
-    parsed['instructions'] = instructions;
-    await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
-    return {
-      path: filePath,
-      action: 'merged',
-      reason: options.migrateLegacyFlowguardInstruction
-        ? 'customer-owned config preserved; migrated verified legacy FlowGuard instruction'
-        : 'customer-owned config: preserved task permissions and merged FlowGuard instruction',
-    };
-  }
-
-  const instructions = existingInstructions.filter((instruction) => instruction !== entry);
-  instructions.push(entry);
-  parsed['instructions'] = instructions;
-  mergeReviewerTaskPermission(parsed);
-
-  if (!parsed['$schema']) parsed['$schema'] = 'https://opencode.ai/config.json';
-  await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
-  return { path: filePath, action: 'merged' };
+  const migrateLegacy = options.migrateLegacyFlowguardInstruction === true;
+  const instructions = normalizedInstructions(parsed, migrateLegacy);
+  return isCustomerOwnedConfig(parsed, instructions)
+    ? mergeCustomerOwnedConfig(filePath, parsed, instructions, entry, migrateLegacy)
+    : mergeManagedConfig(filePath, parsed, instructions, entry);
 }
 
 function cleanupEmptyParents(
@@ -235,28 +265,63 @@ async function removeFlowGuardOnly(
   parsed: Record<string, unknown>,
   scope: InstallScope,
   removeManagedTaskHardening: boolean,
-): Promise<{ removed: boolean }> {
+): Promise<boolean> {
   const entry = mandatesInstructionEntry(scope);
   const hasInstructions = Array.isArray(parsed['instructions']);
   const before = hasInstructions ? (parsed['instructions'] as string[]) : [];
   const after = before.filter((instruction) => instruction !== entry);
   const removedInstruction = after.length !== before.length;
   const removedTaskHardening = removeManagedTaskHardening ? removeTaskHardening(parsed) : false;
-
   if (hasInstructions) parsed['instructions'] = after;
-  return { removed: removedInstruction || removedTaskHardening };
+  return removedInstruction || removedTaskHardening;
 }
 
-async function removeFromCustomerOwned(
+function removeFlowGuardInstruction(
   parsed: Record<string, unknown>,
   instructions: string[],
   scope: InstallScope,
-): Promise<{ removed: true; parsed: Record<string, unknown> } | { removed: false }> {
+): boolean {
   const entry = mandatesInstructionEntry(scope);
   const after = instructions.filter((instruction) => instruction !== entry);
-  if (after.length === instructions.length) return { removed: false };
-  if (Array.isArray(parsed['instructions']) || after.length > 0) parsed['instructions'] = after;
-  return { removed: true, parsed };
+  if (after.length === instructions.length) return false;
+  parsed['instructions'] = after;
+  return true;
+}
+
+async function removeFromCustomerOwned(
+  filePath: string,
+  parsed: Record<string, unknown>,
+  instructions: string[],
+  scope: InstallScope,
+  removeManagedTaskHardening: boolean,
+): Promise<FileOp> {
+  const removedInstruction = removeFlowGuardInstruction(parsed, instructions, scope);
+  const removedTaskHardening = removeManagedTaskHardening ? removeTaskHardening(parsed) : false;
+  if (!removedInstruction && !removedTaskHardening) {
+    return { path: filePath, action: 'skipped', reason: 'no provably FlowGuard-owned entries found' };
+  }
+  await writeJson(filePath, parsed);
+  return {
+    path: filePath,
+    action: 'merged',
+    reason: removedTaskHardening
+      ? 'removed FlowGuard instruction and provenance-owned task hardening'
+      : 'removed FlowGuard instruction; preserved customer task permissions',
+  };
+}
+
+async function removeFromManagedConfig(
+  filePath: string,
+  parsed: Record<string, unknown>,
+  scope: InstallScope,
+  removeManagedTaskHardening: boolean,
+): Promise<FileOp> {
+  const removed = await removeFlowGuardOnly(parsed, scope, removeManagedTaskHardening);
+  if (!removed) {
+    return { path: filePath, action: 'skipped', reason: 'no provably FlowGuard-owned entries found' };
+  }
+  await writeJson(filePath, parsed);
+  return { path: filePath, action: 'merged', reason: 'removed FlowGuard instruction entries' };
 }
 
 export async function removeFromOpencodeJson(
@@ -269,41 +334,11 @@ export async function removeFromOpencodeJson(
 
   try {
     const parsed = parseJsonc(existing);
-    const instructions = Array.isArray(parsed['instructions'])
-      ? (parsed['instructions'] as string[])
-      : [];
-    const hasTaskConfig = hasCustomerTaskPermissions(parsed);
-
-    // Any ambiguous customer-owned surface is preserved. Task hardening is removed
-    // only when installer provenance explicitly says FlowGuard added it.
-    if (hasNonFlowGuardInstructions(instructions) || 'plugin' in parsed || hasTaskConfig) {
-      const result = await removeFromCustomerOwned(parsed, instructions, scope);
-      const removedTaskHardening = options.removeManagedTaskHardening
-        ? removeTaskHardening(parsed)
-        : false;
-      if (!result.removed && !removedTaskHardening) {
-        return { path: filePath, action: 'skipped', reason: 'no provably FlowGuard-owned entries found' };
-      }
-      await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
-      return {
-        path: filePath,
-        action: 'merged',
-        reason: removedTaskHardening
-          ? 'removed FlowGuard instruction and provenance-owned task hardening'
-          : 'removed FlowGuard instruction; preserved customer task permissions',
-      };
-    }
-
-    const { removed } = await removeFlowGuardOnly(
-      parsed,
-      scope,
-      options.removeManagedTaskHardening === true,
-    );
-    if (!removed) {
-      return { path: filePath, action: 'skipped', reason: 'no provably FlowGuard-owned entries found' };
-    }
-    await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
-    return { path: filePath, action: 'merged', reason: 'removed FlowGuard instruction entries' };
+    const instructions = instructionsFrom(parsed);
+    const removeHardening = options.removeManagedTaskHardening === true;
+    return isCustomerOwnedConfig(parsed, instructions)
+      ? await removeFromCustomerOwned(filePath, parsed, instructions, scope, removeHardening)
+      : await removeFromManagedConfig(filePath, parsed, scope, removeHardening);
   } catch {
     getAdapterLogger().warn('cli', 'Opencode.json malformed during uninstall, skipping removal', {
       filePath,
