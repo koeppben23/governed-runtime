@@ -16,12 +16,17 @@ guidance only. The canonical installed FlowGuard mandate body is owned by
 > one product host, so one CLI cannot silently establish cross-host assurance.
 
 The harness persists schema-v3 provenance including runner/config identity, optional
-deterministic seed, effective timeout, Git SHA and dirty state, FlowGuard/mandate
-identity, and case-corpus digest. Required non-inferiority comparison requires a live,
-host-bound, non-synthetic runner with a seed, compares compatible provider/model/runner
-provenance, requires the same seed, and treats dirty-worktree evidence as `NOT_VERIFIED`.
-Results are aggregated by instruction surface and by product host; those dimensions must
-not be collapsed into a single assurance score.
+requested seed, effective timeout, Git SHA and dirty state, FlowGuard/mandate identity,
+and case-corpus digest. Required non-inferiority comparison requires a live, host-bound,
+non-synthetic runner and comparable provider/model/runner provenance. A requested seed is
+recorded and compared, but it is not evidence that the provider used deterministic sampling.
+Assurance-grade seed equivalence requires an independent provider/host confirmation of the
+effective seed for both runs; otherwise the comparison remains `NOT_VERIFIED` or must use a
+statistical repeated-run protocol. Generic child-runner metrics are likewise self-reported
+and cannot become assurance-grade precision/recall/resource evidence without a trusted
+observer. Dirty-worktree evidence or a different case corpus is `NOT_VERIFIED`, not a
+measured regression. Results are aggregated by instruction surface and product host; those
+dimensions must not be collapsed into a single assurance score.
 
 References:
 
@@ -44,9 +49,9 @@ For each scenario:
 
 A deterministic/synthetic PASS establishes harness and materialization behavior only.
 A strict live PASS establishes evidence only for the recorded host/provider/model/run
-provenance; it is not a universal cross-provider claim. A required non-inferiority PASS
-additionally requires comparable clean-worktree provenance and an identical deterministic
-seed across baseline and candidate.
+provenance; it is not a universal cross-provider claim. Required non-inferiority can become
+`PASS` only with comparable clean-worktree/corpus provenance plus trusted metric observation
+and confirmed effective-seed semantics (or an explicitly defined statistical protocol).
 
 Optional severity tags:
 
@@ -161,7 +166,9 @@ For each live run, capture:
 - Scenario ID,
 - instruction surface and product host,
 - provider/model/model version,
-- runner/config identity and deterministic seed when used,
+- runner/config identity and requested seed when used,
+- effective seed evidence when the provider exposes it,
+- telemetry trust source,
 - Git SHA + dirty state,
 - case-corpus and mandate digests,
 - observed output summary,
