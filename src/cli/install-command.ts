@@ -5,11 +5,12 @@
  * @version v5
  */
 
-import { existsSync, readFileSync, unlinkSync } from 'node:fs';
-import { writeFile, mkdir } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
-import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
+import { existsSync, readFileSync, unlinkSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { defaultReasonRegistry } from '../config/reasons.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import type {
   CliArgs,
@@ -17,35 +18,35 @@ import type {
   FileOp,
   RollbackEntry as InstallRollbackEntry,
 } from './install-helpers.js';
-import type { InstallContext, SnapshotResult } from './install-steps.js';
-import {
-  initInstallContext,
-  validateTarball,
-  buildRollbackSnapshot,
-  writeArtifacts,
-  writeConfigFiles,
-  emitPostInstallWarnings,
-  resolveConfigTargetDir,
-} from './install-steps.js';
 import { rollbackArtifacts, toCliError } from './install-helpers.js';
-import { detectOpenCodeRuntimeEvidence } from './opencode-runtime-detect.js';
-import { classifyOpenCodeRuntime } from './opencode-runtime-compat.js';
-import { defaultReasonRegistry } from '../config/reasons.js';
 import {
   assertManagedMandatesOwnership,
   assertNoAmbiguousLegacyInstruction,
   deriveInstallOwnershipManifest,
+  type InstallOwnershipManifest,
   writeInstallOwnershipManifest,
 } from './install-ownership.js';
+import type { InstallContext, SnapshotResult } from './install-steps.js';
 import {
+  buildRollbackSnapshot,
+  emitPostInstallWarnings,
+  initInstallContext,
+  resolveConfigTargetDir,
+  validateTarball,
+  writeArtifacts,
+  writeConfigFiles,
+} from './install-steps.js';
+import {
+  commitDependencyTransaction,
   createDependencyTransaction,
   executeDependencyTransaction,
-  commitDependencyTransaction,
-  rollbackDependencyTransaction,
   isRollbackPossible,
   recoverOrAbort,
+  rollbackDependencyTransaction,
   type DependencyTransaction,
 } from './install-transaction.js';
+import { classifyOpenCodeRuntime } from './opencode-runtime-compat.js';
+import { detectOpenCodeRuntimeEvidence } from './opencode-runtime-detect.js';
 
 export {
   detectPackageManager,
@@ -95,10 +96,7 @@ async function acquireInstallLock(): Promise<{ release(): void }> {
     process.removeListener('exit', release);
     try {
       const raw = readFileSync(lockPath, 'utf-8');
-      if (JSON.parse(raw).token === token) {
-        unlinkSync(lockPath);
-        return;
-      }
+      if (JSON.parse(raw).token === token) unlinkSync(lockPath);
     } catch (err) {
       if (!(err instanceof Error && 'code' in err && err.code === 'ENOENT')) {
         getAdapterLogger().warn('cli', 'lock release failed', {
@@ -193,6 +191,29 @@ function snapshotEntry(snapshot: SnapshotResult, path: string): InstallRollbackE
   return entry;
 }
 
+function resultFromContext(ctx: InstallContext): CliResult {
+  return {
+    target: ctx.target,
+    ops: ctx.ops,
+    errors: ctx.errors,
+    errorDetails: ctx.errorDetails,
+    warnings: ctx.warnings,
+    notices: ctx.notices,
+  };
+}
+
+function alreadyInstalledResult(ctx: InstallContext): CliResult {
+  const message = 'FlowGuard is already installed. Use --force to reinstall.';
+  return {
+    target: ctx.target,
+    ops: [],
+    errors: [message],
+    errorDetails: [{ code: 'ALREADY_INSTALLED', message }],
+    warnings: [],
+    notices: [],
+  };
+}
+
 export async function install(args: CliArgs): Promise<CliResult> {
   let lock: { release(): void } | null = null;
   try {
@@ -251,127 +272,93 @@ async function enforceInstructionSourceCompat(ctx: InstallContext): Promise<void
   });
 }
 
+function deriveOwnership(
+  ctx: InstallContext,
+  snapshot: SnapshotResult,
+): InstallOwnershipManifest {
+  const configPreState = snapshotEntry(snapshot, snapshot.cfgPath);
+  const packagePreState = snapshotEntry(snapshot, snapshot.pkgPath);
+  const opencodePreState = snapshot.opencodeJsonPath
+    ? snapshotEntry(snapshot, snapshot.opencodeJsonPath)
+    : null;
+
+  assertNoAmbiguousLegacyInstruction({
+    platform: ctx.installPlatform,
+    verifiedReinstall: ctx.args.force && configPreState.existed,
+    opencodeOriginalContent: opencodePreState?.originalContent,
+  });
+
+  return deriveInstallOwnershipManifest({
+    platform: ctx.installPlatform,
+    scope: ctx.args.installScope,
+    packageJsonExisted: packagePreState.existed,
+    packageJsonOriginalContent: packagePreState.originalContent,
+    opencodeOriginalContent: opencodePreState?.originalContent,
+    opencodeCurrentContent: snapshot.opencodeJsonPath
+      ? readFileSync(snapshot.opencodeJsonPath, 'utf-8')
+      : null,
+  });
+}
+
+async function persistOwnership(
+  ctx: InstallContext,
+  ownership: InstallOwnershipManifest,
+): Promise<void> {
+  try {
+    await writeInstallOwnershipManifest(ctx.target, ownership);
+  } catch (error) {
+    ctx.warnings.push(
+      `Install completed, but ownership provenance could not be persisted; uninstall will preserve ambiguous customer-owned settings (${error instanceof Error ? error.message : String(error)}).`,
+    );
+  }
+}
+
+async function performInstallMutations(
+  ctx: InstallContext,
+  snapshot: SnapshotResult,
+): Promise<DependencyTransaction> {
+  await writeArtifacts(ctx, { valid: true, path: '', name: '', version: '' }, snapshot);
+  throw new Error('unreachable');
+}
+
 async function doInstall(args: CliArgs): Promise<CliResult> {
   let snapshot: SnapshotResult | null = null;
   let tx: DependencyTransaction | null = null;
-
   const ctx = initInstallContext(args);
 
   try {
     const configTargetDir = resolveConfigTargetDir(ctx);
     await recoverOrAbort(configTargetDir);
-
     await enforceInstructionSourceCompat(ctx);
-    if (ctx.errors.length > 0) {
-      return {
-        target: ctx.target,
-        ops: ctx.ops,
-        errors: ctx.errors,
-        errorDetails: ctx.errorDetails,
-        warnings: ctx.warnings,
-        notices: ctx.notices,
-      };
-    }
+    if (ctx.errors.length > 0) return resultFromContext(ctx);
 
     const cfgPath = join(configTargetDir, 'flowguard.json');
-    if (existsSync(cfgPath) && !args.force) {
-      return {
-        target: ctx.target,
-        ops: [],
-        errors: ['FlowGuard is already installed. Use --force to reinstall.'],
-        errorDetails: [
-          {
-            code: 'ALREADY_INSTALLED',
-            message: 'FlowGuard is already installed. Use --force to reinstall.',
-          },
-        ],
-        warnings: [],
-        notices: [],
-      };
-    }
+    if (existsSync(cfgPath) && !args.force) return alreadyInstalledResult(ctx);
 
     await runInstallPreflight(ctx, configTargetDir);
-
     const tarball = await validateTarball(ctx);
-    if (!tarball) {
-      return {
-        target: ctx.target,
-        ops: ctx.ops,
-        errors: ctx.errors,
-        errorDetails: ctx.errorDetails,
-        warnings: ctx.warnings,
-        notices: ctx.notices,
-      };
-    }
+    if (!tarball) return resultFromContext(ctx);
 
     snapshot = await buildRollbackSnapshot(ctx, tarball.name);
     await assertManagedMandatesOwnership(snapshot.mandatesPath);
-
-    const configPreState = snapshotEntry(snapshot, snapshot.cfgPath);
-    const packagePreState = snapshotEntry(snapshot, snapshot.pkgPath);
-    const opencodePreState = snapshot.opencodeJsonPath
-      ? snapshotEntry(snapshot, snapshot.opencodeJsonPath)
-      : null;
-    const verifiedReinstall = args.force && configPreState.existed;
-
-    assertNoAmbiguousLegacyInstruction({
-      platform: ctx.installPlatform,
-      verifiedReinstall,
-      opencodeOriginalContent: opencodePreState?.originalContent,
-    });
-
     await writeArtifacts(ctx, tarball, snapshot);
     await writeConfigFiles(ctx, snapshot);
-
-    const ownership = deriveInstallOwnershipManifest({
-      platform: ctx.installPlatform,
-      scope: args.installScope,
-      packageJsonExisted: packagePreState.existed,
-      packageJsonOriginalContent: packagePreState.originalContent,
-      opencodeOriginalContent: opencodePreState?.originalContent,
-      opencodeCurrentContent: snapshot.opencodeJsonPath
-        ? readFileSync(snapshot.opencodeJsonPath, 'utf-8')
-        : null,
-    });
+    const ownership = deriveOwnership(ctx, snapshot);
 
     tx = await createDependencyTransaction(snapshot, snapshot.vendorTarballPath);
     await executeDependencyTransaction(tx);
     await commitDependencyTransaction(tx, ctx);
-
-    try {
-      const manifestPath = await writeInstallOwnershipManifest(ctx.target, ownership);
-      ctx.ops.push({ path: manifestPath, action: 'written', reason: 'installer ownership provenance' });
-    } catch (error) {
-      ctx.warnings.push(
-        `Install completed, but ownership provenance could not be persisted; uninstall will preserve ambiguous customer-owned settings (${error instanceof Error ? error.message : String(error)}).`,
-      );
-    }
+    await persistOwnership(ctx, ownership);
 
     emitPostInstallWarnings(ctx);
-    return {
-      target: ctx.target,
-      ops: ctx.ops,
-      errors: ctx.errors,
-      errorDetails: ctx.errorDetails,
-      warnings: ctx.warnings,
-      notices: ctx.notices,
-    };
+    return resultFromContext(ctx);
   } catch (error) {
     const formattedError = formatInstallError(error);
     ctx.errors.push(formattedError);
     ctx.errorDetails.push(toCliError(error));
     await rollbackDeps(tx, ctx.errors);
     await rollbackSnap(snapshot, ctx.ops, ctx.errors);
-    getAdapterLogger().error('cli', 'install command failed', {
-      error: formattedError,
-    });
-    return {
-      target: ctx.target,
-      ops: ctx.ops,
-      errors: ctx.errors,
-      errorDetails: ctx.errorDetails,
-      warnings: ctx.warnings,
-      notices: ctx.notices,
-    };
+    getAdapterLogger().error('cli', 'install command failed', { error: formattedError });
+    return resultFromContext(ctx);
   }
 }
