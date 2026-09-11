@@ -7,6 +7,10 @@ import { randomUUID } from 'node:crypto';
 import { readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { isManagedArtifact } from './templates.js';
+import { InstallError } from './install-recovery.js';
+import { parseJsonc } from './install-json.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import type { InstallPlatform, InstallScope } from './install-types.js';
 
 export const INSTALL_OWNERSHIP_FILENAME = '.flowguard-install-ownership.json';
@@ -35,29 +39,99 @@ export function ownershipManifestPath(target: string): string {
   return join(target, INSTALL_OWNERSHIP_FILENAME);
 }
 
-export function createInstallOwnershipManifest(input: {
+export async function assertManagedMandatesOwnership(path: string): Promise<void> {
+  try {
+    const existing = await readFile(path, 'utf-8');
+    if (!isManagedArtifact(existing)) {
+      throw new InstallError(
+        'MANAGED_ARTIFACT_CONFLICT',
+        `MANAGED_ARTIFACT_CONFLICT: ${path} exists but is not a FlowGuard-managed artifact; refusing to overwrite customer-owned content`,
+      );
+    }
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return;
+    throw error;
+  }
+}
+
+function parsedDependencies(content: Buffer | undefined): Record<string, unknown> | null {
+  if (!content) return null;
+  try {
+    const parsed = JSON.parse(content.toString('utf-8')) as Record<string, unknown>;
+    const dependencies = parsed['dependencies'];
+    return dependencies && typeof dependencies === 'object'
+      ? (dependencies as Record<string, unknown>)
+      : {};
+  } catch {
+    return null;
+  }
+}
+
+function parsedOpencode(content: Buffer | undefined): Record<string, unknown> | null {
+  if (!content) return null;
+  try {
+    return parseJsonc<Record<string, unknown>>(content.toString('utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+function taskPermissions(parsed: Record<string, unknown> | null): Record<string, unknown> | null {
+  const agent = parsed?.['agent'];
+  if (!agent || typeof agent !== 'object') return null;
+  const build = (agent as Record<string, unknown>)['build'];
+  if (!build || typeof build !== 'object') return null;
+  const permission = (build as Record<string, unknown>)['permission'];
+  if (!permission || typeof permission !== 'object') return null;
+  const task = (permission as Record<string, unknown>)['task'];
+  return task && typeof task === 'object' ? (task as Record<string, unknown>) : null;
+}
+
+function instructions(parsed: Record<string, unknown> | null): string[] {
+  const value = parsed?.['instructions'];
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+export function deriveInstallOwnershipManifest(input: {
   platform: InstallPlatform;
   scope: InstallScope;
-  packageJsonCreated: boolean;
-  zodAdded: boolean;
-  taskHardeningAdded?: boolean;
-  legacyInstructionMigrated?: boolean;
+  packageJsonExisted: boolean;
+  packageJsonOriginalContent?: Buffer;
+  opencodeOriginalContent?: Buffer;
+  opencodeCurrentContent?: string | null;
+  verifiedReinstall: boolean;
 }): InstallOwnershipManifest {
+  const previousDeps = parsedDependencies(input.packageJsonOriginalContent);
+  const packageJsonCreated = !input.packageJsonExisted;
+  const zodAdded = packageJsonCreated || previousDeps === null || !('zod' in previousDeps);
+
+  const previousOpencode = parsedOpencode(input.opencodeOriginalContent);
+  const currentOpencode = input.opencodeCurrentContent
+    ? parseJsonc<Record<string, unknown>>(input.opencodeCurrentContent)
+    : null;
+  const previousTask = taskPermissions(previousOpencode);
+  const currentTask = taskPermissions(currentOpencode);
+  const taskHardeningAdded =
+    input.platform === 'opencode' &&
+    previousTask === null &&
+    currentTask?.['*'] === 'deny' &&
+    currentTask?.[REVIEWER_SUBAGENT_TYPE] === 'allow';
+  const legacyInstructionMigrated =
+    input.platform === 'opencode' &&
+    input.verifiedReinstall &&
+    instructions(previousOpencode).includes('AGENTS.md') &&
+    !instructions(currentOpencode).includes('AGENTS.md');
+
   return InstallOwnershipManifestSchema.parse({
     schemaVersion: 1,
     platform: input.platform,
     scope: input.scope,
     packageJson: {
-      created: input.packageJsonCreated,
-      zodAdded: input.zodAdded,
+      created: packageJsonCreated,
+      zodAdded,
     },
     ...(input.platform === 'opencode'
-      ? {
-          opencode: {
-            taskHardeningAdded: input.taskHardeningAdded ?? false,
-            legacyInstructionMigrated: input.legacyInstructionMigrated ?? false,
-          },
-        }
+      ? { opencode: { taskHardeningAdded, legacyInstructionMigrated } }
       : {}),
   });
 }
