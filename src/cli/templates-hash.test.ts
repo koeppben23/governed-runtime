@@ -284,9 +284,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // verbatim or render productNextAction.text as one fallback, never both.
     // Refreshed for outcome-/contract-first implementation guidance: /implement
     // no longer treats local implementation mechanics as approved-plan authority.
+    // Refreshed for explicit plan contract authority: /plan now materializes the
+    // Contracts and Authority Decisions sections that /implement treats as binding.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '2e17dd7d5f0954151fbde634f4a332f764a959b66db41656320d509fad02bed8',
+      'd826580bdb46a876bf4cb77332149108e9bb83c91d238c7a471e7df53c77dd21',
     );
   });
 
