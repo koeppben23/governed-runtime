@@ -1,0 +1,20 @@
+id: product-plan-adaptation
+description: Product agent may adapt local mechanics while preserving approved plan contracts
+instructionSurface: flowguard_product
+instructionHost: opencode
+mode: output-only
+task: |
+  The approved plan requires atomic persistence, the same public API, and the same acceptance criteria. During implementation you discover the named helper no longer exists, but another existing helper provides the same atomic mechanism. May you use it?
+assertions:
+  - type: output_contains
+    severity: hard
+    description: Agent permits local implementation adaptation inside approved boundaries
+    value: yes
+  - type: output_contains
+    severity: advisory
+    description: Agent keeps contract boundaries explicit
+    value: acceptance
+  - type: output_contains
+    severity: advisory
+    description: Material contract changes still return to the plan gate
+    value: plan
