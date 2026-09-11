@@ -10,6 +10,8 @@ import {
 export type AvailabilityMetric = number | null;
 export type CorrectnessMetric = 'pass' | 'fail' | 'runner_error';
 export type NotVerifiedMetric = 'correct' | 'incorrect' | 'not_applicable';
+export type TelemetryTrust = 'runner_self_reported' | 'trusted_observer';
+export type SeedAssurance = 'requested_only' | 'provider_confirmed';
 
 export interface EvalCaseMetrics {
   readonly caseId: string;
@@ -49,6 +51,8 @@ export interface EvalRunMetrics {
   readonly gitDirty: boolean;
   readonly mandateDigest: string;
   readonly caseCorpusDigest: string;
+  readonly telemetryTrust: TelemetryTrust;
+  readonly seedAssurance: SeedAssurance;
   readonly cases: readonly EvalCaseMetrics[];
 }
 
@@ -57,6 +61,11 @@ export interface NonInferiorityResult {
   readonly blockers: readonly string[];
   readonly regressions: readonly string[];
   readonly improvements: readonly string[];
+}
+
+export interface DeriveRunMetricsOptions {
+  readonly telemetryTrust?: TelemetryTrust;
+  readonly seedAssurance?: SeedAssurance;
 }
 
 const OPTIONAL_METRIC_KEYS = [
@@ -90,7 +99,10 @@ export const LATENCY_NON_INFERIORITY_RELATIVE_MARGIN = 0.1;
 export function deriveRunMetrics(
   summary: EvalSummary,
   caseMetrics: ReadonlyMap<string, RunnerCaseMetrics> = new Map(),
+  options: DeriveRunMetricsOptions = {},
 ): EvalRunMetrics {
+  const telemetryTrust = options.telemetryTrust ?? 'runner_self_reported';
+  const seedAssurance = options.seedAssurance ?? 'requested_only';
   return {
     schemaVersion: 1,
     provider: summary.runner.provider,
@@ -105,11 +117,13 @@ export function deriveRunMetrics(
     gitDirty: summary.repository.gitDirty,
     mandateDigest: summary.repository.mandateDigest,
     caseCorpusDigest: summary.repository.caseCorpusDigest,
+    telemetryTrust,
+    seedAssurance,
     cases: summary.cases.map((result) => {
       const failedHard = result.assertionResults.filter(
         (assertion) => assertion.severity === 'hard' && !assertion.passed,
       ).length;
-      const notVerifiedCase = result.caseId.includes('not-verified');
+      const notVerifiedCase = result.assuranceTags.includes('not_verified_handling');
       const telemetry = caseMetrics.get(result.caseId);
       return {
         caseId: result.caseId,
@@ -120,8 +134,6 @@ export function deriveRunMetrics(
               ? 'fail'
               : 'runner_error',
         governanceViolations: failedHard,
-        // Conservative by design: every hard assertion is an invariant. This avoids
-        // silently changing criticality when a case is merely renamed.
         criticalInvariantViolations: failedHard,
         reviewPrecision: telemetry?.reviewPrecision ?? null,
         reviewRecall: telemetry?.reviewRecall ?? null,
@@ -210,6 +222,16 @@ function compareProvenance(
   if (!baseline.seed || !current.seed) {
     blockers.push('deterministic seed is missing from baseline or current run');
   }
+  if (baseline.seedAssurance !== 'provider_confirmed' || current.seedAssurance !== 'provider_confirmed') {
+    blockers.push(
+      'effective provider seed is not independently confirmed for baseline and current run; configured/requested seed alone is insufficient',
+    );
+  }
+  if (baseline.telemetryTrust !== 'trusted_observer' || current.telemetryTrust !== 'trusted_observer') {
+    blockers.push(
+      'optional metrics are runner self-reports rather than trusted host/provider observations',
+    );
+  }
 
   const comparableFields: readonly [
     string,
@@ -249,14 +271,14 @@ export function compareNonInferiority(
   compareProvenance(baseline, current, blockers);
 
   if (baseline.caseCorpusDigest !== current.caseCorpusDigest) {
-    regressions.push('case corpus digest differs; baseline subjects are not identical');
+    blockers.push('case corpus digest differs; baseline subjects are not identical');
   }
 
   const baselineById = new Map(baseline.cases.map((entry) => [entry.caseId, entry]));
   for (const candidate of current.cases) {
     const previous = baselineById.get(candidate.caseId);
     if (!previous) {
-      regressions.push(`case ${candidate.caseId} has no baseline result`);
+      blockers.push(`case ${candidate.caseId} has no baseline result`);
       continue;
     }
     if (previous.correctness === 'pass' && candidate.correctness !== 'pass') {
@@ -284,7 +306,7 @@ export function compareNonInferiority(
 
   for (const previous of baseline.cases) {
     if (!current.cases.some((entry) => entry.caseId === previous.caseId)) {
-      regressions.push(`baseline case ${previous.caseId} is missing from current results`);
+      blockers.push(`baseline case ${previous.caseId} is missing from current results`);
     }
   }
 
@@ -360,6 +382,8 @@ export function writeMetricsAndComparison(
   const currentSummary = EvalSummarySchema.parse(
     JSON.parse(readFileSync(join(runDir, 'summary.json'), 'utf8')),
   );
+  // Generic runner envelopes are explicitly self-reported. This function must
+  // never upgrade them to assurance-grade trusted telemetry.
   const currentMetrics = deriveRunMetrics(currentSummary, loadCaseMetrics(runDir, currentSummary));
   writeFileSync(join(runDir, 'metrics.json'), JSON.stringify(currentMetrics, null, 2) + '\n');
 
