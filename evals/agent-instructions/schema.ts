@@ -8,7 +8,11 @@ const pathSchema = z
   .refine(
     (p) => {
       const normalized = p.replace(/\\/g, '/');
-      return !normalized.startsWith('/') && !/^[A-Za-z]:\//u.test(normalized) && !normalized.split('/').includes('..');
+      return (
+        !normalized.startsWith('/') &&
+        !/^[A-Za-z]:\//u.test(normalized) &&
+        !normalized.split('/').includes('..')
+      );
     },
     { message: 'must be a repository-relative path without traversal' },
   );
@@ -36,6 +40,10 @@ export type InstructionHost = z.infer<typeof InstructionHostSchema>;
 /** Whether a runner is deterministic plumbing or an actual host/provider invocation. */
 export const RunnerKindSchema = z.enum(['synthetic', 'live-host']);
 export type RunnerKind = z.infer<typeof RunnerKindSchema>;
+
+/** Explicit semantic classifications used by assurance metrics. */
+export const AssuranceTagSchema = z.enum(['not_verified_handling']);
+export type AssuranceTag = z.infer<typeof AssuranceTagSchema>;
 
 // ── Stream channel ────────────────────────────────────────────────────
 
@@ -134,6 +142,8 @@ const CaseBase = {
   description: z.string().min(1),
   instructionSurface: InstructionSurfaceSchema,
   instructionHost: InstructionHostSchema.optional(),
+  /** Assurance classifications are explicit data; case IDs carry no metric semantics. */
+  assuranceTags: AssuranceTagSchema.array().default([]),
   task: z.string().min(1),
   /**
    * Synthetic, non-production secret values available only to the eval child.
@@ -203,7 +213,7 @@ const RunnerBase = {
   model: z.string().min(1),
   modelVersion: z.string().min(1),
   runnerVersion: z.string().min(1),
-  /** Deterministic sampling seed. Required by assurance-grade non-inferiority runs. */
+  /** Requested sampling seed; this does not itself prove provider-effective seeding. */
   seed: z.string().min(1).optional(),
   runnerKind: RunnerKindSchema.optional(),
   instructionHost: InstructionHostSchema.optional(),
@@ -282,6 +292,7 @@ export const EvalCaseResultSchema = z.object({
   caseId: idSchema,
   instructionSurface: InstructionSurfaceSchema,
   instructionHost: InstructionHostSchema.optional(),
+  assuranceTags: AssuranceTagSchema.array().default([]),
   verdict: z.enum(['PASS', 'FAIL', 'RUNNER_ERROR']),
   durationMs: z.number(),
   assertionResults: AssertionResultSchema.array(),
