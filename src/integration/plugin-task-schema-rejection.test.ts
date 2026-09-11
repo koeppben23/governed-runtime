@@ -83,7 +83,7 @@ describe('host-task schema rejection boundary', () => {
     });
   });
 
-  it('classifies executed-but-schema-invalid reviewer output separately from missing Task evidence', async () => {
+  it('classifies schema-invalid reviewer output and audits the rejection', async () => {
     let semanticFactory:
       | ((state: { phase: string }, occurredAt: string) => readonly Record<string, unknown>[])
       | undefined;
