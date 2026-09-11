@@ -33,6 +33,10 @@ export type InstructionSurface = z.infer<typeof InstructionSurfaceSchema>;
 export const InstructionHostSchema = z.enum(['opencode', 'claude-code', 'codex']);
 export type InstructionHost = z.infer<typeof InstructionHostSchema>;
 
+/** Whether a runner is deterministic plumbing or an actual host/provider invocation. */
+export const RunnerKindSchema = z.enum(['synthetic', 'live-host']);
+export type RunnerKind = z.infer<typeof RunnerKindSchema>;
+
 // ── Stream channel ────────────────────────────────────────────────────
 
 const StreamSchema = z.enum(['stdout', 'stderr', 'combined']);
@@ -174,6 +178,18 @@ export const EvalCaseSchema = z
         message: 'repository_contributor cases must not declare a product instructionHost',
       });
     }
+    evalCase.assertions.forEach((assertion, index) => {
+      if (assertion.type !== 'output_matches' && assertion.type !== 'output_not_matches') return;
+      try {
+        new RegExp(assertion.pattern, assertion.flags);
+      } catch (error) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['assertions', index, 'pattern'],
+          message: `invalid regular expression: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
+    });
   });
 
 export type EvalCase = z.infer<typeof EvalCaseSchema>;
@@ -187,6 +203,8 @@ const RunnerBase = {
   model: z.string().min(1),
   modelVersion: z.string().min(1),
   runnerVersion: z.string().min(1),
+  runnerKind: RunnerKindSchema.optional(),
+  instructionHost: InstructionHostSchema.optional(),
   staticEnv: z.record(z.string(), z.string()).default({}),
   secretEnvNames: z.array(z.string().regex(/^[A-Z_][A-Z0-9_]*$/)).default([]),
   timeoutMs: z.number().int().positive().default(600_000),
@@ -216,12 +234,32 @@ const InnerRunnerConfigSchema = z.discriminatedUnion('promptTransport', [
     }),
 ]);
 
+const RunnerConfigValidatedSchema = InnerRunnerConfigSchema.superRefine((config, ctx) => {
+  if (config.runnerKind === 'live-host' && config.instructionHost === undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['instructionHost'],
+      message: 'live-host runners require an explicit instructionHost',
+    });
+  }
+  const secretLikeKey = /(SECRET|TOKEN|PASSWORD|API_KEY|PRIVATE_KEY|CREDENTIAL)/i;
+  for (const key of Object.keys(config.staticEnv)) {
+    if (secretLikeKey.test(key)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['staticEnv', key],
+        message: 'secret-like environment keys must be supplied via secretEnvNames, not staticEnv',
+      });
+    }
+  }
+});
+
 export const RunnerConfigSchema = z.preprocess((input) => {
   if (typeof input === 'object' && input !== null && !('promptTransport' in input)) {
     return { ...(input as Record<string, unknown>), promptTransport: 'stdin' };
   }
   return input;
-}, InnerRunnerConfigSchema);
+}, RunnerConfigValidatedSchema);
 
 export type RunnerConfig = z.infer<typeof InnerRunnerConfigSchema>;
 
@@ -266,6 +304,10 @@ export const EvalRunnerProvenanceSchema = z.object({
   model: z.string().min(1),
   modelVersion: z.string().min(1),
   runnerVersion: z.string().min(1),
+  runnerKind: RunnerKindSchema.optional(),
+  instructionHost: InstructionHostSchema.optional(),
+  timeoutMs: z.number().int().positive(),
+  configDigest: z.string().regex(/^[0-9a-f]{64}$/),
   secretEnvNames: z.array(z.string()),
 });
 
@@ -273,27 +315,32 @@ export type EvalRunnerProvenance = z.infer<typeof EvalRunnerProvenanceSchema>;
 
 export const RepositoryProvenanceSchema = z.object({
   gitCommit: z.string().regex(/^[0-9a-f]{40}$/),
+  gitDirty: z.boolean(),
   flowguardVersion: z.string().min(1),
   mandateDigest: z.string().regex(/^[0-9a-f]{64}$/),
+  caseCorpusDigest: z.string().regex(/^[0-9a-f]{64}$/),
 });
 
 export type RepositoryProvenance = z.infer<typeof RepositoryProvenanceSchema>;
 
+const VerdictCountsSchema = z.object({
+  passed: z.number(),
+  failed: z.number(),
+  runnerErrors: z.number(),
+});
+
 export const EvalSummarySchema = z.object({
-  schemaVersion: z.literal(2),
+  schemaVersion: z.literal(3),
   runner: EvalRunnerProvenanceSchema,
   repository: RepositoryProvenanceSchema,
   byInstructionSurface: z.object({
-    repository_contributor: z.object({
-      passed: z.number(),
-      failed: z.number(),
-      runnerErrors: z.number(),
-    }),
-    flowguard_product: z.object({
-      passed: z.number(),
-      failed: z.number(),
-      runnerErrors: z.number(),
-    }),
+    repository_contributor: VerdictCountsSchema,
+    flowguard_product: VerdictCountsSchema,
+  }),
+  byInstructionHost: z.object({
+    opencode: VerdictCountsSchema,
+    'claude-code': VerdictCountsSchema,
+    codex: VerdictCountsSchema,
   }),
   cases: EvalCaseResultSchema.array(),
 });
