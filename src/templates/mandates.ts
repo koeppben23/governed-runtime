@@ -506,9 +506,6 @@ export const FLOWGUARD_MANDATES_KERNEL = renderMandateDocument(
   MANDATES_SECTION_DEFINITIONS.filter((section) => 'kernel' in section && section.kernel === true),
 );
 
-/** @deprecated Prefer FLOWGUARD_MANDATES_KERNEL for installed/persistent mandates. */
-export const FLOWGUARD_MANDATES_BODY = FLOWGUARD_MANDATES_KERNEL;
-
 // ---------------------------------------------------------------------------
 // opencode.json skeleton
 // ---------------------------------------------------------------------------
