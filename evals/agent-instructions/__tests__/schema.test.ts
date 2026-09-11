@@ -201,4 +201,24 @@ describe('EvalCaseSchema', () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it('rejects Windows drive-absolute file assertion paths', () => {
+    const result = EvalCaseSchema.safeParse({
+      id: 'test-case',
+      description: 'A test case',
+      instructionSurface: 'repository_contributor',
+      task: 'Do something',
+      mode: 'workspace',
+      workspace: { mode: 'fixture' },
+      assertions: [
+        {
+          type: 'file_changed',
+          path: 'C:\\outside.txt',
+          severity: 'hard',
+          description: 'drive-absolute paths must be rejected',
+        },
+      ],
+    });
+    expect(result.success).toBe(false);
+  });
 });
