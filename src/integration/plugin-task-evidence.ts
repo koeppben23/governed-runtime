@@ -272,31 +272,50 @@ async function persistAttemptStatus(
           bindResult.diagnostic?.schemaIssueKeys as readonly SchemaIssueKey[] | undefined,
         )
       : null;
-  await deps.ws.updateReviewAssurance(sessDir, (s: SessionState) => {
-    const withRejection = {
-      ...s,
-      reviewAssurance: updateAttemptStatus(
-        ensureReviewAssurance(s.reviewAssurance),
-        attempt.attemptId,
-        status,
-        now,
-        rejectionReason
-          ? {
-              rejectionReason,
+  await deps.ws.updateReviewAssurance(
+    sessDir,
+    (s: SessionState) => {
+      const withRejection = {
+        ...s,
+        reviewAssurance: updateAttemptStatus(
+          ensureReviewAssurance(s.reviewAssurance),
+          attempt.attemptId,
+          status,
+          now,
+          rejectionReason
+            ? {
+                rejectionReason,
+                ...(schemaFingerprint ? { schemaErrorFingerprint: schemaFingerprint } : {}),
+              }
+            : undefined,
+        ),
+      };
+      // A rejected attempt that leaves no legal continuation (no bindable
+      // attempt, no authorized output repair) terminates the obligation:
+      // a pending obligation with no continuation is an illegal persisted
+      // state. Stale attempts never settle (they are superseded by a newer
+      // attempt, not terminal for the obligation).
+      return status === 'rejected'
+        ? settleReviewObligationAfterAttempt(withRejection, attempt.obligationId)
+        : withRejection;
+    },
+    status === 'rejected'
+      ? (state, occurredAt) => [
+          {
+            phase: state.phase,
+            event: 'review:attempt_rejected',
+            occurredAt,
+            detail: {
+              obligationId: attempt.obligationId,
+              attemptId: attempt.attemptId,
+              bindOutcome: bindResult.bindOutcome,
+              ...(rejectionReason ? { rejectionReason } : {}),
               ...(schemaFingerprint ? { schemaErrorFingerprint: schemaFingerprint } : {}),
-            }
-          : undefined,
-      ),
-    };
-    // A rejected attempt that leaves no legal continuation (no bindable
-    // attempt, no authorized output repair) terminates the obligation:
-    // a pending obligation with no continuation is an illegal persisted
-    // state. Stale attempts never settle (they are superseded by a newer
-    // attempt, not terminal for the obligation).
-    return status === 'rejected'
-      ? settleReviewObligationAfterAttempt(withRejection, attempt.obligationId)
-      : withRejection;
-  });
+            },
+          },
+        ]
+      : undefined,
+  );
 }
 
 /** Upper bound for the diagnostic detail surfaced to the calling agent. */
@@ -317,6 +336,12 @@ function bindDetail(bindResult: HostTaskBindResult): string | undefined {
     : message;
 }
 
+function blockCodeFor(bindResult: HostTaskBindResult): string {
+  return bindResult.bindOutcome === 'schema_invalid'
+    ? 'ENVELOPE_SCHEMA_INVALID'
+    : 'HOST_SUBAGENT_TASK_REQUIRED';
+}
+
 function blockRequiredHostTaskEvidence(
   deps: HostTaskEvidenceDeps,
   sessionId: string,
@@ -331,22 +356,25 @@ function blockRequiredHostTaskEvidence(
     ...bindResult.diagnostic,
   });
   const detail = bindDetail(bindResult);
-  hookOutput.output = strictBlockedOutput('HOST_SUBAGENT_TASK_REQUIRED', {
-    reason: `${REVIEWER_SUBAGENT_TYPE} Task call did not produce bindable host-task evidence`,
+  const code = blockCodeFor(bindResult);
+  const schemaInvalid = bindResult.bindOutcome === 'schema_invalid';
+  hookOutput.output = strictBlockedOutput(code, {
+    reason: schemaInvalid
+      ? `${REVIEWER_SUBAGENT_TYPE} Task completed, but its ReviewFindings output failed canonical schema validation`
+      : `${REVIEWER_SUBAGENT_TYPE} Task call did not produce bindable host-task evidence`,
+    message: detail ?? (schemaInvalid ? 'Reviewer output failed schema validation before binding' : ''),
     policy,
     policyMode: policy,
     bindOutcome: bindResult.bindOutcome,
     ...(detail ? { detail } : {}),
     reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
-    // Include schema errors so the agent can fix specific issues via
-    // the canonical repair prompt (obtained by calling flowguard_review).
-    ...(bindResult.bindOutcome === 'schema_invalid' && bindResult.diagnostic?.schemaErrors
+    ...(schemaInvalid && bindResult.diagnostic?.schemaErrors
       ? { schemaErrors: (bindResult.diagnostic.schemaErrors as string[]).join('; ') }
       : {}),
-    ...(bindResult.bindOutcome === 'extraction_invalid'
+    ...(schemaInvalid || bindResult.bindOutcome === 'extraction_invalid'
       ? {
           nextAction:
-            'Re-run the originating FlowGuard command to issue a fresh canonical reviewer prompt.',
+            'Re-run the originating FlowGuard command to authorize a fresh output-repair attempt and issue a new canonical reviewer prompt before invoking the reviewer Task again.',
         }
       : {}),
   });
