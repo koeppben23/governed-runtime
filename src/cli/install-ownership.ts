@@ -7,10 +7,10 @@ import { randomUUID } from 'node:crypto';
 import { readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { isManagedArtifact } from './templates.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { InstallError } from './install-recovery.js';
 import { parseJsonc } from './install-json.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+import { isManagedArtifact } from './templates.js';
 import type { InstallPlatform, InstallScope } from './install-types.js';
 
 export const INSTALL_OWNERSHIP_FILENAME = '.flowguard-install-ownership.json';
@@ -34,6 +34,20 @@ const InstallOwnershipManifestSchema = z
   .strict();
 
 export type InstallOwnershipManifest = z.infer<typeof InstallOwnershipManifestSchema>;
+
+type ExistingManifestState =
+  | { kind: 'absent' }
+  | { kind: 'valid'; manifest: InstallOwnershipManifest }
+  | { kind: 'invalid' };
+
+interface DeriveOwnershipInput {
+  platform: InstallPlatform;
+  scope: InstallScope;
+  packageJsonExisted: boolean;
+  packageJsonOriginalContent?: Buffer;
+  opencodeOriginalContent?: Buffer;
+  opencodeCurrentContent?: string | null;
+}
 
 export function ownershipManifestPath(target: string): string {
   return join(target, INSTALL_OWNERSHIP_FILENAME);
@@ -111,50 +125,47 @@ export function assertNoAmbiguousLegacyInstruction(input: {
   );
 }
 
-export function deriveInstallOwnershipManifest(input: {
-  platform: InstallPlatform;
-  scope: InstallScope;
-  packageJsonExisted: boolean;
-  packageJsonOriginalContent?: Buffer;
-  opencodeOriginalContent?: Buffer;
-  opencodeCurrentContent?: string | null;
-}): InstallOwnershipManifest {
+function derivePackageOwnership(input: DeriveOwnershipInput): InstallOwnershipManifest['packageJson'] {
   const previousDeps = parsedDependencies(input.packageJsonOriginalContent);
-  const packageJsonCreated = !input.packageJsonExisted;
-  const zodAdded = packageJsonCreated || previousDeps === null || !('zod' in previousDeps);
-  const previousCoreDependency =
-    previousDeps && typeof previousDeps['@flowguard/core'] === 'string'
-      ? (previousDeps['@flowguard/core'] as string)
-      : null;
+  const created = !input.packageJsonExisted;
+  const zodAdded = created || previousDeps === null || !('zod' in previousDeps);
+  const core = previousDeps?.['@flowguard/core'];
+  return {
+    created,
+    zodAdded,
+    previousCoreDependency: typeof core === 'string' ? core : null,
+  };
+}
 
-  const previousOpencode = parsedOpencode(input.opencodeOriginalContent);
+function deriveTaskHardeningOwnership(input: DeriveOwnershipInput): boolean {
+  if (input.platform !== 'opencode') return false;
+  const previousTask = taskPermissions(parsedOpencode(input.opencodeOriginalContent));
   const currentOpencode = input.opencodeCurrentContent
     ? parseJsonc<Record<string, unknown>>(input.opencodeCurrentContent)
     : null;
-  const previousTask = taskPermissions(previousOpencode);
   const currentTask = taskPermissions(currentOpencode);
-  const taskHardeningAdded =
-    input.platform === 'opencode' &&
+  return (
     previousTask === null &&
     currentTask?.['*'] === 'deny' &&
-    currentTask?.[REVIEWER_SUBAGENT_TYPE] === 'allow';
+    currentTask?.[REVIEWER_SUBAGENT_TYPE] === 'allow'
+  );
+}
 
+export function deriveInstallOwnershipManifest(
+  input: DeriveOwnershipInput,
+): InstallOwnershipManifest {
   return InstallOwnershipManifestSchema.parse({
     schemaVersion: 1,
     platform: input.platform,
     scope: input.scope,
-    packageJson: {
-      created: packageJsonCreated,
-      zodAdded,
-      previousCoreDependency,
-    },
-    ...(input.platform === 'opencode' ? { opencode: { taskHardeningAdded } } : {}),
+    packageJson: derivePackageOwnership(input),
+    ...(input.platform === 'opencode'
+      ? { opencode: { taskHardeningAdded: deriveTaskHardeningOwnership(input) } }
+      : {}),
   });
 }
 
-async function readExistingManifestState(
-  target: string,
-): Promise<{ kind: 'absent' } | { kind: 'valid'; manifest: InstallOwnershipManifest } | { kind: 'invalid' }> {
+async function readExistingManifestState(target: string): Promise<ExistingManifestState> {
   try {
     const raw = await readFile(ownershipManifestPath(target), 'utf-8');
     try {
@@ -164,7 +175,9 @@ async function readExistingManifestState(
       return { kind: 'invalid' };
     }
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return { kind: 'absent' };
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      return { kind: 'absent' };
+    }
     return { kind: 'invalid' };
   }
 }
@@ -176,14 +189,19 @@ export async function writeInstallOwnershipManifest(
   const path = ownershipManifestPath(target);
   const existing = await readExistingManifestState(target);
   if (existing.kind === 'invalid') {
-    throw new Error(`${INSTALL_OWNERSHIP_FILENAME} exists but is not a valid FlowGuard ownership manifest; preserving it`);
+    throw new Error(
+      `${INSTALL_OWNERSHIP_FILENAME} exists but is not a valid FlowGuard ownership manifest; preserving it`,
+    );
   }
   if (
     existing.kind === 'valid' &&
     (existing.manifest.platform !== manifest.platform || existing.manifest.scope !== manifest.scope)
   ) {
-    throw new Error(`${INSTALL_OWNERSHIP_FILENAME} belongs to a different FlowGuard host/scope; preserving it`);
+    throw new Error(
+      `${INSTALL_OWNERSHIP_FILENAME} belongs to a different FlowGuard host/scope; preserving it`,
+    );
   }
+
   const effective = existing.kind === 'valid' ? existing.manifest : manifest;
   const tmp = `${path}.tmp.${process.pid}.${randomUUID()}`;
   try {
