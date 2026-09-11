@@ -2,7 +2,8 @@
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "testRunner": "vitest",
   "vitest": {
-    "configFile": "vitest.config.ts"
+    "configFile": "vitest.stryker.config.ts",
+    "related": false
   },
   "mutate": [
     "src/templates/mandates.ts",
