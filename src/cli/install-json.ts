@@ -21,8 +21,6 @@ import {
   mandatesInstructionEntry,
 } from './templates.js';
 
-const LEGACY_FLOWGUARD_INSTRUCTION_ENTRY = 'AGENTS.md';
-
 export function parseJsonc<T = Record<string, unknown>>(content: string): T {
   const errors: ParseError[] = [];
   const result = jsoncParse(content, errors, { allowTrailingComma: true });
@@ -139,20 +137,6 @@ async function writeJson(filePath: string, parsed: Record<string, unknown>): Pro
   await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
 }
 
-export interface MergeOpencodeOptions {
-  migrateLegacyFlowguardInstruction?: boolean;
-}
-
-function normalizedInstructions(
-  parsed: Record<string, unknown>,
-  migrateLegacyFlowguardInstruction: boolean,
-): string[] {
-  const instructions = instructionsFrom(parsed);
-  return migrateLegacyFlowguardInstruction
-    ? instructions.filter((instruction) => instruction !== LEGACY_FLOWGUARD_INSTRUCTION_ENTRY)
-    : [...instructions];
-}
-
 function isCustomerOwnedConfig(parsed: Record<string, unknown>, instructions: string[]): boolean {
   return (
     'plugin' in parsed ||
@@ -166,7 +150,6 @@ async function mergeCustomerOwnedConfig(
   parsed: Record<string, unknown>,
   instructions: string[],
   entry: string,
-  migratedLegacy: boolean,
 ): Promise<FileOp> {
   if (!instructions.includes(entry)) instructions.push(entry);
   parsed['instructions'] = instructions;
@@ -174,9 +157,7 @@ async function mergeCustomerOwnedConfig(
   return {
     path: filePath,
     action: 'merged',
-    reason: migratedLegacy
-      ? 'customer-owned config preserved; migrated verified legacy FlowGuard instruction'
-      : 'customer-owned config: preserved task permissions and merged FlowGuard instruction',
+    reason: 'customer-owned config: preserved task permissions and merged FlowGuard instruction',
   };
 }
 
@@ -211,11 +192,7 @@ async function overwriteMalformedOpencode(
   };
 }
 
-export async function mergeOpencodeJson(
-  filePath: string,
-  scope: InstallScope,
-  options: MergeOpencodeOptions = {},
-): Promise<FileOp> {
+export async function mergeOpencodeJson(filePath: string, scope: InstallScope): Promise<FileOp> {
   const entry = mandatesInstructionEntry(scope);
   const existing = await safeRead(filePath);
   if (!existing) {
@@ -231,10 +208,9 @@ export async function mergeOpencodeJson(
     return overwriteMalformedOpencode(filePath, existing, entry);
   }
 
-  const migrateLegacy = options.migrateLegacyFlowguardInstruction === true;
-  const instructions = normalizedInstructions(parsed, migrateLegacy);
+  const instructions = instructionsFrom(parsed);
   return isCustomerOwnedConfig(parsed, instructions)
-    ? mergeCustomerOwnedConfig(filePath, parsed, instructions, entry, migrateLegacy)
+    ? mergeCustomerOwnedConfig(filePath, parsed, instructions, entry)
     : mergeManagedConfig(filePath, parsed, instructions, entry);
 }
 
