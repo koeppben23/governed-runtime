@@ -4,11 +4,7 @@ import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { uninstall } from './install.js';
 import { INSTALL_OWNERSHIP_FILENAME } from './install-ownership.js';
-import {
-  repoArgs,
-  setupCliTestEnvironment,
-  tmpDir,
-} from './install-test-helpers.test.js';
+import { repoArgs, setupCliTestEnvironment, tmpDir } from './install-test-helpers.test.js';
 
 setupCliTestEnvironment();
 
