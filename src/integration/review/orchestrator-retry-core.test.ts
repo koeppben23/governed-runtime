@@ -40,7 +40,7 @@ import {
 const mockSleep = vi.fn<(ms: number) => Promise<void>>().mockResolvedValue(undefined);
 
 /** Default test options: SDK allowed for deterministic tests + mock sleep */
-const TEST_OPTS = { _sleepFn: mockSleep } as const;
+const TEST_OPTS = { reviewInvocationPolicy: 'sdk_allowed', _sleepFn: mockSleep } as const;
 
 function expectReviewerSuccess(
   result: Awaited<ReturnType<typeof invokeReviewer>>,
@@ -296,6 +296,7 @@ describe('invokeReviewer — retry logic', () => {
       });
 
       const result = await invokeReviewer(client, PROMPT, PARENT_ID, {
+        reviewInvocationPolicy: 'sdk_allowed',
         maxRetries: 0,
         _sleepFn: mockSleep,
       });
@@ -319,6 +320,7 @@ describe('invokeReviewer — retry logic', () => {
       });
 
       const result = await invokeReviewer(client, PROMPT, PARENT_ID, {
+        reviewInvocationPolicy: 'sdk_allowed',
         maxRetries: 5,
         _sleepFn: mockSleep,
       });
@@ -337,7 +339,11 @@ describe('invokeReviewer — retry logic', () => {
         prompt: vi.fn().mockResolvedValue(successPromptResult()),
       });
 
-      await invokeReviewer(client, PROMPT, PARENT_ID, { baseDelayMs: 500, _sleepFn: mockSleep });
+      await invokeReviewer(client, PROMPT, PARENT_ID, {
+        reviewInvocationPolicy: 'sdk_allowed',
+        baseDelayMs: 500,
+        _sleepFn: mockSleep,
+      });
 
       // Backoff: attempt 2 = 500 * 2^0 = 500, attempt 3 = 500 * 2^1 = 1000
       expect(mockSleep).toHaveBeenCalledTimes(2);
@@ -416,7 +422,9 @@ describe('invokeReviewer — retry logic', () => {
         prompt: vi.fn().mockResolvedValue(successPromptResult()),
       });
 
-      const result = await invokeReviewer(client, PROMPT, PARENT_ID);
+      const result = await invokeReviewer(client, PROMPT, PARENT_ID, {
+        reviewInvocationPolicy: 'sdk_allowed',
+      });
 
       expect(expectReviewerSuccess(result).sessionId).toBe('child-session-1');
     });
@@ -427,7 +435,9 @@ describe('invokeReviewer — retry logic', () => {
         prompt: vi.fn().mockResolvedValue(successPromptResult()),
       });
 
-      const result = await invokeReviewer(client, PROMPT, PARENT_ID);
+      const result = await invokeReviewer(client, PROMPT, PARENT_ID, {
+        reviewInvocationPolicy: 'sdk_allowed',
+      });
 
       const reviewedBy = expectReviewerSuccess(result).findings?.reviewedBy;
       expect(reviewedBy).toEqual({ sessionId: 'child-session-1' });

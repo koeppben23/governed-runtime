@@ -440,6 +440,7 @@ describe('invokeReviewer — retry session behavior', () => {
 
       await invokeReviewer(client2, PROMPT, 'parent-1', {
         maxRetries: 0,
+        reviewInvocationPolicy: 'sdk_allowed',
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: () => {},
       });

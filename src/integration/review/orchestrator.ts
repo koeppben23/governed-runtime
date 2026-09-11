@@ -261,10 +261,10 @@ export async function invokeReviewer(
   parentSessionId: string,
   options?: InvokeReviewerOptions,
 ): Promise<ReviewerResult | null> {
-  if (options?.reviewInvocationPolicy === 'host_task_required')
+  const invokeOptions = { ...DEFAULT_INVOKE_OPTIONS, ...options };
+  if (invokeOptions.reviewInvocationPolicy === 'host_task_required')
     return hostTaskRequiredBlockedResult();
 
-  const invokeOptions = { ...DEFAULT_INVOKE_OPTIONS, ...options };
   const maxAttempts = invokeOptions.maxRetries + 1;
   const agent = await resolveReviewerAgent(client);
 

@@ -627,7 +627,9 @@ describe('invokeReviewer', () => {
   it('creates child session and invokes reviewer', async () => {
     const { REVIEW_FINDINGS_JSON_SCHEMA } = await import('./findings-schema.js');
     const client = mockClient();
-    const result = await invokeReviewer(client, PROMPT, 'parent-session-1');
+    const result = await invokeReviewer(client, PROMPT, 'parent-session-1', {
+      reviewInvocationPolicy: 'sdk_allowed',
+    });
 
     assertSuccessfulResult(result);
     expect(result!.sessionId).toBe('child-session-1');
@@ -671,12 +673,28 @@ describe('invokeReviewer', () => {
     expect(client.session.prompt).not.toHaveBeenCalled();
   });
 
+  it('defaults to host task required without SDK calls', async () => {
+    const client = mockClient();
+    const result = await invokeReviewer(client, PROMPT, 'parent-session-1');
+
+    expect(result).toMatchObject({
+      blocked: true,
+      code: 'HOST_SUBAGENT_TASK_REQUIRED',
+      reviewInvocation: { policy: 'host_task_required' },
+    });
+    expect(client.app.agents).not.toHaveBeenCalled();
+    expect(client.session.create).not.toHaveBeenCalled();
+    expect(client.session.prompt).not.toHaveBeenCalled();
+  });
+
   // BAD: session creation fails
   it('returns null when session creation fails', async () => {
     const client = mockClient({
       createResult: { error: { message: 'Failed' } },
     });
-    const result = await invokeReviewer(client, PROMPT, 'parent-1');
+    const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+      reviewInvocationPolicy: 'sdk_allowed',
+    });
     expect(result).toBeNull();
   });
 
@@ -685,7 +703,9 @@ describe('invokeReviewer', () => {
     const client = mockClient({
       createResult: { data: undefined, error: undefined },
     });
-    const result = await invokeReviewer(client, PROMPT, 'parent-1');
+    const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+      reviewInvocationPolicy: 'sdk_allowed',
+    });
     expect(result).toBeNull();
   });
 
@@ -694,7 +714,9 @@ describe('invokeReviewer', () => {
     const client = mockClient({
       promptResult: { error: { message: 'Prompt failed' } },
     });
-    const result = await invokeReviewer(client, PROMPT, 'parent-1');
+    const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+      reviewInvocationPolicy: 'sdk_allowed',
+    });
     expect(result).toBeNull();
   });
 
@@ -703,7 +725,9 @@ describe('invokeReviewer', () => {
     const client = mockClient({
       promptResult: { data: undefined, error: undefined },
     });
-    const result = await invokeReviewer(client, PROMPT, 'parent-1');
+    const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+      reviewInvocationPolicy: 'sdk_allowed',
+    });
     expect(result).toBeNull();
   });
 
@@ -717,7 +741,9 @@ describe('invokeReviewer', () => {
         error: undefined,
       },
     });
-    const result = await invokeReviewer(client, PROMPT, 'parent-1');
+    const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+      reviewInvocationPolicy: 'sdk_allowed',
+    });
     // Fail-closed: text content is NOT accepted as structured output substitute
     expect(result).toBeNull();
   });
@@ -730,7 +756,9 @@ describe('invokeReviewer', () => {
         error: undefined,
       },
     });
-    const result = await invokeReviewer(client, PROMPT, 'parent-1');
+    const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+      reviewInvocationPolicy: 'sdk_allowed',
+    });
     expect(result).toBeNull();
   });
 
@@ -744,7 +772,9 @@ describe('invokeReviewer', () => {
         error: undefined,
       },
     });
-    const result = await invokeReviewer(client, PROMPT, 'parent-1');
+    const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+      reviewInvocationPolicy: 'sdk_allowed',
+    });
     expect(result).toBeNull();
   });
 
@@ -758,7 +788,9 @@ describe('invokeReviewer', () => {
         error: undefined,
       },
     });
-    const result = await invokeReviewer(client, PROMPT, 'parent-1');
+    const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+      reviewInvocationPolicy: 'sdk_allowed',
+    });
     assertSuccessfulResult(result);
     expect(result!.findings).not.toBeNull();
     expect(result!.reviewOutputMode).toBe('structured_output');
@@ -778,7 +810,9 @@ describe('invokeReviewer', () => {
         error: undefined,
       },
     });
-    const result = await invokeReviewer(client, PROMPT, 'parent-1');
+    const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+      reviewInvocationPolicy: 'sdk_allowed',
+    });
     assertSuccessfulResult(result);
     expect(result!.findings).not.toHaveProperty('reviewedBy');
   });
@@ -801,7 +835,9 @@ describe('invokeReviewer', () => {
         error: undefined,
       },
     });
-    const result = await invokeReviewer(client, PROMPT, 'parent-1');
+    const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+      reviewInvocationPolicy: 'sdk_allowed',
+    });
     assertSuccessfulResult(result);
     expect(result!.findings).not.toBeNull();
     expect(result!.findings!.overallVerdict).toBe('unable_to_review');
@@ -968,6 +1004,7 @@ describe('reviewer spawn observability (_onAttemptSucceeded)', () => {
     }> = [];
 
     const result = await invokeReviewer(client, SPAWN_PROMPT, 'parent-session-1', {
+      reviewInvocationPolicy: 'sdk_allowed',
       _onAttemptSucceeded: (info) => succeeded.push(info),
     });
 
@@ -987,6 +1024,7 @@ describe('reviewer spawn observability (_onAttemptSucceeded)', () => {
     const succeeded: string[] = [];
 
     await invokeReviewer(client, SPAWN_PROMPT, 'parent-1', {
+      reviewInvocationPolicy: 'sdk_allowed',
       _onAttemptSucceeded: (info) => succeeded.push(info.step),
     });
 
@@ -1001,6 +1039,7 @@ describe('reviewer spawn observability (_onAttemptSucceeded)', () => {
     const succeeded: string[] = [];
 
     await invokeReviewer(client, SPAWN_PROMPT, 'parent-1', {
+      reviewInvocationPolicy: 'sdk_allowed',
       _onAttemptSucceeded: (info) => succeeded.push(info.step),
     });
 

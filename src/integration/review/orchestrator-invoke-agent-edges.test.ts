@@ -27,7 +27,10 @@ describe('invokeReviewer — agent resolution + extraction', () => {
   describe('HAPPY — primary path (flowguard-reviewer registered)', () => {
     it('sends agent: flowguard-reviewer without system directive', async () => {
       const client = makeClient({ agents: [{ id: 'flowguard-reviewer' }] });
-      await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
 
       expect(client.session.prompt).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -46,7 +49,10 @@ describe('invokeReviewer — agent resolution + extraction', () => {
 
     it('returns findings from structured_output', async () => {
       const client = makeClient({ agents: [{ id: 'flowguard-reviewer' }] });
-      const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
 
       const successfulResult = expectReviewerSuccess(result);
       expect(successfulResult.sessionId).toBe('child-session-1');
@@ -56,9 +62,18 @@ describe('invokeReviewer — agent resolution + extraction', () => {
     it('probes only once across multiple invocations', async () => {
       const client = makeClient({ agents: [{ id: 'flowguard-reviewer' }] });
 
-      await invokeReviewer(client, PROMPT, 'p1', { _sleepFn: NO_SLEEP });
-      await invokeReviewer(client, PROMPT, 'p2', { _sleepFn: NO_SLEEP });
-      await invokeReviewer(client, PROMPT, 'p3', { _sleepFn: NO_SLEEP });
+      await invokeReviewer(client, PROMPT, 'p1', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
+      await invokeReviewer(client, PROMPT, 'p2', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
+      await invokeReviewer(client, PROMPT, 'p3', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
 
       expect(client.app.agents).toHaveBeenCalledTimes(1);
     });
@@ -69,7 +84,10 @@ describe('invokeReviewer — agent resolution + extraction', () => {
   describe('HAPPY — fallback path (general with system directive)', () => {
     it('sends agent: general WITH system directive when agent not registered', async () => {
       const client = makeClient({ agents: [] }); // no flowguard-reviewer
-      await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
 
       expect(client.session.prompt).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -85,7 +103,10 @@ describe('invokeReviewer — agent resolution + extraction', () => {
 
     it('sends system directive when probe throws', async () => {
       const client = makeClient({ agentsThrows: true });
-      await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
 
       const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0]![0];
       expect(call.body.agent).toBe('general');
@@ -94,7 +115,10 @@ describe('invokeReviewer — agent resolution + extraction', () => {
 
     it('returns findings successfully in fallback mode', async () => {
       const client = makeClient({ agents: [] });
-      const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
 
       expect(expectReviewerSuccess(result).findings?.overallVerdict).toBe('accept');
     });
@@ -114,7 +138,10 @@ describe('invokeReviewer — agent resolution + extraction', () => {
           error: undefined,
         },
       });
-      const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
       // Fail-closed: text content is NOT accepted as structured output substitute
       expect(result).toBeNull();
     });
@@ -131,7 +158,10 @@ describe('invokeReviewer — agent resolution + extraction', () => {
           error: undefined,
         },
       });
-      const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
       // Fail-closed: fenced JSON in text is NOT accepted
       expect(result).toBeNull();
     });
@@ -147,7 +177,10 @@ describe('invokeReviewer — agent resolution + extraction', () => {
           error: undefined,
         },
       });
-      const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
       expect(result).toBeNull();
     });
 
@@ -159,7 +192,10 @@ describe('invokeReviewer — agent resolution + extraction', () => {
           error: undefined,
         },
       });
-      const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
       expect(result).toBeNull();
     });
 
@@ -178,7 +214,10 @@ describe('invokeReviewer — agent resolution + extraction', () => {
           error: undefined,
         },
       });
-      const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
       // Fail-closed: even concatenated text with valid JSON is NOT accepted
       expect(result).toBeNull();
     });
@@ -208,7 +247,10 @@ describe('invokeReviewer — agent resolution + extraction', () => {
           error: undefined,
         },
       });
-      const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
       const success = expectReviewerSuccess(result);
       expect(success.sessionId).toBe('child-session-1');
       expect(success.findings?.overallVerdict).toBe('accept');
@@ -229,7 +271,10 @@ describe('invokeReviewer — agent resolution + extraction', () => {
           error: undefined,
         },
       });
-      const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
       // info field takes precedence; tool part is only the fallback.
       expect(expectReviewerSuccess(result).findings?.overallVerdict).toBe('changes_requested');
     });
@@ -255,7 +300,10 @@ describe('invokeReviewer — agent resolution + extraction', () => {
           error: undefined,
         },
       });
-      const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
       expect(result).toBeNull();
     });
   });
@@ -275,7 +323,10 @@ describe('invokeReviewer — agent resolution + extraction', () => {
           error: undefined,
         },
       });
-      const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
       expect(expectReviewerSuccess(result).findings?.reviewedBy).toEqual({ sessionId: 'wrong' });
     });
 
@@ -289,7 +340,10 @@ describe('invokeReviewer — agent resolution + extraction', () => {
           error: undefined,
         },
       });
-      const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
       expect(expectReviewerSuccess(result).findings?.reviewedBy).toBeUndefined();
     });
   });
@@ -310,7 +364,10 @@ describe('invokeReviewer — agent resolution + extraction', () => {
       });
 
       const client = makeClient({ agents: [{ id: 'flowguard-reviewer' }] });
-      const result = await invokeReviewer(client, realPrompt, 'sess-e2e', { _sleepFn: NO_SLEEP });
+      const result = await invokeReviewer(client, realPrompt, 'sess-e2e', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
 
       const successfulResult = expectReviewerSuccess(result);
       expect(successfulResult.sessionId).toBe('child-session-1');
@@ -336,7 +393,10 @@ describe('invokeReviewer — agent resolution + extraction', () => {
       });
 
       const client = makeClient({ agents: [] }); // forces fallback
-      const result = await invokeReviewer(client, realPrompt, 'sess-e2e-2', { _sleepFn: NO_SLEEP });
+      const result = await invokeReviewer(client, realPrompt, 'sess-e2e-2', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
 
       expect(expectReviewerSuccess(result).findings?.overallVerdict).toBe('accept');
 
@@ -358,6 +418,7 @@ describe('invokeReviewer — agent resolution + extraction', () => {
       });
 
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
         maxRetries: 2,
         _sleepFn: NO_SLEEP,
       });
@@ -374,6 +435,7 @@ describe('invokeReviewer — agent resolution + extraction', () => {
       });
 
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
         maxRetries: 2,
         _sleepFn: NO_SLEEP,
       });
@@ -389,7 +451,10 @@ describe('invokeReviewer — agent resolution + extraction', () => {
   describe('SMOKE — regression guards', () => {
     it('never sends system directive in primary path regardless of findings', async () => {
       const client = makeClient({ agents: [{ id: 'flowguard-reviewer' }] });
-      await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
 
       const calls = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls;
       for (const call of calls) {
@@ -399,7 +464,10 @@ describe('invokeReviewer — agent resolution + extraction', () => {
 
     it('always sends system directive in fallback path', async () => {
       const client = makeClient({ agents: [] });
-      await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
 
       const calls = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls;
       for (const call of calls) {
@@ -410,12 +478,18 @@ describe('invokeReviewer — agent resolution + extraction', () => {
     it('format field is always present regardless of path', async () => {
       // Primary path
       const client1 = makeClient({ agents: [{ id: 'flowguard-reviewer' }] });
-      await invokeReviewer(client1, PROMPT, 'p1', { _sleepFn: NO_SLEEP });
+      await invokeReviewer(client1, PROMPT, 'p1', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
       _resetAgentResolutionCache();
 
       // Fallback path
       const client2 = makeClient({ agents: [] });
-      await invokeReviewer(client2, PROMPT, 'p2', { _sleepFn: NO_SLEEP });
+      await invokeReviewer(client2, PROMPT, 'p2', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
 
       for (const client of [client1, client2]) {
         const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0]![0];
@@ -449,7 +523,10 @@ describe('invokeReviewer — agent resolution + extraction', () => {
           error: undefined,
         },
       });
-      const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
       expect(result).not.toBeNull();
       expect(expectReviewerSuccess(result).findings?.overallVerdict).toBe('accept');
       expect(expectReviewerSuccess(result).findings?.reviewMode).toBe('subagent');
@@ -467,7 +544,10 @@ describe('invokeReviewer — agent resolution + extraction', () => {
           error: undefined,
         },
       });
-      const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
       expect(result).not.toBeNull();
       expect(expectReviewerSuccess(result).findings?.overallVerdict).toBe('accept');
     });
@@ -485,7 +565,10 @@ describe('invokeReviewer — agent resolution + extraction', () => {
           error: undefined,
         },
       });
-      const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
       expect(result).not.toBeNull();
       // Must use the canonical docs field (structured_output), not the server alias
       expect(expectReviewerSuccess(result).findings?.overallVerdict).toBe('accept');
@@ -502,7 +585,10 @@ describe('invokeReviewer — agent resolution + extraction', () => {
           error: undefined,
         },
       });
-      const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+      });
       // Fail-closed: no text fallback — must return null even though text parts have valid JSON
       expect(result).toBeNull();
     });
@@ -519,6 +605,7 @@ describe('invokeReviewer — agent resolution + extraction', () => {
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
         maxRetries: 0,
         _sleepFn: NO_SLEEP,
       });
@@ -537,6 +624,7 @@ describe('invokeReviewer — agent resolution + extraction', () => {
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
         maxRetries: 0,
         _sleepFn: NO_SLEEP,
       });
@@ -560,6 +648,7 @@ describe('invokeReviewer — agent resolution + extraction', () => {
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
         maxRetries: 2,
         _sleepFn: NO_SLEEP,
       });

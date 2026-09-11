@@ -160,6 +160,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       const diagnostics: Array<Record<string, unknown>> = [];
       const client = makeSequentialClient({});
       const result = await invokeReviewer(client, SHARED_PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
         maxRetries: 0,
         _sleepFn: NO_SLEEP,
         reviewOutputPolicy: 'structured_required',
@@ -180,6 +181,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       const diagnostics: Array<Record<string, unknown>> = [];
       const client = makeSequentialClient({});
       const result = await invokeReviewer(client, SHARED_PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
         maxRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
@@ -481,6 +483,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
         },
       });
       await invokeReviewer(client, SHARED_PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
         maxRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),

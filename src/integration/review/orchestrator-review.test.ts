@@ -372,7 +372,9 @@ describe('end-to-end orchestration flow', () => {
 
     // Step 4: Invoke reviewer
     const client = mockClient();
-    const result = await invokeReviewer(client, prompt, 'parent-session');
+    const result = await invokeReviewer(client, prompt, 'parent-session', {
+      reviewInvocationPolicy: 'sdk_allowed',
+    });
     assertSuccessfulResult(result);
 
     // Step 5: Mutate output
@@ -396,7 +398,9 @@ describe('end-to-end orchestration flow', () => {
     const client = mockClient({
       createResult: { error: { message: 'Server error' } },
     });
-    const result = await invokeReviewer(client, 'test prompt', 'parent');
+    const result = await invokeReviewer(client, 'test prompt', 'parent', {
+      reviewInvocationPolicy: 'sdk_allowed',
+    });
     expect(result).toBeNull();
 
     // Output stays unchanged — the LLM will follow the original INDEPENDENT_REVIEW_REQUIRED
@@ -413,7 +417,9 @@ describe('end-to-end orchestration flow', () => {
         error: undefined,
       },
     });
-    const result = await invokeReviewer(client, 'test prompt', 'parent');
+    const result = await invokeReviewer(client, 'test prompt', 'parent', {
+      reviewInvocationPolicy: 'sdk_allowed',
+    });
     expect(result).toBeNull();
 
     expect(isReviewRequired(original)).toBe(true);
