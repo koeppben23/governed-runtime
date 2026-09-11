@@ -71,20 +71,28 @@ async function main(): Promise<void> {
     config.timeoutMs = ms;
   }
 
-  const requireLiveHost = values['require-live-host'] === true;
+  const requireNonInferiority = values['require-non-inferiority'] === true;
+  // A required non-inferiority verdict is assurance evidence, so it must never be
+  // satisfied by synthetic plumbing. Explicit --require-live-host remains useful
+  // for live runs that do not compare against a baseline.
+  const requireLiveHost = values['require-live-host'] === true || requireNonInferiority;
   if (requireLiveHost) {
     if (config.runnerKind !== 'live-host') {
-      console.error('--require-live-host requires runnerKind="live-host" in the runner config');
+      console.error('assurance evaluation requires runnerKind="live-host" in the runner config');
       process.exit(2);
     }
     if (!config.instructionHost) {
-      console.error('--require-live-host requires an explicit instructionHost in the runner config');
+      console.error('assurance evaluation requires an explicit instructionHost in the runner config');
       process.exit(2);
     }
     if (config.provider.toLowerCase() === 'synthetic') {
-      console.error('--require-live-host rejects synthetic providers');
+      console.error('assurance evaluation rejects synthetic providers');
       process.exit(2);
     }
+  }
+  if (requireNonInferiority && !config.seed) {
+    console.error('--require-non-inferiority requires a deterministic runner seed');
+    process.exit(2);
   }
 
   const { executed, redactionValues } = await runEval(config, REPO_ROOT, values.case, {
@@ -111,7 +119,7 @@ async function main(): Promise<void> {
   }
 
   let exitCode = determineExitCode(executed, values.advisory);
-  if (values['require-non-inferiority'] && comparison?.verdict !== 'PASS') exitCode = 1;
+  if (requireNonInferiority && comparison?.verdict !== 'PASS') exitCode = 1;
   process.exit(exitCode);
 }
 
