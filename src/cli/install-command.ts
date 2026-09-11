@@ -272,22 +272,26 @@ async function enforceInstructionSourceCompat(ctx: InstallContext): Promise<void
   });
 }
 
-function deriveOwnership(
-  ctx: InstallContext,
-  snapshot: SnapshotResult,
-): InstallOwnershipManifest {
+function assertLegacyBoundary(ctx: InstallContext, snapshot: SnapshotResult): void {
   const configPreState = snapshotEntry(snapshot, snapshot.cfgPath);
-  const packagePreState = snapshotEntry(snapshot, snapshot.pkgPath);
   const opencodePreState = snapshot.opencodeJsonPath
     ? snapshotEntry(snapshot, snapshot.opencodeJsonPath)
     : null;
-
   assertNoAmbiguousLegacyInstruction({
     platform: ctx.installPlatform,
     verifiedReinstall: ctx.args.force && configPreState.existed,
     opencodeOriginalContent: opencodePreState?.originalContent,
   });
+}
 
+function deriveOwnership(
+  ctx: InstallContext,
+  snapshot: SnapshotResult,
+): InstallOwnershipManifest {
+  const packagePreState = snapshotEntry(snapshot, snapshot.pkgPath);
+  const opencodePreState = snapshot.opencodeJsonPath
+    ? snapshotEntry(snapshot, snapshot.opencodeJsonPath)
+    : null;
   return deriveInstallOwnershipManifest({
     platform: ctx.installPlatform,
     scope: ctx.args.installScope,
@@ -313,14 +317,6 @@ async function persistOwnership(
   }
 }
 
-async function performInstallMutations(
-  ctx: InstallContext,
-  snapshot: SnapshotResult,
-): Promise<DependencyTransaction> {
-  await writeArtifacts(ctx, { valid: true, path: '', name: '', version: '' }, snapshot);
-  throw new Error('unreachable');
-}
-
 async function doInstall(args: CliArgs): Promise<CliResult> {
   let snapshot: SnapshotResult | null = null;
   let tx: DependencyTransaction | null = null;
@@ -341,6 +337,7 @@ async function doInstall(args: CliArgs): Promise<CliResult> {
 
     snapshot = await buildRollbackSnapshot(ctx, tarball.name);
     await assertManagedMandatesOwnership(snapshot.mandatesPath);
+    assertLegacyBoundary(ctx, snapshot);
     await writeArtifacts(ctx, tarball, snapshot);
     await writeConfigFiles(ctx, snapshot);
     const ownership = deriveOwnership(ctx, snapshot);
