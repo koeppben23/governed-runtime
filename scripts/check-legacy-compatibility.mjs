@@ -4,9 +4,9 @@
  * Reject explicit legacy/backward-compatibility production paths on the FlowGuard
  * implementation surface changed by a pull request.
  *
- * This is repository-development enforcement only. It deliberately excludes
- * generated/runtime instruction templates, tests, fixtures, downstream code,
- * and comment-only prose so the guard targets executable/product contracts.
+ * This is repository-development enforcement only. It excludes tests, fixtures,
+ * downstream code, and comment-only prose. Product templates are production
+ * authority and therefore remain inside the guard.
  *
  * Usage:
  *   node scripts/check-legacy-compatibility.mjs <base-sha> <head-sha>
@@ -22,7 +22,6 @@ if (!base || !head) {
   process.exit(2);
 }
 
-const EXCLUDED_PREFIXES = ['src/templates/'];
 const EXCLUDED_PATH_PARTS = [
   '/__tests__/',
   '/test/',
@@ -43,7 +42,6 @@ const LEGACY_MARKERS = [
 
 function isProductionFlowGuardImplementation(path) {
   if (!path.startsWith('src/')) return false;
-  if (EXCLUDED_PREFIXES.some((prefix) => path.startsWith(prefix))) return false;
   if (!/\.[cm]?[jt]sx?$/u.test(path)) return false;
   if (EXCLUDED_PATH_PARTS.some((part) => path.includes(part))) return false;
   if (EXCLUDED_FILE_PATTERNS.some((pattern) => pattern.test(path))) return false;
@@ -98,7 +96,7 @@ if (findings.length > 0) {
   }
   console.error(
     '\nRemove the compatibility path and update affected callers/tests/docs to the current canonical contract. ' +
-      'Tests and generated/runtime instruction templates are intentionally outside this repository-only guard.',
+      'Tests, fixtures, and comment-only prose are intentionally outside this repository-only guard.',
   );
   process.exit(1);
 }
