@@ -4,7 +4,7 @@
  */
 
 import { readFile, readdir, rm, writeFile, rename, unlink } from 'node:fs/promises';
-import { readFileSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { dirname, join, relative } from 'node:path';
 import type { FileOp, InstallScope } from './install-helpers.js';
@@ -139,6 +139,12 @@ function isFlowGuardMarketplaceEntry(entry: CodexMarketplaceEntry, scope: Instal
 // eslint-disable-next-line complexity
 async function removeCodexMarketplaceEntry(scope: InstallScope): Promise<FileOp> {
   const marketplacePath = resolveCodexMarketplacePath(scope);
+
+  // Uninstall is non-creating: absence must remain absence. In particular, do not
+  // create ~/.codex/.agents/plugins merely to discover that no marketplace exists.
+  if (!existsSync(marketplacePath)) {
+    return { path: marketplacePath, action: 'not_found' };
+  }
 
   await ensureDir(dirname(marketplacePath));
   const lockPath = `${marketplacePath}.flowguard.lock`;
