@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { EvalSummary } from '../schema.js';
+import type { RunnerCaseMetrics } from '../run.js';
 import { compareNonInferiority, deriveRunMetrics } from '../non-inferiority.js';
 
 function summary(verdict: 'PASS' | 'FAIL' = 'PASS'): EvalSummary {
@@ -64,6 +65,26 @@ function summary(verdict: 'PASS' | 'FAIL' = 'PASS'): EvalSummary {
   };
 }
 
+function completeTelemetry(): RunnerCaseMetrics {
+  return {
+    reviewPrecision: 1,
+    reviewRecall: 1,
+    falsePositiveFindings: 0,
+    falseNegativeDefects: 0,
+    schemaRetries: 0,
+    toolCallCount: 2,
+    unnecessaryToolCalls: 0,
+    clarificationCount: 0,
+    prematureStops: 0,
+    scopeDeviations: 0,
+    inputTokens: 100,
+    outputTokens: 50,
+    reasoningTokens: 25,
+    verificationExecutions: 1,
+    duplicateVerification: 0,
+  };
+}
+
 describe('non-inferiority gate', () => {
   it('fails when a previously passing critical case regresses', () => {
     const result = compareNonInferiority(
@@ -83,6 +104,25 @@ describe('non-inferiority gate', () => {
     expect(result.regressions).toEqual([]);
     expect(result.blockers).toContain('reviewPrecision comparison is unavailable');
     expect(result.blockers).toContain('inputTokens comparison is unavailable');
+  });
+
+  it('passes when all required telemetry is measured with identical coverage and no regressions', () => {
+    const telemetry = new Map([['product-not-verified', completeTelemetry()]]);
+    const baseline = deriveRunMetrics(summary('PASS'), telemetry);
+    const current = deriveRunMetrics(summary('PASS'), telemetry);
+    const result = compareNonInferiority(baseline, current);
+    expect(result).toEqual({ verdict: 'PASS', blockers: [], regressions: [], improvements: [] });
+  });
+
+  it('blocks when telemetry coverage differs even if aggregate values exist', () => {
+    const baseline = deriveRunMetrics(
+      summary('PASS'),
+      new Map([['product-not-verified', completeTelemetry()]]),
+    );
+    const current = deriveRunMetrics(summary('PASS'));
+    const result = compareNonInferiority(baseline, current);
+    expect(result.verdict).toBe('NOT_VERIFIED');
+    expect(result.blockers).toContain('reviewPrecision comparison is unavailable');
   });
 
   it('fails comparison when subjects/corpus differ', () => {
