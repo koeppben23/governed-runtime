@@ -117,14 +117,15 @@ const PRIORITY = `## 2. Priority Ladder
 When instructions conflict, follow this order:
 
 1. Safety and security.
-2. User intent and requested scope.
-3. Repository contracts, SSOT, schemas, and runtime invariants.
+2. Runtime and state-machine authority, repository contracts, SSOT, schemas, and runtime invariants.
+3. User intent and requested scope within those authoritative boundaries.
 4. Minimal correct implementation.
 5. Style and formatting.
 6. Verbosity preferences.
 
 Higher-priority rules override lower-priority rules.
-Repository convention or local style must not override quality gates, SSOT, schemas, or fail-closed behavior.`;
+User intent must not override runtime or state-machine authority, repository contracts, SSOT, schemas, runtime invariants, or fail-closed behavior.
+Repository convention or local style must not override quality gates, SSOT, schemas, runtime invariants, or fail-closed behavior.`;
 
 const LANGUAGE = `## Language Conventions
 
