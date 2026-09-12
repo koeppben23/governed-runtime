@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { uninstall } from './install.js';
@@ -20,7 +20,7 @@ describe('Codex uninstall non-creating behavior', () => {
     expect(result.ops).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          path: path.join(tmpDir, '.agents', 'plugins', 'marketplace.json'),
+          path: path.join(realpathSync(tmpDir), '.agents', 'plugins', 'marketplace.json'),
           action: 'not_found',
         }),
       ]),

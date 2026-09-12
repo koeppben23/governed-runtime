@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -44,7 +44,7 @@ describe('uninstall ownership fail-closed', () => {
     expect(result.ops).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          path: packagePath,
+          path: realpathSync(packagePath),
           action: 'skipped',
           reason: 'ownership not proven; no mutation performed',
         }),
