@@ -1,8 +1,7 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
 
-export const VALIDATE_COMMAND = `
----
-description: Run verification checks on the approved plan.
+export const VALIDATE_COMMAND = `---
+description: FlowGuard — Run verification checks on the approved plan.
 ---
 
 You are managing a FlowGuard-controlled development workflow.

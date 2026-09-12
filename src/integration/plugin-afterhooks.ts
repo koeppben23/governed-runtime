@@ -50,7 +50,12 @@ import {
 } from '../shared/flowguard-identifiers.js';
 import { resolveSubagentSessionId } from './review/enforcement/extraction.js';
 import type { ToolHookAfterInput, ToolHookAfterOutput } from './types.js';
-import { FG_PREFIX, getToolTraceId, type FlowGuardPluginRuntime } from './plugin-shared.js';
+import {
+  FG_PREFIX,
+  cleanupSessionRuntime,
+  getToolTraceId,
+  type FlowGuardPluginRuntime,
+} from './plugin-shared.js';
 import {
   TOOL_FLOWGUARD_REVIEW,
   TOOL_FLOWGUARD_CONTINUE,
@@ -94,7 +99,6 @@ export async function toolAfter(
     const traceId = getToolTraceId(runtime, input, 'after');
     return runWithLogContextAsync({ traceId, sessionId }, async () => {
       const now = new Date().toISOString();
-      runtime.setCurrentSessionId(sessionId);
       // Stryker disable next-line ObjectLiteral
       runtime.log.info('hook', 'tool.execute.after', {
         tool: toolName,
@@ -480,7 +484,7 @@ export async function handlePluginEvent(
   return runWithAdapterLoggerAsync(runtime.adapterLog, async () => {
     const eventDeps: EventHandlerDeps = {
       log: runtime.log,
-      cleanupSession: (sessionId: string) => runtime.ws.invalidateChainState(sessionId),
+      cleanupSession: (sessionId: string) => cleanupSessionRuntime(runtime, sessionId),
       async emitSessionErrorAudit(sessionId, errorMessage, detail) {
         const sessDir = runtime.ws.getSessionDir(sessionId);
         if (!sessDir) return;

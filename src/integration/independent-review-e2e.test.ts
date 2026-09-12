@@ -94,7 +94,7 @@ function strictNoSdkClient() {
     throw new Error(`SDK client.${name} must not be called in host_task_required mode`);
   };
   return {
-    app: { log: async () => {} },
+    app: { log: async () => {}, agents: async () => ({ data: [] }) },
     session: { create: notCalled('session.create'), prompt: notCalled('session.prompt') },
   } as unknown;
 }

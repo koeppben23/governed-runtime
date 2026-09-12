@@ -9,9 +9,10 @@
  * - Delegates to existing modules (invokeReviewer, plugin-logging) — zero behavior change
  * - Lives in integration/ because it imports from @opencode-ai/plugin SDK surface
  * - Structural typing ensures HostReviewerResult is satisfied by ReviewerResult
+ * - No boot-time host I/O; reviewer capability is verified lazily on invocation
  *
  * @see https://github.com/koeppben23/governed-runtime/issues/242
- * @version v1
+ * @version v3
  */
 
 import type {
@@ -26,7 +27,6 @@ import type {
   EnforcementLevel,
 } from '../adapters/host-adapter.js';
 import type { OrchestratorClient } from './review/types.js';
-import type { FlowGuardLogger } from '../logging/logger.js';
 import { invokeReviewer } from './review/orchestrator.js';
 import { buildEnforcementError } from './plugin-helpers.js';
 
@@ -36,21 +36,34 @@ import { buildEnforcementError } from './plugin-helpers.js';
 export interface OpenCodeAdapterConfig {
   /** OpenCode SDK client instance. */
   readonly client: OrchestratorClient;
-  /** Session ID resolver (from hook input or workspace). */
-  readonly getSessionId: () => string;
   /** Project working directory. */
   readonly directory: string;
   /** Worktree path. */
   readonly worktree: string;
-  /**
-   * Optional structured diagnostic logger. When present, capability-validation
-   * mismatches are logged (diagnostic only). The adapter's own log() method
-   * remains TUI-toast oriented; this is the structured channel.
-   */
-  readonly log?: Pick<FlowGuardLogger, 'warn'>;
 }
 
 // ─── OpenCode Host Adapter ───────────────────────────────────────────────────
+
+/** Fail-closed boot error: the SDK client cannot guarantee the adapter contract. */
+export class HostAdapterInitError extends Error {
+  readonly code = 'HOST_ADAPTER_INIT_FAILED' as const;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'HostAdapterInitError';
+  }
+}
+
+/** Fail-closed boot error: probed host capabilities do not match the contract. */
+export class HostCapabilityMismatchError extends Error {
+  readonly code = 'HOST_CAPABILITY_MISMATCH' as const;
+
+  constructor(mismatches: ReadonlyArray<{ readonly capability: string }>) {
+    const names = mismatches.map((mismatch) => mismatch.capability).join(', ');
+    super(`[FlowGuard] OpenCode host capability mismatch: ${names || 'unknown'}`);
+    this.name = 'HostCapabilityMismatchError';
+  }
+}
 
 /**
  * OpenCode platform adapter.
@@ -73,24 +86,16 @@ export class OpenCodeHostAdapter implements HostAdapter {
   readonly enforcementLevel: EnforcementLevel = 'synchronous';
 
   private readonly client: OrchestratorClient;
-  private readonly sessionIdResolver: () => string;
   private readonly directoryPath: string;
   private readonly worktreePath: string;
-  private readonly diagnosticLog?: Pick<FlowGuardLogger, 'warn'>;
 
   constructor(config: OpenCodeAdapterConfig) {
     this.client = config.client;
-    this.sessionIdResolver = config.getSessionId;
     this.directoryPath = config.directory;
     this.worktreePath = config.worktree;
-    this.diagnosticLog = config.log;
   }
 
   // ── Session Context ──────────────────────────────────────────────────────
-
-  getSessionId(): string {
-    return this.sessionIdResolver();
-  }
 
   getWorkingDirectory(): string {
     return this.directoryPath;
@@ -104,44 +109,36 @@ export class OpenCodeHostAdapter implements HostAdapter {
 
   async initialize(): Promise<void> {
     // OpenCode SDK client is ready at plugin load time — no async init needed.
-    // Verify client is structurally valid (fail-closed on broken SDK).
-    if (!this.client?.session?.create || !this.client?.session?.prompt) {
-      throw new (class extends Error {
-        readonly code = 'HOST_ADAPTER_INIT_FAILED' as const;
-        constructor(m: string) {
-          super(m);
-          this.name = 'HostAdapterInitError';
-        }
-      })(
+    // Verify the client surface is structurally callable (fail-closed on a
+    // drifting SDK that exposes truthy non-functions).
+    if (
+      typeof this.client?.session?.create !== 'function' ||
+      typeof this.client?.session?.prompt !== 'function'
+    ) {
+      throw new HostAdapterInitError(
         '[FlowGuard] OpenCode adapter initialization failed: SDK client missing ' +
           'session.create or session.prompt methods. Cannot guarantee reviewer capability.',
       );
     }
   }
 
+  /**
+   * Report which capabilities are runtime-verified versus contract-attested.
+   *
+   * Deliberately performs no host call at boot. An `app.agents()` probe during
+   * plugin initialization can start a re-entrant host request (deadlock risk),
+   * and a successful registry listing would not even prove that the
+   * `flowguard-reviewer` agent is resolvable. Reviewer capability is verified
+   * lazily on the real invocation path by `resolveReviewerAgent()`, so
+   * `reviewerSpawn` stays contract-attested here instead of being reported as
+   * runtime-verified.
+   */
   async validateCapabilities(): Promise<CapabilityValidationResult> {
-    const mismatches: Array<{ capability: string; expected: boolean; actual: boolean }> = [];
-
-    // Verify reviewer agent availability by probing the agent registry.
-    try {
-      const agentsResult = await this.client.app.agents();
-      if (agentsResult.error) {
-        mismatches.push({ capability: 'reviewerSpawn', expected: true, actual: false });
-      }
-    } catch {
-      mismatches.push({ capability: 'reviewerSpawn', expected: true, actual: false });
-    }
-
-    if (mismatches.length > 0) {
-      this.diagnosticLog?.warn('adapter', 'host capability validation reported mismatches', {
-        code: 'HOST_CAPABILITY_MISMATCH',
-        mismatches,
-      });
-    }
-
     return {
-      valid: mismatches.length === 0,
-      mismatches,
+      valid: true,
+      mismatches: [],
+      runtimeVerified: [],
+      contractAttested: Object.keys(this.capabilities),
     };
   }
 

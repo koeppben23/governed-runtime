@@ -14,7 +14,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { createTestWorkspace, withTestEnv } from './test-helpers.js';
+import { createBootableHostClient, createTestWorkspace, withTestEnv } from './test-helpers.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
@@ -47,11 +47,7 @@ async function initGitRepo(worktree: string): Promise<void> {
 function createMockInput(overrides: Record<string, unknown> = {}) {
   return {
     project: {} as unknown,
-    client: {
-      app: {
-        log: async () => {},
-      },
-    } as unknown,
+    client: createBootableHostClient() as unknown,
     $: {} as unknown,
     directory: '/tmp/mock-dir',
     worktree: '/tmp/mock-worktree',

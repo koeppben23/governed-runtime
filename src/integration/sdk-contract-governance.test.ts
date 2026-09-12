@@ -95,7 +95,6 @@ describe('SDK Contract: HAI governance surface', () => {
       expect(required).toContain('platform');
       expect(required).toContain('capabilities');
       expect(required).toContain('enforcementLevel');
-      expect(required).toContain('getSessionId');
       expect(required).toContain('getWorkingDirectory');
       expect(required).toContain('getWorktree');
       expect(required).toContain('initialize');

@@ -1,8 +1,7 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
 
-export const CONTINUE_COMMAND = `
----
-description: Route to the canonical next FlowGuard action for the current phase.
+export const CONTINUE_COMMAND = `---
+description: FlowGuard — Route to the canonical next action for the current phase.
 ---
 
 You are managing a FlowGuard-controlled development workflow.

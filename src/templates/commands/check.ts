@@ -1,9 +1,8 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
-export const CHECK_COMMAND = `
----
-description: Run verification checks on the current implementation evidence.
+export const CHECK_COMMAND = `---
+description: FlowGuard — Run verification checks on the current implementation evidence.
 agent: build
 ---
 

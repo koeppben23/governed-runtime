@@ -5,9 +5,8 @@ import {
   DISCOVERY_REVIEW_DONE_WHEN,
 } from './shared-review-loop.js';
 
-export const ARCHITECTURE_COMMAND = `
----
-description: Create or revise an Architecture Decision Record (ADR) with mandatory independent subagent review.
+export const ARCHITECTURE_COMMAND = `---
+description: FlowGuard — Create or revise an Architecture Decision Record (ADR) with mandatory independent subagent review.
 agent: build
 ---
 

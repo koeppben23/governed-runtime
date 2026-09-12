@@ -1,8 +1,7 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
 
-export const FINISH_COMMAND = `
----
-description: Show the read-only Finish Card before export / PR / archive.
+export const FINISH_COMMAND = `---
+description: FlowGuard — Show the read-only Finish Card before export / PR / archive.
 ---
 
 You are managing a FlowGuard-controlled development workflow.

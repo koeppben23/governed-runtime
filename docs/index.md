@@ -66,6 +66,10 @@ Consolidated control narrative: guarantees, boundaries, threats, mitigations, an
 
 Review contract for signed vs mutable data, writers, attacker models, fail-closed behavior, audit events, and operational log points.
 
+### [OpenCode Host Boundary Attack Matrix](./opencode-host-boundary-attack-matrix.md)
+
+Adversarial scenario ledger for the OpenCode host/plugin/SDK boundary: hook failure semantics, tool surface, session lifecycle, concurrency, compaction, adapter lifecycle, contract drift, and reviewer child-session lifecycle.
+
 ### [BSI C5 Mapping](./bsi-c5-mapping.md)
 
 How FlowGuard capabilities map to BSI C5:2020 control domains.

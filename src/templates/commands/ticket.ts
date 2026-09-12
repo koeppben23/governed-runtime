@@ -24,9 +24,8 @@ const externalRefMarkdown = [
   ),
 ].join('\n');
 
-export const TICKET_COMMAND = `
----
-description: Record a task or ticket for the FlowGuard session.
+export const TICKET_COMMAND = `---
+description: FlowGuard — Record a task or ticket for the session.
 ---
 
 You are managing a FlowGuard-controlled development workflow.

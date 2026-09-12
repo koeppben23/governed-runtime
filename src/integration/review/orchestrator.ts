@@ -34,6 +34,12 @@ import { extractStructuredOutputToolPart } from './structured-output-tool-part.j
 import { extractJsonFromTextWithMethod } from './text-extraction.js';
 import { resolveReviewerAgent } from './agent-resolution.js';
 import { buildTextCompatReviewerPrompt } from './prompt-builders.js';
+import {
+  abortReviewerSession,
+  DEFAULT_REVIEWER_PROMPT_TIMEOUT_MS,
+  raceWithTimeout,
+  REVIEWER_PROMPT_TIMEOUT_CODE,
+} from './prompt-timeout.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -95,6 +101,12 @@ export interface InvokeReviewerOptions {
   readonly reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed';
   readonly maxRetries?: number;
   readonly baseDelayMs?: number;
+  /**
+   * Maximum time to wait for a reviewer `session.prompt` before classifying the
+   * attempt as a retryable timeout and aborting the child session best-effort.
+   * `0` or non-finite disables the bound.
+   */
+  readonly promptTimeoutMs?: number;
   readonly _sleepFn?: (ms: number) => Promise<void>;
   readonly _onAttemptFailed?: (info: {
     attempt: number;
@@ -132,6 +144,7 @@ const DEFAULT_INVOKE_OPTIONS: Required<InvokeReviewerOptions> = {
   reviewInvocationPolicy: 'host_task_required',
   maxRetries: 2,
   baseDelayMs: 1000,
+  promptTimeoutMs: DEFAULT_REVIEWER_PROMPT_TIMEOUT_MS,
   _sleepFn: retrySleep,
   _onAttemptFailed: () => {},
   _onAttemptSucceeded: () => {},
@@ -145,6 +158,7 @@ interface ExecuteFormatFreePromptInput {
   attempt: number;
   modelCapabilityError: string;
   invokedAt: string;
+  timeoutMs: number;
   onFailed: (info: {
     attempt: number;
     step: 'format_free_retry_failed' | 'format_free_retry_empty' | 'format_free_retry_parse_failed';
@@ -156,14 +170,31 @@ interface ExecuteFormatFreePromptInput {
 async function executeFormatFreePrompt(
   input: ExecuteFormatFreePromptInput,
 ): Promise<ReviewerResult | null> {
-  const { client, agent, prompt, sessionId, attempt, modelCapabilityError, onFailed } = input;
-  const formatFreeResult = await client.session.prompt({
-    path: { id: sessionId },
-    body: {
-      agent,
-      parts: [{ type: 'text' as const, text: prompt }],
-    },
-  });
+  const { client, agent, prompt, sessionId, attempt, modelCapabilityError, onFailed, timeoutMs } =
+    input;
+  const race = await raceWithTimeout(
+    client.session.prompt({
+      path: { id: sessionId },
+      body: {
+        agent,
+        parts: [{ type: 'text' as const, text: prompt }],
+      },
+    }),
+    timeoutMs,
+  );
+
+  if (race.kind === 'timed_out') {
+    await abortReviewerSession(client, sessionId);
+    onFailed({
+      attempt,
+      step: 'format_free_retry_failed',
+      error: { code: REVIEWER_PROMPT_TIMEOUT_CODE, isRetryable: true },
+      details: { agent, childSessionId: sessionId, timeoutMs },
+    });
+    return null;
+  }
+
+  const formatFreeResult = race.value;
 
   if (formatFreeResult.error || !formatFreeResult.data) {
     onFailed({
@@ -357,10 +388,19 @@ async function promptReviewerSession(
   const { client, prompt, agent, parentSessionId, childSessionId, attempt, options } = input;
   const promptStartedAt = performance.now();
   const invokedAt = new Date().toISOString();
-  const promptResult = await client.session.prompt({
-    path: { id: childSessionId },
-    body: buildStructuredPromptBody(agent, prompt),
-  });
+  const race = await raceWithTimeout(
+    client.session.prompt({
+      path: { id: childSessionId },
+      body: buildStructuredPromptBody(agent, prompt),
+    }),
+    options.promptTimeoutMs,
+  );
+
+  if (race.kind === 'timed_out') {
+    return handlePromptTimeout(input, childSessionId);
+  }
+
+  const promptResult = race.value;
 
   if (promptResult.error || !promptResult.data) {
     return handlePromptTransportFailure(input, promptResult.error, !!promptResult.data);
@@ -402,6 +442,22 @@ function buildStructuredPromptBody(agent: string, prompt: string) {
     parts: [{ type: 'text' as const, text: prompt }],
     format: { type: 'json_schema' as const, schema: REVIEW_FINDINGS_JSON_SCHEMA, retryCount: 1 },
   };
+}
+
+/** Classify a reviewer prompt timeout and abort the child session best-effort. */
+async function handlePromptTimeout(
+  input: InvokeAttemptInput & { childSessionId: string },
+  childSessionId: string,
+): Promise<InvokeAttemptResult> {
+  const { client, agent, attempt, maxAttempts, options } = input;
+  await abortReviewerSession(client, childSessionId);
+  options._onAttemptFailed({
+    attempt,
+    step: 'session_prompt',
+    error: { code: REVIEWER_PROMPT_TIMEOUT_CODE, isRetryable: true },
+    details: { agent, childSessionId, timeoutMs: options.promptTimeoutMs },
+  });
+  return attempt < maxAttempts ? { kind: 'retry' } : { kind: 'done', result: null };
 }
 
 function handlePromptTransportFailure(
@@ -495,6 +551,7 @@ async function handleStructuredCapabilityError(
     attempt: input.attempt,
     modelCapabilityError: capabilityError,
     invokedAt,
+    timeoutMs: input.options.promptTimeoutMs,
     onFailed: input.options._onAttemptFailed,
   });
   if (result && result.blocked !== true) {

@@ -1,8 +1,7 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
 
-export const COMMANDS_COMMAND = `
----
-description: List FlowGuard commands available in the current context.
+export const COMMANDS_COMMAND = `---
+description: FlowGuard — List available commands in the current context.
 ---
 
 ## Goal

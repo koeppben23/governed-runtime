@@ -26,8 +26,20 @@ import type { PluginInput, Hooks } from '@opencode-ai/plugin';
 
 // ── Our plugin export ────────────────────────────────────────────────────────
 import { FlowGuardAuditPlugin, isUsableWorktree } from './plugin.js';
+import { createBootableHostClient } from './test-helpers.js';
 
 const isLatestSdkCompatRun = process.env.FLOWGUARD_SDK_COMPAT_LATEST === '1';
+
+// Explicit, auditable bypass: the CI sdk-compat workflow intentionally tests
+// against the latest SDK, where the pinned byte baseline cannot match. The
+// bypass only relaxes the byte comparison — contract-shape assertions and the
+// derived event-contract baseline still run.
+if (isLatestSdkCompatRun) {
+  process.stderr.write(
+    '[sdk-contract] FLOWGUARD_SDK_COMPAT_LATEST=1 active: pinned baseline ' +
+      'byte-comparison is bypassed; contract-shape assertions still run.\n',
+  );
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // D) PLUGIN FACTORY RESILIENCE
@@ -43,9 +55,9 @@ describe('SDK Contract: Plugin factory resilience', () => {
    */
   function createMockPluginInput(overrides: Partial<PluginInput> = {}): PluginInput {
     return {
-      client: {
+      client: createBootableHostClient({
         app: { log: async () => ({}) },
-      } as PluginInput['client'],
+      }) as unknown as PluginInput['client'],
       project: {} as PluginInput['project'],
       directory: '/tmp/sdk-contract-test',
       worktree: '/tmp/sdk-contract-test',
@@ -170,9 +182,9 @@ describe('SDK Contract: Plugin factory resilience', () => {
 describe('SDK Contract: Smoke — hook invocation with SDK payloads', () => {
   function createMockPluginInput(): PluginInput {
     return {
-      client: {
+      client: createBootableHostClient({
         app: { log: async () => ({}) },
-      } as PluginInput['client'],
+      }) as unknown as PluginInput['client'],
       project: {} as PluginInput['project'],
       directory: '/tmp/sdk-smoke',
       worktree: '/tmp/sdk-smoke',
@@ -265,6 +277,9 @@ describe('SDK Contract: Type baseline infrastructure', () => {
     expect(existsSync(path.join(root, '.sdk-baselines', 'opencode', 'plugin-tool.d.ts'))).toBe(
       true,
     );
+    expect(
+      existsSync(path.join(root, '.sdk-baselines', 'opencode', 'plugin-event-contract.d.ts')),
+    ).toBe(true);
     expect(existsSync(path.join(root, '.sdk-baselines', 'opencode', 'host-version.json'))).toBe(
       true,
     );
@@ -310,9 +325,10 @@ describe('SDK Contract: Type baseline infrastructure', () => {
     expect(typeof meta.version).toBe('string');
     expect(meta.version.length).toBeGreaterThan(0);
 
-    expect(meta.files).toHaveLength(2);
+    expect(meta.files).toHaveLength(3);
     expect(meta.files[0].label).toBe('plugin/dist/index.d.ts');
     expect(meta.files[1].label).toBe('plugin/dist/tool.d.ts');
+    expect(meta.files[2].label).toBe('sdk/gen/types.gen.d.ts#Event');
   });
 
   it('HAPPY: host-version.json records OpenCode Desktop compatibility package', () => {

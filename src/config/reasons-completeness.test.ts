@@ -64,6 +64,9 @@ const EXCLUDED_CODES: ReadonlySet<string> = new Set([
   // Diagnostic-only host-capability log code (diagnosticLog.warn), not a
   // governance reason code — mirrors the CRITICAL/error-severity exclusions above.
   'HOST_CAPABILITY_MISMATCH',
+  // Diagnostic-only boot log code emitted when only part of the advertised
+  // host capability set is runtime-verified. Never blocks a governance path.
+  'HOST_CAPABILITY_UNVERIFIED',
   // Pass-state registry code derived by reason-code-mapping.ts for PROVEN
   // claims (ClaimEnforcementState.registryCode). Never a blocking reason:
   // blockingStateFor('PROVEN') is null, so this code can never surface as a

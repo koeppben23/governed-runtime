@@ -21,7 +21,6 @@ import { OpenCodeHostAdapter } from './opencode-host-adapter.js';
 export function createTestAdapter(client: unknown): HostAdapter {
   return new OpenCodeHostAdapter({
     client: client as OrchestratorClient,
-    getSessionId: () => 'test-session',
     directory: '/test/dir',
     worktree: '/test/worktree',
   });
