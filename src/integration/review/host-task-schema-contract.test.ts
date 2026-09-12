@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { REVIEW_FINDINGS_JSON_SCHEMA } from './findings-schema.js';
-import { renderReviewerTaskPrompt } from './prompt-builders.js';
+import { buildTextCompatReviewerPrompt, renderReviewerTaskPrompt } from './prompt-builders.js';
 
 const BASE_INPUT = {
   iteration: 0,
@@ -12,10 +12,10 @@ const BASE_INPUT = {
 };
 
 describe('host-task reviewer serialization contract', () => {
-  it('embeds the canonical ReviewFindings schema in every host-task prompt', () => {
-    const prompt = renderReviewerTaskPrompt(BASE_INPUT);
+  it('embeds the canonical ReviewFindings schema in every text host-task prompt', () => {
+    const prompt = buildTextCompatReviewerPrompt(renderReviewerTaskPrompt(BASE_INPUT));
 
-    expect(prompt).toContain('## Canonical ReviewFindings Serialization Contract');
+    expect(prompt).toContain('## Text Compatibility Serialization Contract');
     expect(prompt).toContain(JSON.stringify(REVIEW_FINDINGS_JSON_SCHEMA, null, 2));
     for (const field of REVIEW_FINDINGS_JSON_SCHEMA.required) {
       expect(prompt).toContain(`"${field}"`);
@@ -23,22 +23,26 @@ describe('host-task reviewer serialization contract', () => {
   });
 
   it('makes challenge nesting explicit instead of leaving wrapper shape to model inference', () => {
-    const prompt = renderReviewerTaskPrompt({
-      ...BASE_INPUT,
-      challengeContract: {
-        requiredChallengeCount: 1,
-        requiredChallengeKind: 'design_challenge',
-        evidenceRefs: [
-          {
-            kind: 'plan_adr_section',
-            artifactKind: 'plan',
-            artifactDigest: 'a'.repeat(64),
-            sectionPath: [{ headingDepth: 1, siblingIndex: 1, headingText: 'Implementation Plan' }],
-            excerptDigest: 'b'.repeat(64),
-          },
-        ],
-      },
-    });
+    const prompt = buildTextCompatReviewerPrompt(
+      renderReviewerTaskPrompt({
+        ...BASE_INPUT,
+        challengeContract: {
+          requiredChallengeCount: 1,
+          requiredChallengeKind: 'design_challenge',
+          evidenceRefs: [
+            {
+              kind: 'plan_adr_section',
+              artifactKind: 'plan',
+              artifactDigest: 'a'.repeat(64),
+              sectionPath: [
+                { headingDepth: 1, siblingIndex: 1, headingText: 'Implementation Plan' },
+              ],
+              excerptDigest: 'b'.repeat(64),
+            },
+          ],
+        },
+      }),
+    );
 
     expect(prompt).toContain('challenges belong in the top-level challenges array');
     expect(prompt).toContain(
@@ -49,13 +53,15 @@ describe('host-task reviewer serialization contract', () => {
   });
 
   it('keeps the full canonical schema on output-repair prompts', () => {
-    const prompt = renderReviewerTaskPrompt({
-      ...BASE_INPUT,
-      retrySchemaErrors: [
-        'majorRisks: Invalid input: expected array, received undefined',
-        'nonBlockingIssues.designChallenges: Unrecognized keys: "nonBlockingIssues", "designChallenges"',
-      ],
-    });
+    const prompt = buildTextCompatReviewerPrompt(
+      renderReviewerTaskPrompt({
+        ...BASE_INPUT,
+        retrySchemaErrors: [
+          'majorRisks: Invalid input: expected array, received undefined',
+          'nonBlockingIssues.designChallenges: Unrecognized keys: "nonBlockingIssues", "designChallenges"',
+        ],
+      }),
+    );
 
     expect(prompt).toContain('### Prior Output Rejected — Schema Validation Errors');
     expect(prompt).toContain('majorRisks: Invalid input: expected array, received undefined');

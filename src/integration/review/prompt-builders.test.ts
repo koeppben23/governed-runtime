@@ -260,6 +260,13 @@ describe('repository observation and reviewer-provenance rules', () => {
 });
 
 describe('text compatibility reviewer contract', () => {
+  it('keeps the native structured prompt free of serialization schema bytes', () => {
+    const prompt = renderReviewerTaskPrompt(BASE_INPUT);
+
+    expect(prompt).not.toContain('## Text Compatibility Serialization Contract');
+    expect(prompt).not.toContain(JSON.stringify(REVIEW_FINDINGS_JSON_SCHEMA, null, 2));
+  });
+
   it('derives every required field from the native JSON schema', () => {
     const prompt = buildTextCompatReviewerPrompt('review prompt');
 

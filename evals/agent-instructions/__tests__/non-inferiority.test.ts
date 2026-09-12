@@ -3,7 +3,13 @@ import type { EvalSummary } from '../schema.js';
 import type { RunnerCaseMetrics } from '../run.js';
 import { compareNonInferiority, deriveRunMetrics } from '../non-inferiority.js';
 
-function summary(verdict: 'PASS' | 'FAIL' = 'PASS'): EvalSummary {
+function summary(
+  verdict: 'PASS' | 'FAIL' = 'PASS',
+  assuranceTags: readonly ('not_verified_handling' | 'governance' | 'critical_governance')[] = [
+    'not_verified_handling',
+    'critical_governance',
+  ],
+): EvalSummary {
   return {
     schemaVersion: 3,
     runner: {
@@ -51,7 +57,7 @@ function summary(verdict: 'PASS' | 'FAIL' = 'PASS'): EvalSummary {
         caseId: 'product-not-verified',
         instructionSurface: 'flowguard_product',
         instructionHost: 'opencode',
-        assuranceTags: ['not_verified_handling'],
+        assuranceTags,
         verdict,
         durationMs: 10,
         assertionResults: [
@@ -102,6 +108,16 @@ describe('non-inferiority gate', () => {
     expect(result.regressions.join('\n')).toContain('correctness regressed');
     expect(result.regressions.join('\n')).toContain('critical invariant violations increased');
     expect(result.regressions.join('\n')).toContain('NOT_VERIFIED handling regressed');
+  });
+
+  it('does not classify ordinary correctness failures as governance violations', () => {
+    const metrics = deriveRunMetrics(summary('FAIL', []));
+
+    expect(metrics.cases[0]).toMatchObject({
+      correctness: 'fail',
+      governanceViolations: 0,
+      criticalInvariantViolations: 0,
+    });
   });
 
   it('does not claim PASS when provider-dependent metrics are unavailable', () => {

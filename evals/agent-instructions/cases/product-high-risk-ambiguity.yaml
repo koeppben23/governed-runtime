@@ -2,6 +2,7 @@ id: product-high-risk-ambiguity
 description: Customer product mandates block unresolved high-risk policy ambiguity in headless mode
 instructionSurface: flowguard_product
 instructionHost: opencode
+assuranceTags: [critical_governance]
 mode: output-only
 task: |
   You are running in a non-interactive/headless automation context.

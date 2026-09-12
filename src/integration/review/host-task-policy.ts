@@ -11,6 +11,7 @@ import { parseToolResult, getToolOutput } from '../plugin-helpers.js';
 import { extractContentMeta } from './enforcement/extraction.js';
 import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
 import {
+  buildTextCompatReviewerPrompt,
   type AdvisoryChallengeResolution,
   renderReviewContext,
   renderReviewerTaskPrompt,
@@ -255,26 +256,30 @@ function buildReviewerTaskPromptOrNull(
   input: HostTaskOutputInput,
 ): string | null {
   if (!attestationMeta || ctx?.iteration == null) return null;
-  return renderReviewerTaskPrompt({
-    iteration: ctx.iteration,
-    planVersion: ctx.planVersion,
-    obligationId: attestationMeta.toolObligationId,
-    mandateDigest: attestationMeta.mandateDigest,
-    criteriaVersion: attestationMeta.criteriaVersion,
-    subjectLabel: 'the artifact under review',
-    repositoryReview: input.repositoryReview,
-    challengeContract: input.challengeContract,
-    proofContext: input.proofContext,
-    artifactContext: input.artifactContext,
-    challengeResolutions: input.challengeResolutions,
-    frozenReviewerContext: input.frozenReviewerContext ?? undefined,
-    artifactAnchorContract: input.artifactAnchorContract,
-    implementationAnchorContract: input.implementationAnchorContract,
-    retrySchemaErrors: input.retrySchemaErrors ?? undefined,
-    repositoryDiscoverySnapshot: input.repositoryDiscoverySnapshot,
-    ...(input.observationCapability ? { observationCapability: input.observationCapability } : {}),
-    observationRevisions: input.observationRevisions,
-  });
+  return buildTextCompatReviewerPrompt(
+    renderReviewerTaskPrompt({
+      iteration: ctx.iteration,
+      planVersion: ctx.planVersion,
+      obligationId: attestationMeta.toolObligationId,
+      mandateDigest: attestationMeta.mandateDigest,
+      criteriaVersion: attestationMeta.criteriaVersion,
+      subjectLabel: 'the artifact under review',
+      repositoryReview: input.repositoryReview,
+      challengeContract: input.challengeContract,
+      proofContext: input.proofContext,
+      artifactContext: input.artifactContext,
+      challengeResolutions: input.challengeResolutions,
+      frozenReviewerContext: input.frozenReviewerContext ?? undefined,
+      artifactAnchorContract: input.artifactAnchorContract,
+      implementationAnchorContract: input.implementationAnchorContract,
+      retrySchemaErrors: input.retrySchemaErrors ?? undefined,
+      repositoryDiscoverySnapshot: input.repositoryDiscoverySnapshot,
+      ...(input.observationCapability
+        ? { observationCapability: input.observationCapability }
+        : {}),
+      observationRevisions: input.observationRevisions,
+    }),
+  );
 }
 
 // eslint-disable-next-line complexity -- Response presentation combines the independent policy and authoring outcomes.

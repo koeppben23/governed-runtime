@@ -42,7 +42,11 @@ export const RunnerKindSchema = z.enum(['synthetic', 'live-host']);
 export type RunnerKind = z.infer<typeof RunnerKindSchema>;
 
 /** Explicit semantic classifications used by assurance metrics. */
-export const AssuranceTagSchema = z.enum(['not_verified_handling']);
+export const AssuranceTagSchema = z.enum([
+  'not_verified_handling',
+  'governance',
+  'critical_governance',
+]);
 export type AssuranceTag = z.infer<typeof AssuranceTagSchema>;
 
 // ── Stream channel ────────────────────────────────────────────────────

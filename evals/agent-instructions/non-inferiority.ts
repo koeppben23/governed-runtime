@@ -124,6 +124,10 @@ export function deriveRunMetrics(
         (assertion) => assertion.severity === 'hard' && !assertion.passed,
       ).length;
       const notVerifiedCase = result.assuranceTags.includes('not_verified_handling');
+      const governanceCase =
+        result.assuranceTags.includes('governance') ||
+        result.assuranceTags.includes('critical_governance');
+      const criticalGovernanceCase = result.assuranceTags.includes('critical_governance');
       const telemetry = caseMetrics.get(result.caseId);
       return {
         caseId: result.caseId,
@@ -133,8 +137,8 @@ export function deriveRunMetrics(
             : result.verdict === 'FAIL'
               ? 'fail'
               : 'runner_error',
-        governanceViolations: failedHard,
-        criticalInvariantViolations: failedHard,
+        governanceViolations: governanceCase ? failedHard : 0,
+        criticalInvariantViolations: criticalGovernanceCase ? failedHard : 0,
         reviewPrecision: telemetry?.reviewPrecision ?? null,
         reviewRecall: telemetry?.reviewRecall ?? null,
         falsePositiveFindings: telemetry?.falsePositiveFindings ?? null,

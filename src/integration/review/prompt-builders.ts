@@ -76,6 +76,9 @@ export function buildTextCompatReviewerPrompt(structuredPrompt: string): string 
     '',
     JSON.stringify(REVIEW_FINDINGS_JSON_SCHEMA, null, 2),
     '',
+    'Use only schema-defined top-level fields. In particular, challenges belong in the top-level challenges array; never invent wrapper objects such as nonBlockingIssues or designChallenges.',
+    'The canonical schema is authoritative for field names, enums, required fields, optionality, and nesting.',
+    '',
     'Shape example only (replace every placeholder/binding with the exact values from the Trusted Runtime Context; do not copy placeholder text):',
     JSON.stringify(textCompatExample(), null, 2),
     '',
@@ -256,17 +259,6 @@ function retryContract(errors: readonly string[] | undefined): string[] {
   ];
 }
 
-function renderCanonicalReviewerOutputContract(): string[] {
-  return [
-    '## Canonical ReviewFindings Serialization Contract',
-    'Return exactly one valid JSON object and no prose or markdown fences.',
-    'The JSON MUST validate against this canonical ReviewFindingsInput schema:',
-    JSON.stringify(REVIEW_FINDINGS_JSON_SCHEMA, null, 2),
-    'Use only schema-defined top-level fields. In particular, challenges belong in the top-level challenges array; never invent wrapper objects such as nonBlockingIssues or designChallenges.',
-    'The canonical schema is authoritative for field names, enums, required fields, optionality, and nesting.',
-  ];
-}
-
 export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string {
   const context = renderReviewContext({
     iteration: input.iteration,
@@ -286,8 +278,6 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
     ...renderFindingsSemanticRule(input),
     ...renderChallengeContract(input.challengeContract, input.obligationId),
     renderFindingRelationGrammar(),
-    '',
-    ...renderCanonicalReviewerOutputContract(),
     '',
     '## Trusted Runtime Context',
     `Review context: ${context}.`,
