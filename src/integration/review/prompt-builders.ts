@@ -10,7 +10,10 @@
  */
 
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
-import type { FrozenReviewSubject, ReviewSubjectScope } from '../../state/evidence.js';
+import type {
+  FrozenReviewSubject,
+  ReviewSubjectScope,
+} from '../../state/evidence.js';
 import { REVIEW_CHALLENGE_OUTCOMES } from '../../state/evidence.js';
 import {
   renderReviewerCriteria,
@@ -259,6 +262,31 @@ function retryContract(errors: readonly string[] | undefined): string[] {
   ];
 }
 
+function hasImplementationReviewAuthority(input: ReviewerTaskPromptInput): boolean {
+  return (
+    (input.implementationAnchorContract?.length ?? 0) > 0 ||
+    input.challengeContract?.requiredChallengeKind === 'implementation_challenge'
+  );
+}
+
+function hasArtifactReviewAuthority(
+  input: ReviewerTaskPromptInput,
+  artifactKind: 'plan' | 'adr',
+): boolean {
+  return (
+    input.artifactAnchorContract?.some((line) =>
+      line.includes(`artifactKind MUST be "${artifactKind}"`),
+    ) === true
+  );
+}
+
+function hasContentReviewAuthority(input: ReviewerTaskPromptInput): boolean {
+  return (
+    input.challengeContract?.requiredChallengeKind === 'content_challenge' ||
+    input.frozenReviewerContext?.reviewSubject?.kind === 'content'
+  );
+}
+
 /**
  * Resolve phase-specific review semantics from host-authoritative task data.
  * Explicit runtime selection wins. Older callers that do not yet pass
@@ -267,28 +295,10 @@ function retryContract(errors: readonly string[] | undefined): string[] {
  */
 function resolveReviewerPromptType(input: ReviewerTaskPromptInput): ReviewerPromptType {
   if (input.reviewType) return input.reviewType;
-  if (
-    (input.implementationAnchorContract?.length ?? 0) > 0 ||
-    input.challengeContract?.requiredChallengeKind === 'implementation_challenge'
-  ) {
-    return 'implementation';
-  }
-  if (
-    input.artifactAnchorContract?.some((line) => line.includes('artifactKind MUST be "plan"'))
-  ) {
-    return 'plan';
-  }
-  if (
-    input.artifactAnchorContract?.some((line) => line.includes('artifactKind MUST be "adr"'))
-  ) {
-    return 'adr';
-  }
-  if (
-    input.challengeContract?.requiredChallengeKind === 'content_challenge' ||
-    input.frozenReviewerContext?.reviewSubject?.kind === 'content'
-  ) {
-    return 'content';
-  }
+  if (hasImplementationReviewAuthority(input)) return 'implementation';
+  if (hasArtifactReviewAuthority(input, 'plan')) return 'plan';
+  if (hasArtifactReviewAuthority(input, 'adr')) return 'adr';
+  if (hasContentReviewAuthority(input)) return 'content';
   return 'all';
 }
 
@@ -378,7 +388,10 @@ export interface ArchitectureReviewPromptOpts {
 }
 
 export function selectReviewerProfileRules(
-  activeProfile: { name: string; phaseRuleContent?: Record<string, string> } | null | undefined,
+  activeProfile: {
+    name: string;
+    phaseRuleContent?: Record<string, string>;
+  } | null | undefined,
   phase: 'PLAN_REVIEW' | 'IMPL_REVIEW' | 'ARCH_REVIEW' | 'REVIEW',
 ): { profileName?: string; profileRules?: string } {
   if (!activeProfile) return {};
