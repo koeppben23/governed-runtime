@@ -48,4 +48,20 @@ new3 = '''replace(
 '''
 if s.count(old3) != 1:
     raise SystemExit(f'orchestrator interface patch definition count={s.count(old3)}')
-p.write_text(s.replace(old3, new3))
+s = s.replace(old3, new3)
+old4 = '''replace(
+    "src/integration/review/content-review-pipeline.ts",
+    """  prompt: string,\n): Promise<boolean> {\n""",
+    """  prompt: string,\n  attemptId: string,\n): Promise<boolean> {\n""",
+    1,
+)
+'''
+new4 = '''replace(
+    "src/integration/review/content-review-pipeline.ts",
+    """async function enforceContentStrictGate(\n  ctx: PipelineContext,\n  reviewerResult: ReviewerSuccessResult & { findings: Record<string, unknown> },\n  findings: {\n    reviewMode?: string;\n    attestation?: Record<string, unknown> | null;\n    overallVerdict?: string;\n  },\n  prompt: string,\n): Promise<boolean> {\n""",
+    """async function enforceContentStrictGate(\n  ctx: PipelineContext,\n  reviewerResult: ReviewerSuccessResult & { findings: Record<string, unknown> },\n  findings: {\n    reviewMode?: string;\n    attestation?: Record<string, unknown> | null;\n    overallVerdict?: string;\n  },\n  prompt: string,\n  attemptId: string,\n): Promise<boolean> {\n""",
+)
+'''
+if s.count(old4) != 1:
+    raise SystemExit(f'content review strict-gate patch definition count={s.count(old4)}')
+p.write_text(s.replace(old4, new4))
