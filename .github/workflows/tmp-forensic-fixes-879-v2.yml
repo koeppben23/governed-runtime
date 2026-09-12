@@ -20,6 +20,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Disambiguate patch targets
+        run: python scripts/tmp-forensic-fix-879-correct.py
       - name: Apply forensic fixes
         shell: bash
         run: python scripts/tmp-forensic-fix-879.py 2>&1 | tee forensic-patch-error.txt
@@ -45,7 +47,7 @@ jobs:
       - name: Remove temporary runner and commit fixes
         shell: bash
         run: |
-          git rm .github/workflows/tmp-forensic-fixes-879-v2.yml scripts/tmp-forensic-fix-879.py
+          git rm .github/workflows/tmp-forensic-fixes-879-v2.yml scripts/tmp-forensic-fix-879.py scripts/tmp-forensic-fix-879-correct.py
           rm -f forensic-patch-error.txt
           git add -A
           git config user.name "github-actions[bot]"
