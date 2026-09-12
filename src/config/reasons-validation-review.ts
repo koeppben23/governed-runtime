@@ -59,6 +59,16 @@ export const REVIEW_VALIDATION_REASONS = [
     ],
   },
   {
+    code: 'REVIEW_GENERATION_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'Review obligation generation does not match the current reviewer criteria or mandate generation. The stale obligation was not executed.',
+    recoverySteps: [
+      'Re-hydrate the session or start a fresh review cycle so FlowGuard creates an obligation with current reviewer semantics',
+      'Do not execute, attest, or submit findings for the stale obligation',
+    ],
+  },
+  {
     code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
     category: 'state',
     messageTemplate:

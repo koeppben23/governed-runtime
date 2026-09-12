@@ -20,7 +20,9 @@ describe('platform uninstall ownership', () => {
     try {
       writeTree(pluginRoot, claudeCodePluginFiles('1.2.3'));
       const result = await uninstallClaudeCodePlugin(target);
-      expect(result).toEqual([expect.objectContaining({ path: pluginRoot, action: 'removed' })]);
+      expect(result).not.toHaveLength(0);
+      expect(result.every((entry) => entry.action === 'removed')).toBe(true);
+      expect(result.every((entry) => entry.path.startsWith(pluginRoot))).toBe(true);
       expect(() => readFileSync(join(pluginRoot, '.claude-plugin/plugin.json'))).toThrow();
     } finally {
       rmSync(target, { recursive: true, force: true });
@@ -35,9 +37,15 @@ describe('platform uninstall ownership', () => {
       const skillPath = join(pluginRoot, 'skills/start/SKILL.md');
       writeFileSync(skillPath, '# customer modification\n');
       const result = await uninstallClaudeCodePlugin(target);
-      expect(result).toEqual([
-        expect.objectContaining({ action: 'skipped', reason: expect.stringContaining('differs') }),
-      ]);
+      expect(result).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            action: 'skipped',
+            path: skillPath,
+            reason: 'ownership/content mismatch',
+          }),
+        ]),
+      );
       expect(readFileSync(skillPath, 'utf-8')).toBe('# customer modification\n');
     } finally {
       rmSync(target, { recursive: true, force: true });
@@ -51,7 +59,7 @@ describe('platform uninstall ownership', () => {
       writeTree(pluginRoot, claudeCodePluginFiles('1.2.3'));
       writeFileSync(join(pluginRoot, 'customer-note.txt'), 'keep me');
       const result = await uninstallClaudeCodePlugin(target);
-      expect(result[0]).toMatchObject({ action: 'skipped' });
+      expect(result.some((entry) => entry.action === 'removed')).toBe(true);
       expect(readFileSync(join(pluginRoot, 'customer-note.txt'), 'utf-8')).toBe('keep me');
     } finally {
       rmSync(target, { recursive: true, force: true });
