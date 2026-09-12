@@ -1,0 +1,77 @@
+name: Temporary finalize PR 879
+
+on:
+  push:
+    branches:
+      - feat/mandates-v5
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tmp-finalize-879
+  cancel-in-progress: true
+
+jobs:
+  verify-and-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feat/mandates-v5
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply final gate fixes
+        run: python3 scripts/tmp-finalize-879.py
+
+      - name: Format touched sources
+        run: |
+          npx prettier --write \
+            src/config/reasons-validation-review.ts \
+            src/config/reasons-completeness.test.ts \
+            src/cli/platform-uninstall-ownership.test.ts \
+            src/integration/review/shared-helpers.ts \
+            src/integration/review/sdk-evidence-recorder.ts \
+            src/integration/review/content-review-pipeline.ts \
+            src/integration/review/standard-review-pipeline.ts \
+            src/integration/review/assurance-generation.test.ts
+
+      - name: Full unit suite
+        run: npm test -- --reporter=verbose
+
+      - name: Full coverage gate
+        run: npm run test:coverage
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Architecture gate
+        run: npm run test:ci-architecture
+
+      - name: Commit verified fixes and remove temporary helpers
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f scripts/tmp-finalize-879.py .github/workflows/tmp-finalize-879.yml
+          git add -A
+          git diff --cached --check
+          git commit -m "fix: satisfy final review gates"
+          git push origin HEAD:feat/mandates-v5
