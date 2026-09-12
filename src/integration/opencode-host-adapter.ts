@@ -9,9 +9,10 @@
  * - Delegates to existing modules (invokeReviewer, plugin-logging) — zero behavior change
  * - Lives in integration/ because it imports from @opencode-ai/plugin SDK surface
  * - Structural typing ensures HostReviewerResult is satisfied by ReviewerResult
+ * - Boot-time capability probing never waits for re-entrant host I/O
  *
  * @see https://github.com/koeppben23/governed-runtime/issues/242
- * @version v1
+ * @version v2
  */
 
 import type {
@@ -71,6 +72,8 @@ export class HostCapabilityMismatchError extends Error {
   }
 }
 
+type BootProbeOutcome = 'verified' | 'mismatch' | 'pending';
+
 /**
  * OpenCode platform adapter.
  *
@@ -126,20 +129,48 @@ export class OpenCodeHostAdapter implements HostAdapter {
     }
   }
 
+  /**
+   * Probe the agent registry without waiting for host I/O.
+   *
+   * OpenCode may initialize the plugin while servicing a project-scoped host
+   * request. Awaiting another host request from inside plugin initialization can
+   * therefore deadlock the server (the outer request waits for plugin boot while
+   * the inner request waits for that same boot to complete).
+   *
+   * We only consume a result that settles within the current microtask turn.
+   * Anything requiring actual host I/O is deliberately reported as `pending` and
+   * remains contract-attested until the reviewer path exercises it for real.
+   */
+  private async probeAgentRegistryAtBoot(): Promise<BootProbeOutcome> {
+    let outcome: BootProbeOutcome = 'pending';
+    try {
+      const probe = Promise.resolve(this.client.app.agents());
+      void probe.then(
+        (result) => {
+          outcome = result.error ? 'mismatch' : 'verified';
+        },
+        () => {
+          outcome = 'mismatch';
+        },
+      );
+    } catch {
+      return 'mismatch';
+    }
+
+    // Yield exactly one microtask turn. Do not await network/host progress here.
+    await Promise.resolve();
+    return outcome;
+  }
+
   async validateCapabilities(): Promise<CapabilityValidationResult> {
     const mismatches: Array<{ capability: string; expected: boolean; actual: boolean }> = [];
     const runtimeVerified: string[] = [];
 
-    // Verify reviewer agent availability by probing the agent registry.
-    try {
-      const agentsResult = await this.client.app.agents();
-      if (agentsResult.error) {
-        mismatches.push({ capability: 'reviewerSpawn', expected: true, actual: false });
-      } else {
-        runtimeVerified.push('reviewerSpawn');
-      }
-    } catch {
+    const reviewerProbe = await this.probeAgentRegistryAtBoot();
+    if (reviewerProbe === 'mismatch') {
       mismatches.push({ capability: 'reviewerSpawn', expected: true, actual: false });
+    } else if (reviewerProbe === 'verified') {
+      runtimeVerified.push('reviewerSpawn');
     }
 
     const contractAttested = Object.keys(this.capabilities).filter(
