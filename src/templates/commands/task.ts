@@ -1,8 +1,7 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
 
-export const TASK_COMMAND = `
----
-description: Capture a governed task description with optional external references.
+export const TASK_COMMAND = `---
+description: FlowGuard — Capture a governed task description with optional external references.
 ---
 
 You are managing a FlowGuard-controlled development workflow.

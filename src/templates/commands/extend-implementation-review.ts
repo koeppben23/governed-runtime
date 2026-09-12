@@ -1,8 +1,7 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
 
-export const EXTEND_IMPLEMENTATION_REVIEW_COMMAND = `
----
-description: Authorize more independent implementation review iterations after budget exhaustion.
+export const EXTEND_IMPLEMENTATION_REVIEW_COMMAND = `---
+description: FlowGuard — Authorize more independent implementation review iterations after budget exhaustion.
 agent: build
 ---
 

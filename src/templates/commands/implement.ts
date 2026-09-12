@@ -5,9 +5,8 @@ import {
   DISCOVERY_REVIEW_DONE_WHEN,
 } from './shared-review-loop.js';
 
-export const IMPLEMENT_COMMAND = `
----
-description: Implement the approved plan and review the implementation.
+export const IMPLEMENT_COMMAND = `---
+description: FlowGuard — Implement the approved plan and review the implementation.
 agent: build
 ---
 

@@ -1,8 +1,7 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
 
-export const ARCHIVE_COMMAND = `
----
-description: Archive a completed FlowGuard session as a compressed tar.gz file.
+export const ARCHIVE_COMMAND = `---
+description: FlowGuard — Archive a completed session as a compressed tar.gz file.
 ---
 
 You are managing a FlowGuard-controlled development workflow.

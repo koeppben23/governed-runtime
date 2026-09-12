@@ -1,8 +1,7 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
 
-export const RECONCILE_MUTATION_EPISODE_COMMAND = `
----
-description: Resolve a host mutation episode whose outcome can never be observed.
+export const RECONCILE_MUTATION_EPISODE_COMMAND = `---
+description: FlowGuard — Resolve a host mutation episode whose outcome can never be observed.
 agent: build
 ---
 

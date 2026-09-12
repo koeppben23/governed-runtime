@@ -1,8 +1,7 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
 
-export const HYDRATE_COMMAND = `
----
-description: Bootstrap or reload the FlowGuard session. Run this FIRST before any other FlowGuard command.
+export const HYDRATE_COMMAND = `---
+description: FlowGuard — Bootstrap or reload the session. Run this FIRST before any other FlowGuard command.
 ---
 
 You are managing a FlowGuard-controlled development workflow.

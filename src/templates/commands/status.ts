@@ -1,8 +1,7 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
 
-export const STATUS_COMMAND = `
----
-description: Show the current FlowGuard status surface.
+export const STATUS_COMMAND = `---
+description: FlowGuard — Show the current status surface.
 ---
 
 You are managing a FlowGuard-controlled development workflow.

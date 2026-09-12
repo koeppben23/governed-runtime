@@ -1,8 +1,7 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
 
-export const REVIEW_DECISION_COMMAND = `
----
-description: Submit a human review decision (approve, changes_requested, reject) at a User Gate.
+export const REVIEW_DECISION_COMMAND = `---
+description: FlowGuard — Submit a human review decision (approve, changes_requested, reject) at a User Gate.
 ---
 
 You are managing a FlowGuard-controlled development workflow.

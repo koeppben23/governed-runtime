@@ -290,9 +290,13 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for host-owned claim identity and evidence-fit guidance: /plan
     // and /architecture no longer instruct agents to mint claimId; /plan also
     // constrains claim statements to the observable evidence they declare.
+    // Refreshed for OpenCode command frontmatter visibility: every command body
+    // now starts with `---` at byte 0 (gray-matter requires the fence at the start
+    // of the file) and every description is FlowGuard-branded with a `FlowGuard — `
+    // prefix. Changes all command bodies and therefore the COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '3985d83315fa9c37067680edef1419a14aaa17682b3e038661dd15f022704694',
+      'e7e81eaaf4820dfcecff1bbb7ffd9eb7250dba6eb49c1d04b4ab9f7eff54880e',
     );
   });
 

@@ -1,8 +1,7 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
 
-export const EXPORT_COMMAND = `
----
-description: Export a redacted audit-sharing package for the completed session.
+export const EXPORT_COMMAND = `---
+description: FlowGuard — Export a redacted audit-sharing package for the completed session.
 ---
 
 You are managing a FlowGuard-controlled development workflow.

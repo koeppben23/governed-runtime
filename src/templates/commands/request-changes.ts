@@ -1,8 +1,7 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
 
-export const REQUEST_CHANGES_COMMAND = `
----
-description: Request changes on the currently active review gate.
+export const REQUEST_CHANGES_COMMAND = `---
+description: FlowGuard — Request changes on the currently active review gate.
 ---
 
 You are managing a FlowGuard-controlled development workflow.

@@ -1,9 +1,8 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
-export const REVIEW_COMMAND = `
----
-description: Start the standalone compliance review flow (READY -> REVIEW -> REVIEW_COMPLETE).
+export const REVIEW_COMMAND = `---
+description: FlowGuard — Start the standalone compliance review flow (READY -> REVIEW -> REVIEW_COMPLETE).
 agent: build
 ---
 
