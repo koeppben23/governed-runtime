@@ -24,29 +24,22 @@ jobs:
         run: |
           python scripts/tmp-forensic-fix-879-correct.py
           python scripts/tmp-forensic-fix-879-correct2.py
+          python scripts/tmp-forensic-fix-879-correct3.py
       - name: Apply forensic fixes
         shell: bash
-        run: python scripts/tmp-forensic-fix-879.py 2>&1 | tee forensic-patch-error.txt
-      - name: Persist patch diagnostic on failure
-        if: failure()
-        shell: bash
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add forensic-patch-error.txt
-          git commit -m "chore: capture forensic patch diagnostic" || true
-          git push origin HEAD:feat/mandates-v5
+        run: python scripts/tmp-forensic-fix-879.py
       - name: Install dependencies
         run: npm ci
       - name: Format changed files
         run: npx prettier --write src/integration/review/assurance.ts src/integration/review/standard-review-pipeline.ts src/integration/review/pipeline-types.ts src/integration/review/shared-helpers.ts src/integration/review/orchestrator.ts src/integration/review/content-review-pipeline.ts src/integration/review/pending-instruction.ts src/integration/review/host-task-policy.ts src/integration/plugin-orchestrator-independent-review.test.ts src/integration/plugin-orchestrator-review-content.test.ts src/cli/install-ownership.ts src/cli/install-command.ts src/cli/uninstall-command.ts src/cli/install-uninstall.test.ts src/cli/install-ownership-regression.test.ts src/cli/install-types.ts src/cli/claude-code-plugin-install.ts src/cli/platform-uninstall.ts
       - name: Targeted forensic tests
+        id: tests
         shell: bash
         run: |
           set -o pipefail
           npx vitest run src/integration/plugin-orchestrator-independent-review.test.ts src/integration/plugin-orchestrator-review-content.test.ts src/integration/review/orchestrator.test.ts src/integration/review/prompt-builders.test.ts src/integration/review/host-task-policy.test.ts src/cli/install-ownership-regression.test.ts src/cli/install-uninstall.test.ts 2>&1 | tee forensic-test-error.txt
       - name: Persist test diagnostic on failure
-        if: failure()
+        if: steps.tests.outcome == 'failure'
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
@@ -55,12 +48,14 @@ jobs:
           git commit -m "chore: capture forensic test diagnostic" || true
           git push origin HEAD:feat/mandates-v5
       - name: Typecheck
+        id: typecheck
+        if: steps.tests.outcome == 'success'
         shell: bash
         run: |
           set -o pipefail
           npm run typecheck 2>&1 | tee forensic-typecheck-error.txt
       - name: Persist typecheck diagnostic on failure
-        if: failure()
+        if: steps.typecheck.outcome == 'failure'
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
@@ -69,12 +64,14 @@ jobs:
           git commit -m "chore: capture forensic typecheck diagnostic" || true
           git push origin HEAD:feat/mandates-v5
       - name: Lint
+        id: lint
+        if: steps.tests.outcome == 'success' && steps.typecheck.outcome == 'success'
         shell: bash
         run: |
           set -o pipefail
           npm run lint 2>&1 | tee forensic-lint-error.txt
       - name: Persist lint diagnostic on failure
-        if: failure()
+        if: steps.lint.outcome == 'failure'
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
@@ -83,9 +80,10 @@ jobs:
           git commit -m "chore: capture forensic lint diagnostic" || true
           git push origin HEAD:feat/mandates-v5
       - name: Remove temporary runner and commit fixes
+        if: steps.tests.outcome == 'success' && steps.typecheck.outcome == 'success' && steps.lint.outcome == 'success'
         shell: bash
         run: |
-          git rm .github/workflows/tmp-forensic-fixes-879-v2.yml scripts/tmp-forensic-fix-879.py scripts/tmp-forensic-fix-879-correct.py scripts/tmp-forensic-fix-879-correct2.py
+          git rm .github/workflows/tmp-forensic-fixes-879-v2.yml scripts/tmp-forensic-fix-879.py scripts/tmp-forensic-fix-879-correct.py scripts/tmp-forensic-fix-879-correct2.py scripts/tmp-forensic-fix-879-correct3.py
           rm -f forensic-patch-error.txt forensic-test-error.txt forensic-typecheck-error.txt forensic-lint-error.txt
           git add -A
           git config user.name "github-actions[bot]"
