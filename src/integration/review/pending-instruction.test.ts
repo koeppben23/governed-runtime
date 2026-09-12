@@ -11,6 +11,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { buildPendingReviewInstruction } from './pending-instruction.js';
+import { artifactReviewSubjectScope, createReviewObligation } from './assurance.js';
 
 const base = {
   platform: 'opencode' as const,
@@ -44,6 +45,34 @@ describe('buildPendingReviewInstruction', () => {
       expect(result.reviewInvocation.status).toBe('unsupported_blocked');
       expect(result.next).toContain('UNSUPPORTED_REVIEW_TRANSPORT');
       expect(result.next).toContain('flowguard_decision is not independent review evidence');
+    });
+
+    it('rejects a stale obligation without rendering a reviewer Task prompt', () => {
+      const current = createReviewObligation({
+        policySnapshot: {
+          challengePolicy: {
+            version: 'challenge-policy.v1',
+            counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+          },
+          maxReviewerOutputRepairAttempts: 1,
+        },
+        obligationType: 'plan',
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+        iteration: 0,
+        planVersion: 1,
+        now: '2026-01-01T00:00:00.000Z',
+        subjectDigest: 'test',
+        reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
+      });
+      const result = buildPendingReviewInstruction({
+        ...base,
+        mode: 'host_task_sync',
+        obligation: { ...current, criteriaVersion: 'p41-v1' },
+      });
+
+      expect(result.reviewInvocation.status).toBe('unsupported_blocked');
+      expect(result.next).toContain('REVIEW_GENERATION_MISMATCH');
+      expect(result.reviewerTaskPrompt).toBeUndefined();
     });
   });
 });
