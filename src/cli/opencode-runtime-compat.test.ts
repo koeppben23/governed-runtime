@@ -12,7 +12,7 @@ import {
   classifyOpenCodeRuntime,
   KNOWN_INCOMPATIBLE_OPENCODE_HOST_CONTRACTS,
   KNOWN_INCOMPATIBLE_OPENCODE_RUNTIMES,
-  TESTED_OPENCODE_HOST_RANGE,
+  TESTED_OPENCODE_HOST_VERSION,
   type OpenCodeHostContractDenyEntry,
   type OpenCodeRuntimeDenyEntry,
   type OpenCodeRuntimeEvidence,
@@ -122,20 +122,23 @@ describe('opencode-runtime-compat', () => {
       expect(KNOWN_INCOMPATIBLE_OPENCODE_HOST_CONTRACTS).toEqual([]);
     });
 
-    it('HAPPY: classifies a version inside the tested range as verified', () => {
+    it('HAPPY: classifies the exact tested host version as verified', () => {
       const result = classifyOpenCodeHostContract('1.18.29');
       expect(result.status).toBe('verified');
-      expect(result.testedRange).toBe(TESTED_OPENCODE_HOST_RANGE);
+      expect(result.testedVersion).toBe(TESTED_OPENCODE_HOST_VERSION);
+      expect(result.testedRange).toBe(TESTED_OPENCODE_HOST_VERSION);
     });
 
-    it('HAPPY: accepts a newer patch inside the tested minor line', () => {
-      expect(classifyOpenCodeHostContract('1.18.42').status).toBe('verified');
+    it('BAD: a newer patch in the same minor line is compatible-unverified', () => {
+      const result = classifyOpenCodeHostContract('1.18.42');
+      expect(result.status).toBe('compatible-unverified');
+      expect(result.reason).toContain('does not exactly match');
     });
 
     it('BAD: an older version is compatible-unverified, never verified', () => {
       const result = classifyOpenCodeHostContract('1.15.13');
       expect(result.status).toBe('compatible-unverified');
-      expect(result.reason).toContain('outside the tested range');
+      expect(result.reason).toContain('does not exactly match');
     });
 
     it('BAD: a newer minor is compatible-unverified, never verified', () => {
@@ -160,8 +163,10 @@ describe('opencode-runtime-compat', () => {
       expect(classifyOpenCodeHostContract('not-a-version').status).toBe('compatible-unverified');
     });
 
-    it('EDGE: nightly/build suffixes still parse and classify', () => {
-      expect(classifyOpenCodeHostContract('1.18.29-nightly.20260901').status).toBe('verified');
+    it('EDGE: prerelease/nightly builds do not inherit verified status', () => {
+      expect(classifyOpenCodeHostContract('1.18.29-nightly.20260901').status).toBe(
+        'compatible-unverified',
+      );
     });
   });
 });
