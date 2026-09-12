@@ -606,28 +606,88 @@ function stateChallengeResolutions(state: SessionState) {
  * truth. When there is no current implementation digest, nothing is projected
  * and the prompt renders an explicit NOT_VERIFIED evidence line.
  */
+function assertionRequirementKey(checkId: string, providerId: string, localId: string): string {
+  return `${checkId}\u0000${providerId}\u0000${localId}`;
+}
+
+function declaredAssertionRequirementKeys(state: SessionState): ReadonlySet<string> {
+  const keys = new Set<string>();
+  for (const claim of state.plan?.claimDeclarations?.claims ?? []) {
+    const requirement = claim.counterexampleRequirement;
+    if (requirement?.kind !== 'assertion') continue;
+    keys.add(
+      assertionRequirementKey(
+        requirement.checkId,
+        requirement.assertion.providerId,
+        requirement.assertion.localId,
+      ),
+    );
+  }
+  return keys;
+}
+
+function projectClaimAssertionEvidence(
+  attempt: Extract<SessionState['validationAttempts'][number], { scope: 'implementation' }>,
+  requirementKeys: ReadonlySet<string>,
+): ReviewVerificationEvidenceItem['claimAssertionEvidence'] {
+  const extraction = attempt.result.assertionExtraction;
+  if (extraction?.status !== 'extracted' || requirementKeys.size === 0) return undefined;
+  const assertions = extraction.assertions
+    .filter((assertion) =>
+      requirementKeys.has(
+        assertionRequirementKey(
+          attempt.result.checkId,
+          assertion.providerId,
+          assertion.assertion.localId,
+        ),
+      ),
+    )
+    .map((assertion) => ({
+      checkId: attempt.result.checkId,
+      providerId: assertion.providerId,
+      localId: assertion.assertion.localId,
+      status: assertion.status,
+      ...(assertion.suiteName ? { suiteName: assertion.suiteName } : {}),
+      testName: assertion.testName,
+      ...(assertion.sourceFile ? { sourceFile: assertion.sourceFile } : {}),
+      ...(assertion.durationMs !== undefined ? { durationMs: assertion.durationMs } : {}),
+    }));
+  return assertions.length === 0
+    ? undefined
+    : { reportDigests: [...extraction.reportDigests], assertions };
+}
+
 export function stateVerificationEvidence(
   state: SessionState,
 ): readonly ReviewVerificationEvidenceItem[] {
   const currentDigest = state.implementation?.digest;
   if (!currentDigest) return [];
+  const requirementKeys = declaredAssertionRequirementKeys(state);
   return state.validationAttempts
     .filter(
-      (attempt) =>
-        attempt.scope === 'implementation' && attempt.implementationDigest === currentDigest,
+      (
+        attempt,
+      ): attempt is Extract<
+        SessionState['validationAttempts'][number],
+        { scope: 'implementation' }
+      > => attempt.scope === 'implementation' && attempt.implementationDigest === currentDigest,
     )
-    .map((attempt) => ({
-      attemptId: attempt.attemptId,
-      kind: attempt.result.kind,
-      command: attempt.result.command,
-      passed: attempt.result.passed,
-      exitCode: attempt.result.exitCode,
-      timedOut: attempt.result.timedOut,
-      executionMs: attempt.result.executionMs,
-      outputDigest: attempt.result.outputDigest,
-      detail: attempt.result.detail,
-      executedAt: attempt.result.executedAt,
-    }));
+    .map((attempt) => {
+      const claimAssertionEvidence = projectClaimAssertionEvidence(attempt, requirementKeys);
+      return {
+        attemptId: attempt.attemptId,
+        kind: attempt.result.kind,
+        command: attempt.result.command,
+        passed: attempt.result.passed,
+        exitCode: attempt.result.exitCode,
+        timedOut: attempt.result.timedOut,
+        executionMs: attempt.result.executionMs,
+        outputDigest: attempt.result.outputDigest,
+        detail: attempt.result.detail,
+        executedAt: attempt.result.executedAt,
+        ...(claimAssertionEvidence ? { claimAssertionEvidence } : {}),
+      };
+    });
 }
 
 // ─── State + Audit Persistence Helper ────────────────────────────────────────

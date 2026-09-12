@@ -125,6 +125,7 @@ async function bindReviewerEvidence(
           callId: execution.callId,
           canonicalPromptDigest: execution.canonicalPromptDigest,
           modelPromptDigest: execution.modelPromptDigest,
+          createdAt: execution.createdAt,
         }
       : undefined,
     execution: execution

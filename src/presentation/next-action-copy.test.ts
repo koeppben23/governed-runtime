@@ -125,6 +125,31 @@ describe('buildProductNextAction', () => {
     });
   });
 
+  describe('RUN_REVIEWER_TASK — preserve canonical phase routing', () => {
+    it.each([
+      ['PLAN', 'Independent plan review is pending. Submit the reviewer verdict with /plan.'],
+      [
+        'ARCHITECTURE',
+        'Independent architecture review is pending. Submit the reviewer verdict with /architecture.',
+      ],
+      [
+        'IMPL_REVIEW',
+        'Independent implementation review is pending. Submit the reviewer verdict with flowguard_review_implementation.',
+      ],
+      [
+        'REVIEW',
+        'Independent content review is pending. Submit the reviewer verdict with flowguard_review.',
+      ],
+    ] as const)('preserves %s canonical routing', (phase, canonicalText) => {
+      const action = { code: 'RUN_REVIEWER_TASK', text: canonicalText, commands: [] as string[] };
+      expect(buildProductNextAction(action, phase)).toEqual({
+        text: canonicalText,
+        commands: [],
+        presentationForm: 'review_pending',
+      });
+    });
+  });
+
   describe('CORNER — unknown codes fall back to canonical', () => {
     it('returns canonical text and commands for unmapped code', () => {
       const action = { code: 'UNKNOWN_CODE', text: 'Canonical text', commands: ['/cmd'] };

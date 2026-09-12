@@ -10,7 +10,11 @@ import type {
   ReviewObligation,
   ReviewAttempt,
 } from '../../state/evidence.js';
-import type { SessionEnforcementState, HostTaskBindResult } from './enforcement/types.js';
+import type {
+  SessionEnforcementState,
+  HostTaskBindResult,
+  ExecutedTaskPrompt,
+} from './enforcement/types.js';
 import { TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
 import { obligationTypeForTool } from './obligation-tools.js';
 import { buildInvocationEvidence, hashFindings, hashText } from './assurance.js';
@@ -30,6 +34,11 @@ import {
   type FindingWithRelation,
 } from './enforcement/findings-consistency.js';
 import { bindRepositoryEvidenceLocations } from './observation-binding.js';
+
+type HostTaskPromptProvenance = Pick<
+  ExecutedTaskPrompt,
+  'callId' | 'canonicalPromptDigest' | 'modelPromptDigest' | 'createdAt'
+>;
 
 /** Transport contract for captured findings: recovered findings downgrade assurance. */
 function transportContract(latest: PendingReviewRecord) {
@@ -156,11 +165,7 @@ export function buildHostTaskEvidence(
     readonly invocations: ReviewInvocationEvidence[];
     readonly attempts: readonly ReviewAttempt[];
     readonly allowedEvidenceRefs?: readonly unknown[];
-    readonly promptProvenance?: {
-      readonly callId: string;
-      readonly canonicalPromptDigest: string;
-      readonly modelPromptDigest: string | null;
-    };
+    readonly promptProvenance?: HostTaskPromptProvenance;
     /** Exact host-owned execution that produced this Task completion. */
     readonly execution?: {
       readonly obligationId: string;
@@ -249,11 +254,7 @@ function assembleBoundEvidence(input: {
   normalizedFindings: Record<string, unknown>;
   findingsHash: string;
   attestationInfo: AttestationInfo;
-  promptProvenance?: {
-    readonly callId: string;
-    readonly canonicalPromptDigest: string;
-    readonly modelPromptDigest: string | null;
-  };
+  promptProvenance?: HostTaskPromptProvenance;
   now: string;
   allowedEvidenceRefs?: readonly unknown[];
 }): HostTaskBindResult & { attempt?: ReviewAttempt } {
@@ -278,7 +279,8 @@ function assembleBoundEvidence(input: {
         }
       : {}),
     findingsHash,
-    invokedAt: now,
+    invokedAt: input.promptProvenance?.createdAt ?? input.attempt.createdAt,
+    fulfilledAt: latest.subagentRecord?.completedAt ?? now,
     source: 'host-orchestrated',
     attemptId: input.attempt.attemptId,
     ...transportContract(latest),

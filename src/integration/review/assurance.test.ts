@@ -391,7 +391,7 @@ describe('integration/review-assurance', () => {
       expect(result.challengePolicyVersion).toBe('challenge-policy.v1');
     });
 
-    it('creates p41 obligations without rewriting prior attestation values', () => {
+    it('creates p42 obligations without rewriting prior attestation values', () => {
       const priorObligations: ReviewObligation[] = [
         {
           ...makeObligation(),
@@ -415,9 +415,9 @@ describe('integration/review-assurance', () => {
       );
       const fresh = makeObligation();
 
-      expect(REVIEW_CRITERIA_VERSION).toBe('p41-v1');
+      expect(REVIEW_CRITERIA_VERSION).toBe('p42-v1');
       expect(assurance.obligations).toEqual(priorObligations);
-      expect(fresh.criteriaVersion).toBe('p41-v1');
+      expect(fresh.criteriaVersion).toBe('p42-v1');
       expect(fresh.mandateDigest).toBe(REVIEW_MANDATE_DIGEST);
     });
   });

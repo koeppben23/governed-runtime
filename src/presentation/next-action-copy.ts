@@ -81,11 +81,6 @@ const PRODUCT_GUIDANCE: Partial<Record<ActionCode, ProductNextAction>> = {
     text: 'Submit your Architecture Decision Record with /architecture',
     commands: ['/architecture'],
   },
-  RUN_REVIEWER_TASK: {
-    text: 'Independent content review is pending. Run the flowguard-reviewer Task, then submit only its verdict with flowguard_review.',
-    commands: [],
-    presentationForm: 'review_pending',
-  },
   SUBMIT_REVIEWER_VERDICT: {
     text: 'Independent reviewer evidence is bound. Submit its exact verdict with flowguard_review_implementation.',
     commands: ['flowguard_review_implementation'],
@@ -121,6 +116,14 @@ export function buildProductNextAction(
     'lastExportPackagePurpose' | 'lastExportIntegrityCapability' | 'lastExportVerificationStatus'
   >,
 ): ProductNextAction {
+  if (action.code === ACTION_CODES.RUN_REVIEWER_TASK) {
+    return {
+      text: action.text,
+      commands: action.commands,
+      presentationForm: 'review_pending',
+    };
+  }
+
   const code = action.code as ActionCode;
   const guidance = PRODUCT_GUIDANCE[code];
 

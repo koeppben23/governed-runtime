@@ -40,7 +40,7 @@ import type { RepositoryEvidenceFreeze } from '../../state/evidence-review-freez
 import { assertRepositoryFreezeCoherence } from './freeze-coherence.js';
 // Static import - mandate content is a constant in ESM
 import { REVIEWER_AGENT } from '../../templates/mandates.js';
-export const REVIEW_CRITERIA_VERSION = 'p41-v1';
+export const REVIEW_CRITERIA_VERSION = 'p42-v1';
 // Mandate digest - computed from actual REVIEWER_AGENT template at module load
 export const REVIEW_MANDATE_DIGEST = hashText(REVIEWER_AGENT);
 import {

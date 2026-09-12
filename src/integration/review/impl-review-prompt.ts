@@ -38,6 +38,22 @@ export interface ImplReviewPromptOpts {
   readonly implementationDigest?: string;
 }
 
+export interface ReviewClaimAssertionEvidence {
+  readonly checkId: string;
+  readonly providerId: string;
+  readonly localId: string;
+  readonly status: 'passed' | 'failed' | 'errored' | 'skipped';
+  readonly suiteName?: string;
+  readonly testName: string;
+  readonly sourceFile?: string;
+  readonly durationMs?: number;
+}
+
+export interface ReviewClaimAssertionEvidenceSet {
+  readonly reportDigests: readonly string[];
+  readonly assertions: readonly ReviewClaimAssertionEvidence[];
+}
+
 export interface ReviewVerificationEvidenceItem {
   readonly attemptId: string;
   readonly kind: string;
@@ -49,6 +65,7 @@ export interface ReviewVerificationEvidenceItem {
   readonly outputDigest: string;
   readonly detail: string;
   readonly executedAt: string;
+  readonly claimAssertionEvidence?: ReviewClaimAssertionEvidenceSet;
 }
 
 export function renderVerificationEvidence(
@@ -63,12 +80,22 @@ export function renderVerificationEvidence(
   }
   const rows = evidence.map((item) => {
     const status = item.timedOut ? 'TIMED_OUT' : item.passed ? 'PASS' : 'FAIL';
-    return (
+    const base =
       `- [${status}] kind=${item.kind} exitCode=${item.exitCode} durationMs=${item.executionMs} ` +
       `digest=${item.outputDigest}\n` +
       `  command: ${item.command}\n` +
-      `  detail: ${item.detail}`
+      `  detail: ${item.detail}`;
+    if (!item.claimAssertionEvidence) return base;
+    const assertionLines = item.claimAssertionEvidence.assertions.map(
+      (assertion) =>
+        `    - checkId=${assertion.checkId} providerId=${assertion.providerId} ` +
+        `localId=${assertion.localId} status=${assertion.status}`,
     );
+    return [
+      base,
+      `  claim-relevant structured assertions (host-extracted; reportDigests=${item.claimAssertionEvidence.reportDigests.join(',')}):`,
+      ...assertionLines,
+    ].join('\n');
   });
   return [
     '### Verification Evidence (executed)',

@@ -211,4 +211,21 @@ describe('F8: host-authoritative reviewer provenance', () => {
       actorAssurance: 'best_effort',
     });
   });
+
+  it('binds invocation lifecycle to host dispatch start and Task completion', () => {
+    const { state, obligation, attempts } = setupHostStampedCycle();
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts,
+      promptProvenance: {
+        callId: 'call_provenance_001',
+        canonicalPromptDigest: 'a'.repeat(64),
+        modelPromptDigest: null,
+        createdAt: NOW,
+      },
+    });
+    expect(result.evidence?.invokedAt).toBe(NOW);
+    expect(result.evidence?.fulfilledAt).toBe(LATER);
+  });
 });

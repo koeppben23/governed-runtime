@@ -82,6 +82,30 @@ describe('renderVerificationEvidence', () => {
     expect(text).toContain('detail: 42 passed');
   });
 
+  it('renders claim-relevant structured assertion evidence', () => {
+    const text = renderVerificationEvidence([
+      {
+        ...PASS_ITEM,
+        claimAssertionEvidence: {
+          reportDigests: ['c'.repeat(64)],
+          assertions: [
+            {
+              checkId: 'test',
+              providerId: 'junit',
+              localId: 'TaskControllerTest#missingTask',
+              status: 'passed',
+              testName: 'missingTask',
+            },
+          ],
+        },
+      },
+    ]).join('\n');
+    expect(text).toContain(`reportDigests=${'c'.repeat(64)}`);
+    expect(text).toContain(
+      'checkId=test providerId=junit localId=TaskControllerTest#missingTask status=passed',
+    );
+  });
+
   it('renders a failing check as FAIL (not hidden)', () => {
     const text = renderVerificationEvidence([FAIL_ITEM]).join('\n');
     expect(text).toContain('[FAIL] kind=typecheck exitCode=2');
