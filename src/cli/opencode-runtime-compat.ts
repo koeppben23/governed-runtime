@@ -98,10 +98,7 @@ export interface OpenCodeHostContractDenyEntry {
 export const KNOWN_INCOMPATIBLE_OPENCODE_HOST_CONTRACTS: readonly OpenCodeHostContractDenyEntry[] =
   [];
 
-export type OpenCodeHostContractStatus =
-  | 'verified'
-  | 'compatible-unverified'
-  | 'known-incompatible';
+export type OpenCodeHostContractStatus = 'verified' | 'compatible-unverified' | 'known-incompatible';
 
 export interface OpenCodeHostContractClassification {
   readonly status: OpenCodeHostContractStatus;
