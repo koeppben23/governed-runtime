@@ -11,6 +11,7 @@ import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import type { ReviewObligation } from '../../state/evidence.js';
 import type { ReviewHostPlatform, ReviewOrchestrationMode } from './orchestration-mode.js';
 import { renderReviewContext, renderReviewerTaskPrompt } from './prompt-builders.js';
+import { reviewerPromptTypeForTask } from './reviewer-task-type.js';
 
 export interface PendingReviewInstructionInput {
   readonly mode: ReviewOrchestrationMode;
@@ -96,6 +97,7 @@ function buildHostTaskPrompt(
     mandateDigest: obligation.mandateDigest,
     criteriaVersion: obligation.criteriaVersion,
     subjectLabel: input.subjectLabel,
+    reviewType: reviewerPromptTypeForTask(input.reviewKind),
     observationCapability: input.observationCapability,
     challengeContract:
       obligation.requiredChallengeCount === undefined
