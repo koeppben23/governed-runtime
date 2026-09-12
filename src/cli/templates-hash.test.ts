@@ -287,9 +287,12 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Contracts and Authority Decisions sections that /implement treats as binding.
     // Refreshed for host-task output repair: schema/extraction failures require
     // a fresh FlowGuard-authorized repair prompt before the reviewer Task is retried.
+    // Refreshed for host-owned claim identity and evidence-fit guidance: /plan
+    // and /architecture no longer instruct agents to mint claimId; /plan also
+    // constrains claim statements to the observable evidence they declare.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '76af7d21ede22c49c9366807155a1010defe2a3e710c5b2aa826712a478d4a26',
+      '3985d83315fa9c37067680edef1419a14aaa17682b3e038661dd15f022704694',
     );
   });
 
