@@ -99,9 +99,7 @@ export const KNOWN_INCOMPATIBLE_OPENCODE_HOST_CONTRACTS: readonly OpenCodeHostCo
   [];
 
 export type OpenCodeHostContractStatus =
-  | 'verified'
-  | 'compatible-unverified'
-  | 'known-incompatible';
+  'verified' | 'compatible-unverified' | 'known-incompatible';
 
 export interface OpenCodeHostContractClassification {
   readonly status: OpenCodeHostContractStatus;
