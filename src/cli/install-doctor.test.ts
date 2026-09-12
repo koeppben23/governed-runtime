@@ -523,6 +523,7 @@ describe('cli/doctor', () => {
       const compat = checks.find((c) => c.check === 'opencode-instruction-source-activation');
       expect(compat).toBeDefined();
       expect(compat?.status).toBe('warn');
+      expect(compat?.detail).toContain('host contract');
       expect(compat?.detail).toContain('activation is NOT_VERIFIED');
       expect(compat?.detail).toContain('cannot prove');
       expect(compat?.detail).not.toContain('supported');

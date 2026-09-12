@@ -20,7 +20,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { FlowGuardAuditPlugin } from './plugin.js';
 import { makeState } from '../fixtures.js';
-import { createTestWorkspace, withTestEnv } from './test-helpers.js';
+import { createBootableHostClient, createTestWorkspace, withTestEnv } from './test-helpers.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import {
   computeFingerprint,
@@ -67,7 +67,7 @@ const PLAN_CLAIM_DECLARATIONS = {
 function createMockInput(overrides: Record<string, unknown> = {}) {
   return {
     project: {} as unknown,
-    client: { app: { log: async () => {} } } as unknown,
+    client: createBootableHostClient() as unknown,
     $: {} as unknown,
     directory: '/tmp/mock-dir',
     worktree: '/tmp/mock-worktree',

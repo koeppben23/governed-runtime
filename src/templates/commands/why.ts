@@ -1,8 +1,7 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
 
-export const WHY_COMMAND = `
----
-description: Explain why the current workflow is blocked and how to unblock it.
+export const WHY_COMMAND = `---
+description: FlowGuard — Explain why the current workflow is blocked and how to unblock it.
 ---
 
 You are managing a FlowGuard-controlled development workflow.

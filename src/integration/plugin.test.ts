@@ -26,7 +26,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { createTestWorkspace, withTestEnv } from './test-helpers.js';
+import { createBootableHostClient, createTestWorkspace, withTestEnv } from './test-helpers.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import { writeRepoConfig } from '../adapters/persistence-config.js';
 import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
@@ -61,17 +61,13 @@ async function initGitRepo(worktree: string): Promise<void> {
 function createMockInput(overrides: Record<string, unknown> = {}) {
   return {
     project: {} as unknown,
-    client: {
-      app: {
-        log: async () => {},
-      },
-    } as unknown,
+    client: createBootableHostClient(),
     $: {} as unknown,
     directory: '/tmp/mock-dir',
     worktree: '/tmp/mock-worktree',
     serverUrl: new URL('http://localhost:3000'),
     ...overrides,
-  } as Parameters<typeof FlowGuardAuditPlugin>[0];
+  } as unknown as Parameters<typeof FlowGuardAuditPlugin>[0];
 }
 
 async function seedStrictPlanSession(worktree: string, sessionID: string) {
@@ -363,6 +359,114 @@ describe('integration/plugin', () => {
     });
   });
 
+  describe('OpenCode host adapter boot contract', () => {
+    it('logs contract-attested host capabilities at boot', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        await writeRepoConfig(ws.tmpDir, {
+          ...DEFAULT_CONFIG,
+          logging: { ...DEFAULT_CONFIG.logging, mode: 'both' },
+        });
+        const logSpy = vi.fn().mockResolvedValue(undefined);
+        await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+            client: createBootableHostClient({ app: { log: logSpy } }),
+          }),
+        );
+
+        expect(logSpy).toHaveBeenCalledWith({
+          body: {
+            service: 'adapter',
+            level: 'warn',
+            message: 'host capabilities are contract-attested only',
+            extra: {
+              code: 'HOST_CAPABILITY_UNVERIFIED',
+              runtimeVerified: [],
+              contractAttested: [
+                'preToolBlock',
+                'argMutation',
+                'outputReplacement',
+                'contextInjection',
+                'reviewerSpawn',
+                'compactionInjection',
+              ],
+            },
+          },
+        });
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('fails closed when the SDK client cannot guarantee the adapter contract', async () => {
+      await expect(
+        FlowGuardAuditPlugin(
+          createMockInput({
+            client: {
+              session: { prompt: async () => ({}) },
+              app: { log: async () => {}, agents: async () => ({ data: [] }) },
+            },
+          }),
+        ),
+      ).rejects.toMatchObject({ code: 'HOST_ADAPTER_INIT_FAILED' });
+    });
+
+    it('does not probe the host agent registry at boot (reviewer verification is lazy)', async () => {
+      const agents = vi.fn(async () => ({ error: 'unavailable' }));
+
+      const hooks = await FlowGuardAuditPlugin(
+        createMockInput({ client: createBootableHostClient({ app: { agents } }) }),
+      );
+
+      expect(hooks).toBeDefined();
+      expect(agents).not.toHaveBeenCalled();
+    });
+
+    it('failed boot disposes initialized logging resources (no SIGUSR1 listener leak)', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        await writeRepoConfig(ws.tmpDir, {
+          ...DEFAULT_CONFIG,
+          logging: { ...DEFAULT_CONFIG.logging, mode: 'both', enableDynamicLevel: true },
+        });
+        const baseline = process.listenerCount('SIGUSR1');
+
+        // Prove the reloader attaches for this configuration on a successful boot.
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+            client: createBootableHostClient(),
+          }),
+        );
+        expect(process.listenerCount('SIGUSR1')).toBe(baseline + 1);
+        await hooks.dispose!();
+        expect(process.listenerCount('SIGUSR1')).toBe(baseline);
+
+        // A failed boot must release the same resources.
+        await expect(
+          FlowGuardAuditPlugin(
+            createMockInput({
+              worktree: ws.tmpDir,
+              directory: ws.tmpDir,
+              // Missing session.create forces the fail-closed boot path after
+              // the logger (and its SIGUSR1 reloader) has been initialized.
+              client: createBootableHostClient({
+                session: { create: undefined, prompt: async () => ({}) },
+              }),
+            }),
+          ),
+        ).rejects.toMatchObject({ code: 'HOST_ADAPTER_INIT_FAILED' });
+
+        expect(process.listenerCount('SIGUSR1')).toBe(baseline);
+      } finally {
+        await ws.cleanup();
+      }
+    });
+  });
+
   // ─── EDGE ─────────────────────────────────────────────────
   describe('EDGE', () => {
     it('handles non-JSON tool output without throwing', async () => {
@@ -417,7 +521,7 @@ describe('integration/plugin', () => {
           createMockInput({
             worktree: ws.tmpDir,
             directory: ws.tmpDir,
-            client: { app: { log: logSpy } },
+            client: createBootableHostClient({ app: { log: logSpy } }),
           }),
         );
         const handler = hooks['tool.execute.after']!;
@@ -458,7 +562,7 @@ describe('integration/plugin', () => {
           createMockInput({
             worktree: ws.tmpDir,
             directory: ws.tmpDir,
-            client: { app: { log: logSpy } },
+            client: createBootableHostClient({ app: { log: logSpy } }),
           }),
         );
         const handler = hooks['tool.execute.after']!;
@@ -510,7 +614,7 @@ describe('integration/plugin', () => {
           createMockInput({
             worktree: ws.tmpDir,
             directory: ws.tmpDir,
-            client: { app: { log: logSpy } },
+            client: createBootableHostClient({ app: { log: logSpy } }),
           }),
         );
         const handler = hooks['tool.execute.after']!;
@@ -558,7 +662,7 @@ describe('integration/plugin', () => {
           createMockInput({
             worktree: ws.tmpDir,
             directory: ws.tmpDir,
-            client: { app: { log: logSpy } },
+            client: createBootableHostClient({ app: { log: logSpy } }),
           }),
         );
         const handler = hooks['tool.execute.after']!;
@@ -609,7 +713,7 @@ describe('integration/plugin', () => {
           createMockInput({
             worktree: ws.tmpDir,
             directory: ws.tmpDir,
-            client: { app: { log: logSpy } },
+            client: createBootableHostClient({ app: { log: logSpy } }),
           }),
         );
         const handler = hooks['tool.execute.after']!;
@@ -653,7 +757,7 @@ describe('integration/plugin', () => {
           createMockInput({
             worktree: ws.tmpDir,
             directory: ws.tmpDir,
-            client: { app: { log: logSpy } },
+            client: createBootableHostClient({ app: { log: logSpy } }),
           }),
         );
         const handler = hooks['tool.execute.after']!;
@@ -696,7 +800,7 @@ describe('integration/plugin', () => {
           createMockInput({
             worktree: ws.tmpDir,
             directory: ws.tmpDir,
-            client: { app: { log: logSpy } },
+            client: createBootableHostClient({ app: { log: logSpy } }),
           }),
         );
         const handler = hooks['tool.execute.after']!;
@@ -734,7 +838,7 @@ describe('integration/plugin', () => {
           createMockInput({
             worktree: ws.tmpDir,
             directory: ws.tmpDir,
-            client: { app: { log: logSpy } },
+            client: createBootableHostClient({ app: { log: logSpy } }),
           }),
         );
         const handler = hooks['tool.execute.after']!;

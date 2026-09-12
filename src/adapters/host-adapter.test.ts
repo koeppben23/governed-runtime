@@ -60,7 +60,6 @@ function createAdapter(clientOverrides?: Record<string, unknown>): OpenCodeHostA
   const client = createMockClient(clientOverrides);
   return new OpenCodeHostAdapter({
     client: client as never,
-    getSessionId: () => 'test-session-123',
     directory: '/project/root',
     worktree: '/project/worktree',
   });
@@ -108,13 +107,8 @@ describe('HostAdapter Contract', () => {
     });
 
     it('HAPPY: all session context methods return strings', () => {
-      expect(typeof adapter.getSessionId()).toBe('string');
       expect(typeof adapter.getWorkingDirectory()).toBe('string');
       expect(typeof adapter.getWorktree()).toBe('string');
-    });
-
-    it('HAPPY: getSessionId delegates to resolver', () => {
-      expect(adapter.getSessionId()).toBe('test-session-123');
     });
 
     it('HAPPY: getWorkingDirectory returns configured path', () => {
@@ -153,7 +147,6 @@ describe('HostAdapter Contract', () => {
     it('BAD: throws when client is null', async () => {
       const broken = new OpenCodeHostAdapter({
         client: null as never,
-        getSessionId: () => 'x',
         directory: '/x',
         worktree: '/x',
       });
@@ -163,7 +156,6 @@ describe('HostAdapter Contract', () => {
     it('BAD: throws when client.session.create is missing', async () => {
       const broken = new OpenCodeHostAdapter({
         client: { session: { prompt: vi.fn() }, app: { agents: vi.fn() } } as never,
-        getSessionId: () => 'x',
         directory: '/x',
         worktree: '/x',
       });
@@ -173,7 +165,6 @@ describe('HostAdapter Contract', () => {
     it('BAD: throws when client.session.prompt is missing', async () => {
       const broken = new OpenCodeHostAdapter({
         client: { session: { create: vi.fn() }, app: { agents: vi.fn() } } as never,
-        getSessionId: () => 'x',
         directory: '/x',
         worktree: '/x',
       });
@@ -183,11 +174,22 @@ describe('HostAdapter Contract', () => {
     it('BAD: throws when client.session is undefined', async () => {
       const broken = new OpenCodeHostAdapter({
         client: { app: { agents: vi.fn() } } as never,
-        getSessionId: () => 'x',
         directory: '/x',
         worktree: '/x',
       });
       await expect(broken.initialize()).rejects.toThrow(/initialization failed/i);
+    });
+
+    it('BAD: throws when session methods are truthy non-functions (drifting host)', async () => {
+      const broken = new OpenCodeHostAdapter({
+        client: {
+          session: { create: 'not-a-function', prompt: { callable: true } },
+          app: { agents: vi.fn() },
+        } as never,
+        directory: '/x',
+        worktree: '/x',
+      });
+      await expect(broken.initialize()).rejects.toThrow(/session\.(create|prompt)/);
     });
 
     it('HAPPY: succeeds with valid client', async () => {
@@ -245,42 +247,35 @@ describe('HostAdapter Contract', () => {
   // ─── validateCapabilities ──────────────────────────────────────────────────
 
   describe('validateCapabilities', () => {
-    it('HAPPY: returns valid when agents endpoint succeeds', async () => {
+    it('HAPPY: reports all advertised capabilities as contract-attested (none runtime-verified)', async () => {
       const result: CapabilityValidationResult = await adapter.validateCapabilities();
       expect(result.valid).toBe(true);
       expect(result.mismatches).toHaveLength(0);
+      expect(result.runtimeVerified).toEqual([]);
+      expect(result.contractAttested).toEqual([
+        'preToolBlock',
+        'argMutation',
+        'outputReplacement',
+        'contextInjection',
+        'reviewerSpawn',
+        'compactionInjection',
+      ]);
     });
 
-    it('BAD: reports reviewerSpawn mismatch when agents call returns error', async () => {
+    it('HAPPY: never calls the host agent registry at boot (no reentrant host I/O)', async () => {
       const client = createMockClient();
-      client.app.agents.mockResolvedValue({ error: 'unavailable' });
+      client.app.agents.mockRejectedValue(new Error('host I/O must not be started at boot'));
       const adap = new OpenCodeHostAdapter({
         client: client as never,
-        getSessionId: () => 'x',
         directory: '/x',
         worktree: '/x',
       });
-      const result = await adap.validateCapabilities();
-      expect(result.valid).toBe(false);
-      expect(result.mismatches).toContainEqual({
-        capability: 'reviewerSpawn',
-        expected: true,
-        actual: false,
-      });
-    });
 
-    it('BAD: reports mismatch when agents call throws', async () => {
-      const client = createMockClient();
-      client.app.agents.mockRejectedValue(new Error('network error'));
-      const adap = new OpenCodeHostAdapter({
-        client: client as never,
-        getSessionId: () => 'x',
-        directory: '/x',
-        worktree: '/x',
-      });
       const result = await adap.validateCapabilities();
-      expect(result.valid).toBe(false);
-      expect(result.mismatches[0]?.capability).toBe('reviewerSpawn');
+
+      expect(result.valid).toBe(true);
+      expect(client.app.agents).not.toHaveBeenCalled();
+      expect(result.runtimeVerified).toEqual([]);
     });
   });
 
@@ -303,7 +298,6 @@ describe('HostAdapter Contract', () => {
 
       const adap = new OpenCodeHostAdapter({
         client: client as never,
-        getSessionId: () => 'parent-session',
         directory: '/proj',
         worktree: '/proj',
       });
@@ -329,7 +323,6 @@ describe('HostAdapter Contract', () => {
 
       const adap = new OpenCodeHostAdapter({
         client: client as never,
-        getSessionId: () => 'x',
         directory: '/x',
         worktree: '/x',
       });
@@ -354,7 +347,6 @@ describe('HostAdapter Contract', () => {
 
       const adap = new OpenCodeHostAdapter({
         client: client as never,
-        getSessionId: () => 'x',
         directory: '/x',
         worktree: '/x',
       });
@@ -382,7 +374,6 @@ describe('HostAdapter Contract', () => {
       const client = createMockClient();
       const adap = new OpenCodeHostAdapter({
         client: client as never,
-        getSessionId: () => 'x',
         directory: '/x',
         worktree: '/x',
       });
@@ -401,7 +392,6 @@ describe('HostAdapter Contract', () => {
       const client = createMockClient();
       const adap = new OpenCodeHostAdapter({
         client: client as never,
-        getSessionId: () => 'x',
         directory: '/x',
         worktree: '/x',
       });
@@ -416,7 +406,6 @@ describe('HostAdapter Contract', () => {
       client.tui.showToast.mockRejectedValue(new Error('UI crash'));
       const adap = new OpenCodeHostAdapter({
         client: client as never,
-        getSessionId: () => 'x',
         directory: '/x',
         worktree: '/x',
       });
@@ -429,7 +418,6 @@ describe('HostAdapter Contract', () => {
       const client = createMockClient({ tui: undefined });
       const adap = new OpenCodeHostAdapter({
         client: client as never,
-        getSessionId: () => 'x',
         directory: '/x',
         worktree: '/x',
       });

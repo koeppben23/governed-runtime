@@ -69,7 +69,6 @@ export async function commandBefore(
     });
     if (!intent) return;
 
-    runtime.setCurrentSessionId(rawSessionId);
     runtime.log.info('decision', 'recorded user decision command intent', {
       sessionId: rawSessionId,
       command: intent.command,
@@ -90,7 +89,6 @@ export async function toolBefore(
     const sessionId = hookInput?.sessionID ?? 'unknown';
     const traceId = getToolTraceId(runtime, input, 'before');
     return runWithLogContextAsync({ traceId, sessionId }, async () => {
-      runtime.setCurrentSessionId(sessionId);
       // Read-only host tools cannot extend an interrupted completion and must
       // not pay the recovery resolution cost. FlowGuard tools and mutating
       // host tools resume before their first side effect.

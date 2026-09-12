@@ -1,8 +1,7 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
 
-export const APPROVE_COMMAND = `
----
-description: Approve the currently active review gate (plan, implementation evidence, or architecture).
+export const APPROVE_COMMAND = `---
+description: FlowGuard — Approve the currently active review gate (plan, implementation evidence, or architecture).
 ---
 
 You are managing a FlowGuard-controlled development workflow.

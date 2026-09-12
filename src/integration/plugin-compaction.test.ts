@@ -110,6 +110,32 @@ describe('integration/plugin-compaction', () => {
       expect(result).toContain('WARNING: Do not skip pending reviews');
     });
 
+    it('does not claim completion when compaction happens during an in-flight review', async () => {
+      const deps = createMockDeps({ 'sess-inflight': '/tmp/sess/inflight' });
+      mockReadState.mockResolvedValueOnce(
+        createMockState({
+          phase: 'IMPL_REVIEW',
+          reviewAssurance: {
+            obligations: [
+              {
+                status: 'pending',
+                obligationId: 'obligation-1',
+                obligationType: 'implementation_review',
+              },
+            ],
+          },
+          implementationRework: { active: true },
+        }),
+      );
+
+      const result = await buildCompactionContext(deps, 'sess-inflight');
+
+      expect(result).toContain('**Phase**: Implementation review in progress (IMPL_REVIEW)');
+      expect(result).toContain('**Pending review obligations**: 1');
+      expect(result).not.toContain('REVIEW_COMPLETE');
+      expect(result).not.toContain('**Phase**: Complete');
+    });
+
     it('indicates active plan exists', async () => {
       const deps = createMockDeps({ 'sess-4': '/tmp/sess/4' });
       mockReadState.mockResolvedValueOnce(

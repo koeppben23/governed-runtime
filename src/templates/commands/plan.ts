@@ -5,9 +5,8 @@ import {
   DISCOVERY_REVIEW_DONE_WHEN,
 } from './shared-review-loop.js';
 
-export const PLAN_COMMAND = `
----
-description: Generate a plan with mandatory independent subagent review for the current task.
+export const PLAN_COMMAND = `---
+description: FlowGuard — Generate a plan with mandatory independent subagent review for the current task.
 agent: build
 ---
 

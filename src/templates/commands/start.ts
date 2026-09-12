@@ -1,8 +1,7 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
 
-export const START_COMMAND = `
----
-description: Start a governed FlowGuard session. Run this FIRST before any other FlowGuard command.
+export const START_COMMAND = `---
+description: FlowGuard — Start a governed session. Run this FIRST before any other FlowGuard command.
 ---
 
 You are managing a FlowGuard-controlled development workflow.

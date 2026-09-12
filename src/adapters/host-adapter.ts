@@ -193,6 +193,13 @@ export interface CapabilityValidationResult {
     readonly expected: boolean;
     readonly actual: boolean;
   }>;
+  /** Capabilities backed by a runtime probe during this validation run. */
+  readonly runtimeVerified: ReadonlyArray<string>;
+  /**
+   * Advertised capabilities attested by the host contract but not probed at
+   * runtime. They must not be presented as runtime-verified.
+   */
+  readonly contractAttested: ReadonlyArray<string>;
 }
 
 // ─── Host Adapter Interface ──────────────────────────────────────────────────
@@ -230,9 +237,6 @@ export interface HostAdapter {
 
   // ── Session Context ──────────────────────────────────────────────────────
 
-  /** Resolve the active session ID from host context. */
-  getSessionId(): string;
-
   /** Resolve the project working directory from host context. */
   getWorkingDirectory(): string;
 
@@ -247,6 +251,10 @@ export interface HostAdapter {
   /**
    * Validate that actual host capabilities match advertised capabilities.
    * Called at boot time — fail-closed on mismatch.
+   *
+   * Only capabilities listed in `runtimeVerified` are proven by a runtime
+   * probe. The remaining advertised capabilities are `contractAttested`:
+   * they rest on the pinned host contract, not on runtime evidence.
    */
   validateCapabilities(): Promise<CapabilityValidationResult>;
 

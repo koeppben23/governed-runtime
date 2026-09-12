@@ -1,8 +1,7 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
 
-export const RESOLVE_IMPLEMENTATION_CHALLENGE_COMMAND = `
----
-description: Record evidence addressing an implementation review challenge.
+export const RESOLVE_IMPLEMENTATION_CHALLENGE_COMMAND = `---
+description: FlowGuard — Record evidence addressing an implementation review challenge.
 agent: build
 ---
 

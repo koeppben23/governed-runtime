@@ -6,6 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { parse as parseYaml } from 'yaml';
 
 import {
   TOOL_FLOWGUARD_STATUS,
@@ -112,7 +113,7 @@ describe('command templates: agent pinning for review-orchestration commands', (
       const body = COMMANDS[cmd];
       if (!body) throw new TypeError(`missing ${cmd} template`);
       // Frontmatter is between --- delimiters
-      const frontmatterMatch = body.match(/^[\s\n]*---\n([\s\S]*?)\n---/);
+      const frontmatterMatch = body.match(/^---\n([\s\S]*?)\n---/);
       expect(frontmatterMatch).not.toBeNull();
       const frontmatter = frontmatterMatch?.[1];
       if (!frontmatter) throw new TypeError(`missing ${cmd} frontmatter`);
@@ -124,12 +125,34 @@ describe('command templates: agent pinning for review-orchestration commands', (
     // Smoke test: status.md should work without agent pin
     const body = COMMANDS['status.md'];
     if (!body) throw new TypeError('missing status template');
-    const frontmatterMatch = body.match(/^[\s\n]*---\n([\s\S]*?)\n---/);
+    const frontmatterMatch = body.match(/^---\n([\s\S]*?)\n---/);
     expect(frontmatterMatch).not.toBeNull();
     const frontmatter = frontmatterMatch?.[1];
     if (!frontmatter) throw new TypeError('missing status frontmatter');
     // status.md does NOT need agent: build (it only calls flowguard_status)
     expect(frontmatter).not.toMatch(/^agent:\s*build$/m);
+  });
+});
+
+/**
+ * OpenCode parses command frontmatter with gray-matter, which only recognizes the
+ * opening `---` fence at byte 0. A leading blank line silently disables the
+ * description and agent pinning and leaks the raw frontmatter into the prompt.
+ */
+describe('command templates: OpenCode frontmatter contract', () => {
+  it('every command starts with frontmatter at byte 0 and a FlowGuard description', () => {
+    for (const [name, body] of Object.entries(COMMANDS)) {
+      expect(body.startsWith('---\n'), `${name} must start with frontmatter`).toBe(true);
+      const frontmatterMatch = body.match(/^---\n([\s\S]*?)\n---\n/);
+      expect(frontmatterMatch, `${name} must close frontmatter`).not.toBeNull();
+      const frontmatter = frontmatterMatch?.[1];
+      if (!frontmatter) throw new TypeError(`missing ${name} frontmatter`);
+      const data = parseYaml(frontmatter) as { description?: unknown };
+      expect(typeof data.description, `${name} must declare a description`).toBe('string');
+      expect(data.description, `${name} description must be FlowGuard-branded`).toMatch(
+        /^FlowGuard — /,
+      );
+    }
   });
 });
 
@@ -153,48 +176,6 @@ describe('check command: implementation review orchestration', () => {
       'Only a new, explicit user `/implement` command may start implementation.',
     );
     expect(body).toContain('Do not call `read`, `glob`, `grep`, `bash`, `write`, `edit`');
-  });
-});
-
-/**
- * OpenCode SDK conformity guard: commands that invoke the review orchestration
- * pipeline (which spawns flowguard-reviewer via Task tool) MUST pin `agent: build`
- * in their frontmatter. Without this, running the command under a different primary
- * agent (e.g. plan) would bypass agent.build.permission.task restrictions.
- *
- * See: https://opencode.ai/docs/commands/#agent
- */
-describe('command templates: agent pinning for review-orchestration commands', () => {
-  const COMMANDS_REQUIRING_BUILD_AGENT = [
-    'plan.md',
-    'implement.md',
-    'review.md',
-    'architecture.md',
-  ] as const;
-
-  for (const cmd of COMMANDS_REQUIRING_BUILD_AGENT) {
-    it(`${cmd} must pin agent: build in frontmatter`, () => {
-      const body = COMMANDS[cmd];
-      if (!body) throw new TypeError(`missing ${cmd} template`);
-      // Frontmatter is between --- delimiters
-      const frontmatterMatch = body.match(/^[\s\n]*---\n([\s\S]*?)\n---/);
-      expect(frontmatterMatch).not.toBeNull();
-      const frontmatter = frontmatterMatch?.[1];
-      if (!frontmatter) throw new TypeError(`missing ${cmd} frontmatter`);
-      expect(frontmatter).toMatch(/^agent:\s*build$/m);
-    });
-  }
-
-  it('commands without review orchestration do NOT require agent pinning', () => {
-    // Smoke test: status.md should work without agent pin
-    const body = COMMANDS['status.md'];
-    if (!body) throw new TypeError('missing status template');
-    const frontmatterMatch = body.match(/^[\s\n]*---\n([\s\S]*?)\n---/);
-    expect(frontmatterMatch).not.toBeNull();
-    const frontmatter = frontmatterMatch?.[1];
-    if (!frontmatter) throw new TypeError('missing status frontmatter');
-    // status.md does NOT need agent: build (it only calls flowguard_status)
-    expect(frontmatter).not.toMatch(/^agent:\s*build$/m);
   });
 });
 

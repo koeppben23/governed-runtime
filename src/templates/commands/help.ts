@@ -1,8 +1,7 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
 
-export const HELP_COMMAND = `
----
-description: Show concise, context-sensitive FlowGuard help.
+export const HELP_COMMAND = `---
+description: FlowGuard — Show concise, context-sensitive help.
 ---
 
 ## Goal

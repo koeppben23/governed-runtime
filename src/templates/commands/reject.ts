@@ -1,8 +1,7 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
 
-export const REJECT_COMMAND = `
----
-description: Reject the currently active review gate, returning to the workflow start.
+export const REJECT_COMMAND = `---
+description: FlowGuard — Reject the currently active review gate, returning to the workflow start.
 ---
 
 You are managing a FlowGuard-controlled development workflow.

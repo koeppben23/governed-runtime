@@ -23,6 +23,7 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import {
+  createBootableHostClient,
   createTestWorkspace,
   isTarAvailable,
   GIT_MOCK_DEFAULTS,
@@ -126,7 +127,7 @@ beforeEach(async () => {
   logEntries = [];
   const hooks = await FlowGuardAuditPlugin({
     project: {} as never,
-    client: {
+    client: createBootableHostClient({
       app: {
         log: async (entry: unknown) => {
           const e = entry as { body?: { level?: string; message?: string } };
@@ -136,7 +137,7 @@ beforeEach(async () => {
           });
         },
       },
-    } as never,
+    }) as never,
     $: {} as never,
     directory: ws.tmpDir,
     worktree: ws.tmpDir,
@@ -488,7 +489,7 @@ describe('plugin-integration', () => {
       // Create a new plugin pointing to a nonexistent worktree
       const hooks = await FlowGuardAuditPlugin({
         project: {} as never,
-        client: { app: { log: async () => {} } } as never,
+        client: createBootableHostClient() as never,
         $: {} as never,
         directory: '/nonexistent/path',
         worktree: '/nonexistent/path',
@@ -631,7 +632,7 @@ describe('plugin-integration', () => {
       // Create a new plugin instance to pick up the solo config
       const hooks = await FlowGuardAuditPlugin({
         project: {} as never,
-        client: { app: { log: async () => {} } } as never,
+        client: createBootableHostClient() as never,
         $: {} as never,
         directory: ws.tmpDir,
         worktree: ws.tmpDir,
@@ -696,7 +697,7 @@ describe('plugin-integration', () => {
       // New plugin instance to pick up the custom state
       const hooks = await FlowGuardAuditPlugin({
         project: {} as never,
-        client: { app: { log: async () => {} } } as never,
+        client: createBootableHostClient() as never,
         $: {} as never,
         directory: ws.tmpDir,
         worktree: ws.tmpDir,
@@ -849,7 +850,7 @@ describe('plugin-integration', () => {
 
       const hooks2 = await FlowGuardAuditPlugin({
         project: {} as never,
-        client: { app: { log: async () => {} } } as never,
+        client: createBootableHostClient() as never,
         $: {} as never,
         directory: ws.tmpDir,
         worktree: ws.tmpDir,

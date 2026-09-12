@@ -1,8 +1,7 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
 
-export const ABORT_COMMAND = `
----
-description: Emergency termination of the FlowGuard session.
+export const ABORT_COMMAND = `---
+description: FlowGuard — Emergency termination of the session.
 ---
 
 You are managing a FlowGuard-controlled development workflow.

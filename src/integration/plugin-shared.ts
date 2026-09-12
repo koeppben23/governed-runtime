@@ -48,8 +48,24 @@ export interface FlowGuardPluginRuntime {
   readonly toolTraceIds: Map<string, string>;
   readonly activeCommandScopes: Map<string, ActiveCommandScope>;
   readonly checkReworkContinuations: Set<string>;
-  readonly setCurrentSessionId: (sessionId: string) => void;
   readonly logError: (message: string, err: unknown) => void;
+}
+
+/**
+ * Remove all session-scoped runtime ephemera for a terminated session.
+ *
+ * Single cleanup authority for host session termination: persists nothing,
+ * drops enforcement/chain state plus the in-memory maps held by the plugin
+ * runtime (command scopes, rework continuations, tool trace correlation).
+ */
+export function cleanupSessionRuntime(runtime: FlowGuardPluginRuntime, sessionId: string): void {
+  runtime.ws.invalidateChainState(sessionId);
+  runtime.activeCommandScopes.delete(sessionId);
+  runtime.checkReworkContinuations.delete(sessionId);
+  const traceKeyPrefix = `${sessionId}:`;
+  for (const key of runtime.toolTraceIds.keys()) {
+    if (key.startsWith(traceKeyPrefix)) runtime.toolTraceIds.delete(key);
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

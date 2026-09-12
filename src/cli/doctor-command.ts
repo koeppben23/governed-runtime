@@ -44,7 +44,10 @@ import { checkBuildInfo } from './doctor-build-info.js';
 import { checkPluginActivation } from './doctor-plugin.js';
 import { checkLastSessionHandshake } from './doctor-handshake.js';
 import { detectOpenCodeRuntimeEvidence } from './opencode-runtime-detect.js';
-import { classifyOpenCodeRuntime } from './opencode-runtime-compat.js';
+import {
+  classifyOpenCodeHostContract,
+  classifyOpenCodeRuntime,
+} from './opencode-runtime-compat.js';
 import { defaultReasonRegistry } from '../config/reasons.js';
 
 async function checkedRead(filePath: string, checks: DoctorCheck[]): Promise<string | null> {
@@ -253,6 +256,18 @@ async function checkOpencodeInstructionSourceActivation(
   const opencodeJsonPath = resolveOpencodeConfigPath(scope, target);
   const evidence = await detectOpenCodeRuntimeEvidence({ scope, platform: 'opencode', target });
   const classification = classifyOpenCodeRuntime(evidence);
+  const hostContract = classifyOpenCodeHostContract(evidence.version);
+
+  if (hostContract.status === 'known-incompatible') {
+    return [
+      {
+        file: opencodeJsonPath,
+        status: 'error',
+        detail: `OpenCode host contract is known incompatible: ${hostContract.reason}`,
+        check: ACTIVATION_CHECK,
+      },
+    ];
+  }
 
   if (classification.status === 'known-unsupported') {
     const formatted = defaultReasonRegistry.format('OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED', {
@@ -275,7 +290,8 @@ async function checkOpencodeInstructionSourceActivation(
       file: opencodeJsonPath,
       status: 'warn',
       detail:
-        `runtime ${runtimeDesc}; instruction-source activation is NOT_VERIFIED. ` +
+        `runtime ${runtimeDesc}; host contract ${hostContract.status} ` +
+        `(tested ${hostContract.testedRange}); instruction-source activation is NOT_VERIFIED. ` +
         'FlowGuard cannot prove that OpenCode loaded the configured source. ' +
         'See docs/platform-limitations.md.',
       check: ACTIVATION_CHECK,
