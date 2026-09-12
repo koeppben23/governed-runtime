@@ -32,7 +32,7 @@
  * This is a pure module: no I/O, no side effects. Detection lives in
  * opencode-runtime-detect.ts; this module only classifies evidence.
  *
- * @version v2
+ * @version v3
  */
 
 /** Runtime "kind" derived from config-ownership heuristics (never from a version). */
@@ -140,12 +140,11 @@ export function classifyOpenCodeRuntime(
 // ─── Host contract compatibility ─────────────────────────────────────────────
 
 /**
- * OpenCode host versions covered by the pinned SDK baseline. The plugin SDK is
- * pinned exactly (`@opencode-ai/plugin@1.18.29`); this range tracks the host
- * minor line that CI verifies. It is an attestation window, not a guarantee:
- * see {@link classifyOpenCodeHostContract}.
+ * Exact OpenCode host version exercised by CI and represented by the committed
+ * host baseline. No surrounding minor/patch range inherits `verified` status
+ * without independent evidence.
  */
-export const TESTED_OPENCODE_HOST_RANGE = '>=1.18.29 <1.19.0';
+export const TESTED_OPENCODE_HOST_VERSION = '1.18.29';
 
 /**
  * A positively-known incompatible OpenCode host contract version. Same evidence
@@ -173,17 +172,19 @@ export const KNOWN_INCOMPATIBLE_OPENCODE_HOST_CONTRACTS: readonly OpenCodeHostCo
 /**
  * Host contract compatibility status.
  *
- * - `verified`: the detected version is inside {@link TESTED_OPENCODE_HOST_RANGE}.
- * - `compatible-unverified`: the version is unknown or outside the tested range.
+ * - `verified`: the detected version exactly equals {@link TESTED_OPENCODE_HOST_VERSION}.
+ * - `compatible-unverified`: the version is unknown or not the tested version.
  *   It is NOT blocked, but it must never be presented as verified.
  * - `known-incompatible`: the version positively matches the host-contract deny-list.
  */
 export type OpenCodeHostContractStatus =
-  'verified' | 'compatible-unverified' | 'known-incompatible';
+  | 'verified'
+  | 'compatible-unverified'
+  | 'known-incompatible';
 
 export interface OpenCodeHostContractClassification {
   readonly status: OpenCodeHostContractStatus;
-  readonly testedRange: string;
+  readonly testedVersion: string;
   readonly matched?: OpenCodeHostContractDenyEntry;
   readonly reason: string;
 }
@@ -217,13 +218,18 @@ function versionInBoundedRange(version: string, range: string): boolean {
   return true;
 }
 
+function isExactTestedHostVersion(version: string): boolean {
+  return version.trim() === TESTED_OPENCODE_HOST_VERSION;
+}
+
 /**
- * Classify the detected OpenCode host version against the tested host-contract
- * range.
+ * Classify the detected OpenCode host version against the exact tested host
+ * baseline.
  *
- * Unknown or unparseable versions are `compatible-unverified` — never `verified`.
- * Blocking is reserved for positively-known incompatible entries, so an unknown
- * host never silently claims compatibility and never blocks install by accident.
+ * Unknown, unparseable, newer patch, prerelease, and nightly versions are all
+ * `compatible-unverified` — never `verified`. Blocking is reserved for
+ * positively-known incompatible entries, so an unknown host never silently
+ * claims compatibility and never blocks install by accident.
  */
 export function classifyOpenCodeHostContract(
   version: string | null,
@@ -234,27 +240,27 @@ export function classifyOpenCodeHostContract(
     if (matched) {
       return {
         status: 'known-incompatible',
-        testedRange: TESTED_OPENCODE_HOST_RANGE,
+        testedVersion: TESTED_OPENCODE_HOST_VERSION,
         matched,
         reason: matched.reason,
       };
     }
   }
 
-  if (version !== null && versionInBoundedRange(version, TESTED_OPENCODE_HOST_RANGE)) {
+  if (version !== null && isExactTestedHostVersion(version)) {
     return {
       status: 'verified',
-      testedRange: TESTED_OPENCODE_HOST_RANGE,
-      reason: `detected host version ${version} is inside the tested range`,
+      testedVersion: TESTED_OPENCODE_HOST_VERSION,
+      reason: `detected host version ${version} exactly matches the tested host baseline`,
     };
   }
 
   return {
     status: 'compatible-unverified',
-    testedRange: TESTED_OPENCODE_HOST_RANGE,
+    testedVersion: TESTED_OPENCODE_HOST_VERSION,
     reason:
       version === null
         ? 'host version could not be determined'
-        : `detected host version ${version} is outside the tested range`,
+        : `detected host version ${version} does not exactly match the tested host baseline`,
   };
 }
