@@ -12,8 +12,8 @@
  * Honesty model (deliberate, reviewed decision):
  *   - A present `instructions[]` entry means the instruction source is
  *     structurally present in the config. It does NOT prove the runtime actually
- *     loaded the file into the model context. FlowGuard has no reliable surface to verify activation
- *     (the Desktop app exposes no `--version` executable and no documented
+ *     loaded the file into the model context. FlowGuard has no reliable surface to verify
+ *     activation (the Desktop app exposes no `--version` executable and no documented
  *     resolved-instruction API), so this module never claims "supported",
  *     "active", or "compatible".
  *   - `not-classified` is therefore the neutral, honest classification: the entry
