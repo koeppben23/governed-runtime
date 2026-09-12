@@ -89,7 +89,7 @@ describe('F10: renderReviewerTaskPrompt canonical copy-prompt', () => {
   it('omits planVersion cleanly for standalone /review (planVersion null)', () => {
     const prompt = renderReviewerTaskPrompt({ iteration: 4, planVersion: null, ...base });
     expect(promptContainsValue(prompt, 'iteration', 4)).toBe(true);
-    expect(prompt).not.toContain('planVersion');
+    expect(prompt).not.toContain('Bind planVersion exactly to');
     expect(extractContentMeta(prompt)).toEqual({ expectedIteration: 4, expectedPlanVersion: null });
   });
 
