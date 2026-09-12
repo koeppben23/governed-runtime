@@ -1,5 +1,6 @@
 id: canonical-authority
 description: Agent must modify the canonical authority file, not create a local duplicate
+instructionSurface: repository_contributor
 mode: workspace
 task: |
   Add a new structured reason code for expired approval evidence.

@@ -14,7 +14,7 @@ import {
   TOOL_WRAPPER,
   PLUGIN_WRAPPER,
   COMMANDS,
-  FLOWGUARD_MANDATES_BODY,
+  FLOWGUARD_MANDATES_KERNEL,
   REVIEWER_AGENT,
   OPENCODE_JSON_TEMPLATE,
   PACKAGE_JSON_TEMPLATE,
@@ -62,7 +62,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     );
   });
 
-  it('FLOWGUARD_MANDATES_BODY matches compiled output hash', () => {
+  it('FLOWGUARD_MANDATES_KERNEL matches compiled output hash', () => {
     // Refreshed for #471: decoupled host-specific output rules (Next action: line)
     // from universal governance rules — scoped as OpenCode host/profile convention.
     // Refreshed for review-verdict disambiguation: the reviewer verdict token was
@@ -71,8 +71,10 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for agent-role + Extended Guidance: prepended a senior-engineer
     // role/identity sentence and enriched ## 12. Extended Guidance to name the
     // owning authorities (commands/profiles/reviewer) without duplicating them.
-    expect(sha256(FLOWGUARD_MANDATES_BODY)).toBe(
-      'de261e4dcad912540982ce2911a6c9dbfd4f33b7544e3c43c0a12df8c37273bb',
+    // Refreshed for mandate v5: canonical managed projections carry an explicit
+    // versioned trailer and reject obsolete v4 envelopes.
+    expect(sha256(FLOWGUARD_MANDATES_KERNEL)).toBe(
+      'e2ba50d1d8728a88896afdb7d67d622e7a2827dd009c54dbc67b4906255aa3f3',
     );
   });
 
@@ -100,7 +102,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // untrusted-data sentence onto a single line, keeping the reviewer prompt
     // within its compactness budget.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      'd69f8bcf75c2d42bb32ac3838d9243d3baae61b90f4450d62e11c01b02a34c83',
+      'af7c0e89331017abd4604364c38f4979920d6c71940388f14ebb389b3f7e27d7',
     );
   });
 
@@ -279,9 +281,18 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for presentation fallback consistency: task, ticket, check,
     // validate, abort, archive, and export now render presentation.markdown
     // verbatim or render productNextAction.text as one fallback, never both.
+    // Refreshed for outcome-/contract-first implementation guidance: /implement
+    // no longer treats local implementation mechanics as approved-plan authority.
+    // Refreshed for explicit plan contract authority: /plan now materializes the
+    // Contracts and Authority Decisions sections that /implement treats as binding.
+    // Refreshed for host-task output repair: schema/extraction failures require
+    // a fresh FlowGuard-authorized repair prompt before the reviewer Task is retried.
+    // Refreshed for host-owned claim identity and evidence-fit guidance: /plan
+    // and /architecture no longer instruct agents to mint claimId; /plan also
+    // constrains claim statements to the observable evidence they declare.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'cdcabcd6bd3e5e38e2e01bebf412d0d7de5f4d9cfd8cb1848ecaae4fe84b497f',
+      '3985d83315fa9c37067680edef1419a14aaa17682b3e038661dd15f022704694',
     );
   });
 
@@ -317,13 +328,6 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     expect(Object.keys(COMMANDS).sort()).toEqual(expected);
   });
 
-  // Drift guard (issue #565 regression): the OpenCode tool surface is built
-  // verbatim from TOOL_WRAPPER. OpenCode derives the callable tool name as
-  // `flowguard_<exportname>`, so TOOL_WRAPPER MUST re-export every canonical
-  // FlowGuard tool. The #565 split added flowguard_review_implementation to the
-  // barrel and the MCP registry but NOT to TOOL_WRAPPER, making the verdict tool
-  // uncallable on OpenCode. This test cross-checks TOOL_WRAPPER against the
-  // canonical tool-name SSOT so that omission can never silently recur.
   it('TOOL_WRAPPER re-exports every canonical FlowGuard tool (OpenCode surface completeness)', () => {
     const canonicalToolNames = [
       TOOL_FLOWGUARD_STATUS,
@@ -346,7 +350,6 @@ describe('TEMPLATE_HASH_STABILITY', () => {
       TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE,
     ];
 
-    // Parse the actual export identifiers from TOOL_WRAPPER's export block.
     const exportBlock = TOOL_WRAPPER.match(/export\s*\{([^}]*)\}/);
     expect(exportBlock, 'TOOL_WRAPPER must contain an export block').not.toBeNull();
     const exportedIdentifiers = new Set(
@@ -356,9 +359,6 @@ describe('TEMPLATE_HASH_STABILITY', () => {
         .filter((s) => s.length > 0),
     );
 
-    // OpenCode tool name `flowguard_<exportname>` -> the export identifier is the
-    // canonical name with the `flowguard_` prefix stripped. abort_session maps to
-    // the `abort_session` export even though its tool name is flowguard_abort_session.
     const missing = canonicalToolNames
       .map((toolName) => toolName.replace(/^flowguard_/, ''))
       .filter((exportName) => !exportedIdentifiers.has(exportName));
@@ -369,7 +369,6 @@ describe('TEMPLATE_HASH_STABILITY', () => {
         `Add them to src/templates/wrappers/index.ts or OpenCode cannot call these tools.`,
     ).toEqual([]);
 
-    // Symmetry: no stray exports beyond the canonical tool set.
     const canonicalExportNames = new Set(
       canonicalToolNames.map((t) => t.replace(/^flowguard_/, '')),
     );
@@ -380,11 +379,6 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     ).toEqual([]);
   });
 
-  // Drift guard for the installed-package surface: the wrapper's import
-  // (`export { ... } from "@flowguard/core/integration"`) resolves against the
-  // integration barrel at install time. A wrapper export that is missing from
-  // src/integration/index.ts breaks the OpenCode tool scan with an import
-  // error (HTTP 500 on the tool-ids endpoint) — this must never regress.
   it('every TOOL_WRAPPER export exists in the integration barrel (installed package surface)', async () => {
     const exportBlock = TOOL_WRAPPER.match(/export\s*\{([^}]*)\}/);
     expect(exportBlock, 'TOOL_WRAPPER must contain an export block').not.toBeNull();

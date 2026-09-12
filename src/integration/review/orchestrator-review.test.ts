@@ -372,7 +372,9 @@ describe('end-to-end orchestration flow', () => {
 
     // Step 4: Invoke reviewer
     const client = mockClient();
-    const result = await invokeReviewer(client, prompt, 'parent-session');
+    const result = await invokeReviewer(client, prompt, 'parent-session', {
+      reviewInvocationPolicy: 'sdk_allowed',
+    });
     assertSuccessfulResult(result);
 
     // Step 5: Mutate output
@@ -396,7 +398,9 @@ describe('end-to-end orchestration flow', () => {
     const client = mockClient({
       createResult: { error: { message: 'Server error' } },
     });
-    const result = await invokeReviewer(client, 'test prompt', 'parent');
+    const result = await invokeReviewer(client, 'test prompt', 'parent', {
+      reviewInvocationPolicy: 'sdk_allowed',
+    });
     expect(result).toBeNull();
 
     // Output stays unchanged — the LLM will follow the original INDEPENDENT_REVIEW_REQUIRED
@@ -413,7 +417,9 @@ describe('end-to-end orchestration flow', () => {
         error: undefined,
       },
     });
-    const result = await invokeReviewer(client, 'test prompt', 'parent');
+    const result = await invokeReviewer(client, 'test prompt', 'parent', {
+      reviewInvocationPolicy: 'sdk_allowed',
+    });
     expect(result).toBeNull();
 
     expect(isReviewRequired(original)).toBe(true);
@@ -438,15 +444,17 @@ describe('buildReviewContentPrompt', () => {
     expect(prompt).toContain('PR diff content');
     expect(prompt).toContain('Fix auth bug');
     expect(prompt).toContain(opts.obligationId);
-    expect(prompt).not.toContain(opts.mandateDigest);
-    expect(prompt).not.toContain(opts.criteriaVersion);
-    expect(prompt).toContain(REVIEWER_SUBAGENT_TYPE);
+    expect(prompt).toContain(opts.mandateDigest);
+    expect(prompt).toContain(opts.criteriaVersion);
+    expect(prompt).toContain(
+      'Return one ReviewerFindingsInput result using the active output transport.',
+    );
   });
 
   it('includes iteration and planVersion', () => {
     const prompt = buildReviewContentPrompt(opts);
     expect(prompt).toContain('1');
-    expect(prompt).toContain('PlanVersion: 1');
+    expect(prompt).toContain('iteration=1, planVersion=1');
   });
 
   it('handles empty ticket text', () => {
@@ -454,20 +462,20 @@ describe('buildReviewContentPrompt', () => {
     expect(prompt).not.toContain('Ticket context');
   });
 
-  it('includes schema-allowed category guidance', () => {
+  it('includes canonical content-review criteria', () => {
     const prompt = buildReviewContentPrompt(opts);
     expect(prompt).toContain('completeness');
     expect(prompt).toContain('correctness');
-    expect(prompt).toContain('feasibility');
-    expect(prompt).toContain('risk');
-    expect(prompt).toContain('quality');
+    expect(prompt).toContain('Security findings require a concrete attack path');
+    expect(prompt).toContain('scope creep');
+    expect(prompt).toContain('missing verification');
   });
 
   it('includes output format instructions', () => {
     const prompt = buildReviewContentPrompt(opts);
     expect(prompt).toContain('ReviewerFindingsInput');
     expect(prompt).toContain('reviewMode');
-    expect(prompt).toContain('no markdown fences');
+    expect(prompt).toContain('active output transport');
   });
 });
 
@@ -672,7 +680,7 @@ describe('buildReviewContentPrompt edge cases', () => {
 
   it('handles zero iteration', () => {
     const prompt = buildReviewContentPrompt({ ...base, iteration: 0 });
-    expect(prompt).toContain('Iteration: 0');
+    expect(prompt).toContain('iteration=0, planVersion=1');
   });
 
   it('handles multiline content', () => {
@@ -686,19 +694,19 @@ describe('buildReviewContentPrompt edge cases', () => {
     expect(prompt).toContain('fix auth');
   });
 
-  it('includes reviewMode: subagent instruction', () => {
+  it('includes the canonical findings-output instruction', () => {
     const prompt = buildReviewContentPrompt(base);
-    expect(prompt).toContain('reviewMode');
-    expect(prompt).toContain('subagent');
+    expect(prompt).toContain(
+      'Return one ReviewerFindingsInput result using the active output transport.',
+    );
   });
 
-  it('includes attestation fields in output', () => {
+  it('includes trusted runtime attestation bindings', () => {
     const prompt = buildReviewContentPrompt(base);
-    expect(prompt).toContain('ATTESTATION');
-    expect(prompt).toContain('reviewedBy');
+    expect(prompt).toContain('## Trusted Runtime Context');
+    expect(prompt).toContain('obligationId=00000000-0000-0000-0000-000000000001');
     expect(prompt).toContain('mandateDigest');
     expect(prompt).toContain('criteriaVersion');
-    expect(prompt).toContain('toolObligationId');
   });
 
   it('produces non-empty output', () => {

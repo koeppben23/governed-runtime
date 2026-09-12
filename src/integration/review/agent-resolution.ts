@@ -1,90 +1,91 @@
 /**
  * @module integration/review-agent-resolution
- * @description Lazy agent resolution for the flowguard-reviewer subagent.
+ * @description Lazy, fail-closed agent resolution for the isolated flowguard-reviewer subagent.
  *
- * Extracted from review-orchestrator.ts (FG-REL-038) for single-responsibility.
- * Probes the OpenCode agent registry to determine whether 'flowguard-reviewer'
- * is registered. Falls back to 'general' with a system directive.
+ * The reviewer is governance-relevant authority evidence. An ordinary `general`
+ * agent cannot substitute for the installed reviewer because prompt text cannot
+ * enforce the reviewer's host-side read-only capability boundary.
  *
  * Cache semantics: Module-level singleton, valid for process lifetime.
  * OpenCode loads agents once at startup; registry changes require restart.
  *
- * @version v1
+ * @version v2
  */
 
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import type { OrchestratorClient } from './types.js';
 
-// ─── Constants ───────────────────────────────────────────────────────────────
-
-/**
- * Primary agent: 'flowguard-reviewer' — a custom subagent registered by the
- * FlowGuard installer in .opencode/agents/flowguard-reviewer.md.
- */
+/** Primary reviewer agent installed with host-side read-only restrictions. */
 export const REVIEWER_AGENT_PRIMARY = REVIEWER_SUBAGENT_TYPE;
 
-/**
- * Fallback agent: 'general' — used when the custom agent is not available
- * (e.g., before restart after install, or in environments without the agent file).
- * In fallback mode, REVIEWER_SYSTEM_DIRECTIVE is injected as system prompt.
- */
-export const REVIEWER_AGENT_FALLBACK = 'general';
+export class ReviewerAgentUnavailableError extends Error {
+  readonly code = 'REVIEWER_AGENT_UNAVAILABLE' as const;
 
-/**
- * System directive injected ONLY in fallback mode (agent: 'general').
- *
- * When 'flowguard-reviewer' is registered, its markdown prompt serves as the
- * system prompt — this directive is NOT sent to avoid conflict.
- * When falling back to 'general', this directive provides the reviewer persona.
- */
-export const REVIEWER_SYSTEM_DIRECTIVE =
-  'You are a governance reviewer subagent for FlowGuard. ' +
-  'Your ONLY job is to review the provided content and return a SINGLE valid JSON object ' +
-  'conforming to the ReviewerFindingsInput schema. ' +
-  'Do NOT include markdown fences, commentary, explanations, or any text outside the JSON object. ' +
-  'The JSON must contain: iteration, planVersion, reviewMode ("subagent"), overallVerdict, ' +
-  'blockingIssues, majorRisks, missingVerification, scopeCreep, unknowns, and attestation.toolObligationId. ' +
-  'Do not output reviewedBy, reviewedAt, mandateDigest, criteriaVersion, or attestation.reviewedBy.';
-
-// ─── Agent Resolution Cache ─────────────────────────────────────────────────
-
-/**
- * Cached result of the agent resolution probe. null = not yet probed.
- * Module-level cache: valid for the process lifetime (OpenCode loads agents
- * once at startup — registry changes require restart = new process = new cache).
- */
-let cachedResolvedAgent: string | null = null;
-
-/**
- * Lazily probe whether 'flowguard-reviewer' is registered in OpenCode's agent
- * registry. Result is cached for process lifetime.
- *
- * - If found: returns REVIEWER_AGENT_PRIMARY ('flowguard-reviewer')
- * - If not found or probe fails: returns REVIEWER_AGENT_FALLBACK ('general')
- */
-export async function resolveReviewerAgent(client: OrchestratorClient): Promise<string> {
-  if (cachedResolvedAgent !== null) return cachedResolvedAgent;
-
-  try {
-    const result = await client.app.agents();
-    const agents = result.data ?? [];
-    const found = agents.some(
-      (a: Record<string, unknown>) =>
-        a.id === REVIEWER_AGENT_PRIMARY || a.name === REVIEWER_AGENT_PRIMARY,
-    );
-    cachedResolvedAgent = found ? REVIEWER_AGENT_PRIMARY : REVIEWER_AGENT_FALLBACK;
-  } catch {
-    // Probe failure (network, unknown API shape, etc.) — degrade gracefully
-    cachedResolvedAgent = REVIEWER_AGENT_FALLBACK;
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'ReviewerAgentUnavailableError';
   }
+}
 
-  return cachedResolvedAgent;
+type CachedResolution =
+  { readonly kind: 'available' } | { readonly kind: 'unavailable'; readonly reason: string };
+
+let cachedResolution: CachedResolution | null = null;
+
+function unavailable(reason: string, cause?: unknown): never {
+  cachedResolution = { kind: 'unavailable', reason };
+  throw new ReviewerAgentUnavailableError(reason, cause === undefined ? undefined : { cause });
 }
 
 /**
- * Reset the agent resolution cache. Test-only utility.
- * @internal
+ * Resolve the dedicated FlowGuard reviewer. Missing capability and registry
+ * observation failures are both fail-closed: neither may degrade to `general`.
  */
+export async function resolveReviewerAgent(client: OrchestratorClient): Promise<string> {
+  if (cachedResolution?.kind === 'available') return REVIEWER_AGENT_PRIMARY;
+  if (cachedResolution?.kind === 'unavailable') {
+    throw new ReviewerAgentUnavailableError(cachedResolution.reason);
+  }
+
+  let result: Awaited<ReturnType<OrchestratorClient['app']['agents']>>;
+  try {
+    result = await client.app.agents();
+  } catch (error) {
+    return unavailable(
+      `Unable to verify that the isolated ${REVIEWER_AGENT_PRIMARY} capability is registered; refusing SDK review fallback.`,
+      error,
+    );
+  }
+
+  if (result.error) {
+    return unavailable(
+      `Unable to verify that the isolated ${REVIEWER_AGENT_PRIMARY} capability is registered: ${String(
+        (result.error as { message?: unknown }).message ?? result.error,
+      )}`,
+    );
+  }
+
+  if (!Array.isArray(result.data)) {
+    return unavailable(
+      `Reviewer agent registry returned no verifiable agent list; ${REVIEWER_AGENT_PRIMARY} isolation is NOT_VERIFIED.`,
+    );
+  }
+
+  const found = result.data.some(
+    (agent: Record<string, unknown>) =>
+      agent.id === REVIEWER_AGENT_PRIMARY || agent.name === REVIEWER_AGENT_PRIMARY,
+  );
+  if (!found) {
+    return unavailable(
+      `Required isolated reviewer agent ${REVIEWER_AGENT_PRIMARY} is not registered. Restart/reinstall the host before review.`,
+    );
+  }
+
+  cachedResolution = { kind: 'available' };
+  return REVIEWER_AGENT_PRIMARY;
+}
+
+/** Reset the process-lifetime resolution cache. Test-only utility. */
 export function _resetAgentResolutionCache(): void {
-  cachedResolvedAgent = null;
+  cachedResolution = null;
 }

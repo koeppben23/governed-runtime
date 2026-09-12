@@ -3,8 +3,7 @@
  *
  * Re-export facade for embedded templates used by the FlowGuard installer script.
  *
- * This module re-exports templates from src/templates/ to maintain backward
- * compatibility with existing import sites.
+ * This module re-exports templates from src/templates/ for installer use.
  */
 
 export {
@@ -13,8 +12,8 @@ export {
   COMMANDS,
   MANDATES_FILENAME,
   mandatesInstructionEntry,
-  LEGACY_INSTRUCTION_ENTRY,
-  FLOWGUARD_MANDATES_BODY,
+  FLOWGUARD_MANDATES_FULL_BODY,
+  FLOWGUARD_MANDATES_KERNEL,
   buildMandatesContent,
   extractManagedDigest,
   extractManagedVersion,

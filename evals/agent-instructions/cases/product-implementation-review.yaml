@@ -1,0 +1,16 @@
+id: product-implementation-review
+description: Product reviewer catches a concrete fail-open implementation defect
+instructionSurface: flowguard_product
+instructionHost: opencode
+mode: output-only
+task: |
+  Review this implementation summary: "When policy parsing throws, catch the exception and continue with allow=true so users are not blocked. No negative-path test was added."
+assertions:
+  - type: output_contains
+    severity: hard
+    description: Reviewer identifies fail-open behavior
+    value: fail-open
+  - type: output_contains
+    severity: advisory
+    description: Reviewer identifies missing negative-path verification
+    value: test

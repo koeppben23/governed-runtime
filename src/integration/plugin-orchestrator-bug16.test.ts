@@ -390,7 +390,7 @@ describe('BUG-16: buildHostTaskPolicyOutput preserves iteration/planVersion', ()
     expect(parsed.reviewerTaskPrompt).toContain('iteration=2');
     expect(parsed.reviewerTaskPrompt).toContain('planVersion=3');
     expect(parsed.reviewerTaskPrompt).toContain(OBLIGATION_ID);
-    // Anti-fabrication: the canonical prompt must not prefill a verdict.
+    // Text-compat transport includes a schema shape example, never a prefilled verdict.
     expect(parsed.reviewerTaskPrompt).not.toMatch(/overallVerdict"\s*:\s*"accept/i);
     // The next prose delegates canonical prompt transport to the host.
     expect(parsed.next).toContain('reviewerTaskPrompt');

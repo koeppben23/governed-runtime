@@ -1,0 +1,30 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "testRunner": "vitest",
+  "vitest": {
+    "configFile": "vitest.mandates.config.ts",
+    "related": false
+  },
+  "mutate": [
+    "src/templates/mandates.ts",
+    "src/templates/commands/plan.ts",
+    "src/templates/commands/implement.ts"
+  ],
+  "reporters": ["clear-text", "progress", "html", "json"],
+  "coverageAnalysis": "all",
+  "timeoutMS": 15000,
+  "timeoutFactor": 2.0,
+  "concurrency": 2,
+  "checkers": [],
+  "tsconfigFile": "tsconfig.json",
+  "mutator": {
+    "excludedMutations": ["StringLiteral", "ArrayDeclaration", "Regex"]
+  },
+  "thresholds": {
+    "high": 90,
+    "low": 80,
+    "break": 80
+  },
+  "tempDirName": ".stryker-tmp-mandates",
+  "ignoreStatic": false
+}

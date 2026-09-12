@@ -9,13 +9,14 @@
 
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 import type { ReviewObligationType } from '../../state/evidence.js';
-import type { SessionState } from '../../state/schema.js';
 import type { CapturedFindings } from './enforcement/types.js';
 import { recordPluginReview } from './enforcement/enforcement.js';
 import { prepareReviewerFindingsForValidation } from './enforcement/prepare-findings.js';
 import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
+  findBindableAttempt,
+  isCurrentReviewGeneration,
   hashFindings,
   hashText,
 } from './assurance.js';
@@ -26,11 +27,10 @@ import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_ARCHITECTURE } from '../tool-names.
 import { obligationTypeForTool } from './obligation-tools.js';
 import { updateObligation } from './obligation-state.js';
 import { recordAssuranceWithAudit } from './shared-helpers.js';
-import type { SemanticAuditIntent } from '../tools/audit-outbox.js';
-import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
 import { REASON_HOST_SUBAGENT_TASK_REQUIRED } from '../../shared/flowguard-identifiers.js';
 import type { PipelineContext } from './pipeline-types.js';
 import type { EvidenceRecordResult } from './pipeline-types.js';
+import { buildSdkEvidenceAuditIntents } from './sdk-evidence-recorder.js';
 import {
   validatePipelineAttestation,
   recordEvidenceOrBlockReuse,
@@ -79,6 +79,21 @@ export async function runStandardReviewPipeline(
       tool: toolName,
       obligationId: ctx.reviewCtx.obligationId,
       obligationType,
+    });
+    return;
+  }
+
+  if (
+    !isCurrentReviewGeneration(exactObligation) ||
+    ctx.reviewCtx.criteriaVersion !== exactObligation.criteriaVersion ||
+    ctx.reviewCtx.mandateDigest !== exactObligation.mandateDigest
+  ) {
+    output.output = strictBlockedOutput('REVIEW_GENERATION_MISMATCH', {
+      obligationId: exactObligation.obligationId,
+      reason:
+        `review obligation generation ${exactObligation.criteriaVersion}/${exactObligation.mandateDigest} ` +
+        `is not executable by the current runtime ${REVIEW_CRITERIA_VERSION}/${REVIEW_MANDATE_DIGEST}; ` +
+        're-hydrate or create a fresh review obligation',
     });
     return;
   }
@@ -176,6 +191,10 @@ async function handleStandardReviewerResult(
 ): Promise<void> {
   const { reviewerResult, obligationType, strictEnforcement } = opts;
   if (reviewerResult?.blocked) {
+    if (strictEnforcement && reviewerResult.code === 'REVIEWER_INVOCATION_EXHAUSTED') {
+      await handleReviewerFailure(ctx, obligationType, strictEnforcement);
+      return;
+    }
     ctx.output.output = strictBlockedOutput(
       reviewerResult.code ?? REASON_HOST_SUBAGENT_TASK_REQUIRED,
       {
@@ -349,12 +368,12 @@ async function prepareStandardReviewerResult(
     rawFindings: reviewerResult.findings!,
     obligationId: ctx.reviewCtx.obligationId,
     hostConstants: {
-      mandateDigest: REVIEW_MANDATE_DIGEST,
-      criteriaVersion: REVIEW_CRITERIA_VERSION,
+      mandateDigest: ctx.reviewCtx.mandateDigest,
+      criteriaVersion: ctx.reviewCtx.criteriaVersion,
     },
     hostProvenance: {
       childSessionId: reviewerResult.sessionId,
-      reviewedAt: new Date().toISOString(),
+      reviewedAt: reviewerResult.fulfilledAt ?? new Date().toISOString(),
     },
   });
   if (!prepared.ok) {
@@ -368,6 +387,30 @@ async function prepareStandardReviewerResult(
   const parsed = ReviewFindingsSchema.safeParse(prepared.findings);
   if (!parsed.success) return null;
   return { ...reviewerResult, findings: prepared.findings };
+}
+
+function applyStandardEvidenceResult(ctx: PipelineContext, result: EvidenceRecordResult): boolean {
+  const { output, reviewCtx } = ctx;
+  if (result === 'reused') {
+    output.output = strictBlockedOutput('SUBAGENT_EVIDENCE_REUSED', {
+      obligationId: reviewCtx.obligationId,
+    });
+    return true;
+  }
+  if (result === 'missing') {
+    output.output = strictBlockedOutput('REVIEW_MATERIAL_INTEGRITY_FAILED', {
+      reason: `no exact review obligation resolved for ${reviewCtx.obligationId}; evidence was not recorded`,
+    });
+    return true;
+  }
+  if (result === 'lineage_unavailable') {
+    output.output = strictBlockedOutput('REVIEW_ATTEMPT_UNAVAILABLE', {
+      obligationId: reviewCtx.obligationId,
+      reason: 'SDK review evidence could not bind to the pre-authorized review attempt',
+    });
+    return true;
+  }
+  return false;
 }
 
 async function enforceStandardStrictGate(
@@ -385,8 +428,8 @@ async function enforceStandardStrictGate(
 
   const attestation = validatePipelineAttestation(findings, {
     obligationId: reviewCtx.obligationId,
-    criteriaVersion: REVIEW_CRITERIA_VERSION,
-    mandateDigest: REVIEW_MANDATE_DIGEST,
+    criteriaVersion: reviewCtx.criteriaVersion,
+    mandateDigest: reviewCtx.mandateDigest,
     iteration: reviewCtx.iteration,
     planVersion: reviewCtx.planVersion,
     checkReviewedBy: false,
@@ -398,20 +441,33 @@ async function enforceStandardStrictGate(
     return true;
   }
 
+  const attempt = findBindableAttempt(sessionState.reviewAssurance, reviewCtx.obligationId);
+  if (!attempt) {
+    output.output = strictBlockedOutput('REVIEW_ATTEMPT_UNAVAILABLE', {
+      obligationId: reviewCtx.obligationId,
+      reason: 'SDK review completion has no pre-authorized bindable review attempt',
+    });
+    return true;
+  }
+
   const promptHash = hashText(prompt);
   const findingsHash = hashFindings(reviewerResult.findings);
+  const invokedAt = reviewerResult.invokedAt ?? ctx.now;
+  const fulfilledAt = reviewerResult.fulfilledAt ?? new Date().toISOString();
 
   const result = await recordEvidenceOrBlockReuse(deps, sessDir, {
     obligationId: reviewCtx.obligationId,
     obligationType,
     sessionId,
     childSessionId: reviewerResult.sessionId,
+    attemptId: attempt.attemptId,
     promptHash,
     findingsHash,
+    invokedAt,
+    fulfilledAt,
     reviewerResult,
-    currentAssuranceInvocations: sessionState.reviewAssurance?.invocations ?? [],
     semanticIntents: (result, state, occurredAt) =>
-      buildStandardEvidenceAuditIntents({
+      buildSdkEvidenceAuditIntents({
         ctx,
         result,
         obligationType,
@@ -420,98 +476,11 @@ async function enforceStandardStrictGate(
         reviewerResult,
         state,
         occurredAt,
+        reviewProfile: getReviewerPolicies(state).reviewProfile,
       }),
   });
 
-  if (result === 'reused') {
-    output.output = strictBlockedOutput('SUBAGENT_EVIDENCE_REUSED', {
-      obligationId: reviewCtx.obligationId,
-    });
-    return true;
-  }
-  if (result === 'missing') {
-    output.output = strictBlockedOutput('REVIEW_MATERIAL_INTEGRITY_FAILED', {
-      reason: `no exact review obligation resolved for ${reviewCtx.obligationId}; evidence was not recorded`,
-    });
-    return true;
-  }
-
-  return false;
-}
-
-function buildStandardEvidenceAuditIntents(input: {
-  ctx: PipelineContext;
-  result: EvidenceRecordResult;
-  obligationType: string;
-  promptHash: string;
-  findingsHash: string;
-  reviewerResult: Pick<
-    ReviewerSuccessResult,
-    | 'sessionId'
-    | 'reviewOutputMode'
-    | 'structuredOutputUsed'
-    | 'reviewAssuranceLevel'
-    | 'extractionMethod'
-    | 'modelCapabilityError'
-  >;
-  state: SessionState;
-  occurredAt: string;
-}): readonly SemanticAuditIntent[] {
-  const {
-    ctx,
-    result,
-    obligationType,
-    promptHash,
-    findingsHash,
-    reviewerResult,
-    state,
-    occurredAt,
-  } = input;
-  const { sessionId, reviewCtx } = ctx;
-  const detail =
-    result === 'reused'
-      ? { obligationId: reviewCtx.obligationId, code: 'SUBAGENT_EVIDENCE_REUSED' }
-      : {
-          obligationId: reviewCtx.obligationId,
-          obligationType,
-          parentSessionId: sessionId,
-          childSessionId: reviewerResult.sessionId,
-          agentType: REVIEWER_SUBAGENT_TYPE,
-          promptHash,
-          mandateDigest: REVIEW_MANDATE_DIGEST,
-          criteriaVersion: REVIEW_CRITERIA_VERSION,
-          findingsHash,
-          reviewOutputMode: reviewerResult.reviewOutputMode,
-          structuredOutputUsed: reviewerResult.structuredOutputUsed,
-          reviewAssuranceLevel: reviewerResult.reviewAssuranceLevel,
-          reviewProfile: getReviewerPolicies(state).reviewProfile,
-          ...(reviewerResult.extractionMethod
-            ? { extractionMethod: reviewerResult.extractionMethod }
-            : {}),
-          ...(reviewerResult.modelCapabilityError
-            ? { modelCapabilityError: reviewerResult.modelCapabilityError }
-            : {}),
-        };
-  const first: SemanticAuditIntent = {
-    phase: state.phase,
-    event: result === 'reused' ? 'review:obligation_blocked' : 'review:subagent_invoked',
-    occurredAt,
-    detail,
-  };
-  return result === 'fulfilled'
-    ? [
-        first,
-        {
-          phase: state.phase,
-          event: 'review:obligation_fulfilled',
-          occurredAt,
-          detail: {
-            obligationId: reviewCtx.obligationId,
-            childSessionId: reviewerResult.sessionId,
-          },
-        },
-      ]
-    : [first];
+  return applyStandardEvidenceResult(ctx, result);
 }
 
 interface FinalizeOutputOpts {

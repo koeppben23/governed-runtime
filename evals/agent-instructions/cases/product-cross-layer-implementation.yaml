@@ -1,0 +1,20 @@
+id: product-cross-layer-implementation
+description: Product agent preserves authority and contracts across API domain and persistence layers
+instructionSurface: flowguard_product
+instructionHost: opencode
+mode: output-only
+task: |
+  Add a new persisted status exposed through the API. The domain enum is canonical, persistence maps it, and the API exposes it. Describe the safe change and verification boundaries.
+assertions:
+  - type: output_contains
+    severity: hard
+    description: Agent identifies a canonical authority rather than duplicating the enum
+    value: canonical
+  - type: output_contains
+    severity: advisory
+    description: Agent includes persistence verification
+    value: persistence
+  - type: output_contains
+    severity: advisory
+    description: Agent includes API contract verification
+    value: API

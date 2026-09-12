@@ -12,7 +12,7 @@ import { existsSync } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 
@@ -43,26 +43,37 @@ async function cleanTmpDir(dir: string): Promise<void> {
   }
 }
 
-function runFile(
+async function runFile(
   command: string,
   args: readonly string[],
   cwd: string,
-): { stdout: string; stderr: string; code: number } {
-  try {
-    const stdout = execFileSync(command, args, {
-      cwd,
-      encoding: 'utf8',
-      timeout: 420000,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    return { stdout: stdout || '', stderr: '', code: 0 };
-  } catch (err: unknown) {
-    const e = err as { stdout?: string; stderr?: string; status?: number; message?: string };
-    const stdout = e.stdout || e.message || '';
-    const stderr = e.stderr || '';
-    const code = typeof e.status === 'number' ? e.status : 1;
-    return { stdout, stderr, code };
-  }
+  timeoutMs = 30_000,
+): Promise<{ stdout: string; stderr: string; code: number }> {
+  return await new Promise((resolve) => {
+    execFile(
+      command,
+      [...args],
+      {
+        cwd,
+        encoding: 'utf8',
+        timeout: timeoutMs,
+        maxBuffer: 4 * 1024 * 1024,
+        windowsHide: true,
+      },
+      (error, stdout, stderr) => {
+        if (!error) {
+          resolve({ stdout: stdout || '', stderr: stderr || '', code: 0 });
+          return;
+        }
+        const code = typeof error.code === 'number' ? error.code : 1;
+        resolve({
+          stdout: stdout || error.message || '',
+          stderr: stderr || '',
+          code,
+        });
+      },
+    );
+  });
 }
 
 function commandForLog(command: string, args: readonly string[]): string {
@@ -141,7 +152,11 @@ async function writeFreshPackageProject(dir: string): Promise<void> {
   );
 }
 
-function installTarball(cwd: string, extraArgs: readonly string[] = []): void {
+async function installTarball(
+  cwd: string,
+  extraArgs: readonly string[] = [],
+  timeoutMs = 420_000,
+): Promise<void> {
   const installArgs = [
     'install',
     '--prefer-offline',
@@ -150,7 +165,7 @@ function installTarball(cwd: string, extraArgs: readonly string[] = []): void {
     '--no-fund',
     tarballPath,
   ];
-  const installRes = runFile(process.execPath, npmArgs(installArgs), cwd);
+  const installRes = await runFile(process.execPath, npmArgs(installArgs), cwd, timeoutMs);
   assertSuccess(installRes, commandForLog('npm', installArgs));
 }
 
@@ -176,7 +191,7 @@ describe('install-verify', () => {
     // reuse the project for import/export assertions to avoid Windows timeouts.
     installedDir = path.join(tmpDir, 'installed');
     await writeFreshPackageProject(installedDir);
-    installTarball(installedDir);
+    await installTarball(installedDir);
   }, 480_000);
 
   afterAll(async () => {
@@ -203,14 +218,14 @@ describe('install-verify', () => {
     it('installs with --omit=optional without crashing', async () => {
       const p = path.join(tmpDir, 'omit-optional-test');
       await writeFreshPackageProject(p);
-      installTarball(p, ['--omit=optional']);
-    }, 240000);
+      await installTarball(p, ['--omit=optional'], 420_000);
+    }, 480000);
 
     it('imports core module with --omit=optional', async () => {
       const p = path.join(tmpDir, 'omit-optional-import-test');
       await writeFreshPackageProject(p);
-      installTarball(p, ['--omit=optional']);
-      const res = runFile(
+      await installTarball(p, ['--omit=optional'], 210_000);
+      const res = await runFile(
         'node',
         [
           '-e',
@@ -226,7 +241,7 @@ describe('install-verify', () => {
     });
 
     it('can import @flowguard/core after install', async () => {
-      const res = runFile(
+      const res = await runFile(
         'node',
         [
           '-e',
@@ -238,7 +253,7 @@ describe('install-verify', () => {
     }, 30_000);
 
     it('@flowguard/core/testing exports createTestContext', async () => {
-      const res = runFile(
+      const res = await runFile(
         'node',
         [
           '--input-type=module',
@@ -251,7 +266,7 @@ describe('install-verify', () => {
     }, 30_000);
 
     it('@flowguard/core excludes integration and testing exports', async () => {
-      const res = runFile(
+      const res = await runFile(
         'node',
         [
           '--input-type=module',

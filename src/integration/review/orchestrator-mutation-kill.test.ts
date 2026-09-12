@@ -212,7 +212,9 @@ describe('MUTATION_KILL: invokeReviewer StructuredOutputError with structured_ou
         error: undefined,
       },
     });
-    const result = await invokeReviewer(client, 'test prompt', 'parent-1');
+    const result = await invokeReviewer(client, 'test prompt', 'parent-1', {
+      reviewInvocationPolicy: 'sdk_allowed',
+    });
     expect(result).toBeNull();
   });
 
@@ -229,7 +231,9 @@ describe('MUTATION_KILL: invokeReviewer StructuredOutputError with structured_ou
         error: undefined,
       },
     });
-    const result = await invokeReviewer(client, 'test prompt', 'parent-1');
+    const result = await invokeReviewer(client, 'test prompt', 'parent-1', {
+      reviewInvocationPolicy: 'sdk_allowed',
+    });
     assertSuccessfulResult(result);
     expect(result!.findings).not.toBeNull();
   });
@@ -245,7 +249,9 @@ describe('MUTATION_KILL: invokeReviewer reviewer provenance edge cases', () => {
         error: undefined,
       },
     });
-    const result = await invokeReviewer(client, 'test prompt', 'parent-1');
+    const result = await invokeReviewer(client, 'test prompt', 'parent-1', {
+      reviewInvocationPolicy: 'sdk_allowed',
+    });
     assertSuccessfulResult(result);
     expect(result!.findings!.reviewedBy).toBe('not-an-object');
   });
@@ -259,7 +265,9 @@ describe('MUTATION_KILL: invokeReviewer reviewer provenance edge cases', () => {
         error: undefined,
       },
     });
-    const result = await invokeReviewer(client, 'test prompt', 'parent-1');
+    const result = await invokeReviewer(client, 'test prompt', 'parent-1', {
+      reviewInvocationPolicy: 'sdk_allowed',
+    });
     assertSuccessfulResult(result);
     expect(result!.findings!.reviewedBy).toBeNull();
   });
@@ -389,12 +397,12 @@ describe('MUTATION_KILL: buildReviewContentPrompt with stack section', () => {
 
   it('includes ticket context when ticketText is provided', () => {
     const prompt = buildReviewContentPrompt(baseOpts);
-    expect(prompt).toContain('Ticket context: Fix bug #123');
+    expect(prompt).toContain('### Ticket\nFix bug #123');
   });
 
   it('omits ticket context when ticketText is empty', () => {
     const prompt = buildReviewContentPrompt({ ...baseOpts, ticketText: '' });
-    expect(prompt).not.toContain('Ticket context:');
+    expect(prompt).not.toContain('### Ticket');
   });
 });
 
@@ -410,7 +418,10 @@ describe('M2 — retryCount in format object', () => {
     // on deterministic schema failures. retryCount: 1 caps this.
     const client = mockClient();
     _resetAgentResolutionCache();
-    await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: async () => {} });
+    await invokeReviewer(client, PROMPT, 'parent-1', {
+      reviewInvocationPolicy: 'sdk_allowed',
+      _sleepFn: async () => {},
+    });
     const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0]![0]!;
     expect(call.body.format.retryCount).toBe(1);
   });
@@ -418,7 +429,10 @@ describe('M2 — retryCount in format object', () => {
   it('BAD — retryCount is not 0 (would disable retries entirely)', async () => {
     const client = mockClient();
     _resetAgentResolutionCache();
-    await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: async () => {} });
+    await invokeReviewer(client, PROMPT, 'parent-1', {
+      reviewInvocationPolicy: 'sdk_allowed',
+      _sleepFn: async () => {},
+    });
     const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0]![0]!;
     expect(call.body.format.retryCount).not.toBe(0);
   });
@@ -426,7 +440,10 @@ describe('M2 — retryCount in format object', () => {
   it('CORNER — retryCount is a positive integer', async () => {
     const client = mockClient();
     _resetAgentResolutionCache();
-    await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: async () => {} });
+    await invokeReviewer(client, PROMPT, 'parent-1', {
+      reviewInvocationPolicy: 'sdk_allowed',
+      _sleepFn: async () => {},
+    });
     const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0]![0]!;
     expect(Number.isInteger(call.body.format.retryCount)).toBe(true);
     expect(call.body.format.retryCount).toBeGreaterThan(0);
@@ -435,7 +452,10 @@ describe('M2 — retryCount in format object', () => {
   it('EDGE — format type is json_schema alongside retryCount', async () => {
     const client = mockClient();
     _resetAgentResolutionCache();
-    await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: async () => {} });
+    await invokeReviewer(client, PROMPT, 'parent-1', {
+      reviewInvocationPolicy: 'sdk_allowed',
+      _sleepFn: async () => {},
+    });
     const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0]![0]!;
     expect(call.body.format.type).toBe('json_schema');
     expect(call.body.format).toHaveProperty('schema');

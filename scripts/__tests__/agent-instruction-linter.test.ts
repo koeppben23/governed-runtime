@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import {
+  DEFAULT_IGNORED_PATHS,
   lintAgentInstructions,
   normalizeRepoPath,
   isRootAgentFile,
@@ -188,9 +189,7 @@ describe('lintAgentInstructions', () => {
   it('fails when CLAUDE.md contains extra content', () => {
     const result = lintFixture('impure-claude-adapter');
     expect(result.ok).toBe(false);
-    const purityDiag = result.diagnostics.find(
-      (d) => d.file === 'CLAUDE.md' && d.kind === 'error',
-    );
+    const purityDiag = result.diagnostics.find((d) => d.file === 'CLAUDE.md' && d.kind === 'error');
     expect(purityDiag).toBeDefined();
   });
 
@@ -229,64 +228,62 @@ describe('formatDiagnostics', () => {
   });
 
   it('formats error diagnostic with FAIL prefix', () => {
-    const output = formatDiagnostics([
-      { kind: 'error', file: 'AGENTS.md', message: 'bad thing' },
-    ]);
+    const output = formatDiagnostics([{ kind: 'error', file: 'AGENTS.md', message: 'bad thing' }]);
     expect(output).toContain('FAIL');
     expect(output).toContain('AGENTS.md');
     expect(output).toContain('bad thing');
   });
 
   it('formats warn diagnostic with WARN prefix', () => {
-    const output = formatDiagnostics([
-      { kind: 'warn', message: 'advisory' },
-    ]);
+    const output = formatDiagnostics([{ kind: 'warn', message: 'advisory' }]);
     expect(output).toContain('WARN');
     expect(output).toContain('advisory');
   });
 });
 
 describe('CLI wrapper', () => {
-  const cliPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'check-agent-instructions.mjs');
+  const cliPath = join(
+    dirname(fileURLToPath(import.meta.url)),
+    '..',
+    'check-agent-instructions.mjs',
+  );
 
   it('exits 0 for valid fixture directory', () => {
-    const result = spawnSync(
-      process.execPath,
-      [cliPath, join(FIXTURES, 'valid')],
-      { encoding: 'utf8' },
-    );
+    const result = spawnSync(process.execPath, [cliPath, join(FIXTURES, 'valid')], {
+      encoding: 'utf8',
+    });
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('All checks passed');
   });
 
   it('exits 1 for fixture with failures', () => {
-    const result = spawnSync(
-      process.execPath,
-      [cliPath, join(FIXTURES, 'impure-claude-adapter')],
-      { encoding: 'utf8' },
-    );
+    const result = spawnSync(process.execPath, [cliPath, join(FIXTURES, 'impure-claude-adapter')], {
+      encoding: 'utf8',
+    });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('FAIL');
     expect(result.stderr).toContain('Some checks failed');
   });
 
   it('writes diagnostics to stderr', () => {
-    const result = spawnSync(
-      process.execPath,
-      [cliPath, join(FIXTURES, 'over-root-line-budget')],
-      { encoding: 'utf8' },
-    );
+    const result = spawnSync(process.execPath, [cliPath, join(FIXTURES, 'over-root-line-budget')], {
+      encoding: 'utf8',
+    });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('FAIL');
   });
 
   it('accepts optional root argument', () => {
-    const result = spawnSync(
-      process.execPath,
-      [cliPath, join(FIXTURES, 'valid')],
-      { encoding: 'utf8' },
-    );
+    const result = spawnSync(process.execPath, [cliPath, join(FIXTURES, 'valid')], {
+      encoding: 'utf8',
+    });
     expect(result.status).toBe(0);
+  });
+});
+
+describe('DEFAULT_IGNORED_PATHS', () => {
+  it('excludes generated Stryker sandboxes', () => {
+    expect(DEFAULT_IGNORED_PATHS).toContain('.stryker-tmp');
   });
 });
 
@@ -427,11 +424,7 @@ describe('Check 10 — chain byte budget', () => {
   it('includes all ancestor files in deep chain structure', () => {
     const root = join(FIXTURES, 'deep-chain');
     const chain = applicableAgentChain(root, 'src/config/AGENTS.md');
-    expect(chain).toEqual([
-      'AGENTS.md',
-      'src/AGENTS.md',
-      'src/config/AGENTS.md',
-    ]);
+    expect(chain).toEqual(['AGENTS.md', 'src/AGENTS.md', 'src/config/AGENTS.md']);
   });
 });
 

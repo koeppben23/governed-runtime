@@ -133,7 +133,7 @@ function buildCapturingClient(findings: Record<string, unknown>): {
   const capturedPrompts: string[] = [];
   return {
     client: {
-      app: { agents: vi.fn().mockResolvedValue({ data: [] }) },
+      app: { agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }) },
       session: {
         create: vi.fn().mockResolvedValue({ data: { id: CHILD_SESSION_ID }, error: undefined }),
         prompt: vi

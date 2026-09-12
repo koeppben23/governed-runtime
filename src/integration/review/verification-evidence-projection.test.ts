@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { IMPL_EVIDENCE, VALIDATION_PASSED, makeState } from '../../fixtures.js';
+import { IMPL_EVIDENCE, PLAN_RECORD, VALIDATION_PASSED, makeState } from '../../fixtures.js';
 import { stateVerificationEvidence } from './shared-helpers.js';
 
 // Slice 1 fail-closed digest binding: only implementation-scope validation
@@ -85,5 +85,94 @@ describe('stateVerificationEvidence', () => {
     const result = stateVerificationEvidence(state);
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({ passed: false, exitCode: 1 });
+  });
+
+  it('projects only the structured assertion named by a declared plan claim', () => {
+    const checkId = VALIDATION_PASSED[0]!.checkId;
+    const matchingLocalId = 'com.example.TaskControllerTest#missingTask';
+    const unrelatedLocalId = 'com.example.TaskControllerTest#unrelated';
+    const reportDigest = 'c'.repeat(64);
+    const attemptId = '22222222-2222-4222-8222-222222222222';
+    const state = makeState('IMPL_REVIEW', {
+      implementation: IMPL_EVIDENCE,
+      plan: {
+        ...PLAN_RECORD,
+        claimDeclarations: {
+          flow: 'plan',
+          version: 'v2',
+          claims: [
+            {
+              claimId: '11111111-1111-4111-8111-111111111111',
+              statement: 'missing task returns 404',
+              critical: true,
+              authoritySectionId: 'implementation',
+              claimScope: 'specific_behavior',
+              expectedCheckId: checkId,
+              counterexampleRequirement: {
+                kind: 'assertion',
+                checkId,
+                assertion: { providerId: 'junit', localId: matchingLocalId },
+              },
+            },
+          ],
+        },
+      },
+      validationAttempts: [
+        implAttempt({
+          result: {
+            ...VALIDATION_PASSED[0]!,
+            assertionExtraction: {
+              status: 'extracted',
+              attemptId,
+              providerId: 'junit',
+              format: 'junit_xml',
+              bindingCapability: 'assertion',
+              reportDigests: [reportDigest],
+              assertions: [
+                {
+                  assertion: { providerId: 'junit', localId: matchingLocalId },
+                  providerId: 'junit',
+                  status: 'passed',
+                  suiteName: 'com.example.TaskControllerTest',
+                  testName: 'missingTask',
+                },
+                {
+                  assertion: { providerId: 'junit', localId: unrelatedLocalId },
+                  providerId: 'junit',
+                  status: 'passed',
+                  suiteName: 'com.example.TaskControllerTest',
+                  testName: 'unrelated',
+                },
+              ],
+              summary: {
+                assertionCount: 2,
+                passedCount: 2,
+                failedCount: 0,
+                erroredCount: 0,
+                skippedCount: 0,
+                suiteInfrastructureError: false,
+              },
+            },
+          },
+        }),
+      ] as never,
+    });
+
+    const projection = stateVerificationEvidence(state);
+    expect(projection).toHaveLength(1);
+    expect(projection[0]?.claimAssertionEvidence).toEqual({
+      reportDigests: [reportDigest],
+      assertions: [
+        {
+          checkId,
+          providerId: 'junit',
+          localId: matchingLocalId,
+          status: 'passed',
+          suiteName: 'com.example.TaskControllerTest',
+          testName: 'missingTask',
+        },
+      ],
+    });
+    expect(JSON.stringify(projection)).not.toContain(unrelatedLocalId);
   });
 });

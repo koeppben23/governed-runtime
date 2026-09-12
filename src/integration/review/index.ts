@@ -144,8 +144,7 @@ export {
 
 export {
   REVIEWER_AGENT_PRIMARY,
-  REVIEWER_AGENT_FALLBACK,
-  REVIEWER_SYSTEM_DIRECTIVE,
+  ReviewerAgentUnavailableError,
   resolveReviewerAgent,
   _resetAgentResolutionCache,
 } from './agent-resolution.js';

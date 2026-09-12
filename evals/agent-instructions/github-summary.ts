@@ -22,8 +22,8 @@ export function renderGitHubSummary(
   const lines = [
     `## Agent Instruction Eval: ${safeRunner}`,
     '',
-    '| Case | Verdict | Hard Failures | Advisory Failures |',
-    '| --- | --- | ---: | ---: |',
+    '| Surface | Case | Verdict | Hard Failures | Advisory Failures |',
+    '| --- | --- | --- | ---: | ---: |',
   ];
 
   for (const e of executed) {
@@ -33,8 +33,9 @@ export function renderGitHubSummary(
     const advisory = e.result.assertionResults.filter(
       (r) => r.severity === 'advisory' && !r.passed,
     ).length;
+    const surface = `${e.result.instructionSurface}${e.result.instructionHost ? `/${e.result.instructionHost}` : ''}`;
     lines.push(
-      `| ${escapeCell(e.evalCase.id)} | ${e.result.verdict} | ${hard} | ${advisory} |`,
+      `| ${escapeCell(surface)} | ${escapeCell(e.evalCase.id)} | ${e.result.verdict} | ${hard} | ${advisory} |`,
     );
   }
 

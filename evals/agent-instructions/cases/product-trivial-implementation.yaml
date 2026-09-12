@@ -1,0 +1,17 @@
+id: product-trivial-implementation
+description: Product agent handles a true typo-only change without unnecessary governance ceremony
+instructionSurface: flowguard_product
+instructionHost: opencode
+mode: output-only
+task: |
+  Fix a spelling error in a README sentence. There is no code, schema, config, link, or behavior change.
+  State the smallest safe approach.
+assertions:
+  - type: output_not_contains
+    severity: hard
+    description: Agent does not falsely block a harmless typo correction
+    value: BLOCKED
+  - type: output_contains
+    severity: advisory
+    description: Agent keeps the change minimal
+    value: typo

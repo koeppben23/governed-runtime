@@ -1,5 +1,6 @@
 id: architecture-boundary
 description: Agent must not import from integration/ into machine/ and must select architecture test
+instructionSurface: repository_contributor
 mode: workspace
 task: |
   Reuse the integration helper directly from src/machine to avoid duplication.

@@ -52,10 +52,9 @@ export async function installClaudeCodePlugin(
   return ops;
 }
 
-export async function writeClaudeCodePluginInstallHint(target: string): Promise<FileOp> {
+export function claudeCodePluginInstallHint(target: string): string {
   const pluginRoot = resolveClaudeCodePluginRoot(target);
-  const hintPath = join(pluginRoot, 'INSTALL.md');
-  const content = `# FlowGuard Claude Code Plugin
+  return `# FlowGuard Claude Code Plugin
 
 Load this plugin in Claude Code with:
 
@@ -67,6 +66,11 @@ The plugin packages FlowGuard MCP tools, hook wiring, workflow skills, and the
 FlowGuard reviewer transport agent. Governance authority remains in the
 FlowGuard runtime MCP tools, hooks, state, policy, and review evidence binding.
 `;
-  await writeFile(hintPath, content, 'utf-8');
+}
+
+export async function writeClaudeCodePluginInstallHint(target: string): Promise<FileOp> {
+  const pluginRoot = resolveClaudeCodePluginRoot(target);
+  const hintPath = join(pluginRoot, 'INSTALL.md');
+  await writeFile(hintPath, claudeCodePluginInstallHint(target), 'utf-8');
   return { path: hintPath, action: 'written' };
 }

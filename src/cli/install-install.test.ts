@@ -18,7 +18,6 @@ import {
   COMMANDS,
   MANDATES_FILENAME,
   mandatesInstructionEntry,
-  LEGACY_INSTRUCTION_ENTRY,
   extractManagedDigest,
   isManagedArtifact,
 } from './templates.js';
@@ -516,12 +515,17 @@ describe('cli/install', () => {
       expect(existsSync(path.join(tmpDir, 'AGENTS.md'))).toBe(false);
     });
 
-    it('opencode.json does NOT contain legacy AGENTS.md entry', async () => {
+    it('preserves customer AGENTS.md instructions', async () => {
       const tarball = await createMockTarball();
+      await fs.writeFile(
+        path.join(tmpDir, 'opencode.json'),
+        JSON.stringify({ instructions: ['AGENTS.md'] }),
+      );
       await install(repoArgs({ coreTarball: tarball }));
       const content = await fs.readFile(path.join(tmpDir, 'opencode.json'), 'utf-8');
       const parsed = JSON.parse(content);
-      expect(parsed.instructions).not.toContain(LEGACY_INSTRUCTION_ENTRY);
+      expect(parsed.instructions).toContain('AGENTS.md');
+      expect(parsed.instructions).toContain(mandatesInstructionEntry('repo'));
     });
   });
 
@@ -729,7 +733,6 @@ describe('cli/install', () => {
     });
 
     it('rollback removes newly created FlowGuard files and restores pre-existing opencode.json', async () => {
-      // Setup: pre-existing opencode.json with foreign plugin (user-owned)
       const opencodeJsonPath = path.join(tmpDir, 'opencode.json');
       const preExistingOpencode =
         JSON.stringify({ plugins: [{ path: './custom-plugin.ts' }], instructions: [] }, null, 2) +
@@ -737,7 +740,6 @@ describe('cli/install', () => {
       mkdirSync(path.dirname(opencodeJsonPath), { recursive: true });
       await fs.writeFile(opencodeJsonPath, preExistingOpencode);
 
-      // Setup: pre-existing package.json with foreign dep
       const pkgPath = path.join(tmpDir, '.opencode', 'package.json');
       mkdirSync(path.dirname(pkgPath), { recursive: true });
       await fs.writeFile(
@@ -746,7 +748,6 @@ describe('cli/install', () => {
           '\n',
       );
 
-      // Simulate npm install failure
       const { execSync: mockExec } = await import('node:child_process');
       const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
       vi.mocked(mockExec).mockImplementation((cmd: string, opts?: ExecSyncOptions) => {
@@ -763,16 +764,13 @@ describe('cli/install', () => {
         expect(result.errors.length).toBeGreaterThan(0);
         expect(result.errors[0]).toContain('Dependency install failed');
 
-        // FlowGuard-owned files removed
         const mandatesPath = path.join(tmpDir, '.opencode', MANDATES_FILENAME);
         expect(existsSync(mandatesPath)).toBe(false);
 
-        // Pre-existing opencode.json restored to original content (no FlowGuard plugin added)
         expect(existsSync(opencodeJsonPath)).toBe(true);
         const restoredOpencode = await fs.readFile(opencodeJsonPath, 'utf-8');
         expect(restoredOpencode).toBe(preExistingOpencode);
 
-        // Pre-existing package.json restored to original content (no @flowguard/core dep added)
         expect(existsSync(pkgPath)).toBe(true);
         const restoredPkg = await fs.readFile(pkgPath, 'utf-8');
         expect(restoredPkg).toContain('lodash');
@@ -938,7 +936,6 @@ describe('cli/install', () => {
     });
 
     it('restores pre-existing tarball byte-for-byte on rollback', async () => {
-      // Create pre-existing vendor tarball with binary-ish bytes
       const vendorDir = path.join(tmpDir, '.opencode', 'vendor');
       mkdirSync(vendorDir, { recursive: true });
       const tarballName = `flowguard-core-${VERSION}.tgz`;
@@ -960,7 +957,6 @@ describe('cli/install', () => {
         const result = await install(repoArgs({ coreTarball: tarball }));
         expect(result.errors.length).toBeGreaterThan(0);
 
-        // Tarball must be restored byte-for-byte (not corrupted by UTF-8 encoding)
         expect(existsSync(vendorTarballPath)).toBe(true);
         const restoredBytes = await fs.readFile(vendorTarballPath);
         expect(restoredBytes.length).toBe(originalBytes.length);
@@ -971,7 +967,6 @@ describe('cli/install', () => {
     });
 
     it('rollback preserves unrelated user-owned files', async () => {
-      // Create unrelated user file before install
       const userFilePath = path.join(tmpDir, '.opencode', 'user-config.json');
       mkdirSync(path.dirname(userFilePath), { recursive: true });
       await fs.writeFile(userFilePath, 'user data');
@@ -991,7 +986,6 @@ describe('cli/install', () => {
 
         expect(result.errors.length).toBeGreaterThan(0);
 
-        // Unrelated user file untouched
         expect(existsSync(userFilePath)).toBe(true);
         const content = await fs.readFile(userFilePath, 'utf-8');
         expect(content).toBe('user data');
@@ -1001,12 +995,10 @@ describe('cli/install', () => {
     });
 
     it('failed reinstall over existing install preserves pre-existing managed files', async () => {
-      // Phase 1: Successful install
       const tarball = await createMockTarball();
       const firstResult = await install(repoArgs({ coreTarball: tarball }));
       expect(firstResult.errors).toEqual([]);
 
-      // Capture pre-existing managed file content
       const mandatesPath = path.join(tmpDir, '.opencode', MANDATES_FILENAME);
       const toolPath = path.join(tmpDir, '.opencode', 'tools', 'flowguard.ts');
       const vendorDir = path.join(tmpDir, '.opencode', 'vendor');
@@ -1015,7 +1007,6 @@ describe('cli/install', () => {
       const preExistingMandates = await fs.readFile(mandatesPath, 'utf-8');
       const preExistingTool = existsSync(toolPath) ? await fs.readFile(toolPath, 'utf-8') : null;
 
-      // Phase 2: Failed reinstall (npm install fails)
       const { execSync: mockExec } = await import('node:child_process');
       const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
       vi.mocked(mockExec).mockImplementation((cmd: string, opts?: ExecSyncOptions) => {
@@ -1030,7 +1021,6 @@ describe('cli/install', () => {
         const result = await install(repoArgs({ coreTarball: tarball2, force: true }));
         expect(result.errors.length).toBeGreaterThan(0);
 
-        // Managed files must still exist with their ORIGINAL content
         expect(existsSync(mandatesPath)).toBe(true);
         const restoredMandates = await fs.readFile(mandatesPath, 'utf-8');
         expect(restoredMandates).toBe(preExistingMandates);
@@ -1041,10 +1031,8 @@ describe('cli/install', () => {
           expect(restoredTool).toBe(preExistingTool);
         }
 
-        // Vendor directory with tarball must still exist
         expect(existsSync(vendorDir)).toBe(true);
 
-        // Rollback operations must include restorations
         const restorations = result.ops.filter((o) => o.reason?.includes('restored'));
         expect(restorations.length).toBeGreaterThan(0);
       } finally {
@@ -1053,7 +1041,6 @@ describe('cli/install', () => {
     });
 
     it('preserves pre-existing node_modules on rollback', async () => {
-      // Create pre-existing node_modules before install
       const nmPath = path.join(tmpDir, '.opencode', 'node_modules', 'some-package');
       mkdirSync(nmPath, { recursive: true });
       await fs.writeFile(path.join(nmPath, 'index.js'), 'module.exports = 1;');
@@ -1072,7 +1059,6 @@ describe('cli/install', () => {
         const result = await install(repoArgs({ coreTarball: tarball }));
         expect(result.errors.length).toBeGreaterThan(0);
 
-        // Pre-existing node_modules must survive
         expect(existsSync(nmPath)).toBe(true);
         const content = await fs.readFile(path.join(nmPath, 'index.js'), 'utf-8');
         expect(content).toBe('module.exports = 1;');
@@ -1082,13 +1068,10 @@ describe('cli/install', () => {
     });
 
     it('removes newly created node_modules on rollback (npm install ran but failed)', async () => {
-      // No pre-existing node_modules for this test
-
       const { execSync: mockExec } = await import('node:child_process');
       const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
       vi.mocked(mockExec).mockImplementation((cmd: string, opts?: ExecSyncOptions) => {
         if (typeof cmd === 'string' && cmd.includes('install')) {
-          // Simulate partial npm install that creates something then throws
           const cwd =
             opts && typeof opts === 'object' && 'cwd' in opts
               ? (opts as { cwd: string }).cwd
@@ -1106,7 +1089,6 @@ describe('cli/install', () => {
         const result = await install(repoArgs({ coreTarball: tarball }));
         expect(result.errors.length).toBeGreaterThan(0);
 
-        // Newly created node_modules should be removed
         const nmPath = path.join(tmpDir, '.opencode', 'node_modules');
         expect(existsSync(nmPath)).toBe(false);
       } finally {
@@ -1139,12 +1121,10 @@ describe('cli/install', () => {
         expect(result.errors.length).toBeGreaterThan(0);
         expect(result.errors[0]).toContain('Dependency install failed');
 
-        // Pre-existing opencode.jsonc must be restored byte-for-byte
         expect(existsSync(jsoncPath)).toBe(true);
         const restored = await fs.readFile(jsoncPath, 'utf-8');
         expect(restored).toBe(originalContent);
 
-        // No stray opencode.json must be created
         expect(existsSync(path.join(tmpDir, 'opencode.json'))).toBe(false);
       } finally {
         vi.mocked(mockExec).mockImplementation(originalImpl);
@@ -1319,14 +1299,15 @@ describe('cli/install', () => {
       expect(result2.errors).toContain('FlowGuard is already installed. Use --force to reinstall.');
     });
 
-    it('flowguard-mandates.md is ALWAYS replaced even without --force', async () => {
+    it('preserves customer-owned flowguard-mandates.md and reports an ownership conflict', async () => {
       const tarball = await createMockTarball();
       const mandatesPath = path.join(tmpDir, '.opencode', 'flowguard-mandates.md');
       await fs.mkdir(path.dirname(mandatesPath), { recursive: true });
       await fs.writeFile(mandatesPath, 'old content', 'utf-8');
-      await install(repoArgs({ coreTarball: tarball }));
+      const result = await install(repoArgs({ coreTarball: tarball }));
       const content = await fs.readFile(mandatesPath, 'utf-8');
-      expect(content).toContain('# FlowGuard Agent Rules');
+      expect(content).toBe('old content');
+      expect(result.errors.some((error) => error.includes('MANAGED_ARTIFACT_CONFLICT'))).toBe(true);
     });
 
     it('--force overwrites existing tool wrapper', async () => {
@@ -1378,8 +1359,6 @@ describe('cli/install', () => {
       await install(repoArgs({ coreTarball: tarball }));
       const content = await fs.readFile(path.join(tmpDir, 'opencode.json'), 'utf-8');
       const parsed = JSON.parse(content);
-      // OpenCode plugin array is for npm packages only — local discovery
-      // via .opencode/plugins/ is the correct mechanism per OpenCode docs.
       expect(parsed.plugin).toBeUndefined();
     });
 
@@ -1393,7 +1372,6 @@ describe('cli/install', () => {
       await install(repoArgs({ coreTarball: tarball }));
       const content = await fs.readFile(path.join(tmpDir, 'opencode.json'), 'utf-8');
       const parsed = JSON.parse(content);
-      // Desktop-owned config detected (has plugin field) — preserved as-is
       expect(parsed.plugin).toContain('existing-plugin');
       expect(parsed.plugin).not.toContain('flowguard-audit');
     });
@@ -1407,7 +1385,7 @@ describe('cli/install', () => {
       expect(parsed.plugin).toBeUndefined();
     });
 
-    it('mergeReviewerTaskPermission enforces *.deny + flowguard-reviewer.allow (P35)', () => {
+    it('mergeReviewerTaskPermission preserves customer task entries while hardening reviewer access (P35)', () => {
       const parsed: Record<string, unknown> = {
         agent: {
           build: {
@@ -1426,7 +1404,7 @@ describe('cli/install', () => {
       const t = perm.task as Record<string, unknown>;
       expect(t['*']).toBe('deny');
       expect(t['flowguard-reviewer']).toBe('allow');
-      expect(t['some-other-agent']).toBeUndefined();
+      expect(t['some-other-agent']).toBe('allow');
     });
 
     it('mergeReviewerTaskPermission preserves existing *.deny if already set', () => {
@@ -1544,16 +1522,13 @@ describe('cli/install', () => {
       const result = await install(repoArgs({ coreTarball: tarball }));
       expect(result.errors).toEqual([]);
       const ocOp = result.ops.find((op) => op.path.includes('opencode.jsonc'));
-      // Trailing commas are valid JSONC per OpenCode docs ÔÇö should merge, not fallback.
       expect(ocOp?.action).toBe('merged');
-      // No backup needed - file was valid JSONC
       expect(await findBackupFor(jsoncPath)).toBeNull();
-      // Verify the model field was preserved
       const content = JSON.parse(await fs.readFile(jsoncPath, 'utf-8'));
       expect(content.model).toBe('claude');
     });
 
-    it('legacy migration: removes AGENTS.md from opencode.json instructions', async () => {
+    it('preserves AGENTS.md from opencode.json instructions', async () => {
       const tarball = await createMockTarball();
       await fs.writeFile(
         path.join(tmpDir, 'opencode.json'),
@@ -1563,12 +1538,12 @@ describe('cli/install', () => {
       await install(repoArgs({ coreTarball: tarball }));
       const content = await fs.readFile(path.join(tmpDir, 'opencode.json'), 'utf-8');
       const parsed = JSON.parse(content);
-      expect(parsed.instructions).not.toContain('AGENTS.md');
+      expect(parsed.instructions).toContain('AGENTS.md');
       expect(parsed.instructions).toContain('other-instructions.md');
       expect(parsed.instructions).toContain(mandatesInstructionEntry('repo'));
     });
 
-    it('removes legacy @opencode-ai/plugin from existing package.json', async () => {
+    it('preserves customer @opencode-ai/plugin dependency in existing package.json', async () => {
       const tarball = await createMockTarball();
       const pkgDir = path.join(tmpDir, '.opencode');
       await fs.mkdir(pkgDir, { recursive: true });
@@ -1584,7 +1559,7 @@ describe('cli/install', () => {
       await install(repoArgs({ coreTarball: tarball }));
       const content = await fs.readFile(path.join(pkgDir, 'package.json'), 'utf-8');
       const parsed = JSON.parse(content);
-      expect(parsed.dependencies['@opencode-ai/plugin']).toBeUndefined();
+      expect(parsed.dependencies['@opencode-ai/plugin']).toBe('^1.0.0');
       expect(parsed.dependencies.lodash).toBe('^4.0.0');
       expect(parsed.dependencies['@flowguard/core']).toBeDefined();
     });
@@ -1638,7 +1613,7 @@ describe('cli/install', () => {
       const tarball = await createMockTarball();
       const result = await install(repoArgs({ coreTarball: tarball }));
       const commandCount = Object.keys(COMMANDS).length;
-      const expectedOps = 1 + 1 + 1 + 1 + commandCount + 1 + 1 + 1 + 1 + 1;
+      const expectedOps = 1 + 1 + 1 + 1 + commandCount + 1 + 1 + 1 + 1 + 1 + 1;
       expect(result.ops.length).toBe(expectedOps);
     });
 

@@ -32,7 +32,10 @@ export function validFindings(overrides: Record<string, unknown> = {}): Record<s
 }
 
 export const NO_SLEEP = async () => {};
-export const TEXT_COMPAT_OPTIONS = { reviewOutputPolicy: 'text_compat_allowed' as const };
+export const TEXT_COMPAT_OPTIONS = {
+  reviewInvocationPolicy: 'sdk_allowed' as const,
+  reviewOutputPolicy: 'text_compat_allowed' as const,
+};
 
 export function makeClient(opts: {
   agents?: Array<Record<string, unknown>>;

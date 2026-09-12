@@ -420,7 +420,6 @@ export function formatDoctor(checks: DoctorCheck[], host: InstallPlatform): stri
     unmanaged: 'UNMANAGED',
     version_mismatch: 'VERSION',
     instruction_missing: 'INSTR_MISSING',
-    instruction_stale: 'INSTR_STALE',
     error: 'ERROR',
     warn: 'WARN',
     info: 'NOTE',

@@ -252,12 +252,9 @@ describe('review prompt Discovery context loading', () => {
     expect(archPrompt.match(/## Discovery Context/g)).toHaveLength(1);
     expect(archPrompt).toContain('advisory falsification evidence');
     expect(archPrompt).toContain('npm test');
-    expect(archPrompt).toContain(
-      'Set attestation.toolObligationId=11111111-1111-4111-8111-111111111111.',
-    );
-    expect(archPrompt).toContain(
-      'Do not output reviewedBy, reviewedAt, mandateDigest, criteriaVersion, or attestation.reviewedBy',
-    );
+    expect(archPrompt).toContain('obligationId=11111111-1111-4111-8111-111111111111');
+    expect(archPrompt).toContain('mandateDigest=test-digest');
+    expect(archPrompt).toContain('criteriaVersion=p37-v1');
   });
 
   it('plan prompt with an unavailable discovery context renders NOT_VERIFIED and preserves attestation', () => {
@@ -275,12 +272,9 @@ describe('review prompt Discovery context loading', () => {
     expect(prompt).toContain('## Discovery Context');
     expect(prompt).toContain('status: unavailable');
     expect(prompt).toContain('NOT_VERIFIED');
-    expect(prompt).toContain(
-      'Set attestation.toolObligationId=11111111-1111-4111-8111-111111111111.',
-    );
-    expect(prompt).toContain(
-      'Do not output reviewedBy, reviewedAt, mandateDigest, criteriaVersion, or attestation.reviewedBy',
-    );
+    expect(prompt).toContain('obligationId=11111111-1111-4111-8111-111111111111');
+    expect(prompt).toContain('mandateDigest=test-digest');
+    expect(prompt).toContain('criteriaVersion=p37-v1');
   });
 
   it('impl prompt with an unavailable discovery context renders NOT_VERIFIED and preserves attestation', () => {
@@ -299,12 +293,9 @@ describe('review prompt Discovery context loading', () => {
     expect(prompt).toContain('## Discovery Context');
     expect(prompt).toContain('status: unavailable');
     expect(prompt).toContain('NOT_VERIFIED');
-    expect(prompt).toContain(
-      'Set attestation.toolObligationId=11111111-1111-4111-8111-111111111111.',
-    );
-    expect(prompt).toContain(
-      'Do not output reviewedBy, reviewedAt, mandateDigest, criteriaVersion, or attestation.reviewedBy',
-    );
+    expect(prompt).toContain('obligationId=11111111-1111-4111-8111-111111111111');
+    expect(prompt).toContain('mandateDigest=test-digest');
+    expect(prompt).toContain('criteriaVersion=p37-v1');
   });
 
   it('content prompt renders NO local repository Discovery section (content scope)', () => {
@@ -322,8 +313,9 @@ describe('review prompt Discovery context loading', () => {
     // inline content subjects — no section, no instruction.
     expect(prompt).not.toContain('## Discovery Context');
     expect(prompt).not.toContain('Repository Discovery Contract');
-    expect(prompt).toContain('toolObligationId: "11111111-1111-4111-8111-111111111111"');
-    expect(prompt).not.toContain('mandateDigest: "test-digest"');
+    expect(prompt).toContain('obligationId=11111111-1111-4111-8111-111111111111');
+    expect(prompt).toContain('mandateDigest=test-digest');
+    expect(prompt).toContain('criteriaVersion=p37-v1');
   });
 
   it('content prompt renders drift timeout as discovery_drift_timeout + NOT_VERIFIED (#401)', async () => {
@@ -356,12 +348,9 @@ describe('review prompt Discovery context loading', () => {
     });
 
     expect(prompt.match(/## Discovery Context/g)).toHaveLength(1);
-    expect(prompt).toContain(
-      'Set attestation.toolObligationId=11111111-1111-4111-8111-111111111111.',
-    );
-    expect(prompt).toContain(
-      'Do not output reviewedBy, reviewedAt, mandateDigest, criteriaVersion, or attestation.reviewedBy',
-    );
+    expect(prompt).toContain('obligationId=11111111-1111-4111-8111-111111111111');
+    expect(prompt).toContain('mandateDigest=test-digest');
+    expect(prompt).toContain('criteriaVersion=p37-v1');
   });
 
   it('impl prompt with discovery context preserves attestation wording', () => {
@@ -378,12 +367,9 @@ describe('review prompt Discovery context loading', () => {
     });
 
     expect(prompt.match(/## Discovery Context/g)).toHaveLength(1);
-    expect(prompt).toContain(
-      'Set attestation.toolObligationId=11111111-1111-4111-8111-111111111111.',
-    );
-    expect(prompt).toContain(
-      'Do not output reviewedBy, reviewedAt, mandateDigest, criteriaVersion, or attestation.reviewedBy',
-    );
+    expect(prompt).toContain('obligationId=11111111-1111-4111-8111-111111111111');
+    expect(prompt).toContain('mandateDigest=test-digest');
+    expect(prompt).toContain('criteriaVersion=p37-v1');
   });
 
   it('content prompt preserves attestation wording without a Discovery section', () => {
@@ -398,8 +384,9 @@ describe('review prompt Discovery context loading', () => {
     });
 
     expect(prompt).not.toContain('## Discovery Context');
-    expect(prompt).toContain('toolObligationId: "11111111-1111-4111-8111-111111111111"');
-    expect(prompt).not.toContain('mandateDigest: "test-digest"');
+    expect(prompt).toContain('obligationId=11111111-1111-4111-8111-111111111111');
+    expect(prompt).toContain('mandateDigest=test-digest');
+    expect(prompt).toContain('criteriaVersion=p37-v1');
   });
 
   it('renders surfaces and modules from implementation guidance', () => {

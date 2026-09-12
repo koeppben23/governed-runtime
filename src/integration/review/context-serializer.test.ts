@@ -78,25 +78,24 @@ describe('F10: renderReviewerTaskPrompt canonical copy-prompt', () => {
     expect(prompt.length).toBeGreaterThanOrEqual(MIN_SUBAGENT_PROMPT_LENGTH);
   });
 
-  it('carries only reviewer-owned attestation values', () => {
+  it('carries trusted attestation bindings without reviewer-owned provenance', () => {
     const prompt = renderReviewerTaskPrompt({ iteration: 1, planVersion: 1, ...base });
     expect(prompt).toContain(base.obligationId);
-    expect(prompt).not.toContain(base.mandateDigest);
-    expect(prompt).not.toContain(base.criteriaVersion);
-    expect(prompt).toContain('flowguard-reviewer');
+    expect(prompt).toContain(base.mandateDigest);
+    expect(prompt).toContain(base.criteriaVersion);
+    expect(prompt).toContain('Do NOT output reviewedBy or reviewedAt.');
   });
 
   it('omits planVersion cleanly for standalone /review (planVersion null)', () => {
     const prompt = renderReviewerTaskPrompt({ iteration: 4, planVersion: null, ...base });
     expect(promptContainsValue(prompt, 'iteration', 4)).toBe(true);
-    expect(prompt).not.toContain('planVersion');
+    expect(prompt).not.toContain('Bind planVersion exactly to');
     expect(extractContentMeta(prompt)).toEqual({ expectedIteration: 4, expectedPlanVersion: null });
   });
 
   it('does not prefill a verdict or findings (anti-fabrication)', () => {
     const prompt = renderReviewerTaskPrompt({ iteration: 1, planVersion: 1, ...base });
-    expect(prompt).not.toMatch(/"overallVerdict"\s*:/);
-    expect(prompt).not.toMatch(/\baccept\b/);
-    expect(prompt).toContain('MUST NOT call any FlowGuard tools');
+    expect(prompt).not.toContain('"overallVerdict":"accept"');
+    expect(prompt).toContain('MUST NOT call workflow-authority tools');
   });
 });

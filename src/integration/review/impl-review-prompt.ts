@@ -1,21 +1,10 @@
 /**
- * @module integration/review/impl-review-prompt
- * @description Prompt construction for implementation review by the
- *              flowguard-reviewer subagent.
- *
- * Extracted from prompt-builders.ts along the implementation-review boundary
- * to keep both modules within the file-size budget. Pure functions only: no
- * SDK, state, or enforcement dependencies.
- *
- * The subject anchor contract binds the reviewer to the exact
- * implementationDigest; the repository evidence rule derives from the SAME
- * authority enforcement uses (the host-minted observation capability is only
- * minted when at least one frozen revision resolves) — no separate heuristic.
- *
- * @version v1
+ * @module integration/review-impl-review-prompt
+ * @description Task-local implementation review prompt construction.
  */
 
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
+import { renderReviewerCriteria } from '../../templates/mandates-reviewer-criteria.js';
 import { renderPersistedProofGraphContext } from './proof-context.js';
 import { renderRepositoryObservationContract } from './observation-contract-prompt.js';
 import {
@@ -24,7 +13,6 @@ import {
 } from './discovery-context-prompt.js';
 import { buildStackProfileSection, CORE_REVIEW_PROFILE_MARKER } from './prompt-sections.js';
 
-/** Options for building an implementation review prompt. */
 export interface ImplReviewPromptOpts {
   readonly changedFiles: string[];
   readonly planText: string;
@@ -37,7 +25,6 @@ export interface ImplReviewPromptOpts {
   readonly profileName?: string;
   readonly profileRules?: string;
   readonly discoveryContext: DiscoveryReviewContext;
-  /** Persisted advisory projection only; prompt construction never evaluates providers. */
   readonly proofGraph?: ProofGraphProjection;
   readonly challengeResolutions?: ReadonlyArray<{
     challengeId: string;
@@ -45,22 +32,28 @@ export interface ImplReviewPromptOpts {
     validationAttemptIds: string[];
     resolvedAt: string;
   }>;
-  /**
-   * Runtime-executed verification evidence bound to the implementation under
-   * review (FlowGuard-executed, digest-bound by the caller).
-   */
   readonly verificationEvidence?: readonly ReviewVerificationEvidenceItem[];
-  /** Opaque host-minted observation capability of the attempt under review. */
   readonly observationCapability?: string;
   readonly observationRevisions?: readonly ('base' | 'head')[];
-  /** Canonical implementation subject digest for the host-enforced anchor contract. */
   readonly implementationDigest?: string;
 }
 
-/** A single runtime-executed verification result projected for the reviewer
- * prompt (immutable ValidationAttempt.result fields; tamper-evident via
- * `outputDigest`; no raw stdout/stderr is carried).
- */
+export interface ReviewClaimAssertionEvidence {
+  readonly checkId: string;
+  readonly providerId: string;
+  readonly localId: string;
+  readonly status: 'passed' | 'failed' | 'errored' | 'skipped';
+  readonly suiteName?: string;
+  readonly testName: string;
+  readonly sourceFile?: string;
+  readonly durationMs?: number;
+}
+
+export interface ReviewClaimAssertionEvidenceSet {
+  readonly reportDigests: readonly string[];
+  readonly assertions: readonly ReviewClaimAssertionEvidence[];
+}
+
 export interface ReviewVerificationEvidenceItem {
   readonly attemptId: string;
   readonly kind: string;
@@ -72,59 +65,58 @@ export interface ReviewVerificationEvidenceItem {
   readonly outputDigest: string;
   readonly detail: string;
   readonly executedAt: string;
+  readonly claimAssertionEvidence?: ReviewClaimAssertionEvidenceSet;
 }
 
-/**
- * Build a prompt for implementation review by the flowguard-reviewer subagent.
- */
-/**
- * Render the executed verification evidence section for the implementation
- * review prompt.
- *
- * Fail-closed: an empty list renders an explicit NOT_VERIFIED line instead of
- * omitting the section, so the reviewer is told that no runtime evidence is
- * bound to the current implementation — a genuine review signal, not silence.
- *
- * Enforcement safety: this section is emitted AFTER the attestation/context
- * block and BEFORE the CORE_REVIEW_PROFILE_MARKER. Its own field LABELS are
- * neutral (`durationMs`, `digest`, `exitCode`, `kind`) — no "iteration"/"version"
- * adjacent to digits. The `command` and `detail` VALUES are executor-derived and
- * NOT sanitized, so they could in principle contain such a token. That is safe:
- * the L3 matcher (promptContainsValue in enforcement/extraction.ts) is a positive
- * `.test()` presence check on the whole prompt, so an extra token here cannot
- * REMOVE the legitimate iteration=/planVersion= tokens emitted by
- * renderReviewContext, and injecting the CORRECT expected value is not a bypass.
- * The section therefore cannot flip enforcement in either direction.
- */
 export function renderVerificationEvidence(
   evidence: readonly ReviewVerificationEvidenceItem[],
 ): string[] {
   if (evidence.length === 0) {
     return [
-      '## Verification Evidence (executed)',
-      '',
+      '### Verification Evidence (executed)',
       '- NOT_VERIFIED: no executed verification evidence is bound to the current implementation digest.',
-      '  Treat every plan verification claim as NOT_VERIFIED unless you can independently confirm it; do not assume checks passed.',
-      '',
+      '  Treat every plan verification claim as NOT_VERIFIED unless independently confirmed.',
     ];
   }
   const rows = evidence.map((item) => {
     const status = item.timedOut ? 'TIMED_OUT' : item.passed ? 'PASS' : 'FAIL';
-    return (
+    const base =
       `- [${status}] kind=${item.kind} exitCode=${item.exitCode} durationMs=${item.executionMs} ` +
       `digest=${item.outputDigest}\n` +
       `  command: ${item.command}\n` +
-      `  detail: ${item.detail}`
+      `  detail: ${item.detail}`;
+    if (!item.claimAssertionEvidence) return base;
+    const assertionLines = item.claimAssertionEvidence.assertions.map(
+      (assertion) =>
+        `    - checkId=${assertion.checkId} providerId=${assertion.providerId} ` +
+        `localId=${assertion.localId} status=${assertion.status}`,
     );
+    return [
+      base,
+      `  claim-relevant structured assertions (host-extracted; reportDigests=${item.claimAssertionEvidence.reportDigests.join(',')}):`,
+      ...assertionLines,
+    ].join('\n');
   });
   return [
-    '## Verification Evidence (executed)',
-    '',
-    'FlowGuard executed these checks itself (not agent-reported); exitCode/digest are tamper-evident.',
-    'Verify plan verification claims against these results. A claim not supported by a PASS here is NOT_VERIFIED.',
-    '',
+    '### Verification Evidence (executed)',
+    'FlowGuard executed these checks itself; a plan claim not supported by a PASS here remains NOT_VERIFIED.',
     ...rows,
-    '',
+  ];
+}
+
+function renderImplementationAnchorContract(
+  implementationDigest: string | undefined,
+  observationCapability: string | undefined,
+): string[] {
+  if (!implementationDigest) return [];
+  return [
+    '### Implementation Subject Anchor Contract (host-enforced)',
+    '- subjectAnchors MUST use kind "implementation".',
+    `- implementationDigest MUST be "${implementationDigest}".`,
+    '- Repository paths are evidenceLocations only — never subjectAnchors.',
+    observationCapability
+      ? '- evidenceLocations are admissible only when their frozen bytes were obtained through flowguard_observe_repository during this review attempt.'
+      : '- evidenceLocations MUST be []; working-tree reads are investigation only.',
   ];
 }
 
@@ -136,6 +128,8 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     iteration,
     planVersion,
     obligationId,
+    criteriaVersion,
+    mandateDigest,
     profileName,
     profileRules,
     discoveryContext,
@@ -148,57 +142,37 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
   } = opts;
   const stackSection = buildStackProfileSection(profileName, profileRules);
   const discoverySection = buildDiscoveryContextSection(discoveryContext);
+
   return [
-    `You are reviewing an implementation for iteration=${iteration}, planVersion=${planVersion}.`,
+    '## Instructions',
+    renderReviewerCriteria('implementation'),
+    'Review the implementation against the approved contract, not against incidental step-by-step mechanics.',
+    'Falsify correctness, scope, authority, negative paths, test integrity, and verification claims before accepting.',
+    'Treat challenge resolutions as advisory NOT_VERIFIED evidence; inspect them independently.',
+    'Return one ReviewerFindingsInput result using the active output transport.',
     '',
-    '## Ticket',
-    '',
-    ticketText,
-    '',
-    '## Approved Plan',
-    '',
-    planText,
-    '',
-    '## Changed Files',
-    '',
-    changedFiles.map((f) => `- ${f}`).join('\n'),
-    '',
-    ...(stackSection ? [stackSection, ''] : []),
-    ...(discoverySection ? [discoverySection, ''] : []),
+    '## Trusted Runtime Context',
+    `iteration=${iteration}, planVersion=${planVersion}`,
+    `obligationId=${obligationId}`,
+    `mandateDigest=${mandateDigest}`,
+    `criteriaVersion=${criteriaVersion}`,
+    ...(stackSection ? [stackSection] : []),
+    ...(discoverySection ? [discoverySection] : []),
     ...renderPersistedProofGraphContext(proofGraph),
     ...(challengeResolutions.length > 0
-      ? [
-          '## Advisory Challenge Resolutions (NOT_VERIFIED)',
-          '',
-          'These author-recorded bindings do not establish correctness or alter acceptance. Inspect the referenced challenge and validation attempts independently:',
-          JSON.stringify(challengeResolutions),
-          '',
-        ]
+      ? ['### Advisory Challenge Resolutions (NOT_VERIFIED)', JSON.stringify(challengeResolutions)]
       : []),
     ...renderVerificationEvidence(verificationEvidence),
-    '## Instructions',
-    '',
-    'Review this implementation against the approved plan and ticket.',
-    'Treat any challenge resolution as advisory NOT_VERIFIED evidence; independently verify it.',
-    'Read the changed files using the read/glob/grep tools to verify correctness.',
-    'Follow your review criteria for implementations.',
-    ...(implementationDigest
-      ? [
-          '## Implementation Subject Anchor Contract (host-enforced)',
-          'The review subject is the recorded implementation. The host binder enforces this exact contract:',
-          '- subjectAnchors MUST use kind "implementation"',
-          `- implementationDigest MUST be "${implementationDigest}"`,
-          '- Repository paths are evidenceLocations only — never subjectAnchors.',
-          observationCapability
-            ? 'evidenceLocations are admissible ONLY when their frozen bytes were obtained through flowguard_observe_repository during this review attempt.'
-            : 'evidenceLocations MUST be []. Do not convert working-tree reads into repository evidence.',
-        ]
-      : []),
+    ...renderImplementationAnchorContract(implementationDigest, observationCapability),
     ...renderRepositoryObservationContract(observationCapability, observationRevisions ?? []),
-    'Return your findings as a single ReviewerFindingsInput JSON object.',
-    `Set iteration=${iteration} and planVersion=${planVersion} in your response.`,
-    `Set attestation.toolObligationId=${obligationId}.`,
-    'Do not output reviewedBy, reviewedAt, mandateDigest, criteriaVersion, or attestation.reviewedBy; the host stamps them after strict validation.',
+    '',
+    '## Frozen Untrusted Subject Context',
+    '### Ticket',
+    ticketText,
+    '### Approved Plan',
+    planText,
+    '### Changed Files',
+    changedFiles.map((file) => `- ${file}`).join('\n'),
     '',
     CORE_REVIEW_PROFILE_MARKER,
   ].join('\n');

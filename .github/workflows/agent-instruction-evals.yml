@@ -12,6 +12,19 @@ on:
         required: false
         default: '10'
         type: string
+      runner_config:
+        description: 'Repository-relative runner config path'
+        required: false
+        default: 'evals/agent-instructions/runner-configs/fake-ci.json'
+        type: string
+      execution_mode:
+        description: 'Synthetic plumbing smoke or strict live provider evaluation'
+        required: false
+        default: 'synthetic-advisory'
+        type: choice
+        options:
+          - synthetic-advisory
+          - live-strict
 
 permissions:
   contents: read
@@ -38,9 +51,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Validate timeout input
+      - name: Validate inputs
+        env:
+          INPUT_TIMEOUT_MINUTES: ${{ inputs.timeout_minutes }}
+          INPUT_RUNNER_CONFIG: ${{ inputs.runner_config }}
         run: |
-          T="${{ inputs.timeout_minutes }}"
+          T="$INPUT_TIMEOUT_MINUTES"
           case "$T" in
             ''|*[!0-9]*) echo "timeout_minutes must be an integer"; exit 2 ;;
           esac
@@ -48,17 +64,35 @@ jobs:
             echo "timeout_minutes must be between 1 and 30"
             exit 2
           fi
+          CONFIG="$INPUT_RUNNER_CONFIG"
+          case "$CONFIG" in
+            /*|../*|*/../*|*/..) echo "runner_config must be repository-relative without traversal"; exit 2 ;;
+          esac
+          if [ ! -f "$CONFIG" ]; then
+            echo "runner_config does not exist: $CONFIG"
+            exit 2
+          fi
           echo "TIMEOUT_MS=$((T * 60000))" >> "$GITHUB_ENV"
 
-      - name: Run advisory eval smoke
+      - name: Run agent instruction evals
+        env:
+          EVAL_RUNNER_CONFIG: ${{ inputs.runner_config }}
+          EVAL_CASE: ${{ inputs.case }}
+          EVAL_EXECUTION_MODE: ${{ inputs.execution_mode }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           ARGS=(
-            --config evals/agent-instructions/runner-configs/fake-ci.json
-            --advisory
+            --config "$EVAL_RUNNER_CONFIG"
             --timeout-ms "$TIMEOUT_MS"
           )
-          if [ -n "${{ inputs.case }}" ]; then
-            ARGS+=(--case "${{ inputs.case }}")
+          if [ "$EVAL_EXECUTION_MODE" = 'synthetic-advisory' ]; then
+            ARGS+=(--advisory)
+          else
+            ARGS+=(--require-live-host)
+          fi
+          if [ -n "$EVAL_CASE" ]; then
+            ARGS+=(--case "$EVAL_CASE")
           fi
           npx tsx evals/agent-instructions/cli.ts "${ARGS[@]}"
 

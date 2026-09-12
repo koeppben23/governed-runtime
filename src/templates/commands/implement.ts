@@ -27,14 +27,20 @@ ${DISCOVERY_REVIEW_CAPTURE}
 
 ### Phase 2: Implement
 
-2. Use the approved plan authored in the /plan step as the source of truth. Identify the numbered
-   steps and files to modify. (The plan body is NOT included in the flowguard_status response —
-   status only confirms \`hasPlan\`/\`planVersion\` and the phase. If the plan text is no longer
-   available in this conversation context, run \`/help\` first to verify the session state and
-   artifact digest, then call \`flowguard_help({ view: "context", includeArtifactContent: true })\`
-   to retrieve the complete canonical plan content. Use ONLY the returned content — do not
-   reconstruct or infer plan details from metadata alone.)
-3. Execute each step in order:
+2. Use the approved plan authored in the /plan step as the source of truth. Its scope,
+   acceptance criteria, contracts, authority decisions, and required outcomes are binding.
+   Local implementation mechanics are not independently authoritative: choose the smallest
+   correct mechanics that satisfy every approved obligation. If correctness requires a material
+   change to approved scope, behavior, authority, or acceptance criteria, do not silently diverge;
+   stop and return to the plan gate. (The plan body is NOT included in the flowguard_status
+   response — status only confirms \`hasPlan\`/\`planVersion\` and the phase. If the plan text is
+   no longer available in this conversation context, run \`/help\` first to verify the session
+   state and artifact digest, then call
+   \`flowguard_help({ view: "context", includeArtifactContent: true })\` to retrieve the complete
+   canonical plan content. Use ONLY the returned content — do not reconstruct or infer plan
+   details from metadata alone.)
+3. Satisfy every approved outcome, contract, authority decision, scope boundary, and acceptance
+   criterion while preserving dependencies and validation boundaries:
    - FIRST confirm this is a git repository (e.g. \`git rev-parse --is-inside-work-tree\` in the
      worktree). Implementation evidence is git-derived: the runtime blocks every mutating host tool
      with \`NOT_GIT_REPO\` in a non-Git worktree, and \`flowguard_implement\` cannot record evidence
@@ -46,8 +52,9 @@ ${DISCOVERY_REVIEW_CAPTURE}
    - Use \`read\` to examine existing files before modifying.
    - Use \`write\` or \`edit\` to create or modify files.
    - Use \`bash\` for commands (install dependencies, run formatters, etc.).
-   - Follow the plan steps exactly — add nothing beyond what the plan specifies.
- 4. After completing ALL plan steps, call \`flowguard_implement({})\` with no arguments.
+   - Do not add behavior, authority, scope, or acceptance criteria beyond the approved plan.
+  4. After satisfying all approved outcomes, contracts, authority decisions, scope boundaries, and
+     acceptance criteria, call \`flowguard_implement({})\` with no arguments.
     - The tool records evidence and auto-advances the state machine. It can cross MULTIPLE
       phases in one call — e.g. straight past IMPL_VALIDATION into IMPL_REVIEW (a
       policy-permitted zero-check transition) or into EVIDENCE_REVIEW (reduced ceremony).
@@ -127,8 +134,9 @@ ${SHARED_REVIEW_LOOP({
 
 ## Rules
 
-- Follow the approved plan exactly — no deviations or additions.
-- Make only changes the plan requires or that are clearly necessary to make it work: no speculative flexibility, no defensive handling for scenarios that cannot occur, no unrequested refactors of untouched code (see AP-B11 Over-Engineering).
+- The approved plan's scope, acceptance criteria, contracts, authority decisions, and required outcomes are binding; implementation mechanics may adapt locally inside those boundaries.
+- Make only changes necessary to satisfy the approved scope, outcomes, contracts, authority decisions, and acceptance criteria: no speculative flexibility, no defensive handling for scenarios that cannot occur, no unrequested refactors of untouched code (see AP-B11 Over-Engineering).
+- If a materially different solution is required for correctness, stop and return to /plan rather than silently changing approved scope or behavior.
 - Solve the problem generally; never special-case test inputs or hardcode values to make checks pass (see AP-B12 Test-Fitting). If a test looks wrong, surface it instead of fitting to it.
 - Use the standard project tools; do not build helper-script workarounds to shortcut a task. Remove any temporary files or scaffolding created for iteration before finishing.
 - Record evidence with \`flowguard_implement({})\` (no arguments) BEFORE starting the review loop.
@@ -138,14 +146,14 @@ ${SHARED_REVIEW_LOOP({
   with \`flowguard_implement({})\` and dispatch on the returned phase again.
 - In Verification Evidence, list only checks that were actually executed. Mark all others as NOT_VERIFIED.
 - Follow profile rules from \`flowguard_status\` when implementing.
-- Do not call flowguard_plan during /implement — planning is complete.
+- Do not call flowguard_plan during /implement — planning is complete unless a material approved-contract change is required, in which case stop and return control to the user.
 - Do not auto-chain into /review-decision after implementation — the user decides.
 
 ## Example (correct tool sequences)
 
 Happy path (checks exist):
 1. \`flowguard_status\` → phase: IMPLEMENTATION, plan approved
-2. (execute plan steps: read/write/edit/bash)
+2. (satisfy approved outcomes, contracts, authority decisions, scope, and acceptance criteria using the smallest correct implementation mechanics)
 3. \`flowguard_implement({})\` → returns phase: IMPL_VALIDATION
 4. \`flowguard_status\` (unfocused) → read \`activeChecks\`
 5. \`flowguard_run_check({ kind: "<kind>" })\` for each active check → passes, advances to IMPL_REVIEW
@@ -177,7 +185,7 @@ ${GOVERNANCE_RULES}
 
 ## Done-when
 
-- All plan steps are implemented as code changes.
+- Every approved outcome, contract, authority decision, scope boundary, and acceptance criterion is satisfied without material drift.
 - Verification Evidence distinguishes Planned from Executed checks.
 - Implementation evidence is recorded via flowguard_implement.
 - Independent review loop has converged.

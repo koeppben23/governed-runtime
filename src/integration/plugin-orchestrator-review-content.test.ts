@@ -84,7 +84,7 @@ function buildFindings(overrides: Record<string, unknown> = {}): Record<string, 
 
 function buildClient(findings: Record<string, unknown> | null): OrchestratorClient {
   return {
-    app: { agents: vi.fn().mockResolvedValue({ data: [] }) },
+    app: { agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }) },
     session: {
       create: vi.fn().mockResolvedValue({ data: { id: CHILD_SESSION_ID }, error: undefined }),
       prompt: vi
@@ -100,7 +100,7 @@ function buildClient(findings: Record<string, unknown> | null): OrchestratorClie
 
 function buildTextCompatClient(findings: Record<string, unknown>): OrchestratorClient {
   return {
-    app: { agents: vi.fn().mockResolvedValue({ data: [] }) },
+    app: { agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }) },
     session: {
       create: vi.fn().mockResolvedValue({ data: { id: CHILD_SESSION_ID }, error: undefined }),
       prompt: vi
@@ -259,6 +259,7 @@ async function runReviewContent(
   clientOverride?: OrchestratorClient,
   reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed',
   seedInvocations: NonNullable<SessionState['reviewAssurance']>['invocations'] = [],
+  configureState?: (state: SessionState) => void,
 ) {
   const client = clientOverride ?? buildClient(findings);
   const stateRef = {
@@ -269,6 +270,7 @@ async function runReviewContent(
       seedInvocations,
     ),
   };
+  configureState?.(stateRef.current);
   vi.mocked(readState).mockResolvedValue(stateRef.current);
   const { deps, blockReviewOutcome, updateReviewAssurance } = buildDeps(client, stateRef);
   const output = { output: contentAnalysisRequiredOutput() };
@@ -364,8 +366,8 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     expect(next).toContain('do not construct reviewer attestation fields');
     const reviewerTaskPrompt = String(parsed.reviewerTaskPrompt);
     expect(reviewerTaskPrompt).toContain('persisted diff content');
-    expect(reviewerTaskPrompt).toContain('## Frozen Review Subject');
-    expect(reviewerTaskPrompt).toContain('## Review Subject Scope (frozen obligation scope)');
+    expect(reviewerTaskPrompt).toContain('## Frozen Untrusted Subject');
+    expect(reviewerTaskPrompt).toContain('## Subject Scope (frozen obligation scope)');
     expect(reviewerTaskPrompt).toContain(
       JSON.stringify({ kind: 'content', subjectDigest: SUBJECT_DIGEST, lineCount: 1 }),
     );
@@ -487,7 +489,7 @@ describe('runReviewOrchestration strict /review content analysis', () => {
       obligationType: 'review',
       pluginHandshakeAt: NOW,
       status: 'fulfilled',
-      fulfilledAt: NOW,
+      fulfilledAt: expect.any(String),
     });
     const invocation = state.reviewAssurance?.invocations[0];
     expect(invocation).toMatchObject({
@@ -501,17 +503,45 @@ describe('runReviewOrchestration strict /review content analysis', () => {
       hostVisible: false,
       promptHash: expect.any(String),
       findingsHash: expect.any(String),
+      attemptId: ATTEMPT_ID,
       mandateDigest: REVIEW_MANDATE_DIGEST,
       criteriaVersion: REVIEW_CRITERIA_VERSION,
-      invokedAt: NOW,
-      fulfilledAt: NOW,
+      invokedAt: expect.any(String),
+      fulfilledAt: expect.any(String),
       consumedByObligationId: null,
       source: 'host-orchestrated',
       reviewOutputMode: 'structured_output',
       structuredOutputUsed: true,
       reviewAssuranceLevel: 'structured_high',
+      capturedVerdict: 'accept',
     });
     expect(invocation?.invocationId).toBe(obligation?.invocationId);
+    expect(Date.parse(invocation!.invokedAt)).toBeLessThanOrEqual(
+      Date.parse(invocation!.fulfilledAt!),
+    );
+    expect(state.reviewAssurance?.attempts[0]).toMatchObject({
+      attemptId: ATTEMPT_ID,
+      status: 'bound',
+      childSessionId: CHILD_SESSION_ID,
+    });
+    const evidenceIntents = vi.mocked(updateReviewAssurance).mock.calls[0]![2]!(state, NOW);
+    expect(evidenceIntents).toEqual([
+      expect.objectContaining({
+        event: 'review:subagent_invoked',
+        detail: expect.objectContaining({
+          obligationId: OBLIGATION_ID,
+          obligationType: 'review',
+          parentSessionId: PARENT_SESSION_ID,
+          childSessionId: CHILD_SESSION_ID,
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
+        }),
+      }),
+      expect.objectContaining({
+        event: 'review:obligation_fulfilled',
+        detail: { obligationId: OBLIGATION_ID, childSessionId: CHILD_SESSION_ID },
+      }),
+    ]);
     const parsed = JSON.parse(output.output) as Record<string, unknown>;
     expect(parsed.error).toBe(true);
     expect(parsed.code).toBe('CONTENT_ANALYSIS_REQUIRED');
@@ -529,6 +559,35 @@ describe('runReviewOrchestration strict /review content analysis', () => {
       },
     });
     expect(parsed._pluginReviewSessionId).toBe(CHILD_SESSION_ID);
+  });
+
+  it('blocks stale content-review generation before any SDK invocation or evidence mutation', async () => {
+    const { output, blockReviewOutcome, updateReviewAssurance, state, client } =
+      await runReviewContent(
+        buildFindings(),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        (current) => {
+          current.reviewAssurance!.obligations[0]!.criteriaVersion = 'p41-v1';
+        },
+      );
+
+    expect(client.session.create).not.toHaveBeenCalled();
+    expect(client.session.prompt).not.toHaveBeenCalled();
+    expect(updateReviewAssurance).not.toHaveBeenCalled();
+    expect(state.reviewAssurance?.invocations).toEqual([]);
+    expect(state.reviewAssurance?.attempts[0]?.status).toBe('created');
+    expect(blockReviewOutcome).toHaveBeenCalledWith(
+      expect.anything(),
+      OBLIGATION_ID,
+      'REVIEW_GENERATION_MISMATCH',
+      expect.anything(),
+      output,
+    );
   });
 
   it('passes explicit reviewOutputPolicy for /review content text compatibility', async () => {

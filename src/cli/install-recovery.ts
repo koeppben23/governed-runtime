@@ -9,8 +9,6 @@
 
 import type { InstallErrorCode, CliError } from './install-types.js';
 
-// ─── Typed Errors ──────────────────────────────────────────────────────────────
-
 export class InstallError extends Error {
   readonly code: InstallErrorCode;
 
@@ -20,8 +18,6 @@ export class InstallError extends Error {
     this.code = code;
   }
 }
-
-// ─── Recovery Map ──────────────────────────────────────────────────────────────
 
 const RECOVERY_MAP: Record<
   string,
@@ -42,6 +38,9 @@ const RECOVERY_MAP: Record<
   TARBALL_INTEGRITY_FAILED:
     'Inspect the integrity error above, re-download the release artifacts, and retry verification.',
   ALREADY_INSTALLED: 'Add --force to overwrite, or run uninstall first',
+  MANAGED_ARTIFACT_CONFLICT: 'Move or rename the customer-owned conflicting file, then retry.',
+  LEGACY_INSTRUCTION_AMBIGUOUS:
+    'Inspect the existing OpenCode instructions. Remove AGENTS.md only if it is the obsolete FlowGuard reference; otherwise keep it and resolve the authority conflict explicitly before reinstalling.',
   DEPENDENCY_INSTALL_FAILED: 'Run npm install or bun install manually in the target directory',
   INSTALL_LOCK_CONFLICT: (detail) => {
     if (!detail.recoveryContext?.path)
@@ -49,8 +48,6 @@ const RECOVERY_MAP: Record<
     return `Remove stale lock file: rm -f ${detail.recoveryContext.path}`;
   },
 };
-
-// ─── Structured Error Helpers ─────────────────────────────────────────────────
 
 export function formatRecoveryLines(
   errorDetails: Array<{
@@ -73,11 +70,8 @@ export function formatRecoveryLines(
 
     const recovery = RECOVERY_MAP[detail.code];
     if (recovery) {
-      if (typeof recovery === 'function') {
-        lines.push(`    ${recovery(detail)}`);
-      } else {
-        lines.push(`    ${recovery}`);
-      }
+      if (typeof recovery === 'function') lines.push(`    ${recovery(detail)}`);
+      else lines.push(`    ${recovery}`);
     } else {
       hasUncoded = true;
     }
@@ -92,7 +86,6 @@ export function formatRecoveryLines(
   return lines;
 }
 
-/** Write boundary for structured install/uninstall errors. Keeps errors:string[] and errorDetails:CliError[] in sync. */
 export function pushError(
   errors: string[],
   errorDetails: CliError[],
@@ -110,7 +103,6 @@ export function pushError(
   }
 }
 
-/** Convert unknown error to CliError DTO. Used when errors array is not yet a CliResult. */
 export function toCliError(error: unknown): CliError {
   if (error instanceof InstallError) return { code: error.code, message: error.message };
   return { message: error instanceof Error ? error.message : String(error) };

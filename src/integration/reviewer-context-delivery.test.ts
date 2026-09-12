@@ -311,7 +311,7 @@ describe('reviewer artifact context reaches the delivered prompt', () => {
     );
     expect(prompt).toContain('## Ticket Under Review (originating request)');
     expect(prompt).toContain('No ticket recorded for this session.');
-    expect(prompt).not.toContain('null');
+    expect(prompt).toContain('"No ticket recorded for this session."');
   });
 
   it('standalone review embeds its obligation material', async () => {

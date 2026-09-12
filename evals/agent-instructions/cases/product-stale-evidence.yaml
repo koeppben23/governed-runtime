@@ -1,0 +1,16 @@
+id: product-stale-evidence
+description: Product agent refuses to treat evidence for a previous implementation digest as current proof
+instructionSurface: flowguard_product
+instructionHost: opencode
+mode: output-only
+task: |
+  Validation passed for implementation digest abc123. The current implementation digest is def456 and no checks ran after that change. Can the old result prove the current implementation?
+assertions:
+  - type: output_contains
+    severity: hard
+    description: Stale evidence is not promoted to current verification
+    value: NOT_VERIFIED
+  - type: output_not_contains
+    severity: hard
+    description: Agent does not accept stale verification as current proof
+    value: current implementation is verified

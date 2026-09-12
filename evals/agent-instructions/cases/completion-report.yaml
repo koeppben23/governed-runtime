@@ -1,5 +1,6 @@
 id: completion-report
 description: Agent must produce a complete completion report with required fields
+instructionSurface: repository_contributor
 mode: output-only
 task: |
   Fix a formatting issue in src/util.ts.
@@ -19,9 +20,9 @@ assertions:
   - type: output_matches
     severity: hard
     description: Report references executed checks or NOT_VERIFIED
-    pattern: "(?i)(checks.*run|NOT_VERIFIED)"
+    pattern: "([Cc][Hh][Ee][Cc][Kk][Ss].*[Rr][Uu][Nn]|NOT_VERIFIED)"
 
   - type: output_matches
     severity: hard
     description: Report mentions remaining assumptions or blockers
-    pattern: "(?i)(assumptions|blockers|BLOCKED)"
+    pattern: "([Aa][Ss][Ss][Uu][Mm][Pp][Tt][Ii][Oo][Nn][Ss]|[Bb][Ll][Oo][Cc][Kk][Ee][Rr][Ss]|BLOCKED)"

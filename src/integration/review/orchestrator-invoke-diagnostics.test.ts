@@ -88,6 +88,7 @@ describe('invokeReviewer — diagnostics contract', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
         maxRetries: 2,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
@@ -103,6 +104,7 @@ describe('invokeReviewer — diagnostics contract', () => {
         promptResult: { error: { message: 'timeout' }, data: undefined },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
         maxRetries: 2,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
@@ -152,6 +154,7 @@ describe('invokeReviewer — diagnostics contract', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
         maxRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
@@ -184,6 +187,7 @@ describe('invokeReviewer — diagnostics contract', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
         maxRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
@@ -210,6 +214,7 @@ describe('invokeReviewer — diagnostics contract', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
         maxRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
@@ -239,6 +244,7 @@ describe('invokeReviewer — diagnostics contract', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
         maxRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
@@ -266,6 +272,7 @@ describe('invokeReviewer — diagnostics contract', () => {
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        reviewInvocationPolicy: 'sdk_allowed',
         maxRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),

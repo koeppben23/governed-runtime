@@ -25,17 +25,17 @@ import { handleAdrReview } from './architecture-review.js';
 
 export const architecture: ToolDefinition = {
   description:
-    'Submit an Architecture Decision Record (ADR) OR record a self-review verdict. Two modes:\n' +
+    'Submit an Architecture Decision Record (ADR) OR record the independent reviewer verdict. Two modes:\n' +
     'Mode A (submit ADR): provide title and adrText. ADR ID is auto-generated. Records the ADR and starts the review flow.\n' +
     "Mode B (review verdict): provide reviewVerdict ('accept' or 'changes_requested'). " +
     "If 'changes_requested', also provide revised adrText.\n" +
-    'When subagentEnabled=true (the default for all built-in policies), the review is performed ' +
-    `by the ${REVIEWER_SUBAGENT_TYPE} subagent and the verdict submission MUST include reviewFindings ` +
-    'returned by that subagent. When subagentEnabled=false, the legacy LLM-driven self-review path is used.\n' +
+    `Review is performed by the ${REVIEWER_SUBAGENT_TYPE} under the active review transport. ` +
+    'In host-task mode submit ONLY reviewVerdict; FlowGuard resolves captured reviewer evidence automatically. ' +
+    'In an explicitly active SDK/manual findings mode, include the exact reviewer reviewFindings accepted by that transport. ' +
+    'There is no self-review fallback and reviewer unavailability always fails closed.\n' +
     'The review loop runs up to maxIterations (from policy). ' +
-    'On convergence, auto-advances to ARCH_REVIEW.\n' +
-    'Only allowed in READY phase (starts the architecture flow) or ARCHITECTURE phase (re-submit after revision).\n' +
-    'Optionally accepts reviewFindings from an independent review agent.',
+    'On convergence, advances to the ARCH_REVIEW human gate; reviewer acceptance is not user approval.\n' +
+    'Only allowed in READY phase (starts the architecture flow) or ARCHITECTURE phase (re-submit after revision).',
   args: {
     title: z
       .string()
@@ -53,7 +53,7 @@ export const architecture: ToolDefinition = {
       .array(ArchitectureClaimDeclarationSchema)
       .optional()
       .describe(
-        'Pre-evidence claims made by this ADR version. Each identifies its governing ADR section and is bound into any human approval certificate.',
+        'Pre-evidence claims made by this ADR version. Each identifies its governing ADR section and is bound into any human approval certificate. claimId is host-owned and must not be supplied.',
       ),
     reviewVerdict: z
       .enum(['accept', 'changes_requested'])
@@ -66,8 +66,8 @@ export const architecture: ToolDefinition = {
           "'changes_requested' = the ADR needs revision; provide updated adrText.",
       ),
     reviewFindings: ReviewFindingsSchema.optional().describe(
-      `The ${REVIEWER_SUBAGENT_TYPE} subagent's structured findings. SDK mode only — pass the ` +
-        'reviewer output verbatim. In host-task mode do NOT submit reviewFindings: the plugin ' +
+      `The ${REVIEWER_SUBAGENT_TYPE} subagent's structured findings. SDK/manual findings mode only — pass the ` +
+        'reviewer output verbatim when the active transport explicitly requests it. In host-task mode do NOT submit reviewFindings: the plugin ' +
         'resolves them from captured evidence, and hand-edited or mismatched findings are rejected.',
     ),
     reviewerUnavailable: z

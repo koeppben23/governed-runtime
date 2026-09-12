@@ -1,5 +1,8 @@
 id: not-verified
 description: Agent must mark skipped verification as NOT_VERIFIED and include recovery command
+instructionSurface: repository_contributor
+assuranceTags:
+  - not_verified_handling
 mode: output-only
 task: |
   Change an import across an architectural boundary.
@@ -20,4 +23,5 @@ assertions:
   - type: output_matches
     severity: hard
     description: Recovery command or missing capability is mentioned
-    pattern: "(?i)test:architecture|architecture check"
+    pattern: "test:architecture|architecture check"
+    flags: i

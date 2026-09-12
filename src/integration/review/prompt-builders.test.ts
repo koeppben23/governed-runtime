@@ -7,7 +7,9 @@ import {
   buildReviewContentPrompt,
   renderFrozenReviewSubjectEnvelope,
   renderReviewerTaskPrompt,
+  buildTextCompatReviewerPrompt,
 } from './prompt-builders.js';
+import { REVIEW_FINDINGS_JSON_SCHEMA } from './findings-schema.js';
 import { renderPersistedProofGraphContext } from './proof-context.js';
 import type { FrozenReviewerContext } from './frozen-reviewer-context.js';
 
@@ -32,9 +34,9 @@ describe('renderReviewerTaskPrompt challenge contract', () => {
       planVersion: 7,
     });
 
-    expect(prompt).toContain('iteration: 4');
-    expect(prompt).toContain('planVersion: 7');
-    expect(prompt).toContain('reviewMode: "subagent"');
+    expect(prompt).toContain('Bind iteration exactly to 4.');
+    expect(prompt).toContain('Bind planVersion exactly to 7.');
+    expect(prompt).toContain('Bind reviewMode exactly to "subagent".');
   });
 
   it('requires omitting optional challenges when the frozen count is zero', () => {
@@ -71,14 +73,14 @@ describe('renderReviewerTaskPrompt challenge contract', () => {
     // example must itself satisfy the clientReference format, otherwise a
     // reviewer copying the shape verbatim is rejected by the canonical schema.
     expect(prompt).toContain('"clientReference":"c1"');
-    expect(prompt).not.toContain('"challengeId"');
+    const match = prompt.match(/Required challenge object shape: (.+)/);
+    expect(match).not.toBeNull();
+    expect(match![1]).not.toContain('"challengeId"');
     expect(prompt).toContain('"obligationId":"11111111-1111-4111-8111-111111111111"');
     expect(prompt).toContain('"kind":"design_challenge"');
     expect(prompt).toContain('Omit challengeResolutionVerdicts');
     expect(prompt).toContain('outcome. Select it yourself');
 
-    const match = prompt.match(/Required challenge object shape: (.+)/);
-    expect(match).not.toBeNull();
     const renderedChallenge = JSON.parse(match![1]!);
     expect(
       ReviewChallenge.safeParse({
@@ -252,7 +254,24 @@ describe('ProofGraph prompt context', () => {
 describe('repository observation and reviewer-provenance rules', () => {
   it('forbids reviewer-authored provenance before host stamping', () => {
     const prompt = renderReviewerTaskPrompt({ ...BASE_INPUT });
-    expect(prompt).toContain('Do NOT output reviewedBy or reviewedAt anywhere');
+    expect(prompt).toContain('Do NOT output reviewedBy or reviewedAt.');
     expect(prompt).toContain('ReviewerFindingsInput');
+  });
+});
+
+describe('text compatibility reviewer contract', () => {
+  it('keeps the native structured prompt free of serialization schema bytes', () => {
+    const prompt = renderReviewerTaskPrompt(BASE_INPUT);
+
+    expect(prompt).not.toContain('## Text Compatibility Serialization Contract');
+    expect(prompt).not.toContain(JSON.stringify(REVIEW_FINDINGS_JSON_SCHEMA, null, 2));
+  });
+
+  it('derives every required field from the native JSON schema', () => {
+    const prompt = buildTextCompatReviewerPrompt('review prompt');
+
+    for (const field of REVIEW_FINDINGS_JSON_SCHEMA.required) {
+      expect(prompt).toContain(field);
+    }
   });
 });

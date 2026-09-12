@@ -25,10 +25,11 @@ export const ENVELOPE_PRECONDITION_REASONS: readonly BlockedReason[] = [
     code: 'ENVELOPE_PAYLOAD_NOT_FOUND',
     category: 'precondition',
     messageTemplate:
-      'The reviewer output did not contain extractable ReviewFindings JSON. No JSON object was found.',
+      'The reviewer Task completed, but its output did not contain extractable ReviewFindings JSON.',
     recoverySteps: [
-      `Re-invoke the ${REVIEWER_SUBAGENT_TYPE} subagent`,
-      'Ensure the reviewer returns ONLY the ReviewFindings JSON object with no prose, reasoning, or markdown code fences before or after it',
+      'Re-run the originating FlowGuard command (plan, implement, architecture, or review) to authorize a fresh output-repair attempt and emit a new canonical reviewerTaskPrompt',
+      `Only after that command returns INDEPENDENT_REVIEW_REQUIRED, invoke the ${REVIEWER_SUBAGENT_TYPE} Task again with subagent_type="${REVIEWER_SUBAGENT_TYPE}"; do not reuse or free-compose the rejected prompt`,
+      'Do not hand-edit, copy, or submit rejected reviewFindings; host-captured valid evidence remains the only review authority',
     ],
   },
 
@@ -56,10 +57,12 @@ export const ENVELOPE_PRECONDITION_REASONS: readonly BlockedReason[] = [
   {
     code: 'ENVELOPE_SCHEMA_INVALID',
     category: 'precondition',
-    messageTemplate: 'The reviewer output was extracted but failed schema validation: {message}',
+    messageTemplate:
+      'The reviewer Task completed, but its output failed canonical ReviewFindings schema validation: {message}',
     recoverySteps: [
-      `Re-invoke the ${REVIEWER_SUBAGENT_TYPE} subagent and ensure it returns a schema-valid ReviewFindings object`,
-      'Check that all required fields (iteration, planVersion, reviewMode, overallVerdict, blockingIssues, majorRisks, missingVerification, scopeCreep, unknowns, reviewedBy, reviewedAt) are present with correct types',
+      'Re-run the originating FlowGuard command (plan, implement, architecture, or review) to authorize a fresh output-repair attempt and emit a new canonical reviewerTaskPrompt',
+      `Only after that command returns INDEPENDENT_REVIEW_REQUIRED, invoke the ${REVIEWER_SUBAGENT_TYPE} Task again with subagent_type="${REVIEWER_SUBAGENT_TYPE}"; do not reuse or free-compose the rejected prompt`,
+      'Do not hand-edit, copy, or submit rejected reviewFindings; host-captured schema-valid evidence remains the only review authority',
     ],
   },
 

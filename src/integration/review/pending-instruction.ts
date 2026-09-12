@@ -11,6 +11,8 @@ import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import type { ReviewObligation } from '../../state/evidence.js';
 import type { ReviewHostPlatform, ReviewOrchestrationMode } from './orchestration-mode.js';
 import { renderReviewContext, renderReviewerTaskPrompt } from './prompt-builders.js';
+import { reviewerPromptTypeForTask } from './reviewer-task-type.js';
+import { isCurrentReviewGeneration } from './assurance.js';
 
 export interface PendingReviewInstructionInput {
   readonly mode: ReviewOrchestrationMode;
@@ -96,6 +98,7 @@ function buildHostTaskPrompt(
     mandateDigest: obligation.mandateDigest,
     criteriaVersion: obligation.criteriaVersion,
     subjectLabel: input.subjectLabel,
+    reviewType: reviewerPromptTypeForTask(input.reviewKind),
     observationCapability: input.observationCapability,
     challengeContract:
       obligation.requiredChallengeCount === undefined
@@ -134,6 +137,13 @@ export function buildPendingReviewInstruction(
         }
       : {}),
   };
+
+  if (obligation && !isCurrentReviewGeneration(obligation)) {
+    return {
+      reviewInvocation: { ...base, status: 'unsupported_blocked' },
+      next: 'REVIEW_GENERATION_MISMATCH: this persisted review obligation belongs to an older reviewer criteria/mandate generation. Re-hydrate or create a fresh review cycle; do not execute the old obligation under current reviewer semantics.',
+    };
+  }
 
   if (input.mode === 'unsupported_blocked') {
     return {

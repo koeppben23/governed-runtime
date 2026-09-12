@@ -80,7 +80,7 @@ function buildFindings() {
 
 function buildClient(findings: Record<string, unknown>): OrchestratorClient {
   return {
-    app: { agents: vi.fn().mockResolvedValue({ data: [] }) },
+    app: { agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }) },
     session: {
       create: vi.fn().mockResolvedValue({ data: { id: CHILD_SESSION_ID }, error: undefined }),
       prompt: vi
@@ -92,7 +92,7 @@ function buildClient(findings: Record<string, unknown>): OrchestratorClient {
 
 function buildTextCompatClient(findings: Record<string, unknown>): OrchestratorClient {
   return {
-    app: { agents: vi.fn().mockResolvedValue({ data: [] }) },
+    app: { agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }) },
     session: {
       create: vi.fn().mockResolvedValue({ data: { id: CHILD_SESSION_ID }, error: undefined }),
       prompt: vi
@@ -318,10 +318,11 @@ describe('runReviewOrchestration strict independent review with footer output', 
         hostVisible: false,
         promptHash: expect.any(String),
         findingsHash: expect.any(String),
+        attemptId: '22222222-2222-4222-8222-222222222222',
         mandateDigest: REVIEW_MANDATE_DIGEST,
         criteriaVersion: REVIEW_CRITERIA_VERSION,
-        invokedAt: NOW,
-        fulfilledAt: NOW,
+        invokedAt: expect.any(String),
+        fulfilledAt: expect.any(String),
         consumedByObligationId: null,
         source: 'host-orchestrated',
         reviewOutputMode: 'structured_output',
@@ -330,6 +331,14 @@ describe('runReviewOrchestration strict independent review with footer output', 
         capturedVerdict: 'accept',
       });
       expect(invocation?.invocationId).toBe(obligation?.invocationId);
+      expect(Date.parse(invocation!.invokedAt)).toBeLessThanOrEqual(
+        Date.parse(invocation!.fulfilledAt!),
+      );
+      expect(state.reviewAssurance?.attempts[0]).toMatchObject({
+        attemptId: '22222222-2222-4222-8222-222222222222',
+        status: 'bound',
+        childSessionId: CHILD_SESSION_ID,
+      });
 
       expect(appendReviewAuditEvent).not.toHaveBeenCalled();
       const handshakeIntent = vi.mocked(deps.updateReviewAssurance).mock.calls[0]![2]!(state, NOW);
@@ -405,6 +414,30 @@ describe('runReviewOrchestration strict independent review with footer output', 
       expect(parsed._pluginReviewSessionId).toBe(CHILD_SESSION_ID);
     });
   }
+
+  it('blocks a stale standard-review generation before any SDK invocation or evidence mutation', async () => {
+    const state = buildState('PLAN', 'plan');
+    state.reviewAssurance!.obligations[0]!.criteriaVersion = 'p41-v1';
+    const {
+      client,
+      deps,
+      output,
+      state: result,
+    } = await runCase({
+      toolName: TOOL_FLOWGUARD_PLAN,
+      obligationType: 'plan',
+      phase: 'PLAN',
+      input: { args: { planText: 'Add regression tests for review orchestration.' } },
+      state,
+    });
+
+    expect(client.session.create).not.toHaveBeenCalled();
+    expect(client.session.prompt).not.toHaveBeenCalled();
+    expect(deps.updateReviewAssurance).not.toHaveBeenCalled();
+    expect(result.reviewAssurance?.invocations).toEqual([]);
+    expect(result.reviewAssurance?.attempts[0]?.status).toBe('created');
+    expect(JSON.parse(output.output)).toMatchObject({ code: 'REVIEW_GENERATION_MISMATCH' });
+  });
 
   it('host_task_required does not call SDK and returns machine-readable Task requirement', async () => {
     const stateRef = { current: buildState('PLAN', 'plan') };

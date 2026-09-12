@@ -1,10 +1,3 @@
-/**
- * Review and subagent validation reasons.
- *
- * @internal — do not import directly. Part of VALIDATION_REASONS
- *             in reasons-validation.ts.
- */
-
 import type { BlockedReason } from './reasons-types.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
@@ -56,6 +49,16 @@ export const REVIEW_VALIDATION_REASONS = [
     recoverySteps: [
       'Serve the reviewed URL as valid UTF-8, with charset=utf-8 when a charset is declared',
       'Provide the content directly as review text if the source uses another encoding',
+    ],
+  },
+  {
+    code: 'REVIEW_GENERATION_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'Review obligation generation does not match the current reviewer criteria or mandate generation. The stale obligation was not executed.',
+    recoverySteps: [
+      'Re-hydrate the session or start a fresh review cycle so FlowGuard creates an obligation with current reviewer semantics',
+      'Do not execute, attest, or submit findings for the stale obligation',
     ],
   },
   {
@@ -467,8 +470,6 @@ export const REVIEW_VALIDATION_REASONS = [
     ],
   },
 
-  // ─── Verification Execution Reasons (flowguard_run_check) ───────────────────
-
   {
     code: 'CHECK_KIND_NOT_AVAILABLE',
     category: 'input',
@@ -492,8 +493,6 @@ export const REVIEW_VALIDATION_REASONS = [
       'Re-hydrate if the check list needs updating',
     ],
   },
-
-  // ─── Validation Evidence Enforcement (#400) ─────────────────────────────────
 
   {
     code: 'VALIDATION_EVIDENCE_REQUIRED',

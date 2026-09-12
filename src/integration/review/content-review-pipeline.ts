@@ -24,8 +24,11 @@ import {
   hasEvidenceReuse,
   buildInvocationEvidence,
   appendInvocationEvidence,
+  isCurrentReviewGeneration,
+  updateAttemptStatus,
 } from './assurance.js';
 import { updateObligation } from './obligation-state.js';
+import { buildSdkEvidenceAuditIntents } from './sdk-evidence-recorder.js';
 import type { PipelineContext } from './pipeline-types.js';
 import { INVOCATION_MODE_SDK_SESSION, EVIDENCE_SOURCE_HOST } from './pipeline-types.js';
 import {
@@ -47,6 +50,20 @@ function countFindings(findings: unknown): number {
   return Array.isArray(findings) ? findings.length : Object.keys(findings ?? {}).length;
 }
 
+type PersistedReviewObligation = NonNullable<ReturnType<typeof findReviewObligationById>>;
+
+function matchesActiveReviewGeneration(
+  obligation: ReturnType<typeof findReviewObligationById>,
+  reviewCtx: PipelineContext['reviewCtx'],
+): obligation is PersistedReviewObligation {
+  return (
+    obligation !== null &&
+    isCurrentReviewGeneration(obligation) &&
+    obligation.criteriaVersion === reviewCtx.criteriaVersion &&
+    obligation.mandateDigest === reviewCtx.mandateDigest
+  );
+}
+
 /**
  * Resolve the frozen material for the active review obligation.
  *
@@ -60,10 +77,18 @@ async function loadPersistedContentForReview(ctx: PipelineContext): Promise<{
   content: string;
   frozenReviewerContext: FrozenReviewerContext;
   repositoryDiscoverySnapshot: RepositoryDiscoverySnapshot | null;
+  attemptId: string;
 } | null> {
   const { deps, reviewCtx } = ctx;
   const assurance = ensureReviewAssurance(ctx.sessionState.reviewAssurance);
   const obligation = findReviewObligationById(assurance, reviewCtx.obligationId);
+  if (!matchesActiveReviewGeneration(obligation, reviewCtx)) {
+    await blockReviewOutcomeHelper(deps, ctx, 'REVIEW_GENERATION_MISMATCH', {
+      obligationId: reviewCtx.obligationId,
+      reason: 'review obligation generation is stale or does not match the emitted review context',
+    });
+    return null;
+  }
   const attempt = findBindableAttempt(ctx.sessionState.reviewAssurance, reviewCtx.obligationId);
   const material = attempt?.reviewMaterial;
   if (!attempt || !material || attempt.subjectDigest !== obligation?.subjectDigest) {
@@ -107,6 +132,7 @@ async function loadPersistedContentForReview(ctx: PipelineContext): Promise<{
       attempt.repositoryDiscovery.kind === 'repository'
         ? attempt.repositoryDiscovery.snapshot
         : null,
+    attemptId: attempt.attemptId,
   };
 }
 
@@ -115,6 +141,7 @@ async function validateContentFindings(
   reviewerResult: ReviewerSuccessResult,
   prompt: string,
   strictEnforcement: boolean,
+  attemptId: string,
 ): Promise<boolean> {
   const { deps, reviewCtx, output, rawOutput } = ctx;
 
@@ -135,7 +162,10 @@ async function validateContentFindings(
       mandateDigest: reviewCtx.mandateDigest,
       criteriaVersion: reviewCtx.criteriaVersion,
     },
-    hostProvenance: { childSessionId: reviewerResult.sessionId, reviewedAt: ctx.now },
+    hostProvenance: {
+      childSessionId: reviewerResult.sessionId,
+      reviewedAt: reviewerResult.fulfilledAt ?? ctx.now,
+    },
   });
   const parsedFindings = prepared.ok
     ? ReviewFindingsSchema.safeParse(prepared.findings)
@@ -156,7 +186,13 @@ async function validateContentFindings(
     const narrowed = canonicalReviewerResult as ReviewerSuccessResult & {
       findings: Record<string, unknown>;
     };
-    const blocked = await enforceContentStrictGate(ctx, narrowed, parsedFindings.data, prompt);
+    const blocked = await enforceContentStrictGate(
+      ctx,
+      narrowed,
+      parsedFindings.data,
+      prompt,
+      attemptId,
+    );
     if (blocked) return false;
   }
 
@@ -224,7 +260,13 @@ export async function runReviewContentPipeline(ctx: PipelineContext): Promise<vo
     return;
   }
 
-  await validateContentFindings(ctx, reviewerResult, prompt, strictEnforcement);
+  await validateContentFindings(
+    ctx,
+    reviewerResult,
+    prompt,
+    strictEnforcement,
+    persistedContent.attemptId,
+  );
   deps.log.info('review', 'content_review_completed', {
     sessionId,
     findingCount: countFindings(reviewerResult.findings),
@@ -240,6 +282,7 @@ async function enforceContentStrictGate(
     overallVerdict?: string;
   },
   prompt: string,
+  attemptId: string,
 ): Promise<boolean> {
   const { deps, reviewCtx } = ctx;
 
@@ -258,19 +301,18 @@ async function enforceContentStrictGate(
     return true;
   }
 
-  return persistStrictReviewInvocation(ctx, reviewerResult, prompt);
+  return persistStrictReviewInvocation(ctx, reviewerResult, prompt, attemptId);
 }
 
-async function persistStrictReviewInvocation(
+function buildContentReviewInvocation(
   ctx: PipelineContext,
   reviewerResult: ReviewerSuccessResult & { findings: Record<string, unknown> },
-  prompt: string,
-): Promise<boolean> {
-  const { deps, sessDir, reviewCtx, output, sessionId, now } = ctx;
-  const promptHash = hashText(prompt);
-  const findingsHash = hashFindings(reviewerResult.findings);
-
-  const invocation = buildInvocationEvidence({
+  promptHash: string,
+  findingsHash: string,
+  attemptId: string,
+): ReturnType<typeof buildInvocationEvidence> {
+  const { reviewCtx, sessionId, now } = ctx;
+  return buildInvocationEvidence({
     obligationId: reviewCtx.obligationId,
     obligationType: 'review',
     mandateDigest: reviewCtx.mandateDigest,
@@ -281,54 +323,176 @@ async function persistStrictReviewInvocation(
     hostVisible: false,
     promptHash,
     findingsHash,
-    invokedAt: now,
-    fulfilledAt: now,
+    invokedAt: reviewerResult.invokedAt ?? now,
+    fulfilledAt: reviewerResult.fulfilledAt ?? now,
+    attemptId,
     source: EVIDENCE_SOURCE_HOST,
     reviewOutputMode: reviewerResult.reviewOutputMode,
     structuredOutputUsed: reviewerResult.structuredOutputUsed,
     reviewAssuranceLevel: reviewerResult.reviewAssuranceLevel,
     extractionMethod: reviewerResult.extractionMethod,
     modelCapabilityError: reviewerResult.modelCapabilityError,
+    capturedVerdict:
+      typeof reviewerResult.findings.overallVerdict === 'string'
+        ? reviewerResult.findings.overallVerdict
+        : undefined,
   });
+}
+
+function applyContentEvidenceResult(
+  ctx: PipelineContext,
+  reused: boolean,
+  lineageUnavailable: boolean,
+): boolean {
+  if (lineageUnavailable) {
+    ctx.output.output = strictBlockedOutput('REVIEW_ATTEMPT_UNAVAILABLE', {
+      obligationId: ctx.reviewCtx.obligationId,
+      reason: 'SDK review evidence could not bind to the pre-authorized review attempt',
+    });
+    return true;
+  }
+  if (reused) {
+    ctx.output.output = strictBlockedOutput('SUBAGENT_EVIDENCE_REUSED', {
+      obligationId: ctx.reviewCtx.obligationId,
+      reason: 'subagent findings already used for a prior obligation',
+    });
+    return true;
+  }
+  return false;
+}
+
+type ContentEvidenceMutation = {
+  ctx: PipelineContext;
+  reviewerResult: ReviewerSuccessResult & { findings: Record<string, unknown> };
+  attemptId: string;
+  findingsHash: string;
+  invocation: ReturnType<typeof buildInvocationEvidence>;
+  reused: boolean;
+  lineageUnavailable: boolean;
+};
+
+function buildContentEvidenceAuditIntents(input: {
+  mutation: ContentEvidenceMutation;
+  promptHash: string;
+  state: PipelineContext['sessionState'];
+  occurredAt: string;
+}) {
+  const { mutation, promptHash, state, occurredAt } = input;
+  const result = mutation.lineageUnavailable
+    ? 'lineage_unavailable'
+    : mutation.reused
+      ? 'reused'
+      : 'fulfilled';
+  return result === 'lineage_unavailable'
+    ? []
+    : buildSdkEvidenceAuditIntents({
+        ctx: mutation.ctx,
+        result,
+        obligationType: 'review',
+        promptHash,
+        findingsHash: mutation.findingsHash,
+        reviewerResult: mutation.reviewerResult,
+        state,
+        occurredAt,
+        reviewProfile: getReviewerPolicies(state).reviewProfile,
+      });
+}
+
+function applyContentEvidenceMutation(
+  state: PipelineContext['sessionState'],
+  mutation: ContentEvidenceMutation,
+) {
+  const { ctx, reviewerResult, attemptId, findingsHash, invocation } = mutation;
+  const { reviewCtx, now } = ctx;
+  const assurance = ensureReviewAssurance(state.reviewAssurance);
+  if (hasEvidenceReuse(assurance.invocations, reviewerResult.sessionId, findingsHash)) {
+    mutation.reused = true;
+    return updateObligation(state, reviewCtx.obligationId, (item) => ({
+      ...item,
+      status: 'blocked',
+      blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
+    }));
+  }
+  const obligation = assurance.obligations.find(
+    (item) => item.obligationId === reviewCtx.obligationId,
+  );
+  const attempt = assurance.attempts.find((item) => item.attemptId === attemptId);
+  if (
+    !obligation ||
+    !attempt ||
+    attempt.obligationId !== obligation.obligationId ||
+    attempt.obligationType !== obligation.obligationType ||
+    attempt.subjectDigest !== obligation.subjectDigest ||
+    attempt.status !== 'created' ||
+    attempt.childSessionId !== undefined
+  ) {
+    mutation.lineageUnavailable = true;
+    return state;
+  }
+  const boundAssurance = updateAttemptStatus(
+    assurance,
+    attemptId,
+    'bound',
+    reviewerResult.fulfilledAt ?? now,
+    { childSessionId: reviewerResult.sessionId },
+  );
+  const updated = updateObligation(
+    { ...state, reviewAssurance: boundAssurance },
+    reviewCtx.obligationId,
+    (item) => ({
+      ...item,
+      pluginHandshakeAt: now,
+      status: 'fulfilled',
+      invocationId: invocation.invocationId,
+      fulfilledAt: reviewerResult.fulfilledAt ?? now,
+    }),
+  );
+  return {
+    ...updated,
+    reviewAssurance: appendInvocationEvidence(
+      ensureReviewAssurance(updated.reviewAssurance),
+      invocation,
+    ),
+  };
+}
+
+async function persistStrictReviewInvocation(
+  ctx: PipelineContext,
+  reviewerResult: ReviewerSuccessResult & { findings: Record<string, unknown> },
+  prompt: string,
+  attemptId: string,
+): Promise<boolean> {
+  const { deps, sessDir } = ctx;
+  const promptHash = hashText(prompt);
+  const findingsHash = hashFindings(reviewerResult.findings);
+
+  const invocation = buildContentReviewInvocation(
+    ctx,
+    reviewerResult,
+    promptHash,
+    findingsHash,
+    attemptId,
+  );
 
   // Atomically check evidence reuse AND record invocation in a single
   // updateReviewAssurance transaction. Reading the freshest assurance state
   // (`s`) inside the mutation closure closes the TOCTOU window between a
   // stale in-memory reuse check and a later append.
-  let reused = false;
-  await deps.updateReviewAssurance(sessDir, (s) => {
-    const assurance = ensureReviewAssurance(s.reviewAssurance);
-    if (hasEvidenceReuse(assurance.invocations, reviewerResult.sessionId, findingsHash)) {
-      reused = true;
-      return updateObligation(s, reviewCtx.obligationId, (item) => ({
-        ...item,
-        status: 'blocked',
-        blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
-      }));
-    }
-    const updated = updateObligation(s, reviewCtx.obligationId, (item) => ({
-      ...item,
-      pluginHandshakeAt: now,
-      status: 'fulfilled',
-      invocationId: invocation.invocationId,
-      fulfilledAt: now,
-    }));
-    return {
-      ...updated,
-      reviewAssurance: appendInvocationEvidence(
-        ensureReviewAssurance(updated.reviewAssurance),
-        invocation,
-      ),
-    };
-  });
+  const mutation: ContentEvidenceMutation = {
+    ctx,
+    reviewerResult,
+    attemptId,
+    findingsHash,
+    invocation,
+    reused: false,
+    lineageUnavailable: false,
+  };
+  await deps.updateReviewAssurance(
+    sessDir,
+    (state) => applyContentEvidenceMutation(state, mutation),
+    (state, occurredAt) =>
+      buildContentEvidenceAuditIntents({ mutation, promptHash, state, occurredAt }),
+  );
 
-  if (reused) {
-    output.output = strictBlockedOutput('SUBAGENT_EVIDENCE_REUSED', {
-      obligationId: reviewCtx.obligationId,
-      reason: 'subagent findings already used for a prior obligation',
-    });
-    return true;
-  }
-
-  return false;
+  return applyContentEvidenceResult(ctx, mutation.reused, mutation.lineageUnavailable);
 }

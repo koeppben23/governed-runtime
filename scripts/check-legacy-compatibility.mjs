@@ -4,9 +4,9 @@
  * Reject explicit legacy/backward-compatibility production paths on the FlowGuard
  * implementation surface changed by a pull request.
  *
- * This is repository-development enforcement only. It deliberately excludes
- * generated/runtime instruction templates, tests, fixtures, and downstream code
- * so this repository rule cannot become FlowGuard product policy.
+ * This is repository-development enforcement only. It excludes tests, fixtures,
+ * downstream code, and comment-only prose. Product templates are production
+ * authority and therefore remain inside the guard.
  *
  * Usage:
  *   node scripts/check-legacy-compatibility.mjs <base-sha> <head-sha>
@@ -22,7 +22,6 @@ if (!base || !head) {
   process.exit(2);
 }
 
-const EXCLUDED_PREFIXES = ['src/templates/'];
 const EXCLUDED_PATH_PARTS = [
   '/__tests__/',
   '/test/',
@@ -33,8 +32,6 @@ const EXCLUDED_PATH_PARTS = [
 ];
 const EXCLUDED_FILE_PATTERNS = [/\.test\.[cm]?[jt]sx?$/u, /\.spec\.[cm]?[jt]sx?$/u];
 
-// Deliberately narrow, high-signal markers. This guard complements review and
-// AGENTS.md; it is not a general natural-language classifier for legacy code.
 const LEGACY_MARKERS = [
   /\bbackwards? compatibility\b/giu,
   /\blegacy compatibility\b/giu,
@@ -45,7 +42,6 @@ const LEGACY_MARKERS = [
 
 function isProductionFlowGuardImplementation(path) {
   if (!path.startsWith('src/')) return false;
-  if (EXCLUDED_PREFIXES.some((prefix) => path.startsWith(prefix))) return false;
   if (!/\.[cm]?[jt]sx?$/u.test(path)) return false;
   if (EXCLUDED_PATH_PARTS.some((part) => path.includes(part))) return false;
   if (EXCLUDED_FILE_PATTERNS.some((pattern) => pattern.test(path))) return false;
@@ -69,6 +65,12 @@ function lineNumberAt(content, index) {
   return content.slice(0, index).split('\n').length;
 }
 
+function isCommentOnlyMatch(content, index) {
+  const lineStart = content.lastIndexOf('\n', Math.max(0, index - 1)) + 1;
+  const prefix = content.slice(lineStart, index).trimStart();
+  return prefix.startsWith('//') || prefix.startsWith('/*') || prefix.startsWith('*');
+}
+
 const findings = [];
 
 for (const path of changedFiles()) {
@@ -76,9 +78,11 @@ for (const path of changedFiles()) {
   for (const marker of LEGACY_MARKERS) {
     marker.lastIndex = 0;
     for (const match of content.matchAll(marker)) {
+      const index = match.index ?? 0;
+      if (isCommentOnlyMatch(content, index)) continue;
       findings.push({
         path,
-        line: lineNumberAt(content, match.index ?? 0),
+        line: lineNumberAt(content, index),
         text: match[0],
       });
     }
@@ -92,9 +96,9 @@ if (findings.length > 0) {
   }
   console.error(
     '\nRemove the compatibility path and update affected callers/tests/docs to the current canonical contract. ' +
-      'Tests and generated/runtime instruction templates are intentionally outside this repository-only guard.',
+      'Tests, fixtures, and comment-only prose are intentionally outside this repository-only guard.',
   );
   process.exit(1);
 }
 
-console.log('No explicit legacy/backward-compatibility markers found in changed FlowGuard implementation source.');
+console.log('No explicit legacy/backward-compatibility implementation markers found in changed FlowGuard source.');

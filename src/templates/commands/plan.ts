@@ -77,6 +77,19 @@ ${DISCOVERY_REVIEW_CAPTURE}
    the files listed here. A table row may list multiple comma-separated
    explicit paths.
 
+   \`## Contracts\` — Explicitly list the externally or internally binding
+   contracts the implementation must preserve or establish: APIs, schemas,
+   persistence formats, protocol behavior, invariants, compatibility boundaries,
+   and observable failure semantics. Each entry states the owning authority and
+   the required outcome. Write \`None\` only when the repository and ticket
+   establish that no material contract is affected; do not silently omit this section.
+
+   \`## Authority Decisions\` — Explicitly list source-of-truth, ownership,
+   precedence, lifecycle, or trust-boundary decisions that constrain the
+   implementation. Each entry states what is authoritative and what must not
+   become an independent semantic authority. Write \`None\` only when no material
+   authority decision is required; do not silently omit this section.
+
    \`## Acceptance Criteria\` — Checklist (\`- [ ]\`) of observable product or
    repository outcomes. Do not duplicate verification commands here — those
    belong in \`## Verification\`.
@@ -87,8 +100,8 @@ ${DISCOVERY_REVIEW_CAPTURE}
 4. Derive the structured claim declarations for this plan version. Each claim names
    ONE falsifiable behavioral statement, the plan section that governs it, and the
    check expected to establish it after implementation:
-   - \`claimId\`: fresh UUID.
-   - \`statement\`: the behavior or forbidden state asserted.
+   - Do NOT provide \`claimId\`. Claim identity is host-owned and deterministically minted by FlowGuard from the declaration authority.
+   - \`statement\`: the behavior or forbidden state asserted. Keep it no broader than the observable evidence named below; if the claim asserts an internal side effect, call ordering, or forbidden invocation, the selected evidence must directly observe that property rather than only an external outcome.
     - \`critical\`: true when the change is unsafe to approve without this claim.
     - \`claimScope\`: \`specific_behavior\` for one behavior, or \`suite\` only when
       the claim concerns a whole verification suite.
@@ -116,6 +129,7 @@ ${DISCOVERY_REVIEW_CAPTURE}
 Payload contract for \`flowguard_plan\`:
 - Initial submission: the FIRST call MUST be \`flowguard_plan({ planText, claims })\`. NEVER include \`reviewVerdict\`, \`reviewFindings\`, or \`reviewerUnavailable\` in the first call — a prefilled verdict is a fabrication-of-convergence attempt and is rejected (the tool routes a verdict-bearing first call back to \`INDEPENDENT_REVIEW_REQUIRED\`).
 - Claims are pre-evidence declarations, not proof. They are bound into the plan approval certificate and materialized as ProofGraph fact claims after implementation; a declaration without its expected check remains unproven and is reported as a coverage gap.
+- \`claimId\` is not part of the public declaration input. FlowGuard mints it deterministically; never synthesize or submit one.
 - Record an accepting reviewer verdict after review: host_task_required mode calls \`flowguard_plan({ reviewVerdict: "accept" })\` (no \`reviewFindings\` — the plugin resolves captured evidence automatically); SDK/manual-attested modes also include the reviewer's exact \`reviewFindings\`. \`reviewVerdict: "accept"\` is the reviewer's acceptance, NOT user approval.
 - Revision after review: host_task_required mode calls \`flowguard_plan({ reviewVerdict: "changes_requested", planText: <complete revised plan>, claims: <complete revised claims> })\`; SDK/manual-attested modes also include the exact reviewer output as \`reviewFindings\`.
 - Never submit placeholder, diagnostic, or manually fabricated \`reviewFindings\`.
@@ -153,8 +167,9 @@ ${SHARED_REVIEW_LOOP({
 ## Rules
 
 - Every plan step names a specific file path and concrete change (never "implement the feature").
+- Materialize \`## Contracts\` and \`## Authority Decisions\` explicitly on every plan submission and revision; implementation treats those approved outcomes as binding.
 - Declare structured \`claims\` on every plan submission and revision; a plan that asserts critical behavior without a claim leaves the ProofGraph contract empty.
-- Never declare a claim the plan does not assert, and never name a check that is not active in this session.
+- Never declare a claim the plan does not assert, never make a claim broader than its bound observable evidence, and never name a check that is not active in this session.
 - A critical claim blocks the final evidence approval while its declared evidence is missing, stale, or contradicted. Declare \`critical: true\` only for behavior that genuinely must hold, and always with a structurally bindable counterexample check.
 - Always complete the independent review before proceeding (use plugin findings or the reviewer subagent).
 - When revising a plan, include the COMPLETE plan text (not a diff).
@@ -186,7 +201,7 @@ ${GOVERNANCE_RULES}
 
 ## Done-when
 
-- Plan preserves all seven mandatory semantic dimensions across the structural sections.
+- Plan preserves all mandatory semantic dimensions across the structural sections, including explicit contracts and authority decisions.
 - The \`## Verification\` section cites Source for each check OR states NOT_VERIFIED.
 - Independent review loop has converged (approved or max 3 iterations).
 ${DISCOVERY_REVIEW_DONE_WHEN}

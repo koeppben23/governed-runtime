@@ -248,6 +248,7 @@ npx --yes --package "./$TARBALL" flowguard uninstall --host codex --install-scop
 ```
 
 Codex uninstall removes the FlowGuard plugin tree and only the FlowGuard-owned marketplace entry, preserving foreign marketplace plugins.
+Uninstall proves ownership per file against the templates embedded in the executing FlowGuard version and preserves modified files. If uninstalling with a different FlowGuard version than the installer used, historical template bytes are unavailable; review any preserved FlowGuard files manually before removing them.
 
 ## Project-Bound Installation (Recommended for Teams)
 

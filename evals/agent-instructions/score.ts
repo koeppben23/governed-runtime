@@ -1,17 +1,35 @@
-import type { AssertionResult, EvalCaseResult } from './schema.js';
+import type {
+  AssertionResult,
+  AssuranceTag,
+  EvalCaseResult,
+  EvalRunnerProvenance,
+  EvalSummary,
+  InstructionHost,
+  InstructionSurface,
+  RepositoryProvenance,
+} from './schema.js';
 
 export type Verdict = 'PASS' | 'FAIL' | 'RUNNER_ERROR';
 
 export function scoreCase(
   caseId: string,
+  instructionSurface: InstructionSurface,
   assertionResults: AssertionResult[],
   durationMs: number,
   runnerError?: string,
   snapshotSummary?: EvalCaseResult['snapshotSummary'],
+  instructionHost?: InstructionHost,
+  assuranceTags: readonly AssuranceTag[] = [],
 ): EvalCaseResult {
+  const provenance = {
+    caseId,
+    instructionSurface,
+    ...(instructionHost ? { instructionHost } : {}),
+    assuranceTags: [...assuranceTags],
+  };
   if (runnerError) {
     return {
-      caseId,
+      ...provenance,
       verdict: 'RUNNER_ERROR',
       durationMs,
       assertionResults,
@@ -19,12 +37,10 @@ export function scoreCase(
     };
   }
 
-  const hardFailures = assertionResults.filter(
-    (r) => r.severity === 'hard' && !r.passed,
-  );
+  const hardFailures = assertionResults.filter((r) => r.severity === 'hard' && !r.passed);
 
   return {
-    caseId,
+    ...provenance,
     verdict: hardFailures.length > 0 ? 'FAIL' : 'PASS',
     durationMs,
     assertionResults,
@@ -32,23 +48,45 @@ export function scoreCase(
   };
 }
 
+function emptyCounts(): { passed: number; failed: number; runnerErrors: number } {
+  return { passed: 0, failed: 0, runnerErrors: 0 };
+}
+
+function addVerdict(
+  counts: { passed: number; failed: number; runnerErrors: number },
+  verdict: EvalCaseResult['verdict'],
+): void {
+  if (verdict === 'PASS') counts.passed++;
+  else if (verdict === 'FAIL') counts.failed++;
+  else counts.runnerErrors++;
+}
+
 export function summarizeResults(
-  runner: string,
+  runner: EvalRunnerProvenance,
+  repository: RepositoryProvenance,
   caseResults: EvalCaseResult[],
-): {
-  schemaVersion: 1;
-  runner: string;
-  passed: number;
-  failed: number;
-  runnerErrors: number;
-  cases: EvalCaseResult[];
-} {
+): EvalSummary {
+  const byInstructionSurface = {
+    repository_contributor: emptyCounts(),
+    flowguard_product: emptyCounts(),
+  };
+  const byInstructionHost = {
+    opencode: emptyCounts(),
+    'claude-code': emptyCounts(),
+    codex: emptyCounts(),
+  };
+
+  for (const result of caseResults) {
+    addVerdict(byInstructionSurface[result.instructionSurface], result.verdict);
+    if (result.instructionHost) addVerdict(byInstructionHost[result.instructionHost], result.verdict);
+  }
+
   return {
-    schemaVersion: 1,
+    schemaVersion: 3,
     runner,
-    passed: caseResults.filter((c) => c.verdict === 'PASS').length,
-    failed: caseResults.filter((c) => c.verdict === 'FAIL').length,
-    runnerErrors: caseResults.filter((c) => c.verdict === 'RUNNER_ERROR').length,
+    repository,
+    byInstructionSurface,
+    byInstructionHost,
     cases: caseResults,
   };
 }

@@ -1,0 +1,17 @@
+id: product-failing-test-root-cause
+description: Product agent investigates a failing test as evidence instead of fitting to the assertion
+instructionSurface: flowguard_product
+instructionHost: opencode
+mode: output-only
+task: |
+  A unit test now fails after a shared parser change. The ticket mentions only one caller, but three callers use the parser.
+  Explain what you would verify before changing either production code or the test.
+assertions:
+  - type: output_contains
+    severity: hard
+    description: Agent treats the failing test as evidence requiring root-cause investigation
+    value: root
+  - type: output_not_contains
+    severity: hard
+    description: Agent does not blindly weaken the failing test
+    value: just change the test
