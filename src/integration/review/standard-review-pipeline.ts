@@ -16,6 +16,8 @@ import { prepareReviewerFindingsForValidation } from './enforcement/prepare-find
 import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
+  findBindableAttempt,
+  isCurrentReviewGeneration,
   hashFindings,
   hashText,
 } from './assurance.js';
@@ -79,6 +81,21 @@ export async function runStandardReviewPipeline(
       tool: toolName,
       obligationId: ctx.reviewCtx.obligationId,
       obligationType,
+    });
+    return;
+  }
+
+  if (
+    !isCurrentReviewGeneration(exactObligation) ||
+    ctx.reviewCtx.criteriaVersion !== exactObligation.criteriaVersion ||
+    ctx.reviewCtx.mandateDigest !== exactObligation.mandateDigest
+  ) {
+    output.output = strictBlockedOutput('REVIEW_GENERATION_MISMATCH', {
+      obligationId: exactObligation.obligationId,
+      reason:
+        `review obligation generation ${exactObligation.criteriaVersion}/${exactObligation.mandateDigest} ` +
+        `is not executable by the current runtime ${REVIEW_CRITERIA_VERSION}/${REVIEW_MANDATE_DIGEST}; ` +
+        're-hydrate or create a fresh review obligation',
     });
     return;
   }
@@ -353,12 +370,12 @@ async function prepareStandardReviewerResult(
     rawFindings: reviewerResult.findings!,
     obligationId: ctx.reviewCtx.obligationId,
     hostConstants: {
-      mandateDigest: REVIEW_MANDATE_DIGEST,
-      criteriaVersion: REVIEW_CRITERIA_VERSION,
+      mandateDigest: ctx.reviewCtx.mandateDigest,
+      criteriaVersion: ctx.reviewCtx.criteriaVersion,
     },
     hostProvenance: {
       childSessionId: reviewerResult.sessionId,
-      reviewedAt: new Date().toISOString(),
+      reviewedAt: reviewerResult.fulfilledAt ?? new Date().toISOString(),
     },
   });
   if (!prepared.ok) {
@@ -389,8 +406,8 @@ async function enforceStandardStrictGate(
 
   const attestation = validatePipelineAttestation(findings, {
     obligationId: reviewCtx.obligationId,
-    criteriaVersion: REVIEW_CRITERIA_VERSION,
-    mandateDigest: REVIEW_MANDATE_DIGEST,
+    criteriaVersion: reviewCtx.criteriaVersion,
+    mandateDigest: reviewCtx.mandateDigest,
     iteration: reviewCtx.iteration,
     planVersion: reviewCtx.planVersion,
     checkReviewedBy: false,
@@ -402,16 +419,30 @@ async function enforceStandardStrictGate(
     return true;
   }
 
+  const attempt = findBindableAttempt(sessionState.reviewAssurance, reviewCtx.obligationId);
+  if (!attempt) {
+    output.output = strictBlockedOutput('REVIEW_ATTEMPT_UNAVAILABLE', {
+      obligationId: reviewCtx.obligationId,
+      reason: 'SDK review completion has no pre-authorized bindable review attempt',
+    });
+    return true;
+  }
+
   const promptHash = hashText(prompt);
   const findingsHash = hashFindings(reviewerResult.findings);
+  const invokedAt = reviewerResult.invokedAt ?? ctx.now;
+  const fulfilledAt = reviewerResult.fulfilledAt ?? new Date().toISOString();
 
   const result = await recordEvidenceOrBlockReuse(deps, sessDir, {
     obligationId: reviewCtx.obligationId,
     obligationType,
     sessionId,
     childSessionId: reviewerResult.sessionId,
+    attemptId: attempt.attemptId,
     promptHash,
     findingsHash,
+    invokedAt,
+    fulfilledAt,
     reviewerResult,
     currentAssuranceInvocations: sessionState.reviewAssurance?.invocations ?? [],
     semanticIntents: (result, state, occurredAt) =>
@@ -436,6 +467,13 @@ async function enforceStandardStrictGate(
   if (result === 'missing') {
     output.output = strictBlockedOutput('REVIEW_MATERIAL_INTEGRITY_FAILED', {
       reason: `no exact review obligation resolved for ${reviewCtx.obligationId}; evidence was not recorded`,
+    });
+    return true;
+  }
+  if (result === 'lineage_unavailable') {
+    output.output = strictBlockedOutput('REVIEW_ATTEMPT_UNAVAILABLE', {
+      obligationId: reviewCtx.obligationId,
+      reason: 'SDK review evidence could not bind to the pre-authorized review attempt',
     });
     return true;
   }
@@ -482,8 +520,8 @@ function buildStandardEvidenceAuditIntents(input: {
           childSessionId: reviewerResult.sessionId,
           agentType: REVIEWER_SUBAGENT_TYPE,
           promptHash,
-          mandateDigest: REVIEW_MANDATE_DIGEST,
-          criteriaVersion: REVIEW_CRITERIA_VERSION,
+          mandateDigest: reviewCtx.mandateDigest,
+          criteriaVersion: reviewCtx.criteriaVersion,
           findingsHash,
           reviewOutputMode: reviewerResult.reviewOutputMode,
           structuredOutputUsed: reviewerResult.structuredOutputUsed,

@@ -4,7 +4,8 @@
  */
 
 import { existsSync } from 'node:fs';
-import { readdir, rm, writeFile } from 'node:fs/promises';
+import { lstat } from 'node:fs/promises';
+import { readdir, rm, rmdir, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { globalConfigPath } from '../adapters/persistence.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
@@ -173,8 +174,19 @@ function isGeneratedPackageShell(parsed: Record<string, unknown>): boolean {
 function restoreCoreDependency(
   deps: Record<string, string>,
   ownership: InstallOwnershipManifest['packageJson'],
+  pkgPath: string,
+  warnings: string[],
 ): void {
+  const current = deps['@flowguard/core'];
   const previous = ownership.previousCoreDependency;
+  if (current !== ownership.installedCoreDependency) {
+    if (current !== previous) {
+      warnings.push(
+        `${pkgPath}: @flowguard/core changed after FlowGuard installation — preserving current value`,
+      );
+    }
+    return;
+  }
   if (previous === null) {
     delete deps['@flowguard/core'];
     return;
@@ -185,9 +197,11 @@ function restoreCoreDependency(
 function restorePackageDependencies(
   parsed: Record<string, unknown>,
   ownership: InstallOwnershipManifest['packageJson'],
+  pkgPath: string,
+  warnings: string[],
 ): void {
   const deps = { ...((parsed['dependencies'] ?? {}) as Record<string, string>) };
-  restoreCoreDependency(deps, ownership);
+  restoreCoreDependency(deps, ownership, pkgPath, warnings);
   if (ownership.zodAdded === true && deps['zod'] === '^4.0.0') delete deps['zod'];
   if (Object.keys(deps).length === 0) delete parsed['dependencies'];
   else parsed['dependencies'] = deps;
@@ -214,7 +228,7 @@ async function cleanupPackageJson(
   try {
     const parsed = JSON.parse(pkgContent) as Record<string, unknown>;
     const packageOwnership = ownership.packageJson;
-    restorePackageDependencies(parsed, packageOwnership);
+    restorePackageDependencies(parsed, packageOwnership, pkgPath, warnings);
 
     const restoreAbsent =
       packageOwnership.created === true &&
@@ -250,6 +264,45 @@ async function cleanupPackageJson(
   }
 }
 
+async function cleanupOwnedDependencyTree(
+  target: string,
+  packageOps: readonly FileOp[],
+): Promise<FileOp[]> {
+  const packageRestoredToAbsent = packageOps.some(
+    (op) =>
+      op.action === 'removed' &&
+      op.reason === 'installer-created package restored to absent pre-state',
+  );
+  if (!packageRestoredToAbsent) return [];
+
+  const modulesPath = join(target, 'node_modules');
+  try {
+    const stat = await lstat(modulesPath);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) {
+      return [
+        {
+          path: modulesPath,
+          action: 'skipped',
+          reason: 'dependency-tree ownership/type mismatch; preserved',
+        },
+      ];
+    }
+    await rm(modulesPath, { recursive: true });
+    return [
+      {
+        path: modulesPath,
+        action: 'removed',
+        reason: 'removed dependency tree owned by installer-created package shell',
+      },
+    ];
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      return [{ path: modulesPath, action: 'not_found' }];
+    }
+    throw error;
+  }
+}
+
 async function cleanupOpencodeConfig(
   args: CliArgs,
   target: string,
@@ -271,6 +324,25 @@ async function cleanupOpencodeConfig(
   return uninstallCodexPlugin(args.installScope);
 }
 
+async function cleanupEmptyCodexTarget(target: string): Promise<FileOp> {
+  try {
+    await rmdir(target);
+    return { path: target, action: 'removed', reason: 'empty FlowGuard Codex target' };
+  } catch (error) {
+    if (error instanceof Error && 'code' in error) {
+      if (error.code === 'ENOENT') return { path: target, action: 'not_found' };
+      if (error.code === 'ENOTEMPTY' || error.code === 'EEXIST') {
+        return {
+          path: target,
+          action: 'skipped',
+          reason: 'Codex target contains preserved or non-FlowGuard content',
+        };
+      }
+    }
+    throw error;
+  }
+}
+
 export async function uninstall(args: CliArgs): Promise<CliResult> {
   const installPlatform = args.installPlatform ?? 'opencode';
   const target = resolveTarget(args.installScope, installPlatform);
@@ -288,7 +360,9 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
     }
 
     await removeManagedFiles(target, installPlatform, ops, warnings);
-    ops.push(...(await cleanupPackageJson(target, ownership, warnings)));
+    const packageOps = await cleanupPackageJson(target, ownership, warnings);
+    ops.push(...packageOps);
+    ops.push(...(await cleanupOwnedDependencyTree(target, packageOps)));
     ops.push(...(await cleanupOpencodeConfig(args, target, ownership)));
 
     const cfgPath =
@@ -302,6 +376,7 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
 
     const removedManifest = await safeUnlink(manifestPath);
     ops.push({ path: manifestPath, action: removedManifest ? 'removed' : 'not_found' });
+    if (installPlatform === 'codex') ops.push(await cleanupEmptyCodexTarget(target));
   } catch (err) {
     getAdapterLogger().error('cli', 'uninstall command failed', {
       error: err instanceof Error ? err.message : String(err),

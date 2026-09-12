@@ -295,6 +295,7 @@ function deriveOwnership(ctx: InstallContext, snapshot: SnapshotResult): Install
     scope: ctx.args.installScope,
     packageJsonExisted: packagePreState.existed,
     packageJsonOriginalContent: packagePreState.originalContent,
+    packageJsonCurrentContent: readFileSync(snapshot.pkgPath, 'utf-8'),
     opencodeOriginalContent: opencodePreState?.originalContent,
     opencodeCurrentContent: snapshot.opencodeJsonPath
       ? readFileSync(snapshot.opencodeJsonPath, 'utf-8')

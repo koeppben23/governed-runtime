@@ -318,10 +318,11 @@ describe('runReviewOrchestration strict independent review with footer output', 
         hostVisible: false,
         promptHash: expect.any(String),
         findingsHash: expect.any(String),
+        attemptId: '22222222-2222-4222-8222-222222222222',
         mandateDigest: REVIEW_MANDATE_DIGEST,
         criteriaVersion: REVIEW_CRITERIA_VERSION,
-        invokedAt: NOW,
-        fulfilledAt: NOW,
+        invokedAt: expect.any(String),
+        fulfilledAt: expect.any(String),
         consumedByObligationId: null,
         source: 'host-orchestrated',
         reviewOutputMode: 'structured_output',
@@ -330,6 +331,14 @@ describe('runReviewOrchestration strict independent review with footer output', 
         capturedVerdict: 'accept',
       });
       expect(invocation?.invocationId).toBe(obligation?.invocationId);
+      expect(Date.parse(invocation!.invokedAt)).toBeLessThanOrEqual(
+        Date.parse(invocation!.fulfilledAt!),
+      );
+      expect(state.reviewAssurance?.attempts[0]).toMatchObject({
+        attemptId: '22222222-2222-4222-8222-222222222222',
+        status: 'bound',
+        childSessionId: CHILD_SESSION_ID,
+      });
 
       expect(appendReviewAuditEvent).not.toHaveBeenCalled();
       const handshakeIntent = vi.mocked(deps.updateReviewAssurance).mock.calls[0]![2]!(state, NOW);

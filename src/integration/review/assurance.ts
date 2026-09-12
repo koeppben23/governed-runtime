@@ -43,6 +43,15 @@ import { REVIEWER_AGENT } from '../../templates/mandates.js';
 export const REVIEW_CRITERIA_VERSION = 'p42-v1';
 // Mandate digest - computed from actual REVIEWER_AGENT template at module load
 export const REVIEW_MANDATE_DIGEST = hashText(REVIEWER_AGENT);
+
+export function isCurrentReviewGeneration(
+  input: Pick<ReviewObligation, 'criteriaVersion' | 'mandateDigest'>,
+): boolean {
+  return (
+    input.criteriaVersion === REVIEW_CRITERIA_VERSION &&
+    input.mandateDigest === REVIEW_MANDATE_DIGEST
+  );
+}
 import {
   resolveSubjectScope,
   resolveChallengeRequirements,

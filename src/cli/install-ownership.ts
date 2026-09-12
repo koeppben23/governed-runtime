@@ -24,6 +24,7 @@ const InstallOwnershipManifestSchema = z
       created: z.boolean(),
       zodAdded: z.boolean(),
       previousCoreDependency: z.string().nullable(),
+      installedCoreDependency: z.string().min(1).optional(),
     }),
     opencode: z
       .object({
@@ -43,6 +44,7 @@ interface DeriveOwnershipInput {
   scope: InstallScope;
   packageJsonExisted: boolean;
   packageJsonOriginalContent?: Buffer;
+  packageJsonCurrentContent?: string;
   opencodeOriginalContent?: Buffer;
   opencodeCurrentContent?: string | null;
 }
@@ -132,10 +134,21 @@ function derivePackageOwnership(
   const created = !input.packageJsonExisted;
   const zodAdded = created || previousDeps === null || !('zod' in previousDeps);
   const core = previousDeps?.['@flowguard/core'];
+  const currentDeps = input.packageJsonCurrentContent
+    ? parsedDependencies(Buffer.from(input.packageJsonCurrentContent, 'utf-8'))
+    : null;
+  const installedCore = currentDeps?.['@flowguard/core'];
+  if (typeof installedCore !== 'string' || installedCore.length === 0) {
+    throw new InstallError(
+      'INSTALL_OWNERSHIP_UNAVAILABLE',
+      'INSTALL_OWNERSHIP_UNAVAILABLE: installed @flowguard/core dependency could not be captured for ownership provenance',
+    );
+  }
   return {
     created,
     zodAdded,
     previousCoreDependency: typeof core === 'string' ? core : null,
+    installedCoreDependency: installedCore,
   };
 }
 
@@ -204,7 +217,16 @@ export async function writeInstallOwnershipManifest(
     );
   }
 
-  const effective = existing.kind === 'valid' ? existing.manifest : manifest;
+  const effective =
+    existing.kind === 'valid'
+      ? {
+          ...existing.manifest,
+          packageJson: {
+            ...existing.manifest.packageJson,
+            installedCoreDependency: manifest.packageJson.installedCoreDependency,
+          },
+        }
+      : manifest;
   const tmp = `${path}.tmp.${process.pid}.${randomUUID()}`;
   try {
     await writeFile(tmp, JSON.stringify(effective, null, 2) + '\n', {

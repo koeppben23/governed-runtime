@@ -12,6 +12,7 @@ import type { ReviewObligation } from '../../state/evidence.js';
 import type { ReviewHostPlatform, ReviewOrchestrationMode } from './orchestration-mode.js';
 import { renderReviewContext, renderReviewerTaskPrompt } from './prompt-builders.js';
 import { reviewerPromptTypeForTask } from './reviewer-task-type.js';
+import { isCurrentReviewGeneration } from './assurance.js';
 
 export interface PendingReviewInstructionInput {
   readonly mode: ReviewOrchestrationMode;
@@ -136,6 +137,13 @@ export function buildPendingReviewInstruction(
         }
       : {}),
   };
+
+  if (obligation && !isCurrentReviewGeneration(obligation)) {
+    return {
+      reviewInvocation: { ...base, status: 'unsupported_blocked' },
+      next: 'REVIEW_GENERATION_MISMATCH: this persisted review obligation belongs to an older reviewer criteria/mandate generation. Re-hydrate or create a fresh review cycle; do not execute the old obligation under current reviewer semantics.',
+    };
+  }
 
   if (input.mode === 'unsupported_blocked') {
     return {

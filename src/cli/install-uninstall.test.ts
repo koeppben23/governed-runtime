@@ -137,7 +137,7 @@ describe('cli/uninstall', () => {
     });
 
     // Claude Code assurance is intentionally deferred while OpenCode is the product merge scope.
-    it.skip('removes Claude Code plugin tree without touching foreign .claude content', async () => {
+    it('removes Claude Code plugin tree without touching foreign .claude content', async () => {
       const tarball = await createMockTarball();
       await install(
         repoArgs({ coreTarball: tarball, installPlatform: 'claude-code', force: true }),
@@ -155,7 +155,7 @@ describe('cli/uninstall', () => {
     });
 
     // Codex assurance is intentionally deferred while OpenCode is the product merge scope.
-    it.skip('removes Codex plugin tree and only the FlowGuard marketplace entry', async () => {
+    it('removes Codex plugin tree and only the FlowGuard marketplace entry', async () => {
       await fs.mkdir(path.join(tmpDir, '.agents', 'plugins'), { recursive: true });
       await fs.writeFile(
         path.join(tmpDir, '.agents', 'plugins', 'marketplace.json'),
@@ -544,6 +544,25 @@ describe('cli/uninstall', () => {
       expect(parsed.dependencies.lodash).toBe('^4.0.0');
       expect(parsed.dependencies['@flowguard/core']).toBe('file:./vendor/x.tgz');
       expect(parsed.dependencies['zod']).toBeUndefined();
+    });
+
+    it('uninstall preserves a user-modified @flowguard/core value after install', async () => {
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
+
+      const pkgPath = path.join(tmpDir, '.opencode', 'package.json');
+      const installed = JSON.parse(await fs.readFile(pkgPath, 'utf-8'));
+      installed.dependencies['@flowguard/core'] = '^9.9.9';
+      await fs.writeFile(pkgPath, JSON.stringify(installed, null, 2) + '\n', 'utf-8');
+
+      const result = await uninstall(repoArgs({ action: 'uninstall' }));
+
+      expect(result.errors).toEqual([]);
+      expect(result.warnings).toContainEqual(
+        expect.stringContaining('@flowguard/core changed after FlowGuard installation'),
+      );
+      const after = JSON.parse(await fs.readFile(pkgPath, 'utf-8'));
+      expect(after.dependencies['@flowguard/core']).toBe('^9.9.9');
     });
 
     it('uninstall preserves package.json when scripts exist', async () => {

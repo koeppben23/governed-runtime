@@ -101,7 +101,7 @@ export type AttestationResult =
   { valid: true } | { valid: false; code: string; detail: Record<string, string> };
 
 /** Result of evidence recording (reuse detection + fulfillment + missing obligation). */
-export type EvidenceRecordResult = 'fulfilled' | 'reused' | 'missing';
+export type EvidenceRecordResult = 'fulfilled' | 'reused' | 'missing' | 'lineage_unavailable';
 
 // ─── Re-exports for external consumers ───────────────────────────────────────
 

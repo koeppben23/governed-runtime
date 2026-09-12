@@ -74,6 +74,9 @@ export interface ReviewerSuccessResult {
   readonly reviewAssuranceLevel: 'structured_high' | 'text_compat_lower';
   readonly extractionMethod?: 'direct_json' | 'json_fence' | 'outermost_braces';
   readonly modelCapabilityError?: string;
+  /** Host-observed lifecycle timestamps for the successful reviewer prompt. */
+  readonly invokedAt?: string;
+  readonly fulfilledAt?: string;
 }
 
 export type ReviewerResult = ReviewerSuccessResult | ReviewerBlockedResult;
@@ -141,6 +144,7 @@ interface ExecuteFormatFreePromptInput {
   sessionId: string;
   attempt: number;
   modelCapabilityError: string;
+  invokedAt: string;
   onFailed: (info: {
     attempt: number;
     step: 'format_free_retry_failed' | 'format_free_retry_empty' | 'format_free_retry_parse_failed';
@@ -215,6 +219,8 @@ async function executeFormatFreePrompt(
     reviewAssuranceLevel: 'text_compat_lower',
     extractionMethod: extraction.extractionMethod,
     modelCapabilityError,
+    invokedAt: input.invokedAt,
+    fulfilledAt: new Date().toISOString(),
   };
 }
 
@@ -350,6 +356,7 @@ async function promptReviewerSession(
 ): Promise<InvokeAttemptResult> {
   const { client, prompt, agent, parentSessionId, childSessionId, attempt, options } = input;
   const promptStartedAt = performance.now();
+  const invokedAt = new Date().toISOString();
   const promptResult = await client.session.prompt({
     path: { id: childSessionId },
     body: buildStructuredPromptBody(agent, prompt),
@@ -383,7 +390,10 @@ async function promptReviewerSession(
     childSessionId,
     durationMs: performance.now() - promptStartedAt,
   });
-  return { kind: 'done', result: structuredReviewerResult(childSessionId, findings) };
+  return {
+    kind: 'done',
+    result: structuredReviewerResult(childSessionId, findings, invokedAt, new Date().toISOString()),
+  };
 }
 
 function buildStructuredPromptBody(agent: string, prompt: string) {
@@ -476,6 +486,7 @@ async function handleStructuredCapabilityError(
   const retrySessionId = await createFormatFreeRetrySession(input, error);
   if (!retrySessionId) return { kind: 'done', result: null };
   const promptStartedAt = performance.now();
+  const invokedAt = new Date().toISOString();
   const result = await executeFormatFreePrompt({
     client: input.client,
     agent: input.agent,
@@ -483,6 +494,7 @@ async function handleStructuredCapabilityError(
     sessionId: retrySessionId,
     attempt: input.attempt,
     modelCapabilityError: capabilityError,
+    invokedAt,
     onFailed: input.options._onAttemptFailed,
   });
   if (result && result.blocked !== true) {
@@ -631,6 +643,8 @@ function textPartsLength(parts: Array<{ type?: string; text?: string }> | undefi
 function structuredReviewerResult(
   childSessionId: string,
   findings: Record<string, unknown>,
+  invokedAt: string,
+  fulfilledAt: string,
 ): ReviewerSuccessResult {
   return {
     sessionId: childSessionId,
@@ -639,6 +653,8 @@ function structuredReviewerResult(
     reviewOutputMode: 'structured_output',
     structuredOutputUsed: true,
     reviewAssuranceLevel: 'structured_high',
+    invokedAt,
+    fulfilledAt,
   };
 }
 

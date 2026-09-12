@@ -72,6 +72,12 @@ describe('installer ownership regressions', () => {
           dependencies: { '@flowguard/core': 'workspace:*', zod: '^3.22.0' },
         }),
       ),
+      packageJsonCurrentContent: JSON.stringify({
+        dependencies: {
+          '@flowguard/core': 'file:./vendor/flowguard-core-2.0.0.tgz',
+          zod: '^3.22.0',
+        },
+      }),
       opencodeOriginalContent: Buffer.from(JSON.stringify({ instructions: [] })),
       opencodeCurrentContent: JSON.stringify({
         instructions: ['.opencode/flowguard-mandates.md'],
@@ -83,6 +89,7 @@ describe('installer ownership regressions', () => {
       created: false,
       zodAdded: false,
       previousCoreDependency: 'workspace:*',
+      installedCoreDependency: 'file:./vendor/flowguard-core-2.0.0.tgz',
     });
     expect(manifest.opencode?.taskHardeningAdded).toBe(true);
   });
@@ -97,6 +104,12 @@ describe('installer ownership regressions', () => {
         packageJsonOriginalContent: Buffer.from(
           JSON.stringify({ dependencies: { zod: '^3.22.0' } }),
         ),
+        packageJsonCurrentContent: JSON.stringify({
+          dependencies: {
+            '@flowguard/core': 'file:./vendor/flowguard-core-1.0.0.tgz',
+            zod: '^4.0.0',
+          },
+        }),
         opencodeOriginalContent: Buffer.from(JSON.stringify({ instructions: [] })),
         opencodeCurrentContent: JSON.stringify({
           instructions: ['.opencode/flowguard-mandates.md'],
@@ -116,6 +129,12 @@ describe('installer ownership regressions', () => {
             dependencies: { '@flowguard/core': 'file:./vendor/flowguard.tgz', zod: '^4.0.0' },
           }),
         ),
+        packageJsonCurrentContent: JSON.stringify({
+          dependencies: {
+            '@flowguard/core': 'file:./vendor/flowguard-core-2.0.0.tgz',
+            zod: '^4.0.0',
+          },
+        }),
         opencodeOriginalContent: Buffer.from(
           JSON.stringify({
             instructions: ['.opencode/flowguard-mandates.md'],
@@ -128,7 +147,13 @@ describe('installer ownership regressions', () => {
       });
       await writeInstallOwnershipManifest(dir, reinstall);
 
-      await expect(readInstallOwnershipManifest(dir)).resolves.toEqual(first);
+      await expect(readInstallOwnershipManifest(dir)).resolves.toEqual({
+        ...first,
+        packageJson: {
+          ...first.packageJson,
+          installedCoreDependency: 'file:./vendor/flowguard-core-2.0.0.tgz',
+        },
+      });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

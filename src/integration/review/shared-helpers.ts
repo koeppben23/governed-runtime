@@ -40,6 +40,7 @@ import {
   buildInvocationEvidence,
   appendInvocationEvidence,
   resolveAttemptObservationCapability,
+  updateAttemptStatus,
 } from './assurance.js';
 import { resolveObservationRevisions } from './observation-access.js';
 import { updateObligation } from './obligation-state.js';
@@ -141,8 +142,11 @@ function buildSdkSessionInvocation(
     obligationType: ReviewObligationType;
     sessionId: string;
     childSessionId: string;
+    attemptId: string;
     promptHash: string;
     findingsHash: string;
+    invokedAt: string;
+    fulfilledAt: string;
     reviewerResult: Pick<
       ReviewerSuccessResult,
       | 'reviewOutputMode'
@@ -154,7 +158,6 @@ function buildSdkSessionInvocation(
     >;
   },
   obligation: { mandateDigest: string; criteriaVersion: string },
-  now: string,
 ): ReturnType<typeof buildInvocationEvidence> {
   return buildInvocationEvidence({
     obligationId: params.obligationId,
@@ -167,8 +170,9 @@ function buildSdkSessionInvocation(
     hostVisible: false,
     promptHash: params.promptHash,
     findingsHash: params.findingsHash,
-    invokedAt: now,
-    fulfilledAt: now,
+    invokedAt: params.invokedAt,
+    fulfilledAt: params.fulfilledAt,
+    attemptId: params.attemptId,
     source: EVIDENCE_SOURCE_HOST,
     reviewOutputMode: params.reviewerResult.reviewOutputMode,
     structuredOutputUsed: params.reviewerResult.structuredOutputUsed,
@@ -191,8 +195,11 @@ export async function recordEvidenceOrBlockReuse(
     obligationType: ReviewObligationType;
     sessionId: string;
     childSessionId: string;
+    attemptId: string;
     promptHash: string;
     findingsHash: string;
+    invokedAt: string;
+    fulfilledAt: string;
     reviewerResult: Pick<
       ReviewerSuccessResult,
       | 'sessionId'
@@ -213,6 +220,7 @@ export async function recordEvidenceOrBlockReuse(
 ): Promise<EvidenceRecordResult> {
   let reused = false;
   let missing = false;
+  let lineageUnavailable = false;
   await deps.updateReviewAssurance(
     sessDir,
     (s, now2) => {
@@ -235,14 +243,30 @@ export async function recordEvidenceOrBlockReuse(
           blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
         }));
       }
+      const attempt = assurance.attempts.find((item) => item.attemptId === params.attemptId);
+      if (
+        !attempt ||
+        attempt.obligationId !== obligation.obligationId ||
+        attempt.obligationType !== obligation.obligationType ||
+        attempt.subjectDigest !== obligation.subjectDigest ||
+        attempt.status !== 'created' ||
+        attempt.childSessionId !== undefined
+      ) {
+        lineageUnavailable = true;
+        return s;
+      }
 
-      const invocation = buildSdkSessionInvocation(params, obligation, now2);
+      const invocation = buildSdkSessionInvocation(params, obligation);
+      const boundAssurance = updateAttemptStatus(
+        assurance,
+        attempt.attemptId,
+        'bound',
+        params.fulfilledAt,
+        { childSessionId: params.childSessionId },
+      );
       const withInvocation = {
         ...s,
-        reviewAssurance: appendInvocationEvidence(
-          ensureReviewAssurance(s.reviewAssurance),
-          invocation,
-        ),
+        reviewAssurance: appendInvocationEvidence(boundAssurance, invocation),
       };
       return updateObligation(withInvocation, params.obligationId, (item) => ({
         ...item,
@@ -252,11 +276,17 @@ export async function recordEvidenceOrBlockReuse(
       }));
     },
     (state, now) =>
-      missing || !params.semanticIntents
+      missing || lineageUnavailable || !params.semanticIntents
         ? []
         : params.semanticIntents(reused ? 'reused' : 'fulfilled', state, now),
   );
-  return missing ? 'missing' : reused ? 'reused' : 'fulfilled';
+  return missing
+    ? 'missing'
+    : lineageUnavailable
+      ? 'lineage_unavailable'
+      : reused
+        ? 'reused'
+        : 'fulfilled';
 }
 
 // ─── Invocation Helpers ──────────────────────────────────────────────────────

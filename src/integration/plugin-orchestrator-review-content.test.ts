@@ -487,7 +487,7 @@ describe('runReviewOrchestration strict /review content analysis', () => {
       obligationType: 'review',
       pluginHandshakeAt: NOW,
       status: 'fulfilled',
-      fulfilledAt: NOW,
+      fulfilledAt: expect.any(String),
     });
     const invocation = state.reviewAssurance?.invocations[0];
     expect(invocation).toMatchObject({
@@ -501,10 +501,11 @@ describe('runReviewOrchestration strict /review content analysis', () => {
       hostVisible: false,
       promptHash: expect.any(String),
       findingsHash: expect.any(String),
+      attemptId: ATTEMPT_ID,
       mandateDigest: REVIEW_MANDATE_DIGEST,
       criteriaVersion: REVIEW_CRITERIA_VERSION,
-      invokedAt: NOW,
-      fulfilledAt: NOW,
+      invokedAt: expect.any(String),
+      fulfilledAt: expect.any(String),
       consumedByObligationId: null,
       source: 'host-orchestrated',
       reviewOutputMode: 'structured_output',
@@ -512,6 +513,14 @@ describe('runReviewOrchestration strict /review content analysis', () => {
       reviewAssuranceLevel: 'structured_high',
     });
     expect(invocation?.invocationId).toBe(obligation?.invocationId);
+    expect(Date.parse(invocation!.invokedAt)).toBeLessThanOrEqual(
+      Date.parse(invocation!.fulfilledAt!),
+    );
+    expect(state.reviewAssurance?.attempts[0]).toMatchObject({
+      attemptId: ATTEMPT_ID,
+      status: 'bound',
+      childSessionId: CHILD_SESSION_ID,
+    });
     const parsed = JSON.parse(output.output) as Record<string, unknown>;
     expect(parsed.error).toBe(true);
     expect(parsed.code).toBe('CONTENT_ANALYSIS_REQUIRED');

@@ -36,6 +36,7 @@ import {
   findReviewObligationById,
   ensureReviewAssurance,
   findBindableAttempt,
+  isCurrentReviewGeneration,
 } from './assurance.js';
 import { updateObligation } from './obligation-state.js';
 import { resolveRepositoryObservationAccess } from './observation-access.js';
@@ -149,6 +150,11 @@ interface HostTaskOutputInput {
  * attempt is resolved precisely BY re-running the review call.
  */
 type ReviewerContextFailure =
+  | {
+      readonly kind: 'generation_mismatch';
+      readonly obligationId: string;
+      readonly reason: string;
+    }
   | { readonly kind: 'material_integrity'; readonly reason: string }
   | { readonly kind: 'attempt_missing'; readonly obligationId: string; readonly reason: string };
 
@@ -156,6 +162,15 @@ function applyReviewerContextFailure(
   result: Record<string, unknown>,
   failure: ReviewerContextFailure,
 ): string {
+  if (failure.kind === 'generation_mismatch') {
+    result.code = 'REVIEW_GENERATION_MISMATCH';
+    result.message = failure.reason;
+    result.recovery = [
+      'Re-hydrate the session or create a fresh review cycle under the current reviewer generation',
+      'Do not execute or attest the stale obligation using current reviewer criteria',
+    ];
+    return JSON.stringify(refreshBlockedPresentation(result));
+  }
   if (failure.kind === 'material_integrity') {
     result.code = 'REVIEW_MATERIAL_INTEGRITY_FAILED';
     result.message = `Frozen review material integrity verification failed: ${failure.reason}`;
@@ -603,6 +618,15 @@ function resolveReviewerContextFailure(
   frozenReviewerContext: FrozenReviewerContext | null,
 ): ReviewerContextFailure | null {
   if (!obligation) return null;
+  if (!isCurrentReviewGeneration(obligation)) {
+    return {
+      kind: 'generation_mismatch',
+      obligationId: obligation.obligationId,
+      reason:
+        `Review obligation ${obligation.obligationId} belongs to stale generation ` +
+        `${obligation.criteriaVersion}/${obligation.mandateDigest}; create a fresh obligation under the current runtime generation.`,
+    };
+  }
   // Single frozen-material authority (prompt emission side): artifact-scoped
   // obligations bind their material generation to the exact artifact subject
   // digest — the same check the output-repair authority enforces.

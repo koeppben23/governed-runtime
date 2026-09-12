@@ -3,12 +3,15 @@
  * @description Platform-specific uninstall helpers for non-OpenCode host artifacts.
  */
 
-import { readFile, readdir, rm, writeFile, rename, unlink } from 'node:fs/promises';
+import { lstat, readFile, readdir, rename, rmdir, unlink, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { FileOp, InstallScope } from './install-helpers.js';
-import { resolveClaudeCodePluginRoot } from './claude-code-plugin-install.js';
+import {
+  claudeCodePluginInstallHint,
+  resolveClaudeCodePluginRoot,
+} from './claude-code-plugin-install.js';
 import { resolveCodexMarketplacePath, resolveCodexPluginRoot } from './codex-plugin-install.js';
 import { CODEX_PLUGIN_NAME, claudeCodePluginFiles, codexPluginFiles } from './templates.js';
 import { ensureDir } from '../adapters/persistence.js';
@@ -37,56 +40,20 @@ async function readPluginVersion(pluginRoot: string, manifestPath: string): Prom
   }
 }
 
-async function collectFiles(root: string, current = root): Promise<string[]> {
-  let entries;
-  try {
-    entries = await readdir(current, { withFileTypes: true });
-  } catch (error) {
-    if (isErrno(error, 'ENOENT')) return [];
-    throw error;
-  }
-  const files: string[] = [];
-  for (const entry of entries) {
-    const full = join(current, entry.name);
-    if (entry.isDirectory()) files.push(...(await collectFiles(root, full)));
-    else if (entry.isFile()) files.push(relative(root, full).replace(/\\/g, '/'));
-    else return ['__UNSUPPORTED_ENTRY__'];
-  }
-  return files.sort();
-}
-
-async function pluginTreeMatches(root: string, expected: Record<string, string>): Promise<boolean> {
-  const actualFiles = await collectFiles(root);
-  const expectedFiles = Object.keys(expected).sort();
-  if (actualFiles.length !== expectedFiles.length) return false;
-  if (actualFiles.some((file, index) => file !== expectedFiles[index])) return false;
-  for (const file of expectedFiles) {
-    try {
-      if ((await readFile(join(root, file), 'utf-8')) !== expected[file]) return false;
-    } catch {
-      return false;
-    }
-  }
-  return true;
-}
-
 export async function uninstallClaudeCodePlugin(target: string): Promise<FileOp[]> {
   const pluginRoot = resolveClaudeCodePluginRoot(target);
   const version = await readPluginVersion(pluginRoot, '.claude-plugin/plugin.json');
   if (!version) {
     return [{ path: pluginRoot, action: 'skipped', reason: 'Claude plugin ownership not proven' }];
   }
-  const expected = claudeCodePluginFiles(version);
-  if (!(await pluginTreeMatches(pluginRoot, expected))) {
-    return [
-      {
-        path: pluginRoot,
-        action: 'skipped',
-        reason: 'Claude plugin tree differs from installed FlowGuard template; preserved',
-      },
-    ];
-  }
-  return [await removePluginTree(pluginRoot, 'FlowGuard Claude Code plugin tree')];
+  return removeOwnedPluginFiles(
+    pluginRoot,
+    {
+      ...claudeCodePluginFiles(version),
+      'INSTALL.md': claudeCodePluginInstallHint(target),
+    },
+    'FlowGuard Claude Code plugin file',
+  );
 }
 
 export async function uninstallCodexPlugin(scope: InstallScope): Promise<FileOp[]> {
@@ -95,28 +62,73 @@ export async function uninstallCodexPlugin(scope: InstallScope): Promise<FileOp[
   const version = await readPluginVersion(pluginRoot, '.codex-plugin/plugin.json');
   if (!version) {
     ops.push({ path: pluginRoot, action: 'skipped', reason: 'Codex plugin ownership not proven' });
-  } else if (await pluginTreeMatches(pluginRoot, codexPluginFiles(version))) {
-    ops.push(await removePluginTree(pluginRoot, 'FlowGuard Codex plugin tree'));
   } else {
-    ops.push({
-      path: pluginRoot,
-      action: 'skipped',
-      reason: 'Codex plugin tree differs from installed FlowGuard template; preserved',
-    });
+    ops.push(
+      ...(await removeOwnedPluginFiles(
+        pluginRoot,
+        codexPluginFiles(version),
+        'FlowGuard Codex plugin file',
+      )),
+    );
   }
 
   ops.push(await removeCodexMarketplaceEntry(scope));
   return ops;
 }
 
-async function removePluginTree(pluginRoot: string, reason: string): Promise<FileOp> {
+async function removeOwnedPluginFiles(
+  pluginRoot: string,
+  expected: Record<string, string>,
+  reason: string,
+): Promise<FileOp[]> {
+  let rootStat;
   try {
-    await rm(pluginRoot, { recursive: true });
-    return { path: pluginRoot, action: 'removed', reason };
-  } catch (err) {
-    if (isErrno(err, 'ENOENT')) return { path: pluginRoot, action: 'not_found' };
-    throw err;
+    rootStat = await lstat(pluginRoot);
+  } catch (error) {
+    if (isErrno(error, 'ENOENT')) return [{ path: pluginRoot, action: 'not_found' }];
+    throw error;
   }
+  if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
+    return [{ path: pluginRoot, action: 'skipped', reason: 'plugin root ownership not proven' }];
+  }
+
+  const ops: FileOp[] = [];
+  for (const [relativePath, expectedContent] of Object.entries(expected)) {
+    const fullPath = join(pluginRoot, relativePath);
+    try {
+      const stat = await lstat(fullPath);
+      if (stat.isSymbolicLink() || !stat.isFile()) {
+        ops.push({ path: fullPath, action: 'skipped', reason: 'ownership/content mismatch' });
+        continue;
+      }
+      const actual = await readFile(fullPath, 'utf-8');
+      if (actual !== expectedContent) {
+        ops.push({ path: fullPath, action: 'skipped', reason: 'ownership/content mismatch' });
+        continue;
+      }
+      await unlink(fullPath);
+      ops.push({ path: fullPath, action: 'removed', reason });
+    } catch (error) {
+      if (!isErrno(error, 'ENOENT')) throw error;
+    }
+  }
+  await pruneEmptyPluginDirectories(pluginRoot);
+  return ops.length > 0 ? ops : [{ path: pluginRoot, action: 'not_found' }];
+}
+
+async function pruneEmptyPluginDirectories(root: string, current = root): Promise<void> {
+  let entries;
+  try {
+    entries = await readdir(current, { withFileTypes: true });
+  } catch (error) {
+    if (isErrno(error, 'ENOENT')) return;
+    throw error;
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory()) await pruneEmptyPluginDirectories(root, join(current, entry.name));
+  }
+  const remaining = await readdir(current);
+  if (remaining.length === 0) await rmdir(current);
 }
 
 function expectedMarketplaceSourcePath(scope: InstallScope): string {
