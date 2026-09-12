@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 /**
  * @module cli/install
- * @description Executable FlowGuard CLI entrypoint.
+ * @description Executable FlowGuard CLI entrypoint and repository-internal CLI test API.
  *
  * Install, uninstall, and doctor behavior live in cohesive command modules.
- * This file owns CLI argument parsing, console formatting, and process dispatch.
+ * This file owns CLI argument parsing, console formatting, process dispatch,
+ * and the intentionally shared CLI surface used by installer integration tests.
  */
 
 import { realpathSync } from 'node:fs';
@@ -34,6 +35,33 @@ import {
   SHIPPED_EXECUTABLE_CHECK,
   resolvePackageRoot,
 } from './install-types.js';
+
+export type {
+  InstallScope,
+  InstallPlatform,
+  PolicyMode,
+  CliAction,
+  CliArgs,
+  FileOp,
+  CliResult,
+  DoctorStatus,
+  DoctorCheck,
+} from './install-types.js';
+export {
+  resolveTarget,
+  formatTargetPath,
+  sha256,
+  computeMandatesDigest,
+  resolveOpencodeConfigPath,
+} from './install-helpers.js';
+export { mergeReviewerTaskPermission } from './install-json.js';
+export { hasNonFlowGuardInstructions, FLOWGUARD_INSTRUCTION_ENTRIES } from './install-types.js';
+export { doctor } from './doctor-command.js';
+export { checkLastSessionHandshake } from './doctor-handshake.js';
+export { checkPluginActivation } from './doctor-plugin.js';
+export { checkShippedExecutables } from './doctor-executables.js';
+export { detectPackageManager, install } from './install-command.js';
+export { uninstall } from './uninstall-command.js';
 
 // ─── Argument Parsing ─────────────────────────────────────────────────────────
 
