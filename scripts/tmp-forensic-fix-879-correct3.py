@@ -96,5 +96,46 @@ insert = """    it('uninstall preserves a user-modified @flowguard/core value af
 
 """ + needle
 replace("src/cli/install-uninstall.test.ts", needle, insert)
+
+# 13) Codex target IS the plugin root. After owned config + provenance files are removed,
+# prune that root only if it is actually empty. Never do this for Claude because its
+# target is the whole .claude configuration directory.
+replace(
+    "src/cli/uninstall-command.ts",
+    "import { readdir, rm, writeFile } from 'node:fs/promises';",
+    "import { readdir, rm, rmdir, writeFile } from 'node:fs/promises';",
+)
+replace(
+    "src/cli/uninstall-command.ts",
+    """    const removedManifest = await safeUnlink(manifestPath);
+    ops.push({ path: manifestPath, action: removedManifest ? 'removed' : 'not_found' });
+""",
+    """    const removedManifest = await safeUnlink(manifestPath);
+    ops.push({ path: manifestPath, action: removedManifest ? 'removed' : 'not_found' });
+
+    if (installPlatform === 'codex') {
+      try {
+        await rmdir(target);
+        ops.push({ path: target, action: 'removed', reason: 'empty FlowGuard Codex target' });
+      } catch (error) {
+        if (error instanceof Error && 'code' in error) {
+          if (error.code === 'ENOENT') {
+            ops.push({ path: target, action: 'not_found' });
+          } else if (error.code === 'ENOTEMPTY' || error.code === 'EEXIST') {
+            ops.push({
+              path: target,
+              action: 'skipped',
+              reason: 'Codex target contains preserved or non-FlowGuard content',
+            });
+          } else {
+            throw error;
+          }
+        } else {
+          throw error;
+        }
+      }
+    }
+""",
+)
 '''
 p.write_text(s + extra)
