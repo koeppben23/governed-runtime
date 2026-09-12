@@ -17,7 +17,6 @@ import type {
 } from '../../config/policy-types.js';
 import { type OrchestratorLogExtra } from '../../logging/log-extras.js';
 import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
-import type { ReviewerSuccessResult } from './orchestrator.js';
 import { extractReviewContext } from './orchestrator.js';
 import { parseToolResult } from '../plugin-helpers.js';
 import {
@@ -34,25 +33,15 @@ import {
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_ARCHITECTURE,
 } from '../tool-names.js';
-import {
-  ensureReviewAssurance,
-  hasEvidenceReuse,
-  buildInvocationEvidence,
-  appendInvocationEvidence,
-  resolveAttemptObservationCapability,
-  updateAttemptStatus,
-} from './assurance.js';
+import { resolveAttemptObservationCapability } from './assurance.js';
 import { resolveObservationRevisions } from './observation-access.js';
-import { updateObligation } from './obligation-state.js';
-import type { ReviewObligationType } from '../../state/evidence.js';
 import type {
   OrchestratorDeps,
   AttestationResult,
-  EvidenceRecordResult,
   PipelineContext,
   ReviewSessionContext,
 } from './pipeline-types.js';
-import { INVOCATION_MODE_SDK_SESSION, EVIDENCE_SOURCE_HOST } from './pipeline-types.js';
+export { recordEvidenceOrBlockReuse } from './sdk-evidence-recorder.js';
 
 // ─── Reason Constants ────────────────────────────────────────────────────────
 
@@ -119,174 +108,6 @@ export function validatePipelineAttestation(
   }
 
   return { valid: true };
-}
-
-// ─── Evidence Recording ──────────────────────────────────────────────────────
-
-/**
- * Record invocation evidence or block if evidence was reused.
- *
- * Encapsulates the mutable side-channel pattern (`reusedEvidence` flag)
- * into a clean return value. Both pipelines use this to avoid the
- * fragile let-mutate-in-callback anti-pattern.
- */
-
-/**
- * Build SDK-session invocation evidence for a fulfilled review obligation.
- * Extracted from recordEvidenceOrBlockReuse to keep the function within the
- * size/complexity budget.
- */
-function buildSdkSessionInvocation(
-  params: {
-    obligationId: string;
-    obligationType: ReviewObligationType;
-    sessionId: string;
-    childSessionId: string;
-    attemptId: string;
-    promptHash: string;
-    findingsHash: string;
-    invokedAt: string;
-    fulfilledAt: string;
-    reviewerResult: Pick<
-      ReviewerSuccessResult,
-      | 'reviewOutputMode'
-      | 'structuredOutputUsed'
-      | 'reviewAssuranceLevel'
-      | 'extractionMethod'
-      | 'modelCapabilityError'
-      | 'findings'
-    >;
-  },
-  obligation: { mandateDigest: string; criteriaVersion: string },
-): ReturnType<typeof buildInvocationEvidence> {
-  return buildInvocationEvidence({
-    obligationId: params.obligationId,
-    obligationType: params.obligationType,
-    mandateDigest: obligation.mandateDigest,
-    criteriaVersion: obligation.criteriaVersion,
-    parentSessionId: params.sessionId,
-    childSessionId: params.childSessionId,
-    invocationMode: INVOCATION_MODE_SDK_SESSION,
-    hostVisible: false,
-    promptHash: params.promptHash,
-    findingsHash: params.findingsHash,
-    invokedAt: params.invokedAt,
-    fulfilledAt: params.fulfilledAt,
-    attemptId: params.attemptId,
-    source: EVIDENCE_SOURCE_HOST,
-    reviewOutputMode: params.reviewerResult.reviewOutputMode,
-    structuredOutputUsed: params.reviewerResult.structuredOutputUsed,
-    reviewAssuranceLevel: params.reviewerResult.reviewAssuranceLevel,
-    extractionMethod: params.reviewerResult.extractionMethod,
-    modelCapabilityError: params.reviewerResult.modelCapabilityError,
-    capturedVerdict:
-      params.reviewerResult.findings &&
-      typeof params.reviewerResult.findings.overallVerdict === 'string'
-        ? params.reviewerResult.findings.overallVerdict
-        : undefined,
-  });
-}
-
-export async function recordEvidenceOrBlockReuse(
-  deps: OrchestratorDeps,
-  sessDir: string,
-  params: {
-    obligationId: string;
-    obligationType: ReviewObligationType;
-    sessionId: string;
-    childSessionId: string;
-    attemptId: string;
-    promptHash: string;
-    findingsHash: string;
-    invokedAt: string;
-    fulfilledAt: string;
-    reviewerResult: Pick<
-      ReviewerSuccessResult,
-      | 'sessionId'
-      | 'reviewOutputMode'
-      | 'structuredOutputUsed'
-      | 'reviewAssuranceLevel'
-      | 'extractionMethod'
-      | 'modelCapabilityError'
-      | 'findings'
-    >;
-    currentAssuranceInvocations: unknown[];
-    semanticIntents?: (
-      result: EvidenceRecordResult,
-      state: SessionState,
-      now: string,
-    ) => readonly SemanticAuditIntent[];
-  },
-): Promise<EvidenceRecordResult> {
-  let reused = false;
-  let missing = false;
-  let lineageUnavailable = false;
-  await deps.updateReviewAssurance(
-    sessDir,
-    (s, now2) => {
-      const assurance = ensureReviewAssurance(s.reviewAssurance);
-      const obligation = assurance.obligations.find(
-        (item) => item.obligationId === params.obligationId,
-      );
-      if (!obligation) {
-        // Defense-in-depth: evidence must never report fulfillment for an
-        // obligation that does not exist. The pipeline entry gate normally
-        // blocks earlier; this keeps the helper fail-closed on its own.
-        missing = true;
-        return s;
-      }
-      if (hasEvidenceReuse(assurance.invocations, params.childSessionId, params.findingsHash)) {
-        reused = true;
-        return updateObligation(s, params.obligationId, (item) => ({
-          ...item,
-          status: 'blocked',
-          blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
-        }));
-      }
-      const attempt = assurance.attempts.find((item) => item.attemptId === params.attemptId);
-      if (
-        !attempt ||
-        attempt.obligationId !== obligation.obligationId ||
-        attempt.obligationType !== obligation.obligationType ||
-        attempt.subjectDigest !== obligation.subjectDigest ||
-        attempt.status !== 'created' ||
-        attempt.childSessionId !== undefined
-      ) {
-        lineageUnavailable = true;
-        return s;
-      }
-
-      const invocation = buildSdkSessionInvocation(params, obligation);
-      const boundAssurance = updateAttemptStatus(
-        assurance,
-        attempt.attemptId,
-        'bound',
-        params.fulfilledAt,
-        { childSessionId: params.childSessionId },
-      );
-      const withInvocation = {
-        ...s,
-        reviewAssurance: appendInvocationEvidence(boundAssurance, invocation),
-      };
-      return updateObligation(withInvocation, params.obligationId, (item) => ({
-        ...item,
-        status: 'fulfilled',
-        invocationId: invocation.invocationId,
-        fulfilledAt: now2,
-      }));
-    },
-    (state, now) =>
-      missing || lineageUnavailable || !params.semanticIntents
-        ? []
-        : params.semanticIntents(reused ? 'reused' : 'fulfilled', state, now),
-  );
-  return missing
-    ? 'missing'
-    : lineageUnavailable
-      ? 'lineage_unavailable'
-      : reused
-        ? 'reused'
-        : 'fulfilled';
 }
 
 // ─── Invocation Helpers ──────────────────────────────────────────────────────

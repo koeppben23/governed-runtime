@@ -391,6 +391,30 @@ async function prepareStandardReviewerResult(
   return { ...reviewerResult, findings: prepared.findings };
 }
 
+function applyStandardEvidenceResult(ctx: PipelineContext, result: EvidenceRecordResult): boolean {
+  const { output, reviewCtx } = ctx;
+  if (result === 'reused') {
+    output.output = strictBlockedOutput('SUBAGENT_EVIDENCE_REUSED', {
+      obligationId: reviewCtx.obligationId,
+    });
+    return true;
+  }
+  if (result === 'missing') {
+    output.output = strictBlockedOutput('REVIEW_MATERIAL_INTEGRITY_FAILED', {
+      reason: `no exact review obligation resolved for ${reviewCtx.obligationId}; evidence was not recorded`,
+    });
+    return true;
+  }
+  if (result === 'lineage_unavailable') {
+    output.output = strictBlockedOutput('REVIEW_ATTEMPT_UNAVAILABLE', {
+      obligationId: reviewCtx.obligationId,
+      reason: 'SDK review evidence could not bind to the pre-authorized review attempt',
+    });
+    return true;
+  }
+  return false;
+}
+
 async function enforceStandardStrictGate(
   ctx: PipelineContext,
   reviewerResult: ReviewerSuccessResult & { findings: Record<string, unknown> },
@@ -444,7 +468,6 @@ async function enforceStandardStrictGate(
     invokedAt,
     fulfilledAt,
     reviewerResult,
-    currentAssuranceInvocations: sessionState.reviewAssurance?.invocations ?? [],
     semanticIntents: (result, state, occurredAt) =>
       buildStandardEvidenceAuditIntents({
         ctx,
@@ -458,27 +481,7 @@ async function enforceStandardStrictGate(
       }),
   });
 
-  if (result === 'reused') {
-    output.output = strictBlockedOutput('SUBAGENT_EVIDENCE_REUSED', {
-      obligationId: reviewCtx.obligationId,
-    });
-    return true;
-  }
-  if (result === 'missing') {
-    output.output = strictBlockedOutput('REVIEW_MATERIAL_INTEGRITY_FAILED', {
-      reason: `no exact review obligation resolved for ${reviewCtx.obligationId}; evidence was not recorded`,
-    });
-    return true;
-  }
-  if (result === 'lineage_unavailable') {
-    output.output = strictBlockedOutput('REVIEW_ATTEMPT_UNAVAILABLE', {
-      obligationId: reviewCtx.obligationId,
-      reason: 'SDK review evidence could not bind to the pre-authorized review attempt',
-    });
-    return true;
-  }
-
-  return false;
+  return applyStandardEvidenceResult(ctx, result);
 }
 
 function buildStandardEvidenceAuditIntents(input: {

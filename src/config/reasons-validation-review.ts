@@ -1,10 +1,3 @@
-/**
- * Review and subagent validation reasons.
- *
- * @internal — do not import directly. Part of VALIDATION_REASONS
- *             in reasons-validation.ts.
- */
-
 import type { BlockedReason } from './reasons-types.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
@@ -477,8 +470,6 @@ export const REVIEW_VALIDATION_REASONS = [
     ],
   },
 
-  // ─── Verification Execution Reasons (flowguard_run_check) ───────────────────
-
   {
     code: 'CHECK_KIND_NOT_AVAILABLE',
     category: 'input',
@@ -502,8 +493,6 @@ export const REVIEW_VALIDATION_REASONS = [
       'Re-hydrate if the check list needs updating',
     ],
   },
-
-  // ─── Validation Evidence Enforcement (#400) ─────────────────────────────────
 
   {
     code: 'VALIDATION_EVIDENCE_REQUIRED',

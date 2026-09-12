@@ -49,6 +49,20 @@ function countFindings(findings: unknown): number {
   return Array.isArray(findings) ? findings.length : Object.keys(findings ?? {}).length;
 }
 
+type PersistedReviewObligation = NonNullable<ReturnType<typeof findReviewObligationById>>;
+
+function matchesActiveReviewGeneration(
+  obligation: ReturnType<typeof findReviewObligationById>,
+  reviewCtx: PipelineContext['reviewCtx'],
+): obligation is PersistedReviewObligation {
+  return (
+    obligation !== null &&
+    isCurrentReviewGeneration(obligation) &&
+    obligation.criteriaVersion === reviewCtx.criteriaVersion &&
+    obligation.mandateDigest === reviewCtx.mandateDigest
+  );
+}
+
 /**
  * Resolve the frozen material for the active review obligation.
  *
@@ -67,12 +81,7 @@ async function loadPersistedContentForReview(ctx: PipelineContext): Promise<{
   const { deps, reviewCtx } = ctx;
   const assurance = ensureReviewAssurance(ctx.sessionState.reviewAssurance);
   const obligation = findReviewObligationById(assurance, reviewCtx.obligationId);
-  if (
-    !obligation ||
-    !isCurrentReviewGeneration(obligation) ||
-    obligation.criteriaVersion !== reviewCtx.criteriaVersion ||
-    obligation.mandateDigest !== reviewCtx.mandateDigest
-  ) {
+  if (!matchesActiveReviewGeneration(obligation, reviewCtx)) {
     await blockReviewOutcomeHelper(deps, ctx, 'REVIEW_GENERATION_MISMATCH', {
       obligationId: reviewCtx.obligationId,
       reason: 'review obligation generation is stale or does not match the emitted review context',
@@ -294,17 +303,15 @@ async function enforceContentStrictGate(
   return persistStrictReviewInvocation(ctx, reviewerResult, prompt, attemptId);
 }
 
-async function persistStrictReviewInvocation(
+function buildContentReviewInvocation(
   ctx: PipelineContext,
   reviewerResult: ReviewerSuccessResult & { findings: Record<string, unknown> },
-  prompt: string,
+  promptHash: string,
+  findingsHash: string,
   attemptId: string,
-): Promise<boolean> {
-  const { deps, sessDir, reviewCtx, output, sessionId, now } = ctx;
-  const promptHash = hashText(prompt);
-  const findingsHash = hashFindings(reviewerResult.findings);
-
-  const invocation = buildInvocationEvidence({
+): ReturnType<typeof buildInvocationEvidence> {
+  const { reviewCtx, sessionId, now } = ctx;
+  return buildInvocationEvidence({
     obligationId: reviewCtx.obligationId,
     obligationType: 'review',
     mandateDigest: reviewCtx.mandateDigest,
@@ -325,6 +332,47 @@ async function persistStrictReviewInvocation(
     extractionMethod: reviewerResult.extractionMethod,
     modelCapabilityError: reviewerResult.modelCapabilityError,
   });
+}
+
+function applyContentEvidenceResult(
+  ctx: PipelineContext,
+  reused: boolean,
+  lineageUnavailable: boolean,
+): boolean {
+  if (lineageUnavailable) {
+    ctx.output.output = strictBlockedOutput('REVIEW_ATTEMPT_UNAVAILABLE', {
+      obligationId: ctx.reviewCtx.obligationId,
+      reason: 'SDK review evidence could not bind to the pre-authorized review attempt',
+    });
+    return true;
+  }
+  if (reused) {
+    ctx.output.output = strictBlockedOutput('SUBAGENT_EVIDENCE_REUSED', {
+      obligationId: ctx.reviewCtx.obligationId,
+      reason: 'subagent findings already used for a prior obligation',
+    });
+    return true;
+  }
+  return false;
+}
+
+async function persistStrictReviewInvocation(
+  ctx: PipelineContext,
+  reviewerResult: ReviewerSuccessResult & { findings: Record<string, unknown> },
+  prompt: string,
+  attemptId: string,
+): Promise<boolean> {
+  const { deps, sessDir, reviewCtx, now } = ctx;
+  const promptHash = hashText(prompt);
+  const findingsHash = hashFindings(reviewerResult.findings);
+
+  const invocation = buildContentReviewInvocation(
+    ctx,
+    reviewerResult,
+    promptHash,
+    findingsHash,
+    attemptId,
+  );
 
   // Atomically check evidence reuse AND record invocation in a single
   // updateReviewAssurance transaction. Reading the freshest assurance state
@@ -385,21 +433,5 @@ async function persistStrictReviewInvocation(
     };
   });
 
-  if (lineageUnavailable) {
-    output.output = strictBlockedOutput('REVIEW_ATTEMPT_UNAVAILABLE', {
-      obligationId: reviewCtx.obligationId,
-      reason: 'SDK review evidence could not bind to the pre-authorized review attempt',
-    });
-    return true;
-  }
-
-  if (reused) {
-    output.output = strictBlockedOutput('SUBAGENT_EVIDENCE_REUSED', {
-      obligationId: reviewCtx.obligationId,
-      reason: 'subagent findings already used for a prior obligation',
-    });
-    return true;
-  }
-
-  return false;
+  return applyContentEvidenceResult(ctx, reused, lineageUnavailable);
 }
