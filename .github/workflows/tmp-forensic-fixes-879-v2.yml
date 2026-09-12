@@ -39,7 +39,19 @@ jobs:
       - name: Format changed files
         run: npx prettier --write src/integration/review/assurance.ts src/integration/review/standard-review-pipeline.ts src/integration/review/pipeline-types.ts src/integration/review/shared-helpers.ts src/integration/review/orchestrator.ts src/integration/review/content-review-pipeline.ts src/integration/review/pending-instruction.ts src/integration/review/host-task-policy.ts src/cli/install-ownership.ts src/cli/install-command.ts src/cli/uninstall-command.ts src/cli/install-uninstall.test.ts src/cli/install-ownership-regression.test.ts src/integration/plugin-orchestrator-independent-review.test.ts
       - name: Targeted forensic tests
-        run: npx vitest run src/integration/plugin-orchestrator-independent-review.test.ts src/integration/plugin-orchestrator-review-content.test.ts src/integration/review/orchestrator.test.ts src/integration/review/prompt-builders.test.ts src/integration/review/host-task-policy.test.ts src/cli/install-ownership-regression.test.ts src/cli/install-uninstall.test.ts
+        shell: bash
+        run: |
+          set -o pipefail
+          npx vitest run src/integration/plugin-orchestrator-independent-review.test.ts src/integration/plugin-orchestrator-review-content.test.ts src/integration/review/orchestrator.test.ts src/integration/review/prompt-builders.test.ts src/integration/review/host-task-policy.test.ts src/cli/install-ownership-regression.test.ts src/cli/install-uninstall.test.ts 2>&1 | tee forensic-test-error.txt
+      - name: Persist test diagnostic on failure
+        if: failure()
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add forensic-test-error.txt
+          git commit -m "chore: capture forensic test diagnostic" || true
+          git push origin HEAD:feat/mandates-v5
       - name: Typecheck
         run: npm run typecheck
       - name: Lint
@@ -48,7 +60,7 @@ jobs:
         shell: bash
         run: |
           git rm .github/workflows/tmp-forensic-fixes-879-v2.yml scripts/tmp-forensic-fix-879.py scripts/tmp-forensic-fix-879-correct.py
-          rm -f forensic-patch-error.txt
+          rm -f forensic-patch-error.txt forensic-test-error.txt
           git add -A
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
