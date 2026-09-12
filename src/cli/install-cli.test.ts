@@ -9,12 +9,7 @@ import * as path from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { formatResult, formatDoctor, main } from './install.js';
 import type { CliResult, DoctorCheck } from './install-types.js';
-import {
-  VERSION,
-  repoArgs,
-  createMockTarball,
-  setupCliTestEnvironment,
-} from './install-test-helpers.test.js';
+import { createMockTarball, setupCliTestEnvironment } from './install-test-helpers.test.js';
 
 vi.mock('node:child_process', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:child_process')>();
@@ -231,6 +226,3 @@ describe('cli/main', () => {
     });
   });
 });
-
-void repoArgs;
-void VERSION;
