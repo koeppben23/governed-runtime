@@ -23,7 +23,12 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { FlowGuardAuditPlugin } from './plugin.js';
-import { createTestWorkspace, createToolContext, parseToolResult } from './test-helpers.js';
+import {
+  createBootableHostClient,
+  createTestWorkspace,
+  createToolContext,
+  parseToolResult,
+} from './test-helpers.js';
 import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
@@ -71,11 +76,7 @@ async function killLeaseHolder(sessDir: string): Promise<void> {
 function createMockInput(overrides: Record<string, unknown> = {}) {
   return {
     project: {} as unknown,
-    client: {
-      app: {
-        log: async () => {},
-      },
-    } as unknown,
+    client: createBootableHostClient() as unknown,
     $: {} as unknown,
     directory: '/tmp/mock-dir',
     worktree: '/tmp/mock-worktree',

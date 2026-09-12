@@ -8,7 +8,6 @@
     "platform",
     "capabilities",
     "enforcementLevel",
-    "getSessionId",
     "getWorkingDirectory",
     "getWorktree",
     "initialize",
@@ -35,7 +34,6 @@
       "enum": ["synchronous", "hook_gated", "advisory"],
       "description": "Derived enforcement level based on host capabilities."
     },
-    "getSessionId": { "type": "string", "const": "() => string" },
     "getWorkingDirectory": { "type": "string", "const": "() => string" },
     "getWorktree": { "type": "string", "const": "() => string" },
     "initialize": { "type": "string", "const": "() => Promise<void>" },

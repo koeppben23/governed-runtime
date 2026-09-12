@@ -136,3 +136,125 @@ export function classifyOpenCodeRuntime(
   );
   return matched ? { status: 'known-unsupported', matched } : { status: 'not-classified' };
 }
+
+// ─── Host contract compatibility ─────────────────────────────────────────────
+
+/**
+ * OpenCode host versions covered by the pinned SDK baseline. The plugin SDK is
+ * pinned exactly (`@opencode-ai/plugin@1.18.29`); this range tracks the host
+ * minor line that CI verifies. It is an attestation window, not a guarantee:
+ * see {@link classifyOpenCodeHostContract}.
+ */
+export const TESTED_OPENCODE_HOST_RANGE = '>=1.18.29 <1.19.0';
+
+/**
+ * A positively-known incompatible OpenCode host contract version. Same evidence
+ * discipline as the instruction deny-list: every entry requires a cited source.
+ */
+export interface OpenCodeHostContractDenyEntry {
+  /** Semver range (`>=X <Y`) this entry applies to. */
+  readonly versionRange: string;
+  /** Human-readable reason the host contract is incompatible. */
+  readonly reason: string;
+  /** Cited evidence proving the incompatibility (issue link, changelog, test). */
+  readonly verifiedBy: string;
+}
+
+/**
+ * Deny-list of OpenCode host contract versions positively known to break the
+ * FlowGuard plugin contract (hooks, events, adapter semantics).
+ *
+ * SEEDED EMPTY BY DESIGN. Adding an entry is a security-boundary change that
+ * requires a positive, cited `verifiedBy` source.
+ */
+export const KNOWN_INCOMPATIBLE_OPENCODE_HOST_CONTRACTS: readonly OpenCodeHostContractDenyEntry[] =
+  [];
+
+/**
+ * Host contract compatibility status.
+ *
+ * - `verified`: the detected version is inside {@link TESTED_OPENCODE_HOST_RANGE}.
+ * - `compatible-unverified`: the version is unknown or outside the tested range.
+ *   It is NOT blocked, but it must never be presented as verified.
+ * - `known-incompatible`: the version positively matches the host-contract deny-list.
+ */
+export type OpenCodeHostContractStatus =
+  'verified' | 'compatible-unverified' | 'known-incompatible';
+
+export interface OpenCodeHostContractClassification {
+  readonly status: OpenCodeHostContractStatus;
+  readonly testedRange: string;
+  readonly matched?: OpenCodeHostContractDenyEntry;
+  readonly reason: string;
+}
+
+type Semver = readonly [number, number, number];
+
+function parseSemver(version: string): Semver | null {
+  const match = version.trim().match(/^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
+  if (!match) return null;
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+
+function compareSemver(a: Semver, b: Semver): number {
+  for (let i = 0; i < 3; i++) {
+    if (a[i] !== b[i]) return a[i]! < b[i]! ? -1 : 1;
+  }
+  return 0;
+}
+
+/** True when `version` is a concrete version inside the `>=X <Y` range. */
+function versionInBoundedRange(version: string, range: string): boolean {
+  const parsed = parseSemver(version);
+  if (!parsed) return false;
+  const lowerMatch = range.match(/>=(\d+\.\d+\.\d+)/);
+  const upperMatch = range.match(/<(\d+\.\d+\.\d+)/);
+  const lower = lowerMatch ? parseSemver(lowerMatch[1]!) : null;
+  const upper = upperMatch ? parseSemver(upperMatch[1]!) : null;
+  if (!lower && !upper) return false;
+  if (lower && compareSemver(parsed, lower) < 0) return false;
+  if (upper && compareSemver(parsed, upper) >= 0) return false;
+  return true;
+}
+
+/**
+ * Classify the detected OpenCode host version against the tested host-contract
+ * range.
+ *
+ * Unknown or unparseable versions are `compatible-unverified` — never `verified`.
+ * Blocking is reserved for positively-known incompatible entries, so an unknown
+ * host never silently claims compatibility and never blocks install by accident.
+ */
+export function classifyOpenCodeHostContract(
+  version: string | null,
+  denyList: readonly OpenCodeHostContractDenyEntry[] = KNOWN_INCOMPATIBLE_OPENCODE_HOST_CONTRACTS,
+): OpenCodeHostContractClassification {
+  if (version !== null) {
+    const matched = denyList.find((entry) => versionInBoundedRange(version, entry.versionRange));
+    if (matched) {
+      return {
+        status: 'known-incompatible',
+        testedRange: TESTED_OPENCODE_HOST_RANGE,
+        matched,
+        reason: matched.reason,
+      };
+    }
+  }
+
+  if (version !== null && versionInBoundedRange(version, TESTED_OPENCODE_HOST_RANGE)) {
+    return {
+      status: 'verified',
+      testedRange: TESTED_OPENCODE_HOST_RANGE,
+      reason: `detected host version ${version} is inside the tested range`,
+    };
+  }
+
+  return {
+    status: 'compatible-unverified',
+    testedRange: TESTED_OPENCODE_HOST_RANGE,
+    reason:
+      version === null
+        ? 'host version could not be determined'
+        : `detected host version ${version} is outside the tested range`,
+  };
+}

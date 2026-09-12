@@ -64,7 +64,6 @@ function makeRuntime(
     toolTraceIds: new Map<string, string>(),
     activeCommandScopes: new Map<string, 'check'>(),
     checkReworkContinuations: new Set<string>(),
-    setCurrentSessionId: vi.fn(),
     logError: vi.fn(),
   };
   const { ws: wsOverrides, ...rest } = overrides;
@@ -114,7 +113,6 @@ describe('commandBefore', () => {
       'decision',
       'command.execute.before missing sessionID',
     );
-    expect(runtime.setCurrentSessionId).not.toHaveBeenCalled();
   });
 
   it('warns and skips for a null command input', async () => {
@@ -124,13 +122,11 @@ describe('commandBefore', () => {
       'decision',
       'command.execute.before missing sessionID',
     );
-    expect(runtime.setCurrentSessionId).not.toHaveBeenCalled();
   });
 
-  it('records a user decision intent for /approve and sets the session', async () => {
+  it('records a user decision intent for /approve', async () => {
     const runtime = makeRuntime();
     await commandBefore(runtime, { sessionID: SESSION_ID, command: '/approve', arguments: '' }, {});
-    expect(runtime.setCurrentSessionId).toHaveBeenCalledWith(SESSION_ID);
     expect(runtime.log.info).toHaveBeenCalledWith(
       'decision',
       'recorded user decision command intent',
@@ -145,19 +141,23 @@ describe('commandBefore', () => {
       { sessionID: SESSION_ID, command: '/review-decision', arguments: 'reject' },
       {},
     );
-    expect(runtime.setCurrentSessionId).toHaveBeenCalledWith(SESSION_ID);
+    expect(runtime.log.info).toHaveBeenCalledWith(
+      'decision',
+      'recorded user decision command intent',
+      expect.objectContaining({ sessionId: SESSION_ID, expectedVerdict: 'reject' }),
+    );
   });
 
   it('returns without recording for a non-decision command', async () => {
     const runtime = makeRuntime();
     await commandBefore(runtime, { sessionID: SESSION_ID, command: '/plan', arguments: '' }, {});
-    expect(runtime.setCurrentSessionId).not.toHaveBeenCalled();
+    expect(runtime.log.info).not.toHaveBeenCalled();
   });
 
   it('returns without recording when command and arguments are missing', async () => {
     const runtime = makeRuntime();
     await commandBefore(runtime, { sessionID: SESSION_ID }, {});
-    expect(runtime.setCurrentSessionId).not.toHaveBeenCalled();
+    expect(runtime.log.info).not.toHaveBeenCalled();
   });
 
   it('sets the check scope for /check and clears it for other commands', async () => {
@@ -1514,6 +1514,14 @@ describe('toolBefore — trace registry', () => {
     const input = { tool: 'read', sessionID: SESSION_ID };
     await toolBefore(runtime, input, { args: {} });
     expect(runtime.toolTraceIds.has(`${SESSION_ID}:read`)).toBe(true);
+  });
+
+  it('a host retry with the same callID is processed deterministically', async () => {
+    const runtime = makeRuntime();
+    const input = { tool: 'read', sessionID: SESSION_ID, callID: 'retry-1' };
+    await toolBefore(runtime, input, { args: {} });
+    await toolBefore(runtime, input, { args: {} });
+    expect(runtime.toolTraceIds.size).toBe(0);
   });
 });
 

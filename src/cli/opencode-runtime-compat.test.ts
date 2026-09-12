@@ -8,8 +8,12 @@
 
 import { describe, it, expect } from 'vitest';
 import {
+  classifyOpenCodeHostContract,
   classifyOpenCodeRuntime,
+  KNOWN_INCOMPATIBLE_OPENCODE_HOST_CONTRACTS,
   KNOWN_INCOMPATIBLE_OPENCODE_RUNTIMES,
+  TESTED_OPENCODE_HOST_RANGE,
+  type OpenCodeHostContractDenyEntry,
   type OpenCodeRuntimeDenyEntry,
   type OpenCodeRuntimeEvidence,
 } from './opencode-runtime-compat.js';
@@ -110,6 +114,54 @@ describe('opencode-runtime-compat', () => {
         classifyOpenCodeRuntime(cliEvidence({ runtimeLine: 'all-versions', version: null }), deny)
           .status,
       ).toBe('known-unsupported');
+    });
+  });
+
+  describe('host contract compatibility matrix', () => {
+    it('ships an empty host-contract deny-list', () => {
+      expect(KNOWN_INCOMPATIBLE_OPENCODE_HOST_CONTRACTS).toEqual([]);
+    });
+
+    it('HAPPY: classifies a version inside the tested range as verified', () => {
+      const result = classifyOpenCodeHostContract('1.18.29');
+      expect(result.status).toBe('verified');
+      expect(result.testedRange).toBe(TESTED_OPENCODE_HOST_RANGE);
+    });
+
+    it('HAPPY: accepts a newer patch inside the tested minor line', () => {
+      expect(classifyOpenCodeHostContract('1.18.42').status).toBe('verified');
+    });
+
+    it('BAD: an older version is compatible-unverified, never verified', () => {
+      const result = classifyOpenCodeHostContract('1.15.13');
+      expect(result.status).toBe('compatible-unverified');
+      expect(result.reason).toContain('outside the tested range');
+    });
+
+    it('BAD: a newer minor is compatible-unverified, never verified', () => {
+      expect(classifyOpenCodeHostContract('1.19.0').status).toBe('compatible-unverified');
+    });
+
+    it('BAD: a positively known incompatible version is blocked', () => {
+      const deny: readonly OpenCodeHostContractDenyEntry[] = [
+        {
+          versionRange: '>=1.20.0 <1.21.0',
+          reason: 'hook generation changes break synchronous blocking',
+          verifiedBy: 'synthetic-test-fixture',
+        },
+      ];
+      const result = classifyOpenCodeHostContract('1.20.3', deny);
+      expect(result.status).toBe('known-incompatible');
+      expect(result.matched?.reason).toContain('synchronous blocking');
+    });
+
+    it('CORNER: unknown or malformed versions are compatible-unverified', () => {
+      expect(classifyOpenCodeHostContract(null).status).toBe('compatible-unverified');
+      expect(classifyOpenCodeHostContract('not-a-version').status).toBe('compatible-unverified');
+    });
+
+    it('EDGE: nightly/build suffixes still parse and classify', () => {
+      expect(classifyOpenCodeHostContract('1.18.29-nightly.20260901').status).toBe('verified');
     });
   });
 });

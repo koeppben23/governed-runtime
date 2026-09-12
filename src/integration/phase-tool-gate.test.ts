@@ -87,6 +87,10 @@ describe('phase-tool-gate', () => {
       it('T9: flowguard_plan → false (FlowGuard tools excluded)', () => {
         expect(isMutatingHostTool('flowguard_plan')).toBe(false);
       });
+
+      it('T9b: mcp__flowguard__flowguard_status → false (MCP FlowGuard surface excluded)', () => {
+        expect(isMutatingHostTool('mcp__flowguard__flowguard_status')).toBe(false);
+      });
     });
 
     describe('EDGE — empty and unknown tools', () => {
@@ -96,6 +100,10 @@ describe('phase-tool-gate', () => {
 
       it('T11: unknown_tool → true (fail-closed until explicitly classified)', () => {
         expect(isMutatingHostTool('unknown_tool')).toBe(true);
+      });
+
+      it('T11b: mcp__other__danger → true (unknown MCP surface fails closed)', () => {
+        expect(isMutatingHostTool('mcp__other__danger')).toBe(true);
       });
     });
   });

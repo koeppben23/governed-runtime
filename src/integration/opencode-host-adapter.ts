@@ -36,8 +36,6 @@ import { buildEnforcementError } from './plugin-helpers.js';
 export interface OpenCodeAdapterConfig {
   /** OpenCode SDK client instance. */
   readonly client: OrchestratorClient;
-  /** Session ID resolver (from hook input or workspace). */
-  readonly getSessionId: () => string;
   /** Project working directory. */
   readonly directory: string;
   /** Worktree path. */
@@ -51,6 +49,27 @@ export interface OpenCodeAdapterConfig {
 }
 
 // ─── OpenCode Host Adapter ───────────────────────────────────────────────────
+
+/** Fail-closed boot error: the SDK client cannot guarantee the adapter contract. */
+export class HostAdapterInitError extends Error {
+  readonly code = 'HOST_ADAPTER_INIT_FAILED' as const;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'HostAdapterInitError';
+  }
+}
+
+/** Fail-closed boot error: probed host capabilities do not match the contract. */
+export class HostCapabilityMismatchError extends Error {
+  readonly code = 'HOST_CAPABILITY_MISMATCH' as const;
+
+  constructor(mismatches: ReadonlyArray<{ readonly capability: string }>) {
+    const names = mismatches.map((mismatch) => mismatch.capability).join(', ');
+    super(`[FlowGuard] OpenCode host capability mismatch: ${names || 'unknown'}`);
+    this.name = 'HostCapabilityMismatchError';
+  }
+}
 
 /**
  * OpenCode platform adapter.
@@ -73,24 +92,18 @@ export class OpenCodeHostAdapter implements HostAdapter {
   readonly enforcementLevel: EnforcementLevel = 'synchronous';
 
   private readonly client: OrchestratorClient;
-  private readonly sessionIdResolver: () => string;
   private readonly directoryPath: string;
   private readonly worktreePath: string;
   private readonly diagnosticLog?: Pick<FlowGuardLogger, 'warn'>;
 
   constructor(config: OpenCodeAdapterConfig) {
     this.client = config.client;
-    this.sessionIdResolver = config.getSessionId;
     this.directoryPath = config.directory;
     this.worktreePath = config.worktree;
     this.diagnosticLog = config.log;
   }
 
   // ── Session Context ──────────────────────────────────────────────────────
-
-  getSessionId(): string {
-    return this.sessionIdResolver();
-  }
 
   getWorkingDirectory(): string {
     return this.directoryPath;
@@ -106,13 +119,7 @@ export class OpenCodeHostAdapter implements HostAdapter {
     // OpenCode SDK client is ready at plugin load time — no async init needed.
     // Verify client is structurally valid (fail-closed on broken SDK).
     if (!this.client?.session?.create || !this.client?.session?.prompt) {
-      throw new (class extends Error {
-        readonly code = 'HOST_ADAPTER_INIT_FAILED' as const;
-        constructor(m: string) {
-          super(m);
-          this.name = 'HostAdapterInitError';
-        }
-      })(
+      throw new HostAdapterInitError(
         '[FlowGuard] OpenCode adapter initialization failed: SDK client missing ' +
           'session.create or session.prompt methods. Cannot guarantee reviewer capability.',
       );
@@ -121,16 +128,23 @@ export class OpenCodeHostAdapter implements HostAdapter {
 
   async validateCapabilities(): Promise<CapabilityValidationResult> {
     const mismatches: Array<{ capability: string; expected: boolean; actual: boolean }> = [];
+    const runtimeVerified: string[] = [];
 
     // Verify reviewer agent availability by probing the agent registry.
     try {
       const agentsResult = await this.client.app.agents();
       if (agentsResult.error) {
         mismatches.push({ capability: 'reviewerSpawn', expected: true, actual: false });
+      } else {
+        runtimeVerified.push('reviewerSpawn');
       }
     } catch {
       mismatches.push({ capability: 'reviewerSpawn', expected: true, actual: false });
     }
+
+    const contractAttested = Object.keys(this.capabilities).filter(
+      (capability) => !runtimeVerified.includes(capability),
+    );
 
     if (mismatches.length > 0) {
       this.diagnosticLog?.warn('adapter', 'host capability validation reported mismatches', {
@@ -142,6 +156,8 @@ export class OpenCodeHostAdapter implements HostAdapter {
     return {
       valid: mismatches.length === 0,
       mismatches,
+      runtimeVerified,
+      contractAttested,
     };
   }
 

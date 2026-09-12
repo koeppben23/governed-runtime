@@ -29,7 +29,7 @@ import { resolvePluginSessionPolicy } from './plugin-policy.js';
 import type { OrchestratorDeps } from './plugin-orchestrator.js';
 import type { RiskEnforcementDeps } from './plugin-risk.js';
 import { type ActiveCommandScope, type FlowGuardPluginRuntime } from './plugin-shared.js';
-import { createOpenCodeHostAdapter } from './opencode-host-adapter.js';
+import { createOpenCodeHostAdapter, HostCapabilityMismatchError } from './opencode-host-adapter.js';
 import { createWorkspace } from './plugin-workspace.js';
 import type { OrchestratorClient } from './review/orchestrator.js';
 import { initHumanProjectionTelemetrySink } from '../telemetry/human-projection/sink.js';
@@ -90,13 +90,22 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
 
   const typedClient = client as OrchestratorClient;
 
-  let currentSessionId = 'unknown';
   const adapter = createOpenCodeHostAdapter({
     client: typedClient,
-    getSessionId: () => currentSessionId,
     directory: candidateWorktree ?? '',
     worktree: candidateWorktree ?? '',
     log,
+  });
+
+  await adapter.initialize();
+  const capabilityValidation = await adapter.validateCapabilities();
+  if (!capabilityValidation.valid) {
+    throw new HostCapabilityMismatchError(capabilityValidation.mismatches);
+  }
+  log.warn('adapter', 'host capabilities partially runtime-verified', {
+    code: 'HOST_CAPABILITY_UNVERIFIED',
+    runtimeVerified: capabilityValidation.runtimeVerified,
+    contractAttested: capabilityValidation.contractAttested,
   });
 
   const orchestratorDeps = createOrchestratorDeps(ws, log, typedClient, adapter);
@@ -132,19 +141,21 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     toolTraceIds,
     activeCommandScopes,
     checkReworkContinuations,
-    setCurrentSessionId: (sessionId) => {
-      currentSessionId = sessionId;
-    },
     logError,
   });
 
-  // Use OpenCode's plugin teardown hook (Hooks.dispose) to flush + release log
-  // sinks (OTLP shutdown + SIGUSR1 detach). OpenCode awaits dispose, giving the
-  // OTLP batch exporter a real completion point — unlike global process-exit
-  // listeners, this is per-instance and is not leaked across plugin inits.
-  if (disposeLogging) {
-    hooks.dispose = disposeLogging;
-  }
+  // Use OpenCode's plugin teardown hook (Hooks.dispose) to shut down the host
+  // adapter and flush + release log sinks (OTLP shutdown + SIGUSR1 detach).
+  // OpenCode awaits dispose, giving the OTLP batch exporter a real completion
+  // point — unlike global process-exit listeners, this is per-instance and is
+  // not leaked across plugin inits.
+  hooks.dispose = async () => {
+    try {
+      await adapter.shutdown();
+    } finally {
+      await disposeLogging?.();
+    }
+  };
 
   return hooks;
 };

@@ -53,7 +53,6 @@ function makeRuntime(
     toolTraceIds: new Map<string, string>(),
     activeCommandScopes: new Map<string, 'check'>(),
     checkReworkContinuations: new Set<string>(),
-    setCurrentSessionId: vi.fn(),
     logError: vi.fn(),
   };
   const { ws: wsOverrides, ...rest } = overrides;
@@ -320,6 +319,18 @@ describe('toolAfter — audit block output mutation', () => {
     );
     expect(output.output).toBe('ok');
   });
+
+  it('a foreign after-hook call without a prior before does not throw', async () => {
+    const runtime = makeRuntime();
+
+    await expect(
+      toolAfter(
+        runtime,
+        { tool: 'read', sessionID: SESSION_ID, callID: 'foreign-call', args: {} },
+        hookOutput('ok'),
+      ),
+    ).resolves.toBeUndefined();
+  });
 });
 
 describe('handlePluginEvent', () => {
@@ -329,13 +340,23 @@ describe('handlePluginEvent', () => {
     expect(runtime.ws.invalidateChainState).not.toHaveBeenCalled();
   });
 
-  it('cleans the chain state on session.deleted', async () => {
+  it('cleans all session-scoped runtime state on session.deleted', async () => {
     const runtime = makeRuntime();
+    runtime.activeCommandScopes.set(SESSION_ID, 'check');
+    runtime.checkReworkContinuations.add(SESSION_ID);
+    runtime.toolTraceIds.set(`${SESSION_ID}:bash`, 'trace-1');
+    runtime.toolTraceIds.set('other-session:bash', 'trace-2');
+
     await handlePluginEvent(runtime, {
       type: 'session.deleted',
       properties: { info: { id: SESSION_ID } },
     });
+
     expect(runtime.ws.invalidateChainState).toHaveBeenCalledWith(SESSION_ID);
+    expect(runtime.activeCommandScopes.has(SESSION_ID)).toBe(false);
+    expect(runtime.checkReworkContinuations.has(SESSION_ID)).toBe(false);
+    expect(runtime.toolTraceIds.has(`${SESSION_ID}:bash`)).toBe(false);
+    expect(runtime.toolTraceIds.get('other-session:bash')).toBe('trace-2');
   });
 
   it('emits a session error audit when the session mapping exists', async () => {
