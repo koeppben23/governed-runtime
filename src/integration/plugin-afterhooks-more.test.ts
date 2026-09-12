@@ -329,11 +329,11 @@ describe('handlePluginEvent', () => {
     expect(runtime.ws.invalidateChainState).not.toHaveBeenCalled();
   });
 
-  it('cleans the chain state on session.delete', async () => {
+  it('cleans the chain state on session.deleted', async () => {
     const runtime = makeRuntime();
     await handlePluginEvent(runtime, {
-      type: 'session.delete',
-      properties: { sessionID: SESSION_ID },
+      type: 'session.deleted',
+      properties: { info: { id: SESSION_ID } },
     });
     expect(runtime.ws.invalidateChainState).toHaveBeenCalledWith(SESSION_ID);
   });

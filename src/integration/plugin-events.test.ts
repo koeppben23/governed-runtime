@@ -4,7 +4,7 @@
  *
  * Validates:
  * - session.error events are logged via deps.log.error
- * - session.delete events call cleanupSession
+ * - session.deleted events call cleanupSession
  * - Unhandled event types are silently ignored (no-op)
  * - Fail-safe behavior: handler never throws
  *
@@ -71,11 +71,11 @@ describe('integration/plugin-events', () => {
       });
     });
 
-    it('session.delete event calls cleanupSession with sessionId', async () => {
+    it('session.deleted event calls cleanupSession with sessionId', async () => {
       const deps = createMockDeps();
       const event: PluginEvent = {
-        type: 'session.delete',
-        properties: { sessionID: 'sess-xyz' },
+        type: 'session.deleted',
+        properties: { info: { id: 'sess-xyz' } },
       };
 
       await handleEvent(deps, event);
@@ -124,10 +124,10 @@ describe('integration/plugin-events', () => {
       expect(deps.calls).toHaveLength(0);
     });
 
-    it('session.delete with no sessionID does not call cleanup', async () => {
+    it('session.deleted with no info does not call cleanup', async () => {
       const deps = createMockDeps();
       const event: PluginEvent = {
-        type: 'session.delete',
+        type: 'session.deleted',
         properties: {},
       };
 
@@ -182,11 +182,11 @@ describe('integration/plugin-events', () => {
       );
     });
 
-    it('session.delete with non-string sessionID does not call cleanup', async () => {
+    it('session.deleted with non-string info.id does not call cleanup', async () => {
       const deps = createMockDeps();
       const event: PluginEvent = {
-        type: 'session.delete',
-        properties: { sessionID: 12345 },
+        type: 'session.deleted',
+        properties: { info: { id: 12345 } },
       };
 
       await handleEvent(deps, event);
@@ -206,8 +206,8 @@ describe('integration/plugin-events', () => {
       };
 
       const event: PluginEvent = {
-        type: 'session.delete',
-        properties: { sessionID: 'sess-boom' },
+        type: 'session.deleted',
+        properties: { info: { id: 'sess-boom' } },
       };
 
       // Must not throw
@@ -264,10 +264,21 @@ describe('integration/plugin-events', () => {
     it('handles 1000 rapid events without memory leaks or throws', async () => {
       const deps = createMockDeps();
 
-      const events: PluginEvent[] = Array.from({ length: 1000 }, (_, i) => ({
-        type: i % 3 === 0 ? 'session.error' : i % 3 === 1 ? 'session.delete' : 'session.start',
-        properties: { sessionID: `sess-${i}`, error: `error-${i}` },
-      }));
+      const events: PluginEvent[] = Array.from({ length: 1000 }, (_, i) => {
+        if (i % 3 === 0) {
+          return {
+            type: 'session.error',
+            properties: { sessionID: `sess-${i}`, error: `error-${i}` },
+          };
+        }
+        if (i % 3 === 1) {
+          return {
+            type: 'session.deleted',
+            properties: { info: { id: `sess-${i}` } },
+          };
+        }
+        return { type: 'session.start' };
+      });
 
       const start = performance.now();
       await Promise.all(events.map((e) => handleEvent(deps, e)));
@@ -506,12 +517,12 @@ describe('integration/plugin-events', () => {
       expect(auditCall!.args[1]).toBe('unspecified session error');
     });
 
-    // T11 -- CORNER: session.delete does NOT call emitSessionErrorAudit
-    it('session.delete does not call emitSessionErrorAudit', async () => {
+    // T11 -- CORNER: session.deleted does NOT call emitSessionErrorAudit
+    it('session.deleted does not call emitSessionErrorAudit', async () => {
       const deps = createMockDeps();
       const event: PluginEvent = {
-        type: 'session.delete',
-        properties: { sessionID: 'S1' },
+        type: 'session.deleted',
+        properties: { info: { id: 'S1' } },
       };
 
       await handleEvent(deps, event);

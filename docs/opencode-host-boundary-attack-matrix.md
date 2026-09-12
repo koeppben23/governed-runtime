@@ -105,14 +105,14 @@ References are repo-relative and CI-checked by
 
 ## Session Lifecycle
 
-| ID    | Scenario / vector                                                          | Expected fail-closed behavior                                                                                | Coverage                                                                                                                                              | Status  | Finding |
-| ----- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
-| SL-01 | Host emits a session termination event.                                    | Cleanup runs for the terminated session.                                                                     | Production matches `session.delete`; SDK 1.18.29 emits `session.deleted`. Tests replicate the wrong name: `src/integration/plugin-events.test.ts:74`. | Gap     | F-02    |
-| SL-02 | Termination payload uses `properties.info.id` (SDK `EventSessionDeleted`). | Session id resolves from the real payload.                                                                   | Production reads `properties.sessionID`: `src/integration/plugin-events.ts:145`.                                                                      | Gap     | F-02    |
-| SL-03 | `session.error` carries an object error (SDK union).                       | Audit captures meaningful error detail without crashing.                                                     | Production string-coerces `properties.error`: `src/integration/plugin-events.ts:120`; tests use a string.                                             | Gap     | F-02    |
-| SL-04 | Session termination must clear all session-scoped ephemera.                | `activeCommandScopes`, `checkReworkContinuations`, trace ids, and chain state are removed deterministically. | Only chain state is invalidated: `src/integration/plugin-afterhooks.ts:483`.                                                                          | Gap     | F-06    |
-| SL-05 | Session directory disappears between hooks (TOCTOU).                       | Fail closed with a structured error; no state guess.                                                         | `src/integration/plugin-bootstrap.test.ts:688`, `src/integration/plugin-bootstrap.test.ts:707`.                                                       | Covered | —       |
-| SL-06 | Host restarts with stale in-memory state.                                  | Persisted state remains authority; hydrate/status reconstruct from disk.                                     | `src/integration/tools-execute-hydrate.test.ts:229`, `src/integration/session-state-upgrade.test.ts:60`.                                              | Covered | —       |
+| ID    | Scenario / vector                                                          | Expected fail-closed behavior                                                                                | Coverage                                                                                                                                          | Status  | Finding |
+| ----- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
+| SL-01 | Host emits a session termination event.                                    | Cleanup runs for the terminated session.                                                                     | Canonical union pin + runtime cleanup: `src/integration/sdk-contract-events.test.ts`, `src/integration/plugin-events.test.ts:73`.                 | Covered | F-02    |
+| SL-02 | Termination payload uses `properties.info.id` (SDK `EventSessionDeleted`). | Session id resolves from the real payload.                                                                   | Compile-time `info.id` pin and runtime cleanup: `src/integration/sdk-contract-events.test.ts`; production: `src/integration/plugin-events.ts:31`. | Covered | F-02    |
+| SL-03 | `session.error` carries an object error (SDK union).                       | Audit captures meaningful error detail without crashing.                                                     | SDK error-union matrix: `src/integration/sdk-contract-events.test.ts`; extraction: `src/integration/plugin-events.ts:120`.                        | Covered | F-02    |
+| SL-04 | Session termination must clear all session-scoped ephemera.                | `activeCommandScopes`, `checkReworkContinuations`, trace ids, and chain state are removed deterministically. | Only chain state is invalidated: `src/integration/plugin-afterhooks.ts:483`.                                                                      | Gap     | F-06    |
+| SL-05 | Session directory disappears between hooks (TOCTOU).                       | Fail closed with a structured error; no state guess.                                                         | `src/integration/plugin-bootstrap.test.ts:688`, `src/integration/plugin-bootstrap.test.ts:707`.                                                   | Covered | —       |
+| SL-06 | Host restarts with stale in-memory state.                                  | Persisted state remains authority; hydrate/status reconstruct from disk.                                     | `src/integration/tools-execute-hydrate.test.ts:229`, `src/integration/session-state-upgrade.test.ts:60`.                                          | Covered | —       |
 
 ---
 
@@ -154,15 +154,15 @@ References are repo-relative and CI-checked by
 
 ## Host Contract Drift
 
-| ID    | Scenario / vector                                                | Expected fail-closed behavior                                                         | Coverage                                                                                                                                       | Status  | Finding |
-| ----- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
-| HD-01 | SDK `Event` union changes (name or variant).                     | The baseline gate covers the actual contract source.                                  | Baselines cover only the plugin index/tool; `Event` is transitive: `scripts/sdk-type-snapshot.mjs:40`, `.sdk-baselines/opencode/version.json`. | Gap     | F-03    |
-| HD-02 | Event payload shape changes (`properties.info`, object `error`). | Compile-time or runtime pin, or a compatibility adapter.                              | No pin on `@opencode-ai/sdk` generated types.                                                                                                  | Gap     | F-02    |
-| HD-03 | Plugin `Hooks` surface changes (added or removed hooks).         | Compile-time assertions fail.                                                         | `src/integration/sdk-contract.test.ts:81`, `src/integration/sdk-contract-plugin.test.ts:63`.                                                   | Covered | —       |
-| HD-04 | Hook payload runtime shape drift.                                | Runtime schema validation rejects unknown or missing fields.                          | `src/integration/sdk-contract-runtime.test.ts:30`.                                                                                             | Covered | —       |
-| HD-05 | Agent registry contract drift (`opencode debug agent`).          | The real-host probe runs in the default test pipeline.                                | `src/cli/opencode-reviewer-capability.test.ts:19` is orphaned from all vitest projects.                                                        | Gap     | F-09    |
-| HD-06 | Host version outside the tested range.                           | Explicit compatibility matrix; unknown host contract fails closed or warns by policy. | Empty deny-list with `not-classified` allowed: `src/cli/opencode-runtime-compat.ts:60`; no host-contract version gate.                         | Gap     | F-05    |
-| HD-07 | Baseline/update scripts regress or are bypassed.                 | CI-enforced tests for snapshot, update, and drift scripts.                            | No script tests; `FLOWGUARD_SDK_COMPAT_LATEST=1` bypass: `src/integration/sdk-contract-plugin.test.ts:30`.                                     | Gap     | F-10    |
+| ID    | Scenario / vector                                                | Expected fail-closed behavior                                                         | Coverage                                                                                                                                              | Status  | Finding |
+| ----- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
+| HD-01 | SDK `Event` union changes (name or variant).                     | The baseline gate covers the actual contract source.                                  | Baselines cover only the plugin index/tool; `Event` is transitive: `scripts/sdk-type-snapshot.mjs:40`, `.sdk-baselines/opencode/version.json`.        | Gap     | F-03    |
+| HD-02 | Event payload shape changes (`properties.info`, object `error`). | Compile-time or runtime pin, or a compatibility adapter.                              | Compile-time derivations from `Hooks['event']`: `src/integration/sdk-contract-events.test.ts`; production pin: `src/integration/plugin-events.ts:31`. | Covered | F-02    |
+| HD-03 | Plugin `Hooks` surface changes (added or removed hooks).         | Compile-time assertions fail.                                                         | `src/integration/sdk-contract.test.ts:81`, `src/integration/sdk-contract-plugin.test.ts:63`.                                                          | Covered | —       |
+| HD-04 | Hook payload runtime shape drift.                                | Runtime schema validation rejects unknown or missing fields.                          | `src/integration/sdk-contract-runtime.test.ts:30`.                                                                                                    | Covered | —       |
+| HD-05 | Agent registry contract drift (`opencode debug agent`).          | The real-host probe runs in the default test pipeline.                                | `src/cli/opencode-reviewer-capability.test.ts:19` is orphaned from all vitest projects.                                                               | Gap     | F-09    |
+| HD-06 | Host version outside the tested range.                           | Explicit compatibility matrix; unknown host contract fails closed or warns by policy. | Empty deny-list with `not-classified` allowed: `src/cli/opencode-runtime-compat.ts:60`; no host-contract version gate.                                | Gap     | F-05    |
+| HD-07 | Baseline/update scripts regress or are bypassed.                 | CI-enforced tests for snapshot, update, and drift scripts.                            | No script tests; `FLOWGUARD_SDK_COMPAT_LATEST=1` bypass: `src/integration/sdk-contract-plugin.test.ts:30`.                                            | Gap     | F-10    |
 
 ---
 
@@ -223,28 +223,38 @@ Remediation: call `await adapter.initialize()`, then
 
 ### F-02 — Event contract drift: `session.delete` versus `session.deleted`
 
-**Severity:** P1. **Status:** Confirmed bug. **Scenarios:** SL-01, SL-02, SL-03, HD-02.
+**Severity:** P1. **Status:** Fixed — contract pinned in `src/integration/plugin-events.ts`, verified by `src/integration/sdk-contract-events.test.ts`. **Scenarios:** SL-01, SL-02, SL-03, HD-02.
 
-Production handles `session.delete` and reads `properties.sessionID`
-(`src/integration/plugin-events.ts:70`,
+Original defect: production handled `session.delete` and read
+`properties.sessionID` (`src/integration/plugin-events.ts:70`,
 `src/integration/plugin-events.ts:145`). The pinned SDK 1.18.29 event union
 defines `EventSessionDeleted` with `type: "session.deleted"` and
 `properties.info: Session` (`id`), and `EventSessionError` with
 `properties.error` as an object union
 (`node_modules/@opencode-ai/sdk/dist/gen/types.gen.d.ts:505`,
-`node_modules/@opencode-ai/sdk/dist/gen/types.gen.d.ts:518`). Existing tests
-replicate the wrong event name and payload shape
-(`src/integration/plugin-events.test.ts:74`), so the suite stays green while the
-handler is unreachable.
+`node_modules/@opencode-ai/sdk/dist/gen/types.gen.d.ts:518`). Existing
+tests replicated the wrong event name and payload shape, so the suite stayed
+green while the handler was unreachable.
 
-Impact: session-scoped cleanup never runs on a real host, and real session
-errors lose their error detail (the string coercion produces the placeholder
-`unspecified session error`).
+Impact before the fix: session-scoped cleanup never ran on a real host, and real
+session errors lost their error detail (the string coercion produced the
+placeholder `unspecified session error`).
 
-Remediation: handle the SDK names (`session.deleted`, `session.error`), resolve
-the session id from `properties.info.id` with an explicit fallback, and
-serialize object errors with a bounded, redacting serializer. Add a contract
-test against the real SDK `Event` union. This is the top-priority fix.
+Resolution:
+
+- `HANDLED_EVENT_TYPES` and `handleEvent` now match `session.deleted`; the set
+  literal is pinned to `Extract<Event, ...>['type']` derived from
+  `Hooks['event']`, so an SDK rename fails compilation.
+- `session.deleted` resolves the session id from `properties.info.id` and
+  ignores missing or non-string ids fail-safe.
+- `session.error` extracts `data.message` and `name` from every SDK error union
+  member; the error discriminant is recorded as `errorName` in the audit detail.
+- `src/integration/sdk-contract-events.test.ts` derives the real event union and
+  payload paths from the pinned SDK, exercises the canonical payloads at
+  runtime, and asserts that the API command name `session.delete` stays ignored.
+
+The remaining baseline gap (the transitive `Event` surface is still not part of
+the snapshot) is tracked as F-03.
 
 ### F-03 — SDK baseline does not cover the transitive `Event` contract
 
@@ -420,7 +430,7 @@ gated live test where feasible.
 
 ## Remediation Order
 
-1. F-02 — fix the event contract and add a real-SDK contract test.
+1. F-02 — fix the event contract and add a real-SDK contract test. **Done** (see F-02).
 2. F-01 — activate adapter lifecycle in the composition root, compose dispose.
 3. F-04 — make capability validation honest (or route mutation through the adapter).
 4. F-03 — extend the baseline to the SDK event/type surface.
