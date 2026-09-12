@@ -1,1 +1,1 @@
-src/integration/review/shared-helpers.ts: expected 1 matches, got 2: '    childSessionId: string;\n    promptHash: string;\n    findingsHash: string;\n'
+src/integration/review/orchestrator.ts: expected 1 matches, got 0: '  readonly modelCapabilityError: string;\n  onFailed: (info: {\n'
