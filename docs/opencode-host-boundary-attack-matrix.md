@@ -77,6 +77,7 @@ files evolve.
 
 ## Hook Failure Semantics
 
+<!-- prettier-ignore -->
 | ID    | Scenario / vector                                                                       | Expected fail-closed behavior                                                           | Coverage                                                                                                                                       | Status  | Finding |
 | ----- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
 | HS-01 | `tool.execute.before` throws for a denied mutation; the host must not execute the tool. | Thrown enforcement error aborts the host tool call; no mutation occurs.                 | Handler/root block tests: `src/integration/plugin-bootstrap.test.ts:408`, `src/integration/plugin.test.ts:1341`; no real-host execution proof. | Partial | F-08    |
@@ -93,6 +94,7 @@ files evolve.
 
 ## Tool Surface And Mutation Gates
 
+<!-- prettier-ignore -->
 | ID    | Scenario / vector                                                             | Expected fail-closed behavior                                     | Coverage                                                                                                                                                    | Status  | Finding |
 | ----- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
 | TS-01 | Unknown host tool name.                                                       | Treated as mutating/fail-closed; never implicit read-only.        | `src/integration/phase-tool-gate.test.ts:93`, `src/integration/plugin.test.ts:1420`, `src/integration/tool-classification.test.ts:126`.                     | Covered | —       |
@@ -107,6 +109,7 @@ files evolve.
 
 ## Session Lifecycle
 
+<!-- prettier-ignore -->
 | ID    | Scenario / vector                                                          | Expected fail-closed behavior                                                                                | Coverage                                                                                                                                                               | Status  | Finding |
 | ----- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
 | SL-01 | Host emits a session termination event.                                    | Cleanup runs for the terminated session.                                                                     | Canonical union pin + runtime cleanup: `src/integration/sdk-contract-events.test.ts`, `src/integration/plugin-events.test.ts:73`.                                      | Covered | F-02    |
@@ -120,6 +123,7 @@ files evolve.
 
 ## Concurrency And Isolation
 
+<!-- prettier-ignore -->
 | ID    | Scenario / vector                                                       | Expected fail-closed behavior                                                        | Coverage                                                                                                                         | Status  | Finding |
 | ----- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
 | CI-01 | Two sessions in one workspace with interleaved tool calls.              | Session-scoped state and audit separation.                                           | `src/integration/e2e-workflow.test.ts:727`, `src/integration/tools-execute-hydrate.test.ts:918`.                                 | Covered | —       |
@@ -133,6 +137,7 @@ files evolve.
 
 ## Compaction
 
+<!-- prettier-ignore -->
 | ID    | Scenario / vector                                             | Expected fail-closed behavior                                          | Coverage                                                                                          | Status  | Finding |
 | ----- | ------------------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ------- | ------- |
 | CP-01 | Compaction while a review obligation is pending.              | Mandatory pending-obligation context is injected.                      | `src/integration/plugin-compaction.test.ts:97` plus the in-flight review case below.              | Covered | F-12    |
@@ -143,6 +148,7 @@ files evolve.
 
 ## Plugin And Adapter Lifecycle
 
+<!-- prettier-ignore -->
 | ID    | Scenario / vector                                                         | Expected fail-closed behavior                                               | Coverage                                                                                                                                                              | Status  | Finding |
 | ----- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
 | PL-01 | Plugin boot with a broken SDK client (`session.create`/`prompt` missing). | Fail closed before hooks are exposed.                                       | Composition root boot test: `src/integration/plugin.test.ts` (HOST_ADAPTER_INIT_FAILED); adapter unit: `src/adapters/host-adapter.test.ts:153`.                       | Covered | F-01    |
@@ -156,20 +162,22 @@ files evolve.
 
 ## Host Contract Drift
 
-| ID    | Scenario / vector                                                | Expected fail-closed behavior                                                         | Coverage                                                                                                                                              | Status  | Finding |
-| ----- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
-| HD-01 | SDK `Event` union changes (name or variant).                     | The baseline gate covers the actual contract source.                                  | Derived event-contract baseline: `.sdk-baselines/opencode/plugin-event-contract.d.ts`, `scripts/__tests__/sdk-type-snapshot.test.ts`.                 | Covered | F-03    |
-| HD-02 | Event payload shape changes (`properties.info`, object `error`). | Compile-time or runtime pin, or a compatibility adapter.                              | Compile-time derivations from `Hooks['event']`: `src/integration/sdk-contract-events.test.ts`; production pin: `src/integration/plugin-events.ts:31`. | Covered | F-02    |
-| HD-03 | Plugin `Hooks` surface changes (added or removed hooks).         | Compile-time assertions fail.                                                         | `src/integration/sdk-contract.test.ts:81`, `src/integration/sdk-contract-plugin.test.ts:63`.                                                          | Covered | —       |
-| HD-04 | Hook payload runtime shape drift.                                | Runtime schema validation rejects unknown or missing fields.                          | `src/integration/sdk-contract-runtime.test.ts:30`.                                                                                                    | Covered | —       |
-| HD-05 | Agent registry contract drift (`opencode debug agent`).          | The real-host probe runs in the default test pipeline.                                | Wired into the smoke project: `vitest.config.ts`; probe: `src/cli/opencode-reviewer-capability.test.ts:19`.                                           | Covered | F-09    |
+<!-- prettier-ignore -->
+| ID    | Scenario / vector                                                | Expected fail-closed behavior                                                            | Coverage                                                                                                                                              | Status  | Finding |
+| ----- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
+| HD-01 | SDK `Event` union changes (name or variant).                     | The baseline gate covers the actual contract source.                                     | Derived event-contract baseline: `.sdk-baselines/opencode/plugin-event-contract.d.ts`, `scripts/__tests__/sdk-type-snapshot.test.ts`.                 | Covered | F-03    |
+| HD-02 | Event payload shape changes (`properties.info`, object `error`). | Compile-time or runtime pin, or a compatibility adapter.                                 | Compile-time derivations from `Hooks['event']`: `src/integration/sdk-contract-events.test.ts`; production pin: `src/integration/plugin-events.ts:31`. | Covered | F-02    |
+| HD-03 | Plugin `Hooks` surface changes (added or removed hooks).         | Compile-time assertions fail.                                                            | `src/integration/sdk-contract.test.ts:81`, `src/integration/sdk-contract-plugin.test.ts:63`.                                                          | Covered | —       |
+| HD-04 | Hook payload runtime shape drift.                                | Runtime schema validation rejects unknown or missing fields.                             | `src/integration/sdk-contract-runtime.test.ts:30`.                                                                                                    | Covered | —       |
+| HD-05 | Agent registry contract drift (`opencode debug agent`).          | The real-host probe runs in the default test pipeline.                                   | Wired into the smoke project: `vitest.config.ts`; probe: `src/cli/opencode-reviewer-capability.test.ts:19`.                                           | Covered | F-09    |
 | HD-06 | Host version differs from the exact tested baseline.             | Exact tested version is `verified`; all other unknown versions warn or block by policy. | Exact-version classifier: `src/cli/opencode-runtime-compat.test.ts`; doctor detail: `src/cli/install-doctor.test.ts`.                                | Partial | F-05    |
-| HD-07 | Baseline/update scripts regress or are bypassed.                 | CI-enforced tests for snapshot, update, and drift scripts.                            | Script tests: `scripts/__tests__/sdk-type-snapshot.test.ts`; explicit bypass warning: `src/integration/sdk-contract-plugin.test.ts`.                  | Covered | F-10    |
+| HD-07 | Baseline/update scripts regress or are bypassed.                 | CI-enforced tests for snapshot, update, and drift scripts.                               | Script tests: `scripts/__tests__/sdk-type-snapshot.test.ts`; explicit bypass warning: `src/integration/sdk-contract-plugin.test.ts`.                  | Covered | F-10    |
 
 ---
 
 ## Reviewer Child-Session Lifecycle
 
+<!-- prettier-ignore -->
 | ID    | Scenario / vector                                                | Expected fail-closed behavior                                                 | Coverage                                                                                                                                                    | Status  | Finding |
 | ----- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
 | RC-01 | Reviewer child creation or prompt fails transiently.             | Fresh child per attempt, bounded retry with backoff; no duplicate evidence.   | `src/integration/review/orchestrator-retry-core.test.ts:99`, `src/integration/review/orchestrator-invoke-errors.test.ts:15`.                                | Covered | —       |
