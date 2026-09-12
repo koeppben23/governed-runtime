@@ -243,7 +243,7 @@ function makeDelegatedResult(action: string): CliParseResult<CliArgs> {
 function parseInstallArgs(action: CliAction, argv: string[]): CliParseResult<CliArgs> {
   const st = initialParseState();
 
-  for (let i = 1; i < argv.length; ) {
+  for (let i = 1; i < argv.length;) {
     const arg = argv[i];
     if (arg === undefined) return { kind: 'error', error: 'Unexpected empty argument' };
     const advance = parseOneArg(st, arg, argv, i);
