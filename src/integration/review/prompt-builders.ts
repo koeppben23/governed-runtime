@@ -123,7 +123,7 @@ export interface ReviewerTaskPromptInput {
   readonly mandateDigest: string;
   readonly criteriaVersion: string;
   readonly subjectLabel: string;
-  /** Review semantics selected by the runtime. Defaults to all when not known. */
+  /** Review semantics selected by the runtime. Inferred from frozen task authority when omitted. */
   readonly reviewType?: ReviewerPromptType;
   readonly repositoryReview?: boolean;
   readonly challengeContract?: ReviewerChallengePromptContract;
@@ -259,6 +259,39 @@ function retryContract(errors: readonly string[] | undefined): string[] {
   ];
 }
 
+/**
+ * Resolve phase-specific review semantics from host-authoritative task data.
+ * Explicit runtime selection wins. Older callers that do not yet pass
+ * reviewType remain safe because the frozen subject/challenge contracts identify
+ * the phase without trusting model-authored text.
+ */
+function resolveReviewerPromptType(input: ReviewerTaskPromptInput): ReviewerPromptType {
+  if (input.reviewType) return input.reviewType;
+  if (
+    (input.implementationAnchorContract?.length ?? 0) > 0 ||
+    input.challengeContract?.requiredChallengeKind === 'implementation_challenge'
+  ) {
+    return 'implementation';
+  }
+  if (
+    input.artifactAnchorContract?.some((line) => line.includes('artifactKind MUST be "plan"'))
+  ) {
+    return 'plan';
+  }
+  if (
+    input.artifactAnchorContract?.some((line) => line.includes('artifactKind MUST be "adr"'))
+  ) {
+    return 'adr';
+  }
+  if (
+    input.challengeContract?.requiredChallengeKind === 'content_challenge' ||
+    input.frozenReviewerContext?.reviewSubject?.kind === 'content'
+  ) {
+    return 'content';
+  }
+  return 'all';
+}
+
 export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string {
   const context = renderReviewContext({
     iteration: input.iteration,
@@ -273,7 +306,7 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
   return [
     '## Instructions',
     `Perform an independent, falsification-first review of ${input.subjectLabel}.`,
-    renderReviewerCriteria(input.reviewType ?? 'all'),
+    renderReviewerCriteria(resolveReviewerPromptType(input)),
     ...renderReviewerRules(isRepositoryReview),
     ...renderFindingsSemanticRule(input),
     ...renderChallengeContract(input.challengeContract, input.obligationId),
