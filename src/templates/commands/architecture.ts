@@ -34,7 +34,7 @@ ${DISCOVERY_REVIEW_CAPTURE}
    - Derive structured claim declarations for the decision. Each claim names ONE
      falsifiable architectural assertion, its governing ADR section, and the review
      evidence required to assess it:
-     - \`claimId\`: fresh UUID.
+     - Do NOT provide \`claimId\`. Claim identity is host-owned and deterministically minted by FlowGuard from the declaration authority.
      - \`statement\`: the architectural assertion or forbidden state.
      - \`critical\`: true when the decision is unsafe to approve without this claim.
      - \`authoritySectionId\`: the governing ADR section (e.g. \`decision\`).
@@ -79,6 +79,7 @@ ${SHARED_REVIEW_LOOP({
 - The ADR includes \`## Context\`, \`## Decision\`, and \`## Consequences\` sections.
 - Declare structured \`claims\` on every new ADR submission; they are bound into the
   architecture approval certificate and surfaced to the reviewer.
+- Claim identity is host-owned. Never synthesize or submit \`claimId\` in an architecture tool payload.
 - Architecture claims are advisory by design: they are recorded as \`derived_signal\`
   and never block an approval, because no executable provider covers ADR review
   evidence. Do not present them as proven.
