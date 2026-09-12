@@ -55,6 +55,16 @@ function projectHealth(
   };
 }
 
+function projectDriftDigests(
+  drift: DiscoveryDriftStatusProjection | null | undefined,
+): Pick<RepositoryDiscoverySnapshot['drift'], 'currentDigest' | 'persistedDigest'> {
+  if (!drift) return { currentDigest: null, persistedDigest: null };
+  return {
+    currentDigest: drift.currentDigest,
+    persistedDigest: drift.persistedDigest,
+  };
+}
+
 function projectDrift(
   drift: DiscoveryDriftStatusProjection | null | undefined,
 ): RepositoryDiscoverySnapshot['drift'] {
@@ -67,6 +77,7 @@ function projectDrift(
   return {
     status,
     drifted: drift?.drifted ?? false,
+    ...projectDriftDigests(drift),
     changedContributorNames: drift ? [...drift.changedContributorNames] : [],
     notVerified: drift ? [...drift.notVerified] : [],
   };

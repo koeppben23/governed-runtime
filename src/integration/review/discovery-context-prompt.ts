@@ -135,6 +135,8 @@ function appendDrift(
     return;
   }
   lines.push(`- status: ${drift.status}`, `- drifted: ${String(drift.drifted)}`);
+  if (drift.currentDigest) lines.push(`- currentDigest: ${drift.currentDigest}`);
+  if (drift.persistedDigest) lines.push(`- persistedDigest: ${drift.persistedDigest}`);
   if (drift.changedContributorNames.length > 0) {
     lines.push(
       `- changedContributors: ${drift.changedContributorNames.slice(0, limits.changedContributors).join(', ')}`,
@@ -184,8 +186,9 @@ function appendVerificationCandidates(
   }
   lines.push('- advisory only; these are not executed checks');
   for (const candidate of candidates.slice(0, limits.verificationCandidates)) {
+    const identity = candidate.candidateId ? `; candidateId: ${candidate.candidateId}` : '';
     lines.push(
-      `- ${candidate.kind}: ${candidate.command} (source: ${candidate.source}; confidence: ${candidate.confidence}; reason: ${candidate.reason})`,
+      `- ${candidate.kind}: ${candidate.command} (source: ${candidate.source}; confidence: ${candidate.confidence}${identity}; reason: ${candidate.reason})`,
     );
   }
   lines.push('');
@@ -333,6 +336,10 @@ function appendSnapshotHealth(lines: string[], snapshot: RepositoryDiscoverySnap
 
 function appendSnapshotDrift(lines: string[], snapshot: RepositoryDiscoverySnapshot): void {
   lines.push('### Drift', `- status: ${snapshot.drift.status}`);
+  if (snapshot.drift.currentDigest) lines.push(`- currentDigest: ${snapshot.drift.currentDigest}`);
+  if (snapshot.drift.persistedDigest) {
+    lines.push(`- persistedDigest: ${snapshot.drift.persistedDigest}`);
+  }
   if (snapshot.drift.changedContributorNames.length > 0) {
     lines.push(`- changedContributors: ${snapshot.drift.changedContributorNames.join(', ')}`);
   }
@@ -375,8 +382,9 @@ function appendSnapshotCandidates(lines: string[], snapshot: RepositoryDiscovery
   }
   lines.push('- advisory only; these are not executed checks');
   for (const candidate of snapshot.verificationCandidates.slice(0, 6)) {
+    const identity = candidate.candidateId ? `; candidateId: ${candidate.candidateId}` : '';
     lines.push(
-      `- ${candidate.kind}: ${candidate.command} (source: ${candidate.source}; confidence: ${candidate.confidence})`,
+      `- ${candidate.kind}: ${candidate.command} (source: ${candidate.source}; confidence: ${candidate.confidence}${identity})`,
     );
   }
   lines.push('');

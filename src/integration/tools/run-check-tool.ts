@@ -92,6 +92,7 @@ import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { hashText } from '../../shared/hashing.js';
 import { validateRunCheckRequest } from './run-check-request.js';
 import { resolveExecutionSubjectInputs } from './execution-subject-input-resolution.js';
+import { formatRunCheckStatus, formatValidationDetail } from './run-check-presentation.js';
 const RUN_CHECK_RETRY_DELAYS_MS = [100, 200, 400] as const;
 const RUN_CHECK_RETRIES = RUN_CHECK_RETRY_DELAYS_MS.length;
 
@@ -453,6 +454,7 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
         kind,
         candidateId: validationResult.candidateId,
         evidence,
+        validationResult,
         derivedRepairGuidance,
         originalState: freshState,
         executionObservedStateDigest,
@@ -517,7 +519,7 @@ function buildValidationResult(params: {
     checkId,
     candidateId,
     passed,
-    detail: formatValidationDetail(evidence),
+    detail: formatValidationDetail(evidence, extraction),
     executedAt: evidence.startedAt,
     kind: evidence.kind,
     command: evidence.command,
@@ -559,12 +561,6 @@ function classifyValidationOutcome(
   if (execution.passed) return 'supported';
   const output = `${execution.stdout}\n${execution.stderr}`.trim();
   return output.length === 0 ? 'blocked' : 'inconclusive';
-}
-
-function formatValidationDetail(evidence: CheckEvidence): string {
-  if (evidence.timedOut) return `Timed out after ${evidence.executionMs}ms`;
-  if (evidence.passed) return `Passed (exit 0, ${evidence.executionMs}ms)`;
-  return `Failed (exit ${evidence.exitCode}, ${evidence.executionMs}ms)`;
 }
 
 function mergeValidationResult(
@@ -657,6 +653,7 @@ function formatRunCheckResponse(input: {
   kind: string;
   candidateId?: string;
   evidence: CheckEvidence;
+  validationResult: ValidationResult;
   derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance> | undefined;
   originalState: SessionState;
   executionObservedStateDigest: string;
@@ -666,7 +663,6 @@ function formatRunCheckResponse(input: {
   policy: FlowGuardPolicy;
 }): ToolResult {
   const {
-    kind,
     evidence,
     derivedRepairGuidance,
     originalState,
@@ -707,7 +703,7 @@ function formatRunCheckResponse(input: {
   return appendNextAction(
     JSON.stringify({
       phase: finalState.phase,
-      status: formatRunCheckStatus(kind, evidence),
+      status: formatRunCheckStatus(input.kind, input.validationResult, evidence),
       evidence: {
         kind: evidence.kind,
         ...(input.candidateId ? { candidateId: input.candidateId } : {}),
@@ -732,10 +728,4 @@ function formatRunCheckResponse(input: {
     }),
     finalState,
   );
-}
-
-function formatRunCheckStatus(kind: string, evidence: CheckEvidence): string {
-  if (evidence.passed) return `Check '${kind}' passed.`;
-  if (evidence.timedOut) return `Check '${kind}' timed out.`;
-  return `Check '${kind}' failed (exit ${evidence.exitCode}).`;
 }
