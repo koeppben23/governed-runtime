@@ -38,97 +38,42 @@
 /** Runtime "kind" derived from config-ownership heuristics (never from a version). */
 export type OpenCodeRuntimeKind = 'cli' | 'desktop-owned' | 'unknown';
 
-/**
- * Evidence about the detected OpenCode runtime. All fields are best-effort;
- * `null` means "could not be determined" and never implies incompatibility.
- */
 export interface OpenCodeRuntimeEvidence {
-  /** Runtime kind derived from config-ownership heuristics. */
   readonly runtimeKind: OpenCodeRuntimeKind;
-  /** OpenCode version string, best-effort (CLI only). `null` for Desktop/unknown. */
   readonly version: string | null;
-  /** A runtime-line identifier, when one can be positively determined. */
   readonly runtimeLine: string | null;
 }
 
-/**
- * A positively-known incompatible OpenCode runtime. Adding an entry is a
- * fail-closed act: it flips affected installations to a blocked reason. Every
- * entry MUST carry a cited evidence source.
- */
 export interface OpenCodeRuntimeDenyEntry {
-  /** Runtime-line identifier this entry matches (exact match). */
   readonly runtimeLine: string;
-  /** Optional semver range this entry applies to. Omitted = all versions of the line. */
   readonly versionRange?: string;
-  /** Human-readable reason this runtime does not resolve `instructions[]`. */
   readonly reason: string;
-  /** Cited evidence proving the incompatibility (issue link, changelog, test). */
   readonly verifiedBy: string;
 }
 
-/**
- * Deny-list of OpenCode runtimes positively known to accept the FlowGuard
- * `instructions[]` entry without resolving it as an instruction source.
- *
- * SEEDED EMPTY BY DESIGN. No such runtime is currently known with evidence.
- * Do NOT add speculative entries — each addition is a security-boundary change
- * that requires a positive, cited `verifiedBy` source.
- */
 export const KNOWN_INCOMPATIBLE_OPENCODE_RUNTIMES: readonly OpenCodeRuntimeDenyEntry[] = [];
 
-/**
- * Classification of the instruction source.
- *
- * - `not-classified`: the runtime does not match a positively-known
- *   incompatible entry. Activation is NOT asserted.
- * - `known-unsupported`: the runtime positively matches the deny-list.
- *
- * There is deliberately no `compatible`/`supported`/`active` value: FlowGuard
- * does not verify activation and must not claim it.
- */
 export type OpenCodeRuntimeStatus = 'not-classified' | 'known-unsupported';
 
-/**
- * The matched deny entry when status is `known-unsupported`.
- * `undefined` when `not-classified`.
- */
 export interface OpenCodeRuntimeClassification {
   readonly status: OpenCodeRuntimeStatus;
   readonly matched?: OpenCodeRuntimeDenyEntry;
 }
 
-/**
- * Naive semver-range membership for the deny-list. Supports exact version
- * strings and a leading-prefix wildcard form (`"1.2.x"` / `"1.2."`). This is
- * intentionally conservative: an unparseable or non-matching range yields
- * `false`, so an ambiguous deny entry never blocks. The deny-list is empty by
- * default, so this path is exercised only by explicitly-added entries.
- */
 function versionInRange(version: string | null, range: string | undefined): boolean {
-  if (range === undefined) return true; // entry applies to all versions of the line
-  if (version === null) return false; // cannot confirm membership without a version
+  if (range === undefined) return true;
+  if (version === null) return false;
   if (version === range) return true;
   const prefix = range.endsWith('.x') ? range.slice(0, -1) : range.endsWith('.') ? range : null;
   if (prefix !== null) return version.startsWith(prefix);
   return false;
 }
 
-/**
- * Classify runtime evidence against the deny-list.
- *
- * An unknown runtime (no positively determinable runtime-line, including the
- * Desktop app) classifies as `not-classified` — present but activation-unverified.
- * It is NEVER classified as compatible/supported. Blocking (`known-unsupported`)
- * is reserved for positively-known incompatible runtimes on the deny-list.
- */
 export function classifyOpenCodeRuntime(
   evidence: OpenCodeRuntimeEvidence,
   denyList: readonly OpenCodeRuntimeDenyEntry[] = KNOWN_INCOMPATIBLE_OPENCODE_RUNTIMES,
 ): OpenCodeRuntimeClassification {
-  if (evidence.runtimeLine === null) {
-    return { status: 'not-classified' };
-  }
+  if (evidence.runtimeLine === null) return { status: 'not-classified' };
   const matched = denyList.find(
     (entry) =>
       entry.runtimeLine === evidence.runtimeLine &&
@@ -139,44 +84,20 @@ export function classifyOpenCodeRuntime(
 
 // ─── Host contract compatibility ─────────────────────────────────────────────
 
-/**
- * Exact OpenCode host version exercised by CI and represented by the committed
- * host baseline. No surrounding minor/patch range inherits `verified` status
- * without independent evidence.
- */
+/** Exact OpenCode host version exercised by CI and represented by the baseline. */
 export const TESTED_OPENCODE_HOST_VERSION = '1.18.29';
+/** @deprecated Compatibility alias; this is an exact version, not a range. */
+export const TESTED_OPENCODE_HOST_RANGE = TESTED_OPENCODE_HOST_VERSION;
 
-/**
- * A positively-known incompatible OpenCode host contract version. Same evidence
- * discipline as the instruction deny-list: every entry requires a cited source.
- */
 export interface OpenCodeHostContractDenyEntry {
-  /** Semver range (`>=X <Y`) this entry applies to. */
   readonly versionRange: string;
-  /** Human-readable reason the host contract is incompatible. */
   readonly reason: string;
-  /** Cited evidence proving the incompatibility (issue link, changelog, test). */
   readonly verifiedBy: string;
 }
 
-/**
- * Deny-list of OpenCode host contract versions positively known to break the
- * FlowGuard plugin contract (hooks, events, adapter semantics).
- *
- * SEEDED EMPTY BY DESIGN. Adding an entry is a security-boundary change that
- * requires a positive, cited `verifiedBy` source.
- */
 export const KNOWN_INCOMPATIBLE_OPENCODE_HOST_CONTRACTS: readonly OpenCodeHostContractDenyEntry[] =
   [];
 
-/**
- * Host contract compatibility status.
- *
- * - `verified`: the detected version exactly equals {@link TESTED_OPENCODE_HOST_VERSION}.
- * - `compatible-unverified`: the version is unknown or not the tested version.
- *   It is NOT blocked, but it must never be presented as verified.
- * - `known-incompatible`: the version positively matches the host-contract deny-list.
- */
 export type OpenCodeHostContractStatus =
   | 'verified'
   | 'compatible-unverified'
@@ -185,6 +106,8 @@ export type OpenCodeHostContractStatus =
 export interface OpenCodeHostContractClassification {
   readonly status: OpenCodeHostContractStatus;
   readonly testedVersion: string;
+  /** Compatibility projection for existing doctor output; value is exact, not a semver range. */
+  readonly testedRange: string;
   readonly matched?: OpenCodeHostContractDenyEntry;
   readonly reason: string;
 }
@@ -204,7 +127,6 @@ function compareSemver(a: Semver, b: Semver): number {
   return 0;
 }
 
-/** True when `version` is a concrete version inside the `>=X <Y` range. */
 function versionInBoundedRange(version: string, range: string): boolean {
   const parsed = parseSemver(version);
   if (!parsed) return false;
@@ -218,19 +140,13 @@ function versionInBoundedRange(version: string, range: string): boolean {
   return true;
 }
 
-function isExactTestedHostVersion(version: string): boolean {
-  return version.trim() === TESTED_OPENCODE_HOST_VERSION;
+function baseClassification() {
+  return {
+    testedVersion: TESTED_OPENCODE_HOST_VERSION,
+    testedRange: TESTED_OPENCODE_HOST_VERSION,
+  } as const;
 }
 
-/**
- * Classify the detected OpenCode host version against the exact tested host
- * baseline.
- *
- * Unknown, unparseable, newer patch, prerelease, and nightly versions are all
- * `compatible-unverified` — never `verified`. Blocking is reserved for
- * positively-known incompatible entries, so an unknown host never silently
- * claims compatibility and never blocks install by accident.
- */
 export function classifyOpenCodeHostContract(
   version: string | null,
   denyList: readonly OpenCodeHostContractDenyEntry[] = KNOWN_INCOMPATIBLE_OPENCODE_HOST_CONTRACTS,
@@ -239,25 +155,25 @@ export function classifyOpenCodeHostContract(
     const matched = denyList.find((entry) => versionInBoundedRange(version, entry.versionRange));
     if (matched) {
       return {
+        ...baseClassification(),
         status: 'known-incompatible',
-        testedVersion: TESTED_OPENCODE_HOST_VERSION,
         matched,
         reason: matched.reason,
       };
     }
   }
 
-  if (version !== null && isExactTestedHostVersion(version)) {
+  if (version !== null && version.trim() === TESTED_OPENCODE_HOST_VERSION) {
     return {
+      ...baseClassification(),
       status: 'verified',
-      testedVersion: TESTED_OPENCODE_HOST_VERSION,
       reason: `detected host version ${version} exactly matches the tested host baseline`,
     };
   }
 
   return {
+    ...baseClassification(),
     status: 'compatible-unverified',
-    testedVersion: TESTED_OPENCODE_HOST_VERSION,
     reason:
       version === null
         ? 'host version could not be determined'
