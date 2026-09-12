@@ -86,8 +86,6 @@ export function classifyOpenCodeRuntime(
 
 /** Exact OpenCode host version exercised by CI and represented by the baseline. */
 export const TESTED_OPENCODE_HOST_VERSION = '1.18.29';
-/** @deprecated Compatibility alias; this is an exact version, not a range. */
-export const TESTED_OPENCODE_HOST_RANGE = TESTED_OPENCODE_HOST_VERSION;
 
 export interface OpenCodeHostContractDenyEntry {
   readonly versionRange: string;
