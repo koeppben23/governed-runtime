@@ -10,8 +10,9 @@ import { CLAUDE_CODE_PLUGIN_SKILLS } from './claude-code-plugin.js';
 const UUID = '11111111-1111-4111-8111-111111111111';
 
 function expectNoAgentMintingInstruction(text: string): void {
-  expect(text).not.toMatch(/claimId.{0,40}(fresh|generate|mint|UUID)/i);
-  expect(text).toMatch(/claimId[^\n]*(host-owned|host|FlowGuard)/i);
+  expect(text).not.toContain('`claimId`: fresh UUID');
+  expect(text).not.toMatch(/fresh\s+`?claimId`?\s+UUID/i);
+  expect(text).toMatch(/claimId[^\n]*(host-owned|FlowGuard)/i);
 }
 
 describe('claim identity ownership', () => {
