@@ -63,3 +63,18 @@ must never be fully removed:
 Command templates must stay command-specific. Shared governance text comes from the
 `Governance rules` mandates section via the compatibility `GOVERNANCE_RULES` projection;
 templates must not copy semantic governance rules directly.
+
+### Instruction Classification
+
+Every installed command template is classified before its instruction text changes:
+
+| Class                                 | Templates                                                                                                                                                                                                                                                                             | Authority                                                                 |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| State-machine protocol                | `hydrate`, `ticket`, `plan`, `continue`, `implement`, `validate`, `review`, `architecture`, `review-decision`, `approve`, `request-changes`, `reject`, `extend-implementation-review`, `resolve-implementation-challenge`, `reconcile-mutation-episode`, `abort`, `archive`, `finish` | Canonical state transitions and guards in `src/machine/`                  |
+| Product invariant                     | All templates                                                                                                                                                                                                                                                                         | Canonical mandate sections in `src/templates/mandates.ts`                 |
+| Engineering heuristic or presentation | `status`, `start`, `task`, `check`, `export`, `why`, `help`, `commands`                                                                                                                                                                                                               | The owning command template; it must not create state or policy authority |
+
+Protocol wording that binds state, evidence, review, or approval ordering is a product
+contract and must stay exact. Product invariants must be projected from the mandates
+registry rather than copied into a command. Heuristics may be rewritten for task context
+only when they do not change a protocol or invariant.
