@@ -40,75 +40,60 @@ jobs:
                   raise SystemExit(f'{path}: expected one match, got {count}')
               write(path, text.replace(old, new, 1))
 
-          replace_once(
-              'src/integration/review/assurance.ts',
-              "export const REVIEW_CRITERIA_VERSION = 'p41-v1';",
-              "export const REVIEW_CRITERIA_VERSION = 'p42-v1';",
-          )
+          replace_once('src/integration/review/assurance.ts', "export const REVIEW_CRITERIA_VERSION = 'p41-v1';", "export const REVIEW_CRITERIA_VERSION = 'p42-v1';")
           p = 'src/integration/review/assurance.test.ts'
           text = read(p)
-          text = text.replace(
-              "it('creates p41 obligations without rewriting prior attestation values', () => {",
-              "it('creates p42 obligations without rewriting prior attestation values', () => {",
-          )
+          text = text.replace("it('creates p41 obligations without rewriting prior attestation values', () => {", "it('creates p42 obligations without rewriting prior attestation values', () => {")
           text = text.replace("expect(REVIEW_CRITERIA_VERSION).toBe('p41-v1');", "expect(REVIEW_CRITERIA_VERSION).toBe('p42-v1');")
           text = text.replace("expect(fresh.criteriaVersion).toBe('p41-v1');", "expect(fresh.criteriaVersion).toBe('p42-v1');")
           write(p, text)
 
-          replace_once(
-              'src/presentation/next-action-copy.ts',
-              """  RUN_REVIEWER_TASK: {
-              text: 'Independent content review is pending. Run the flowguard-reviewer Task, then submit only its verdict with flowguard_review.',
-              commands: [],
+          replace_once('src/presentation/next-action-copy.ts', """  RUN_REVIEWER_TASK: {
+            text: 'Independent content review is pending. Run the flowguard-reviewer Task, then submit only its verdict with flowguard_review.',
+            commands: [],
+            presentationForm: 'review_pending',
+          },
+          """, '')
+          replace_once('src/presentation/next-action-copy.ts', """  const code = action.code as ActionCode;
+          const guidance = PRODUCT_GUIDANCE[code];
+          """, """  if (action.code === ACTION_CODES.RUN_REVIEWER_TASK) {
+            return {
+              text: action.text,
+              commands: action.commands,
               presentationForm: 'review_pending',
-            },
-          """,
-              '',
-          )
-          replace_once(
-              'src/presentation/next-action-copy.ts',
-              """  const code = action.code as ActionCode;
-            const guidance = PRODUCT_GUIDANCE[code];
-          """,
-              """  if (action.code === ACTION_CODES.RUN_REVIEWER_TASK) {
-              return {
-                text: action.text,
-                commands: action.commands,
-                presentationForm: 'review_pending',
-              };
-            }
+            };
+          }
 
-            const code = action.code as ActionCode;
-            const guidance = PRODUCT_GUIDANCE[code];
-          """,
-          )
+          const code = action.code as ActionCode;
+          const guidance = PRODUCT_GUIDANCE[code];
+          """)
           p = 'src/presentation/next-action-copy.test.ts'
           text = read(p)
           marker = "  describe('CORNER — unknown codes fall back to canonical', () => {"
           if text.count(marker) != 1:
               raise SystemExit('next-action-copy.test.ts insertion marker mismatch')
           block = """  describe('RUN_REVIEWER_TASK — preserve canonical phase routing', () => {
-              it.each([
-                ['PLAN', 'Independent plan review is pending. Submit the reviewer verdict with /plan.'],
-                ['ARCHITECTURE', 'Independent architecture review is pending. Submit the reviewer verdict with /architecture.'],
-                ['IMPL_REVIEW', 'Independent implementation review is pending. Submit the reviewer verdict with flowguard_review_implementation.'],
-                ['REVIEW', 'Independent content review is pending. Submit the reviewer verdict with flowguard_review.'],
-              ] as const)('preserves %s routing instead of substituting content-review copy', (phase, canonicalText) => {
-                const action = { code: 'RUN_REVIEWER_TASK', text: canonicalText, commands: [] as string[] };
-                const product = buildProductNextAction(action, phase);
-                expect(product).toEqual({ text: canonicalText, commands: [], presentationForm: 'review_pending' });
-              });
+            it.each([
+              ['PLAN', 'Independent plan review is pending. Submit the reviewer verdict with /plan.'],
+              ['ARCHITECTURE', 'Independent architecture review is pending. Submit the reviewer verdict with /architecture.'],
+              ['IMPL_REVIEW', 'Independent implementation review is pending. Submit the reviewer verdict with flowguard_review_implementation.'],
+              ['REVIEW', 'Independent content review is pending. Submit the reviewer verdict with flowguard_review.'],
+            ] as const)('preserves %s routing instead of substituting content-review copy', (phase, canonicalText) => {
+              const action = { code: 'RUN_REVIEWER_TASK', text: canonicalText, commands: [] as string[] };
+              const product = buildProductNextAction(action, phase);
+              expect(product).toEqual({ text: canonicalText, commands: [], presentationForm: 'review_pending' });
             });
+          });
 
           """
           write(p, text.replace(marker, block + marker, 1))
 
           p = 'src/integration/review/impl-review-prompt.ts'
           text = read(p)
-          old = """export interface ReviewVerificationEvidenceItem {
+          replace = """export interface ReviewVerificationEvidenceItem {
             readonly attemptId: string;
           """
-          new = """export interface ReviewClaimAssertionEvidence {
+          with_ = """export interface ReviewClaimAssertionEvidence {
             readonly checkId: string;
             readonly providerId: string;
             readonly localId: string;
@@ -127,58 +112,58 @@ jobs:
           export interface ReviewVerificationEvidenceItem {
             readonly attemptId: string;
           """
-          if text.count(old) != 1:
+          if text.count(replace) != 1:
               raise SystemExit('impl-review-prompt.ts interface marker mismatch')
-          text = text.replace(old, new, 1)
-          old = """  readonly detail: string;
+          text = text.replace(replace, with_, 1)
+          replace = """  readonly detail: string;
             readonly executedAt: string;
           }
           """
-          new = """  readonly detail: string;
+          with_ = """  readonly detail: string;
             readonly executedAt: string;
             readonly claimAssertionEvidence?: ReviewClaimAssertionEvidenceSet;
           }
           """
-          if text.count(old) != 1:
+          if text.count(replace) != 1:
               raise SystemExit('impl-review-prompt.ts field marker mismatch')
-          text = text.replace(old, new, 1)
-          old = """  const rows = evidence.map((item) => {
-              const status = item.timedOut ? 'TIMED_OUT' : item.passed ? 'PASS' : 'FAIL';
-              return (
-                `- [${status}] kind=${item.kind} exitCode=${item.exitCode} durationMs=${item.executionMs} ` +
-                `digest=${item.outputDigest}\\n` +
-                `  command: ${item.command}\\n` +
-                `  detail: ${item.detail}`
-              );
-            });
+          text = text.replace(replace, with_, 1)
+          replace = """  const rows = evidence.map((item) => {
+            const status = item.timedOut ? 'TIMED_OUT' : item.passed ? 'PASS' : 'FAIL';
+            return (
+              `- [${status}] kind=${item.kind} exitCode=${item.exitCode} durationMs=${item.executionMs} ` +
+              `digest=${item.outputDigest}\\n` +
+              `  command: ${item.command}\\n` +
+              `  detail: ${item.detail}`
+            );
+          });
           """
-          new = """  const rows = evidence.map((item) => {
-              const status = item.timedOut ? 'TIMED_OUT' : item.passed ? 'PASS' : 'FAIL';
-              const base =
-                `- [${status}] kind=${item.kind} exitCode=${item.exitCode} durationMs=${item.executionMs} ` +
-                `digest=${item.outputDigest}\\n` +
-                `  command: ${item.command}\\n` +
-                `  detail: ${item.detail}`;
-              if (!item.claimAssertionEvidence) return base;
-              const assertionLines = item.claimAssertionEvidence.assertions.map(
-                (assertion) =>
-                  `    - checkId=${assertion.checkId} providerId=${assertion.providerId} ` +
-                  `localId=${assertion.localId} status=${assertion.status}`,
-              );
-              return [
-                base,
-                `  claim-relevant structured assertions (host-extracted; reportDigests=${item.claimAssertionEvidence.reportDigests.join(',')}):`,
-                ...assertionLines,
-              ].join('\\n');
-            });
+          with_ = """  const rows = evidence.map((item) => {
+            const status = item.timedOut ? 'TIMED_OUT' : item.passed ? 'PASS' : 'FAIL';
+            const base =
+              `- [${status}] kind=${item.kind} exitCode=${item.exitCode} durationMs=${item.executionMs} ` +
+              `digest=${item.outputDigest}\\n` +
+              `  command: ${item.command}\\n` +
+              `  detail: ${item.detail}`;
+            if (!item.claimAssertionEvidence) return base;
+            const assertionLines = item.claimAssertionEvidence.assertions.map(
+              (assertion) =>
+                `    - checkId=${assertion.checkId} providerId=${assertion.providerId} ` +
+                `localId=${assertion.localId} status=${assertion.status}`,
+            );
+            return [
+              base,
+              `  claim-relevant structured assertions (host-extracted; reportDigests=${item.claimAssertionEvidence.reportDigests.join(',')}):`,
+              ...assertionLines,
+            ].join('\\n');
+          });
           """
-          if text.count(old) != 1:
+          if text.count(replace) != 1:
               raise SystemExit('impl-review-prompt.ts render marker mismatch')
-          write(p, text.replace(old, new, 1))
+          write(p, text.replace(replace, with_, 1))
 
           p = 'src/integration/review/shared-helpers.ts'
           text = read(p)
-          old = """export function stateVerificationEvidence(
+          replace = """export function stateVerificationEvidence(
             state: SessionState,
           ): readonly ReviewVerificationEvidenceItem[] {
             const currentDigest = state.implementation?.digest;
@@ -202,7 +187,7 @@ jobs:
               }));
           }
           """
-          new = """function assertionRequirementKey(checkId: string, providerId: string, localId: string): string {
+          with_ = """function assertionRequirementKey(checkId: string, providerId: string, localId: string): string {
             return `${checkId}\\u0000${providerId}\\u0000${localId}`;
           }
 
@@ -211,13 +196,7 @@ jobs:
             for (const claim of state.plan?.claimDeclarations?.claims ?? []) {
               const requirement = claim.counterexampleRequirement;
               if (requirement?.kind !== 'assertion') continue;
-              keys.add(
-                assertionRequirementKey(
-                  requirement.checkId,
-                  requirement.assertion.providerId,
-                  requirement.assertion.localId,
-                ),
-              );
+              keys.add(assertionRequirementKey(requirement.checkId, requirement.assertion.providerId, requirement.assertion.localId));
             }
             return keys;
           }
@@ -229,15 +208,7 @@ jobs:
             const extraction = attempt.result.assertionExtraction;
             if (extraction?.status !== 'extracted' || requirementKeys.size === 0) return undefined;
             const assertions = extraction.assertions
-              .filter((assertion) =>
-                requirementKeys.has(
-                  assertionRequirementKey(
-                    attempt.result.checkId,
-                    assertion.providerId,
-                    assertion.assertion.localId,
-                  ),
-                ),
-              )
+              .filter((assertion) => requirementKeys.has(assertionRequirementKey(attempt.result.checkId, assertion.providerId, assertion.assertion.localId)))
               .map((assertion) => ({
                 checkId: attempt.result.checkId,
                 providerId: assertion.providerId,
@@ -259,10 +230,7 @@ jobs:
             if (!currentDigest) return [];
             const requirementKeys = declaredAssertionRequirementKeys(state);
             return state.validationAttempts
-              .filter(
-                (attempt): attempt is Extract<SessionState['validationAttempts'][number], { scope: 'implementation' }> =>
-                  attempt.scope === 'implementation' && attempt.implementationDigest === currentDigest,
-              )
+              .filter((attempt): attempt is Extract<SessionState['validationAttempts'][number], { scope: 'implementation' }> => attempt.scope === 'implementation' && attempt.implementationDigest === currentDigest)
               .map((attempt) => {
                 const claimAssertionEvidence = projectClaimAssertionEvidence(attempt, requirementKeys);
                 return {
@@ -281,21 +249,16 @@ jobs:
               });
           }
           """
-          if text.count(old) != 1:
+          if text.count(replace) != 1:
               raise SystemExit('shared-helpers.ts projection marker mismatch')
-          write(p, text.replace(old, new, 1))
+          write(p, text.replace(replace, with_, 1))
 
           p = 'src/integration/review/verification-evidence-projection.test.ts'
           text = read(p)
-          text = text.replace(
-              "import { IMPL_EVIDENCE, VALIDATION_PASSED, makeState } from '../../fixtures.js';",
-              "import { IMPL_EVIDENCE, PLAN_RECORD, VALIDATION_PASSED, makeState } from '../../fixtures.js';",
-              1,
-          )
+          text = text.replace("import { IMPL_EVIDENCE, VALIDATION_PASSED, makeState } from '../../fixtures.js';", "import { IMPL_EVIDENCE, PLAN_RECORD, VALIDATION_PASSED, makeState } from '../../fixtures.js';", 1)
           block = """
             it('projects only claim-relevant structured assertion evidence from the current implementation', () => {
               const matchingLocalId = 'com.example.TaskControllerTest#missingTask';
-              const unrelatedLocalId = 'com.example.TaskControllerTest#unrelated';
               const resultWithAssertions = {
                 ...VALIDATION_PASSED[0]!,
                 assertionExtraction: {
@@ -307,7 +270,7 @@ jobs:
                   reportDigests: ['c'.repeat(64)],
                   assertions: [
                     { assertion: { providerId: 'junit' as const, localId: matchingLocalId }, providerId: 'junit' as const, status: 'passed' as const, suiteName: 'com.example.TaskControllerTest', testName: 'missingTask' },
-                    { assertion: { providerId: 'junit' as const, localId: unrelatedLocalId }, providerId: 'junit' as const, status: 'passed' as const, suiteName: 'com.example.TaskControllerTest', testName: 'unrelated' },
+                    { assertion: { providerId: 'junit' as const, localId: 'com.example.TaskControllerTest#unrelated' }, providerId: 'junit' as const, status: 'passed' as const, suiteName: 'com.example.TaskControllerTest', testName: 'unrelated' },
                   ],
                   summary: { assertionCount: 2, passedCount: 2, failedCount: 0, erroredCount: 0, skippedCount: 0, suiteInfrastructureError: false },
                 },
@@ -319,21 +282,12 @@ jobs:
                   claimDeclarations: {
                     flow: 'plan' as const,
                     version: 'v2' as const,
-                    claims: [{
-                      claimId: '11111111-1111-4111-8111-111111111111',
-                      statement: 'missing task returns 404',
-                      critical: true,
-                      authoritySectionId: 'implementation',
-                      claimScope: 'specific_behavior' as const,
-                      expectedCheckId: 'test',
-                      counterexampleRequirement: { kind: 'assertion' as const, checkId: 'test', assertion: { providerId: 'junit' as const, localId: matchingLocalId } },
-                    }],
+                    claims: [{ claimId: '11111111-1111-4111-8111-111111111111', statement: 'missing task returns 404', critical: true, authoritySectionId: 'implementation', claimScope: 'specific_behavior' as const, expectedCheckId: 'test', counterexampleRequirement: { kind: 'assertion' as const, checkId: 'test', assertion: { providerId: 'junit' as const, localId: matchingLocalId } } }],
                   },
                 },
                 validationAttempts: [implAttempt({ result: resultWithAssertions })] as never,
               });
-              const projected = stateVerificationEvidence(state);
-              expect(projected[0]?.claimAssertionEvidence).toEqual({
+              expect(stateVerificationEvidence(state)[0]?.claimAssertionEvidence).toEqual({
                 reportDigests: ['c'.repeat(64)],
                 assertions: [{ checkId: 'test', providerId: 'junit', localId: matchingLocalId, status: 'passed', suiteName: 'com.example.TaskControllerTest', testName: 'missingTask' }],
               });
@@ -350,78 +304,79 @@ jobs:
           if text.count(marker) != 1:
               raise SystemExit('verification-evidence-prompt.test.ts marker mismatch')
           block = """  it('renders claim-relevant structured assertion identity and report binding', () => {
-              const text = renderVerificationEvidence([{
-                ...PASS_ITEM,
-                claimAssertionEvidence: {
-                  reportDigests: ['c'.repeat(64)],
-                  assertions: [{ checkId: 'test', providerId: 'junit', localId: 'com.example.TaskControllerTest#missingTask', status: 'passed', testName: 'missingTask' }],
-                },
-              }]).join('\\n');
-              expect(text).toContain('claim-relevant structured assertions (host-extracted');
-              expect(text).toContain(`reportDigests=${'c'.repeat(64)}`);
-              expect(text).toContain('checkId=test providerId=junit localId=com.example.TaskControllerTest#missingTask status=passed');
-            });
+            const text = renderVerificationEvidence([{
+              ...PASS_ITEM,
+              claimAssertionEvidence: {
+                reportDigests: ['c'.repeat(64)],
+                assertions: [{ checkId: 'test', providerId: 'junit', localId: 'com.example.TaskControllerTest#missingTask', status: 'passed', testName: 'missingTask' }],
+              },
+            }]).join('\\n');
+            expect(text).toContain('claim-relevant structured assertions (host-extracted');
+            expect(text).toContain(`reportDigests=${'c'.repeat(64)}`);
+            expect(text).toContain('checkId=test providerId=junit localId=com.example.TaskControllerTest#missingTask status=passed');
+          });
 
           """
           write(p, text.replace(marker, block + marker, 1))
 
           p = 'src/integration/plugin-task-evidence.ts'
           text = read(p)
-          old = """          callId: execution.callId,
+          replace = """          callId: execution.callId,
                     canonicalPromptDigest: execution.canonicalPromptDigest,
                     modelPromptDigest: execution.modelPromptDigest,
           """
-          new = """          callId: execution.callId,
+          with_ = """          callId: execution.callId,
                     canonicalPromptDigest: execution.canonicalPromptDigest,
                     modelPromptDigest: execution.modelPromptDigest,
                     createdAt: execution.createdAt,
           """
-          if text.count(old) != 1:
+          if text.count(replace) != 1:
               raise SystemExit('plugin-task-evidence.ts provenance marker mismatch')
-          write(p, text.replace(old, new, 1))
+          write(p, text.replace(replace, with_, 1))
 
           p = 'src/integration/review/evidence-binding.ts'
           text = read(p)
-          old = """      readonly callId: string;
-                readonly canonicalPromptDigest: string;
-                readonly modelPromptDigest: string | null;
+          text = text.replace("import type { SessionEnforcementState, HostTaskBindResult } from './enforcement/types.js';", "import type { SessionEnforcementState, HostTaskBindResult, ExecutedTaskPrompt } from './enforcement/types.js';", 1)
+          anchor = "function transportContract(latest: PendingReviewRecord) {"
+          alias = """type HostTaskPromptProvenance = Pick<
+            ExecutedTaskPrompt,
+            'callId' | 'canonicalPromptDigest' | 'modelPromptDigest' | 'createdAt'
+          >;
+
           """
-          new = """      readonly callId: string;
-                readonly canonicalPromptDigest: string;
-                readonly modelPromptDigest: string | null;
-                readonly createdAt: string;
+          if text.count(anchor) != 1:
+              raise SystemExit('evidence-binding.ts alias marker mismatch')
+          text = text.replace(anchor, alias + anchor, 1)
+          replace = """    readonly promptProvenance?: {
+              readonly callId: string;
+              readonly canonicalPromptDigest: string;
+              readonly modelPromptDigest: string | null;
+            };
           """
-          if text.count(old) != 1:
+          if text.count(replace) != 1:
               raise SystemExit('evidence-binding.ts records provenance marker mismatch')
-          text = text.replace(old, new, 1)
-          old = """    readonly callId: string;
-              readonly canonicalPromptDigest: string;
-              readonly modelPromptDigest: string | null;
-            };
-            now: string;
+          text = text.replace(replace, "    readonly promptProvenance?: HostTaskPromptProvenance;\n", 1)
+          replace = """  promptProvenance?: {
+            readonly callId: string;
+            readonly canonicalPromptDigest: string;
+            readonly modelPromptDigest: string | null;
+          };
           """
-          new = """    readonly callId: string;
-              readonly canonicalPromptDigest: string;
-              readonly modelPromptDigest: string | null;
-              readonly createdAt: string;
-            };
-            now: string;
-          """
-          if text.count(old) != 1:
+          if text.count(replace) != 1:
               raise SystemExit('evidence-binding.ts assemble provenance marker mismatch')
-          text = text.replace(old, new, 1)
-          old = """    findingsHash,
-              invokedAt: now,
-              source: 'host-orchestrated',
+          text = text.replace(replace, "  promptProvenance?: HostTaskPromptProvenance;\n", 1)
+          replace = """    findingsHash,
+            invokedAt: now,
+            source: 'host-orchestrated',
           """
-          new = """    findingsHash,
-              invokedAt: input.promptProvenance?.createdAt ?? input.attempt.createdAt,
-              fulfilledAt: latest.subagentRecord?.completedAt ?? now,
-              source: 'host-orchestrated',
+          with_ = """    findingsHash,
+            invokedAt: input.promptProvenance?.createdAt ?? input.attempt.createdAt,
+            fulfilledAt: latest.subagentRecord?.completedAt ?? now,
+            source: 'host-orchestrated',
           """
-          if text.count(old) != 1:
+          if text.count(replace) != 1:
               raise SystemExit('evidence-binding.ts timestamp marker mismatch')
-          write(p, text.replace(old, new, 1))
+          write(p, text.replace(replace, with_, 1))
 
           p = 'src/integration/review/evidence-binding-provenance.test.ts'
           text = read(p)
@@ -429,9 +384,7 @@ jobs:
             it('binds invocation lifecycle to host dispatch start and Task completion', () => {
               const { state, obligation, attempts } = setupHostStampedCycle();
               const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
-                obligations: [obligation],
-                invocations: [],
-                attempts,
+                obligations: [obligation], invocations: [], attempts,
                 promptProvenance: { callId: 'call_provenance_001', canonicalPromptDigest: 'a'.repeat(64), modelPromptDigest: null, createdAt: NOW },
               });
               expect(result.evidence?.invokedAt).toBe(NOW);
