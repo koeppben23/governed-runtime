@@ -11,15 +11,19 @@ export { REVIEWER_CRITERIA } from './mandates-reviewer-criteria.js';
 /** Filename for the FlowGuard mandates artifact. */
 export const MANDATES_FILENAME = 'flowguard-mandates.md';
 
+const MANDATES_INSTRUCTION_ENTRIES = {
+  global: MANDATES_FILENAME,
+  repo: `.opencode/${MANDATES_FILENAME}`,
+} as const;
+
 /**
  * Returns the instruction entry path for opencode.json based on install scope.
  *
  * - global: bare filename (resolved relative to ~/.config/opencode/)
  * - repo:   .opencode/ prefixed path (resolved relative to project root where opencode.json lives)
  */
-export function mandatesInstructionEntry(scope: 'global' | 'repo'): string {
-  return scope === 'global' ? MANDATES_FILENAME : `.opencode/${MANDATES_FILENAME}`;
-}
+export const mandatesInstructionEntry = (scope: 'global' | 'repo'): string =>
+  MANDATES_INSTRUCTION_ENTRIES[scope];
 
 export type MandatesSectionId =
   | 'grounding'
@@ -491,6 +495,10 @@ function renderMandateDocument(sections: readonly MandatesSectionDefinition[]): 
   return `${sections.map((section) => section.content).join('\n\n')}\n\n---\n\n${MANDATES_TRAILER}\n`;
 }
 
+function isKernelSection(section: MandatesSectionDefinition): boolean {
+  return section.kernel === true;
+}
+
 /**
  * Full canonical diagnostic/runtime projection. It is derived from the same
  * semantic section registry as the installed kernel and is never installed as
@@ -504,7 +512,7 @@ export const FLOWGUARD_MANDATES_FULL_BODY = renderMandateDocument(MANDATES_SECTI
  * and verification matrices are supplied by their owning runtime/command layer.
  */
 export const FLOWGUARD_MANDATES_KERNEL = renderMandateDocument(
-  MANDATES_SECTION_DEFINITIONS.filter((section) => 'kernel' in section && section.kernel === true),
+  MANDATES_SECTION_DEFINITIONS.filter(isKernelSection),
 );
 
 // ---------------------------------------------------------------------------

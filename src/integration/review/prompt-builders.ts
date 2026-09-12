@@ -49,7 +49,7 @@ function textCompatExample(): Record<string, unknown> {
     iteration: '<exact iteration from Trusted Runtime Context>',
     planVersion: '<exact planVersion when supplied>',
     reviewMode: 'subagent',
-    overallVerdict: 'accept',
+    overallVerdict: '<select after falsification>',
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],

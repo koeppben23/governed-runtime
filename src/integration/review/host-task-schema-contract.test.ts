@@ -20,6 +20,8 @@ describe('host-task reviewer serialization contract', () => {
     for (const field of REVIEW_FINDINGS_JSON_SCHEMA.required) {
       expect(prompt).toContain(`"${field}"`);
     }
+    expect(prompt).toContain('"overallVerdict": "<select after falsification>"');
+    expect(prompt).not.toContain('"overallVerdict": "accept"');
   });
 
   it('makes challenge nesting explicit instead of leaving wrapper shape to model inference', () => {

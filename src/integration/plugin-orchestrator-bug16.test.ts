@@ -390,11 +390,8 @@ describe('BUG-16: buildHostTaskPolicyOutput preserves iteration/planVersion', ()
     expect(parsed.reviewerTaskPrompt).toContain('iteration=2');
     expect(parsed.reviewerTaskPrompt).toContain('planVersion=3');
     expect(parsed.reviewerTaskPrompt).toContain(OBLIGATION_ID);
-    // Text-compat transport includes a schema shape example, which must be
-    // explicitly non-copyable rather than being mistaken for a prefilled verdict.
-    expect(parsed.reviewerTaskPrompt).toContain(
-      'Shape example only (replace every placeholder/binding with the exact values from the Trusted Runtime Context; do not copy placeholder text):',
-    );
+    // Text-compat transport includes a schema shape example, never a prefilled verdict.
+    expect(parsed.reviewerTaskPrompt).not.toMatch(/overallVerdict"\s*:\s*"accept/i);
     // The next prose delegates canonical prompt transport to the host.
     expect(parsed.next).toContain('reviewerTaskPrompt');
     expect(parsed.next).toContain('FlowGuard injects the canonical bytes');

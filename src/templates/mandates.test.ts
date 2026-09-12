@@ -52,10 +52,9 @@ describe('mandates — contract anchors', () => {
 
   it('mandatesInstructionEntry uses MANDATES_FILENAME', () => {
     const repo = mandatesInstructionEntry('repo');
-    expect(repo).toContain(MANDATES_FILENAME);
-    expect(repo).toContain('.opencode/');
+    expect(repo).toBe(`.opencode/${MANDATES_FILENAME}`);
     const global = mandatesInstructionEntry('global');
-    expect(global).toContain(MANDATES_FILENAME);
+    expect(global).toBe(MANDATES_FILENAME);
   });
 
   it('keeps the installed mandate body canonical', () => {
