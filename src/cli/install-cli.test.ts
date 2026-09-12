@@ -192,13 +192,12 @@ describe('cli/main', () => {
       await expect(main(['install', '--install-scope', 'repo'])).resolves.toBe(1);
     });
 
-    it.each([
-      ['--mode', 'team'],
-      ['--global'],
-      ['--project'],
-    ])('returns 2 for removed install option %s', async (...args) => {
-      await expect(main(['install', ...args])).resolves.toBe(2);
-    });
+    it.each([['--mode', 'team'], ['--global'], ['--project']])(
+      'returns 2 for removed install option %s',
+      async (...args) => {
+        await expect(main(['install', ...args])).resolves.toBe(2);
+      },
+    );
   });
 
   describe('CORNER', () => {
