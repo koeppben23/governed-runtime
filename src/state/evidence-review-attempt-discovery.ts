@@ -42,6 +42,10 @@ export const RepositoryDiscoverySnapshot = z
       .object({
         status: z.enum(['clean', 'drifted', 'not_assessed', 'unavailable']),
         drifted: z.boolean(),
+        /** Current runtime Discovery digest when the drift authority produced one. */
+        currentDigest: z.string().nullable().optional(),
+        /** Persisted comparison digest used by the drift authority. */
+        persistedDigest: z.string().nullable().optional(),
         changedContributorNames: z.array(z.string()).optional(),
         // Older persisted attempt snapshots used the collector-only name.
         // Preserve their advisory context while projecting the broader model.
