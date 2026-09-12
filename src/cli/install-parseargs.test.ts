@@ -72,7 +72,9 @@ describe('cli/parseArgs', () => {
     });
 
     it("parses 'install --policy-mode team-ci'", () => {
-      expect(okResult(parseArgs(['install', '--policy-mode', 'team-ci'])).policyMode).toBe('team-ci');
+      expect(okResult(parseArgs(['install', '--policy-mode', 'team-ci'])).policyMode).toBe(
+        'team-ci',
+      );
     });
 
     it("parses 'install --core-tarball <path>'", () => {
@@ -154,9 +156,9 @@ describe('cli/parseArgs', () => {
     });
 
     it("delegates 'run' arguments without install-parser rejection", () => {
-      expect(okResult(parseArgs(['run', '--host', 'claude-code', '--', 'Run /validate'])).action).toBe(
-        'run',
-      );
+      expect(
+        okResult(parseArgs(['run', '--host', 'claude-code', '--', 'Run /validate'])).action,
+      ).toBe('run');
     });
 
     it("delegates 'serve' arguments without install-parser rejection", () => {
@@ -216,15 +218,14 @@ describe('cli/parseArgs', () => {
       errorResult(parseArgs(['install', '--verbose']));
     });
 
-    it.each([
-      ['--mode', 'team'],
-      ['--global'],
-      ['--project'],
-    ])('rejects removed install option %s', (...args) => {
-      const result = parseArgs(['install', ...args]);
-      expect(result.kind).toBe('error');
-      if (result.kind === 'error') expect(result.error).toContain(`Unknown option: ${args[0]}`);
-    });
+    it.each([['--mode', 'team'], ['--global'], ['--project']])(
+      'rejects removed install option %s',
+      (...args) => {
+        const result = parseArgs(['install', ...args]);
+        expect(result.kind).toBe('error');
+        if (result.kind === 'error') expect(result.error).toContain(`Unknown option: ${args[0]}`);
+      },
+    );
 
     it('returns error for --core-tarball without value', () => {
       errorResult(parseArgs(['install', '--core-tarball']));
@@ -266,14 +267,7 @@ describe('cli/parseArgs', () => {
 
     it('canonical scope, policy and force flags compose deterministically', () => {
       const args = okResult(
-        parseArgs([
-          'install',
-          '--install-scope',
-          'repo',
-          '--policy-mode',
-          'regulated',
-          '--force',
-        ]),
+        parseArgs(['install', '--install-scope', 'repo', '--policy-mode', 'regulated', '--force']),
       );
       expect(args.installScope).toBe('repo');
       expect(args.policyMode).toBe('regulated');
