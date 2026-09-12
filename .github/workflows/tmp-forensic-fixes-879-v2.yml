@@ -1,0 +1,896 @@
+name: Temporary forensic fixes 879 v2
+
+on:
+  push:
+    branches: [feat/mandates-v5]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-push:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/mandates-v5
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply forensic fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new, count=1):
+              p = Path(path)
+              s = p.read_text()
+              actual = s.count(old)
+              if actual != count:
+                  raise SystemExit(f'{path}: expected {count} matches, got {actual}: {old[:100]!r}')
+              p.write_text(s.replace(old, new, count))
+
+          # 1) Single current-generation authority.
+          replace('src/integration/review/assurance.ts',
+          "export const REVIEW_MANDATE_DIGEST = hashText(REVIEWER_AGENT);\n",
+          "export const REVIEW_MANDATE_DIGEST = hashText(REVIEWER_AGENT);\n\nexport function isCurrentReviewGeneration(\n  input: Pick<ReviewObligation, 'criteriaVersion' | 'mandateDigest'>,\n): boolean {\n  return (\n    input.criteriaVersion === REVIEW_CRITERIA_VERSION &&\n    input.mandateDigest === REVIEW_MANDATE_DIGEST\n  );\n}\n")
+
+          # 2) SDK orchestration must not reinterpret a frozen older generation.
+          replace('src/integration/review/standard-review-pipeline.ts',
+          "  REVIEW_CRITERIA_VERSION,\n  REVIEW_MANDATE_DIGEST,\n  hashFindings,\n  hashText,\n",
+          "  REVIEW_CRITERIA_VERSION,\n  REVIEW_MANDATE_DIGEST,\n  findBindableAttempt,\n  isCurrentReviewGeneration,\n  hashFindings,\n  hashText,\n")
+          marker = """  if (!exactObligation || exactObligation.obligationType !== obligationType) {
+    output.output = strictBlockedOutput('REVIEW_MATERIAL_INTEGRITY_FAILED', {
+      reason: `review orchestration requires an exact ${obligationType} review obligation for ${ctx.reviewCtx.obligationId}`,
+    });
+    deps.log.warn('orchestrator', 'missing or mismatched review obligation — blocked', {
+      tool: toolName,
+      obligationId: ctx.reviewCtx.obligationId,
+      obligationType,
+    });
+    return;
+  }
+
+"""
+          replacement = marker + """  if (
+    !isCurrentReviewGeneration(exactObligation) ||
+    ctx.reviewCtx.criteriaVersion !== exactObligation.criteriaVersion ||
+    ctx.reviewCtx.mandateDigest !== exactObligation.mandateDigest
+  ) {
+    output.output = strictBlockedOutput('REVIEW_GENERATION_MISMATCH', {
+      obligationId: exactObligation.obligationId,
+      reason:
+        `review obligation generation ${exactObligation.criteriaVersion}/${exactObligation.mandateDigest} ` +
+        `is not executable by the current runtime ${REVIEW_CRITERIA_VERSION}/${REVIEW_MANDATE_DIGEST}; ` +
+        're-hydrate or create a fresh review obligation',
+    });
+    return;
+  }
+
+"""
+          replace('src/integration/review/standard-review-pipeline.ts', marker, replacement)
+          replace('src/integration/review/standard-review-pipeline.ts',
+          """    hostConstants: {
+      mandateDigest: REVIEW_MANDATE_DIGEST,
+      criteriaVersion: REVIEW_CRITERIA_VERSION,
+    },
+    hostProvenance: {
+      childSessionId: reviewerResult.sessionId,
+      reviewedAt: new Date().toISOString(),
+    },
+""",
+          """    hostConstants: {
+      mandateDigest: ctx.reviewCtx.mandateDigest,
+      criteriaVersion: ctx.reviewCtx.criteriaVersion,
+    },
+    hostProvenance: {
+      childSessionId: reviewerResult.sessionId,
+      reviewedAt: reviewerResult.fulfilledAt ?? new Date().toISOString(),
+    },
+""")
+          replace('src/integration/review/standard-review-pipeline.ts',
+          """    criteriaVersion: REVIEW_CRITERIA_VERSION,
+    mandateDigest: REVIEW_MANDATE_DIGEST,
+""",
+          """    criteriaVersion: reviewCtx.criteriaVersion,
+    mandateDigest: reviewCtx.mandateDigest,
+""", 1)
+          replace('src/integration/review/standard-review-pipeline.ts',
+          """  const promptHash = hashText(prompt);
+  const findingsHash = hashFindings(reviewerResult.findings);
+
+  const result = await recordEvidenceOrBlockReuse(deps, sessDir, {
+""",
+          """  const attempt = findBindableAttempt(sessionState.reviewAssurance, reviewCtx.obligationId);
+  if (!attempt) {
+    output.output = strictBlockedOutput('REVIEW_ATTEMPT_UNAVAILABLE', {
+      obligationId: reviewCtx.obligationId,
+      reason: 'SDK review completion has no pre-authorized bindable review attempt',
+    });
+    return true;
+  }
+
+  const promptHash = hashText(prompt);
+  const findingsHash = hashFindings(reviewerResult.findings);
+  const invokedAt = reviewerResult.invokedAt ?? ctx.now;
+  const fulfilledAt = reviewerResult.fulfilledAt ?? new Date().toISOString();
+
+  const result = await recordEvidenceOrBlockReuse(deps, sessDir, {
+""")
+          replace('src/integration/review/standard-review-pipeline.ts',
+          """    childSessionId: reviewerResult.sessionId,
+    promptHash,
+    findingsHash,
+    reviewerResult,
+""",
+          """    childSessionId: reviewerResult.sessionId,
+    attemptId: attempt.attemptId,
+    promptHash,
+    findingsHash,
+    invokedAt,
+    fulfilledAt,
+    reviewerResult,
+""")
+          replace('src/integration/review/standard-review-pipeline.ts',
+          """  if (result === 'missing') {
+    output.output = strictBlockedOutput('REVIEW_MATERIAL_INTEGRITY_FAILED', {
+      reason: `no exact review obligation resolved for ${reviewCtx.obligationId}; evidence was not recorded`,
+    });
+    return true;
+  }
+
+  return false;
+""",
+          """  if (result === 'missing') {
+    output.output = strictBlockedOutput('REVIEW_MATERIAL_INTEGRITY_FAILED', {
+      reason: `no exact review obligation resolved for ${reviewCtx.obligationId}; evidence was not recorded`,
+    });
+    return true;
+  }
+  if (result === 'lineage_unavailable') {
+    output.output = strictBlockedOutput('REVIEW_ATTEMPT_UNAVAILABLE', {
+      obligationId: reviewCtx.obligationId,
+      reason: 'SDK review evidence could not bind to the pre-authorized review attempt',
+    });
+    return true;
+  }
+
+  return false;
+""")
+          replace('src/integration/review/standard-review-pipeline.ts',
+          """          mandateDigest: REVIEW_MANDATE_DIGEST,
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
+""",
+          """          mandateDigest: reviewCtx.mandateDigest,
+          criteriaVersion: reviewCtx.criteriaVersion,
+""", 1)
+
+          # 3) SDK evidence must bind the pre-existing attempt and preserve real lifecycle time.
+          replace('src/integration/review/pipeline-types.ts',
+          "export type EvidenceRecordResult = 'fulfilled' | 'reused' | 'missing';",
+          "export type EvidenceRecordResult = 'fulfilled' | 'reused' | 'missing' | 'lineage_unavailable';")
+          replace('src/integration/review/shared-helpers.ts',
+          """  appendInvocationEvidence,
+  resolveAttemptObservationCapability,
+""",
+          """  appendInvocationEvidence,
+  resolveAttemptObservationCapability,
+  updateAttemptStatus,
+""")
+          replace('src/integration/review/shared-helpers.ts',
+          """    childSessionId: string;
+    promptHash: string;
+    findingsHash: string;
+""",
+          """    childSessionId: string;
+    attemptId: string;
+    promptHash: string;
+    findingsHash: string;
+    invokedAt: string;
+    fulfilledAt: string;
+""", 1)
+          replace('src/integration/review/shared-helpers.ts',
+          """    findingsHash: params.findingsHash,
+    invokedAt: now,
+    fulfilledAt: now,
+""",
+          """    findingsHash: params.findingsHash,
+    invokedAt: params.invokedAt,
+    fulfilledAt: params.fulfilledAt,
+    attemptId: params.attemptId,
+""")
+          replace('src/integration/review/shared-helpers.ts',
+          """    childSessionId: string;
+    promptHash: string;
+    findingsHash: string;
+    reviewerResult: Pick<
+""",
+          """    childSessionId: string;
+    attemptId: string;
+    promptHash: string;
+    findingsHash: string;
+    invokedAt: string;
+    fulfilledAt: string;
+    reviewerResult: Pick<
+""", 1)
+          replace('src/integration/review/shared-helpers.ts',
+          """  let reused = false;
+  let missing = false;
+""",
+          """  let reused = false;
+  let missing = false;
+  let lineageUnavailable = false;
+""")
+          replace('src/integration/review/shared-helpers.ts',
+          """      if (hasEvidenceReuse(assurance.invocations, params.childSessionId, params.findingsHash)) {
+        reused = true;
+        return updateObligation(s, params.obligationId, (item) => ({
+          ...item,
+          status: 'blocked',
+          blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
+        }));
+      }
+
+      const invocation = buildSdkSessionInvocation(params, obligation, now2);
+      const withInvocation = {
+        ...s,
+        reviewAssurance: appendInvocationEvidence(
+          ensureReviewAssurance(s.reviewAssurance),
+          invocation,
+        ),
+      };
+""",
+          """      if (hasEvidenceReuse(assurance.invocations, params.childSessionId, params.findingsHash)) {
+        reused = true;
+        return updateObligation(s, params.obligationId, (item) => ({
+          ...item,
+          status: 'blocked',
+          blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
+        }));
+      }
+      const attempt = assurance.attempts.find((item) => item.attemptId === params.attemptId);
+      if (
+        !attempt ||
+        attempt.obligationId !== obligation.obligationId ||
+        attempt.obligationType !== obligation.obligationType ||
+        attempt.subjectDigest !== obligation.subjectDigest ||
+        attempt.status !== 'created' ||
+        attempt.childSessionId !== undefined
+      ) {
+        lineageUnavailable = true;
+        return s;
+      }
+
+      const invocation = buildSdkSessionInvocation(params, obligation, now2);
+      const boundAssurance = updateAttemptStatus(
+        assurance,
+        attempt.attemptId,
+        'bound',
+        params.fulfilledAt,
+        { childSessionId: params.childSessionId },
+      );
+      const withInvocation = {
+        ...s,
+        reviewAssurance: appendInvocationEvidence(boundAssurance, invocation),
+      };
+""")
+          replace('src/integration/review/shared-helpers.ts',
+          """      missing || !params.semanticIntents
+        ? []
+        : params.semanticIntents(reused ? 'reused' : 'fulfilled', state, now),
+  );
+  return missing ? 'missing' : reused ? 'reused' : 'fulfilled';
+""",
+          """      missing || lineageUnavailable || !params.semanticIntents
+        ? []
+        : params.semanticIntents(reused ? 'reused' : 'fulfilled', state, now),
+  );
+  return missing
+    ? 'missing'
+    : lineageUnavailable
+      ? 'lineage_unavailable'
+      : reused
+        ? 'reused'
+        : 'fulfilled';
+""")
+
+          # 4) SDK result timestamps are captured around the actual prompt call.
+          replace('src/integration/review/orchestrator.ts',
+          """  readonly modelCapabilityError?: string;
+}
+""",
+          """  readonly modelCapabilityError?: string;
+  /** Host-observed lifecycle timestamps for the successful reviewer prompt. */
+  readonly invokedAt?: string;
+  readonly fulfilledAt?: string;
+}
+""", 1)
+          replace('src/integration/review/orchestrator.ts',
+          """  readonly modelCapabilityError: string;
+  onFailed: (info: {
+""",
+          """  readonly modelCapabilityError: string;
+  readonly invokedAt: string;
+  onFailed: (info: {
+""")
+          replace('src/integration/review/orchestrator.ts',
+          """    extractionMethod: extraction.extractionMethod,
+    modelCapabilityError,
+  };
+""",
+          """    extractionMethod: extraction.extractionMethod,
+    modelCapabilityError,
+    invokedAt: input.invokedAt,
+    fulfilledAt: new Date().toISOString(),
+  };
+""")
+          replace('src/integration/review/orchestrator.ts',
+          """  const promptStartedAt = performance.now();
+  const promptResult = await client.session.prompt({
+""",
+          """  const promptStartedAt = performance.now();
+  const invokedAt = new Date().toISOString();
+  const promptResult = await client.session.prompt({
+""", 1)
+          replace('src/integration/review/orchestrator.ts',
+          "return { kind: 'done', result: structuredReviewerResult(childSessionId, findings) };",
+          "return {\n    kind: 'done',\n    result: structuredReviewerResult(childSessionId, findings, invokedAt, new Date().toISOString()),\n  };")
+          replace('src/integration/review/orchestrator.ts',
+          """  const promptStartedAt = performance.now();
+  const result = await executeFormatFreePrompt({
+""",
+          """  const promptStartedAt = performance.now();
+  const invokedAt = new Date().toISOString();
+  const result = await executeFormatFreePrompt({
+""", 1)
+          replace('src/integration/review/orchestrator.ts',
+          """    modelCapabilityError: capabilityError,
+    onFailed: input.options._onAttemptFailed,
+""",
+          """    modelCapabilityError: capabilityError,
+    invokedAt,
+    onFailed: input.options._onAttemptFailed,
+""")
+          replace('src/integration/review/orchestrator.ts',
+          """function structuredReviewerResult(
+  childSessionId: string,
+  findings: Record<string, unknown>,
+): ReviewerSuccessResult {
+""",
+          """function structuredReviewerResult(
+  childSessionId: string,
+  findings: Record<string, unknown>,
+  invokedAt: string,
+  fulfilledAt: string,
+): ReviewerSuccessResult {
+""")
+          replace('src/integration/review/orchestrator.ts',
+          """    structuredOutputUsed: true,
+    reviewAssuranceLevel: 'structured_high',
+  };
+""",
+          """    structuredOutputUsed: true,
+    reviewAssuranceLevel: 'structured_high',
+    invokedAt,
+    fulfilledAt,
+  };
+""", 1)
+
+          # 5) Standalone content SDK path: generation + attempt lineage + timestamps.
+          replace('src/integration/review/content-review-pipeline.ts',
+          """  appendInvocationEvidence,
+} from './assurance.js';
+""",
+          """  appendInvocationEvidence,
+  isCurrentReviewGeneration,
+  updateAttemptStatus,
+} from './assurance.js';
+""")
+          replace('src/integration/review/content-review-pipeline.ts',
+          """  repositoryDiscoverySnapshot: RepositoryDiscoverySnapshot | null;
+} | null> {
+""",
+          """  repositoryDiscoverySnapshot: RepositoryDiscoverySnapshot | null;
+  attemptId: string;
+} | null> {
+""")
+          replace('src/integration/review/content-review-pipeline.ts',
+          """  const obligation = findReviewObligationById(assurance, reviewCtx.obligationId);
+  const attempt = findBindableAttempt(ctx.sessionState.reviewAssurance, reviewCtx.obligationId);
+""",
+          """  const obligation = findReviewObligationById(assurance, reviewCtx.obligationId);
+  if (
+    !obligation ||
+    !isCurrentReviewGeneration(obligation) ||
+    obligation.criteriaVersion !== reviewCtx.criteriaVersion ||
+    obligation.mandateDigest !== reviewCtx.mandateDigest
+  ) {
+    await blockReviewOutcomeHelper(deps, ctx, 'REVIEW_GENERATION_MISMATCH', {
+      obligationId: reviewCtx.obligationId,
+      reason: 'review obligation generation is stale or does not match the emitted review context',
+    });
+    return null;
+  }
+  const attempt = findBindableAttempt(ctx.sessionState.reviewAssurance, reviewCtx.obligationId);
+""")
+          replace('src/integration/review/content-review-pipeline.ts',
+          """    repositoryDiscoverySnapshot:
+      attempt.repositoryDiscovery.kind === 'repository'
+        ? attempt.repositoryDiscovery.snapshot
+        : null,
+  };
+""",
+          """    repositoryDiscoverySnapshot:
+      attempt.repositoryDiscovery.kind === 'repository'
+        ? attempt.repositoryDiscovery.snapshot
+        : null,
+    attemptId: attempt.attemptId,
+  };
+""")
+          replace('src/integration/review/content-review-pipeline.ts',
+          """  prompt: string,
+  strictEnforcement: boolean,
+): Promise<boolean> {
+""",
+          """  prompt: string,
+  strictEnforcement: boolean,
+  attemptId: string,
+): Promise<boolean> {
+""", 1)
+          replace('src/integration/review/content-review-pipeline.ts',
+          """    const blocked = await enforceContentStrictGate(ctx, narrowed, parsedFindings.data, prompt);
+""",
+          """    const blocked = await enforceContentStrictGate(
+      ctx,
+      narrowed,
+      parsedFindings.data,
+      prompt,
+      attemptId,
+    );
+""")
+          replace('src/integration/review/content-review-pipeline.ts',
+          "await validateContentFindings(ctx, reviewerResult, prompt, strictEnforcement);",
+          "await validateContentFindings(\n    ctx,\n    reviewerResult,\n    prompt,\n    strictEnforcement,\n    persistedContent.attemptId,\n  );")
+          replace('src/integration/review/content-review-pipeline.ts',
+          """  prompt: string,
+): Promise<boolean> {
+""",
+          """  prompt: string,
+  attemptId: string,
+): Promise<boolean> {
+""", 1)
+          replace('src/integration/review/content-review-pipeline.ts',
+          "return persistStrictReviewInvocation(ctx, reviewerResult, prompt);",
+          "return persistStrictReviewInvocation(ctx, reviewerResult, prompt, attemptId);")
+          replace('src/integration/review/content-review-pipeline.ts',
+          """  reviewerResult: ReviewerSuccessResult & { findings: Record<string, unknown> },
+  prompt: string,
+): Promise<boolean> {
+""",
+          """  reviewerResult: ReviewerSuccessResult & { findings: Record<string, unknown> },
+  prompt: string,
+  attemptId: string,
+): Promise<boolean> {
+""")
+          replace('src/integration/review/content-review-pipeline.ts',
+          """    findingsHash,
+    invokedAt: now,
+    fulfilledAt: now,
+""",
+          """    findingsHash,
+    invokedAt: reviewerResult.invokedAt ?? now,
+    fulfilledAt: reviewerResult.fulfilledAt ?? now,
+    attemptId,
+""")
+          replace('src/integration/review/content-review-pipeline.ts',
+          """  let reused = false;
+  await deps.updateReviewAssurance(sessDir, (s) => {
+""",
+          """  let reused = false;
+  let lineageUnavailable = false;
+  await deps.updateReviewAssurance(sessDir, (s) => {
+""")
+          replace('src/integration/review/content-review-pipeline.ts',
+          """    if (hasEvidenceReuse(assurance.invocations, reviewerResult.sessionId, findingsHash)) {
+      reused = true;
+      return updateObligation(s, reviewCtx.obligationId, (item) => ({
+        ...item,
+        status: 'blocked',
+        blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
+      }));
+    }
+    const updated = updateObligation(s, reviewCtx.obligationId, (item) => ({
+""",
+          """    if (hasEvidenceReuse(assurance.invocations, reviewerResult.sessionId, findingsHash)) {
+      reused = true;
+      return updateObligation(s, reviewCtx.obligationId, (item) => ({
+        ...item,
+        status: 'blocked',
+        blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
+      }));
+    }
+    const obligation = assurance.obligations.find((item) => item.obligationId === reviewCtx.obligationId);
+    const attempt = assurance.attempts.find((item) => item.attemptId === attemptId);
+    if (
+      !obligation ||
+      !attempt ||
+      attempt.obligationId !== obligation.obligationId ||
+      attempt.obligationType !== obligation.obligationType ||
+      attempt.subjectDigest !== obligation.subjectDigest ||
+      attempt.status !== 'created' ||
+      attempt.childSessionId !== undefined
+    ) {
+      lineageUnavailable = true;
+      return s;
+    }
+    const boundAssurance = updateAttemptStatus(
+      assurance,
+      attemptId,
+      'bound',
+      reviewerResult.fulfilledAt ?? now,
+      { childSessionId: reviewerResult.sessionId },
+    );
+    const updated = updateObligation({ ...s, reviewAssurance: boundAssurance }, reviewCtx.obligationId, (item) => ({
+""")
+          replace('src/integration/review/content-review-pipeline.ts',
+          """      reviewAssurance: appendInvocationEvidence(
+        ensureReviewAssurance(updated.reviewAssurance),
+        invocation,
+      ),
+""",
+          """      reviewAssurance: appendInvocationEvidence(
+        ensureReviewAssurance(updated.reviewAssurance),
+        invocation,
+      ),
+""")
+          replace('src/integration/review/content-review-pipeline.ts',
+          """  if (reused) {
+    output.output = strictBlockedOutput('SUBAGENT_EVIDENCE_REUSED', {
+""",
+          """  if (lineageUnavailable) {
+    output.output = strictBlockedOutput('REVIEW_ATTEMPT_UNAVAILABLE', {
+      obligationId: reviewCtx.obligationId,
+      reason: 'SDK review evidence could not bind to the pre-authorized review attempt',
+    });
+    return true;
+  }
+
+  if (reused) {
+    output.output = strictBlockedOutput('SUBAGENT_EVIDENCE_REUSED', {
+""")
+
+          # 6) Host-task prompt generation also fails closed on stale criteria generation.
+          replace('src/integration/review/pending-instruction.ts',
+          "import { reviewerPromptTypeForTask } from './reviewer-task-type.js';",
+          "import { reviewerPromptTypeForTask } from './reviewer-task-type.js';\nimport { isCurrentReviewGeneration } from './assurance.js';")
+          replace('src/integration/review/pending-instruction.ts',
+          """  if (input.mode === 'unsupported_blocked') {
+""",
+          """  if (obligation && !isCurrentReviewGeneration(obligation)) {
+    return {
+      reviewInvocation: { ...base, status: 'unsupported_blocked' },
+      next:
+        'REVIEW_GENERATION_MISMATCH: this persisted review obligation belongs to an older reviewer criteria/mandate generation. Re-hydrate or create a fresh review cycle; do not execute the old obligation under current reviewer semantics.',
+    };
+  }
+
+  if (input.mode === 'unsupported_blocked') {
+""")
+          replace('src/integration/review/host-task-policy.ts',
+          """  findReviewObligationById,
+  ensureReviewAssurance,
+  findBindableAttempt,
+""",
+          """  findReviewObligationById,
+  ensureReviewAssurance,
+  findBindableAttempt,
+  isCurrentReviewGeneration,
+""")
+          replace('src/integration/review/host-task-policy.ts',
+          """type ReviewerContextFailure =
+  | { readonly kind: 'material_integrity'; readonly reason: string }
+""",
+          """type ReviewerContextFailure =
+  | {
+      readonly kind: 'generation_mismatch';
+      readonly obligationId: string;
+      readonly reason: string;
+    }
+  | { readonly kind: 'material_integrity'; readonly reason: string }
+""")
+          replace('src/integration/review/host-task-policy.ts',
+          """function applyReviewerContextFailure(
+  result: Record<string, unknown>,
+  failure: ReviewerContextFailure,
+): string {
+  if (failure.kind === 'material_integrity') {
+""",
+          """function applyReviewerContextFailure(
+  result: Record<string, unknown>,
+  failure: ReviewerContextFailure,
+): string {
+  if (failure.kind === 'generation_mismatch') {
+    result.code = 'REVIEW_GENERATION_MISMATCH';
+    result.message = failure.reason;
+    result.recovery = [
+      'Re-hydrate the session or create a fresh review cycle under the current reviewer generation',
+      'Do not execute or attest the stale obligation using current reviewer criteria',
+    ];
+    return JSON.stringify(refreshBlockedPresentation(result));
+  }
+  if (failure.kind === 'material_integrity') {
+""")
+          replace('src/integration/review/host-task-policy.ts',
+          """  if (!obligation) return null;
+  // Single frozen-material authority (prompt emission side): artifact-scoped
+""",
+          """  if (!obligation) return null;
+  if (!isCurrentReviewGeneration(obligation)) {
+    return {
+      kind: 'generation_mismatch',
+      obligationId: obligation.obligationId,
+      reason:
+        `Review obligation ${obligation.obligationId} belongs to stale generation ` +
+        `${obligation.criteriaVersion}/${obligation.mandateDigest}; create a fresh obligation under the current runtime generation.`,
+    };
+  }
+  // Single frozen-material authority (prompt emission side): artifact-scoped
+""")
+
+          # 7) Installer dependency ownership: compare-and-restore current FlowGuard value only.
+          replace('src/cli/install-ownership.ts',
+          """      previousCoreDependency: z.string().nullable(),
+""",
+          """      previousCoreDependency: z.string().nullable(),
+      installedCoreDependency: z.string().min(1),
+""")
+          replace('src/cli/install-ownership.ts',
+          """  packageJsonOriginalContent?: Buffer;
+  opencodeOriginalContent?: Buffer;
+""",
+          """  packageJsonOriginalContent?: Buffer;
+  packageJsonCurrentContent?: string;
+  opencodeOriginalContent?: Buffer;
+""")
+          replace('src/cli/install-ownership.ts',
+          """  const core = previousDeps?.['@flowguard/core'];
+  return {
+    created,
+    zodAdded,
+    previousCoreDependency: typeof core === 'string' ? core : null,
+  };
+""",
+          """  const core = previousDeps?.['@flowguard/core'];
+  const currentDeps = input.packageJsonCurrentContent
+    ? parsedDependencies(Buffer.from(input.packageJsonCurrentContent, 'utf-8'))
+    : null;
+  const installedCore = currentDeps?.['@flowguard/core'];
+  if (typeof installedCore !== 'string' || installedCore.length === 0) {
+    throw new InstallError(
+      'INSTALL_OWNERSHIP_UNAVAILABLE',
+      'INSTALL_OWNERSHIP_UNAVAILABLE: installed @flowguard/core dependency could not be captured for ownership provenance',
+    );
+  }
+  return {
+    created,
+    zodAdded,
+    previousCoreDependency: typeof core === 'string' ? core : null,
+    installedCoreDependency: installedCore,
+  };
+""")
+          replace('src/cli/install-ownership.ts',
+          """  const effective = existing.kind === 'valid' ? existing.manifest : manifest;
+""",
+          """  const effective =
+    existing.kind === 'valid'
+      ? {
+          ...existing.manifest,
+          packageJson: {
+            ...existing.manifest.packageJson,
+            installedCoreDependency: manifest.packageJson.installedCoreDependency,
+          },
+        }
+      : manifest;
+""")
+          replace('src/cli/install-command.ts',
+          """    packageJsonOriginalContent: packagePreState.originalContent,
+    opencodeOriginalContent: opencodePreState?.originalContent,
+""",
+          """    packageJsonOriginalContent: packagePreState.originalContent,
+    packageJsonCurrentContent: readFileSync(snapshot.pkgPath, 'utf-8'),
+    opencodeOriginalContent: opencodePreState?.originalContent,
+""")
+          replace('src/cli/uninstall-command.ts',
+          """function restoreCoreDependency(
+  deps: Record<string, string>,
+  ownership: InstallOwnershipManifest['packageJson'],
+): void {
+  const previous = ownership.previousCoreDependency;
+  if (previous === null) {
+    delete deps['@flowguard/core'];
+    return;
+  }
+  deps['@flowguard/core'] = previous;
+}
+
+function restorePackageDependencies(
+  parsed: Record<string, unknown>,
+  ownership: InstallOwnershipManifest['packageJson'],
+): void {
+  const deps = { ...((parsed['dependencies'] ?? {}) as Record<string, string>) };
+  restoreCoreDependency(deps, ownership);
+""",
+          """function restoreCoreDependency(
+  deps: Record<string, string>,
+  ownership: InstallOwnershipManifest['packageJson'],
+  pkgPath: string,
+  warnings: string[],
+): void {
+  const current = deps['@flowguard/core'];
+  const previous = ownership.previousCoreDependency;
+  if (current !== ownership.installedCoreDependency) {
+    if (current !== previous) {
+      warnings.push(
+        `${pkgPath}: @flowguard/core changed after FlowGuard installation — preserving current value`,
+      );
+    }
+    return;
+  }
+  if (previous === null) {
+    delete deps['@flowguard/core'];
+    return;
+  }
+  deps['@flowguard/core'] = previous;
+}
+
+function restorePackageDependencies(
+  parsed: Record<string, unknown>,
+  ownership: InstallOwnershipManifest['packageJson'],
+  pkgPath: string,
+  warnings: string[],
+): void {
+  const deps = { ...((parsed['dependencies'] ?? {}) as Record<string, string>) };
+  restoreCoreDependency(deps, ownership, pkgPath, warnings);
+""")
+          replace('src/cli/uninstall-command.ts',
+          "restorePackageDependencies(parsed, packageOwnership);",
+          "restorePackageDependencies(parsed, packageOwnership, pkgPath, warnings);")
+
+          # 8) The production Claude/Codex uninstall changes must execute their happy-path tests.
+          replace('src/cli/install-uninstall.test.ts',
+          "it.skip('removes Claude Code plugin tree without touching foreign .claude content'",
+          "it('removes Claude Code plugin tree without touching foreign .claude content'")
+          replace('src/cli/install-uninstall.test.ts',
+          "it.skip('removes Codex plugin tree and only the FlowGuard marketplace entry'",
+          "it('removes Codex plugin tree and only the FlowGuard marketplace entry'")
+
+          # Update ownership regression expectations and exercise user mutation preservation.
+          replace('src/cli/install-ownership-regression.test.ts',
+          """      packageJsonOriginalContent: Buffer.from(
+        JSON.stringify({
+          dependencies: { '@flowguard/core': 'workspace:*', zod: '^3.22.0' },
+        }),
+      ),
+      opencodeOriginalContent: Buffer.from(JSON.stringify({ instructions: [] })),
+""",
+          """      packageJsonOriginalContent: Buffer.from(
+        JSON.stringify({
+          dependencies: { '@flowguard/core': 'workspace:*', zod: '^3.22.0' },
+        }),
+      ),
+      packageJsonCurrentContent: JSON.stringify({
+        dependencies: {
+          '@flowguard/core': 'file:./vendor/flowguard-core-2.0.0.tgz',
+          zod: '^3.22.0',
+        },
+      }),
+      opencodeOriginalContent: Buffer.from(JSON.stringify({ instructions: [] })),
+""", 1)
+          replace('src/cli/install-ownership-regression.test.ts',
+          """      previousCoreDependency: 'workspace:*',
+    });
+""",
+          """      previousCoreDependency: 'workspace:*',
+      installedCoreDependency: 'file:./vendor/flowguard-core-2.0.0.tgz',
+    });
+""", 1)
+          # Both force-reinstall fixtures need current package state.
+          replace('src/cli/install-ownership-regression.test.ts',
+          """        packageJsonOriginalContent: Buffer.from(
+          JSON.stringify({ dependencies: { zod: '^3.22.0' } }),
+        ),
+        opencodeOriginalContent: Buffer.from(JSON.stringify({ instructions: [] })),
+""",
+          """        packageJsonOriginalContent: Buffer.from(
+          JSON.stringify({ dependencies: { zod: '^3.22.0' } }),
+        ),
+        packageJsonCurrentContent: JSON.stringify({
+          dependencies: { '@flowguard/core': 'file:./vendor/flowguard-core-1.0.0.tgz', zod: '^4.0.0' },
+        }),
+        opencodeOriginalContent: Buffer.from(JSON.stringify({ instructions: [] })),
+""", 1)
+          replace('src/cli/install-ownership-regression.test.ts',
+          """        packageJsonOriginalContent: Buffer.from(
+          JSON.stringify({
+            dependencies: { '@flowguard/core': 'file:./vendor/flowguard.tgz', zod: '^4.0.0' },
+          }),
+        ),
+        opencodeOriginalContent: Buffer.from(
+""",
+          """        packageJsonOriginalContent: Buffer.from(
+          JSON.stringify({
+            dependencies: { '@flowguard/core': 'file:./vendor/flowguard.tgz', zod: '^4.0.0' },
+          }),
+        ),
+        packageJsonCurrentContent: JSON.stringify({
+          dependencies: { '@flowguard/core': 'file:./vendor/flowguard-core-2.0.0.tgz', zod: '^4.0.0' },
+        }),
+        opencodeOriginalContent: Buffer.from(
+""", 1)
+          replace('src/cli/install-ownership-regression.test.ts',
+          """      await expect(readInstallOwnershipManifest(dir)).resolves.toEqual(first);
+""",
+          """      await expect(readInstallOwnershipManifest(dir)).resolves.toEqual({
+        ...first,
+        packageJson: {
+          ...first.packageJson,
+          installedCoreDependency: 'file:./vendor/flowguard-core-2.0.0.tgz',
+        },
+      });
+""")
+
+          # Runtime SDK lineage assertions.
+          replace('src/integration/plugin-orchestrator-independent-review.test.ts',
+          """        findingsHash: expect.any(String),
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+""",
+          """        findingsHash: expect.any(String),
+        attemptId: '22222222-2222-4222-8222-222222222222',
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+""", 1)
+          replace('src/integration/plugin-orchestrator-independent-review.test.ts',
+          """        invokedAt: NOW,
+        fulfilledAt: NOW,
+""",
+          """        invokedAt: expect.any(String),
+        fulfilledAt: expect.any(String),
+""", 1)
+          replace('src/integration/plugin-orchestrator-independent-review.test.ts',
+          """      expect(invocation?.invocationId).toBe(obligation?.invocationId);
+
+      expect(appendReviewAuditEvent).not.toHaveBeenCalled();
+""",
+          """      expect(invocation?.invocationId).toBe(obligation?.invocationId);
+      expect(Date.parse(invocation!.invokedAt)).toBeLessThanOrEqual(Date.parse(invocation!.fulfilledAt!));
+      expect(state.reviewAssurance?.attempts[0]).toMatchObject({
+        attemptId: '22222222-2222-4222-8222-222222222222',
+        status: 'bound',
+        childSessionId: CHILD_SESSION_ID,
+      });
+
+      expect(appendReviewAuditEvent).not.toHaveBeenCalled();
+""")
+          PY
+      - name: Install dependencies
+        run: npm ci
+      - name: Format changed files
+        run: npx prettier --write src/integration/review/assurance.ts src/integration/review/standard-review-pipeline.ts src/integration/review/pipeline-types.ts src/integration/review/shared-helpers.ts src/integration/review/orchestrator.ts src/integration/review/content-review-pipeline.ts src/integration/review/pending-instruction.ts src/integration/review/host-task-policy.ts src/cli/install-ownership.ts src/cli/install-command.ts src/cli/uninstall-command.ts src/cli/install-uninstall.test.ts src/cli/install-ownership-regression.test.ts src/integration/plugin-orchestrator-independent-review.test.ts
+      - name: Targeted forensic tests
+        run: npx vitest run src/integration/plugin-orchestrator-independent-review.test.ts src/integration/plugin-orchestrator-review-content.test.ts src/integration/review/orchestrator.test.ts src/integration/review/prompt-builders.test.ts src/integration/review/host-task-policy.test.ts src/cli/install-ownership-regression.test.ts src/cli/install-uninstall.test.ts
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Remove temporary workflow and commit
+        shell: bash
+        run: |
+          git rm .github/workflows/tmp-forensic-fixes-879-v2.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: close forensic assurance and ownership gaps"
+          git push origin HEAD:feat/mandates-v5
