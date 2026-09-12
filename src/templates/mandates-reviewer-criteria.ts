@@ -13,6 +13,7 @@ export const REVIEWER_CRITERIA: Record<Exclude<ReviewerPromptType, 'all'>, strin
 - Feasibility: referenced files/APIs exist and the plan can be implemented.
 - Edge cases: unhappy paths and fail-closed behavior are concrete.
 - Verification: checks are testable and sourced from repo scripts/contracts.
+- Claim/evidence fit: every declared ProofGraph claim is no broader than the observable evidence named for it. A claim about an internal side effect, ordering constraint, or forbidden call requires evidence that directly observes that property; an external outcome alone is insufficient.
 - Shape: prefer deep modules and vertical tracer-bullet slices over shallow pass-throughs and horizontal layer-by-layer builds.
 - Root cause: for a bug fix, the plan targets the shared cause (all affected callers), not just the symptom path named by the ticket.`,
   implementation: `### For Implementations
@@ -21,6 +22,7 @@ export const REVIEWER_CRITERIA: Record<Exclude<ReviewerPromptType, 'all'>, strin
 - Edge coverage: negative paths from the plan are tested.
 - Quality: follows repo conventions without duplicate authority.
 - Verification evidence: executed checks are recorded; missing checks are NOT_VERIFIED.
+- ProofGraph evidence fit: PROVEN means the declared evidence contract is satisfied, not that an arbitrarily broad free-text claim is semantically entailed. Challenge any claim whose statement exceeds what its bound assertion/check actually observes.
 - Test integrity: tests assert observable behavior through public interfaces; flag internal-coupling and non-boundary mocks only when they hide a real defect or weaken evidence.
 - Security (as risk): flag concretely exploitable injection, authn/authz bypass, hardcoded secrets or weak crypto, unsafe deserialization/RCE, XSS, or sensitive-data/PII exposure introduced by the change; require a clear attack path, not theoretical hardening.
 - Root cause: a fix editing a shared function addresses the shared cause for every caller, not only the ticket's path.`,
