@@ -107,35 +107,56 @@ replace(
 )
 replace(
     "src/cli/uninstall-command.ts",
-    """    const removedManifest = await safeUnlink(manifestPath);
-    ops.push({ path: manifestPath, action: removedManifest ? 'removed' : 'not_found' });
+    """export async function uninstall(args: CliArgs): Promise<CliResult> {
 """,
-    """    const removedManifest = await safeUnlink(manifestPath);
-    ops.push({ path: manifestPath, action: removedManifest ? 'removed' : 'not_found' });
-
-    if (installPlatform === 'codex') {
-      try {
-        await rmdir(target);
-        ops.push({ path: target, action: 'removed', reason: 'empty FlowGuard Codex target' });
-      } catch (error) {
-        if (error instanceof Error && 'code' in error) {
-          if (error.code === 'ENOENT') {
-            ops.push({ path: target, action: 'not_found' });
-          } else if (error.code === 'ENOTEMPTY' || error.code === 'EEXIST') {
-            ops.push({
-              path: target,
-              action: 'skipped',
-              reason: 'Codex target contains preserved or non-FlowGuard content',
-            });
-          } else {
-            throw error;
-          }
-        } else {
-          throw error;
-        }
+    """async function cleanupEmptyCodexTarget(target: string): Promise<FileOp> {
+  try {
+    await rmdir(target);
+    return { path: target, action: 'removed', reason: 'empty FlowGuard Codex target' };
+  } catch (error) {
+    if (error instanceof Error && 'code' in error) {
+      if (error.code === 'ENOENT') return { path: target, action: 'not_found' };
+      if (error.code === 'ENOTEMPTY' || error.code === 'EEXIST') {
+        return {
+          path: target,
+          action: 'skipped',
+          reason: 'Codex target contains preserved or non-FlowGuard content',
+        };
       }
     }
+    throw error;
+  }
+}
+
+export async function uninstall(args: CliArgs): Promise<CliResult> {
 """,
+)
+replace(
+    "src/cli/uninstall-command.ts",
+    """    const removedManifest = await safeUnlink(manifestPath);
+    ops.push({ path: manifestPath, action: removedManifest ? 'removed' : 'not_found' });
+""",
+    """    const removedManifest = await safeUnlink(manifestPath);
+    ops.push({ path: manifestPath, action: removedManifest ? 'removed' : 'not_found' });
+    if (installPlatform === 'codex') ops.push(await cleanupEmptyCodexTarget(target));
+""",
+)
+
+# 14) Lifecycle timestamps are carried explicitly; the old builder clock parameter is dead.
+replace(
+    "src/integration/review/shared-helpers.ts",
+    """  obligation: { mandateDigest: string; criteriaVersion: string },
+  now: string,
+): ReturnType<typeof buildInvocationEvidence> {
+""",
+    """  obligation: { mandateDigest: string; criteriaVersion: string },
+): ReturnType<typeof buildInvocationEvidence> {
+""",
+)
+replace(
+    "src/integration/review/shared-helpers.ts",
+    "const invocation = buildSdkSessionInvocation(params, obligation, now2);",
+    "const invocation = buildSdkSessionInvocation(params, obligation);",
 )
 '''
 p.write_text(s + extra)
