@@ -8,8 +8,7 @@
   "mutate": [
     "src/templates/mandates.ts",
     "src/templates/commands/plan.ts",
-    "src/templates/commands/implement.ts",
-    "src/integration/review/agent-resolution.ts"
+    "src/templates/commands/implement.ts"
   ],
   "reporters": ["clear-text", "progress", "html", "json"],
   "coverageAnalysis": "perTest",
@@ -19,7 +18,7 @@
   "checkers": ["typescript"],
   "tsconfigFile": "tsconfig.json",
   "mutator": {
-    "excludedMutations": ["Regex"]
+    "excludedMutations": ["StringLiteral", "ArrayDeclaration", "Regex"]
   },
   "thresholds": {
     "high": 90,

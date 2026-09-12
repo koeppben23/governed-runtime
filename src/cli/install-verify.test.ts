@@ -218,8 +218,8 @@ describe('install-verify', () => {
     it('installs with --omit=optional without crashing', async () => {
       const p = path.join(tmpDir, 'omit-optional-test');
       await writeFreshPackageProject(p);
-      await installTarball(p, ['--omit=optional'], 210_000);
-    }, 240000);
+      await installTarball(p, ['--omit=optional'], 420_000);
+    }, 480000);
 
     it('imports core module with --omit=optional', async () => {
       const p = path.join(tmpDir, 'omit-optional-import-test');

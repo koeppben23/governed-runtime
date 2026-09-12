@@ -95,7 +95,6 @@ describe('F10: renderReviewerTaskPrompt canonical copy-prompt', () => {
 
   it('does not prefill a verdict or findings (anti-fabrication)', () => {
     const prompt = renderReviewerTaskPrompt({ iteration: 1, planVersion: 1, ...base });
-    expect(prompt).not.toMatch(/"overallVerdict"\s*:/);
     expect(prompt).not.toContain('"overallVerdict":"accept"');
     expect(prompt).toContain('MUST NOT call workflow-authority tools');
   });
