@@ -7,7 +7,7 @@
  * Extracted from orchestrator.ts. Leaf module — no dependency on
  * orchestrator.ts or orchestrator-output.ts.
  *
- * @version v1
+ * @version v2
  */
 
 import { REVIEW_REQUIRED_PREFIX } from './enforcement/types.js';
@@ -41,31 +41,20 @@ export function extractReviewContext(
   mandateDigest: string;
 } | null {
   if (toolName === TOOL_FLOWGUARD_REVIEW) return extractStandaloneReviewContext(toolOutput);
-  const obligation = extractReviewObligationFields(toolOutput);
-  const next = typeof toolOutput.next === 'string' ? toolOutput.next : '';
-  const iteration = obligation.iteration ?? numberFromNext(next, 'iteration');
-  const planVersion = obligation.planVersion ?? numberFromNext(next, 'planVersion');
-  if (!obligation.obligationId || !obligation.criteriaVersion || !obligation.mandateDigest)
-    return null;
+
+  const obligation = reviewObligationObject(toolOutput);
+  if (!obligation) return null;
+
+  const obligationId = stringValue(obligation.obligationId);
+  const criteriaVersion = stringValue(obligation.criteriaVersion);
+  const mandateDigest = stringValue(obligation.mandateDigest);
+  const iteration = numberValue(obligation.iteration);
+  const planVersion = numberValue(obligation.planVersion);
+  if (!obligationId || !criteriaVersion || !mandateDigest) return null;
   if (iteration === null || planVersion === null) return null;
   if (!matchesPlanSelfReviewIteration(toolName, toolOutput, iteration)) return null;
-  return {
-    iteration,
-    planVersion,
-    obligationId: obligation.obligationId,
-    criteriaVersion: obligation.criteriaVersion,
-    mandateDigest: obligation.mandateDigest,
-  };
-}
 
-// ─── Private Helpers ──────────────────────────────────────────────────────────
-
-interface ExtractedReviewObligationFields {
-  readonly obligationId: string | null;
-  readonly criteriaVersion: string | null;
-  readonly mandateDigest: string | null;
-  readonly iteration: number | null;
-  readonly planVersion: number | null;
+  return { iteration, planVersion, obligationId, criteriaVersion, mandateDigest };
 }
 
 function extractStandaloneReviewContext(
@@ -77,24 +66,6 @@ function extractStandaloneReviewContext(
   const criteriaVersion = stringValue(att?.criteriaVersion);
   if (!obligationId || !mandateDigest || !criteriaVersion) return null;
   return { iteration: 1, planVersion: 1, obligationId, criteriaVersion, mandateDigest };
-}
-
-function extractReviewObligationFields(
-  toolOutput: Record<string, unknown>,
-): ExtractedReviewObligationFields {
-  const obligation = reviewObligationObject(toolOutput);
-  return {
-    obligationId:
-      stringValue(obligation?.obligationId) ?? stringValue(toolOutput.reviewObligationId),
-    criteriaVersion:
-      stringValue(obligation?.criteriaVersion) ?? stringValue(toolOutput.reviewCriteriaVersion),
-    mandateDigest:
-      stringValue(obligation?.mandateDigest) ?? stringValue(toolOutput.reviewMandateDigest),
-    iteration:
-      numberValue(obligation?.iteration) ?? numberValue(toolOutput.reviewObligationIteration),
-    planVersion:
-      numberValue(obligation?.planVersion) ?? numberValue(toolOutput.reviewObligationPlanVersion),
-  };
 }
 
 function reviewObligationObject(
@@ -112,11 +83,6 @@ function stringValue(value: unknown): string | null {
 
 function numberValue(value: unknown): number | null {
   return typeof value === 'number' ? value : null;
-}
-
-function numberFromNext(next: string, key: 'iteration' | 'planVersion'): number | null {
-  const match = next.match(new RegExp(`${key}[=:\\s]+(\\d+)`, 'i'));
-  return match ? parseInt(match[1]!, 10) : null;
 }
 
 function matchesPlanSelfReviewIteration(
