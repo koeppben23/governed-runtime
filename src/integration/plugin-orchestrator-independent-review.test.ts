@@ -415,6 +415,30 @@ describe('runReviewOrchestration strict independent review with footer output', 
     });
   }
 
+  it('blocks a stale standard-review generation before any SDK invocation or evidence mutation', async () => {
+    const state = buildState('PLAN', 'plan');
+    state.reviewAssurance!.obligations[0]!.criteriaVersion = 'p41-v1';
+    const {
+      client,
+      deps,
+      output,
+      state: result,
+    } = await runCase({
+      toolName: TOOL_FLOWGUARD_PLAN,
+      obligationType: 'plan',
+      phase: 'PLAN',
+      input: { args: { planText: 'Add regression tests for review orchestration.' } },
+      state,
+    });
+
+    expect(client.session.create).not.toHaveBeenCalled();
+    expect(client.session.prompt).not.toHaveBeenCalled();
+    expect(deps.updateReviewAssurance).not.toHaveBeenCalled();
+    expect(result.reviewAssurance?.invocations).toEqual([]);
+    expect(result.reviewAssurance?.attempts[0]?.status).toBe('created');
+    expect(JSON.parse(output.output)).toMatchObject({ code: 'REVIEW_GENERATION_MISMATCH' });
+  });
+
   it('host_task_required does not call SDK and returns machine-readable Task requirement', async () => {
     const stateRef = { current: buildState('PLAN', 'plan') };
     stateRef.current = {

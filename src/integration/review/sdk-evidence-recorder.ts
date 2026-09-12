@@ -17,6 +17,8 @@ import { updateObligation } from './obligation-state.js';
 import type { ReviewerSuccessResult } from './orchestrator.js';
 import { EVIDENCE_SOURCE_HOST, INVOCATION_MODE_SDK_SESSION } from './pipeline-types.js';
 import type { EvidenceRecordResult, OrchestratorDeps } from './pipeline-types.js';
+import type { PipelineContext } from './pipeline-types.js';
+import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
 
 type SdkEvidenceParams = {
   obligationId: string;
@@ -50,6 +52,83 @@ type MutationFlags = {
   missing: boolean;
   lineageUnavailable: boolean;
 };
+
+export function buildSdkEvidenceAuditIntents(input: {
+  ctx: PipelineContext;
+  result: EvidenceRecordResult;
+  obligationType: string;
+  promptHash: string;
+  findingsHash: string;
+  reviewerResult: Pick<
+    ReviewerSuccessResult,
+    | 'sessionId'
+    | 'reviewOutputMode'
+    | 'structuredOutputUsed'
+    | 'reviewAssuranceLevel'
+    | 'extractionMethod'
+    | 'modelCapabilityError'
+  >;
+  state: SessionState;
+  occurredAt: string;
+  reviewProfile: string;
+}): readonly SemanticAuditIntent[] {
+  const {
+    ctx,
+    result,
+    obligationType,
+    promptHash,
+    findingsHash,
+    reviewerResult,
+    state,
+    occurredAt,
+    reviewProfile,
+  } = input;
+  const { sessionId, reviewCtx } = ctx;
+  const detail =
+    result === 'reused'
+      ? { obligationId: reviewCtx.obligationId, code: 'SUBAGENT_EVIDENCE_REUSED' }
+      : {
+          obligationId: reviewCtx.obligationId,
+          obligationType,
+          parentSessionId: sessionId,
+          childSessionId: reviewerResult.sessionId,
+          agentType: REVIEWER_SUBAGENT_TYPE,
+          promptHash,
+          mandateDigest: reviewCtx.mandateDigest,
+          criteriaVersion: reviewCtx.criteriaVersion,
+          findingsHash,
+          reviewOutputMode: reviewerResult.reviewOutputMode,
+          structuredOutputUsed: reviewerResult.structuredOutputUsed,
+          reviewAssuranceLevel: reviewerResult.reviewAssuranceLevel,
+          reviewProfile,
+          ...(reviewerResult.extractionMethod
+            ? { extractionMethod: reviewerResult.extractionMethod }
+            : {}),
+          ...(reviewerResult.modelCapabilityError
+            ? { modelCapabilityError: reviewerResult.modelCapabilityError }
+            : {}),
+        };
+  const first: SemanticAuditIntent = {
+    phase: state.phase,
+    event: result === 'reused' ? 'review:obligation_blocked' : 'review:subagent_invoked',
+    occurredAt,
+    detail,
+  };
+  return result === 'fulfilled'
+    ? [
+        first,
+        {
+          phase: state.phase,
+          event: 'review:obligation_fulfilled',
+          occurredAt,
+          detail: {
+            obligationId: reviewCtx.obligationId,
+            childSessionId: reviewerResult.sessionId,
+          },
+        },
+      ]
+    : [first];
+}
 
 function buildSdkSessionInvocation(
   params: SdkEvidenceParams,

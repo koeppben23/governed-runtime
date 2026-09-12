@@ -9,7 +9,6 @@
 
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 import type { ReviewObligationType } from '../../state/evidence.js';
-import type { SessionState } from '../../state/schema.js';
 import type { CapturedFindings } from './enforcement/types.js';
 import { recordPluginReview } from './enforcement/enforcement.js';
 import { prepareReviewerFindingsForValidation } from './enforcement/prepare-findings.js';
@@ -28,11 +27,10 @@ import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_ARCHITECTURE } from '../tool-names.
 import { obligationTypeForTool } from './obligation-tools.js';
 import { updateObligation } from './obligation-state.js';
 import { recordAssuranceWithAudit } from './shared-helpers.js';
-import type { SemanticAuditIntent } from '../tools/audit-outbox.js';
-import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
 import { REASON_HOST_SUBAGENT_TASK_REQUIRED } from '../../shared/flowguard-identifiers.js';
 import type { PipelineContext } from './pipeline-types.js';
 import type { EvidenceRecordResult } from './pipeline-types.js';
+import { buildSdkEvidenceAuditIntents } from './sdk-evidence-recorder.js';
 import {
   validatePipelineAttestation,
   recordEvidenceOrBlockReuse,
@@ -469,7 +467,7 @@ async function enforceStandardStrictGate(
     fulfilledAt,
     reviewerResult,
     semanticIntents: (result, state, occurredAt) =>
-      buildStandardEvidenceAuditIntents({
+      buildSdkEvidenceAuditIntents({
         ctx,
         result,
         obligationType,
@@ -478,85 +476,11 @@ async function enforceStandardStrictGate(
         reviewerResult,
         state,
         occurredAt,
+        reviewProfile: getReviewerPolicies(state).reviewProfile,
       }),
   });
 
   return applyStandardEvidenceResult(ctx, result);
-}
-
-function buildStandardEvidenceAuditIntents(input: {
-  ctx: PipelineContext;
-  result: EvidenceRecordResult;
-  obligationType: string;
-  promptHash: string;
-  findingsHash: string;
-  reviewerResult: Pick<
-    ReviewerSuccessResult,
-    | 'sessionId'
-    | 'reviewOutputMode'
-    | 'structuredOutputUsed'
-    | 'reviewAssuranceLevel'
-    | 'extractionMethod'
-    | 'modelCapabilityError'
-  >;
-  state: SessionState;
-  occurredAt: string;
-}): readonly SemanticAuditIntent[] {
-  const {
-    ctx,
-    result,
-    obligationType,
-    promptHash,
-    findingsHash,
-    reviewerResult,
-    state,
-    occurredAt,
-  } = input;
-  const { sessionId, reviewCtx } = ctx;
-  const detail =
-    result === 'reused'
-      ? { obligationId: reviewCtx.obligationId, code: 'SUBAGENT_EVIDENCE_REUSED' }
-      : {
-          obligationId: reviewCtx.obligationId,
-          obligationType,
-          parentSessionId: sessionId,
-          childSessionId: reviewerResult.sessionId,
-          agentType: REVIEWER_SUBAGENT_TYPE,
-          promptHash,
-          mandateDigest: reviewCtx.mandateDigest,
-          criteriaVersion: reviewCtx.criteriaVersion,
-          findingsHash,
-          reviewOutputMode: reviewerResult.reviewOutputMode,
-          structuredOutputUsed: reviewerResult.structuredOutputUsed,
-          reviewAssuranceLevel: reviewerResult.reviewAssuranceLevel,
-          reviewProfile: getReviewerPolicies(state).reviewProfile,
-          ...(reviewerResult.extractionMethod
-            ? { extractionMethod: reviewerResult.extractionMethod }
-            : {}),
-          ...(reviewerResult.modelCapabilityError
-            ? { modelCapabilityError: reviewerResult.modelCapabilityError }
-            : {}),
-        };
-  const first: SemanticAuditIntent = {
-    phase: state.phase,
-    event: result === 'reused' ? 'review:obligation_blocked' : 'review:subagent_invoked',
-    occurredAt,
-    detail,
-  };
-  return result === 'fulfilled'
-    ? [
-        first,
-        {
-          phase: state.phase,
-          event: 'review:obligation_fulfilled',
-          occurredAt,
-          detail: {
-            obligationId: reviewCtx.obligationId,
-            childSessionId: reviewerResult.sessionId,
-          },
-        },
-      ]
-    : [first];
 }
 
 interface FinalizeOutputOpts {

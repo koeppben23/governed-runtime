@@ -28,6 +28,7 @@ import {
   updateAttemptStatus,
 } from './assurance.js';
 import { updateObligation } from './obligation-state.js';
+import { buildSdkEvidenceAuditIntents } from './sdk-evidence-recorder.js';
 import type { PipelineContext } from './pipeline-types.js';
 import { INVOCATION_MODE_SDK_SESSION, EVIDENCE_SOURCE_HOST } from './pipeline-types.js';
 import {
@@ -331,6 +332,10 @@ function buildContentReviewInvocation(
     reviewAssuranceLevel: reviewerResult.reviewAssuranceLevel,
     extractionMethod: reviewerResult.extractionMethod,
     modelCapabilityError: reviewerResult.modelCapabilityError,
+    capturedVerdict:
+      typeof reviewerResult.findings.overallVerdict === 'string'
+        ? reviewerResult.findings.overallVerdict
+        : undefined,
   });
 }
 
@@ -356,13 +361,108 @@ function applyContentEvidenceResult(
   return false;
 }
 
+type ContentEvidenceMutation = {
+  ctx: PipelineContext;
+  reviewerResult: ReviewerSuccessResult & { findings: Record<string, unknown> };
+  attemptId: string;
+  findingsHash: string;
+  invocation: ReturnType<typeof buildInvocationEvidence>;
+  reused: boolean;
+  lineageUnavailable: boolean;
+};
+
+function buildContentEvidenceAuditIntents(input: {
+  mutation: ContentEvidenceMutation;
+  promptHash: string;
+  state: PipelineContext['sessionState'];
+  occurredAt: string;
+}) {
+  const { mutation, promptHash, state, occurredAt } = input;
+  const result = mutation.lineageUnavailable
+    ? 'lineage_unavailable'
+    : mutation.reused
+      ? 'reused'
+      : 'fulfilled';
+  return result === 'lineage_unavailable'
+    ? []
+    : buildSdkEvidenceAuditIntents({
+        ctx: mutation.ctx,
+        result,
+        obligationType: 'review',
+        promptHash,
+        findingsHash: mutation.findingsHash,
+        reviewerResult: mutation.reviewerResult,
+        state,
+        occurredAt,
+        reviewProfile: getReviewerPolicies(state).reviewProfile,
+      });
+}
+
+function applyContentEvidenceMutation(
+  state: PipelineContext['sessionState'],
+  mutation: ContentEvidenceMutation,
+) {
+  const { ctx, reviewerResult, attemptId, findingsHash, invocation } = mutation;
+  const { reviewCtx, now } = ctx;
+  const assurance = ensureReviewAssurance(state.reviewAssurance);
+  if (hasEvidenceReuse(assurance.invocations, reviewerResult.sessionId, findingsHash)) {
+    mutation.reused = true;
+    return updateObligation(state, reviewCtx.obligationId, (item) => ({
+      ...item,
+      status: 'blocked',
+      blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
+    }));
+  }
+  const obligation = assurance.obligations.find(
+    (item) => item.obligationId === reviewCtx.obligationId,
+  );
+  const attempt = assurance.attempts.find((item) => item.attemptId === attemptId);
+  if (
+    !obligation ||
+    !attempt ||
+    attempt.obligationId !== obligation.obligationId ||
+    attempt.obligationType !== obligation.obligationType ||
+    attempt.subjectDigest !== obligation.subjectDigest ||
+    attempt.status !== 'created' ||
+    attempt.childSessionId !== undefined
+  ) {
+    mutation.lineageUnavailable = true;
+    return state;
+  }
+  const boundAssurance = updateAttemptStatus(
+    assurance,
+    attemptId,
+    'bound',
+    reviewerResult.fulfilledAt ?? now,
+    { childSessionId: reviewerResult.sessionId },
+  );
+  const updated = updateObligation(
+    { ...state, reviewAssurance: boundAssurance },
+    reviewCtx.obligationId,
+    (item) => ({
+      ...item,
+      pluginHandshakeAt: now,
+      status: 'fulfilled',
+      invocationId: invocation.invocationId,
+      fulfilledAt: reviewerResult.fulfilledAt ?? now,
+    }),
+  );
+  return {
+    ...updated,
+    reviewAssurance: appendInvocationEvidence(
+      ensureReviewAssurance(updated.reviewAssurance),
+      invocation,
+    ),
+  };
+}
+
 async function persistStrictReviewInvocation(
   ctx: PipelineContext,
   reviewerResult: ReviewerSuccessResult & { findings: Record<string, unknown> },
   prompt: string,
   attemptId: string,
 ): Promise<boolean> {
-  const { deps, sessDir, reviewCtx, now } = ctx;
+  const { deps, sessDir } = ctx;
   const promptHash = hashText(prompt);
   const findingsHash = hashFindings(reviewerResult.findings);
 
@@ -378,60 +478,21 @@ async function persistStrictReviewInvocation(
   // updateReviewAssurance transaction. Reading the freshest assurance state
   // (`s`) inside the mutation closure closes the TOCTOU window between a
   // stale in-memory reuse check and a later append.
-  let reused = false;
-  let lineageUnavailable = false;
-  await deps.updateReviewAssurance(sessDir, (s) => {
-    const assurance = ensureReviewAssurance(s.reviewAssurance);
-    if (hasEvidenceReuse(assurance.invocations, reviewerResult.sessionId, findingsHash)) {
-      reused = true;
-      return updateObligation(s, reviewCtx.obligationId, (item) => ({
-        ...item,
-        status: 'blocked',
-        blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
-      }));
-    }
-    const obligation = assurance.obligations.find(
-      (item) => item.obligationId === reviewCtx.obligationId,
-    );
-    const attempt = assurance.attempts.find((item) => item.attemptId === attemptId);
-    if (
-      !obligation ||
-      !attempt ||
-      attempt.obligationId !== obligation.obligationId ||
-      attempt.obligationType !== obligation.obligationType ||
-      attempt.subjectDigest !== obligation.subjectDigest ||
-      attempt.status !== 'created' ||
-      attempt.childSessionId !== undefined
-    ) {
-      lineageUnavailable = true;
-      return s;
-    }
-    const boundAssurance = updateAttemptStatus(
-      assurance,
-      attemptId,
-      'bound',
-      reviewerResult.fulfilledAt ?? now,
-      { childSessionId: reviewerResult.sessionId },
-    );
-    const updated = updateObligation(
-      { ...s, reviewAssurance: boundAssurance },
-      reviewCtx.obligationId,
-      (item) => ({
-        ...item,
-        pluginHandshakeAt: now,
-        status: 'fulfilled',
-        invocationId: invocation.invocationId,
-        fulfilledAt: reviewerResult.fulfilledAt ?? now,
-      }),
-    );
-    return {
-      ...updated,
-      reviewAssurance: appendInvocationEvidence(
-        ensureReviewAssurance(updated.reviewAssurance),
-        invocation,
-      ),
-    };
-  });
+  const mutation: ContentEvidenceMutation = {
+    ctx,
+    reviewerResult,
+    attemptId,
+    findingsHash,
+    invocation,
+    reused: false,
+    lineageUnavailable: false,
+  };
+  await deps.updateReviewAssurance(
+    sessDir,
+    (state) => applyContentEvidenceMutation(state, mutation),
+    (state, occurredAt) =>
+      buildContentEvidenceAuditIntents({ mutation, promptHash, state, occurredAt }),
+  );
 
-  return applyContentEvidenceResult(ctx, reused, lineageUnavailable);
+  return applyContentEvidenceResult(ctx, mutation.reused, mutation.lineageUnavailable);
 }

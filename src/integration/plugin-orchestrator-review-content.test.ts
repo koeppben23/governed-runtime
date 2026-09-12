@@ -259,6 +259,7 @@ async function runReviewContent(
   clientOverride?: OrchestratorClient,
   reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed',
   seedInvocations: NonNullable<SessionState['reviewAssurance']>['invocations'] = [],
+  configureState?: (state: SessionState) => void,
 ) {
   const client = clientOverride ?? buildClient(findings);
   const stateRef = {
@@ -269,6 +270,7 @@ async function runReviewContent(
       seedInvocations,
     ),
   };
+  configureState?.(stateRef.current);
   vi.mocked(readState).mockResolvedValue(stateRef.current);
   const { deps, blockReviewOutcome, updateReviewAssurance } = buildDeps(client, stateRef);
   const output = { output: contentAnalysisRequiredOutput() };
@@ -511,6 +513,7 @@ describe('runReviewOrchestration strict /review content analysis', () => {
       reviewOutputMode: 'structured_output',
       structuredOutputUsed: true,
       reviewAssuranceLevel: 'structured_high',
+      capturedVerdict: 'accept',
     });
     expect(invocation?.invocationId).toBe(obligation?.invocationId);
     expect(Date.parse(invocation!.invokedAt)).toBeLessThanOrEqual(
@@ -521,6 +524,24 @@ describe('runReviewOrchestration strict /review content analysis', () => {
       status: 'bound',
       childSessionId: CHILD_SESSION_ID,
     });
+    const evidenceIntents = vi.mocked(updateReviewAssurance).mock.calls[0]![2]!(state, NOW);
+    expect(evidenceIntents).toEqual([
+      expect.objectContaining({
+        event: 'review:subagent_invoked',
+        detail: expect.objectContaining({
+          obligationId: OBLIGATION_ID,
+          obligationType: 'review',
+          parentSessionId: PARENT_SESSION_ID,
+          childSessionId: CHILD_SESSION_ID,
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
+        }),
+      }),
+      expect.objectContaining({
+        event: 'review:obligation_fulfilled',
+        detail: { obligationId: OBLIGATION_ID, childSessionId: CHILD_SESSION_ID },
+      }),
+    ]);
     const parsed = JSON.parse(output.output) as Record<string, unknown>;
     expect(parsed.error).toBe(true);
     expect(parsed.code).toBe('CONTENT_ANALYSIS_REQUIRED');
@@ -538,6 +559,35 @@ describe('runReviewOrchestration strict /review content analysis', () => {
       },
     });
     expect(parsed._pluginReviewSessionId).toBe(CHILD_SESSION_ID);
+  });
+
+  it('blocks stale content-review generation before any SDK invocation or evidence mutation', async () => {
+    const { output, blockReviewOutcome, updateReviewAssurance, state, client } =
+      await runReviewContent(
+        buildFindings(),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        (current) => {
+          current.reviewAssurance!.obligations[0]!.criteriaVersion = 'p41-v1';
+        },
+      );
+
+    expect(client.session.create).not.toHaveBeenCalled();
+    expect(client.session.prompt).not.toHaveBeenCalled();
+    expect(updateReviewAssurance).not.toHaveBeenCalled();
+    expect(state.reviewAssurance?.invocations).toEqual([]);
+    expect(state.reviewAssurance?.attempts[0]?.status).toBe('created');
+    expect(blockReviewOutcome).toHaveBeenCalledWith(
+      expect.anything(),
+      OBLIGATION_ID,
+      'REVIEW_GENERATION_MISMATCH',
+      expect.anything(),
+      output,
+    );
   });
 
   it('passes explicit reviewOutputPolicy for /review content text compatibility', async () => {
