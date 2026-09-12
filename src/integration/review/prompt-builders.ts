@@ -10,10 +10,7 @@
  */
 
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
-import type {
-  FrozenReviewSubject,
-  ReviewSubjectScope,
-} from '../../state/evidence.js';
+import type { FrozenReviewSubject, ReviewSubjectScope } from '../../state/evidence.js';
 import { REVIEW_CHALLENGE_OUTCOMES } from '../../state/evidence.js';
 import {
   renderReviewerCriteria,
@@ -388,10 +385,13 @@ export interface ArchitectureReviewPromptOpts {
 }
 
 export function selectReviewerProfileRules(
-  activeProfile: {
-    name: string;
-    phaseRuleContent?: Record<string, string>;
-  } | null | undefined,
+  activeProfile:
+    | {
+        name: string;
+        phaseRuleContent?: Record<string, string>;
+      }
+    | null
+    | undefined,
   phase: 'PLAN_REVIEW' | 'IMPL_REVIEW' | 'ARCH_REVIEW' | 'REVIEW',
 ): { profileName?: string; profileRules?: string } {
   if (!activeProfile) return {};
