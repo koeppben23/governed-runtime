@@ -46,6 +46,10 @@ failure. H5 remains separately open: this change does not add a logger `flush()`
 contract. G27 also remains unchanged; `/review` URL pinning and remote-JWKS
 transport are distinct trust boundaries.
 
+A 2026-09-12 post-merge review of the OpenCode host-boundary hardening (#880,
+head `4f70dc9e`) confirmed the material fixes and recorded four non-blocking
+host-assurance follow-ups (HA1–HA4); see the dated section below.
+
 ## Status Legend
 
 | Status                 | Meaning                                                   |
@@ -494,6 +498,61 @@ resolution remains separately open. C1 remains open because its broader
 non-OpenCode installer finding is not fully covered by #844. MUT3 remains
 tracked until a v-tag workflow run supplies the execution evidence required by
 this inventory's status contract.
+
+## 2026-09-12 — OpenCode Host-Assurance Follow-Ups (Post-#880)
+
+The OpenCode host-boundary hardening (PR #880, head `4f70dc9e`) closed the
+material findings from the first forensic pass. The post-merge review confirmed
+the fixes and recorded four non-blocking follow-ups. None is an active bypass:
+the real reviewer path already fails closed, and the live block proof remains
+explicitly `NOT_VERIFIED`. The items below keep the HAI and matrix language
+aligned with what the implementation actually proves.
+
+| ID  | Severity | Status | Summary                                                                                                                                                                          |
+| --- | -------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| HA1 | P3       | Open   | HAI `validateCapabilities()` docs still say "match advertised capabilities"; the OpenCode adapter classifies all six as `contractAttested` and performs no runtime validation.   |
+| HA2 | P3       | Open   | Attack-matrix scenario PL-02 is still named "Capability mismatch at boot" after the boot probe was removed; the expected-behavior text is correct.                              |
+| HA3 | P2       | Open   | Human-projection telemetry sink is process-global and can be overwritten across plugin instances; matrix CI-02 "No shared mutable state" is too absolute. Pre-existing on `develop`. |
+| HA4 | P3/P2    | Open   | `enforcementLevel: 'synchronous'` is a host-contract property, not a live-proven guarantee; the F-08 model-dispatch proof is still `NOT_VERIFIED`.                               |
+
+**HA1 — HAI capability wording drifts from the OpenCode implementation (P3, Open).**
+`src/adapters/host-adapter.ts:248` documents `validateCapabilities()` as
+"Validate that actual host capabilities match advertised capabilities. Called
+at boot time — fail-closed on mismatch." `src/integration/opencode-host-adapter.ts`
+deliberately performs no host call at boot and returns `runtimeVerified: []`
+with all six capabilities in `contractAttested`. The implementation is the more
+honest of the two. Remediation: reword the contract to "classify capability
+assurance and report observed mismatches", align the `CapabilityValidationResult`
+docs, and update `.sdk-baselines/governance/host-adapter-interface.json` plus
+`src/integration/sdk-contract-governance.test.ts` in the same change.
+
+**HA2 — Matrix PL-02 scenario name predates the no-boot-probe design (P3, Open).**
+`docs/opencode-host-boundary-attack-matrix.md` PL-02 is titled "Capability
+mismatch at boot". After F-01/F-04 there is no boot probe, so a boot-time
+capability mismatch cannot be observed; the row's expected behavior (no unproven
+boot claims, lazy fail-closed reviewer verification) is correct. Remediation:
+rename the scenario to "Boot capability assurance without host I/O".
+
+**HA3 — Human-projection telemetry sink is process-global (P2, Open, pre-existing).**
+`initHumanProjectionTelemetrySink()` writes a module-global `currentSink`
+(`src/telemetry/human-projection/sink.ts:25`), and `FlowGuardAuditPlugin` calls
+it per instance at boot (`src/integration/plugin.ts:73`). Multiple plugin
+instances can overwrite each other's setting. The sink is explicitly
+non-authoritative, carries limited telemetry, and is currently console/no-op
+only, so this is diagnostic. It does mean matrix CI-02 "No shared mutable
+state" is too absolute as written. Remediation: scope the sink to the plugin
+runtime instance (inject through deps), or document it as an explicitly
+process-global diagnostic and soften CI-02. The finding predates PR #880 and is
+intentionally not fixed there.
+
+**HA4 — `enforcementLevel` mixes contract property and assurance level (P3/P2, Open).**
+`src/adapters/host-adapter.ts:27` describes `synchronous` as a "guaranteed
+block (in-process throw or exit-code-2)". That is the OpenCode enforcement
+model, but the real model-dispatch proof that a before-hook throw prevents tool
+execution is still `NOT_VERIFIED` (matrix F-08, gated `OPENCODE_LIVE=1` E2E).
+Remediation: separate the enforcement model (host contract property) from the
+assurance level (observed evidence) and render the assurance level explicitly
+where `enforcementLevel` is surfaced today.
 
 ## Maintenance Rules
 
