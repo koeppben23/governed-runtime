@@ -54,9 +54,7 @@ describe('renderReviewerTaskPrompt phase criteria', () => {
   it('selects implementation criteria from the host-enforced implementation contract', () => {
     const prompt = renderReviewerTaskPrompt({
       ...BASE,
-      implementationAnchorContract: [
-        '## Implementation Subject Anchor Contract (host-enforced)',
-      ],
+      implementationAnchorContract: ['## Implementation Subject Anchor Contract (host-enforced)'],
       challengeContract: {
         requiredChallengeCount: 1,
         requiredChallengeKind: 'implementation_challenge',
@@ -95,9 +93,7 @@ describe('renderReviewerTaskPrompt phase criteria', () => {
     const prompt = renderReviewerTaskPrompt({
       ...BASE,
       reviewType: 'plan',
-      implementationAnchorContract: [
-        '## Implementation Subject Anchor Contract (host-enforced)',
-      ],
+      implementationAnchorContract: ['## Implementation Subject Anchor Contract (host-enforced)'],
     });
     expectOnlyCriteria(prompt, '### For Plans');
   });
