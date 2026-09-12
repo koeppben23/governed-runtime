@@ -68,8 +68,10 @@ Each row states:
 - **Status** — `Covered`, `Partial`, `Gap`, or `Residual`.
 - **Finding** — `F-xx` reference into the findings section, or `—`.
 
-References are repo-relative and CI-checked by
+Referenced repository artifacts are CI-checked for existence by
 `src/documentation/__tests__/opencode-host-boundary-attack-matrix.test.ts`.
+Line numbers are review aids only and are not CI-validated; they may drift as
+files evolve.
 
 ---
 
@@ -141,14 +143,14 @@ References are repo-relative and CI-checked by
 
 ## Plugin And Adapter Lifecycle
 
-| ID    | Scenario / vector                                                         | Expected fail-closed behavior                                               | Coverage                                                                                                                                        | Status  | Finding |
-| ----- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
-| PL-01 | Plugin boot with a broken SDK client (`session.create`/`prompt` missing). | Fail closed before hooks are exposed.                                       | Composition root boot test: `src/integration/plugin.test.ts` (HOST_ADAPTER_INIT_FAILED); adapter unit: `src/adapters/host-adapter.test.ts:153`. | Covered | F-01    |
-| PL-02 | Capability mismatch at boot (for example agent registry unavailable).     | Fail closed or enter an explicit degraded mode before governance hooks run. | Composition root boot test: `src/integration/plugin.test.ts` (HOST_CAPABILITY_MISMATCH).                                                        | Covered | F-01    |
-| PL-03 | Advertised capabilities versus what is actually probed.                   | Only verified capabilities may be claimed; the rest are marked unverified.  | `runtimeVerified`/`contractAttested` result: `src/adapters/host-adapter.test.ts`, `src/integration/plugin.test.ts`.                             | Covered | F-04    |
-| PL-04 | Dispose must shut down the adapter and logging.                           | Composed shutdown; no leaked resources.                                     | Composed dispose (`adapter.shutdown()` + logging): `src/integration/plugin.ts`; dispose test: `src/integration/plugin.test.ts`.                 | Covered | F-01    |
-| PL-05 | Plugin reload or repeated init.                                           | No leaked listeners, duplicate state, or stale caches.                      | Repeated init: `src/integration/plugin.test.ts:1672`.                                                                                           | Partial | —       |
-| PL-06 | Hook output mutation (`output.args`, `output.output`, `output.context`).  | Single host-adapter authority for host mutation semantics.                  | No-op adapter methods: `src/integration/opencode-host-adapter.ts:159`; hook code mutates references directly.                                   | Gap     | F-04    |
+| ID    | Scenario / vector                                                         | Expected fail-closed behavior                                               | Coverage                                                                                                                                                              | Status  | Finding |
+| ----- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
+| PL-01 | Plugin boot with a broken SDK client (`session.create`/`prompt` missing). | Fail closed before hooks are exposed.                                       | Composition root boot test: `src/integration/plugin.test.ts` (HOST_ADAPTER_INIT_FAILED); adapter unit: `src/adapters/host-adapter.test.ts:153`.                       | Covered | F-01    |
+| PL-02 | Capability probe is immediately known incompatible at boot.               | Fail closed before governance hooks run; never wait on re-entrant host I/O. | Immediate-result unit coverage: `src/adapters/host-adapter.test.ts`; live host initialization is deliberately not awaited during the boot probe.                     | Covered | F-01    |
+| PL-03 | Advertised capabilities versus what is actually probed.                   | Only verified capabilities may be claimed; the rest are marked unverified.  | `runtimeVerified`/`contractAttested` result: `src/adapters/host-adapter.test.ts`, `src/integration/plugin.test.ts`.                                                   | Covered | F-04    |
+| PL-04 | Dispose must shut down the adapter and logging.                           | Composed shutdown; no leaked resources.                                     | Composed dispose (`adapter.shutdown()` + logging): `src/integration/plugin.ts`; dispose test: `src/integration/plugin.test.ts`.                                       | Covered | F-01    |
+| PL-05 | Plugin reload or repeated init.                                           | No leaked listeners, duplicate state, or stale caches.                      | Repeated init: `src/integration/plugin.test.ts:1672`.                                                                                                                 | Partial | —       |
+| PL-06 | Hook output mutation (`output.args`, `output.output`, `output.context`).  | Single host-adapter authority for host mutation semantics.                  | No-op adapter methods: `src/integration/opencode-host-adapter.ts:159`; hook code mutates references directly.                                                         | Gap     | F-04    |
 
 ---
 
@@ -161,7 +163,7 @@ References are repo-relative and CI-checked by
 | HD-03 | Plugin `Hooks` surface changes (added or removed hooks).         | Compile-time assertions fail.                                                         | `src/integration/sdk-contract.test.ts:81`, `src/integration/sdk-contract-plugin.test.ts:63`.                                                          | Covered | —       |
 | HD-04 | Hook payload runtime shape drift.                                | Runtime schema validation rejects unknown or missing fields.                          | `src/integration/sdk-contract-runtime.test.ts:30`.                                                                                                    | Covered | —       |
 | HD-05 | Agent registry contract drift (`opencode debug agent`).          | The real-host probe runs in the default test pipeline.                                | Wired into the smoke project: `vitest.config.ts`; probe: `src/cli/opencode-reviewer-capability.test.ts:19`.                                           | Covered | F-09    |
-| HD-06 | Host version outside the tested range.                           | Explicit compatibility matrix; unknown host contract fails closed or warns by policy. | Host-contract matrix: `src/cli/opencode-runtime-compat.test.ts`; doctor detail: `src/cli/install-doctor.test.ts`.                                     | Covered | F-05    |
+| HD-06 | Host version differs from the exact tested baseline.             | Exact tested version is `verified`; all other unknown versions warn or block by policy. | Exact-version classifier: `src/cli/opencode-runtime-compat.test.ts`; doctor detail: `src/cli/install-doctor.test.ts`.                                | Partial | F-05    |
 | HD-07 | Baseline/update scripts regress or are bypassed.                 | CI-enforced tests for snapshot, update, and drift scripts.                            | Script tests: `scripts/__tests__/sdk-type-snapshot.test.ts`; explicit bypass warning: `src/integration/sdk-contract-plugin.test.ts`.                  | Covered | F-10    |
 
 ---
@@ -191,7 +193,7 @@ addressing findings:
 - Reviewer provenance, attempt lifecycle, and bounded child concurrency are
   contract-tested (TS-04, RC-01, RC-05).
 - The reviewer agent permission surface is verified against the real
-  `opencode` binary (once the orphaned test is wired back in, F-09).
+  `opencode` binary by the smoke-project capability probe (F-09).
 - Hook payload runtime shapes are validated with runtime schemas (HD-04).
 
 ---
@@ -202,43 +204,31 @@ Severity reflects blast radius on the governance boundary, not effort.
 
 ### F-01 — Host adapter lifecycle is dead code in the composition root
 
-**Severity:** P1. **Status:** Fixed — `initialize()`, `validateCapabilities()`, and `shutdown()` are composed in `src/integration/plugin.ts`; boot tests in `src/integration/plugin.test.ts`. **Scenarios:** PL-01, PL-02, PL-04.
+**Severity:** P1. **Status:** Fixed — lifecycle is composed, and the boot capability probe is bounded to the current microtask so plugin initialization cannot deadlock on re-entrant host I/O. **Scenarios:** PL-01, PL-02, PL-04.
 
-`OpenCodeHostAdapter` implements `initialize()` (fail-closed on a broken SDK
-client), `validateCapabilities()`, and `shutdown()`, and
-`src/adapters/host-adapter.ts` documents boot-time validation as a lifecycle
-invariant. The composition root creates the adapter
-(`src/integration/plugin.ts:93`) but never calls `initialize()` or
-`validateCapabilities()`; `hooks.dispose` is assigned only `disposeLogging`
-(`src/integration/plugin.ts:140`), so `adapter.shutdown()` is never composed.
+`OpenCodeHostAdapter` implements `initialize()`, `validateCapabilities()`, and
+`shutdown()`, and `src/adapters/host-adapter.ts` documents boot-time validation
+as a lifecycle invariant. The composition root now invokes initialization and
+validation before exposing hooks and composes shutdown into `dispose`.
 
-Impact: boot-time capability validation never runs. An incompatible host is
-discovered later, if at all, on a reviewer or SDK path.
-
-Remediation: call `await adapter.initialize()`, then
-`validateCapabilities()`, and fail closed with a typed
-`HostCapabilityMismatchError` before exposing hooks; compose
-`adapter.shutdown()` into `dispose`; add an integration test that drives
-`FlowGuardAuditPlugin()` with a broken client and asserts boot failure.
+A real-host regression showed that awaiting `client.app.agents()` during plugin
+initialization can deadlock a project-scoped host request: the outer request
+waits for plugin boot while the nested host call waits for the same boot. The
+boot probe therefore consumes only results that settle in the current microtask
+turn. Host-I/O-backed evidence remains contract-attested until exercised by a
+real runtime path.
 
 ### F-02 — Event contract drift: `session.delete` versus `session.deleted`
 
 **Severity:** P1. **Status:** Fixed — contract pinned in `src/integration/plugin-events.ts`, verified by `src/integration/sdk-contract-events.test.ts`. **Scenarios:** SL-01, SL-02, SL-03, HD-02.
 
 Original defect: production handled `session.delete` and read
-`properties.sessionID` (`src/integration/plugin-events.ts:70`,
-`src/integration/plugin-events.ts:145`). The pinned SDK 1.18.29 event union
-defines `EventSessionDeleted` with `type: "session.deleted"` and
+`properties.sessionID`. The pinned SDK 1.18.29 event union defines
+`EventSessionDeleted` with `type: "session.deleted"` and
 `properties.info: Session` (`id`), and `EventSessionError` with
-`properties.error` as an object union
-(`node_modules/@opencode-ai/sdk/dist/gen/types.gen.d.ts:505`,
-`node_modules/@opencode-ai/sdk/dist/gen/types.gen.d.ts:518`). Existing
-tests replicated the wrong event name and payload shape, so the suite stayed
-green while the handler was unreachable.
-
-Impact before the fix: session-scoped cleanup never ran on a real host, and real
-session errors lost their error detail (the string coercion produced the
-placeholder `unspecified session error`).
+`properties.error` as an object union. Existing tests replicated the wrong event
+name and payload shape, so the suite stayed green while the handler was
+unreachable.
 
 Resolution:
 
@@ -250,206 +240,132 @@ Resolution:
 - `session.error` extracts `data.message` and `name` from every SDK error union
   member; the error discriminant is recorded as `errorName` in the audit detail.
 - `src/integration/sdk-contract-events.test.ts` derives the real event union and
-  payload paths from the pinned SDK, exercises the canonical payloads at
-  runtime, and asserts that the API command name `session.delete` stays ignored.
-
-The remaining baseline gap (the transitive `Event` surface is still not part of
-the snapshot) is tracked as F-03.
+  payload paths from the pinned SDK and asserts that `session.delete` stays ignored.
 
 ### F-03 — SDK baseline does not cover the transitive `Event` contract
 
 **Severity:** P1. **Status:** Fixed — derived event-contract baseline plus script tests. **Scenarios:** HD-01, HD-02.
 
-`scripts/sdk-type-snapshot.mjs:40` snapshots only
-`@opencode-ai/plugin/dist/index.d.ts` and `.../tool.d.ts`. Both reference
-`Event` transitively from `@opencode-ai/sdk`
-(`.sdk-baselines/opencode/plugin-index.d.ts:1`). The SDK package can change the
-event union while the plugin declaration file stays byte-identical, so the
-baseline stays green while the runtime contract breaks. F-02 is the live
-instance of this blind spot.
-
-Remediation: snapshot the SDK event/types surface, or generate a small
-machine-readable contract schema (events, payload shapes, hook inputs/outputs,
-client methods) and diff that. Keep the schema reviewable instead of dumping
-large generated files.
+The plugin declaration imports `Event` transitively from `@opencode-ai/sdk`, so
+the plugin declaration alone cannot detect an event rename or payload-shape
+change. The snapshot now derives the Event union and member payloads into
+`.sdk-baselines/opencode/plugin-event-contract.d.ts` and CI diffs that compact
+contract.
 
 ### F-04 — Capability claims exceed what capability validation verifies
 
-**Severity:** P1. **Status:** Partially fixed — verification is now honest (`runtimeVerified` vs `contractAttested`); host mutation still lives in hook code outside the adapter (PL-06). **Scenarios:** PL-03, PL-06.
+**Severity:** P1. **Status:** Partially fixed — verification levels are explicit (`runtimeVerified` vs `contractAttested`); host mutation still lives in hook code outside the adapter (PL-06). **Scenarios:** PL-03, PL-06.
 
 `OpenCodeHostAdapter.capabilities` claims `preToolBlock`, `argMutation`,
 `outputReplacement`, `contextInjection`, `reviewerSpawn`, and
-`compactionInjection` (`src/integration/opencode-host-adapter.ts:56`), but
-`validateCapabilities()` probes only `client.app.agents()` and can only report
-`reviewerSpawn` (`src/integration/opencode-host-adapter.ts:122`). At the same
-time `deliverArgMutation` and `mutateToolResult` are no-ops because the hook
-code mutates host references directly, so the HAI abstraction does not own
-mutation.
+`compactionInjection`. The boot probe only provides limited evidence and is not
+allowed to block on host I/O. Capabilities without runtime evidence remain
+`contractAttested` and must not be presented as runtime-verified.
 
-Impact: "capability validation" overstates assurance, and the adapter boundary
-is leaky: some host semantics live in OpenCode-specific hook code.
-
-Remediation: distinguish statically attested from runtime-probed capabilities,
-mark unverified ones explicitly, and either discharge the mutation capabilities
-through the adapter or stop claiming them there.
+The HAI remains leaky for mutation: `deliverArgMutation`, `mutateToolResult`,
+and compaction delivery are no-ops while OpenCode hook handlers mutate host
+references directly.
 
 ### F-05 — Host compatibility is open-world (deny-list only)
 
-**Severity:** P1/P2. **Status:** Fixed — explicit `verified`/`compatible-unverified`/`known-incompatible` matrix, surfaced by doctor. **Scenarios:** HD-06.
+**Severity:** P1/P2. **Status:** Partial — explicit `verified`/`compatible-unverified`/`known-incompatible` classification and doctor reporting exist, and only the exact CI baseline `1.18.29` is `verified`; the fail-closed policy for unknown host contracts is still an explicit product decision. **Scenarios:** HD-06.
 
-`KNOWN_INCOMPATIBLE_OPENCODE_RUNTIMES` is empty by design, unknown runtimes
-classify as `not-classified`, and only `known-unsupported` is blocked
-(`src/cli/opencode-runtime-compat.ts:60`). The module is honest about this for
-instruction-source resolution, but the host hook contract has no equivalent
-gate, while the product claims OpenCode "fully supported" enforcement.
+The host-contract classifier now distinguishes the exact tested OpenCode host
+from unverified and positively incompatible versions. No surrounding 1.18.x
+patch, prerelease, or nightly build inherits `verified` status from 1.18.29.
 
-Impact: untested host versions can run with claimed synchronous, hook-gated
-enforcement.
+Unknown versions currently remain `compatible-unverified` and produce diagnostic
+warning rather than a governance-mode hard block. This is intentional and
+honest, but it means the policy question is not closed.
 
-Remediation: introduce an explicit compatibility matrix (`verified`,
-`compatible-unverified`, `known-incompatible`) and decide fail-closed policy
-for unknown host contract versions, at least when hook generation changes.
+Remediation: decide whether governance mode must fail closed for every
+`compatible-unverified` host, or define and continuously test a broader verified
+compatibility window before widening `verified`.
 
 ### F-06 — Session cleanup is incomplete
 
 **Severity:** P2. **Status:** Fixed — central `cleanupSessionRuntime`. **Scenarios:** SL-04.
 
-`cleanupSession` is wired to `ws.invalidateChainState(sessionId)` only
-(`src/integration/plugin-afterhooks.ts:483`). The runtime also holds
-`toolTraceIds`, `activeCommandScopes`, and `checkReworkContinuations`
-(`src/integration/plugin.ts:100`), and two of them are unbounded and
-semantically relevant.
-
-Impact: terminated sessions leak memory and leave session-scoped semantic state
-behind.
-
-Remediation: one `cleanupSessionRuntime(runtime, sessionId)` SSOT that clears
-every session-scoped map, called from the termination handler.
+Session deletion now clears chain state, tool trace ids, active command scopes,
+and rework continuations through one session-scoped cleanup authority.
 
 ### F-07 — Mutable `currentSessionId` is a loaded gun
 
 **Severity:** P2. **Status:** Fixed — mutable session-id state removed from the HAI. **Scenarios:** CI-03.
 
-The adapter resolves the session id from a mutable closure that before and after
-hooks both write (`src/integration/plugin.ts:93`,
-`src/integration/plugin-beforehooks.ts:72`,
-`src/integration/plugin-afterhooks.ts:97`). No current production authority path
-calls `adapter.getSessionId()`, so this is not an active bypass.
-
-Impact: any future authority path that reads `getSessionId()` can observe a
-different session's id under interleaving.
-
-Remediation: remove `getSessionId()` from the adapter until needed, or pass the
-session id per call (or via `AsyncLocalStorage`) instead of shared mutable
-state.
+The adapter no longer resolves session identity through shared mutable plugin
+state. Authority paths receive session identity per call.
 
 ### F-08 — No real-host proof that a before-hook throw prevents tool execution
 
 **Severity:** P1. **Status:** Partial — gated real-host E2E added (`src/cli/opencode-host-boundary-live.test.ts`, smoke project); live execution is `NOT_VERIFIED` until run with `OPENCODE_LIVE=1`. **Scenarios:** HS-01.
 
-Blocked-mutation tests assert the throw at handler and composition-root level,
-but no test loads the real plugin into OpenCode and proves that a blocked tool
-never executes.
-
-Impact: the central synchronous enforcement premise is unverified at the host
-boundary.
-
-Remediation: gated real-host E2E: real `opencode` process, installed plugin,
-blocked mutation (assert no side effect), allowed mutation (assert side
-effect), after-hook observation, session deletion event, and dispose ordering.
+Blocked-mutation tests assert the throw at handler and composition-root level.
+The gated test loads the real plugin into OpenCode and checks a marker side
+effect, but its live model-dispatch path is intentionally not claimed verified
+until it completes in an enabled environment.
 
 ### F-09 — Real-host reviewer capability test is orphaned from all vitest projects
 
 **Severity:** P2. **Status:** Fixed — wired into the smoke project. **Scenarios:** TS-03, TS-07, HD-05.
 
-`src/cli/opencode-reviewer-capability.test.ts` spawns the real `opencode` binary
-and asserts reviewer agent permissions, but it is excluded from the `unit`
-project (`vitest.config.ts:60`) and missing from the `smoke` include list
-(`vitest.config.ts:83`), so `test:opencode-reviewer-capabilities` collects zero
-tests.
-
-Impact: the strongest real-host assurance test silently never runs in CI.
-
-Remediation: wire the file into a project and add a meta-test that the file
-collects at least one test.
+The real `opencode` capability probe now runs in the smoke project and asserts
+reviewer agent permissions against the pinned host binary.
 
 ### F-10 — Baseline, update, and doc-drift scripts are untested; compatibility bypass is implicit
 
 **Severity:** P2. **Status:** Fixed — script tests plus explicit, logged bypass. **Scenarios:** HD-07.
 
-`scripts/sdk-type-snapshot.mjs`, `scripts/update-opencode-sdk.mjs`,
-`scripts/check-opencode-host-drift.mjs`, and `scripts/docs-drift.mjs` have no
-test coverage, and `FLOWGUARD_SDK_COMPAT_LATEST=1` skips the byte comparison
-(`src/integration/sdk-contract-plugin.test.ts:30`).
-
-Impact: the drift gate can regress or be bypassed without a failing test.
-
-Remediation: fixture-based tests for the compare/update logic and an explicit,
-audited bypass path.
+Fixture-based tests cover snapshot derivation, and the compatibility bypass is
+explicit rather than silent.
 
 ### F-11 — Host-tool retry, duplicate `callID`, and foreign after-hook are untested
 
 **Severity:** P2. **Status:** Fixed — deterministic retry/duplicate/foreign tests. **Scenarios:** HS-03, HS-06, HS-07, HS-09, CI-05.
 
-Retry semantics are covered for reviewer attempts but not for host tool calls,
-and there is no test for duplicated call identities or an after-hook for an
-unknown call.
-
-Impact: double evidence, blocked recovery, or trace-map poisoning could go
-unnoticed.
-
-Remediation: deterministic tests that replay before/after pairs with duplicated
-and unknown `callID`s, including concurrent duplicates.
+Deterministic tests now exercise duplicated and unknown host call identities and
+foreign after-hook delivery.
 
 ### F-12 — Compaction during an in-flight review is untested
 
 **Severity:** P2. **Status:** Fixed — in-flight compaction case added. **Scenarios:** CP-01, CP-03.
 
-Only pending-obligation rendering and degraded snapshot paths are covered; no
-test compacts in the middle of an active review attempt or challenge loop.
-
-Impact: a mandatory review obligation could be lost or misrepresented across
-compaction.
-
-Remediation: end-to-end test that compacts mid-attempt and asserts the
-obligation survives and the context never claims completion.
+The compaction suite now asserts that active review obligations survive and are
+not represented as completed.
 
 ### F-13 — Reviewer timeout and orphan cleanup are untested
 
 **Severity:** P2. **Status:** Fixed — bounded prompt timeout plus best-effort child abort. **Scenarios:** RC-02, RC-03, RC-04.
 
-Abort is modeled only in a fake probe, there is no functional timeout test, and
-orphan handling is logical rather than process-level.
-
-Impact: hangs or orphaned child authority are not covered.
-
-Remediation: timeout/abort tests with deterministic classification, plus a
-gated live test where feasible.
+Reviewer prompts are time-bounded and timeout classification is deterministic;
+timed-out child sessions are aborted best-effort. Process-level orphan cleanup
+remains residual evidence rather than a stronger claim.
 
 ---
 
 ## Remediation Order
 
-1. F-02 — fix the event contract and add a real-SDK contract test. **Done** (see F-02).
-2. F-01 — activate adapter lifecycle in the composition root, compose dispose. **Done**.
+1. F-02 — fix the event contract and add a real-SDK contract test. **Done**.
+2. F-01 — activate adapter lifecycle without re-entrant boot I/O; compose dispose. **Done**.
 3. F-04 — make capability validation honest. **Done for verification levels**; adapter-owned mutation remains open (PL-06).
-4. F-03 — extend the baseline to the SDK event/type surface. **Done** (derived event-contract baseline).
-5. F-05 — define the host compatibility matrix and policy. **Done** (classification + doctor).
+4. F-03 — extend the baseline to the SDK event/type surface. **Done**.
+5. F-05 — define host compatibility classification. **Done**; unknown-host fail-closed policy remains **Partial**.
 6. F-06 — centralize session-scoped cleanup. **Done**.
 7. F-07 — remove mutable session-id state from the adapter. **Done**.
 8. F-08 — real-host hook lifecycle E2E. **Gated test added; live run `NOT_VERIFIED`**.
-9. F-09 to F-13 — close the executable coverage gaps. **Done** (F-13 orphan cleanup remains logical-only).
+9. F-09 to F-13 — close executable coverage gaps. **Done** (process-level orphan evidence remains residual).
 
 ---
 
 ## Next Passes
 
-- Execute the matrix as executable tests, starting with the real-host hook
-  lifecycle E2E (F-08) and the event contract tests (F-02).
+- Complete the gated real-host hook lifecycle E2E (F-08) in an environment where
+  the pinned host can complete model dispatch.
+- Decide the fail-closed policy for `compatible-unverified` OpenCode hosts (F-05).
+- Close PL-06 by deciding whether OpenCode mutation semantics belong entirely
+  behind the HAI or remain an explicitly host-owned hook concern.
 - Extend the matrix to the remaining hosts (Claude Code, Codex) once the
   OpenCode slice is closed.
-- Re-run this ledger after each remediation and move rows from `Gap` to
-  `Covered` with evidence.
 
 ## References
 
