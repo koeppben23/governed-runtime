@@ -180,6 +180,18 @@ describe('HostAdapter Contract', () => {
       await expect(broken.initialize()).rejects.toThrow(/initialization failed/i);
     });
 
+    it('BAD: throws when session methods are truthy non-functions (drifting host)', async () => {
+      const broken = new OpenCodeHostAdapter({
+        client: {
+          session: { create: 'not-a-function', prompt: { callable: true } },
+          app: { agents: vi.fn() },
+        } as never,
+        directory: '/x',
+        worktree: '/x',
+      });
+      await expect(broken.initialize()).rejects.toThrow(/session\.(create|prompt)/);
+    });
+
     it('HAPPY: succeeds with valid client', async () => {
       await expect(adapter.initialize()).resolves.toBeUndefined();
     });
@@ -235,50 +247,35 @@ describe('HostAdapter Contract', () => {
   // ─── validateCapabilities ──────────────────────────────────────────────────
 
   describe('validateCapabilities', () => {
-    it('HAPPY: returns valid when agents endpoint succeeds', async () => {
+    it('HAPPY: reports all advertised capabilities as contract-attested (none runtime-verified)', async () => {
       const result: CapabilityValidationResult = await adapter.validateCapabilities();
       expect(result.valid).toBe(true);
       expect(result.mismatches).toHaveLength(0);
-      expect(result.runtimeVerified).toEqual(['reviewerSpawn']);
+      expect(result.runtimeVerified).toEqual([]);
       expect(result.contractAttested).toEqual([
         'preToolBlock',
         'argMutation',
         'outputReplacement',
         'contextInjection',
+        'reviewerSpawn',
         'compactionInjection',
       ]);
     });
 
-    it('BAD: reports reviewerSpawn mismatch when agents call returns error', async () => {
+    it('HAPPY: never calls the host agent registry at boot (no reentrant host I/O)', async () => {
       const client = createMockClient();
-      client.app.agents.mockResolvedValue({ error: 'unavailable' });
+      client.app.agents.mockRejectedValue(new Error('host I/O must not be started at boot'));
       const adap = new OpenCodeHostAdapter({
         client: client as never,
         directory: '/x',
         worktree: '/x',
       });
-      const result = await adap.validateCapabilities();
-      expect(result.valid).toBe(false);
-      expect(result.mismatches).toContainEqual({
-        capability: 'reviewerSpawn',
-        expected: true,
-        actual: false,
-      });
-      expect(result.runtimeVerified).toEqual([]);
-      expect(result.contractAttested).toHaveLength(6);
-    });
 
-    it('BAD: reports mismatch when agents call throws', async () => {
-      const client = createMockClient();
-      client.app.agents.mockRejectedValue(new Error('network error'));
-      const adap = new OpenCodeHostAdapter({
-        client: client as never,
-        directory: '/x',
-        worktree: '/x',
-      });
       const result = await adap.validateCapabilities();
-      expect(result.valid).toBe(false);
-      expect(result.mismatches[0]?.capability).toBe('reviewerSpawn');
+
+      expect(result.valid).toBe(true);
+      expect(client.app.agents).not.toHaveBeenCalled();
+      expect(result.runtimeVerified).toEqual([]);
     });
   });
 

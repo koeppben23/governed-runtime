@@ -94,19 +94,31 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     client: typedClient,
     directory: candidateWorktree ?? '',
     worktree: candidateWorktree ?? '',
-    log,
   });
 
-  await adapter.initialize();
-  const capabilityValidation = await adapter.validateCapabilities();
-  if (!capabilityValidation.valid) {
-    throw new HostCapabilityMismatchError(capabilityValidation.mismatches);
+  // Fail-closed boot: on any initialization or capability failure, release the
+  // resources acquired above (adapter + logging/OTLP/reloader) before
+  // rethrowing. Without this, repeated failed boots would leak SIGUSR1
+  // listeners and OTLP exporter timers while hooks.dispose never exists.
+  try {
+    await adapter.initialize();
+    const capabilityValidation = await adapter.validateCapabilities();
+    if (!capabilityValidation.valid) {
+      throw new HostCapabilityMismatchError(capabilityValidation.mismatches);
+    }
+    log.warn('adapter', 'host capabilities are contract-attested only', {
+      code: 'HOST_CAPABILITY_UNVERIFIED',
+      runtimeVerified: capabilityValidation.runtimeVerified,
+      contractAttested: capabilityValidation.contractAttested,
+    });
+  } catch (err) {
+    try {
+      await adapter.shutdown();
+    } finally {
+      await disposeLogging?.();
+    }
+    throw err;
   }
-  log.warn('adapter', 'host capabilities partially runtime-verified', {
-    code: 'HOST_CAPABILITY_UNVERIFIED',
-    runtimeVerified: capabilityValidation.runtimeVerified,
-    contractAttested: capabilityValidation.contractAttested,
-  });
 
   const orchestratorDeps = createOrchestratorDeps(ws, log, typedClient, adapter);
   const toolTraceIds = new Map<string, string>();

@@ -9,10 +9,10 @@
  * - Delegates to existing modules (invokeReviewer, plugin-logging) — zero behavior change
  * - Lives in integration/ because it imports from @opencode-ai/plugin SDK surface
  * - Structural typing ensures HostReviewerResult is satisfied by ReviewerResult
- * - Boot-time capability probing never waits for re-entrant host I/O
+ * - No boot-time host I/O; reviewer capability is verified lazily on invocation
  *
  * @see https://github.com/koeppben23/governed-runtime/issues/242
- * @version v2
+ * @version v3
  */
 
 import type {
@@ -27,7 +27,6 @@ import type {
   EnforcementLevel,
 } from '../adapters/host-adapter.js';
 import type { OrchestratorClient } from './review/types.js';
-import type { FlowGuardLogger } from '../logging/logger.js';
 import { invokeReviewer } from './review/orchestrator.js';
 import { buildEnforcementError } from './plugin-helpers.js';
 
@@ -41,12 +40,6 @@ export interface OpenCodeAdapterConfig {
   readonly directory: string;
   /** Worktree path. */
   readonly worktree: string;
-  /**
-   * Optional structured diagnostic logger. When present, capability-validation
-   * mismatches are logged (diagnostic only). The adapter's own log() method
-   * remains TUI-toast oriented; this is the structured channel.
-   */
-  readonly log?: Pick<FlowGuardLogger, 'warn'>;
 }
 
 // ─── OpenCode Host Adapter ───────────────────────────────────────────────────
@@ -72,8 +65,6 @@ export class HostCapabilityMismatchError extends Error {
   }
 }
 
-type BootProbeOutcome = 'verified' | 'mismatch' | 'pending';
-
 /**
  * OpenCode platform adapter.
  *
@@ -97,13 +88,11 @@ export class OpenCodeHostAdapter implements HostAdapter {
   private readonly client: OrchestratorClient;
   private readonly directoryPath: string;
   private readonly worktreePath: string;
-  private readonly diagnosticLog?: Pick<FlowGuardLogger, 'warn'>;
 
   constructor(config: OpenCodeAdapterConfig) {
     this.client = config.client;
     this.directoryPath = config.directory;
     this.worktreePath = config.worktree;
-    this.diagnosticLog = config.log;
   }
 
   // ── Session Context ──────────────────────────────────────────────────────
@@ -120,8 +109,12 @@ export class OpenCodeHostAdapter implements HostAdapter {
 
   async initialize(): Promise<void> {
     // OpenCode SDK client is ready at plugin load time — no async init needed.
-    // Verify client is structurally valid (fail-closed on broken SDK).
-    if (!this.client?.session?.create || !this.client?.session?.prompt) {
+    // Verify the client surface is structurally callable (fail-closed on a
+    // drifting SDK that exposes truthy non-functions).
+    if (
+      typeof this.client?.session?.create !== 'function' ||
+      typeof this.client?.session?.prompt !== 'function'
+    ) {
       throw new HostAdapterInitError(
         '[FlowGuard] OpenCode adapter initialization failed: SDK client missing ' +
           'session.create or session.prompt methods. Cannot guarantee reviewer capability.',
@@ -130,65 +123,22 @@ export class OpenCodeHostAdapter implements HostAdapter {
   }
 
   /**
-   * Probe the agent registry without waiting for host I/O.
+   * Report which capabilities are runtime-verified versus contract-attested.
    *
-   * OpenCode may initialize the plugin while servicing a project-scoped host
-   * request. Awaiting another host request from inside plugin initialization can
-   * therefore deadlock the server (the outer request waits for plugin boot while
-   * the inner request waits for that same boot to complete).
-   *
-   * We only consume a result that settles within the current microtask turn.
-   * Anything requiring actual host I/O is deliberately reported as `pending` and
-   * remains contract-attested until the reviewer path exercises it for real.
+   * Deliberately performs no host call at boot. An `app.agents()` probe during
+   * plugin initialization can start a re-entrant host request (deadlock risk),
+   * and a successful registry listing would not even prove that the
+   * `flowguard-reviewer` agent is resolvable. Reviewer capability is verified
+   * lazily on the real invocation path by `resolveReviewerAgent()`, so
+   * `reviewerSpawn` stays contract-attested here instead of being reported as
+   * runtime-verified.
    */
-  private async probeAgentRegistryAtBoot(): Promise<BootProbeOutcome> {
-    let outcome: BootProbeOutcome = 'pending';
-    try {
-      const probe = Promise.resolve(this.client.app.agents());
-      void probe.then(
-        (result) => {
-          outcome = result.error ? 'mismatch' : 'verified';
-        },
-        () => {
-          outcome = 'mismatch';
-        },
-      );
-    } catch {
-      return 'mismatch';
-    }
-
-    // Yield exactly one microtask turn. Do not await network/host progress here.
-    await Promise.resolve();
-    return outcome;
-  }
-
   async validateCapabilities(): Promise<CapabilityValidationResult> {
-    const mismatches: Array<{ capability: string; expected: boolean; actual: boolean }> = [];
-    const runtimeVerified: string[] = [];
-
-    const reviewerProbe = await this.probeAgentRegistryAtBoot();
-    if (reviewerProbe === 'mismatch') {
-      mismatches.push({ capability: 'reviewerSpawn', expected: true, actual: false });
-    } else if (reviewerProbe === 'verified') {
-      runtimeVerified.push('reviewerSpawn');
-    }
-
-    const contractAttested = Object.keys(this.capabilities).filter(
-      (capability) => !runtimeVerified.includes(capability),
-    );
-
-    if (mismatches.length > 0) {
-      this.diagnosticLog?.warn('adapter', 'host capability validation reported mismatches', {
-        code: 'HOST_CAPABILITY_MISMATCH',
-        mismatches,
-      });
-    }
-
     return {
-      valid: mismatches.length === 0,
-      mismatches,
-      runtimeVerified,
-      contractAttested,
+      valid: true,
+      mismatches: [],
+      runtimeVerified: [],
+      contractAttested: Object.keys(this.capabilities),
     };
   }
 

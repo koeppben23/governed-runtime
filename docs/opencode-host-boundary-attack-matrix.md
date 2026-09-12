@@ -151,9 +151,9 @@ files evolve.
 <!-- prettier-ignore -->
 | ID    | Scenario / vector                                                         | Expected fail-closed behavior                                               | Coverage                                                                                                                                                              | Status  | Finding |
 | ----- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
-| PL-01 | Plugin boot with a broken SDK client (`session.create`/`prompt` missing). | Fail closed before hooks are exposed.                                       | Composition root boot test: `src/integration/plugin.test.ts` (HOST_ADAPTER_INIT_FAILED); adapter unit: `src/adapters/host-adapter.test.ts:153`.                       | Covered | F-01    |
-| PL-02 | Capability probe is immediately known incompatible at boot.               | Fail closed before governance hooks run; never wait on re-entrant host I/O. | Immediate-result unit coverage: `src/adapters/host-adapter.test.ts`; live host initialization is deliberately not awaited during the boot probe.                     | Covered | F-01    |
-| PL-03 | Advertised capabilities versus what is actually probed.                   | Only verified capabilities may be claimed; the rest are marked unverified.  | `runtimeVerified`/`contractAttested` result: `src/adapters/host-adapter.test.ts`, `src/integration/plugin.test.ts`.                                                   | Covered | F-04    |
+| PL-01 | Plugin boot with a broken SDK client (`session.create`/`prompt` missing). | Fail closed before hooks are exposed.                                       | Composition root boot test: `src/integration/plugin.test.ts` (HOST_ADAPTER_INIT_FAILED, truthy non-functions rejected); adapter unit: `src/adapters/host-adapter.test.ts`. | Covered | F-01    |
+| PL-02 | Capability mismatch at boot.                                              | No unproven boot claims; reviewer capability verifies lazily and fails closed on the invocation path. | Adapter performs no boot host call: `src/adapters/host-adapter.test.ts`, `src/integration/plugin.test.ts`; lazy resolution: `src/integration/review/agent-resolution.ts`. | Covered | F-01    |
+| PL-03 | Advertised capabilities versus what is actually probed.                   | Only verified capabilities may be claimed; the rest are marked unverified.  | All six reported `contractAttested` with `runtimeVerified: []`: `src/adapters/host-adapter.test.ts`, `src/integration/plugin.test.ts`.                                  | Covered | F-04    |
 | PL-04 | Dispose must shut down the adapter and logging.                           | Composed shutdown; no leaked resources.                                     | Composed dispose (`adapter.shutdown()` + logging): `src/integration/plugin.ts`; dispose test: `src/integration/plugin.test.ts`.                                       | Covered | F-01    |
 | PL-05 | Plugin reload or repeated init.                                           | No leaked listeners, duplicate state, or stale caches.                      | Repeated init: `src/integration/plugin.test.ts:1672`.                                                                                                                 | Partial | —       |
 | PL-06 | Hook output mutation (`output.args`, `output.output`, `output.context`).  | Single host-adapter authority for host mutation semantics.                  | No-op adapter methods: `src/integration/opencode-host-adapter.ts:159`; hook code mutates references directly.                                                         | Gap     | F-04    |
@@ -212,7 +212,7 @@ Severity reflects blast radius on the governance boundary, not effort.
 
 ### F-01 — Host adapter lifecycle is dead code in the composition root
 
-**Severity:** P1. **Status:** Fixed — lifecycle is composed, and the boot capability probe is bounded to the current microtask so plugin initialization cannot deadlock on re-entrant host I/O. **Scenarios:** PL-01, PL-02, PL-04.
+**Severity:** P1. **Status:** Fixed — lifecycle is composed, boot failures release resources, and no host call is made at boot. **Scenarios:** PL-01, PL-02, PL-04.
 
 `OpenCodeHostAdapter` implements `initialize()`, `validateCapabilities()`, and
 `shutdown()`, and `src/adapters/host-adapter.ts` documents boot-time validation
@@ -222,9 +222,15 @@ validation before exposing hooks and composes shutdown into `dispose`.
 A real-host regression showed that awaiting `client.app.agents()` during plugin
 initialization can deadlock a project-scoped host request: the outer request
 waits for plugin boot while the nested host call waits for the same boot. The
-boot probe therefore consumes only results that settle in the current microtask
-turn. Host-I/O-backed evidence remains contract-attested until exercised by a
-real runtime path.
+adapter therefore makes no host call at boot — not even a microtask-bounded one.
+Reviewer capability verifies lazily by `resolveReviewerAgent()` on the real
+invocation path.
+
+Boot is fail-closed on a structurally broken client (including truthy
+non-function `session` methods). A failed boot also releases the resources
+acquired by logging initialization (adapter `shutdown()` plus `disposeLogging()`,
+including the SIGUSR1 level reloader and OTLP exporters) before rethrowing, so
+repeated failed boots cannot leak listeners or timers.
 
 ### F-02 — Event contract drift: `session.delete` versus `session.deleted`
 
@@ -262,13 +268,15 @@ contract.
 
 ### F-04 — Capability claims exceed what capability validation verifies
 
-**Severity:** P1. **Status:** Partially fixed — verification levels are explicit (`runtimeVerified` vs `contractAttested`); host mutation still lives in hook code outside the adapter (PL-06). **Scenarios:** PL-03, PL-06.
+**Severity:** P1. **Status:** Partially fixed — no capability is reported as runtime-verified at boot, so the assurance claim is now honest; host mutation still lives in hook code outside the adapter (PL-06). **Scenarios:** PL-03, PL-06.
 
 `OpenCodeHostAdapter.capabilities` claims `preToolBlock`, `argMutation`,
 `outputReplacement`, `contextInjection`, `reviewerSpawn`, and
-`compactionInjection`. The boot probe only provides limited evidence and is not
-allowed to block on host I/O. Capabilities without runtime evidence remain
-`contractAttested` and must not be presented as runtime-verified.
+`compactionInjection`. The adapter makes no host call at boot, so
+`validateCapabilities()` reports all six as `contractAttested` with
+`runtimeVerified: []`; a successful agent-registry listing would not have
+proven that `flowguard-reviewer` is resolvable anyway. Reviewer capability
+verifies lazily on the real invocation path.
 
 The HAI remains leaky for mutation: `deliverArgMutation`, `mutateToolResult`,
 and compaction delivery are no-ops while OpenCode hook handlers mutate host

@@ -380,15 +380,16 @@ describe('integration/plugin', () => {
           body: {
             service: 'adapter',
             level: 'warn',
-            message: 'host capabilities partially runtime-verified',
+            message: 'host capabilities are contract-attested only',
             extra: {
               code: 'HOST_CAPABILITY_UNVERIFIED',
-              runtimeVerified: ['reviewerSpawn'],
+              runtimeVerified: [],
               contractAttested: [
                 'preToolBlock',
                 'argMutation',
                 'outputReplacement',
                 'contextInjection',
+                'reviewerSpawn',
                 'compactionInjection',
               ],
             },
@@ -412,16 +413,57 @@ describe('integration/plugin', () => {
       ).rejects.toMatchObject({ code: 'HOST_ADAPTER_INIT_FAILED' });
     });
 
-    it('fails closed when probed capabilities mismatch the host contract', async () => {
-      await expect(
-        FlowGuardAuditPlugin(
+    it('does not probe the host agent registry at boot (reviewer verification is lazy)', async () => {
+      const agents = vi.fn(async () => ({ error: 'unavailable' }));
+
+      const hooks = await FlowGuardAuditPlugin(
+        createMockInput({ client: createBootableHostClient({ app: { agents } }) }),
+      );
+
+      expect(hooks).toBeDefined();
+      expect(agents).not.toHaveBeenCalled();
+    });
+
+    it('failed boot disposes initialized logging resources (no SIGUSR1 listener leak)', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        await writeRepoConfig(ws.tmpDir, {
+          ...DEFAULT_CONFIG,
+          logging: { ...DEFAULT_CONFIG.logging, mode: 'both', enableDynamicLevel: true },
+        });
+        const baseline = process.listenerCount('SIGUSR1');
+
+        // Prove the reloader attaches for this configuration on a successful boot.
+        const hooks = await FlowGuardAuditPlugin(
           createMockInput({
-            client: createBootableHostClient({
-              app: { agents: async () => ({ error: 'unavailable' }) },
-            }),
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+            client: createBootableHostClient(),
           }),
-        ),
-      ).rejects.toMatchObject({ code: 'HOST_CAPABILITY_MISMATCH' });
+        );
+        expect(process.listenerCount('SIGUSR1')).toBe(baseline + 1);
+        await hooks.dispose!();
+        expect(process.listenerCount('SIGUSR1')).toBe(baseline);
+
+        // A failed boot must release the same resources.
+        await expect(
+          FlowGuardAuditPlugin(
+            createMockInput({
+              worktree: ws.tmpDir,
+              directory: ws.tmpDir,
+              // Missing session.create forces the fail-closed boot path after
+              // the logger (and its SIGUSR1 reloader) has been initialized.
+              client: createBootableHostClient({
+                session: { create: undefined, prompt: async () => ({}) },
+              }),
+            }),
+          ),
+        ).rejects.toMatchObject({ code: 'HOST_ADAPTER_INIT_FAILED' });
+
+        expect(process.listenerCount('SIGUSR1')).toBe(baseline);
+      } finally {
+        await ws.cleanup();
+      }
     });
   });
 
