@@ -96,7 +96,7 @@ jobs:
         if: steps.tests.outcome == 'success' && steps.typecheck.outcome == 'success' && steps.lint.outcome == 'success'
         shell: bash
         run: |
-          git rm .github/workflows/tmp-forensic-fixes-879-v2.yml scripts/tmp-forensic-fix-879.py scripts/tmp-forensic-fix-879-correct.py scripts/tmp-forensic-fix-879-correct2.py scripts/tmp-forensic-fix-879-correct3.py
+          git rm -f .github/workflows/tmp-forensic-fixes-879-v2.yml scripts/tmp-forensic-fix-879.py scripts/tmp-forensic-fix-879-correct.py scripts/tmp-forensic-fix-879-correct2.py scripts/tmp-forensic-fix-879-correct3.py
           rm -f forensic-patch-error.txt forensic-format-error.txt forensic-test-error.txt forensic-typecheck-error.txt forensic-lint-error.txt
           git add -A
           git config user.name "github-actions[bot]"
