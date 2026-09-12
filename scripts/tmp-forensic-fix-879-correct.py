@@ -33,4 +33,19 @@ new2 = '''replace(
 '''
 if s.count(old2) != 1:
     raise SystemExit(f'second ambiguous patch definition count={s.count(old2)}')
-p.write_text(s.replace(old2, new2))
+s = s.replace(old2, new2)
+old3 = '''replace(
+    "src/integration/review/orchestrator.ts",
+    """  readonly modelCapabilityError: string;\n  onFailed: (info: {\n""",
+    """  readonly modelCapabilityError: string;\n  readonly invokedAt: string;\n  onFailed: (info: {\n""",
+)
+'''
+new3 = '''replace(
+    "src/integration/review/orchestrator.ts",
+    """  modelCapabilityError: string;\n  onFailed: (info: {\n""",
+    """  modelCapabilityError: string;\n  invokedAt: string;\n  onFailed: (info: {\n""",
+)
+'''
+if s.count(old3) != 1:
+    raise SystemExit(f'orchestrator interface patch definition count={s.count(old3)}')
+p.write_text(s.replace(old3, new3))
