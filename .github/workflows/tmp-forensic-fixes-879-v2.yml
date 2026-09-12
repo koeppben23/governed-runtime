@@ -36,7 +36,7 @@ jobs:
           set -o pipefail
           npx prettier --write src/integration/review/assurance.ts src/integration/review/standard-review-pipeline.ts src/integration/review/pipeline-types.ts src/integration/review/shared-helpers.ts src/integration/review/orchestrator.ts src/integration/review/content-review-pipeline.ts src/integration/review/pending-instruction.ts src/integration/review/host-task-policy.ts src/integration/plugin-orchestrator-independent-review.test.ts src/integration/plugin-orchestrator-review-content.test.ts src/cli/install-ownership.ts src/cli/install-command.ts src/cli/uninstall-command.ts src/cli/install-uninstall.test.ts src/cli/install-ownership-regression.test.ts src/cli/install-types.ts src/cli/claude-code-plugin-install.ts src/cli/platform-uninstall.ts 2>&1 | tee forensic-format-error.txt
       - name: Persist format diagnostic on failure
-        if: steps.format.outcome == 'failure'
+        if: failure() && steps.format.outcome == 'failure'
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
@@ -52,7 +52,7 @@ jobs:
           set -o pipefail
           npx vitest run src/integration/plugin-orchestrator-independent-review.test.ts src/integration/plugin-orchestrator-review-content.test.ts src/integration/review/orchestrator.test.ts src/integration/review/prompt-builders.test.ts src/integration/review/host-task-policy.test.ts src/cli/install-ownership-regression.test.ts src/cli/install-uninstall.test.ts 2>&1 | tee forensic-test-error.txt
       - name: Persist test diagnostic on failure
-        if: steps.tests.outcome == 'failure'
+        if: failure() && steps.tests.outcome == 'failure'
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
@@ -68,7 +68,7 @@ jobs:
           set -o pipefail
           npm run typecheck 2>&1 | tee forensic-typecheck-error.txt
       - name: Persist typecheck diagnostic on failure
-        if: steps.typecheck.outcome == 'failure'
+        if: failure() && steps.typecheck.outcome == 'failure'
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
@@ -84,7 +84,7 @@ jobs:
           set -o pipefail
           npm run lint 2>&1 | tee forensic-lint-error.txt
       - name: Persist lint diagnostic on failure
-        if: steps.lint.outcome == 'failure'
+        if: failure() && steps.lint.outcome == 'failure'
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
