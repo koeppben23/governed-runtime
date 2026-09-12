@@ -21,7 +21,17 @@ jobs:
           node-version: 22
           cache: npm
       - name: Apply forensic fixes
-        run: python scripts/tmp-forensic-fix-879.py
+        shell: bash
+        run: python scripts/tmp-forensic-fix-879.py 2>&1 | tee forensic-patch-error.txt
+      - name: Persist patch diagnostic on failure
+        if: failure()
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add forensic-patch-error.txt
+          git commit -m "chore: capture forensic patch diagnostic" || true
+          git push origin HEAD:feat/mandates-v5
       - name: Install dependencies
         run: npm ci
       - name: Format changed files
@@ -36,8 +46,9 @@ jobs:
         shell: bash
         run: |
           git rm .github/workflows/tmp-forensic-fixes-879-v2.yml scripts/tmp-forensic-fix-879.py
+          rm -f forensic-patch-error.txt
+          git add -A
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
           git commit -m "fix: close forensic assurance and ownership gaps"
           git push origin HEAD:feat/mandates-v5
