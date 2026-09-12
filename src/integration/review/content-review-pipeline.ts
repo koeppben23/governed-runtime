@@ -152,7 +152,10 @@ async function validateContentFindings(
       mandateDigest: reviewCtx.mandateDigest,
       criteriaVersion: reviewCtx.criteriaVersion,
     },
-    hostProvenance: { childSessionId: reviewerResult.sessionId, reviewedAt: ctx.now },
+    hostProvenance: {
+      childSessionId: reviewerResult.sessionId,
+      reviewedAt: reviewerResult.fulfilledAt ?? ctx.now,
+    },
   });
   const parsedFindings = prepared.ok
     ? ReviewFindingsSchema.safeParse(prepared.findings)
