@@ -82,7 +82,7 @@ insert = """    it('uninstall preserves a user-modified @flowguard/core value af
       const pkgPath = path.join(tmpDir, '.opencode', 'package.json');
       const installed = JSON.parse(await fs.readFile(pkgPath, 'utf-8'));
       installed.dependencies['@flowguard/core'] = '^9.9.9';
-      await fs.writeFile(pkgPath, JSON.stringify(installed, null, 2) + '\n', 'utf-8');
+      await fs.writeFile(pkgPath, JSON.stringify(installed, null, 2) + '\\n', 'utf-8');
 
       const result = await uninstall(repoArgs({ action: 'uninstall' }));
 
