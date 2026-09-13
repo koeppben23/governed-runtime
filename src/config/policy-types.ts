@@ -205,16 +205,6 @@ export function defaultValidationEvidenceForMode(mode: PolicyMode): ValidationEv
   return { enforcement: 'off', allowNoCommands: false };
 }
 
-/**
- * Fail-closed challenge-policy default for a mode when a snapshot omits it.
- * Hard Assurance Epoch: every preset carries the canonical matrix — the
- * writer-side default is the matrix for ALL modes, and the persisted snapshot
- * requires the field explicitly.
- */
-export function defaultChallengePolicyForMode(_mode: PolicyMode): ChallengePolicy {
-  return CHALLENGE_POLICY_V1;
-}
-
 // ─── FlowGuard Policy ─────────────────────────────────────────────────────────
 
 /**
