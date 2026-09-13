@@ -356,6 +356,7 @@ function buildNewHydrateState(
     pendingAuditOperations: [],
     error: null,
     createdAt: now,
+    regulatedArchiveStatus: null,
   };
 
   const result = evaluate(newState, ctx.policy);

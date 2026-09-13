@@ -524,6 +524,7 @@ export function makeState(
     pendingAuditOperations: [],
     error: null,
     createdAt: FIXED_TIME,
+    regulatedArchiveStatus: null,
     ...overrides,
   };
 }

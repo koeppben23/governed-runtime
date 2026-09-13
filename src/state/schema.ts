@@ -661,10 +661,7 @@ export const SessionState = z
     /** Removed persisted archive authority; old state must fail at this boundary. */
     archiveStatus: z.never().optional(),
     /** Lifecycle of the immutable raw-evidence package required at regulated completion. */
-    regulatedArchiveStatus: z
-      .enum(['pending', 'created', 'verified', 'failed'])
-      .nullable()
-      .optional(),
+    regulatedArchiveStatus: z.enum(['pending', 'created', 'verified', 'failed']).nullable(),
     /** Purpose of the most recent user-requested archive export. */
     lastExportPackagePurpose: z.enum(['sharing', 'auditor']).nullable().optional(),
     /** Whether the most recent export contains the canonical evidence required for verification. */
