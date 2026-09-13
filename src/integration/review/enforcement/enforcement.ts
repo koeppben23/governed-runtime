@@ -187,6 +187,22 @@ function clearSubmittedReview(
   }
 }
 
+function reviewObligationIdFromSignal(
+  parsed: NonNullable<ReturnType<typeof parseToolResult>>,
+  isReviewContent: boolean,
+): string | null {
+  if (isReviewContent) {
+    const attestation = parsed.requiredReviewAttestation;
+    if (!attestation || typeof attestation !== 'object' || Array.isArray(attestation)) return null;
+    const obligationId = (attestation as Record<string, unknown>).toolObligationId;
+    return typeof obligationId === 'string' ? obligationId : null;
+  }
+  const value = parsed.reviewObligation;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const obligationId = (value as Record<string, unknown>).obligationId;
+  return typeof obligationId === 'string' ? obligationId : null;
+}
+
 function trackRequiredReview(
   state: SessionEnforcementState,
   context: NonNullable<ReturnType<typeof resolveReviewTrackingContext>>,
@@ -201,11 +217,9 @@ function trackRequiredReview(
   const next = typeof parsed.next === 'string' ? parsed.next : '';
   if (next.startsWith(REVIEW_REQUIRED_PREFIX) && (context.isReviewContent || context.signalOwner)) {
     const attemptId = typeof parsed.reviewAttemptId === 'string' ? parsed.reviewAttemptId : null;
-    const obligationId =
-      typeof parsed.reviewObligationId === 'string' ? parsed.reviewObligationId : null;
     trackReviewRequired(state, recordKey, next, now, {
       attemptId,
-      obligationId,
+      obligationId: reviewObligationIdFromSignal(parsed, context.isReviewContent),
       canonicalPromptAnchor: canonicalPromptAnchorOf(parsed),
       canonicalPrompt: canonicalPromptOf(parsed),
       canonicalPromptDigest: canonicalPromptDigestOf(parsed),

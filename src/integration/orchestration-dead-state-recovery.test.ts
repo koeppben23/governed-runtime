@@ -404,7 +404,10 @@ describe('plan — dead-state recovery (Fix 2a)', () => {
       );
       const same = parseToolResult(sameRaw);
       expect(same.error).not.toBe(true);
-      expect(same.reviewObligationId).toBe(lastObl?.obligationId ?? first.reviewObligationId);
+      expect((same.reviewObligation as { obligationId?: string } | undefined)?.obligationId).toBe(
+        lastObl?.obligationId ??
+          (first.reviewObligation as { obligationId?: string } | undefined)?.obligationId,
+      );
 
       // CHANGED revision while pending: fail closed — never silently ignored.
       const changedRaw = await plan.execute(
@@ -587,8 +590,12 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
       expect(result.status).toContain('restarted');
       expect(result.adrId).toBe('ADR-001');
       expect(result.adrDigest).toBe(hashText(ADR_TEXT));
-      expect(result.reviewObligationId).toBeDefined();
-      expect(result.reviewObligationId).not.toBe(blockedObligationId);
+      expect(
+        (result.reviewObligation as { obligationId?: string } | undefined)?.obligationId,
+      ).toBeDefined();
+      expect(
+        (result.reviewObligation as { obligationId?: string } | undefined)?.obligationId,
+      ).not.toBe(blockedObligationId);
 
       const after = await readState(sessDir);
       // A blocked review obligation is a new review generation — never a new ADR.
@@ -677,7 +684,9 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
 
       expect(result.error).not.toBe(true);
       expect(result.status).toContain('repair');
-      expect(result.reviewObligationId).toBe(pending.obligationId);
+      expect((result.reviewObligation as { obligationId?: string } | undefined)?.obligationId).toBe(
+        pending.obligationId,
+      );
 
       const after = await readState(sessDir);
       const attempts = after!.reviewAssurance!.attempts.filter(
@@ -838,7 +847,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
 
       expect(result.error).not.toBe(true);
       expect(result.status).toContain('restarted');
-      expect(result.reviewObligationIteration).toBe(2);
+      expect((result.reviewObligation as { iteration?: number } | undefined)?.iteration).toBe(2);
       expect(result.selfReviewIteration).toBe(2);
       expect(String(result.next)).toContain('iteration=2');
 
@@ -931,7 +940,9 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
       const result = parseToolResult(raw);
 
       expect(result.error).not.toBe(true);
-      expect(result.reviewObligationId).toBe(pending.obligationId);
+      expect((result.reviewObligation as { obligationId?: string } | undefined)?.obligationId).toBe(
+        pending.obligationId,
+      );
       expect(result.status).toContain('pending');
     });
   });

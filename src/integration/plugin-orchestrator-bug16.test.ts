@@ -56,11 +56,13 @@ function reviewRequiredOutput(iteration: number, planVersion: number): string {
       `Use subagent_type "flowguard-reviewer" with a prompt that includes: ` +
       `(1) the full plan text, (2) the ticket text, (3) iteration=${iteration}, ` +
       `(4) planVersion=${planVersion}.`,
-    reviewObligationId: OBLIGATION_ID,
-    reviewObligationIteration: iteration,
-    reviewObligationPlanVersion: planVersion,
-    reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
-    reviewMandateDigest: REVIEW_MANDATE_DIGEST,
+    reviewObligation: {
+      obligationId: OBLIGATION_ID,
+      iteration,
+      planVersion,
+      criteriaVersion: REVIEW_CRITERIA_VERSION,
+      mandateDigest: REVIEW_MANDATE_DIGEST,
+    },
   });
 }
 
@@ -224,11 +226,13 @@ describe('BUG-16: buildHostTaskPolicyOutput preserves iteration/planVersion', ()
     const malformedOutput = JSON.stringify({
       phase: 'PLAN',
       next: 'INDEPENDENT_REVIEW_REQUIRED: Review the plan.',
-      reviewObligationId: OBLIGATION_ID,
-      reviewObligationIteration: 0,
-      reviewObligationPlanVersion: 1,
-      reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
-      reviewMandateDigest: REVIEW_MANDATE_DIGEST,
+      reviewObligation: {
+        obligationId: OBLIGATION_ID,
+        iteration: 2,
+        planVersion: 3,
+        criteriaVersion: REVIEW_CRITERIA_VERSION,
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+      },
     });
 
     const state = buildState();

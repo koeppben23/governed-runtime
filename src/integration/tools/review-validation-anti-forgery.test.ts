@@ -1111,7 +1111,13 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
         // Canonical production signal shape: obligation identity + host
         // attestation constants.
         reviewAttemptId: `att-${assurance.obligations[0]!.obligationId}`,
-        reviewObligationId: assurance.obligations[0]!.obligationId,
+        reviewObligation: {
+          obligationId: assurance.obligations[0]!.obligationId,
+          iteration: 0,
+          planVersion: 1,
+          mandateDigest: assurance.obligations[0]!.mandateDigest,
+          criteriaVersion: assurance.obligations[0]!.criteriaVersion,
+        },
         requiredReviewAttestation: {
           reviewedBy: 'flowguard-reviewer',
           mandateDigest: assurance.obligations[0]!.mandateDigest,

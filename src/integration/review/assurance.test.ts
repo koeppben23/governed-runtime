@@ -671,7 +671,7 @@ describe('integration/review-assurance', () => {
   });
 
   describe('reviewObligationResponseFields', () => {
-    it('builds nested and flat compatibility response fields', () => {
+    it('builds structured response fields', () => {
       const obligation = makeObligation({ obligationType: 'architecture', iteration: 2 });
       const result = reviewObligationResponseFields(obligation);
 
@@ -680,8 +680,15 @@ describe('integration/review-assurance', () => {
         obligationType: 'architecture',
         iteration: 2,
       });
-      expect(result.reviewObligationId).toBe(obligation.obligationId);
-      expect(result.reviewCriteriaVersion).toBe(obligation.criteriaVersion);
+      for (const field of [
+        'reviewObligationId',
+        'reviewObligationIteration',
+        'reviewObligationPlanVersion',
+        'reviewCriteriaVersion',
+        'reviewMandateDigest',
+      ]) {
+        expect(result).not.toHaveProperty(field);
+      }
     });
 
     it('returns empty fields when obligation is null', () => {

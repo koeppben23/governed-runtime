@@ -302,17 +302,19 @@ describe('MUTATION_KILL: isReviewRequired /review CONTENT_ANALYSIS_REQUIRED boun
   });
 });
 
-describe('MUTATION_KILL: extractReviewContext regex fallback with multi-digit and whitespace', () => {
+describe('MUTATION_KILL: extractReviewContext canonical structured fields', () => {
   const baseFields = {
-    reviewObligationId: '11111111-1111-4111-8111-111111111111',
-    reviewCriteriaVersion: 'p37-v1',
-    reviewMandateDigest: 'test-mandate-digest',
+    reviewObligation: {
+      obligationId: '11111111-1111-4111-8111-111111111111',
+      criteriaVersion: 'p37-v1',
+      mandateDigest: 'test-mandate-digest',
+    },
   };
 
   it('extracts multi-digit iteration from regex (kills \\d+ → \\d)', () => {
     const parsed = {
       ...baseFields,
-      next: `${REVIEW_REQUIRED_PREFIX}: iteration=12, planVersion=34`,
+      reviewObligation: { ...baseFields.reviewObligation, iteration: 12, planVersion: 34 },
     };
     const ctx = extractReviewContext('flowguard_plan', parsed);
     expect(ctx).not.toBeNull();
@@ -323,7 +325,7 @@ describe('MUTATION_KILL: extractReviewContext regex fallback with multi-digit an
   it('extracts iteration with whitespace separator (kills \\s → \\S)', () => {
     const parsed = {
       ...baseFields,
-      next: `${REVIEW_REQUIRED_PREFIX}: iteration 5, planVersion 7`,
+      reviewObligation: { ...baseFields.reviewObligation, iteration: 5, planVersion: 7 },
     };
     const ctx = extractReviewContext('flowguard_plan', parsed);
     expect(ctx).not.toBeNull();
@@ -334,7 +336,7 @@ describe('MUTATION_KILL: extractReviewContext regex fallback with multi-digit an
   it('extracts iteration with colon separator', () => {
     const parsed = {
       ...baseFields,
-      next: `${REVIEW_REQUIRED_PREFIX}: iteration: 3, planVersion: 9`,
+      reviewObligation: { ...baseFields.reviewObligation, iteration: 3, planVersion: 9 },
     };
     const ctx = extractReviewContext('flowguard_plan', parsed);
     expect(ctx).not.toBeNull();
@@ -345,7 +347,7 @@ describe('MUTATION_KILL: extractReviewContext regex fallback with multi-digit an
   it('returns null when iteration regex does not match (kills conditional true)', () => {
     const parsed = {
       ...baseFields,
-      next: `${REVIEW_REQUIRED_PREFIX}: no numeric fields here`,
+      reviewObligation: baseFields.reviewObligation,
     };
     const ctx = extractReviewContext('flowguard_plan', parsed);
     expect(ctx).toBeNull();
@@ -354,9 +356,7 @@ describe('MUTATION_KILL: extractReviewContext regex fallback with multi-digit an
   it('uses structured field over regex when both present', () => {
     const parsed = {
       ...baseFields,
-      reviewObligationIteration: 10,
-      reviewObligationPlanVersion: 20,
-      next: `${REVIEW_REQUIRED_PREFIX}: iteration=99, planVersion=99`,
+      reviewObligation: { ...baseFields.reviewObligation, iteration: 10, planVersion: 20 },
     };
     const ctx = extractReviewContext('flowguard_plan', parsed);
     expect(ctx).not.toBeNull();

@@ -804,7 +804,9 @@ describe('implement', () => {
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('IMPL_REVIEW');
       expect(result.reviewTransportFailure).toEqual({ transport: 'host_task', reported: true });
-      expect(result.reviewObligationId).toBeTruthy();
+      expect(
+        (result.reviewObligation as { obligationId?: string } | undefined)?.obligationId,
+      ).toBeTruthy();
       expect(after?.reviewAssurance).toEqual(retryState.reviewAssurance);
       expect(after?.implReview).toEqual(retryState.implReview);
     });

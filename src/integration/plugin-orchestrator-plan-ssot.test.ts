@@ -44,11 +44,13 @@ function reviewRequiredOutput(): string {
   return JSON.stringify({
     phase: 'PLAN',
     next: 'INDEPENDENT_REVIEW_REQUIRED: call flowguard-reviewer with iteration=1 and planVersion=1',
-    reviewObligationId: OBLIGATION_ID,
-    reviewObligationIteration: 1,
-    reviewObligationPlanVersion: 1,
-    reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
-    reviewMandateDigest: REVIEW_MANDATE_DIGEST,
+    reviewObligation: {
+      obligationId: OBLIGATION_ID,
+      iteration: 1,
+      planVersion: 1,
+      criteriaVersion: REVIEW_CRITERIA_VERSION,
+      mandateDigest: REVIEW_MANDATE_DIGEST,
+    },
   });
 }
 

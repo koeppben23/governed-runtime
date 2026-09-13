@@ -158,10 +158,14 @@ function planReviewRequiredOutput(attemptId = ATTEMPT_ID): string {
     phase: 'PLAN',
     selfReviewIteration: 0,
     reviewMode: 'subagent',
-    reviewObligationId: OBLIGATION_ID,
+    reviewObligation: {
+      obligationId: OBLIGATION_ID,
+      iteration: 0,
+      planVersion: 1,
+      criteriaVersion: REVIEW_CRITERIA_VERSION,
+      mandateDigest: REVIEW_MANDATE_DIGEST,
+    },
     reviewAttemptId: attemptId,
-    reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
-    reviewMandateDigest: REVIEW_MANDATE_DIGEST,
     reviewInvocation: {
       requiredReviewAttestation: {
         mandateDigest: REVIEW_MANDATE_DIGEST,

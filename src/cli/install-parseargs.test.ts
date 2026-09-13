@@ -7,8 +7,9 @@
 import { describe, it, expect } from 'vitest';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { parseArgs, resolveTarget, formatTargetPath } from './install.js';
-import type { CliArgs } from './install.js';
+import { parseArgs } from './install.js';
+import { resolveTarget, formatTargetPath } from './install-helpers.js';
+import type { CliArgs } from './install-types.js';
 import { setupCliTestEnvironment } from './install-test-helpers.test.js';
 import { withTestEnv } from '../integration/test-helpers.js';
 
@@ -17,9 +18,9 @@ setupCliTestEnvironment();
 // ─── parseArgs ────────────────────────────────────────────────────────────────
 
 describe('cli/parseArgs', () => {
-  function okResult(result: ReturnType<typeof parseArgs>) {
+  function okResult(result: ReturnType<typeof parseArgs>): CliArgs {
     expect(result.kind).toBe('ok');
-    return (result as { kind: 'ok'; value: { args: CliArgs; deprecations: string[] } }).value;
+    return (result as { kind: 'ok'; value: CliArgs }).value;
   }
 
   function errorResult(result: ReturnType<typeof parseArgs>) {
@@ -29,8 +30,7 @@ describe('cli/parseArgs', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
   describe('HAPPY', () => {
     it("parses 'install' with defaults", () => {
-      const result = parseArgs(['install']);
-      const { args, deprecations } = okResult(result);
+      const args = okResult(parseArgs(['install']));
       expect(args).toEqual({
         action: 'install',
         installScope: 'global',
@@ -43,51 +43,49 @@ describe('cli/parseArgs', () => {
         allowUnverifiedTarball: false,
         logMode: undefined,
       });
-      expect(deprecations).toEqual([]);
     });
 
     it("parses 'install --install-scope repo'", () => {
-      const { args } = okResult(parseArgs(['install', '--install-scope', 'repo']));
-      expect(args.installScope).toBe('repo');
+      expect(okResult(parseArgs(['install', '--install-scope', 'repo'])).installScope).toBe('repo');
     });
 
     it("parses 'install --policy-mode team'", () => {
-      const { args } = okResult(parseArgs(['install', '--policy-mode', 'team']));
-      expect(args.policyMode).toBe('team');
+      expect(okResult(parseArgs(['install', '--policy-mode', 'team'])).policyMode).toBe('team');
     });
 
     it("parses 'install --platform claude-code'", () => {
-      const { args } = okResult(parseArgs(['install', '--platform', 'claude-code']));
-      expect(args.installPlatform).toBe('claude-code');
+      expect(okResult(parseArgs(['install', '--platform', 'claude-code'])).installPlatform).toBe(
+        'claude-code',
+      );
     });
 
-    it("parses 'install --host claude-code' as platform alias", () => {
-      const result = parseArgs(['install', '--host', 'claude-code']);
-      const { args, deprecations } = okResult(result);
-      expect(args.installPlatform).toBe('claude-code');
-      expect(deprecations).toEqual([]);
+    it("parses 'install --host claude-code' as the supported platform alias", () => {
+      expect(okResult(parseArgs(['install', '--host', 'claude-code'])).installPlatform).toBe(
+        'claude-code',
+      );
     });
 
     it("parses 'install --policy-mode regulated --force'", () => {
-      const { args } = okResult(parseArgs(['install', '--policy-mode', 'regulated', '--force']));
+      const args = okResult(parseArgs(['install', '--policy-mode', 'regulated', '--force']));
       expect(args.policyMode).toBe('regulated');
       expect(args.force).toBe(true);
     });
 
     it("parses 'install --policy-mode team-ci'", () => {
-      const { args } = okResult(parseArgs(['install', '--policy-mode', 'team-ci']));
-      expect(args.policyMode).toBe('team-ci');
+      expect(okResult(parseArgs(['install', '--policy-mode', 'team-ci'])).policyMode).toBe(
+        'team-ci',
+      );
     });
 
     it("parses 'install --core-tarball <path>'", () => {
-      const { args } = okResult(
+      const args = okResult(
         parseArgs(['install', '--core-tarball', '/path/to/flowguard-core-${VERSION}.tgz']),
       );
       expect(args.coreTarball).toBe('/path/to/flowguard-core-${VERSION}.tgz');
     });
 
     it("parses 'install --core-tarball with all options'", () => {
-      const { args } = okResult(
+      const args = okResult(
         parseArgs([
           'install',
           '--core-tarball',
@@ -106,7 +104,7 @@ describe('cli/parseArgs', () => {
     });
 
     it('parses --checksums-file', () => {
-      const { args } = okResult(
+      const args = okResult(
         parseArgs([
           'install',
           '--core-tarball',
@@ -119,7 +117,7 @@ describe('cli/parseArgs', () => {
     });
 
     it('parses --allow-unverified-tarball', () => {
-      const { args } = okResult(
+      const args = okResult(
         parseArgs([
           'install',
           '--core-tarball',
@@ -131,59 +129,56 @@ describe('cli/parseArgs', () => {
     });
 
     it('rejects --checksums-file without value', () => {
-      const result = parseArgs(['install', '--core-tarball', './x.tgz', '--checksums-file']);
-      errorResult(result);
+      errorResult(parseArgs(['install', '--core-tarball', './x.tgz', '--checksums-file']));
     });
 
     it('rejects ambiguous checksum verification and opt-out flags', () => {
-      const result = parseArgs([
-        'install',
-        '--core-tarball',
-        './flowguard-core-1.0.0.tgz',
-        '--checksums-file',
-        './checksums.sha256',
-        '--allow-unverified-tarball',
-      ]);
-      errorResult(result);
+      errorResult(
+        parseArgs([
+          'install',
+          '--core-tarball',
+          './flowguard-core-1.0.0.tgz',
+          '--checksums-file',
+          './checksums.sha256',
+          '--allow-unverified-tarball',
+        ]),
+      );
     });
 
     it("parses 'uninstall --install-scope global'", () => {
-      const { args } = okResult(parseArgs(['uninstall', '--install-scope', 'global']));
+      const args = okResult(parseArgs(['uninstall', '--install-scope', 'global']));
       expect(args.action).toBe('uninstall');
       expect(args.installScope).toBe('global');
     });
 
     it("parses 'doctor'", () => {
-      const { args } = okResult(parseArgs(['doctor']));
-      expect(args.action).toBe('doctor');
+      expect(okResult(parseArgs(['doctor'])).action).toBe('doctor');
     });
 
     it("delegates 'run' arguments without install-parser rejection", () => {
-      const result = parseArgs(['run', '--host', 'claude-code', '--', 'Run /validate']);
-      const { args } = okResult(result);
-      expect(args.action).toBe('run');
+      expect(
+        okResult(parseArgs(['run', '--host', 'claude-code', '--', 'Run /validate'])).action,
+      ).toBe('run');
     });
 
     it("delegates 'serve' arguments without install-parser rejection", () => {
-      const result = parseArgs(['serve', '--host', 'opencode', '--port', '4096']);
-      const { args } = okResult(result);
-      expect(args.action).toBe('serve');
+      expect(okResult(parseArgs(['serve', '--host', 'opencode', '--port', '4096'])).action).toBe(
+        'serve',
+      );
     });
 
     it("delegates 'inspect' arguments without install-parser rejection", () => {
-      const result = parseArgs(['inspect', '--session', 'some-id', '--json']);
-      const { args } = okResult(result);
-      expect(args.action).toBe('inspect');
+      expect(okResult(parseArgs(['inspect', '--session', 'some-id', '--json'])).action).toBe(
+        'inspect',
+      );
     });
 
     it('returns help for --help flag', () => {
-      const result = parseArgs(['install', '--help']);
-      expect(result.kind).toBe('help');
+      expect(parseArgs(['install', '--help']).kind).toBe('help');
     });
 
     it('returns help for -h flag', () => {
-      const result = parseArgs(['install', '-h']);
-      expect(result.kind).toBe('help');
+      expect(parseArgs(['install', '-h']).kind).toBe('help');
     });
   });
 
@@ -223,100 +218,60 @@ describe('cli/parseArgs', () => {
       errorResult(parseArgs(['install', '--verbose']));
     });
 
-    it('returns error for --mode without value (deprecated alias)', () => {
-      errorResult(parseArgs(['install', '--mode']));
-    });
-
-    it('returns error for --mode with invalid value (deprecated alias)', () => {
-      errorResult(parseArgs(['install', '--mode', 'enterprise']));
-    });
+    it.each([['--mode', 'team'], ['--global'], ['--project']])(
+      'rejects removed install option %s',
+      (...args) => {
+        const result = parseArgs(['install', ...args]);
+        expect(result.kind).toBe('error');
+        if (result.kind === 'error') expect(result.error).toContain(`Unknown option: ${args[0]}`);
+      },
+    );
 
     it('returns error for --core-tarball without value', () => {
       errorResult(parseArgs(['install', '--core-tarball']));
     });
 
     it('returns error for no command', () => {
-      const result = parseArgs([]);
-      expect(result.kind).toBe('error');
+      expect(parseArgs([]).kind).toBe('error');
     });
   });
 
   // ─── CORNER ────────────────────────────────────────────────
   describe('CORNER', () => {
-    it('deprecated --global sets installScope to global with deprecation warning', () => {
-      const { args, deprecations } = okResult(parseArgs(['install', '--global']));
-      expect(args.installScope).toBe('global');
-      expect(deprecations).toContain('--global is deprecated, use --install-scope global');
-    });
-
-    it('deprecated --project sets installScope to repo with deprecation warning', () => {
-      const { args, deprecations } = okResult(parseArgs(['install', '--project']));
-      expect(args.installScope).toBe('repo');
-      expect(deprecations).toContain('--project is deprecated, use --install-scope repo');
-    });
-
-    it('deprecated --mode sets policyMode with deprecation warning', () => {
-      const { args, deprecations } = okResult(parseArgs(['install', '--mode', 'team']));
-      expect(args.policyMode).toBe('team');
-      expect(deprecations).toContain('--mode is deprecated, use --policy-mode');
-    });
-
-    it('--project then --global: last one wins (both deprecated)', () => {
-      const result = parseArgs(['install', '--project', '--global']);
-      const { args, deprecations } = okResult(result);
-      expect(args.installScope).toBe('global');
-      expect(deprecations.length).toBe(2);
-    });
-
-    it('--global then --project: last one wins (both deprecated)', () => {
-      const { args } = okResult(parseArgs(['install', '--global', '--project']));
-      expect(args.installScope).toBe('repo');
-    });
-
     it('all four policy modes are accepted via --policy-mode', () => {
       for (const mode of ['solo', 'team', 'team-ci', 'regulated'] as const) {
-        const { args } = okResult(parseArgs(['install', '--policy-mode', mode]));
-        expect(args.policyMode).toBe(mode);
+        expect(okResult(parseArgs(['install', '--policy-mode', mode])).policyMode).toBe(mode);
       }
     });
 
     it('both install scopes are accepted via --install-scope', () => {
       for (const scope of ['global', 'repo'] as const) {
-        const { args } = okResult(parseArgs(['install', '--install-scope', scope]));
-        expect(args.installScope).toBe(scope);
+        expect(okResult(parseArgs(['install', '--install-scope', scope])).installScope).toBe(scope);
       }
     });
   });
 
   // ─── EDGE ─────────────────────────────────────────────────
   describe('EDGE', () => {
-    it('all three actions are accepted', () => {
+    it('all three install actions are accepted', () => {
       for (const action of ['install', 'uninstall', 'doctor'] as const) {
-        const { args } = okResult(parseArgs([action]));
-        expect(args.action).toBe(action);
+        expect(okResult(parseArgs([action])).action).toBe(action);
       }
     });
 
     it('--force without --policy-mode defaults to team (human-gated)', () => {
-      const { args } = okResult(parseArgs(['install', '--force']));
+      const args = okResult(parseArgs(['install', '--force']));
       expect(args.policyMode).toBe('team');
       expect(args.force).toBe(true);
     });
 
-    it('mixing new and deprecated flags works', () => {
-      const result = parseArgs([
-        'install',
-        '--install-scope',
-        'repo',
-        '--mode',
-        'regulated',
-        '--force',
-      ]);
-      const { args, deprecations } = okResult(result);
+    it('canonical scope, policy and force flags compose deterministically', () => {
+      const args = okResult(
+        parseArgs(['install', '--install-scope', 'repo', '--policy-mode', 'regulated', '--force']),
+      );
       expect(args.installScope).toBe('repo');
       expect(args.policyMode).toBe('regulated');
       expect(args.force).toBe(true);
-      expect(deprecations).toContain('--mode is deprecated, use --policy-mode');
     });
   });
 
@@ -369,8 +324,7 @@ describe('cli/resolveTarget', () => {
 
   describe('CORNER', () => {
     it('repo target uses the current working directory', () => {
-      const target = resolveTarget('repo');
-      expect(target).toBe(path.resolve('.opencode'));
+      expect(resolveTarget('repo')).toBe(path.resolve('.opencode'));
     });
   });
 
@@ -384,8 +338,7 @@ describe('cli/resolveTarget', () => {
     it('global respects OPENCODE_CONFIG_DIR env var', () => {
       const restoreEnv = withTestEnv({ OPENCODE_CONFIG_DIR: '/custom/config/path' });
       try {
-        const target = resolveTarget('global');
-        expect(target).toBe('/custom/config/path');
+        expect(resolveTarget('global')).toBe('/custom/config/path');
       } finally {
         restoreEnv();
       }
@@ -405,8 +358,7 @@ describe('cli/resolveTarget', () => {
     it('repo scope is unaffected by OPENCODE_CONFIG_DIR', () => {
       const restoreEnv = withTestEnv({ OPENCODE_CONFIG_DIR: '/custom/config/path' });
       try {
-        const target = resolveTarget('repo');
-        expect(target).toBe(path.resolve('.opencode'));
+        expect(resolveTarget('repo')).toBe(path.resolve('.opencode'));
       } finally {
         restoreEnv();
       }
@@ -438,12 +390,10 @@ describe('formatTargetPath', () => {
 
   it('formats repo scope as relative to cwd', () => {
     const cwd = process.cwd();
-    const result = formatTargetPath(cwd + '/.opencode', 'repo', cwd);
-    expect(result).toBe('./.opencode');
+    expect(formatTargetPath(cwd + '/.opencode', 'repo', cwd)).toBe('./.opencode');
   });
 
   it('handles cwd itself as repo target', () => {
-    const result = formatTargetPath(process.cwd(), 'repo', process.cwd());
-    expect(result).toBe('./');
+    expect(formatTargetPath(process.cwd(), 'repo', process.cwd())).toBe('./');
   });
 });

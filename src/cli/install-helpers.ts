@@ -3,7 +3,7 @@
  * @description Path resolution, tarball integrity, and file helpers for the FlowGuard CLI installer.
  *
  * Types and JSON merge logic extracted to install-types.ts and install-json.ts
- * following FG-REL-042. This module re-exports everything for backward compatibility.
+ * following FG-REL-042.
  *
  * @version v2
  */
@@ -56,7 +56,6 @@ export {
   BUILD_INFO_CHECK,
   FLOWGUARD_OWNED_FILES,
   FLOWGUARD_TARBALL_PATTERN,
-  FLOWGUARD_INSTRUCTION_ENTRIES,
   hasNonFlowGuardInstructions,
 } from './install-types.js';
 import {

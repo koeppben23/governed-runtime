@@ -3,9 +3,9 @@
 /**
  * check-unused-exports.mjs
  *
- * Non-blocking PR hint: warn when a PR introduces NEW unused exports relative
- * to the committed baseline. Pure path/symbol diff — no semantic judgment.
- * Always exits 0. Baseline management is explicit:
+ * CI gate: fail when a PR introduces NEW unused exports relative to the
+ * committed baseline. Pure path/symbol diff — no semantic judgment.
+ * Baseline management is explicit:
  *
  *   node scripts/check-unused-exports.mjs --update [--baseline <path>]
  *
@@ -76,8 +76,8 @@ function main() {
 
   const current = collectCurrentExports();
   if (current === null) {
-    console.log('Could not collect unused exports (knip unavailable or unparsable).');
-    process.exit(0);
+    console.error('Could not collect unused exports (knip unavailable or unparsable).');
+    process.exit(1);
   }
 
   if (update) {
@@ -96,8 +96,8 @@ function main() {
     baseline = [];
   }
   if (baseline.length === 0) {
-    console.log(`No baseline at ${baselinePath}; run with --update to initialize it.`);
-    process.exit(0);
+    console.error(`No baseline at ${baselinePath}; run with --update to initialize it.`);
+    process.exit(1);
   }
 
   const { added, removed } = diffUnusedExports(current.entries, baseline);
@@ -107,9 +107,10 @@ function main() {
       .map((entry) => `  - ${entry}:${current.lineOf.get(entry) ?? '?'}`)
       .join('\n');
     console.log(
-      `::warning::This PR introduces ${added.length} new unused export(s) ` +
+      `::error::This PR introduces ${added.length} new unused export(s) ` +
         `(baseline has ${baseline.length}; ${removed.length} removed).\n${preview}`,
     );
+    process.exit(1);
   } else if (removed.length > 0) {
     console.log(
       `No new unused exports; ${removed.length} baseline entry(s) were cleaned up ` +

@@ -17,7 +17,11 @@ describe('standalone review retry signal', () => {
         error: true,
         code: 'HOST_SUBAGENT_TASK_REQUIRED',
         reviewAttemptId: attemptId,
-        reviewObligationId: obligationId,
+        requiredReviewAttestation: {
+          toolObligationId: obligationId,
+          mandateDigest: 'test-mandate-digest',
+          criteriaVersion: 'p37-v1',
+        },
         next: formatReviewRequiredSignal(0, 1),
       }),
       NOW,

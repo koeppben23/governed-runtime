@@ -38,7 +38,7 @@ describe('CLI structured logging', () => {
       const parsed = parseArgs(['doctor', '--log-mode', 'file+console', '--install-scope', 'repo']);
       expect(parsed.kind).toBe('ok');
       if (parsed.kind === 'ok') {
-        expect(parsed.value.args.logMode).toBe('file+console');
+        expect(parsed.value.logMode).toBe('file+console');
       }
     });
 
@@ -58,7 +58,7 @@ describe('CLI structured logging', () => {
       process.chdir(tmpDir);
 
       const captured: string[] = [];
-      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
         captured.push(String(chunk));
         return true;
       });
@@ -119,17 +119,13 @@ describe('CLI structured logging', () => {
       });
       await fs.mkdir(path.join(tmpDir, '.git'));
 
-      // Mock: no console output for file mode
       vi.spyOn(process.stderr, 'write').mockReturnValue(true);
       vi.spyOn(process.stdout, 'write').mockReturnValue(true);
 
       try {
         await main(['doctor', '--install-scope', 'global', '--log-mode', 'file']);
-
-        // Wait for async file writes
         await new Promise((r) => setTimeout(r, 300));
 
-        // Find the log file
         const logDir = path.join(tmpDir, '.opencode', 'logs');
         let entries: string[] = [];
         try {
@@ -146,9 +142,7 @@ describe('CLI structured logging', () => {
           const firstLine = JSON.parse(lines[0] ?? '{}');
           expect(firstLine.component).toBe('flowguard');
           expect(firstLine.service).toBe('cli');
-          // First entry is "CLI logger initialized", subsequent entries contain "command_started"
-          const allContent = content;
-          expect(allContent).toContain('command_started');
+          expect(content).toContain('command_started');
           expect(firstLine.fields).toBeTruthy();
         }
       } finally {
@@ -205,11 +199,9 @@ describe('CLI structured logging', () => {
       try {
         await main(['doctor', '--install-scope', 'global', '--log-mode', 'file+console']);
 
-        // Stderr (console sink) should have log output
         const stderr = stderrLines.join('');
         expect(stderr).toContain('[INFO]');
 
-        // Poll for log file (deterministic, no fixed sleep)
         const logDir = path.join(tmpDir, '.opencode', 'logs');
         let logFile: string | undefined;
         const deadline = Date.now() + 2000;

@@ -1912,7 +1912,13 @@ describe('L3 artifact presence', () => {
       // Obligation identity + host attestation: without them the pending is
       // structurally failed before any reviewer dispatch and L3 never runs.
       reviewAttemptId: `att-${FIXTURE_OBLIGATION_ID}`,
-      reviewObligationId: FIXTURE_OBLIGATION_ID,
+      reviewObligation: {
+        obligationId: FIXTURE_OBLIGATION_ID,
+        iteration: 0,
+        planVersion: 1,
+        criteriaVersion: 'p37-v1',
+        mandateDigest: 'test-mandate-digest',
+      },
       requiredReviewAttestation: hostAttestationFor(FIXTURE_OBLIGATION_ID),
       next:
         `${REVIEW_REQUIRED_PREFIX}: Call the flowguard-reviewer subagent via Task tool. ` +
