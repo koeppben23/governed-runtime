@@ -17,6 +17,7 @@ import type { SessionState } from '../../state/schema.js';
 import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
+  freezeReviewMaterial,
   hashFindings,
 } from '../review/assurance.js';
 import { computeRecordDigest } from '../../state/evidence-plan.js';
@@ -262,6 +263,9 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
             maxReviewerOutputRepairAttempts: 1,
+            reviewProfile: 'core',
+            profileSource: 'policy_default',
+            reviewMaterial: freezeReviewMaterial('frozen review material', 'test-subject-digest'),
             createdAt: now,
             pluginHandshakeAt: now,
             status: 'pending',
@@ -336,6 +340,9 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
             maxReviewerOutputRepairAttempts: 1,
+            reviewProfile: 'core',
+            profileSource: 'policy_default',
+            reviewMaterial: freezeReviewMaterial('frozen review material', 'test-subject-digest'),
             createdAt: now,
             pluginHandshakeAt: now,
             status: 'pending',

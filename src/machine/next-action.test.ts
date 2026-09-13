@@ -23,6 +23,7 @@ import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import {
   artifactReviewSubjectScope,
   createReviewObligation,
+  freezeReviewMaterial,
 } from '../integration/review/assurance.js';
 import { hashCanonicalReviewContent, normalizeReviewContent } from '../shared/review-subject.js';
 
@@ -385,6 +386,7 @@ describe('resolveNextAction', () => {
         iteration: 1,
         planVersion: 1,
         subjectDigest: 'impl-digest',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'impl-digest'),
         reviewSubjectScope: { kind: 'implementation', implementationDigest: 'impl-digest' },
         changedFiles: ['src/a.ts'],
         policySnapshot: null,
@@ -451,6 +453,7 @@ describe('resolveNextAction', () => {
         iteration: 1,
         planVersion: 1,
         subjectDigest: 'impl-digest',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'impl-digest'),
         reviewSubjectScope: {
           kind: 'implementation',
           implementationDigest: 'impl-digest',
@@ -487,6 +490,10 @@ describe('resolveNextAction', () => {
           iteration,
           planVersion: 1,
           subjectDigest: `impl-digest-${iteration}`,
+          reviewMaterial: freezeReviewMaterial(
+            'frozen review material',
+            `impl-digest-${iteration}`,
+          ),
           reviewSubjectScope: {
             kind: 'implementation',
             implementationDigest: `impl-digest-${iteration}`,
@@ -592,6 +599,7 @@ describe('resolveNextAction', () => {
         planVersion: 1,
         now: '2026-01-01T00:00:00.000Z',
         subjectDigest: 'test',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
       });
       const state = makeState('READY', {
         reviewAssurance: {
@@ -614,6 +622,7 @@ describe('resolveNextAction', () => {
         planVersion: 1,
         now: '2026-01-01T00:00:00.000Z',
         subjectDigest: 'test',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
       });
       const state = makeState('REVIEW', {
         reviewAssurance: {

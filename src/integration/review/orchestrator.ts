@@ -421,7 +421,7 @@ async function handleStructuredCapabilityError(
   capabilityError: string,
 ): Promise<InvokeAttemptResult> {
   logCapabilityError(input, error, capabilityError);
-  return structuredOutputBlocked(input, error);
+  return structuredOutputBlocked(input);
 }
 
 function logCapabilityError(
@@ -438,21 +438,12 @@ function logCapabilityError(
       reason: 'Session model does not support required structured output.',
       detectedPattern: capabilityError,
       reviewOutputPolicy: input.options.reviewOutputPolicy,
+      recovery: `Configure the ${REVIEWER_SUBAGENT_TYPE} agent to use a structured-output-capable model.`,
     },
   });
 }
 
-function structuredOutputBlocked(input: InvokeAttemptInput, error: unknown): InvokeAttemptResult {
-  input.options._onAttemptFailed({
-    attempt: input.attempt,
-    step: 'model_capability_incompatible',
-    error,
-    details: {
-      agent: input.agent,
-      reviewOutputPolicy: input.options.reviewOutputPolicy,
-      recovery: `Configure the ${REVIEWER_SUBAGENT_TYPE} agent to use a structured-output-capable model.`,
-    },
-  });
+function structuredOutputBlocked(input: InvokeAttemptInput): InvokeAttemptResult {
   return {
     kind: 'done',
     result: {

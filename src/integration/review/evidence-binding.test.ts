@@ -265,6 +265,7 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
       const existingInvocation = buildInvocationEvidence({
         obligationId: obligation.obligationId,
         obligationType: 'plan',
+        attemptId: attempts[0]!.attemptId,
         mandateDigest: obligation.mandateDigest,
         criteriaVersion: obligation.criteriaVersion,
         parentSessionId: SESSION_ID,

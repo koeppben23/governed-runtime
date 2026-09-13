@@ -9,6 +9,7 @@ import { assessMinimumTaskClass, maxTaskClass } from '../phase-tool-gate.js';
 import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
+  freezeReviewMaterial,
   hashFindings,
 } from '../review/assurance.js';
 
@@ -261,6 +262,9 @@ describe('architecture — BUG-15 evidence-resolve', () => {
               criteriaVersion: REVIEW_CRITERIA_VERSION,
               mandateDigest: REVIEW_MANDATE_DIGEST,
               maxReviewerOutputRepairAttempts: 1,
+              reviewProfile: 'core',
+              profileSource: 'policy_default',
+              reviewMaterial: freezeReviewMaterial('frozen review material', 'test-subject-digest'),
               createdAt: now,
               pluginHandshakeAt: now,
               status: 'fulfilled',
@@ -356,6 +360,9 @@ describe('architecture — BUG-15 evidence-resolve', () => {
               criteriaVersion: REVIEW_CRITERIA_VERSION,
               mandateDigest: REVIEW_MANDATE_DIGEST,
               maxReviewerOutputRepairAttempts: 1,
+              reviewProfile: 'core',
+              profileSource: 'policy_default',
+              reviewMaterial: freezeReviewMaterial('frozen review material', 'test-subject-digest'),
               createdAt: now,
               pluginHandshakeAt: now,
               status: 'fulfilled',
@@ -480,6 +487,9 @@ describe('architecture — BUG-15 evidence-resolve', () => {
               criteriaVersion: REVIEW_CRITERIA_VERSION,
               mandateDigest: REVIEW_MANDATE_DIGEST,
               maxReviewerOutputRepairAttempts: 1,
+              reviewProfile: 'core',
+              profileSource: 'policy_default',
+              reviewMaterial: freezeReviewMaterial('frozen review material', 'test-subject-digest'),
               createdAt: now,
               pluginHandshakeAt: now,
               status: 'fulfilled',

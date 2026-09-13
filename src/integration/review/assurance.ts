@@ -163,7 +163,7 @@ export function createReviewObligation(input: {
   /** Frozen standalone content/repository subject, when this is a standalone review. */
   reviewSubject?: FrozenReviewSubject;
   /** Exact normalized artifact bytes frozen for host-task delivery. */
-  reviewMaterial?: ReviewMaterial;
+  reviewMaterial: ReviewMaterial;
   /**
    * Mandatory review coverage profile frozen into the obligation at creation,
    * before any reviewer invocation. Defaults to the fail-closed 'core' baseline.
@@ -250,7 +250,7 @@ export function createReviewObligation(input: {
     ...(input.claimDeclarationsDigest
       ? { claimDeclarationsDigest: input.claimDeclarationsDigest }
       : {}),
-    ...(input.reviewMaterial ? { reviewMaterial: input.reviewMaterial } : {}),
+    reviewMaterial: input.reviewMaterial,
     reviewSubject: input.reviewSubject,
     metadata: input.metadata,
     ...(input.fingerprintVersion ? { fingerprintVersion: input.fingerprintVersion } : {}),
@@ -599,7 +599,7 @@ export function buildInvocationEvidence(input: {
   /** SHA-256 digest of the extracted/reviewed content (branch reviews only). */
   reviewedContentDigest?: string | null;
   /** Persisted host-authoritative attempt ID bound at evidence-assembly time. */
-  attemptId?: string;
+  attemptId: string;
 }): ReviewInvocationEvidence {
   return {
     invocationId: randomUUID(),
@@ -627,9 +627,7 @@ export function buildInvocationEvidence(input: {
     resolvedBranchSha: input.resolvedBranchSha ?? null,
     resolvedBaseSha: input.resolvedBaseSha ?? null,
     reviewedContentDigest: input.reviewedContentDigest ?? null,
-    // An omitted lineage deliberately remains schema-invalid; this constructor
-    // never reconstructs identity from an older invocation shape.
-    attemptId: input.attemptId ?? '',
+    attemptId: input.attemptId,
     ...buildOptionalInvocationFields(input),
   };
 }

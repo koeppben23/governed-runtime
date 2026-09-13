@@ -200,6 +200,8 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
       fulfilledAt: FIXED_TIME,
       consumedAt: FIXED_TIME,
       subjectDigest: ARCHITECTURE_DECISION.digest,
+      reviewProfile: 'core',
+      profileSource: 'policy_default',
       requiredChallengeCount: 0,
       requiredChallengeKind: 'design_challenge',
       challengePolicyVersion: 'challenge-policy.v1',
@@ -244,7 +246,20 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
       reviewAssuranceLevel: 'structured_high',
     },
   ],
-  attempts: [],
+  attempts: [
+    {
+      attemptId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      obligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      obligationType: 'architecture',
+      subjectDigest: ARCHITECTURE_DECISION.digest,
+      ordinal: 0,
+      childSessionId: 'child-session-1',
+      status: 'bound',
+      origin: { kind: 'initial' },
+      repositoryDiscovery: { kind: 'not_applicable' },
+      createdAt: FIXED_TIME,
+    },
+  ],
   dispatches: [],
 };
 
@@ -269,6 +284,8 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
     fulfilledAt: FIXED_TIME,
     consumedAt: FIXED_TIME,
     subjectDigest: 'digest-of-plan',
+    reviewProfile: 'core',
+    profileSource: 'policy_default',
     // Bound to the (empty) claim declaration set of PLAN_RECORD: the plan
     // approval gate fails closed when evidence carries no claim binding.
     claimDeclarationsDigest: hashText(
@@ -315,6 +332,20 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
       reviewOutputMode: 'structured_output',
       structuredOutputUsed: true,
       reviewAssuranceLevel: 'structured_high',
+    },
+  ],
+  attempts: [
+    {
+      attemptId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      obligationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      obligationType: 'plan',
+      subjectDigest: 'digest-of-plan',
+      ordinal: 0,
+      childSessionId: 'child-session-1',
+      status: 'bound',
+      origin: { kind: 'initial' },
+      repositoryDiscovery: { kind: 'not_applicable' },
+      createdAt: FIXED_TIME,
     },
   ],
 });

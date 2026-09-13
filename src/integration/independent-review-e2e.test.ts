@@ -229,6 +229,8 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
             maxReviewerOutputRepairAttempts: 1,
+            reviewProfile: 'core',
+            profileSource: 'policy_default',
             subjectDigest: SUBJECT_DIGEST,
             createdAt: now,
             pluginHandshakeAt: null,
@@ -539,7 +541,9 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
           obligation.obligationId === obligationId
             ? {
                 ...obligation,
-                reviewMaterial: initialAttempt?.reviewMaterial,
+                ...(initialAttempt?.reviewMaterial
+                  ? { reviewMaterial: initialAttempt.reviewMaterial }
+                  : {}),
                 reviewSubjectScope: {
                   kind: 'repository_change' as const,
                   paths: ['docs/test.md'],
@@ -614,7 +618,18 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
     const attemptA = (afterHandshake?.reviewAssurance?.attempts ?? []).find(
       (attempt) => attempt.obligationId === obligationId,
     );
-    expect(attemptA?.repositoryDiscovery.kind).toBe('not_applicable');
+    // The repository attempt is born with its host-owned Discovery snapshot:
+    // resolved BEFORE the mint, never mutated afterwards.
+    expect(attemptA?.repositoryDiscovery.kind).toBe('repository');
+    if (attemptA?.repositoryDiscovery.kind === 'repository') {
+      // The snapshot binds the CANONICAL persisted-Discovery digest — never the
+      // workspace fingerprint (stored separately).
+      expect(attemptA.repositoryDiscovery.snapshot.discoveryDigest).toBe('d'.repeat(64));
+      expect(attemptA.repositoryDiscovery.snapshot.workspaceFingerprint).toEqual(
+        expect.any(String),
+      );
+      expect(attemptA.repositoryDiscovery.snapshot.health.status).toBeTypeOf('string');
+    }
     const initialHypothesisCount = afterHandshake?.proofGraph?.claims.length ?? 0;
     expect(initialHypothesisCount).toBeGreaterThan(0);
     const reviewerArgsA = reviewerArgsFromReviewRequiredOutput(reviewOut.output);

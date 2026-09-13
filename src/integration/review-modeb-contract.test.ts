@@ -235,6 +235,11 @@ describe('plan / architecture Mode-B review contract', () => {
             planVersion: 1,
             now: NOW(),
             subjectDigest: 'test',
+            reviewMaterial: {
+              content: REVIEW_MATERIAL_CONTENT,
+              materialDigest: REVIEW_MATERIAL_DIGEST,
+              subjectDigest: 'test',
+            },
             reviewSubjectScope: artifactReviewSubjectScope('plan', '# Plan\nBody', 'test'),
             changedFiles: ['docs/test.md'],
           }),
@@ -292,6 +297,11 @@ describe('plan / architecture Mode-B review contract', () => {
             planVersion: 1,
             now: NOW(),
             subjectDigest: 'test',
+            reviewMaterial: {
+              content: REVIEW_MATERIAL_CONTENT,
+              materialDigest: REVIEW_MATERIAL_DIGEST,
+              subjectDigest: 'test',
+            },
             reviewSubjectScope: artifactReviewSubjectScope(
               'adr',
               '## Context\nC\n## Decision\nD',

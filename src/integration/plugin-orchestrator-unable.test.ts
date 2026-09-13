@@ -205,6 +205,11 @@ function buildSessionState() {
           subjectDigest: 'plan-digest-1',
           reviewProfile: 'core' as const,
           profileSource: 'policy_default' as const,
+          reviewMaterial: {
+            content: 'frozen review material',
+            materialDigest: 'a'.repeat(64),
+            subjectDigest: 'plan-digest-1',
+          },
           reviewSubjectScope: {
             kind: 'artifact' as const,
             artifact: {

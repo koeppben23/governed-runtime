@@ -24,6 +24,13 @@ function obligation(): ReviewObligation {
     criteriaVersion: 'criteria-v1',
     mandateDigest: 'mandate-digest',
     maxReviewerOutputRepairAttempts: 1,
+    reviewProfile: 'core',
+    profileSource: 'policy_default',
+    reviewMaterial: {
+      content: 'frozen review material',
+      materialDigest: 'a'.repeat(64),
+      subjectDigest: 'test-subject-digest',
+    },
     createdAt: FIXED_TIME,
     pluginHandshakeAt: null,
     status: 'pending',

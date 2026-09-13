@@ -36,6 +36,8 @@ describe('PluginWorkspaceImpl semantic outbox', () => {
               criteriaVersion: 'review-criteria.v1',
               mandateDigest: 'mandate-digest',
               maxReviewerOutputRepairAttempts: 1,
+              reviewProfile: 'core',
+              profileSource: 'policy_default',
               createdAt: NOW,
               pluginHandshakeAt: NOW,
               status: 'blocked',

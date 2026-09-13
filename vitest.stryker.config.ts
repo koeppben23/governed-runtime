@@ -43,7 +43,7 @@ export default defineConfig({
       'src/integration/review/orchestrator-invoke-diagnostics.test.ts',
       'src/integration/review/orchestrator-invoke-errors.test.ts',
       'src/integration/review/orchestrator-retry-core.test.ts',
-      'src/integration/review/orchestrator-retry-format-free.test.ts',
+      'src/integration/review/orchestrator-timeout.test.ts',
       'src/integration/review/enforcement/enforcement.test.ts',
       'src/integration/review/enforcement/findings-consistency.test.ts',
       'src/integration/review/enforcement/challenge-consistency.test.ts',

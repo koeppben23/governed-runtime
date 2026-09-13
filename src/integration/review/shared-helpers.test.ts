@@ -300,6 +300,11 @@ function implementPromptState(overrides: {
     fulfilledAt: null,
     consumedAt: null,
     subjectDigest: 'subject-A',
+    reviewMaterial: {
+      content: 'frozen review material',
+      materialDigest: 'a'.repeat(64),
+      subjectDigest: 'subject-A',
+    },
     reviewProfile: 'core' as const,
     profileSource: 'policy_default' as const,
     reviewSubjectScope:
@@ -435,6 +440,11 @@ it('fails closed when the resolved obligation is not an implement obligation', (
     fulfilledAt: null,
     consumedAt: null,
     subjectDigest: 'subject-A',
+    reviewMaterial: {
+      content: 'frozen review material',
+      materialDigest: 'a'.repeat(64),
+      subjectDigest: 'subject-A',
+    },
     reviewProfile: 'core' as const,
     profileSource: 'policy_default' as const,
     reviewSubjectScope: {

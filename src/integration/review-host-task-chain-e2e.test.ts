@@ -178,6 +178,11 @@ async function bindHostTaskReviewEvidence(
     (item) => item.obligationId === obligationId,
   );
   if (!obligation) throw new TypeError('Expected persisted review obligation');
+  const assurance = ensureReviewAssurance(state.reviewAssurance);
+  const existingAttempt = assurance.attempts.find(
+    (attempt) => attempt.obligationId === obligationId,
+  );
+  const resolvedAttemptId = existingAttempt?.attemptId ?? crypto.randomUUID();
   const invocation = buildInvocationEvidence({
     obligationId,
     obligationType: 'review',
@@ -194,16 +199,11 @@ async function bindHostTaskReviewEvidence(
     source: 'host-orchestrated',
     capturedVerdict: findings.overallVerdict,
     capturedRawFindings: findings,
-    attemptId: state.reviewAssurance?.attempts?.find((a) => a.obligationId === obligationId)
-      ?.attemptId,
+    attemptId: resolvedAttemptId,
   });
-  const assurance = ensureReviewAssurance(state.reviewAssurance);
-  const existingAttempt = assurance.attempts.find(
-    (attempt) => attempt.obligationId === obligationId,
-  );
   const boundAttempt = {
     ...(existingAttempt ?? {}),
-    attemptId: existingAttempt?.attemptId ?? crypto.randomUUID(),
+    attemptId: resolvedAttemptId,
     obligationId,
     obligationType: obligation.obligationType,
     subjectDigest: obligation.subjectDigest,
@@ -223,7 +223,12 @@ async function bindHostTaskReviewEvidence(
         ...assurance,
         obligations: assurance.obligations.map((item) =>
           item.obligationId === obligationId
-            ? { ...item, reviewMaterial: existingAttempt?.reviewMaterial }
+            ? {
+                ...item,
+                ...(existingAttempt?.reviewMaterial
+                  ? { reviewMaterial: existingAttempt.reviewMaterial }
+                  : {}),
+              }
             : item,
         ),
         attempts: [

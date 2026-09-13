@@ -23,6 +23,11 @@ function planObligation(): ReturnType<typeof createReviewObligation> {
     planVersion: 1,
     now: NOW,
     subjectDigest: 'plan-subject-digest',
+    reviewMaterial: {
+      content: 'frozen review material',
+      materialDigest: 'a'.repeat(64),
+      subjectDigest: 'plan-subject-digest',
+    },
     reviewSubjectScope: artifactReviewSubjectScope('plan', '# Plan\nBody', 'plan-subject-digest'),
     changedFiles: ['src/foo.ts'],
     policySnapshot: {

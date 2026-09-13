@@ -43,6 +43,8 @@ describe('review/enforcement/findings-consistency', () => {
       criteriaVersion: 'p41-v1',
       mandateDigest: 'mandate-digest',
       maxReviewerOutputRepairAttempts: 1,
+      reviewProfile: 'core',
+      profileSource: 'policy_default',
       requiredChallengeCount: 0,
       requiredChallengeKind: 'design_challenge' as const,
       challengePolicyVersion: 'challenge-policy.v1' as const,

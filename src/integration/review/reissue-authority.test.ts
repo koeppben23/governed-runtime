@@ -46,6 +46,7 @@ function makeObligation(overrides: Partial<ReviewObligation> = {}): ReviewObliga
       planVersion: 1,
       now: NOW,
       subjectDigest: SUBJECT_DIGEST,
+      reviewMaterial: FROZEN_MATERIAL,
       reviewSubject: {
         kind: 'content',
         source: { kind: 'inline', mediaType: 'text' },

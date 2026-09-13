@@ -1255,6 +1255,8 @@ describe('toolBefore — observation capability parent binding', () => {
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
             maxReviewerOutputRepairAttempts: 1,
+            reviewProfile: 'core' as const,
+            profileSource: 'policy_default' as const,
             createdAt: now,
             pluginHandshakeAt: null,
             status: 'pending',

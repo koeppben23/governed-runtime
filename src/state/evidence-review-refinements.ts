@@ -58,28 +58,43 @@ export interface ObligationRefinementShape {
 }
 
 /**
- * Implementation-scoped obligations must bind their scope digest to the
- * obligation subject digest. Kind-level enforcement (repository_change is
- * never a legal implementation scope) lives at the minting boundary —
- * legacy persisted records predating the implementation subject model keep
- * parsing; this refinement only rejects a MODERN implementation scope whose
- * digest diverges from the subject identity it is bound to.
+ * Implementation obligations bind their scope kind AND digest to the frozen
+ * implementation subject: `obligationType === 'implement'` requires
+ * `reviewSubjectScope.kind === 'implementation'` with a digest equal to the
+ * obligation subject digest. Any other kind (repository_change, content,
+ * artifact, unavailable) is an unsatisfiable current-contract state and is
+ * rejected at the schema boundary. Mirror-side, no other obligation type may
+ * carry an implementation scope.
  */
 export function refineImplementationScopeSubjectCoherence(
   obligation: ObligationRefinementShape,
   context: z.RefinementCtx,
 ): void {
-  if (obligation.obligationType !== 'implement') return;
   const scope = obligation.reviewSubjectScope;
-  if (
-    scope?.kind === 'implementation' &&
-    scope.implementationDigest !== undefined &&
-    scope.implementationDigest !== obligation.subjectDigest
-  ) {
+  if (obligation.obligationType === 'implement') {
+    if (scope?.kind !== 'implementation') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['reviewSubjectScope'],
+        message: 'implement obligations require an implementation reviewSubjectScope.',
+      });
+      return;
+    }
+    if (scope.implementationDigest !== obligation.subjectDigest) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['reviewSubjectScope'],
+        message:
+          'implementation reviewSubjectScope digest must equal the obligation subject digest',
+      });
+    }
+    return;
+  }
+  if (scope?.kind === 'implementation') {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['reviewSubjectScope'],
-      message: 'implementation reviewSubjectScope digest must equal the obligation subject digest',
+      message: 'only implement obligations may carry an implementation reviewSubjectScope.',
     });
   }
 }
@@ -88,6 +103,7 @@ export function refineImplementationScopeSubjectCoherence(
 export interface AttemptRefinementShape {
   readonly attemptId: string;
   readonly obligationId: string;
+  readonly obligationType: string;
   readonly repositoryDiscovery: { readonly kind: 'repository' | 'not_applicable' };
 }
 
@@ -121,19 +137,6 @@ export function refineReviewMaterialSubject(
     code: z.ZodIssueCode.custom,
     path: ['reviewMaterial', 'subjectDigest'],
     message: 'Review obligation reviewMaterial.subjectDigest must match obligation.subjectDigest.',
-  });
-}
-
-/** Every current review obligation requires frozen material. */
-export function refineCurrentGenerationMaterial(
-  obligation: ObligationRefinementShape,
-  context: z.RefinementCtx,
-): void {
-  if (obligation.reviewMaterial) return;
-  context.addIssue({
-    code: z.ZodIssueCode.custom,
-    path: ['reviewMaterial'],
-    message: 'Review obligations require frozen reviewMaterial.',
   });
 }
 
@@ -290,6 +293,33 @@ export function refineAssuranceInvocationLinkageCoherence(
         code: z.ZodIssueCode.custom,
         path: ['invocations'],
         message: 'Review invocation evidence requires attempt lineage and structured output.',
+      });
+      return;
+    }
+  }
+  const attemptsByAttemptId = new Map(
+    assurance.attempts.map((attempt) => [attempt.attemptId, attempt]),
+  );
+  for (const invocation of assurance.invocations) {
+    const attemptId = invocation.attemptId;
+    if (!attemptId) continue;
+    const attempt = attemptsByAttemptId.get(attemptId);
+    if (!attempt) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['invocations'],
+        message: `invocation ${invocation.invocationId} references unknown attempt ${invocation.attemptId}`,
+      });
+      return;
+    }
+    if (
+      attempt.obligationId !== invocation.obligationId ||
+      attempt.obligationType !== invocation.obligationType
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['invocations'],
+        message: `invocation ${invocation.invocationId} attempt ${attempt.attemptId} belongs to a different obligation`,
       });
       return;
     }

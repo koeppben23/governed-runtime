@@ -107,6 +107,8 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
             maxReviewerOutputRepairAttempts: 1,
+            reviewProfile: 'core',
+            profileSource: 'policy_default',
             createdAt: now,
             pluginHandshakeAt: null,
             status: 'pending',

@@ -18,6 +18,7 @@ import type { DiscoveryResult } from '../../discovery/types.js';
 import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
+  freezeReviewMaterial,
   hashFindings,
 } from '../review/assurance.js';
 import { computeRecordDigest } from '../../state/evidence-plan.js';
@@ -217,6 +218,7 @@ function manualAttestedInvocation(input: {
     invocationId: INVOCATION_ID,
     obligationId: OBLIGATION_ID,
     obligationType: input.obligationType,
+    attemptId: OBLIGATION_ID.replace(/^(\w{8})/, 'd0000001'),
     parentSessionId: 'ses_parent',
     childSessionId: 'ses_child',
     agentType: 'flowguard-reviewer' as const,
@@ -316,6 +318,9 @@ function planStateWithEvidence(
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
           maxReviewerOutputRepairAttempts: 1,
+          reviewProfile: 'core',
+          profileSource: 'policy_default',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test-subject-digest'),
           createdAt: now,
           pluginHandshakeAt: now,
           status: 'fulfilled',
@@ -705,6 +710,9 @@ describe('BUG-17: plan evidence-first resolution', () => {
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
             maxReviewerOutputRepairAttempts: 1,
+            reviewProfile: 'core',
+            profileSource: 'policy_default',
+            reviewMaterial: freezeReviewMaterial('frozen review material', 'test-subject-digest'),
             createdAt: now,
             pluginHandshakeAt: null,
             status: 'fulfilled',
@@ -720,7 +728,20 @@ describe('BUG-17: plan evidence-first resolution', () => {
           },
         ],
         invocations: [manualAttestedInvocation({ obligationType: 'plan', findings })],
-        attempts: [],
+        attempts: [
+          {
+            attemptId: OBLIGATION_ID.replace(/^(\w{8})/, 'd0000001'),
+            obligationId: OBLIGATION_ID,
+            obligationType: 'plan',
+            subjectDigest: 'test-subject-digest',
+            ordinal: 0,
+            childSessionId: 'ses_child',
+            status: 'bound',
+            origin: { kind: 'initial' },
+            repositoryDiscovery: { kind: 'not_applicable' },
+            createdAt: now,
+          },
+        ],
         dispatches: [],
       },
     });

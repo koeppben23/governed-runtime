@@ -22,6 +22,7 @@ import {
   artifactReviewSubjectScope,
   buildInvocationEvidence,
   createReviewObligation,
+  freezeReviewMaterial,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './assurance.js';
@@ -44,6 +45,7 @@ function planObligation(): ReviewObligation {
     planVersion: 1,
     now: NOW,
     subjectDigest: 'plan-digest-v1',
+    reviewMaterial: freezeReviewMaterial('frozen review material', 'plan-digest-v1'),
     reviewSubjectScope: artifactReviewSubjectScope('plan', '## Approach\nBody', 'plan-digest-v1'),
     repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
   });
@@ -83,6 +85,7 @@ function hostInvocation(
   const invocation = buildInvocationEvidence({
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
+    attemptId: '00000000-0000-4000-8000-0000000000aa',
     mandateDigest: REVIEW_MANDATE_DIGEST,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
     parentSessionId: 'ses-parent',
@@ -151,6 +154,7 @@ describe('resolveReviewedArtifactIdentity', () => {
       planVersion: 2,
       now: NOW,
       subjectDigest: 'plan-digest-v2',
+      reviewMaterial: freezeReviewMaterial('frozen review material', 'plan-digest-v2'),
       reviewSubjectScope: artifactReviewSubjectScope(
         'plan',
         '## Approach\nBody2',
@@ -180,6 +184,7 @@ describe('resolveReviewedArtifactIdentity', () => {
       planVersion: 1,
       now: NOW,
       subjectDigest: 'impl-digest',
+      reviewMaterial: freezeReviewMaterial('frozen review material', 'impl-digest'),
       changedFiles: ['src/foo.ts'],
       reviewSubjectScope: { kind: 'implementation', implementationDigest: 'impl-digest' },
     });

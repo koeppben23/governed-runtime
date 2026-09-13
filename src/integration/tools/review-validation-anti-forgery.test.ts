@@ -11,6 +11,7 @@ import {
   REVIEW_MANDATE_DIGEST,
   appendInvocationEvidence,
   ensureReviewAssurance,
+  freezeReviewMaterial,
 } from '../review/assurance.js';
 import {
   createSessionState,
@@ -125,6 +126,9 @@ function strictAssuranceFixture(
         criteriaVersion: REVIEW_CRITERIA_VERSION,
         mandateDigest: REVIEW_MANDATE_DIGEST,
         maxReviewerOutputRepairAttempts: 1,
+        reviewProfile: 'core',
+        profileSource: 'policy_default',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'test-subject-digest'),
         createdAt: new Date().toISOString(),
         pluginHandshakeAt: new Date().toISOString(),
         status: 'fulfilled' as const,
@@ -152,6 +156,7 @@ function strictAssuranceFixture(
         invocationId: '22222222-2222-4222-8222-222222222222',
         obligationId: '11111111-1111-4111-8111-111111111111',
         obligationType: 'plan' as const,
+        attemptId: '33333333-3333-4333-8333-333333333333',
         parentSessionId: 'ses_parent',
         childSessionId: 'ses_child',
         agentType: 'flowguard-reviewer' as const,

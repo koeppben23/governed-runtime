@@ -223,11 +223,17 @@ async function inject(
     status: 'fulfilled' as const,
     fulfilledAt: FIXED_TIME,
     pluginHandshakeAt: isOpen(host) ? FIXED_TIME : null,
-    reviewSubjectScope: {
-      kind: 'repository_change' as const,
-      paths: ['README.md'],
-      revisions: ['base', 'head'] as const,
-    },
+    reviewSubjectScope:
+      obl.obligationType === 'implement'
+        ? {
+            kind: 'implementation' as const,
+            implementationDigest: obl.subjectDigest,
+          }
+        : {
+            kind: 'repository_change' as const,
+            paths: ['README.md'],
+            revisions: ['base', 'head'] as const,
+          },
   };
   const inv = {
     invocationId: randomUUID(),

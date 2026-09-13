@@ -1050,6 +1050,13 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             criteriaVersion: 'p40-v1',
             mandateDigest: 'e78b6bab98fcf033874fcc07e17d87aaff73fca47b1a28209e5dd4a1a28eedb7',
             maxReviewerOutputRepairAttempts: 1,
+            reviewProfile: 'core',
+            profileSource: 'policy_default',
+            reviewMaterial: {
+              content: 'frozen review material',
+              materialDigest: 'a'.repeat(64),
+              subjectDigest: 'plan-digest',
+            },
             createdAt: FIXED_TIME,
             pluginHandshakeAt: FIXED_TIME,
             status: 'fulfilled' as const,

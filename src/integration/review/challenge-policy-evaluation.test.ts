@@ -25,6 +25,7 @@ import {
   REVIEW_MANDATE_DIGEST,
   buildInvocationEvidence,
   createReviewObligation,
+  freezeReviewMaterial,
   hashFindings,
 } from './assurance.js';
 
@@ -188,6 +189,7 @@ async function resolveCapturedFixture(
       planVersion: 1,
       now: '2026-07-26T00:00:00.000Z',
       subjectDigest: 'test',
+      reviewMaterial: freezeReviewMaterial(REVIEW_MATERIAL_CONTENT, 'test'),
       changedFiles: ['src/example.ts'],
       reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
       policySnapshot: { challengePolicy: CHALLENGE_POLICY_V1, maxReviewerOutputRepairAttempts: 1 },
@@ -249,6 +251,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
       planVersion: 1,
       now: '2026-07-26T00:00:00.000Z',
       subjectDigest: 'test',
+      reviewMaterial: freezeReviewMaterial(REVIEW_MATERIAL_CONTENT, 'test'),
       changedFiles: ['src/example.ts'],
       reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
       policySnapshot: { challengePolicy: CHALLENGE_POLICY_V1, maxReviewerOutputRepairAttempts: 1 },
@@ -364,6 +367,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
       planVersion: 1,
       now: '2026-07-26T00:01:00.000Z',
       subjectDigest: 'test',
+      reviewMaterial: freezeReviewMaterial(REVIEW_MATERIAL_CONTENT, 'test'),
       changedFiles: ['src/example.ts'],
       reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
       policySnapshot: { challengePolicy: CHALLENGE_POLICY_V1, maxReviewerOutputRepairAttempts: 1 },

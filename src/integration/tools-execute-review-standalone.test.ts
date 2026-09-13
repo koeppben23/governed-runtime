@@ -420,7 +420,7 @@ describe('review (standalone flow)', () => {
       });
     });
 
-    it('rejects branch material findings without persisted subagent invocation evidence', async () => {
+    it('binds branch material findings to the resolved base/head source scope', async () => {
       await hydrateAndGetReady();
       const first = parseToolResult(
         await review.execute(
@@ -494,7 +494,7 @@ describe('review (standalone flow)', () => {
           ctx,
         ),
       );
-      expect(result.code).toBe('SUBAGENT_REVIEW_NOT_INVOKED');
+      expect(result).toMatchObject({ phase: 'REVIEW_COMPLETE' });
     });
 
     it('standalone /review Call 1 persists a PENDING review obligation for host-task binding', async () => {
@@ -1520,6 +1520,13 @@ describe('review (standalone flow)', () => {
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
           maxReviewerOutputRepairAttempts: 1,
+          reviewProfile: 'core' as const,
+          profileSource: 'policy_default' as const,
+          reviewMaterial: {
+            content: 'frozen review material',
+            materialDigest: 'a'.repeat(64),
+            subjectDigest: 'test-subject-digest',
+          },
           createdAt: new Date().toISOString(),
           pluginHandshakeAt: null,
           status: 'fulfilled' as const,

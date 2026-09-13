@@ -21,6 +21,7 @@ import {
   createReviewAttempt,
   createReviewObligation,
   ensureReviewAssurance,
+  freezeReviewMaterial,
   hashFindings,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
@@ -75,6 +76,7 @@ function candidateObligation(
     planVersion: 1,
     now: NOW_ISO,
     subjectDigest: 'impl-digest',
+    reviewMaterial: freezeReviewMaterial('frozen review material', 'impl-digest'),
     ...(obligationType === 'plan'
       ? {
           reviewSubjectScope: artifactReviewSubjectScope('plan', '# Plan\nBody', 'impl-digest'),
@@ -484,6 +486,7 @@ describe('direct/submitted validator path', () => {
     findings: ReviewFindings,
   ): ReviewAssuranceState {
     const invocationId = '33333333-3333-4333-8333-333333333333';
+    const attemptId = attempts[attempts.length - 1]!.attemptId;
     const boundObligation = {
       ...obligation,
       status: 'fulfilled' as const,
@@ -495,6 +498,7 @@ describe('direct/submitted validator path', () => {
       invocationId,
       obligationId: obligation.obligationId,
       obligationType: obligation.obligationType,
+      attemptId,
       parentSessionId: SESSION_ID,
       childSessionId: CHILD_SESSION_ID,
       agentType: REVIEWER_SUBAGENT_TYPE,

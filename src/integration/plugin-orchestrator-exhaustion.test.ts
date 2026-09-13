@@ -27,7 +27,11 @@ import { runReviewOrchestration } from './plugin-orchestrator.js';
 import type { OrchestratorDeps, ToolCallEvent } from './plugin-orchestrator.js';
 import { createTestAdapter } from './test-adapter-helper.js';
 import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
-import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
+import {
+  REVIEW_CRITERIA_VERSION,
+  REVIEW_MANDATE_DIGEST,
+  freezeReviewMaterial,
+} from './review/assurance.js';
 import type { SessionState } from '../state/schema.js';
 import type { OrchestratorClient } from './review/types.js';
 
@@ -73,6 +77,9 @@ function buildState(): SessionState {
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
           maxReviewerOutputRepairAttempts: 1,
+          reviewProfile: 'core',
+          profileSource: 'policy_default',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test-subject-digest'),
           createdAt: NOW,
           pluginHandshakeAt: null,
           status: 'pending',
@@ -117,6 +124,9 @@ function buildAlreadyBlockedState(): SessionState {
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
           maxReviewerOutputRepairAttempts: 1,
+          reviewProfile: 'core',
+          profileSource: 'policy_default',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test-subject-digest'),
           createdAt: NOW,
           pluginHandshakeAt: NOW,
           status: 'blocked',
@@ -359,6 +369,9 @@ describe('BUG-07: obligation blocked after total invocation failure', () => {
               criteriaVersion: REVIEW_CRITERIA_VERSION,
               mandateDigest: REVIEW_MANDATE_DIGEST,
               maxReviewerOutputRepairAttempts: 1,
+              reviewProfile: 'core',
+              profileSource: 'policy_default',
+              reviewMaterial: freezeReviewMaterial('frozen review material', 'test-subject-digest'),
               createdAt: NOW,
               pluginHandshakeAt: null,
               status: 'pending',

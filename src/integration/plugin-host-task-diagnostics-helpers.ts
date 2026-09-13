@@ -12,6 +12,7 @@ import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './review/enforce
 import {
   artifactReviewSubjectScope,
   createReviewObligation,
+  freezeReviewMaterial,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './review/assurance.js';
@@ -127,6 +128,7 @@ export function pendingObligation(overrides: Partial<ReviewObligation> = {}): Re
     planVersion: 1,
     now: NOW,
     subjectDigest: 'diagnostics-test-subject',
+    reviewMaterial: freezeReviewMaterial('# Diagnostics\nBody', 'diagnostics-test-subject'),
     reviewSubjectScope: artifactReviewSubjectScope(
       'plan',
       '# Diagnostics\nBody',

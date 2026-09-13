@@ -25,6 +25,13 @@ export function makeReviewObligation(overrides: Partial<ReviewObligation> = {}):
     criteriaVersion: REVIEW_CRITERIA_VERSION,
     mandateDigest: REVIEW_MANDATE_DIGEST,
     maxReviewerOutputRepairAttempts: 1,
+    reviewProfile: 'core' as const,
+    profileSource: 'policy_default' as const,
+    reviewMaterial: {
+      content: 'frozen plan review material',
+      materialDigest: 'a'.repeat(64),
+      subjectDigest: 'test-subject-digest',
+    },
     requiredChallengeCount: 0,
     requiredChallengeKind: 'design_challenge',
     challengePolicyVersion: 'challenge-policy.v1',

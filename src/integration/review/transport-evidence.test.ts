@@ -15,6 +15,7 @@ import {
   artifactReviewSubjectScope,
   createReviewAttempt,
   createReviewObligation,
+  freezeReviewMaterial,
 } from './assurance.js';
 import { bindExternalReviewEvidence } from './transport-evidence.js';
 
@@ -83,6 +84,7 @@ describe('external review transport evidence binding', () => {
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
       subjectDigest: 'test',
+      reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
       reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
     });
     const state = makeState('PLAN', {
@@ -121,6 +123,7 @@ describe('external review transport evidence binding', () => {
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
       subjectDigest: 'test',
+      reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
       reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
     });
     await writeFile(
@@ -164,6 +167,7 @@ describe('external review transport evidence binding', () => {
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
       subjectDigest: 'test',
+      reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
       reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
     });
     await writeFile(
@@ -216,6 +220,7 @@ describe('external review transport evidence binding', () => {
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
       subjectDigest: 'test',
+      reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
       reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
     });
     await writeFile(
@@ -262,6 +267,7 @@ describe('external review transport evidence binding', () => {
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
       subjectDigest: 'test',
+      reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
       reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
     });
     await writeFile(

@@ -256,6 +256,10 @@ async function inject(
     fulfilledAt: FIXED_TIME,
     pluginHandshakeAt: FIXED_TIME,
   };
+  const boundAttempt = state!.reviewAssurance!.attempts.find(
+    (a) => a.obligationId === obl.obligationId,
+  );
+  if (!boundAttempt) throw new Error(`No attempt for pending ${oblType} obligation`);
   const inv = {
     invocationId: randomUUID(),
     obligationId: obl.obligationId,
@@ -275,8 +279,7 @@ async function inject(
     consumedByObligationId: null,
     capturedVerdict: verdict,
     capturedRawFindings: ff,
-    attemptId: state!.reviewAssurance!.attempts.find((a) => a.obligationId === obl.obligationId)
-      ?.attemptId,
+    attemptId: boundAttempt.attemptId,
     reviewOutputMode: 'structured_output' as const,
     structuredOutputUsed: true,
     reviewAssuranceLevel: 'structured_high' as const,

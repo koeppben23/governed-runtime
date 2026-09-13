@@ -111,6 +111,8 @@ function makeBlockedObligation(
     criteriaVersion: 'p37-v1',
     mandateDigest: 'test-mandate-digest-blocked',
     maxReviewerOutputRepairAttempts: 1,
+    reviewProfile: 'core',
+    profileSource: 'policy_default',
     requiredChallengeCount: 0,
     requiredChallengeKind: 'design_challenge' as const,
     challengePolicyVersion: 'challenge-policy.v1' as const,
@@ -121,7 +123,13 @@ function makeBlockedObligation(
     invocationId: null,
     fulfilledAt: null,
     consumedAt: null,
-    reviewSubjectScope: { kind: 'unavailable', reason: 'blocked obligation fixture' },
+    reviewSubjectScope:
+      obligationType === 'implement'
+        ? {
+            kind: 'implementation' as const,
+            implementationDigest: 'test-subject-digest-blocked',
+          }
+        : { kind: 'unavailable' as const, reason: 'blocked obligation fixture' },
     reviewMaterial: freezeReviewMaterial(
       `# Frozen ${obligationType} review material`,
       'test-subject-digest-blocked',
@@ -152,6 +160,8 @@ function makePendingObligation(
     criteriaVersion: 'p37-v1',
     mandateDigest: 'test-mandate-digest-pending',
     maxReviewerOutputRepairAttempts: 1,
+    reviewProfile: 'core',
+    profileSource: 'policy_default',
     requiredChallengeCount: 0,
     requiredChallengeKind: 'design_challenge' as const,
     challengePolicyVersion: 'challenge-policy.v1' as const,
@@ -162,11 +172,17 @@ function makePendingObligation(
     invocationId: null,
     fulfilledAt: null,
     consumedAt: null,
-    reviewSubjectScope: {
-      kind: 'repository_change',
-      paths: ['src/foo.ts'],
-      revisions: ['base', 'head'],
-    },
+    reviewSubjectScope:
+      obligationType === 'implement'
+        ? {
+            kind: 'implementation' as const,
+            implementationDigest: 'test-subject-digest-pending',
+          }
+        : {
+            kind: 'repository_change' as const,
+            paths: ['src/foo.ts'],
+            revisions: ['base', 'head'] as const,
+          },
     reviewMaterial: freezeReviewMaterial(
       `# Frozen ${obligationType} review material`,
       'test-subject-digest-pending',

@@ -36,6 +36,11 @@ function obligation(id: string): ReturnType<typeof createReviewObligation> {
       planVersion: 1,
       now: NOW,
       subjectDigest: `subject-${id}`,
+      reviewMaterial: {
+        content: 'frozen review material',
+        materialDigest: 'b'.repeat(64),
+        subjectDigest: `subject-${id}`,
+      },
       reviewSubject: {
         kind: 'content',
         source: { kind: 'inline', mediaType: 'text' },

@@ -19,6 +19,7 @@ import {
   createAttemptForExistingObligation,
   createObligationAndAttempt,
   createReviewObligation,
+  freezeReviewMaterial,
 } from './assurance.js';
 import { createReviewAttempt, mintObservationCapability } from './attempt-lifecycle.js';
 import {
@@ -42,6 +43,7 @@ function contextObligation(
     planVersion: 1,
     now: NOW,
     subjectDigest: 'adr-digest',
+    reviewMaterial: freezeReviewMaterial('frozen review material', 'adr-digest'),
     reviewSubjectScope: artifactReviewSubjectScope(
       'adr',
       '## Context\nA\n## Decision\nB',
@@ -62,6 +64,7 @@ function candidatePairObligation(): ReviewObligation {
     planVersion: 1,
     now: NOW,
     subjectDigest: 'impl-digest',
+    reviewMaterial: freezeReviewMaterial('frozen review material', 'impl-digest'),
     changedFiles: ['src/foo.ts'],
     reviewSubjectScope: { kind: 'implementation', implementationDigest: 'impl-digest' },
     repositoryAuthority: {
@@ -79,6 +82,7 @@ function standaloneRepositoryObligation(): ReviewObligation {
     planVersion: 1,
     now: NOW,
     subjectDigest: 'review-digest',
+    reviewMaterial: freezeReviewMaterial('frozen review material', 'review-digest'),
     reviewSubject: {
       kind: 'repository_change',
       source: { kind: 'branch', branch: 'topic' },
@@ -100,6 +104,7 @@ function artifactOnlyObligation(): ReviewObligation {
     planVersion: 1,
     now: NOW,
     subjectDigest: 'plan-digest',
+    reviewMaterial: freezeReviewMaterial('frozen review material', 'plan-digest'),
     reviewSubjectScope: artifactReviewSubjectScope('plan', '## Approach\nPlan body', 'plan-digest'),
   });
 }
@@ -197,6 +202,7 @@ describe('authority-bound capability minting', () => {
         planVersion: 1,
         now: NOW,
         subjectDigest: 'adr-digest',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'adr-digest'),
         reviewSubjectScope: artifactReviewSubjectScope(
           'adr',
           '## Context\nA\n## Decision\nB',
@@ -220,6 +226,7 @@ describe('authority-bound capability minting', () => {
         planVersion: 1,
         now: NOW,
         subjectDigest: 'plan-digest',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'plan-digest'),
         reviewSubjectScope: artifactReviewSubjectScope(
           'plan',
           '## Approach\nPlan body',

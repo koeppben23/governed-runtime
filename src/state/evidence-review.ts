@@ -63,7 +63,6 @@ import {
 } from './evidence-review-authority.js';
 import {
   refineAssuranceDiscoveryCoherence,
-  refineCurrentGenerationMaterial,
   refineAssuranceIdentityUniqueness,
   refineAssuranceInvocationLinkageCoherence,
   refineAssuranceProvenanceCoherence,
@@ -410,13 +409,12 @@ export const ReviewObligation = z
     consumedAt: z.string().datetime().nullable(),
     /**
      * Mandatory review coverage profile frozen at obligation creation, before any
-     * reviewer invocation. Optional for backward compatibility with obligations
-     * persisted before this field existed; consumers treat a missing value as the
-     * fail-closed 'core' baseline.
+     * reviewer invocation. The mint always materializes it (fail-closed 'core'
+     * baseline without an explicit request), so absence is not a legal shape.
      */
-    reviewProfile: ReviewProfile.optional(),
+    reviewProfile: ReviewProfile,
     /** Provenance of the frozen review profile (see ReviewProfileSource). */
-    profileSource: ReviewProfileSource.optional(),
+    profileSource: ReviewProfileSource,
     /** Challenge coverage frozen from the runtime-computed minimum task class. REQUIRED — 0 is the explicit TRIVIAL value, never an implicit no-policy state. */
     requiredChallengeCount: z.number().int().min(0).max(2),
     /** The sole challenge evidence kind required for this obligation. */
@@ -438,7 +436,8 @@ export const ReviewObligation = z
     subjectDigest: z.string().min(1),
     /** Exact plan-claim declaration digest frozen before reviewer invocation. */
     claimDeclarationsDigest: z.string().min(1).optional(),
-    reviewMaterial: ReviewMaterial.optional(),
+    /** Frozen reviewed bytes. REQUIRED: every current obligation carries its material. */
+    reviewMaterial: ReviewMaterial,
     reviewSubject: FrozenReviewSubject.optional(),
     /** Missing means the legacy v1 fingerprint algorithm. */
     fingerprintVersion: ReviewInputFingerprintVersion.optional(),
@@ -473,7 +472,6 @@ export const ReviewObligation = z
   })
   .superRefine(refineStandaloneSubject)
   .superRefine(refineReviewMaterialSubject)
-  .superRefine(refineCurrentGenerationMaterial)
   .superRefine(refineAuthorityStructure)
   .superRefine(refineRepositoryEvidenceFreezeCoherence);
 export type ReviewObligation = z.infer<typeof ReviewObligation>;

@@ -101,6 +101,8 @@ function obligation(
     criteriaVersion: REVIEW_CRITERIA_VERSION,
     mandateDigest: REVIEW_MANDATE_DIGEST,
     maxReviewerOutputRepairAttempts: 1,
+    reviewProfile: 'core',
+    profileSource: 'policy_default',
     requiredChallengeCount: 0,
     requiredChallengeKind: 'design_challenge' as const,
     challengePolicyVersion: 'challenge-policy.v1' as const,

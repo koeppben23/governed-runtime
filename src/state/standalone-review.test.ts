@@ -10,7 +10,7 @@ import {
 import { deriveProofGraph } from '../audit/proofgraph/derive.js';
 import { assuranceWith, makeState } from '../fixtures.js';
 import { SessionState } from './schema.js';
-import { createReviewObligation } from '../integration/review/assurance.js';
+import { createReviewObligation, freezeReviewMaterial } from '../integration/review/assurance.js';
 import {
   appendCompletedReviewEvidence,
   appendPreparedReviewEvidence,
@@ -37,6 +37,7 @@ function reviewObligation(): ReturnType<typeof createReviewObligation> {
     planVersion: 1,
     now: NOW,
     subjectDigest: 'subject-digest',
+    reviewMaterial: freezeReviewMaterial('frozen review material', 'subject-digest'),
     reviewSubject: {
       kind: 'content',
       source: { kind: 'inline', mediaType: 'text' },

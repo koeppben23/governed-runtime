@@ -1343,6 +1343,7 @@ describe('plan', () => {
         artifactReviewSubjectScope: assuranceMod.artifactReviewSubjectScope,
         buildInvocationEvidence: assuranceMod.buildInvocationEvidence,
         createReviewObligation: assuranceMod.createReviewObligation,
+        freezeReviewMaterial: assuranceMod.freezeReviewMaterial,
         REVIEW_CRITERIA_VERSION: assuranceMod.REVIEW_CRITERIA_VERSION,
         REVIEW_MANDATE_DIGEST: assuranceMod.REVIEW_MANDATE_DIGEST,
         hashFindings: findingsHashMod.hashFindings,
@@ -1366,6 +1367,7 @@ describe('plan', () => {
         planVersion: 1,
         now: NOW,
         subjectDigest,
+        reviewMaterial: deps.freezeReviewMaterial('frozen review material', subjectDigest),
         reviewSubjectScope: deps.artifactReviewSubjectScope(
           'plan',
           '## Approach\nBody',
@@ -1412,6 +1414,7 @@ describe('plan', () => {
         ...deps.buildInvocationEvidence({
           obligationId: obligation.obligationId,
           obligationType: 'plan',
+          attemptId: '00000000-0000-4000-8000-0000000000d1',
           mandateDigest: deps.REVIEW_MANDATE_DIGEST,
           criteriaVersion: deps.REVIEW_CRITERIA_VERSION,
           parentSessionId: 'ses-parent',

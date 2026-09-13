@@ -63,6 +63,11 @@ function buildState(): SessionState {
     planVersion: 1,
     now: '2026-08-13T10:00:00.000Z',
     subjectDigest: 'impl-digest',
+    reviewMaterial: {
+      content: 'frozen review material',
+      materialDigest: 'a'.repeat(64),
+      subjectDigest: 'impl-digest',
+    },
     changedFiles: ['src/foo.ts'],
     reviewSubjectScope: { kind: 'implementation', implementationDigest: 'impl-digest' },
     repositoryAuthority: {

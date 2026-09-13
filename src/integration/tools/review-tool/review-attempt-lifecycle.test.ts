@@ -116,6 +116,13 @@ describe('subject digest stability', () => {
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
             maxReviewerOutputRepairAttempts: 1,
+            reviewProfile: 'core',
+            profileSource: 'policy_default',
+            reviewMaterial: {
+              content: 'frozen review material',
+              materialDigest: 'a'.repeat(64),
+              subjectDigest: 'review-subject',
+            },
             createdAt: '2026-08-09T00:00:00.000Z',
             pluginHandshakeAt: null,
             status: 'pending',

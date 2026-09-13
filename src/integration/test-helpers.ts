@@ -28,7 +28,12 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { readState } from '../adapters/persistence.js';
 import { resetAdapterLogger } from '../logging/adapter-logger.js';
-import type { ReviewAttempt, ReviewFindings, ReviewObligationType } from '../state/evidence.js';
+import type {
+  ReviewAttempt,
+  ReviewFindings,
+  ReviewObligation,
+  ReviewObligationType,
+} from '../state/evidence.js';
 import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
@@ -371,7 +376,7 @@ export async function freezeRepositoryReviewObligation(
  * tool tests do not run plugin hooks, so they use this helper to set the same
  * mandate-bound evidence before submitting ReviewFindings to the tool.
  */
-// eslint-disable-next-line complexity, max-lines-per-function -- shared strict-review fixture must bind evidence, attempt lineage, and invocation together
+// eslint-disable-next-line max-lines-per-function -- shared strict-review fixture must bind evidence, attempt lineage, and invocation together
 export async function fulfillStrictReviewObligation(
   sessDir: string,
   input: {
@@ -470,9 +475,11 @@ export async function fulfillStrictReviewObligation(
   };
 
   const isHostTask = state.policySnapshot?.reviewInvocationPolicy === 'host_task_required';
-  const hostAttempt = isHostTask
-    ? bindHostTaskAttempt(assurance.attempts, obligation, findings.reviewedBy.sessionId)
-    : null;
+  const boundAttempt = bindHostTaskAttempt(
+    assurance.attempts,
+    obligation,
+    findings.reviewedBy.sessionId,
+  );
   const invocation = buildInvocationEvidence({
     obligationId: obligation.obligationId,
     obligationType: input.obligationType,
@@ -486,7 +493,7 @@ export async function fulfillStrictReviewObligation(
     findingsHash: hashFindings(findings),
     invokedAt: new Date().toISOString(),
     fulfilledAt: new Date().toISOString(),
-    attemptId: hostAttempt?.attemptId ?? '00000000-0000-4000-8000-000000000001',
+    attemptId: boundAttempt.attemptId,
     // Production evidence carries the reviewer's explicit verdict
     // (transport-evidence sets capturedVerdict from findings.overallVerdict;
     // host-task captures set it from captured findings). The helper mirrors
@@ -497,7 +504,6 @@ export async function fulfillStrictReviewObligation(
     // evidence (capturedRawFindings) rather than from agent-submitted args.
     // Without this, resolveHostTaskFindings returns null → REVIEW_FINDINGS_REQUIRED.
     ...(isHostTask ? { capturedRawFindings: findings } : {}),
-    ...(hostAttempt ? { attemptId: hostAttempt.attemptId } : {}),
   });
   const obligationAcceptedByReviewer = !isHostTask;
 
@@ -521,20 +527,47 @@ export async function fulfillStrictReviewObligation(
           : item,
       ),
       invocations: [...assurance.invocations, invocation],
-      ...(hostAttempt
-        ? {
-            attempts: [
-              ...assurance.attempts.filter(
-                (attempt) => attempt.attemptId !== hostAttempt.attemptId,
-              ),
-              hostAttempt,
-            ],
-          }
-        : {}),
+      attempts: [
+        ...assurance.attempts.filter((attempt) => attempt.attemptId !== boundAttempt.attemptId),
+        boundAttempt,
+      ],
     },
   });
 
   return findings;
+}
+
+function attemptRepositoryDiscovery(obligation: {
+  readonly repositoryAuthority?: ReviewObligation['repositoryAuthority'];
+}): ReviewAttempt['repositoryDiscovery'] {
+  if (!obligation.repositoryAuthority) return { kind: 'not_applicable' };
+  return {
+    kind: 'repository',
+    snapshot: {
+      observedAt: new Date().toISOString(),
+      discoveryDigest: null,
+      workspaceFingerprint: null,
+      health: {
+        status: 'unavailable',
+        healthy: false,
+        failedCollectorNames: [],
+        hasBudgetExhaustion: false,
+        ageWarning: null,
+        notVerified: [],
+      },
+      drift: {
+        status: 'not_assessed',
+        drifted: false,
+        changedContributorNames: [],
+        notVerified: [],
+      },
+      detectedStack: null,
+      verificationCandidates: [],
+      riskSurfaces: [],
+      warnings: [],
+      notVerified: [],
+    },
+  };
 }
 
 function bindHostTaskAttempt(
@@ -543,6 +576,7 @@ function bindHostTaskAttempt(
     readonly obligationId: string;
     readonly obligationType: ReviewObligationType;
     readonly subjectDigest: string;
+    readonly repositoryAuthority?: ReviewObligation['repositoryAuthority'];
   },
   childSessionId: string,
 ): ReviewAttempt {
@@ -556,7 +590,7 @@ function bindHostTaskAttempt(
     childSessionId,
     status: 'bound' as const,
     origin: { kind: 'initial' as const },
-    repositoryDiscovery: { kind: 'not_applicable' as const },
+    repositoryDiscovery: attemptRepositoryDiscovery(obligation),
     createdAt: new Date().toISOString(),
   };
   return {

@@ -30,6 +30,7 @@ import {
   appendObligationWithAttempt,
   createAttemptForExistingObligation,
   artifactReviewSubjectScope,
+  freezeReviewMaterial,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './assurance.js';
@@ -56,6 +57,7 @@ function makeObligation(overrides?: Partial<ReviewObligation>): ReviewObligation
     planVersion: 1,
     now: NOW,
     subjectDigest: 'test',
+    reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
     reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
     ...(obligationType === 'plan' || obligationType === 'architecture'
       ? { repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' } }
@@ -74,6 +76,7 @@ function makeInvocation(overrides?: Partial<ReviewInvocationEvidence>): ReviewIn
   return buildInvocationEvidence({
     obligationId: '00000000-0000-4000-8000-000000000001',
     obligationType: 'plan',
+    attemptId: '00000000-0000-4000-8000-000000000002',
     mandateDigest,
     criteriaVersion,
     parentSessionId: 'parent-session-1',
@@ -229,6 +232,7 @@ describe('integration/review-assurance', () => {
         planVersion: 1,
         now: NOW,
         subjectDigest: 'test',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
         reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
       });
       expect(result.obligationType).toBe('plan');
@@ -260,6 +264,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           changedFiles,
           ...(obligationType === 'plan' || obligationType === 'architecture'
             ? {
@@ -318,6 +323,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           changedFiles: ['docs/x.md'],
           reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
           claimedTaskClass: 'HIGH-RISK',
@@ -333,6 +339,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           changedFiles: ['src/state/schema.ts'],
           reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
           claimedTaskClass: 'TRIVIAL',
@@ -349,6 +356,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           changedFiles: ['docs/x.md'],
           reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
           claimedTaskClass: 'STANDARD',
@@ -365,6 +373,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           changedFiles: ['docs/x.md'],
           reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
           policySnapshot,
@@ -380,6 +389,7 @@ describe('integration/review-assurance', () => {
         planVersion: 1,
         now: NOW,
         subjectDigest: 'test',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
         changedFiles: ['src/state/schema.ts'],
         reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
         policySnapshot: { maxReviewerOutputRepairAttempts: 1 },
@@ -432,6 +442,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
         }),
       ).toThrow(/FAIL_CLOSED/);
     });
@@ -445,6 +456,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
         }),
       ).toThrow(/FAIL_CLOSED/);
     });
@@ -458,6 +470,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           changedFiles: ['src/foo.ts'],
           reviewSubjectScope: { kind: 'unavailable', reason: 'diff_resolution_failed' },
         }),
@@ -473,6 +486,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           changedFiles: ['src/foo.ts'],
           reviewSubjectScope: {
             kind: 'repository_change',
@@ -490,6 +504,7 @@ describe('integration/review-assurance', () => {
         planVersion: 1,
         now: NOW,
         subjectDigest: 'test',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
       });
       expect(result.reviewSubjectScope).toEqual({
         kind: 'unavailable',
@@ -505,6 +520,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
         }),
       ).toThrowError('implementation reviewSubjectScope');
     });
@@ -517,6 +533,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           changedFiles: ['src/foo.ts'],
         }),
       ).toThrowError('implementation reviewSubjectScope');
@@ -530,6 +547,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           reviewSubjectScope: { kind: 'unavailable', reason: 'diff_resolution_failed' },
         }),
       ).toThrowError('implementation reviewSubjectScope');
@@ -543,6 +561,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           reviewSubjectScope: { kind: 'implementation', implementationDigest: 'other' },
         }),
       ).toThrowError('does not match the obligation subject digest');
@@ -555,6 +574,7 @@ describe('integration/review-assurance', () => {
         planVersion: 1,
         now: NOW,
         subjectDigest: 'test',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
         changedFiles: ['src/foo.ts'],
         reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
       });
@@ -572,6 +592,7 @@ describe('integration/review-assurance', () => {
         planVersion: 1,
         now: NOW,
         subjectDigest: 'plan-digest',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'plan-digest'),
         reviewSubjectScope: {
           kind: 'artifact',
           artifact: {
@@ -915,6 +936,7 @@ describe('integration/review-assurance', () => {
         findingsHash: hashText('findings'),
         invokedAt: NOW,
         fulfilledAt: NOW,
+        attemptId: '00000000-0000-4000-8000-000000000003',
         invocationMode: 'sdk_session_prompt',
         hostVisible: false,
       });
@@ -943,6 +965,7 @@ describe('integration/review-assurance', () => {
         invokedAt: NOW,
         fulfilledAt: NOW,
         capturedVerdict: 'accept',
+        attemptId: '00000000-0000-4000-8000-000000000004',
         invocationMode: 'sdk_session_prompt',
         hostVisible: false,
       });
@@ -961,6 +984,7 @@ describe('integration/review-assurance', () => {
         findingsHash: hashText('findings'),
         invokedAt: NOW,
         capturedVerdict: 'changes_requested',
+        attemptId: '00000000-0000-4000-8000-000000000005',
         invocationMode: 'sdk_session_prompt',
         hostVisible: false,
       });
@@ -978,6 +1002,7 @@ describe('integration/review-assurance', () => {
         promptHash: hashText('prompt'),
         findingsHash: hashText('findings'),
         invokedAt: NOW,
+        attemptId: '00000000-0000-4000-8000-000000000006',
         invocationMode: 'sdk_session_prompt',
         hostVisible: false,
       });
@@ -1055,6 +1080,7 @@ describe('integration/review-assurance', () => {
         promptHash: hashText('prompt'),
         findingsHash: hashText('findings'),
         invokedAt: NOW,
+        attemptId: '00000000-0000-4000-8000-000000000007',
       });
       expect(result.capturedRawFindings).toBeUndefined();
     });
