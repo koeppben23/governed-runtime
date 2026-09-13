@@ -476,13 +476,13 @@ describe('P26: regulated archive completion', () => {
       // Non-regulated: response must NOT include archiveStatus
       expect(result.archiveStatus).toBeUndefined();
 
-      // Read state — regulated archive lifecycle should NOT be set
+      // Read state — regulated archive lifecycle is explicitly unset
       const { computeFingerprint, sessionDir: resolveSessionDir } = wsMock;
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const finalState = await readState(sessDir);
       expect(finalState).not.toBeNull();
-      expect(finalState!.regulatedArchiveStatus).toBeUndefined();
+      expect(finalState!.regulatedArchiveStatus).toBeNull();
     });
 
     it('solo + completion → no archiveStatus', async () => {
@@ -522,7 +522,7 @@ describe('P26: regulated archive completion', () => {
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const finalState = await readState(sessDir);
       expect(finalState).not.toBeNull();
-      expect(finalState!.regulatedArchiveStatus).toBeUndefined();
+      expect(finalState!.regulatedArchiveStatus).toBeNull();
     });
 
     it('abort at regulated session → no archiveStatus (emergency escape)', async () => {
@@ -553,8 +553,8 @@ describe('P26: regulated archive completion', () => {
       expect(finalState).not.toBeNull();
       expect(finalState!.error).not.toBeNull();
       expect(finalState!.error!.code).toBe('ABORTED');
-      // No archive attempt for aborted sessions
-      expect(finalState!.regulatedArchiveStatus).toBeUndefined();
+      // No archive attempt for aborted sessions; persisted authority remains explicitly unset
+      expect(finalState!.regulatedArchiveStatus).toBeNull();
     });
   });
 
