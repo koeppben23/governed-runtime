@@ -87,11 +87,13 @@ function architectureOutput(obligation: ReviewObligation): string {
     selfReviewIteration: 0,
     reviewMode: 'subagent',
     reviewAttemptId: `att-${obligation.obligationId}`,
-    reviewObligationId: obligation.obligationId,
-    reviewObligationIteration: 0,
-    reviewObligationPlanVersion: 1,
-    reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
-    reviewMandateDigest: REVIEW_MANDATE_DIGEST,
+    reviewObligation: {
+      obligationId: obligation.obligationId,
+      iteration: 0,
+      planVersion: 1,
+      criteriaVersion: REVIEW_CRITERIA_VERSION,
+      mandateDigest: REVIEW_MANDATE_DIGEST,
+    },
     next: 'INDEPENDENT_REVIEW_REQUIRED: Policy requires a host-visible flowguard-reviewer invocation via the OpenCode Task tool. Context: iteration=0, planVersion=1.',
   });
 }

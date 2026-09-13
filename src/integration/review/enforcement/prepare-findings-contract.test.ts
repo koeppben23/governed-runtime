@@ -92,7 +92,13 @@ function signalWithoutAttestation(): string {
     phase: 'PLAN',
     next: `${REVIEW_REQUIRED_PREFIX}: Call the flowguard-reviewer subagent via Task tool. iteration=0, planVersion=1.`,
     reviewAttemptId: `att-${OBLIGATION_ID}`,
-    reviewObligationId: OBLIGATION_ID,
+    reviewObligation: {
+      obligationId: OBLIGATION_ID,
+      iteration: 0,
+      planVersion: 1,
+      criteriaVersion: 'p37-v1',
+      mandateDigest: 'test-mandate-digest',
+    },
   });
 }
 

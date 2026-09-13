@@ -965,7 +965,10 @@ describe('integration/plugin', () => {
       });
 
       it('sessDir=null + config=team → team', async () => {
-        const result = await resolvePluginSessionPolicy({ sessDir: null, configDefaultMode: 'team' });
+        const result = await resolvePluginSessionPolicy({
+          sessDir: null,
+          configDefaultMode: 'team',
+        });
         expect(result.policy.mode).toBe('team');
         expect(result.state).toBeNull();
       });
@@ -1114,7 +1117,10 @@ describe('integration/plugin', () => {
             worktree: ws.tmpDir,
             directory: ws.tmpDir,
             client: {
-              app: { log: async () => {}, agents: async () => ({ data: [{ id: 'flowguard-reviewer' }] }) },
+              app: {
+                log: async () => {},
+                agents: async () => ({ data: [{ id: 'flowguard-reviewer' }] }),
+              },
               session: {
                 create: async () => ({ data: { id: 'child-session-1' } }),
                 prompt: async () => ({ data: { info: { structured_output: findings } } }),
@@ -1123,7 +1129,11 @@ describe('integration/plugin', () => {
           }),
         );
 
-        const output = { title: 'plan', output: strictPlanReviewRequiredOutput(obligationId), metadata: {} };
+        const output = {
+          title: 'plan',
+          output: strictPlanReviewRequiredOutput(obligationId),
+          metadata: {},
+        };
         await hooks['tool.execute.after']!(
           { tool: 'flowguard_plan', sessionID, callID: 'c1', args: {} },
           output,
@@ -1134,7 +1144,9 @@ describe('integration/plugin', () => {
         expect(blocked.code).toBe('SUBAGENT_MANDATE_MISMATCH');
 
         const state = await readState(sessDir);
-        expect(state?.reviewAssurance?.obligations[0]?.blockedCode).toBe('SUBAGENT_MANDATE_MISMATCH');
+        expect(state?.reviewAssurance?.obligations[0]?.blockedCode).toBe(
+          'SUBAGENT_MANDATE_MISMATCH',
+        );
       } finally {
         await ws.cleanup();
       }
@@ -1162,7 +1174,10 @@ describe('integration/plugin', () => {
             worktree: ws.tmpDir,
             directory: ws.tmpDir,
             client: {
-              app: { log: async () => {}, agents: async () => ({ data: [{ id: 'flowguard-reviewer' }] }) },
+              app: {
+                log: async () => {},
+                agents: async () => ({ data: [{ id: 'flowguard-reviewer' }] }),
+              },
               session: {
                 create: async () => ({ data: { id: 'child-session-1' } }),
                 prompt: async () => ({ data: { info: { structured_output: findings } } }),
@@ -1170,7 +1185,11 @@ describe('integration/plugin', () => {
             },
           }),
         );
-        const output = { title: 'plan', output: strictPlanReviewRequiredOutput(obligationId), metadata: {} };
+        const output = {
+          title: 'plan',
+          output: strictPlanReviewRequiredOutput(obligationId),
+          metadata: {},
+        };
 
         await hooks['tool.execute.after']!(
           { tool: 'flowguard_plan', sessionID, callID: 'c1', args: {} },
@@ -1213,7 +1232,10 @@ describe('integration/plugin', () => {
             worktree: ws.tmpDir,
             directory: ws.tmpDir,
             client: {
-              app: { log: async () => {}, agents: async () => ({ data: [{ id: 'flowguard-reviewer' }] }) },
+              app: {
+                log: async () => {},
+                agents: async () => ({ data: [{ id: 'flowguard-reviewer' }] }),
+              },
               session: {
                 create: async () => ({ data: { id: 'child-session-1' } }),
                 prompt: async () => ({ data: { info: { structured_output: findings } } }),
@@ -1222,7 +1244,11 @@ describe('integration/plugin', () => {
           }),
         );
 
-        const output = { title: 'plan', output: strictPlanReviewRequiredOutput(obligationId), metadata: {} };
+        const output = {
+          title: 'plan',
+          output: strictPlanReviewRequiredOutput(obligationId),
+          metadata: {},
+        };
         await hooks['tool.execute.after']!(
           { tool: 'flowguard_plan', sessionID, callID: 'c1', args: {} },
           output,
@@ -1276,8 +1302,14 @@ describe('integration/plugin', () => {
       const ws = await createTestWorkspace();
       try {
         const sessionID = crypto.randomUUID();
-        const hooks = await FlowGuardAuditPlugin(createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }));
-        const output = { title: 'status', output: JSON.stringify({ phase: 'TICKET' }), metadata: {} };
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const output = {
+          title: 'status',
+          output: JSON.stringify({ phase: 'TICKET' }),
+          metadata: {},
+        };
         await hooks['tool.execute.after']!(
           { tool: 'flowguard_status', sessionID, callID: 'c1', args: {} },
           output,
@@ -1293,8 +1325,14 @@ describe('integration/plugin', () => {
       const ws = await createTestWorkspace();
       try {
         const sessionID = crypto.randomUUID();
-        const hooks = await FlowGuardAuditPlugin(createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }));
-        const output = { title: 'plan', output: JSON.stringify({ phase: 'PLAN', next: 'continue' }), metadata: {} };
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const output = {
+          title: 'plan',
+          output: JSON.stringify({ phase: 'PLAN', next: 'continue' }),
+          metadata: {},
+        };
         await hooks['tool.execute.after']!(
           { tool: 'flowguard_plan', sessionID, callID: 'c1', args: {} },
           output,
@@ -1309,7 +1347,9 @@ describe('integration/plugin', () => {
     it('tool.execute.before hook exists and reads args from output per OpenCode docs', async () => {
       const ws = await createTestWorkspace();
       try {
-        const hooks = await FlowGuardAuditPlugin(createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }));
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
         const beforeHook = hooks['tool.execute.before'];
         expect(typeof beforeHook).toBe('function');
         const input = { tool: 'flowguard_status', sessionID: crypto.randomUUID(), callID: 'c1' };
@@ -1325,12 +1365,16 @@ describe('integration/plugin', () => {
       try {
         const sessionID = crypto.randomUUID();
         await seedStrictPlanSession(ws.tmpDir, sessionID);
-        const hooks = await FlowGuardAuditPlugin(createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }));
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
         const beforeHook = hooks['tool.execute.before'];
         expect(typeof beforeHook).toBe('function');
         const input = { tool: 'task', sessionID, callID: 'c1' };
         const output = { args: { subagent_type: 'flowguard-reviewer', prompt: 'test' } };
-        await expect(beforeHook!(input, output)).rejects.toThrow('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
+        await expect(beforeHook!(input, output)).rejects.toThrow(
+          'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+        );
       } finally {
         await ws.cleanup();
       }
@@ -1339,7 +1383,9 @@ describe('integration/plugin', () => {
     it('C2 BAD — before hook does not crash when output.args is empty', async () => {
       const ws = await createTestWorkspace();
       try {
-        const hooks = await FlowGuardAuditPlugin(createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }));
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
         const beforeHook = hooks['tool.execute.before'];
         const input = { tool: 'task', sessionID: crypto.randomUUID(), callID: 'c1' };
         const output = { args: {} };
@@ -1352,7 +1398,9 @@ describe('integration/plugin', () => {
     it('C2 EDGE — before hook fail-closes unknown tool when output is undefined', async () => {
       const ws = await createTestWorkspace();
       try {
-        const hooks = await FlowGuardAuditPlugin(createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }));
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
         const beforeHook = hooks['tool.execute.before'];
         const input = { tool: 'some_tool', sessionID: crypto.randomUUID(), callID: 'c1' };
         await expect(beforeHook!(input, { args: {} })).rejects.toThrow('SESSION_DIR_NOT_FOUND');
@@ -1366,7 +1414,9 @@ describe('integration/plugin', () => {
       try {
         const sessionID = crypto.randomUUID();
         await seedStrictPlanSession(ws.tmpDir, sessionID);
-        const hooks = await FlowGuardAuditPlugin(createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }));
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
         const beforeHook = hooks['tool.execute.before'];
         const input = {
           tool: 'task',
@@ -1375,7 +1425,9 @@ describe('integration/plugin', () => {
           args: { subagent_type: 'WRONG_TYPE' },
         };
         const output = { args: { subagent_type: 'flowguard-reviewer', prompt: 'test' } };
-        await expect(beforeHook!(input, output)).rejects.toThrow('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
+        await expect(beforeHook!(input, output)).rejects.toThrow(
+          'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+        );
       } finally {
         await ws.cleanup();
       }
@@ -1385,10 +1437,17 @@ describe('integration/plugin', () => {
       const ws = await createTestWorkspace();
       try {
         const sessionID = crypto.randomUUID();
-        const hooks = await FlowGuardAuditPlugin(createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }));
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
         await expect(
           hooks['tool.execute.after']!(
-            { tool: 'task', sessionID, callID: 'c1', args: { subagent_type: 'flowguard-reviewer' } },
+            {
+              tool: 'task',
+              sessionID,
+              callID: 'c1',
+              args: { subagent_type: 'flowguard-reviewer' },
+            },
             { title: 'task', output: '{}', metadata: {} },
           ),
         ).resolves.toBeUndefined();
@@ -1402,7 +1461,9 @@ describe('integration/plugin', () => {
     it('HAPPY — before hook processes ToolHookInput + ToolHookBeforeOutput shapes', async () => {
       const ws = await createTestWorkspace();
       try {
-        const hooks = await FlowGuardAuditPlugin(createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }));
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
         const beforeHook = hooks['tool.execute.before']!;
         const input = { tool: 'flowguard_status', sessionID: crypto.randomUUID(), callID: 'c1' };
         const output = { args: { query: 'phase' } };
@@ -1415,7 +1476,9 @@ describe('integration/plugin', () => {
     it('HAPPY — after hook processes ToolHookInput + ToolHookOutput shapes', async () => {
       const ws = await createTestWorkspace();
       try {
-        const hooks = await FlowGuardAuditPlugin(createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }));
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
         const afterHook = hooks['tool.execute.after']!;
         const input = { tool: 'bash', sessionID: crypto.randomUUID(), callID: 'c1', args: {} };
         const output = { title: 'bash', output: 'hello world', metadata: {} };
@@ -1428,7 +1491,9 @@ describe('integration/plugin', () => {
     it('BAD — before hook fail-closes an invalid empty tool identity', async () => {
       const ws = await createTestWorkspace();
       try {
-        const hooks = await FlowGuardAuditPlugin(createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }));
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
         const beforeHook = hooks['tool.execute.before']!;
         await expect(
           beforeHook({ tool: '', sessionID: '', callID: '' }, { args: {} }),
@@ -1441,7 +1506,9 @@ describe('integration/plugin', () => {
     it('BAD — after hook handles null input and output gracefully', async () => {
       const ws = await createTestWorkspace();
       try {
-        const hooks = await FlowGuardAuditPlugin(createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }));
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
         const afterHook = hooks['tool.execute.after']!;
         await expect(
           afterHook(
@@ -1457,7 +1524,9 @@ describe('integration/plugin', () => {
     it('CORNER — before hook ignores extra fields on input and output', async () => {
       const ws = await createTestWorkspace();
       try {
-        const hooks = await FlowGuardAuditPlugin(createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }));
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
         const beforeHook = hooks['tool.execute.before']!;
         const input = {
           tool: 'flowguard_status',
@@ -1476,9 +1545,15 @@ describe('integration/plugin', () => {
       const ws = await createTestWorkspace();
       try {
         const sessionID = crypto.randomUUID();
-        const hooks = await FlowGuardAuditPlugin(createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }));
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
         const afterHook = hooks['tool.execute.after']!;
-        const output = { title: 'status', output: JSON.stringify({ phase: 'TICKET' }), metadata: {} };
+        const output = {
+          title: 'status',
+          output: JSON.stringify({ phase: 'TICKET' }),
+          metadata: {},
+        };
         await afterHook({ tool: 'flowguard_status', sessionID, callID: 'c1', args: {} }, output);
         expect(typeof output.output).toBe('string');
       } finally {
@@ -1487,8 +1562,14 @@ describe('integration/plugin', () => {
     });
 
     it('SMOKE — hook modules import ToolHookInput from types.ts (source regression)', async () => {
-      const beforehooksPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'plugin-beforehooks.ts');
-      const afterhooksPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'plugin-afterhooks.ts');
+      const beforehooksPath = path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        'plugin-beforehooks.ts',
+      );
+      const afterhooksPath = path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        'plugin-afterhooks.ts',
+      );
       const source = await fs.readFile(beforehooksPath, 'utf-8');
       const afterSource = await fs.readFile(afterhooksPath, 'utf-8');
       expect(source).toContain("from './types.js'");
@@ -1510,7 +1591,9 @@ describe('integration/plugin', () => {
       const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-dispose-'));
       try {
         await initGitRepo(dir);
-        const hooks = await FlowGuardAuditPlugin(createMockInput({ worktree: dir, directory: dir }));
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: dir, directory: dir }),
+        );
         expect(typeof hooks.dispose).toBe('function');
         await expect(hooks.dispose!()).resolves.toBeUndefined();
       } finally {

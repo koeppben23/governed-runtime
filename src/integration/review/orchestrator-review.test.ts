@@ -136,9 +136,13 @@ function modeAOutput(
     phase: 'PLAN',
     status: `Plan submitted (v${planVersion}).`,
     selfReviewIteration: iteration,
-    reviewObligationId: '11111111-1111-4111-8111-111111111111',
-    reviewCriteriaVersion: 'p37-v1',
-    reviewMandateDigest: 'test-mandate-digest',
+    reviewObligation: {
+      obligationId: '11111111-1111-4111-8111-111111111111',
+      iteration,
+      planVersion,
+      criteriaVersion: 'p37-v1',
+      mandateDigest: 'test-mandate-digest',
+    },
     reviewMode: 'subagent',
     next:
       `${REVIEW_REQUIRED_PREFIX}: Call the flowguard-reviewer subagent via Task tool. ` +
@@ -329,9 +333,13 @@ describe('extractReviewContext', () => {
   it('does not validate selfReviewIteration for implement tool', () => {
     const parsed = {
       next: `${REVIEW_REQUIRED_PREFIX}: iteration=1, planVersion=2`,
-      reviewObligationId: '11111111-1111-4111-8111-111111111111',
-      reviewCriteriaVersion: 'p37-v1',
-      reviewMandateDigest: 'test-mandate-digest',
+      reviewObligation: {
+        obligationId: '11111111-1111-4111-8111-111111111111',
+        iteration: 1,
+        planVersion: 2,
+        criteriaVersion: 'p37-v1',
+        mandateDigest: 'test-mandate-digest',
+      },
       selfReviewIteration: 99, // different — but implement doesn't check
     };
     const ctx = extractReviewContext('flowguard_implement', parsed);
@@ -388,7 +396,9 @@ describe('end-to-end orchestration flow', () => {
     expect(mutatedParsed._pluginReviewSessionId).toBe('child-session-1');
     // Original fields preserved
     expect(mutatedParsed.phase).toBe('PLAN');
-    expect(mutatedParsed.reviewObligationId).toBeDefined();
+    expect(mutatedParsed.reviewObligation).toMatchObject({
+      obligationId: '11111111-1111-4111-8111-111111111111',
+    });
   });
 
   // EDGE: reviewer fails — graceful degradation (output unchanged)
