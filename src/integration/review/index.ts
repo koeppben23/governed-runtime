@@ -86,7 +86,6 @@ export {
   hashText,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
-  getReviewMandateDigest,
   emptyReviewAssurance,
   ensureReviewAssurance,
   createReviewObligation,

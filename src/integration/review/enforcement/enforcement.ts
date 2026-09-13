@@ -187,9 +187,16 @@ function clearSubmittedReview(
   }
 }
 
-function structuredReviewObligationId(
+function reviewObligationIdFromSignal(
   parsed: NonNullable<ReturnType<typeof parseToolResult>>,
+  isReviewContent: boolean,
 ): string | null {
+  if (isReviewContent) {
+    const attestation = parsed.requiredReviewAttestation;
+    if (!attestation || typeof attestation !== 'object' || Array.isArray(attestation)) return null;
+    const obligationId = (attestation as Record<string, unknown>).toolObligationId;
+    return typeof obligationId === 'string' ? obligationId : null;
+  }
   const value = parsed.reviewObligation;
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const obligationId = (value as Record<string, unknown>).obligationId;
@@ -212,7 +219,7 @@ function trackRequiredReview(
     const attemptId = typeof parsed.reviewAttemptId === 'string' ? parsed.reviewAttemptId : null;
     trackReviewRequired(state, recordKey, next, now, {
       attemptId,
-      obligationId: structuredReviewObligationId(parsed),
+      obligationId: reviewObligationIdFromSignal(parsed, context.isReviewContent),
       canonicalPromptAnchor: canonicalPromptAnchorOf(parsed),
       canonicalPrompt: canonicalPromptOf(parsed),
       canonicalPromptDigest: canonicalPromptDigestOf(parsed),

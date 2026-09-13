@@ -116,10 +116,6 @@ import {
   mintObservationCapabilityIfResolvable,
 } from './attempt-lifecycle.js';
 
-export function getReviewMandateDigest(): string {
-  return REVIEW_MANDATE_DIGEST;
-}
-
 /**
  * Resolve the opaque observation capability of the attempt a reviewer Task
  * will bind to: the highest-ordinal attempt of the obligation. Returns null
@@ -336,11 +332,6 @@ export function reviewObligationResponseFields(
       requiredChallengeCount: obligation.requiredChallengeCount,
       requiredChallengeKind: obligation.requiredChallengeKind,
     },
-    reviewObligationId: obligation.obligationId,
-    reviewObligationIteration: obligation.iteration,
-    reviewObligationPlanVersion: obligation.planVersion,
-    reviewCriteriaVersion: obligation.criteriaVersion,
-    reviewMandateDigest: obligation.mandateDigest,
     requiredChallengeCount: obligation.requiredChallengeCount,
     requiredChallengeKind: obligation.requiredChallengeKind,
     ...(attemptId ? { reviewAttemptId: attemptId } : {}),

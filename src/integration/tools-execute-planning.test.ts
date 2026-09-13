@@ -535,7 +535,9 @@ describe('plan', () => {
       // instruction (awaiting_task continuation).
       expect(result.error).not.toBe(true);
       expect(result.phase).toBe('PLAN');
-      expect(result.reviewObligationId).toBe(first.reviewObligationId);
+      expect((result.reviewObligation as { obligationId?: string } | undefined)?.obligationId).toBe(
+        (first.reviewObligation as { obligationId?: string } | undefined)?.obligationId,
+      );
       expect(result.status).toContain('pending');
 
       // CHANGED revision while pending: fail closed — never silently ignored.
@@ -556,7 +558,7 @@ describe('plan', () => {
       );
       const first = parseToolResult(firstRaw);
       expect(first.phase).toBe('PLAN');
-      const obligationId = first.reviewObligationId as string;
+      const obligationId = (first.reviewObligation as { obligationId: string }).obligationId;
       const spentAttemptId = first.reviewAttemptId as string;
 
       // Simulate a crash/restart between the reviewer Task's Before and After:
@@ -587,7 +589,9 @@ describe('plan', () => {
       const result = parseToolResult(raw);
       expect(result.error).not.toBe(true);
       expect(result.phase).toBe('PLAN');
-      expect(result.reviewObligationId).toBe(obligationId);
+      expect((result.reviewObligation as { obligationId?: string } | undefined)?.obligationId).toBe(
+        obligationId,
+      );
       const rearmedAttemptId = result.reviewAttemptId as string;
       expect(rearmedAttemptId).not.toBe(spentAttemptId);
 

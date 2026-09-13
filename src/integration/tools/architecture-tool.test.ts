@@ -1035,9 +1035,8 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(parsed.reviewObligation.iteration).toBe(0);
     expect(parsed.reviewObligation.planVersion).toBe(1);
     expect(parsed.reviewObligation.obligationId).toBeDefined();
-    // Backward-compat flat fields parity with plan.ts
-    expect(parsed.reviewObligationId).toBe(parsed.reviewObligation.obligationId);
-    expect(parsed.reviewObligationIteration).toBe(0);
+    expect(parsed).not.toHaveProperty('reviewObligationId');
+    expect(parsed).not.toHaveProperty('reviewObligationIteration');
     // Persisted state carries the obligation
     const writtenState = mocks.writeStateWithArtifacts.mock.calls[0]?.[1] as {
       reviewAssurance?: { obligations?: Array<{ obligationType?: string }> };

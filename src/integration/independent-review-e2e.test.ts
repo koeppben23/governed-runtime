@@ -563,19 +563,10 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
     const afterHook = hooks['tool.execute.after']!;
 
     // flowguard_review after-hook: the orchestrator runs handleHostTaskPolicy
-    // (host-task handshake) on the SAME output the tool returned.
+    // (host-task handshake) on the exact output the tool returned.
     const reviewOut = {
       title: 'Review',
-      output: JSON.stringify({
-        ...call1,
-        reviewObligation: {
-          obligationId,
-          iteration: 1,
-          planVersion: 1,
-          criteriaVersion: att.criteriaVersion,
-          mandateDigest: att.mandateDigest,
-        },
-      }),
+      output: JSON.stringify(call1),
       metadata: {},
     };
     await afterHook(
@@ -699,19 +690,9 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
     const retry = JSON.parse(String(retryRaw)) as Record<string, unknown>;
     expect(retry.code).toBe('CONTENT_ANALYSIS_REQUIRED');
 
-    const retryAttestation = retry.requiredReviewAttestation as Record<string, unknown>;
     const retryOut = {
       title: 'Review retry',
-      output: JSON.stringify({
-        ...retry,
-        reviewObligation: {
-          obligationId,
-          iteration: 1,
-          planVersion: 1,
-          criteriaVersion: retryAttestation.criteriaVersion,
-          mandateDigest: retryAttestation.mandateDigest,
-        },
-      }),
+      output: JSON.stringify(retry),
       metadata: {},
     };
     await afterHook(
