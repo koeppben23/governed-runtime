@@ -207,21 +207,6 @@ describe('hydrate rail unit tests', () => {
       expect(state.policySnapshot.maxImplReviewIterations).toBe(1);
     });
 
-    it('applies requireVerifiedActorsForApproval override', () => {
-      const result = hydrateNew(
-        minimalInput({ policy: { requireVerifiedActorsForApproval: true } }),
-      );
-      const state = expectOk(result);
-      expect(state.policySnapshot.requireVerifiedActorsForApproval).toBe(true);
-    });
-
-    it('preserves base requireVerifiedActorsForApproval when undefined', () => {
-      const result = hydrateNew(minimalInput({ policy: {} }));
-      const state = expectOk(result);
-      // solo default is false
-      expect(state.policySnapshot.requireVerifiedActorsForApproval).toBe(false);
-    });
-
     it('applies identityProviderMode override', () => {
       const result = hydrateNew(minimalInput({ policy: { identityProviderMode: 'required' } }));
       const state = expectOk(result);

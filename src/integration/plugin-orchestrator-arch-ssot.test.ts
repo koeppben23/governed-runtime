@@ -84,11 +84,6 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
     architecture: ARCHITECTURE_DECISION,
     policySnapshot: {
       ...POLICY_SNAPSHOT,
-      selfReview: {
-        subagentEnabled: true,
-        fallbackToSelf: false,
-        strictEnforcement: true,
-      },
       reviewOutputPolicy: 'structured_required',
     },
     reviewAssurance: {

@@ -209,9 +209,8 @@ function applyStateClearingPattern(state: SessionState, verdict: ReviewVerdict):
  * - Neither may have actorSource 'unknown'.
  * - Initiator and reviewer actorId must differ (MaRisk AT 7.2 separation of duties).
  *
- * Assurance enforcement (P33 legacy + P34 explicit threshold):
- * - requireVerifiedActorsForApproval: true → minimum 'claim_validated'
- * - minimumActorAssuranceForApproval → explicit ordinal comparison via actor-info
+ * Assurance enforcement uses minimumActorAssuranceForApproval with an explicit
+ * ordinal comparison via actor-info.
  *
  * @returns RailBlocked if enforcement fails, null if approval may proceed.
  */
@@ -226,18 +225,6 @@ function verifyFourEyes(state: SessionState, input: ReviewDecisionInput): RailBl
   if (actorComparison === 'same')
     return blocked('FOUR_EYES_ACTOR_MATCH', { initiator: state.initiatedByIdentity.actorId });
   if (actorComparison === 'uncomparable') return blocked('DECISION_IDENTITY_REQUIRED');
-  return null;
-}
-
-function checkRequireVerified(input: ReviewDecisionInput): RailBlocked | null {
-  if (
-    input.decisionIdentity?.actorAssurance !== 'claim_validated' &&
-    input.decisionIdentity?.actorAssurance !== 'idp_verified'
-  )
-    return blocked('ACTOR_ASSURANCE_INSUFFICIENT', {
-      minimum: 'claim_validated',
-      current: input.decisionIdentity?.actorAssurance ?? 'best_effort',
-    });
   return null;
 }
 
@@ -257,9 +244,7 @@ function verifyAssuranceThreshold(
   input: ReviewDecisionInput,
   ctx: RailContext,
 ): RailBlocked | null {
-  const requireVerified = ctx.policy?.requireVerifiedActorsForApproval;
   const minimumAssurance = ctx.policy?.minimumActorAssuranceForApproval;
-  if (requireVerified) return checkRequireVerified(input);
   if (minimumAssurance === 'claim_validated' || minimumAssurance === 'idp_verified')
     return checkMinAssurance(input, minimumAssurance);
   return null;

@@ -56,8 +56,8 @@ import {
 } from './standalone-review.js';
 
 /** Immutable compatibility contract for executable session authority. */
-export const CURRENT_ASSURANCE_EPOCH = 'assurance-epoch.v2' as const;
-export const CURRENT_SESSION_STATE_SCHEMA_VERSION = 'v3' as const;
+export const CURRENT_ASSURANCE_EPOCH = 'assurance-epoch.v3' as const;
+export const CURRENT_SESSION_STATE_SCHEMA_VERSION = 'v4' as const;
 export const CURRENT_STATE_DIGEST_FORMAT = 'state-digest.v2' as const;
 export const CURRENT_AUDIT_CHAIN_FORMAT = 'audit-chain.v3' as const;
 
@@ -658,8 +658,8 @@ export const SessionState = z
     /** Session creation timestamp (set once by init()). */
     createdAt: z.string().datetime(),
 
-    /** @deprecated Legacy combined archive status. New writes use the fields below. */
-    archiveStatus: z.enum(['pending', 'created', 'verified', 'failed']).nullable().optional(),
+    /** Removed persisted archive authority; old state must fail at this boundary. */
+    archiveStatus: z.never().optional(),
     /** Lifecycle of the immutable raw-evidence package required at regulated completion. */
     regulatedArchiveStatus: z
       .enum(['pending', 'created', 'verified', 'failed'])
@@ -672,6 +672,7 @@ export const SessionState = z
     /** Verification outcome for the most recent user-requested archive export. */
     lastExportVerificationStatus: z.enum(['not_run', 'passed', 'failed']).nullable().optional(),
   })
+  .strict()
   .superRefine((state, context) => {
     // Identity invariant: flowguardSessionId is the same authority as id
     // under an explicit name. Divergence would let two session identities

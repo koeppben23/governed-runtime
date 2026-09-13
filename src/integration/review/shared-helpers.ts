@@ -167,10 +167,8 @@ export function buildAttemptSucceededLogger(
 
 // ─── Policy Helpers ──────────────────────────────────────────────────────────
 
-export function isStrictEnforcementEnabled(sessionState: {
-  policySnapshot?: { selfReview?: { strictEnforcement?: boolean } };
-}): boolean {
-  return sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
+export function isStrictEnforcementEnabled(_sessionState: object): boolean {
+  return true;
 }
 
 export function getReviewerPolicies(sessionState: {

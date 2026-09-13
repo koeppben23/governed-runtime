@@ -84,7 +84,6 @@ export function buildNewPolicyInput(
     policyPathHint: policyResolution.centralEvidence?.pathHint,
     maxSelfReviewIterations: config.policy.maxSelfReviewIterations,
     maxImplReviewIterations: config.policy.maxImplReviewIterations,
-    requireVerifiedActorsForApproval: config.policy.requireVerifiedActorsForApproval,
     identityProvider: config.policy.identityProvider,
     identityProviderMode: config.policy.identityProviderMode,
     minimumActorAssuranceForApproval: config.policy.minimumActorAssuranceForApproval,

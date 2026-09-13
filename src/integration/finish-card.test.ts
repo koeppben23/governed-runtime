@@ -52,24 +52,6 @@ function makeReviewReport(overallStatus: ReviewReport['overallStatus']): ReviewR
   };
 }
 
-/** COMPLETE terminal state with a legacy selfReview snapshot (produces 1 warning). */
-function makeWarningState(): SessionState {
-  const base = makeProgressedState('COMPLETE');
-  const snap = base.policySnapshot;
-  return {
-    ...base,
-    policySnapshot: {
-      ...snap,
-      selfReview: {
-        ...(snap.selfReview ?? {}),
-        subagentEnabled: false,
-        fallbackToSelf: true,
-        strictEnforcement: false,
-      } as never,
-    },
-  } as SessionState;
-}
-
 /** COMPLETE terminal state with a required slot (plan) removed → not blocked, evidence incomplete. */
 function makeUnverifiedState(): SessionState {
   return { ...makeProgressedState('COMPLETE'), plan: null };
@@ -93,14 +75,6 @@ describe('deriveFinishOverallStatus — overall status matrix', () => {
     expect(card.readiness.blocked).toBe(false);
     expect(card.warnings).toHaveLength(0);
     expect(card.overallStatus).toBe('READY');
-  });
-
-  it('READY_WITH_WARNINGS when not blocked, evidence complete, warnings present', () => {
-    const state = makeWarningState();
-    const card = buildFinishCard(state, policy);
-    expect(card.readiness.blocked).toBe(false);
-    expect(card.warnings.length).toBeGreaterThan(0);
-    expect(card.overallStatus).toBe('READY_WITH_WARNINGS');
   });
 
   it('NOT_VERIFIED when not blocked but a required slot is missing or failed', () => {
@@ -144,23 +118,6 @@ describe('deriveFinishOverallStatus — overall status matrix', () => {
       expect(card.overallStatus, `${phase} must not be READY`).not.toBe('READY');
       expect(card.overallStatus, `${phase} must be IN_PROGRESS`).toBe('IN_PROGRESS');
     }
-  });
-
-  it('non-terminal phase stays IN_PROGRESS even with warnings', () => {
-    const state = makeProgressedState('PLAN');
-    // Legacy-shaped in-memory injection for runtime-projection robustness;
-    // the persisted schema no longer admits weakened selfReview.
-    state.policySnapshot = {
-      ...state.policySnapshot,
-      selfReview: {
-        subagentEnabled: false,
-        fallbackToSelf: true,
-        strictEnforcement: false,
-      } as never,
-    } as typeof state.policySnapshot;
-    const card = buildFinishCard(state, policy);
-    expect(card.readiness.warnings.length).toBeGreaterThan(0);
-    expect(card.overallStatus).toBe('IN_PROGRESS');
   });
 
   it('does not invent a stale evidence status (not_yet_required never NOT_VERIFIED)', () => {

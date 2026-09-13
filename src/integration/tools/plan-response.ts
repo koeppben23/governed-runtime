@@ -161,9 +161,12 @@ function planSubmissionReviewContext(
   finalState: SessionState,
   planVersion: number,
 ) {
-  const nextObligation = scope.reviewPolicy.subagentEnabled
-    ? findLatestObligation(finalState.reviewAssurance?.obligations ?? [], 'plan', 0, planVersion)
-    : null;
+  const nextObligation = findLatestObligation(
+    finalState.reviewAssurance?.obligations ?? [],
+    'plan',
+    0,
+    planVersion,
+  );
   const planAttemptId = nextObligation
     ? (finalState.reviewAssurance?.attempts?.find(
         (a) => a.obligationId === nextObligation.obligationId && a.status === 'created',
@@ -216,7 +219,7 @@ export function buildPlanSubmissionResponse(
     planDigest: planEvidence.digest,
     selfReviewIteration: 0,
     maxSelfReviewIterations: scope.maxSelfReviewIterations,
-    reviewMode: scope.reviewPolicy.subagentEnabled ? 'subagent' : 'self',
+    reviewMode: 'subagent',
     ...reviewObligationResponseFields(nextObligation, planAttemptId),
     ...planRepositoryEvidenceWarning(nextObligation),
     next: reviewInstruction.next,
@@ -396,7 +399,6 @@ export async function persistNonConvergedPlanReview(
   const classification = await resolvePreImplementationChallengeClassification(
     finalState,
     scope.worktree,
-    scope.reviewPolicy.subagentEnabled,
     targetPaths,
   );
   const resolvedTargetPaths =
@@ -468,50 +470,46 @@ async function mintPlanRevisionAttempt(input: {
       }),
     };
   }
-  const attemptResult = scope.reviewPolicy.subagentEnabled
-    ? createObligationAndAttempt(
-        finalState.reviewAssurance,
-        {
+  const attemptResult = createObligationAndAttempt(
+    finalState.reviewAssurance,
+    {
+      obligationType: 'plan',
+      iteration,
+      planVersion: nextPlanVersion,
+      now: scope.ctx.now(),
+      subjectDigest: revision.currentPlan.digest,
+      claimDeclarationsDigest: hashText(
+        canonicalJsonStringify(finalState.plan?.claimDeclarations ?? { flow: 'plan', claims: [] }),
+      ),
+      // Frozen review material: the exact (possibly revised) plan artifact
+      // plus originating ticket context, digest-bound at creation time.
+      reviewMaterial: freezeReviewMaterial(
+        buildFrozenReviewMaterialContent({
           obligationType: 'plan',
-          iteration,
-          planVersion: nextPlanVersion,
-          now: scope.ctx.now(),
-          subjectDigest: revision.currentPlan.digest,
-          claimDeclarationsDigest: hashText(
-            canonicalJsonStringify(
-              finalState.plan?.claimDeclarations ?? { flow: 'plan', claims: [] },
-            ),
-          ),
-          // Frozen review material: the exact (possibly revised) plan artifact
-          // plus originating ticket context, digest-bound at creation time.
-          reviewMaterial: freezeReviewMaterial(
-            buildFrozenReviewMaterialContent({
-              obligationType: 'plan',
-              state: finalState,
-              artifact: revision.currentPlan.body,
-            }),
-            revision.currentPlan.digest,
-          ),
-          // The (possibly revised) plan artifact is the review SUBJECT; changedFiles
-          // below stay challenge-classification and repository-evidence context only.
-          reviewSubjectScope: artifactReviewSubjectScope(
-            'plan',
-            revision.currentPlan.body,
-            revision.currentPlan.digest,
-          ),
-          reviewProfile: resolveFrozenReviewProfile(finalState.policySnapshot),
-          profileSource: 'policy_default',
-          policySnapshot: finalState.policySnapshot,
-          changedFiles: resolvedTargetPaths,
-          claimedTaskClass: finalState.claimedTaskClass,
-          metadata,
-          repositoryAuthority: authority,
-          repositoryEvidenceFreeze: freezeOutcomeRecord(freeze),
-        },
-        scope.ctx.now(),
-        discovery.context,
-      )
-    : null;
+          state: finalState,
+          artifact: revision.currentPlan.body,
+        }),
+        revision.currentPlan.digest,
+      ),
+      // The (possibly revised) plan artifact is the review SUBJECT; changedFiles
+      // below stay challenge-classification and repository-evidence context only.
+      reviewSubjectScope: artifactReviewSubjectScope(
+        'plan',
+        revision.currentPlan.body,
+        revision.currentPlan.digest,
+      ),
+      reviewProfile: resolveFrozenReviewProfile(finalState.policySnapshot),
+      profileSource: 'policy_default',
+      policySnapshot: finalState.policySnapshot,
+      changedFiles: resolvedTargetPaths,
+      claimedTaskClass: finalState.claimedTaskClass,
+      metadata,
+      repositoryAuthority: authority,
+      repositoryEvidenceFreeze: freezeOutcomeRecord(freeze),
+    },
+    scope.ctx.now(),
+    discovery.context,
+  );
   return { kind: 'ok', attemptResult };
 }
 

@@ -84,11 +84,6 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
     plan: PLAN_RECORD,
     policySnapshot: {
       ...POLICY_SNAPSHOT,
-      selfReview: {
-        subagentEnabled: true,
-        fallbackToSelf: false,
-        strictEnforcement: true,
-      },
       reviewOutputPolicy: 'structured_required',
     },
     reviewAssurance: {

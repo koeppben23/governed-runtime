@@ -79,20 +79,12 @@ import type { ReviewAttemptDiscoveryContext } from '../../state/evidence.js';
 // ─── Mode-B Internal Types ────────────────────────────────────────────────
 
 type ResolvedReview = {
-  subagentEnabled: boolean;
-  strictEnforcement: boolean;
   pendingObligation: ReturnType<typeof findLatestUnconsumedObligation>;
   expectedIteration: number;
   expectedPlanVersion: number;
   assuranceBase: ReturnType<typeof ensureReviewAssurance>;
   effectiveFindings?: ReviewFindings;
   evidenceInvocationId?: string;
-};
-
-type ReviewPolicyConfig = {
-  subagentEnabled: boolean;
-  fallbackToSelf: boolean;
-  strictEnforcement: boolean;
 };
 
 type AdrRevision = {
@@ -125,14 +117,6 @@ function validateReviewEntryState(state: SessionState): string | null {
   return null;
 }
 
-function getReviewPolicyConfig(policy: ArchitectureSession['policy']): ReviewPolicyConfig {
-  return {
-    subagentEnabled: policy.selfReview?.subagentEnabled ?? false,
-    fallbackToSelf: policy.selfReview?.fallbackToSelf ?? false,
-    strictEnforcement: policy.selfReview?.strictEnforcement ?? false,
-  };
-}
-
 function getObligationExpectation(
   pendingObligation: ReturnType<typeof findLatestUnconsumedObligation>,
   state: SessionState,
@@ -152,7 +136,6 @@ function resolveArchitectureReview(
   session: ArchitectureSession,
 ): ResolvedReview | string {
   const { state, policy } = session;
-  const reviewPolicy = getReviewPolicyConfig(policy);
   const assuranceBase = ensureReviewAssurance(state.reviewAssurance);
   const pendingObligation = findLatestUnconsumedObligation(assuranceBase, 'architecture');
   const { expectedIteration, expectedPlanVersion } = getObligationExpectation(
@@ -168,9 +151,6 @@ function resolveArchitectureReview(
     },
     policy: {
       reviewInvocationPolicy: policy.reviewInvocationPolicy,
-      strictEnforcement: reviewPolicy.strictEnforcement,
-      subagentEnabled: reviewPolicy.subagentEnabled,
-      fallbackToSelf: reviewPolicy.fallbackToSelf,
     },
     input: {
       reviewFindings: args.reviewFindings,
@@ -199,8 +179,6 @@ function resolveArchitectureReview(
   if (findingsBlocked) return findingsBlocked;
 
   return {
-    subagentEnabled: reviewPolicy.subagentEnabled,
-    strictEnforcement: reviewPolicy.strictEnforcement,
     pendingObligation,
     expectedIteration,
     expectedPlanVersion,
@@ -279,14 +257,12 @@ function buildReviewedState(
   const newReviewFindings = review.effectiveFindings
     ? [...(existingReviewFindings ?? []), review.effectiveFindings]
     : existingReviewFindings;
-  const strictObligation = review.strictEnforcement
-    ? findLatestObligation(
-        review.assuranceBase.obligations,
-        'architecture',
-        review.expectedIteration,
-        review.expectedPlanVersion,
-      )
-    : null;
+  const strictObligation = findLatestObligation(
+    review.assuranceBase.obligations,
+    'architecture',
+    review.expectedIteration,
+    review.expectedPlanVersion,
+  );
   const consumedAssurance = consumeReviewObligation(
     review.assuranceBase,
     strictObligation,
@@ -407,7 +383,7 @@ async function persistAndFormatReviewResult(input: ReviewResultContext): Promise
 async function persistAndFormatConvergedReview(input: ReviewResultContext): Promise<string> {
   const { session, review, revision, advanced, iteration } = input;
   await writeStateWithArtifacts(session.sessDir, advanced.state);
-  const reviewLabel = review.subagentEnabled ? 'Independent review' : 'ADR self-review';
+  const reviewLabel = 'Independent review';
   const completion = advanced.state.architecture?.reviewCompletion;
   const status =
     completion === 'review_exhausted'
@@ -582,7 +558,6 @@ async function persistAndFormatNonConvergedReview(
   const classification = await resolvePreImplementationChallengeClassification(
     advanced.state,
     session.worktree,
-    review.subagentEnabled,
     targetPaths,
   );
   const resolvedTargetPaths =
@@ -648,7 +623,6 @@ function buildNonConvergedReviewResponse(input: {
   const { session, review, revision, advanced, iteration, verdict, nextObligation } = input;
   const instruction = buildArchitectureReviewInstruction({
     policy: session.policy,
-    subagentEnabled: review.subagentEnabled,
     obligation: nextObligation,
     iteration,
     planVersion: review.expectedPlanVersion,
@@ -657,16 +631,14 @@ function buildNonConvergedReviewResponse(input: {
   });
   return {
     phase: advanced.state.phase,
-    status: `${review.subagentEnabled ? 'Independent review' : 'ADR self-review'} iteration ${iteration}/${session.policy.maxSelfReviewIterations}. Verdict: ${verdict}.`,
+    status: `Independent review iteration ${iteration}/${session.policy.maxSelfReviewIterations}. Verdict: ${verdict}.`,
     adrId: revision.currentAdr.id,
     adrDigest: revision.currentAdr.digest,
     selfReviewIteration: iteration,
     revisionDelta: revision.revisionDelta,
-    reviewMode: review.subagentEnabled ? 'subagent' : 'self',
+    reviewMode: 'subagent',
     ...reviewObligationResponseFields(nextObligation, input.attemptId),
-    ...(review.subagentEnabled
-      ? repositoryEvidenceUnavailableField(nextObligation?.repositoryEvidenceFreeze)
-      : {}),
+    ...repositoryEvidenceUnavailableField(nextObligation?.repositoryEvidenceFreeze),
     next: instruction.next,
     ...(instruction.reviewInvocation ? { reviewInvocation: instruction.reviewInvocation } : {}),
     _audit: { transitions: advanced.transitions },
@@ -683,7 +655,6 @@ function createNextArchitectureReviewObligation(input: {
   freeze: RepositoryAuthorityFreezeResult;
 }) {
   const { state, session, review, revision, iteration, resolvedTargetPaths, freeze } = input;
-  if (!review.subagentEnabled) return null;
   const subjectDigest = state.architecture?.digest ?? `arch-${review.expectedPlanVersion}`;
   return createReviewObligation({
     obligationType: 'architecture',

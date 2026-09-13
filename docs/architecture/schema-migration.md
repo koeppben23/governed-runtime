@@ -1,6 +1,6 @@
 # Schema Migration Architecture
 
-**Status:** Superseded by the current hard-cutover decision (session state v3 +
+**Status:** Superseded by the current hard-cutover decision (session state v4 +
 audit-chain.v3, hard rejection of legacy artifacts).
 **Version:** v1
 **Author:** FlowGuard Core Team
@@ -45,7 +45,7 @@ change lands.
 
 | Schema                              | File                                                              | Lock Mechanism                                                |
 | ----------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------- |
-| `SessionState.schemaVersion`        | `src/state/schema.ts` (line ~326)                                 | `z.literal('v3')` (current hard cutover)                      |
+| `SessionState.schemaVersion`        | `src/state/schema.ts` (line ~326)                                 | `z.literal('v4')` (current hard cutover)                      |
 | `FlowGuardConfig.schemaVersion`     | `src/config/flowguard-config.ts` (line ~32)                       | `z.literal('v1')`                                             |
 | `PolicySnapshot` (embedded)         | `src/state/evidence-policy.ts` (`PolicySnapshotSchema`, line ~36) | Inherited from SessionState                                   |
 | `CentralPolicyBundle.schemaVersion` | `src/config/policy-types.ts` (line ~340)                          | Frozen literal                                                |

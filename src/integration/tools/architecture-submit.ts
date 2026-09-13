@@ -57,7 +57,6 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
   const classification = await resolvePreImplementationChallengeClassification(
     ctx.state,
     ctx.worktree,
-    ctx.subagentEnabled,
     ctx.targetPaths,
   );
   const resolvedTargetPaths =
@@ -179,7 +178,7 @@ export async function handleAdrSubmission(
     });
   }
 
-  const subagentEnabled = policy.selfReview?.subagentEnabled ?? false;
+  const subagentEnabled = true;
   const archPlanVersion = 1;
   const now = ctx.now();
   const classification = await classifyAndCreateArchObligation({
@@ -203,7 +202,6 @@ export async function handleAdrSubmission(
 
   const instruction = buildArchitectureReviewInstruction({
     policy: session.policy,
-    subagentEnabled,
     obligation: nextObligation,
     iteration: 0,
     planVersion: archPlanVersion,

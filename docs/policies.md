@@ -187,10 +187,8 @@ how a `/review-decision` is labelled in the audit trail — `human` in team/regu
 (an explicit human decision is expected), `system` in solo/team-ci (gates
 auto-approve, so the decision is machine-attributed).
 
-**Subagent review:** All four modes ship with `selfReview.subagentEnabled = true`,
-`selfReview.fallbackToSelf = false`, `selfReview.strictEnforcement = true` as the
-runtime-normalized defaults. Self-review is never accepted as review evidence in
-the current release; the orchestrator deterministically invokes the
+**Subagent review:** Independent subagent review is a mandatory runtime invariant,
+not a policy setting. Self-review is never accepted as review evidence; the orchestrator invokes the
 `flowguard-reviewer` subagent for `/plan`, `/architecture`, and `/implement` and
 fails closed on missing or mismatched evidence (see `docs/independent-review.md`).
 

@@ -197,7 +197,7 @@ function planInstructionResponse(
     status: 'Plan review is pending; reusing the existing review obligation.',
     planDigest: scope.state.plan!.current.digest,
     selfReviewIteration: scope.state.selfReview!.iteration,
-    reviewMode: scope.reviewPolicy.subagentEnabled ? 'subagent' : 'self',
+    reviewMode: 'subagent',
     ...reviewObligationResponseFields(obligation, attemptId),
     next: instruction.next,
     ...(instruction.reviewInvocation ? { reviewInvocation: instruction.reviewInvocation } : {}),

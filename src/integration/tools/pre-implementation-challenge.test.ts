@@ -38,31 +38,21 @@ describe('resolvePreImplementationChallengeClassification', () => {
     mocks.readDiscovery.mockResolvedValue(null);
   });
 
-  it('not_required when subagent review is disabled (no discovery read)', async () => {
-    const r = await resolvePreImplementationChallengeClassification(withChallenge, '/ws', false, [
-      'a',
-    ]);
-    expect(r).toEqual({ kind: 'not_required' });
-    expect(mocks.readDiscovery).not.toHaveBeenCalled();
-  });
-
   it('not_required when no challengePolicy is active (no discovery read)', async () => {
-    const r = await resolvePreImplementationChallengeClassification(withoutChallenge, '/ws', true, [
-      'a',
-    ]);
+    const r = await resolvePreImplementationChallengeClassification(withoutChallenge, '/ws', ['a']);
     expect(r).toEqual({ kind: 'not_required' });
     expect(mocks.readDiscovery).not.toHaveBeenCalled();
   });
 
   it('not_required and never throws when policySnapshot is absent', async () => {
-    const r = await resolvePreImplementationChallengeClassification(noSnapshot, '/ws', true);
+    const r = await resolvePreImplementationChallengeClassification(noSnapshot, '/ws');
     expect(r).toEqual({ kind: 'not_required' });
     expect(mocks.readDiscovery).not.toHaveBeenCalled();
   });
 
   it('available: unions caller targetPaths with discovery risk paths, deduped', async () => {
     mocks.readDiscovery.mockResolvedValueOnce(persistenceDiscovery(['src/db.ts']));
-    const r = await resolvePreImplementationChallengeClassification(withChallenge, '/ws', true, [
+    const r = await resolvePreImplementationChallengeClassification(withChallenge, '/ws', [
       'src/db.ts',
       'src/api.ts',
     ]);
@@ -71,7 +61,7 @@ describe('resolvePreImplementationChallengeClassification', () => {
   });
 
   it('available with an empty set when no targetPaths and empty discovery (never unavailable)', async () => {
-    const r = await resolvePreImplementationChallengeClassification(withChallenge, '/ws', true);
+    const r = await resolvePreImplementationChallengeClassification(withChallenge, '/ws');
     expect(r).toEqual({ kind: 'available', changedFiles: [] });
   });
 });

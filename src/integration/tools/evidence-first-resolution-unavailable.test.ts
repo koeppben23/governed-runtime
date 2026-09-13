@@ -5,7 +5,7 @@
  * validate agent-submitted findings normally.
  *
  * Tests plan.ts and implement.ts evidence-first patterns.
- * (architecture.ts tests are in architecture-tool.test.ts)
+ * (architecture.ts evidence-resolution tests are in architecture-tool-evidence-resolve.test.ts)
  *
  * @test-policy HAPPY, BAD, EDGE, REGRESSION — all categories present.
  */
@@ -244,7 +244,6 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
         ...POLICY_SNAPSHOT,
         mode: 'team',
         reviewInvocationPolicy: 'host_task_required',
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
       reviewAssurance: {
         assuranceSchemaVersion: 'review-assurance.v6' as const,
@@ -321,7 +320,6 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
         ...POLICY_SNAPSHOT,
         mode: 'team',
         reviewInvocationPolicy: 'host_task_required',
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
       reviewAssurance: {
         assuranceSchemaVersion: 'review-assurance.v6' as const,
@@ -367,7 +365,6 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
       ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
     const { plan } = await import('./plan.js');
     const res = await plan.execute(
@@ -386,7 +383,6 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
       ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
     const { review_implementation } = await import('./implement.js');
     const res = await review_implementation.execute(
@@ -405,7 +401,6 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
       ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
     });
 
     const { plan } = await import('./plan.js');
@@ -425,7 +420,6 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
       ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
 
     let persistedState: unknown = null;
@@ -454,7 +448,6 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
       ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
     });
 
     const { review_implementation } = await import('./implement.js');
@@ -474,7 +467,6 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
       ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
 
     const { plan } = await import('./plan.js');

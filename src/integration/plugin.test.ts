@@ -120,11 +120,6 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
       },
       policySnapshot: {
         ...makeState('PLAN').policySnapshot,
-        selfReview: {
-          subagentEnabled: true,
-          fallbackToSelf: false,
-          strictEnforcement: true,
-        },
       },
       reviewAssurance: {
         assuranceSchemaVersion: 'review-assurance.v6' as const,

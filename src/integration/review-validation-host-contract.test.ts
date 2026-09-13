@@ -246,9 +246,6 @@ describe('validateReviewFindings host contract', () => {
 
         const isHostTask = enforcementStyle === 'plugin_handshake';
         const result = validateReviewFindings(findings, {
-          strictEnforcement: true,
-          subagentEnabled: true,
-          fallbackToSelf: false,
           expectedIteration: 0,
           expectedPlanVersion: 1,
           assurance,
@@ -266,9 +263,6 @@ describe('validateReviewFindings host contract', () => {
   it('OpenCode blocks manual_attested evidence without plugin handshake', () => {
     const findings = strictFindings();
     const result = validateReviewFindings(findings, {
-      strictEnforcement: true,
-      subagentEnabled: true,
-      fallbackToSelf: false,
       expectedIteration: 0,
       expectedPlanVersion: 1,
       assurance: manualAttestedAssurance(findings, 'plan'),
@@ -297,9 +291,6 @@ describe('validateReviewFindings host contract', () => {
     };
 
     const result = validateReviewFindings(findings, {
-      strictEnforcement: true,
-      subagentEnabled: true,
-      fallbackToSelf: false,
       expectedIteration: 0,
       expectedPlanVersion: 1,
       assurance,
@@ -321,9 +312,6 @@ describe('validateReviewFindings host contract', () => {
     };
 
     const result = validateReviewFindings(findings, {
-      strictEnforcement: true,
-      subagentEnabled: true,
-      fallbackToSelf: false,
       expectedIteration: 0,
       expectedPlanVersion: 1,
       assurance,
@@ -344,9 +332,6 @@ describe('validateReviewFindings host contract', () => {
     };
 
     const result = validateReviewFindings(findings, {
-      strictEnforcement: true,
-      subagentEnabled: true,
-      fallbackToSelf: false,
       expectedIteration: 0,
       expectedPlanVersion: 1,
       assurance,

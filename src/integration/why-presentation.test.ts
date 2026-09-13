@@ -59,7 +59,7 @@ function ticketState(): SessionState {
 function completeVerifiedState(): SessionState {
   return {
     ...makeProgressedState('COMPLETE'),
-    archiveStatus: 'verified',
+    regulatedArchiveStatus: 'verified',
     policySnapshot: sp('solo'),
     actorInfo: undefined,
   };

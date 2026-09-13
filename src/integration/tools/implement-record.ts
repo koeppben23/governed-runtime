@@ -9,7 +9,7 @@
  * via the Task tool. FlowGuard accepts, validates, and persists the resulting
  * ReviewFindings.
  *
- * Flow (subagentEnabled=true):
+ * Flow:
  * 1. Primary agent performs implementation work
  * 2. Primary agent calls flowguard_implement (Mode A, records evidence)
  * 3. FlowGuard returns next-action instructing subagent invocation
@@ -23,10 +23,6 @@
  * - Persistence: impl history (author), implReviewFindings (reviewer)
  * - Response: summary of review findings
  * - Next-action: independent reviewer instructions
- *
- * Policy config (selfReview):
- * - subagentEnabled: enforces subagent review mode
- * - fallbackToSelf: deprecated compatibility field; self-review fallback is prohibited
  *
  * Validation rules:
  * - reviewMode=self → BLOCKED
@@ -113,11 +109,8 @@ import {
 export function validateInitialReviewFindings(input: ImplementRuntime): string | null {
   if (!input.args.reviewFindings) return null;
   return validateReviewFindings(input.args.reviewFindings, {
-    subagentEnabled: input.subagentEnabled,
-    fallbackToSelf: input.fallbackToSelf,
     expectedIteration: 0,
     expectedPlanVersion: (input.state.plan?.history.length ?? 0) + 1,
-    strictEnforcement: false,
     reviewInvocationPolicy: input.policy.reviewInvocationPolicy,
     reviewParentSessionId: input.context.sessionID,
     reviewHostPlatform: resolveRuntimeReviewPlatform(),
@@ -554,7 +547,6 @@ export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): 
   const activation = await activateReviewObligationAndPersist({
     state: stateWithMaterializedContract,
     preAdvanceState: nextState,
-    subagentEnabled: input.subagentEnabled,
     iteration: reviewIteration,
     planVersion,
     now: input.ctx.now(),

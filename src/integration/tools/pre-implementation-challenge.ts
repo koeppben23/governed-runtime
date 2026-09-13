@@ -47,10 +47,8 @@ import { discoveryRiskPaths } from '../discovery-risk-paths.js';
 export async function resolvePreImplementationChallengeClassification(
   state: SessionState,
   wsDir: string,
-  subagentEnabled: boolean,
   targetPaths?: readonly string[],
 ): Promise<{ kind: 'not_required' } | { kind: 'available'; changedFiles: readonly string[] }> {
-  if (!subagentEnabled) return { kind: 'not_required' };
   if (!state.policySnapshot?.challengePolicy) return { kind: 'not_required' };
   const discovery = await readDiscovery(wsDir);
   const changedFiles = [...new Set([...(targetPaths ?? []), ...discoveryRiskPaths(discovery)])];

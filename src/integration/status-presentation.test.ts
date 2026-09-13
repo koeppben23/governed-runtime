@@ -74,7 +74,7 @@ function makeReadyState(): SessionState {
     implReview: null,
     reviewDecision: null,
     architecture: null,
-    archiveStatus: null,
+    regulatedArchiveStatus: null,
     actorInfo: undefined,
   };
 }
@@ -97,7 +97,7 @@ function makeBlockedPlanReviewState(): SessionState {
     implReview: null,
     reviewDecision: null,
     architecture: null,
-    archiveStatus: null,
+    regulatedArchiveStatus: null,
     actorInfo: undefined,
   };
 }
@@ -120,7 +120,7 @@ function makeValidatingState(): SessionState {
     implReview: null,
     reviewDecision: null,
     architecture: null,
-    archiveStatus: null,
+    regulatedArchiveStatus: null,
     actorInfo: undefined,
   };
 }

@@ -43,8 +43,6 @@ function makeCtx(
   overrides: Partial<ReviewFindingsValidationContext> = {},
 ): ReviewFindingsValidationContext {
   return {
-    subagentEnabled: true,
-    fallbackToSelf: false,
     expectedPlanVersion: 1,
     expectedIteration: 0,
     ...overrides,
@@ -223,7 +221,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       findings,
       makeCtx({
-        strictEnforcement: true,
         assurance: strictAssuranceFixture(strictFindings()),
         obligationType: 'plan',
       }),
@@ -245,10 +242,7 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     assurance.obligations[0]!.status = 'pending';
     assurance.obligations[0]!.invocationId = null;
     assurance.obligations[0]!.fulfilledAt = null;
-    const result = validateReviewFindings(
-      findings,
-      makeCtx({ strictEnforcement: true, assurance, obligationType: 'plan' }),
-    );
+    const result = validateReviewFindings(findings, makeCtx({ assurance, obligationType: 'plan' }));
     expect(result).not.toBeNull();
     const blocked = JSON.parse(result!);
     expect(blocked.code).toBe('SUBAGENT_EVIDENCE_MISSING');
@@ -260,10 +254,7 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const findings = strictFindings();
     const assurance = strictAssuranceFixture(findings);
     assurance.invocations = [];
-    const result = validateReviewFindings(
-      findings,
-      makeCtx({ strictEnforcement: true, assurance, obligationType: 'plan' }),
-    );
+    const result = validateReviewFindings(findings, makeCtx({ assurance, obligationType: 'plan' }));
     expect(result).not.toBeNull();
     const blocked = JSON.parse(result!);
     expect(blocked.code).toBe('SUBAGENT_EVIDENCE_MISSING');
@@ -277,7 +268,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       findings,
       makeCtx({
-        strictEnforcement: true,
         assurance: strictAssuranceFixture(findings),
         obligationType: 'plan',
       }),
@@ -290,7 +280,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       findings,
       makeCtx({
-        strictEnforcement: true,
         assurance: manualAttestedAssuranceFixture(findings),
         obligationType: 'plan',
         reviewInvocationPolicy: 'sdk_allowed',
@@ -309,7 +298,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       findings,
       makeCtx({
-        strictEnforcement: true,
         assurance,
         obligationType: 'plan',
         reviewInvocationPolicy: 'sdk_allowed',
@@ -342,7 +330,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       findings,
       makeCtx({
-        strictEnforcement: true,
         assurance,
         obligationType: 'plan',
         reviewInvocationPolicy: 'host_task_required',
@@ -360,7 +347,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       findings,
       makeCtx({
-        strictEnforcement: true,
         assurance: manualAttestedAssuranceFixture(findings),
         obligationType: 'plan',
         reviewHostPlatform: 'claude-code',
@@ -383,7 +369,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       findings,
       makeCtx({
-        strictEnforcement: true,
         assurance,
         obligationType: 'plan',
         reviewInvocationPolicy: 'sdk_allowed',
@@ -407,7 +392,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       findings,
       makeCtx({
-        strictEnforcement: true,
         assurance,
         obligationType: 'plan',
         reviewInvocationPolicy: 'sdk_allowed',
@@ -426,7 +410,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
       findings,
       makeCtx({
         expectedIteration: 1,
-        strictEnforcement: true,
         assurance: manualAttestedAssuranceFixture(findings),
         obligationType: 'plan',
         reviewInvocationPolicy: 'sdk_allowed',
@@ -445,7 +428,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
       findings,
       makeCtx({
         expectedPlanVersion: 2,
-        strictEnforcement: true,
         assurance: manualAttestedAssuranceFixture(findings),
         obligationType: 'plan',
         reviewInvocationPolicy: 'sdk_allowed',
@@ -468,7 +450,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       findings,
       makeCtx({
-        strictEnforcement: true,
         assurance,
         obligationType: 'plan',
         reviewInvocationPolicy: 'sdk_allowed',
@@ -491,7 +472,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       findings,
       makeCtx({
-        strictEnforcement: true,
         assurance,
         obligationType: 'plan',
         reviewInvocationPolicy: 'host_task_preferred',
@@ -514,7 +494,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       findings,
       makeCtx({
-        strictEnforcement: true,
         assurance,
         obligationType: 'plan',
         reviewInvocationPolicy: 'host_task_preferred',
@@ -531,7 +510,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       findings,
       makeCtx({
-        strictEnforcement: true,
         assurance: manualAttestedAssuranceFixture(findings),
         obligationType: 'plan',
         reviewInvocationPolicy: 'sdk_allowed',
@@ -554,7 +532,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       findings,
       makeCtx({
-        strictEnforcement: true,
         assurance,
         obligationType: 'plan',
         reviewInvocationPolicy: 'host_task_preferred',
@@ -577,7 +554,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       findings,
       makeCtx({
-        strictEnforcement: true,
         assurance: nativeAttestedAssuranceFixture(findings),
         obligationType: 'plan',
         reviewInvocationPolicy: 'host_task_preferred',
@@ -601,7 +577,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       findings,
       makeCtx({
-        strictEnforcement: true,
         assurance,
         obligationType: 'plan',
         reviewInvocationPolicy: 'host_task_preferred',
@@ -622,7 +597,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       findings,
       makeCtx({
-        strictEnforcement: true,
         assurance,
         obligationType: 'plan',
         reviewInvocationPolicy: 'host_task_preferred',
@@ -645,7 +619,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       findings,
       makeCtx({
-        strictEnforcement: true,
         assurance,
         obligationType: 'plan',
         reviewInvocationPolicy: 'host_task_preferred',
@@ -662,7 +635,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       findings,
       makeCtx({
-        strictEnforcement: true,
         assurance: nativeAttestedAssuranceFixture(findings),
         obligationType: 'plan',
         reviewInvocationPolicy: 'host_task_required',
@@ -687,7 +659,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       findings,
       makeCtx({
-        strictEnforcement: true,
         assurance,
         obligationType: 'plan',
         reviewInvocationPolicy: 'host_task_preferred',
@@ -705,7 +676,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       findings,
       makeCtx({
-        strictEnforcement: true,
         assurance: nativeAttestedAssuranceFixture(findings),
         obligationType: 'plan',
         reviewInvocationPolicy: 'host_task_preferred',
@@ -739,7 +709,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       findings,
       makeCtx({
-        strictEnforcement: true,
         assurance,
         obligationType: 'plan',
         reviewInvocationPolicy: 'host_task_required',
@@ -773,7 +742,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       submittedFindings,
       makeCtx({
-        strictEnforcement: true,
         assurance,
         obligationType: 'plan',
         reviewInvocationPolicy: 'host_task_required',
@@ -820,7 +788,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       submittedFindings,
       makeCtx({
-        strictEnforcement: true,
         assurance,
         obligationType: 'plan',
         reviewInvocationPolicy: 'host_task_required',
@@ -853,7 +820,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       findings,
       makeCtx({
-        strictEnforcement: true,
         assurance,
         obligationType: 'plan',
         reviewInvocationPolicy: 'host_task_required',
@@ -891,7 +857,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       findings,
       makeCtx({
-        strictEnforcement: true,
         assurance,
         obligationType: 'plan',
         reviewInvocationPolicy: 'host_task_required',
@@ -928,7 +893,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       submittedFindings,
       makeCtx({
-        strictEnforcement: true,
         assurance,
         obligationType: 'plan',
         reviewInvocationPolicy: 'host_task_required',
@@ -951,7 +915,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       submittedFindings,
       makeCtx({
-        strictEnforcement: true,
         assurance,
         obligationType: 'plan',
         // no reviewInvocationPolicy → defaults to SDK-like behavior
@@ -976,7 +939,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       findings,
       makeCtx({
-        strictEnforcement: true,
         assurance,
         obligationType: 'plan',
         // no reviewInvocationPolicy → SDK-like
@@ -1004,10 +966,7 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
       assurance.invocations[0]!,
     ];
 
-    const result = validateReviewFindings(
-      findings,
-      makeCtx({ strictEnforcement: true, assurance, obligationType: 'plan' }),
-    );
+    const result = validateReviewFindings(findings, makeCtx({ assurance, obligationType: 'plan' }));
 
     expect(result).toBeNull();
   });
@@ -1031,7 +990,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       findings,
       makeCtx({
-        strictEnforcement: true,
         assurance,
         obligationType: 'plan',
         reviewInvocationPolicy: 'sdk_allowed',
@@ -1061,7 +1019,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       findings,
       makeCtx({
-        strictEnforcement: true,
         assurance,
         obligationType: 'plan',
         reviewInvocationPolicy: 'host_task_required',
@@ -1169,7 +1126,6 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const result = validateReviewFindings(
       findings,
       makeCtx({
-        strictEnforcement: true,
         assurance: assuranceWithTaskEvidence,
         obligationType: 'plan',
         reviewInvocationPolicy: 'host_task_required',

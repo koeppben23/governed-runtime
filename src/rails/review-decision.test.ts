@@ -392,35 +392,6 @@ describe('review-decision rail', () => {
     }
   });
 
-  it('requireVerifiedActorsForApproval blocks best_effort reviewer', () => {
-    const state = makeState('PLAN_REVIEW', {
-      initiatedByIdentity: initiatorIdentity,
-    });
-
-    const result = executeReviewDecision(
-      state,
-      {
-        verdict: 'approve',
-        rationale: 'ok',
-        decidedBy: 'reviewer-1',
-        decisionIdentity: {
-          ...reviewerIdentity,
-          actorAssurance: 'best_effort',
-        },
-      },
-      {
-        ...baseCtx,
-        policy: withPolicy({ requireVerifiedActorsForApproval: true }),
-      },
-    );
-
-    expect(result.kind).toBe('blocked');
-    if (result.kind === 'blocked') {
-      expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
-      expect(result.reason).toBeDefined();
-    }
-  });
-
   it('minimum idp_verified blocks claim_validated reviewer', () => {
     const state = makeState('PLAN_REVIEW', {
       initiatedByIdentity: initiatorIdentity,
@@ -612,28 +583,6 @@ describe('review-decision rail', () => {
     expect(result.kind).toBe('ok');
   });
 
-  it('ACTOR_ASSURANCE_INSUFFICIENT reason includes minimum and current levels', () => {
-    const state = makeState('PLAN_REVIEW', {
-      initiatedByIdentity: initiatorIdentity,
-    });
-    const result = executeReviewDecision(
-      state,
-      {
-        verdict: 'approve',
-        rationale: 'ok',
-        decidedBy: 'reviewer-1',
-        decisionIdentity: { ...reviewerIdentity, actorAssurance: 'best_effort' as const },
-      },
-      { ...baseCtx, policy: withPolicy({ requireVerifiedActorsForApproval: true }) },
-    );
-    expect(result.kind).toBe('blocked');
-    if (result.kind === 'blocked') {
-      expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
-      expect(result.reason).toContain('claim_validated');
-      expect(result.reason).toContain('best_effort');
-    }
-  });
-
   it('ACTOR_ASSURANCE_INSUFFICIENT via minimumActorAssurance includes levels', () => {
     const state = makeState('PLAN_REVIEW', {
       initiatedByIdentity: initiatorIdentity,
@@ -802,8 +751,7 @@ describe('review-decision rail', () => {
   });
 
   // ─── MUTATION KILL round 2 ───────────────────────────────────
-  it('idp_verified passes requireVerifiedActorsForApproval (assurance threshold)', () => {
-    // Kill: actorAssurance !== 'idp_verified' → true (blocks idp_verified)
+  it('idp_verified meets the assurance threshold', () => {
     const state = makeState('PLAN_REVIEW', {
       initiatedByIdentity: initiatorIdentity,
       plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
@@ -821,7 +769,7 @@ describe('review-decision rail', () => {
         decidedBy: 'reviewer-1',
         decisionIdentity: { ...reviewerIdentity, actorAssurance: 'idp_verified' as const },
       },
-      { ...baseCtx, policy: withPolicy({ requireVerifiedActorsForApproval: true }) },
+      { ...baseCtx, policy: withPolicy({}) },
     );
     // idp_verified meets the threshold — should NOT be blocked
     expect(result.kind).toBe('ok');
@@ -1144,7 +1092,6 @@ describe('review-decision rail', () => {
           ...baseCtx,
           policy: withPolicy({
             minimumActorAssuranceForApproval: 'claim_validated',
-            // NOT using legacy requireVerifiedActorsForApproval
           }),
         },
       );
@@ -1382,7 +1329,7 @@ describe('review-decision rail', () => {
         {
           ...baseCtx,
           policy: withPolicy({
-            // Neither requireVerifiedActorsForApproval nor minimumActorAssuranceForApproval set
+            // No assurance threshold is set.
           }),
         },
       );
@@ -1507,34 +1454,6 @@ describe('review-decision rail', () => {
       if (result.kind === 'ok') {
         expect(result.state.architecture).toBeNull();
         expect(result.state.selfReview).toBeNull();
-      }
-    });
-
-    it('actorAssurance fallback to best_effort when undefined (survivor kill)', () => {
-      const state = makeState('PLAN_REVIEW', {
-        initiatedByIdentity: initiatorIdentity,
-      });
-      const result = executeReviewDecision(
-        state,
-        {
-          verdict: 'approve',
-          rationale: 'ok',
-          decidedBy: 'reviewer-1',
-          decisionIdentity: identityWithoutAssurance(),
-        },
-        {
-          ...baseCtx,
-          policy: withPolicy({ requireVerifiedActorsForApproval: true }),
-        },
-      );
-      // Should still work since undefined falls back to 'best_effort' which fails requirement
-      expect(result.kind).toBe('blocked');
-      if (result.kind === 'blocked') {
-        expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
-        // Pin the explicit string fallback so a literal mutation cannot survive:
-        // the rendered message must contain "best_effort" as the current assurance.
-        expect(result.reason).toContain('best_effort');
-        expect(result.reason).toContain('claim_validated');
       }
     });
 

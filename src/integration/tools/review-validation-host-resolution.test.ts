@@ -60,9 +60,6 @@ function ctx(
     expected: { obligationType: 'plan' as const, iteration: 0, planVersion: 1 },
     policy: {
       reviewInvocationPolicy: 'host_task_required' as const,
-      strictEnforcement: true,
-      subagentEnabled: true,
-      fallbackToSelf: false,
     },
     input: {},
     state: {

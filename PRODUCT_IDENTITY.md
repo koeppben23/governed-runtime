@@ -91,7 +91,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 
 - **Structured manifests** — every archive includes `archive-manifest.json` with session identity, file inventory, per-file digests, and content digest
 - **SHA-256 file hash** — `.tar.gz.sha256` sidecar for external integrity verification (fatal on write failure in regulated mode)
-- **Regulated archive completion guarantee** — clean regulated completion requires synchronous archive creation + verification success; `archiveStatus` field tracks lifecycle (`pending` → `verified` or `failed`)
+- **Regulated archive completion guarantee** — clean regulated completion requires synchronous archive creation + verification success; `regulatedArchiveStatus` tracks lifecycle (`pending` → `verified` or `failed`)
 - **9-category verification** — `verifyArchive()` validates manifest presence, file completeness, digest integrity, discovery consistency, state presence, and audit-chain integrity across 20 distinct finding codes (see `src/archive/types.ts`)
 - **Redacted export by default** — archive artifacts are export-redacted (`mode=basic`, `includeRaw=false`) while runtime/audit SSOT remains raw internally
 - **Receipt export** — archives include `decision-receipts.redacted.v1.json` (and raw receipts only when explicitly opted in)
@@ -303,7 +303,7 @@ FlowGuard uses **Option A1: Pre-built proprietary GitHub Release distribution** 
 
 - **15 Integration Tools** (`src/integration/tools/`) — bridge between LLM and state machine, installed as thin wrappers. The canonical list lives in `src/integration/tool-names.ts` (`TOOL_FLOWGUARD_*` constants). 14 are exposed via MCP (`src/mcp-server/server.ts`); see `docs/mcp-tool-surface.md` for the one asymmetric exclusion.
 - **25 Installed Command Definitions** (`.opencode/commands/*.md`) backed by 24 templates. Templates live in `src/templates/commands/`. Includes 11 Machine Commands, 2 operational tools, 8 product aliases, 3 action variants, and 3 operational helpers. Canonical registry: `src/integration/installed-commands.ts`.
-- **1 Review Agent** (`.opencode/agents/flowguard-reviewer.md`) — hidden subagent for independent adversarial review (deployed when `selfReview.subagentEnabled`). The agent body is rendered programmatically from `src/templates/mandates.ts` at install time; there is no static asset of this name in the source tree.
+- **1 Review Agent** (`.opencode/agents/flowguard-reviewer.md`) — hidden subagent for mandatory independent adversarial review. The agent body is rendered programmatically from `src/templates/mandates.ts` at install time; there is no static asset of this name in the source tree.
 - **1 Audit Plugin** (`src/integration/plugin.ts`) — automatic event recording via `tool.execute.after` hook
 - **`flowguard-mandates.md`** — managed artifact with SHA-256 content-digest, loaded via `instructions` in `opencode.json` (or `opencode.jsonc` when present)
 - **Profile Rules** — tech-stack-specific guidance delivered via tool returns, not file-based instructions

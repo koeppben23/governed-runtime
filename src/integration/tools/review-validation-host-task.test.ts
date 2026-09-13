@@ -1205,12 +1205,6 @@ describe('resolveHostTaskEffectiveFindings — directly-submitted challenge fres
     };
   }
 
-  it('accepts directly-submitted findings whose challenge cites a fresh, allowed attempt', () => {
-    const result = resolveHostTaskEffectiveFindings(makeCtx([IMPL_REF, FRESH_ATTEMPT_REF]));
-    expect(result.blocked).toBeUndefined();
-    expect(result.effectiveFindings).toBeDefined();
-  });
-
   it('blocks directly-submitted findings whose challenge cites a stale/foreign attempt', () => {
     // The exact Gap 2 leak: on the directly-submitted path the freshness set was
     // never passed, so a validation_attempt outside allowedChallengeEvidenceRefs

@@ -75,7 +75,7 @@ async function validateSessionContext(
   const reviewCtx = extractReviewContext(toolName, parsedOutput);
   let strictEnforcement: boolean | null = null;
   if (!reviewCtx) {
-    strictEnforcement = sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
+    strictEnforcement = true;
     if (strictEnforcement) {
       output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
         reason: 'review context missing for strict orchestration',
@@ -147,7 +147,7 @@ export async function runReviewOrchestration(
       sessionId,
       now,
       rawOutput,
-      strictEnforcement: sessionState?.policySnapshot?.selfReview?.strictEnforcement === true,
+      strictEnforcement: true,
     };
 
     if (toolName === TOOL_FLOWGUARD_REVIEW) {

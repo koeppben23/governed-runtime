@@ -906,7 +906,6 @@ describe('toolBefore — reviewer task authorization', () => {
       const state = makeState('PLAN', {
         policySnapshot: {
           ...base.policySnapshot,
-          selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
         },
       });
       await seedSession(sessDir, state);

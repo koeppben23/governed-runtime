@@ -184,9 +184,6 @@ describe('buildImplementRuntime', () => {
       policy: flowGuardPolicy(),
       ctx: {} as unknown as ImplementRuntime['ctx'],
     });
-    expect(rt.subagentEnabled).toBe(false);
-    expect(rt.fallbackToSelf).toBe(false);
-    expect(rt.strictEnforcement).toBe(false);
   });
 
   it('passes through selfReview config values', () => {
@@ -201,9 +198,6 @@ describe('buildImplementRuntime', () => {
       }),
       ctx: {} as unknown as ImplementRuntime['ctx'],
     });
-    expect(rt.subagentEnabled).toBe(true);
-    expect(rt.fallbackToSelf).toBe(true);
-    expect(rt.strictEnforcement).toBe(true);
   });
 });
 
@@ -419,7 +413,6 @@ describe('activateImplementationReviewObligation — implementation subject mode
 
     const input = implReviewState();
     const result = await activateImplementationReviewObligation(input, {
-      subagentEnabled: true,
       iteration: 1,
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
@@ -454,7 +447,6 @@ describe('activateImplementationReviewObligation — implementation subject mode
 
     const input = implReviewState();
     const result = await activateImplementationReviewObligation(input, {
-      subagentEnabled: true,
       iteration: 1,
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
@@ -485,7 +477,6 @@ describe('activateImplementationReviewObligation — implementation subject mode
 
     const input = implReviewState();
     const result = await activateImplementationReviewObligation(input, {
-      subagentEnabled: true,
       iteration: 1,
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',

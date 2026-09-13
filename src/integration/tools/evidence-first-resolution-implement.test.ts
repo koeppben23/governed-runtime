@@ -5,7 +5,7 @@
  * validate agent-submitted findings normally.
  *
  * Tests plan.ts and implement.ts evidence-first patterns.
- * (architecture.ts tests are in architecture-tool.test.ts)
+ * (architecture.ts evidence-resolution tests are in architecture-tool-evidence-resolve.test.ts)
  *
  * @test-policy HAPPY, BAD, EDGE, REGRESSION — all categories present.
  */
@@ -399,7 +399,6 @@ describe('BUG-17: implement evidence-first resolution', () => {
       ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
     mocks.autoAdvance.mockReturnValue({
       kind: 'advanced',
@@ -438,7 +437,6 @@ describe('BUG-17: implement evidence-first resolution', () => {
       ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
 
     const { review_implementation } = await import('./implement.js');
@@ -507,7 +505,6 @@ describe('BUG-17: implement evidence-first resolution', () => {
       ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
 
     const { review_implementation } = await import('./implement.js');
@@ -524,7 +521,6 @@ describe('BUG-17: implement evidence-first resolution', () => {
       ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
     mocks.autoAdvance.mockReturnValue({
       kind: 'advanced',
@@ -561,7 +557,6 @@ describe('BUG-17: implement evidence-first resolution', () => {
       ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
 
     const { review_implementation } = await import('./implement.js');
@@ -578,7 +573,6 @@ describe('BUG-17: implement evidence-first resolution', () => {
       ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'sdk_allowed',
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
 
     const { review_implementation } = await import('./implement.js');
@@ -684,7 +678,6 @@ describe('BUG-17: implement evidence-first resolution', () => {
       ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_preferred',
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
     });
     mocks.autoAdvance.mockReturnValue({
       kind: 'advanced',

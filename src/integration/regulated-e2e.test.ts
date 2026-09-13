@@ -224,7 +224,7 @@ describe('regulated-e2e critical path', () => {
     const state = await readState(await sessDir());
     expect(state?.phase).toBe('COMPLETE');
     expect(state?.policySnapshot.mode).toBe('regulated');
-    expect(state?.archiveStatus).toBeDefined();
+    expect(state?.regulatedArchiveStatus).toBeDefined();
     const events = (await readAuditTrail(await sessDir())).events;
     const transitionIndex = events.findIndex(
       (event) =>

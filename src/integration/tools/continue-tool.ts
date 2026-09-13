@@ -128,7 +128,7 @@ function formatUserGateGuidance(state: SessionState): string {
     nextAction,
     state.phase,
     state.error?.code === 'ABORTED',
-    state.archiveStatus ?? null,
+    state.regulatedArchiveStatus ?? null,
   );
   return formatContinueResponse(
     {

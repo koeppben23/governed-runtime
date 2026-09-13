@@ -5,7 +5,6 @@ import * as crypto from 'node:crypto';
 import { executeReviewDecision } from '../rails/review-decision.js';
 import { makeProgressedState } from '../fixtures.js';
 import { getPolicyPreset } from '../config/policy.js';
-import { normalizePolicySnapshotWithMeta } from '../config/policy-snapshot-normalize.js';
 import { resolvePolicyFromSnapshot } from '../config/policy-snapshot.js';
 import { readState } from '../adapters/persistence.js';
 import { readConfig, writeRepoConfig } from '../adapters/persistence-config.js';
@@ -128,26 +127,6 @@ describe('policy snapshot regression', () => {
     // IdP-required enforcement is guaranteed upstream by policy-bound actor resolution.
     expect(result.kind).toBe('ok');
     expect(snapshotPolicy.identityProviderMode).toBe('required');
-  });
-
-  it('rejects unversioned policy snapshots', () => {
-    const snapshot = {
-      mode: 'regulated',
-      hash: 'a'.repeat(64),
-      resolvedAt: '2026-01-01T00:00:00.000Z',
-      requestedMode: 'regulated',
-      effectiveGateBehavior: 'human_gated',
-      requireHumanGates: true,
-      maxSelfReviewIterations: 3,
-      maxImplReviewIterations: 3,
-      allowSelfApproval: false,
-      audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
-      actorClassification: { flowguard_decision: 'human' },
-    };
-
-    expect(() => normalizePolicySnapshotWithMeta(snapshot)).toThrow(
-      'Invalid policy digest version "undefined"',
-    );
   });
 
   it('hydrate persists full effective policy fields in snapshot', async () => {

@@ -62,15 +62,14 @@ import {
 } from './architecture-shared.js';
 import { appendNextAction, formatBlocked, writeStateWithArtifacts } from './helpers.js';
 
-// eslint-disable-next-line complexity -- the architecture continuation route is one sequential fail-closed chain (pending reissue, output repair, restart, missing-attempt close).
 export async function routeArchitectureInitialSubmission(
   args: ArchitectureArgs,
   session: ArchitectureSession,
 ): Promise<string | null> {
-  const { state, policy } = session;
+  const { state } = session;
   if (state.phase !== 'ARCHITECTURE' || !state.architecture || !state.selfReview) return null;
 
-  const subagentEnabled = policy.selfReview?.subagentEnabled ?? false;
+  const subagentEnabled = true;
   const continuation = resolveReviewContinuation(state.reviewAssurance, 'architecture');
 
   switch (continuation.kind) {
@@ -233,10 +232,9 @@ function architectureInstructionResponse(
   },
 ): string {
   const { state, policy } = session;
-  const subagentEnabled = policy.selfReview?.subagentEnabled ?? false;
+  const subagentEnabled = true;
   const instruction = buildArchitectureReviewInstruction({
     policy,
-    subagentEnabled,
     obligation: input.obligation,
     iteration: input.iteration,
     planVersion: input.planVersion,
@@ -278,7 +276,6 @@ async function mintRestartObligation(
   const classification = await resolvePreImplementationChallengeClassification(
     session.state,
     session.worktree,
-    subagentEnabled,
     args.targetPaths,
   );
   const resolvedTargetPaths =
@@ -383,7 +380,6 @@ async function restartArchitectureReview(
 
   const instruction = buildArchitectureReviewInstruction({
     policy: session.policy,
-    subagentEnabled,
     obligation,
     iteration,
     planVersion,

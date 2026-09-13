@@ -135,11 +135,6 @@ function buildSessionState(
     },
     policySnapshot: {
       ...POLICY_SNAPSHOT,
-      selfReview: {
-        subagentEnabled: true,
-        fallbackToSelf: false,
-        strictEnforcement,
-      } as never,
       reviewOutputPolicy,
       ...(reviewInvocationPolicy ? { reviewInvocationPolicy } : {}),
     },
@@ -757,31 +752,6 @@ describe('runReviewOrchestration strict /review content analysis', () => {
       expect.objectContaining({ reason: expect.stringContaining('digest does not match') }),
       output,
     );
-  });
-
-  it('does not mutate output for non-strict malformed reviewer input', async () => {
-    const findings = buildFindings({
-      attestation: {
-        mandateDigest: 'wrong-digest-value',
-        criteriaVersion: REVIEW_CRITERIA_VERSION,
-        toolObligationId: OBLIGATION_ID,
-        iteration: 1,
-        planVersion: 1,
-        reviewedBy: 'flowguard-reviewer',
-      },
-    });
-
-    const { output, blockReviewOutcome, updateReviewAssurance } = await runReviewContent(
-      findings,
-      { args: { text: 'diff content', inputOrigin: 'manual_text' } },
-      false,
-    );
-
-    expect(blockReviewOutcome).not.toHaveBeenCalled();
-    expect(updateReviewAssurance).not.toHaveBeenCalled();
-    const parsed = JSON.parse(output.output) as Record<string, unknown>;
-    expect(parsed.next).toBeUndefined();
-    expect(parsed.pluginReviewFindings).toBeUndefined();
   });
 
   it('blocks with SUBAGENT_EVIDENCE_REUSED when subagent findings were already used (atomic reuse check)', async () => {

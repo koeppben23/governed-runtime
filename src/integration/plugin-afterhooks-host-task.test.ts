@@ -91,7 +91,6 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
       policySnapshot: {
         ...base.policySnapshot,
         reviewInvocationPolicy: 'host_task_required',
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
       reviewAssurance: {
         assuranceSchemaVersion: 'review-assurance.v6' as const,

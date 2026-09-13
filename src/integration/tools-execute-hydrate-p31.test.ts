@@ -294,43 +294,6 @@ describe('P31 Config as Runtime Authority', () => {
     }
   });
 
-  it('new session persists config requireVerifiedActorsForApproval in policySnapshot', async () => {
-    const tmpDir = await fs.mkdtemp('/tmp/p33-verified-');
-    try {
-      const {
-        computeFingerprint,
-        workspaceDir,
-        sessionDir: resolveSessionDir,
-      } = await import('../adapters/workspace/index.js');
-      const { writeRepoConfig, readConfig } = await import('../adapters/persistence-config.js');
-      const { readState } = await import('../adapters/persistence.js');
-      const fp = await computeFingerprint(tmpDir);
-      const wsDir = workspaceDir(fp.fingerprint);
-
-      const baseConfig = await readConfig(tmpDir);
-      await writeRepoConfig(tmpDir, {
-        ...baseConfig,
-        policy: {
-          ...baseConfig.policy,
-          requireVerifiedActorsForApproval: true,
-        },
-      });
-
-      const localCtx = createToolContext({
-        worktree: tmpDir,
-        directory: tmpDir,
-        sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
-      });
-      await hydrate.execute({ profileId: 'baseline' }, localCtx);
-
-      const sessDir = resolveSessionDir(fp.fingerprint, localCtx.sessionID);
-      const state = await readState(sessDir);
-      expect(state!.policySnapshot.requireVerifiedActorsForApproval).toBe(true);
-    } finally {
-      await rmWithRetry(tmpDir);
-    }
-  });
-
   it('explicit profileId=unknown blocks with INVALID_PROFILE', async () => {
     const tmpDir = await fs.mkdtemp('/tmp/p31-d-');
     try {

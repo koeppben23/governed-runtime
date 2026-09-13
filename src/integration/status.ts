@@ -18,7 +18,7 @@
  * - evidenceSummary    → evaluateCompleteness()
  * - policyMode         → state.policySnapshot?.mode ?? 'unknown'
  * - actor              → state.actorInfo
- * - archiveStatus      → state.archiveStatus
+ * - archiveStatus      → state.regulatedArchiveStatus
  *
  * @version v1
  */
@@ -40,7 +40,6 @@ import { buildProductNextAction } from '../presentation/next-action-copy.js';
 
 const ALL_COMMANDS = Object.values(Command) as FlowGuardCommand[];
 import { evaluateCompleteness } from '../audit/completeness.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { getReviewLoopProgress, type ReviewLoopProgress } from './review/review-loop-progress.js';
 import { projectStatusConclusion, type StatusConclusionProjection } from './status-conclusion.js';
 import type { KnownPresentationStatusInput } from '../presentation/labels.js';
@@ -420,7 +419,7 @@ export function buildStatusProjection(
     next,
     state.phase,
     state.error?.code === 'ABORTED',
-    state.archiveStatus,
+    state.regulatedArchiveStatus,
     state,
   );
 
@@ -440,7 +439,7 @@ export function buildStatusProjection(
     policyMode,
     profileId,
     actor,
-    archiveStatus: state.archiveStatus ?? null,
+    archiveStatus: state.regulatedArchiveStatus ?? null,
     lastExport: buildLastExport(state),
     allowedCommands: allowed.map((cmd: FlowGuardCommand) => `/${cmd}`),
     nextAction: {
@@ -589,7 +588,7 @@ export function buildContextProjection(state: SessionState): ContextProjection {
           assurance: state.actorInfo.assurance,
         }
       : null,
-    archiveStatus: state.archiveStatus ?? null,
+    archiveStatus: state.regulatedArchiveStatus ?? null,
     policyMode: snapshot.mode,
     regulated: {
       applicable: isRegulated,
@@ -613,25 +612,10 @@ export function buildReadinessProjection(
   const snapshot = state.policySnapshot;
   const warnings: string[] = [];
 
-  // Check for legacy/weakened selfReview config
-  if (snapshot.selfReview) {
-    const cfg = snapshot.selfReview;
-    if (
-      cfg.subagentEnabled !== true ||
-      cfg.fallbackToSelf !== false ||
-      cfg.strictEnforcement !== true
-    ) {
-      warnings.push(
-        'Legacy selfReview config detected and normalized to mandatory strict. ' +
-          `Ensure ${REVIEWER_SUBAGENT_TYPE} plugin is active.`,
-      );
-    }
-  }
-
   return {
     phase: state.phase,
     policyMode: snapshot.mode,
-    archiveStatus: state.archiveStatus ?? null,
+    archiveStatus: state.regulatedArchiveStatus ?? null,
     blocked,
     evidenceComplete: completeness.overallComplete,
     fourEyesSatisfied: completeness.fourEyes.satisfied,

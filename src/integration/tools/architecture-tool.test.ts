@@ -26,11 +26,6 @@ const mocks = vi.hoisted(() => {
     resolvePolicyFromState: vi.fn(() => ({
       ...TEAM_POLICY,
       reviewInvocationPolicy: 'self',
-      selfReview: {
-        ...TEAM_POLICY.selfReview,
-        subagentEnabled: false,
-        strictEnforcement: false,
-      },
     })),
     createPolicyContext: vi.fn(() => ({
       policy: { maxSelfReviewIterations: 3 },
@@ -161,11 +156,6 @@ describe('integration/tools/architecture (wrapper)', () => {
     mocks.resolvePolicyFromState.mockReturnValue({
       ...TEAM_POLICY,
       reviewInvocationPolicy: 'self',
-      selfReview: {
-        ...TEAM_POLICY.selfReview,
-        subagentEnabled: false,
-        strictEnforcement: false,
-      },
     });
     mocks.state = makeState('READY');
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
@@ -288,7 +278,6 @@ describe('integration/tools/architecture (wrapper)', () => {
     });
     mocks.resolvePolicyFromState.mockReturnValue({
       ...TEAM_POLICY,
-      selfReview: { ...TEAM_POLICY.selfReview, subagentEnabled: true },
     });
     // Discovery absent → no detected risk surface. Git is irrelevant to an ADR:
     // even a rejecting git diff must not change the outcome.
@@ -380,7 +369,6 @@ describe('integration/tools/architecture (wrapper)', () => {
     });
     mocks.resolvePolicyFromState.mockReturnValue({
       ...TEAM_POLICY,
-      selfReview: { ...TEAM_POLICY.selfReview, subagentEnabled: true },
     });
     mocks.readDiscovery.mockResolvedValueOnce(discovery);
 
@@ -456,7 +444,6 @@ describe('integration/tools/architecture (wrapper)', () => {
     });
     mocks.resolvePolicyFromState.mockReturnValue({
       ...TEAM_POLICY,
-      selfReview: { ...TEAM_POLICY.selfReview, subagentEnabled: true },
     });
     mocks.readDiscovery.mockResolvedValueOnce(discovery);
 
@@ -475,48 +462,6 @@ describe('integration/tools/architecture (wrapper)', () => {
     const obligation = savedState.reviewAssurance?.obligations.at(-1);
     expect(obligation?.requiredChallengeCount).toBe(expectedCount);
     expect(obligation?.metadata?.targetPaths).toEqual(expectedUnion);
-  });
-
-  it('skips the discovery read and creates no obligation when subagent review is disabled', async () => {
-    // Guard: with self-review disabled, classification short-circuits BEFORE any
-    // discovery read and creates no obligation, even under an active challengePolicy.
-    const policySnapshot = {
-      ...makeState('READY').policySnapshot,
-      challengePolicy: TEAM_POLICY.challengePolicy,
-    };
-    mocks.state = makeState('READY', { policySnapshot });
-    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
-    mocks.executeArchitecture.mockReturnValue({
-      kind: 'ok',
-      state: makeState('ARCHITECTURE', {
-        policySnapshot,
-        architecture: {
-          id: 'ADR-001',
-          title: 'ADR',
-          adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
-          digest: 'digest-adr',
-          status: 'proposed',
-          reviewCompletion: 'pending',
-          createdAt: '2026-01-01T00:00:00.000Z',
-        },
-      }),
-      transitions: [],
-    });
-    mocks.resolvePolicyFromState.mockReturnValue({
-      ...TEAM_POLICY,
-      selfReview: { ...TEAM_POLICY.selfReview, subagentEnabled: false },
-    });
-
-    const { architecture } = await import('./architecture.js');
-    const parsed = JSON.parse(
-      String(await architecture.execute({ title: 'x', adrText: 'y' }, {} as never)),
-    );
-
-    expect(parsed.phase).toBe('ARCHITECTURE');
-    expect(parsed.reviewMode).toBe('self');
-    expect(mocks.readDiscovery).not.toHaveBeenCalled();
-    const savedState = mocks.writeStateWithArtifacts.mock.calls.at(-1)?.[1] as SessionState;
-    expect(savedState.reviewAssurance?.obligations ?? []).toHaveLength(0);
   });
 
   it('blocks mixed ADR submission and review verdict', async () => {
@@ -644,7 +589,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(JSON.parse(String(res)).code).toBe('NO_ARCHITECTURE');
   });
 
-  it('blocks changes_requested without revised text', async () => {
+  it('rejects manual findings before validating a revision without text', async () => {
     mocks.state = makeState('ARCHITECTURE', {
       architecture: {
         id: 'ADR-001',
@@ -673,10 +618,10 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
       {} as never,
     );
-    expect(JSON.parse(String(res)).code).toBe('EMPTY_ADR_TEXT');
+    expect(JSON.parse(String(res)).code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
   });
 
-  it('blocks changes_requested when revised ADR sections are invalid', async () => {
+  it('rejects manual findings before validating revised ADR sections', async () => {
     mocks.validateAdrSections.mockReturnValue(['## Decision']);
     mocks.state = makeState('ARCHITECTURE', {
       architecture: {
@@ -707,10 +652,10 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
       {} as never,
     );
-    expect(JSON.parse(String(res)).code).toBe('MISSING_ADR_SECTIONS');
+    expect(JSON.parse(String(res)).code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
   });
 
-  it('returns non-converged status for changes_requested with valid revision', async () => {
+  it('rejects a manual findings revision', async () => {
     mocks.state = makeState('ARCHITECTURE', {
       architecture: {
         id: 'ADR-001',
@@ -740,10 +685,10 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
       {} as never,
     );
-    expect(JSON.parse(String(res)).status).toContain('iteration 1/3');
+    expect(JSON.parse(String(res)).code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
   });
 
-  it('invalidates a prior approval certificate when the ADR is revised', async () => {
+  it('does not mutate an ADR when a revision provides manual findings', async () => {
     mocks.state = makeState('ARCHITECTURE', {
       architecture: {
         id: 'ADR-001',
@@ -796,11 +741,10 @@ describe('integration/tools/architecture (wrapper)', () => {
       {} as never,
     );
 
-    const writtenState = mocks.writeStateWithArtifacts.mock.calls[0]?.[1] as SessionState;
-    expect(writtenState.architecture?.approvalCertificate).toBeUndefined();
+    expect(mocks.writeStateWithArtifacts).not.toHaveBeenCalled();
   });
 
-  it('routes reviewer acceptance to the human architecture gate', async () => {
+  it('rejects a manually supplied reviewer acceptance', async () => {
     mocks.state = makeState('ARCHITECTURE', {
       architecture: {
         id: 'ADR-001',
@@ -835,23 +779,12 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
       {} as never,
     );
-    expect(JSON.parse(String(res)).status).toContain('Human approval is required');
     const parsed = JSON.parse(String(res));
-    expect(parsed.reviewCard).toBeDefined();
-    expect(typeof parsed.reviewCard).toBe('string');
-    expect(parsed.reviewCard).toContain('# FlowGuard Architecture Review');
-    expect(parsed.presentation).toEqual({ markdown: parsed.reviewCard });
-    const writtenState = mocks.writeStateWithArtifacts.mock.calls[0]?.[1] as {
-      architecture?: { status?: string };
-    };
-    expect(parsed.phase).toBe('ARCH_REVIEW');
-    expect(writtenState.architecture?.status).toBe('proposed');
-    expect((writtenState.architecture as { reviewCompletion?: string }).reviewCompletion).toBe(
-      'reviewer_accepted',
-    );
+    expect(parsed.code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+    expect(mocks.writeStateWithArtifacts).not.toHaveBeenCalled();
   });
 
-  it('force-converges to the human gate (ARCH_REVIEW) instead of blocking at the iteration limit', async () => {
+  it('rejects manual findings at the iteration limit', async () => {
     mocks.state = makeState('ARCHITECTURE', {
       architecture: {
         id: 'ADR-001',
@@ -893,16 +826,10 @@ describe('integration/tools/architecture (wrapper)', () => {
       ),
     );
 
-    expect(parsed.error).not.toBe(true);
-    expect(parsed.code).toBeUndefined();
-    expect(parsed.phase).toBe('ARCH_REVIEW');
-    expect(parsed.status).toContain('iteration limit');
-    expect(parsed.status).toContain('without reviewer approval');
-    expect(parsed.status).toContain('Human approval is required');
-    expect(parsed.reviewCard).toContain('Reviewer did NOT approve');
+    expect(parsed.code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
   });
 
-  it('never auto-finalizes an exhausted ADR in auto-approve modes', async () => {
+  it('does not auto-finalize an exhausted ADR from manual findings', async () => {
     mocks.state = makeState('ARCHITECTURE', {
       architecture: {
         id: 'ADR-001',
@@ -943,14 +870,8 @@ describe('integration/tools/architecture (wrapper)', () => {
       ),
     );
 
-    expect(parsed.error).not.toBe(true);
-    expect(parsed.code).toBeUndefined();
-    expect(parsed.phase).toBe('ARCH_REVIEW');
-    expect(parsed.status).toContain('without reviewer approval');
-    expect(parsed.status).toContain('Human approval is required');
-    const writtenState = mocks.writeStateWithArtifacts.mock.calls[0]?.[1] as SessionState;
-    expect(writtenState.architecture?.status).toBe('proposed');
-    expect(writtenState.architecture?.reviewCompletion).toBe('review_exhausted');
+    expect(parsed.code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+    expect(mocks.writeStateWithArtifacts).not.toHaveBeenCalled();
   });
 
   it('rejects reviewFindings without a verdict in a submission (#499: no silent discard)', async () => {
@@ -994,16 +915,14 @@ describe('integration/tools/architecture (wrapper)', () => {
 
   // ── F13 slice 7b: Mode-A INDEPENDENT_REVIEW_REQUIRED + reviewObligation ──
 
-  it('emits INDEPENDENT_REVIEW_REQUIRED next-action when subagentEnabled=true (Mode A)', async () => {
-    // Slice 7b: when policy.selfReview.subagentEnabled=true, the architecture
-    // tool MUST emit a next-action that instructs the primary agent to call
+  it('emits INDEPENDENT_REVIEW_REQUIRED next-action for mandatory review (Mode A)', async () => {
+    // The architecture tool MUST emit a next-action that instructs the primary agent to call
     // the flowguard-reviewer subagent before submitting a verdict. Mirrors
     // plan.ts and implement.ts behavior. The orchestrator (slice 6) detects
     // this marker to dispatch the subagent automatically.
     mocks.resolvePolicyFromState.mockReturnValueOnce({
       ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
-      selfReview: { ...TEAM_POLICY.selfReview, subagentEnabled: true },
     });
     const { architecture } = await import('./architecture.js');
     const res = await architecture.execute({ title: 'x', adrText: 'y' }, {} as never);
@@ -1016,7 +935,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(parsed.reviewMode).toBe('subagent');
   });
 
-  it('attaches an architecture review obligation when subagentEnabled=true (Mode A)', async () => {
+  it('attaches an architecture review obligation for mandatory review (Mode A)', async () => {
     // Slice 7b: the response and the persisted state must carry a fresh
     // ReviewObligation with obligationType='architecture' so:
     //  (a) the orchestrator can identify the subagent dispatch target, and
@@ -1025,7 +944,6 @@ describe('integration/tools/architecture (wrapper)', () => {
     mocks.resolvePolicyFromState.mockReturnValueOnce({
       ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
-      selfReview: { ...TEAM_POLICY.selfReview, subagentEnabled: true },
     });
     const { architecture } = await import('./architecture.js');
     const res = await architecture.execute({ title: 'x', adrText: 'y' }, {} as never);
@@ -1045,23 +963,17 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(writtenState.reviewAssurance?.obligations?.[0]?.obligationType).toBe('architecture');
   });
 
-  it('keeps legacy self-review next-action when subagentEnabled=false (Mode A)', async () => {
-    // Slice 7b backwards-compat guarantee: with the legacy default
-    // (subagentEnabled absent or false), the Mode-A response MUST NOT
-    // mention INDEPENDENT_REVIEW_REQUIRED, MUST set reviewMode='self',
-    // and MUST NOT attach a reviewObligation. This pin protects the
-    // backwards-compat fallback path against accidental coupling.
+  it('requires independent review for every initial submission (Mode A)', async () => {
     const { architecture } = await import('./architecture.js');
     const res = await architecture.execute({ title: 'x', adrText: 'y' }, {} as never);
     const parsed = JSON.parse(String(res));
-    expect(parsed.next).not.toContain('INDEPENDENT_REVIEW_REQUIRED');
-    expect(parsed.next).toContain('Self-review needed');
-    expect(parsed.reviewMode).toBe('self');
-    expect(parsed.reviewObligation).toBeUndefined();
+    expect(parsed.next).toContain('INDEPENDENT_REVIEW_REQUIRED');
+    expect(parsed.reviewMode).toBe('subagent');
+    expect(parsed.reviewObligation).toBeDefined();
     const writtenState = mocks.writeStateWithArtifacts.mock.calls[0]?.[1] as {
       reviewAssurance?: { obligations?: unknown[] };
     };
-    expect(writtenState.reviewAssurance?.obligations ?? []).toHaveLength(0);
+    expect(writtenState.reviewAssurance?.obligations).toHaveLength(1);
   });
 
   // ── F13 slice 7c: Mode-B reviewFindings ingestion + persistence ─────
@@ -1095,7 +1007,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(JSON.parse(String(res)).code).toBe('REVIEW_FINDINGS_REQUIRED');
   });
 
-  it('persists reviewFindings append-only on the architecture record (slice 7c)', async () => {
+  it('does not persist manually supplied reviewFindings', async () => {
     // Slice 7c: parallel storage to plan.reviewFindings — each Mode-B
     // submission appends one entry to architecture.reviewFindings, never
     // overwrites or replaces. Mirrors plan.ts:392-395 invariant.
@@ -1148,14 +1060,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       { reviewVerdict: 'accept', reviewFindings: newFinding },
       {} as never,
     );
-    const writtenState = mocks.writeStateWithArtifacts.mock.calls[0]?.[1] as {
-      architecture?: { reviewFindings?: Array<{ overallVerdict?: string }> };
-    };
-    expect(writtenState.architecture?.reviewFindings).toHaveLength(2);
-    expect(writtenState.architecture?.reviewFindings?.[0]?.overallVerdict).toBe(
-      'changes_requested',
-    );
-    expect(writtenState.architecture?.reviewFindings?.[1]?.overallVerdict).toBe('accept');
+    expect(mocks.writeStateWithArtifacts).not.toHaveBeenCalled();
   });
 
   it('routes overallVerdict=unable_to_review to BLOCKED in Mode B (slice 7c, P1.3 parity)', async () => {
@@ -1197,14 +1102,11 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(JSON.parse(String(res)).code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
   });
 
-  it('emits INDEPENDENT_REVIEW_REQUIRED next-action on non-converged Mode B (slice 7c)', async () => {
+  it('requires captured findings on a non-converged Mode B call', async () => {
     // Slice 7c: when subagentEnabled=true and the loop has not converged,
     // the response must instruct the primary agent to call the subagent
     // again for the next iteration, mirroring plan.ts:543-551.
-    mocks.resolvePolicyFromState.mockReturnValue({
-      maxSelfReviewIterations: 3,
-      selfReview: { subagentEnabled: true },
-    } as never);
+    mocks.resolvePolicyFromState.mockReturnValue(TEAM_POLICY);
     mocks.state = makeState('ARCHITECTURE', {
       architecture: {
         id: 'ADR-001',
@@ -1235,15 +1137,10 @@ describe('integration/tools/architecture (wrapper)', () => {
       {} as never,
     );
     const parsed = JSON.parse(String(res));
-    expect(parsed.next).toContain('INDEPENDENT_REVIEW_REQUIRED');
-    expect(parsed.next).toContain('flowguard-reviewer');
-    expect(parsed.next).toContain('iteration=1');
-    expect(parsed.reviewMode).toBe('subagent');
-    expect(parsed.reviewObligation?.obligationType).toBe('architecture');
-    expect(parsed.reviewObligation?.iteration).toBe(1);
+    expect(parsed.code).toBe('REVIEW_FINDINGS_REQUIRED');
   });
 
-  it('blocks Mode B when reviewVerdict does not match reviewFindings.overallVerdict', async () => {
+  it('rejects manual findings before checking verdict consistency', async () => {
     mocks.state = makeState('ARCHITECTURE', {
       architecture: {
         id: 'ADR-001',
@@ -1286,7 +1183,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     );
     const parsed = JSON.parse(String(res));
     expect(parsed.error).toBe(true);
-    expect(parsed.code).toBe('SUBAGENT_FINDINGS_VERDICT_MISMATCH');
+    expect(parsed.code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
   });
 
   // ═══════════════════════════════════════════════════════════════════════════════

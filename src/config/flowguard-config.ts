@@ -148,9 +148,6 @@ export const FlowGuardConfigSchema = z.object({
       /** Override obligation-level reviewer output-repair attempts (new attempt
        * after a canonically repairable non-bindable reviewer output). */
       maxReviewerOutputRepairAttempts: z.number().int().min(0).max(5).optional(),
-      /** P33/P34: Require verified actor identity for regulated approvals.
-       * Superseded by minimumActorAssuranceForApproval when set. */
-      requireVerifiedActorsForApproval: z.boolean().optional(),
       /** P34: Minimum assurance level required for approval.
        * 'best_effort' | 'claim_validated' | 'idp_verified' */
       minimumActorAssuranceForApproval: z
@@ -190,6 +187,7 @@ export const FlowGuardConfigSchema = z.object({
         })
         .optional(),
     })
+    .strict()
     .default({}),
 
   /** Profile configuration. */

@@ -216,11 +216,8 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
 
     // 6. Validate — should pass with host_task_required
     const result = validateReviewFindings(agentReconstructedFindings, {
-      subagentEnabled: true,
-      fallbackToSelf: false,
       expectedPlanVersion: 1,
       expectedIteration: 0,
-      strictEnforcement: true,
       assurance,
       obligationType: 'plan',
       reviewInvocationPolicy: 'host_task_required',
@@ -297,11 +294,8 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
     };
 
     const result = validateReviewFindings(tamperedFindings, {
-      subagentEnabled: true,
-      fallbackToSelf: false,
       expectedPlanVersion: 1,
       expectedIteration: 0,
-      strictEnforcement: true,
       assurance,
       obligationType: 'plan',
       reviewInvocationPolicy: 'host_task_required',
@@ -399,11 +393,8 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
     expect(hashFindings(agentFindings)).not.toBe(bindResult.evidence!.findingsHash);
 
     const result = validateReviewFindings(agentFindings, {
-      subagentEnabled: true,
-      fallbackToSelf: false,
       expectedPlanVersion: 1,
       expectedIteration: 0,
-      strictEnforcement: true,
       assurance,
       obligationType: 'plan',
       reviewInvocationPolicy: 'host_task_required',

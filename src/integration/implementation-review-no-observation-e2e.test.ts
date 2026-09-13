@@ -352,7 +352,6 @@ async function prepareBoundUnableReview(se: SE, implementationDigest: string) {
     policySnapshot: {
       ...makeState('IMPL_REVIEW').policySnapshot,
       reviewInvocationPolicy: 'host_task_required',
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
     },
   });
   await writeStateWithArtifacts(se.sDir, base);
@@ -360,7 +359,6 @@ async function prepareBoundUnableReview(se: SE, implementationDigest: string) {
   const activated = await (
     await import('./tools/implement-shared.js')
   ).activateImplementationReviewObligation(firstState!, {
-    subagentEnabled: true,
     iteration: 1,
     planVersion: 1,
     now: FIXED_TIME,

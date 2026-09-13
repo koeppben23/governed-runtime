@@ -67,7 +67,7 @@ All adapter modules (persistence, git, archive, init, evidence-artifacts, gh-cli
 - `git executable not found` / `Failed to resolve current branch` (git)
 - `Discovery snapshot missing during archive creation` (archive)
 - `JWT verification failed` (identity, redacted)
-- `Legacy selfReview config normalized to mandatory strict` (policy)
+- `Removed policy configuration rejected` (policy)
 
 Adapter logs route to whichever log mode is configured — file, console, or both.
 
@@ -245,24 +245,6 @@ Controls whether IdP verification failure blocks session creation:
 Minimum required actor assurance for `approve` verdicts at user gates. The
 approver's resolved assurance tier must be `>=` this value, otherwise
 `/review-decision approve` is rejected with `ACTOR_ASSURANCE_INSUFFICIENT`.
-
-### policy.requireVerifiedActorsForApproval
-
-**Type:** `boolean`
-**Default:** `false`
-
-Legacy precedence flag. When `true`, the approver is required to be at
-assurance `claim_validated` or higher (the same effect as
-`minimumActorAssuranceForApproval: 'claim_validated'`).
-
-> **Precedence:** `requireVerifiedActorsForApproval` is evaluated **first**.
-> When it is `true`, the runtime ignores `minimumActorAssuranceForApproval`
-> for the decision rail and uses the legacy gate. Operators relaxing the
-> stricter legacy gate by setting `minimumActorAssuranceForApproval` to a
-> lower tier MUST also set `requireVerifiedActorsForApproval: false` —
-> otherwise the legacy gate keeps winning. See
-> `src/rails/review-decision.ts` (`verifyAssuranceThreshold`) and
-> `docs/actor-assurance-architecture.md`.
 
 ### policy.maxImplReviewIterations
 

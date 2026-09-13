@@ -151,11 +151,6 @@ function buildSessionState() {
   return makeState('PLAN', {
     policySnapshot: {
       ...POLICY_SNAPSHOT,
-      selfReview: {
-        subagentEnabled: true,
-        fallbackToSelf: false,
-        strictEnforcement: true,
-      },
     },
     plan: {
       current: {

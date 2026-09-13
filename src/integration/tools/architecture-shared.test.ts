@@ -156,30 +156,12 @@ describe('validateInitialSubmissionGate', () => {
 // ─── buildArchitectureReviewInstruction ───────────────────────────────────────
 
 describe('buildArchitectureReviewInstruction', () => {
-  it('subagentEnabled=false => self-review text prompt', () => {
-    const result = buildArchitectureReviewInstruction({
-      policy: {
-        ...TEAM_POLICY,
-        reviewInvocationPolicy: 'sdk_allowed',
-      },
-      subagentEnabled: false,
-      obligation: null,
-      iteration: 0,
-      planVersion: 1,
-      subjectLabel: 'ADR',
-      state: state('ARCHITECTURE'),
-    });
-    expect(result.next).toContain('Self-review needed');
-    expect(result.reviewInvocation).toBeUndefined();
-  });
-
   it('subagentEnabled=true => returns next + reviewInvocation', () => {
     const result = buildArchitectureReviewInstruction({
       policy: {
         ...TEAM_POLICY,
         reviewInvocationPolicy: 'sdk_allowed',
       },
-      subagentEnabled: true,
       obligation: null,
       iteration: 0,
       planVersion: 1,

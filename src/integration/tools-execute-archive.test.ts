@@ -321,7 +321,7 @@ describe('archive', () => {
         await writeState(sessDir, {
           ...state!,
           phase: 'COMPLETE',
-          archiveStatus: 'verified',
+          regulatedArchiveStatus: 'verified',
           policySnapshot: {
             ...state!.policySnapshot,
             mode: 'regulated',
@@ -339,7 +339,7 @@ describe('archive', () => {
         expect((result.productNextAction as { text: string }).text).toContain(
           'redacted sharing archive',
         );
-        expect(persisted?.archiveStatus).toBe('verified');
+        expect(persisted?.regulatedArchiveStatus).toBe('verified');
         expect(persisted).toMatchObject({
           lastExportPackagePurpose: 'sharing',
           lastExportIntegrityCapability: 'not_verifiable',

@@ -73,11 +73,6 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
     plan: PLAN_RECORD,
     policySnapshot: {
       ...POLICY_SNAPSHOT,
-      selfReview: {
-        subagentEnabled: true,
-        fallbackToSelf: false,
-        strictEnforcement: true,
-      },
       reviewInvocationPolicy: 'host_task_required',
       reviewOutputPolicy: 'structured_required',
     },
@@ -262,11 +257,6 @@ describe('BUG-16: buildHostTaskPolicyOutput preserves iteration/planVersion', ()
     const state = buildState({
       policySnapshot: {
         ...POLICY_SNAPSHOT,
-        selfReview: {
-          subagentEnabled: true,
-          fallbackToSelf: false,
-          strictEnforcement: true,
-        },
         reviewInvocationPolicy: 'host_task_preferred',
         reviewOutputPolicy: 'structured_required',
       },

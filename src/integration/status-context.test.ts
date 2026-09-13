@@ -93,7 +93,7 @@ function makeMinimalState(phase: SessionState['phase'] = 'READY'): SessionState 
     implReview: null,
     reviewDecision: null,
     architecture: null,
-    archiveStatus: null,
+    regulatedArchiveStatus: null,
     actorInfo: undefined,
     error: null,
   };
@@ -227,12 +227,11 @@ describe('context and readiness projections', () => {
         assurance: 'best_effort',
         email: 'op@example.com',
       },
-      archiveStatus: 'pending',
+      regulatedArchiveStatus: 'pending',
       policySnapshot: {
         ...makeMinimalState('EVIDENCE_REVIEW').policySnapshot!,
         mode: 'regulated' as const,
         allowSelfApproval: false,
-        requireVerifiedActorsForApproval: true,
         centralMinimumMode: 'team' as const,
       },
     };
@@ -257,31 +256,6 @@ describe('context and readiness projections', () => {
     expect(typeof readiness.actorKnown).toBe('boolean');
   });
 
-  it('includes warning when legacy selfReview config is normalized', () => {
-    let state = makeMinimalState('READY');
-    // Inject legacy config
-    if (state.policySnapshot) {
-      state = {
-        ...state,
-        policySnapshot: {
-          ...state.policySnapshot,
-          selfReview: {
-            subagentEnabled: false,
-            fallbackToSelf: true,
-            strictEnforcement: false,
-          } as never,
-        } as typeof state.policySnapshot,
-      };
-    }
-    const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
-
-    expect(readiness.warnings).toBeDefined();
-    expect(readiness.warnings.length).toBeGreaterThan(0);
-    expect(readiness.warnings[0]).toContain('Legacy selfReview config');
-  });
-
-  // ─── MUTATION KILL: selfReview config check (lines 350-355) ────────────────
-
   it('readiness HAPPY returns no warnings when selfReview config is correct', () => {
     let state = makeMinimalState('READY');
     if (state.policySnapshot) {
@@ -289,96 +263,11 @@ describe('context and readiness projections', () => {
         ...state,
         policySnapshot: {
           ...state.policySnapshot,
-          selfReview: {
-            subagentEnabled: true,
-            fallbackToSelf: false,
-            strictEnforcement: true,
-          } as never,
         },
       };
     }
     const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
     expect(readiness.warnings).toHaveLength(0);
-  });
-
-  it('readiness warning when subagentEnabled is false (survivor kill)', () => {
-    let state = makeMinimalState('READY');
-    if (state.policySnapshot) {
-      state = {
-        ...state,
-        policySnapshot: {
-          ...state.policySnapshot,
-          selfReview: {
-            subagentEnabled: false,
-            fallbackToSelf: false,
-            strictEnforcement: true,
-          } as never,
-        },
-      };
-    }
-    const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
-    expect(readiness.warnings.length).toBeGreaterThan(0);
-    expect(readiness.warnings[0]).toContain('Legacy selfReview config');
-  });
-
-  it('readiness warning when fallbackToSelf is true (survivor kill)', () => {
-    let state = makeMinimalState('READY');
-    if (state.policySnapshot) {
-      state = {
-        ...state,
-        policySnapshot: {
-          ...state.policySnapshot,
-          selfReview: {
-            subagentEnabled: true,
-            fallbackToSelf: true,
-            strictEnforcement: true,
-          } as never,
-        },
-      };
-    }
-    const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
-    expect(readiness.warnings.length).toBeGreaterThan(0);
-    expect(readiness.warnings[0]).toContain('Legacy selfReview config');
-  });
-
-  it('readiness warning when strictEnforcement is false (survivor kill)', () => {
-    let state = makeMinimalState('READY');
-    if (state.policySnapshot) {
-      state = {
-        ...state,
-        policySnapshot: {
-          ...state.policySnapshot,
-          selfReview: {
-            subagentEnabled: true,
-            fallbackToSelf: false,
-            strictEnforcement: false,
-          } as never,
-        },
-      };
-    }
-    const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
-    expect(readiness.warnings.length).toBeGreaterThan(0);
-    expect(readiness.warnings[0]).toContain('Legacy selfReview config');
-  });
-
-  it('readiness warning when all three selfReview flags are wrong (survivor kill)', () => {
-    let state = makeMinimalState('READY');
-    if (state.policySnapshot) {
-      state = {
-        ...state,
-        policySnapshot: {
-          ...state.policySnapshot,
-          selfReview: {
-            subagentEnabled: false,
-            fallbackToSelf: true,
-            strictEnforcement: false,
-          } as never,
-        } as typeof state.policySnapshot,
-      };
-    }
-    const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
-    expect(readiness.warnings.length).toBeGreaterThan(0);
-    expect(readiness.warnings[0]).toContain('Legacy selfReview config');
   });
 
   // ─── MUTATION KILL: actorKnown field (line 371) ───────────────────────────

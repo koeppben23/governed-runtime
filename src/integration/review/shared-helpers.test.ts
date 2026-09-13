@@ -159,18 +159,6 @@ describe('isStrictEnforcementEnabled', () => {
     } as unknown as SessionState;
     expect(isStrictEnforcementEnabled(s)).toBe(true);
   });
-
-  it('returns false when selfReview is absent', () => {
-    const s = { policySnapshot: {} } as unknown as SessionState;
-    expect(isStrictEnforcementEnabled(s)).toBe(false);
-  });
-
-  it('returns false when strictEnforcement is false', () => {
-    const s = {
-      policySnapshot: { selfReview: { strictEnforcement: false } },
-    } as unknown as SessionState;
-    expect(isStrictEnforcementEnabled(s)).toBe(false);
-  });
 });
 
 // ─── isOutputAlreadyBlocked ───────────────────────────────────────────────────

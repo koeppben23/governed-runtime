@@ -100,7 +100,6 @@ export async function resolveNewPolicyResolution(
     configMaxImplReviewIterations: config.policy.maxImplReviewIterations,
     configMaxIncoherentReviewerCaptureRetries: config.policy.maxIncoherentReviewerCaptureRetries,
     configMaxReviewerOutputRepairAttempts: config.policy.maxReviewerOutputRepairAttempts,
-    configRequireVerifiedActorsForApproval: config.policy.requireVerifiedActorsForApproval,
     configMinimumActorAssuranceForApproval: config.policy.minimumActorAssuranceForApproval,
     configIdentityProvider: config.policy.identityProvider,
     configIdentityProviderMode: config.policy.identityProviderMode,
