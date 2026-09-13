@@ -67,9 +67,6 @@ const run = spawnSync(
 );
 
 if (run.status !== 0) {
-  if (existsSync(outputFile)) {
-    console.error(readFileSync(outputFile, 'utf-8'));
-  }
   rmSync(tmpDir, { recursive: true, force: true });
   process.exit(run.status ?? 1);
 }
