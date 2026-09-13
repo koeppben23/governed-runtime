@@ -139,6 +139,12 @@ describe('state schemas', () => {
       expect(() => SessionState.parse(state)).not.toThrow();
     });
 
+    it('SessionState rejects the removed archiveStatus persisted field', () => {
+      expect(() =>
+        SessionState.parse({ ...makeState('TICKET'), archiveStatus: 'verified' }),
+      ).toThrow();
+    });
+
     it('SessionState rejects a state missing validationAttempts (no read-time defaulting)', () => {
       const incomplete: Record<string, unknown> = { ...makeState('TICKET') };
       delete incomplete.validationAttempts;
@@ -614,7 +620,6 @@ describe('state schemas', () => {
         maxImplReviewIterations: 3,
         allowSelfApproval: true,
         minimumActorAssuranceForApproval: 'best_effort',
-        requireVerifiedActorsForApproval: false,
         identityProviderMode: 'optional',
         maxIncoherentReviewerCaptureRetries: 1,
         maxReviewerOutputRepairAttempts: 1,
@@ -623,11 +628,6 @@ describe('state schemas', () => {
         allowReducedCeremony: false,
         discoveryHealth: { enforcement: 'off', onDegraded: 'allow', onDrift: 'allow' },
         validationEvidence: { enforcement: 'off', allowNoCommands: false },
-        selfReview: {
-          subagentEnabled: true,
-          fallbackToSelf: false,
-          strictEnforcement: true,
-        },
         challengePolicy: {
           version: 'challenge-policy.v1',
           counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
@@ -669,7 +669,6 @@ describe('state schemas', () => {
         maxImplReviewIterations: 3,
         allowSelfApproval: true,
         minimumActorAssuranceForApproval: 'best_effort',
-        requireVerifiedActorsForApproval: false,
         enforceRiskClassification: false,
         allowRiskDowngradeOverride: false,
         allowReducedCeremony: false,
@@ -680,11 +679,6 @@ describe('state schemas', () => {
         reviewOutputPolicy: 'text_compat_allowed',
         reviewInvocationPolicy: 'sdk_allowed',
         reviewProfile: 'core',
-        selfReview: {
-          subagentEnabled: true,
-          fallbackToSelf: false,
-          strictEnforcement: true,
-        },
         challengePolicy: {
           version: 'challenge-policy.v1',
           counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
@@ -730,7 +724,6 @@ describe('state schemas', () => {
         maxImplReviewIterations: 3,
         allowSelfApproval: true,
         minimumActorAssuranceForApproval: 'best_effort',
-        requireVerifiedActorsForApproval: false,
         identityProvider: {
           mode: 'jwks',
           issuer: 'https://issuer.example.com',
@@ -771,7 +764,6 @@ describe('state schemas', () => {
         maxImplReviewIterations: 3,
         allowSelfApproval: false,
         minimumActorAssuranceForApproval: 'best_effort',
-        requireVerifiedActorsForApproval: false,
         identityProviderMode: 'optional',
         maxIncoherentReviewerCaptureRetries: 1,
         maxReviewerOutputRepairAttempts: 1,
@@ -783,11 +775,6 @@ describe('state schemas', () => {
         reviewOutputPolicy: 'structured_required',
         reviewInvocationPolicy: 'host_task_required',
         reviewProfile: 'core',
-        selfReview: {
-          subagentEnabled: true,
-          fallbackToSelf: false,
-          strictEnforcement: true,
-        },
         challengePolicy: {
           version: 'challenge-policy.v1',
           counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
@@ -897,6 +884,40 @@ describe('state schemas', () => {
       await expect(readState(tmpDir)).rejects.toThrow(
         /Zod validation.*requestedMode|requestedMode.*Required/s,
       );
+    });
+
+    it.each([
+      [
+        'archiveStatus',
+        (state: Record<string, unknown>) => ({ ...state, archiveStatus: 'archived' }),
+      ],
+      [
+        'policySnapshot.selfReview',
+        (state: Record<string, unknown>) => ({
+          ...state,
+          policySnapshot: {
+            ...(state.policySnapshot as Record<string, unknown>),
+            selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
+          },
+        }),
+      ],
+      [
+        'policySnapshot.requireVerifiedActorsForApproval',
+        (state: Record<string, unknown>) => ({
+          ...state,
+          policySnapshot: {
+            ...(state.policySnapshot as Record<string, unknown>),
+            requireVerifiedActorsForApproval: false,
+          },
+        }),
+      ],
+    ])('readState rejects v4/v3 state containing removed %s', async (_field, addRemovedField) => {
+      const state = JSON.parse(JSON.stringify(makeState('TICKET'))) as Record<string, unknown>;
+      await fs.writeFile(
+        path.join(tmpDir, 'session-state.json'),
+        JSON.stringify(addRemovedField(state)),
+      );
+      await expect(readState(tmpDir)).rejects.toMatchObject({ code: 'SCHEMA_VALIDATION_FAILED' });
     });
   });
 

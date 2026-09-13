@@ -44,7 +44,6 @@ export interface HydratePolicyOptions {
   configMaxIncoherentReviewerCaptureRetries?: number;
   configMaxReviewerOutputRepairAttempts?: number;
   configMinimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
-  configRequireVerifiedActorsForApproval?: boolean;
   configIdentityProvider?: IdpConfig;
   configIdentityProviderMode?: IdentityProviderMode;
   configEnforceRiskClassification?: boolean;
@@ -64,7 +63,6 @@ interface RequestedPolicyContext {
 function resolveMinAssurance(
   base: FlowGuardPolicy,
   configMin?: string,
-  requireVerified?: boolean,
 ): 'best_effort' | 'claim_validated' | 'idp_verified' {
   if (
     configMin === 'best_effort' ||
@@ -72,7 +70,6 @@ function resolveMinAssurance(
     configMin === 'idp_verified'
   )
     return configMin;
-  if (requireVerified === true) return 'claim_validated';
   return base.minimumActorAssuranceForApproval;
 }
 
@@ -106,7 +103,6 @@ function applyConfigOverrides(
     configMaxIncoherentReviewerCaptureRetries?: number;
     configMaxReviewerOutputRepairAttempts?: number;
     configMinimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
-    configRequireVerifiedActorsForApproval?: boolean;
     configIdentityProvider?: IdpConfig;
     configIdentityProviderMode?: IdentityProviderMode;
     configEnforceRiskClassification?: boolean;
@@ -130,10 +126,7 @@ function applyConfigOverrides(
     minimumActorAssuranceForApproval: resolveMinAssurance(
       basePolicy,
       opts.configMinimumActorAssuranceForApproval,
-      opts.configRequireVerifiedActorsForApproval,
     ),
-    requireVerifiedActorsForApproval:
-      opts.configRequireVerifiedActorsForApproval ?? basePolicy.requireVerifiedActorsForApproval,
     identityProvider: opts.configIdentityProvider ?? basePolicy.identityProvider,
     identityProviderMode: opts.configIdentityProviderMode ?? basePolicy.identityProviderMode,
     enforceRiskClassification:

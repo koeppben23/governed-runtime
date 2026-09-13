@@ -24,15 +24,10 @@ import {
   type HydratePolicyResolution,
 } from './policy.js';
 import type { PolicySnapshot } from '../state/evidence.js';
-import {
-  normalizeSelfReviewConfig,
-  modeConsistentDefaults,
-  normalizeDiscoveryHealthField,
-  normalizeValidationEvidenceField,
-} from './policy-snapshot-normalize.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { POLICY_DIGEST_VERSION } from '../shared/policy-digest.js';
 import { PolicyConfigurationError } from './policy-errors.js';
+import type { FlowGuardPolicy } from './policy-types.js';
 
 export const sha256 = (text: string) => createHash('sha256').update(text, 'utf-8').digest('hex');
 export const NOW = '2026-04-27T10:00:00.000Z';
@@ -81,9 +76,6 @@ describe('createPolicySnapshot', () => {
       SOLO_POLICY.maxIncoherentReviewerCaptureRetries,
     );
     expect(snapshot.allowSelfApproval).toBe(SOLO_POLICY.allowSelfApproval);
-    expect(snapshot.requireVerifiedActorsForApproval).toBe(
-      SOLO_POLICY.requireVerifiedActorsForApproval,
-    );
     expect(snapshot.identityProviderMode).toBe(SOLO_POLICY.identityProviderMode);
     expect(snapshot.reviewOutputPolicy).toBe(SOLO_POLICY.reviewOutputPolicy);
     expect(snapshot.reviewInvocationPolicy).toBe(SOLO_POLICY.reviewInvocationPolicy);
@@ -159,18 +151,9 @@ describe('createPolicySnapshot', () => {
     expect(snapshot.effectiveGateBehavior).toBe('human_gated');
   });
 
-  it('preserves the configured self-review policy', () => {
-    const policy = {
-      ...SOLO_POLICY,
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
-    };
-
-    expect(createPolicySnapshot(policy, NOW, sha256).selfReview).toEqual(policy.selfReview);
-  });
-
-  it('binds nested governance fields into the policy digest', () => {
+  it('binds governance fields into the policy digest', () => {
     const baseline = createPolicySnapshot(SOLO_POLICY, NOW, sha256).hash;
-    const variants = [
+    const variants: readonly FlowGuardPolicy[] = [
       {
         ...SOLO_POLICY,
         audit: { ...SOLO_POLICY.audit, enableChainHash: !SOLO_POLICY.audit.enableChainHash },
@@ -181,42 +164,31 @@ describe('createPolicySnapshot', () => {
       },
       {
         ...SOLO_POLICY,
-        selfReview: {
-          ...SOLO_POLICY.selfReview,
-          strictEnforcement: !SOLO_POLICY.selfReview.strictEnforcement,
-        },
-      },
-      {
-        ...SOLO_POLICY,
         validationEvidence: {
           ...SOLO_POLICY.validationEvidence,
           allowNoCommands: !SOLO_POLICY.validationEvidence.allowNoCommands,
         },
+      },
+      {
+        ...SOLO_POLICY,
+        minimumActorAssuranceForApproval: 'claim_validated' as const,
+      },
+      {
+        ...SOLO_POLICY,
+        reviewInvocationPolicy: 'host_task_required' as const,
+      },
+      {
+        ...SOLO_POLICY,
+        challengePolicy: {
+          ...SOLO_POLICY.challengePolicy,
+          counts: { ...SOLO_POLICY.challengePolicy.counts, STANDARD: 2 },
+        } as unknown as FlowGuardPolicy['challengePolicy'],
       },
     ];
 
     for (const policy of variants) {
       expect(createPolicySnapshot(policy, NOW, sha256).hash).not.toBe(baseline);
     }
-  });
-
-  it('distinguishes policies that differ only in nested audit and review fields', () => {
-    const policyA = {
-      ...SOLO_POLICY,
-      mode: 'team' as const,
-      audit: { ...SOLO_POLICY.audit, enableChainHash: true, emitToolCalls: true },
-      selfReview: { ...SOLO_POLICY.selfReview, strictEnforcement: false },
-    };
-    const policyB = {
-      ...SOLO_POLICY,
-      mode: 'team' as const,
-      audit: { ...SOLO_POLICY.audit, enableChainHash: false, emitToolCalls: false },
-      selfReview: { ...SOLO_POLICY.selfReview, strictEnforcement: true },
-    };
-
-    expect(createPolicySnapshot(policyA, NOW, sha256).hash).not.toBe(
-      createPolicySnapshot(policyB, NOW, sha256).hash,
-    );
   });
 });
 
@@ -319,64 +291,6 @@ describe('resolvePolicyFromSnapshot', () => {
         ...REGULATED_POLICY.discoveryHealth,
         onDrift: 'allow',
       });
-    });
-  });
-
-  describe('LEGACY — missing fields', () => {
-    it('applies every fail-closed legacy fallback', () => {
-      const snapshot = createPolicySnapshot(REGULATED_POLICY, NOW, sha256);
-      const legacy = {
-        ...snapshot,
-        maxIncoherentReviewerCaptureRetries: undefined,
-        maxReviewerOutputRepairAttempts: undefined,
-        minimumActorAssuranceForApproval: undefined,
-        requireVerifiedActorsForApproval: undefined,
-        audit: { ...snapshot.audit, timestampAssurance: undefined },
-        enforceRiskClassification: undefined,
-        allowRiskDowngradeOverride: undefined,
-        allowReducedCeremony: undefined,
-      } as unknown as PolicySnapshot;
-
-      const reconstructed = resolvePolicyFromSnapshot(legacy);
-      expect(reconstructed.maxIncoherentReviewerCaptureRetries).toBe(1);
-      expect(reconstructed.maxReviewerOutputRepairAttempts).toBe(1);
-      expect(reconstructed.minimumActorAssuranceForApproval).toBe('claim_validated');
-      expect(reconstructed.requireVerifiedActorsForApproval).toBe(false);
-      expect(reconstructed.audit.timestampAssurance).toEqual({
-        enabled: false,
-        mode: 'local_only',
-        strict: false,
-        criticalEvents: ['decision', 'lifecycle'],
-        ntpServers: ['pool.ntp.org'],
-        ntpDriftThresholdMs: 30000,
-        tsaTimeoutMs: 10000,
-      });
-      expect(reconstructed.enforceRiskClassification).toBe(true);
-      expect(reconstructed.allowRiskDowngradeOverride).toBe(false);
-      expect(reconstructed.allowReducedCeremony).toBe(false);
-    });
-
-    it('reconstructs policy with safe defaults for legacy fields', () => {
-      const snapshot = createPolicySnapshot(SOLO_POLICY, NOW, sha256);
-      const reconstructed = resolvePolicyFromSnapshot({
-        ...snapshot,
-        identityProviderMode: undefined as unknown as 'optional' | 'required',
-      });
-      expect(reconstructed.identityProviderMode).toBe('optional');
-    });
-
-    it('legacy snapshot without reviewProfile resolves fail-closed to core (Wave 1 — #730)', () => {
-      const snapshot = createPolicySnapshot(REGULATED_POLICY, NOW, sha256);
-      const legacy = { ...snapshot };
-      delete (legacy as { reviewProfile?: unknown }).reviewProfile;
-      const reconstructed = resolvePolicyFromSnapshot(legacy);
-      expect(reconstructed.reviewProfile).toBe('core');
-    });
-
-    it('legacy snapshot without challengePolicy keeps challenge enforcement disabled', () => {
-      const snapshot = createPolicySnapshot(REGULATED_POLICY, NOW, sha256);
-      delete (snapshot as { challengePolicy?: unknown }).challengePolicy;
-      expect(resolvePolicyFromSnapshot(snapshot).challengePolicy).toBeUndefined();
     });
   });
 });

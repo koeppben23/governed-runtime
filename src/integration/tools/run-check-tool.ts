@@ -426,7 +426,6 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
       const activation = await activateReviewObligationAndPersist({
         state: stateWithMaterializedContract,
         preAdvanceState: nextState,
-        subagentEnabled: freshPolicy.selfReview?.subagentEnabled ?? false,
         iteration: nextImplementationReviewIteration(advanced.state),
         planVersion: (advanced.state.plan?.history.length ?? 0) + 1,
         now: railCtx.now(),

@@ -117,7 +117,6 @@ export interface HydratePolicyInput {
   readonly policyPathHint?: string;
   readonly maxSelfReviewIterations?: number;
   readonly maxImplReviewIterations?: number;
-  readonly requireVerifiedActorsForApproval?: boolean;
   readonly identityProvider?: IdpConfig;
   readonly identityProviderMode?: IdentityProviderMode;
   readonly minimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
@@ -177,9 +176,6 @@ export function applyHydrateOverrides(
       : {}),
     ...(p.maxImplReviewIterations !== undefined
       ? { maxImplReviewIterations: p.maxImplReviewIterations }
-      : {}),
-    ...(p.requireVerifiedActorsForApproval !== undefined
-      ? { requireVerifiedActorsForApproval: p.requireVerifiedActorsForApproval }
       : {}),
     ...(p.identityProvider !== undefined ? { identityProvider: p.identityProvider } : {}),
     ...(p.identityProviderMode !== undefined
@@ -360,6 +356,7 @@ function buildNewHydrateState(
     pendingAuditOperations: [],
     error: null,
     createdAt: now,
+    regulatedArchiveStatus: null,
   };
 
   const result = evaluate(newState, ctx.policy);

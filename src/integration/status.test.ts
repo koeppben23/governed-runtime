@@ -100,7 +100,7 @@ function makeMinimalState(phase: SessionState['phase'] = 'READY'): SessionState 
     implReview: null,
     reviewDecision: null,
     architecture: null,
-    archiveStatus: null,
+    regulatedArchiveStatus: null,
     actorInfo: undefined,
     error: null,
   };

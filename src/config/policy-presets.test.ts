@@ -149,7 +149,6 @@ describe('config/policy', () => {
       expect(SOLO_POLICY.audit.emitToolCalls).toBe(true);
       expect(SOLO_POLICY.audit.enableChainHash).toBe(false);
       expect(SOLO_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
-      expect(SOLO_POLICY.requireVerifiedActorsForApproval).toBe(false);
       expect(SOLO_POLICY.identityProviderMode).toBe('optional');
       expect(SOLO_POLICY.enforceRiskClassification).toBe(false);
       expect(SOLO_POLICY.allowRiskDowngradeOverride).toBe(false);
@@ -165,7 +164,6 @@ describe('config/policy', () => {
       expect(TEAM_POLICY.audit.emitToolCalls).toBe(true);
       expect(TEAM_POLICY.audit.enableChainHash).toBe(true);
       expect(TEAM_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
-      expect(TEAM_POLICY.requireVerifiedActorsForApproval).toBe(false);
       expect(TEAM_POLICY.identityProviderMode).toBe('optional');
       expect(TEAM_POLICY.enforceRiskClassification).toBe(false);
       expect(TEAM_POLICY.allowRiskDowngradeOverride).toBe(false);
@@ -177,7 +175,6 @@ describe('config/policy', () => {
       expect(REGULATED_POLICY.requireHumanGates).toBe(true);
       expect(REGULATED_POLICY.audit.enableChainHash).toBe(true);
       expect(REGULATED_POLICY.minimumActorAssuranceForApproval).toBe('claim_validated');
-      expect(REGULATED_POLICY.requireVerifiedActorsForApproval).toBe(false);
       expect(REGULATED_POLICY.identityProviderMode).toBe('optional');
       expect(REGULATED_POLICY.enforceRiskClassification).toBe(true);
       expect(REGULATED_POLICY.allowRiskDowngradeOverride).toBe(false);
@@ -209,7 +206,6 @@ describe('config/policy', () => {
       expect(TEAM_CI_POLICY.audit.emitToolCalls).toBe(true);
       expect(TEAM_CI_POLICY.audit.enableChainHash).toBe(true);
       expect(TEAM_CI_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
-      expect(TEAM_CI_POLICY.requireVerifiedActorsForApproval).toBe(false);
       expect(TEAM_CI_POLICY.identityProviderMode).toBe('optional');
       expect(TEAM_CI_POLICY.enforceRiskClassification).toBe(true);
       expect(TEAM_CI_POLICY.allowRiskDowngradeOverride).toBe(false);
@@ -242,11 +238,7 @@ describe('config/policy', () => {
       expect(SOLO_POLICY.audit.emitToolCalls).toBe(true);
       expect(SOLO_POLICY.audit.enableChainHash).toBe(false);
       expect(SOLO_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
-      expect(SOLO_POLICY.requireVerifiedActorsForApproval).toBe(false);
       expect(SOLO_POLICY.identityProviderMode).toBe('optional');
-      expect(SOLO_POLICY.selfReview?.subagentEnabled).toBe(true);
-      expect(SOLO_POLICY.selfReview?.fallbackToSelf).toBe(false);
-      expect(SOLO_POLICY.selfReview?.strictEnforcement).toBe(true);
     });
 
     it('all TEAM_POLICY fields match expected values', () => {
@@ -259,11 +251,7 @@ describe('config/policy', () => {
       expect(TEAM_POLICY.audit.emitToolCalls).toBe(true);
       expect(TEAM_POLICY.audit.enableChainHash).toBe(true);
       expect(TEAM_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
-      expect(TEAM_POLICY.requireVerifiedActorsForApproval).toBe(false);
       expect(TEAM_POLICY.identityProviderMode).toBe('optional');
-      expect(TEAM_POLICY.selfReview?.subagentEnabled).toBe(true);
-      expect(TEAM_POLICY.selfReview?.fallbackToSelf).toBe(false);
-      expect(TEAM_POLICY.selfReview?.strictEnforcement).toBe(true);
     });
 
     it('all REGULATED_POLICY fields match expected values', () => {
@@ -276,11 +264,7 @@ describe('config/policy', () => {
       expect(REGULATED_POLICY.audit.emitToolCalls).toBe(true);
       expect(REGULATED_POLICY.audit.enableChainHash).toBe(true);
       expect(REGULATED_POLICY.minimumActorAssuranceForApproval).toBe('claim_validated');
-      expect(REGULATED_POLICY.requireVerifiedActorsForApproval).toBe(false);
       expect(REGULATED_POLICY.identityProviderMode).toBe('optional');
-      expect(REGULATED_POLICY.selfReview?.subagentEnabled).toBe(true);
-      expect(REGULATED_POLICY.selfReview?.fallbackToSelf).toBe(false);
-      expect(REGULATED_POLICY.selfReview?.strictEnforcement).toBe(true);
     });
 
     it('all TEAM_CI_POLICY fields match expected values', () => {
@@ -293,11 +277,7 @@ describe('config/policy', () => {
       expect(TEAM_CI_POLICY.audit.emitToolCalls).toBe(true);
       expect(TEAM_CI_POLICY.audit.enableChainHash).toBe(true);
       expect(TEAM_CI_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
-      expect(TEAM_CI_POLICY.requireVerifiedActorsForApproval).toBe(false);
       expect(TEAM_CI_POLICY.identityProviderMode).toBe('optional');
-      expect(TEAM_CI_POLICY.selfReview?.subagentEnabled).toBe(true);
-      expect(TEAM_CI_POLICY.selfReview?.fallbackToSelf).toBe(false);
-      expect(TEAM_CI_POLICY.selfReview?.strictEnforcement).toBe(true);
     });
 
     it('detectCiContext recognizes common CI signals', () => {
@@ -411,16 +391,6 @@ describe('config/policy', () => {
       expect(result.policy.maxImplReviewIterations).toBe(14);
     });
 
-    it('resolvePolicyForHydrate applies config requireVerifiedActorsForApproval override', async () => {
-      const result = await resolvePolicyForHydrate({
-        defaultMode: 'regulated',
-        ciContext: false,
-        digestFn: (s) => `sha256:${s.length}`,
-        configRequireVerifiedActorsForApproval: true,
-      });
-      expect(result.policy.requireVerifiedActorsForApproval).toBe(true);
-    });
-
     it('resolvePolicyForHydrate uses preset when config undefined', async () => {
       const result = await resolvePolicyForHydrate({
         defaultMode: 'solo',
@@ -441,11 +411,9 @@ describe('config/policy', () => {
         readFileFn: async () => JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team' }),
         configMaxSelfReviewIterations: 8,
         configMaxImplReviewIterations: 16,
-        configRequireVerifiedActorsForApproval: true,
       });
       expect(result.policy.maxSelfReviewIterations).toBe(8);
       expect(result.policy.maxImplReviewIterations).toBe(16);
-      expect(result.policy.requireVerifiedActorsForApproval).toBe(true);
       expect(result.policy.minimumActorAssuranceForApproval).toBe('claim_validated');
     });
 
@@ -637,13 +605,6 @@ describe('config/policy', () => {
         flowguard_decision: 'human',
         flowguard_abort_session: 'human',
       });
-    });
-
-    it('solo selfReview is default config', () => {
-      const r = resolvePolicyWithContext('solo', false);
-      expect(r.policy.selfReview.subagentEnabled).toBe(true);
-      expect(r.policy.selfReview.fallbackToSelf).toBe(false);
-      expect(r.policy.selfReview.strictEnforcement).toBe(true);
     });
 
     it('solo preset: validationEvidence off (#400)', () => {

@@ -9,7 +9,7 @@
  * via the Task tool. FlowGuard accepts, validates, and persists the resulting
  * ReviewFindings.
  *
- * Flow (subagentEnabled=true):
+ * Flow:
  * 1. Primary agent performs implementation work
  * 2. Primary agent calls flowguard_implement (Mode A, records evidence)
  * 3. FlowGuard returns next-action instructing subagent invocation
@@ -23,10 +23,6 @@
  * - Persistence: impl history (author), implReviewFindings (reviewer)
  * - Response: summary of review findings
  * - Next-action: independent reviewer instructions
- *
- * Policy config (selfReview):
- * - subagentEnabled: enforces subagent review mode
- * - fallbackToSelf: deprecated compatibility field; self-review fallback is prohibited
  *
  * Validation rules:
  * - reviewMode=self → BLOCKED
@@ -197,9 +193,6 @@ function resolveImplementationFindings(
     expected: { obligationType: 'implement', iteration, planVersion },
     policy: {
       reviewInvocationPolicy: input.policy.reviewInvocationPolicy,
-      strictEnforcement: input.strictEnforcement,
-      subagentEnabled: input.subagentEnabled,
-      fallbackToSelf: input.fallbackToSelf,
     },
     input: {
       reviewFindings: input.args.reviewFindings,
@@ -257,9 +250,12 @@ function appendImplReviewState(input: {
   } = input;
   const implementation = runtime.state.implementation!;
   const assuranceBase = ensureReviewAssurance(runtime.state.reviewAssurance);
-  const strictObligation = runtime.strictEnforcement
-    ? findLatestObligation(assuranceBase.obligations, 'implement', iteration, planVersion)
-    : null;
+  const strictObligation = findLatestObligation(
+    assuranceBase.obligations,
+    'implement',
+    iteration,
+    planVersion,
+  );
   const consumedObligation = obligationToConsume ?? strictObligation;
   const consumedAssurance = consumeReviewObligation(
     assuranceBase,
@@ -525,7 +521,6 @@ async function handleSubmittedImplementationReview(input: {
     // Prepare the successor before consuming evidence. A failed Discovery mint
     // must preserve the current bound verdict as the executable recovery path.
     const reissued = await activateImplementationReviewObligation(runtime.state, {
-      subagentEnabled: runtime.subagentEnabled,
       iteration: iteration + 1,
       planVersion,
       now: runtime.ctx.now(),

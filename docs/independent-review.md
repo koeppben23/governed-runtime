@@ -1,6 +1,6 @@
 # Independent Review Architecture
 
-FlowGuard's independent review system enables structured, policy-governed review of plans, architecture decisions (ADRs), and implementations by a separate agent. On OpenCode, the FlowGuard plugin deterministically invokes the reviewer subagent via the OpenCode SDK — no LLM decision is involved in the invocation itself. On Claude Code and Codex, native reviewer agents/subagents are transport and isolation artifacts only. Review completion still requires validated, obligation-bound `ReviewFindings` through FlowGuard's existing `ReviewObligation` and `ReviewInvocationEvidence` pipeline. In strict mode (`selfReview.strictEnforcement=true`), review approval is fail-closed unless mandate-bound, single-use subagent evidence is present.
+FlowGuard's independent review system enables structured, policy-governed review of plans, architecture decisions (ADRs), and implementations by a separate agent. On OpenCode, the FlowGuard plugin deterministically invokes the reviewer subagent via the OpenCode SDK — no LLM decision is involved in the invocation itself. On Claude Code and Codex, native reviewer agents/subagents are transport and isolation artifacts only. Review completion requires validated, obligation-bound `ReviewFindings` through FlowGuard's existing `ReviewObligation` and `ReviewInvocationEvidence` pipeline; missing or mismatched evidence fails closed.
 
 ---
 
@@ -339,25 +339,9 @@ The installer merges into `opencode.jsonc`:
 }
 ```
 
-### 3. FlowGuard Policy
+### 3. Mandatory Review Invariant
 
-Independent subagent review is the default FlowGuard policy configuration:
-
-```json
-{
-  "selfReview": {
-    "subagentEnabled": true,
-    "fallbackToSelf": false,
-    "strictEnforcement": true
-  }
-}
-```
-
-| Setting                   | Effect                                                                                         |
-| ------------------------- | ---------------------------------------------------------------------------------------------- |
-| `subagentEnabled: true`   | Requires `reviewMode: "subagent"`.                                                             |
-| `fallbackToSelf: false`   | Self-review findings are always blocked.                                                       |
-| `strictEnforcement: true` | Enforces mandate-bound, one-time subagent evidence; missing or mismatched evidence is BLOCKED. |
+Independent subagent review is mandatory in every policy mode. It is not configurable: every review requires mandate-bound, one-time reviewer evidence, and self-review findings are blocked.
 
 ---
 

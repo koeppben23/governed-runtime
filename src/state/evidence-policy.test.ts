@@ -26,16 +26,10 @@ const CURRENT_SNAPSHOT = {
   maxReviewerOutputRepairAttempts: 1,
   allowSelfApproval: true,
   minimumActorAssuranceForApproval: 'best_effort' as const,
-  requireVerifiedActorsForApproval: false,
   identityProviderMode: 'optional' as const,
   reviewOutputPolicy: 'text_compat_allowed' as const,
   reviewInvocationPolicy: 'sdk_allowed' as const,
   reviewProfile: 'core' as const,
-  selfReview: {
-    subagentEnabled: true,
-    fallbackToSelf: false,
-    strictEnforcement: true,
-  },
   challengePolicy: {
     version: 'challenge-policy.v1' as const,
     counts: { TRIVIAL: 0 as const, STANDARD: 1 as const, 'HIGH-RISK': 2 as const },
@@ -74,7 +68,6 @@ describe('evidence-policy', () => {
       expect(parsed.hash).toBe(VALID_POLICY_DIGEST);
       expect(parsed.hashVersion).toBe(POLICY_DIGEST_VERSION);
       expect(parsed.minimumActorAssuranceForApproval).toBe('best_effort');
-      expect(parsed.requireVerifiedActorsForApproval).toBe(false);
       expect(parsed.identityProviderMode).toBe('optional');
       expect(parsed.discoveryHealth).toEqual(CURRENT_SNAPSHOT.discoveryHealth);
       expect(parsed.validationEvidence).toEqual(CURRENT_SNAPSHOT.validationEvidence);
@@ -102,13 +95,13 @@ describe('evidence-policy', () => {
 
   describe('BAD', () => {
     it.each(['', 'abc', 'UNKNOWN_LEGACY', 'A'.repeat(64)])(
-      'rejects invalid v2 policy digest %p',
+      'rejects invalid policy digest %p',
       (hash) => {
         expect(PolicySnapshotSchema.safeParse({ ...CURRENT_SNAPSHOT, hash }).success).toBe(false);
       },
     );
 
-    it('rejects a missing v2 policy digest', () => {
+    it('rejects a missing policy digest', () => {
       const { hash: _hash, ...snapshot } = CURRENT_SNAPSHOT;
       expect(PolicySnapshotSchema.safeParse(snapshot).success).toBe(false);
     });
@@ -117,7 +110,7 @@ describe('evidence-policy', () => {
       expect(() =>
         PolicySnapshotSchema.parse({
           ...CURRENT_SNAPSHOT,
-          hashVersion: 'policy-digest.v3',
+          hashVersion: 'policy-digest.v2',
         }),
       ).toThrow();
     });
@@ -139,10 +132,12 @@ describe('evidence-policy', () => {
       expect(() => PolicySnapshotSchema.parse(snapshot)).toThrow();
     });
 
-    it('rejects a snapshot missing requireVerifiedActorsForApproval', () => {
-      const { requireVerifiedActorsForApproval: _r, ...snapshot } = CURRENT_SNAPSHOT;
-      expect(() => PolicySnapshotSchema.parse(snapshot)).toThrow();
-    });
+    it.each(['selfReview', 'requireVerifiedActorsForApproval'] as const)(
+      'rejects removed %s',
+      (field) => {
+        expect(() => PolicySnapshotSchema.parse({ ...CURRENT_SNAPSHOT, [field]: true })).toThrow();
+      },
+    );
 
     it('rejects a snapshot missing identityProviderMode', () => {
       const { identityProviderMode: _i, ...snapshot } = CURRENT_SNAPSHOT;
@@ -185,11 +180,6 @@ describe('evidence-policy', () => {
 
     it('rejects a snapshot missing challengePolicy (no silent challenge-coverage disable)', () => {
       const { challengePolicy: _c, ...snapshot } = CURRENT_SNAPSHOT;
-      expect(() => PolicySnapshotSchema.parse(snapshot)).toThrow();
-    });
-
-    it('rejects a snapshot missing selfReview (no read-time reconstruction)', () => {
-      const { selfReview: _s, ...snapshot } = CURRENT_SNAPSHOT;
       expect(() => PolicySnapshotSchema.parse(snapshot)).toThrow();
     });
 

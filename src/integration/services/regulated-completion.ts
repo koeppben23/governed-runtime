@@ -179,7 +179,7 @@ export async function executeRegulatedCompletion(
     // contention so the caller can retry.
     if (err instanceof RegulatedCompletionLockContentionError) {
       const fresh = await readState(sessDir);
-      if (fresh?.archiveStatus === 'verified') {
+      if (fresh?.regulatedArchiveStatus === 'verified') {
         return fresh;
       }
       throw err;
@@ -192,7 +192,6 @@ export async function executeRegulatedCompletion(
     finalState = {
       ...current,
       regulatedArchiveStatus: 'failed' as const,
-      archiveStatus: 'failed' as const,
     };
     try {
       finalState = await writeStateWithArtifactsAndAuditOperations(sessDir, finalState);
@@ -274,23 +273,24 @@ async function archiveAndVerify(
     // durable exactly-once authority: return it without touching the
     // published artifacts.
     const fresh = await readState(sessDir);
-    if (fresh?.archiveStatus === 'verified') {
+    if (fresh?.regulatedArchiveStatus === 'verified') {
       return fresh;
     }
     let current = fresh ?? state;
-    if (current.archiveStatus !== 'created' && current.archiveStatus !== 'verified') {
+    if (
+      current.regulatedArchiveStatus !== 'created' &&
+      current.regulatedArchiveStatus !== 'verified'
+    ) {
       await archiveRegulatedEvidence(fingerprint, sessionID);
       current = await writeStateWithArtifactsAndAuditOperations(sessDir, {
         ...current,
         regulatedArchiveStatus: 'created' as const,
-        archiveStatus: 'created' as const,
       });
     }
     const verification = await verifyRegulatedArchive(fingerprint, sessionID);
     const finalState = await writeStateWithArtifactsAndAuditOperations(sessDir, {
       ...current,
       regulatedArchiveStatus: verification.passed ? ('verified' as const) : ('failed' as const),
-      archiveStatus: verification.passed ? ('verified' as const) : ('failed' as const),
     });
     return reconcileCompletionAuditOperations(sessDir, sessionID, finalState, auditDeps);
   });
@@ -303,7 +303,11 @@ export async function resumeRegulatedCompletion(
   auditDeps: AuditDeps,
 ): Promise<SessionState | null> {
   const state = await readState(sessDir);
-  if (!state || !isRegulatedTicketCompletion(state) || state.archiveStatus === 'verified') {
+  if (
+    !state ||
+    !isRegulatedTicketCompletion(state) ||
+    state.regulatedArchiveStatus === 'verified'
+  ) {
     return null;
   }
   return executeRegulatedCompletion(sessDir, fingerprint, sessionID, state, auditDeps);
@@ -413,7 +417,6 @@ async function commitCompletionLifecycle(
       {
         ...authority,
         regulatedArchiveStatus: 'pending' as const,
-        archiveStatus: 'pending' as const,
       },
       undefined,
       [lifecycleIntent()],

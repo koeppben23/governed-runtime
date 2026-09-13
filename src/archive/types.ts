@@ -176,7 +176,7 @@ export const ArchiveManifestSchema = z.object({
   // provides opaque ids like "ses_...", not UUIDs, so the manifest must accept
   // any non-empty id — NOT z.string().uuid(), which rejected every real
   // OpenCode session and made verifyArchive emit manifest_parse_error ->
-  // archiveStatus:"failed" on otherwise-valid archives. Path-traversal safety
+  // regulatedArchiveStatus:"failed" on otherwise-valid archives. Path-traversal safety
   // is enforced by validateSessionId at write time, not by this schema.
   sessionId: z.string().min(1),
   fingerprint: z.string().regex(FINGERPRINT_PATTERN),

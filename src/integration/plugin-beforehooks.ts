@@ -147,8 +147,7 @@ async function resolveEnforcement(
     const sessionState = sessDir ? await readState(sessDir) : null;
     return {
       sessionState,
-      // Stryker disable next-line ConditionalExpression,BooleanLiteral,OptionalChaining — equivalent: the non-`true` fallback routes every mutated variant of the optional chain to the same `false` outcome; the `=== true` equality is deliberate but observationally identical for the two-state snapshot.
-      strictEnforcement: sessionState?.policySnapshot?.selfReview?.strictEnforcement === true,
+      strictEnforcement: true,
     };
   } catch {
     // Stryker disable next-line ObjectLiteral — diagnostic-only payload.

@@ -87,7 +87,7 @@ describe('documentation/release-process', () => {
       const upgrade = readRepoFile('docs/upgrade-rollback.md');
 
       expect(upgrade).toContain('No forward-compatibility guarantee.');
-      expect(upgrade).toContain('policy-digest.v2');
+      expect(upgrade).toContain('policy-digest.v3');
       expect(upgrade).toContain('Do not edit persisted state to bridge that');
     });
   });

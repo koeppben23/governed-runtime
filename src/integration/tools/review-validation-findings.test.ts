@@ -35,8 +35,6 @@ function makeCtx(
   overrides: Partial<ReviewFindingsValidationContext> = {},
 ): ReviewFindingsValidationContext {
   return {
-    subagentEnabled: true,
-    fallbackToSelf: false,
     expectedPlanVersion: 1,
     expectedIteration: 0,
     ...overrides,
@@ -56,18 +54,21 @@ function findingRelation() {
 }
 
 function strictFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings {
-  return makeFindings({
+  const findings = makeFindings({
     reviewedBy: { sessionId: 'ses_child' },
+    ...overrides,
+  });
+  return {
+    ...findings,
     attestation: {
       mandateDigest: REVIEW_MANDATE_DIGEST,
       criteriaVersion: REVIEW_CRITERIA_VERSION,
       toolObligationId: '11111111-1111-4111-8111-111111111111',
-      iteration: 0,
-      planVersion: 1,
+      iteration: findings.iteration,
+      planVersion: findings.planVersion,
       reviewedBy: 'flowguard-reviewer',
     },
-    ...overrides,
-  });
+  };
 }
 
 function strictAssuranceFixture(
@@ -85,8 +86,8 @@ function strictAssuranceFixture(
         requiredChallengeKind: 'design_challenge' as const,
         challengePolicyVersion: 'challenge-policy.v1' as const,
         subjectDigest: 'test-subject-digest',
-        iteration: 0,
-        planVersion: 1,
+        iteration: findings.iteration,
+        planVersion: findings.planVersion,
         criteriaVersion: REVIEW_CRITERIA_VERSION,
         mandateDigest: REVIEW_MANDATE_DIGEST,
         maxReviewerOutputRepairAttempts: 1,
@@ -143,25 +144,36 @@ describe('validateReviewFindings', () => {
 
   describe('happy path', () => {
     it('returns null for valid subagent findings (subagent enabled)', () => {
+      const findings = strictFindings();
       const result = validateReviewFindings(
-        makeFindings({ reviewMode: 'subagent' }),
-        makeCtx({ subagentEnabled: true }),
+        findings,
+        makeCtx({ assurance: strictAssuranceFixture(findings), obligationType: 'plan' }),
       );
       expect(result).toBeNull();
     });
 
     it('returns null for iteration > 0 when expected', () => {
+      const findings = strictFindings({ iteration: 3 });
       const result = validateReviewFindings(
-        makeFindings({ iteration: 3 }),
-        makeCtx({ expectedIteration: 3 }),
+        findings,
+        makeCtx({
+          expectedIteration: 3,
+          assurance: strictAssuranceFixture(findings),
+          obligationType: 'plan',
+        }),
       );
       expect(result).toBeNull();
     });
 
     it('returns null for planVersion > 1 when expected', () => {
+      const findings = strictFindings({ planVersion: 5 });
       const result = validateReviewFindings(
-        makeFindings({ planVersion: 5 }),
-        makeCtx({ expectedPlanVersion: 5 }),
+        findings,
+        makeCtx({
+          expectedPlanVersion: 5,
+          assurance: strictAssuranceFixture(findings),
+          obligationType: 'plan',
+        }),
       );
       expect(result).toBeNull();
     });
@@ -215,38 +227,45 @@ describe('validateReviewFindings', () => {
     });
 
     it('allows accept with empty blockingIssues', () => {
+      const findings = strictFindings({ overallVerdict: 'accept', blockingIssues: [] });
       const result = validateReviewFindings(
-        makeFindings({ overallVerdict: 'accept', blockingIssues: [] }),
-        makeCtx(),
+        findings,
+        makeCtx({ assurance: strictAssuranceFixture(findings), obligationType: 'plan' }),
       );
       expect(result).toBeNull();
     });
 
     it('allows changes_requested with blocking issues', () => {
+      const findings = strictFindings({
+        overallVerdict: 'changes_requested',
+        blockingIssues: [criticalIssue],
+      });
       const result = validateReviewFindings(
-        makeFindings({ overallVerdict: 'changes_requested', blockingIssues: [criticalIssue] }),
-        makeCtx({ assurance: strictAssuranceFixture(), obligationType: 'plan' }),
+        findings,
+        makeCtx({ assurance: strictAssuranceFixture(findings), obligationType: 'plan' }),
       );
       expect(result).toBeNull();
     });
 
     it('allows changes_requested with empty blockingIssues', () => {
+      const findings = strictFindings({ overallVerdict: 'changes_requested', blockingIssues: [] });
       const result = validateReviewFindings(
-        makeFindings({ overallVerdict: 'changes_requested', blockingIssues: [] }),
-        makeCtx(),
+        findings,
+        makeCtx({ assurance: strictAssuranceFixture(findings), obligationType: 'plan' }),
       );
       expect(result).toBeNull();
     });
 
     it('allows accept with advisory-only findings OUTSIDE blockingIssues (majorRisks/missingVerification)', () => {
+      const findings = strictFindings({
+        overallVerdict: 'accept',
+        blockingIssues: [],
+        majorRisks: [majorIssue],
+        missingVerification: ['no integration test for the new path'],
+      });
       const result = validateReviewFindings(
-        makeFindings({
-          overallVerdict: 'accept',
-          blockingIssues: [],
-          majorRisks: [majorIssue],
-          missingVerification: ['no integration test for the new path'],
-        }),
-        makeCtx({ assurance: strictAssuranceFixture(), obligationType: 'plan' }),
+        findings,
+        makeCtx({ assurance: strictAssuranceFixture(findings), obligationType: 'plan' }),
       );
       expect(result).toBeNull();
     });
@@ -305,22 +324,6 @@ describe('validateReviewFindings', () => {
       expect(blocked.message).toContain('independent reviewer subagent');
       expect(blocked.message).toContain('reviewMode=self');
     });
-
-    it('accepts subagent mode even when legacy subagentEnabled=false is supplied', () => {
-      const result = validateReviewFindings(
-        makeFindings({ reviewMode: 'subagent' }),
-        makeCtx({ subagentEnabled: false }),
-      );
-      expect(result).toBeNull();
-    });
-
-    it('accepts subagent mode when subagentEnabled=true', () => {
-      const result = validateReviewFindings(
-        makeFindings({ reviewMode: 'subagent' }),
-        makeCtx({ subagentEnabled: true }),
-      );
-      expect(result).toBeNull();
-    });
   });
 
   // ── Rule 3: planVersion binding ────────────────────────────────────────
@@ -346,9 +349,14 @@ describe('validateReviewFindings', () => {
     });
 
     it('accepts exact planVersion match', () => {
+      const findings = strictFindings({ planVersion: 3 });
       const result = validateReviewFindings(
-        makeFindings({ planVersion: 3 }),
-        makeCtx({ expectedPlanVersion: 3 }),
+        findings,
+        makeCtx({
+          expectedPlanVersion: 3,
+          assurance: strictAssuranceFixture(findings),
+          obligationType: 'plan',
+        }),
       );
       expect(result).toBeNull();
     });
@@ -376,9 +384,14 @@ describe('validateReviewFindings', () => {
     });
 
     it('accepts exact iteration match', () => {
+      const findings = strictFindings({ iteration: 2 });
       const result = validateReviewFindings(
-        makeFindings({ iteration: 2 }),
-        makeCtx({ expectedIteration: 2 }),
+        findings,
+        makeCtx({
+          expectedIteration: 2,
+          assurance: strictAssuranceFixture(findings),
+          obligationType: 'plan',
+        }),
       );
       expect(result).toBeNull();
     });
@@ -391,7 +404,7 @@ describe('validateReviewFindings', () => {
       // Legacy subagent-disabled is ignored; planVersion binding remains authoritative.
       const result = validateReviewFindings(
         makeFindings({ reviewMode: 'subagent', planVersion: 99 }),
-        makeCtx({ subagentEnabled: false, expectedPlanVersion: 1 }),
+        makeCtx({ expectedPlanVersion: 1 }),
       );
       expect(result).not.toBeNull();
       expect(parseBlocked(result!).code).toBe('REVIEW_PLAN_VERSION_MISMATCH');
@@ -429,33 +442,9 @@ describe('validateReviewFindings', () => {
     });
   });
 
-  // ── Corner: legacy policy combinations ─────────────────────────────────
-
-  describe('policy matrix (legacy combinations all require subagent findings)', () => {
-    const combinations = [
-      { subagentEnabled: false, fallbackToSelf: false },
-      { subagentEnabled: false, fallbackToSelf: true },
-      { subagentEnabled: true, fallbackToSelf: false },
-      { subagentEnabled: true, fallbackToSelf: true },
-    ] as const;
-
-    for (const combo of combinations) {
-      it(`accepts subagent mode + subagent=${combo.subagentEnabled} fallback=${combo.fallbackToSelf}`, () => {
-        const result = validateReviewFindings(
-          makeFindings({ reviewMode: 'subagent' }),
-          makeCtx(combo),
-        );
-        expect(result).toBeNull();
-      });
-    }
-  });
-
   describe('strict assurance', () => {
     it('reports unavailable plugin enforcement when the strict assurance state is absent', () => {
-      const result = validateReviewFindings(
-        strictFindings(),
-        makeCtx({ strictEnforcement: true, obligationType: 'plan' }),
-      );
+      const result = validateReviewFindings(strictFindings(), makeCtx({ obligationType: 'plan' }));
 
       expect(result).not.toBeNull();
       const blocked = parseBlocked(result!);
@@ -468,8 +457,6 @@ describe('validateReviewFindings', () => {
       const result = validateReviewFindings(
         findings,
         makeCtx({
-          subagentEnabled: true,
-          strictEnforcement: true,
           assurance: strictAssuranceFixture(findings),
           obligationType: 'plan',
         }),
@@ -482,8 +469,6 @@ describe('validateReviewFindings', () => {
       const result = validateReviewFindings(
         findings,
         makeCtx({
-          subagentEnabled: true,
-          strictEnforcement: true,
           assurance: strictAssuranceFixture(),
           obligationType: 'plan',
         }),
@@ -500,8 +485,6 @@ describe('validateReviewFindings', () => {
       const result = validateReviewFindings(
         findings,
         makeCtx({
-          subagentEnabled: true,
-          strictEnforcement: true,
           assurance,
           obligationType: 'plan',
         }),
@@ -516,7 +499,6 @@ describe('validateReviewFindings', () => {
         findings,
         makeCtx({
           expectedIteration: 0,
-          strictEnforcement: true,
           assurance: strictAssuranceFixture(findings),
           obligationType: 'plan',
         }),
@@ -531,7 +513,6 @@ describe('validateReviewFindings', () => {
       const result = validateReviewFindings(
         tampered,
         makeCtx({
-          strictEnforcement: true,
           assurance: strictAssuranceFixture(original),
           obligationType: 'plan',
         }),
@@ -545,7 +526,6 @@ describe('validateReviewFindings', () => {
       const result = validateReviewFindings(
         findings,
         makeCtx({
-          strictEnforcement: true,
           assurance: strictAssuranceFixture(strictFindings()),
           obligationType: 'plan',
         }),
@@ -592,7 +572,6 @@ describe('validateReviewFindings', () => {
       const result = validateReviewFindings(
         findings,
         makeCtx({
-          strictEnforcement: true,
           assurance: undefined, // would otherwise trigger PLUGIN_ENFORCEMENT_UNAVAILABLE
           obligationType: 'plan',
         }),
@@ -605,39 +584,32 @@ describe('validateReviewFindings', () => {
       // The new gate must NOT capture the normal path. With approve,
       // validation proceeds to existing rules; on a fully-valid
       // findings + ctx the result is null (validation pass).
-      const findings = makeFindings({ overallVerdict: 'accept' });
-      const result = validateReviewFindings(findings, makeCtx());
+      const findings = strictFindings({ overallVerdict: 'accept' });
+      const result = validateReviewFindings(
+        findings,
+        makeCtx({ assurance: strictAssuranceFixture(findings), obligationType: 'plan' }),
+      );
       expect(result).toBeNull();
     });
 
     it('does NOT block when overallVerdict=changes_requested (HAPPY: regression guard)', () => {
       // Symmetric guard for the second 2-valued LoopVerdict.
-      const findings = makeFindings({ overallVerdict: 'changes_requested' });
-      const result = validateReviewFindings(findings, makeCtx());
+      const findings = strictFindings({ overallVerdict: 'changes_requested' });
+      const result = validateReviewFindings(
+        findings,
+        makeCtx({ assurance: strictAssuranceFixture(findings), obligationType: 'plan' }),
+      );
       expect(result).toBeNull();
     });
   });
 
   // ─── F13: architecture obligationType (slice 3) ──────────────
   describe('F13 architecture obligationType', () => {
-    it("accepts obligationType: 'architecture' (non-strict path)", () => {
-      const findings = makeFindings({ overallVerdict: 'accept' });
-      const result = validateReviewFindings(
-        findings,
-        makeCtx({
-          subagentEnabled: true,
-          obligationType: 'architecture',
-        }),
-      );
-      expect(result).toBeNull();
-    });
-
     it("third-verdict precedence still wins for obligationType: 'architecture'", () => {
       const findings = makeFindings({ overallVerdict: 'unable_to_review' });
       const result = validateReviewFindings(
         findings,
         makeCtx({
-          subagentEnabled: true,
           obligationType: 'architecture',
         }),
       );
@@ -662,8 +634,6 @@ describe('validateReviewFindings', () => {
       const result = validateReviewFindings(
         findings,
         makeCtx({
-          subagentEnabled: true,
-          strictEnforcement: true,
           assurance: archAssurance,
           obligationType: 'architecture',
         }),
@@ -744,12 +714,32 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
     });
   }
 
+  function strictChallengeCtx(findings: ReviewFindings): ReviewFindingsValidationContext {
+    const assurance = strictAssuranceFixture(findings);
+    assurance.obligations[0] = {
+      ...assurance.obligations[0]!,
+      obligationType: 'implement',
+      requiredChallengeCount: 1,
+      requiredChallengeKind: 'implementation_challenge',
+    };
+    assurance.invocations[0] = {
+      ...assurance.invocations[0]!,
+      obligationType: 'implement',
+    };
+    return makeCtx({
+      obligationType: 'implement',
+      assurance,
+      allowedEvidenceRefs: [IMPL_REF, FRESH_ATTEMPT_REF],
+      expectedObligationId: OBLIGATION_ID,
+    });
+  }
+
   it('accepts a challenge citing a fresh, allowed validation attempt', () => {
-    const result = validateReviewFindings(
-      makeFindings({ challenges: [implChallenge([IMPL_REF, FRESH_ATTEMPT_REF])] }),
-      challengeCtx(),
-    );
-    expect(result).toBeNull();
+    const findings = strictFindings({
+      challenges: [implChallenge([IMPL_REF, FRESH_ATTEMPT_REF])],
+    });
+
+    expect(validateReviewFindings(findings, strictChallengeCtx(findings))).toBeNull();
   });
 
   it('rejects a challenge citing a validation attempt outside the allowed (fresh) set', () => {

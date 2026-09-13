@@ -527,7 +527,6 @@ describe('architecture — BUG-15 evidence-resolve', () => {
         ...TEAM_POLICY,
         maxSelfReviewIterations: 3,
         reviewInvocationPolicy: 'host_task_required',
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
       });
       // Preserve the reviewed candidate and stop at the mandatory human gate.
       mocks.autoAdvance.mockImplementation((state: SessionState) => ({
@@ -567,7 +566,6 @@ describe('architecture — BUG-15 evidence-resolve', () => {
         ...TEAM_POLICY,
         maxSelfReviewIterations: 3,
         reviewInvocationPolicy: 'host_task_required',
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
       });
       mocks.autoAdvance.mockReturnValue({
         kind: 'advanced',
@@ -617,7 +615,6 @@ describe('architecture — BUG-15 evidence-resolve', () => {
         ...TEAM_POLICY,
         maxSelfReviewIterations: 3,
         reviewInvocationPolicy: 'host_task_required',
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
       });
 
       const { architecture } = await import('./architecture.js');
@@ -635,7 +632,6 @@ describe('architecture — BUG-15 evidence-resolve', () => {
         ...TEAM_POLICY,
         maxSelfReviewIterations: 3,
         reviewInvocationPolicy: 'host_task_required',
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
       });
 
       const { architecture } = await import('./architecture.js');
@@ -654,8 +650,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
       mocks.resolvePolicyFromState.mockReturnValue({
         ...TEAM_POLICY,
         maxSelfReviewIterations: 3,
-        reviewInvocationPolicy: 'sdk_allowed', // NOT host_task_required
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+        reviewInvocationPolicy: 'sdk_allowed',
       });
 
       const { architecture } = await import('./architecture.js');
@@ -672,7 +667,6 @@ describe('architecture — BUG-15 evidence-resolve', () => {
         ...TEAM_POLICY,
         maxSelfReviewIterations: 3,
         reviewInvocationPolicy: 'host_task_required',
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
       });
       mocks.autoAdvance.mockReturnValue({
         kind: 'advanced',
@@ -704,7 +698,6 @@ describe('architecture — BUG-15 evidence-resolve', () => {
         ...TEAM_POLICY,
         maxSelfReviewIterations: 3,
         reviewInvocationPolicy: 'host_task_required',
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
       });
       mocks.autoAdvance.mockReturnValue({
         kind: 'advanced',
@@ -727,36 +720,6 @@ describe('architecture — BUG-15 evidence-resolve', () => {
       expect(parsed.error).toBeUndefined();
     });
 
-    it('REGRESSION: sdk_allowed + agent submits reviewFindings → validates (non-host_task path)', async () => {
-      // BUG-17 regression guard: non-host_task modes still validate agent findings
-      mocks.state = stateWithEvidence('accept');
-      mocks.requireStateForMutation.mockResolvedValue(mocks.state);
-      mocks.resolvePolicyFromState.mockReturnValue({
-        ...TEAM_POLICY,
-        maxSelfReviewIterations: 3,
-        reviewInvocationPolicy: 'sdk_allowed',
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
-      });
-      mocks.autoAdvance.mockReturnValue({
-        kind: 'advanced',
-        state: mocks.state,
-        evalResult: { kind: 'pending' },
-        transitions: [],
-      });
-
-      const { architecture } = await import('./architecture.js');
-      const res = await architecture.execute(
-        {
-          reviewVerdict: 'accept',
-          reviewFindings: makeFindings({ iteration: 0, overallVerdict: 'accept' }),
-        },
-        {} as never,
-      );
-      const parsed = JSON.parse(String(res));
-      // SDK path succeeds with valid findings
-      expect(parsed.error).toBeUndefined();
-    });
-
     it('HAPPY: sdk_allowed + Claude manual_attested reviewFindings converge without pluginHandshakeAt', async () => {
       process.env.FLOWGUARD_HOST_PLATFORM = 'claude-code';
       mocks.state = stateWithManualAttestedEvidence();
@@ -765,7 +728,6 @@ describe('architecture — BUG-15 evidence-resolve', () => {
         ...TEAM_POLICY,
         maxSelfReviewIterations: 3,
         reviewInvocationPolicy: 'sdk_allowed',
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       });
       mocks.autoAdvance.mockReturnValue({
         kind: 'advanced',
@@ -790,7 +752,6 @@ describe('architecture — BUG-15 evidence-resolve', () => {
         ...TEAM_POLICY,
         maxSelfReviewIterations: 3,
         reviewInvocationPolicy: 'host_task_required',
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
       });
       mocks.autoAdvance.mockReturnValue({
         kind: 'advanced',
@@ -827,7 +788,6 @@ describe('architecture — BUG-15 evidence-resolve', () => {
         ...TEAM_POLICY,
         maxSelfReviewIterations: 3,
         reviewInvocationPolicy: 'host_task_required',
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
       });
       mocks.autoAdvance.mockReturnValue({
         kind: 'advanced',
@@ -894,7 +854,6 @@ describe('architecture — BUG-15 evidence-resolve', () => {
         ...TEAM_POLICY,
         maxSelfReviewIterations: 3,
         reviewInvocationPolicy: 'host_task_required',
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
       });
       mocks.autoAdvance.mockReturnValue({
         kind: 'advanced',

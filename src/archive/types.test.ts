@@ -4,7 +4,7 @@
  *
  * Regression: ArchiveManifestSchema.sessionId was z.string().uuid(), which
  * rejected OpenCode's opaque "ses_..." session ids — so verifyArchive emitted
- * manifest_parse_error and archiveStatus became "failed" on every real session.
+ * manifest_parse_error and regulatedArchiveStatus became "failed" on every real session.
  *
  * @test-policy HAPPY, BAD
  */

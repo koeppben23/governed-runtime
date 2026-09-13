@@ -105,11 +105,6 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
       },
       policySnapshot: {
         ...makeState('PLAN').policySnapshot,
-        selfReview: {
-          subagentEnabled: true,
-          fallbackToSelf: false,
-          strictEnforcement: true,
-        },
       },
       reviewAssurance: {
         assuranceSchemaVersion: 'review-assurance.v6' as const,
@@ -284,7 +279,7 @@ describe('plugin bootstrap fail-closed', () => {
         const input = { tool: 'task', sessionID: crypto.randomUUID(), callID: 'c1' };
         const output = { args: { subagent_type: 'flowguard-reviewer', prompt: 'test prompt' } };
         await expect(beforeHook(input, output)).rejects.toThrow(
-          'AUDIT_SESSION_AUTHORITY_UNAVAILABLE',
+          'STATE_UNAVAILABLE_FOR_REVIEWER_TASK',
         );
       } finally {
         await ws.cleanup();

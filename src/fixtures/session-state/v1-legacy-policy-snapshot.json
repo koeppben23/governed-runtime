@@ -49,7 +49,6 @@
     "maxSelfReviewIterations": 3,
     "maxImplReviewIterations": 3,
     "allowSelfApproval": false,
-    "requireVerifiedActorsForApproval": true,
     "audit": {
       "emitTransitions": true,
       "emitToolCalls": true,

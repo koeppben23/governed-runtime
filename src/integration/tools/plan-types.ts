@@ -48,11 +48,7 @@ export type PlanCallMode =
       params?: Record<string, string>;
     };
 
-export type PlanReviewPolicy = {
-  subagentEnabled: boolean;
-  fallbackToSelf: boolean;
-  strictEnforcement: boolean;
-};
+export type PlanReviewPolicy = Record<never, never>;
 
 export type PlanClaimSubmissionDiagnostics = {
   submittedClaimDeclarationsDigest: string;
@@ -146,9 +142,6 @@ export function classifyPlanCall(args: PlanArgs, input = planInputFlags(args)): 
 }
 
 export function planReviewPolicy(scope: MutablePlanSession): PlanReviewPolicy {
-  return {
-    subagentEnabled: scope.policy.selfReview?.subagentEnabled ?? false,
-    fallbackToSelf: scope.policy.selfReview?.fallbackToSelf ?? false,
-    strictEnforcement: scope.policy.selfReview?.strictEnforcement ?? false,
-  };
+  void scope;
+  return {};
 }

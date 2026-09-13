@@ -108,7 +108,6 @@ describe('actor assurance matrix', () => {
               ...getPolicyPreset('regulated'),
               allowSelfApproval: false,
               minimumActorAssuranceForApproval: required,
-              requireVerifiedActorsForApproval: false,
             },
           });
 

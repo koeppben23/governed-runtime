@@ -139,11 +139,6 @@ function buildState(
         : null,
     policySnapshot: {
       ...POLICY_SNAPSHOT,
-      selfReview: {
-        subagentEnabled: true,
-        fallbackToSelf: false,
-        strictEnforcement: true,
-      },
       reviewOutputPolicy,
     },
     reviewAssurance: {

@@ -593,7 +593,7 @@ function buildFullStatusResponse(input: FullStatusInput): string {
     ),
     discoveryDrift,
     implementationGuidance,
-    archiveStatus: state.archiveStatus ?? null,
+    archiveStatus: state.regulatedArchiveStatus ?? null,
     appliedPolicy: buildAppliedPolicyStatus(state),
     ...buildProfileStatus(state, discoveryHealth, input.runtimeCandidates),
     ...buildEvidenceStatus(state),

@@ -3,10 +3,7 @@
  * @description Tests for BUG-07 fix: obligation blocked after total invocation failure.
  *
  * Validates:
- * - Non-strict: obligation transitions to 'blocked' with REVIEWER_INVOCATION_EXHAUSTED
- * - Strict: existing blockReviewOutcome behavior unchanged (regression)
- * - Audit event emitted for non-strict exhaustion
- * - Output unchanged in non-strict exhaustion (LLM fallback)
+ * - Invocation failure blocks the review outcome
  * - Blocked obligations are not rediscovered by findLatestPendingReviewObligation
  *
  * @test-policy HAPPY, BAD, CORNER, EDGE, SMOKE — all categories present.
@@ -30,11 +27,7 @@ import { runReviewOrchestration } from './plugin-orchestrator.js';
 import type { OrchestratorDeps, ToolCallEvent } from './plugin-orchestrator.js';
 import { createTestAdapter } from './test-adapter-helper.js';
 import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
-import {
-  REVIEW_CRITERIA_VERSION,
-  REVIEW_MANDATE_DIGEST,
-  findLatestPendingReviewObligation,
-} from './review/assurance.js';
+import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import type { SessionState } from '../state/schema.js';
 import type { OrchestratorClient } from './review/types.js';
 
@@ -57,17 +50,12 @@ function reviewRequiredOutput(): string {
   });
 }
 
-function buildState(strictEnforcement: boolean): SessionState {
+function buildState(): SessionState {
   return makeState('PLAN', {
     ticket: TICKET,
     plan: PLAN_RECORD,
     policySnapshot: {
       ...POLICY_SNAPSHOT,
-      selfReview: {
-        subagentEnabled: true,
-        fallbackToSelf: false,
-        strictEnforcement,
-      } as never,
       reviewOutputPolicy: 'structured_required',
     },
     reviewAssurance: {
@@ -112,11 +100,6 @@ function buildAlreadyBlockedState(): SessionState {
     plan: PLAN_RECORD,
     policySnapshot: {
       ...POLICY_SNAPSHOT,
-      selfReview: {
-        subagentEnabled: true,
-        fallbackToSelf: false,
-        strictEnforcement: false,
-      } as never,
       reviewOutputPolicy: 'structured_required',
     },
     reviewAssurance: {
@@ -168,37 +151,6 @@ function buildFailingClient(): OrchestratorClient {
   };
 }
 
-/** Client that returns blocked response */
-function buildBlockedClient(): OrchestratorClient {
-  return {
-    app: { agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }) },
-    session: {
-      create: vi.fn().mockResolvedValue({ data: { id: 'child-blocked-1' }, error: undefined }),
-      prompt: vi.fn().mockResolvedValue({
-        data: { info: { structured_output: undefined } },
-        error: undefined,
-      }),
-    },
-  };
-}
-
-/** Client returning findings without structured_output (unparseable) */
-function buildUnparseableClient(): OrchestratorClient {
-  return {
-    app: { agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }) },
-    session: {
-      create: vi.fn().mockResolvedValue({ data: { id: 'child-unparse-1' }, error: undefined }),
-      prompt: vi.fn().mockResolvedValue({
-        data: {
-          parts: [{ type: 'text', text: 'not JSON' }],
-          info: {},
-        },
-        error: undefined,
-      }),
-    },
-  };
-}
-
 function buildDeps(
   client: OrchestratorClient,
   stateRef: { current: SessionState },
@@ -246,14 +198,13 @@ function buildDeps(
   };
 }
 
-async function runExhaustion(strictEnforcement: boolean, clientOverride?: OrchestratorClient) {
-  const state = buildState(strictEnforcement);
+async function runExhaustion(clientOverride?: OrchestratorClient) {
+  const state = buildState();
   const stateRef = { current: state };
   vi.mocked(readState).mockResolvedValue(stateRef.current);
   const client = clientOverride ?? buildFailingClient();
   const { deps, blockReviewOutcome, updateReviewAssurance } = buildDeps(client, stateRef);
-  const originalOutput = reviewRequiredOutput();
-  const output = { output: originalOutput };
+  const output = { output: reviewRequiredOutput() };
   const event: ToolCallEvent = {
     toolName: TOOL_FLOWGUARD_PLAN,
     input: {},
@@ -266,11 +217,9 @@ async function runExhaustion(strictEnforcement: boolean, clientOverride?: Orches
 
   return {
     output,
-    originalOutput,
     state: stateRef.current,
     deps,
     blockReviewOutcome,
-    updateReviewAssurance,
   };
 }
 
@@ -286,34 +235,9 @@ describe('BUG-07: obligation blocked after total invocation failure', () => {
 
   // ─── HAPPY ──────────────────────────────────────────────────────────────────
 
-  describe('HAPPY: non-strict exhaustion blocking', () => {
-    it('obligation blocked with REVIEWER_INVOCATION_EXHAUSTED when invokeReviewer returns null (non-strict)', async () => {
-      const { state } = await runExhaustion(false);
-
-      const obligation = state.reviewAssurance?.obligations.find(
-        (o) => o.obligationId === OBLIGATION_ID,
-      );
-      expect(obligation).toBeDefined();
-      expect(obligation!.status).toBe('blocked');
-      expect(obligation!.blockedCode).toBe('REVIEWER_INVOCATION_EXHAUSTED');
-    });
-
-    it('commits a durable audit intent for non-strict exhaustion', async () => {
-      const { state, updateReviewAssurance } = await runExhaustion(false);
-      const intentFactory = updateReviewAssurance.mock.calls[1]![2] as (
-        state: SessionState,
-        now: string,
-      ) => readonly unknown[];
-      expect(intentFactory(state, NOW)).toEqual([
-        expect.objectContaining({
-          event: 'review:obligation_blocked',
-          detail: { obligationId: OBLIGATION_ID, code: 'REVIEWER_INVOCATION_EXHAUSTED' },
-        }),
-      ]);
-    });
-
-    it('strict mode still calls blockReviewOutcome (regression guard)', async () => {
-      const { blockReviewOutcome } = await runExhaustion(true);
+  describe('HAPPY: exhaustion blocking', () => {
+    it('calls blockReviewOutcome when reviewer invocation fails', async () => {
+      const { blockReviewOutcome } = await runExhaustion();
 
       expect(blockReviewOutcome).toHaveBeenCalledWith(
         expect.objectContaining({ sessDir: SESS_DIR, sessionId: PARENT_SESSION_ID }),
@@ -329,7 +253,7 @@ describe('BUG-07: obligation blocked after total invocation failure', () => {
 
   describe('BAD: pre-condition failures', () => {
     it('null reviewerResult + no sessDir -> output blocked PLUGIN_ENFORCEMENT_UNAVAILABLE', async () => {
-      const state = buildState(false);
+      const state = buildState();
       const stateRef = { current: state };
       vi.mocked(readState).mockResolvedValue(stateRef.current);
       const client = buildFailingClient();
@@ -402,16 +326,6 @@ describe('BUG-07: obligation blocked after total invocation failure', () => {
       expect(obligation!.status).toBe('blocked');
       expect(obligation!.blockedCode).toBe('REVIEWER_INVOCATION_EXHAUSTED');
     });
-
-    it('multiple sequential failures create distinct durable audit intents', async () => {
-      // First failure
-      const first = await runExhaustion(false);
-      expect(first.updateReviewAssurance.mock.calls[1]![2]).toBeDefined();
-
-      // Second failure (fresh run)
-      const second = await runExhaustion(false);
-      expect(second.updateReviewAssurance.mock.calls[1]![2]).toBeDefined();
-    });
   });
 
   // ─── EDGE ───────────────────────────────────────────────────────────────────
@@ -427,11 +341,6 @@ describe('BUG-07: obligation blocked after total invocation failure', () => {
         plan: PLAN_RECORD,
         policySnapshot: {
           ...POLICY_SNAPSHOT,
-          selfReview: {
-            subagentEnabled: true,
-            fallbackToSelf: false,
-            strictEnforcement: false,
-          } as never,
           reviewOutputPolicy: 'structured_required',
           reviewInvocationPolicy: 'host_task_required',
         },
@@ -494,45 +403,6 @@ describe('BUG-07: obligation blocked after total invocation failure', () => {
             (call[4] as Record<string, unknown>).code === 'REVIEWER_INVOCATION_EXHAUSTED',
         );
       expect(exhaustionAudit.length).toBe(0);
-    });
-
-    it('reviewerResult has findings but no parseable schema (non-strict) -> does NOT hit exhaustion path', async () => {
-      // invokeReviewer returns a result (not null), but findings don't parse.
-      // The non-null path (line 598+) handles this — NOT the else branch at 829.
-      const { state } = await runExhaustion(false, buildUnparseableClient());
-
-      // With unparseable client, invokeReviewer returns null (no structured_output,
-      // all 3 attempts exhausted) → SHOULD hit exhaustion path
-      const obligation = state.reviewAssurance?.obligations.find(
-        (o) => o.obligationId === OBLIGATION_ID,
-      );
-      expect(obligation!.status).toBe('blocked');
-      expect(obligation!.blockedCode).toBe('REVIEWER_INVOCATION_EXHAUSTED');
-    });
-  });
-
-  // ─── SMOKE ──────────────────────────────────────────────────────────────────
-
-  describe('SMOKE: output preservation', () => {
-    it('end-to-end: tool output unchanged in non-strict exhaustion (fallback to LLM)', async () => {
-      const { output, originalOutput } = await runExhaustion(false);
-
-      // In non-strict mode, the output is NOT rewritten — the LLM fallback path
-      // continues with the original output. Only the obligation status changes.
-      expect(output.output).toBe(originalOutput);
-    });
-  });
-
-  // ─── E2E: findLatestPendingReviewObligation integration ─────────────────────
-
-  describe('E2E: blocked obligation not rediscovered', () => {
-    it('findLatestPendingReviewObligation does NOT return blocked obligation', async () => {
-      const { state } = await runExhaustion(false);
-
-      // The core invariant: after exhaustion, the obligation is blocked and
-      // findLatestPendingReviewObligation must not find it.
-      const found = findLatestPendingReviewObligation(state.reviewAssurance, 'plan');
-      expect(found).toBeNull();
     });
   });
 });

@@ -141,11 +141,5 @@ describe('BUG-21 null-tolerance tests', () => {
       expect(source).toContain('BUG-21');
       expect(source).toContain('as any');
     });
-
-    it('architecture BUG-21 block explains intentionally invalid input', () => {
-      const source = readSource('integration/tools/architecture-tool.test.ts');
-      expect(source).toContain('BUG-21');
-      expect(source).toContain('as any');
-    });
   });
 });

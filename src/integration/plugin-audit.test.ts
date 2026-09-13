@@ -1088,7 +1088,7 @@ describe('runAudit', () => {
       const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-complete-'));
       try {
         const state = completeState({
-          archiveStatus: 'created',
+          regulatedArchiveStatus: 'created',
           policySnapshot: { ...completeState().policySnapshot, mode: 'solo' as const },
         });
         await writeState(sessDir, state);

@@ -50,16 +50,10 @@ import { checkRepositoryEvidenceBinding } from './review-validation-evidence.js'
 
 /** Policy and binding context required for review-findings validation. */
 export interface ReviewFindingsValidationContext {
-  /** Deprecated compatibility field; mandatory subagent review is always required. */
-  readonly subagentEnabled: boolean;
-  /** Deprecated compatibility field; self-review fallback is always prohibited. */
-  readonly fallbackToSelf: boolean;
   /** Expected plan version (history.length + 1). */
   readonly expectedPlanVersion: number;
   /** Expected iteration number for the current mode/phase. */
   readonly expectedIteration: number;
-  /** Strict assurance mode flag. */
-  readonly strictEnforcement?: boolean;
   /** Strict assurance store from state. */
   readonly assurance?: ReviewAssuranceState;
   /** Obligation type for strict checks. */
@@ -277,9 +271,7 @@ export function validateReviewFindings(
   const evidenceBlock = checkRepositoryEvidenceBinding(findings, obligation, ctx);
   if (evidenceBlock) return evidenceBlock;
 
-  if (ctx.strictEnforcement) return validateStrictReviewFindings(findings, ctx);
-
-  return null;
+  return validateStrictReviewFindings(findings, ctx);
 }
 
 function checkReviewFindingsScope(
@@ -566,9 +558,6 @@ interface HostTaskResolutionContext {
   };
   readonly policy: {
     readonly reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed';
-    readonly strictEnforcement: boolean;
-    readonly subagentEnabled: boolean;
-    readonly fallbackToSelf: boolean;
   };
   readonly input: {
     readonly reviewFindings?: unknown;
@@ -703,11 +692,8 @@ export function resolveHostTaskEffectiveFindings(
 function resolveDirectSubmittedFindings(ctx: HostTaskResolutionContext): HostTaskResolutionResult {
   if (!ctx.input.reviewFindings) return {};
   const blocked = validateReviewFindings(ctx.input.reviewFindings as ReviewFindings, {
-    subagentEnabled: ctx.policy.subagentEnabled,
-    fallbackToSelf: ctx.policy.fallbackToSelf,
     expectedPlanVersion: ctx.expected.planVersion,
     expectedIteration: ctx.expected.iteration,
-    strictEnforcement: ctx.policy.strictEnforcement,
     assurance: ctx.state.assurance,
     obligationType: ctx.expected.obligationType,
     reviewInvocationPolicy: ctx.policy.reviewInvocationPolicy,

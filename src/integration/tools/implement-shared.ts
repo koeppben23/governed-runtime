@@ -148,14 +148,13 @@ function buildImplementationReviewObligation(
 export async function activateImplementationReviewObligation(
   state: SessionState,
   input: {
-    subagentEnabled: boolean;
     iteration: number;
     planVersion: number;
     now: string;
     worktree: string;
   },
 ): Promise<ImplementationReviewActivationResult> {
-  if (state.phase !== 'IMPL_REVIEW' || state.reducedCeremony !== null || !input.subagentEnabled) {
+  if (state.phase !== 'IMPL_REVIEW' || state.reducedCeremony !== null) {
     return { state, obligation: null, attemptId: null };
   }
 
@@ -233,7 +232,6 @@ export async function materializeImplReviewContract(
 export async function activateReviewObligationAndPersist(input: {
   state: SessionState;
   preAdvanceState: SessionState;
-  subagentEnabled: boolean;
   iteration: number;
   planVersion: number;
   now: string;
@@ -243,7 +241,6 @@ export async function activateReviewObligationAndPersist(input: {
   persistPreAdvance?: boolean;
 }): Promise<{ activated: ImplementationReviewActivationResult } | { response: string }> {
   const activated = await activateImplementationReviewObligation(input.state, {
-    subagentEnabled: input.subagentEnabled,
     iteration: input.iteration,
     planVersion: input.planVersion,
     now: input.now,
@@ -278,9 +275,6 @@ export type ImplementRuntime = {
   policy: FlowGuardPolicy;
   ctx: RailContext;
   maxImplReviewIterations: number;
-  subagentEnabled: boolean;
-  fallbackToSelf: boolean;
-  strictEnforcement: boolean;
 };
 
 export type ImplementationCeremony = ReturnType<typeof resolveCeremonyProfile>;
@@ -297,9 +291,6 @@ export function buildImplementRuntime(input: {
   return {
     ...input,
     maxImplReviewIterations: input.policy.maxImplReviewIterations,
-    subagentEnabled: input.policy.selfReview?.subagentEnabled ?? false,
-    fallbackToSelf: input.policy.selfReview?.fallbackToSelf ?? false,
-    strictEnforcement: input.policy.selfReview?.strictEnforcement ?? false,
   };
 }
 

@@ -31,7 +31,6 @@ export default defineConfig({
       'src/integration/proofgraph/claim-contract.test.ts',
       'src/integration/proofgraph/materialize-contract.test.ts',
       'src/integration/tools/pre-implementation-challenge.test.ts',
-      'src/integration/tools/architecture-tool.test.ts',
       'src/integration/tools/architecture-tool-evidence-resolve.test.ts',
       'src/discovery/**/*.test.ts',
       'src/verification/**/*.test.ts',

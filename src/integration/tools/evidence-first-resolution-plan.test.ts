@@ -5,7 +5,7 @@
  * validate agent-submitted findings normally.
  *
  * Tests plan.ts and implement.ts evidence-first patterns.
- * (architecture.ts tests are in architecture-tool.test.ts)
+ * (architecture.ts evidence-resolution tests are in architecture-tool-evidence-resolve.test.ts)
  *
  * @test-policy HAPPY, BAD, EDGE, REGRESSION — all categories present.
  */
@@ -384,7 +384,6 @@ describe('BUG-17: plan evidence-first resolution', () => {
       ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
     mocks.autoAdvance.mockReturnValue({
       kind: 'advanced',
@@ -423,7 +422,6 @@ describe('BUG-17: plan evidence-first resolution', () => {
       ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
 
     const { plan } = await import('./plan.js');
@@ -448,7 +446,6 @@ describe('BUG-17: plan evidence-first resolution', () => {
       ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
     // autoAdvance overflows: a non-terminating topology. The overflow variant
     // carries NO advanced state.
@@ -526,7 +523,6 @@ describe('BUG-17: plan evidence-first resolution', () => {
       ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
 
     const { plan } = await import('./plan.js');
@@ -552,7 +548,6 @@ describe('BUG-17: plan evidence-first resolution', () => {
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     mocks.resolvePolicyFromState.mockReturnValue({
       ...TEAM_POLICY,
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
     mocks.readDiscovery.mockResolvedValueOnce(null);
     mocks.autoAdvance.mockImplementation((s: SessionState) => ({
@@ -589,7 +584,6 @@ describe('BUG-17: plan evidence-first resolution', () => {
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     mocks.resolvePolicyFromState.mockReturnValue({
       ...TEAM_POLICY,
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
     mocks.readDiscovery.mockResolvedValueOnce(discoveryWithPaths(['src/db.ts']));
     mocks.autoAdvance.mockImplementation((s: SessionState) => ({
@@ -612,35 +606,6 @@ describe('BUG-17: plan evidence-first resolution', () => {
     expect(obligation?.metadata?.targetPaths).toEqual(['src/db.ts']);
   });
 
-  it('initial obligation: no challenge obligation when subagent review is disabled (no discovery read)', async () => {
-    mocks.state = makeState('TICKET', {
-      ticket: TICKET,
-      policySnapshot: {
-        ...makeState('TICKET').policySnapshot,
-        challengePolicy: TEAM_POLICY.challengePolicy,
-      },
-    });
-    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
-    mocks.resolvePolicyFromState.mockReturnValue({
-      ...TEAM_POLICY,
-      selfReview: { subagentEnabled: false, fallbackToSelf: false, strictEnforcement: false },
-    });
-    mocks.autoAdvance.mockImplementation((s: SessionState) => ({
-      kind: 'advanced',
-      state: s,
-      evalResult: { kind: 'pending' },
-      transitions: [],
-    }));
-
-    const { plan } = await import('./plan.js');
-    const parsed = JSON.parse(
-      String(await plan.execute({ planText: '## Plan\n1. Fix' }, {} as never)),
-    );
-
-    expect(parsed.error).toBeUndefined();
-    expect(mocks.readDiscovery).not.toHaveBeenCalled();
-  });
-
   it('EDGE: host_task_required + agent submits INVALID reviewFindings → still succeeds (ignored)', async () => {
     // BUG-17: In host_task mode, agent-submitted findings are completely ignored.
     // Even findings with wrong iteration/planVersion don't block because evidence is SSOT.
@@ -650,7 +615,6 @@ describe('BUG-17: plan evidence-first resolution', () => {
       ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
     mocks.autoAdvance.mockReturnValue({
       kind: 'advanced',
@@ -681,7 +645,6 @@ describe('BUG-17: plan evidence-first resolution', () => {
       ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'sdk_allowed',
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
 
     const { plan } = await import('./plan.js');
@@ -766,7 +729,6 @@ describe('BUG-17: plan evidence-first resolution', () => {
       ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'sdk_allowed',
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
     });
     mocks.autoAdvance.mockReturnValue({
       kind: 'advanced',
@@ -802,7 +764,6 @@ describe('BUG-17: plan evidence-first resolution', () => {
       ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
     mocks.autoAdvance.mockImplementation((s: SessionState) => ({
       kind: 'advanced',
@@ -862,7 +823,6 @@ describe('BUG-17: plan evidence-first resolution', () => {
       ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
     mocks.autoAdvance.mockImplementation((s: SessionState) => ({
       kind: 'advanced',

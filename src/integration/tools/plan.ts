@@ -9,7 +9,7 @@
  * via the Task tool. FlowGuard accepts, validates, and persists the resulting
  * ReviewFindings.
  *
- * Flow (subagentEnabled=true):
+ * Flow:
  * 1. Primary agent drafts plan, submits to FlowGuard
  * 2. FlowGuard returns next-action instructing subagent invocation
  * 3. Primary agent calls flowguard-reviewer subagent via Task tool
@@ -23,10 +23,6 @@
  * - Persistence: plan.history (author), plan.reviewFindings (reviewer)
  * - Response: summary of review findings, iteration tracking
  * - Next-action: independent reviewer instructions
- *
- * Policy config (selfReview):
- * - subagentEnabled: enforces subagent review mode
- * - fallbackToSelf: deprecated compatibility field; self-review fallback is prohibited
  *
  * Validation rules:
  * - reviewMode=self → BLOCKED
@@ -176,11 +172,8 @@ function validateReviewInputShape(input: PlanInputFlags, state: SessionState): s
 function validateInitialPlanFindings(scope: PlanExecutionScope): string | null {
   if (!scope.input.isInitialSubmission || !scope.args.reviewFindings) return null;
   return validateReviewFindings(scope.args.reviewFindings, {
-    subagentEnabled: scope.reviewPolicy.subagentEnabled,
-    fallbackToSelf: scope.reviewPolicy.fallbackToSelf,
     expectedPlanVersion: (scope.state.plan?.history.length ?? 0) + 1,
     expectedIteration: 0,
-    strictEnforcement: false,
     reviewInvocationPolicy: scope.policy.reviewInvocationPolicy,
     reviewParentSessionId: scope.context.sessionID,
     reviewHostPlatform: resolveRuntimeReviewPlatform(),
@@ -237,7 +230,6 @@ async function createPlanReviewAttempt(
     }
   | { kind: 'blocked'; message: string }
 > {
-  if (!scope.reviewPolicy.subagentEnabled) return { kind: 'ok', attemptResult: null };
   const freeze = await freezeContextAuthorityAtHead(scope.worktree);
   const authority = frozenAuthorityOrUndefined(freeze);
   // Repository-governed attempts are minted WITH their host-owned Discovery
@@ -364,9 +356,6 @@ function resolveEffectivePlanFindings(scope: PlanExecutionScope) {
     },
     policy: {
       reviewInvocationPolicy: scope.policy.reviewInvocationPolicy,
-      strictEnforcement: scope.reviewPolicy.strictEnforcement,
-      subagentEnabled: scope.reviewPolicy.subagentEnabled,
-      fallbackToSelf: scope.reviewPolicy.fallbackToSelf,
     },
     input: {
       reviewFindings: scope.args.reviewFindings,
@@ -497,14 +486,12 @@ function consumePlanObligation(
   expectedPlanVersion: number,
   evidenceInvocationId: string | null,
 ) {
-  const strictObligation = scope.reviewPolicy.strictEnforcement
-    ? findLatestObligation(
-        assuranceBase.obligations,
-        'plan',
-        expectedIteration,
-        expectedPlanVersion,
-      )
-    : null;
+  const strictObligation = findLatestObligation(
+    assuranceBase.obligations,
+    'plan',
+    expectedIteration,
+    expectedPlanVersion,
+  );
   return consumeReviewObligation(
     assuranceBase,
     strictObligation,
@@ -534,7 +521,6 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
   const classification = await resolvePreImplementationChallengeClassification(
     scope.state,
     scope.worktree,
-    scope.reviewPolicy.subagentEnabled,
     scope.args.targetPaths,
   );
   const attempt = await createPlanReviewAttempt(

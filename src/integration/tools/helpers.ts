@@ -193,11 +193,11 @@ export function formatRailResult(
     nextAction,
     result.state.phase,
     aborted,
-    result.state.archiveStatus ?? null,
+    result.state.regulatedArchiveStatus ?? null,
     result.state,
   );
   const reviewDecision = result.state.reviewDecision;
-  const { archiveStatus } = result.state;
+  const archiveStatus = result.state.regulatedArchiveStatus;
   const reviewLoop = getReviewLoopProgress(result.state);
   const presentation = options.evidenceApprovalCompletion
     ? buildEvidenceApprovalCompletionPresentation(result.state)
@@ -662,7 +662,7 @@ export function enrichWithNextAction<T extends Record<string, unknown>>(
     nextAction,
     state.phase,
     state.error?.code === 'ABORTED',
-    state.archiveStatus ?? null,
+    state.regulatedArchiveStatus ?? null,
     state,
   );
   return {

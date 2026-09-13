@@ -167,7 +167,6 @@ function buildState(
     },
     policySnapshot: {
       ...POLICY_SNAPSHOT,
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       reviewInvocationPolicy: 'host_task_required',
       reviewOutputPolicy: 'structured_required',
     },

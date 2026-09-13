@@ -453,7 +453,6 @@ describe('P34a: Policy-Driven Branches', () => {
       ...state!,
       policySnapshot: {
         ...state!.policySnapshot,
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
     });
 
@@ -479,7 +478,6 @@ describe('P34a: Policy-Driven Branches', () => {
       ...state!,
       policySnapshot: {
         ...state!.policySnapshot,
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
     });
 
@@ -507,7 +505,6 @@ describe('P34a: Policy-Driven Branches', () => {
       ...state!,
       policySnapshot: {
         ...state!.policySnapshot,
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
     });
 
@@ -535,7 +532,6 @@ describe('P34a: Policy-Driven Branches', () => {
       ...state!,
       policySnapshot: {
         ...state!.policySnapshot,
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
     });
 
@@ -560,13 +556,10 @@ describe('P34a: Policy-Driven Branches', () => {
       ...state!,
       policySnapshot: {
         ...state!.policySnapshot,
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
     });
 
     state = await readState(sessDir);
-    expect(state?.policySnapshot.selfReview?.subagentEnabled).toBe(true);
-
     await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
     const reviewFindings = await fulfillPlanReview(0, 'accept');
     const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
@@ -754,28 +747,6 @@ describe('decision', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('VALIDATION');
-    });
-
-    it('config verified-actor requirement blocks approve for best_effort reviewer', async () => {
-      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
-      const { writeRepoConfig, readConfig } = await import('../adapters/persistence-config.js');
-      const fp = await computeFingerprint(ws.tmpDir);
-      const wsDir = workspaceDir(fp.fingerprint);
-      const baseConfig = await readConfig();
-      await writeRepoConfig(ws.tmpDir, {
-        ...baseConfig,
-        policy: {
-          ...baseConfig.policy,
-          requireVerifiedActorsForApproval: true,
-        },
-      });
-
-      await reachPlanReview();
-      recordUserDecision('approve');
-      const raw = await decision.execute({ verdict: 'approve', rationale: 'Looks good' }, ctx);
-      const result = parseToolResult(raw);
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
     });
   });
 

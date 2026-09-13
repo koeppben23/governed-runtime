@@ -35,13 +35,9 @@ function baseSession(stateOverrides: Record<string, unknown> = {}): Architecture
       selfReview: { iteration: 1 },
       ...stateOverrides,
     },
-    policy: {
-      selfReview: { strictEnforcement: false },
-      reviewInvocationPolicy: 'host_task_preferred',
-      maxSelfReviewIterations: 3,
-    },
+    policy: { reviewInvocationPolicy: 'host_task_preferred', maxSelfReviewIterations: 3 },
     ctx: {},
-  } as ArchitectureSession;
+  } as unknown as ArchitectureSession;
 }
 
 const baseContext = { sessionID: 'test-session' } as ToolContext;

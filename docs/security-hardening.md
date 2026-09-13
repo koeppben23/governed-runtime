@@ -313,19 +313,19 @@ Regulated clean completion (`EVIDENCE_REVIEW → APPROVE → COMPLETE`) now requ
 creation **and** verification success. The decision tool owns the synchronous archive
 lifecycle for regulated sessions:
 
-1. State set to `archiveStatus: 'pending'`
+1. State set to `regulatedArchiveStatus: 'pending'`
 2. `session_completed` audit event appended to trail (before archive)
 3. `archiveSession()` called synchronously (not fire-and-forget)
 4. `verifyArchive()` validates archive integrity
-5. State updated to `archiveStatus: 'verified'` or `archiveStatus: 'failed'`
+5. State updated to `regulatedArchiveStatus: 'verified'` or `regulatedArchiveStatus: 'failed'`
 
 The `session_completed` event is emitted **before** `archiveSession()` so the archive
-contains the terminal lifecycle event. The audit plugin detects `archiveStatus` on the
+contains the terminal lifecycle event. The audit plugin detects `regulatedArchiveStatus` on the
 persisted state and skips its own `session_completed` emission and auto-archive to avoid
 duplication. The plugin's chain hash cache is invalidated for regulated completions to
 prevent chain forks.
 
-A regulated session with `phase: 'COMPLETE'` and `archiveStatus !== 'verified'` (without
+A regulated session with `phase: 'COMPLETE'` and `regulatedArchiveStatus !== 'verified'` (without
 `error`) is NOT a clean regulated completion — it is a degraded terminal state.
 
 **Checksum sidecar hardening:** In regulated mode, `.sha256` sidecar write failure is

@@ -47,7 +47,11 @@ export async function recoverRegulatedCompletion(
     });
     return;
   }
-  if (!state || !isRegulatedTicketCompletion(state) || state.archiveStatus === 'verified') {
+  if (
+    !state ||
+    !isRegulatedTicketCompletion(state) ||
+    state.regulatedArchiveStatus === 'verified'
+  ) {
     return;
   }
   const fingerprint = await runtime.auditDeps.resolveFingerprint();
@@ -62,7 +66,9 @@ export async function recoverRegulatedCompletion(
   const needsResume = await withSessionWriteLock(sessDir, async () => {
     const fresh = await readState(sessDir);
     return (
-      fresh !== null && isRegulatedTicketCompletion(fresh) && fresh.archiveStatus !== 'verified'
+      fresh !== null &&
+      isRegulatedTicketCompletion(fresh) &&
+      fresh.regulatedArchiveStatus !== 'verified'
     );
   });
   if (!needsResume) return;

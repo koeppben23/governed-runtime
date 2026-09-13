@@ -163,7 +163,6 @@ describe('recoverRegulatedCompletion', () => {
     );
 
     const finalState = await readState(sessDir);
-    expect(finalState?.archiveStatus).toBe('verified');
     expect(finalState?.regulatedArchiveStatus).toBe('verified');
     const events = await auditEvents(sessDir);
     expect(events.filter((event) => event.detail.kind === 'decision')).toHaveLength(1);
@@ -194,7 +193,7 @@ describe('recoverRegulatedCompletion', () => {
     const pending = await readState(sessDir);
     await writeStateWithArtifactsAndAuditOperations(
       sessDir,
-      { ...pending!, archiveStatus: 'pending', regulatedArchiveStatus: 'pending' },
+      { ...pending!, regulatedArchiveStatus: 'pending' },
       undefined,
       [terminalLifecycleIntent()],
     );
@@ -205,7 +204,7 @@ describe('recoverRegulatedCompletion', () => {
     );
 
     const finalState = await readState(sessDir);
-    expect(finalState?.archiveStatus).toBe('verified');
+    expect(finalState?.regulatedArchiveStatus).toBe('verified');
     const events = await auditEvents(sessDir);
     expect(events.filter((event) => event.detail.kind === 'decision')).toHaveLength(1);
     expect(events.filter((event) => event.event === 'lifecycle:session_completed')).toHaveLength(1);
@@ -216,7 +215,6 @@ describe('recoverRegulatedCompletion', () => {
     const { fingerprint, sessDir } = await seedSession(reviewState('COMPLETE'));
     const verified = {
       ...(await readState(sessDir))!,
-      archiveStatus: 'verified' as const,
       regulatedArchiveStatus: 'verified' as const,
     };
     await writeState(sessDir, verified);
@@ -275,7 +273,7 @@ describe('recoverRegulatedCompletion', () => {
     expect(events.filter((event) => event.event === 'lifecycle:session_completed')).toHaveLength(1);
     expect(archiveRegulatedEvidence).toHaveBeenCalledTimes(1);
     expect(verifyRegulatedArchive).toHaveBeenCalledTimes(1);
-    expect((await readState(sessDir))?.archiveStatus).toBe('verified');
+    expect((await readState(sessDir))?.regulatedArchiveStatus).toBe('verified');
   });
 
   it('a late concurrent recovery never re-publishes archive bytes that were already verified', async () => {
@@ -308,7 +306,7 @@ describe('recoverRegulatedCompletion', () => {
     expect(archiveRegulatedEvidence).toHaveBeenCalledTimes(1);
     expect(verifyRegulatedArchive).toHaveBeenCalledTimes(1);
     const finalState = await readState(sessDir);
-    expect(finalState?.archiveStatus).toBe('verified');
+    expect(finalState?.regulatedArchiveStatus).toBe('verified');
     expect(finalState?.pendingAuditOperations.every((op) => op.status === 'reconciled')).toBe(true);
   });
 });

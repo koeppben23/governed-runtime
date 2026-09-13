@@ -100,7 +100,7 @@ function makePlanReviewState(): SessionState {
 function makeCompleteState(): SessionState {
   return {
     ...makeProgressedState('COMPLETE'),
-    archiveStatus: 'verified',
+    regulatedArchiveStatus: 'verified',
     policySnapshot: sp('solo'),
     activeChecks: [],
     verificationCandidates: [],

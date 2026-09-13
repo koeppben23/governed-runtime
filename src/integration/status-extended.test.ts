@@ -94,7 +94,7 @@ function makeMinimalState(phase: SessionState['phase'] = 'READY'): SessionState 
     implReview: null,
     reviewDecision: null,
     architecture: null,
-    archiveStatus: null,
+    regulatedArchiveStatus: null,
     actorInfo: undefined,
     error: null,
   };
@@ -155,7 +155,7 @@ describe('buildStatusProjection — E2E', () => {
         assurance: 'claim_validated',
         email: 'reviewer@corp.com',
       },
-      archiveStatus: 'pending',
+      regulatedArchiveStatus: 'pending',
     };
     const projection = buildStatusProjection(state, policy);
 
@@ -334,7 +334,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
       const state: SessionState = {
         ...stateWithTicket('READY'),
         activeProfile: { id: 'baseline', name: 'Baseline', ruleContent: '' },
-        archiveStatus: 'verified',
+        regulatedArchiveStatus: 'verified',
         actorInfo: {
           id: 'actor-1',
           source: 'claim',
@@ -538,7 +538,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
           assurance: 'idp_verified',
           email: 'reviewer@example.com',
         },
-        archiveStatus: 'pending',
+        regulatedArchiveStatus: 'pending',
         policySnapshot: {
           ...makeMinimalState('READY').policySnapshot!,
           mode: 'regulated' as const,
@@ -623,67 +623,6 @@ describe('status.ts MUTATION_KILL matrix', () => {
       expect(buildReadinessProjection(unknown, solo).actorKnown).toBe(false);
       expect(buildReadinessProjection(claim, solo).actorKnown).toBe(true);
       expect(buildReadinessProjection(absent, solo).actorKnown).toBe(true);
-    });
-
-    it('strict selfReview config produces no warning while each legacy flag does', () => {
-      let strict = makeMinimalState('READY');
-      strict = {
-        ...strict,
-        policySnapshot: {
-          ...strict.policySnapshot,
-          selfReview: {
-            subagentEnabled: true,
-            fallbackToSelf: false,
-            strictEnforcement: true,
-          } as never,
-        },
-      };
-
-      let weakSubagent = makeMinimalState('READY');
-      weakSubagent = {
-        ...weakSubagent,
-        policySnapshot: {
-          ...weakSubagent.policySnapshot,
-          selfReview: {
-            subagentEnabled: false,
-            fallbackToSelf: false,
-            strictEnforcement: true,
-          } as never,
-        },
-      };
-
-      let weakFallback = makeMinimalState('READY');
-      weakFallback = {
-        ...weakFallback,
-        policySnapshot: {
-          ...weakFallback.policySnapshot,
-          selfReview: {
-            subagentEnabled: true,
-            fallbackToSelf: true,
-            strictEnforcement: true,
-          } as never,
-        },
-      };
-
-      let weakStrict = makeMinimalState('READY');
-      weakStrict = {
-        ...weakStrict,
-        policySnapshot: {
-          ...weakStrict.policySnapshot,
-          selfReview: {
-            subagentEnabled: true,
-            fallbackToSelf: false,
-            strictEnforcement: false,
-          } as never,
-        },
-      };
-
-      expect(buildReadinessProjection(strict, solo).warnings).toEqual([]);
-      for (const state of [weakSubagent, weakFallback, weakStrict]) {
-        expect(buildReadinessProjection(state, solo).warnings).toEqual([
-          expect.stringContaining('Legacy selfReview config'),
-        ]);
-      }
     });
   });
 
@@ -803,38 +742,10 @@ describe('status.ts MUTATION_KILL matrix', () => {
         ...makeMinimalState('READY'),
         policySnapshot: {
           ...baseSnap,
-          selfReview: {
-            subagentEnabled: true,
-            fallbackToSelf: false,
-            strictEnforcement: true,
-          } as never,
         },
       };
       const readiness = buildReadinessProjection(state, solo);
       expect(readiness.warnings).toEqual([]);
-    });
-
-    it('emits the exact legacy warning text when selfReview config is weakened', () => {
-      // Kills L359 StringLiteral mutant — warning must contain the exact phrase
-      // "Ensure flowguard-reviewer plugin is active." verbatim.
-      const baseSnap = makeMinimalState('READY').policySnapshot!;
-      const state: SessionState = {
-        ...makeMinimalState('READY'),
-        policySnapshot: {
-          ...baseSnap,
-          selfReview: {
-            subagentEnabled: false, // weakened
-            fallbackToSelf: false,
-            strictEnforcement: true,
-          } as never,
-        },
-      };
-      const readiness = buildReadinessProjection(state, solo);
-      expect(readiness.warnings).toHaveLength(1);
-      expect(readiness.warnings[0]).toContain(
-        'Legacy selfReview config detected and normalized to mandatory strict.',
-      );
-      expect(readiness.warnings[0]).toContain('Ensure flowguard-reviewer plugin is active.');
     });
   });
 });

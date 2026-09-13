@@ -50,26 +50,6 @@ export interface AuditPolicy {
   readonly timestampAssurance: TimestampAssurancePolicy;
 }
 
-/**
- * Mandatory independent review configuration.
- * Plan and implementation reviews must be performed by the flowguard-reviewer
- * subagent with mandate-bound evidence. Self-review fallback is not permitted.
- *
- * NOTE: These fields are retained for compatibility with existing snapshots.
- * In the current governance model, only the mandatory strict configuration
- * (subagentEnabled=true, fallbackToSelf=false, strictEnforcement=true) is valid.
- * Weaker values are normalized to the mandatory default at snapshot load time.
- * @see policy-snapshot.ts normalizeSelfReviewConfig
- */
-export interface SelfReviewConfig {
-  /** Legacy/compatibility field. Mandatory independent review is always enabled. */
-  readonly subagentEnabled: boolean;
-  /** Legacy/compatibility field. Self-review fallback is always prohibited. */
-  readonly fallbackToSelf: boolean;
-  /** Legacy/compatibility field. Strict enforcement is always required. */
-  readonly strictEnforcement: boolean;
-}
-
 /** Controls which reviewer output modes may satisfy governance evidence. */
 export type ReviewOutputPolicy = 'structured_required' | 'text_compat_allowed';
 
@@ -111,13 +91,6 @@ export function challengeKindForObligation(obligationType: string): ChallengeKin
   if (obligationType === 'review') return 'content_challenge';
   return 'design_challenge';
 }
-
-/** Mandatory independent review configuration for FlowGuardPolicy. */
-export const DEFAULT_SELF_REVIEW_CONFIG = {
-  subagentEnabled: true as const,
-  fallbackToSelf: false as const,
-  strictEnforcement: true as const,
-};
 
 /**
  * Canonical default for `maxReviewerOutputRepairAttempts`: exactly ONE
@@ -232,16 +205,6 @@ export function defaultValidationEvidenceForMode(mode: PolicyMode): ValidationEv
   return { enforcement: 'off', allowNoCommands: false };
 }
 
-/**
- * Fail-closed challenge-policy default for a mode when a snapshot omits it.
- * Hard Assurance Epoch: every preset carries the canonical matrix — the
- * writer-side default is the matrix for ALL modes, and the persisted snapshot
- * requires the field explicitly.
- */
-export function defaultChallengePolicyForMode(_mode: PolicyMode): ChallengePolicy {
-  return CHALLENGE_POLICY_V1;
-}
-
 // ─── FlowGuard Policy ─────────────────────────────────────────────────────────
 
 /**
@@ -293,9 +256,6 @@ export interface FlowGuardPolicy {
    */
   readonly allowSelfApproval: boolean;
 
-  /** Independent review configuration. */
-  readonly selfReview: SelfReviewConfig;
-
   /** Whether lower-assurance text-compatible review output may satisfy evidence. */
   readonly reviewOutputPolicy: ReviewOutputPolicy;
 
@@ -331,22 +291,9 @@ export interface FlowGuardPolicy {
    * Applies at User Gates in regulated mode. Actors below the threshold are blocked
    * with reason ACTOR_ASSURANCE_INSUFFICIENT.
    *
-   * Migration from P33 v0:
-   *   requireVerifiedActorsForApproval: true  → minimumActorAssuranceForApproval: 'claim_validated'
-   *   requireVerifiedActorsForApproval: false → minimumActorAssuranceForApproval: 'best_effort'
-   *
    * P34 design doc: docs/actor-assurance-architecture.md
    */
   readonly minimumActorAssuranceForApproval: 'best_effort' | 'claim_validated' | 'idp_verified';
-
-  /**
-   * P33 (deprecated): Whether regulated approvals require verified actor identity.
-   * Ignored if minimumActorAssuranceForApproval is set.
-   * Translated to minimumActorAssuranceForApproval at resolution time:
-   *   true  → 'claim_validated'
-   *   false → 'best_effort'
-   */
-  readonly requireVerifiedActorsForApproval: boolean;
 
   /**
    * P35a/P35b1/P35b2: IdP configuration for static keys or JWKS authority.

@@ -114,7 +114,6 @@ function acceptanceSession(
   const policy: FlowGuardPolicy = {
     ...TEAM_POLICY,
     reviewInvocationPolicy: 'host_task_required',
-    selfReview: { ...TEAM_POLICY.selfReview, subagentEnabled: true },
   };
   const state = makeState('READY', {
     policySnapshot: {

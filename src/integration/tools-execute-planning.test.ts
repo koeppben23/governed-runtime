@@ -990,7 +990,6 @@ describe('plan', () => {
         ...state!,
         policySnapshot: {
           ...state!.policySnapshot,
-          selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
         },
       });
 

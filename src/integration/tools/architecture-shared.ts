@@ -98,7 +98,6 @@ export function validateInitialSubmissionGate(
 
 export function buildArchitectureReviewInstruction(input: {
   policy: ArchitectureSession['policy'];
-  subagentEnabled: boolean;
   obligation: ReturnType<typeof createReviewObligation> | null;
   iteration: number;
   planVersion: number;
@@ -109,15 +108,6 @@ export function buildArchitectureReviewInstruction(input: {
   next: string;
   reviewInvocation?: ReturnType<typeof buildPendingReviewInstruction>['reviewInvocation'];
 } {
-  const { subagentEnabled } = input;
-  if (!subagentEnabled) {
-    return {
-      next:
-        'Self-review needed. Review the ADR critically against MADR standards. ' +
-        'Check for completeness, clarity, and consequences coverage. ' +
-        'Then call flowguard_architecture with reviewVerdict.',
-    };
-  }
   const platform = resolveRuntimeReviewPlatform();
   const mode = resolveReviewOrchestrationMode({
     platform,

@@ -23,7 +23,7 @@ function sp(mode: 'solo' | 'team') {
 function completeState(extras: Record<string, unknown> = {}): SessionState {
   return {
     ...makeProgressedState('COMPLETE'),
-    archiveStatus: 'verified',
+    regulatedArchiveStatus: 'verified',
     policySnapshot: sp('solo'),
     actorInfo: undefined,
     ...extras,
@@ -61,25 +61,6 @@ describe('golden fixtures for /finish', () => {
     expect(output).toBe(golden.trimEnd());
     // Full evidence, terminal, solo → READY
     expect(card.overallStatus).toBe('READY');
-  });
-
-  it('finish-ready-with-warnings matches golden output', async () => {
-    const warnSnapshot = {
-      ...createPolicySnapshot(getPolicyPreset('solo'), '2026-01-01T00:00:00.000Z', hashText),
-      // Legacy-shaped in-memory injection for runtime-projection robustness;
-      // the persisted schema no longer admits weakened selfReview.
-      selfReview: { subagentEnabled: false, fallbackToSelf: true, strictEnforcement: false },
-    } as unknown as ReturnType<typeof createPolicySnapshot>;
-    const state = completeState({ policySnapshot: warnSnapshot });
-    const policy = getPolicyPreset('solo');
-    const card = buildFinishCard(state, policy);
-    const pres = buildFinishPresentationProjection(state, card);
-    const output = renderMarkdown(buildFinishDocument(pres));
-    const golden = await readGolden('finish-ready-with-warnings.md');
-    expect(output).toBe(golden.trimEnd());
-    // Legacy selfReview config → READY_WITH_WARNINGS
-    expect(card.overallStatus).toBe('READY_WITH_WARNINGS');
-    expect(card.warnings.length).toBeGreaterThan(0);
   });
 
   it('finish-blocked matches golden output', async () => {
@@ -234,21 +215,6 @@ describe('buildFinishDocument', () => {
     const output = renderMarkdown(doc);
     expect(output).toContain('## Exit options');
     expect(output).toContain('- Abandon this work');
-  });
-
-  it('renders warning notice for each warning', () => {
-    const warnSnapshot = {
-      ...createPolicySnapshot(getPolicyPreset('solo'), '2026-01-01T00:00:00.000Z', hashText),
-      // Legacy-shaped in-memory injection for runtime-projection robustness;
-      // the persisted schema no longer admits weakened selfReview.
-      selfReview: { subagentEnabled: false, fallbackToSelf: true, strictEnforcement: false },
-    } as unknown as ReturnType<typeof createPolicySnapshot>;
-    const state = completeState({ policySnapshot: warnSnapshot });
-    const card = buildFinishCard(state, getPolicyPreset('solo'));
-    const pres = buildFinishPresentationProjection(state, card);
-    const output = renderMarkdown(buildFinishDocument(pres));
-    expect(output).toContain('## Warnings');
-    expect(output).toContain('⚠');
   });
 
   it('guarantees are set correctly', () => {

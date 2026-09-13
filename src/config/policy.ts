@@ -9,7 +9,6 @@
 export type {
   AuditPolicy,
   TimestampAssurancePolicy,
-  SelfReviewConfig,
   FlowGuardPolicy,
   PolicyMode,
   EffectiveGateBehavior,
@@ -32,7 +31,6 @@ export type {
   ChallengeKind,
 } from './policy-types.js';
 export {
-  DEFAULT_SELF_REVIEW_CONFIG,
   CHALLENGE_POLICY_V1,
   CHALLENGE_POLICY_VERSION,
   challengeKindForObligation,
@@ -71,4 +69,3 @@ export {
   freezePolicySnapshot,
   resolvePolicyFromSnapshot,
 } from './policy-snapshot.js';
-export { normalizePolicySnapshot } from './policy-snapshot-normalize.js';

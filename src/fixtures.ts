@@ -72,17 +72,11 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
   maxReviewerOutputRepairAttempts: 1,
   allowSelfApproval: true,
   minimumActorAssuranceForApproval: 'best_effort',
-  requireVerifiedActorsForApproval: false,
   identityProvider: undefined,
   identityProviderMode: 'optional',
   reviewOutputPolicy: 'text_compat_allowed',
   reviewInvocationPolicy: 'sdk_allowed',
   reviewProfile: 'core',
-  selfReview: {
-    subagentEnabled: true,
-    fallbackToSelf: false,
-    strictEnforcement: true,
-  },
   challengePolicy: {
     version: 'challenge-policy.v1',
     counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
@@ -117,7 +111,6 @@ export const REGULATED_POLICY_SNAPSHOT: PolicySnapshot = {
   requestedMode: 'regulated',
   allowSelfApproval: false,
   minimumActorAssuranceForApproval: 'best_effort',
-  requireVerifiedActorsForApproval: false,
   reviewOutputPolicy: 'structured_required',
   enforceRiskClassification: true,
 };
@@ -531,6 +524,7 @@ export function makeState(
     pendingAuditOperations: [],
     error: null,
     createdAt: FIXED_TIME,
+    regulatedArchiveStatus: null,
     ...overrides,
   };
 }

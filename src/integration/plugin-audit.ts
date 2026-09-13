@@ -180,7 +180,8 @@ async function emitDecisionReceipt(params: DecisionReceiptParams): Promise<strin
   // Regulated completion commits its terminal decision as a state-owned
   // semantic operation before archival. The after-hook must not project it a
   // second time.
-  if (policyMode === 'regulated' && state?.archiveStatus && existingDecision) return prevHash;
+  if (policyMode === 'regulated' && state?.regulatedArchiveStatus && existingDecision)
+    return prevHash;
 
   const sequence = await deps.nextDecisionSequence(ctx.sessDir, sessionId);
   const decisionId = `DEC-${String(sequence).padStart(3, '0')}`;
@@ -367,7 +368,7 @@ async function maybeCompleteAndArchive(
   if (state?.transition?.to !== 'COMPLETE' || LIFECYCLE_TOOLS[toolName]) return prevHash;
 
   const freshState = deps.cachedFingerprint ? await readState(ctx.sessDir) : null;
-  const toolLayerHandled = !!freshState?.archiveStatus;
+  const toolLayerHandled = !!freshState?.regulatedArchiveStatus;
 
   if (!toolLayerHandled) {
     prevHash = await emitSessionCompletedLifecycle(
@@ -380,7 +381,7 @@ async function maybeCompleteAndArchive(
   } else {
     // Stryker disable next-line ObjectLiteral — diagnostic-only payload.
     deps.log.debug('audit', 'session_completed handled by tool layer', {
-      archiveStatus: freshState.archiveStatus,
+      regulatedArchiveStatus: freshState.regulatedArchiveStatus,
     });
   }
 
@@ -464,7 +465,7 @@ function scheduleSoloArchive(
   if (toolLayerHandled) {
     // Stryker disable next-line ObjectLiteral — diagnostic-only payload.
     deps.log.debug('audit', 'archive handled by tool layer', {
-      archiveStatus: freshState?.archiveStatus,
+      regulatedArchiveStatus: freshState?.regulatedArchiveStatus,
     });
     return;
   }

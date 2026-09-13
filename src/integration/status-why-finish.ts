@@ -86,7 +86,7 @@ export function buildWhyPresentationProjection(
     next,
     state.phase,
     state.error?.code === 'ABORTED',
-    state.archiveStatus ?? null,
+    state.regulatedArchiveStatus ?? null,
   );
   const completeness = evaluateCompleteness(state);
 
@@ -182,7 +182,7 @@ function buildFinishConclusion(state: SessionState): FinishConclusionProjection 
     next,
     state.phase,
     state.error?.code === 'ABORTED',
-    state.archiveStatus ?? null,
+    state.regulatedArchiveStatus ?? null,
   );
 
   const command = productNext.commands[0];

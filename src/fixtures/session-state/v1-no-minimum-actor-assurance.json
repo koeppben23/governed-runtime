@@ -29,7 +29,6 @@
     "maxSelfReviewIterations": 3,
     "maxImplReviewIterations": 3,
     "allowSelfApproval": false,
-    "requireVerifiedActorsForApproval": true,
     "identityProviderMode": "optional",
     "audit": {
       "emitTransitions": true,
