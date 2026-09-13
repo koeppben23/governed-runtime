@@ -122,6 +122,10 @@ function makeBlockedObligation(
     fulfilledAt: null,
     consumedAt: null,
     reviewSubjectScope: { kind: 'unavailable', reason: 'blocked obligation fixture' },
+    reviewMaterial: freezeReviewMaterial(
+      `# Frozen ${obligationType} review material`,
+      'test-subject-digest-blocked',
+    ),
     ...(obligationType === 'plan' || obligationType === 'architecture'
       ? {
           repositoryEvidenceFreeze: {
@@ -163,6 +167,10 @@ function makePendingObligation(
       paths: ['src/foo.ts'],
       revisions: ['base', 'head'],
     },
+    reviewMaterial: freezeReviewMaterial(
+      `# Frozen ${obligationType} review material`,
+      'test-subject-digest-pending',
+    ),
     ...(obligationType === 'plan' || obligationType === 'architecture'
       ? {
           repositoryEvidenceFreeze: {

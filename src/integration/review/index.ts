@@ -152,10 +152,6 @@ export {
 
 export { buildHostTaskEvidence } from './evidence-binding.js';
 
-// ─── Text Extraction ─────────────────────────────────────────────────────────
-
-export { extractJsonFromText, extractJsonFromTextWithMethod } from './text-extraction.js';
-
 // ─── Findings Schema ─────────────────────────────────────────────────────────
 
 export { REVIEW_FINDINGS_JSON_SCHEMA } from './findings-schema.js';

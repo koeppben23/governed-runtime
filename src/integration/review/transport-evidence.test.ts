@@ -11,7 +11,9 @@ import {
 } from '../../fixtures.js';
 import {
   appendReviewObligation,
+  appendReviewAttempt,
   artifactReviewSubjectScope,
+  createReviewAttempt,
   createReviewObligation,
 } from './assurance.js';
 import { bindExternalReviewEvidence } from './transport-evidence.js';
@@ -46,6 +48,22 @@ function findingsFor(
   };
 }
 
+function assuranceForTransport(obligation: ReturnType<typeof createReviewObligation>) {
+  return appendReviewAttempt(
+    appendReviewObligation(undefined, obligation),
+    createReviewAttempt({
+      obligationId: obligation.obligationId,
+      obligationType: obligation.obligationType,
+      subjectDigest: obligation.subjectDigest,
+      ordinal: 1,
+      origin: { kind: 'initial' },
+      repositoryDiscovery: { kind: 'not_applicable' },
+      observationCapability: null,
+      now: '2026-01-01T00:00:00.000Z',
+    }),
+  );
+}
+
 describe('external review transport evidence binding', () => {
   it('rejects file-exists-only invalid transport evidence', async () => {
     const sessDir = await mkdtemp(join(tmpdir(), 'fg-review-evidence-'));
@@ -70,7 +88,7 @@ describe('external review transport evidence binding', () => {
     const state = makeState('PLAN', {
       ticket: TICKET,
       plan: PLAN_RECORD,
-      reviewAssurance: appendReviewObligation(undefined, obligation),
+      reviewAssurance: assuranceForTransport(obligation),
     });
 
     const result = await bindExternalReviewEvidence(
@@ -113,7 +131,7 @@ describe('external review transport evidence binding', () => {
     const state = makeState('PLAN', {
       ticket: TICKET,
       plan: PLAN_RECORD,
-      reviewAssurance: appendReviewObligation(undefined, obligation),
+      reviewAssurance: assuranceForTransport(obligation),
     });
 
     const result = await bindExternalReviewEvidence(
@@ -161,7 +179,7 @@ describe('external review transport evidence binding', () => {
     const state = makeState('PLAN', {
       ticket: TICKET,
       plan: PLAN_RECORD,
-      reviewAssurance: appendReviewObligation(undefined, obligation),
+      reviewAssurance: assuranceForTransport(obligation),
     });
 
     const result = await bindExternalReviewEvidence(
@@ -213,7 +231,7 @@ describe('external review transport evidence binding', () => {
     const state = makeState('PLAN', {
       ticket: TICKET,
       plan: PLAN_RECORD,
-      reviewAssurance: appendReviewObligation(undefined, obligation),
+      reviewAssurance: assuranceForTransport(obligation),
     });
 
     const result = await bindExternalReviewEvidence(
@@ -256,7 +274,7 @@ describe('external review transport evidence binding', () => {
     const state = makeState('PLAN', {
       ticket: TICKET,
       plan: PLAN_RECORD,
-      reviewAssurance: appendReviewObligation(undefined, obligation),
+      reviewAssurance: assuranceForTransport(obligation),
     });
 
     const result = await bindExternalReviewEvidence(

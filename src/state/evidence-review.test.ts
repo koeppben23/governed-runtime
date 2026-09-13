@@ -390,6 +390,11 @@ describe('evidence-review', () => {
         fulfilledAt: null,
         consumedAt: null,
         maxReviewerOutputRepairAttempts: 1,
+        reviewMaterial: {
+          content: 'frozen repository review material',
+          materialDigest: 'a'.repeat(64),
+          subjectDigest: 'a'.repeat(64),
+        },
         reviewSubjectScope: {
           kind: 'repository_change' as const,
           paths: ['src/auth.ts'],
@@ -451,6 +456,11 @@ describe('evidence-review', () => {
           revisions: ['base', 'head'],
         },
         maxReviewerOutputRepairAttempts: 1,
+        reviewMaterial: {
+          content: 'frozen plan review material',
+          materialDigest: 'a'.repeat(64),
+          subjectDigest: 'a'.repeat(64),
+        },
         repositoryEvidenceFreeze: {
           kind: 'unavailable' as const,
           reason: 'repository_unavailable' as const,
@@ -478,8 +488,12 @@ describe('evidence-review', () => {
       );
     });
 
-    it('requires frozen material for future criteria generations', () => {
-      const { reviewSubject: _, ...legacy } = {
+    it('requires frozen material for every current obligation', () => {
+      const {
+        reviewSubject: _,
+        reviewMaterial: _material,
+        ...withoutMaterial
+      } = {
         ...repositoryReviewObligation(),
         obligationType: 'plan' as const,
         repositoryEvidenceFreeze: {
@@ -487,12 +501,10 @@ describe('evidence-review', () => {
           reason: 'repository_unavailable' as const,
         },
       };
-      expect(ReviewObligation.safeParse(legacy).success).toBe(true);
-
-      const future = ReviewObligation.safeParse({ ...legacy, criteriaVersion: 'p42-v1' });
-      expect(future.success).toBe(false);
-      if (future.success) throw new TypeError('expected schema rejection');
-      expect(future.error.issues.map((issue) => issue.path.join('.'))).toContain('reviewMaterial');
+      const result = ReviewObligation.safeParse(withoutMaterial);
+      expect(result.success).toBe(false);
+      if (result.success) throw new TypeError('expected schema rejection');
+      expect(result.error.issues.map((issue) => issue.path.join('.'))).toContain('reviewMaterial');
     });
 
     function contextAuthorityPlanObligation(overrides: Record<string, unknown> = {}) {
@@ -523,6 +535,11 @@ describe('evidence-review', () => {
         requiredChallengeCount: 0,
         requiredChallengeKind: 'design_challenge' as const,
         challengePolicyVersion: 'challenge-policy.v1' as const,
+        reviewMaterial: {
+          content: 'frozen authority plan review material',
+          materialDigest: 'a'.repeat(64),
+          subjectDigest: 'a'.repeat(64),
+        },
         repositoryAuthority: {
           kind: 'context' as const,
           context: {
@@ -833,9 +850,12 @@ describe('evidence-review', () => {
       expect(result.error.issues.map((issue) => issue.path.join('.'))).toContain('attempts');
     });
 
-    it('rejects a repository review attempt without a repository Discovery snapshot', () => {
-      const obligation = repositoryReviewObligation();
-      const attempt = attemptForObligation(obligation, { kind: 'not_applicable' });
+    it('rejects a repository-governed attempt without a repository Discovery snapshot', () => {
+      const obligation = contextAuthorityPlanObligation();
+      const attempt = {
+        ...attemptForObligation(obligation, { kind: 'not_applicable' }),
+        obligationType: 'plan' as const,
+      };
       const result = ReviewAssuranceState.safeParse({
         assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [obligation],
@@ -1154,6 +1174,11 @@ describe('evidence-review', () => {
         },
         metadata: { inputFingerprint: 'abc', customField: 42 },
         maxReviewerOutputRepairAttempts: 1,
+        reviewMaterial: {
+          content: 'frozen metadata review material',
+          materialDigest: 'a'.repeat(64),
+          subjectDigest: 'a'.repeat(64),
+        },
       };
       expect(ReviewObligation.parse(obligation)).toEqual(obligation);
     });
@@ -1272,6 +1297,11 @@ describe('evidence-review', () => {
         reviewProfile: 'core' as const,
         profileSource: 'policy_default' as const,
         maxReviewerOutputRepairAttempts: 1,
+        reviewMaterial: {
+          content: 'frozen profile review material',
+          materialDigest: 'sha256-subject',
+          subjectDigest: 'sha256-subject',
+        },
         repositoryEvidenceFreeze: {
           kind: 'unavailable' as const,
           reason: 'repository_unavailable' as const,
@@ -1305,6 +1335,11 @@ describe('evidence-review', () => {
           revisions: ['base', 'head'],
         },
         maxReviewerOutputRepairAttempts: 1,
+        reviewMaterial: {
+          content: 'frozen profile review material',
+          materialDigest: 'sha256-subject',
+          subjectDigest: 'sha256-subject',
+        },
         repositoryEvidenceFreeze: {
           kind: 'unavailable' as const,
           reason: 'repository_unavailable' as const,
@@ -1338,6 +1373,11 @@ describe('Implementation subject scope coherence (schema refinement)', () => {
       fulfilledAt: null,
       consumedAt: null,
       maxReviewerOutputRepairAttempts: 1,
+      reviewMaterial: {
+        content: 'frozen implementation review material',
+        materialDigest: 'a'.repeat(64),
+        subjectDigest: 'a'.repeat(64),
+      },
       reviewSubjectScope,
     };
   }
@@ -1364,11 +1404,10 @@ describe('Implementation subject scope coherence (schema refinement)', () => {
     }
   });
 
-  it('keeps parsing legacy implement obligations without an implementation scope (migration-safe)', () => {
+  it('accepts a current implementation obligation with its bound implementation scope', () => {
     const obligation = implementObligation({
-      kind: 'repository_change',
-      paths: ['src/auth.ts'],
-      revisions: ['base', 'head'],
+      kind: 'implementation',
+      implementationDigest: 'a'.repeat(64),
     });
     expect(ReviewObligation.safeParse(obligation).success).toBe(true);
   });

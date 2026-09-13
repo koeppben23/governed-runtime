@@ -40,6 +40,7 @@ import {
 
 import type {
   ReviewFindings,
+  ReviewAttempt,
   ReviewObligation,
   ReviewInvocationEvidence,
   ReviewAssuranceState,
@@ -73,6 +74,10 @@ const INVOCATION_ID = '22222222-2222-4222-8222-222222222222';
 const INVOCATION_ID_PLAN = '33333333-3333-4333-8333-333333333333';
 const INVOCATION_ID_IMPL = '44444444-4444-4444-8444-444444444444';
 const INVOCATION_ID_ARCH = '55555555-5555-4555-8555-555555555555';
+const ATTEMPT_ID = '66666666-6666-4666-8666-666666666666';
+const ATTEMPT_ID_PLAN = '77777777-7777-4777-8777-777777777777';
+const ATTEMPT_ID_IMPL = '88888888-8888-4888-8888-888888888888';
+const ATTEMPT_ID_ARCH = '99999999-9999-4999-8999-999999999999';
 const SESS_ID_REVIEWER = 'ses_reviewer';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -119,10 +124,12 @@ function buildHostInvocation(
   obligation: ReviewObligation,
   findingsHash: string,
   invocationId = INVOCATION_ID,
+  attemptId = ATTEMPT_ID,
 ): ReviewInvocationEvidence {
   const style = computeHostEnforcementStyle(host);
   return {
     invocationId,
+    attemptId,
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
     parentSessionId: 'ses_parent',
@@ -145,13 +152,31 @@ function buildHostInvocation(
   };
 }
 
+function buildBoundAttempt(
+  obligation: Pick<ReviewObligation, 'obligationId' | 'obligationType' | 'subjectDigest'>,
+  childSessionId: string,
+  attemptId = ATTEMPT_ID,
+): ReviewAttempt {
+  return {
+    attemptId,
+    obligationId: obligation.obligationId,
+    obligationType: obligation.obligationType,
+    subjectDigest: obligation.subjectDigest,
+    ordinal: 0,
+    childSessionId,
+    status: 'bound',
+    origin: { kind: 'initial' },
+    repositoryDiscovery: { kind: 'not_applicable' },
+    createdAt: NOW,
+  };
+}
+
 function pluginHandshakeAssurance(
   findings: ReviewFindings,
   obligationType: (typeof ALL_OBLIGATION_TYPES)[number],
 ): ReviewAssuranceState {
   return {
     assuranceSchemaVersion: 'review-assurance.v6' as const,
-    attempts: [],
     dispatches: [],
     obligations: [
       {
@@ -183,6 +208,7 @@ function pluginHandshakeAssurance(
     invocations: [
       {
         invocationId: INVOCATION_ID,
+        attemptId: ATTEMPT_ID,
         obligationId: OBLIGATION_ID,
         obligationType,
         parentSessionId: 'ses_parent',
@@ -202,6 +228,12 @@ function pluginHandshakeAssurance(
         structuredOutputUsed: true,
         reviewAssuranceLevel: 'structured_high',
       },
+    ],
+    attempts: [
+      buildBoundAttempt(
+        { obligationId: OBLIGATION_ID, obligationType, subjectDigest: 'test-subject-digest' },
+        SESS_ID_REVIEWER,
+      ),
     ],
   };
 }
@@ -386,7 +418,13 @@ describe('assurance lifecycle persistence across hosts', () => {
         });
         const findingsP = strictFindings({ iteration: 0, planVersion: 1 });
         const fhP = hashFindings(findingsP);
-        const invocationP = buildHostInvocation(host, obligationP, fhP, INVOCATION_ID_PLAN);
+        const invocationP = buildHostInvocation(
+          host,
+          obligationP,
+          fhP,
+          INVOCATION_ID_PLAN,
+          ATTEMPT_ID_PLAN,
+        );
 
         let assurance = appendReviewObligation(undefined, obligationP);
         // Mark obligation fulfilled (as if plugin/agent completed review)
@@ -403,7 +441,7 @@ describe('assurance lifecycle persistence across hosts', () => {
               : o,
           ),
           invocations: assurance.invocations,
-          attempts: [],
+          attempts: [buildBoundAttempt(obligationP, SESS_ID_REVIEWER, ATTEMPT_ID_PLAN)],
           dispatches: assurance.dispatches,
         };
         assurance = appendInvocationEvidence(assurance, invocationP);
@@ -442,7 +480,13 @@ describe('assurance lifecycle persistence across hosts', () => {
         });
         const findingsI = strictFindings({ iteration: 0, planVersion: 1 });
         const fhI = hashFindings(findingsI);
-        const invocationI = buildHostInvocation(host, obligationI, fhI, INVOCATION_ID_IMPL);
+        const invocationI = buildHostInvocation(
+          host,
+          obligationI,
+          fhI,
+          INVOCATION_ID_IMPL,
+          ATTEMPT_ID_IMPL,
+        );
 
         let implAssurance = appendReviewObligation(assurance, obligationI);
         implAssurance = {
@@ -458,7 +502,10 @@ describe('assurance lifecycle persistence across hosts', () => {
               : o,
           ),
           invocations: implAssurance.invocations,
-          attempts: [],
+          attempts: [
+            ...implAssurance.attempts,
+            buildBoundAttempt(obligationI, SESS_ID_REVIEWER, ATTEMPT_ID_IMPL),
+          ],
           dispatches: implAssurance.dispatches,
         };
         implAssurance = appendInvocationEvidence(implAssurance, invocationI);
@@ -520,7 +567,13 @@ describe('assurance lifecycle persistence across hosts', () => {
         });
         const findingsA = strictFindings({ iteration: 0, planVersion: 1 });
         const fhA = hashFindings(findingsA);
-        const invocationA = buildHostInvocation(host, obligationA, fhA, INVOCATION_ID_ARCH);
+        const invocationA = buildHostInvocation(
+          host,
+          obligationA,
+          fhA,
+          INVOCATION_ID_ARCH,
+          ATTEMPT_ID_ARCH,
+        );
 
         let archAssurance = appendReviewObligation(undefined, obligationA);
         archAssurance = {
@@ -536,7 +589,7 @@ describe('assurance lifecycle persistence across hosts', () => {
               : o,
           ),
           invocations: archAssurance.invocations,
-          attempts: [],
+          attempts: [buildBoundAttempt(obligationA, SESS_ID_REVIEWER, ATTEMPT_ID_ARCH)],
           dispatches: archAssurance.dispatches,
         };
         archAssurance = appendInvocationEvidence(archAssurance, invocationA);

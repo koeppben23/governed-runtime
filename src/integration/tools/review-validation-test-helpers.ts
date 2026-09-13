@@ -12,7 +12,7 @@ import {
 
 export const RV_OBLIGATION_ID = '11111111-1111-4111-8111-111111111111';
 export const RV_INVOCATION_ID = '22222222-2222-4222-8222-222222222222';
-export const RV_ATTEMPT_ID = '33333333-3333-4333-8333-333333333333';
+const RV_ATTEMPT_ID = '33333333-3333-4333-8333-333333333333';
 export const RV_NOW = new Date().toISOString();
 
 export function makeReviewObligation(overrides: Partial<ReviewObligation> = {}): ReviewObligation {

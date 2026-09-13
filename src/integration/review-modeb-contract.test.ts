@@ -90,6 +90,7 @@ function buildAssuranceForObligation(
   invocationId: string,
 ) {
   const s = style(host);
+  const attemptId = randomUUID();
   const invocation = {
     invocationId,
     obligationId: obligation.obligationId,
@@ -115,6 +116,7 @@ function buildAssuranceForObligation(
     reviewOutputMode: 'structured_output' as const,
     structuredOutputUsed: true,
     reviewAssuranceLevel: 'structured_high' as const,
+    attemptId,
   };
   const fulfilled = {
     ...obligation,
@@ -127,7 +129,20 @@ function buildAssuranceForObligation(
       assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [fulfilled],
       invocations: [],
-      attempts: [],
+      attempts: [
+        {
+          attemptId,
+          obligationId: obligation.obligationId,
+          obligationType: obligation.obligationType,
+          subjectDigest: obligation.subjectDigest,
+          ordinal: 1,
+          childSessionId: 'ses_reviewer',
+          status: 'bound' as const,
+          origin: { kind: 'initial' as const },
+          repositoryDiscovery: { kind: 'not_applicable' as const },
+          createdAt: NOW(),
+        },
+      ],
       dispatches: [],
     },
     invocation,

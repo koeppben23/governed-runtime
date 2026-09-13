@@ -120,6 +120,7 @@ vi.mock('../adapters/actor', async (importOriginal) => {
       id: 'test-operator',
       email: 'test@flowguard.dev',
       source: 'env',
+      assurance: 'best_effort',
     }),
   };
 });
@@ -419,7 +420,7 @@ describe('review (standalone flow)', () => {
       });
     });
 
-    it('binds branch material findings to the resolved base/head source scope', async () => {
+    it('rejects branch material findings without persisted subagent invocation evidence', async () => {
       await hydrateAndGetReady();
       const first = parseToolResult(
         await review.execute(
@@ -493,7 +494,7 @@ describe('review (standalone flow)', () => {
           ctx,
         ),
       );
-      expect(result).toMatchObject({ phase: 'REVIEW_COMPLETE' });
+      expect(result.code).toBe('SUBAGENT_REVIEW_NOT_INVOKED');
     });
 
     it('standalone /review Call 1 persists a PENDING review obligation for host-task binding', async () => {
@@ -1503,36 +1504,6 @@ describe('review (standalone flow)', () => {
         expect(consumed?.invocationId).toMatch(/^[0-9a-f-]{36}$/);
       });
 
-      it('blocks text-compat findings without matching host invocation metadata', async () => {
-        const uuid = await obtainObligationUuid({ prNumber: 44, inputOrigin: 'pr' });
-        const findings = {
-          ...buildAnalysisFindings('accept', uuid),
-          pluginReviewOutput: {
-            reviewOutputMode: 'text_compat',
-            structuredOutputUsed: false,
-            reviewAssuranceLevel: 'text_compat_lower',
-            extractionMethod: 'direct_json',
-          },
-        };
-
-        const raw = await review.execute(
-          { prNumber: 44, reviewFindings: findings as never, inputOrigin: 'pr' },
-          ctx,
-        );
-        const result = parseToolResult(raw);
-
-        expect(result.error).toBe(true);
-        expect(result.code).toBe('SUBAGENT_MANDATE_MISMATCH');
-
-        const { computeFingerprint, sessionDir: resolveSessionDir } =
-          await import('../adapters/workspace/index.js');
-        const fp = await computeFingerprint(ws.tmpDir);
-        const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
-        const state = await readState(sessDir);
-        if (!state) throw new TypeError('Expected persisted session state');
-        expect(state.reviewAssurance?.invocations ?? []).toHaveLength(0);
-      });
-
       it('E3: consumeReviewObligation accepts fulfilled obligation (fulfilled -> consumed transition)', async () => {
         const { consumeReviewObligation, ensureReviewAssurance } =
           await import('./review/assurance.js');
@@ -1611,6 +1582,7 @@ describe('review (standalone flow)', () => {
           findingsHash: 'b'.repeat(64),
           invokedAt: new Date().toISOString(),
           fulfilledAt: new Date().toISOString(),
+          attemptId: '11111111-2222-4333-8444-555555555555',
         });
         expect(ReviewInvocationEvidence.safeParse(inv).success).toBe(true);
       });

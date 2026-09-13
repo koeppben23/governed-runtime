@@ -27,7 +27,7 @@ const CURRENT_SNAPSHOT = {
   allowSelfApproval: true,
   minimumActorAssuranceForApproval: 'best_effort' as const,
   identityProviderMode: 'optional' as const,
-  reviewOutputPolicy: 'text_compat_allowed' as const,
+  reviewOutputPolicy: 'structured_required' as const,
   reviewInvocationPolicy: 'sdk_allowed' as const,
   reviewProfile: 'core' as const,
   challengePolicy: {

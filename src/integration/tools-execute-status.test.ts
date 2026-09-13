@@ -124,6 +124,7 @@ vi.mock('../adapters/actor', async (importOriginal) => {
       id: 'test-operator',
       email: 'test@flowguard.dev',
       source: 'env',
+      assurance: 'best_effort',
     }),
   };
 });
@@ -771,6 +772,7 @@ describe('status', () => {
           findingsHash: hashFindings(findings),
           invokedAt: '2026-01-01T00:00:00.000Z',
           source: 'host-orchestrated',
+          attemptId: '00000000-0000-4000-8000-000000000123',
         }),
         consumedByObligationId: obligation.obligationId,
       };
@@ -799,7 +801,20 @@ describe('status', () => {
           assuranceSchemaVersion: 'review-assurance.v6' as const,
           obligations: [{ ...obligation, status: 'consumed' as const }],
           invocations: [invocation],
-          attempts: [],
+          attempts: [
+            {
+              attemptId: '00000000-0000-4000-8000-000000000123',
+              obligationId: obligation.obligationId,
+              obligationType: 'architecture' as const,
+              subjectDigest: obligation.subjectDigest,
+              ordinal: 1,
+              childSessionId: 'ses-child',
+              status: 'bound' as const,
+              origin: { kind: 'initial' as const },
+              repositoryDiscovery: { kind: 'not_applicable' as const },
+              createdAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
           dispatches: [],
         },
       };

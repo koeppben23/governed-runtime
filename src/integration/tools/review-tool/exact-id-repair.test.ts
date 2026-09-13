@@ -68,7 +68,9 @@ vi.mock('../../../adapters/actor', async (importOriginal) => {
     resolveActor: vi.fn().mockResolvedValue({
       id: 'test-operator',
       email: 'test@flowguard.dev',
+      displayName: null,
       source: 'env',
+      assurance: 'best_effort',
     }),
   };
 });

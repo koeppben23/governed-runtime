@@ -646,7 +646,7 @@ describe('state schemas', () => {
             tsaTimeoutMs: 10000,
           },
         },
-        reviewOutputPolicy: 'text_compat_allowed',
+        reviewOutputPolicy: 'structured_required',
         reviewInvocationPolicy: 'sdk_allowed',
         reviewProfile: 'core',
         actorClassification: {
@@ -676,7 +676,7 @@ describe('state schemas', () => {
         validationEvidence: { enforcement: 'off', allowNoCommands: false },
         maxIncoherentReviewerCaptureRetries: 1,
         maxReviewerOutputRepairAttempts: 1,
-        reviewOutputPolicy: 'text_compat_allowed',
+        reviewOutputPolicy: 'structured_required',
         reviewInvocationPolicy: 'sdk_allowed',
         reviewProfile: 'core',
         challengePolicy: {

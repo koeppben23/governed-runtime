@@ -53,6 +53,7 @@ vi.mock('../adapters/actor', async (importOriginal) => {
       id: 'test-operator',
       email: 'test@flowguard.dev',
       source: 'env',
+      assurance: 'best_effort',
     }),
   };
 });
@@ -220,6 +221,11 @@ async function bindHostTaskReviewEvidence(
     reviewAssurance: appendInvocationEvidence(
       {
         ...assurance,
+        obligations: assurance.obligations.map((item) =>
+          item.obligationId === obligationId
+            ? { ...item, reviewMaterial: existingAttempt?.reviewMaterial }
+            : item,
+        ),
         attempts: [
           ...assurance.attempts.filter((attempt) => attempt.attemptId !== boundAttempt.attemptId),
           boundAttempt,

@@ -340,7 +340,7 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ ReviewerFindingsInput drift guard', ()
     expect(
       ReviewFindings.safeParse({
         ...payload,
-        reviewedBy: { sessionId: 'sess_abc123', actorAssurance: 'verified' },
+        reviewedBy: { sessionId: 'sess_abc123', actorAssurance: 'idp_verified' },
         reviewedAt: new Date().toISOString(),
         attestation: {
           toolObligationId: payload.attestation.toolObligationId,

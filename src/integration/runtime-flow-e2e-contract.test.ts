@@ -217,6 +217,7 @@ async function inject(
   if (!obl) throw new Error(`No pending ${oblType} obligation`);
   const ff = f(obl.obligationId, obl.iteration, obl.planVersion, challengesFor(state, obl));
   const fh = hashFindings(ff);
+  const attemptId = randomUUID();
   const newObl = {
     ...obl,
     status: 'fulfilled' as const,
@@ -249,6 +250,7 @@ async function inject(
     reviewOutputMode: 'structured_output' as const,
     structuredOutputUsed: true,
     reviewAssuranceLevel: 'structured_high' as const,
+    attemptId,
   };
   const aug: SessionState = {
     ...state,
@@ -258,7 +260,46 @@ async function inject(
         o.obligationId === obl.obligationId ? newObl : o,
       ),
       invocations: [...state.reviewAssurance!.invocations, inv],
-      attempts: [],
+      attempts: [
+        {
+          attemptId,
+          obligationId: obl.obligationId,
+          obligationType: obl.obligationType,
+          subjectDigest: obl.subjectDigest,
+          ordinal: 1,
+          childSessionId: 'ses_r',
+          status: 'bound' as const,
+          origin: { kind: 'initial' as const },
+          repositoryDiscovery: {
+            kind: 'repository' as const,
+            snapshot: {
+              observedAt: FIXED_TIME,
+              discoveryDigest: null,
+              workspaceFingerprint: null,
+              health: {
+                status: 'available' as const,
+                healthy: true,
+                failedCollectorNames: [],
+                hasBudgetExhaustion: false,
+                ageWarning: null,
+                notVerified: [],
+              },
+              drift: {
+                status: 'not_assessed' as const,
+                drifted: false,
+                changedContributorNames: [],
+                notVerified: [],
+              },
+              detectedStack: null,
+              verificationCandidates: [],
+              riskSurfaces: [],
+              warnings: [],
+              notVerified: [],
+            },
+          },
+          createdAt: FIXED_TIME,
+        },
+      ],
       dispatches: state.reviewAssurance!.dispatches,
     },
     reviewDecision: {

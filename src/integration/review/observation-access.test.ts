@@ -126,8 +126,8 @@ describe('resolveObservationRevisions', () => {
     expect(resolveObservationRevisions(candidatePairObligation())).toEqual(['base', 'head']);
   });
 
-  it('repository_change fallback with full SHAs → ["base", "head"]', () => {
-    expect(resolveObservationRevisions(standaloneRepositoryObligation())).toEqual(['base', 'head']);
+  it('repository_change without explicit observation authority → []', () => {
+    expect(resolveObservationRevisions(standaloneRepositoryObligation())).toEqual([]);
   });
 
   it('artifact-only obligation without authority → []', () => {
