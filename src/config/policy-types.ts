@@ -50,8 +50,8 @@ export interface AuditPolicy {
   readonly timestampAssurance: TimestampAssurancePolicy;
 }
 
-/** Controls which reviewer output modes may satisfy governance evidence. */
-export type ReviewOutputPolicy = 'structured_required' | 'text_compat_allowed';
+/** Independent review evidence always requires host-structured output. */
+export type ReviewOutputPolicy = 'structured_required';
 
 /** Controls how the reviewer is invoked — host-visible Task tool vs SDK vs fallback. */
 export type ReviewInvocationPolicy = 'host_task_required' | 'host_task_preferred' | 'sdk_allowed';

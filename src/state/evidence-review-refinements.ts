@@ -98,6 +98,10 @@ export interface AssuranceRefinementShape {
     readonly invocationId: string;
     readonly obligationId: string;
     readonly obligationType: string;
+    readonly attemptId?: string;
+    readonly reviewOutputMode?: string;
+    readonly structuredOutputUsed?: boolean;
+    readonly reviewAssuranceLevel?: string;
   }[];
   readonly attempts: readonly AttemptRefinementShape[];
 }
@@ -120,20 +124,16 @@ export function refineReviewMaterialSubject(
   });
 }
 
-/** Known generations persisted before frozen review material existed. */
-const PRE_FROZEN_MATERIAL_CRITERIA = new Set(['p37-v1', 'p38-v1', 'p39-v1', 'p40-v1']);
-
-/** All non-legacy generations require frozen material. */
+/** Every current review obligation requires frozen material. */
 export function refineCurrentGenerationMaterial(
   obligation: ObligationRefinementShape,
   context: z.RefinementCtx,
 ): void {
-  if (obligation.reviewMaterial || PRE_FROZEN_MATERIAL_CRITERIA.has(obligation.criteriaVersion))
-    return;
+  if (obligation.reviewMaterial) return;
   context.addIssue({
     code: z.ZodIssueCode.custom,
     path: ['reviewMaterial'],
-    message: 'Non-legacy review obligations require frozen reviewMaterial.',
+    message: 'Review obligations require frozen reviewMaterial.',
   });
 }
 
@@ -279,6 +279,21 @@ export function refineAssuranceInvocationLinkageCoherence(
   assurance: AssuranceRefinementShape,
   context: z.RefinementCtx,
 ): void {
+  for (const invocation of assurance.invocations) {
+    if (
+      !invocation.attemptId ||
+      invocation.reviewOutputMode !== 'structured_output' ||
+      invocation.structuredOutputUsed !== true ||
+      invocation.reviewAssuranceLevel !== 'structured_high'
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['invocations'],
+        message: 'Review invocation evidence requires attempt lineage and structured output.',
+      });
+      return;
+    }
+  }
   const invocationsByInvocationId = new Map(
     assurance.invocations.map((invocation) => [invocation.invocationId, invocation]),
   );

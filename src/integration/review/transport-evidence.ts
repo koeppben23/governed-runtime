@@ -151,7 +151,7 @@ async function processTransportFile(
   state: SessionState,
   obligation: ReturnType<typeof latestUnconsumedObligation> & {},
   assurance: ReturnType<typeof ensureReviewAssurance>,
-  opts: { parentSessionId: string; now: string },
+  opts: { parentSessionId: string; now: string; attemptId: string },
 ): Promise<TransportEvidenceBindResult> {
   const { parentSessionId, now } = opts;
   const parsed = parseAndValidateTransportFindings(file, state, obligation);
@@ -175,6 +175,7 @@ async function processTransportFile(
   const invocation = buildManualTransportInvocation(obligation, findings, findingsHash, {
     parentSessionId,
     now,
+    attemptId: opts.attemptId,
   });
   const fulfilled = fulfillObligation(
     assurance,
@@ -252,7 +253,7 @@ function buildManualTransportInvocation(
   obligation: ReturnType<typeof latestUnconsumedObligation> & {},
   findings: ReturnType<typeof ReviewFindingsSchema.parse>,
   findingsHash: string,
-  opts: { parentSessionId: string; now: string },
+  opts: { parentSessionId: string; now: string; attemptId: string },
 ): ReturnType<typeof buildInvocationEvidence> {
   return buildInvocationEvidence({
     obligationId: obligation.obligationId,
@@ -269,6 +270,7 @@ function buildManualTransportInvocation(
     findingsHash,
     invokedAt: findings.reviewedAt,
     fulfilledAt: opts.now,
+    attemptId: opts.attemptId,
     source: 'agent-submitted-attested',
     capturedVerdict: findings.overallVerdict,
     capturedRawFindings: findings,
@@ -287,10 +289,22 @@ export async function bindExternalReviewEvidence(
   const files = await readTransportFiles(sessDir);
   if (files.length === 0) return { status: 'none' };
   const assurance = ensureReviewAssurance(state.reviewAssurance);
+  const attempts = assurance.attempts.filter(
+    (attempt) => attempt.obligationId === obligation.obligationId && attempt.status === 'created',
+  );
+  if (attempts.length !== 1) {
+    return {
+      status: 'invalid',
+      code: 'REVIEW_ATTEMPT_UNAVAILABLE',
+      reason: 'external_review_requires_one_pre_authorized_attempt',
+      obligationId: obligation.obligationId,
+    };
+  }
   for (const file of files.reverse()) {
     const result = await processTransportFile(file, state, obligation, assurance, {
       parentSessionId,
       now,
+      attemptId: attempts[0]!.attemptId,
     });
     if (result.status !== 'none') return result;
   }

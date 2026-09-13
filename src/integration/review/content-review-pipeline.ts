@@ -327,11 +327,6 @@ function buildContentReviewInvocation(
     fulfilledAt: reviewerResult.fulfilledAt ?? now,
     attemptId,
     source: EVIDENCE_SOURCE_HOST,
-    reviewOutputMode: reviewerResult.reviewOutputMode,
-    structuredOutputUsed: reviewerResult.structuredOutputUsed,
-    reviewAssuranceLevel: reviewerResult.reviewAssuranceLevel,
-    extractionMethod: reviewerResult.extractionMethod,
-    modelCapabilityError: reviewerResult.modelCapabilityError,
     capturedVerdict:
       typeof reviewerResult.findings.overallVerdict === 'string'
         ? reviewerResult.findings.overallVerdict

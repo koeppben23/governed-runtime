@@ -88,7 +88,7 @@ export const PolicySnapshotSchema = z
      */
     identityProviderMode: z.enum(['optional', 'required']),
     /** Frozen review output policy for structured vs text-compatible evidence. */
-    reviewOutputPolicy: z.enum(['structured_required', 'text_compat_allowed']),
+    reviewOutputPolicy: z.literal('structured_required'),
     /** Frozen review invocation policy — how the reviewer must be invoked. */
     reviewInvocationPolicy: z.enum(['host_task_required', 'host_task_preferred', 'sdk_allowed']),
     /** Frozen mandatory review coverage profile. */

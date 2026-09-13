@@ -122,7 +122,7 @@ function buildTextCompatClient(findings: Record<string, unknown>): OrchestratorC
 
 function buildSessionState(
   strictEnforcement = true,
-  reviewOutputPolicy: 'structured_required' | 'text_compat_allowed' = 'structured_required',
+  reviewOutputPolicy: 'structured_required' = 'structured_required',
   reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed',
   seedInvocations: NonNullable<SessionState['reviewAssurance']>['invocations'] = [],
 ) {
@@ -250,7 +250,7 @@ async function runReviewContent(
   findings: Record<string, unknown> | null,
   input: unknown = { args: { text: 'diff content', inputOrigin: 'manual_text' } },
   strictEnforcement = true,
-  reviewOutputPolicy: 'structured_required' | 'text_compat_allowed' = 'structured_required',
+  reviewOutputPolicy: 'structured_required' = 'structured_required',
   clientOverride?: OrchestratorClient,
   reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed',
   seedInvocations: NonNullable<SessionState['reviewAssurance']>['invocations'] = [],
@@ -583,35 +583,6 @@ describe('runReviewOrchestration strict /review content analysis', () => {
       expect.anything(),
       output,
     );
-  });
-
-  it('passes explicit reviewOutputPolicy for /review content text compatibility', async () => {
-    const findings = buildFindings();
-    const textCompatClient = buildTextCompatClient(findings);
-    const { output, blockReviewOutcome, state, client } = await runReviewContent(
-      findings,
-      { args: { text: 'diff content', inputOrigin: 'manual_text' } },
-      true,
-      'text_compat_allowed',
-      textCompatClient,
-    );
-
-    expect(blockReviewOutcome).not.toHaveBeenCalled();
-    expect(client.session.prompt).toHaveBeenCalledTimes(2);
-    const invocation = state.reviewAssurance?.invocations[0];
-    expect(invocation).toMatchObject({
-      reviewOutputMode: 'text_compat',
-      structuredOutputUsed: false,
-      reviewAssuranceLevel: 'text_compat_lower',
-      extractionMethod: 'direct_json',
-    });
-    const parsed = JSON.parse(output.output) as Record<string, unknown>;
-    expect(parsed.pluginReviewOutput).toMatchObject({
-      reviewOutputMode: 'text_compat',
-      structuredOutputUsed: false,
-      reviewAssuranceLevel: 'text_compat_lower',
-      extractionMethod: 'direct_json',
-    });
   });
 
   it('uses persisted material rather than direct /review input while injecting valid strict findings', async () => {

@@ -117,7 +117,7 @@ function buildTextCompatClient(findings: Record<string, unknown>): OrchestratorC
 function buildState(
   phase: ReviewableCase['phase'],
   obligationType: ReviewableCase['obligationType'],
-  reviewOutputPolicy: 'structured_required' | 'text_compat_allowed' = 'structured_required',
+  reviewOutputPolicy: 'structured_required' = 'structured_required',
 ) {
   const reviewMaterial = freezeReviewMaterial('frozen review material', 'test-subject-digest');
   return makeState(phase, {
@@ -562,39 +562,6 @@ describe('runReviewOrchestration strict independent review with footer output', 
 
     expect(client.session.create).toHaveBeenCalledOnce();
     expect(client.session.prompt).toHaveBeenCalledOnce();
-  });
-
-  it('passes explicit reviewOutputPolicy for plan/implement/architecture text compatibility path', async () => {
-    const stateRef = { current: buildState('PLAN', 'plan', 'text_compat_allowed') };
-    vi.mocked(readState).mockResolvedValue(stateRef.current);
-    const client = buildTextCompatClient(buildFindings());
-    const deps = buildDeps(client, stateRef);
-    const output = { output: reviewRequiredOutput('PLAN') };
-
-    await runReviewOrchestration(deps, {
-      toolName: TOOL_FLOWGUARD_PLAN,
-      input: { args: { planText: 'Add regression tests for review orchestration.' } },
-      output,
-      sessionId: PARENT_SESSION_ID,
-      now: NOW,
-    });
-
-    expect(deps.blockReviewOutcome).not.toHaveBeenCalled();
-    expect(client.session.prompt).toHaveBeenCalledTimes(2);
-    const invocation = stateRef.current.reviewAssurance?.invocations[0];
-    expect(invocation).toMatchObject({
-      reviewOutputMode: 'text_compat',
-      structuredOutputUsed: false,
-      reviewAssuranceLevel: 'text_compat_lower',
-      extractionMethod: 'direct_json',
-    });
-    const parsed = JSON.parse(output.output) as Record<string, unknown>;
-    expect(parsed.pluginReviewOutput).toMatchObject({
-      reviewOutputMode: 'text_compat',
-      structuredOutputUsed: false,
-      reviewAssuranceLevel: 'text_compat_lower',
-      extractionMethod: 'direct_json',
-    });
   });
 });
 

@@ -82,6 +82,7 @@ export function assuranceChain(entries: AssuranceEntry[]): ReviewAssuranceState 
           e.invocationId === null
             ? `${e.obligationId}-inv-${(e.findingsHash ?? 'x').slice(0, 8)}`
             : (e.invocationId as string),
+        attemptId: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
         obligationId: e.obligationId,
         obligationType: e.obligationType ?? 'architecture',
         parentSessionId: `parent-${index}`,

@@ -74,7 +74,7 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
   minimumActorAssuranceForApproval: 'best_effort',
   identityProvider: undefined,
   identityProviderMode: 'optional',
-  reviewOutputPolicy: 'text_compat_allowed',
+  reviewOutputPolicy: 'structured_required',
   reviewInvocationPolicy: 'sdk_allowed',
   reviewProfile: 'core',
   challengePolicy: {
@@ -223,6 +223,7 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
   invocations: [
     {
       invocationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      attemptId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
       obligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       obligationType: 'architecture',
       parentSessionId: 'parent-session-1',
@@ -295,6 +296,7 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
   invocations: [
     {
       invocationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      attemptId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
       obligationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
       obligationType: 'plan',
       parentSessionId: 'parent-session-1',

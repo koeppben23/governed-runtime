@@ -227,7 +227,6 @@ function reviewCardInvocationFields(
   reviewOutputMode?: string;
   structuredOutputUsed?: boolean;
   reviewAssuranceLevel?: string;
-  extractionMethod?: string;
   reviewerSessionId?: string;
 } {
   return {
@@ -237,7 +236,6 @@ function reviewCardInvocationFields(
     reviewOutputMode: boundInvocation?.reviewOutputMode,
     structuredOutputUsed: boundInvocation?.structuredOutputUsed,
     reviewAssuranceLevel: boundInvocation?.reviewAssuranceLevel,
-    extractionMethod: boundInvocation?.extractionMethod,
     reviewerSessionId: reviewerSessionId(boundInvocation, args),
   };
 }

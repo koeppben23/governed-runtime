@@ -924,45 +924,6 @@ describe('integration/review-assurance', () => {
       expect(result.reviewOutputMode).toBe('structured_output');
       expect(result.structuredOutputUsed).toBe(true);
       expect(result.reviewAssuranceLevel).toBe('structured_high');
-      expect(result.extractionMethod).toBeUndefined();
-    });
-
-    it('records text compatibility metadata explicitly', () => {
-      const result = makeInvocation({
-        reviewOutputMode: 'text_compat',
-        structuredOutputUsed: false,
-        reviewAssuranceLevel: 'text_compat_lower',
-        extractionMethod: 'outermost_braces',
-        modelCapabilityError: 'model does not support this tool_choice',
-      });
-      expect(result).toMatchObject({
-        reviewOutputMode: 'text_compat',
-        structuredOutputUsed: false,
-        reviewAssuranceLevel: 'text_compat_lower',
-        extractionMethod: 'outermost_braces',
-        modelCapabilityError: 'model does not support this tool_choice',
-      });
-    });
-
-    it('defaults to text_compat_lower when reviewOutputMode is text_compat', () => {
-      const result = buildInvocationEvidence({
-        obligationId: '00000000-0000-4000-8000-000000000002',
-        obligationType: 'review',
-        mandateDigest: FIXTURE_MANDATE_DIGEST,
-        criteriaVersion: FIXTURE_CRITERIA_VERSION,
-        parentSessionId: 'parent-1',
-        childSessionId: 'child-1',
-        promptHash: hashText('prompt'),
-        findingsHash: hashText('findings'),
-        invokedAt: NOW,
-        fulfilledAt: NOW,
-        reviewOutputMode: 'text_compat',
-        invocationMode: 'sdk_session_prompt',
-        hostVisible: false,
-      });
-      expect(result.reviewOutputMode).toBe('text_compat');
-      expect(result.structuredOutputUsed).toBe(false);
-      expect(result.reviewAssuranceLevel).toBe('text_compat_lower');
     });
   });
 

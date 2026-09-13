@@ -32,13 +32,7 @@ type SdkEvidenceParams = {
   fulfilledAt: string;
   reviewerResult: Pick<
     ReviewerSuccessResult,
-    | 'sessionId'
-    | 'reviewOutputMode'
-    | 'structuredOutputUsed'
-    | 'reviewAssuranceLevel'
-    | 'extractionMethod'
-    | 'modelCapabilityError'
-    | 'findings'
+    'sessionId' | 'reviewOutputMode' | 'structuredOutputUsed' | 'reviewAssuranceLevel' | 'findings'
   >;
   semanticIntents?: (
     result: EvidenceRecordResult,
@@ -61,12 +55,7 @@ export function buildSdkEvidenceAuditIntents(input: {
   findingsHash: string;
   reviewerResult: Pick<
     ReviewerSuccessResult,
-    | 'sessionId'
-    | 'reviewOutputMode'
-    | 'structuredOutputUsed'
-    | 'reviewAssuranceLevel'
-    | 'extractionMethod'
-    | 'modelCapabilityError'
+    'sessionId' | 'reviewOutputMode' | 'structuredOutputUsed' | 'reviewAssuranceLevel'
   >;
   state: SessionState;
   occurredAt: string;
@@ -101,12 +90,6 @@ export function buildSdkEvidenceAuditIntents(input: {
           structuredOutputUsed: reviewerResult.structuredOutputUsed,
           reviewAssuranceLevel: reviewerResult.reviewAssuranceLevel,
           reviewProfile,
-          ...(reviewerResult.extractionMethod
-            ? { extractionMethod: reviewerResult.extractionMethod }
-            : {}),
-          ...(reviewerResult.modelCapabilityError
-            ? { modelCapabilityError: reviewerResult.modelCapabilityError }
-            : {}),
         };
   const first: SemanticAuditIntent = {
     phase: state.phase,
@@ -149,11 +132,6 @@ function buildSdkSessionInvocation(
     fulfilledAt: params.fulfilledAt,
     attemptId: params.attemptId,
     source: EVIDENCE_SOURCE_HOST,
-    reviewOutputMode: params.reviewerResult.reviewOutputMode,
-    structuredOutputUsed: params.reviewerResult.structuredOutputUsed,
-    reviewAssuranceLevel: params.reviewerResult.reviewAssuranceLevel,
-    extractionMethod: params.reviewerResult.extractionMethod,
-    modelCapabilityError: params.reviewerResult.modelCapabilityError,
     capturedVerdict:
       params.reviewerResult.findings &&
       typeof params.reviewerResult.findings.overallVerdict === 'string'

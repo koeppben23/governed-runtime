@@ -25,9 +25,7 @@ export const ReviewInvocationEvidence = z
     parentSessionId: z.string().min(1),
     childSessionId: z.string().min(1),
     agentType: z.literal(REVIEWER_SUBAGENT_TYPE),
-    /** Persisted attempt identity. Populated at binding time from the host-authoritative
-     *  attempt. Optional for legacy records; absent lineage MUST be treated as a hard
-     *  blocker (attempt_lineage_unavailable) by any status-mutating path. */
+    /** Persisted host-authoritative attempt identity. */
     attemptId: z.string().uuid().optional(),
     /** How the reviewer was invoked: host-visible Task tool, SDK, manual attested, or
      *  manual attested corroborated by a FlowGuard-captured host hook (native_subagent_attested). */
@@ -58,20 +56,11 @@ export const ReviewInvocationEvidence = z
     /** Evidence source: host-orchestrated or agent-submitted-attested. */
     source: z.enum(['host-orchestrated', 'agent-submitted-attested']).optional(),
     /** Reviewer output transport used to obtain the findings. */
-    reviewOutputMode: z.enum(['structured_output', 'text_compat']),
-    /** True only when OpenCode SDK structured_output was present and used. */
+    reviewOutputMode: z.literal('structured_output'),
+    /** Structured output was used to obtain this evidence. */
     structuredOutputUsed: z.boolean(),
-    /** Review-output assurance tier, distinct from actor identity assurance.
-     *  - structured_high: reviewer output parsed as clean, schema-conforming JSON.
-     *  - structured_recovered: findings recovered from an embedded/brace-balanced
-     *    JSON block in mixed model output; extraction succeeded but the response
-     *    was not a clean structured payload, so provenance confidence is reduced. (F8)
-     *  - text_compat_lower: text-compatibility extraction path. */
-    reviewAssuranceLevel: z.enum(['structured_high', 'structured_recovered', 'text_compat_lower']),
-    /** JSON extraction strategy used for text compatibility mode only. */
-    extractionMethod: z.enum(['direct_json', 'json_fence', 'outermost_braces']).optional(),
-    /** Original model capability error that caused text compatibility mode. */
-    modelCapabilityError: z.string().optional(),
+    /** Structured reviewer output is the only evidence-bearing transport. */
+    reviewAssuranceLevel: z.literal('structured_high'),
     /** Host-captured corroboration (native_subagent_attested only).
      *  Populated from a FlowGuard hook (SubagentStop / PostToolUse) that fired inside the
      *  reviewer subagent. These fields are the independent host witness that the review tool

@@ -3,12 +3,11 @@
  * @description Deterministic review subagent invocation via OpenCode SDK.
  *
  * This module is the core orchestration layer for reviewer subagent invocation.
- * It handles SDK session lifecycle, retry logic, structured/text-compat output,
- * output mutation, and review detection.
+ * It handles SDK session lifecycle, retry logic, structured output, output
+ * mutation, and review detection.
  *
  * Extracted modules (FG-REL-038):
  * - review-findings-schema.ts — JSON Schema for ReviewFindings
- * - review-text-extraction.ts — Multi-strategy JSON extraction
  * - review-prompt-builders.ts — Prompt construction for all review types
  * - review-agent-resolution.ts — Agent registry probe + cache
  *
@@ -31,9 +30,7 @@ import type { OrchestratorClient } from './types.js';
 
 import { REVIEW_FINDINGS_JSON_SCHEMA } from './findings-schema.js';
 import { extractStructuredOutputToolPart } from './structured-output-tool-part.js';
-import { extractJsonFromTextWithMethod } from './text-extraction.js';
 import { resolveReviewerAgent } from './agent-resolution.js';
-import { buildTextCompatReviewerPrompt } from './prompt-builders.js';
 import {
   abortReviewerSession,
   DEFAULT_REVIEWER_PROMPT_TIMEOUT_MS,
@@ -75,11 +72,9 @@ export interface ReviewerSuccessResult {
   readonly sessionId: string;
   readonly rawResponse: string;
   readonly findings: Record<string, unknown> | null;
-  readonly reviewOutputMode: 'structured_output' | 'text_compat';
+  readonly reviewOutputMode: 'structured_output';
   readonly structuredOutputUsed: boolean;
-  readonly reviewAssuranceLevel: 'structured_high' | 'text_compat_lower';
-  readonly extractionMethod?: 'direct_json' | 'json_fence' | 'outermost_braces';
-  readonly modelCapabilityError?: string;
+  readonly reviewAssuranceLevel: 'structured_high';
   /** Host-observed lifecycle timestamps for the successful reviewer prompt. */
   readonly invokedAt?: string;
   readonly fulfilledAt?: string;
@@ -97,7 +92,7 @@ export interface OrchestrationResult {
 const REVIEWER_SESSION_TITLE = 'FlowGuard Independent Review';
 
 export interface InvokeReviewerOptions {
-  readonly reviewOutputPolicy?: 'structured_required' | 'text_compat_allowed';
+  readonly reviewOutputPolicy?: 'structured_required';
   readonly reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed';
   readonly maxRetries?: number;
   readonly baseDelayMs?: number;
@@ -117,11 +112,6 @@ export interface InvokeReviewerOptions {
       | 'structured_output_error'
       | 'info_error'
       | 'model_capability_incompatible'
-      | 'format_free_retry_session_create'
-      | 'format_free_retry_failed'
-      | 'format_free_retry_empty'
-      | 'format_free_retry_parse_failed'
-      | 'text_compat_blocked_by_policy'
       | 'no_findings';
     error?: unknown;
     details?: Record<string, unknown>;
@@ -149,111 +139,6 @@ const DEFAULT_INVOKE_OPTIONS: Required<InvokeReviewerOptions> = {
   _onAttemptFailed: () => {},
   _onAttemptSucceeded: () => {},
 };
-
-interface ExecuteFormatFreePromptInput {
-  client: OrchestratorClient;
-  agent: string;
-  prompt: string;
-  sessionId: string;
-  attempt: number;
-  modelCapabilityError: string;
-  invokedAt: string;
-  timeoutMs: number;
-  onFailed: (info: {
-    attempt: number;
-    step: 'format_free_retry_failed' | 'format_free_retry_empty' | 'format_free_retry_parse_failed';
-    error?: unknown;
-    details?: Record<string, unknown>;
-  }) => void;
-}
-
-async function executeFormatFreePrompt(
-  input: ExecuteFormatFreePromptInput,
-): Promise<ReviewerResult | null> {
-  const { client, agent, prompt, sessionId, attempt, modelCapabilityError, onFailed, timeoutMs } =
-    input;
-  const race = await raceWithTimeout(
-    client.session.prompt({
-      path: { id: sessionId },
-      body: {
-        agent,
-        parts: [{ type: 'text' as const, text: prompt }],
-      },
-    }),
-    timeoutMs,
-  );
-
-  if (race.kind === 'timed_out') {
-    await abortReviewerSession(client, sessionId);
-    onFailed({
-      attempt,
-      step: 'format_free_retry_failed',
-      error: { code: REVIEWER_PROMPT_TIMEOUT_CODE, isRetryable: true },
-      details: { agent, childSessionId: sessionId, timeoutMs },
-    });
-    return null;
-  }
-
-  const formatFreeResult = race.value;
-
-  if (formatFreeResult.error || !formatFreeResult.data) {
-    onFailed({
-      attempt,
-      step: 'format_free_retry_failed',
-      error: formatFreeResult.error,
-      details: { agent, childSessionId: sessionId },
-    });
-    return null;
-  }
-
-  const textContent = (formatFreeResult.data.parts ?? [])
-    .filter((p: { type?: string; text?: string }) => p.type === 'text' && p.text)
-    .map((p: { type?: string; text?: string }) => p.text!)
-    .join('');
-
-  if (!textContent) {
-    onFailed({
-      attempt,
-      step: 'format_free_retry_empty',
-      error: null,
-      details: {
-        agent,
-        childSessionId: sessionId,
-        partsCount: formatFreeResult.data.parts?.length ?? 0,
-      },
-    });
-    return null;
-  }
-
-  const extraction = extractJsonFromTextWithMethod(textContent);
-  if (!extraction) {
-    onFailed({
-      attempt,
-      step: 'format_free_retry_parse_failed',
-      error: null,
-      details: {
-        agent,
-        childSessionId: sessionId,
-        textLength: textContent.length,
-        textPreview: textContent.slice(0, 200),
-      },
-    });
-    return null;
-  }
-
-  return {
-    sessionId,
-    rawResponse: JSON.stringify(extraction.value),
-    findings: extraction.value,
-    reviewOutputMode: 'text_compat',
-    structuredOutputUsed: false,
-    reviewAssuranceLevel: 'text_compat_lower',
-    extractionMethod: extraction.extractionMethod,
-    modelCapabilityError,
-    invokedAt: input.invokedAt,
-    fulfilledAt: new Date().toISOString(),
-  };
-}
 
 export async function invokeReviewer(
   client: OrchestratorClient,
@@ -536,34 +421,7 @@ async function handleStructuredCapabilityError(
   capabilityError: string,
 ): Promise<InvokeAttemptResult> {
   logCapabilityError(input, error, capabilityError);
-  if (input.options.reviewOutputPolicy !== 'text_compat_allowed')
-    return textCompatBlocked(input, error);
-  await showTextCompatToast(input.client);
-  const retrySessionId = await createFormatFreeRetrySession(input, error);
-  if (!retrySessionId) return { kind: 'done', result: null };
-  const promptStartedAt = performance.now();
-  const invokedAt = new Date().toISOString();
-  const result = await executeFormatFreePrompt({
-    client: input.client,
-    agent: input.agent,
-    prompt: buildTextCompatReviewerPrompt(input.prompt),
-    sessionId: retrySessionId,
-    attempt: input.attempt,
-    modelCapabilityError: capabilityError,
-    invokedAt,
-    timeoutMs: input.options.promptTimeoutMs,
-    onFailed: input.options._onAttemptFailed,
-  });
-  if (result && result.blocked !== true) {
-    input.options._onAttemptSucceeded({
-      attempt: input.attempt,
-      step: 'session_prompt',
-      parentSessionId: input.parentSessionId,
-      childSessionId: retrySessionId,
-      durationMs: performance.now() - promptStartedAt,
-    });
-  }
-  return { kind: 'done', result };
+  return structuredOutputBlocked(input, error);
 }
 
 function logCapabilityError(
@@ -577,21 +435,17 @@ function logCapabilityError(
     error,
     details: {
       agent: input.agent,
-      reason:
-        'Session model does not support structured output (tool_choice/function calling). ' +
-        (input.options.reviewOutputPolicy === 'text_compat_allowed'
-          ? 'Creating new child session for text compatibility retry.'
-          : 'Policy requires structured output.'),
+      reason: 'Session model does not support required structured output.',
       detectedPattern: capabilityError,
       reviewOutputPolicy: input.options.reviewOutputPolicy,
     },
   });
 }
 
-function textCompatBlocked(input: InvokeAttemptInput, error: unknown): InvokeAttemptResult {
+function structuredOutputBlocked(input: InvokeAttemptInput, error: unknown): InvokeAttemptResult {
   input.options._onAttemptFailed({
     attempt: input.attempt,
-    step: 'text_compat_blocked_by_policy',
+    step: 'model_capability_incompatible',
     error,
     details: {
       agent: input.agent,
@@ -618,36 +472,6 @@ function textCompatBlocked(input: InvokeAttemptInput, error: unknown): InvokeAtt
       },
     },
   };
-}
-
-async function showTextCompatToast(client: OrchestratorClient): Promise<void> {
-  try {
-    await client.tui?.showToast({
-      body: {
-        message: 'FlowGuard Reviewer: using lower-assurance text compatibility mode',
-        variant: 'info',
-      },
-    });
-  } catch {
-    /* TUI unavailable — ignore */
-  }
-}
-
-async function createFormatFreeRetrySession(
-  input: InvokeAttemptInput & { childSessionId: string },
-  error: unknown,
-): Promise<string | null> {
-  const retryCreateResult = await input.client.session.create({
-    body: { parentID: input.parentSessionId, title: REVIEWER_SESSION_TITLE + ' (format-free)' },
-  });
-  if (!retryCreateResult.error && retryCreateResult.data?.id) return retryCreateResult.data.id;
-  input.options._onAttemptFailed({
-    attempt: input.attempt,
-    step: 'format_free_retry_session_create',
-    error: retryCreateResult.error ?? error,
-    details: { agent: input.agent, originalSessionId: input.childSessionId },
-  });
-  return null;
 }
 
 function extractStructuredFindings(

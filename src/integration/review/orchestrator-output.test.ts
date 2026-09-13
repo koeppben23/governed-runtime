@@ -17,9 +17,9 @@ function reviewerResult(overrides: Record<string, unknown> = {}) {
   return {
     findings: { overallVerdict: 'accept', blockingIssues: [] },
     sessionId: 'child-session-1',
-    reviewOutputMode: 'structured',
+    reviewOutputMode: 'structured_output',
     structuredOutputUsed: true,
-    reviewAssuranceLevel: 'native_subagent_attested',
+    reviewAssuranceLevel: 'structured_high',
     ...overrides,
   } as Parameters<typeof buildMutatedOutput>[1];
 }

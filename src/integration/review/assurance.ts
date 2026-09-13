@@ -257,7 +257,6 @@ export function createReviewObligation(input: {
     reviewSubjectScope,
     repositoryRevisionProvenance: deriveRepositoryRevisionProvenance({
       repositoryAuthority: input.repositoryAuthority,
-      reviewSubject: input.reviewSubject,
     }),
     repositoryAuthority: input.repositoryAuthority,
     repositoryEvidenceFreeze: input.repositoryEvidenceFreeze,
@@ -380,8 +379,7 @@ export function findLatestPendingReviewObligation(
           (o) =>
             o.metadata &&
             o.metadata.fingerprint === metadataFingerprint &&
-            (fingerprintVersion === undefined ||
-              (o.fingerprintVersion ?? 'v1') === fingerprintVersion),
+            (fingerprintVersion === undefined || o.fingerprintVersion === fingerprintVersion),
         )
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
         .at(0) ?? null
@@ -585,11 +583,6 @@ export function buildInvocationEvidence(input: {
   invokedAt: string;
   fulfilledAt?: string;
   source?: 'host-orchestrated' | 'agent-submitted-attested';
-  reviewOutputMode?: 'structured_output' | 'text_compat';
-  structuredOutputUsed?: boolean;
-  reviewAssuranceLevel?: 'structured_high' | 'structured_recovered' | 'text_compat_lower';
-  extractionMethod?: 'direct_json' | 'json_fence' | 'outermost_braces';
-  modelCapabilityError?: string;
   /** Captured verdict from the reviewer's actual output (host-task authoritative). */
   capturedVerdict?: string;
   /** Complete raw findings from the reviewer's output (host-task only).
@@ -605,15 +598,9 @@ export function buildInvocationEvidence(input: {
   resolvedBaseSha?: string | null;
   /** SHA-256 digest of the extracted/reviewed content (branch reviews only). */
   reviewedContentDigest?: string | null;
-  /** Persisted attempt ID bound at evidence-assembly time. */
+  /** Persisted host-authoritative attempt ID bound at evidence-assembly time. */
   attemptId?: string;
 }): ReviewInvocationEvidence {
-  const reviewOutputMode = input.reviewOutputMode ?? 'structured_output';
-  const structuredOutputUsed =
-    input.structuredOutputUsed ?? reviewOutputMode === 'structured_output';
-  const reviewAssuranceLevel =
-    input.reviewAssuranceLevel ??
-    (reviewOutputMode === 'text_compat' ? 'text_compat_lower' : 'structured_high');
   return {
     invocationId: randomUUID(),
     obligationId: input.obligationId,
@@ -634,20 +621,20 @@ export function buildInvocationEvidence(input: {
     fulfilledAt: input.fulfilledAt ?? null,
     consumedByObligationId: null,
     source: input.source,
-    reviewOutputMode,
-    structuredOutputUsed,
-    reviewAssuranceLevel,
+    reviewOutputMode: 'structured_output',
+    structuredOutputUsed: true,
+    reviewAssuranceLevel: 'structured_high',
     resolvedBranchSha: input.resolvedBranchSha ?? null,
     resolvedBaseSha: input.resolvedBaseSha ?? null,
     reviewedContentDigest: input.reviewedContentDigest ?? null,
-    ...(input.attemptId ? { attemptId: input.attemptId } : {}),
+    // An omitted lineage deliberately remains schema-invalid; this constructor
+    // never reconstructs identity from an older invocation shape.
+    attemptId: input.attemptId ?? '',
     ...buildOptionalInvocationFields(input),
   };
 }
 
 function buildOptionalInvocationFields(input: {
-  extractionMethod?: 'direct_json' | 'json_fence' | 'outermost_braces';
-  modelCapabilityError?: string;
   capturedVerdict?: string;
   capturedRawFindings?: Record<string, unknown>;
   hostCapturedAgentId?: string;
@@ -655,8 +642,6 @@ function buildOptionalInvocationFields(input: {
   hostCaptureSource?: 'subagent_stop_hook' | 'post_tool_use_hook';
 }): Record<string, unknown> {
   return {
-    ...(input.extractionMethod ? { extractionMethod: input.extractionMethod } : {}),
-    ...(input.modelCapabilityError ? { modelCapabilityError: input.modelCapabilityError } : {}),
     ...(input.capturedVerdict ? { capturedVerdict: input.capturedVerdict } : {}),
     ...(input.capturedRawFindings ? { capturedRawFindings: input.capturedRawFindings } : {}),
     ...(input.hostCapturedAgentId ? { hostCapturedAgentId: input.hostCapturedAgentId } : {}),

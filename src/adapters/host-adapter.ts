@@ -110,7 +110,7 @@ export interface ToolResultMutation {
 export interface ReviewerSpawnConfig {
   readonly prompt: string;
   readonly parentSessionId: string;
-  readonly reviewOutputPolicy?: 'structured_required' | 'text_compat_allowed';
+  readonly reviewOutputPolicy?: 'structured_required';
   readonly reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed';
   readonly maxRetries?: number;
   readonly baseDelayMs?: number;
@@ -155,11 +155,9 @@ export interface HostReviewerSuccessResult {
   readonly sessionId: string;
   readonly rawResponse: string;
   readonly findings: Record<string, unknown> | null;
-  readonly reviewOutputMode: 'structured_output' | 'text_compat';
+  readonly reviewOutputMode: 'structured_output';
   readonly structuredOutputUsed: boolean;
-  readonly reviewAssuranceLevel: 'structured_high' | 'text_compat_lower';
-  readonly extractionMethod?: 'direct_json' | 'json_fence' | 'outermost_braces';
-  readonly modelCapabilityError?: string;
+  readonly reviewAssuranceLevel: 'structured_high';
 }
 
 /** Discriminated union of reviewer invocation outcomes. */

@@ -42,21 +42,8 @@ describe('hasFrozenRepositoryAuthority', () => {
       }),
     ).toBe(true);
   });
-  it('HAPPY: repository_change review subject counts', () => {
-    expect(
-      hasFrozenRepositoryAuthority({
-        reviewSubject: {
-          kind: 'repository_change',
-          baseRepository: REMOTE,
-          baseSha: SHA_BASE,
-          headSha: SHA_HEAD,
-        },
-      }),
-    ).toBe(true);
-  });
-  it('BAD: no authority is false for content subjects and empty carriers', () => {
+  it('BAD: no authority is false', () => {
     expect(hasFrozenRepositoryAuthority({})).toBe(false);
-    expect(hasFrozenRepositoryAuthority({ reviewSubject: { kind: 'content' } })).toBe(false);
   });
 });
 
@@ -77,28 +64,6 @@ describe('resolveFrozenRevisionTarget', () => {
     expect(resolveFrozenRevisionTarget(carrier, 'head')?.objectSha).toBe(SHA_BASE);
     expect(resolveFrozenRevisionTarget(carrier, 'base')).toBeNull();
   });
-  it('HAPPY: repository_change subject resolves commit targets; fork head uses headRepository', () => {
-    const carrier = {
-      reviewSubject: {
-        kind: 'repository_change',
-        baseRepository: REMOTE,
-        headRepository: { host: 'github.com', owner: 'contributor', name: 'fork' },
-        baseSha: SHA_BASE,
-        headSha: SHA_HEAD,
-      },
-    };
-    const base = resolveFrozenRevisionTarget(carrier, 'base');
-    const head = resolveFrozenRevisionTarget(carrier, 'head');
-    expect(base).toEqual({ kind: 'commit', repositoryIdentity: REMOTE, objectSha: SHA_BASE });
-    expect(head).toEqual({
-      kind: 'commit',
-      repositoryIdentity: { host: 'github.com', owner: 'contributor', name: 'fork' },
-      objectSha: SHA_HEAD,
-    });
-  });
-  it('BAD: content subjects resolve nothing', () => {
-    expect(resolveFrozenRevisionTarget({ reviewSubject: { kind: 'content' } }, 'head')).toBeNull();
-  });
 });
 
 describe('deriveRepositoryRevisionProvenance', () => {
@@ -118,18 +83,6 @@ describe('deriveRepositoryRevisionProvenance', () => {
         },
       }),
     ).toEqual({ kind: 'available', headSha: SHA_BASE });
-  });
-  it('HAPPY: repository_change subject derives available for PR reviews too', () => {
-    expect(
-      deriveRepositoryRevisionProvenance({
-        reviewSubject: {
-          kind: 'repository_change',
-          baseRepository: REMOTE,
-          baseSha: SHA_BASE,
-          headSha: SHA_HEAD,
-        },
-      }),
-    ).toEqual({ kind: 'available', headSha: SHA_HEAD, baseSha: SHA_BASE });
   });
   it('BAD: no authority derives unavailable', () => {
     const derived = deriveRepositoryRevisionProvenance({});

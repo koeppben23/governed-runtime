@@ -486,6 +486,7 @@ export async function fulfillStrictReviewObligation(
     findingsHash: hashFindings(findings),
     invokedAt: new Date().toISOString(),
     fulfilledAt: new Date().toISOString(),
+    attemptId: hostAttempt?.attemptId ?? '00000000-0000-4000-8000-000000000001',
     // Production evidence carries the reviewer's explicit verdict
     // (transport-evidence sets capturedVerdict from findings.overallVerdict;
     // host-task captures set it from captured findings). The helper mirrors

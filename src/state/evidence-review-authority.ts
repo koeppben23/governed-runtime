@@ -22,7 +22,6 @@
 
 import { z } from 'zod';
 import { GitSha, ReviewRepositoryIdentity } from './evidence-review-subject.js';
-import type { ReviewRepositoryIdentity as ReviewRepositoryIdentityValue } from './evidence-review-subject.js';
 import type { ReviewRepositoryRevisionProvenance as ReviewRepositoryRevisionProvenanceValue } from './evidence-primitives.js';
 import { RepositoryPathSchema } from './evidence-findings.js';
 
@@ -195,19 +194,11 @@ export type RepositoryObservation = z.infer<typeof RepositoryObservation>;
 /** Minimal structural obligation shape the authority predicates operate on. */
 export interface RepositoryAuthorityCarrier {
   readonly repositoryAuthority?: FrozenRepositoryAuthorityValue;
-  readonly reviewSubject?: {
-    readonly kind?: string;
-    readonly baseRepository?: ReviewRepositoryIdentityValue;
-    readonly headRepository?: ReviewRepositoryIdentityValue | null;
-    readonly baseSha?: string;
-    readonly headSha?: string;
-  } | null;
 }
 
 /** True when the carrier holds frozen repository authority of any kind. */
 export function hasFrozenRepositoryAuthority(carrier: RepositoryAuthorityCarrier): boolean {
-  if (carrier.repositoryAuthority) return true;
-  return carrier.reviewSubject?.kind === 'repository_change';
+  return carrier.repositoryAuthority !== undefined;
 }
 
 /**
@@ -226,32 +217,13 @@ export function resolveFrozenRevisionTarget(
     }
     return revision === 'head' ? authority.context : null;
   }
-  const subject = carrier.reviewSubject;
-  if (
-    subject?.kind === 'repository_change' &&
-    subject.baseRepository &&
-    subject.baseSha &&
-    subject.headSha
-  ) {
-    const headSha: string = subject.headSha;
-    const baseSha: string = subject.baseSha;
-    const identity: ReviewRepositoryIdentityValue =
-      revision === 'head'
-        ? (subject.headRepository ?? subject.baseRepository)
-        : subject.baseRepository;
-    return {
-      kind: 'commit',
-      repositoryIdentity: identity,
-      objectSha: revision === 'head' ? headSha : baseSha,
-    };
-  }
   return null;
 }
 
 /**
- * Canonical derivation of the legacy revision-provenance projection from
- * frozen authority. Provenance is a pure projection — never read from mutable
- * runtime state. When no frozen authority exists the derivation is
+ * Canonical derivation of the revision-provenance projection from frozen
+ * authority. Provenance is a pure projection — never read from mutable runtime
+ * state. When no frozen authority exists the derivation is
  * `unavailable`, which makes every repository evidence revision fail closed.
  */
 export function deriveRepositoryRevisionProvenance(
@@ -267,14 +239,6 @@ export function deriveRepositoryRevisionProvenance(
   }
   if (authority?.kind === 'context') {
     return { kind: 'available', headSha: authority.context.objectSha };
-  }
-  const subject = carrier.reviewSubject;
-  if (subject?.kind === 'repository_change' && subject.headSha && subject.baseSha) {
-    return {
-      kind: 'available',
-      headSha: subject.headSha,
-      baseSha: subject.baseSha,
-    };
   }
   return { kind: 'unavailable', reason: 'frozen_repository_authority_missing' };
 }
