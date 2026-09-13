@@ -31,10 +31,10 @@ export function hostAttestationFor(obligationId: string): Record<string, unknown
  * Build a Mode A response with INDEPENDENT_REVIEW_REQUIRED containing iteration
  * and planVersion.
  *
- * `obligationId` models the REAL production signal (plan-response.ts emits
- * reviewObligationId + reviewInvocation.requiredReviewAttestation): the default
- * is a realistic fixture obligation identity; pass `null` to deliberately
- * model a signal without obligation/host attestation.
+ * `obligationId` models the canonical production signal: the review identity is
+ * carried only by the structured `reviewObligation` object. Host attestation is
+ * a separate host-issued binding contract. Pass `null` to deliberately model a
+ * signal without obligation/host attestation.
  */
 export function modeASubagentResponse(
   opts: {
@@ -58,7 +58,16 @@ export function modeASubagentResponse(
     ...(obligationId
       ? {
           reviewAttemptId: `att-${obligationId}`,
-          reviewObligationId: obligationId,
+          reviewObligation: {
+            obligationId,
+            obligationType: phase === 'IMPLEMENTATION' ? 'implement' : 'plan',
+            iteration,
+            planVersion,
+            criteriaVersion: FIXTURE_CRITERIA_VERSION,
+            mandateDigest: FIXTURE_MANDATE_DIGEST,
+            requiredChallengeCount: 0,
+            requiredChallengeKind: 'design_challenge',
+          },
           requiredReviewAttestation: {
             reviewedBy: REVIEWER_SUBAGENT_TYPE,
             mandateDigest: FIXTURE_MANDATE_DIGEST,
@@ -98,7 +107,16 @@ export function modeAWithoutContentMeta(obligationId: string = FIXTURE_OBLIGATIO
     phase: 'PLAN',
     reviewMode: 'subagent',
     reviewAttemptId: `att-${obligationId}`,
-    reviewObligationId: obligationId,
+    reviewObligation: {
+      obligationId,
+      obligationType: 'plan',
+      iteration: 0,
+      planVersion: 1,
+      criteriaVersion: FIXTURE_CRITERIA_VERSION,
+      mandateDigest: FIXTURE_MANDATE_DIGEST,
+      requiredChallengeCount: 0,
+      requiredChallengeKind: 'design_challenge',
+    },
     requiredReviewAttestation: {
       reviewedBy: REVIEWER_SUBAGENT_TYPE,
       mandateDigest: FIXTURE_MANDATE_DIGEST,
