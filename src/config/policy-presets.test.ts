@@ -607,10 +607,6 @@ describe('config/policy', () => {
       });
     });
 
-    it('solo selfReview is default config', () => {
-      const r = resolvePolicyWithContext('solo', false);
-    });
-
     it('solo preset: validationEvidence off (#400)', () => {
       const r = resolvePolicyWithContext('solo', false);
       expect(r.policy.validationEvidence).toEqual({ enforcement: 'off', allowNoCommands: false });

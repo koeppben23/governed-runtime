@@ -1162,6 +1162,14 @@ describe('resolveHostTaskEffectiveFindings — directly-submitted challenge fres
       unknowns: [],
       reviewedBy: { sessionId: 'ses_child' },
       reviewedAt: new Date().toISOString(),
+      attestation: {
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+        criteriaVersion: REVIEW_CRITERIA_VERSION,
+        toolObligationId: CHALLENGE_OBLIGATION_ID,
+        iteration: 0,
+        planVersion: 1,
+        reviewedBy: 'flowguard-reviewer',
+      },
       challenges: [
         {
           challengeId: '33333333-3333-4333-8333-333333333333',
@@ -1179,21 +1187,36 @@ describe('resolveHostTaskEffectiveFindings — directly-submitted challenge fres
 
   function makeCtx(evidenceRefs: readonly unknown[]) {
     // sdk_allowed => NOT host-task mode => directly-submitted branch (Gap 2 fix).
+    const findings = submittedFindings(evidenceRefs);
+    const obligation = challengeObligation();
+    const invocationId = '22222222-2222-4222-8222-222222222222';
+    const fulfilledObligation = {
+      ...obligation,
+      status: 'fulfilled' as const,
+      invocationId,
+      pluginHandshakeAt: new Date().toISOString(),
+      fulfilledAt: new Date().toISOString(),
+    };
     return {
-      pendingObligation: challengeObligation(),
+      pendingObligation: fulfilledObligation,
       expected: { obligationType: 'implement' as const, iteration: 0, planVersion: 1 },
       policy: {
         reviewInvocationPolicy: 'sdk_allowed' as const,
-        strictEnforcement: false,
-        subagentEnabled: true,
-        fallbackToSelf: false,
       },
-      input: { reviewFindings: submittedFindings(evidenceRefs), verdict: 'accept' },
+      input: { reviewFindings: findings, verdict: 'accept' },
       state: {
         assurance: {
           assuranceSchemaVersion: 'review-assurance.v6' as const,
-          obligations: [challengeObligation()],
-          invocations: [],
+          obligations: [fulfilledObligation],
+          invocations: [
+            makeSharedHostTaskInvocation(findings, {
+              invocationId,
+              obligationId: CHALLENGE_OBLIGATION_ID,
+              obligationType: 'implement',
+              invocationMode: 'sdk_session_prompt',
+              hostVisible: false,
+            }),
+          ],
           attempts: [],
           dispatches: [],
         },
@@ -1204,6 +1227,12 @@ describe('resolveHostTaskEffectiveFindings — directly-submitted challenge fres
       },
     };
   }
+
+  it('accepts directly-submitted findings whose challenge cites a fresh, allowed attempt', () => {
+    const result = resolveHostTaskEffectiveFindings(makeCtx([IMPL_REF, FRESH_ATTEMPT_REF]));
+    expect(result.blocked).toBeUndefined();
+    expect(result.effectiveFindings).toBeDefined();
+  });
 
   it('blocks directly-submitted findings whose challenge cites a stale/foreign attempt', () => {
     // The exact Gap 2 leak: on the directly-submitted path the freshness set was

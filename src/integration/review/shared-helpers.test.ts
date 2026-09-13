@@ -150,17 +150,6 @@ describe('validatePipelineAttestation', () => {
   });
 });
 
-// ─── isStrictEnforcementEnabled ───────────────────────────────────────────────
-
-describe('isStrictEnforcementEnabled', () => {
-  it('returns true when selfReview.strictEnforcement is true', () => {
-    const s = {
-      policySnapshot: { selfReview: { strictEnforcement: true } },
-    } as unknown as SessionState;
-    expect(isStrictEnforcementEnabled(s)).toBe(true);
-  });
-});
-
 // ─── isOutputAlreadyBlocked ───────────────────────────────────────────────────
 
 describe('isOutputAlreadyBlocked', () => {

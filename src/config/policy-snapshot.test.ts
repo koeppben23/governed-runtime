@@ -27,6 +27,7 @@ import type { PolicySnapshot } from '../state/evidence.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { POLICY_DIGEST_VERSION } from '../shared/policy-digest.js';
 import { PolicyConfigurationError } from './policy-errors.js';
+import type { FlowGuardPolicy } from './policy-types.js';
 
 export const sha256 = (text: string) => createHash('sha256').update(text, 'utf-8').digest('hex');
 export const NOW = '2026-04-27T10:00:00.000Z';
@@ -150,11 +151,44 @@ describe('createPolicySnapshot', () => {
     expect(snapshot.effectiveGateBehavior).toBe('human_gated');
   });
 
-  it('preserves the configured self-review policy', () => {
-    const policy = {
-      ...SOLO_POLICY,
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
-    };
+  it('binds governance fields into the policy digest', () => {
+    const baseline = createPolicySnapshot(SOLO_POLICY, NOW, sha256).hash;
+    const variants: readonly FlowGuardPolicy[] = [
+      {
+        ...SOLO_POLICY,
+        audit: { ...SOLO_POLICY.audit, enableChainHash: !SOLO_POLICY.audit.enableChainHash },
+      },
+      {
+        ...SOLO_POLICY,
+        audit: { ...SOLO_POLICY.audit, emitToolCalls: !SOLO_POLICY.audit.emitToolCalls },
+      },
+      {
+        ...SOLO_POLICY,
+        validationEvidence: {
+          ...SOLO_POLICY.validationEvidence,
+          allowNoCommands: !SOLO_POLICY.validationEvidence.allowNoCommands,
+        },
+      },
+      {
+        ...SOLO_POLICY,
+        minimumActorAssuranceForApproval: 'claim_validated' as const,
+      },
+      {
+        ...SOLO_POLICY,
+        reviewInvocationPolicy: 'host_task_required' as const,
+      },
+      {
+        ...SOLO_POLICY,
+        challengePolicy: {
+          ...SOLO_POLICY.challengePolicy,
+          counts: { ...SOLO_POLICY.challengePolicy.counts, STANDARD: 2 },
+        } as unknown as FlowGuardPolicy['challengePolicy'],
+      },
+    ];
+
+    for (const policy of variants) {
+      expect(createPolicySnapshot(policy, NOW, sha256).hash).not.toBe(baseline);
+    }
   });
 });
 

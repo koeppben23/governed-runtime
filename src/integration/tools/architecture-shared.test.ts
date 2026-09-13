@@ -156,7 +156,7 @@ describe('validateInitialSubmissionGate', () => {
 // ─── buildArchitectureReviewInstruction ───────────────────────────────────────
 
 describe('buildArchitectureReviewInstruction', () => {
-  it('subagentEnabled=true => returns next + reviewInvocation', () => {
+  it('returns next + reviewInvocation for mandatory independent review', () => {
     const result = buildArchitectureReviewInstruction({
       policy: {
         ...TEAM_POLICY,

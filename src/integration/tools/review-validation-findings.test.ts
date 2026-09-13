@@ -714,6 +714,34 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
     });
   }
 
+  function strictChallengeCtx(findings: ReviewFindings): ReviewFindingsValidationContext {
+    const assurance = strictAssuranceFixture(findings);
+    assurance.obligations[0] = {
+      ...assurance.obligations[0]!,
+      obligationType: 'implement',
+      requiredChallengeCount: 1,
+      requiredChallengeKind: 'implementation_challenge',
+    };
+    assurance.invocations[0] = {
+      ...assurance.invocations[0]!,
+      obligationType: 'implement',
+    };
+    return makeCtx({
+      obligationType: 'implement',
+      assurance,
+      allowedEvidenceRefs: [IMPL_REF, FRESH_ATTEMPT_REF],
+      expectedObligationId: OBLIGATION_ID,
+    });
+  }
+
+  it('accepts a challenge citing a fresh, allowed validation attempt', () => {
+    const findings = strictFindings({
+      challenges: [implChallenge([IMPL_REF, FRESH_ATTEMPT_REF])],
+    });
+
+    expect(validateReviewFindings(findings, strictChallengeCtx(findings))).toBeNull();
+  });
+
   it('rejects a challenge citing a validation attempt outside the allowed (fresh) set', () => {
     // The stale/foreign attempt ref is NOT in allowedEvidenceRefs — the exact
     // Gap 2 leak: previously accepted on the directly-submitted path because
