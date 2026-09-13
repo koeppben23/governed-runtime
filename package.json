@@ -49,7 +49,7 @@
     "check": "npm run check:prod && npm run check:tests && npm run check:agent-instructions",
     "typecheck": "npm run check",
     "check:opencode-host": "node scripts/check-opencode-host-drift.mjs",
-    "check:unused-dependencies": "knip --dependencies",
+    "check:unused-dependencies": "knip --dependencies --treat-config-hints-as-errors --treat-tag-hints-as-errors",
     "lint": "eslint \"src/**/*.ts\"",
     "lint:strict": "eslint \"src/**/*.ts\" --max-warnings=0",
     "format": "prettier --write \"src/**/*.ts\" \"docs/**/*.md\" \"demos/**/*.md\" \"scripts/**/*.js\" \"*.json\" \".github/**/*.yml\"",

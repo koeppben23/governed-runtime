@@ -45,8 +45,8 @@ jobs:
       - name: Hint when trust-boundary changes miss KNOWN_ISSUES.md
         run: node scripts/check-known-issues-note.mjs "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}"
 
-  unused-exports-note:
-    name: unused-exports-note
+  unused-exports:
+    name: unused-exports
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     timeout-minutes: 10
@@ -61,7 +61,7 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm ci
-      - name: Hint on new unused exports against the committed baseline
+      - name: Check new unused exports against the committed baseline
         run: node scripts/check-unused-exports.mjs
 
   test:

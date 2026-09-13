@@ -88,7 +88,7 @@ export async function runWithAdapterLoggerAsync<T>(
 }
 
 /** Fields safe to spread into structured diagnostic log extras. */
-export function getLogTraceFields(): { traceId?: string; sessionId?: string; durationMs?: number } {
+export function getLogTraceFields(): { traceId?: string; sessionId?: string } {
   const ctx = getLogContext();
   if (!ctx) return {};
   return ctx.sessionId === undefined

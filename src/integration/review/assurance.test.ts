@@ -680,8 +680,15 @@ describe('integration/review-assurance', () => {
         obligationType: 'architecture',
         iteration: 2,
       });
-      expect(result).not.toHaveProperty('reviewObligationId');
-      expect(result).not.toHaveProperty('reviewCriteriaVersion');
+      for (const field of [
+        'reviewObligationId',
+        'reviewObligationIteration',
+        'reviewObligationPlanVersion',
+        'reviewCriteriaVersion',
+        'reviewMandateDigest',
+      ]) {
+        expect(result).not.toHaveProperty(field);
+      }
     });
 
     it('returns empty fields when obligation is null', () => {
