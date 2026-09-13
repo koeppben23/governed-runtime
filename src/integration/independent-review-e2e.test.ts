@@ -105,14 +105,20 @@ function planModeAOutput(): { output: string; metadata: Record<string, unknown> 
       phase: 'PLAN',
       selfReviewIteration: 0,
       reviewMode: 'subagent',
-      reviewObligationId: OBLIGATION_ID,
-      // The real flowguard_plan emits the attempt id alongside the obligation
-      // id (assurance.ts buildReviewRequiredPayload). Enforcement tracking
-      // parses it into the pending review, and the Task after-hook binds the
-      // reviewer child session to exactly this attempt.
+      reviewObligation: {
+        obligationId: OBLIGATION_ID,
+        obligationType: 'plan',
+        iteration: 0,
+        planVersion: 1,
+        criteriaVersion: REVIEW_CRITERIA_VERSION,
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+        requiredChallengeCount: 0,
+        requiredChallengeKind: 'design_challenge',
+      },
+      // The real flowguard_plan emits the attempt id alongside the structured
+      // review obligation. Enforcement tracking binds the reviewer child session
+      // to exactly this attempt.
       reviewAttemptId: ATTEMPT_ID,
-      reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
-      reviewMandateDigest: REVIEW_MANDATE_DIGEST,
       reviewerTaskPrompt: renderReviewerTaskPrompt({
         iteration: 0,
         planVersion: 1,
