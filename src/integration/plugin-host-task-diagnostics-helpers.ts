@@ -47,7 +47,16 @@ export function modeAResponse(
     ...(obligationId
       ? {
           reviewAttemptId: `att-${obligationId}`,
-          reviewObligationId: obligationId,
+          reviewObligation: {
+            obligationId,
+            obligationType: 'plan',
+            iteration,
+            planVersion,
+            criteriaVersion: REVIEW_CRITERIA_VERSION,
+            mandateDigest: REVIEW_MANDATE_DIGEST,
+            requiredChallengeCount: 0,
+            requiredChallengeKind: 'design_challenge',
+          },
           requiredReviewAttestation: {
             reviewedBy: REVIEWER_SUBAGENT_TYPE,
             mandateDigest: REVIEW_MANDATE_DIGEST,
