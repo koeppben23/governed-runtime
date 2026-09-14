@@ -520,6 +520,19 @@ async function resolveHostToolStateOrThrow(
     );
   }
   const state = await readRequiredHostToolState(sessDir, sessionId, toolName);
+  if (state.error) {
+    // A persisted blocking error (e.g. strict TSA assurance failure) is a
+    // durable fail-closed latch: the next governed host mutation must not
+    // extend a session whose recorded authority is already broken. Surface the
+    // persisted code so the root cause — not a downstream phase-gate symptom —
+    // is what the host sees.
+    throw buildEnforcementError(state.error.code, state.error.message, {
+      sessionId,
+      tool: toolName,
+      recoveryHint: state.error.recoveryHint,
+      occurredAt: state.error.occurredAt,
+    });
+  }
   enforceHostToolPhase(runtime, toolName, sessionId, state);
   return { sessDir, state };
 }
