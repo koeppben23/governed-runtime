@@ -36,7 +36,7 @@ import {
   observationLedgerRoot,
 } from '../../adapters/persistence-observation-ledger.js';
 import { resolveFrozenRevisionTarget } from '../../state/evidence.js';
-import { normalizeRepositoryPath } from '../../state/repository-path.js';
+import { classifyRepositoryPath } from '../../state/repository-path.js';
 import { resolveAttemptByCapability } from '../review/observation-resolution.js';
 import {
   buildObservationToolResponse,
@@ -91,7 +91,6 @@ function validateObservationRequest(
       }),
     };
   }
-  void parsed.data;
   // The executing session identity is recorded in the capture and later
   // enforced by the parent replay against the actual reviewer child session.
   // Without a session identity the tool fails closed: a capture without an
@@ -104,13 +103,13 @@ function validateObservationRequest(
       }),
     };
   }
-  const normalized = normalizeRepositoryPath(parsed.data.path);
-  if (!normalized) {
+  const path = classifyRepositoryPath(parsed.data.path);
+  if (path.kind !== 'valid') {
     return {
       blocked: formatBlocked('REVIEW_OBSERVATION_PATH_INVALID', { path: parsed.data.path }),
     };
   }
-  return { normalizedPath: normalized };
+  return { normalizedPath: path.normalizedPath };
 }
 
 /**
