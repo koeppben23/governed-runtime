@@ -92,9 +92,9 @@ describe('DiscoveryResult code-surface status coherence', () => {
     expect(
       DiscoveryResultSchema.safeParse(withCodeSurfaceStatuses('partial', 'partial')).success,
     ).toBe(true);
-    expect(DiscoveryResultSchema.safeParse(withCodeSurfaceStatuses('failed', 'failed')).success).toBe(
-      true,
-    );
+    expect(
+      DiscoveryResultSchema.safeParse(withCodeSurfaceStatuses('failed', 'failed')).success,
+    ).toBe(true);
   });
 
   it('rejects failed output with a complete diagnostic', () => {
@@ -110,7 +110,10 @@ describe('DiscoveryResult code-surface status coherence', () => {
   });
 
   it('does not report an inconsistent code-surface failure as healthy even if schema validation is bypassed', () => {
-    const inconsistent = withCodeSurfaceStatuses('failed', 'complete') as unknown as DiscoveryResult;
+    const inconsistent = withCodeSurfaceStatuses(
+      'failed',
+      'complete',
+    ) as unknown as DiscoveryResult;
     expect(extractDiscoveryHealth(inconsistent).healthy).toBe(false);
   });
 });
