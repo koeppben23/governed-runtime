@@ -121,8 +121,8 @@ function applyConfigOverrides(
     maxIncoherentReviewerCaptureRetries:
       opts.configMaxIncoherentReviewerCaptureRetries ??
       basePolicy.maxIncoherentReviewerCaptureRetries,
-    maxReviewerOutputRepairAttempts:
-      opts.configMaxReviewerOutputRepairAttempts ?? basePolicy.maxReviewerOutputRepairAttempts,
+    maxReviewerAttempts:
+      opts.configMaxReviewerOutputRepairAttempts ?? basePolicy.maxReviewerAttempts,
     minimumActorAssuranceForApproval: resolveMinAssurance(
       basePolicy,
       opts.configMinimumActorAssuranceForApproval,

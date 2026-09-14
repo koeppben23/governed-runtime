@@ -39,7 +39,7 @@ function implementObligation(id: string, digest: string): ReviewObligation {
     },
     reviewSubjectScope: { kind: 'implementation', implementationDigest: digest },
     repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
-    maxReviewerOutputRepairAttempts: 0,
+    maxReviewerAttempts: 0,
     reviewProfile: 'core',
     profileSource: 'policy_default',
   };
@@ -74,7 +74,7 @@ function planObligation(id: string, digest: string): ReviewObligation {
       artifact: { kind: 'plan', digest, sectionPaths: [] },
     },
     repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
-    maxReviewerOutputRepairAttempts: 0,
+    maxReviewerAttempts: 0,
     reviewProfile: 'core',
     profileSource: 'policy_default',
   };

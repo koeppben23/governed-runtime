@@ -369,7 +369,7 @@ export function latestAttemptForObligation(
  * Number of attempts minted as authorized output repairs for this obligation.
  * Derived exclusively from attempt origins — no separate counter exists.
  */
-export function countOutputRepairAttempts(
+export function countReviewAttempts(
   assurance: ReviewAssuranceState | undefined,
   obligationId: string,
 ): number {
@@ -501,12 +501,12 @@ export function authorizeOutputRepairReissue(
   if (stall) {
     return { kind: 'blocked', code: stall.code, reason: stall.reason };
   }
-  const used = countOutputRepairAttempts(assurance, obligation.obligationId);
-  if (used >= obligation.maxReviewerOutputRepairAttempts) {
+  const used = countReviewAttempts(assurance, obligation.obligationId);
+  if (used >= obligation.maxReviewerAttempts) {
     return {
       kind: 'blocked',
       code: 'REVIEWER_OUTPUT_RETRY_EXHAUSTED',
-      reason: `output-repair budget exhausted (${used}/${obligation.maxReviewerOutputRepairAttempts})`,
+      reason: `reviewer-attempt budget exhausted (${used}/${obligation.maxReviewerAttempts})`,
     };
   }
   return {

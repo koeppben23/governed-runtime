@@ -145,9 +145,9 @@ export const FlowGuardConfigSchema = z.object({
       maxImplReviewIterations: z.number().int().min(1).max(10).optional(),
       /** Override retries after accept findings contain blocking issues (F12). */
       maxIncoherentReviewerCaptureRetries: z.number().int().min(0).max(5).optional(),
-      /** Override obligation-level reviewer output-repair attempts (new attempt
-       * after a canonically repairable non-bindable reviewer output). */
-      maxReviewerOutputRepairAttempts: z.number().int().min(0).max(5).optional(),
+      /** Override obligation-level reviewer-attempt budget (output repairs and
+       * task re-arms). */
+      maxReviewerAttempts: z.number().int().min(0).max(5).optional(),
       /** P34: Minimum assurance level required for approval.
        * 'best_effort' | 'claim_validated' | 'idp_verified' */
       minimumActorAssuranceForApproval: z

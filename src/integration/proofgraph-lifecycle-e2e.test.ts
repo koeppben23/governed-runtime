@@ -1077,7 +1077,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             planVersion: 1,
             criteriaVersion: 'p40-v1',
             mandateDigest: 'e78b6bab98fcf033874fcc07e17d87aaff73fca47b1a28209e5dd4a1a28eedb7',
-            maxReviewerOutputRepairAttempts: 1,
+            maxReviewerAttempts: 1,
             reviewProfile: 'core',
             profileSource: 'policy_default',
             reviewMaterial: {

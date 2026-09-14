@@ -38,7 +38,10 @@ export interface ObligationRefinementShape {
   readonly obligationId: string;
   readonly subjectDigest: string;
   readonly criteriaVersion: string;
+  readonly status: string;
   readonly invocationId: string | null;
+  readonly fulfilledAt?: string | null;
+  readonly consumedAt?: string | null;
   readonly reviewMaterial?: {
     readonly subjectDigest: string;
   } | null;
@@ -116,6 +119,7 @@ export interface AttemptRefinementShape {
   readonly completedAt?: string;
   readonly observationCapability?: string;
   readonly rejectionReason?: string;
+  readonly schemaErrorFingerprint?: string;
   readonly createdAt: string;
   readonly origin: {
     readonly kind: string;
@@ -140,6 +144,9 @@ export interface AssuranceRefinementShape {
     readonly hostCapturedAgentId?: string;
     readonly hostCapturedAgentType?: string;
     readonly hostCaptureSource?: string;
+    readonly hostTaskCallId?: string;
+    readonly canonicalPromptDigest?: string;
+    readonly consumedByObligationId?: string | null;
     readonly reviewOutputMode?: string;
     readonly structuredOutputUsed?: boolean;
     readonly reviewAssuranceLevel?: string;
@@ -150,6 +157,7 @@ export interface AssuranceRefinementShape {
     readonly attemptId: string;
     readonly obligationId: string;
     readonly hostCallId: string;
+    readonly canonicalPromptDigest: string;
     readonly dispatchStatus: string;
     readonly completedAt?: string;
   }[];
@@ -498,6 +506,36 @@ export function refineAssuranceInvocationLinkageCoherence(
       });
       return;
     }
+    // A host-task invocation is the evidence side of exactly one durable
+    // dispatch: the dispatch must exist for the same attempt and be closed as
+    // completed on the same host call with the same canonical prompt.
+    if (invocation.invocationMode === 'host_subagent_task') {
+      const dispatch = assurance.dispatches.find(
+        (record) => record.attemptId === invocation.attemptId,
+      );
+      if (
+        !invocation.hostTaskCallId ||
+        !invocation.canonicalPromptDigest ||
+        !dispatch ||
+        dispatch.dispatchStatus !== 'completed' ||
+        dispatch.hostCallId !== invocation.hostTaskCallId ||
+        dispatch.canonicalPromptDigest !== invocation.canonicalPromptDigest
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['invocations'],
+          message: `host-task invocation ${invocation.invocationId} requires a completed matching dispatch`,
+        });
+        return;
+      }
+    } else if (invocation.hostTaskCallId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['invocations'],
+        message: `non-host-task invocation ${invocation.invocationId} must not carry a host task call id`,
+      });
+      return;
+    }
   }
   const attemptsByAttemptId = new Map(
     assurance.attempts.map((attempt) => [attempt.attemptId, attempt]),
@@ -560,18 +598,59 @@ export function refineAssuranceInvocationLinkageCoherence(
   const invocationsByInvocationId = new Map(
     assurance.invocations.map((invocation) => [invocation.invocationId, invocation]),
   );
+  const obligationIds = new Set(assurance.obligations.map((obligation) => obligation.obligationId));
   for (const obligation of assurance.obligations) {
-    if (!obligation.invocationId) continue;
-    const linked = invocationsByInvocationId.get(obligation.invocationId);
-    if (!linked) continue;
+    if (obligation.invocationId) {
+      const linked = invocationsByInvocationId.get(obligation.invocationId);
+      if (!linked) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['obligations'],
+          message: `obligation ${obligation.obligationId} references unknown invocation ${obligation.invocationId}`,
+        });
+        return;
+      }
+      if (
+        linked.obligationId !== obligation.obligationId ||
+        linked.obligationType !== obligation.obligationType
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['invocations'],
+          message: `invocation ${linked.invocationId} is the canonical linkage of obligation ${obligation.obligationId} but back-references obligation ${linked.obligationId} (type ${linked.obligationType})`,
+        });
+        return;
+      }
+    }
     if (
-      linked.obligationId !== obligation.obligationId ||
-      linked.obligationType !== obligation.obligationType
+      (obligation.status === 'fulfilled' || obligation.status === 'consumed') &&
+      (!obligation.invocationId || !obligation.fulfilledAt)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['obligations'],
+        message: `obligation ${obligation.obligationId} is ${obligation.status} without invocation lineage and fulfilledAt`,
+      });
+      return;
+    }
+    if (obligation.status === 'consumed' && !obligation.consumedAt) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['obligations'],
+        message: `consumed obligation ${obligation.obligationId} is missing consumedAt`,
+      });
+      return;
+    }
+  }
+  for (const invocation of assurance.invocations) {
+    if (
+      invocation.consumedByObligationId &&
+      !obligationIds.has(invocation.consumedByObligationId)
     ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['invocations'],
-        message: `invocation ${linked.invocationId} is the canonical linkage of obligation ${obligation.obligationId} but back-references obligation ${linked.obligationId} (type ${linked.obligationType})`,
+        message: `invocation ${invocation.invocationId} references unknown consumedByObligationId ${invocation.consumedByObligationId}`,
       });
       return;
     }

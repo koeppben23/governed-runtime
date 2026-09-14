@@ -47,6 +47,7 @@ import {
   REVIEW_MANDATE_DIGEST,
 } from './review/assurance.js';
 import { hashFindings } from './review/findings-hash.js';
+import { hostTaskDispatchPlan } from './tools/review-validation-test-helpers.js';
 import type { ReviewFindings } from '../state/evidence.js';
 // ─── Zod v4 Metadata Regression (P1 review gate) ──────────────────────────────
 describe('tool-schemas-zod-v4', () => {
@@ -719,7 +720,7 @@ describe('status', () => {
             version: 'challenge-policy.v1',
             counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
           },
-          maxReviewerOutputRepairAttempts: 1,
+          maxReviewerAttempts: 1,
         },
         obligationType: 'architecture',
         iteration: 0,
@@ -759,6 +760,13 @@ describe('status', () => {
           reviewedBy: 'flowguard-reviewer',
         },
       } as ReviewFindings;
+      const dispatchPlan = hostTaskDispatchPlan({
+        isHostTask: true,
+        dispatches: [],
+        attemptId: '00000000-0000-4000-8000-000000000123',
+        obligationId: obligation.obligationId,
+        at: '2026-01-01T00:00:00.000Z',
+      });
       const invocation = {
         ...buildInvocationEvidence({
           obligationId: obligation.obligationId,
@@ -769,6 +777,8 @@ describe('status', () => {
           childSessionId: 'ses-child',
           invocationMode: 'host_subagent_task',
           promptHash: 'sha256-prompt',
+          hostTaskCallId: dispatchPlan.hostTaskCallId,
+          canonicalPromptDigest: dispatchPlan.canonicalPromptDigest,
           findingsHash: hashFindings(findings),
           invokedAt: '2026-01-01T00:00:00.000Z',
           attemptId: '00000000-0000-4000-8000-000000000123',
@@ -798,7 +808,15 @@ describe('status', () => {
         },
         reviewAssurance: {
           assuranceSchemaVersion: 'review-assurance.v6' as const,
-          obligations: [{ ...obligation, status: 'consumed' as const }],
+          obligations: [
+            {
+              ...obligation,
+              status: 'consumed' as const,
+              invocationId: invocation.invocationId,
+              fulfilledAt: '2026-01-01T00:00:00.000Z',
+              consumedAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
           invocations: [invocation],
           attempts: [
             {
@@ -816,7 +834,7 @@ describe('status', () => {
               completedAt: '2026-01-01T00:00:00.000Z',
             },
           ],
-          dispatches: [],
+          dispatches: dispatchPlan.dispatch ? [dispatchPlan.dispatch] : [],
         },
       };
       await writeState(sessDir, state);

@@ -30,7 +30,7 @@ import { deriveRepositoryRevisionProvenance } from '../../state/evidence.js';
 import { indexMarkdownSections } from '../../shared/markdown-sections.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import {
-  DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS,
+  DEFAULT_MAX_REVIEWER_ATTEMPTS,
   CHALLENGE_POLICY_V1,
   type ChallengePolicy,
 } from '../../config/policy-types.js';
@@ -177,7 +177,7 @@ export function createReviewObligation(input: {
    * reissue gate never re-reads live config.
    */
   policySnapshot?:
-    | (Pick<PolicySnapshot, 'maxReviewerOutputRepairAttempts'> & {
+    | (Pick<PolicySnapshot, 'maxReviewerAttempts'> & {
         challengePolicy?: ChallengePolicy;
       })
     | null;
@@ -258,11 +258,11 @@ export function createReviewObligation(input: {
     }),
     repositoryAuthority: input.repositoryAuthority,
     repositoryEvidenceFreeze: input.repositoryEvidenceFreeze,
-    // Frozen output-repair budget. The canonical policy default applies at
+    // Frozen reviewer-attempt budget. The canonical policy default applies at
     // creation time only; the reissue gate reads this frozen value, never the
     // live config, so a later policy change cannot re-open a settled
     // obligation's repair window.
-    maxReviewerOutputRepairAttempts: resolveFrozenOutputRepairBudget(input.policySnapshot),
+    maxReviewerAttempts: resolveFrozenReviewerAttemptBudget(input.policySnapshot),
   };
 }
 
@@ -284,21 +284,19 @@ export function resolveFrozenReviewProfile(
 }
 
 /**
- * Frozen output-repair budget for an obligation. The canonical policy default
+ * Frozen reviewer-attempt budget for an obligation. The canonical policy default
  * applies at creation time only; the reissue gate reads the frozen obligation
  * value, never the live config.
  */
-function resolveFrozenOutputRepairBudget(
+function resolveFrozenReviewerAttemptBudget(
   policySnapshot:
-    | (Pick<PolicySnapshot, 'maxReviewerOutputRepairAttempts'> & {
+    | (Pick<PolicySnapshot, 'maxReviewerAttempts'> & {
         challengePolicy?: ChallengePolicy;
       })
     | null
     | undefined,
 ): number {
-  return (
-    policySnapshot?.maxReviewerOutputRepairAttempts ?? DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS
-  );
+  return policySnapshot?.maxReviewerAttempts ?? DEFAULT_MAX_REVIEWER_ATTEMPTS;
 }
 
 export function appendReviewObligation(

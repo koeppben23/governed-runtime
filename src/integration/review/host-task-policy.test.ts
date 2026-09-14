@@ -23,7 +23,7 @@ function obligation(): ReviewObligation {
     planVersion: 1,
     criteriaVersion: 'criteria-v1',
     mandateDigest: 'mandate-digest',
-    maxReviewerOutputRepairAttempts: 1,
+    maxReviewerAttempts: 1,
     reviewProfile: 'core',
     profileSource: 'policy_default',
     reviewMaterial: {

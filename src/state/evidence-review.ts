@@ -126,10 +126,10 @@ export type ReviewAttemptRejectionReason = z.infer<typeof ReviewAttemptRejection
  *
  * Every attempt carries exactly one origin. `initial` marks the first attempt
  * minted with its obligation. `output_repair` marks a reissue authorized by
- * the obligation-level output-repair policy (see reissue-authority.ts).
+ * the obligation-level reviewer-attempt budget (see reissue-authority.ts).
  * `task_rearm` marks a re-arm driven by the reviewer Task lifecycle
- * (interruption or spent-attempt retry); it is budgeted by the enforcement
- * retry gate, NOT by the output-repair budget.
+ * (interruption or spent-attempt retry); both repair classes draw on the SAME
+ * frozen reviewer-attempt budget.
  *
  * Invariant: no non-initial attempt exists without an explicit origin.
  */
@@ -473,7 +473,7 @@ export const ReviewObligation = z
     repositoryAuthority: FrozenRepositoryAuthority.optional(),
     /** Durable plan/architecture repository-context freeze outcome (see {@link RepositoryEvidenceFreeze}); plan/architecture obligations MUST carry it — continuations, restarts, re-emits, archives, and forensics render the exact degradation cause. */
     repositoryEvidenceFreeze: RepositoryEvidenceFreeze.optional(),
-    maxReviewerOutputRepairAttempts: z.number().int().min(0).max(5),
+    maxReviewerAttempts: z.number().int().min(0).max(5),
   })
   .strict()
   .superRefine(refineStandaloneSubject)
@@ -540,7 +540,7 @@ export const REVIEW_ASSURANCE_SCHEMA_VERSION = 'review-assurance.v6' as const;
  * persists it (an empty ledger is `dispatches: []`).
  *
  * `assuranceSchemaVersion` is a REQUIRED hard version literal: v2 introduced
- * authority-bearing attempt origins and frozen output-repair budgets; v3 bound
+ * authority-bearing attempt origins and frozen reviewer-attempt budgets; v3 bound
  * host-owned repository Discovery snapshots to attempts; v4 introduced frozen
  * repository authority, observation capabilities, and attempt-owned
  * observations; v5 makes observations representation-typed; v6 makes the

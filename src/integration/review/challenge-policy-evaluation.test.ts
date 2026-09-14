@@ -15,6 +15,7 @@ import { computeFingerprint, sessionDir } from '../../adapters/workspace/index.j
 import { hashCanonicalReviewContent } from '../../shared/review-subject.js';
 import { createTestWorkspace, createToolContext, parseToolResult } from '../test-helpers.js';
 import { resolve_implementation_challenge } from '../tools/challenge-resolution.js';
+import { hostTaskDispatchPlan } from '../tools/review-validation-test-helpers.js';
 import { resolveHostTaskFindings } from '../tools/review-validation-host-task.js';
 import {
   computeTargetedResolutionChallengeIds,
@@ -194,7 +195,7 @@ async function resolveCapturedFixture(
       reviewMaterial: freezeReviewMaterial(REVIEW_MATERIAL_CONTENT, 'test'),
       changedFiles: ['src/example.ts'],
       reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
-      policySnapshot: { challengePolicy: CHALLENGE_POLICY_V1, maxReviewerOutputRepairAttempts: 1 },
+      policySnapshot: { challengePolicy: CHALLENGE_POLICY_V1, maxReviewerAttempts: 1 },
     }),
   );
   const reviewerStartedAt = performance.now();
@@ -255,7 +256,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
       reviewMaterial: freezeReviewMaterial(REVIEW_MATERIAL_CONTENT, 'test'),
       changedFiles: ['src/example.ts'],
       reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
-      policySnapshot: { challengePolicy: CHALLENGE_POLICY_V1, maxReviewerOutputRepairAttempts: 1 },
+      policySnapshot: { challengePolicy: CHALLENGE_POLICY_V1, maxReviewerAttempts: 1 },
     }),
   );
   const challengeId = '22222222-2222-4222-8222-222222222222';
@@ -278,6 +279,13 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
       },
     ],
   });
+  const firstDispatchPlan = hostTaskDispatchPlan({
+    isHostTask: true,
+    dispatches: [],
+    attemptId: '33333333-3333-4333-8333-333333333334',
+    obligationId: firstObligation.obligationId,
+    at: '2026-07-26T00:00:00.000Z',
+  });
   const firstInvocation = buildInvocationEvidence({
     obligationId: firstObligation.obligationId,
     obligationType: 'implement',
@@ -287,6 +295,8 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
     childSessionId: firstFindings.reviewedBy.sessionId,
     invocationMode: 'host_subagent_task',
     promptHash: 'initial-changes-requested-prompt',
+    hostTaskCallId: firstDispatchPlan.hostTaskCallId,
+    canonicalPromptDigest: firstDispatchPlan.canonicalPromptDigest,
     findingsHash: hashFindings(firstFindings),
     invokedAt: '2026-07-26T00:00:00.000Z',
     capturedRawFindings: firstFindings,
@@ -325,7 +335,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
         obligations: [firstObligation],
         invocations: [firstInvocation],
         attempts: [firstAttempt],
-        dispatches: [],
+        dispatches: firstDispatchPlan.dispatch ? [firstDispatchPlan.dispatch] : [],
       },
       validationAttempts: [
         {
@@ -370,7 +380,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
       reviewMaterial: freezeReviewMaterial(REVIEW_MATERIAL_CONTENT, 'test'),
       changedFiles: ['src/example.ts'],
       reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
-      policySnapshot: { challengePolicy: CHALLENGE_POLICY_V1, maxReviewerOutputRepairAttempts: 1 },
+      policySnapshot: { challengePolicy: CHALLENGE_POLICY_V1, maxReviewerAttempts: 1 },
     }),
   );
   const secondFindings = capturedFindings(secondObligation.obligationId, 1, 'structurally_valid', {

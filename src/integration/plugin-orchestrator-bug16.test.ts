@@ -90,7 +90,7 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
           planVersion: 3,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
-          maxReviewerOutputRepairAttempts: 1,
+          maxReviewerAttempts: 1,
           reviewProfile: 'core',
           profileSource: 'policy_default',
           createdAt: NOW,

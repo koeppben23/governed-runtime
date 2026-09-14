@@ -106,7 +106,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
-            maxReviewerOutputRepairAttempts: 1,
+            maxReviewerAttempts: 1,
             reviewProfile: 'core',
             profileSource: 'policy_default',
             createdAt: now,
@@ -577,7 +577,36 @@ describe('reviewer host-task after-hook: extraction_invalid → sequential re-in
       const spent = await readState(sessDir);
       expect(spent?.reviewAssurance?.invocations ?? []).toHaveLength(0);
 
-      // The obligation is then settled through another route.
+      // The obligation is then settled through another route: a valid host-task
+      // decision is recorded against the spent attempt (rejected attempts keep
+      // their reviewer-evidence lineage) and consumed. The settlement must be
+      // referentially closed, so the late Task cannot pass itself off as it.
+      const settledAt = new Date().toISOString();
+      const spentDispatch = spent!.reviewAssurance!.dispatches[0]!;
+      const settledInvocation = {
+        invocationId: crypto.randomUUID(),
+        attemptId: ATTEMPT_ID,
+        obligationId: OBLIGATION_ID,
+        obligationType: 'plan' as const,
+        parentSessionId: 'ses_settled_parent',
+        childSessionId: 'derived:call:call-first',
+        agentType: REVIEWER_SUBAGENT_TYPE as 'flowguard-reviewer',
+        invocationMode: 'host_subagent_task' as const,
+        hostVisible: true,
+        source: 'host-orchestrated' as const,
+        promptHash: 'settled-review-prompt',
+        hostTaskCallId: spentDispatch.hostCallId,
+        canonicalPromptDigest: spentDispatch.canonicalPromptDigest,
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+        criteriaVersion: REVIEW_CRITERIA_VERSION,
+        findingsHash: 'f'.repeat(64),
+        invokedAt: settledAt,
+        fulfilledAt: settledAt,
+        consumedByObligationId: OBLIGATION_ID,
+        reviewOutputMode: 'structured_output' as const,
+        structuredOutputUsed: true,
+        reviewAssuranceLevel: 'structured_high' as const,
+      };
       await writeState(sessDir, {
         ...spent!,
         reviewAssurance: {
@@ -585,8 +614,11 @@ describe('reviewer host-task after-hook: extraction_invalid → sequential re-in
           obligations: spent!.reviewAssurance!.obligations.map((o) => ({
             ...o,
             status: 'consumed' as const,
-            consumedAt: new Date().toISOString(),
+            invocationId: settledInvocation.invocationId,
+            fulfilledAt: settledAt,
+            consumedAt: settledAt,
           })),
+          invocations: [settledInvocation],
         },
       });
 
@@ -596,9 +628,13 @@ describe('reviewer host-task after-hook: extraction_invalid → sequential re-in
         beforeHook({ tool: 'task', sessionID, callID: 'call-late' }, { args: reviewerArgs }),
       ).rejects.toThrow('REVIEWER_TASK_REQUIRES_PENDING_OBLIGATION');
 
-      // Fail closed: no invocation, and no fresh attempt minted to carry one.
+      // Fail closed: the settled evidence is untouched, and no fresh attempt is
+      // minted to carry a late record.
       const after = await readState(sessDir);
-      expect(after?.reviewAssurance?.invocations ?? []).toHaveLength(0);
+      expect(after?.reviewAssurance?.invocations ?? []).toHaveLength(1);
+      expect(after?.reviewAssurance?.invocations[0]!.invocationId).toBe(
+        settledInvocation.invocationId,
+      );
       expect(
         after?.reviewAssurance?.attempts ?? [],
         'a settled obligation must not be re-armed',

@@ -153,7 +153,7 @@ function buildSessionState(
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
-          maxReviewerOutputRepairAttempts: 1,
+          maxReviewerAttempts: 1,
           reviewProfile: 'core',
           profileSource: 'policy_default',
           createdAt: NOW,

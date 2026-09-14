@@ -75,6 +75,7 @@ import {
   hashFindings,
 } from './review/assurance.js';
 import { resolveAttemptDiscoveryOrBlock } from './review/discovery-attempt-context.js';
+import { hostTaskDispatchPlan } from './tools/review-validation-test-helpers.js';
 import { resolveNextAction, ACTION_CODES } from '../machine/next-action.js';
 import { executeCheck } from '../verification/executor.js';
 
@@ -250,18 +251,27 @@ async function inject(
     validationAttemptIdFor(state!, digest),
   );
   const fh = hashFindings(ff);
-  const newObl = {
-    ...obl,
-    status: 'fulfilled' as const,
-    fulfilledAt: FIXED_TIME,
-    pluginHandshakeAt: FIXED_TIME,
-  };
   const boundAttempt = state!.reviewAssurance!.attempts.find(
     (a) => a.obligationId === obl.obligationId,
   );
   if (!boundAttempt) throw new Error(`No attempt for pending ${oblType} obligation`);
+  const invocationId = randomUUID();
+  const dispatchPlan = hostTaskDispatchPlan({
+    isHostTask: true,
+    dispatches: state!.reviewAssurance!.dispatches,
+    attemptId: boundAttempt.attemptId,
+    obligationId: obl.obligationId,
+    at: FIXED_TIME,
+  });
+  const newObl = {
+    ...obl,
+    status: 'fulfilled' as const,
+    invocationId,
+    fulfilledAt: FIXED_TIME,
+    pluginHandshakeAt: FIXED_TIME,
+  };
   const inv = {
-    invocationId: randomUUID(),
+    invocationId,
     obligationId: obl.obligationId,
     obligationType: obl.obligationType,
     parentSessionId: se.sId,
@@ -271,6 +281,8 @@ async function inject(
     hostVisible: true,
     source: 'host-orchestrated' as const,
     promptHash: 'abc',
+    hostTaskCallId: dispatchPlan.hostTaskCallId,
+    canonicalPromptDigest: dispatchPlan.canonicalPromptDigest,
     mandateDigest: REVIEW_MANDATE_DIGEST,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
     findingsHash: fh,
@@ -302,7 +314,9 @@ async function inject(
             }
           : attempt,
       ),
-      dispatches: state!.reviewAssurance!.dispatches,
+      dispatches: dispatchPlan.dispatch
+        ? [...state!.reviewAssurance!.dispatches, dispatchPlan.dispatch]
+        : state!.reviewAssurance!.dispatches,
     },
     reviewDecision: {
       verdict: 'approve',

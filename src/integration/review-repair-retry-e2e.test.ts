@@ -414,14 +414,14 @@ describe('review repair retry (host-task)', () => {
     const obligation = afterFirst!.reviewAssurance!.obligations.find(
       (o) => o.obligationId === obligationId,
     )!;
-    expect(obligation.maxReviewerOutputRepairAttempts).toBe(1);
+    expect(obligation.maxReviewerAttempts).toBe(1);
 
     // Simulate a later policy change: the snapshot now allows 3 repairs.
     await writeStateWithArtifacts(sessDir, {
       ...afterFirst!,
       policySnapshot: {
         ...afterFirst!.policySnapshot!,
-        maxReviewerOutputRepairAttempts: 3,
+        maxReviewerAttempts: 3,
       },
     });
 
@@ -493,7 +493,7 @@ describe('review repair retry (host-task)', () => {
       ...afterFirst!,
       policySnapshot: {
         ...afterFirst!.policySnapshot!,
-        maxReviewerOutputRepairAttempts: 0,
+        maxReviewerAttempts: 0,
       },
     });
 

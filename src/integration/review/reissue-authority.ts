@@ -21,7 +21,7 @@ import type {
 
 export {
   authorizeOutputRepairReissue,
-  countOutputRepairAttempts,
+  countReviewAttempts,
   latestAttemptForObligation,
   type OutputRepairAuthorization,
   type ReissueBlockCode,
@@ -40,8 +40,10 @@ export type TaskRearmAuthorization =
  * Task lifecycle. The settled-obligation guard lives here so the re-arm path
  * cannot mint attempts on fulfilled, consumed, or blocked obligations.
  *
- * The re-arm budget is the existing enforcement retry gate (Task dispatch),
- * deliberately NOT the output-repair budget.
+ * Re-arms and output repairs draw on the SAME frozen per-obligation
+ * reviewer-attempt budget: an obligation cannot mint unbounded new reviewer
+ * attempts, regardless of whether the predecessor was interrupted or
+ * rejected.
  */
 export function authorizeTaskLifecycleRearm(
   assurance: ReviewAssuranceState,
@@ -63,10 +65,10 @@ export function authorizeTaskLifecycleRearm(
       attempt.obligationId === obligation.obligationId &&
       (attempt.origin.kind === 'task_rearm' || attempt.origin.kind === 'output_repair'),
   ).length;
-  if (repairs >= obligation.maxReviewerOutputRepairAttempts) {
+  if (repairs >= obligation.maxReviewerAttempts) {
     return {
       kind: 'blocked',
-      reason: `reviewer repair budget exhausted (${repairs}/${obligation.maxReviewerOutputRepairAttempts})`,
+      reason: `reviewer repair budget exhausted (${repairs}/${obligation.maxReviewerAttempts})`,
     };
   }
   const triggerReason =

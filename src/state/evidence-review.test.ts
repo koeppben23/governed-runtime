@@ -400,7 +400,7 @@ describe('evidence-review', () => {
         blockedCode: null,
         fulfilledAt: null,
         consumedAt: null,
-        maxReviewerOutputRepairAttempts: 1,
+        maxReviewerAttempts: 1,
         reviewProfile: 'core' as const,
         profileSource: 'policy_default' as const,
         reviewMaterial: {
@@ -470,7 +470,7 @@ describe('evidence-review', () => {
           paths: ['src/auth.ts'],
           revisions: ['base', 'head'],
         },
-        maxReviewerOutputRepairAttempts: 1,
+        maxReviewerAttempts: 1,
         reviewProfile: 'core' as const,
         profileSource: 'policy_default' as const,
         reviewMaterial: {
@@ -548,7 +548,7 @@ describe('evidence-review', () => {
             sectionPaths: [[{ headingDepth: 2, siblingIndex: 1, headingText: 'Approach' }]],
           },
         },
-        maxReviewerOutputRepairAttempts: 1,
+        maxReviewerAttempts: 1,
         requiredChallengeCount: 0,
         requiredChallengeKind: 'design_challenge' as const,
         challengePolicyVersion: 'challenge-policy.v1' as const,
@@ -727,8 +727,8 @@ describe('evidence-review', () => {
         parentSessionId: 'ses_parent',
         childSessionId: 'ses_child',
         agentType: 'flowguard-reviewer' as const,
-        invocationMode: 'host_subagent_task' as const,
-        hostVisible: true,
+        invocationMode: 'sdk_session_prompt' as const,
+        hostVisible: false,
         source: 'host-orchestrated' as const,
         promptHash: 'sha256-prompt',
         mandateDigest: 'sha256-mandate',
@@ -1482,7 +1482,7 @@ describe('evidence-review', () => {
           lineCount: 1,
         },
         metadata: { inputFingerprint: 'abc', customField: 42 },
-        maxReviewerOutputRepairAttempts: 1,
+        maxReviewerAttempts: 1,
         reviewProfile: 'core' as const,
         profileSource: 'policy_default' as const,
         reviewMaterial: {
@@ -1607,7 +1607,7 @@ describe('evidence-review', () => {
         },
         reviewProfile: 'core' as const,
         profileSource: 'policy_default' as const,
-        maxReviewerOutputRepairAttempts: 1,
+        maxReviewerAttempts: 1,
         reviewMaterial: {
           content: 'frozen profile review material',
           materialDigest: 'sha256-subject',
@@ -1645,7 +1645,7 @@ describe('evidence-review', () => {
           paths: ['src/auth.ts'],
           revisions: ['base', 'head'],
         },
-        maxReviewerOutputRepairAttempts: 1,
+        maxReviewerAttempts: 1,
         reviewMaterial: {
           content: 'frozen profile review material',
           materialDigest: 'sha256-subject',
@@ -1690,7 +1690,7 @@ describe('Implementation subject scope coherence (schema refinement)', () => {
       blockedCode: null,
       fulfilledAt: null,
       consumedAt: null,
-      maxReviewerOutputRepairAttempts: 1,
+      maxReviewerAttempts: 1,
       reviewProfile: 'core' as const,
       profileSource: 'policy_default' as const,
       reviewMaterial: {

@@ -195,7 +195,7 @@ function buildSessionState() {
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
-          maxReviewerOutputRepairAttempts: 1,
+          maxReviewerAttempts: 1,
           createdAt: '2026-04-24T12:00:00.000Z',
           pluginHandshakeAt: null,
           status: 'pending' as const,

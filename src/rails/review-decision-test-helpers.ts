@@ -130,7 +130,7 @@ export function assuranceChain(entries: AssuranceEntry[]): ReviewAssuranceState 
         },
       },
       repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
-      maxReviewerOutputRepairAttempts: 0,
+      maxReviewerAttempts: 0,
     };
   });
   return {

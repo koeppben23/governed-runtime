@@ -42,7 +42,7 @@ describe('review/enforcement/findings-consistency', () => {
       planVersion: 1,
       criteriaVersion: 'p41-v1',
       mandateDigest: 'mandate-digest',
-      maxReviewerOutputRepairAttempts: 1,
+      maxReviewerAttempts: 1,
       reviewProfile: 'core',
       profileSource: 'policy_default',
       requiredChallengeCount: 0,

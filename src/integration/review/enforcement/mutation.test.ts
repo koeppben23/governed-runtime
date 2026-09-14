@@ -561,7 +561,7 @@ describe('review-enforcement mutation kills', () => {
               planVersion: 1,
               criteriaVersion: 'v1',
               mandateDigest: 'digest-abc',
-              maxReviewerOutputRepairAttempts: 1,
+              maxReviewerAttempts: 1,
               reviewProfile: 'core' as const,
               profileSource: 'policy_default' as const,
               reviewMaterial: {
@@ -619,7 +619,7 @@ describe('review-enforcement mutation kills', () => {
               planVersion: 1,
               criteriaVersion: 'v1',
               mandateDigest: 'digest-abc',
-              maxReviewerOutputRepairAttempts: 1,
+              maxReviewerAttempts: 1,
               reviewProfile: 'core' as const,
               profileSource: 'policy_default' as const,
               reviewMaterial: {

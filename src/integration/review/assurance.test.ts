@@ -294,7 +294,7 @@ describe('integration/review-assurance', () => {
               version: 'challenge-policy.v1',
               counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
             },
-            maxReviewerOutputRepairAttempts: 1,
+            maxReviewerAttempts: 1,
           },
         });
         expect(result).toMatchObject({
@@ -311,7 +311,7 @@ describe('integration/review-assurance', () => {
           version: 'challenge-policy.v1' as const,
           counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 } as const,
         },
-        maxReviewerOutputRepairAttempts: 1,
+        maxReviewerAttempts: 1,
       };
 
       it('uses the HIGH-RISK claim even when changedFiles look doc-only', () => {
@@ -392,7 +392,7 @@ describe('integration/review-assurance', () => {
         reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
         changedFiles: ['src/state/schema.ts'],
         reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
-        policySnapshot: { maxReviewerOutputRepairAttempts: 1 },
+        policySnapshot: { maxReviewerAttempts: 1 },
       });
       // Hard Assurance Epoch: the mint always freezes the canonical challenge
       // matrix (writer-side default), never an implicit no-policy state.

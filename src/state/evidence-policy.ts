@@ -72,8 +72,8 @@ export const PolicySnapshotSchema = z
     maxImplReviewIterations: z.number().int().positive(),
     /** Frozen retry budget for F12-incoherent reviewer captures. */
     maxIncoherentReviewerCaptureRetries: z.number().int().nonnegative(),
-    /** Frozen obligation-level reviewer output-repair budget. */
-    maxReviewerOutputRepairAttempts: z.number().int().min(0).max(5),
+    /** Frozen obligation-level reviewer-attempt budget. */
+    maxReviewerAttempts: z.number().int().min(0).max(5),
     allowSelfApproval: z.boolean(),
     /** P34: Minimum required actor assurance for regulated approval decisions. */
     minimumActorAssuranceForApproval: z.enum(['best_effort', 'claim_validated', 'idp_verified']),

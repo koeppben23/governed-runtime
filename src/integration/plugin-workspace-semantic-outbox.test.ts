@@ -35,7 +35,7 @@ describe('PluginWorkspaceImpl semantic outbox', () => {
               planVersion: 1,
               criteriaVersion: 'review-criteria.v1',
               mandateDigest: 'mandate-digest',
-              maxReviewerOutputRepairAttempts: 1,
+              maxReviewerAttempts: 1,
               reviewProfile: 'core',
               profileSource: 'policy_default',
               createdAt: NOW,

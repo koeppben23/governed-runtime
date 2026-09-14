@@ -79,19 +79,53 @@ async function seedSession(
   await fs.mkdir(sessDir, { recursive: true });
 
   const obligationStatus = options.obligationStatus ?? 'pending';
+  const attemptStatus = options.attemptStatus ?? 'created';
   const attempt: ReviewAttempt = {
     attemptId: ATTEMPT_ID,
     obligationId: OBLIGATION_ID,
     obligationType: 'plan',
     subjectDigest: SUBJECT_DIGEST,
     ordinal: 0,
-    status: options.attemptStatus ?? 'created',
+    status: attemptStatus,
     origin: { kind: 'initial' } as const,
     repositoryDiscovery: { kind: 'not_applicable' } as const,
     observations: [],
     createdAt: now,
+    ...(attemptStatus === 'created' ? {} : { completedAt: now }),
     ...(options.attemptChildSessionId ? { childSessionId: options.attemptChildSessionId } : {}),
   };
+  // Settled obligations must carry canonical invocation lineage. The seeded
+  // reviewer evidence uses the SDK transport so the fixture stays independent
+  // of the host-task dispatch ledger; these tests exercise re-arm refusal, not
+  // host-task capture.
+  const lineageInvocationId = '33333333-3333-4111-8111-111111111111';
+  const settled = obligationStatus === 'fulfilled' || obligationStatus === 'consumed';
+  const invocations = settled
+    ? [
+        {
+          invocationId: lineageInvocationId,
+          attemptId: ATTEMPT_ID,
+          obligationId: OBLIGATION_ID,
+          obligationType: 'plan' as const,
+          parentSessionId: 'ses_parent_lifecycle',
+          childSessionId: options.attemptChildSessionId ?? CHILD_FIRST,
+          agentType: REVIEWER_SUBAGENT_TYPE as 'flowguard-reviewer',
+          invocationMode: 'sdk_session_prompt' as const,
+          hostVisible: false,
+          promptHash: 'prompt-hash-lifecycle',
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
+          findingsHash: 'f'.repeat(64),
+          invokedAt: now,
+          fulfilledAt: now,
+          consumedByObligationId: null,
+          reviewOutputMode: 'structured_output' as const,
+          structuredOutputUsed: true,
+          reviewAssuranceLevel: 'structured_high' as const,
+          source: 'host-orchestrated' as const,
+        },
+      ]
+    : [];
 
   const base = makeState('PLAN');
   await writeState(
@@ -115,13 +149,13 @@ async function seedSession(
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
-            maxReviewerOutputRepairAttempts: 1,
+            maxReviewerAttempts: 1,
             reviewProfile: 'core',
             profileSource: 'policy_default',
             createdAt: now,
             pluginHandshakeAt: null,
             status: obligationStatus,
-            invocationId: null,
+            invocationId: settled ? lineageInvocationId : null,
             blockedCode: null,
             fulfilledAt: obligationStatus === 'pending' ? null : now,
             consumedAt: obligationStatus === 'consumed' ? now : null,
@@ -141,7 +175,7 @@ async function seedSession(
             },
           },
         ],
-        invocations: [],
+        invocations: [...invocations],
         attempts: [attempt],
         dispatches: [],
       },
@@ -403,7 +437,13 @@ describe('reviewer attempt lifecycle through the real hooks', () => {
 
       const state = await readState(sessDir);
       expect(state?.reviewAssurance?.attempts ?? []).toHaveLength(1);
-      expect(state?.reviewAssurance?.invocations ?? []).toHaveLength(0);
+      // No SECOND evidence record: any invocation for the retried child session
+      // would prove the settled obligation was reopened. The seeded lineage of a
+      // fulfilled/consumed obligation is historical and must survive unchanged.
+      const retriedEvidence = (state?.reviewAssurance?.invocations ?? []).filter(
+        (inv) => inv.childSessionId === CHILD_RETRY,
+      );
+      expect(retriedEvidence).toHaveLength(0);
     },
   );
 

@@ -107,6 +107,8 @@ export function refineAssuranceAttemptLineageCoherence(
 ): void {
   const attemptsById = new Map(assurance.attempts.map((attempt) => [attempt.attemptId, attempt]));
   const ordinals = new Set<string>();
+  const minOrdinalByObligation = new Map<string, number>();
+  const initialByObligation = new Map<string, AttemptRefinementShape>();
   for (const attempt of assurance.attempts) {
     const key = `${attempt.obligationId}#${String(attempt.ordinal)}`;
     if (ordinals.has(key)) {
@@ -118,6 +120,64 @@ export function refineAssuranceAttemptLineageCoherence(
       return;
     }
     ordinals.add(key);
+    const min = minOrdinalByObligation.get(attempt.obligationId);
+    minOrdinalByObligation.set(
+      attempt.obligationId,
+      min === undefined ? attempt.ordinal : Math.min(min, attempt.ordinal),
+    );
+    if (attempt.origin.kind === 'initial') {
+      if (initialByObligation.has(attempt.obligationId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['attempts'],
+          message: `obligation ${attempt.obligationId} has more than one initial attempt`,
+        });
+        return;
+      }
+      initialByObligation.set(attempt.obligationId, attempt);
+    }
+  }
+  for (const [obligationId, initial] of initialByObligation) {
+    if (initial.ordinal !== minOrdinalByObligation.get(obligationId)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['attempts'],
+        message: `initial attempt ${initial.attemptId} is not the lowest-ordinal attempt for obligation ${obligationId}`,
+      });
+      return;
+    }
+  }
+  for (const attempt of assurance.attempts) {
+    if (attempt.status === 'created') {
+      if (attempt.completedAt || attempt.rejectionReason || attempt.schemaErrorFingerprint) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['attempts'],
+          message: `created attempt ${attempt.attemptId} must not carry completion or rejection fields`,
+        });
+        return;
+      }
+      continue;
+    }
+    if (!attempt.completedAt) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['attempts'],
+        message: `${attempt.status} attempt ${attempt.attemptId} is missing completedAt`,
+      });
+      return;
+    }
+    if (
+      attempt.status !== 'rejected' &&
+      (attempt.rejectionReason || attempt.schemaErrorFingerprint)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['attempts'],
+        message: `attempt ${attempt.attemptId} carries rejection fields without a rejected status`,
+      });
+      return;
+    }
   }
   for (const attempt of assurance.attempts) {
     const origin = attempt.origin;

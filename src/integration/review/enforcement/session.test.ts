@@ -712,7 +712,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
             planVersion: 1,
             criteriaVersion: 'v1',
             mandateDigest: 'digest',
-            maxReviewerOutputRepairAttempts: 1,
+            maxReviewerAttempts: 1,
             reviewProfile: 'core' as const,
             profileSource: 'policy_default' as const,
             reviewMaterial: {
@@ -770,7 +770,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
             planVersion: 1,
             criteriaVersion: 'v1',
             mandateDigest: 'digest',
-            maxReviewerOutputRepairAttempts: 1,
+            maxReviewerAttempts: 1,
             reviewProfile: 'core' as const,
             profileSource: 'policy_default' as const,
             reviewMaterial: {

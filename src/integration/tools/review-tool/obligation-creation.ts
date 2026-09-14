@@ -273,7 +273,7 @@ export async function ensureMissingAnalysisObligation(
  * Reissue authorization is delegated to `authorizeOutputRepairReissue`:
  * pending obligation + no bindable attempt + latest attempt `rejected` with an
  * explicit structured reason + `canonical_output_retry` policy + remaining
- * frozen budget (`maxReviewerOutputRepairAttempts`, frozen onto the obligation
+ * frozen budget (`maxReviewerAttempts`, frozen onto the obligation
  * at creation). On denial the obligation is deterministically blocked with the
  * denial code — `/status` must not recommend a further reviewer retry.
  *

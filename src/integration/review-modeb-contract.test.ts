@@ -45,6 +45,7 @@ import {
   ARCHITECTURE_DECISION,
   SELF_REVIEW_CONVERGED,
 } from '../fixtures.js';
+import { hostTaskDispatchPlan } from './tools/review-validation-test-helpers.js';
 import type { SessionState } from '../state/schema.js';
 import { hashCanonicalReviewContent } from '../shared/review-subject.js';
 
@@ -93,6 +94,14 @@ function buildAssuranceForObligation(
   const s = style(host);
   const hostObserved = s === 'plugin_handshake';
   const attemptId = randomUUID();
+  const now = NOW();
+  const dispatchPlan = hostTaskDispatchPlan({
+    isHostTask: hostObserved,
+    dispatches: [],
+    attemptId,
+    obligationId: obligation.obligationId,
+    at: now,
+  });
   const invocation = {
     invocationId,
     obligationId: obligation.obligationId,
@@ -107,8 +116,14 @@ function buildAssuranceForObligation(
     mandateDigest: REVIEW_MANDATE_DIGEST,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
     findingsHash,
-    invokedAt: NOW(),
-    fulfilledAt: NOW(),
+    ...(hostObserved
+      ? {
+          hostTaskCallId: dispatchPlan.hostTaskCallId,
+          canonicalPromptDigest: dispatchPlan.canonicalPromptDigest,
+        }
+      : {}),
+    invokedAt: now,
+    fulfilledAt: now,
     consumedByObligationId: null,
     capturedVerdict: hostObserved ? 'approve' : undefined,
     reviewOutputMode: hostObserved
@@ -123,8 +138,9 @@ function buildAssuranceForObligation(
   const fulfilled = {
     ...obligation,
     status: 'fulfilled' as const,
-    fulfilledAt: NOW(),
-    pluginHandshakeAt: hostObserved ? NOW() : null,
+    invocationId,
+    fulfilledAt: now,
+    pluginHandshakeAt: hostObserved ? now : null,
   };
   const assured = appendInvocationEvidence(
     {
@@ -151,7 +167,10 @@ function buildAssuranceForObligation(
     },
     invocation,
   );
-  return { ...assured };
+  return {
+    ...assured,
+    dispatches: dispatchPlan.dispatch ? [dispatchPlan.dispatch] : [],
+  };
 }
 
 interface E2ESession {
@@ -231,7 +250,7 @@ describe('plan / architecture Mode-B review contract', () => {
                 version: 'challenge-policy.v1',
                 counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
               },
-              maxReviewerOutputRepairAttempts: 1,
+              maxReviewerAttempts: 1,
             },
             obligationType: 'plan',
             repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
@@ -293,7 +312,7 @@ describe('plan / architecture Mode-B review contract', () => {
                 version: 'challenge-policy.v1',
                 counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
               },
-              maxReviewerOutputRepairAttempts: 1,
+              maxReviewerAttempts: 1,
             },
             obligationType: 'architecture',
             repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },

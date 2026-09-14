@@ -18,7 +18,7 @@ function makeObligation(overrides: Partial<ReviewObligation> = {}): ReviewObliga
     planVersion: 1,
     criteriaVersion: 'v1',
     mandateDigest: 'abc123',
-    maxReviewerOutputRepairAttempts: 1,
+    maxReviewerAttempts: 1,
     createdAt: FIXED_DATETIME,
     pluginHandshakeAt: null,
     status: 'pending',

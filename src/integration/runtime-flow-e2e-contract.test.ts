@@ -42,7 +42,7 @@ import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './review/assurance.js';
-import { mintObservationCapability } from './review/attempt-lifecycle.js';
+import { hostTaskDispatchPlan } from './tools/review-validation-test-helpers.js';
 import { makeState, TICKET, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 import { computeRecordDigest } from '../state/evidence-plan.js';
@@ -216,13 +216,62 @@ async function inject(
     (o) => o.obligationType === oblType && o.status === 'pending',
   );
   if (!obl) throw new Error(`No pending ${oblType} obligation`);
+  // The obligation's tool-created attempt is the one the reviewer evidence is
+  // bound to; mutating it keeps the attempt ledger append-only instead of
+  // replacing historical attempts (which would orphan earlier invocations).
+  const priorAttempt = state.reviewAssurance!.attempts.find(
+    (attempt) => attempt.obligationId === obl.obligationId,
+  );
+  if (!priorAttempt) throw new Error(`No attempt for ${oblType} obligation`);
   const ff = f(obl.obligationId, obl.iteration, obl.planVersion, challengesFor(state, obl));
   const fh = hashFindings(ff);
-  const attemptId = randomUUID();
+  const attemptId = priorAttempt.attemptId;
   const hostObserved = isOpen(host);
+  const dispatchPlan = hostTaskDispatchPlan({
+    isHostTask: hostObserved,
+    dispatches: state.reviewAssurance!.dispatches,
+    attemptId,
+    obligationId: obl.obligationId,
+    at: FIXED_TIME,
+  });
+  const invocationId = randomUUID();
+  const inv = {
+    invocationId,
+    obligationId: obl.obligationId,
+    obligationType: obl.obligationType,
+    parentSessionId: sessionId,
+    childSessionId: 'ses_r',
+    agentType: 'flowguard-reviewer' as const,
+    invocationMode: hostObserved ? ('host_subagent_task' as const) : ('manual_attested' as const),
+    hostVisible: hostObserved,
+    source: hostObserved ? ('host-orchestrated' as const) : ('agent-submitted-attested' as const),
+    promptHash: 'abc',
+    mandateDigest: REVIEW_MANDATE_DIGEST,
+    criteriaVersion: REVIEW_CRITERIA_VERSION,
+    findingsHash: fh,
+    ...(hostObserved
+      ? {
+          hostTaskCallId: dispatchPlan.hostTaskCallId,
+          canonicalPromptDigest: dispatchPlan.canonicalPromptDigest,
+        }
+      : {}),
+    invokedAt: FIXED_TIME,
+    fulfilledAt: FIXED_TIME,
+    consumedByObligationId: null,
+    capturedVerdict: hostObserved ? 'approve' : undefined,
+    reviewOutputMode: hostObserved
+      ? ('structured_output' as const)
+      : ('agent_submitted_structured' as const),
+    structuredOutputUsed: hostObserved,
+    reviewAssuranceLevel: hostObserved
+      ? ('structured_high' as const)
+      : ('structured_submitted' as const),
+    attemptId,
+  };
   const newObl = {
     ...obl,
     status: 'fulfilled' as const,
+    invocationId,
     fulfilledAt: FIXED_TIME,
     pluginHandshakeAt: hostObserved ? FIXED_TIME : null,
     reviewSubjectScope:
@@ -237,33 +286,6 @@ async function inject(
             revisions: ['base', 'head'] as const,
           },
   };
-  const inv = {
-    invocationId: randomUUID(),
-    obligationId: obl.obligationId,
-    obligationType: obl.obligationType,
-    parentSessionId: sessionId,
-    childSessionId: 'ses_r',
-    agentType: 'flowguard-reviewer' as const,
-    invocationMode: hostObserved ? ('host_subagent_task' as const) : ('manual_attested' as const),
-    hostVisible: hostObserved,
-    source: hostObserved ? ('host-orchestrated' as const) : ('agent-submitted-attested' as const),
-    promptHash: 'abc',
-    mandateDigest: REVIEW_MANDATE_DIGEST,
-    criteriaVersion: REVIEW_CRITERIA_VERSION,
-    findingsHash: fh,
-    invokedAt: FIXED_TIME,
-    fulfilledAt: FIXED_TIME,
-    consumedByObligationId: null,
-    capturedVerdict: hostObserved ? 'approve' : undefined,
-    reviewOutputMode: hostObserved
-      ? ('structured_output' as const)
-      : ('agent_submitted_structured' as const),
-    structuredOutputUsed: hostObserved,
-    reviewAssuranceLevel: hostObserved
-      ? ('structured_high' as const)
-      : ('structured_submitted' as const),
-    attemptId,
-  };
   const aug: SessionState = {
     ...state,
     reviewAssurance: {
@@ -272,50 +294,19 @@ async function inject(
         o.obligationId === obl.obligationId ? newObl : o,
       ),
       invocations: [...state.reviewAssurance!.invocations, inv],
-      attempts: [
-        {
-          attemptId,
-          obligationId: obl.obligationId,
-          obligationType: obl.obligationType,
-          subjectDigest: obl.subjectDigest,
-          ordinal: 1,
-          childSessionId: 'ses_r',
-          status: 'bound' as const,
-          origin: { kind: 'initial' as const },
-          repositoryDiscovery: {
-            kind: 'repository' as const,
-            snapshot: {
-              observedAt: FIXED_TIME,
-              discoveryDigest: null,
-              workspaceFingerprint: null,
-              health: {
-                status: 'available' as const,
-                healthy: true,
-                failedCollectorNames: [],
-                hasBudgetExhaustion: false,
-                ageWarning: null,
-                notVerified: [],
-              },
-              drift: {
-                status: 'not_assessed' as const,
-                drifted: false,
-                changedContributorNames: [],
-                notVerified: [],
-              },
-              detectedStack: null,
-              verificationCandidates: [],
-              riskSurfaces: [],
-              warnings: [],
-              notVerified: [],
-            },
-          },
-          observationCapability: mintObservationCapability(),
-          observations: [],
-          createdAt: FIXED_TIME,
-          completedAt: FIXED_TIME,
-        },
-      ],
-      dispatches: state.reviewAssurance!.dispatches,
+      attempts: state.reviewAssurance!.attempts.map((attempt) =>
+        attempt.attemptId === attemptId
+          ? {
+              ...attempt,
+              childSessionId: 'ses_r',
+              status: 'bound' as const,
+              completedAt: FIXED_TIME,
+            }
+          : attempt,
+      ),
+      dispatches: dispatchPlan.dispatch
+        ? [...state.reviewAssurance!.dispatches, dispatchPlan.dispatch]
+        : state.reviewAssurance!.dispatches,
     },
     reviewDecision: {
       verdict: 'approve',

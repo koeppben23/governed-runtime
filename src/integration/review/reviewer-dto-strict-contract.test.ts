@@ -32,7 +32,7 @@ function planObligation(): ReturnType<typeof createReviewObligation> {
     changedFiles: ['src/foo.ts'],
     policySnapshot: {
       challengePolicy: CHALLENGE_POLICY_V1,
-      maxReviewerOutputRepairAttempts: 1,
+      maxReviewerAttempts: 1,
     },
   });
 }

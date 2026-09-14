@@ -72,7 +72,7 @@ export function buildHostTaskAttestation(obligation: ReviewObligation): Record<s
  *
  * Authorization is delegated to `authorizeOutputRepairReissue` (pending
  * obligation, no bindable attempt, latest attempt rejected with an explicit
- * canonically repairable reason, remaining frozen output-repair budget). On
+ * canonically repairable reason, remaining frozen reviewer-attempt budget). On
  * denial the obligation is deterministically blocked with the denial code and
  * the caller receives the blocked message instead of an attempt identity.
  *

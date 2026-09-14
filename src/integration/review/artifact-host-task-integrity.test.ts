@@ -53,7 +53,7 @@ function architectureObligation(materialSubjectDigest: string): ReviewObligation
         version: 'challenge-policy.v1',
         counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
       },
-      maxReviewerOutputRepairAttempts: 1,
+      maxReviewerAttempts: 1,
     },
   });
 }
@@ -251,7 +251,7 @@ describe('host-task observation contract wiring', () => {
           version: 'challenge-policy.v1',
           counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
         },
-        maxReviewerOutputRepairAttempts: 1,
+        maxReviewerAttempts: 1,
       },
       repositoryAuthority: {
         kind: 'context',

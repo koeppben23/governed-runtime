@@ -32,6 +32,7 @@ import {
   ensureReviewAssurance,
   hashFindings,
 } from './review/assurance.js';
+import { hostTaskDispatchPlan } from './tools/review-validation-test-helpers.js';
 import { hydrate, review } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
 
@@ -184,6 +185,13 @@ async function bindHostTaskReviewEvidence(
     (attempt) => attempt.obligationId === obligationId,
   );
   const resolvedAttemptId = existingAttempt?.attemptId ?? crypto.randomUUID();
+  const dispatchPlan = hostTaskDispatchPlan({
+    isHostTask: true,
+    dispatches: assurance.dispatches,
+    attemptId: resolvedAttemptId,
+    obligationId,
+    at: '2026-01-01T00:00:00.000Z',
+  });
   const invocation = buildInvocationEvidence({
     obligationId,
     obligationType: 'review',
@@ -193,6 +201,8 @@ async function bindHostTaskReviewEvidence(
     childSessionId: 'ses_review_child_host_task',
     invocationMode: 'host_subagent_task',
     promptHash: 'host-task-review-prompt',
+    hostTaskCallId: dispatchPlan.hostTaskCallId,
+    canonicalPromptDigest: dispatchPlan.canonicalPromptDigest,
     findingsHash: hashFindings(findings),
     invokedAt: '2026-01-01T00:00:00.000Z',
     fulfilledAt: '2026-01-01T00:00:00.000Z',
@@ -217,18 +227,31 @@ async function bindHostTaskReviewEvidence(
     completedAt: existingAttempt?.completedAt ?? invocation.fulfilledAt ?? new Date().toISOString(),
   };
   const boundInvocation = { ...invocation, attemptId: boundAttempt.attemptId };
+  const withInvocation = appendInvocationEvidence(
+    {
+      ...assurance,
+      obligations: assurance.obligations.map((item) =>
+        item.obligationId === obligationId
+          ? {
+              ...item,
+              status: 'fulfilled' as const,
+              invocationId: boundInvocation.invocationId,
+              fulfilledAt: boundInvocation.fulfilledAt ?? invocation.invokedAt,
+            }
+          : item,
+      ),
+      attempts: [
+        ...assurance.attempts.filter((attempt) => attempt.attemptId !== boundAttempt.attemptId),
+        boundAttempt,
+      ],
+    },
+    boundInvocation,
+  );
   await writeState(sessDir, {
     ...state,
-    reviewAssurance: appendInvocationEvidence(
-      {
-        ...assurance,
-        attempts: [
-          ...assurance.attempts.filter((attempt) => attempt.attemptId !== boundAttempt.attemptId),
-          boundAttempt,
-        ],
-      },
-      boundInvocation,
-    ),
+    reviewAssurance: dispatchPlan.dispatch
+      ? { ...withInvocation, dispatches: [...withInvocation.dispatches, dispatchPlan.dispatch] }
+      : withInvocation,
   });
   return boundInvocation;
 }

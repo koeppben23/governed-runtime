@@ -220,7 +220,7 @@ describe('resolveNextAction', () => {
     it('PLAN with a repairable rejected attempt → authorized repair via /plan', () => {
       const obligation = pendingPlanObligation({
         status: 'pending',
-        maxReviewerOutputRepairAttempts: 1,
+        maxReviewerAttempts: 1,
       });
       const rejected = {
         ...bindableAttemptFor(obligation),

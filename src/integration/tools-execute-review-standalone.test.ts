@@ -63,6 +63,7 @@ import {
   IMPL_REVIEW_CONVERGED,
 } from '../fixtures.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
+import { hostTaskDispatchPlan } from './tools/review-validation-test-helpers.js';
 import { TEAM_POLICY } from '../config/policy.js';
 
 /** Test predicate for source-tagged standalone review report findings. */
@@ -337,6 +338,13 @@ describe('review (standalone flow)', () => {
       (attempt) => attempt.obligationId === obligationId,
     );
     if (!boundAttempt) throw new TypeError('Expected persisted review attempt');
+    const dispatchPlan = hostTaskDispatchPlan({
+      isHostTask: true,
+      dispatches: ensureReviewAssurance(state.reviewAssurance).dispatches,
+      attemptId: boundAttempt.attemptId,
+      obligationId,
+      at: '2026-01-01T00:00:00.000Z',
+    });
     const invocation = buildInvocationEvidence({
       obligationId,
       obligationType: 'review',
@@ -346,6 +354,8 @@ describe('review (standalone flow)', () => {
       childSessionId: 'ses_review_child_host_task',
       invocationMode: 'host_subagent_task',
       promptHash: 'host-task-review-prompt',
+      hostTaskCallId: dispatchPlan.hostTaskCallId,
+      canonicalPromptDigest: dispatchPlan.canonicalPromptDigest,
       findingsHash: hashFindings(findings),
       invokedAt: '2026-01-01T00:00:00.000Z',
       fulfilledAt: '2026-01-01T00:00:00.000Z',
@@ -353,25 +363,31 @@ describe('review (standalone flow)', () => {
       capturedRawFindings: findings,
       attemptId: boundAttempt.attemptId,
     });
+    const assuranceWithEvidence = appendInvocationEvidence(
+      {
+        ...ensureReviewAssurance(state.reviewAssurance),
+        attempts: state.reviewAssurance!.attempts.map((attempt) =>
+          attempt.attemptId === boundAttempt.attemptId
+            ? {
+                ...attempt,
+                childSessionId: invocation.childSessionId,
+                status: 'bound' as const,
+                completedAt:
+                  attempt.completedAt ?? invocation.fulfilledAt ?? new Date().toISOString(),
+              }
+            : attempt,
+        ),
+      },
+      invocation,
+    );
     await writeState(sessDir, {
       ...state,
-      reviewAssurance: appendInvocationEvidence(
-        {
-          ...ensureReviewAssurance(state.reviewAssurance),
-          attempts: state.reviewAssurance!.attempts.map((attempt) =>
-            attempt.attemptId === boundAttempt.attemptId
-              ? {
-                  ...attempt,
-                  childSessionId: invocation.childSessionId,
-                  status: 'bound' as const,
-                  completedAt:
-                    attempt.completedAt ?? invocation.fulfilledAt ?? new Date().toISOString(),
-                }
-              : attempt,
-          ),
-        },
-        invocation,
-      ),
+      reviewAssurance: dispatchPlan.dispatch
+        ? {
+            ...assuranceWithEvidence,
+            dispatches: [...assuranceWithEvidence.dispatches, dispatchPlan.dispatch],
+          }
+        : assuranceWithEvidence,
     });
     return invocation;
   }
@@ -1538,7 +1554,7 @@ describe('review (standalone flow)', () => {
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
-          maxReviewerOutputRepairAttempts: 1,
+          maxReviewerAttempts: 1,
           reviewProfile: 'core' as const,
           profileSource: 'policy_default' as const,
           reviewMaterial: {

@@ -110,7 +110,7 @@ function makeBlockedObligation(
     planVersion,
     criteriaVersion: 'p37-v1',
     mandateDigest: 'test-mandate-digest-blocked',
-    maxReviewerOutputRepairAttempts: 1,
+    maxReviewerAttempts: 1,
     reviewProfile: 'core',
     profileSource: 'policy_default',
     requiredChallengeCount: 0,
@@ -159,7 +159,7 @@ function makePendingObligation(
     planVersion,
     criteriaVersion: 'p37-v1',
     mandateDigest: 'test-mandate-digest-pending',
-    maxReviewerOutputRepairAttempts: 1,
+    maxReviewerAttempts: 1,
     reviewProfile: 'core',
     profileSource: 'policy_default',
     requiredChallengeCount: 0,
@@ -689,6 +689,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         repositoryDiscovery: { kind: 'not_applicable' },
         observations: [],
         createdAt: CREATED_AT,
+        completedAt: CREATED_AT,
       };
       await writeState(sessDir, {
         ...state,
@@ -768,6 +769,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         repositoryDiscovery: { kind: 'not_applicable' },
         observations: [],
         createdAt: CREATED_AT,
+        completedAt: CREATED_AT,
       };
       await writeState(sessDir, {
         ...state,
@@ -830,6 +832,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         repositoryDiscovery: { kind: 'not_applicable' },
         observations: [],
         createdAt: CREATED_AT,
+        completedAt: CREATED_AT,
       };
       await writeState(sessDir, {
         ...state,
