@@ -522,6 +522,12 @@ describe('Attempt lineage and dispatch lifecycle', () => {
     expect(parseLineage([REJECTED_ATTEMPT, repairAttempt()]).success).toBe(true);
   });
 
+  it('ReviewObligation rejects the removed attemptIds projection', () => {
+    expect(
+      ReviewObligation.safeParse({ ...PLAN_OBLIGATION, attemptIds: [REPAIR_ATTEMPT_ID] }).success,
+    ).toBe(false);
+  });
+
   it('ReviewAttempt rejects the removed reviewMaterial copy', () => {
     const attempt = {
       ...REJECTED_ATTEMPT,
