@@ -12,7 +12,8 @@
 
 import { describe, it, expect } from 'vitest';
 import { mapReviewFindingsToReport } from './completion.js';
-import type { ReviewFindings, ReviewReportFinding } from '../../../state/evidence.js';
+import { ReviewFindings } from '../../../state/evidence.js';
+import type { ReviewReportFinding } from '../../../state/evidence.js';
 
 function challengeFinding(findings: ReviewReportFinding[]) {
   const finding = findings[0];
@@ -46,6 +47,7 @@ function reviewFindings(overrides: Record<string, unknown>): ReviewFindings {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'reviewer' },
     reviewedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
@@ -119,13 +121,20 @@ describe('mapReviewFindingsToReport: challenges reach the author', () => {
   });
 
   it.each([
-    ['no challenges field', {}],
-    ['a non-array challenges field', { challenges: 'nope' }],
     ['a null entry', { challenges: [null] }],
     ['an entry without an outcome', { challenges: [challenge({ outcome: undefined })] }],
     ['an entry without a scenario', { challenges: [challenge({ scenario: undefined })] }],
   ])('ignores %s rather than emitting a hollow finding', (_label, input) => {
     expect(mapReviewFindingsToReport(reviewFindings(input as Record<string, unknown>))).toEqual([]);
+  });
+
+  it('rejects obsolete findings without the required challenges field at the schema boundary', () => {
+    const missingChallenges = reviewFindings({}) as Record<string, unknown>;
+    delete missingChallenges.challenges;
+    expect(ReviewFindings.safeParse(missingChallenges).success).toBe(false);
+    expect(ReviewFindings.safeParse({ ...reviewFindings({}), challenges: 'nope' }).success).toBe(
+      false,
+    );
   });
 
   it('still emits a challenge that carries no usable location', () => {

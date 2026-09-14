@@ -64,7 +64,6 @@ export interface ReviewReportCardInput {
   reviewOutputMode?: string;
   structuredOutputUsed?: boolean;
   reviewAssuranceLevel?: string;
-  extractionMethod?: string;
   /** Mandatory state-derived ProofGraph summary. */
   proofSummary: CompactProofPresentation;
   /** Canonical next action resolved from the completed state. */
@@ -152,7 +151,6 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
     reviewOutputMode,
     structuredOutputUsed,
     reviewAssuranceLevel,
-    extractionMethod,
     proofSummary,
   } = input;
 
@@ -260,7 +258,6 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
     if (reviewAssuranceLevel) {
       evidence.push({ label: 'Review assurance', value: reviewAssuranceLevel });
     }
-    if (extractionMethod) evidence.push({ label: 'Extraction method', value: extractionMethod });
     sections.push({ kind: 'keyValue', heading: 'Evidence', items: evidence });
   }
 

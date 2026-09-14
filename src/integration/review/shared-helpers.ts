@@ -187,9 +187,7 @@ export function getReviewerPolicies(sessionState: {
   const reviewProfile = sessionState.policySnapshot?.reviewProfile;
   return {
     reviewOutputPolicy:
-      outputPolicy === 'structured_required' || outputPolicy === 'text_compat_allowed'
-        ? outputPolicy
-        : 'structured_required',
+      outputPolicy === 'structured_required' ? outputPolicy : 'structured_required',
     reviewInvocationPolicy:
       invocationPolicy === 'host_task_required' ||
       invocationPolicy === 'host_task_preferred' ||

@@ -146,6 +146,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'sess-test' },
     reviewedAt: '2026-01-01T00:00:00.000Z',
   });
@@ -890,6 +891,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: 'sess-test' },
       reviewedAt: '2026-01-01T00:00:00.000Z',
     };
@@ -1021,6 +1023,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: 'sess-prev' },
       reviewedAt: '2025-12-31T00:00:00.000Z',
     };
@@ -1175,6 +1178,7 @@ describe('integration/tools/architecture (wrapper)', () => {
           missingVerification: [],
           scopeCreep: [],
           unknowns: [],
+          challenges: [],
           reviewedBy: { sessionId: 's1' },
           reviewedAt: '2026-01-01T00:00:00.000Z',
         },

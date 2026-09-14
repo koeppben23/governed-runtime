@@ -11,8 +11,11 @@ import {
 } from '../../fixtures.js';
 import {
   appendReviewObligation,
+  appendReviewAttempt,
   artifactReviewSubjectScope,
+  createReviewAttempt,
   createReviewObligation,
+  freezeReviewMaterial,
 } from './assurance.js';
 import { bindExternalReviewEvidence } from './transport-evidence.js';
 
@@ -33,6 +36,7 @@ function findingsFor(
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy,
     reviewedAt: '2026-01-01T00:00:01.000Z',
     attestation: {
@@ -46,6 +50,22 @@ function findingsFor(
   };
 }
 
+function assuranceForTransport(obligation: ReturnType<typeof createReviewObligation>) {
+  return appendReviewAttempt(
+    appendReviewObligation(undefined, obligation),
+    createReviewAttempt({
+      obligationId: obligation.obligationId,
+      obligationType: obligation.obligationType,
+      subjectDigest: obligation.subjectDigest,
+      ordinal: 1,
+      origin: { kind: 'initial' },
+      repositoryDiscovery: { kind: 'not_applicable' },
+      observationCapability: null,
+      now: '2026-01-01T00:00:00.000Z',
+    }),
+  );
+}
+
 describe('external review transport evidence binding', () => {
   it('rejects file-exists-only invalid transport evidence', async () => {
     const sessDir = await mkdtemp(join(tmpdir(), 'fg-review-evidence-'));
@@ -57,7 +77,7 @@ describe('external review transport evidence binding', () => {
           version: 'challenge-policy.v1',
           counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
         },
-        maxReviewerOutputRepairAttempts: 1,
+        maxReviewerAttempts: 1,
       },
       obligationType: 'plan',
       repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
@@ -65,12 +85,13 @@ describe('external review transport evidence binding', () => {
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
       subjectDigest: 'test',
+      reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
       reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
     });
     const state = makeState('PLAN', {
       ticket: TICKET,
       plan: PLAN_RECORD,
-      reviewAssurance: appendReviewObligation(undefined, obligation),
+      reviewAssurance: assuranceForTransport(obligation),
     });
 
     const result = await bindExternalReviewEvidence(
@@ -95,7 +116,7 @@ describe('external review transport evidence binding', () => {
           version: 'challenge-policy.v1',
           counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
         },
-        maxReviewerOutputRepairAttempts: 1,
+        maxReviewerAttempts: 1,
       },
       obligationType: 'plan',
       repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
@@ -103,6 +124,7 @@ describe('external review transport evidence binding', () => {
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
       subjectDigest: 'test',
+      reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
       reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
     });
     await writeFile(
@@ -113,7 +135,7 @@ describe('external review transport evidence binding', () => {
     const state = makeState('PLAN', {
       ticket: TICKET,
       plan: PLAN_RECORD,
-      reviewAssurance: appendReviewObligation(undefined, obligation),
+      reviewAssurance: assuranceForTransport(obligation),
     });
 
     const result = await bindExternalReviewEvidence(
@@ -125,8 +147,20 @@ describe('external review transport evidence binding', () => {
 
     expect(result.status).toBe('bound');
     if (result.status !== 'bound') throw new Error('expected bound');
-    expect(result.state.reviewAssurance?.invocations[0]?.invocationMode).toBe('manual_attested');
+    const invocation = result.state.reviewAssurance?.invocations[0];
+    expect(invocation?.invocationMode).toBe('manual_attested');
     expect(result.state.reviewAssurance?.obligations[0]?.status).toBe('fulfilled');
+    // Agent-submitted transport must not claim host-observed structured output.
+    expect(invocation?.reviewOutputMode).toBe('agent_submitted_structured');
+    expect(invocation?.structuredOutputUsed).toBe(false);
+    expect(invocation?.reviewAssuranceLevel).toBe('structured_submitted');
+    // The referenced attempt is bound atomically and correlated to the child session.
+    const attempt = result.state.reviewAssurance?.attempts.find(
+      (item) => item.attemptId === invocation?.attemptId,
+    );
+    expect(attempt?.status).toBe('bound');
+    expect(attempt?.completedAt).toBeDefined();
+    expect(attempt?.childSessionId).toBe(invocation?.childSessionId);
   });
 
   it('rejects transport findings when reviewer actor is the session initiator', async () => {
@@ -138,7 +172,7 @@ describe('external review transport evidence binding', () => {
           version: 'challenge-policy.v1',
           counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
         },
-        maxReviewerOutputRepairAttempts: 1,
+        maxReviewerAttempts: 1,
       },
       obligationType: 'plan',
       repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
@@ -146,6 +180,7 @@ describe('external review transport evidence binding', () => {
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
       subjectDigest: 'test',
+      reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
       reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
     });
     await writeFile(
@@ -161,7 +196,7 @@ describe('external review transport evidence binding', () => {
     const state = makeState('PLAN', {
       ticket: TICKET,
       plan: PLAN_RECORD,
-      reviewAssurance: appendReviewObligation(undefined, obligation),
+      reviewAssurance: assuranceForTransport(obligation),
     });
 
     const result = await bindExternalReviewEvidence(
@@ -190,7 +225,7 @@ describe('external review transport evidence binding', () => {
           version: 'challenge-policy.v1',
           counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
         },
-        maxReviewerOutputRepairAttempts: 1,
+        maxReviewerAttempts: 1,
       },
       obligationType: 'plan',
       repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
@@ -198,6 +233,7 @@ describe('external review transport evidence binding', () => {
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
       subjectDigest: 'test',
+      reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
       reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
     });
     await writeFile(
@@ -213,7 +249,7 @@ describe('external review transport evidence binding', () => {
     const state = makeState('PLAN', {
       ticket: TICKET,
       plan: PLAN_RECORD,
-      reviewAssurance: appendReviewObligation(undefined, obligation),
+      reviewAssurance: assuranceForTransport(obligation),
     });
 
     const result = await bindExternalReviewEvidence(
@@ -236,7 +272,7 @@ describe('external review transport evidence binding', () => {
           version: 'challenge-policy.v1',
           counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
         },
-        maxReviewerOutputRepairAttempts: 1,
+        maxReviewerAttempts: 1,
       },
       obligationType: 'plan',
       repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
@@ -244,6 +280,7 @@ describe('external review transport evidence binding', () => {
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
       subjectDigest: 'test',
+      reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
       reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
     });
     await writeFile(
@@ -256,7 +293,7 @@ describe('external review transport evidence binding', () => {
     const state = makeState('PLAN', {
       ticket: TICKET,
       plan: PLAN_RECORD,
-      reviewAssurance: appendReviewObligation(undefined, obligation),
+      reviewAssurance: assuranceForTransport(obligation),
     });
 
     const result = await bindExternalReviewEvidence(

@@ -223,7 +223,7 @@ export function resolveHostTaskFindings(
       // rebind; the raw refs are then kept so the unchanged exact check below
       // still rejects it.
       const challengesForConsistency = ((): typeof parsed.data.challenges => {
-        if (!allowedChallengeEvidenceRefs || !parsed.data.challenges) {
+        if (!allowedChallengeEvidenceRefs) {
           return parsed.data.challenges;
         }
         const rebound = bindCanonicalEvidenceRefs(

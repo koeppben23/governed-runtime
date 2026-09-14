@@ -26,6 +26,7 @@ const validRawFindings: Record<string, unknown> = {
   missingVerification: [],
   scopeCreep: [],
   unknowns: [],
+  challenges: [],
   reviewedBy: { sessionId: 'ses_child' },
   reviewedAt: now,
 };
@@ -47,6 +48,7 @@ function boundAttempt(obligation: ReviewObligation): ReviewAttempt {
     status: 'bound',
     origin: { kind: 'initial' },
     repositoryDiscovery: { kind: 'not_applicable' },
+    observations: [],
     createdAt: now,
   };
 }

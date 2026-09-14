@@ -72,8 +72,8 @@ export const PolicySnapshotSchema = z
     maxImplReviewIterations: z.number().int().positive(),
     /** Frozen retry budget for F12-incoherent reviewer captures. */
     maxIncoherentReviewerCaptureRetries: z.number().int().nonnegative(),
-    /** Frozen obligation-level reviewer output-repair budget. */
-    maxReviewerOutputRepairAttempts: z.number().int().min(0).max(5),
+    /** Frozen obligation-level reviewer-attempt budget. */
+    maxReviewerAttempts: z.number().int().min(0).max(5),
     allowSelfApproval: z.boolean(),
     /** P34: Minimum required actor assurance for regulated approval decisions. */
     minimumActorAssuranceForApproval: z.enum(['best_effort', 'claim_validated', 'idp_verified']),
@@ -88,7 +88,7 @@ export const PolicySnapshotSchema = z
      */
     identityProviderMode: z.enum(['optional', 'required']),
     /** Frozen review output policy for structured vs text-compatible evidence. */
-    reviewOutputPolicy: z.enum(['structured_required', 'text_compat_allowed']),
+    reviewOutputPolicy: z.literal('structured_required'),
     /** Frozen review invocation policy — how the reviewer must be invoked. */
     reviewInvocationPolicy: z.enum(['host_task_required', 'host_task_preferred', 'sdk_allowed']),
     /** Frozen mandatory review coverage profile. */

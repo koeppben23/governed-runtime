@@ -18,11 +18,9 @@ import { parseToolResult } from '../plugin-helpers.js';
 interface ReviewerOutputInput {
   readonly findings: unknown;
   readonly sessionId: string;
-  readonly reviewOutputMode: string;
+  readonly reviewOutputMode: 'structured_output';
   readonly structuredOutputUsed: boolean;
-  readonly reviewAssuranceLevel: string;
-  readonly extractionMethod?: string;
-  readonly modelCapabilityError?: string;
+  readonly reviewAssuranceLevel: 'structured_high';
 }
 
 export function buildMutatedOutput(
@@ -47,12 +45,6 @@ export function buildMutatedOutput(
     reviewOutputMode: reviewerResult.reviewOutputMode,
     structuredOutputUsed: reviewerResult.structuredOutputUsed,
     reviewAssuranceLevel: reviewerResult.reviewAssuranceLevel,
-    ...(reviewerResult.extractionMethod
-      ? { extractionMethod: reviewerResult.extractionMethod }
-      : {}),
-    ...(reviewerResult.modelCapabilityError
-      ? { modelCapabilityError: reviewerResult.modelCapabilityError }
-      : {}),
   };
 
   return JSON.stringify(parsed);
@@ -81,12 +73,6 @@ export function buildReviewContentMutatedOutput(
     reviewOutputMode: reviewerResult.reviewOutputMode,
     structuredOutputUsed: reviewerResult.structuredOutputUsed,
     reviewAssuranceLevel: reviewerResult.reviewAssuranceLevel,
-    ...(reviewerResult.extractionMethod
-      ? { extractionMethod: reviewerResult.extractionMethod }
-      : {}),
-    ...(reviewerResult.modelCapabilityError
-      ? { modelCapabilityError: reviewerResult.modelCapabilityError }
-      : {}),
   };
 
   return JSON.stringify(parsed);

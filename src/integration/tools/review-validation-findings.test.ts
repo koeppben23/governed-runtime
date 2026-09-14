@@ -7,6 +7,7 @@ import {
 import type { ReviewFindings } from '../../state/evidence.js';
 import type { ReviewChallenge } from '../../state/evidence-review.js';
 import {
+  freezeReviewMaterial,
   hashFindings,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
@@ -25,6 +26,7 @@ function makeFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'ses_test' },
     reviewedAt: new Date().toISOString(),
     ...overrides,
@@ -76,7 +78,20 @@ function strictAssuranceFixture(
 ): NonNullable<ReviewFindingsValidationContext['assurance']> {
   return {
     assuranceSchemaVersion: 'review-assurance.v6' as const,
-    attempts: [],
+    attempts: [
+      {
+        attemptId: '55555555-5555-4555-8555-555555555555',
+        obligationId: '11111111-1111-4111-8111-111111111111',
+        obligationType: 'plan' as const,
+        subjectDigest: 'test-subject-digest',
+        ordinal: 0,
+        status: 'bound' as const,
+        origin: { kind: 'initial' } as const,
+        repositoryDiscovery: { kind: 'not_applicable' } as const,
+        observations: [],
+        createdAt: new Date().toISOString(),
+      },
+    ],
     dispatches: [],
     obligations: [
       {
@@ -90,7 +105,10 @@ function strictAssuranceFixture(
         planVersion: findings.planVersion,
         criteriaVersion: REVIEW_CRITERIA_VERSION,
         mandateDigest: REVIEW_MANDATE_DIGEST,
-        maxReviewerOutputRepairAttempts: 1,
+        maxReviewerAttempts: 1,
+        reviewProfile: 'core' as const,
+        profileSource: 'policy_default' as const,
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'test-subject-digest'),
         createdAt: new Date().toISOString(),
         pluginHandshakeAt: new Date().toISOString(),
         status: 'fulfilled' as const,
@@ -118,11 +136,13 @@ function strictAssuranceFixture(
         parentSessionId: 'ses_parent',
         childSessionId: 'ses_child',
         agentType: 'flowguard-reviewer' as const,
+        attemptId: '55555555-5555-4555-8555-555555555555',
         invocationMode: 'sdk_session_prompt' as const,
         reviewOutputMode: 'structured_output' as const,
         structuredOutputUsed: true,
         reviewAssuranceLevel: 'structured_high' as const,
         hostVisible: false,
+        source: 'host-orchestrated' as const,
         promptHash: 'abc',
         mandateDigest: REVIEW_MANDATE_DIGEST,
         criteriaVersion: REVIEW_CRITERIA_VERSION,
@@ -664,7 +684,10 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
       planVersion: 1,
       criteriaVersion: REVIEW_CRITERIA_VERSION,
       mandateDigest: REVIEW_MANDATE_DIGEST,
-      maxReviewerOutputRepairAttempts: 1,
+      maxReviewerAttempts: 1,
+      reviewProfile: 'core' as const,
+      profileSource: 'policy_default' as const,
+      reviewMaterial: freezeReviewMaterial('frozen review material', 'test-subject-digest'),
       createdAt: new Date().toISOString(),
       pluginHandshakeAt: null,
       status: 'pending' as const,
@@ -724,6 +747,10 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
     };
     assurance.invocations[0] = {
       ...assurance.invocations[0]!,
+      obligationType: 'implement',
+    };
+    assurance.attempts[0] = {
+      ...assurance.attempts[0]!,
       obligationType: 'implement',
     };
     return makeCtx({

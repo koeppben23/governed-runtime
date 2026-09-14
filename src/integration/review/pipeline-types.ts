@@ -20,9 +20,6 @@ import type { SemanticAuditIntent } from '../tools/audit-outbox.js';
 /** Invocation mode for SDK-driven session prompts (not host-visible). */
 export const INVOCATION_MODE_SDK_SESSION = 'sdk_session_prompt' as const;
 
-/** Evidence source tag for host-orchestrated reviews. */
-export const EVIDENCE_SOURCE_HOST = 'host-orchestrated' as const;
-
 // ─── Public interfaces ───────────────────────────────────────────────────────
 
 /**

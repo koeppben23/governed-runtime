@@ -561,7 +561,14 @@ describe('review-enforcement mutation kills', () => {
               planVersion: 1,
               criteriaVersion: 'v1',
               mandateDigest: 'digest-abc',
-              maxReviewerOutputRepairAttempts: 1,
+              maxReviewerAttempts: 1,
+              reviewProfile: 'core' as const,
+              profileSource: 'policy_default' as const,
+              reviewMaterial: {
+                content: 'frozen review material',
+                materialDigest: 'a'.repeat(64),
+                subjectDigest: 'test-subject-digest',
+              },
               createdAt: NOW,
               pluginHandshakeAt: null,
               status: 'pending' as const,
@@ -612,7 +619,14 @@ describe('review-enforcement mutation kills', () => {
               planVersion: 1,
               criteriaVersion: 'v1',
               mandateDigest: 'digest-abc',
-              maxReviewerOutputRepairAttempts: 1,
+              maxReviewerAttempts: 1,
+              reviewProfile: 'core' as const,
+              profileSource: 'policy_default' as const,
+              reviewMaterial: {
+                content: 'frozen review material',
+                materialDigest: 'a'.repeat(64),
+                subjectDigest: 'test-subject-digest',
+              },
               createdAt: NOW,
               pluginHandshakeAt: null,
               status: 'fulfilled' as const,
@@ -667,53 +681,6 @@ describe('review-enforcement mutation kills', () => {
         false,
       );
       expect(result.allowed).toBe(true);
-    });
-  });
-
-  // ─── MUTATION KILL: extractCapturedFindings with embedded JSON ───────────
-  describe('MUTATION_KILL: extractCapturedFindings embedded JSON extraction', () => {
-    it('extracts findings from text with embedded JSON containing reviewedBy', () => {
-      const embedded =
-        'Some prefix text\n' +
-        JSON.stringify({
-          overallVerdict: 'accept',
-          blockingIssues: [],
-          reviewedBy: { sessionId: 'ses_abc123' },
-        }) +
-        '\nSome suffix text';
-      const findings = extractCapturedFindings(embedded);
-      expect(findings).not.toBeNull();
-      expect(findings!.overallVerdict).toBe('accept');
-      expect(findings!.sessionId).toBe('ses_abc123');
-    });
-
-    it('handles nested braces in embedded JSON correctly', () => {
-      const embedded = JSON.stringify({
-        overallVerdict: 'changes_requested',
-        blockingIssues: [{ title: 'Missing {test} coverage', severity: 'error' }],
-        reviewedBy: { sessionId: 'ses_nested' },
-      });
-      const findings = extractCapturedFindings(embedded);
-      expect(findings).not.toBeNull();
-      expect(findings!.overallVerdict).toBe('changes_requested');
-      expect(findings!.blockingIssuesCount).toBe(1);
-    });
-
-    it('handles escaped quotes in embedded JSON', () => {
-      const obj = {
-        overallVerdict: 'accept',
-        blockingIssues: [],
-        summary: 'Code looks "fine"',
-        reviewedBy: { sessionId: 'ses_escaped' },
-      };
-      const findings = extractCapturedFindings(JSON.stringify(obj));
-      expect(findings).not.toBeNull();
-      expect(findings!.overallVerdict).toBe('accept');
-    });
-
-    it('returns null for text without valid JSON structure', () => {
-      const findings = extractCapturedFindings('Not JSON at all { broken }');
-      expect(findings).toBeNull();
     });
   });
 

@@ -17,7 +17,7 @@ import {
 /** True if `challengeId` ever appeared as an implementation_challenge in the history. */
 function challengeEverRecorded(state: SessionState, challengeId: string): boolean {
   return (state.implReviewFindings ?? []).some((findings) =>
-    (findings.challenges ?? []).some(
+    findings.challenges.some(
       (item) => item.challengeId === challengeId && item.kind === 'implementation_challenge',
     ),
   );

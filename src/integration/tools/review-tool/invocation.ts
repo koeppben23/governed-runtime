@@ -17,6 +17,7 @@ import {
   appendInvocationEvidence,
   fulfillObligation,
 } from '../../review/assurance.js';
+import { updateAttemptStatus } from '../../review/attempt-lifecycle.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import { readReviewerCaptures } from '../../../adapters/persistence-reviewer-capture.js';
 import {
@@ -35,34 +36,6 @@ import type {
 import type { ToolContext } from '../helpers.js';
 
 // ─── Invocation validation ───────────────────────────────────────────────────
-
-export function validateTextCompatInvocation(
-  findings: Record<string, unknown>,
-  obligation: ReviewObligation,
-  hostInvForObligation: ReturnType<typeof ensureReviewAssurance>['invocations'][number] | undefined,
-): string | null {
-  const submittedReviewOutput = findings.pluginReviewOutput as Record<string, unknown> | undefined;
-  if (submittedReviewOutput?.reviewOutputMode !== 'text_compat') return null;
-  if (hostInvForObligation?.reviewOutputMode !== 'text_compat') {
-    return formatBlockedWithAttestation(
-      'SUBAGENT_MANDATE_MISMATCH',
-      'Submitted text-compat findings require matching host-orchestrated ReviewInvocationEvidence with reviewOutputMode: text_compat.',
-      obligation.obligationId,
-    );
-  }
-  if (
-    hostInvForObligation.reviewAssuranceLevel !== 'text_compat_lower' ||
-    hostInvForObligation.structuredOutputUsed !== false ||
-    !hostInvForObligation.extractionMethod
-  ) {
-    return formatBlockedWithAttestation(
-      'SUBAGENT_MANDATE_MISMATCH',
-      'Submitted text-compat findings require complete lower-assurance invocation metadata.',
-      obligation.obligationId,
-    );
-  }
-  return null;
-}
 
 export function validateHostInvocationEvidence(input: {
   hostInvForObligation: ReturnType<typeof ensureReviewAssurance>['invocations'][number];
@@ -188,6 +161,7 @@ function buildManualInvocationState(input: {
   promptHash: string;
   now: string;
   attestation: NativeAttestation;
+  attemptId: string;
 }): StartedReviewResult {
   const {
     result,
@@ -198,6 +172,7 @@ function buildManualInvocationState(input: {
     promptHash,
     now,
     attestation,
+    attemptId,
   } = input;
   const invocation = buildInvocationEvidence({
     obligationId: obligation.obligationId,
@@ -207,12 +182,11 @@ function buildManualInvocationState(input: {
     parentSessionId: context.sessionID,
     childSessionId,
     invocationMode: attestation.invocationMode,
-    hostVisible: false,
     promptHash,
     findingsHash,
     invokedAt: now,
     fulfilledAt: now,
-    source: 'agent-submitted-attested',
+    attemptId,
     ...getBranchProvenance(obligation),
     ...(attestation.hostCapturedAgentId
       ? { hostCapturedAgentId: attestation.hostCapturedAgentId }
@@ -222,17 +196,22 @@ function buildManualInvocationState(input: {
       : {}),
     ...(attestation.hostCaptureSource ? { hostCaptureSource: attestation.hostCaptureSource } : {}),
   });
+  // Evidence-bearing invocations require the referenced attempt to be bound
+  // atomically, with its child session correlated to the invocation.
+  const fulfilled = fulfillObligation(
+    ensureReviewAssurance(result.state.reviewAssurance),
+    obligation.obligationId,
+    invocation.invocationId,
+    now,
+  );
   return {
     ...result,
     state: {
       ...result.state,
       reviewAssurance: appendInvocationEvidence(
-        fulfillObligation(
-          ensureReviewAssurance(result.state.reviewAssurance),
-          obligation.obligationId,
-          invocation.invocationId,
-          now,
-        ),
+        updateAttemptStatus(fulfilled, attemptId, 'bound', now, {
+          childSessionId: invocation.childSessionId,
+        }),
         invocation,
       ),
     },
@@ -290,6 +269,19 @@ async function recordManualReviewInvocation(input: {
     obligationId: obligation.obligationId,
     sessionId: exec.context.sessionID,
   });
+  const attempts = assurance.attempts.filter(
+    (attempt) => attempt.obligationId === obligation.obligationId && attempt.status === 'created',
+  );
+  if (attempts.length !== 1) {
+    return {
+      result,
+      blocked: formatBlockedWithAttestation(
+        'REVIEW_ATTEMPT_UNAVAILABLE',
+        'Submitted review findings require exactly one pre-authorized review attempt.',
+        obligation.obligationId,
+      ),
+    };
+  }
   return {
     result: buildManualInvocationState({
       result,
@@ -300,6 +292,7 @@ async function recordManualReviewInvocation(input: {
       promptHash: hashText(fingerprintReviewInput(exec.args)),
       now: exec.now,
       attestation,
+      attemptId: attempts[0]!.attemptId,
     }),
     ...(attestation.rejection ? { nativeAttestationRejection: attestation.rejection } : {}),
   };
@@ -332,8 +325,6 @@ export async function recordSubmittedReviewInvocation(
   const hostInvForObligation = assurance.invocations.find(
     (inv) => inv.obligationId === obligation.obligationId && inv.source === 'host-orchestrated',
   );
-  const textCompatBlock = validateTextCompatInvocation(findings, obligation, hostInvForObligation);
-  if (textCompatBlock) return { result, blocked: textCompatBlock };
   if (hostInvForObligation) {
     return {
       result,

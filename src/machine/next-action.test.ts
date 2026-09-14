@@ -23,6 +23,7 @@ import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import {
   artifactReviewSubjectScope,
   createReviewObligation,
+  freezeReviewMaterial,
 } from '../integration/review/assurance.js';
 import { hashCanonicalReviewContent, normalizeReviewContent } from '../shared/review-subject.js';
 
@@ -59,12 +60,8 @@ function bindableAttemptFor(obligation: ReviewObligation): ReviewAttempt {
     status: 'created',
     origin: { kind: 'initial' },
     repositoryDiscovery: { kind: 'not_applicable' },
+    observations: [],
     createdAt: '2026-01-01T00:00:00.000Z',
-    reviewMaterial: {
-      content: PLAN_BODY,
-      materialDigest: hashCanonicalReviewContent(PLAN_BODY),
-      subjectDigest: 'plan-subject-digest',
-    },
   };
 }
 
@@ -223,7 +220,7 @@ describe('resolveNextAction', () => {
     it('PLAN with a repairable rejected attempt → authorized repair via /plan', () => {
       const obligation = pendingPlanObligation({
         status: 'pending',
-        maxReviewerOutputRepairAttempts: 1,
+        maxReviewerAttempts: 1,
       });
       const rejected = {
         ...bindableAttemptFor(obligation),
@@ -385,6 +382,7 @@ describe('resolveNextAction', () => {
         iteration: 1,
         planVersion: 1,
         subjectDigest: 'impl-digest',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'impl-digest'),
         reviewSubjectScope: { kind: 'implementation', implementationDigest: 'impl-digest' },
         changedFiles: ['src/a.ts'],
         policySnapshot: null,
@@ -405,6 +403,7 @@ describe('resolveNextAction', () => {
               ordinal: 1,
               origin: { kind: 'initial' },
               repositoryDiscovery: { kind: 'not_applicable' },
+              observations: [],
               status: 'bound',
               childSessionId: 'child',
               completedAt: '2026-01-01T00:00:00.000Z',
@@ -451,6 +450,7 @@ describe('resolveNextAction', () => {
         iteration: 1,
         planVersion: 1,
         subjectDigest: 'impl-digest',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'impl-digest'),
         reviewSubjectScope: {
           kind: 'implementation',
           implementationDigest: 'impl-digest',
@@ -487,6 +487,10 @@ describe('resolveNextAction', () => {
           iteration,
           planVersion: 1,
           subjectDigest: `impl-digest-${iteration}`,
+          reviewMaterial: freezeReviewMaterial(
+            'frozen review material',
+            `impl-digest-${iteration}`,
+          ),
           reviewSubjectScope: {
             kind: 'implementation',
             implementationDigest: `impl-digest-${iteration}`,
@@ -592,6 +596,7 @@ describe('resolveNextAction', () => {
         planVersion: 1,
         now: '2026-01-01T00:00:00.000Z',
         subjectDigest: 'test',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
       });
       const state = makeState('READY', {
         reviewAssurance: {
@@ -614,6 +619,7 @@ describe('resolveNextAction', () => {
         planVersion: 1,
         now: '2026-01-01T00:00:00.000Z',
         subjectDigest: 'test',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
       });
       const state = makeState('REVIEW', {
         reviewAssurance: {

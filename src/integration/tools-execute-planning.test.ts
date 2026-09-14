@@ -121,6 +121,7 @@ vi.mock('../adapters/actor', async (importOriginal) => {
       id: 'test-operator',
       email: 'test@flowguard.dev',
       source: 'env',
+      assurance: 'best_effort',
     }),
   };
 });
@@ -1342,6 +1343,7 @@ describe('plan', () => {
         artifactReviewSubjectScope: assuranceMod.artifactReviewSubjectScope,
         buildInvocationEvidence: assuranceMod.buildInvocationEvidence,
         createReviewObligation: assuranceMod.createReviewObligation,
+        freezeReviewMaterial: assuranceMod.freezeReviewMaterial,
         REVIEW_CRITERIA_VERSION: assuranceMod.REVIEW_CRITERIA_VERSION,
         REVIEW_MANDATE_DIGEST: assuranceMod.REVIEW_MANDATE_DIGEST,
         hashFindings: findingsHashMod.hashFindings,
@@ -1358,13 +1360,14 @@ describe('plan', () => {
             version: 'challenge-policy.v1',
             counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
           },
-          maxReviewerOutputRepairAttempts: 1,
+          maxReviewerAttempts: 1,
         },
         obligationType: 'plan',
         iteration: 0,
         planVersion: 1,
         now: NOW,
         subjectDigest,
+        reviewMaterial: deps.freezeReviewMaterial('frozen review material', subjectDigest),
         reviewSubjectScope: deps.artifactReviewSubjectScope(
           'plan',
           '## Approach\nBody',
@@ -1388,6 +1391,7 @@ describe('plan', () => {
         missingVerification: [],
         scopeCreep: [],
         unknowns: [],
+        challenges: [],
         reviewedBy: { sessionId: 'ses-child' },
         reviewedAt: NOW,
         attestation: {
@@ -1411,16 +1415,15 @@ describe('plan', () => {
         ...deps.buildInvocationEvidence({
           obligationId: obligation.obligationId,
           obligationType: 'plan',
+          attemptId: '00000000-0000-4000-8000-0000000000d1',
           mandateDigest: deps.REVIEW_MANDATE_DIGEST,
           criteriaVersion: deps.REVIEW_CRITERIA_VERSION,
           parentSessionId: 'ses-parent',
           childSessionId: 'ses-child',
           invocationMode: 'host_subagent_task',
-          hostVisible: true,
           promptHash: 'sha256-prompt',
           findingsHash: deps.hashFindings(findings),
           invokedAt: NOW,
-          source: 'host-orchestrated',
         }),
         consumedByObligationId: consumedBy,
       };

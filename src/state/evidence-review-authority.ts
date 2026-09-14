@@ -22,7 +22,6 @@
 
 import { z } from 'zod';
 import { GitSha, ReviewRepositoryIdentity } from './evidence-review-subject.js';
-import type { ReviewRepositoryIdentity as ReviewRepositoryIdentityValue } from './evidence-review-subject.js';
 import type { ReviewRepositoryRevisionProvenance as ReviewRepositoryRevisionProvenanceValue } from './evidence-primitives.js';
 import { RepositoryPathSchema } from './evidence-findings.js';
 
@@ -61,8 +60,14 @@ export type FrozenRepositoryRevisionTargetValue = FrozenRepositoryRevisionTarget
  * Frozen repository authority carried by a repository-governed review
  * obligation.
  *
- * `candidate_pair` — implementation reviews: frozen pre-mutation `base` and
- *                    content-addressed worktree candidate `head`.
+ * `candidate_pair` — same-repository reviews (implementation, standalone
+ *                    branch/PR): frozen pre-mutation/`base` and
+ *                    content-addressed `head` targets sharing ONE repository
+ *                    identity.
+ * `fork_pair` — cross-repository PR reviews: `base` and `head` live in
+ *                    distinct repositories (a fork). Both revisions must be
+ *                    remote identities on the same host; neither side may be
+ *                    silently re-pointed at the other repository.
  * `context` — plan/architecture reviews: a single frozen repository context.
  *            `revision:'head'` resolves to the context; `revision:'base'` is
  *            unavailable (there is no frozen base side in a context).
@@ -71,6 +76,14 @@ export const FrozenRepositoryAuthority = z.discriminatedUnion('kind', [
   z
     .object({
       kind: z.literal('candidate_pair'),
+      base: FrozenRepositoryRevisionTarget,
+      head: FrozenRepositoryRevisionTarget,
+    })
+    .strict()
+    .readonly(),
+  z
+    .object({
+      kind: z.literal('fork_pair'),
       base: FrozenRepositoryRevisionTarget,
       head: FrozenRepositoryRevisionTarget,
     })
@@ -195,19 +208,11 @@ export type RepositoryObservation = z.infer<typeof RepositoryObservation>;
 /** Minimal structural obligation shape the authority predicates operate on. */
 export interface RepositoryAuthorityCarrier {
   readonly repositoryAuthority?: FrozenRepositoryAuthorityValue;
-  readonly reviewSubject?: {
-    readonly kind?: string;
-    readonly baseRepository?: ReviewRepositoryIdentityValue;
-    readonly headRepository?: ReviewRepositoryIdentityValue | null;
-    readonly baseSha?: string;
-    readonly headSha?: string;
-  } | null;
 }
 
 /** True when the carrier holds frozen repository authority of any kind. */
 export function hasFrozenRepositoryAuthority(carrier: RepositoryAuthorityCarrier): boolean {
-  if (carrier.repositoryAuthority) return true;
-  return carrier.reviewSubject?.kind === 'repository_change';
+  return carrier.repositoryAuthority !== undefined;
 }
 
 /**
@@ -221,44 +226,25 @@ export function resolveFrozenRevisionTarget(
 ): FrozenRepositoryRevisionTargetValue | null {
   const authority = carrier.repositoryAuthority;
   if (authority) {
-    if (authority.kind === 'candidate_pair') {
+    if (authority.kind === 'candidate_pair' || authority.kind === 'fork_pair') {
       return revision === 'base' ? authority.base : authority.head;
     }
     return revision === 'head' ? authority.context : null;
-  }
-  const subject = carrier.reviewSubject;
-  if (
-    subject?.kind === 'repository_change' &&
-    subject.baseRepository &&
-    subject.baseSha &&
-    subject.headSha
-  ) {
-    const headSha: string = subject.headSha;
-    const baseSha: string = subject.baseSha;
-    const identity: ReviewRepositoryIdentityValue =
-      revision === 'head'
-        ? (subject.headRepository ?? subject.baseRepository)
-        : subject.baseRepository;
-    return {
-      kind: 'commit',
-      repositoryIdentity: identity,
-      objectSha: revision === 'head' ? headSha : baseSha,
-    };
   }
   return null;
 }
 
 /**
- * Canonical derivation of the legacy revision-provenance projection from
- * frozen authority. Provenance is a pure projection — never read from mutable
- * runtime state. When no frozen authority exists the derivation is
+ * Canonical derivation of the revision-provenance projection from frozen
+ * authority. Provenance is a pure projection — never read from mutable runtime
+ * state. When no frozen authority exists the derivation is
  * `unavailable`, which makes every repository evidence revision fail closed.
  */
 export function deriveRepositoryRevisionProvenance(
   carrier: RepositoryAuthorityCarrier,
 ): ReviewRepositoryRevisionProvenanceValue {
   const authority = carrier.repositoryAuthority;
-  if (authority?.kind === 'candidate_pair') {
+  if (authority?.kind === 'candidate_pair' || authority?.kind === 'fork_pair') {
     return {
       kind: 'available',
       headSha: authority.head.objectSha,
@@ -268,32 +254,50 @@ export function deriveRepositoryRevisionProvenance(
   if (authority?.kind === 'context') {
     return { kind: 'available', headSha: authority.context.objectSha };
   }
-  const subject = carrier.reviewSubject;
-  if (subject?.kind === 'repository_change' && subject.headSha && subject.baseSha) {
-    return {
-      kind: 'available',
-      headSha: subject.headSha,
-      baseSha: subject.baseSha,
-    };
-  }
   return { kind: 'unavailable', reason: 'frozen_repository_authority_missing' };
 }
 
 /**
  * Canonical verification that a FrozenRepositoryAuthority is structurally
- * consistent: candidate_pair revisions must share the same repository
- * identity, and object SHAs must be well-formed.
+ * consistent.
+ *
+ * `candidate_pair` revisions must share the same repository identity.
+ * `fork_pair` revisions must be two DISTINCT remote repositories on the same
+ * host — the explicit representation of a cross-repository PR. A same-identity
+ * pair must be expressed as `candidate_pair`, and a local side can never be
+ * part of a fork pair.
  */
 export function verifyFrozenRepositoryAuthority(
   authority: FrozenRepositoryAuthorityValue,
 ): string | null {
-  if (authority.kind !== 'candidate_pair') return null;
+  if (authority.kind === 'context') return null;
   const base = authority.base.repositoryIdentity;
   const head = authority.head.repositoryIdentity;
   const baseIsLocal = 'kind' in base && base.kind === 'local';
   const headIsLocal = 'kind' in head && head.kind === 'local';
   if (baseIsLocal !== headIsLocal) {
-    return 'candidate_pair revisions must share one repository identity kind';
+    return `${authority.kind} revisions must share one repository identity kind`;
+  }
+  if (authority.kind === 'fork_pair') {
+    if (baseIsLocal || headIsLocal) {
+      return 'fork_pair revisions must be remote repository identities';
+    }
+    const remoteBase = base as {
+      readonly host: string;
+      readonly owner: string;
+      readonly name: string;
+    };
+    const remoteHead = head as {
+      readonly host: string;
+      readonly owner: string;
+      readonly name: string;
+    };
+    if (remoteBase.host !== remoteHead.host) {
+      return 'fork_pair revisions must share one remote host';
+    }
+    return remoteBase.owner === remoteHead.owner && remoteBase.name === remoteHead.name
+      ? 'fork_pair revisions must name distinct repositories (use candidate_pair for one repository)'
+      : null;
   }
   if (baseIsLocal && headIsLocal) {
     return base.rootCommitDigest === head.rootCommitDigest

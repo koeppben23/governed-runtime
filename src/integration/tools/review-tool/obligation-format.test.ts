@@ -8,7 +8,11 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { formatMissingContentAnalysis, repositoryFromBranchSubject } from './obligation-format.js';
+import {
+  formatMissingContentAnalysis,
+  repositoryAuthorityFromSubject,
+  repositoryFromBranchSubject,
+} from './obligation-format.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 
 const OBLIGATION_ID = 'f8163adf-6604-435a-b3ae-bae1b6b3ea08';
@@ -93,5 +97,65 @@ describe('repositoryFromBranchSubject', () => {
   it('returns undefined without a head identity or for a content subject', () => {
     expect(repositoryFromBranchSubject(subject(LOCAL, undefined))).toBeUndefined();
     expect(repositoryFromBranchSubject(undefined)).toBeUndefined();
+  });
+});
+
+describe('repositoryAuthorityFromSubject', () => {
+  function subject(
+    baseRepository: unknown,
+    headRepository: unknown,
+  ): Parameters<typeof repositoryAuthorityFromSubject>[0] {
+    return {
+      kind: 'repository_change',
+      source: { kind: 'branch', branch: 'feature/x' },
+      baseRepository,
+      headRepository,
+      baseSha: 'b'.repeat(40),
+      headSha: 'a'.repeat(40),
+      changedPaths: ['src/app.ts'],
+      materialDigest: 'd'.repeat(64),
+      subjectDigest: 'e'.repeat(64),
+    } as Parameters<typeof repositoryAuthorityFromSubject>[0];
+  }
+
+  const REMOTE = { host: 'github.com', owner: 'flowguard', name: 'governed-runtime' };
+  const FORK = { host: 'github.com', owner: 'contributor', name: 'governed-runtime' };
+  const LOCAL = { kind: 'local' as const, rootCommitDigest: 'c'.repeat(64) };
+
+  it('mints a candidate_pair for a same-repository subject', () => {
+    expect(repositoryAuthorityFromSubject(subject(REMOTE, { ...REMOTE }))).toEqual({
+      kind: 'candidate_pair',
+      base: { kind: 'commit', repositoryIdentity: REMOTE, objectSha: 'b'.repeat(40) },
+      head: { kind: 'commit', repositoryIdentity: REMOTE, objectSha: 'a'.repeat(40) },
+    });
+  });
+
+  it('mints a candidate_pair for a subject without a distinct head identity', () => {
+    expect(repositoryAuthorityFromSubject(subject(LOCAL, undefined))).toEqual({
+      kind: 'candidate_pair',
+      base: { kind: 'commit', repositoryIdentity: LOCAL, objectSha: 'b'.repeat(40) },
+      head: { kind: 'commit', repositoryIdentity: LOCAL, objectSha: 'a'.repeat(40) },
+    });
+  });
+
+  it('mints a fork_pair keeping both repository identities for a fork PR', () => {
+    expect(repositoryAuthorityFromSubject(subject(REMOTE, FORK))).toEqual({
+      kind: 'fork_pair',
+      base: { kind: 'commit', repositoryIdentity: REMOTE, objectSha: 'b'.repeat(40) },
+      head: { kind: 'commit', repositoryIdentity: FORK, objectSha: 'a'.repeat(40) },
+    });
+  });
+
+  it('returns undefined for non-repository subjects', () => {
+    expect(repositoryAuthorityFromSubject(undefined)).toBeUndefined();
+    expect(
+      repositoryAuthorityFromSubject({
+        kind: 'content',
+        source: { kind: 'inline', mediaType: 'text' },
+        materialDigest: 'd'.repeat(64),
+        subjectDigest: 'e'.repeat(64),
+        lineCount: 1,
+      }),
+    ).toBeUndefined();
   });
 });

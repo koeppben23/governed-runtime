@@ -23,7 +23,7 @@ export const ReviewerFindingsInput = ReviewFindingsObject.omit({
 })
   .extend({
     attestation: z.object({ toolObligationId: z.string().uuid() }).strict().readonly(),
-    challenges: z.array(ReviewerChallengeInput).optional(),
+    challenges: z.array(ReviewerChallengeInput),
     challengeResolutionVerdicts: z.array(ChallengeResolutionVerdict).optional(),
   })
   .strict()

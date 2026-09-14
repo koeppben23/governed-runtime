@@ -120,8 +120,8 @@ async function prepareReviewExecution(
   const resolvedSource = resolveObligationBranchSource(state, exec);
   let refInput = withCwd(populateRefInput(exec.args, state, resolvedSource), exec.context.worktree);
   if (exec.args.branch && !resolvedSource) {
-    const hostVerdict = await prepareHostTaskVerdictReview(sessDir, state, result, exec);
-    if (hostVerdict) return withMaterializedHostVerdict(hostVerdict, null);
+    const earlyVerdict = await resolveEarlyHostTaskVerdict(sessDir, state, result, exec);
+    if (earlyVerdict) return withMaterializedHostVerdict(earlyVerdict, null);
   }
   const materializedContent = await resolveReviewContentForExecution(state, exec, refInput);
   if (typeof materializedContent === 'string') return materializedContent;
@@ -144,6 +144,24 @@ async function prepareReviewExecution(
   if (exec.args.reviewFindings === undefined)
     return prepareMissingFindingsSubmission(result, refInput, missingResult, materializedContent);
   return finishFindingsSubmission(sessDir, state, result, exec, { refInput, materializedContent });
+}
+
+/**
+ * Host-task verdict resolution for a branch continuation with no re-resolvable
+ * source. A continuation carrying frozen review material is NOT resolved here:
+ * its persisted bytes must satisfy the content-source contract downstream, so
+ * only continuations without reusable frozen material stand on the verdict path.
+ */
+async function resolveEarlyHostTaskVerdict(
+  sessDir: string,
+  state: SessionState,
+  result: StartedReviewResult,
+  exec: ReviewExecutionContext,
+): Promise<ReviewPreparation | string | null> {
+  const frozen = resolveFrozenContinuationContent(state, exec);
+  if (frozen.kind === 'blocked') return frozen.message;
+  if (frozen.kind === 'reuse') return null;
+  return prepareHostTaskVerdictReview(sessDir, state, result, exec);
 }
 
 function withMaterializedHostVerdict(

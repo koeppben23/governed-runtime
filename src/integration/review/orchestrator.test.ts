@@ -796,7 +796,6 @@ describe('invokeReviewer', () => {
     expect(result!.reviewOutputMode).toBe('structured_output');
     expect(result!.structuredOutputUsed).toBe(true);
     expect(result!.reviewAssuranceLevel).toBe('structured_high');
-    expect(result!.extractionMethod).toBeUndefined();
     expect(result!.findings!.reviewedBy).toEqual({ sessionId: 'reviewer-guessed-id' });
   });
 

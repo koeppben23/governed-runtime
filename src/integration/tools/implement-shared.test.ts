@@ -94,6 +94,7 @@ function makeReviewFindings(overrides: Partial<ReviewFindings> = {}): ReviewFind
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'reviewer' },
     reviewedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,

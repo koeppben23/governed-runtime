@@ -63,15 +63,19 @@ import {
 } from './evidence-review-authority.js';
 import {
   refineAssuranceDiscoveryCoherence,
-  refineCurrentGenerationMaterial,
   refineAssuranceIdentityUniqueness,
   refineAssuranceInvocationLinkageCoherence,
   refineAssuranceProvenanceCoherence,
   refineAuthorityStructure,
+  refineObligationRepositoryAuthorityCoherence,
   refineRepositoryEvidenceFreezeCoherence,
   refineReviewMaterialSubject,
   refineStandaloneSubject,
 } from './evidence-review-refinements.js';
+import {
+  refineAssuranceAttemptLineageCoherence,
+  refineAssuranceDispatchCoherence,
+} from './evidence-review-ledger-refinements.js';
 export { classifyRepositoryPath, type RepositoryPathClassification } from './repository-path.js';
 
 export const ReviewAttemptStatusValues = [
@@ -122,10 +126,10 @@ export type ReviewAttemptRejectionReason = z.infer<typeof ReviewAttemptRejection
  *
  * Every attempt carries exactly one origin. `initial` marks the first attempt
  * minted with its obligation. `output_repair` marks a reissue authorized by
- * the obligation-level output-repair policy (see reissue-authority.ts).
+ * the obligation-level reviewer-attempt budget (see reissue-authority.ts).
  * `task_rearm` marks a re-arm driven by the reviewer Task lifecycle
- * (interruption or spent-attempt retry); it is budgeted by the enforcement
- * retry gate, NOT by the output-repair budget.
+ * (interruption or spent-attempt retry); both repair classes draw on the SAME
+ * frozen reviewer-attempt budget.
  *
  * Invariant: no non-initial attempt exists without an explicit origin.
  */
@@ -158,59 +162,61 @@ export const ReviewMaterial = z
   .readonly();
 export type ReviewMaterial = z.infer<typeof ReviewMaterial>;
 
-export const ReviewAttempt = z.object({
-  attemptId: z.string().uuid(),
-  obligationId: z.string().uuid(),
-  obligationType: ReviewObligationType,
-  subjectDigest: z.string().min(1),
-  /** Immutable material supplied to the reviewer for standalone content reviews. */
-  reviewMaterial: ReviewMaterial.optional(),
-  ordinal: z.number().int().nonnegative(),
-  childSessionId: z.string().optional(),
-  status: ReviewAttemptStatus,
-  /**
-   * Authority-bearing origin. REQUIRED: every attempt names how it came into
-   * existence; attempts without an origin cannot be parsed.
-   */
-  origin: ReviewAttemptOrigin,
-  /**
-   * Structured reason for a `rejected` status. Persisted at the rejection
-   * point; the output-repair gate refuses reissues without an explicit,
-   * canonically repairable reason.
-   */
-  rejectionReason: ReviewAttemptRejectionReason.optional(),
-  /**
-   * Attempt-bound repository Discovery context, resolved BEFORE the attempt is
-   * minted. REQUIRED: `repository` for standalone repository reviews,
-   * `not_applicable` otherwise.
-   */
-  repositoryDiscovery: ReviewAttemptDiscoveryContext,
-  /**
-   * Opaque host-minted observation capability bound to exactly this attempt.
-   * Transported to the reviewer via the canonical prompt; echoed by the
-   * sanctioned observation tool as routing only. Optional for attempts
-   * persisted before the frozen-repository-authority generation.
-   */
-  observationCapability: ObservationCapability.optional(),
-  /**
-   * Canonical fingerprint of the schema-error issue set that rejected this
-   * attempt (repair DIAGNOSTICS only — never authority). Detects a targeted
-   * repair that reproduced the identical error set (`REVIEWER_OUTPUT_REPAIR_STALLED`).
-   */
-  schemaErrorFingerprint: z
-    .string()
-    .regex(/^[a-f0-9]{64}$/)
-    .optional(),
-  /**
-   * Authoritative, attempt-bound repository observations. Minted EXCLUSIVELY
-   * by the parent replay after the reviewer child session is known; child-side
-   * captures never become entries here directly. Optional for attempts
-   * persisted before the frozen-repository-authority generation.
-   */
-  observations: z.array(RepositoryObservation).readonly().optional(),
-  createdAt: z.string().datetime(),
-  completedAt: z.string().datetime().optional(),
-});
+export const ReviewAttempt = z
+  .object({
+    attemptId: z.string().uuid(),
+    obligationId: z.string().uuid(),
+    obligationType: ReviewObligationType,
+    subjectDigest: z.string().min(1),
+    ordinal: z.number().int().nonnegative(),
+    childSessionId: z.string().optional(),
+    status: ReviewAttemptStatus,
+    /**
+     * Authority-bearing origin. REQUIRED: every attempt names how it came into
+     * existence; attempts without an origin cannot be parsed.
+     */
+    origin: ReviewAttemptOrigin,
+    /**
+     * Structured reason for a `rejected` status. Persisted at the rejection
+     * point; the output-repair gate refuses reissues without an explicit,
+     * canonically repairable reason.
+     */
+    rejectionReason: ReviewAttemptRejectionReason.optional(),
+    /**
+     * Attempt-bound repository Discovery context, resolved BEFORE the attempt is
+     * minted. REQUIRED: `repository` for standalone repository reviews,
+     * `not_applicable` otherwise.
+     */
+    repositoryDiscovery: ReviewAttemptDiscoveryContext,
+    /**
+     * Opaque host-minted observation capability bound to exactly this attempt.
+     * Transported to the reviewer via the canonical prompt; echoed by the
+     * sanctioned observation tool as routing only. Required for repository-
+     * governed attempts and forbidden otherwise; the assurance boundary
+     * enforces both directions.
+     */
+    observationCapability: ObservationCapability.optional(),
+    /**
+     * Canonical fingerprint of the schema-error issue set that rejected this
+     * attempt (repair DIAGNOSTICS only — never authority). Detects a targeted
+     * repair that reproduced the identical error set (`REVIEWER_OUTPUT_REPAIR_STALLED`).
+     */
+    schemaErrorFingerprint: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
+    /**
+     * Authoritative, attempt-bound repository observations. Minted EXCLUSIVELY
+     * by the parent replay after the reviewer child session is known; child-side
+     * captures never become entries here directly. REQUIRED: attempts without
+     * observations carry `[]`, never an absent field.
+     */
+    observations: z.array(RepositoryObservation).readonly(),
+    createdAt: z.string().datetime(),
+    completedAt: z.string().datetime().optional(),
+  })
+  .strict()
+  .readonly();
 export type ReviewAttempt = z.infer<typeof ReviewAttempt>;
 
 // ─── Completeness Report ──────────────────────────────────────────────────────
@@ -229,7 +235,7 @@ export const FourEyesStatusSchema = z.object({
   required: z.boolean(),
   satisfied: z.boolean(),
   initiatedBy: z.string(),
-  decidedBy: z.string().nullable(),
+  decisionIdentity: DecisionIdentity.nullable(),
   detail: z.string(),
 });
 
@@ -347,8 +353,8 @@ export const ReviewFindingsObject = z
      */
     reviewerClaimedBy: ReviewActorInfo.optional(),
     attestation: ReviewAttestation.optional(),
-    /** Optional for findings persisted before challenge capture was introduced. */
-    challenges: z.array(ReviewChallenge).optional(),
+    /** Review challenges. REQUIRED: `[]` is the canonical "no challenges" form. */
+    challenges: z.array(ReviewChallenge),
     /** Reviewer-only verdicts for prior implementation challenge resolutions. */
     challengeResolutionVerdicts: z.array(ChallengeResolutionVerdict).optional(),
   })
@@ -384,7 +390,7 @@ export const ReviewProfileSource = z.enum([
   'inherited_plan_full',
 ]);
 export type ReviewProfileSource = z.infer<typeof ReviewProfileSource>;
-export const ReviewInputFingerprintVersion = z.enum(['v1', 'v2']);
+export const ReviewInputFingerprintVersion = z.literal('v2');
 export type ReviewInputFingerprintVersion = z.infer<typeof ReviewInputFingerprintVersion>;
 
 export { ReviewRepositoryRevisionProvenance } from './evidence-primitives.js';
@@ -410,13 +416,12 @@ export const ReviewObligation = z
     consumedAt: z.string().datetime().nullable(),
     /**
      * Mandatory review coverage profile frozen at obligation creation, before any
-     * reviewer invocation. Optional for backward compatibility with obligations
-     * persisted before this field existed; consumers treat a missing value as the
-     * fail-closed 'core' baseline.
+     * reviewer invocation. The mint always materializes it (fail-closed 'core'
+     * baseline without an explicit request), so absence is not a legal shape.
      */
-    reviewProfile: ReviewProfile.optional(),
+    reviewProfile: ReviewProfile,
     /** Provenance of the frozen review profile (see ReviewProfileSource). */
-    profileSource: ReviewProfileSource.optional(),
+    profileSource: ReviewProfileSource,
     /** Challenge coverage frozen from the runtime-computed minimum task class. REQUIRED — 0 is the explicit TRIVIAL value, never an implicit no-policy state. */
     requiredChallengeCount: z.number().int().min(0).max(2),
     /** The sole challenge evidence kind required for this obligation. */
@@ -438,16 +443,15 @@ export const ReviewObligation = z
     subjectDigest: z.string().min(1),
     /** Exact plan-claim declaration digest frozen before reviewer invocation. */
     claimDeclarationsDigest: z.string().min(1).optional(),
-    reviewMaterial: ReviewMaterial.optional(),
+    /** Frozen reviewed bytes. REQUIRED: every current obligation carries its material. */
+    reviewMaterial: ReviewMaterial,
     reviewSubject: FrozenReviewSubject.optional(),
-    /** Missing means the legacy v1 fingerprint algorithm. */
-    fingerprintVersion: ReviewInputFingerprintVersion.optional(),
     /**
-     * Ordered attempt IDs associated with this obligation.
-     * Each reviewer Task invocation creates a new attempt; the latest attempt at
-     * the highest ordinal is the authoritative one for binding.
+     * Input-fingerprint generation. `v2` for standalone review obligations;
+     * absent for artifact flows (plan/architecture/implement) that do not
+     * participate in input-fingerprint matching.
      */
-    attemptIds: z.array(z.string().uuid()).optional(),
+    fingerprintVersion: ReviewInputFingerprintVersion.optional(),
     /** Optional metadata, e.g. input fingerprint for standalone /review obligations. */
     metadata: z.record(z.string(), z.unknown()).optional(),
     /** Frozen subject coverage. A review without a subject is not bindable. */
@@ -463,18 +467,19 @@ export const ReviewObligation = z
      *
      * Absence means the obligation has NO repository evidence authority;
      * repository evidence must surface as `evidence_unavailable`, never as a
-     * snapshot of mutable runtime state. Optional for obligations persisted
-     * before the frozen-repository-authority generation.
+     * snapshot of mutable runtime state. Absent for obligations whose flow
+     * carried no frozen repository authority (e.g. an unavailable freeze).
      */
     repositoryAuthority: FrozenRepositoryAuthority.optional(),
     /** Durable plan/architecture repository-context freeze outcome (see {@link RepositoryEvidenceFreeze}); plan/architecture obligations MUST carry it — continuations, restarts, re-emits, archives, and forensics render the exact degradation cause. */
     repositoryEvidenceFreeze: RepositoryEvidenceFreeze.optional(),
-    maxReviewerOutputRepairAttempts: z.number().int().min(0).max(5),
+    maxReviewerAttempts: z.number().int().min(0).max(5),
   })
+  .strict()
   .superRefine(refineStandaloneSubject)
   .superRefine(refineReviewMaterialSubject)
-  .superRefine(refineCurrentGenerationMaterial)
   .superRefine(refineAuthorityStructure)
+  .superRefine(refineObligationRepositoryAuthorityCoherence)
   .superRefine(refineRepositoryEvidenceFreezeCoherence);
 export type ReviewObligation = z.infer<typeof ReviewObligation>;
 
@@ -535,7 +540,7 @@ export const REVIEW_ASSURANCE_SCHEMA_VERSION = 'review-assurance.v6' as const;
  * persists it (an empty ledger is `dispatches: []`).
  *
  * `assuranceSchemaVersion` is a REQUIRED hard version literal: v2 introduced
- * authority-bearing attempt origins and frozen output-repair budgets; v3 bound
+ * authority-bearing attempt origins and frozen reviewer-attempt budgets; v3 bound
  * host-owned repository Discovery snapshots to attempts; v4 introduced frozen
  * repository authority, observation capabilities, and attempt-owned
  * observations; v5 makes observations representation-typed; v6 makes the
@@ -558,9 +563,12 @@ export const ReviewAssuranceState = z
     attempts: z.array(ReviewAttempt),
     dispatches: z.array(ReviewDispatchRecord),
   })
+  .strict()
   .superRefine(refineAssuranceIdentityUniqueness)
   .superRefine(refineAssuranceDiscoveryCoherence)
   .superRefine(refineAssuranceProvenanceCoherence)
+  .superRefine(refineAssuranceAttemptLineageCoherence)
+  .superRefine(refineAssuranceDispatchCoherence)
   .superRefine(refineAssuranceInvocationLinkageCoherence)
   .readonly();
 export type ReviewAssuranceState = z.infer<typeof ReviewAssuranceState>;
@@ -570,18 +578,18 @@ export type ReviewAssuranceState = z.infer<typeof ReviewAssuranceState>;
 /**
  * Human review decision at a User Gate (PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW).
  *
- * P30: Includes structured decisionIdentity for regulated approval attribution.
- * The decidedBy field remains for backward compatibility; decisionIdentity
- * provides full provenance for audit and four-eyes proof.
+ * P30: `decisionIdentity` is the sole decision attribution authority. It carries
+ * the full structured provenance (actor id, email, source, assurance) required
+ * for audit and four-eyes proof; there is no separate identity string.
  */
 export const ReviewDecision = z
   .object({
     verdict: ReviewVerdict,
     rationale: z.string(),
     decidedAt: z.string().datetime(),
-    decidedBy: z.string().min(1),
-    decisionIdentity: DecisionIdentity.optional(),
+    decisionIdentity: DecisionIdentity,
   })
+  .strict()
   .readonly();
 export type ReviewDecision = z.infer<typeof ReviewDecision>;
 

@@ -201,6 +201,7 @@ function makePayload(overrides: Record<string, unknown> = {}) {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 's' },
     reviewedAt: '2026-01-01T00:00:00Z',
     attestation: {

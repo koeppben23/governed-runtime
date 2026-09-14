@@ -55,6 +55,11 @@ describe('invokeReviewer — prompt timeout and orphan containment', () => {
           code: 'REVIEWER_PROMPT_TIMEOUT',
           isRetryable: true,
         }),
+        details: expect.objectContaining({
+          agent: 'flowguard-reviewer',
+          childSessionId: 'child-1',
+          timeoutMs: 5,
+        }),
       }),
     );
   });

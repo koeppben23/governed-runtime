@@ -79,6 +79,7 @@ function baseRawFindings(overrides: Record<string, unknown> = {}): Record<string
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     attestation: {
       toolObligationId: OBLIGATION_ID,
     },

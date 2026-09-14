@@ -83,7 +83,7 @@ beforeAll(async () => {
         version: 'challenge-policy.v1',
         counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
       },
-      maxReviewerOutputRepairAttempts: 1,
+      maxReviewerAttempts: 1,
     },
     obligationType: 'implement',
     iteration: 0,

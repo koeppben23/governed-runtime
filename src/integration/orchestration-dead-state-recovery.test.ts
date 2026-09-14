@@ -110,7 +110,9 @@ function makeBlockedObligation(
     planVersion,
     criteriaVersion: 'p37-v1',
     mandateDigest: 'test-mandate-digest-blocked',
-    maxReviewerOutputRepairAttempts: 1,
+    maxReviewerAttempts: 1,
+    reviewProfile: 'core',
+    profileSource: 'policy_default',
     requiredChallengeCount: 0,
     requiredChallengeKind: 'design_challenge' as const,
     challengePolicyVersion: 'challenge-policy.v1' as const,
@@ -121,7 +123,17 @@ function makeBlockedObligation(
     invocationId: null,
     fulfilledAt: null,
     consumedAt: null,
-    reviewSubjectScope: { kind: 'unavailable', reason: 'blocked obligation fixture' },
+    reviewSubjectScope:
+      obligationType === 'implement'
+        ? {
+            kind: 'implementation' as const,
+            implementationDigest: 'test-subject-digest-blocked',
+          }
+        : { kind: 'unavailable' as const, reason: 'blocked obligation fixture' },
+    reviewMaterial: freezeReviewMaterial(
+      `# Frozen ${obligationType} review material`,
+      'test-subject-digest-blocked',
+    ),
     ...(obligationType === 'plan' || obligationType === 'architecture'
       ? {
           repositoryEvidenceFreeze: {
@@ -147,7 +159,9 @@ function makePendingObligation(
     planVersion,
     criteriaVersion: 'p37-v1',
     mandateDigest: 'test-mandate-digest-pending',
-    maxReviewerOutputRepairAttempts: 1,
+    maxReviewerAttempts: 1,
+    reviewProfile: 'core',
+    profileSource: 'policy_default',
     requiredChallengeCount: 0,
     requiredChallengeKind: 'design_challenge' as const,
     challengePolicyVersion: 'challenge-policy.v1' as const,
@@ -158,11 +172,21 @@ function makePendingObligation(
     invocationId: null,
     fulfilledAt: null,
     consumedAt: null,
-    reviewSubjectScope: {
-      kind: 'repository_change',
-      paths: ['src/foo.ts'],
-      revisions: ['base', 'head'],
-    },
+    reviewSubjectScope:
+      obligationType === 'implement'
+        ? {
+            kind: 'implementation' as const,
+            implementationDigest: 'test-subject-digest-pending',
+          }
+        : {
+            kind: 'repository_change' as const,
+            paths: ['src/foo.ts'],
+            revisions: ['base', 'head'] as const,
+          },
+    reviewMaterial: freezeReviewMaterial(
+      `# Frozen ${obligationType} review material`,
+      'test-subject-digest-pending',
+    ),
     ...(obligationType === 'plan' || obligationType === 'architecture'
       ? {
           repositoryEvidenceFreeze: {
@@ -658,13 +682,14 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         obligationId: pending.obligationId,
         obligationType: 'architecture',
         subjectDigest: pending.subjectDigest,
-        reviewMaterial: pending.reviewMaterial,
         ordinal: 1,
         status: 'rejected',
         origin: { kind: 'initial' },
         rejectionReason: 'schema_invalid',
         repositoryDiscovery: { kind: 'not_applicable' },
+        observations: [],
         createdAt: CREATED_AT,
+        completedAt: CREATED_AT,
       };
       await writeState(sessDir, {
         ...state,
@@ -737,13 +762,14 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         obligationId: tampered.obligationId,
         obligationType: 'architecture',
         subjectDigest: tampered.subjectDigest,
-        reviewMaterial: tampered.reviewMaterial,
         ordinal: 1,
         status: 'rejected',
         origin: { kind: 'initial' },
         rejectionReason: 'schema_invalid',
         repositoryDiscovery: { kind: 'not_applicable' },
+        observations: [],
         createdAt: CREATED_AT,
+        completedAt: CREATED_AT,
       };
       await writeState(sessDir, {
         ...state,
@@ -799,13 +825,14 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         obligationId: tampered.obligationId,
         obligationType: 'architecture',
         subjectDigest: tampered.subjectDigest,
-        reviewMaterial: tampered.reviewMaterial,
         ordinal: 1,
         status: 'rejected',
         origin: { kind: 'initial' },
         rejectionReason: 'schema_invalid',
         repositoryDiscovery: { kind: 'not_applicable' },
+        observations: [],
         createdAt: CREATED_AT,
+        completedAt: CREATED_AT,
       };
       await writeState(sessDir, {
         ...state,

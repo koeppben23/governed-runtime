@@ -68,7 +68,9 @@ vi.mock('../../../adapters/actor', async (importOriginal) => {
     resolveActor: vi.fn().mockResolvedValue({
       id: 'test-operator',
       email: 'test@flowguard.dev',
+      displayName: null,
       source: 'env',
+      assurance: 'best_effort',
     }),
   };
 });
@@ -243,7 +245,7 @@ describe('exact obligation identity dominates fingerprint matching', () => {
   });
 });
 
-/** Raise the frozen output-repair budget (test manipulation of frozen state). */
+/** Raise the frozen reviewer-attempt budget (test manipulation of frozen state). */
 async function raiseRepairBudget(
   sessDir: string,
   obligationId: string,
@@ -255,7 +257,7 @@ async function raiseRepairBudget(
     reviewAssurance: {
       ...ensureReviewAssurance(state!.reviewAssurance),
       obligations: ensureReviewAssurance(state!.reviewAssurance).obligations.map((o) =>
-        o.obligationId !== obligationId ? o : { ...o, maxReviewerOutputRepairAttempts: budget },
+        o.obligationId !== obligationId ? o : { ...o, maxReviewerAttempts: budget },
       ),
     },
   });

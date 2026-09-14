@@ -45,6 +45,7 @@ import {
   ARCHITECTURE_DECISION,
   SELF_REVIEW_CONVERGED,
 } from '../fixtures.js';
+import { hostTaskDispatchPlan } from './tools/review-validation-test-helpers.js';
 import type { SessionState } from '../state/schema.js';
 import { hashCanonicalReviewContent } from '../shared/review-subject.js';
 
@@ -69,6 +70,7 @@ function findings(oblId: string, iteration = 0, planVersion = 1): ReviewFindings
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'ses_reviewer' },
     reviewedAt: NOW(),
     attestation: {
@@ -90,6 +92,16 @@ function buildAssuranceForObligation(
   invocationId: string,
 ) {
   const s = style(host);
+  const hostObserved = s === 'plugin_handshake';
+  const attemptId = randomUUID();
+  const now = NOW();
+  const dispatchPlan = hostTaskDispatchPlan({
+    isHostTask: hostObserved,
+    dispatches: [],
+    attemptId,
+    obligationId: obligation.obligationId,
+    at: now,
+  });
   const invocation = {
     invocationId,
     obligationId: obligation.obligationId,
@@ -97,42 +109,68 @@ function buildAssuranceForObligation(
     parentSessionId,
     childSessionId: 'ses_reviewer',
     agentType: 'flowguard-reviewer' as const,
-    invocationMode:
-      s === 'plugin_handshake' ? ('host_subagent_task' as const) : ('manual_attested' as const),
-    hostVisible: s === 'plugin_handshake',
-    source:
-      s === 'plugin_handshake'
-        ? ('host-orchestrated' as const)
-        : ('agent-submitted-attested' as const),
+    invocationMode: hostObserved ? ('host_subagent_task' as const) : ('manual_attested' as const),
+    hostVisible: hostObserved,
+    source: hostObserved ? ('host-orchestrated' as const) : ('agent-submitted-attested' as const),
     promptHash: 'abc',
     mandateDigest: REVIEW_MANDATE_DIGEST,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
     findingsHash,
-    invokedAt: NOW(),
-    fulfilledAt: NOW(),
+    ...(hostObserved
+      ? {
+          hostTaskCallId: dispatchPlan.hostTaskCallId,
+          canonicalPromptDigest: dispatchPlan.canonicalPromptDigest,
+        }
+      : {}),
+    invokedAt: now,
+    fulfilledAt: now,
     consumedByObligationId: null,
-    capturedVerdict: s === 'plugin_handshake' ? 'approve' : undefined,
-    reviewOutputMode: 'structured_output' as const,
-    structuredOutputUsed: true,
-    reviewAssuranceLevel: 'structured_high' as const,
+    capturedVerdict: hostObserved ? 'approve' : undefined,
+    reviewOutputMode: hostObserved
+      ? ('structured_output' as const)
+      : ('agent_submitted_structured' as const),
+    structuredOutputUsed: hostObserved,
+    reviewAssuranceLevel: hostObserved
+      ? ('structured_high' as const)
+      : ('structured_submitted' as const),
+    attemptId,
   };
   const fulfilled = {
     ...obligation,
     status: 'fulfilled' as const,
-    fulfilledAt: NOW(),
-    pluginHandshakeAt: s === 'plugin_handshake' ? NOW() : null,
+    invocationId,
+    fulfilledAt: now,
+    pluginHandshakeAt: hostObserved ? now : null,
   };
   const assured = appendInvocationEvidence(
     {
       assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [fulfilled],
       invocations: [],
-      attempts: [],
+      attempts: [
+        {
+          attemptId,
+          obligationId: obligation.obligationId,
+          obligationType: obligation.obligationType,
+          subjectDigest: obligation.subjectDigest,
+          ordinal: 1,
+          childSessionId: 'ses_reviewer',
+          status: 'bound' as const,
+          origin: { kind: 'initial' as const },
+          repositoryDiscovery: { kind: 'not_applicable' as const },
+          observations: [],
+          createdAt: NOW(),
+          completedAt: NOW(),
+        },
+      ],
       dispatches: [],
     },
     invocation,
   );
-  return { ...assured };
+  return {
+    ...assured,
+    dispatches: dispatchPlan.dispatch ? [dispatchPlan.dispatch] : [],
+  };
 }
 
 interface E2ESession {
@@ -212,7 +250,7 @@ describe('plan / architecture Mode-B review contract', () => {
                 version: 'challenge-policy.v1',
                 counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
               },
-              maxReviewerOutputRepairAttempts: 1,
+              maxReviewerAttempts: 1,
             },
             obligationType: 'plan',
             repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
@@ -220,6 +258,11 @@ describe('plan / architecture Mode-B review contract', () => {
             planVersion: 1,
             now: NOW(),
             subjectDigest: 'test',
+            reviewMaterial: {
+              content: REVIEW_MATERIAL_CONTENT,
+              materialDigest: REVIEW_MATERIAL_DIGEST,
+              subjectDigest: 'test',
+            },
             reviewSubjectScope: artifactReviewSubjectScope('plan', '# Plan\nBody', 'test'),
             changedFiles: ['docs/test.md'],
           }),
@@ -269,7 +312,7 @@ describe('plan / architecture Mode-B review contract', () => {
                 version: 'challenge-policy.v1',
                 counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
               },
-              maxReviewerOutputRepairAttempts: 1,
+              maxReviewerAttempts: 1,
             },
             obligationType: 'architecture',
             repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
@@ -277,6 +320,11 @@ describe('plan / architecture Mode-B review contract', () => {
             planVersion: 1,
             now: NOW(),
             subjectDigest: 'test',
+            reviewMaterial: {
+              content: REVIEW_MATERIAL_CONTENT,
+              materialDigest: REVIEW_MATERIAL_DIGEST,
+              subjectDigest: 'test',
+            },
             reviewSubjectScope: artifactReviewSubjectScope(
               'adr',
               '## Context\nC\n## Decision\nD',

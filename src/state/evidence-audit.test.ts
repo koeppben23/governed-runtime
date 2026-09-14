@@ -47,6 +47,7 @@ describe('evidence-audit', () => {
           id: 'user-1',
           email: 'user@example.com',
           source: 'env' as const,
+          assurance: 'best_effort' as const,
         },
         ...V3_ENVELOPE,
       };

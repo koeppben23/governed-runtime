@@ -23,11 +23,11 @@ const CURRENT_SNAPSHOT = {
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
   maxIncoherentReviewerCaptureRetries: 1,
-  maxReviewerOutputRepairAttempts: 1,
+  maxReviewerAttempts: 1,
   allowSelfApproval: true,
   minimumActorAssuranceForApproval: 'best_effort' as const,
   identityProviderMode: 'optional' as const,
-  reviewOutputPolicy: 'text_compat_allowed' as const,
+  reviewOutputPolicy: 'structured_required' as const,
   reviewInvocationPolicy: 'sdk_allowed' as const,
   reviewProfile: 'core' as const,
   challengePolicy: {

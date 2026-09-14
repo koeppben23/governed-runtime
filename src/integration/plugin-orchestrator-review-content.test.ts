@@ -75,6 +75,7 @@ function buildFindings(overrides: Record<string, unknown> = {}): Record<string, 
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     attestation: {
       toolObligationId: OBLIGATION_ID,
     },
@@ -122,7 +123,7 @@ function buildTextCompatClient(findings: Record<string, unknown>): OrchestratorC
 
 function buildSessionState(
   strictEnforcement = true,
-  reviewOutputPolicy: 'structured_required' | 'text_compat_allowed' = 'structured_required',
+  reviewOutputPolicy: 'structured_required' = 'structured_required',
   reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed',
   seedInvocations: NonNullable<SessionState['reviewAssurance']>['invocations'] = [],
 ) {
@@ -152,7 +153,9 @@ function buildSessionState(
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
-          maxReviewerOutputRepairAttempts: 1,
+          maxReviewerAttempts: 1,
+          reviewProfile: 'core',
+          profileSource: 'policy_default',
           createdAt: NOW,
           pluginHandshakeAt: null,
           status: 'pending',
@@ -186,15 +189,11 @@ function buildSessionState(
           obligationId: OBLIGATION_ID,
           obligationType: 'review',
           subjectDigest: SUBJECT_DIGEST,
-          reviewMaterial: {
-            content: PERSISTED_CONTENT,
-            materialDigest: MATERIAL_DIGEST,
-            subjectDigest: SUBJECT_DIGEST,
-          },
           ordinal: 1,
           status: 'created',
           origin: { kind: 'initial' } as const,
           repositoryDiscovery: { kind: 'not_applicable' } as const,
+          observations: [],
           createdAt: NOW,
         },
       ],
@@ -250,7 +249,7 @@ async function runReviewContent(
   findings: Record<string, unknown> | null,
   input: unknown = { args: { text: 'diff content', inputOrigin: 'manual_text' } },
   strictEnforcement = true,
-  reviewOutputPolicy: 'structured_required' | 'text_compat_allowed' = 'structured_required',
+  reviewOutputPolicy: 'structured_required' = 'structured_required',
   clientOverride?: OrchestratorClient,
   reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed',
   seedInvocations: NonNullable<SessionState['reviewAssurance']>['invocations'] = [],
@@ -585,35 +584,6 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     );
   });
 
-  it('passes explicit reviewOutputPolicy for /review content text compatibility', async () => {
-    const findings = buildFindings();
-    const textCompatClient = buildTextCompatClient(findings);
-    const { output, blockReviewOutcome, state, client } = await runReviewContent(
-      findings,
-      { args: { text: 'diff content', inputOrigin: 'manual_text' } },
-      true,
-      'text_compat_allowed',
-      textCompatClient,
-    );
-
-    expect(blockReviewOutcome).not.toHaveBeenCalled();
-    expect(client.session.prompt).toHaveBeenCalledTimes(2);
-    const invocation = state.reviewAssurance?.invocations[0];
-    expect(invocation).toMatchObject({
-      reviewOutputMode: 'text_compat',
-      structuredOutputUsed: false,
-      reviewAssuranceLevel: 'text_compat_lower',
-      extractionMethod: 'direct_json',
-    });
-    const parsed = JSON.parse(output.output) as Record<string, unknown>;
-    expect(parsed.pluginReviewOutput).toMatchObject({
-      reviewOutputMode: 'text_compat',
-      structuredOutputUsed: false,
-      reviewAssuranceLevel: 'text_compat_lower',
-      extractionMethod: 'direct_json',
-    });
-  });
-
   it('uses persisted material rather than direct /review input while injecting valid strict findings', async () => {
     const { output, blockReviewOutcome, client } = await runReviewContent(buildFindings(), {
       text: 'diff content',
@@ -658,14 +628,14 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     });
 
     expect(client.session.create).not.toHaveBeenCalled();
-    // No attempt means the obligation predates the frozen-material contract:
-    // current mutable state must not be used to reconstruct reviewer input.
+    // No attempt means no bindable reviewer context: the frozen obligation
+    // material alone cannot reconstruct reviewer input without an attempt.
     expect(blockReviewOutcome).toHaveBeenCalledWith(
       expect.anything(),
       OBLIGATION_ID,
-      'REVIEW_MATERIAL_INTEGRITY_FAILED',
+      'REVIEW_ATTEMPT_UNAVAILABLE',
       expect.objectContaining({
-        reason: expect.stringContaining('predates frozen review material'),
+        reason: expect.stringContaining('bindable attempt'),
       }),
       output,
     );
@@ -720,16 +690,18 @@ describe('runReviewOrchestration strict /review content analysis', () => {
       ...stateRef.current,
       reviewAssurance: {
         ...stateRef.current.reviewAssurance!,
-        attempts: [
-          {
-            ...stateRef.current.reviewAssurance!.attempts[0]!,
-            reviewMaterial: {
-              content: 'wrong material',
-              materialDigest: 'b'.repeat(64),
-              subjectDigest: SUBJECT_DIGEST,
-            },
-          },
-        ],
+        obligations: stateRef.current.reviewAssurance!.obligations.map((obligation) =>
+          obligation.obligationId === OBLIGATION_ID
+            ? {
+                ...obligation,
+                reviewMaterial: {
+                  content: 'wrong material',
+                  materialDigest: 'b'.repeat(64),
+                  subjectDigest: SUBJECT_DIGEST,
+                },
+              }
+            : obligation,
+        ),
       },
     };
     vi.mocked(readState).mockResolvedValue(stateRef.current);
@@ -771,6 +743,7 @@ describe('runReviewOrchestration strict /review content analysis', () => {
           invocationId: 'prior-invocation-1',
           obligationId: 'prior-obligation-1',
           obligationType: 'review',
+          attemptId: '00000000-0000-4000-8000-0000000000c1',
           parentSessionId: PARENT_SESSION_ID,
           childSessionId: CHILD_SESSION_ID,
           agentType: 'flowguard-reviewer',

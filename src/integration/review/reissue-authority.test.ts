@@ -15,7 +15,7 @@ import {
 import {
   authorizeOutputRepairReissue,
   authorizeTaskLifecycleRearm,
-  countOutputRepairAttempts,
+  countReviewAttempts,
   latestAttemptForObligation,
 } from './reissue-authority.js';
 import type {
@@ -46,6 +46,7 @@ function makeObligation(overrides: Partial<ReviewObligation> = {}): ReviewObliga
       planVersion: 1,
       now: NOW,
       subjectDigest: SUBJECT_DIGEST,
+      reviewMaterial: FROZEN_MATERIAL,
       reviewSubject: {
         kind: 'content',
         source: { kind: 'inline', mediaType: 'text' },
@@ -53,21 +54,17 @@ function makeObligation(overrides: Partial<ReviewObligation> = {}): ReviewObliga
         subjectDigest: SUBJECT_DIGEST,
         lineCount: 2,
       },
-      policySnapshot: { maxReviewerOutputRepairAttempts: 1 },
+      policySnapshot: { maxReviewerAttempts: 1 },
     }),
     ...overrides,
   };
 }
 
-function initialAttempt(
-  obligation: ReviewObligation,
-  reviewMaterial: ReviewMaterial = FROZEN_MATERIAL,
-): ReviewAttempt {
+function initialAttempt(obligation: ReviewObligation): ReviewAttempt {
   return createReviewAttempt({
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
     subjectDigest: obligation.subjectDigest,
-    reviewMaterial,
     ordinal: 1,
     origin: { kind: 'initial' },
     repositoryDiscovery: { kind: 'not_applicable' },
@@ -185,12 +182,12 @@ describe('authorizeOutputRepairReissue', () => {
     expect(result).toMatchObject({ kind: 'blocked', code: 'REVIEW_REPAIR_UNAVAILABLE' });
   });
 
-  it('blocks when no attempt exists (missing persisted material is an integrity failure)', () => {
+  it('blocks when no attempt exists (no rejected attempt can authorize a repair)', () => {
     const obligation = makeObligation();
     const result = authorizeOutputRepairReissue(assuranceWith(obligation, []), obligation);
     expect(result).toMatchObject({
-      kind: 'integrity_blocked',
-      code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
+      kind: 'blocked',
+      code: 'REVIEW_REPAIR_UNAVAILABLE',
     });
   });
 
@@ -202,7 +199,7 @@ describe('authorizeOutputRepairReissue', () => {
   });
 
   it('exhausts the frozen budget: repair #1 rejected → RETRY_EXHAUSTED', () => {
-    const obligation = makeObligation({ maxReviewerOutputRepairAttempts: 1 });
+    const obligation = makeObligation({ maxReviewerAttempts: 1 });
     const initial = initialAttempt(obligation);
     const rejectedInitial = updateAttemptStatus(
       assuranceWith(obligation, [initial]),
@@ -241,7 +238,7 @@ describe('authorizeOutputRepairReissue', () => {
 
   it('frozen budget is respected even when live policy would allow more', () => {
     // Budget frozen at creation (0): a repairable rejection must not reissue.
-    const obligation = makeObligation({ maxReviewerOutputRepairAttempts: 0 });
+    const obligation = makeObligation({ maxReviewerAttempts: 0 });
     const rejected = rejectedAttempt(obligation, 'schema_invalid');
     const result = authorizeOutputRepairReissue(assuranceWith(obligation, [rejected]), obligation);
     expect(result).toMatchObject({ kind: 'blocked', code: 'REVIEWER_OUTPUT_RETRY_EXHAUSTED' });
@@ -255,10 +252,10 @@ describe('authorizeOutputRepairReissue', () => {
       subjectDigest: SUBJECT_DIGEST,
     };
     const rejected = rejectedAttempt(obligation, 'schema_invalid');
-    const tamperedAttempt: ReviewAttempt = { ...rejected, reviewMaterial: tampered };
+    const tamperedObligation: ReviewObligation = { ...obligation, reviewMaterial: tampered };
     const result = authorizeOutputRepairReissue(
-      assuranceWith(obligation, [tamperedAttempt]),
-      obligation,
+      assuranceWith(tamperedObligation, [rejected]),
+      tamperedObligation,
     );
     expect(result).toEqual({
       kind: 'integrity_blocked',
@@ -270,15 +267,18 @@ describe('authorizeOutputRepairReissue', () => {
   it('blocks with REVIEW_MATERIAL_INTEGRITY_FAILED when the persisted material is missing', () => {
     const obligation = makeObligation();
     const rejected = rejectedAttempt(obligation, 'schema_invalid');
-    const withoutMaterial: ReviewAttempt = { ...rejected, reviewMaterial: undefined };
+    const withoutMaterial = {
+      ...obligation,
+      reviewMaterial: undefined,
+    } as unknown as ReviewObligation;
     const result = authorizeOutputRepairReissue(
-      assuranceWith(obligation, [withoutMaterial]),
-      obligation,
+      assuranceWith(withoutMaterial, [rejected]),
+      withoutMaterial,
     );
     expect(result).toEqual({
       kind: 'integrity_blocked',
       code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
-      reason: expect.stringContaining('predates frozen review material'),
+      reason: expect.stringContaining('frozen review material is unavailable'),
     });
   });
 
@@ -292,10 +292,10 @@ describe('authorizeOutputRepairReissue', () => {
       subjectDigest: SUBJECT_DIGEST,
     };
     const rejected = rejectedAttempt(obligation, 'schema_invalid');
-    const tamperedAttempt: ReviewAttempt = { ...rejected, reviewMaterial: tampered };
+    const tamperedObligation: ReviewObligation = { ...obligation, reviewMaterial: tampered };
     const result = authorizeOutputRepairReissue(
-      assuranceWith(obligation, [tamperedAttempt]),
-      obligation,
+      assuranceWith(tamperedObligation, [rejected]),
+      tamperedObligation,
     );
     expect(result).toMatchObject({
       kind: 'integrity_blocked',
@@ -303,7 +303,7 @@ describe('authorizeOutputRepairReissue', () => {
     });
   });
 
-  it('countOutputRepairAttempts counts output_repair and task_rearm origins', () => {
+  it('countReviewAttempts counts output_repair and task_rearm origins', () => {
     const obligation = makeObligation();
     const initial = initialAttempt(obligation);
     const repair = createAttemptForExistingObligation(
@@ -335,7 +335,7 @@ describe('authorizeOutputRepairReissue', () => {
       },
     ).attempt;
     const assurance = assuranceWith(obligation, [initial, repair, rearmed]);
-    expect(countOutputRepairAttempts(assurance, obligation.obligationId)).toBe(2);
+    expect(countReviewAttempts(assurance, obligation.obligationId)).toBe(2);
   });
 
   it('latestAttemptForObligation returns the highest ordinal', () => {
@@ -423,7 +423,7 @@ describe('authorizeOutputRepairReissue — stall detection', () => {
    * repaired fingerprint. Returns the settled assurance state.
    */
   function repairChain(fingerprintOfFirst: string, fingerprintOfRepair: string | null) {
-    const obligation = makeObligation({ maxReviewerOutputRepairAttempts: 2 });
+    const obligation = makeObligation({ maxReviewerAttempts: 2 });
     let assurance = assuranceWith(obligation, [initialAttempt(obligation)]);
     const firstId = assurance.attempts[0]!.attemptId;
     assurance = updateAttemptStatus(assurance, firstId, 'rejected', NOW, {
@@ -466,7 +466,7 @@ describe('authorizeOutputRepairReissue — stall detection', () => {
   });
 
   it('fails safe without fingerprints (budget semantics apply)', () => {
-    const obligation = makeObligation({ maxReviewerOutputRepairAttempts: 1 });
+    const obligation = makeObligation({ maxReviewerAttempts: 1 });
     let assurance = assuranceWith(obligation, [initialAttempt(obligation)]);
     const firstId = assurance.attempts[0]!.attemptId;
     assurance = updateAttemptStatus(assurance, firstId, 'rejected', NOW, {

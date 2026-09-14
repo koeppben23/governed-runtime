@@ -124,21 +124,7 @@ const IdpConfigDiscriminatedSchema = z
     }
   });
 
-const IdpConfigWithCompatSchema = z.preprocess((raw) => {
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    return raw;
-  }
-  const record = raw as Record<string, unknown>;
-  if (record.mode === undefined && Array.isArray(record.signingKeys)) {
-    return {
-      ...record,
-      mode: 'static',
-    };
-  }
-  return raw;
-}, IdpConfigDiscriminatedSchema);
-
-export const IdpConfigSchema = IdpConfigWithCompatSchema;
+export const IdpConfigSchema = IdpConfigDiscriminatedSchema;
 
 export type IdpConfig = z.infer<typeof IdpConfigSchema>;
 

@@ -165,7 +165,7 @@ export function createPlanApprovalCertificate(
       planRecordDigest,
       reviewBinding,
       approvedAt: decision.decidedAt,
-      approvedBy: decision.decidedBy,
+      approvedBy: decision.decisionIdentity.actorId,
     }),
   );
   const certificateId = digestToId(certificateIdDigest, 4);
@@ -175,7 +175,7 @@ export function createPlanApprovalCertificate(
     claimDeclarationsDigest,
     decisionAttestationDigest,
     approvedAt: decision.decidedAt,
-    approvedBy: decision.decidedBy,
+    approvedBy: decision.decisionIdentity.actorId,
     certificateId,
     planVersion,
     planRecordDigest,

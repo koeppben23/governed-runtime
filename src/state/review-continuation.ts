@@ -133,8 +133,7 @@ export function verifyFrozenReviewerContext(
     return {
       kind: 'blocked',
       code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
-      reason:
-        'this obligation predates frozen review material and cannot be safely reconstructed from mutable state',
+      reason: 'frozen review material is unavailable for this obligation',
     };
   }
   if (reviewMaterial.content !== normalizeReviewContent(reviewMaterial.content)) {
@@ -224,8 +223,7 @@ export function verifyFrozenArtifactMaterial(
     return {
       kind: 'blocked',
       code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
-      reason:
-        'this obligation predates frozen review material and cannot be safely reconstructed from mutable state',
+      reason: 'frozen review material is unavailable for this obligation',
     };
   }
   if (reviewMaterial.content !== normalizeReviewContent(reviewMaterial.content)) {
@@ -350,19 +348,6 @@ export function findBindableAttempt(
   return candidates.reduce((best, a) => (a.ordinal > best.ordinal ? a : best));
 }
 
-export function latestReviewMaterial(
-  assurance: ReviewAssuranceState,
-  obligationId: string,
-): ReviewMaterial | undefined {
-  for (let index = assurance.attempts.length - 1; index >= 0; index--) {
-    const attempt = assurance.attempts[index];
-    if (attempt?.obligationId === obligationId && attempt.reviewMaterial) {
-      return attempt.reviewMaterial;
-    }
-  }
-  return undefined;
-}
-
 // ─── Output-repair reissue authority ─────────────────────────────────────────
 
 export type ReissueBlockCode =
@@ -384,7 +369,7 @@ export function latestAttemptForObligation(
  * Number of attempts minted as authorized output repairs for this obligation.
  * Derived exclusively from attempt origins — no separate counter exists.
  */
-export function countOutputRepairAttempts(
+export function countReviewAttempts(
   assurance: ReviewAssuranceState | undefined,
   obligationId: string,
 ): number {
@@ -450,7 +435,7 @@ function repairStallBlock(
  * The immutable authority is verified FIRST — a broken frozen subject/material
  * binding blocks the transition before any other condition is consulted and
  * before any state can be mutated:
- *   verifyFrozenMaterialForObligation(obligation, latestReviewMaterial) == ok
+ *   verifyFrozenMaterialForObligation(obligation, obligation.reviewMaterial) == ok
  *   AND obligation.status === 'pending'
  *   AND no bindable attempt exists (an open attempt is returned as-is)
  *   AND the latest attempt exists and is `rejected`
@@ -465,8 +450,12 @@ export function authorizeOutputRepairReissue(
   assurance: ReviewAssuranceState | undefined,
   obligation: ReviewObligation,
 ): OutputRepairAuthorization {
-  const material = latestReviewMaterial(ensureReviewAssurance(assurance), obligation.obligationId);
-  const materialVerification = verifyFrozenMaterialForObligation(obligation, material);
+  // Single frozen-material authority: the obligation owns the material; attempts
+  // never carry a copy.
+  const materialVerification = verifyFrozenMaterialForObligation(
+    obligation,
+    obligation.reviewMaterial,
+  );
   if (materialVerification.kind === 'blocked') {
     return {
       kind: 'integrity_blocked',
@@ -512,12 +501,12 @@ export function authorizeOutputRepairReissue(
   if (stall) {
     return { kind: 'blocked', code: stall.code, reason: stall.reason };
   }
-  const used = countOutputRepairAttempts(assurance, obligation.obligationId);
-  if (used >= obligation.maxReviewerOutputRepairAttempts) {
+  const used = countReviewAttempts(assurance, obligation.obligationId);
+  if (used >= obligation.maxReviewerAttempts) {
     return {
       kind: 'blocked',
       code: 'REVIEWER_OUTPUT_RETRY_EXHAUSTED',
-      reason: `output-repair budget exhausted (${used}/${obligation.maxReviewerOutputRepairAttempts})`,
+      reason: `reviewer-attempt budget exhausted (${used}/${obligation.maxReviewerAttempts})`,
     };
   }
   return {

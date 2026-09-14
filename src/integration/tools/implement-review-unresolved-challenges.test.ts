@@ -20,7 +20,7 @@ const PASSED = '00000000-0000-4000-8000-00000000000c';
 type Ch = { challengeId: string; kind: string; outcome: string };
 type Vd = { challengeId: string; verdict: string };
 type Findings = {
-  challenges?: Ch[];
+  challenges: Ch[];
   challengeResolutionVerdicts?: Vd[];
   overallVerdict?: 'accept' | 'changes_requested' | 'unable_to_review';
 };
@@ -144,7 +144,10 @@ describe('implement re-review challenge lifecycle (#747)', () => {
         digest: 'impl-2',
         findingsList: [
           { challenges: [{ challengeId: A, kind: 'implementation_challenge', outcome: 'fail' }] },
-          { challengeResolutionVerdicts: [{ challengeId: A, verdict: 'still_failing' }] },
+          {
+            challenges: [],
+            challengeResolutionVerdicts: [{ challengeId: A, verdict: 'still_failing' }],
+          },
         ],
         resolutions: [{ challengeId: A, implementationDigest: 'impl-2' }],
       });
@@ -157,7 +160,10 @@ describe('implement re-review challenge lifecycle (#747)', () => {
         digest: 'impl-2',
         findingsList: [
           { challenges: [{ challengeId: A, kind: 'implementation_challenge', outcome: 'fail' }] },
-          { challengeResolutionVerdicts: [{ challengeId: A, verdict: 'not_verified' }] },
+          {
+            challenges: [],
+            challengeResolutionVerdicts: [{ challengeId: A, verdict: 'not_verified' }],
+          },
         ],
       });
       expect(isOpenImplementationChallenge(state, A)).toBe(true);
@@ -169,8 +175,14 @@ describe('implement re-review challenge lifecycle (#747)', () => {
         digest: 'impl-3',
         findingsList: [
           { challenges: [{ challengeId: A, kind: 'implementation_challenge', outcome: 'fail' }] },
-          { challengeResolutionVerdicts: [{ challengeId: A, verdict: 'still_failing' }] },
-          { challengeResolutionVerdicts: [{ challengeId: A, verdict: 'resolved' }] },
+          {
+            challenges: [],
+            challengeResolutionVerdicts: [{ challengeId: A, verdict: 'still_failing' }],
+          },
+          {
+            challenges: [],
+            challengeResolutionVerdicts: [{ challengeId: A, verdict: 'resolved' }],
+          },
         ],
         resolutions: [{ challengeId: A, implementationDigest: 'impl-3' }],
       });
@@ -186,6 +198,7 @@ describe('implement re-review challenge lifecycle (#747)', () => {
           { challenges: [{ challengeId: A, kind: 'implementation_challenge', outcome: 'fail' }] },
           {
             overallVerdict: 'unable_to_review',
+            challenges: [],
             challengeResolutionVerdicts: [{ challengeId: A, verdict: 'resolved' }],
           },
         ],
@@ -200,8 +213,14 @@ describe('implement re-review challenge lifecycle (#747)', () => {
         digest: 'impl-4',
         findingsList: [
           { challenges: [{ challengeId: A, kind: 'implementation_challenge', outcome: 'fail' }] },
-          { challengeResolutionVerdicts: [{ challengeId: A, verdict: 'resolved' }] },
-          { challengeResolutionVerdicts: [{ challengeId: A, verdict: 'still_failing' }] },
+          {
+            challenges: [],
+            challengeResolutionVerdicts: [{ challengeId: A, verdict: 'resolved' }],
+          },
+          {
+            challenges: [],
+            challengeResolutionVerdicts: [{ challengeId: A, verdict: 'still_failing' }],
+          },
         ],
       });
       // Latest verdict wins → open again.

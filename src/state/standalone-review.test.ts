@@ -10,7 +10,7 @@ import {
 import { deriveProofGraph } from '../audit/proofgraph/derive.js';
 import { assuranceWith, makeState } from '../fixtures.js';
 import { SessionState } from './schema.js';
-import { createReviewObligation } from '../integration/review/assurance.js';
+import { createReviewObligation, freezeReviewMaterial } from '../integration/review/assurance.js';
 import {
   appendCompletedReviewEvidence,
   appendPreparedReviewEvidence,
@@ -30,13 +30,14 @@ function reviewObligation(): ReturnType<typeof createReviewObligation> {
         version: 'challenge-policy.v1',
         counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
       },
-      maxReviewerOutputRepairAttempts: 1,
+      maxReviewerAttempts: 1,
     },
     obligationType: 'review',
     iteration: 1,
     planVersion: 1,
     now: NOW,
     subjectDigest: 'subject-digest',
+    reviewMaterial: freezeReviewMaterial('frozen review material', 'subject-digest'),
     reviewSubject: {
       kind: 'content',
       source: { kind: 'inline', mediaType: 'text' },

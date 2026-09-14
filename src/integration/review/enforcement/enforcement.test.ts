@@ -1174,32 +1174,6 @@ describe('review-enforcement', () => {
       expect(pending?.subagentRecord?.sessionId).toBeNull();
     });
 
-    it('capturedFindings extracted from embedded JSON in task result', () => {
-      const state = createSessionState();
-
-      onFlowGuardToolAfter(
-        state,
-        'flowguard_plan',
-        { planText: '## Plan' },
-        modeASubagentResponse(),
-        NOW,
-      );
-
-      onTaskToolAfter(
-        state,
-        { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'Review' },
-        taskResultWithEmbeddedFindings('s1', {
-          verdict: 'changes_requested',
-          blockingIssues: [{ severity: 'critical', description: 'Missing auth' }],
-        }),
-        LATER,
-      );
-
-      const pending = state.pendingReviews.get('flowguard_plan');
-      expect(pending?.capturedFindings?.overallVerdict).toBe('changes_requested');
-      expect(pending?.capturedFindings?.blockingIssuesCount).toBe(1);
-    });
-
     it('handles empty args gracefully in onFlowGuardToolAfter', () => {
       const state = createSessionState();
       onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeASubagentResponse(), NOW);

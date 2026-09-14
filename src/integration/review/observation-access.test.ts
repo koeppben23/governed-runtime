@@ -12,6 +12,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { ReviewAssuranceState } from '../../state/evidence.js';
 import type { ReviewObligation, ReviewAttempt } from '../../state/evidence.js';
 import {
   appendObligationWithAttempt,
@@ -19,6 +20,7 @@ import {
   createAttemptForExistingObligation,
   createObligationAndAttempt,
   createReviewObligation,
+  freezeReviewMaterial,
 } from './assurance.js';
 import { createReviewAttempt, mintObservationCapability } from './attempt-lifecycle.js';
 import {
@@ -27,6 +29,7 @@ import {
 } from './observation-access.js';
 import { renderRepositoryObservationContract } from './observation-contract-prompt.js';
 import { renderReviewerTaskPrompt } from './prompt-builders.js';
+import { repositoryDiscoveryContext } from '../test-helpers.js';
 
 const NOW = '2026-08-15T10:00:00.000Z';
 const LOCAL_IDENTITY = { kind: 'local' as const, rootCommitDigest: 'sha256:' + 'a'.repeat(64) };
@@ -42,6 +45,7 @@ function contextObligation(
     planVersion: 1,
     now: NOW,
     subjectDigest: 'adr-digest',
+    reviewMaterial: freezeReviewMaterial('frozen review material', 'adr-digest'),
     reviewSubjectScope: artifactReviewSubjectScope(
       'adr',
       '## Context\nA\n## Decision\nB',
@@ -62,6 +66,7 @@ function candidatePairObligation(): ReviewObligation {
     planVersion: 1,
     now: NOW,
     subjectDigest: 'impl-digest',
+    reviewMaterial: freezeReviewMaterial('frozen review material', 'impl-digest'),
     changedFiles: ['src/foo.ts'],
     reviewSubjectScope: { kind: 'implementation', implementationDigest: 'impl-digest' },
     repositoryAuthority: {
@@ -79,6 +84,7 @@ function standaloneRepositoryObligation(): ReviewObligation {
     planVersion: 1,
     now: NOW,
     subjectDigest: 'review-digest',
+    reviewMaterial: freezeReviewMaterial('frozen review material', 'review-digest'),
     reviewSubject: {
       kind: 'repository_change',
       source: { kind: 'branch', branch: 'topic' },
@@ -100,18 +106,23 @@ function artifactOnlyObligation(): ReviewObligation {
     planVersion: 1,
     now: NOW,
     subjectDigest: 'plan-digest',
+    reviewMaterial: freezeReviewMaterial('frozen review material', 'plan-digest'),
     reviewSubjectScope: artifactReviewSubjectScope('plan', '## Approach\nPlan body', 'plan-digest'),
   });
 }
 
-function attemptFor(obligation: ReviewObligation, capability: string | null): ReviewAttempt {
+function attemptFor(
+  obligation: ReviewObligation,
+  capability: string | null,
+  repositoryDiscovery: ReviewAttempt['repositoryDiscovery'] = { kind: 'not_applicable' },
+): ReviewAttempt {
   return createReviewAttempt({
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
     subjectDigest: obligation.subjectDigest,
     ordinal: 1,
     origin: { kind: 'initial' },
-    repositoryDiscovery: { kind: 'not_applicable' },
+    repositoryDiscovery,
     observationCapability: capability,
     now: NOW,
   });
@@ -126,8 +137,8 @@ describe('resolveObservationRevisions', () => {
     expect(resolveObservationRevisions(candidatePairObligation())).toEqual(['base', 'head']);
   });
 
-  it('repository_change fallback with full SHAs → ["base", "head"]', () => {
-    expect(resolveObservationRevisions(standaloneRepositoryObligation())).toEqual(['base', 'head']);
+  it('repository_change without explicit observation authority → []', () => {
+    expect(resolveObservationRevisions(standaloneRepositoryObligation())).toEqual([]);
   });
 
   it('artifact-only obligation without authority → []', () => {
@@ -149,11 +160,25 @@ describe('resolveRepositoryObservationAccess', () => {
     }
   });
 
-  it('BAD: missing capability → unavailable even with authority (attempt_capability_unavailable)', () => {
+  it('BAD: repository-governed attempt without a capability is invalid state and fails closed', () => {
     const obligation = contextObligation();
-    const access = resolveRepositoryObservationAccess(obligation, attemptFor(obligation, null));
+    const attempt = attemptFor(obligation, null, repositoryDiscoveryContext(NOW));
+    const parsed = ReviewAssuranceState.safeParse({
+      assuranceSchemaVersion: 'review-assurance.v6',
+      obligations: [obligation],
+      invocations: [],
+      attempts: [attempt],
+      dispatches: [],
+    });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.map((issue) => issue.message)).toContain(
+        `repository-governed attempt ${attempt.attemptId} requires an observation capability`,
+      );
+    }
+    const access = resolveRepositoryObservationAccess(obligation, attempt);
     expect(access.available).toBe(false);
-    if (!access.available) expect(access.reason).toBe('attempt_capability_unavailable');
+    if (!access.available) expect(access.reason).toBe('no_frozen_authority');
   });
 
   it('BAD: forged capability without obligation authority → unavailable (defense-in-depth)', () => {
@@ -197,6 +222,7 @@ describe('authority-bound capability minting', () => {
         planVersion: 1,
         now: NOW,
         subjectDigest: 'adr-digest',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'adr-digest'),
         reviewSubjectScope: artifactReviewSubjectScope(
           'adr',
           '## Context\nA\n## Decision\nB',
@@ -220,6 +246,7 @@ describe('authority-bound capability minting', () => {
         planVersion: 1,
         now: NOW,
         subjectDigest: 'plan-digest',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'plan-digest'),
         reviewSubjectScope: artifactReviewSubjectScope(
           'plan',
           '## Approach\nPlan body',

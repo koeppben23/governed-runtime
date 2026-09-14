@@ -30,6 +30,7 @@ import {
   appendObligationWithAttempt,
   createAttemptForExistingObligation,
   artifactReviewSubjectScope,
+  freezeReviewMaterial,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './assurance.js';
@@ -56,6 +57,7 @@ function makeObligation(overrides?: Partial<ReviewObligation>): ReviewObligation
     planVersion: 1,
     now: NOW,
     subjectDigest: 'test',
+    reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
     reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
     ...(obligationType === 'plan' || obligationType === 'architecture'
       ? { repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' } }
@@ -74,6 +76,7 @@ function makeInvocation(overrides?: Partial<ReviewInvocationEvidence>): ReviewIn
   return buildInvocationEvidence({
     obligationId: '00000000-0000-4000-8000-000000000001',
     obligationType: 'plan',
+    attemptId: '00000000-0000-4000-8000-000000000002',
     mandateDigest,
     criteriaVersion,
     parentSessionId: 'parent-session-1',
@@ -83,7 +86,6 @@ function makeInvocation(overrides?: Partial<ReviewInvocationEvidence>): ReviewIn
     invokedAt: NOW,
     fulfilledAt: fulfilledAt ?? NOW,
     invocationMode: 'sdk_session_prompt',
-    hostVisible: false,
     ...rest,
   });
 }
@@ -99,6 +101,7 @@ function makeFindings(overrides?: Partial<ReviewFindings>): ReviewFindings {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'child-session-1' },
     reviewedAt: NOW,
     attestation: {
@@ -125,7 +128,7 @@ describe('integration/review-assurance', () => {
   });
 
   describe('standalone review material', () => {
-    it('copies persisted normalized material to a reissued attempt', () => {
+    it('keeps the obligation material authoritative across a reissued attempt', () => {
       const materialDigest = hashText('line one\nline two\n');
       const subjectDigest = hashText(`content:${materialDigest}`);
       const material = {
@@ -161,7 +164,7 @@ describe('integration/review-assurance', () => {
         },
       );
 
-      expect(retried.assurance.attempts.at(-1)?.reviewMaterial).toEqual(material);
+      expect(retried.assurance.obligations.at(-1)?.reviewMaterial).toEqual(material);
       expect(retried.assurance.attempts.at(-1)?.subjectDigest).toBe(subjectDigest);
       expect(retried.attempt.childSessionId).toBe('child-session-2');
     });
@@ -194,7 +197,7 @@ describe('integration/review-assurance', () => {
 
       expect(reissued.attempt.childSessionId).toBeUndefined();
       expect(reissued.attempt.status).toBe('created');
-      expect(reissued.attempt.reviewMaterial).toEqual(material);
+      expect(reissued.assurance.obligations.at(-1)?.reviewMaterial).toEqual(material);
       // Bindable means: resolvable again by the host for a fresh reviewer Task.
       expect(findBindableAttempt(reissued.assurance, obligation.obligationId)?.attemptId).toBe(
         reissued.attempt.attemptId,
@@ -229,6 +232,7 @@ describe('integration/review-assurance', () => {
         planVersion: 1,
         now: NOW,
         subjectDigest: 'test',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
         reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
       });
       expect(result.obligationType).toBe('plan');
@@ -260,6 +264,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           changedFiles,
           ...(obligationType === 'plan' || obligationType === 'architecture'
             ? {
@@ -289,7 +294,7 @@ describe('integration/review-assurance', () => {
               version: 'challenge-policy.v1',
               counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
             },
-            maxReviewerOutputRepairAttempts: 1,
+            maxReviewerAttempts: 1,
           },
         });
         expect(result).toMatchObject({
@@ -306,7 +311,7 @@ describe('integration/review-assurance', () => {
           version: 'challenge-policy.v1' as const,
           counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 } as const,
         },
-        maxReviewerOutputRepairAttempts: 1,
+        maxReviewerAttempts: 1,
       };
 
       it('uses the HIGH-RISK claim even when changedFiles look doc-only', () => {
@@ -318,6 +323,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           changedFiles: ['docs/x.md'],
           reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
           claimedTaskClass: 'HIGH-RISK',
@@ -333,6 +339,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           changedFiles: ['src/state/schema.ts'],
           reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
           claimedTaskClass: 'TRIVIAL',
@@ -349,6 +356,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           changedFiles: ['docs/x.md'],
           reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
           claimedTaskClass: 'STANDARD',
@@ -365,6 +373,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           changedFiles: ['docs/x.md'],
           reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
           policySnapshot,
@@ -380,9 +389,10 @@ describe('integration/review-assurance', () => {
         planVersion: 1,
         now: NOW,
         subjectDigest: 'test',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
         changedFiles: ['src/state/schema.ts'],
         reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
-        policySnapshot: { maxReviewerOutputRepairAttempts: 1 },
+        policySnapshot: { maxReviewerAttempts: 1 },
       });
       // Hard Assurance Epoch: the mint always freezes the canonical challenge
       // matrix (writer-side default), never an implicit no-policy state.
@@ -432,6 +442,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
         }),
       ).toThrow(/FAIL_CLOSED/);
     });
@@ -445,6 +456,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
         }),
       ).toThrow(/FAIL_CLOSED/);
     });
@@ -458,6 +470,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           changedFiles: ['src/foo.ts'],
           reviewSubjectScope: { kind: 'unavailable', reason: 'diff_resolution_failed' },
         }),
@@ -473,6 +486,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           changedFiles: ['src/foo.ts'],
           reviewSubjectScope: {
             kind: 'repository_change',
@@ -490,6 +504,7 @@ describe('integration/review-assurance', () => {
         planVersion: 1,
         now: NOW,
         subjectDigest: 'test',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
       });
       expect(result.reviewSubjectScope).toEqual({
         kind: 'unavailable',
@@ -505,6 +520,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
         }),
       ).toThrowError('implementation reviewSubjectScope');
     });
@@ -517,6 +533,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           changedFiles: ['src/foo.ts'],
         }),
       ).toThrowError('implementation reviewSubjectScope');
@@ -530,6 +547,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           reviewSubjectScope: { kind: 'unavailable', reason: 'diff_resolution_failed' },
         }),
       ).toThrowError('implementation reviewSubjectScope');
@@ -543,6 +561,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           reviewSubjectScope: { kind: 'implementation', implementationDigest: 'other' },
         }),
       ).toThrowError('does not match the obligation subject digest');
@@ -555,6 +574,7 @@ describe('integration/review-assurance', () => {
         planVersion: 1,
         now: NOW,
         subjectDigest: 'test',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
         changedFiles: ['src/foo.ts'],
         reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
       });
@@ -572,6 +592,7 @@ describe('integration/review-assurance', () => {
         planVersion: 1,
         now: NOW,
         subjectDigest: 'plan-digest',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'plan-digest'),
         reviewSubjectScope: {
           kind: 'artifact',
           artifact: {
@@ -829,7 +850,6 @@ describe('integration/review-assurance', () => {
         childSessionId: findings.reviewedBy.sessionId,
         findingsHash: hashFindings(findings),
         invocationMode: 'host_subagent_task',
-        hostVisible: true,
       });
       const assurance = {
         assuranceSchemaVersion: 'review-assurance.v6' as const,
@@ -915,8 +935,8 @@ describe('integration/review-assurance', () => {
         findingsHash: hashText('findings'),
         invokedAt: NOW,
         fulfilledAt: NOW,
+        attemptId: '00000000-0000-4000-8000-000000000003',
         invocationMode: 'sdk_session_prompt',
-        hostVisible: false,
       });
       expect(result.agentType).toBe(REVIEWER_SUBAGENT_TYPE);
       expect(result.mandateDigest).toBe(FIXTURE_MANDATE_DIGEST);
@@ -924,45 +944,6 @@ describe('integration/review-assurance', () => {
       expect(result.reviewOutputMode).toBe('structured_output');
       expect(result.structuredOutputUsed).toBe(true);
       expect(result.reviewAssuranceLevel).toBe('structured_high');
-      expect(result.extractionMethod).toBeUndefined();
-    });
-
-    it('records text compatibility metadata explicitly', () => {
-      const result = makeInvocation({
-        reviewOutputMode: 'text_compat',
-        structuredOutputUsed: false,
-        reviewAssuranceLevel: 'text_compat_lower',
-        extractionMethod: 'outermost_braces',
-        modelCapabilityError: 'model does not support this tool_choice',
-      });
-      expect(result).toMatchObject({
-        reviewOutputMode: 'text_compat',
-        structuredOutputUsed: false,
-        reviewAssuranceLevel: 'text_compat_lower',
-        extractionMethod: 'outermost_braces',
-        modelCapabilityError: 'model does not support this tool_choice',
-      });
-    });
-
-    it('defaults to text_compat_lower when reviewOutputMode is text_compat', () => {
-      const result = buildInvocationEvidence({
-        obligationId: '00000000-0000-4000-8000-000000000002',
-        obligationType: 'review',
-        mandateDigest: FIXTURE_MANDATE_DIGEST,
-        criteriaVersion: FIXTURE_CRITERIA_VERSION,
-        parentSessionId: 'parent-1',
-        childSessionId: 'child-1',
-        promptHash: hashText('prompt'),
-        findingsHash: hashText('findings'),
-        invokedAt: NOW,
-        fulfilledAt: NOW,
-        reviewOutputMode: 'text_compat',
-        invocationMode: 'sdk_session_prompt',
-        hostVisible: false,
-      });
-      expect(result.reviewOutputMode).toBe('text_compat');
-      expect(result.structuredOutputUsed).toBe(false);
-      expect(result.reviewAssuranceLevel).toBe('text_compat_lower');
     });
   });
 
@@ -982,8 +963,8 @@ describe('integration/review-assurance', () => {
         invokedAt: NOW,
         fulfilledAt: NOW,
         capturedVerdict: 'accept',
+        attemptId: '00000000-0000-4000-8000-000000000004',
         invocationMode: 'sdk_session_prompt',
-        hostVisible: false,
       });
       expect(result.capturedVerdict).toBe('accept');
     });
@@ -1000,8 +981,8 @@ describe('integration/review-assurance', () => {
         findingsHash: hashText('findings'),
         invokedAt: NOW,
         capturedVerdict: 'changes_requested',
+        attemptId: '00000000-0000-4000-8000-000000000005',
         invocationMode: 'sdk_session_prompt',
-        hostVisible: false,
       });
       expect(result.capturedVerdict).toBe('changes_requested');
     });
@@ -1017,8 +998,8 @@ describe('integration/review-assurance', () => {
         promptHash: hashText('prompt'),
         findingsHash: hashText('findings'),
         invokedAt: NOW,
+        attemptId: '00000000-0000-4000-8000-000000000006',
         invocationMode: 'sdk_session_prompt',
-        hostVisible: false,
       });
       expect(result.capturedVerdict).toBeUndefined();
     });
@@ -1032,33 +1013,14 @@ describe('integration/review-assurance', () => {
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         invocationMode: 'host_subagent_task',
-        hostVisible: true,
         promptHash: hashText('prompt'),
         findingsHash: hashText('findings'),
         invokedAt: NOW,
+        attemptId: '00000000-0000-4000-8000-000000000002',
         capturedVerdict: 'accept',
       });
       const parsed = ReviewInvocationEvidenceSchema.parse(evidence);
       expect(parsed.capturedVerdict).toBe('accept');
-    });
-
-    it('EDGE: Zod parse accepts evidence without capturedVerdict (backward compat)', () => {
-      const evidence = buildInvocationEvidence({
-        obligationId: '00000000-0000-4000-8000-000000000001',
-        obligationType: 'plan',
-        mandateDigest: FIXTURE_MANDATE_DIGEST,
-        criteriaVersion: FIXTURE_CRITERIA_VERSION,
-        parentSessionId: 'parent-1',
-        childSessionId: 'child-1',
-        invocationMode: 'sdk_session_prompt',
-        hostVisible: false,
-        promptHash: hashText('prompt'),
-        findingsHash: hashText('findings'),
-        invokedAt: NOW,
-        // no capturedVerdict
-      });
-      const parsed = ReviewInvocationEvidenceSchema.parse(evidence);
-      expect(parsed.capturedVerdict).toBeUndefined();
     });
   });
 
@@ -1088,10 +1050,10 @@ describe('integration/review-assurance', () => {
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         invocationMode: 'host_subagent_task',
-        hostVisible: true,
         promptHash: hashText('prompt'),
         findingsHash: hashFindings(sampleRawFindings),
         invokedAt: NOW,
+        attemptId: '00000000-0000-4000-8000-000000000002',
         capturedVerdict: 'accept',
         capturedRawFindings: sampleRawFindings,
       });
@@ -1107,10 +1069,10 @@ describe('integration/review-assurance', () => {
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         invocationMode: 'sdk_session_prompt',
-        hostVisible: false,
         promptHash: hashText('prompt'),
         findingsHash: hashText('findings'),
         invokedAt: NOW,
+        attemptId: '00000000-0000-4000-8000-000000000007',
       });
       expect(result.capturedRawFindings).toBeUndefined();
     });
@@ -1124,10 +1086,10 @@ describe('integration/review-assurance', () => {
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         invocationMode: 'host_subagent_task',
-        hostVisible: true,
         promptHash: hashText('prompt'),
         findingsHash: hashFindings(sampleRawFindings),
         invokedAt: NOW,
+        attemptId: '00000000-0000-4000-8000-000000000002',
         capturedVerdict: 'accept',
         capturedRawFindings: sampleRawFindings,
       });
@@ -1135,50 +1097,6 @@ describe('integration/review-assurance', () => {
       expect(parsed.capturedRawFindings).toBeDefined();
       expect(parsed.capturedRawFindings!.overallVerdict).toBe('accept');
       expect(parsed.capturedRawFindings!.iteration).toBe(0);
-    });
-
-    it('EDGE: Zod parse accepts evidence without capturedRawFindings (backward compat)', () => {
-      const evidence = buildInvocationEvidence({
-        obligationId: '00000000-0000-4000-8000-000000000001',
-        obligationType: 'plan',
-        mandateDigest: FIXTURE_MANDATE_DIGEST,
-        criteriaVersion: FIXTURE_CRITERIA_VERSION,
-        parentSessionId: 'parent-1',
-        childSessionId: 'child-1',
-        invocationMode: 'sdk_session_prompt',
-        hostVisible: false,
-        promptHash: hashText('prompt'),
-        findingsHash: hashText('findings'),
-        invokedAt: NOW,
-      });
-      const parsed = ReviewInvocationEvidenceSchema.parse(evidence);
-      expect(parsed.capturedRawFindings).toBeUndefined();
-    });
-
-    it('CORNER: capturedRawFindings with extra keys preserved through Zod (z.record passthrough)', () => {
-      const rawWithExtras = {
-        ...sampleRawFindings,
-        _internalDebug: { foo: 'bar' },
-        customField: 42,
-      };
-      const evidence = buildInvocationEvidence({
-        obligationId: '00000000-0000-4000-8000-000000000001',
-        obligationType: 'plan',
-        mandateDigest: FIXTURE_MANDATE_DIGEST,
-        criteriaVersion: FIXTURE_CRITERIA_VERSION,
-        parentSessionId: 'parent-1',
-        childSessionId: 'child-1',
-        invocationMode: 'host_subagent_task',
-        hostVisible: true,
-        promptHash: hashText('prompt'),
-        findingsHash: hashFindings(rawWithExtras),
-        invokedAt: NOW,
-        capturedRawFindings: rawWithExtras,
-      });
-      const parsed = ReviewInvocationEvidenceSchema.parse(evidence);
-      // z.record(z.string(), z.unknown()) preserves all keys
-      expect(parsed.capturedRawFindings!._internalDebug).toEqual({ foo: 'bar' });
-      expect(parsed.capturedRawFindings!.customField).toBe(42);
     });
   });
 

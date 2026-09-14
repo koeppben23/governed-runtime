@@ -25,7 +25,7 @@ function obligation(overrides: Partial<ReviewObligation>): ReviewObligation {
     planVersion: 1,
     criteriaVersion: 'p41-v1',
     mandateDigest: 'mandate-digest',
-    maxReviewerOutputRepairAttempts: 1,
+    maxReviewerAttempts: 1,
     createdAt: '2026-01-01T00:00:00.000Z',
     pluginHandshakeAt: null,
     status: 'pending',

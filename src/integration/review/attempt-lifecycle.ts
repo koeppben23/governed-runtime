@@ -18,7 +18,6 @@ import type {
   ReviewAttemptDiscoveryContext,
   ReviewAttemptOrigin,
   ReviewAttemptRejectionReason,
-  ReviewMaterial,
   ReviewObligation,
   ReviewObligationType,
 } from '../../state/evidence.js';
@@ -29,7 +28,6 @@ export {
   emptyReviewAssurance,
   ensureReviewAssurance,
   findBindableAttempt,
-  latestReviewMaterial,
 } from '../../state/review-continuation.js';
 
 /**
@@ -56,7 +54,6 @@ export function createReviewAttempt(input: {
   obligationId: string;
   obligationType: ReviewObligationType;
   subjectDigest: string;
-  reviewMaterial?: ReviewMaterial;
   ordinal: number;
   childSessionId?: string;
   /**
@@ -88,7 +85,6 @@ export function createReviewAttempt(input: {
     obligationId: input.obligationId,
     obligationType: input.obligationType,
     subjectDigest: input.subjectDigest,
-    ...(input.reviewMaterial === undefined ? {} : { reviewMaterial: input.reviewMaterial }),
     ordinal: input.ordinal,
     childSessionId: input.childSessionId,
     status: 'created',
@@ -97,6 +93,7 @@ export function createReviewAttempt(input: {
     ...(input.observationCapability === null
       ? {}
       : { observationCapability: input.observationCapability }),
+    observations: [],
     createdAt: input.now,
   };
 }
@@ -141,7 +138,6 @@ export function createAttemptForExistingObligation(
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
     subjectDigest: obligation.subjectDigest,
-    reviewMaterial: obligation.reviewMaterial,
     ordinal,
     ...(childSessionId === undefined ? {} : { childSessionId }),
     origin: transition.origin,
@@ -266,6 +262,13 @@ export function updateAttemptStatus(
   };
 }
 
+/**
+ * Supersede the still-BINDABLE attempts of an obligation when a newer attempt
+ * is minted. Only `created` attempts are bindable (see `findBindableAttempt`),
+ * so only they need superseding; terminal statuses (`rejected`, `stale`,
+ * `expired`) stay verbatim because the attempt lineage validates its trigger
+ * reason against them.
+ */
 export function staleObligationAttempts(
   assurance: ReviewAssuranceState,
   obligationId: string,
@@ -277,7 +280,7 @@ export function staleObligationAttempts(
   return {
     ...base,
     attempts: base.attempts.map((a) =>
-      a.obligationId === obligationId && a.attemptId !== exceptAttemptId && a.status !== 'bound'
+      a.obligationId === obligationId && a.attemptId !== exceptAttemptId && a.status === 'created'
         ? { ...a, status: 'stale' as const, completedAt: now }
         : a,
     ),

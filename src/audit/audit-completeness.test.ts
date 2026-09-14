@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { evaluateCompleteness } from './completeness.js';
 import { makeState, makeProgressedState, FIXED_TIME, FIXED_SESSION_UUID } from '../fixtures.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
+import { ReviewDecision } from '../state/evidence-review.js';
 import type { ValidationResult } from '../state/evidence.js';
 import type { SessionState } from '../state/schema.js';
 import { computeRecordDigest } from '../state/evidence-plan.js';
@@ -146,7 +147,6 @@ describe('audit completeness', () => {
           verdict: 'approve',
           rationale: 'LGTM',
           decidedAt: FIXED_TIME,
-          decidedBy: 'alice',
           decisionIdentity: {
             actorId: 'alice',
             actorEmail: null,
@@ -174,7 +174,12 @@ describe('audit completeness', () => {
           verdict: 'approve',
           rationale: 'LGTM',
           decidedAt: FIXED_TIME,
-          decidedBy: 'bob',
+          decisionIdentity: {
+            actorId: 'bob',
+            actorEmail: null,
+            actorSource: 'claim',
+            actorAssurance: 'claim_validated',
+          },
         },
       });
       const report = evaluateCompleteness(state);
@@ -183,7 +188,18 @@ describe('audit completeness', () => {
       expect(report.fourEyes.detail).toContain('satisfied');
     });
 
-    it('four-eyes violated when structured identities match despite different legacy strings', () => {
+    it('rejects a decision that carries only the obsolete decidedBy string', () => {
+      expect(
+        ReviewDecision.safeParse({
+          verdict: 'approve',
+          rationale: 'LGTM',
+          decidedAt: FIXED_TIME,
+          decidedBy: 'legacy-reviewer',
+        }).success,
+      ).toBe(false);
+    });
+
+    it('four-eyes violated when structured identities match despite actor-id case differences', () => {
       const state = makeState('COMPLETE', {
         ...makeProgressedState('COMPLETE'),
         policySnapshot: {
@@ -201,7 +217,6 @@ describe('audit completeness', () => {
           verdict: 'approve',
           rationale: 'LGTM',
           decidedAt: FIXED_TIME,
-          decidedBy: 'legacy-reviewer',
           decisionIdentity: {
             actorId: 'ALICE',
             actorEmail: null,
@@ -233,7 +248,6 @@ describe('audit completeness', () => {
           verdict: 'approve',
           rationale: 'LGTM',
           decidedAt: FIXED_TIME,
-          decidedBy: 'bob',
           decisionIdentity: {
             actorId: 'bob',
             actorEmail: null,
@@ -248,7 +262,7 @@ describe('audit completeness', () => {
       expect(report.fourEyes.detail).toContain('not comparable');
     });
 
-    it('four-eyes uses legacy actor strings when structured identities are absent', () => {
+    it('four-eyes falls back to the initiator string when no structured initiator identity exists', () => {
       const state = makeState('COMPLETE', {
         ...makeProgressedState('COMPLETE'),
         policySnapshot: {
@@ -261,7 +275,12 @@ describe('audit completeness', () => {
           verdict: 'approve',
           rationale: 'LGTM',
           decidedAt: FIXED_TIME,
-          decidedBy: 'bob',
+          decisionIdentity: {
+            actorId: 'bob',
+            actorEmail: null,
+            actorSource: 'claim',
+            actorAssurance: 'claim_validated',
+          },
         },
       });
       const report = evaluateCompleteness(state);

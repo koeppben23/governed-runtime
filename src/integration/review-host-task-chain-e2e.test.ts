@@ -32,6 +32,7 @@ import {
   ensureReviewAssurance,
   hashFindings,
 } from './review/assurance.js';
+import { hostTaskDispatchPlan } from './tools/review-validation-test-helpers.js';
 import { hydrate, review } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
 
@@ -53,6 +54,7 @@ vi.mock('../adapters/actor', async (importOriginal) => {
       id: 'test-operator',
       email: 'test@flowguard.dev',
       source: 'env',
+      assurance: 'best_effort',
     }),
   };
 });
@@ -153,6 +155,7 @@ function buildAnalysisFindings(
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'flowguard-reviewer-session-123' },
     reviewedAt: '2026-01-01T00:00:00.000Z',
     attestation: {
@@ -177,6 +180,18 @@ async function bindHostTaskReviewEvidence(
     (item) => item.obligationId === obligationId,
   );
   if (!obligation) throw new TypeError('Expected persisted review obligation');
+  const assurance = ensureReviewAssurance(state.reviewAssurance);
+  const existingAttempt = assurance.attempts.find(
+    (attempt) => attempt.obligationId === obligationId,
+  );
+  const resolvedAttemptId = existingAttempt?.attemptId ?? crypto.randomUUID();
+  const dispatchPlan = hostTaskDispatchPlan({
+    isHostTask: true,
+    dispatches: assurance.dispatches,
+    attemptId: resolvedAttemptId,
+    obligationId,
+    at: '2026-01-01T00:00:00.000Z',
+  });
   const invocation = buildInvocationEvidence({
     obligationId,
     obligationType: 'review',
@@ -185,24 +200,19 @@ async function bindHostTaskReviewEvidence(
     parentSessionId: ctx.sessionID,
     childSessionId: 'ses_review_child_host_task',
     invocationMode: 'host_subagent_task',
-    hostVisible: true,
     promptHash: 'host-task-review-prompt',
+    hostTaskCallId: dispatchPlan.hostTaskCallId,
+    canonicalPromptDigest: dispatchPlan.canonicalPromptDigest,
     findingsHash: hashFindings(findings),
     invokedAt: '2026-01-01T00:00:00.000Z',
     fulfilledAt: '2026-01-01T00:00:00.000Z',
-    source: 'host-orchestrated',
     capturedVerdict: findings.overallVerdict,
     capturedRawFindings: findings,
-    attemptId: state.reviewAssurance?.attempts?.find((a) => a.obligationId === obligationId)
-      ?.attemptId,
+    attemptId: resolvedAttemptId,
   });
-  const assurance = ensureReviewAssurance(state.reviewAssurance);
-  const existingAttempt = assurance.attempts.find(
-    (attempt) => attempt.obligationId === obligationId,
-  );
   const boundAttempt = {
     ...(existingAttempt ?? {}),
-    attemptId: existingAttempt?.attemptId ?? crypto.randomUUID(),
+    attemptId: resolvedAttemptId,
     obligationId,
     obligationType: obligation.obligationType,
     subjectDigest: obligation.subjectDigest,
@@ -212,21 +222,36 @@ async function bindHostTaskReviewEvidence(
     origin: existingAttempt?.origin ?? ({ kind: 'initial' } as const),
     repositoryDiscovery:
       existingAttempt?.repositoryDiscovery ?? ({ kind: 'not_applicable' } as const),
+    observations: existingAttempt?.observations ?? [],
     createdAt: existingAttempt?.createdAt ?? new Date().toISOString(),
+    completedAt: existingAttempt?.completedAt ?? invocation.fulfilledAt ?? new Date().toISOString(),
   };
   const boundInvocation = { ...invocation, attemptId: boundAttempt.attemptId };
+  const withInvocation = appendInvocationEvidence(
+    {
+      ...assurance,
+      obligations: assurance.obligations.map((item) =>
+        item.obligationId === obligationId
+          ? {
+              ...item,
+              status: 'fulfilled' as const,
+              invocationId: boundInvocation.invocationId,
+              fulfilledAt: boundInvocation.fulfilledAt ?? invocation.invokedAt,
+            }
+          : item,
+      ),
+      attempts: [
+        ...assurance.attempts.filter((attempt) => attempt.attemptId !== boundAttempt.attemptId),
+        boundAttempt,
+      ],
+    },
+    boundInvocation,
+  );
   await writeState(sessDir, {
     ...state,
-    reviewAssurance: appendInvocationEvidence(
-      {
-        ...assurance,
-        attempts: [
-          ...assurance.attempts.filter((attempt) => attempt.attemptId !== boundAttempt.attemptId),
-          boundAttempt,
-        ],
-      },
-      boundInvocation,
-    ),
+    reviewAssurance: dispatchPlan.dispatch
+      ? { ...withInvocation, dispatches: [...withInvocation.dispatches, dispatchPlan.dispatch] }
+      : withInvocation,
   });
   return boundInvocation;
 }

@@ -28,7 +28,7 @@ import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
-import { createTestWorkspace } from './test-helpers.js';
+import { createTestWorkspace, repositoryDiscoveryContext } from './test-helpers.js';
 import type { SessionState } from '../state/schema.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
@@ -991,11 +991,11 @@ Provide structured findings per the canonical reviewer contract.`.repeat(2);
       obligationId: obligation.obligationId,
       obligationType: 'plan' as const,
       subjectDigest: obligation.subjectDigest,
-      reviewMaterial: obligation.reviewMaterial,
       ordinal: 0,
       status: 'created' as const,
       origin: { kind: 'initial' } as const,
       repositoryDiscovery: { kind: 'not_applicable' } as const,
+      observations: [],
       createdAt: '2026-01-01T00:00:00.000Z',
     };
     return { obligation, initialAttempt };
@@ -1254,7 +1254,9 @@ describe('toolBefore — observation capability parent binding', () => {
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
-            maxReviewerOutputRepairAttempts: 1,
+            maxReviewerAttempts: 1,
+            reviewProfile: 'core' as const,
+            profileSource: 'policy_default' as const,
             createdAt: now,
             pluginHandshakeAt: null,
             status: 'pending',
@@ -1267,7 +1269,18 @@ describe('toolBefore — observation capability parent binding', () => {
               materialDigest: 'material-digest',
               subjectDigest: 'obs-subject-digest',
             },
-            repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+            repositoryEvidenceFreeze: { kind: 'available' as const },
+            repositoryAuthority: {
+              kind: 'context' as const,
+              context: {
+                kind: 'commit' as const,
+                repositoryIdentity: {
+                  kind: 'local' as const,
+                  rootCommitDigest: `sha256:${'d'.repeat(64)}`,
+                },
+                objectSha: 'e'.repeat(40),
+              },
+            },
             reviewSubjectScope: {
               kind: 'artifact',
               artifact: {
@@ -1285,16 +1298,12 @@ describe('toolBefore — observation capability parent binding', () => {
             obligationId: OBLIGATION_ID,
             obligationType: 'plan',
             subjectDigest: 'obs-subject-digest',
-            reviewMaterial: {
-              content: '## Plan\n',
-              materialDigest: 'material-digest',
-              subjectDigest: 'obs-subject-digest',
-            },
             ordinal: 0,
             status: 'created',
             origin: { kind: 'initial' } as const,
-            repositoryDiscovery: { kind: 'not_applicable' } as const,
+            repositoryDiscovery: repositoryDiscoveryContext(now),
             observationCapability: CAPABILITY,
+            observations: [],
             createdAt: now,
           },
         ],

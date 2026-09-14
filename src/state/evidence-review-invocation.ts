@@ -25,10 +25,8 @@ export const ReviewInvocationEvidence = z
     parentSessionId: z.string().min(1),
     childSessionId: z.string().min(1),
     agentType: z.literal(REVIEWER_SUBAGENT_TYPE),
-    /** Persisted attempt identity. Populated at binding time from the host-authoritative
-     *  attempt. Optional for legacy records; absent lineage MUST be treated as a hard
-     *  blocker (attempt_lineage_unavailable) by any status-mutating path. */
-    attemptId: z.string().uuid().optional(),
+    /** Persisted host-authoritative attempt identity. */
+    attemptId: z.string().uuid(),
     /** How the reviewer was invoked: host-visible Task tool, SDK, manual attested, or
      *  manual attested corroborated by a FlowGuard-captured host hook (native_subagent_attested). */
     invocationMode: z.enum([
@@ -55,23 +53,30 @@ export const ReviewInvocationEvidence = z
      *  Enables evidence-based findings resolution: the tool reads findings directly from
      *  invocation evidence, eliminating agent-side reconstruction of the ReviewFindings object. */
     capturedRawFindings: z.record(z.string(), z.unknown()).optional(),
-    /** Evidence source: host-orchestrated or agent-submitted-attested. */
-    source: z.enum(['host-orchestrated', 'agent-submitted-attested']).optional(),
-    /** Reviewer output transport used to obtain the findings. */
-    reviewOutputMode: z.enum(['structured_output', 'text_compat']),
-    /** True only when OpenCode SDK structured_output was present and used. */
+    /**
+     * Evidence source, fully determined by `invocationMode`:
+     * host_subagent_task/sdk_session_prompt → host-orchestrated,
+     * manual_attested/native_subagent_attested → agent-submitted-attested.
+     */
+    source: z.enum(['host-orchestrated', 'agent-submitted-attested']),
+    /**
+     * Reviewer output transport used to obtain the findings.
+     *
+     * `structured_output` — host-observed structured model output
+     * (`host_subagent_task`, `sdk_session_prompt`).
+     * `agent_submitted_structured` — schema-valid ReviewFindings submitted by
+     * the agent (`manual_attested`, `native_subagent_attested`). Structured,
+     * but NOT host-observed model output.
+     */
+    reviewOutputMode: z.enum(['structured_output', 'agent_submitted_structured']),
+    /** True ONLY when host-observed structured model output was used. */
     structuredOutputUsed: z.boolean(),
-    /** Review-output assurance tier, distinct from actor identity assurance.
-     *  - structured_high: reviewer output parsed as clean, schema-conforming JSON.
-     *  - structured_recovered: findings recovered from an embedded/brace-balanced
-     *    JSON block in mixed model output; extraction succeeded but the response
-     *    was not a clean structured payload, so provenance confidence is reduced. (F8)
-     *  - text_compat_lower: text-compatibility extraction path. */
-    reviewAssuranceLevel: z.enum(['structured_high', 'structured_recovered', 'text_compat_lower']),
-    /** JSON extraction strategy used for text compatibility mode only. */
-    extractionMethod: z.enum(['direct_json', 'json_fence', 'outermost_braces']).optional(),
-    /** Original model capability error that caused text compatibility mode. */
-    modelCapabilityError: z.string().optional(),
+    /**
+     * Output assurance tier derived from the transport:
+     * `structured_high` for host-observed structured output,
+     * `structured_submitted` for agent-submitted structured findings.
+     */
+    reviewAssuranceLevel: z.enum(['structured_high', 'structured_submitted']),
     /** Host-captured corroboration (native_subagent_attested only).
      *  Populated from a FlowGuard hook (SubagentStop / PostToolUse) that fired inside the
      *  reviewer subagent. These fields are the independent host witness that the review tool
@@ -98,5 +103,6 @@ export const ReviewInvocationEvidence = z
       .nullable()
       .optional(),
   })
+  .strict()
   .readonly();
 export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;

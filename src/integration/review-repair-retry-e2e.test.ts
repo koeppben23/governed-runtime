@@ -44,7 +44,9 @@ vi.mock('../adapters/actor', async (importOriginal) => {
     resolveActor: vi.fn().mockResolvedValue({
       id: 'test-operator',
       email: 'test@flowguard.dev',
+      displayName: null,
       source: 'env',
+      assurance: 'best_effort',
     }),
   };
 });
@@ -171,8 +173,15 @@ describe('review repair retry (host-task)', () => {
     expect(bindable).toHaveLength(1);
     expect(bindable[0]!.attemptId).not.toBe(firstAttempt!.attemptId);
     // The frozen material must carry forward: the reviewer receives the same
-    // bytes that were frozen for the original obligation.
-    expect(bindable[0]!.reviewMaterial).toEqual(firstAttempt!.reviewMaterial);
+    // bytes that were frozen for the original obligation, and the obligation
+    // remains the sole material authority across the repair.
+    const obligationBefore = afterFirst!.reviewAssurance!.obligations.find(
+      (o) => o.obligationId === obligationId,
+    )!;
+    const obligationAfter = afterRepair!.reviewAssurance!.obligations.find(
+      (o) => o.obligationId === obligationId,
+    )!;
+    expect(obligationAfter.reviewMaterial).toEqual(obligationBefore.reviewMaterial);
     expect(bindable[0]!.subjectDigest).toBe(firstAttempt!.subjectDigest);
     // The obligation itself is never duplicated by a repair call.
     expect(
@@ -405,14 +414,14 @@ describe('review repair retry (host-task)', () => {
     const obligation = afterFirst!.reviewAssurance!.obligations.find(
       (o) => o.obligationId === obligationId,
     )!;
-    expect(obligation.maxReviewerOutputRepairAttempts).toBe(1);
+    expect(obligation.maxReviewerAttempts).toBe(1);
 
     // Simulate a later policy change: the snapshot now allows 3 repairs.
     await writeStateWithArtifacts(sessDir, {
       ...afterFirst!,
       policySnapshot: {
         ...afterFirst!.policySnapshot!,
-        maxReviewerOutputRepairAttempts: 3,
+        maxReviewerAttempts: 3,
       },
     });
 
@@ -484,7 +493,7 @@ describe('review repair retry (host-task)', () => {
       ...afterFirst!,
       policySnapshot: {
         ...afterFirst!.policySnapshot!,
-        maxReviewerOutputRepairAttempts: 0,
+        maxReviewerAttempts: 0,
       },
     });
 
@@ -545,24 +554,24 @@ describe('review repair retry (host-task)', () => {
       },
     });
 
-    // Tamper the persisted frozen material on the rejected attempt. The
-    // obligation-level frozen subject stays intact, so the gate — not the
+    // Tamper the persisted frozen material on the obligation. The obligation
+    // remains the sole material authority, so the gate — not the
     // frozen-continuation guard — must refuse with the integrity code.
     const afterRejected = await readState(sessDir);
     await writeStateWithArtifacts(sessDir, {
       ...afterRejected!,
       reviewAssurance: {
         ...afterRejected!.reviewAssurance!,
-        attempts: afterRejected!.reviewAssurance!.attempts.map((a) =>
-          a.attemptId === firstAttempt.attemptId
+        obligations: afterRejected!.reviewAssurance!.obligations.map((o) =>
+          o.obligationId === obligationId
             ? {
-                ...a,
+                ...o,
                 reviewMaterial: {
-                  ...a.reviewMaterial!,
+                  ...o.reviewMaterial,
                   content: 'TAMPERED frozen material\n',
                 },
               }
-            : a,
+            : o,
         ),
       },
     });

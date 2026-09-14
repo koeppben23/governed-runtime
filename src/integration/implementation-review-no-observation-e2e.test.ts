@@ -75,6 +75,7 @@ import {
   hashFindings,
 } from './review/assurance.js';
 import { resolveAttemptDiscoveryOrBlock } from './review/discovery-attempt-context.js';
+import { hostTaskDispatchPlan } from './tools/review-validation-test-helpers.js';
 import { resolveNextAction, ACTION_CODES } from '../machine/next-action.js';
 import { executeCheck } from '../verification/executor.js';
 
@@ -196,7 +197,7 @@ function implFindings(
     planVersion: pv,
     reviewMode: 'subagent' as const,
     overallVerdict: verdict,
-    ...(withChallenge ? { challenges: [implementationChallenge(oblId, digest, attemptId)] } : {}),
+    challenges: withChallenge ? [implementationChallenge(oblId, digest, attemptId)] : [],
     blockingIssues:
       verdict === 'changes_requested'
         ? [
@@ -250,14 +251,27 @@ async function inject(
     validationAttemptIdFor(state!, digest),
   );
   const fh = hashFindings(ff);
+  const boundAttempt = state!.reviewAssurance!.attempts.find(
+    (a) => a.obligationId === obl.obligationId,
+  );
+  if (!boundAttempt) throw new Error(`No attempt for pending ${oblType} obligation`);
+  const invocationId = randomUUID();
+  const dispatchPlan = hostTaskDispatchPlan({
+    isHostTask: true,
+    dispatches: state!.reviewAssurance!.dispatches,
+    attemptId: boundAttempt.attemptId,
+    obligationId: obl.obligationId,
+    at: FIXED_TIME,
+  });
   const newObl = {
     ...obl,
     status: 'fulfilled' as const,
+    invocationId,
     fulfilledAt: FIXED_TIME,
     pluginHandshakeAt: FIXED_TIME,
   };
   const inv = {
-    invocationId: randomUUID(),
+    invocationId,
     obligationId: obl.obligationId,
     obligationType: obl.obligationType,
     parentSessionId: se.sId,
@@ -267,6 +281,8 @@ async function inject(
     hostVisible: true,
     source: 'host-orchestrated' as const,
     promptHash: 'abc',
+    hostTaskCallId: dispatchPlan.hostTaskCallId,
+    canonicalPromptDigest: dispatchPlan.canonicalPromptDigest,
     mandateDigest: REVIEW_MANDATE_DIGEST,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
     findingsHash: fh,
@@ -275,8 +291,7 @@ async function inject(
     consumedByObligationId: null,
     capturedVerdict: verdict,
     capturedRawFindings: ff,
-    attemptId: state!.reviewAssurance!.attempts.find((a) => a.obligationId === obl.obligationId)
-      ?.attemptId,
+    attemptId: boundAttempt.attemptId,
     reviewOutputMode: 'structured_output' as const,
     structuredOutputUsed: true,
     reviewAssuranceLevel: 'structured_high' as const,
@@ -299,13 +314,20 @@ async function inject(
             }
           : attempt,
       ),
-      dispatches: state!.reviewAssurance!.dispatches,
+      dispatches: dispatchPlan.dispatch
+        ? [...state!.reviewAssurance!.dispatches, dispatchPlan.dispatch]
+        : state!.reviewAssurance!.dispatches,
     },
     reviewDecision: {
       verdict: 'approve',
       rationale: 'E2E',
       decidedAt: FIXED_TIME,
-      decidedBy: 'reviewer-1',
+      decisionIdentity: {
+        actorId: 'reviewer-1',
+        actorEmail: null,
+        actorSource: 'unknown',
+        actorAssurance: 'best_effort',
+      },
     },
   };
   await writeStateWithArtifacts(se.sDir, aug);

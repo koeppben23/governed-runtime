@@ -77,6 +77,7 @@ function stateWithMaterial(
           status: 'rejected' as const,
           origin: { kind: 'initial' } as const,
           repositoryDiscovery: { kind: 'not_applicable' } as const,
+          observations: [],
           createdAt: NOW,
         },
       ],

@@ -40,6 +40,7 @@ import {
 
 import type {
   ReviewFindings,
+  ReviewAttempt,
   ReviewObligation,
   ReviewInvocationEvidence,
   ReviewAssuranceState,
@@ -60,19 +61,29 @@ import {
   REVIEW_MANDATE_DIGEST,
 } from './review/assurance.js';
 import type { HostId } from '../shared/hosts.js';
+import { hostTaskDispatchPlan } from './tools/review-validation-test-helpers.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const ALL_HOSTS = ['opencode', 'claude-code', 'codex'] as const satisfies readonly HostId[];
 const ALL_OBLIGATION_TYPES = ['plan', 'implement', 'architecture'] as const;
 const NOW = new Date().toISOString();
-const DECIDED_BY = 'reviewer-1';
+const DECISION_IDENTITY = {
+  actorId: 'reviewer-1',
+  actorEmail: null,
+  actorSource: 'unknown' as const,
+  actorAssurance: 'best_effort' as const,
+};
 
 const OBLIGATION_ID = '11111111-1111-4111-8111-111111111111';
 const INVOCATION_ID = '22222222-2222-4222-8222-222222222222';
 const INVOCATION_ID_PLAN = '33333333-3333-4333-8333-333333333333';
 const INVOCATION_ID_IMPL = '44444444-4444-4444-8444-444444444444';
 const INVOCATION_ID_ARCH = '55555555-5555-4555-8555-555555555555';
+const ATTEMPT_ID = '66666666-6666-4666-8666-666666666666';
+const ATTEMPT_ID_PLAN = '77777777-7777-4777-8777-777777777777';
+const ATTEMPT_ID_IMPL = '88888888-8888-4888-8888-888888888888';
+const ATTEMPT_ID_ARCH = '99999999-9999-4999-8999-999999999999';
 const SESS_ID_REVIEWER = 'ses_reviewer';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -94,6 +105,7 @@ function makeFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: SESS_ID_REVIEWER },
     reviewedAt: NOW,
     ...overrides,
@@ -119,29 +131,56 @@ function buildHostInvocation(
   obligation: ReviewObligation,
   findingsHash: string,
   invocationId = INVOCATION_ID,
+  attemptId = ATTEMPT_ID,
+  hostTaskCallId?: string,
+  canonicalPromptDigest?: string,
 ): ReviewInvocationEvidence {
   const style = computeHostEnforcementStyle(host);
+  const hostObserved = style === 'plugin_handshake';
   return {
     invocationId,
+    attemptId,
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
     parentSessionId: 'ses_parent',
     childSessionId: SESS_ID_REVIEWER,
     agentType: 'flowguard-reviewer',
-    invocationMode: style === 'plugin_handshake' ? 'host_subagent_task' : 'manual_attested',
-    hostVisible: style === 'plugin_handshake',
-    source: style === 'plugin_handshake' ? 'host-orchestrated' : 'agent-submitted-attested',
+    invocationMode: hostObserved ? 'host_subagent_task' : 'manual_attested',
+    hostVisible: hostObserved,
+    source: hostObserved ? 'host-orchestrated' : 'agent-submitted-attested',
     promptHash: 'abc',
+    ...(hostObserved ? { hostTaskCallId, canonicalPromptDigest } : {}),
     mandateDigest: REVIEW_MANDATE_DIGEST,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
     findingsHash,
     invokedAt: NOW,
     fulfilledAt: NOW,
     consumedByObligationId: null,
-    capturedVerdict: style === 'plugin_handshake' ? 'approve' : undefined,
-    reviewOutputMode: 'structured_output',
-    structuredOutputUsed: true,
-    reviewAssuranceLevel: 'structured_high',
+    capturedVerdict: hostObserved ? 'approve' : undefined,
+    reviewOutputMode: hostObserved ? 'structured_output' : 'agent_submitted_structured',
+    structuredOutputUsed: hostObserved,
+    reviewAssuranceLevel: hostObserved ? 'structured_high' : 'structured_submitted',
+  };
+}
+
+function buildBoundAttempt(
+  obligation: Pick<ReviewObligation, 'obligationId' | 'obligationType' | 'subjectDigest'>,
+  childSessionId: string,
+  attemptId = ATTEMPT_ID,
+): ReviewAttempt {
+  return {
+    attemptId,
+    obligationId: obligation.obligationId,
+    obligationType: obligation.obligationType,
+    subjectDigest: obligation.subjectDigest,
+    ordinal: 0,
+    childSessionId,
+    status: 'bound',
+    origin: { kind: 'initial' },
+    repositoryDiscovery: { kind: 'not_applicable' },
+    observations: [],
+    createdAt: NOW,
+    completedAt: NOW,
   };
 }
 
@@ -149,10 +188,16 @@ function pluginHandshakeAssurance(
   findings: ReviewFindings,
   obligationType: (typeof ALL_OBLIGATION_TYPES)[number],
 ): ReviewAssuranceState {
+  const dispatchPlan = hostTaskDispatchPlan({
+    isHostTask: true,
+    dispatches: [],
+    attemptId: ATTEMPT_ID,
+    obligationId: OBLIGATION_ID,
+    at: NOW,
+  });
   return {
     assuranceSchemaVersion: 'review-assurance.v6' as const,
-    attempts: [],
-    dispatches: [],
+    dispatches: dispatchPlan.dispatch ? [dispatchPlan.dispatch] : [],
     obligations: [
       {
         obligationId: OBLIGATION_ID,
@@ -162,7 +207,10 @@ function pluginHandshakeAssurance(
         planVersion: 1,
         criteriaVersion: REVIEW_CRITERIA_VERSION,
         mandateDigest: REVIEW_MANDATE_DIGEST,
-        maxReviewerOutputRepairAttempts: 1,
+        maxReviewerAttempts: 1,
+        reviewProfile: 'core',
+        profileSource: 'policy_default',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'test-subject-digest'),
         requiredChallengeCount: 0,
         requiredChallengeKind: 'design_challenge' as const,
         challengePolicyVersion: 'challenge-policy.v1' as const,
@@ -183,6 +231,7 @@ function pluginHandshakeAssurance(
     invocations: [
       {
         invocationId: INVOCATION_ID,
+        attemptId: ATTEMPT_ID,
         obligationId: OBLIGATION_ID,
         obligationType,
         parentSessionId: 'ses_parent',
@@ -190,7 +239,10 @@ function pluginHandshakeAssurance(
         agentType: 'flowguard-reviewer' as const,
         invocationMode: 'host_subagent_task' as const,
         hostVisible: true,
+        source: 'host-orchestrated' as const,
         promptHash: 'abc',
+        hostTaskCallId: dispatchPlan.hostTaskCallId,
+        canonicalPromptDigest: dispatchPlan.canonicalPromptDigest,
         mandateDigest: REVIEW_MANDATE_DIGEST,
         criteriaVersion: REVIEW_CRITERIA_VERSION,
         findingsHash: hashFindings(findings),
@@ -202,6 +254,12 @@ function pluginHandshakeAssurance(
         structuredOutputUsed: true,
         reviewAssuranceLevel: 'structured_high',
       },
+    ],
+    attempts: [
+      buildBoundAttempt(
+        { obligationId: OBLIGATION_ID, obligationType, subjectDigest: 'test-subject-digest' },
+        SESS_ID_REVIEWER,
+      ),
     ],
   };
 }
@@ -219,7 +277,12 @@ function manualAttestedAssurance(
     ...assurance.invocations[0]!,
     invocationMode: 'manual_attested' as const,
     hostVisible: false,
+    hostTaskCallId: undefined,
+    canonicalPromptDigest: undefined,
     source: 'agent-submitted-attested' as const,
+    reviewOutputMode: 'agent_submitted_structured' as const,
+    structuredOutputUsed: false,
+    reviewAssuranceLevel: 'structured_submitted' as const,
   };
   return assurance;
 }
@@ -288,6 +351,9 @@ describe('validateReviewFindings host contract', () => {
       invocationMode: 'host_subagent_task',
       hostVisible: true,
       findingsHash: hashFindings(findings),
+      reviewOutputMode: 'structured_output',
+      structuredOutputUsed: true,
+      reviewAssuranceLevel: 'structured_high',
     };
 
     const result = validateReviewFindings(findings, {
@@ -386,7 +452,22 @@ describe('assurance lifecycle persistence across hosts', () => {
         });
         const findingsP = strictFindings({ iteration: 0, planVersion: 1 });
         const fhP = hashFindings(findingsP);
-        const invocationP = buildHostInvocation(host, obligationP, fhP, INVOCATION_ID_PLAN);
+        const dispatchPlanP = hostTaskDispatchPlan({
+          isHostTask: isOpenCode,
+          dispatches: [],
+          attemptId: ATTEMPT_ID_PLAN,
+          obligationId: obligationP.obligationId,
+          at: NOW,
+        });
+        const invocationP = buildHostInvocation(
+          host,
+          obligationP,
+          fhP,
+          INVOCATION_ID_PLAN,
+          ATTEMPT_ID_PLAN,
+          dispatchPlanP.hostTaskCallId,
+          dispatchPlanP.canonicalPromptDigest,
+        );
 
         let assurance = appendReviewObligation(undefined, obligationP);
         // Mark obligation fulfilled (as if plugin/agent completed review)
@@ -397,14 +478,15 @@ describe('assurance lifecycle persistence across hosts', () => {
               ? {
                   ...o,
                   status: 'fulfilled' as const,
+                  invocationId: INVOCATION_ID_PLAN,
                   fulfilledAt: NOW,
                   pluginHandshakeAt: isOpenCode ? NOW : null,
                 }
               : o,
           ),
           invocations: assurance.invocations,
-          attempts: [],
-          dispatches: assurance.dispatches,
+          attempts: [buildBoundAttempt(obligationP, SESS_ID_REVIEWER, ATTEMPT_ID_PLAN)],
+          dispatches: dispatchPlanP.dispatch ? [dispatchPlanP.dispatch] : [],
         };
         assurance = appendInvocationEvidence(assurance, invocationP);
         assurance = consumeReviewObligation(assurance, obligationP, NOW, INVOCATION_ID_PLAN);
@@ -414,7 +496,7 @@ describe('assurance lifecycle persistence across hosts', () => {
           verdict: 'approve',
           rationale: 'LGTM',
           decidedAt: NOW,
-          decidedBy: DECIDED_BY,
+          decisionIdentity: DECISION_IDENTITY,
         };
         await writeState(sessDir, planState);
         let loaded = await readState(sessDir);
@@ -442,7 +524,22 @@ describe('assurance lifecycle persistence across hosts', () => {
         });
         const findingsI = strictFindings({ iteration: 0, planVersion: 1 });
         const fhI = hashFindings(findingsI);
-        const invocationI = buildHostInvocation(host, obligationI, fhI, INVOCATION_ID_IMPL);
+        const dispatchPlanI = hostTaskDispatchPlan({
+          isHostTask: isOpenCode,
+          dispatches: [],
+          attemptId: ATTEMPT_ID_IMPL,
+          obligationId: obligationI.obligationId,
+          at: NOW,
+        });
+        const invocationI = buildHostInvocation(
+          host,
+          obligationI,
+          fhI,
+          INVOCATION_ID_IMPL,
+          ATTEMPT_ID_IMPL,
+          dispatchPlanI.hostTaskCallId,
+          dispatchPlanI.canonicalPromptDigest,
+        );
 
         let implAssurance = appendReviewObligation(assurance, obligationI);
         implAssurance = {
@@ -452,14 +549,20 @@ describe('assurance lifecycle persistence across hosts', () => {
               ? {
                   ...o,
                   status: 'fulfilled' as const,
+                  invocationId: INVOCATION_ID_IMPL,
                   fulfilledAt: NOW,
                   pluginHandshakeAt: isOpenCode ? NOW : null,
                 }
               : o,
           ),
           invocations: implAssurance.invocations,
-          attempts: [],
-          dispatches: implAssurance.dispatches,
+          attempts: [
+            ...implAssurance.attempts,
+            buildBoundAttempt(obligationI, SESS_ID_REVIEWER, ATTEMPT_ID_IMPL),
+          ],
+          dispatches: dispatchPlanI.dispatch
+            ? [...implAssurance.dispatches, dispatchPlanI.dispatch]
+            : implAssurance.dispatches,
         };
         implAssurance = appendInvocationEvidence(implAssurance, invocationI);
         implAssurance = consumeReviewObligation(
@@ -520,7 +623,22 @@ describe('assurance lifecycle persistence across hosts', () => {
         });
         const findingsA = strictFindings({ iteration: 0, planVersion: 1 });
         const fhA = hashFindings(findingsA);
-        const invocationA = buildHostInvocation(host, obligationA, fhA, INVOCATION_ID_ARCH);
+        const dispatchPlanA = hostTaskDispatchPlan({
+          isHostTask: isOpenCode,
+          dispatches: [],
+          attemptId: ATTEMPT_ID_ARCH,
+          obligationId: obligationA.obligationId,
+          at: NOW,
+        });
+        const invocationA = buildHostInvocation(
+          host,
+          obligationA,
+          fhA,
+          INVOCATION_ID_ARCH,
+          ATTEMPT_ID_ARCH,
+          dispatchPlanA.hostTaskCallId,
+          dispatchPlanA.canonicalPromptDigest,
+        );
 
         let archAssurance = appendReviewObligation(undefined, obligationA);
         archAssurance = {
@@ -530,14 +648,15 @@ describe('assurance lifecycle persistence across hosts', () => {
               ? {
                   ...o,
                   status: 'fulfilled' as const,
+                  invocationId: INVOCATION_ID_ARCH,
                   fulfilledAt: NOW,
                   pluginHandshakeAt: isOpenCode ? NOW : null,
                 }
               : o,
           ),
           invocations: archAssurance.invocations,
-          attempts: [],
-          dispatches: archAssurance.dispatches,
+          attempts: [buildBoundAttempt(obligationA, SESS_ID_REVIEWER, ATTEMPT_ID_ARCH)],
+          dispatches: dispatchPlanA.dispatch ? [dispatchPlanA.dispatch] : [],
         };
         archAssurance = appendInvocationEvidence(archAssurance, invocationA);
         archAssurance = consumeReviewObligation(
@@ -552,7 +671,7 @@ describe('assurance lifecycle persistence across hosts', () => {
           verdict: 'approve',
           rationale: 'ADR accepted',
           decidedAt: NOW,
-          decidedBy: DECIDED_BY,
+          decisionIdentity: DECISION_IDENTITY,
         };
         await writeState(sessDir, archState);
 
@@ -563,7 +682,7 @@ describe('assurance lifecycle persistence across hosts', () => {
             verdict: 'approve',
             rationale: 'ADR accepted',
             decidedAt: NOW,
-            decidedBy: DECIDED_BY,
+            decisionIdentity: DECISION_IDENTITY,
           },
         });
         await writeState(sessDir, complete);

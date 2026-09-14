@@ -1,5 +1,10 @@
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
-import type { FrozenReviewSubject, ReviewRepositoryIdentity } from '../../../state/evidence.js';
+import type {
+  FrozenRepositoryAuthority,
+  FrozenRepositoryRevisionTarget,
+  FrozenReviewSubject,
+  ReviewRepositoryIdentity,
+} from '../../../state/evidence.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from '../../review/assurance.js';
 
 /**
@@ -11,6 +16,35 @@ import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from '../../review/ass
 function sameRepositoryIdentity(a: ReviewRepositoryIdentity, b: ReviewRepositoryIdentity): boolean {
   if ('kind' in a) return 'kind' in b && a.rootCommitDigest === b.rootCommitDigest;
   return !('kind' in b) && a.host === b.host && a.owner === b.owner && a.name === b.name;
+}
+
+/**
+ * Explicit frozen repository authority for a frozen repository-change subject.
+ *
+ * Same-repository reviews mint a `candidate_pair`; distinct remote
+ * repositories (a fork PR) mint a `fork_pair`, which keeps the two repository
+ * identities explicit instead of silently re-pointing one side at the other.
+ * Non-repository subjects carry no repository authority.
+ */
+export function repositoryAuthorityFromSubject(
+  subject: FrozenReviewSubject | undefined,
+): FrozenRepositoryAuthority | undefined {
+  if (subject?.kind !== 'repository_change') return undefined;
+  const baseIdentity = subject.baseRepository;
+  const headIdentity = subject.headRepository ?? subject.baseRepository;
+  const base: FrozenRepositoryRevisionTarget = {
+    kind: 'commit',
+    repositoryIdentity: baseIdentity,
+    objectSha: subject.baseSha,
+  };
+  const head: FrozenRepositoryRevisionTarget = {
+    kind: 'commit',
+    repositoryIdentity: headIdentity,
+    objectSha: subject.headSha,
+  };
+  return sameRepositoryIdentity(baseIdentity, headIdentity)
+    ? { kind: 'candidate_pair', base, head }
+    : { kind: 'fork_pair', base, head };
 }
 
 /**

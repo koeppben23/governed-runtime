@@ -1,13 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { _resetAgentResolutionCache } from './agent-resolution.js';
 import { invokeReviewer, type ReviewerResult, type ReviewerSuccessResult } from './orchestrator.js';
-import {
-  validFindings,
-  NO_SLEEP,
-  TEXT_COMPAT_OPTIONS,
-  makeClient,
-  PROMPT,
-} from './orchestrator-test-helpers.js';
+import { validFindings, NO_SLEEP, makeClient, PROMPT } from './orchestrator-test-helpers.js';
 
 function assertSuccessfulResult(
   result: ReviewerResult | null,
@@ -29,13 +23,14 @@ describe('invokeReviewer — diagnostics contract', () => {
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
-        ...TEXT_COMPAT_OPTIONS,
+        reviewInvocationPolicy: 'sdk_allowed',
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
       expect(diagnostics).toHaveLength(1);
       expect(diagnostics[0]!.step).toBe('session_create');
       expect(diagnostics[0]!.attempt).toBe(1);
+      expect((diagnostics[0]!.details as Record<string, unknown>).hasData).toBe(false);
     });
 
     it('fires with step=session_prompt when prompt returns error', async () => {
@@ -46,13 +41,17 @@ describe('invokeReviewer — diagnostics contract', () => {
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
-        ...TEXT_COMPAT_OPTIONS,
+        reviewInvocationPolicy: 'sdk_allowed',
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
       expect(diagnostics).toHaveLength(1);
       expect(diagnostics[0]!.step).toBe('session_prompt');
       expect(diagnostics[0]!.attempt).toBe(1);
+      const details = diagnostics[0]!.details as Record<string, unknown>;
+      expect(details.hasData).toBe(false);
+      expect(details.hasFormat).toBe(true);
+      expect(details.isNonRetryable).toBe(false);
     });
 
     it('fires with step=no_findings when structured output absent', async () => {
@@ -66,13 +65,16 @@ describe('invokeReviewer — diagnostics contract', () => {
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
-        ...TEXT_COMPAT_OPTIONS,
+        reviewInvocationPolicy: 'sdk_allowed',
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
       expect(diagnostics).toHaveLength(1);
       expect(diagnostics[0]!.step).toBe('no_findings');
-      expect((diagnostics[0]!.details as Record<string, unknown>).infoKeys).toEqual([]);
+      const details = diagnostics[0]!.details as Record<string, unknown>;
+      expect(details.infoKeys).toEqual([]);
+      expect(details.hasStructuredOutput).toBe(false);
+      expect(details.hasStructured).toBe(false);
     });
 
     it('fires with step=structured_output_error for StructuredOutputError', async () => {
@@ -95,6 +97,9 @@ describe('invokeReviewer — diagnostics contract', () => {
       });
       expect(diagnostics).toHaveLength(1);
       expect(diagnostics[0]!.step).toBe('structured_output_error');
+      const details = diagnostics[0]!.details as Record<string, unknown>;
+      expect(details.agent).toBe('flowguard-reviewer');
+      expect(details.retries).toBeUndefined();
     });
 
     it('fires once per attempt on repeated failures', async () => {
@@ -128,7 +133,7 @@ describe('invokeReviewer — diagnostics contract', () => {
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
-        ...TEXT_COMPAT_OPTIONS,
+        reviewInvocationPolicy: 'sdk_allowed',
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -137,6 +142,56 @@ describe('invokeReviewer — diagnostics contract', () => {
       expect(details.hasInfo).toBe(true);
       expect(details.partsCount).toBe(1);
       expect(details.textPartsLength).toBe(8); // "not json" = 8 chars
+    });
+
+    it('counts only text parts that carry text in no_findings details', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [
+              { type: 'text', text: '12345' },
+              { type: 'tool', text: 'XX' },
+              { type: 'text' },
+              { text: 'YY' },
+            ],
+            info: { structured: null, error: undefined },
+          },
+          error: undefined,
+        },
+      });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0]!.step).toBe('no_findings');
+      expect((diagnostics[0]!.details as Record<string, unknown>).textPartsLength).toBe(5);
+    });
+
+    it('treats array structured payloads as absent findings (fail-closed)', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: { structured: [{ overallVerdict: 'accept', blockingIssues: [] }] },
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        reviewInvocationPolicy: 'sdk_allowed',
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      expect(result).toBeNull();
+      expect(diagnostics.some((d) => d.step === 'no_findings')).toBe(true);
     });
 
     // ─── info_error step: non-StructuredOutputError surfacing ─────────────────

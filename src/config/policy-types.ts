@@ -50,8 +50,12 @@ export interface AuditPolicy {
   readonly timestampAssurance: TimestampAssurancePolicy;
 }
 
-/** Controls which reviewer output modes may satisfy governance evidence. */
-export type ReviewOutputPolicy = 'structured_required' | 'text_compat_allowed';
+/**
+ * Independent review evidence always requires STRUCTURED findings (host-
+ * observed structured model output or honestly-labeled agent-submitted
+ * structured findings); unstructured text recovery is never admissible.
+ */
+export type ReviewOutputPolicy = 'structured_required';
 
 /** Controls how the reviewer is invoked — host-visible Task tool vs SDK vs fallback. */
 export type ReviewInvocationPolicy = 'host_task_required' | 'host_task_preferred' | 'sdk_allowed';
@@ -93,8 +97,8 @@ export function challengeKindForObligation(obligationType: string): ChallengeKin
 }
 
 /**
- * Canonical default for `maxReviewerOutputRepairAttempts`: exactly ONE
- * authorized output-repair reissue per obligation.
+ * Canonical default for `maxReviewerAttempts`: exactly ONE additional
+ * reviewer attempt (output repair or task re-arm) per obligation.
  *
  * initial attempt (does not count) → repairable rejection → repair #1
  * repair #1 → repairable rejection → REVIEWER_OUTPUT_RETRY_EXHAUSTED
@@ -102,7 +106,7 @@ export function challengeKindForObligation(obligationType: string): ChallengeKin
  * The value is frozen onto the obligation at creation; presets and the
  * config override both route through this canonical default.
  */
-export const DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS = 1;
+export const DEFAULT_MAX_REVIEWER_ATTEMPTS = 1;
 
 // ─── Discovery Health Policy ──────────────────────────────────────────────────
 
@@ -238,15 +242,17 @@ export interface FlowGuardPolicy {
   readonly maxIncoherentReviewerCaptureRetries: number;
 
   /**
-   * Obligation-level output-repair budget: how many NEW reviewer attempts may
-   * be minted for one obligation after a canonically repairable non-bindable
-   * reviewer output (schema/extraction/attestation/relation contract defects).
-   * Frozen onto the obligation at creation; the reissue gate reads the frozen
-   * value, never the live config. Governance rejections, scope/material
-   * failures, and execution failures do NOT consume this budget — they never
-   * authorize a reissue at all.
+   * Obligation-level reviewer-attempt budget: how many NEW reviewer attempts
+   * (output repairs AND task re-arms) may be minted for one obligation.
+   * Consumed by canonically repairable non-bindable reviewer output
+   * (schema/extraction/attestation/relation contract defects) and by
+   * Task-lifecycle re-arms after an interrupted dispatch. Frozen onto the
+   * obligation at creation; the reissue gates read the frozen value, never the
+   * live config. Governance rejections, scope/material failures, and
+   * execution failures do NOT consume this budget — they never authorize a
+   * reissue at all.
    */
-  readonly maxReviewerOutputRepairAttempts: number;
+  readonly maxReviewerAttempts: number;
 
   /**
    * Whether the session initiator can approve at User Gates.

@@ -15,7 +15,7 @@ import {
 } from './assurance.js';
 import { updateObligation } from './obligation-state.js';
 import type { ReviewerSuccessResult } from './orchestrator.js';
-import { EVIDENCE_SOURCE_HOST, INVOCATION_MODE_SDK_SESSION } from './pipeline-types.js';
+import { INVOCATION_MODE_SDK_SESSION } from './pipeline-types.js';
 import type { EvidenceRecordResult, OrchestratorDeps } from './pipeline-types.js';
 import type { PipelineContext } from './pipeline-types.js';
 import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
@@ -32,13 +32,7 @@ type SdkEvidenceParams = {
   fulfilledAt: string;
   reviewerResult: Pick<
     ReviewerSuccessResult,
-    | 'sessionId'
-    | 'reviewOutputMode'
-    | 'structuredOutputUsed'
-    | 'reviewAssuranceLevel'
-    | 'extractionMethod'
-    | 'modelCapabilityError'
-    | 'findings'
+    'sessionId' | 'reviewOutputMode' | 'structuredOutputUsed' | 'reviewAssuranceLevel' | 'findings'
   >;
   semanticIntents?: (
     result: EvidenceRecordResult,
@@ -61,12 +55,7 @@ export function buildSdkEvidenceAuditIntents(input: {
   findingsHash: string;
   reviewerResult: Pick<
     ReviewerSuccessResult,
-    | 'sessionId'
-    | 'reviewOutputMode'
-    | 'structuredOutputUsed'
-    | 'reviewAssuranceLevel'
-    | 'extractionMethod'
-    | 'modelCapabilityError'
+    'sessionId' | 'reviewOutputMode' | 'structuredOutputUsed' | 'reviewAssuranceLevel'
   >;
   state: SessionState;
   occurredAt: string;
@@ -101,12 +90,6 @@ export function buildSdkEvidenceAuditIntents(input: {
           structuredOutputUsed: reviewerResult.structuredOutputUsed,
           reviewAssuranceLevel: reviewerResult.reviewAssuranceLevel,
           reviewProfile,
-          ...(reviewerResult.extractionMethod
-            ? { extractionMethod: reviewerResult.extractionMethod }
-            : {}),
-          ...(reviewerResult.modelCapabilityError
-            ? { modelCapabilityError: reviewerResult.modelCapabilityError }
-            : {}),
         };
   const first: SemanticAuditIntent = {
     phase: state.phase,
@@ -142,18 +125,11 @@ function buildSdkSessionInvocation(
     parentSessionId: params.sessionId,
     childSessionId: params.childSessionId,
     invocationMode: INVOCATION_MODE_SDK_SESSION,
-    hostVisible: false,
     promptHash: params.promptHash,
     findingsHash: params.findingsHash,
     invokedAt: params.invokedAt,
     fulfilledAt: params.fulfilledAt,
     attemptId: params.attemptId,
-    source: EVIDENCE_SOURCE_HOST,
-    reviewOutputMode: params.reviewerResult.reviewOutputMode,
-    structuredOutputUsed: params.reviewerResult.structuredOutputUsed,
-    reviewAssuranceLevel: params.reviewerResult.reviewAssuranceLevel,
-    extractionMethod: params.reviewerResult.extractionMethod,
-    modelCapabilityError: params.reviewerResult.modelCapabilityError,
     capturedVerdict:
       params.reviewerResult.findings &&
       typeof params.reviewerResult.findings.overallVerdict === 'string'

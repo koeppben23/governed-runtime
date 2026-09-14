@@ -382,9 +382,9 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
     code: 'DECISION_RECEIPT_ACTOR_MISSING',
     category: 'identity',
     messageTemplate:
-      'Decision receipt skipped because decidedBy is missing on the review-decision output.',
+      'Decision receipt skipped because decisionIdentity is missing on the review-decision output.',
     recoverySteps: [
-      'Ensure /review-decision output includes reviewDecision.decidedBy',
+      'Ensure /review-decision output includes reviewDecision.decisionIdentity',
       'Set FLOWGUARD_ACTOR_ID before running /review-decision',
       'Re-run /review-decision with a verified actor identity',
     ],

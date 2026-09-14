@@ -241,10 +241,24 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ ReviewerFindingsInput drift guard', ()
     expect(required).toContain('attestation');
   });
 
-  it('CONTRACT: challenges are available to the SDK but remain optional for legacy findings', () => {
+  it('CONTRACT: challenges are required at the top level of the SDK schema and the review input', () => {
     const props = jsonSchemaProperties();
     expect(props.challenges).toBeDefined();
-    expect(jsonSchemaRequired()).not.toContain('challenges');
+    expect(jsonSchemaRequired()).toContain('challenges');
+    expect(
+      ReviewerFindingsInput.safeParse({
+        iteration: 1,
+        planVersion: 1,
+        reviewMode: 'subagent',
+        overallVerdict: 'accept',
+        blockingIssues: [],
+        majorRisks: [],
+        missingVerification: [],
+        scopeCreep: [],
+        unknowns: [],
+        attestation: { toolObligationId: '00000000-0000-4000-8000-000000000000' },
+      }).success,
+    ).toBe(false);
   });
 
   it('GOOD: challenge oneOf includes all three canonical discriminator variants', () => {
@@ -309,6 +323,7 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ ReviewerFindingsInput drift guard', ()
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       attestation: {
         toolObligationId: '00000000-0000-4000-8000-000000000000',
       },
@@ -330,6 +345,7 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ ReviewerFindingsInput drift guard', ()
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       attestation: {
         toolObligationId: '00000000-0000-4000-8000-000000000000',
       },
@@ -340,7 +356,7 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ ReviewerFindingsInput drift guard', ()
     expect(
       ReviewFindings.safeParse({
         ...payload,
-        reviewedBy: { sessionId: 'sess_abc123', actorAssurance: 'verified' },
+        reviewedBy: { sessionId: 'sess_abc123', actorAssurance: 'idp_verified' },
         reviewedAt: new Date().toISOString(),
         attestation: {
           toolObligationId: payload.attestation.toolObligationId,
@@ -370,6 +386,7 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ ReviewerFindingsInput drift guard', ()
       missingVerification: ['plan text malformed at line 42'],
       scopeCreep: [],
       unknowns: ['cannot parse the proposed schema diff'],
+      challenges: [],
       attestation: {
         toolObligationId: '00000000-0000-4000-8000-000000000000',
       },

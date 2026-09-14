@@ -5,7 +5,7 @@
  *              Keep this file as the entry point for existing imports from 'state/evidence.js'.
  *
  *              evidence-assurance-internal.ts MUST NOT appear in these re-exports —
- *              OpenCodeSessionId, coerceAssurance, and assuranceSchema are internal helpers
+ *              OpenCodeSessionId and assuranceSchema are internal helpers
  *              and were never part of the public evidence.ts API surface.
  *
  * @version v2 (split into focused modules, no behavior change, no API expansion)

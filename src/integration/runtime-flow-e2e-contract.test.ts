@@ -42,6 +42,7 @@ import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './review/assurance.js';
+import { hostTaskDispatchPlan } from './tools/review-validation-test-helpers.js';
 import { makeState, TICKET, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 import { computeRecordDigest } from '../state/evidence-plan.js';
@@ -215,40 +216,75 @@ async function inject(
     (o) => o.obligationType === oblType && o.status === 'pending',
   );
   if (!obl) throw new Error(`No pending ${oblType} obligation`);
+  // The obligation's tool-created attempt is the one the reviewer evidence is
+  // bound to; mutating it keeps the attempt ledger append-only instead of
+  // replacing historical attempts (which would orphan earlier invocations).
+  const priorAttempt = state.reviewAssurance!.attempts.find(
+    (attempt) => attempt.obligationId === obl.obligationId,
+  );
+  if (!priorAttempt) throw new Error(`No attempt for ${oblType} obligation`);
   const ff = f(obl.obligationId, obl.iteration, obl.planVersion, challengesFor(state, obl));
   const fh = hashFindings(ff);
-  const newObl = {
-    ...obl,
-    status: 'fulfilled' as const,
-    fulfilledAt: FIXED_TIME,
-    pluginHandshakeAt: isOpen(host) ? FIXED_TIME : null,
-    reviewSubjectScope: {
-      kind: 'repository_change' as const,
-      paths: ['README.md'],
-      revisions: ['base', 'head'] as const,
-    },
-  };
+  const attemptId = priorAttempt.attemptId;
+  const hostObserved = isOpen(host);
+  const dispatchPlan = hostTaskDispatchPlan({
+    isHostTask: hostObserved,
+    dispatches: state.reviewAssurance!.dispatches,
+    attemptId,
+    obligationId: obl.obligationId,
+    at: FIXED_TIME,
+  });
+  const invocationId = randomUUID();
   const inv = {
-    invocationId: randomUUID(),
+    invocationId,
     obligationId: obl.obligationId,
     obligationType: obl.obligationType,
     parentSessionId: sessionId,
     childSessionId: 'ses_r',
     agentType: 'flowguard-reviewer' as const,
-    invocationMode: isOpen(host) ? ('host_subagent_task' as const) : ('manual_attested' as const),
-    hostVisible: isOpen(host),
-    source: isOpen(host) ? ('host-orchestrated' as const) : ('agent-submitted-attested' as const),
+    invocationMode: hostObserved ? ('host_subagent_task' as const) : ('manual_attested' as const),
+    hostVisible: hostObserved,
+    source: hostObserved ? ('host-orchestrated' as const) : ('agent-submitted-attested' as const),
     promptHash: 'abc',
     mandateDigest: REVIEW_MANDATE_DIGEST,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
     findingsHash: fh,
+    ...(hostObserved
+      ? {
+          hostTaskCallId: dispatchPlan.hostTaskCallId,
+          canonicalPromptDigest: dispatchPlan.canonicalPromptDigest,
+        }
+      : {}),
     invokedAt: FIXED_TIME,
     fulfilledAt: FIXED_TIME,
     consumedByObligationId: null,
-    capturedVerdict: isOpen(host) ? 'approve' : undefined,
-    reviewOutputMode: 'structured_output' as const,
-    structuredOutputUsed: true,
-    reviewAssuranceLevel: 'structured_high' as const,
+    capturedVerdict: hostObserved ? 'approve' : undefined,
+    reviewOutputMode: hostObserved
+      ? ('structured_output' as const)
+      : ('agent_submitted_structured' as const),
+    structuredOutputUsed: hostObserved,
+    reviewAssuranceLevel: hostObserved
+      ? ('structured_high' as const)
+      : ('structured_submitted' as const),
+    attemptId,
+  };
+  const newObl = {
+    ...obl,
+    status: 'fulfilled' as const,
+    invocationId,
+    fulfilledAt: FIXED_TIME,
+    pluginHandshakeAt: hostObserved ? FIXED_TIME : null,
+    reviewSubjectScope:
+      obl.obligationType === 'implement'
+        ? {
+            kind: 'implementation' as const,
+            implementationDigest: obl.subjectDigest,
+          }
+        : {
+            kind: 'repository_change' as const,
+            paths: ['README.md'],
+            revisions: ['base', 'head'] as const,
+          },
   };
   const aug: SessionState = {
     ...state,
@@ -258,14 +294,30 @@ async function inject(
         o.obligationId === obl.obligationId ? newObl : o,
       ),
       invocations: [...state.reviewAssurance!.invocations, inv],
-      attempts: [],
-      dispatches: state.reviewAssurance!.dispatches,
+      attempts: state.reviewAssurance!.attempts.map((attempt) =>
+        attempt.attemptId === attemptId
+          ? {
+              ...attempt,
+              childSessionId: 'ses_r',
+              status: 'bound' as const,
+              completedAt: FIXED_TIME,
+            }
+          : attempt,
+      ),
+      dispatches: dispatchPlan.dispatch
+        ? [...state.reviewAssurance!.dispatches, dispatchPlan.dispatch]
+        : state.reviewAssurance!.dispatches,
     },
     reviewDecision: {
       verdict: 'approve',
       rationale: 'E2E',
       decidedAt: FIXED_TIME,
-      decidedBy: 'reviewer-1',
+      decisionIdentity: {
+        actorId: 'reviewer-1',
+        actorEmail: null,
+        actorSource: 'unknown',
+        actorAssurance: 'best_effort',
+      },
     },
   };
   await writeStateWithArtifacts(sDir, aug);

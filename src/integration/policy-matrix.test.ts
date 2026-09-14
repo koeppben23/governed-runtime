@@ -364,9 +364,9 @@ const MATRIX: Array<{
 
 describe('policy mode matrix', () => {
   it('freezes reviewOutputPolicy defaults per mode', async () => {
-    const expected: Record<Mode, 'structured_required' | 'text_compat_allowed'> = {
-      solo: 'text_compat_allowed',
-      team: 'text_compat_allowed',
+    const expected: Record<Mode, 'structured_required'> = {
+      solo: 'structured_required',
+      team: 'structured_required',
       'team-ci': 'structured_required',
       regulated: 'structured_required',
     };

@@ -136,7 +136,9 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
-            maxReviewerOutputRepairAttempts: 1,
+            maxReviewerAttempts: 1,
+            reviewProfile: 'core',
+            profileSource: 'policy_default',
             createdAt: now,
             pluginHandshakeAt: null,
             status: 'pending',
@@ -159,11 +161,11 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
             obligationId,
             obligationType: 'plan' as const,
             subjectDigest: 'test-subject-digest',
-            reviewMaterial,
             ordinal: 0,
             status: 'created' as const,
             origin: { kind: 'initial' } as const,
             repositoryDiscovery: { kind: 'not_applicable' } as const,
+            observations: [],
             createdAt: now,
           },
         ],
@@ -1128,6 +1130,7 @@ describe('integration/plugin', () => {
           missingVerification: [],
           scopeCreep: [],
           unknowns: [],
+          challenges: [],
         };
 
         const hooks = await FlowGuardAuditPlugin(
@@ -1187,6 +1190,7 @@ describe('integration/plugin', () => {
           missingVerification: [],
           scopeCreep: [],
           unknowns: [],
+          challenges: [],
           attestation: {
             toolObligationId: obligationId,
           },
@@ -1249,6 +1253,7 @@ describe('integration/plugin', () => {
           missingVerification: [],
           scopeCreep: [],
           unknowns: [],
+          challenges: [],
           attestation: { toolObligationId: obligationId },
         };
         const hooks = await FlowGuardAuditPlugin(
@@ -1306,6 +1311,7 @@ describe('integration/plugin', () => {
           missingVerification: [],
           scopeCreep: [],
           unknowns: [],
+          challenges: [],
           attestation: {
             toolObligationId: obligationId,
           },

@@ -30,7 +30,7 @@ import { deriveRepositoryRevisionProvenance } from '../../state/evidence.js';
 import { indexMarkdownSections } from '../../shared/markdown-sections.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import {
-  DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS,
+  DEFAULT_MAX_REVIEWER_ATTEMPTS,
   CHALLENGE_POLICY_V1,
   type ChallengePolicy,
 } from '../../config/policy-types.js';
@@ -99,7 +99,6 @@ export {
   ensureReviewAssurance,
   createReviewAttempt,
   createAttemptForExistingObligation,
-  latestReviewMaterial,
   appendReviewAttempt,
   resolveAttempt,
   resolveEvidenceAuthorizingAttempt,
@@ -119,9 +118,8 @@ import {
 /**
  * Resolve the opaque observation capability of the attempt a reviewer Task
  * will bind to: the highest-ordinal attempt of the obligation. Returns null
- * when no attempt or capability exists (legacy attempts minted before the
- * frozen-repository-authority generation) — repository evidence is then
- * unavailable for the attempt.
+ * when no attempt exists or the obligation backs no frozen repository
+ * revision — repository evidence is then unavailable for the attempt.
  */
 export function resolveAttemptObservationCapability(
   assurance: ReviewAssuranceState | undefined,
@@ -163,7 +161,7 @@ export function createReviewObligation(input: {
   /** Frozen standalone content/repository subject, when this is a standalone review. */
   reviewSubject?: FrozenReviewSubject;
   /** Exact normalized artifact bytes frozen for host-task delivery. */
-  reviewMaterial?: ReviewMaterial;
+  reviewMaterial: ReviewMaterial;
   /**
    * Mandatory review coverage profile frozen into the obligation at creation,
    * before any reviewer invocation. Defaults to the fail-closed 'core' baseline.
@@ -179,7 +177,7 @@ export function createReviewObligation(input: {
    * reissue gate never re-reads live config.
    */
   policySnapshot?:
-    | (Pick<PolicySnapshot, 'maxReviewerOutputRepairAttempts'> & {
+    | (Pick<PolicySnapshot, 'maxReviewerAttempts'> & {
         challengePolicy?: ChallengePolicy;
       })
     | null;
@@ -207,7 +205,7 @@ export function createReviewObligation(input: {
    */
   claimedTaskClass?: TaskClass;
   metadata?: Record<string, unknown>;
-  fingerprintVersion?: 'v1' | 'v2';
+  fingerprintVersion?: 'v2';
 }): ReviewObligation {
   assertSubjectDigest(input.subjectDigest);
   assertRepositoryFreezeCoherence(input);
@@ -250,22 +248,21 @@ export function createReviewObligation(input: {
     ...(input.claimDeclarationsDigest
       ? { claimDeclarationsDigest: input.claimDeclarationsDigest }
       : {}),
-    ...(input.reviewMaterial ? { reviewMaterial: input.reviewMaterial } : {}),
+    reviewMaterial: input.reviewMaterial,
     reviewSubject: input.reviewSubject,
     metadata: input.metadata,
     ...(input.fingerprintVersion ? { fingerprintVersion: input.fingerprintVersion } : {}),
     reviewSubjectScope,
     repositoryRevisionProvenance: deriveRepositoryRevisionProvenance({
       repositoryAuthority: input.repositoryAuthority,
-      reviewSubject: input.reviewSubject,
     }),
     repositoryAuthority: input.repositoryAuthority,
     repositoryEvidenceFreeze: input.repositoryEvidenceFreeze,
-    // Frozen output-repair budget. The canonical policy default applies at
+    // Frozen reviewer-attempt budget. The canonical policy default applies at
     // creation time only; the reissue gate reads this frozen value, never the
     // live config, so a later policy change cannot re-open a settled
     // obligation's repair window.
-    maxReviewerOutputRepairAttempts: resolveFrozenOutputRepairBudget(input.policySnapshot),
+    maxReviewerAttempts: resolveFrozenReviewerAttemptBudget(input.policySnapshot),
   };
 }
 
@@ -287,21 +284,19 @@ export function resolveFrozenReviewProfile(
 }
 
 /**
- * Frozen output-repair budget for an obligation. The canonical policy default
+ * Frozen reviewer-attempt budget for an obligation. The canonical policy default
  * applies at creation time only; the reissue gate reads the frozen obligation
  * value, never the live config.
  */
-function resolveFrozenOutputRepairBudget(
+function resolveFrozenReviewerAttemptBudget(
   policySnapshot:
-    | (Pick<PolicySnapshot, 'maxReviewerOutputRepairAttempts'> & {
+    | (Pick<PolicySnapshot, 'maxReviewerAttempts'> & {
         challengePolicy?: ChallengePolicy;
       })
     | null
     | undefined,
 ): number {
-  return (
-    policySnapshot?.maxReviewerOutputRepairAttempts ?? DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS
-  );
+  return policySnapshot?.maxReviewerAttempts ?? DEFAULT_MAX_REVIEWER_ATTEMPTS;
 }
 
 export function appendReviewObligation(
@@ -362,7 +357,7 @@ export function findLatestPendingReviewObligation(
   assurance: ReviewAssuranceState | undefined,
   obligationType: ReviewObligationType,
   metadataFingerprint?: string,
-  fingerprintVersion?: 'v1' | 'v2',
+  fingerprintVersion?: 'v2',
 ): ReviewObligation | null {
   const base = ensureReviewAssurance(assurance);
   const candidates = base.obligations.filter(
@@ -380,8 +375,7 @@ export function findLatestPendingReviewObligation(
           (o) =>
             o.metadata &&
             o.metadata.fingerprint === metadataFingerprint &&
-            (fingerprintVersion === undefined ||
-              (o.fingerprintVersion ?? 'v1') === fingerprintVersion),
+            (fingerprintVersion === undefined || o.fingerprintVersion === fingerprintVersion),
         )
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
         .at(0) ?? null
@@ -506,7 +500,6 @@ export function createObligationAndAttempt(
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
     subjectDigest: obligationInput.subjectDigest,
-    reviewMaterial: obligation.reviewMaterial,
     ordinal,
     origin: { kind: 'initial' },
     repositoryDiscovery,
@@ -546,7 +539,6 @@ export function appendObligationWithAttempt(
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
     subjectDigest: obligation.subjectDigest,
-    reviewMaterial: obligation.reviewMaterial,
     ordinal,
     origin: { kind: 'initial' },
     repositoryDiscovery,
@@ -576,7 +568,6 @@ export function buildInvocationEvidence(input: {
   parentSessionId: string;
   childSessionId: string;
   invocationMode: ReviewInvocationMode;
-  hostVisible: boolean;
   promptHash: string;
   canonicalPromptDigest?: string;
   modelPromptDigest?: string | null;
@@ -584,12 +575,6 @@ export function buildInvocationEvidence(input: {
   findingsHash: string;
   invokedAt: string;
   fulfilledAt?: string;
-  source?: 'host-orchestrated' | 'agent-submitted-attested';
-  reviewOutputMode?: 'structured_output' | 'text_compat';
-  structuredOutputUsed?: boolean;
-  reviewAssuranceLevel?: 'structured_high' | 'structured_recovered' | 'text_compat_lower';
-  extractionMethod?: 'direct_json' | 'json_fence' | 'outermost_braces';
-  modelCapabilityError?: string;
   /** Captured verdict from the reviewer's actual output (host-task authoritative). */
   capturedVerdict?: string;
   /** Complete raw findings from the reviewer's output (host-task only).
@@ -605,15 +590,14 @@ export function buildInvocationEvidence(input: {
   resolvedBaseSha?: string | null;
   /** SHA-256 digest of the extracted/reviewed content (branch reviews only). */
   reviewedContentDigest?: string | null;
-  /** Persisted attempt ID bound at evidence-assembly time. */
-  attemptId?: string;
+  /** Persisted host-authoritative attempt ID bound at evidence-assembly time. */
+  attemptId: string;
 }): ReviewInvocationEvidence {
-  const reviewOutputMode = input.reviewOutputMode ?? 'structured_output';
-  const structuredOutputUsed =
-    input.structuredOutputUsed ?? reviewOutputMode === 'structured_output';
-  const reviewAssuranceLevel =
-    input.reviewAssuranceLevel ??
-    (reviewOutputMode === 'text_compat' ? 'text_compat_lower' : 'structured_high');
+  // Provenance is DERIVED from how the reviewer was invoked — callers cannot
+  // assert host observation for agent-submitted transport.
+  const hostObservedStructured =
+    input.invocationMode === 'host_subagent_task' || input.invocationMode === 'sdk_session_prompt';
+  const hostVisible = input.invocationMode === 'host_subagent_task';
   return {
     invocationId: randomUUID(),
     obligationId: input.obligationId,
@@ -622,7 +606,7 @@ export function buildInvocationEvidence(input: {
     childSessionId: input.childSessionId,
     agentType: REVIEWER_SUBAGENT_TYPE,
     invocationMode: input.invocationMode,
-    hostVisible: input.hostVisible,
+    hostVisible,
     promptHash: input.promptHash,
     canonicalPromptDigest: input.canonicalPromptDigest,
     modelPromptDigest: input.modelPromptDigest,
@@ -633,21 +617,19 @@ export function buildInvocationEvidence(input: {
     invokedAt: input.invokedAt,
     fulfilledAt: input.fulfilledAt ?? null,
     consumedByObligationId: null,
-    source: input.source,
-    reviewOutputMode,
-    structuredOutputUsed,
-    reviewAssuranceLevel,
+    source: hostObservedStructured ? 'host-orchestrated' : 'agent-submitted-attested',
+    reviewOutputMode: hostObservedStructured ? 'structured_output' : 'agent_submitted_structured',
+    structuredOutputUsed: hostObservedStructured,
+    reviewAssuranceLevel: hostObservedStructured ? 'structured_high' : 'structured_submitted',
     resolvedBranchSha: input.resolvedBranchSha ?? null,
     resolvedBaseSha: input.resolvedBaseSha ?? null,
     reviewedContentDigest: input.reviewedContentDigest ?? null,
-    ...(input.attemptId ? { attemptId: input.attemptId } : {}),
+    attemptId: input.attemptId,
     ...buildOptionalInvocationFields(input),
   };
 }
 
 function buildOptionalInvocationFields(input: {
-  extractionMethod?: 'direct_json' | 'json_fence' | 'outermost_braces';
-  modelCapabilityError?: string;
   capturedVerdict?: string;
   capturedRawFindings?: Record<string, unknown>;
   hostCapturedAgentId?: string;
@@ -655,8 +637,6 @@ function buildOptionalInvocationFields(input: {
   hostCaptureSource?: 'subagent_stop_hook' | 'post_tool_use_hook';
 }): Record<string, unknown> {
   return {
-    ...(input.extractionMethod ? { extractionMethod: input.extractionMethod } : {}),
-    ...(input.modelCapabilityError ? { modelCapabilityError: input.modelCapabilityError } : {}),
     ...(input.capturedVerdict ? { capturedVerdict: input.capturedVerdict } : {}),
     ...(input.capturedRawFindings ? { capturedRawFindings: input.capturedRawFindings } : {}),
     ...(input.hostCapturedAgentId ? { hostCapturedAgentId: input.hostCapturedAgentId } : {}),

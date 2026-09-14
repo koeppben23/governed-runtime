@@ -145,7 +145,12 @@ function stateWithClaims() {
       verdict: 'approve',
       rationale: 'approved',
       decidedAt: NOW,
-      decidedBy: 'user',
+      decisionIdentity: {
+        actorId: 'user',
+        actorEmail: null,
+        actorSource: 'unknown',
+        actorAssurance: 'best_effort',
+      },
     },
     implementation: {
       changedFiles: ['src/example.ts'],

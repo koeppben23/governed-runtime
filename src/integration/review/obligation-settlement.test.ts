@@ -41,7 +41,7 @@ function planObligation(): ReviewObligation {
         version: 'challenge-policy.v1',
         counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
       },
-      maxReviewerOutputRepairAttempts: 1,
+      maxReviewerAttempts: 1,
     },
   });
 }
@@ -67,7 +67,6 @@ function attemptFor(
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
     subjectDigest: obligation.subjectDigest,
-    reviewMaterial: obligation.reviewMaterial,
     ordinal,
     origin: { kind: 'initial' },
     repositoryDiscovery: { kind: 'not_applicable' },

@@ -2,22 +2,12 @@
  * @module integration/test-helpers
  * @description Shared test infrastructure for integration and E2E tests.
  *
- * Provides:
- * - TestToolContext: structural type matching the internal ToolContext in tools.ts
- * - createToolContext(): factory for building tool execution contexts
- * - createTestWorkspace(): tmpDir + OPENCODE_CONFIG_DIR setup with cleanup
- * - isTarAvailable(): capability gate for archive tests
- * - GIT_MOCK_DEFAULTS: default return values for git adapter mocks
- * - parseToolResult(): parse JSON tool output into typed object
- *
- * Design:
- * - TestToolContext is defined structurally (not imported from tools.ts).
- *   This keeps the production API surface unchanged.
- * - All filesystem operations use real temp directories with OPENCODE_CONFIG_DIR
- *   redirection, following the pattern established in workspace.test.ts.
- * - Git adapter functions (remoteOriginUrl, changedFiles, listRepoSignals) are
- *   expected to be mocked via vi.mock() at the test-file level. This module
- *   provides only the default values, not the mock setup itself.
+ * Provides tool contexts, temp-workspace setup, tar capability detection, git
+ * mock defaults, tool-result parsing, strict-review fixtures, and scoped env
+ * mutation. TestToolContext is defined structurally (not imported from
+ * tools.ts) to keep the production API surface unchanged. All filesystem
+ * operations use real temp directories with OPENCODE_CONFIG_DIR redirection;
+ * git adapter functions are mocked at the test-file level.
  *
  * @version v1
  */
@@ -28,7 +18,12 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { readState } from '../adapters/persistence.js';
 import { resetAdapterLogger } from '../logging/adapter-logger.js';
-import type { ReviewAttempt, ReviewFindings, ReviewObligationType } from '../state/evidence.js';
+import type {
+  ReviewAttempt,
+  ReviewFindings,
+  ReviewObligation,
+  ReviewObligationType,
+} from '../state/evidence.js';
 import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
@@ -37,8 +32,10 @@ import {
   hashFindings,
   hashText,
 } from './review/assurance.js';
+import { mintObservationCapabilityIfResolvable } from './review/attempt-lifecycle.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { writeStateWithAuditOperations } from './tools/audit-outbox.js';
+import { hostTaskDispatchPlan } from './tools/review-validation-test-helpers.js';
 
 // ─── Safety Guards ───────────────────────────────────────────────────────────
 
@@ -366,12 +363,10 @@ export async function freezeRepositoryReviewObligation(
 
 /**
  * Fulfill a strict independent-review obligation in tool execution tests.
- *
- * Production fulfillment is performed by the OpenCode plugin orchestrator. Direct
- * tool tests do not run plugin hooks, so they use this helper to set the same
- * mandate-bound evidence before submitting ReviewFindings to the tool.
+ * Production fulfillment runs through the OpenCode plugin orchestrator; direct
+ * tool tests use this helper to set the same mandate-bound evidence.
  */
-// eslint-disable-next-line complexity, max-lines-per-function -- shared strict-review fixture must bind evidence, attempt lineage, and invocation together
+// eslint-disable-next-line max-lines-per-function -- shared strict-review fixture must bind evidence, attempt lineage, and invocation together
 export async function fulfillStrictReviewObligation(
   sessDir: string,
   input: {
@@ -466,13 +461,22 @@ export async function fulfillStrictReviewObligation(
       planVersion: input.planVersion,
       reviewedBy: REVIEWER_SUBAGENT_TYPE,
     },
-    ...(challenges.length > 0 ? { challenges } : {}),
+    challenges,
   };
 
   const isHostTask = state.policySnapshot?.reviewInvocationPolicy === 'host_task_required';
-  const hostAttempt = isHostTask
-    ? bindHostTaskAttempt(assurance.attempts, obligation, findings.reviewedBy.sessionId)
-    : null;
+  const boundAttempt = bindHostTaskAttempt(
+    assurance.attempts,
+    obligation,
+    findings.reviewedBy.sessionId,
+  );
+  const dispatchPlan = hostTaskDispatchPlan({
+    isHostTask,
+    dispatches: assurance.dispatches,
+    attemptId: boundAttempt.attemptId,
+    obligationId: obligation.obligationId,
+    at: new Date().toISOString(),
+  });
   const invocation = buildInvocationEvidence({
     obligationId: obligation.obligationId,
     obligationType: input.obligationType,
@@ -481,11 +485,13 @@ export async function fulfillStrictReviewObligation(
     parentSessionId: state.binding.hostSessionId,
     childSessionId: findings.reviewedBy.sessionId,
     invocationMode: isHostTask ? 'host_subagent_task' : 'sdk_session_prompt',
-    hostVisible: isHostTask,
     promptHash: hashText(`${input.obligationType}:${input.iteration}:${input.planVersion}`),
     findingsHash: hashFindings(findings),
     invokedAt: new Date().toISOString(),
     fulfilledAt: new Date().toISOString(),
+    attemptId: boundAttempt.attemptId,
+    hostTaskCallId: dispatchPlan.hostTaskCallId,
+    canonicalPromptDigest: dispatchPlan.canonicalPromptDigest,
     // Production evidence carries the reviewer's explicit verdict
     // (transport-evidence sets capturedVerdict from findings.overallVerdict;
     // host-task captures set it from captured findings). The helper mirrors
@@ -496,7 +502,6 @@ export async function fulfillStrictReviewObligation(
     // evidence (capturedRawFindings) rather than from agent-submitted args.
     // Without this, resolveHostTaskFindings returns null → REVIEW_FINDINGS_REQUIRED.
     ...(isHostTask ? { capturedRawFindings: findings } : {}),
-    ...(hostAttempt ? { attemptId: hostAttempt.attemptId } : {}),
   });
   const obligationAcceptedByReviewer = !isHostTask;
 
@@ -520,31 +525,77 @@ export async function fulfillStrictReviewObligation(
           : item,
       ),
       invocations: [...assurance.invocations, invocation],
-      ...(hostAttempt
-        ? {
-            attempts: [
-              ...assurance.attempts.filter(
-                (attempt) => attempt.attemptId !== hostAttempt.attemptId,
-              ),
-              hostAttempt,
-            ],
-          }
-        : {}),
+      attempts: [
+        ...assurance.attempts.filter((attempt) => attempt.attemptId !== boundAttempt.attemptId),
+        boundAttempt,
+      ],
+      dispatches: dispatchPlan.dispatch
+        ? [...assurance.dispatches, dispatchPlan.dispatch]
+        : assurance.dispatches,
     },
   });
 
   return findings;
 }
 
+/**
+ * Canonical repository Discovery context for repository-governed attempts.
+ * Attempts with a repository Discovery variant MUST carry an observation
+ * capability; callers mint it via `mintObservationCapability()`.
+ */
+export function repositoryDiscoveryContext(
+  observedAt: string = new Date().toISOString(),
+): ReviewAttempt['repositoryDiscovery'] {
+  return {
+    kind: 'repository',
+    snapshot: {
+      observedAt,
+      discoveryDigest: null,
+      workspaceFingerprint: null,
+      health: {
+        status: 'available',
+        healthy: true,
+        failedCollectorNames: [],
+        hasBudgetExhaustion: false,
+        ageWarning: null,
+        notVerified: [],
+      },
+      drift: {
+        status: 'not_assessed',
+        drifted: false,
+        changedContributorNames: [],
+        notVerified: [],
+      },
+      detectedStack: null,
+      verificationCandidates: [],
+      riskSurfaces: [],
+      warnings: [],
+      notVerified: [],
+    },
+  };
+}
+
+function attemptRepositoryDiscovery(obligation: {
+  readonly repositoryAuthority?: ReviewObligation['repositoryAuthority'];
+}): ReviewAttempt['repositoryDiscovery'] {
+  if (!obligation.repositoryAuthority) return { kind: 'not_applicable' };
+  const context = repositoryDiscoveryContext();
+  if (context.kind !== 'repository') return { kind: 'not_applicable' };
+  return {
+    ...context,
+    snapshot: {
+      ...context.snapshot,
+      health: { ...context.snapshot.health, status: 'unavailable', healthy: false },
+    },
+  };
+}
+
 function bindHostTaskAttempt(
   attempts: readonly ReviewAttempt[],
-  obligation: {
-    readonly obligationId: string;
-    readonly obligationType: ReviewObligationType;
-    readonly subjectDigest: string;
-  },
+  obligation: ReviewObligation,
   childSessionId: string,
 ): ReviewAttempt {
+  const now = new Date().toISOString();
   const existing = attempts.find((attempt) => attempt.obligationId === obligation.obligationId);
   const attempt = existing ?? {
     attemptId: crypto.randomUUID(),
@@ -555,8 +606,13 @@ function bindHostTaskAttempt(
     childSessionId,
     status: 'bound' as const,
     origin: { kind: 'initial' as const },
-    repositoryDiscovery: { kind: 'not_applicable' as const },
-    createdAt: new Date().toISOString(),
+    repositoryDiscovery: attemptRepositoryDiscovery(obligation),
+    ...(obligation.repositoryAuthority
+      ? { observationCapability: mintObservationCapabilityIfResolvable(obligation) ?? undefined }
+      : {}),
+    observations: [],
+    createdAt: now,
+    completedAt: now,
   };
   return {
     ...attempt,
@@ -565,6 +621,7 @@ function bindHostTaskAttempt(
     subjectDigest: obligation.subjectDigest,
     childSessionId,
     status: 'bound',
+    completedAt: attempt.completedAt ?? now,
   };
 }
 

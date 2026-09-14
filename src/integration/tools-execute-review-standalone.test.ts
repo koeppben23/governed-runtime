@@ -63,6 +63,7 @@ import {
   IMPL_REVIEW_CONVERGED,
 } from '../fixtures.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
+import { hostTaskDispatchPlan } from './tools/review-validation-test-helpers.js';
 import { TEAM_POLICY } from '../config/policy.js';
 
 /** Test predicate for source-tagged standalone review report findings. */
@@ -120,6 +121,7 @@ vi.mock('../adapters/actor', async (importOriginal) => {
       id: 'test-operator',
       email: 'test@flowguard.dev',
       source: 'env',
+      assurance: 'best_effort',
     }),
   };
 });
@@ -307,6 +309,7 @@ describe('review (standalone flow)', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: 'flowguard-reviewer-session-123' },
       reviewedAt: '2026-01-01T00:00:00.000Z',
       attestation: {
@@ -335,6 +338,13 @@ describe('review (standalone flow)', () => {
       (attempt) => attempt.obligationId === obligationId,
     );
     if (!boundAttempt) throw new TypeError('Expected persisted review attempt');
+    const dispatchPlan = hostTaskDispatchPlan({
+      isHostTask: true,
+      dispatches: ensureReviewAssurance(state.reviewAssurance).dispatches,
+      attemptId: boundAttempt.attemptId,
+      obligationId,
+      at: '2026-01-01T00:00:00.000Z',
+    });
     const invocation = buildInvocationEvidence({
       obligationId,
       obligationType: 'review',
@@ -343,29 +353,41 @@ describe('review (standalone flow)', () => {
       parentSessionId: ctx.sessionID,
       childSessionId: 'ses_review_child_host_task',
       invocationMode: 'host_subagent_task',
-      hostVisible: true,
       promptHash: 'host-task-review-prompt',
+      hostTaskCallId: dispatchPlan.hostTaskCallId,
+      canonicalPromptDigest: dispatchPlan.canonicalPromptDigest,
       findingsHash: hashFindings(findings),
       invokedAt: '2026-01-01T00:00:00.000Z',
       fulfilledAt: '2026-01-01T00:00:00.000Z',
-      source: 'host-orchestrated',
       capturedVerdict: findings.overallVerdict,
       capturedRawFindings: findings,
       attemptId: boundAttempt.attemptId,
     });
+    const assuranceWithEvidence = appendInvocationEvidence(
+      {
+        ...ensureReviewAssurance(state.reviewAssurance),
+        attempts: state.reviewAssurance!.attempts.map((attempt) =>
+          attempt.attemptId === boundAttempt.attemptId
+            ? {
+                ...attempt,
+                childSessionId: invocation.childSessionId,
+                status: 'bound' as const,
+                completedAt:
+                  attempt.completedAt ?? invocation.fulfilledAt ?? new Date().toISOString(),
+              }
+            : attempt,
+        ),
+      },
+      invocation,
+    );
     await writeState(sessDir, {
       ...state,
-      reviewAssurance: appendInvocationEvidence(
-        {
-          ...ensureReviewAssurance(state.reviewAssurance),
-          attempts: state.reviewAssurance!.attempts.map((attempt) =>
-            attempt.attemptId === boundAttempt.attemptId
-              ? { ...attempt, childSessionId: invocation.childSessionId, status: 'bound' as const }
-              : attempt,
-          ),
-        },
-        invocation,
-      ),
+      reviewAssurance: dispatchPlan.dispatch
+        ? {
+            ...assuranceWithEvidence,
+            dispatches: [...assuranceWithEvidence.dispatches, dispatchPlan.dispatch],
+          }
+        : assuranceWithEvidence,
     });
     return invocation;
   }
@@ -445,10 +467,7 @@ describe('review (standalone flow)', () => {
         headSha: 'a'.repeat(40),
       });
       expect(obligation.subjectDigest).toBe(obligation.reviewSubject?.subjectDigest);
-      const attempt = state.reviewAssurance!.attempts.find(
-        (item) => item.obligationId === obligationId,
-      );
-      expect(attempt?.reviewMaterial?.materialDigest).toBe(
+      expect(obligation.reviewMaterial.materialDigest).toBe(
         obligation.reviewSubject?.materialDigest,
       );
       const findings = {
@@ -494,6 +513,20 @@ describe('review (standalone flow)', () => {
         ),
       );
       expect(result).toMatchObject({ phase: 'REVIEW_COMPLETE' });
+      const afterSubmit = (await readState(await currentSessionDir()))!;
+      const invocation = afterSubmit.reviewAssurance!.invocations.find(
+        (item) => item.obligationId === obligationId,
+      );
+      // Manual submission carries honest agent-submitted provenance ...
+      expect(invocation?.reviewOutputMode).toBe('agent_submitted_structured');
+      expect(invocation?.structuredOutputUsed).toBe(false);
+      expect(invocation?.reviewAssuranceLevel).toBe('structured_submitted');
+      // ... and the referenced attempt is bound atomically.
+      const boundAttempt = afterSubmit.reviewAssurance!.attempts.find(
+        (item) => item.attemptId === invocation?.attemptId,
+      );
+      expect(boundAttempt?.status).toBe('bound');
+      expect(boundAttempt?.completedAt).toBeDefined();
     });
 
     it('standalone /review Call 1 persists a PENDING review obligation for host-task binding', async () => {
@@ -734,6 +767,7 @@ describe('review (standalone flow)', () => {
         missingVerification: [],
         scopeCreep: [],
         unknowns: [],
+        challenges: [],
         reviewedBy: { sessionId: 'flowguard-reviewer-session-123' },
         reviewedAt: '2026-01-01T00:00:00.000Z',
         attestation: {
@@ -1305,6 +1339,7 @@ describe('review (standalone flow)', () => {
           missingVerification: [],
           scopeCreep: [],
           unknowns: [],
+          challenges: [],
           reviewedBy: { sessionId: 'flowguard-reviewer-session-xyz' },
           reviewedAt: '2026-01-01T00:00:00.000Z',
           attestation: {
@@ -1353,6 +1388,7 @@ describe('review (standalone flow)', () => {
           missingVerification: [],
           scopeCreep: [],
           unknowns: [],
+          challenges: [],
           reviewedBy: { sessionId: 'flowguard-reviewer-session-e2e' },
           reviewedAt: '2026-01-01T00:00:00.000Z',
           attestation: {
@@ -1503,36 +1539,6 @@ describe('review (standalone flow)', () => {
         expect(consumed?.invocationId).toMatch(/^[0-9a-f-]{36}$/);
       });
 
-      it('blocks text-compat findings without matching host invocation metadata', async () => {
-        const uuid = await obtainObligationUuid({ prNumber: 44, inputOrigin: 'pr' });
-        const findings = {
-          ...buildAnalysisFindings('accept', uuid),
-          pluginReviewOutput: {
-            reviewOutputMode: 'text_compat',
-            structuredOutputUsed: false,
-            reviewAssuranceLevel: 'text_compat_lower',
-            extractionMethod: 'direct_json',
-          },
-        };
-
-        const raw = await review.execute(
-          { prNumber: 44, reviewFindings: findings as never, inputOrigin: 'pr' },
-          ctx,
-        );
-        const result = parseToolResult(raw);
-
-        expect(result.error).toBe(true);
-        expect(result.code).toBe('SUBAGENT_MANDATE_MISMATCH');
-
-        const { computeFingerprint, sessionDir: resolveSessionDir } =
-          await import('../adapters/workspace/index.js');
-        const fp = await computeFingerprint(ws.tmpDir);
-        const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
-        const state = await readState(sessDir);
-        if (!state) throw new TypeError('Expected persisted session state');
-        expect(state.reviewAssurance?.invocations ?? []).toHaveLength(0);
-      });
-
       it('E3: consumeReviewObligation accepts fulfilled obligation (fulfilled -> consumed transition)', async () => {
         const { consumeReviewObligation, ensureReviewAssurance } =
           await import('./review/assurance.js');
@@ -1548,7 +1554,14 @@ describe('review (standalone flow)', () => {
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
-          maxReviewerOutputRepairAttempts: 1,
+          maxReviewerAttempts: 1,
+          reviewProfile: 'core' as const,
+          profileSource: 'policy_default' as const,
+          reviewMaterial: {
+            content: 'frozen review material',
+            materialDigest: 'a'.repeat(64),
+            subjectDigest: 'test-subject-digest',
+          },
           createdAt: new Date().toISOString(),
           pluginHandshakeAt: null,
           status: 'fulfilled' as const,
@@ -1606,11 +1619,11 @@ describe('review (standalone flow)', () => {
           parentSessionId: 'parent-session',
           childSessionId: 'child-session',
           invocationMode: 'sdk_session_prompt',
-          hostVisible: false,
           promptHash: 'a'.repeat(64),
           findingsHash: 'b'.repeat(64),
           invokedAt: new Date().toISOString(),
           fulfilledAt: new Date().toISOString(),
+          attemptId: '11111111-2222-4333-8444-555555555555',
         });
         expect(ReviewInvocationEvidence.safeParse(inv).success).toBe(true);
       });

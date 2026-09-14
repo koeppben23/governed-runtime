@@ -126,14 +126,7 @@ const REVIEW_REPORT_STRING_ALLOW_LIST = new Set([
   'severity',
 ]);
 
-const REVIEW_REPORT_SENSITIVE_KEYS = new Set([
-  'message',
-  'detail',
-  'ref',
-  'title',
-  'initiatedBy',
-  'decidedBy',
-]);
+const REVIEW_REPORT_SENSITIVE_KEYS = new Set(['message', 'detail', 'ref', 'title', 'initiatedBy']);
 
 const DECISION_RECEIPT_STRING_ALLOW_LIST = new Set([
   ...EXPORT_BASE_STRING_ALLOW_LIST,
@@ -146,7 +139,7 @@ const DECISION_RECEIPT_STRING_ALLOW_LIST = new Set([
   'policyMode',
 ]);
 
-const DECISION_RECEIPT_SENSITIVE_KEYS = new Set(['decidedBy', 'rationale']);
+const DECISION_RECEIPT_SENSITIVE_KEYS = new Set(['rationale']);
 
 const SESSION_STATE_STRING_ALLOW_LIST = new Set([
   ...EXPORT_BASE_STRING_ALLOW_LIST,

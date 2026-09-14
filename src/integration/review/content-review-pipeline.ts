@@ -20,7 +20,6 @@ import {
   ensureReviewAssurance,
   findReviewObligationById,
   findBindableAttempt,
-  latestReviewMaterial,
   hasEvidenceReuse,
   buildInvocationEvidence,
   appendInvocationEvidence,
@@ -30,7 +29,7 @@ import {
 import { updateObligation } from './obligation-state.js';
 import { buildSdkEvidenceAuditIntents } from './sdk-evidence-recorder.js';
 import type { PipelineContext } from './pipeline-types.js';
-import { INVOCATION_MODE_SDK_SESSION, EVIDENCE_SOURCE_HOST } from './pipeline-types.js';
+import { INVOCATION_MODE_SDK_SESSION } from './pipeline-types.js';
 import {
   validatePipelineAttestation,
   blockReviewOutcomeHelper,
@@ -90,10 +89,9 @@ async function loadPersistedContentForReview(ctx: PipelineContext): Promise<{
     return null;
   }
   const attempt = findBindableAttempt(ctx.sessionState.reviewAssurance, reviewCtx.obligationId);
-  const material = attempt?.reviewMaterial;
+  const material = obligation?.reviewMaterial;
   if (!attempt || !material || attempt.subjectDigest !== obligation?.subjectDigest) {
-    const persisted = latestReviewMaterial(assurance, reviewCtx.obligationId);
-    const materialCheck = verifyFrozenMaterialForObligation(obligation, persisted);
+    const materialCheck = verifyFrozenMaterialForObligation(obligation, material);
     await blockReviewOutcomeHelper(
       deps,
       ctx,
@@ -320,18 +318,11 @@ function buildContentReviewInvocation(
     parentSessionId: sessionId,
     childSessionId: reviewerResult.sessionId,
     invocationMode: INVOCATION_MODE_SDK_SESSION,
-    hostVisible: false,
     promptHash,
     findingsHash,
     invokedAt: reviewerResult.invokedAt ?? now,
     fulfilledAt: reviewerResult.fulfilledAt ?? now,
     attemptId,
-    source: EVIDENCE_SOURCE_HOST,
-    reviewOutputMode: reviewerResult.reviewOutputMode,
-    structuredOutputUsed: reviewerResult.structuredOutputUsed,
-    reviewAssuranceLevel: reviewerResult.reviewAssuranceLevel,
-    extractionMethod: reviewerResult.extractionMethod,
-    modelCapabilityError: reviewerResult.modelCapabilityError,
     capturedVerdict:
       typeof reviewerResult.findings.overallVerdict === 'string'
         ? reviewerResult.findings.overallVerdict

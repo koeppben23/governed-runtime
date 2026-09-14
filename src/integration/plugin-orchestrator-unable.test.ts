@@ -84,6 +84,7 @@ function findingsWithVerdict(verdict: 'approve' | 'unable_to_review'): string {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     attestation: {
       toolObligationId: OBLIGATION_ID,
     },
@@ -194,7 +195,7 @@ function buildSessionState() {
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
-          maxReviewerOutputRepairAttempts: 1,
+          maxReviewerAttempts: 1,
           createdAt: '2026-04-24T12:00:00.000Z',
           pluginHandshakeAt: null,
           status: 'pending' as const,
@@ -205,6 +206,11 @@ function buildSessionState() {
           subjectDigest: 'plan-digest-1',
           reviewProfile: 'core' as const,
           profileSource: 'policy_default' as const,
+          reviewMaterial: {
+            content: 'frozen review material',
+            materialDigest: 'a'.repeat(64),
+            subjectDigest: 'plan-digest-1',
+          },
           reviewSubjectScope: {
             kind: 'artifact' as const,
             artifact: {

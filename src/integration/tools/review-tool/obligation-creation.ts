@@ -28,7 +28,10 @@ import { blockObligation } from '../../review/obligation-state.js';
 import { resolveReviewAttemptDiscoveryContext } from '../../review/discovery-attempt-context.js';
 import type { ReviewAttemptDiscoveryContext } from '../../../state/evidence.js';
 import { fingerprintReviewInput } from './fingerprint.js';
-import { formatMissingContentAnalysis } from './obligation-format.js';
+import {
+  formatMissingContentAnalysis,
+  repositoryAuthorityFromSubject,
+} from './obligation-format.js';
 import { hasReviewContentInput, validateReviewContentSource } from './review-input.js';
 import { formatBlocked, writeStateWithArtifacts } from '../helpers.js';
 import { resolveChallengeClassificationEvidence } from '../review-obligation-classification.js';
@@ -77,8 +80,9 @@ interface NewReviewObligationInput {
 export async function createNewReviewObligation(
   input: NewReviewObligationInput,
 ): Promise<{ obligation?: ReviewObligation; blocked?: string }> {
-  const reviewSubject = input.preparedContent?.reviewSubject;
-  if (!reviewSubject) {
+  const preparedContent = input.preparedContent;
+  const reviewSubject = preparedContent?.reviewSubject;
+  if (!reviewSubject || !preparedContent) {
     return {
       blocked: formatBlocked('REVIEW_SUBJECT_NOT_MATERIALIZED', {
         reason: 'Standalone review requires a frozen subject before creating an obligation.',
@@ -139,21 +143,20 @@ export async function createNewReviewObligation(
       now: input.now,
       subjectDigest: reviewSubject.subjectDigest,
       reviewSubject,
-      reviewMaterial: input.preparedContent
-        ? {
-            content: input.preparedContent.content,
-            materialDigest: input.preparedContent.reviewSubject.materialDigest,
-            subjectDigest: reviewSubject.subjectDigest,
-          }
-        : undefined,
+      reviewMaterial: {
+        content: preparedContent.content,
+        materialDigest: reviewSubject.materialDigest,
+        subjectDigest: reviewSubject.subjectDigest,
+      },
       reviewProfile: resolveFrozenReviewProfile(input.state.policySnapshot),
       profileSource: 'policy_default',
       policySnapshot: input.state.policySnapshot,
       changedFiles: resolvedTargetPaths,
       reviewSubjectScope,
-      // Revision provenance is derived canonically from the frozen review
-      // subject (base/head SHAs + repository identities) — never from
-      // mutable runtime state.
+      // Explicit frozen repository authority projected from the frozen review
+      // subject: same-repository pairs stay candidate pairs, fork PRs keep
+      // both repository identities. Never derived from mutable runtime state.
+      repositoryAuthority: repositoryAuthorityFromSubject(reviewSubject),
       // No claimedTaskClass floor here: a standalone /review assesses an EXTERNAL
       // PR/branch/content whose risk is the reviewed diff itself (changedFiles),
       // not the session's own task-class claim. The C1 floor applies only to the
@@ -228,15 +231,12 @@ export async function ensureMissingAnalysisObligation(
   const explicit = await resolveExplicitObligationIdPath(sessDir, state, args, now);
   if (explicit.handled) return explicit.result;
 
-  const fingerprint = fingerprintReviewInput(
-    {
-      ...args,
-      resolvedBranchSha: context.resolvedSource?.resolvedBranchSha,
-      resolvedBaseSha: context.resolvedSource?.resolvedBaseSha,
-    },
-    'v2',
-  );
-  const inputFingerprint = fingerprintReviewInput(args, 'v2');
+  const fingerprint = fingerprintReviewInput({
+    ...args,
+    resolvedBranchSha: context.resolvedSource?.resolvedBranchSha,
+    resolvedBaseSha: context.resolvedSource?.resolvedBaseSha,
+  });
+  const inputFingerprint = fingerprintReviewInput(args);
   const existing = findLatestPendingReviewObligation(
     state.reviewAssurance,
     'review',
@@ -273,7 +273,7 @@ export async function ensureMissingAnalysisObligation(
  * Reissue authorization is delegated to `authorizeOutputRepairReissue`:
  * pending obligation + no bindable attempt + latest attempt `rejected` with an
  * explicit structured reason + `canonical_output_retry` policy + remaining
- * frozen budget (`maxReviewerOutputRepairAttempts`, frozen onto the obligation
+ * frozen budget (`maxReviewerAttempts`, frozen onto the obligation
  * at creation). On denial the obligation is deterministically blocked with the
  * denial code — `/status` must not recommend a further reviewer retry.
  *

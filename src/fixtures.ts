@@ -69,12 +69,12 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
   maxIncoherentReviewerCaptureRetries: 1,
-  maxReviewerOutputRepairAttempts: 1,
+  maxReviewerAttempts: 1,
   allowSelfApproval: true,
   minimumActorAssuranceForApproval: 'best_effort',
   identityProvider: undefined,
   identityProviderMode: 'optional',
-  reviewOutputPolicy: 'text_compat_allowed',
+  reviewOutputPolicy: 'structured_required',
   reviewInvocationPolicy: 'sdk_allowed',
   reviewProfile: 'core',
   challengePolicy: {
@@ -166,6 +166,7 @@ export function assuranceWith(input: {
   readonly obligations?: readonly ReviewObligation[];
   readonly invocations?: readonly ReviewInvocationEvidence[];
   readonly attempts?: readonly ReviewAttempt[];
+  readonly dispatches?: ReviewAssuranceState['dispatches'];
 }): ReviewAssuranceState {
   const obligations = input.obligations ?? (input.obligation ? [input.obligation] : []);
   return {
@@ -173,7 +174,7 @@ export function assuranceWith(input: {
     obligations: [...obligations],
     invocations: input.invocations ? [...input.invocations] : [],
     attempts: input.attempts ? [...input.attempts] : [],
-    dispatches: [],
+    dispatches: input.dispatches ? [...input.dispatches] : [],
   };
 }
 
@@ -200,6 +201,8 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
       fulfilledAt: FIXED_TIME,
       consumedAt: FIXED_TIME,
       subjectDigest: ARCHITECTURE_DECISION.digest,
+      reviewProfile: 'core',
+      profileSource: 'policy_default',
       requiredChallengeCount: 0,
       requiredChallengeKind: 'design_challenge',
       challengePolicyVersion: 'challenge-policy.v1',
@@ -217,19 +220,23 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
         },
       },
       repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
-      maxReviewerOutputRepairAttempts: 0,
+      maxReviewerAttempts: 0,
     },
   ],
   invocations: [
     {
       invocationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      attemptId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
       obligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       obligationType: 'architecture',
       parentSessionId: 'parent-session-1',
+      source: 'host-orchestrated',
       childSessionId: 'child-session-1',
       agentType: 'flowguard-reviewer',
       invocationMode: 'host_subagent_task',
       hostVisible: true,
+      hostTaskCallId: 'call-architecture-review',
+      canonicalPromptDigest: 'a'.repeat(64),
       promptHash: 'prompt-hash-of-architecture-review',
       mandateDigest: 'mandate-digest-of-review-criteria',
       criteriaVersion: 'criteria-v1',
@@ -243,8 +250,34 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
       reviewAssuranceLevel: 'structured_high',
     },
   ],
-  attempts: [],
-  dispatches: [],
+  attempts: [
+    {
+      attemptId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      obligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      obligationType: 'architecture',
+      subjectDigest: ARCHITECTURE_DECISION.digest,
+      ordinal: 0,
+      childSessionId: 'child-session-1',
+      status: 'bound',
+      origin: { kind: 'initial' },
+      repositoryDiscovery: { kind: 'not_applicable' },
+      observations: [],
+      createdAt: FIXED_TIME,
+      completedAt: FIXED_TIME,
+    },
+  ],
+  dispatches: [
+    {
+      dispatchId: '99999999-9999-4999-8999-999999999999',
+      attemptId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      obligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      hostCallId: 'call-architecture-review',
+      canonicalPromptDigest: 'a'.repeat(64),
+      dispatchAuthorizedAt: FIXED_TIME,
+      dispatchStatus: 'completed',
+      completedAt: FIXED_TIME,
+    },
+  ],
 };
 
 /**
@@ -268,6 +301,8 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
     fulfilledAt: FIXED_TIME,
     consumedAt: FIXED_TIME,
     subjectDigest: 'digest-of-plan',
+    reviewProfile: 'core',
+    profileSource: 'policy_default',
     // Bound to the (empty) claim declaration set of PLAN_RECORD: the plan
     // approval gate fails closed when evidence carries no claim binding.
     claimDeclarationsDigest: hashText(
@@ -290,18 +325,22 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
       },
     },
     repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
-    maxReviewerOutputRepairAttempts: 0,
+    maxReviewerAttempts: 0,
   },
   invocations: [
     {
       invocationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      attemptId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
       obligationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
       obligationType: 'plan',
       parentSessionId: 'parent-session-1',
+      source: 'host-orchestrated',
       childSessionId: 'child-session-1',
       agentType: 'flowguard-reviewer',
       invocationMode: 'host_subagent_task',
       hostVisible: true,
+      hostTaskCallId: 'call-plan-review',
+      canonicalPromptDigest: 'b'.repeat(64),
       promptHash: 'prompt-hash-of-plan-review',
       mandateDigest: 'mandate-digest-of-plan-review-criteria',
       criteriaVersion: 'criteria-v1',
@@ -313,6 +352,34 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
       reviewOutputMode: 'structured_output',
       structuredOutputUsed: true,
       reviewAssuranceLevel: 'structured_high',
+    },
+  ],
+  attempts: [
+    {
+      attemptId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      obligationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      obligationType: 'plan',
+      subjectDigest: 'digest-of-plan',
+      ordinal: 0,
+      childSessionId: 'child-session-1',
+      status: 'bound',
+      origin: { kind: 'initial' },
+      repositoryDiscovery: { kind: 'not_applicable' },
+      observations: [],
+      createdAt: FIXED_TIME,
+      completedAt: FIXED_TIME,
+    },
+  ],
+  dispatches: [
+    {
+      dispatchId: '88888888-8888-4888-8888-888888888888',
+      attemptId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      obligationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      hostCallId: 'call-plan-review',
+      canonicalPromptDigest: 'b'.repeat(64),
+      dispatchAuthorizedAt: FIXED_TIME,
+      dispatchStatus: 'completed',
+      completedAt: FIXED_TIME,
     },
   ],
 });
@@ -449,7 +516,7 @@ export const REVIEW_APPROVE: ReviewDecision = {
   verdict: 'approve',
   rationale: 'LGTM',
   decidedAt: FIXED_TIME,
-  decidedBy: 'reviewer-1',
+  decisionIdentity: DECISION_IDENTITY_REVIEWER,
 };
 
 export const ERROR_INFO: ErrorInfo = {

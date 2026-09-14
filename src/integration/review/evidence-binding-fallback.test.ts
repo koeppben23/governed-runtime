@@ -30,6 +30,7 @@ function reviewerOutput(attestation: unknown): string {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     ...(attestation === undefined ? {} : { attestation }),
   });
 }

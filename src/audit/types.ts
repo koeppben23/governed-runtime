@@ -32,6 +32,7 @@ import { canonicalJsonStringify, computeCanonicalEventDigest } from './canonical
 // Re-exported here for backward compatibility — all existing consumers continue to work.
 import type { ActorInfo, ActorVerificationMeta } from '../state/evidence.js';
 export type { ActorInfo, ActorVerificationMeta };
+import type { DecisionIdentity } from '../state/evidence-identity.js';
 
 // ─── Event Kind ───────────────────────────────────────────────────────────────
 
@@ -151,7 +152,7 @@ export interface DecisionDetail {
   gatePhase: Phase;
   verdict: ReviewVerdict;
   rationale: string;
-  decidedBy: string;
+  decisionIdentity: DecisionIdentity;
   decidedAt: string;
   fromPhase: Phase;
   toPhase: Phase;

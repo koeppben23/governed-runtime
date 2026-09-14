@@ -310,14 +310,20 @@ async function handleTaskAfter(
     return;
   }
   if (execution) {
-    // The After observed the host Task: close the durable dispatch ledger
-    // entry so a restart can never mistake this dispatch for unknown-outcome.
+    // The After observed the host Task: close the durable dispatch ledger entry.
     try {
       await markReviewerDispatchCompleted(runtime, ctx.sessionId, execution.callId, ctx.now);
     } catch (err) {
-      // A stuck `authorized` ledger entry is fail-closed: it only ever forces
-      // a fresh append-only re-arm, never a duplicate bind. Log and continue.
       runtime.logError('reviewer dispatch completion failed', err);
+      // Fail closed for reviewer tasks: dispatch and invocation authorities must
+      // not diverge. The stuck `authorized` entry forces a fresh re-arm later.
+      if (isReviewerTask) {
+        ctx.hookOutput.output = strictBlockedOutput(
+          'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+          { reason: 'durable reviewer dispatch completion could not be persisted' },
+        );
+        return;
+      }
     }
   }
   const resolvedChildSessionId = resolveReviewerTaskSessionId(

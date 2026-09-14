@@ -621,7 +621,16 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
           submitted!.plan!.claimDeclarations,
         ),
       },
-      { verdict: 'approve', rationale: 'ok', decidedBy: 'approver' },
+      {
+        verdict: 'approve',
+        rationale: 'ok',
+        decisionIdentity: {
+          actorId: 'approver',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
       realDigestContext(),
     );
 
@@ -671,6 +680,7 @@ describe('standalone review hypotheses (runtime)', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: 'ses_r' },
       reviewedAt: FIXED_TIME,
       attestation: {
@@ -849,7 +859,16 @@ describe('ProofGraph materialization and gate (runtime)', () => {
     });
     const approved = executeReviewDecision(
       base,
-      { verdict: 'approve', rationale: 'ok', decidedBy: 'approver' },
+      {
+        verdict: 'approve',
+        rationale: 'ok',
+        decisionIdentity: {
+          actorId: 'approver',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
       realDigestContext(),
     );
     if (approved.kind !== 'ok') throw new Error('plan approval failed');
@@ -968,7 +987,16 @@ describe('ProofGraph materialization and gate (runtime)', () => {
         proofContract: contract,
         proofGraph: summary.projection,
       },
-      { verdict: 'approve', rationale: 'ship it', decidedBy: 'approver' },
+      {
+        verdict: 'approve',
+        rationale: 'ship it',
+        decisionIdentity: {
+          actorId: 'approver',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
       // No policy configuration at all: enforcement is unconditional (#762).
       realDigestContext(),
     );
@@ -1049,7 +1077,14 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             planVersion: 1,
             criteriaVersion: 'p40-v1',
             mandateDigest: 'e78b6bab98fcf033874fcc07e17d87aaff73fca47b1a28209e5dd4a1a28eedb7',
-            maxReviewerOutputRepairAttempts: 1,
+            maxReviewerAttempts: 1,
+            reviewProfile: 'core',
+            profileSource: 'policy_default',
+            reviewMaterial: {
+              content: 'frozen review material',
+              materialDigest: 'a'.repeat(64),
+              subjectDigest: 'plan-digest',
+            },
             createdAt: FIXED_TIME,
             pluginHandshakeAt: FIXED_TIME,
             status: 'fulfilled' as const,
@@ -1070,6 +1105,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             agentType: 'flowguard-reviewer' as const,
             invocationMode: 'host_subagent_task' as const,
             hostVisible: true,
+            source: 'host-orchestrated' as const,
             promptHash: 'abc',
             mandateDigest: 'e78b6bab98fcf033874fcc07e17d87aaff73fca47b1a28209e5dd4a1a28eedb7',
             criteriaVersion: 'p40-v1',
@@ -1095,6 +1131,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             status: 'bound' as const,
             origin: { kind: 'initial' } as const,
             repositoryDiscovery: { kind: 'not_applicable' } as const,
+            observations: [],
             createdAt: FIXED_TIME,
           },
         ],
@@ -1103,7 +1140,16 @@ describe('ProofGraph materialization and gate (runtime)', () => {
     });
     const approved = executeReviewDecision(
       state,
-      { verdict: 'approve', rationale: 'ok', decidedBy: 'approver' },
+      {
+        verdict: 'approve',
+        rationale: 'ok',
+        decisionIdentity: {
+          actorId: 'approver',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
       realDigestContext(),
     );
     if (approved.kind !== 'ok') throw new Error('plan approval failed');

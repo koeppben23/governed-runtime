@@ -12,6 +12,7 @@ import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './review/enforce
 import {
   artifactReviewSubjectScope,
   createReviewObligation,
+  freezeReviewMaterial,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './review/assurance.js';
@@ -113,6 +114,7 @@ export function taskResultWithAttestation(
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     attestation: {
       toolObligationId: obligationId,
     },
@@ -127,6 +129,7 @@ export function pendingObligation(overrides: Partial<ReviewObligation> = {}): Re
     planVersion: 1,
     now: NOW,
     subjectDigest: 'diagnostics-test-subject',
+    reviewMaterial: freezeReviewMaterial('# Diagnostics\nBody', 'diagnostics-test-subject'),
     reviewSubjectScope: artifactReviewSubjectScope(
       'plan',
       '# Diagnostics\nBody',
@@ -138,7 +141,7 @@ export function pendingObligation(overrides: Partial<ReviewObligation> = {}): Re
         version: 'challenge-policy.v1',
         counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
       },
-      maxReviewerOutputRepairAttempts: 1,
+      maxReviewerAttempts: 1,
     },
     repositoryAuthority: {
       kind: 'context',
@@ -176,6 +179,7 @@ export function attemptFor(
     status: 'created',
     origin: { kind: 'initial' },
     repositoryDiscovery: { kind: 'not_applicable' },
+    observations: [],
     createdAt: NOW,
     ...overrides,
   };

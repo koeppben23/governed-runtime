@@ -95,22 +95,22 @@ describe('identity resolveIdpToken (P35b1)', () => {
     expect(actor.verificationMeta.keyId).toBe('static-key-1');
   });
 
-  it('HAPPY parses legacy static config without mode (backward-compat)', () => {
-    const parsed = IdpConfigSchema.parse({
-      issuer: 'https://issuer.example.com',
-      audience: ['flowguard'],
-      claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
-      signingKeys: [
-        {
-          kind: 'pem',
-          kid: 'legacy-static-key',
-          alg: 'RS256',
-          pem: '-----BEGIN PUBLIC KEY-----\nMIIB\n-----END PUBLIC KEY-----',
-        },
-      ],
-    });
-
-    expect(parsed.mode).toBe('static');
+  it('BAD rejects static config without a mode discriminator', () => {
+    expect(() =>
+      IdpConfigSchema.parse({
+        issuer: 'https://issuer.example.com',
+        audience: ['flowguard'],
+        claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+        signingKeys: [
+          {
+            kind: 'pem',
+            kid: 'legacy-static-key',
+            alg: 'RS256',
+            pem: '-----BEGIN PUBLIC KEY-----\nMIIB\n-----END PUBLIC KEY-----',
+          },
+        ],
+      }),
+    ).toThrow();
   });
 
   it('HAPPY jwks mode verifies token by kid from multi-key JWKS', async () => {

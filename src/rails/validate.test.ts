@@ -99,7 +99,6 @@ function validationState(overrides?: Record<string, unknown>) {
     reviewDecision: {
       verdict: 'approve',
       rationale: 'approved',
-      decidedBy: 'r1',
       decidedAt: FIXED_TIME,
       decisionIdentity: {
         actorId: 'r1',
@@ -227,7 +226,6 @@ describe('validate rail', () => {
         reviewDecision: {
           verdict: 'approve',
           rationale: 'approved',
-          decidedBy: 'r1',
           decidedAt: FIXED_TIME,
           decisionIdentity: {
             actorId: 'r1',

@@ -141,6 +141,7 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
         missingVerification: [],
         scopeCreep: [],
         unknowns: [],
+        challenges: [],
         reviewedBy: {},
         reviewedAt: NOW,
         attestation: {
@@ -184,6 +185,7 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
         missingVerification: [],
         scopeCreep: [],
         unknowns: [],
+        challenges: [],
         // No attestation field.
       });
       onTaskToolAfter(
@@ -265,16 +267,15 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
       const existingInvocation = buildInvocationEvidence({
         obligationId: obligation.obligationId,
         obligationType: 'plan',
+        attemptId: attempts[0]!.attemptId,
         mandateDigest: obligation.mandateDigest,
         criteriaVersion: obligation.criteriaVersion,
         parentSessionId: SESSION_ID,
         childSessionId: CHILD_SESSION_ID,
         invocationMode: 'host_subagent_task',
-        hostVisible: true,
         promptHash: 'dummy-hash',
         findingsHash: fHash,
         invokedAt: NOW,
-        source: 'host-orchestrated',
       });
 
       const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
@@ -669,6 +670,7 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       attestation: {
         toolObligationId: obligationId,
       },

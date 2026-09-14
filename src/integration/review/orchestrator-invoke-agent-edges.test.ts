@@ -80,13 +80,20 @@ describe('invokeReviewer — agent capability and extraction edges', () => {
   });
 
   it('blocks rather than falling back when the capability probe throws', async () => {
+    const diagnostics: Array<Record<string, unknown>> = [];
     const client = makeClient({ agentsThrows: true });
     const result = await invokeReviewer(client, PROMPT, 'parent-1', {
       reviewInvocationPolicy: 'sdk_allowed',
       _sleepFn: NO_SLEEP,
+      _onAttemptFailed: (info) => diagnostics.push(info),
     });
     expect(result).toMatchObject({ blocked: true, code: 'REVIEWER_INVOCATION_EXHAUSTED' });
     expect(client.session.create).not.toHaveBeenCalled();
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]!.step).toBe('agent_probe');
+    const details = diagnostics[0]!.details as Record<string, unknown>;
+    expect(details.reviewerSubagentType).toBe('flowguard-reviewer');
+    expect(details.reviewInvocationPolicy).toBe('sdk_allowed');
   });
 
   it('does not accept unstructured text as structured output under structured_required', async () => {

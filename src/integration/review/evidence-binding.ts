@@ -40,18 +40,6 @@ type HostTaskPromptProvenance = Pick<
   'callId' | 'canonicalPromptDigest' | 'modelPromptDigest' | 'createdAt'
 >;
 
-/** Transport contract for captured findings: recovered findings downgrade assurance. */
-function transportContract(latest: PendingReviewRecord) {
-  return latest.capturedFindings?.extractionMethod === 'recovered_block'
-    ? {
-        reviewAssuranceLevel: 'structured_recovered' as const,
-        reviewOutputMode: 'text_compat' as const,
-        structuredOutputUsed: false,
-        extractionMethod: 'outermost_braces' as const,
-      }
-    : { reviewAssuranceLevel: 'structured_high' as const };
-}
-
 /** Mark an attempt as spent so a later callback from it is hard-rejected. */
 function staleAttempt(attempt: ReviewAttempt, now: string): ReviewAttempt {
   return { ...attempt, status: 'rejected' as const, completedAt: now };
@@ -269,7 +257,6 @@ function assembleBoundEvidence(input: {
     parentSessionId: input.sessionId,
     childSessionId,
     invocationMode: 'host_subagent_task',
-    hostVisible: true,
     promptHash,
     ...(input.promptProvenance
       ? {
@@ -281,9 +268,7 @@ function assembleBoundEvidence(input: {
     findingsHash,
     invokedAt: input.promptProvenance?.createdAt ?? input.attempt.createdAt,
     fulfilledAt: latest.subagentRecord?.completedAt ?? now,
-    source: 'host-orchestrated',
     attemptId: input.attempt.attemptId,
-    ...transportContract(latest),
     capturedVerdict: latest.capturedFindings?.overallVerdict,
     capturedRawFindings: input.normalizedFindings,
     ...getBranchProvenanceFields(obligation),

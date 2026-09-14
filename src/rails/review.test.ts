@@ -224,7 +224,6 @@ describe('review rail', () => {
           verdict: 'approve',
           rationale: 'LGTM',
           decidedAt: FIXED_TIME,
-          decidedBy: 'alice',
           decisionIdentity: {
             actorId: 'alice',
             actorEmail: null,
@@ -464,7 +463,12 @@ describe('review rail', () => {
           verdict: 'approve',
           rationale: 'LGTM',
           decidedAt: FIXED_TIME,
-          decidedBy: 'alice', // same person
+          decisionIdentity: {
+            actorId: 'alice',
+            actorEmail: null,
+            actorSource: 'unknown',
+            actorAssurance: 'best_effort',
+          },
         },
       });
       const report = await executeReview(state, NOW);
@@ -626,7 +630,12 @@ describe('review rail', () => {
           verdict: 'approve',
           rationale: 'ok',
           decidedAt: FIXED_TIME,
-          decidedBy: 'bob', // different person, but not satisfied because not required
+          decisionIdentity: {
+            actorId: 'bob',
+            actorEmail: null,
+            actorSource: 'unknown',
+            actorAssurance: 'best_effort',
+          },
         },
       });
       const report = await executeReview(state, NOW);
@@ -672,7 +681,10 @@ describe('review rail', () => {
         initiatedBy: 'initiator-1',
         reviewDecision: {
           ...state.reviewDecision!,
-          decidedBy: 'reviewer-2', // different person
+          decisionIdentity: {
+            ...state.reviewDecision!.decisionIdentity,
+            actorId: 'reviewer-2', // different person
+          },
         },
       };
       const report = await executeReview(stateWithFourEyes, NOW);
@@ -681,7 +693,7 @@ describe('review rail', () => {
       expect(fourEyesFindings).toHaveLength(0);
     });
 
-    it('four-eyes required + NOT satisfied (decidedBy=null) → warning', async () => {
+    it('four-eyes required + NOT satisfied (no review decision) → warning', async () => {
       // regulated + no review decision yet
       const state = makeProgressedState('IMPLEMENTATION');
       const stateWithFourEyes = {
@@ -710,7 +722,6 @@ describe('review rail', () => {
         },
         reviewDecision: {
           ...state.reviewDecision!,
-          decidedBy: 'same-person', // same as initiator
           decisionIdentity: {
             actorId: 'same-person',
             actorEmail: null,

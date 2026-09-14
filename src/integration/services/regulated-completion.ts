@@ -10,6 +10,8 @@
  */
 
 import type { SessionState } from '../../state/schema.js';
+import { DecisionIdentity } from '../../state/evidence-identity.js';
+import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { archiveRegulatedEvidence } from '../../adapters/workspace/archive.js';
 import { verifyRegulatedArchive } from '../../adapters/workspace/archive-verify-chain.js';
 import { readState, PersistenceError } from '../../adapters/persistence.js';
@@ -313,6 +315,16 @@ export async function resumeRegulatedCompletion(
   return executeRegulatedCompletion(sessDir, fingerprint, sessionID, state, auditDeps);
 }
 
+function isSameDecisionIdentity(detail: Record<string, unknown>, state: SessionState): boolean {
+  const decision = state.reviewDecision;
+  if (!decision) return false;
+  const parsed = DecisionIdentity.safeParse(detail.decisionIdentity);
+  return (
+    parsed.success &&
+    canonicalJsonStringify(parsed.data) === canonicalJsonStringify(decision.decisionIdentity)
+  );
+}
+
 function isTerminalDecisionDetail(detail: Record<string, unknown>, state: SessionState): boolean {
   const transition = state.transition;
   const decision = state.reviewDecision;
@@ -324,7 +336,7 @@ function isTerminalDecisionDetail(detail: Record<string, unknown>, state: Sessio
     detail.transitionEvent === transition.event &&
     detail.verdict === decision.verdict &&
     detail.rationale === decision.rationale &&
-    detail.decidedBy === decision.decidedBy &&
+    isSameDecisionIdentity(detail, state) &&
     detail.decidedAt === decision.decidedAt
   );
 }
@@ -452,15 +464,14 @@ async function decisionIntent(
       decisionSequence,
       verdict: decision.verdict,
       rationale: decision.rationale,
-      decidedBy: decision.decidedBy,
+      decisionIdentity: decision.decisionIdentity,
       decidedAt: decision.decidedAt,
       fromPhase: transition.from,
       toPhase: transition.to,
       transitionEvent: transition.event,
       policyMode: state.policySnapshot.mode,
-      decisionIdentity: decision.decisionIdentity,
     },
-    actor: decision.decisionIdentity?.actorId ?? decision.decidedBy,
+    actor: decision.decisionIdentity.actorId,
     ...(state.actorInfo ? { actorInfo: state.actorInfo } : {}),
   };
 }

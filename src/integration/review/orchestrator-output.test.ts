@@ -17,9 +17,9 @@ function reviewerResult(overrides: Record<string, unknown> = {}) {
   return {
     findings: { overallVerdict: 'accept', blockingIssues: [] },
     sessionId: 'child-session-1',
-    reviewOutputMode: 'structured',
+    reviewOutputMode: 'structured_output',
     structuredOutputUsed: true,
-    reviewAssuranceLevel: 'native_subagent_attested',
+    reviewAssuranceLevel: 'structured_high',
     ...overrides,
   } as Parameters<typeof buildMutatedOutput>[1];
 }
@@ -36,9 +36,9 @@ describe('buildMutatedOutput', () => {
     expect(parsed.pluginReviewFindings).toEqual({ overallVerdict: 'accept', blockingIssues: [] });
     expect(parsed._pluginReviewSessionId).toBe('child-session-1');
     expect(parsed.pluginReviewOutput).toEqual({
-      reviewOutputMode: 'structured',
+      reviewOutputMode: 'structured_output',
       structuredOutputUsed: true,
-      reviewAssuranceLevel: 'native_subagent_attested',
+      reviewAssuranceLevel: 'structured_high',
     });
   });
 
@@ -59,26 +59,6 @@ describe('buildMutatedOutput', () => {
 
   it('BAD: returns null when the original output parses to an array', () => {
     expect(buildMutatedOutput(JSON.stringify([{ next: 'x' }]), reviewerResult())).toBeNull();
-  });
-
-  it('EDGE: includes extractionMethod only when provided', () => {
-    const withField = JSON.parse(
-      buildMutatedOutput(BASE_OUTPUT, reviewerResult({ extractionMethod: 'json_fallback' }))!,
-    );
-    expect(withField.pluginReviewOutput.extractionMethod).toBe('json_fallback');
-
-    const withoutField = JSON.parse(buildMutatedOutput(BASE_OUTPUT, reviewerResult())!);
-    expect('extractionMethod' in withoutField.pluginReviewOutput).toBe(false);
-  });
-
-  it('EDGE: includes modelCapabilityError only when provided', () => {
-    const withField = JSON.parse(
-      buildMutatedOutput(BASE_OUTPUT, reviewerResult({ modelCapabilityError: 'no_structured' }))!,
-    );
-    expect(withField.pluginReviewOutput.modelCapabilityError).toBe('no_structured');
-
-    const withoutField = JSON.parse(buildMutatedOutput(BASE_OUTPUT, reviewerResult())!);
-    expect('modelCapabilityError' in withoutField.pluginReviewOutput).toBe(false);
   });
 });
 
@@ -106,20 +86,5 @@ describe('buildReviewContentMutatedOutput', () => {
 
   it('BAD: returns null when the original output parses to an array', () => {
     expect(buildReviewContentMutatedOutput(JSON.stringify(['x']), reviewerResult())).toBeNull();
-  });
-
-  it('EDGE: optional diagnostics fields are gated the same way', () => {
-    const both = JSON.parse(
-      buildReviewContentMutatedOutput(
-        BASE_OUTPUT,
-        reviewerResult({ extractionMethod: 'm', modelCapabilityError: 'e' }),
-      )!,
-    );
-    expect(both.pluginReviewOutput.extractionMethod).toBe('m');
-    expect(both.pluginReviewOutput.modelCapabilityError).toBe('e');
-
-    const neither = JSON.parse(buildReviewContentMutatedOutput(BASE_OUTPUT, reviewerResult())!);
-    expect('extractionMethod' in neither.pluginReviewOutput).toBe(false);
-    expect('modelCapabilityError' in neither.pluginReviewOutput).toBe(false);
   });
 });
