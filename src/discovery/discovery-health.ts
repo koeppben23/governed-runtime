@@ -31,7 +31,7 @@ export interface DiscoveryHealthAvailableProjection {
   readonly failedCollectorNames: string[];
   readonly hasBudgetExhaustion: boolean;
   readonly readFailureCount: number;
-  readonly codeSurfaceStatus: CodeSurfaceStatus | null;
+  readonly codeSurfaceStatus: CodeSurfaceStatus;
   readonly collectedAt: string | null;
   readonly ageWarning: string | null;
   readonly healthy: boolean;
@@ -61,7 +61,7 @@ export type DiscoveryHealthProjection =
  * - result.codeSurfaces.status → codeSurfaceStatus
  * - result.collectedAt → collectedAt, ageWarning (computed)
  *
- * healthy: no failed, partial, budget exhaustion, or read failures.
+ * healthy: no failed/partial collectors, healthy code-surface status, budget exhaustion, or read failures.
  *
  * @param result - The DiscoveryResult to project from.
  * @returns DiscoveryHealthProjection derived from a schema-valid current result.
@@ -102,6 +102,7 @@ export function extractDiscoveryHealth(result: DiscoveryResult): DiscoveryHealth
   const healthy =
     failedCollectors === 0 &&
     partialCollectors === 0 &&
+    codeSurfaceStatus === 'ok' &&
     !hasBudgetExhaustion &&
     readFailureCount === 0;
 

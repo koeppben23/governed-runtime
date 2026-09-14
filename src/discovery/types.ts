@@ -432,6 +432,22 @@ export const DiscoveryResultSchema = z
         });
       }
     }
+
+    const codeSurfaceDiagnosticIndex = result.diagnostics.findIndex(
+      (diagnostic) => diagnostic.name === 'code-surface-analysis',
+    );
+    if (codeSurfaceDiagnosticIndex >= 0) {
+      const codeSurfaceDiagnostic = result.diagnostics[codeSurfaceDiagnosticIndex]!;
+      const expectedStatus =
+        result.codeSurfaces.status === 'ok' ? 'complete' : result.codeSurfaces.status;
+      if (codeSurfaceDiagnostic.status !== expectedStatus) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['diagnostics', codeSurfaceDiagnosticIndex, 'status'],
+          message: `code-surface-analysis diagnostic status must be '${expectedStatus}' when codeSurfaces.status is '${result.codeSurfaces.status}'`,
+        });
+      }
+    }
   })
   .strict();
 export type DiscoveryResult = z.infer<typeof DiscoveryResultSchema>;
