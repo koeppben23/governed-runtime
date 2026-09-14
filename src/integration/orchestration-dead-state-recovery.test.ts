@@ -688,6 +688,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         origin: { kind: 'initial' },
         rejectionReason: 'schema_invalid',
         repositoryDiscovery: { kind: 'not_applicable' },
+        observations: [],
         createdAt: CREATED_AT,
       };
       await writeState(sessDir, {
@@ -767,6 +768,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         origin: { kind: 'initial' },
         rejectionReason: 'schema_invalid',
         repositoryDiscovery: { kind: 'not_applicable' },
+        observations: [],
         createdAt: CREATED_AT,
       };
       await writeState(sessDir, {
@@ -829,6 +831,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         origin: { kind: 'initial' },
         rejectionReason: 'schema_invalid',
         repositoryDiscovery: { kind: 'not_applicable' },
+        observations: [],
         createdAt: CREATED_AT,
       };
       await writeState(sessDir, {

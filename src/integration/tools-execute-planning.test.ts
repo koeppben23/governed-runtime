@@ -1421,11 +1421,9 @@ describe('plan', () => {
           parentSessionId: 'ses-parent',
           childSessionId: 'ses-child',
           invocationMode: 'host_subagent_task',
-          hostVisible: true,
           promptHash: 'sha256-prompt',
           findingsHash: deps.hashFindings(findings),
           invokedAt: NOW,
-          source: 'host-orchestrated',
         }),
         consumedByObligationId: consumedBy,
       };

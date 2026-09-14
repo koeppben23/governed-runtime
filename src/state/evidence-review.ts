@@ -63,6 +63,7 @@ import {
 } from './evidence-review-authority.js';
 import {
   refineAssuranceDiscoveryCoherence,
+  refineAssuranceDispatchCoherence,
   refineAssuranceIdentityUniqueness,
   refineAssuranceInvocationLinkageCoherence,
   refineAssuranceProvenanceCoherence,
@@ -158,60 +159,63 @@ export const ReviewMaterial = z
   .readonly();
 export type ReviewMaterial = z.infer<typeof ReviewMaterial>;
 
-export const ReviewAttempt = z.object({
-  attemptId: z.string().uuid(),
-  obligationId: z.string().uuid(),
-  obligationType: ReviewObligationType,
-  subjectDigest: z.string().min(1),
-  /** Immutable material supplied to the reviewer for standalone content reviews. */
-  reviewMaterial: ReviewMaterial.optional(),
-  ordinal: z.number().int().nonnegative(),
-  childSessionId: z.string().optional(),
-  status: ReviewAttemptStatus,
-  /**
-   * Authority-bearing origin. REQUIRED: every attempt names how it came into
-   * existence; attempts without an origin cannot be parsed.
-   */
-  origin: ReviewAttemptOrigin,
-  /**
-   * Structured reason for a `rejected` status. Persisted at the rejection
-   * point; the output-repair gate refuses reissues without an explicit,
-   * canonically repairable reason.
-   */
-  rejectionReason: ReviewAttemptRejectionReason.optional(),
-  /**
-   * Attempt-bound repository Discovery context, resolved BEFORE the attempt is
-   * minted. REQUIRED: `repository` for standalone repository reviews,
-   * `not_applicable` otherwise.
-   */
-  repositoryDiscovery: ReviewAttemptDiscoveryContext,
-  /**
-   * Opaque host-minted observation capability bound to exactly this attempt.
-   * Transported to the reviewer via the canonical prompt; echoed by the
-   * sanctioned observation tool as routing only. Required for repository-
-   * governed attempts and forbidden otherwise; the assurance boundary
-   * enforces both directions.
-   */
-  observationCapability: ObservationCapability.optional(),
-  /**
-   * Canonical fingerprint of the schema-error issue set that rejected this
-   * attempt (repair DIAGNOSTICS only — never authority). Detects a targeted
-   * repair that reproduced the identical error set (`REVIEWER_OUTPUT_REPAIR_STALLED`).
-   */
-  schemaErrorFingerprint: z
-    .string()
-    .regex(/^[a-f0-9]{64}$/)
-    .optional(),
-  /**
-   * Authoritative, attempt-bound repository observations. Minted EXCLUSIVELY
-   * by the parent replay after the reviewer child session is known; child-side
-   * captures never become entries here directly. Optional for attempts
-   * persisted before the frozen-repository-authority generation.
-   */
-  observations: z.array(RepositoryObservation).readonly().optional(),
-  createdAt: z.string().datetime(),
-  completedAt: z.string().datetime().optional(),
-});
+export const ReviewAttempt = z
+  .object({
+    attemptId: z.string().uuid(),
+    obligationId: z.string().uuid(),
+    obligationType: ReviewObligationType,
+    subjectDigest: z.string().min(1),
+    /** Immutable material supplied to the reviewer for standalone content reviews. */
+    reviewMaterial: ReviewMaterial.optional(),
+    ordinal: z.number().int().nonnegative(),
+    childSessionId: z.string().optional(),
+    status: ReviewAttemptStatus,
+    /**
+     * Authority-bearing origin. REQUIRED: every attempt names how it came into
+     * existence; attempts without an origin cannot be parsed.
+     */
+    origin: ReviewAttemptOrigin,
+    /**
+     * Structured reason for a `rejected` status. Persisted at the rejection
+     * point; the output-repair gate refuses reissues without an explicit,
+     * canonically repairable reason.
+     */
+    rejectionReason: ReviewAttemptRejectionReason.optional(),
+    /**
+     * Attempt-bound repository Discovery context, resolved BEFORE the attempt is
+     * minted. REQUIRED: `repository` for standalone repository reviews,
+     * `not_applicable` otherwise.
+     */
+    repositoryDiscovery: ReviewAttemptDiscoveryContext,
+    /**
+     * Opaque host-minted observation capability bound to exactly this attempt.
+     * Transported to the reviewer via the canonical prompt; echoed by the
+     * sanctioned observation tool as routing only. Required for repository-
+     * governed attempts and forbidden otherwise; the assurance boundary
+     * enforces both directions.
+     */
+    observationCapability: ObservationCapability.optional(),
+    /**
+     * Canonical fingerprint of the schema-error issue set that rejected this
+     * attempt (repair DIAGNOSTICS only — never authority). Detects a targeted
+     * repair that reproduced the identical error set (`REVIEWER_OUTPUT_REPAIR_STALLED`).
+     */
+    schemaErrorFingerprint: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
+    /**
+     * Authoritative, attempt-bound repository observations. Minted EXCLUSIVELY
+     * by the parent replay after the reviewer child session is known; child-side
+     * captures never become entries here directly. REQUIRED: attempts without
+     * observations carry `[]`, never an absent field.
+     */
+    observations: z.array(RepositoryObservation).readonly(),
+    createdAt: z.string().datetime(),
+    completedAt: z.string().datetime().optional(),
+  })
+  .strict()
+  .readonly();
 export type ReviewAttempt = z.infer<typeof ReviewAttempt>;
 
 // ─── Completeness Report ──────────────────────────────────────────────────────
@@ -468,14 +472,15 @@ export const ReviewObligation = z
      *
      * Absence means the obligation has NO repository evidence authority;
      * repository evidence must surface as `evidence_unavailable`, never as a
-     * snapshot of mutable runtime state. Optional for obligations persisted
-     * before the frozen-repository-authority generation.
+     * snapshot of mutable runtime state. Absent for obligations whose flow
+     * carried no frozen repository authority (e.g. an unavailable freeze).
      */
     repositoryAuthority: FrozenRepositoryAuthority.optional(),
     /** Durable plan/architecture repository-context freeze outcome (see {@link RepositoryEvidenceFreeze}); plan/architecture obligations MUST carry it — continuations, restarts, re-emits, archives, and forensics render the exact degradation cause. */
     repositoryEvidenceFreeze: RepositoryEvidenceFreeze.optional(),
     maxReviewerOutputRepairAttempts: z.number().int().min(0).max(5),
   })
+  .strict()
   .superRefine(refineStandaloneSubject)
   .superRefine(refineReviewMaterialSubject)
   .superRefine(refineAuthorityStructure)
@@ -563,9 +568,11 @@ export const ReviewAssuranceState = z
     attempts: z.array(ReviewAttempt),
     dispatches: z.array(ReviewDispatchRecord),
   })
+  .strict()
   .superRefine(refineAssuranceIdentityUniqueness)
   .superRefine(refineAssuranceDiscoveryCoherence)
   .superRefine(refineAssuranceProvenanceCoherence)
+  .superRefine(refineAssuranceDispatchCoherence)
   .superRefine(refineAssuranceInvocationLinkageCoherence)
   .readonly();
 export type ReviewAssuranceState = z.infer<typeof ReviewAssuranceState>;
@@ -586,6 +593,7 @@ export const ReviewDecision = z
     decidedAt: z.string().datetime(),
     decisionIdentity: DecisionIdentity,
   })
+  .strict()
   .readonly();
 export type ReviewDecision = z.infer<typeof ReviewDecision>;
 

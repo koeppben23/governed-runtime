@@ -30,7 +30,7 @@ import {
 import { updateObligation } from './obligation-state.js';
 import { buildSdkEvidenceAuditIntents } from './sdk-evidence-recorder.js';
 import type { PipelineContext } from './pipeline-types.js';
-import { INVOCATION_MODE_SDK_SESSION, EVIDENCE_SOURCE_HOST } from './pipeline-types.js';
+import { INVOCATION_MODE_SDK_SESSION } from './pipeline-types.js';
 import {
   validatePipelineAttestation,
   blockReviewOutcomeHelper,
@@ -320,13 +320,11 @@ function buildContentReviewInvocation(
     parentSessionId: sessionId,
     childSessionId: reviewerResult.sessionId,
     invocationMode: INVOCATION_MODE_SDK_SESSION,
-    hostVisible: false,
     promptHash,
     findingsHash,
     invokedAt: reviewerResult.invokedAt ?? now,
     fulfilledAt: reviewerResult.fulfilledAt ?? now,
     attemptId,
-    source: EVIDENCE_SOURCE_HOST,
     capturedVerdict:
       typeof reviewerResult.findings.overallVerdict === 'string'
         ? reviewerResult.findings.overallVerdict

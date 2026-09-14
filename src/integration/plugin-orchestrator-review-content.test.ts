@@ -198,6 +198,7 @@ function buildSessionState(
           status: 'created',
           origin: { kind: 'initial' } as const,
           repositoryDiscovery: { kind: 'not_applicable' } as const,
+          observations: [],
           createdAt: NOW,
         },
       ],

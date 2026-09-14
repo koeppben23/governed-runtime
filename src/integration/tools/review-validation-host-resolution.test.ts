@@ -48,6 +48,7 @@ function boundAttempt(obligation: ReviewObligation): ReviewAttempt {
     status: 'bound',
     origin: { kind: 'initial' },
     repositoryDiscovery: { kind: 'not_applicable' },
+    observations: [],
     createdAt: now,
   };
 }

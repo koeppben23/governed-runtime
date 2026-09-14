@@ -996,6 +996,7 @@ Provide structured findings per the canonical reviewer contract.`.repeat(2);
       status: 'created' as const,
       origin: { kind: 'initial' } as const,
       repositoryDiscovery: { kind: 'not_applicable' } as const,
+      observations: [],
       createdAt: '2026-01-01T00:00:00.000Z',
     };
     return { obligation, initialAttempt };
@@ -1308,6 +1309,7 @@ describe('toolBefore — observation capability parent binding', () => {
             origin: { kind: 'initial' } as const,
             repositoryDiscovery: repositoryDiscoveryContext(now),
             observationCapability: CAPABILITY,
+            observations: [],
             createdAt: now,
           },
         ],

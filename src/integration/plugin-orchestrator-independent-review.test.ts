@@ -195,6 +195,7 @@ function buildState(
           status: 'created',
           origin: { kind: 'initial' },
           repositoryDiscovery: { kind: 'not_applicable' },
+          observations: [],
           createdAt: NOW,
         },
       ],

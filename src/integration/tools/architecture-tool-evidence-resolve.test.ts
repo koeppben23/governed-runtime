@@ -208,6 +208,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
         status: 'bound' as const,
         origin: { kind: 'initial' as const },
         repositoryDiscovery: { kind: 'not_applicable' as const },
+        observations: [],
         createdAt: now,
       };
     }
@@ -295,6 +296,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
               structuredOutputUsed: true,
               reviewAssuranceLevel: 'structured_high',
               hostVisible: true,
+              source: 'host-orchestrated',
               promptHash: 'abc',
               mandateDigest: REVIEW_MANDATE_DIGEST,
               criteriaVersion: REVIEW_CRITERIA_VERSION,
@@ -520,6 +522,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
               structuredOutputUsed: true,
               reviewAssuranceLevel: 'structured_high',
               hostVisible: true,
+              source: 'host-orchestrated',
               promptHash: 'abc',
               mandateDigest: REVIEW_MANDATE_DIGEST,
               criteriaVersion: REVIEW_CRITERIA_VERSION,

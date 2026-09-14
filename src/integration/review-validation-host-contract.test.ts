@@ -174,6 +174,7 @@ function buildBoundAttempt(
     status: 'bound',
     origin: { kind: 'initial' },
     repositoryDiscovery: { kind: 'not_applicable' },
+    observations: [],
     createdAt: NOW,
     completedAt: NOW,
   };
@@ -227,6 +228,7 @@ function pluginHandshakeAssurance(
         agentType: 'flowguard-reviewer' as const,
         invocationMode: 'host_subagent_task' as const,
         hostVisible: true,
+        source: 'host-orchestrated' as const,
         promptHash: 'abc',
         mandateDigest: REVIEW_MANDATE_DIGEST,
         criteriaVersion: REVIEW_CRITERIA_VERSION,

@@ -50,7 +50,11 @@ export interface AuditPolicy {
   readonly timestampAssurance: TimestampAssurancePolicy;
 }
 
-/** Independent review evidence always requires host-structured output. */
+/**
+ * Independent review evidence always requires STRUCTURED findings (host-
+ * observed structured model output or honestly-labeled agent-submitted
+ * structured findings); unstructured text recovery is never admissible.
+ */
 export type ReviewOutputPolicy = 'structured_required';
 
 /** Controls how the reviewer is invoked — host-visible Task tool vs SDK vs fallback. */

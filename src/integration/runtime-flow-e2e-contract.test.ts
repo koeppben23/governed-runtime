@@ -310,6 +310,7 @@ async function inject(
             },
           },
           observationCapability: mintObservationCapability(),
+          observations: [],
           createdAt: FIXED_TIME,
           completedAt: FIXED_TIME,
         },

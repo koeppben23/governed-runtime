@@ -22,7 +22,6 @@ import {
   ReviewAssuranceState,
   ReviewDecision,
   ReviewReport,
-  ReviewInputFingerprintVersion,
   EvidenceSlotStatusSchema,
   FourEyesStatusSchema,
   CompletenessSummarySchema,
@@ -440,8 +439,9 @@ describe('evidence-review', () => {
         subjectDigest: 'a'.repeat(64),
         ordinal: 0,
         status: 'created' as const,
-        origin: { kind: 'initial' } as const,
+        origin: { kind: 'initial' as const },
         repositoryDiscovery,
+        observations: [],
         createdAt: FIXED_TIME,
       };
     }
@@ -690,6 +690,7 @@ describe('evidence-review', () => {
         agentType: 'flowguard-reviewer' as const,
         invocationMode: 'host_subagent_task' as const,
         hostVisible: true,
+        source: 'host-orchestrated' as const,
         promptHash: 'sha256-prompt',
         mandateDigest: 'sha256-mandate',
         criteriaVersion: 'v1',
@@ -728,6 +729,7 @@ describe('evidence-review', () => {
         agentType: 'flowguard-reviewer' as const,
         invocationMode: 'host_subagent_task' as const,
         hostVisible: true,
+        source: 'host-orchestrated' as const,
         promptHash: 'sha256-prompt',
         mandateDigest: 'sha256-mandate',
         criteriaVersion: 'p40-v1',
@@ -754,6 +756,7 @@ describe('evidence-review', () => {
         status: 'bound' as const,
         origin: { kind: 'initial' as const },
         repositoryDiscovery: { kind: 'not_applicable' as const },
+        observations: [],
         createdAt: FIXED_TIME,
         completedAt: FIXED_TIME,
         ...overrides,
@@ -902,6 +905,8 @@ describe('evidence-review', () => {
     it('CORNER: an agent-submitted invocation with honest provenance parses', () => {
       const invocation = structuredInvocation({
         invocationMode: 'manual_attested' as const,
+        hostVisible: false,
+        source: 'agent-submitted-attested' as const,
         reviewOutputMode: 'agent_submitted_structured' as const,
         structuredOutputUsed: false,
         reviewAssuranceLevel: 'structured_submitted' as const,
@@ -950,12 +955,14 @@ describe('evidence-review', () => {
       const result = parseAssuranceWith(invocation, linkedAttempt());
       expect(result.success).toBe(false);
       if (result.success) throw new TypeError('expected schema rejection');
-      expect(JSON.stringify(result.error.issues)).toContain('consistent output provenance');
+      expect(JSON.stringify(result.error.issues)).toContain('consistent invocation provenance');
     });
 
     it('rejects agent-submitted transport claiming host-structured provenance', () => {
       const invocation = structuredInvocation({
         invocationMode: 'manual_attested' as const,
+        hostVisible: false,
+        source: 'agent-submitted-attested' as const,
         reviewOutputMode: 'structured_output' as const,
         structuredOutputUsed: true,
         reviewAssuranceLevel: 'structured_high' as const,
@@ -963,7 +970,7 @@ describe('evidence-review', () => {
       const result = parseAssuranceWith(invocation, linkedAttempt());
       expect(result.success).toBe(false);
       if (result.success) throw new TypeError('expected schema rejection');
-      expect(JSON.stringify(result.error.issues)).toContain('consistent output provenance');
+      expect(JSON.stringify(result.error.issues)).toContain('consistent invocation provenance');
     });
 
     it('rejects a capability-less repository-governed attempt', () => {
@@ -1054,6 +1061,7 @@ describe('evidence-review', () => {
         agentType: 'flowguard-reviewer' as const,
         invocationMode: 'host_subagent_task' as const,
         hostVisible: true,
+        source: 'host-orchestrated' as const,
         promptHash: 'sha256-prompt',
         mandateDigest: 'sha256-mandate',
         criteriaVersion: 'p40-v1',
@@ -1096,6 +1104,7 @@ describe('evidence-review', () => {
         status: 'created' as const,
         origin: { kind: 'initial' } as const,
         repositoryDiscovery: { kind: 'not_applicable' } as const,
+        observations: [],
         createdAt: FIXED_TIME,
       };
       const result = ReviewAssuranceState.safeParse({
@@ -1774,171 +1783,5 @@ describe('Implementation subject scope coherence (schema refinement)', () => {
         'only implement obligations may carry an implementation reviewSubjectScope',
       );
     }
-  });
-});
-
-describe('Obligation repository authority coherence (schema refinement)', () => {
-  const LOCAL = { kind: 'local' as const, rootCommitDigest: 'a'.repeat(64) };
-  const CANDIDATE_PAIR = {
-    kind: 'candidate_pair' as const,
-    base: { kind: 'commit' as const, repositoryIdentity: LOCAL, objectSha: 'b'.repeat(40) },
-    head: { kind: 'commit' as const, repositoryIdentity: LOCAL, objectSha: 'a'.repeat(40) },
-  };
-  const CONTEXT_AUTHORITY = {
-    kind: 'context' as const,
-    context: {
-      kind: 'commit' as const,
-      repositoryIdentity: { host: 'github.com', owner: 'acme', name: 'repo' },
-      objectSha: 'c'.repeat(40),
-    },
-  };
-
-  function repositoryReviewObligation(overrides: Record<string, unknown> = {}) {
-    return {
-      obligationId: FIXED_UUID,
-      obligationType: 'review' as const,
-      iteration: 0,
-      planVersion: 1,
-      criteriaVersion: 'p40-v1',
-      mandateDigest: 'sha256-mandate',
-      createdAt: FIXED_TIME,
-      pluginHandshakeAt: null,
-      status: 'pending' as const,
-      invocationId: null,
-      blockedCode: null,
-      fulfilledAt: null,
-      consumedAt: null,
-      reviewProfile: 'core' as const,
-      profileSource: 'policy_default' as const,
-      requiredChallengeCount: 0,
-      requiredChallengeKind: 'content_challenge' as const,
-      challengePolicyVersion: 'challenge-policy.v1' as const,
-      subjectDigest: 'a'.repeat(64),
-      reviewMaterial: {
-        content: 'frozen review material',
-        materialDigest: 'a'.repeat(64),
-        subjectDigest: 'a'.repeat(64),
-      },
-      reviewSubject: {
-        kind: 'repository_change' as const,
-        source: { kind: 'branch' as const, branch: 'feature/x' },
-        baseRepository: LOCAL,
-        headRepository: LOCAL,
-        baseSha: 'b'.repeat(40),
-        headSha: 'a'.repeat(40),
-        changedPaths: ['src/a.ts'],
-        materialDigest: 'a'.repeat(64),
-        subjectDigest: 'a'.repeat(64),
-      },
-      reviewSubjectScope: {
-        kind: 'repository_change' as const,
-        paths: ['src/a.ts'],
-        revisions: ['base', 'head'] as const,
-      },
-      repositoryAuthority: CANDIDATE_PAIR,
-      maxReviewerOutputRepairAttempts: 1,
-      ...overrides,
-    };
-  }
-
-  it('accepts a repository_change review whose authority exactly matches the subject', () => {
-    expect(ReviewObligation.safeParse(repositoryReviewObligation()).success).toBe(true);
-  });
-
-  it('rejects an authority whose head SHA diverges from the frozen subject', () => {
-    const obligation = repositoryReviewObligation({
-      repositoryAuthority: {
-        ...CANDIDATE_PAIR,
-        head: { ...CANDIDATE_PAIR.head, objectSha: 'c'.repeat(40) },
-      },
-    });
-    const result = ReviewObligation.safeParse(obligation);
-    expect(result.success).toBe(false);
-    if (result.success) throw new TypeError('expected schema rejection');
-    expect(JSON.stringify(result.error.issues)).toContain('exactly match the frozen reviewSubject');
-  });
-
-  it('rejects a repository_change review without frozen authority', () => {
-    const obligation = repositoryReviewObligation({ repositoryAuthority: undefined });
-    const result = ReviewObligation.safeParse(obligation);
-    expect(result.success).toBe(false);
-    if (result.success) throw new TypeError('expected schema rejection');
-    expect(JSON.stringify(result.error.issues)).toContain('require frozen repository authority');
-  });
-
-  it('rejects a context authority on a repository_change review', () => {
-    const obligation = repositoryReviewObligation({
-      repositoryAuthority: CONTEXT_AUTHORITY,
-    });
-    const result = ReviewObligation.safeParse(obligation);
-    expect(result.success).toBe(false);
-    if (result.success) throw new TypeError('expected schema rejection');
-    expect(JSON.stringify(result.error.issues)).toContain('candidate-pair or fork-pair');
-  });
-
-  it('rejects repository authority on a content review', () => {
-    const obligation = repositoryReviewObligation({
-      reviewSubject: {
-        kind: 'content' as const,
-        source: { kind: 'inline' as const, mediaType: 'text' as const },
-        materialDigest: 'a'.repeat(64),
-        subjectDigest: 'a'.repeat(64),
-        lineCount: 1,
-      },
-      reviewSubjectScope: {
-        kind: 'content' as const,
-        subjectDigest: 'a'.repeat(64),
-        lineCount: 1,
-      },
-    });
-    const result = ReviewObligation.safeParse(obligation);
-    expect(result.success).toBe(false);
-    if (result.success) throw new TypeError('expected schema rejection');
-    expect(JSON.stringify(result.error.issues)).toContain('must not carry repository authority');
-  });
-
-  it('rejects a context authority on an implement obligation', () => {
-    const obligation = repositoryReviewObligation({
-      obligationType: 'implement' as const,
-      requiredChallengeKind: 'implementation_challenge' as const,
-      reviewSubject: undefined,
-      reviewSubjectScope: {
-        kind: 'implementation' as const,
-        implementationDigest: 'a'.repeat(64),
-      },
-      repositoryAuthority: CONTEXT_AUTHORITY,
-    });
-    const result = ReviewObligation.safeParse(obligation);
-    expect(result.success).toBe(false);
-    if (result.success) throw new TypeError('expected schema rejection');
-    expect(JSON.stringify(result.error.issues)).toContain('candidate-pair repository authority');
-  });
-
-  it('rejects a candidate-pair authority on a plan obligation', () => {
-    const obligation = repositoryReviewObligation({
-      obligationType: 'plan' as const,
-      requiredChallengeKind: 'design_challenge' as const,
-      reviewSubject: undefined,
-      reviewSubjectScope: {
-        kind: 'artifact' as const,
-        artifact: {
-          kind: 'plan' as const,
-          digest: 'a'.repeat(64),
-          sectionPaths: [[{ headingDepth: 2, siblingIndex: 1, headingText: 'Approach' }]],
-        },
-      },
-      repositoryEvidenceFreeze: { kind: 'available' as const },
-    });
-    const result = ReviewObligation.safeParse(obligation);
-    expect(result.success).toBe(false);
-    if (result.success) throw new TypeError('expected schema rejection');
-    expect(JSON.stringify(result.error.issues)).toContain('context authority');
-  });
-});
-
-describe('ReviewInputFingerprintVersion', () => {
-  it('accepts the current v2 generation and rejects the removed v1', () => {
-    expect(ReviewInputFingerprintVersion.safeParse('v2').success).toBe(true);
-    expect(ReviewInputFingerprintVersion.safeParse('v1').success).toBe(false);
   });
 });

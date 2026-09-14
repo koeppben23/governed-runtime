@@ -60,6 +60,7 @@ function bindableAttemptFor(obligation: ReviewObligation): ReviewAttempt {
     status: 'created',
     origin: { kind: 'initial' },
     repositoryDiscovery: { kind: 'not_applicable' },
+    observations: [],
     createdAt: '2026-01-01T00:00:00.000Z',
     reviewMaterial: {
       content: PLAN_BODY,
@@ -407,6 +408,7 @@ describe('resolveNextAction', () => {
               ordinal: 1,
               origin: { kind: 'initial' },
               repositoryDiscovery: { kind: 'not_applicable' },
+              observations: [],
               status: 'bound',
               childSessionId: 'child',
               completedAt: '2026-01-01T00:00:00.000Z',

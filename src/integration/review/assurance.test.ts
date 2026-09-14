@@ -86,7 +86,6 @@ function makeInvocation(overrides?: Partial<ReviewInvocationEvidence>): ReviewIn
     invokedAt: NOW,
     fulfilledAt: fulfilledAt ?? NOW,
     invocationMode: 'sdk_session_prompt',
-    hostVisible: false,
     ...rest,
   });
 }
@@ -851,7 +850,6 @@ describe('integration/review-assurance', () => {
         childSessionId: findings.reviewedBy.sessionId,
         findingsHash: hashFindings(findings),
         invocationMode: 'host_subagent_task',
-        hostVisible: true,
       });
       const assurance = {
         assuranceSchemaVersion: 'review-assurance.v6' as const,
@@ -939,7 +937,6 @@ describe('integration/review-assurance', () => {
         fulfilledAt: NOW,
         attemptId: '00000000-0000-4000-8000-000000000003',
         invocationMode: 'sdk_session_prompt',
-        hostVisible: false,
       });
       expect(result.agentType).toBe(REVIEWER_SUBAGENT_TYPE);
       expect(result.mandateDigest).toBe(FIXTURE_MANDATE_DIGEST);
@@ -968,7 +965,6 @@ describe('integration/review-assurance', () => {
         capturedVerdict: 'accept',
         attemptId: '00000000-0000-4000-8000-000000000004',
         invocationMode: 'sdk_session_prompt',
-        hostVisible: false,
       });
       expect(result.capturedVerdict).toBe('accept');
     });
@@ -987,7 +983,6 @@ describe('integration/review-assurance', () => {
         capturedVerdict: 'changes_requested',
         attemptId: '00000000-0000-4000-8000-000000000005',
         invocationMode: 'sdk_session_prompt',
-        hostVisible: false,
       });
       expect(result.capturedVerdict).toBe('changes_requested');
     });
@@ -1005,7 +1000,6 @@ describe('integration/review-assurance', () => {
         invokedAt: NOW,
         attemptId: '00000000-0000-4000-8000-000000000006',
         invocationMode: 'sdk_session_prompt',
-        hostVisible: false,
       });
       expect(result.capturedVerdict).toBeUndefined();
     });
@@ -1019,7 +1013,6 @@ describe('integration/review-assurance', () => {
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         invocationMode: 'host_subagent_task',
-        hostVisible: true,
         promptHash: hashText('prompt'),
         findingsHash: hashText('findings'),
         invokedAt: NOW,
@@ -1057,7 +1050,6 @@ describe('integration/review-assurance', () => {
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         invocationMode: 'host_subagent_task',
-        hostVisible: true,
         promptHash: hashText('prompt'),
         findingsHash: hashFindings(sampleRawFindings),
         invokedAt: NOW,
@@ -1077,7 +1069,6 @@ describe('integration/review-assurance', () => {
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         invocationMode: 'sdk_session_prompt',
-        hostVisible: false,
         promptHash: hashText('prompt'),
         findingsHash: hashText('findings'),
         invokedAt: NOW,
@@ -1095,7 +1086,6 @@ describe('integration/review-assurance', () => {
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
         invocationMode: 'host_subagent_task',
-        hostVisible: true,
         promptHash: hashText('prompt'),
         findingsHash: hashFindings(sampleRawFindings),
         invokedAt: NOW,

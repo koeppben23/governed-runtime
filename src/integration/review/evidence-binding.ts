@@ -257,7 +257,6 @@ function assembleBoundEvidence(input: {
     parentSessionId: input.sessionId,
     childSessionId,
     invocationMode: 'host_subagent_task',
-    hostVisible: true,
     promptHash,
     ...(input.promptProvenance
       ? {
@@ -269,7 +268,6 @@ function assembleBoundEvidence(input: {
     findingsHash,
     invokedAt: input.promptProvenance?.createdAt ?? input.attempt.createdAt,
     fulfilledAt: latest.subagentRecord?.completedAt ?? now,
-    source: 'host-orchestrated',
     attemptId: input.attempt.attemptId,
     capturedVerdict: latest.capturedFindings?.overallVerdict,
     capturedRawFindings: input.normalizedFindings,

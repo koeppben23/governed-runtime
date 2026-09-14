@@ -489,7 +489,6 @@ export async function fulfillStrictReviewObligation(
     parentSessionId: state.binding.hostSessionId,
     childSessionId: findings.reviewedBy.sessionId,
     invocationMode: isHostTask ? 'host_subagent_task' : 'sdk_session_prompt',
-    hostVisible: isHostTask,
     promptHash: hashText(`${input.obligationType}:${input.iteration}:${input.planVersion}`),
     findingsHash: hashFindings(findings),
     invokedAt: new Date().toISOString(),
@@ -612,6 +611,7 @@ function bindHostTaskAttempt(
     ...(obligation.repositoryAuthority
       ? { observationCapability: mintObservationCapabilityIfResolvable(obligation) ?? undefined }
       : {}),
+    observations: [],
     createdAt: now,
     completedAt: now,
   };

@@ -97,6 +97,7 @@ export function createReviewAttempt(input: {
     ...(input.observationCapability === null
       ? {}
       : { observationCapability: input.observationCapability }),
+    observations: [],
     createdAt: input.now,
   };
 }

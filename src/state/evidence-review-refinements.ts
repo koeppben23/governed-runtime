@@ -126,11 +126,21 @@ export interface AssuranceRefinementShape {
     readonly childSessionId: string;
     readonly attemptId?: string;
     readonly invocationMode?: string;
+    readonly source?: string;
+    readonly hostVisible?: boolean;
+    readonly hostCapturedAgentId?: string;
+    readonly hostCapturedAgentType?: string;
+    readonly hostCaptureSource?: string;
     readonly reviewOutputMode?: string;
     readonly structuredOutputUsed?: boolean;
     readonly reviewAssuranceLevel?: string;
   }[];
   readonly attempts: readonly AttemptRefinementShape[];
+  readonly dispatches: readonly {
+    readonly dispatchId: string;
+    readonly attemptId: string;
+    readonly obligationId: string;
+  }[];
 }
 
 /** Frozen material must belong to the same subject as its obligation. */
@@ -381,7 +391,14 @@ export function refineAssuranceDiscoveryCoherence(
       return;
     }
     const obligation = obligationsById.get(attempt.obligationId);
-    if (!obligation) continue;
+    if (!obligation) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['attempts'],
+        message: `attempt ${attempt.attemptId} references unknown obligation ${attempt.obligationId}`,
+      });
+      return;
+    }
     const repositoryGoverned = hasFrozenRepositoryAuthority(obligation);
     if (repositoryGoverned && attempt.repositoryDiscovery.kind !== 'repository') {
       context.addIssue({
@@ -403,6 +420,48 @@ export function refineAssuranceDiscoveryCoherence(
 }
 
 /**
+ * Dispatch-ledger referential closure. The durable dispatch ledger is
+ * authority-bearing, so every dispatch must reference an EXISTING attempt
+ * belonging to the SAME obligation, and dispatch identities must be unique.
+ * Orphans and cross-links are invalid states, not legacy data.
+ */
+export function refineAssuranceDispatchCoherence(
+  assurance: AssuranceRefinementShape,
+  context: z.RefinementCtx,
+): void {
+  const attemptsById = new Map(assurance.attempts.map((attempt) => [attempt.attemptId, attempt]));
+  const dispatchIds = new Set<string>();
+  for (const dispatch of assurance.dispatches) {
+    if (dispatchIds.has(dispatch.dispatchId)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['dispatches'],
+        message: `duplicate dispatchId ${dispatch.dispatchId} — a dispatch identity must be unique across the assurance state`,
+      });
+      return;
+    }
+    dispatchIds.add(dispatch.dispatchId);
+    const attempt = attemptsById.get(dispatch.attemptId);
+    if (!attempt) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['dispatches'],
+        message: `dispatch ${dispatch.dispatchId} references unknown attempt ${dispatch.attemptId}`,
+      });
+      return;
+    }
+    if (attempt.obligationId !== dispatch.obligationId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['dispatches'],
+        message: `dispatch ${dispatch.dispatchId} obligation does not match its attempt`,
+      });
+      return;
+    }
+  }
+}
+
+/**
  * Canonical linkage coherence (CE2): when an obligation's canonical linkage
  * points at an invocation, the invocation must back-reference the SAME
  * obligation on both sides of the relation (`obligationId` AND
@@ -416,8 +475,8 @@ export function refineAssuranceInvocationLinkageCoherence(
 ): void {
   for (const invocation of assurance.invocations) {
     // Provenance is derived from HOW the reviewer was invoked; a state whose
-    // transport disagrees with its output provenance claims more assurance
-    // than was observed.
+    // transport, visibility, corroboration, or output provenance disagrees
+    // with the invocation mode claims more assurance than was observed.
     const hostObserved =
       invocation.invocationMode === 'host_subagent_task' ||
       invocation.invocationMode === 'sdk_session_prompt';
@@ -435,18 +494,37 @@ export function refineAssuranceInvocationLinkageCoherence(
         : expectedMode === 'agent_submitted_structured'
           ? 'structured_submitted'
           : null;
+    const expectedSource = hostObserved
+      ? 'host-orchestrated'
+      : agentSubmitted
+        ? 'agent-submitted-attested'
+        : null;
+    const expectedHostVisible = invocation.invocationMode === 'host_subagent_task';
+    const hostCaptureConsistent =
+      invocation.invocationMode === 'native_subagent_attested'
+        ? Boolean(
+            invocation.hostCapturedAgentId &&
+            invocation.hostCapturedAgentType &&
+            invocation.hostCaptureSource,
+          )
+        : !invocation.hostCapturedAgentId &&
+          !invocation.hostCapturedAgentType &&
+          !invocation.hostCaptureSource;
     if (
       !invocation.attemptId ||
       expectedMode === null ||
       invocation.reviewOutputMode !== expectedMode ||
       invocation.reviewAssuranceLevel !== expectedLevel ||
-      invocation.structuredOutputUsed !== (expectedMode === 'structured_output')
+      invocation.structuredOutputUsed !== (expectedMode === 'structured_output') ||
+      invocation.source !== expectedSource ||
+      invocation.hostVisible !== expectedHostVisible ||
+      !hostCaptureConsistent
     ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['invocations'],
         message:
-          'Review invocation evidence requires attempt lineage and consistent output provenance.',
+          'Review invocation evidence requires attempt lineage and consistent invocation provenance.',
       });
       return;
     }

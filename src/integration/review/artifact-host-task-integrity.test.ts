@@ -292,12 +292,19 @@ describe('host-task observation contract wiring', () => {
     const state = sessionWith(obligation);
     // Persisted attempts are untrusted: forge a capability that no frozen
     // authority backs. The SSOT must not translate it into a contract.
-    state.reviewAssurance!.attempts[0]!.observationCapability = 'fgc_forged';
+    const [firstAttempt, ...restAttempts] = state.reviewAssurance!.attempts;
+    const forgedState: SessionState = {
+      ...state,
+      reviewAssurance: {
+        ...state.reviewAssurance!,
+        attempts: [{ ...firstAttempt!, observationCapability: 'fgc_forged' }, ...restAttempts],
+      },
+    };
     const output = { output: architectureOutput(obligation) };
     const reviewCtx = extractReviewContext('flowguard_architecture', JSON.parse(output.output))!;
     await handleHostTaskPolicy(
       mockDeps(),
-      state,
+      forgedState,
       '/tmp/sess-integrity',
       reviewCtx,
       output,

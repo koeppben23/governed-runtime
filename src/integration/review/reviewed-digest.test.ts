@@ -92,11 +92,9 @@ function hostInvocation(
     parentSessionId: 'ses-parent',
     childSessionId: 'ses-child',
     invocationMode: 'host_subagent_task',
-    hostVisible: true,
     promptHash: 'sha256-prompt',
     findingsHash: hashFindings(findings),
     invokedAt: NOW,
-    source: 'host-orchestrated',
   });
   return { ...invocation, ...overrides } as ReviewInvocationEvidence;
 }

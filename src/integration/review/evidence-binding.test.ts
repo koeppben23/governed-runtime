@@ -273,11 +273,9 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
         parentSessionId: SESSION_ID,
         childSessionId: CHILD_SESSION_ID,
         invocationMode: 'host_subagent_task',
-        hostVisible: true,
         promptHash: 'dummy-hash',
         findingsHash: fHash,
         invokedAt: NOW,
-        source: 'host-orchestrated',
       });
 
       const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {

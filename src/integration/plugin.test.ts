@@ -166,6 +166,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
             status: 'created' as const,
             origin: { kind: 'initial' } as const,
             repositoryDiscovery: { kind: 'not_applicable' } as const,
+            observations: [],
             createdAt: now,
           },
         ],

@@ -192,12 +192,10 @@ async function bindHostTaskReviewEvidence(
     parentSessionId: ctx.sessionID,
     childSessionId: 'ses_review_child_host_task',
     invocationMode: 'host_subagent_task',
-    hostVisible: true,
     promptHash: 'host-task-review-prompt',
     findingsHash: hashFindings(findings),
     invokedAt: '2026-01-01T00:00:00.000Z',
     fulfilledAt: '2026-01-01T00:00:00.000Z',
-    source: 'host-orchestrated',
     capturedVerdict: findings.overallVerdict,
     capturedRawFindings: findings,
     attemptId: resolvedAttemptId,
@@ -214,6 +212,7 @@ async function bindHostTaskReviewEvidence(
     origin: existingAttempt?.origin ?? ({ kind: 'initial' } as const),
     repositoryDiscovery:
       existingAttempt?.repositoryDiscovery ?? ({ kind: 'not_applicable' } as const),
+    observations: existingAttempt?.observations ?? [],
     createdAt: existingAttempt?.createdAt ?? new Date().toISOString(),
     completedAt: existingAttempt?.completedAt ?? invocation.fulfilledAt ?? new Date().toISOString(),
   };

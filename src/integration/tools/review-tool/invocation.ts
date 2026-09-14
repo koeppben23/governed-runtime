@@ -182,12 +182,10 @@ function buildManualInvocationState(input: {
     parentSessionId: context.sessionID,
     childSessionId,
     invocationMode: attestation.invocationMode,
-    hostVisible: false,
     promptHash,
     findingsHash,
     invokedAt: now,
     fulfilledAt: now,
-    source: 'agent-submitted-attested',
     attemptId,
     ...getBranchProvenance(obligation),
     ...(attestation.hostCapturedAgentId

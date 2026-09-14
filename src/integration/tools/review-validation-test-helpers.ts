@@ -64,6 +64,7 @@ export function makeHostTaskInvocation(
     childSessionId: 'ses_child',
     agentType: 'flowguard-reviewer' as const,
     invocationMode: 'host_subagent_task' as const,
+    source: 'host-orchestrated' as const,
     hostVisible: true,
     promptHash: 'abc',
     mandateDigest: REVIEW_MANDATE_DIGEST,

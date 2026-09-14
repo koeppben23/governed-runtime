@@ -53,8 +53,12 @@ export const ReviewInvocationEvidence = z
      *  Enables evidence-based findings resolution: the tool reads findings directly from
      *  invocation evidence, eliminating agent-side reconstruction of the ReviewFindings object. */
     capturedRawFindings: z.record(z.string(), z.unknown()).optional(),
-    /** Evidence source: host-orchestrated or agent-submitted-attested. */
-    source: z.enum(['host-orchestrated', 'agent-submitted-attested']).optional(),
+    /**
+     * Evidence source, fully determined by `invocationMode`:
+     * host_subagent_task/sdk_session_prompt → host-orchestrated,
+     * manual_attested/native_subagent_attested → agent-submitted-attested.
+     */
+    source: z.enum(['host-orchestrated', 'agent-submitted-attested']),
     /**
      * Reviewer output transport used to obtain the findings.
      *
@@ -99,5 +103,6 @@ export const ReviewInvocationEvidence = z
       .nullable()
       .optional(),
   })
+  .strict()
   .readonly();
 export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;

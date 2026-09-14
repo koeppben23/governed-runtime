@@ -93,6 +93,7 @@ async function seedSession(
     status: options.attemptStatus ?? 'created',
     origin: { kind: 'initial' } as const,
     repositoryDiscovery: { kind: 'not_applicable' } as const,
+    observations: [],
     createdAt: now,
     ...(options.attemptChildSessionId ? { childSessionId: options.attemptChildSessionId } : {}),
   };

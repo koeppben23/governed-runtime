@@ -573,7 +573,6 @@ export function buildInvocationEvidence(input: {
   parentSessionId: string;
   childSessionId: string;
   invocationMode: ReviewInvocationMode;
-  hostVisible: boolean;
   promptHash: string;
   canonicalPromptDigest?: string;
   modelPromptDigest?: string | null;
@@ -581,7 +580,6 @@ export function buildInvocationEvidence(input: {
   findingsHash: string;
   invokedAt: string;
   fulfilledAt?: string;
-  source?: 'host-orchestrated' | 'agent-submitted-attested';
   /** Captured verdict from the reviewer's actual output (host-task authoritative). */
   capturedVerdict?: string;
   /** Complete raw findings from the reviewer's output (host-task only).
@@ -600,8 +598,11 @@ export function buildInvocationEvidence(input: {
   /** Persisted host-authoritative attempt ID bound at evidence-assembly time. */
   attemptId: string;
 }): ReviewInvocationEvidence {
+  // Provenance is DERIVED from how the reviewer was invoked — callers cannot
+  // assert host observation for agent-submitted transport.
   const hostObservedStructured =
     input.invocationMode === 'host_subagent_task' || input.invocationMode === 'sdk_session_prompt';
+  const hostVisible = input.invocationMode === 'host_subagent_task';
   return {
     invocationId: randomUUID(),
     obligationId: input.obligationId,
@@ -610,7 +611,7 @@ export function buildInvocationEvidence(input: {
     childSessionId: input.childSessionId,
     agentType: REVIEWER_SUBAGENT_TYPE,
     invocationMode: input.invocationMode,
-    hostVisible: input.hostVisible,
+    hostVisible,
     promptHash: input.promptHash,
     canonicalPromptDigest: input.canonicalPromptDigest,
     modelPromptDigest: input.modelPromptDigest,
@@ -621,7 +622,7 @@ export function buildInvocationEvidence(input: {
     invokedAt: input.invokedAt,
     fulfilledAt: input.fulfilledAt ?? null,
     consumedByObligationId: null,
-    source: input.source,
+    source: hostObservedStructured ? 'host-orchestrated' : 'agent-submitted-attested',
     reviewOutputMode: hostObservedStructured ? 'structured_output' : 'agent_submitted_structured',
     structuredOutputUsed: hostObservedStructured,
     reviewAssuranceLevel: hostObservedStructured ? 'structured_high' : 'structured_submitted',

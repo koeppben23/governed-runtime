@@ -125,6 +125,7 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
           status: 'created',
           origin: { kind: 'initial' },
           repositoryDiscovery: { kind: 'not_applicable' },
+          observations: [],
           createdAt: NOW,
         },
       ],

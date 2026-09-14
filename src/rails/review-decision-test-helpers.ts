@@ -52,6 +52,7 @@ function invocationsFromEntries(entries: AssuranceEntry[]): ReviewAssuranceState
         agentType: 'flowguard-reviewer',
         invocationMode: 'host_subagent_task',
         hostVisible: true,
+        source: 'host-orchestrated',
         promptHash: 'prompt-hash',
         mandateDigest: 'm'.repeat(64),
         criteriaVersion: 'criteria-v1',
@@ -80,6 +81,7 @@ function attemptsFromEntries(entries: AssuranceEntry[]): ReviewAssuranceState['a
       status: 'bound' as const,
       origin: { kind: 'initial' } as const,
       repositoryDiscovery: { kind: 'not_applicable' } as const,
+      observations: [] as const,
       createdAt: e.createdAt ?? '2026-01-01T00:00:00.000Z',
       completedAt: e.createdAt ?? '2026-01-01T00:00:00.000Z',
     }));

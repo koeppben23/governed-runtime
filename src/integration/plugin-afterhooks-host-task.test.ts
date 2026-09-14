@@ -143,6 +143,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
             status: 'created' as const,
             origin: { kind: 'initial' } as const,
             repositoryDiscovery: { kind: 'not_applicable' } as const,
+            observations: [],
             createdAt: now,
           },
         ],
@@ -468,7 +469,6 @@ describe('reviewer host-task after-hook: extraction_invalid → sequential re-in
         reviewAssurance: {
           ...state!.reviewAssurance!,
           attempts: state!.reviewAssurance!.attempts.map((attempt) => ({
-            dispatches: [],
             ...attempt,
             status: 'bound' as const,
             childSessionId: CHILD_VALID,

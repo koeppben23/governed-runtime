@@ -269,7 +269,6 @@ function buildManualTransportInvocation(
     parentSessionId: opts.parentSessionId,
     childSessionId: findings.reviewedBy.sessionId,
     invocationMode: 'manual_attested',
-    hostVisible: false,
     promptHash: hashText(
       `${obligation.obligationType}:${obligation.iteration}:${obligation.planVersion}`,
     ),
@@ -277,7 +276,6 @@ function buildManualTransportInvocation(
     invokedAt: findings.reviewedAt,
     fulfilledAt: opts.now,
     attemptId: opts.attemptId,
-    source: 'agent-submitted-attested',
     capturedVerdict: findings.overallVerdict,
     capturedRawFindings: findings,
     ...getBranchProvenanceFields(obligation),
