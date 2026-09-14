@@ -20,41 +20,28 @@ import {
 import type { ReviewAssuranceState } from '../../../state/evidence.js';
 import { promptContainsValue } from './extraction.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../tool-names.js';
-import { isPendingCaptureUsable } from './prepare-findings.js';
+
 /**
  * Enforce prompt integrity before allowing a subagent call (Level 3).
  * Called in tool.execute.before for task calls with subagent_type=flowguard-reviewer.
- *
- * Validates:
- * 1. Prompt meets minimum length (catches empty/trivial prompts)
- * 2. Prompt contains expected iteration value (contextual match)
- * 3. Prompt contains expected planVersion value (contextual match, plan only)
- *
- * @param state - Session enforcement state (read-only check)
- * @param taskArgs - Task tool call arguments
- * @returns Enforcement result
  */
 function checkReviewContext(
   pendingReviews: PendingReview[],
   prompt: string,
-  strictEnforcement: boolean,
 ): { hasMatch: boolean; missingFields: string[]; blockReason?: EnforcementResult } {
   const missingFields: string[] = [];
   for (const pending of pendingReviews) {
     if (!pending.contentMeta) {
-      if (strictEnforcement) {
-        return {
-          hasMatch: false,
-          missingFields,
-          blockReason: {
-            allowed: false,
-            code: 'SUBAGENT_CONTEXT_UNVERIFIABLE',
-            reason:
-              'Content meta extraction failed — cannot validate subagent context in strict mode. The FlowGuard tool response must include structured review obligation metadata.',
-          },
-        };
-      }
-      return { hasMatch: true, missingFields };
+      return {
+        hasMatch: false,
+        missingFields,
+        blockReason: {
+          allowed: false,
+          code: 'SUBAGENT_CONTEXT_UNVERIFIABLE',
+          reason:
+            'Content meta extraction failed — cannot validate subagent context. The FlowGuard tool response must include structured review obligation metadata.',
+        },
+      };
     }
     const { expectedIteration, expectedPlanVersion } = pending.contentMeta;
     const hasIteration = promptContainsValue(prompt, 'iteration', expectedIteration);
@@ -97,42 +84,28 @@ function structuralContextBlock(state: SessionEnforcementState): EnforcementResu
 /**
  * Whether a pending review may be dispatched by the reviewer Task RIGHT NOW.
  *
- * Dispatch authority is the DURABLE attempt lifecycle, never the transient
- * capture: a Task call may run only when its pending review names a durable
+ * Dispatch authority is the DURABLE attempt lifecycle, never transient capture
+ * state. A Task call may run only when its pending review names a durable
  * attempt that is still `created` (bindable, no child session). A rejected,
- * bound, staled, or expired attempt is never re-dispatched by a bare Task
- * call — only the originating FlowGuard command re-issues an attempt
- * (canonical output repair) and emits a fresh signal first.
- *
- * The transient capture is consulted only when NO durable assurance is
- * available to the gate (legacy fallback for callers without state access).
+ * bound, staled, or expired attempt is never re-dispatched by a bare Task call.
  */
 function isDispatchable(
   pending: PendingReview,
   assurance: ReviewAssuranceState | null | undefined,
 ): boolean {
-  const namesAttempt = pending.obligationId != null && pending.attemptId != null;
-  if (assurance && namesAttempt) {
-    const durable = assurance.attempts.find(
-      (a) => a.obligationId === pending.obligationId && a.attemptId === pending.attemptId,
-    );
-    return durable !== undefined && durable.status === 'created' && !durable.childSessionId;
-  }
-  if (pending.subagentCalled === false) return true;
-  if (!assurance) return !isPendingCaptureUsable(pending);
-  return false;
+  if (!assurance || pending.obligationId == null || pending.attemptId == null) return false;
+  const durable = assurance.attempts.find(
+    (attempt) =>
+      attempt.obligationId === pending.obligationId && attempt.attemptId === pending.attemptId,
+  );
+  return durable !== undefined && durable.status === 'created' && !durable.childSessionId;
 }
 
 /**
- * With durable authority, a pending review without a bindable attempt is NOT
- * dispatchable: a bare Task call must never re-arm a rejected attempt. Only
- * the originating FlowGuard command re-issues attempts.
+ * A pending review without a durable bindable attempt is not dispatchable.
  */
-function notDispatchableBlock(
-  state: SessionEnforcementState,
-  assurance: ReviewAssuranceState | null | undefined,
-): EnforcementResult | null {
-  if (!assurance || state.pendingReviews.size === 0) return null;
+function notDispatchableBlock(state: SessionEnforcementState): EnforcementResult | null {
+  if (state.pendingReviews.size === 0) return null;
   return {
     allowed: false,
     code: 'REVIEWER_TASK_NOT_DISPATCHABLE',
@@ -146,7 +119,6 @@ function notDispatchableBlock(
 export function enforceBeforeSubagentCall(
   state: SessionEnforcementState,
   taskArgs: Record<string, unknown>,
-  strictEnforcement = false,
   assurance?: ReviewAssuranceState | null,
 ): EnforcementResult {
   const subagentType = typeof taskArgs.subagent_type === 'string' ? taskArgs.subagent_type : '';
@@ -157,21 +129,19 @@ export function enforceBeforeSubagentCall(
   const structuralBlock = structuralContextBlock(state);
   if (structuralBlock) return structuralBlock;
 
-  // Include pending reviews dispatchable against a durable bindable attempt.
-  const unfilledPendingReviews = [...state.pendingReviews.values()].filter((p) =>
-    isDispatchable(p, assurance),
+  const unfilledPendingReviews = [...state.pendingReviews.values()].filter((pending) =>
+    isDispatchable(pending, assurance),
   );
   if (unfilledPendingReviews.length === 0) {
-    return notDispatchableBlock(state, assurance) ?? { allowed: true };
+    return notDispatchableBlock(state) ?? { allowed: true };
   }
 
-  return enforcePendingReviewPrompt(unfilledPendingReviews, prompt, strictEnforcement);
+  return enforcePendingReviewPrompt(unfilledPendingReviews, prompt);
 }
 
 function enforcePendingReviewPrompt(
   unfilledPendingReviews: PendingReview[],
   prompt: string,
-  strictEnforcement: boolean,
 ): EnforcementResult {
   const promptDigest = createHash('sha256').update(prompt, 'utf8').digest('hex');
   const canonicalPromptBlock = checkCanonicalPrompt(unfilledPendingReviews, promptDigest);
@@ -185,7 +155,7 @@ function enforcePendingReviewPrompt(
     };
   }
 
-  const ctx = checkReviewContext(unfilledPendingReviews, prompt, strictEnforcement);
+  const ctx = checkReviewContext(unfilledPendingReviews, prompt);
   if (ctx.blockReason) return ctx.blockReason;
   if (!ctx.hasMatch) {
     return {
@@ -221,8 +191,6 @@ function checkCanonicalPrompt(
     };
   }
 
-  // Check retry exhaustion: a review that was already called and has
-  // exhausted its retry budget (>= 1 retry) cannot be re-invoked.
   const retryExhausted = unfilledPendingReviews.filter(
     (p) => p.subagentCalled && (p.retryCount ?? 0) >= 1,
   );
@@ -240,14 +208,8 @@ function checkCanonicalPrompt(
     };
   }
 
-  // Check repair-prompt requirement: after schema-invalid output, a
-  // fresh canonical repair prompt must be issued by flowguard_review.
-  // Validation uses a host-issued opaque SHA256 digest — the parent
-  // cannot fabricate the exact repair prompt bytes.
   const needsRepair = unfilledPendingReviews.filter((p) => p.repairPromptRequired);
   if (needsRepair.length > 0) {
-    // A repair prompt must have been issued (expectedRepairPromptDigest set)
-    // AND the task prompt must match its digest exactly.
     const matchesRepair = needsRepair.some(
       (p) => p.expectedRepairPromptDigest !== null && p.expectedRepairPromptDigest === promptDigest,
     );
@@ -269,8 +231,6 @@ function checkCanonicalPrompt(
             `a stale prompt.`,
       };
     }
-    // Note: repairPromptRequired is cleared in onTaskToolAfter after the
-    // task runs — never in this pre-execution validator (fail-closed).
   }
 
   return null;
@@ -278,14 +238,6 @@ function checkCanonicalPrompt(
 
 /**
  * Verify that the host-issued canonical prompt includes the artifact.
- *
- * The length floor and the iteration/planVersion match are all satisfied by the
- * canonical prompt's instruction block alone, so without this check a reviewer
- * could be dispatched with nothing to review and every enforcement level would
- * still report success.
- *
- * Only applies where FlowGuard actually emitted a canonical prompt; a legitimate
- * host-issued prompt is unaffected.
  */
 function checkArtifactAppended(
   pendingReviews: readonly PendingReview[],
